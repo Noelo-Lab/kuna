@@ -8854,6 +8854,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "rustfmtwrite"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P9"
+subphase = "string-writer-format"
+strength = "HARD"
+rewind = "P9"
+issue = "angr-rust-write-format"
+summary = "Recover write!/writeln! into a verified String writer for Rust 1.93.0/1.93.1. Require exact core::fmt::write identity, four runtime arguments, an entry-derived writer, a complete immutable String fmt::Write vtable and a one-byte result. Preserve the original result as the macro's is_err() byte while retaining descriptor setup, surrounding branches and all IR. Custom writers, unknown vtables and unsupported result layouts remain explicit."
+use_when = "Off by default because the declared speed study did not clear the small-C wall-time confidence bound. Enable to expose proven String mutation through Rust write! macros. Literal calls also require rustfmtliteral; argument calls require rustfmtargs and their formatter options. The scoped fmt::Write import and byte-result bridge preserve the known String writer contract without changing function prototypes."
+example = "option rustfmtwrite on"
+source_decompiler = "angr"
+inspiration = "angr test_rust_decompiler.py::TestRustFormatMacrosTemplateLayout::test_format_macros write_str and FormatMacroSimplifier core::fmt::write consumer"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "Rust String writes remain opaque core::fmt::write calls|write! formatting arguments remain stack descriptors and vtable addresses"
+live_field = "rust_fmt_write"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "outlang"
 values = "c|rust|go"
 default = "c"

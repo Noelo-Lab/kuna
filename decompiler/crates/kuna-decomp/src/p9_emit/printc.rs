@@ -8176,11 +8176,38 @@ impl PrintC {
         op: OpId,
         plan: super::kuna_rustfmtargs::Plan,
     ) {
+        self.push_rust_format_plan_with_writer(fd, arch, op, plan, None);
+    }
+
+    fn push_rust_format_plan_with_writer(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        plan: super::kuna_rustfmtargs::Plan,
+        writer: Option<(VarnodeId, bool)>,
+    ) {
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
         self.push_atom(&Atom::with_op(plan.name, TagType::OpToken,
             crate::printlanguage::SyntaxHighlight::funcname_color, op_key(op)));
         for _ in &plan.arguments {
             self.push_op(&tokens::COMMA, Some(op_key(op)));
+        }
+        if let Some((writer, pointer_bridge)) = writer {
+            self.push_op(&tokens::COMMA, Some(op_key(op)));
+            self.push_op(&super::kuna_langrust::rust_tokens::ADDRESSOF_MUT, Some(op_key(op)));
+            self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+            self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+            if pointer_bridge {
+                self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+            }
+            self.push_vn_ir(fd, arch, writer, op);
+            if pointer_bridge {
+                self.push_atom(&Atom::syntax("*mut _", TagType::TypeToken,
+                    crate::printlanguage::SyntaxHighlight::type_color));
+            }
+            self.push_atom(&Atom::syntax("*mut std::string::String", TagType::TypeToken,
+                crate::printlanguage::SyntaxHighlight::type_color));
         }
         self.push_atom(&Atom::syntax(plan.literal, TagType::Syntax,
             crate::printlanguage::SyntaxHighlight::const_color));
@@ -8236,6 +8263,29 @@ impl PrintC {
     /// (`getHiddenThisSlot`) is the C++ method-invocation hook (always -1 here —
     /// the C++ `int4 skip = -1;` for the direct case, no C++ method format yet).
     fn op_call_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_write {
+            if let Some(plan) = super::kuna_rustfmtwrite::recover(fd, arch, op) {
+                if plan.result_type.is_some() {
+                    self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+                }
+                self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+                self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+                self.push_op(&super::kuna_rustfmtwrite::WITH_WRITE, Some(op_key(op)));
+                self.push_atom(&Atom::syntax("", TagType::BlankToken,
+                    crate::printlanguage::SyntaxHighlight::no_color));
+                self.push_rust_format_plan_with_writer(fd, arch, op, plan.format,
+                    Some((plan.writer, plan.pointer_bridge)));
+                self.push_atom(&Atom::syntax("is_err", TagType::Syntax,
+                    crate::printlanguage::SyntaxHighlight::funcname_color));
+                self.push_atom(&Atom::syntax("", TagType::BlankToken,
+                    crate::printlanguage::SyntaxHighlight::no_color));
+                if let Some(result_type) = plan.result_type {
+                    self.push_atom(&Atom::syntax(result_type, TagType::TypeToken,
+                        crate::printlanguage::SyntaxHighlight::type_color));
+                }
+                return;
+            }
+        }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_pieces {
             if let Some(plan) = super::kuna_rustfmtpieces::recover(fd, arch, op) {
                 self.push_rust_format_plan(fd, arch, op, plan);

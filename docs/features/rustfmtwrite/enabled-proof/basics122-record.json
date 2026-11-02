@@ -1,0 +1,24 @@
+{
+  "fixture": "basics122",
+  "sha256": "b0c5144b05517c764da886a30b5eeca5709b6b655e93b55ae4967042943db50f",
+  "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+  "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 2018,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "go",
+      "functions": 2018,
+      "changed": [],
+      "parsed": 2018,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

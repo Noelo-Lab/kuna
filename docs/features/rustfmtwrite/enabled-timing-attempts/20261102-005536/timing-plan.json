@@ -1,0 +1,33 @@
+{
+  "declared_at": "2026-11-01 23:38:40.040825+00:00",
+  "reason": "First speed review for verified String writer recovery, declared before all samples.",
+  "method": "Fixed 768 balanced randomized three-arm rounds; all six permutations per six-round block. One final inference, no interim acceptance or automatic repeat.",
+  "cases": [
+    "scalar-c",
+    "write-primitive",
+    "write-flags",
+    "write-literal",
+    "write-string",
+    "reference-write",
+    "native-rust-c-control",
+    "older-rust-control",
+    "rust-large-control",
+    "go-control"
+  ],
+  "samples_per_arm": 768,
+  "warmups_per_arm": 3,
+  "seed": 20261110,
+  "bootstrap_resamples": 20000,
+  "block_rounds": 6,
+  "family_alpha": 0.05,
+  "comparisons": 40,
+  "upper_quantile": 0.99875,
+  "budget_pct": 5,
+  "maximum_looks": 1,
+  "acceptance": "Every ratio-of-medians CPU/wall comparison AND every simultaneous upper block-bootstrap mean-ratio bound must be <=5%. All complete results retained; no automatic retry.",
+  "cpu_selection": "Rank physical CPU pairs by minimum sibling idle fraction over five seconds; assign disjoint pairs before sampling and keep every arm of each case on its assigned CPU. Coordinator and inference exclude all assigned pairs.",
+  "execution": "Independent case workers on disjoint physical CPU pairs, optionally shared with the two preceding formatter features; no owned builds/tests/corpus during sampling.",
+  "common_main_before_sampling": "69fad3ce4cbdbb3232680938252bd75c2bec5a68",
+  "shared_scheduler_declared_at": "2026-11-01 23:47:53.080119+00:00",
+  "shared_scheduler_amendment": "All 25 independent cases from the three feature studies may run together on disjoint physical CPU pairs. No samples collected yet; per-feature tests, fixed sample counts, comparison families and acceptance criteria unchanged."
+}

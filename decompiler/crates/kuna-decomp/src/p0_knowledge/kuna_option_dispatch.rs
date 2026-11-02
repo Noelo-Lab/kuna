@@ -860,6 +860,7 @@ kuna_options! { self, p1;
     "rustfmtpanic" => on_off!(rust_fmt_panic, "Rust panic formatting"),
     "rustfmtpieces" => on_off!(rust_fmt_pieces, "Rust piece-array formatting"),
     "rustfmtstr" => on_off!(rust_fmt_str, "Rust verified string Display arguments"),
+    "rustfmtwrite" => on_off!(rust_fmt_write, "Rust verified String writer formatting"),
     "securitycheck" => {
         on_off!(strip_security_check, "Rust security-check branch stripping")
     },

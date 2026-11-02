@@ -1,0 +1,10 @@
+cd /home/mahaloz/kwt/angr-rust-fmt-write && /home/mahaloz/kwt/angr-rust-fmt-write/decompiler/target/release/kuna test --datatests \
+  --datatests-dir tests/stages --baseline docs/baseline-stages.json
+warning: decomp_test_dbg is a different build from this kuna
+  kuna:            0.1.0 (source 617314f7fad57f5b) /home/mahaloz/kwt/angr-rust-fmt-write/decompiler/target/release/kuna
+  decomp_test_dbg: 0.1.0 (source 35c6f950afed7c45) /home/mahaloz/kwt/angr-rust-fmt-write/decompiler/target/release/decomp_test_dbg
+datatests: 3541/3541 assertions passed
+exit: 0
+
+=== baseline parity ===
+PARITY OK

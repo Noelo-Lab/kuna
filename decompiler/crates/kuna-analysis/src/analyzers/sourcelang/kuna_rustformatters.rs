@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct FormatterMetadata {
     pub integers: BTreeMap<u64, kuna_decomp::kuna_rustfmtflags::Formatter>,
     pub strings: BTreeSet<u64>,
+    pub writers: super::kuna_rustfmtwrite::WriterMetadata,
 }
 
 pub fn primitive_display_formatters(bytes: &[u8]) -> BTreeMap<u64, &'static str> {
@@ -41,12 +42,13 @@ pub fn formatter_metadata(bytes: &[u8]) -> FormatterMetadata {
                 let full = symbol
                     .name()
                     .ok()
-                    .filter(|name| name.contains("fmt"))
+                    .filter(|name| name.contains("fmt") || (name.contains("drop_in_place") && name.contains("String")))
                     .and_then(|name| rustc_demangle::try_demangle(name).ok())
                     .map(|name| format!("{name:#}"));
                 (symbol.address(), full)
             }).collect();
     let strings = super::kuna_rustfmtstr::collect(&file, &symbols);
+    let writers = super::kuna_rustfmtwrite::collect(&file, bytes, &symbols);
     let integers = kuna_decomp::kuna_rustfmtflags::formatter_symbols(symbols);
-    FormatterMetadata { integers, strings }
+    FormatterMetadata { integers, strings, writers }
 }

@@ -1,0 +1,14 @@
+{
+  "decision": "Ship rustfmtwrite opt-in. No unchanged-code repeat of the failed default-on study.",
+  "study": "/tmp/kuna-rust-fmt-write/timing-randomized-attempts/20261102-005536",
+  "small_c_median_wall_delta_pct": {
+    "parent": 0.08431752120792169,
+    "off": 0.1514838323806389
+  },
+  "small_c_upper_mean_wall_delta_pct": {
+    "parent": 5.602660297777378,
+    "off": 6.125015459554035
+  },
+  "new_workdir": "/tmp/kuna-rust-fmt-write-optin",
+  "required": "Fresh release build, generated catalog docs, all repository checks, enabled/default/off complete-output equivalence against the previously reviewed records, explicit opt-in documentation. Existing enabled execution proof may be reused only if unchanged expressions verified."
+}

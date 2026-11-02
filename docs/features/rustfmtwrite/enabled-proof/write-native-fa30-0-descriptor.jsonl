@@ -1,0 +1,1 @@
+{"call_instruction":64068,"callee":68240,"descriptor":{"argument_count":0,"arguments":[],"literal_tag":23,"template":27077},"name":"core::fmt::write","result_size":1,"result_type":"u8","runtime_argument_count":4,"vtable":311208,"writer":{"constant":null,"definition":null,"offset":56,"size":8,"space":"register"}}

@@ -584,12 +584,14 @@ mod tests {
         ///
         /// `callwide` requires complete caller evidence and remains an explicit
         /// opt-in until its default validation is complete.
+        /// `rustfmtwrite` did not clear its declared small-C wall-time confidence
+        /// bound and remains explicit in every preset.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "callmechanisms", "regsigned", "x86listingswitch", "callwide",
+              "armconstshift", "callmechanisms", "regsigned", "x86listingswitch", "callwide", "rustfmtwrite",
               // `lazyfuncs` changes no output, but its saving is a single-function
               // property: the whole-binary surfaces the presets drive (decompile-all,
               // the web front-end, the benchmark) materialize every target they walk

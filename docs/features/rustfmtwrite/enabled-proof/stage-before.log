@@ -1,0 +1,13 @@
+datatests: 0/10 assertions passed
+FAILURES:
+  [data] off and custom formatting preserve runtime writes
+  [data] all seven writes use a scoped trait import
+  [data] all seven writes preserve the byte result
+  [data] unsigned String mutation
+  [data] signed newline String mutation
+  [data] static flags and repeated indices
+  [data] literal braces Unicode NUL and extra newline
+  [data] empty output still preserves the writer and result
+  [data] string fill width and precision
+  [data] mixed arguments retain their order
+exit: 10

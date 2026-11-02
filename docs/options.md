@@ -523,6 +523,8 @@ Three tiers:
 | Rust literal output remains _print with opaque piece-array addresses | [`rustfmtpieces`](#rustfmtpieces) |
 | Rust string formatting remains a runtime descriptor call | [`rustfmtstr`](#rustfmtstr) |
 | format! with mixed integer and string arguments remains format_inner | [`rustfmtstr`](#rustfmtstr) |
+| Rust String writes remain opaque core::fmt::write calls | [`rustfmtwrite`](#rustfmtwrite) |
+| write! formatting arguments remain stack descriptors and vtable addresses | [`rustfmtwrite`](#rustfmtwrite) |
 | Go output language is unavailable | [`outlang`](#outlang) |
 | Go functions retain C declarations and control-flow syntax | [`outlang`](#outlang) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
@@ -2576,6 +2578,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default to expose proven string arguments in print!, format! and panic! recovery. Requires rustfmtargs and the corresponding sink option; explicit format specifications also require rustfmtflags. Turn off to retain runtime calls containing string arguments. The original formatter contract requires valid UTF-8 storage for the recorded length.
 - **Where / provenance:** P9/string-format · angr · opt-in-tool · angr-rust-string-format
 - **Example:** `option rustfmtstr off`
+
+### `rustfmtwrite` -- on | off, default `off`
+
+- **Symptoms:** Rust String writes remain opaque core::fmt::write calls; write! formatting arguments remain stack descriptors and vtable addresses.
+- **What it does:** Recover write!/writeln! into a verified String writer for Rust 1.93.0/1.93.1. Require exact core::fmt::write identity, four runtime arguments, an entry-derived writer, a complete immutable String fmt::Write vtable and a one-byte result. Preserve the original result as the macro's is_err() byte while retaining descriptor setup, surrounding branches and all IR. Custom writers, unknown vtables and unsupported result layouts remain explicit.
+- **When to flip:** Off by default because the declared speed study did not clear the small-C wall-time confidence bound. Enable to expose proven String mutation through Rust write! macros. Literal calls also require rustfmtliteral; argument calls require rustfmtargs and their formatter options. The scoped fmt::Write import and byte-result bridge preserve the known String writer contract without changing function prototypes.
+- **Where / provenance:** P9/string-writer-format · angr · opt-in-tool · angr-rust-write-format
+- **Example:** `option rustfmtwrite on`
 
 ### `outlang` -- c | rust | go, default `c`
 

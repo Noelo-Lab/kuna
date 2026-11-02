@@ -1,0 +1,7 @@
+{
+  "command": "CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 cargo build --release -j 8 -p kuna-cli -p kuna-console",
+  "exit_code": 0,
+  "duration": "1m 39s",
+  "cli_sha256": "ebff674185bf38266bea0adc10afda33a0bba10a699f09be32a1ab9b09e9a923",
+  "default": "rustfmtwrite off"
+}

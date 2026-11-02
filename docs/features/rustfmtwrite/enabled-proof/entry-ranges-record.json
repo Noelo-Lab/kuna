@@ -1,0 +1,24 @@
+{
+  "fixture": "entry-ranges",
+  "sha256": "b0f38a89fec7a625d005888c2b10b77352e63d605ac64357eccf2d0bbfabb5a0",
+  "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+  "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 9,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "go",
+      "functions": 9,
+      "changed": [],
+      "parsed": 9,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

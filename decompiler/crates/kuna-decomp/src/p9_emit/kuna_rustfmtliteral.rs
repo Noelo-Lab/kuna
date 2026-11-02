@@ -101,7 +101,7 @@ fn constant_word(fd: &Funcdata, mut id: VarnodeId) -> Option<u64> {
     None
 }
 
-fn render(text: &str, stderr: bool) -> (&'static str, String) {
+pub(crate) fn render(text: &str, stderr: bool) -> (&'static str, String) {
     let (text, newline) = text.strip_suffix('\n').map_or((text, false), |s| (s, true));
     let name = match (stderr, newline) {
         (false, false) => "print!",

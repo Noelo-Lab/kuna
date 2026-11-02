@@ -1,0 +1,265 @@
+{
+  "review_pending": false,
+  "functions": [
+    {
+      "fixture": "rust",
+      "address": "0x11230",
+      "prior_manual_review_preserved": true,
+      "added_instruction_addresses": [],
+      "lost_instruction_addresses": [
+        "0x1125d"
+      ],
+      "lost_addresses_belong_to_replaced_call_lines": true,
+      "variable_mapping_changes": [
+        {
+          "name": "param_1",
+          "added_call_addresses": [],
+          "lost_call_addresses": [
+            "0x1125d"
+          ]
+        },
+        {
+          "name": "v2",
+          "added_call_addresses": [
+            "0x11262",
+            "0x11267"
+          ],
+          "lost_call_addresses": []
+        }
+      ],
+      "declarations_and_function_metadata_unchanged": true,
+      "disassembly": [
+        {
+          "address": "0x1125d",
+          "disassembly": "\n/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931:     file format elf64-x86-64\n\n\nDisassembly of section .text:\n\n000000000001125d <_ZN7fmtdemo9write_str17h4f54406b224f30a9E+0x2d>:\n   1125d:\t48 8d 4c 24 18       \tlea    0x18(%rsp),%rcx\n   11262:\te8 59 11 00 00       \tcall   123c0 <_ZN4core3fmt5write17h22467d3ad5dd5554E>\n   11267:\t84 c0                \ttest   %al,%al\n   11269:\t75 05                \tjne    11270 <_ZN7fmtdemo9write_str17h4f54406b224f30a9E+0x40>\n   1126b:\t48                   \trex.W\n   1126c:\t83                   \t.byte 0x83\n",
+          "classification": "Stack descriptor-array address computation into RCX; the macro replaces this descriptor argument with typed value reads. No load, store or flag effect."
+        }
+      ]
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xf960",
+      "prior_manual_review_preserved": true,
+      "added_instruction_addresses": [],
+      "lost_instruction_addresses": [],
+      "lost_addresses_belong_to_replaced_call_lines": true,
+      "variable_mapping_changes": [],
+      "declarations_and_function_metadata_unchanged": true,
+      "disassembly": []
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xf9b0",
+      "prior_manual_review_preserved": true,
+      "added_instruction_addresses": [],
+      "lost_instruction_addresses": [
+        "0xf9ed"
+      ],
+      "lost_addresses_belong_to_replaced_call_lines": true,
+      "variable_mapping_changes": [
+        {
+          "name": "param_1",
+          "added_call_addresses": [],
+          "lost_call_addresses": [
+            "0xf9ed"
+          ]
+        },
+        {
+          "name": "v2",
+          "added_call_addresses": [
+            "0xf9f7"
+          ],
+          "lost_call_addresses": []
+        },
+        {
+          "name": "v5",
+          "added_call_addresses": [
+            "0xf9f7"
+          ],
+          "lost_call_addresses": []
+        }
+      ],
+      "declarations_and_function_metadata_unchanged": true,
+      "disassembly": [
+        {
+          "address": "0xf9ed",
+          "disassembly": "\n/home/mahaloz/kwt/angr-rust-fmt-write/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64:     file format elf64-x86-64\n\n\nDisassembly of section .text:\n\n000000000000f9ed <write_flags+0x3d>:\n    f9ed:\t48 8d 4c 24 08       \tlea    0x8(%rsp),%rcx\n    f9f2:\te8 99 10 00 00       \tcall   10a90 <_ZN4core3fmt5write17h22467d3ad5dd5554E>\n    f9f7:\t84 c0                \ttest   %al,%al\n    f9f9:\t75 07                \tjne    fa02 <write_flags+0x52>\n    f9fb:\t31 c0                \txor    %eax,%eax\n",
+          "classification": "Stack descriptor-array address computation into RCX; the macro replaces this descriptor argument with typed value reads. No load, store or flag effect."
+        }
+      ]
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfa30",
+      "prior_manual_review_preserved": true,
+      "added_instruction_addresses": [],
+      "lost_instruction_addresses": [],
+      "lost_addresses_belong_to_replaced_call_lines": true,
+      "variable_mapping_changes": [],
+      "declarations_and_function_metadata_unchanged": true,
+      "disassembly": []
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfa80",
+      "prior_manual_review_preserved": true,
+      "added_instruction_addresses": [],
+      "lost_instruction_addresses": [
+        "0xfacc"
+      ],
+      "lost_addresses_belong_to_replaced_call_lines": true,
+      "variable_mapping_changes": [
+        {
+          "name": "param_1",
+          "added_call_addresses": [],
+          "lost_call_addresses": [
+            "0xfacc"
+          ]
+        },
+        {
+          "name": "v2",
+          "added_call_addresses": [
+            "0xfad6"
+          ],
+          "lost_call_addresses": []
+        },
+        {
+          "name": "v5",
+          "added_call_addresses": [
+            "0xfad6"
+          ],
+          "lost_call_addresses": []
+        },
+        {
+          "name": "v3",
+          "added_call_addresses": [
+            "0xfad1",
+            "0xfad6"
+          ],
+          "lost_call_addresses": []
+        }
+      ],
+      "declarations_and_function_metadata_unchanged": true,
+      "disassembly": [
+        {
+          "address": "0xfacc",
+          "disassembly": "\n/home/mahaloz/kwt/angr-rust-fmt-write/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64:     file format elf64-x86-64\n\n\nDisassembly of section .text:\n\n000000000000facc <write_pair+0x4c>:\n    facc:\t48 8d 4c 24 18       \tlea    0x18(%rsp),%rcx\n    fad1:\te8 ba 0f 00 00       \tcall   10a90 <_ZN4core3fmt5write17h22467d3ad5dd5554E>\n    fad6:\t84 c0                \ttest   %al,%al\n    fad8:\t75 07                \tjne    fae1 <write_pair+0x61>\n    fada:\t31 c0                \txor    %eax,%eax\n",
+          "classification": "Stack descriptor-array address computation into RCX; the macro replaces this descriptor argument with typed value reads. No load, store or flag effect."
+        }
+      ]
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfb50",
+      "prior_manual_review_preserved": true,
+      "added_instruction_addresses": [],
+      "lost_instruction_addresses": [
+        "0xfb7d"
+      ],
+      "lost_addresses_belong_to_replaced_call_lines": true,
+      "variable_mapping_changes": [
+        {
+          "name": "param_1",
+          "added_call_addresses": [],
+          "lost_call_addresses": [
+            "0xfb7d"
+          ]
+        },
+        {
+          "name": "v2",
+          "added_call_addresses": [
+            "0xfb82",
+            "0xfb87"
+          ],
+          "lost_call_addresses": []
+        }
+      ],
+      "declarations_and_function_metadata_unchanged": true,
+      "disassembly": [
+        {
+          "address": "0xfb7d",
+          "disassembly": "\n/home/mahaloz/kwt/angr-rust-fmt-write/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64:     file format elf64-x86-64\n\n\nDisassembly of section .text:\n\n000000000000fb7d <write_signed+0x2d>:\n    fb7d:\t48 8d 4c 24 18       \tlea    0x18(%rsp),%rcx\n    fb82:\te8 09 0f 00 00       \tcall   10a90 <_ZN4core3fmt5write17h22467d3ad5dd5554E>\n    fb87:\t84 c0                \ttest   %al,%al\n    fb89:\t75 07                \tjne    fb92 <write_signed+0x42>\n    fb8b:\t31 c0                \txor    %eax,%eax\n",
+          "classification": "Stack descriptor-array address computation into RCX; the macro replaces this descriptor argument with typed value reads. No load, store or flag effect."
+        }
+      ]
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfbc0",
+      "prior_manual_review_preserved": true,
+      "added_instruction_addresses": [],
+      "lost_instruction_addresses": [
+        "0xfbf2"
+      ],
+      "lost_addresses_belong_to_replaced_call_lines": true,
+      "variable_mapping_changes": [
+        {
+          "name": "param_1",
+          "added_call_addresses": [],
+          "lost_call_addresses": [
+            "0xfbf2"
+          ]
+        },
+        {
+          "name": "v1",
+          "added_call_addresses": [
+            "0xfbfc"
+          ],
+          "lost_call_addresses": []
+        },
+        {
+          "name": "v4",
+          "added_call_addresses": [
+            "0xfbfc"
+          ],
+          "lost_call_addresses": []
+        }
+      ],
+      "declarations_and_function_metadata_unchanged": true,
+      "disassembly": [
+        {
+          "address": "0xfbf2",
+          "disassembly": "\n/home/mahaloz/kwt/angr-rust-fmt-write/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64:     file format elf64-x86-64\n\n\nDisassembly of section .text:\n\n000000000000fbf2 <write_string+0x32>:\n    fbf2:\t48 8d 4c 24 18       \tlea    0x18(%rsp),%rcx\n    fbf7:\te8 94 0e 00 00       \tcall   10a90 <_ZN4core3fmt5write17h22467d3ad5dd5554E>\n    fbfc:\t84 c0                \ttest   %al,%al\n    fbfe:\t75 07                \tjne    fc07 <write_string+0x47>\n    fc00:\t31 c0                \txor    %eax,%eax\n",
+          "classification": "Stack descriptor-array address computation into RCX; the macro replaces this descriptor argument with typed value reads. No load, store or flag effect."
+        }
+      ]
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfc70",
+      "prior_manual_review_preserved": true,
+      "added_instruction_addresses": [],
+      "lost_instruction_addresses": [
+        "0xfc9c"
+      ],
+      "lost_addresses_belong_to_replaced_call_lines": true,
+      "variable_mapping_changes": [
+        {
+          "name": "param_1",
+          "added_call_addresses": [],
+          "lost_call_addresses": [
+            "0xfc9c"
+          ]
+        },
+        {
+          "name": "v2",
+          "added_call_addresses": [
+            "0xfca1",
+            "0xfca6"
+          ],
+          "lost_call_addresses": []
+        }
+      ],
+      "declarations_and_function_metadata_unchanged": true,
+      "disassembly": [
+        {
+          "address": "0xfc9c",
+          "disassembly": "\n/home/mahaloz/kwt/angr-rust-fmt-write/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64:     file format elf64-x86-64\n\n\nDisassembly of section .text:\n\n000000000000fc9c <write_unsigned+0x2c>:\n    fc9c:\t48 8d 4c 24 08       \tlea    0x8(%rsp),%rcx\n    fca1:\te8 ea 0d 00 00       \tcall   10a90 <_ZN4core3fmt5write17h22467d3ad5dd5554E>\n    fca6:\t84 c0                \ttest   %al,%al\n    fca8:\t75 07                \tjne    fcb1 <write_unsigned+0x41>\n    fcaa:\t31 c0                \txor    %eax,%eax\n",
+          "classification": "Stack descriptor-array address computation into RCX; the macro replaces this descriptor argument with typed value reads. No load, store or flag effect."
+        }
+      ]
+    }
+  ],
+  "native_complete_function_records_equal_prior_review": true,
+  "reference_context_difference_preexists_feature_and_is_independently_verified": true
+}

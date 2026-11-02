@@ -1,0 +1,12 @@
+--- before/fmtdemo::write_str
++++ after/fmtdemo::write_str
+@@ -10,7 +10,7 @@
+   v2 = &mut v1;
+   v4 = fmt;
+   v1 = a1;
+-  if core::fmt::write(a0,0x4e388 as *mut (),0x5f14 as *mut u16,&mut v2) == b'\0' {
++  if ({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),"[{}]",&*((v2 as *const _) as *const i64)) }).is_err() as u8 == b'\0' {
+     return;
+   }
+   core::result::unwrap_failed(_called__Result::unwrap____on_an__Err__value_,0x2b,&mut v3,0x4e348,0x4e478); // no-return
+

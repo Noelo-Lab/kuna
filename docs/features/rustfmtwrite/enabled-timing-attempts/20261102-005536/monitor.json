@@ -1,0 +1,385 @@
+{
+  "method": "balanced_randomized_block_bootstrap",
+  "execution": "Independent case workers on disjoint physical CPU pairs, optionally shared with the two preceding formatter features; no owned builds/tests/corpus during sampling.",
+  "attempt": "/tmp/kuna-rust-fmt-write/timing-randomized-attempts/20261102-005536",
+  "cpu_assignments": {
+    "0:scalar-c": {
+      "target_cpu": 61,
+      "sibling_cpu": 21
+    },
+    "0:pieces-literal": {
+      "target_cpu": 52,
+      "sibling_cpu": 12
+    },
+    "0:pieces-integers": {
+      "target_cpu": 47,
+      "sibling_cpu": 7
+    },
+    "0:older-rust-c-control": {
+      "target_cpu": 41,
+      "sibling_cpu": 1
+    },
+    "0:original-angr-rust": {
+      "target_cpu": 49,
+      "sibling_cpu": 9
+    },
+    "0:rust-newer-control": {
+      "target_cpu": 71,
+      "sibling_cpu": 31
+    },
+    "0:go-control": {
+      "target_cpu": 48,
+      "sibling_cpu": 8
+    },
+    "1:scalar-c": {
+      "target_cpu": 59,
+      "sibling_cpu": 19
+    },
+    "1:str-plain": {
+      "target_cpu": 60,
+      "sibling_cpu": 20
+    },
+    "1:str-flags": {
+      "target_cpu": 44,
+      "sibling_cpu": 4
+    },
+    "1:str-result": {
+      "target_cpu": 45,
+      "sibling_cpu": 5
+    },
+    "1:reference-make-string": {
+      "target_cpu": 67,
+      "sibling_cpu": 27
+    },
+    "1:older-rust-control": {
+      "target_cpu": 68,
+      "sibling_cpu": 28
+    },
+    "1:rust-large-control": {
+      "target_cpu": 50,
+      "sibling_cpu": 10
+    },
+    "1:go-control": {
+      "target_cpu": 79,
+      "sibling_cpu": 39
+    },
+    "2:scalar-c": {
+      "target_cpu": 77,
+      "sibling_cpu": 37
+    },
+    "2:write-primitive": {
+      "target_cpu": 40,
+      "sibling_cpu": 0
+    },
+    "2:write-flags": {
+      "target_cpu": 75,
+      "sibling_cpu": 35
+    },
+    "2:write-literal": {
+      "target_cpu": 62,
+      "sibling_cpu": 22
+    },
+    "2:write-string": {
+      "target_cpu": 72,
+      "sibling_cpu": 32
+    },
+    "2:reference-write": {
+      "target_cpu": 74,
+      "sibling_cpu": 34
+    },
+    "2:native-rust-c-control": {
+      "target_cpu": 78,
+      "sibling_cpu": 38
+    },
+    "2:older-rust-control": {
+      "target_cpu": 58,
+      "sibling_cpu": 18
+    },
+    "2:rust-large-control": {
+      "target_cpu": 55,
+      "sibling_cpu": 15
+    },
+    "2:go-control": {
+      "target_cpu": 42,
+      "sibling_cpu": 2
+    }
+  },
+  "plan": {
+    "declared_at": "2026-11-01 23:38:40.040825+00:00",
+    "reason": "First speed review for verified String writer recovery, declared before all samples.",
+    "method": "Fixed 768 balanced randomized three-arm rounds; all six permutations per six-round block. One final inference, no interim acceptance or automatic repeat.",
+    "cases": [
+      "scalar-c",
+      "write-primitive",
+      "write-flags",
+      "write-literal",
+      "write-string",
+      "reference-write",
+      "native-rust-c-control",
+      "older-rust-control",
+      "rust-large-control",
+      "go-control"
+    ],
+    "samples_per_arm": 768,
+    "warmups_per_arm": 3,
+    "seed": 20261110,
+    "bootstrap_resamples": 20000,
+    "block_rounds": 6,
+    "family_alpha": 0.05,
+    "comparisons": 40,
+    "upper_quantile": 0.99875,
+    "budget_pct": 5,
+    "maximum_looks": 1,
+    "acceptance": "Every ratio-of-medians CPU/wall comparison AND every simultaneous upper block-bootstrap mean-ratio bound must be <=5%. All complete results retained; no automatic retry.",
+    "cpu_selection": "Rank physical CPU pairs by minimum sibling idle fraction over five seconds; assign disjoint pairs before sampling and keep every arm of each case on its assigned CPU. Coordinator and inference exclude all assigned pairs.",
+    "execution": "Independent case workers on disjoint physical CPU pairs, optionally shared with the two preceding formatter features; no owned builds/tests/corpus during sampling.",
+    "common_main_before_sampling": "69fad3ce4cbdbb3232680938252bd75c2bec5a68",
+    "shared_scheduler_declared_at": "2026-11-01 23:47:53.080119+00:00",
+    "shared_scheduler_amendment": "All 25 independent cases from the three feature studies may run together on disjoint physical CPU pairs. No samples collected yet; per-feature tests, fixed sample counts, comparison families and acceptance criteria unchanged."
+  },
+  "accepted_for_speed_review": false,
+  "baseline_commit": "a8a55f1df9482eda606cb96b6f7599437fe6d77f",
+  "baseline_has_pending_feature": true,
+  "results": {
+    "scalar-c": {
+      "samples": 768,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.09500896457153019,
+          "wall_ms": 0.08431752120792169
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.13298636792882235,
+          "wall_ms": 0.1514838323806389
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.7984985428588199,
+          "wall_ms": 5.602660297777378
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.7783685781986421,
+          "wall_ms": 6.125015459554035
+        }
+      },
+      "speed_budget_passed": false
+    },
+    "write-primitive": {
+      "samples": 768,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.00022924948246405563,
+          "wall_ms": 0.024709679152090658
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.07287782526566033,
+          "wall_ms": -0.002812276885633125
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.7995241207038458,
+          "wall_ms": 0.5438910513820004
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.46319101962651826,
+          "wall_ms": 0.1897955887835303
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "write-flags": {
+      "samples": 768,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": -0.4293726037656542,
+          "wall_ms": -0.23147863163391902
+        },
+        "off_to_patched": {
+          "cpu_ms": -0.07571288558800848,
+          "wall_ms": 0.035750825375990836
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.07292245674443136,
+          "wall_ms": 0.44529283675074244
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.5091867106975559,
+          "wall_ms": 0.6566303337161672
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "write-literal": {
+      "samples": 768,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.14131910803694137,
+          "wall_ms": 0.1284564809322264
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.02083037005153887,
+          "wall_ms": 0.0026122251346905045
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.780028109488251,
+          "wall_ms": 1.5065413879652974
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.5970344436629321,
+          "wall_ms": 1.7892523081663074
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "write-string": {
+      "samples": 768,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.1911202587575156,
+          "wall_ms": 0.2097156856761373
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.07744340911977066,
+          "wall_ms": 0.10929204758645117
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 1.5940917558420675,
+          "wall_ms": 2.4023297245402047
+        },
+        "off_to_patched": {
+          "cpu_ms": 1.334080548296664,
+          "wall_ms": 2.136782228469258
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "reference-write": {
+      "samples": 768,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.04206383184404139,
+          "wall_ms": 0.055325905851133506
+        },
+        "off_to_patched": {
+          "cpu_ms": -0.09588830450178998,
+          "wall_ms": -0.04753839240728697
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.7610840336633482,
+          "wall_ms": 1.5474680338114382
+        },
+        "off_to_patched": {
+          "cpu_ms": 1.108736632295621,
+          "wall_ms": 1.6304435392136392
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "native-rust-c-control": {
+      "samples": 768,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.10818527133420464,
+          "wall_ms": 0.17766743367182425
+        },
+        "off_to_patched": {
+          "cpu_ms": -0.05049393725296003,
+          "wall_ms": -0.029275003612128092
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.636609824799332,
+          "wall_ms": 1.9351190455855214
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.3442612280246546,
+          "wall_ms": 1.6200977958634564
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "older-rust-control": {
+      "samples": 768,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.03906415293855048,
+          "wall_ms": 0.10710313133472926
+        },
+        "off_to_patched": {
+          "cpu_ms": -0.29937009364094935,
+          "wall_ms": -0.7182823466783228
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.21434755296432093,
+          "wall_ms": 0.1947821608516971
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.9287060317958303,
+          "wall_ms": 1.1418147686715265
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "rust-large-control": {
+      "samples": 768,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": -0.03452659609591846,
+          "wall_ms": 0.030967495418599
+        },
+        "off_to_patched": {
+          "cpu_ms": -0.028950837579622135,
+          "wall_ms": -0.21163169102688117
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 1.7715961059329637,
+          "wall_ms": 1.978743937887366
+        },
+        "off_to_patched": {
+          "cpu_ms": 1.629214543669585,
+          "wall_ms": 1.4095436132606707
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "go-control": {
+      "samples": 768,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.1600821029693833,
+          "wall_ms": 0.10425342390034675
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.04225621529547752,
+          "wall_ms": -0.04068511757605586
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.7407514863404674,
+          "wall_ms": 1.9820140930416021
+        },
+        "off_to_patched": {
+          "cpu_ms": 1.0007041794112466,
+          "wall_ms": 2.324487529772186
+        }
+      },
+      "speed_budget_passed": true
+    }
+  }
+}

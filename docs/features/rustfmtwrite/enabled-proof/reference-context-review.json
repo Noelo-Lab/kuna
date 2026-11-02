@@ -1,0 +1,658 @@
+{
+  "reference_address": "0x11230",
+  "context_difference_preexists_feature": true,
+  "exact_allowed_differences": [
+    "writer parameter u64 to *mut (), including its variable type",
+    "parent runtime call arguments gain their inferred pointer casts",
+    "recovered writer gains the corresponding pointer cast through *mut _"
+  ],
+  "all_other_complete_function_fields_identical": true,
+  "source_instruction_mappings_identical_across_contexts": true,
+  "fresh_emitted_expression_unchanged": "({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),\"[{}]\",&*((v2 as *const _) as *const i64)) }).is_err() as u8",
+  "single_emitted_expression": "({ use std::fmt::Write as _; write!(&mut *(a0 as *mut std::string::String),\"[{}]\",&*((v2 as *const _) as *const i64)) }).is_err() as u8",
+  "functions": {
+    "single_before": {
+      "name": "fmtdemo::write_str",
+      "address": 70192,
+      "address_hex": "0x11230",
+      "aliases": [],
+      "object_location": null,
+      "size": 112,
+      "code": "// fmtdemo::write_str\n#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn write_str(mut a0: u64, mut a1: u64)\n{\n  let mut v1: u64; // rsi | stack - 0x18\n  let mut v2: *mut u64; // rax | stack - 0x10\n  let mut v3: u8; // stack - 0x19\n  let mut v4: *mut *const (); // stack - 0x8\n  \n  v2 = &mut v1;\n  v4 = fmt;\n  v1 = a1;\n  if core::fmt::write(a0,0x4e388,0x5f14,&mut v2) == b'\\0' {\n    return;\n  }\n  core::result::unwrap_failed(_called__Result::unwrap____on_an__Err__value_,0x2b,&mut v3,0x4e348,0x4e478); // no-return\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 10,
+          "addresses": [
+            70201
+          ]
+        },
+        {
+          "line_number": 11,
+          "addresses": [
+            70218
+          ]
+        },
+        {
+          "line_number": 12,
+          "addresses": [
+            70242
+          ]
+        },
+        {
+          "line_number": 13,
+          "addresses": [
+            70237,
+            70242,
+            70247
+          ]
+        },
+        {
+          "line_number": 14,
+          "addresses": [
+            70255
+          ]
+        },
+        {
+          "line_number": 16,
+          "addresses": [
+            70277,
+            70287
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "param_1",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            13
+          ],
+          "addresses": [
+            70237,
+            70242,
+            70247
+          ]
+        },
+        {
+          "name": "param_2",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            12
+          ],
+          "addresses": [
+            70242
+          ]
+        },
+        {
+          "name": "v3",
+          "type": "undefined1",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -25,
+          "size": 1,
+          "line_numbers": [
+            16
+          ],
+          "addresses": [
+            70277,
+            70287
+          ]
+        },
+        {
+          "name": "v1",
+          "type": "u64",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -24,
+          "size": 8,
+          "line_numbers": [
+            12
+          ],
+          "addresses": [
+            70242
+          ]
+        },
+        {
+          "name": "v2",
+          "type": "*mut u64",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 8,
+          "line_numbers": [
+            10
+          ],
+          "addresses": [
+            70201
+          ]
+        },
+        {
+          "name": "v4",
+          "type": "*mut *const ()",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -8,
+          "size": 8,
+          "line_numbers": [
+            11
+          ],
+          "addresses": [
+            70218
+          ]
+        },
+        {
+          "name": "local_30",
+          "type": "undefined23",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -48,
+          "size": 23,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    },
+    "single_after": {
+      "name": "fmtdemo::write_str",
+      "address": 70192,
+      "address_hex": "0x11230",
+      "aliases": [],
+      "object_location": null,
+      "size": 112,
+      "code": "// fmtdemo::write_str\n#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn write_str(mut a0: u64, mut a1: u64)\n{\n  let mut v1: u64; // rsi | stack - 0x18\n  let mut v2: *mut u64; // rax | stack - 0x10\n  let mut v3: u8; // stack - 0x19\n  let mut v4: *mut *const (); // stack - 0x8\n  \n  v2 = &mut v1;\n  v4 = fmt;\n  v1 = a1;\n  if ({ use std::fmt::Write as _; write!(&mut *(a0 as *mut std::string::String),\"[{}]\",&*((v2 as *const _) as *const i64)) }).is_err() as u8 == b'\\0' {\n    return;\n  }\n  core::result::unwrap_failed(_called__Result::unwrap____on_an__Err__value_,0x2b,&mut v3,0x4e348,0x4e478); // no-return\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 10,
+          "addresses": [
+            70201
+          ]
+        },
+        {
+          "line_number": 11,
+          "addresses": [
+            70218
+          ]
+        },
+        {
+          "line_number": 12,
+          "addresses": [
+            70242
+          ]
+        },
+        {
+          "line_number": 13,
+          "addresses": [
+            70242,
+            70247
+          ]
+        },
+        {
+          "line_number": 14,
+          "addresses": [
+            70255
+          ]
+        },
+        {
+          "line_number": 16,
+          "addresses": [
+            70277,
+            70287
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "param_1",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            13
+          ],
+          "addresses": [
+            70242,
+            70247
+          ]
+        },
+        {
+          "name": "param_2",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            12
+          ],
+          "addresses": [
+            70242
+          ]
+        },
+        {
+          "name": "v3",
+          "type": "undefined1",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -25,
+          "size": 1,
+          "line_numbers": [
+            16
+          ],
+          "addresses": [
+            70277,
+            70287
+          ]
+        },
+        {
+          "name": "v1",
+          "type": "u64",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -24,
+          "size": 8,
+          "line_numbers": [
+            12
+          ],
+          "addresses": [
+            70242
+          ]
+        },
+        {
+          "name": "v2",
+          "type": "*mut u64",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 8,
+          "line_numbers": [
+            10,
+            13
+          ],
+          "addresses": [
+            70201,
+            70242,
+            70247
+          ]
+        },
+        {
+          "name": "v4",
+          "type": "*mut *const ()",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -8,
+          "size": 8,
+          "line_numbers": [
+            11
+          ],
+          "addresses": [
+            70218
+          ]
+        },
+        {
+          "name": "local_30",
+          "type": "undefined23",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -48,
+          "size": 23,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    },
+    "full_before": {
+      "name": "fmtdemo::write_str",
+      "address": 70192,
+      "address_hex": "0x11230",
+      "aliases": [],
+      "object_location": null,
+      "size": 112,
+      "code": "// fmtdemo::write_str\n#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn write_str(mut a0: *mut (), mut a1: u64)\n{\n  let mut v1: u64; // rsi | stack - 0x18\n  let mut v2: *mut u64; // rax | stack - 0x10\n  let mut v3: u8; // stack - 0x19\n  let mut v4: *mut *const (); // stack - 0x8\n  \n  v2 = &mut v1;\n  v4 = fmt;\n  v1 = a1;\n  if core::fmt::write(a0,0x4e388 as *mut (),0x5f14 as *mut u16,&mut v2) == b'\\0' {\n    return;\n  }\n  core::result::unwrap_failed(_called__Result::unwrap____on_an__Err__value_,0x2b,&mut v3,0x4e348,0x4e478); // no-return\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 10,
+          "addresses": [
+            70201
+          ]
+        },
+        {
+          "line_number": 11,
+          "addresses": [
+            70218
+          ]
+        },
+        {
+          "line_number": 12,
+          "addresses": [
+            70242
+          ]
+        },
+        {
+          "line_number": 13,
+          "addresses": [
+            70237,
+            70242,
+            70247
+          ]
+        },
+        {
+          "line_number": 14,
+          "addresses": [
+            70255
+          ]
+        },
+        {
+          "line_number": 16,
+          "addresses": [
+            70277,
+            70287
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "param_1",
+          "type": "*mut ()",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            13
+          ],
+          "addresses": [
+            70237,
+            70242,
+            70247
+          ]
+        },
+        {
+          "name": "param_2",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            12
+          ],
+          "addresses": [
+            70242
+          ]
+        },
+        {
+          "name": "v3",
+          "type": "undefined1",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -25,
+          "size": 1,
+          "line_numbers": [
+            16
+          ],
+          "addresses": [
+            70277,
+            70287
+          ]
+        },
+        {
+          "name": "v1",
+          "type": "u64",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -24,
+          "size": 8,
+          "line_numbers": [
+            12
+          ],
+          "addresses": [
+            70242
+          ]
+        },
+        {
+          "name": "v2",
+          "type": "*mut u64",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 8,
+          "line_numbers": [
+            10
+          ],
+          "addresses": [
+            70201
+          ]
+        },
+        {
+          "name": "v4",
+          "type": "*mut *const ()",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -8,
+          "size": 8,
+          "line_numbers": [
+            11
+          ],
+          "addresses": [
+            70218
+          ]
+        },
+        {
+          "name": "local_30",
+          "type": "undefined23",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -48,
+          "size": 23,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    },
+    "full_after": {
+      "name": "fmtdemo::write_str",
+      "address": 70192,
+      "address_hex": "0x11230",
+      "aliases": [],
+      "object_location": null,
+      "size": 112,
+      "code": "// fmtdemo::write_str\n#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn write_str(mut a0: *mut (), mut a1: u64)\n{\n  let mut v1: u64; // rsi | stack - 0x18\n  let mut v2: *mut u64; // rax | stack - 0x10\n  let mut v3: u8; // stack - 0x19\n  let mut v4: *mut *const (); // stack - 0x8\n  \n  v2 = &mut v1;\n  v4 = fmt;\n  v1 = a1;\n  if ({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),\"[{}]\",&*((v2 as *const _) as *const i64)) }).is_err() as u8 == b'\\0' {\n    return;\n  }\n  core::result::unwrap_failed(_called__Result::unwrap____on_an__Err__value_,0x2b,&mut v3,0x4e348,0x4e478); // no-return\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 10,
+          "addresses": [
+            70201
+          ]
+        },
+        {
+          "line_number": 11,
+          "addresses": [
+            70218
+          ]
+        },
+        {
+          "line_number": 12,
+          "addresses": [
+            70242
+          ]
+        },
+        {
+          "line_number": 13,
+          "addresses": [
+            70242,
+            70247
+          ]
+        },
+        {
+          "line_number": 14,
+          "addresses": [
+            70255
+          ]
+        },
+        {
+          "line_number": 16,
+          "addresses": [
+            70277,
+            70287
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "param_1",
+          "type": "*mut ()",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            13
+          ],
+          "addresses": [
+            70242,
+            70247
+          ]
+        },
+        {
+          "name": "param_2",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            12
+          ],
+          "addresses": [
+            70242
+          ]
+        },
+        {
+          "name": "v3",
+          "type": "undefined1",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -25,
+          "size": 1,
+          "line_numbers": [
+            16
+          ],
+          "addresses": [
+            70277,
+            70287
+          ]
+        },
+        {
+          "name": "v1",
+          "type": "u64",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -24,
+          "size": 8,
+          "line_numbers": [
+            12
+          ],
+          "addresses": [
+            70242
+          ]
+        },
+        {
+          "name": "v2",
+          "type": "*mut u64",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 8,
+          "line_numbers": [
+            10,
+            13
+          ],
+          "addresses": [
+            70201,
+            70242,
+            70247
+          ]
+        },
+        {
+          "name": "v4",
+          "type": "*mut *const ()",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -8,
+          "size": 8,
+          "line_numbers": [
+            11
+          ],
+          "addresses": [
+            70218
+          ]
+        },
+        {
+          "name": "local_30",
+          "type": "undefined23",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -48,
+          "size": 23,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    }
+  },
+  "input_file_sha256": {
+    "single_before": "27e2e011b06cd87a932ed89964684ef5303c9ab8457fdc64e195ea4ee4b136e5",
+    "single_after": "5290a3cc003281171f231ad3fb1ed9c281802e46897348dc70e1abe9e35a6846",
+    "full_before": "0edd0b223a5e933d1a8be8f3dcdbd076678e822a0355528557bc64ba4569632e",
+    "full_after": "fb656c471cb4558c7d9174557cba97d7e339283142dbc7b93104632048c46c72"
+  },
+  "native_source": "std::fmt::write(out, format_args!(\"[{}]\", value))",
+  "native_producer": "1.93.1",
+  "signed_values": 264,
+  "prefixes": 3,
+  "initial_capacities": 3,
+  "total_comparisons": 7128,
+  "executions": [
+    {
+      "compiler": "1.90.0",
+      "calls": 2376,
+      "stdout_sha256": "3e1b7f70a98eab9c15b909f532fc86688d6958205112879da16792c635fd507e",
+      "original_string_bytes_and_result_bytes_match": true
+    },
+    {
+      "compiler": "1.93.1",
+      "calls": 2376,
+      "stdout_sha256": "3e1b7f70a98eab9c15b909f532fc86688d6958205112879da16792c635fd507e",
+      "original_string_bytes_and_result_bytes_match": true
+    },
+    {
+      "compiler": "1.99.1",
+      "calls": 2376,
+      "stdout_sha256": "3e1b7f70a98eab9c15b909f532fc86688d6958205112879da16792c635fd507e",
+      "original_string_bytes_and_result_bytes_match": true
+    }
+  ],
+  "complete_function_recompilation_claimed": false
+}

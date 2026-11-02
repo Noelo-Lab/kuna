@@ -1,0 +1,104 @@
+{
+  "changed_functions": 8,
+  "recovered_calls": 8,
+  "sites": [
+    {
+      "fixture": "rust",
+      "address": "0x11230",
+      "expression": "({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),\"[{}]\",&*((v2 as *const _) as *const i64)) }).is_err() as u8",
+      "bindings": {
+        "v2": "let v2_value:i64=i64::MIN+1;let v2=&v2_value as *const i64;"
+      },
+      "unchanged_emitted_expression": true
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xf960",
+      "expression": "({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),\"\") }).is_err() as u8",
+      "bindings": {},
+      "unchanged_emitted_expression": true
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xf9b0",
+      "expression": "({ use std::fmt::Write as _; writeln!(&mut *((a0 as *mut _) as *mut std::string::String),\"{:#010x}/{:\u00b7>12}\",&*((v2 as *const _) as *const u32),&*((v5 as *const _) as *const u32)) }).is_err() as u8",
+      "bindings": {
+        "v2": "let v2_value:u32=u32::MAX;let v2=&v2_value as *const u32;",
+        "v5": "let v5_value:u32=u32::MAX;let v5=&v5_value as *const u32;"
+      },
+      "unchanged_emitted_expression": true
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfa30",
+      "expression": "({ use std::fmt::Write as _; writeln!(&mut *((a0 as *mut _) as *mut std::string::String),\"{{\u00e9\ud83d\ude42}}\\0\\n\") }).is_err() as u8",
+      "bindings": {},
+      "unchanged_emitted_expression": true
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfa80",
+      "expression": "({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),\"{}: {}\",&*((v3 as *const _) as *const u32),std::str::from_utf8_unchecked(std::slice::from_raw_parts(v2 as *const u8,v5 as usize))) }).is_err() as u8",
+      "bindings": {
+        "v3": "let v3_value:u32=u32::MAX;let v3=&v3_value as *const u32;",
+        "v2": "let v2=text.as_ptr() as u64;",
+        "v5": "let v5=text.len() as u64;"
+      },
+      "unchanged_emitted_expression": true
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfb50",
+      "expression": "({ use std::fmt::Write as _; writeln!(&mut *((a0 as *mut _) as *mut std::string::String),\"{}\",&*((v2 as *const _) as *const i64)) }).is_err() as u8",
+      "bindings": {
+        "v2": "let v2_value:i64=i64::MIN+1;let v2=&v2_value as *const i64;"
+      },
+      "unchanged_emitted_expression": true
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfbc0",
+      "expression": "({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),\"|{:\ud83e\udd80^10.3}|\",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v4 as usize))) }).is_err() as u8",
+      "bindings": {
+        "v1": "let v1=text.as_ptr() as u64;",
+        "v4": "let v4=text.len() as u64;"
+      },
+      "unchanged_emitted_expression": true
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfc70",
+      "expression": "({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),\"[{}]\",&*((v2 as *const _) as *const u32)) }).is_err() as u8",
+      "bindings": {
+        "v2": "let v2_value:u32=u32::MAX;let v2=&v2_value as *const u32;"
+      },
+      "unchanged_emitted_expression": true
+    }
+  ],
+  "execution_compilers": [
+    "1.90.0",
+    "1.93.1",
+    "1.99.1"
+  ],
+  "stdout_sha256": "6e033bd6e0276fbfe06ad34c15808dd9369914a43926f9d5eeb607840e5bd0c9",
+  "all_template_bytes_and_argument_bindings_verified": true,
+  "all_writer_vtables_and_result_bytes_verified": true,
+  "every_macro_expression_unchanged": true,
+  "execution_uses_explicit_input_bindings": true,
+  "source_mapping_classification_pending": false,
+  "type_diagnostics": {
+    "before": {
+      "functions_with_diagnostics": 8,
+      "diagnostics": 8,
+      "compiles": 0
+    },
+    "after": {
+      "functions_with_diagnostics": 0,
+      "diagnostics": 0,
+      "compiles": 0
+    },
+    "newly_diagnosed_functions": [],
+    "previously_compiling_now_failing": []
+  },
+  "complete_function_recompilation_claimed": false
+}

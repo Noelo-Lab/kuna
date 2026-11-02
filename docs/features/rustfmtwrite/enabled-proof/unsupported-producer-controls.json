@@ -1,0 +1,36 @@
+[
+  {
+    "version": "1.90.0",
+    "functions": [
+      "write_unsigned",
+      "write_signed",
+      "write_flags",
+      "write_literal",
+      "write_empty",
+      "write_string",
+      "write_pair",
+      "write_custom",
+      "write_dynamic",
+      "write_unknown",
+      "write_reject"
+    ],
+    "all_on_off_outputs_identical": true
+  },
+  {
+    "version": "1.99.1",
+    "functions": [
+      "write_unsigned",
+      "write_signed",
+      "write_flags",
+      "write_literal",
+      "write_empty",
+      "write_string",
+      "write_pair",
+      "write_custom",
+      "write_dynamic",
+      "write_unknown",
+      "write_reject"
+    ],
+    "all_on_off_outputs_identical": true
+  }
+]
