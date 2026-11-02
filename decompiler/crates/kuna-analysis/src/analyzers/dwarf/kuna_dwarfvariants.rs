@@ -146,8 +146,9 @@
 //!   variant part — see the note on [`variant_fields`]);
 //! * no variant with any field at all (that is a C-like enum, and rustc emits
 //!   `DW_TAG_enumeration_type` for those);
-//! * a discriminant whose type is not integer-shaped, or is zero-width, or would
-//!   extend past the enum's `DW_AT_byte_size`;
+//! * a discriminant whose location cannot be decoded, or whose type is not
+//!   integer-shaped, or is zero-width, or would extend past the enum's
+//!   `DW_AT_byte_size`;
 //! * a zero-width or absent `DW_AT_byte_size`, and a `DW_AT_declaration` DIE.
 //!
 //! Refused AFTER the shell is interned — it has to exist before the members are
@@ -174,7 +175,9 @@ use kuna_base::types::{int4, uint4};
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeField, TypeFactory};
 use kuna_decomp::kuna_dwarfvariants::{VariantFacet, VariantLayout};
 
-use super::kuna_dwarfstructs::{aggregate_alignment, aggregate_size, qualified_name, resolve_name};
+use super::kuna_dwarfstructs::{
+    aggregate_alignment, aggregate_size, is_static_member, member_offset, qualified_name, resolve_name,
+};
 use super::kuna_typedepth::TypeWalk;
 use super::DieSnap;
 
@@ -247,9 +250,10 @@ pub(super) fn variant_part<'a>(
 /// includes an enum whose variant payload is another enum — that nests the TYPE
 /// but not the variant part).
 ///
-/// A member with no name, no buildable type, or a negative offset is SKIPPED, the
-/// same policy `dwarfstructs`'s member walk uses: one exotic member costs its own
-/// field, not the layout.
+/// A member with no name, a static member, or one whose offset is negative or
+/// cannot be decoded is SKIPPED, the same policy `dwarfstructs`'s member walk
+/// uses: one exotic member costs its own field, not the layout. A member without
+/// a location starts the payload.
 fn variant_fields(
     payload: &DieSnap,
     dies: &BTreeMap<usize, DieSnap>,
@@ -263,10 +267,10 @@ fn variant_fields(
         if m.tag == gimli::DW_TAG_variant_part {
             return None;
         }
-        if m.tag != gimli::DW_TAG_member || m.name.is_empty() {
+        if m.tag != gimli::DW_TAG_member || m.name.is_empty() || is_static_member(m) {
             continue;
         }
-        let off = m.data_member_location.unwrap_or(0);
+        let Some(off) = member_offset(m) else { continue };
         if off < 0 || off > int4::MAX as i64 {
             continue;
         }
@@ -291,7 +295,7 @@ pub(super) fn read_variant_part(
     if tag.tag != gimli::DW_TAG_member {
         return None;
     }
-    let tag_offset = tag.data_member_location.unwrap_or(0);
+    let tag_offset = member_offset(tag)?;
     if !(0..=int4::MAX as i64).contains(&tag_offset) {
         return None;
     }
