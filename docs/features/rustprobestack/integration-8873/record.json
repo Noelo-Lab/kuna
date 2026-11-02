@@ -1,0 +1,41 @@
+{
+  "feature": "rustprobestack",
+  "default": "off in all presets",
+  "parent_commit": "887325c0adda6e525bc759fe0c3ac4eb86d89eba",
+  "binary_sha256": {
+    "parent": "c0bd40cab52d4f955ca1d4b8fd42a52df9a60ac3a3d0c702984a162025f95d5d",
+    "candidate": "1bb69f239fb5e8437fe263b1e99dba9190383e0c336eaeb3f07c00dbba4f77ee"
+  },
+  "original_assertions": 675,
+  "stage_assertions": 3658,
+  "workspace": {
+    "passed": 10276,
+    "failed": 0,
+    "ignored": 39,
+    "completed_suites": 72
+  },
+  "breadth": {
+    "images": 41,
+    "distinct_functions": 33695,
+    "language_records": 75801,
+    "changed_records": 0
+  },
+  "explicit_auto_changed_records": 84,
+  "native_complete_bodies": 12,
+  "native_values": 384,
+  "asan_buffer_values": 32,
+  "catalog_options": 371,
+  "corpus_files": 670,
+  "initial_feature_record": "initial-record.json",
+  "integration_record": "integration-8873/record.json",
+  "timing": {
+    "auto_study": "auto-study/timing-result.json",
+    "auto_study_passed": false,
+    "off_study": "timing-off-result.json",
+    "off_study_passed": false,
+    "current_integration_timed": false,
+    "scope": "Completed failed studies remain scoped to their recorded8332/c5fc parents and binaries. No unchanged-feature timing repeat after PPC32 main integration and no default promotion."
+  },
+  "supplied_upstream_binary_executed": false,
+  "full_angr_parity_claimed": false
+}

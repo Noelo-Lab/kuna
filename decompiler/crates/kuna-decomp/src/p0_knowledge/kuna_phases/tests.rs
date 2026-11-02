@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_371() {
-    assert_eq!(kuna_num_settables(), 371);
-    assert_eq!(SETTABLE_TABLE.len(), 371);
+fn settable_count_is_372() {
+    assert_eq!(kuna_num_settables(), 372);
+    assert_eq!(SETTABLE_TABLE.len(), 372);
 }
 
 #[test]
-fn tier_counts_are_127_core_150_transform_93_analysis() {
+fn tier_counts_are_127_core_151_transform_93_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_127_core_150_transform_93_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (128, 150, 93));
+    assert_eq!((core, transform, analysis), (128, 151, 93));
 }
 
 #[test]
@@ -761,6 +761,7 @@ fn option_values_live_value_present_for_176() {
                             // rustabi shape; its live value is
                             // `Architecture::go_morestack`.
                             | "gomorestack"
+                            | "rustprobestack"
                             // (kuna) `gobool` takes the same MODE shape; its
                             // live value is `Architecture::go_bool`.
                             | "gobool"
@@ -1158,7 +1159,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `truncptrflow`; its P3 row sits after `haltloopguard`.
     // +1 for `clonephiorder`; its P8 row sits after `rettriangle`.
     // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
-    assert_eq!(json.matches("},\n").count(), 370);
+    assert_eq!(json.matches("},\n").count(), 371);
 }
 
 #[test]

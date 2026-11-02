@@ -470,6 +470,7 @@ fn summary_json(
     error: Option<&str>,
     warnings: &[String],
     display_address: &dyn Fn(u64) -> u64,
+    declared: &crate::funcdecl::Declared,
 ) -> String {
     let named = |f: &Option<(u64, String)>| match f {
         Some((vma, name)) => {
@@ -532,7 +533,7 @@ fn summary_json(
                     ("no_callers".into(), Json::Number(summary.no_callers.to_string())),
                     ("code_bytes".into(), Json::Number(summary.code_bytes.to_string())),
                     ("size_buckets".into(), buckets),
-                    ("largest".into(), entries_json(&summary.largest, display_address)),
+                    ("largest".into(), entries_json(&summary.largest, display_address, declared)),
                     ("runtime".into(), crate::runtime_hints::to_json(&summary.runtime)),
                     ("limits".into(), crate::limits::to_json(&summary.limits, display_address)),
                 ])
@@ -652,6 +653,7 @@ pub fn run(argv: &[String]) -> i32 {
                         filters.narrows().then_some(run.discovered),
                         &run.assertions,
                         &run.interior,
+                        &run.declared,
                         args.omit,
                     )
                 }),
@@ -1188,6 +1190,7 @@ pub fn run_functions(argv: &[String]) -> i32 {
                     discovery_error.as_deref(),
                     limits.as_ref(),
                     &|address| prog.output_code_offset(address),
+                    &crate::funcdecl::Declared::of(&prog),
                 )
             } else {
                 let mut text = String::new();
@@ -1245,21 +1248,25 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
         return 1;
     };
     let summary = summarize(&args.binary, &prog, filters, &graph, &all, &selected);
+    let declared = crate::funcdecl::Declared::of(&prog);
+    let warnings: Vec<String> =
+        prog.load_notes().iter().chain(declared.notes()).cloned().collect();
     let text = if args.json {
         summary_json(
             &args.binary,
             &summary,
             selected.len(),
             discovery_error.as_deref(),
-            prog.load_notes(),
+            &warnings,
             &|address| prog.output_code_offset(address),
+            &declared,
         )
     } else {
         summary_text(
             &args.binary,
             &summary,
             selected.len(),
-            prog.load_notes(),
+            &warnings,
             &|address| prog.output_code_offset(address),
         )
     };
@@ -1278,6 +1285,8 @@ struct AllRun {
     assertions: Vec<kuna_console::assertions::Outcome>,
     /// The `--addr` targets that land inside another function.
     interior: crate::interior::Interiors,
+    /// The caller's declarations, as the document reports them.
+    declared: crate::funcdecl::Declared,
 }
 
 /// Load + analyze the binary once, narrow the target list, then decompile what
@@ -1297,6 +1306,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
         targets
     };
     let interior = crate::interior::selections(&prog, args, &targets);
+    let declared = crate::funcdecl::Declared::of(&prog);
     let whole = targets.len() == discovered && args.addrs.is_empty() && args.names.is_none();
     let (callee_first, explicit) = callee_first_decision(&prog, args, targets.len(), whole);
     // `--jobs N`: hand the targets to the worker pool and release the parent's
@@ -1330,7 +1340,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
             arm_frames,
             None,
         )?;
-        return Ok(AllRun { funcs: pooled.results, discovered, assertions, interior });
+        return Ok(AllRun { funcs: pooled.results, discovered, assertions, interior, declared });
     }
     if explicit && prog.arch().protoorder.is_on() && !whole {
         eprintln!(
@@ -1344,7 +1354,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
     } else {
         decompile_entries(&mut prog, args, targets, /* pointer_arguments= */ true)
     };
-    Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior })
+    Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior, declared })
 }
 
 /// Arm the per-function budgets `args` asks for: the wall-clock watchdog on the
@@ -1741,6 +1751,9 @@ pub(crate) fn load_program(
     if !args.assertions.is_empty() {
         kuna_console::assertions::apply_program_scoped(&mut prog);
     }
+    if args.jobs_worker.is_none() {
+        crate::funcdecl::warn_unmapped(&prog, &binary);
+    }
     crate::kuna_allocrelease::after_analysis();
     if args.jobs_worker.is_none() {
         kuna_console::kuna_callwide::prepare(&mut prog);
@@ -2109,6 +2122,7 @@ fn classify_code_evidence(bytes: &[u8]) -> CodeEvidence {
 /// `kuna decompile --json` renders through here too (its `functions` array holds
 /// the one function it was asked for), so the single-function and whole-binary
 /// surfaces cannot drift into two shapes for one record.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_result_json(
     binary: &str,
     funcs: &[FuncResult],
@@ -2116,9 +2130,10 @@ pub(crate) fn render_result_json(
     error: Option<&str>,
     assertions: &[kuna_console::assertions::Outcome],
     interior: &crate::interior::Interiors,
+    declared: &crate::funcdecl::Declared,
     omit: Omit,
 ) -> String {
-    render_selected_json(binary, funcs, options, error, None, assertions, interior, omit)
+    render_selected_json(binary, funcs, options, error, None, assertions, interior, declared, omit)
 }
 
 /// [`render_result_json`] plus the inventory `total` a NARROWED whole-binary run
@@ -2138,11 +2153,14 @@ pub(crate) fn render_selected_json(
     total: Option<usize>,
     assertions: &[kuna_console::assertions::Outcome],
     interior: &crate::interior::Interiors,
+    declared: &crate::funcdecl::Declared,
     omit: Omit,
 ) -> String {
     let mut out = Vec::new();
-    write_selected_json(&mut out, binary, funcs, options, error, total, assertions, interior, omit)
-        .expect("rendering the document into memory");
+    write_selected_json(
+        &mut out, binary, funcs, options, error, total, assertions, interior, declared, omit,
+    )
+    .expect("rendering the document into memory");
     String::from_utf8(out).expect("the document is ASCII")
 }
 
@@ -2158,13 +2176,15 @@ pub(crate) fn write_selected_json(
     total: Option<usize>,
     assertions: &[kuna_console::assertions::Outcome],
     interior: &crate::interior::Interiors,
+    declared: &crate::funcdecl::Declared,
     omit: Omit,
 ) -> std::io::Result<()> {
     let language = crate::loadtime::explicit_output_language(options)
         .and_then(kuna_decomp::kuna_lang::OutLang::from_print_name)
         .map(|lang| lang.print_name()).unwrap_or("c-language");
-    let (head, tail) = document_fields(binary, funcs.len(), language, error, total, assertions, omit);
-    let records = funcs.iter().map(|f| function_json(f, interior, omit));
+    let (head, tail) =
+        document_fields(binary, funcs.len(), language, error, total, assertions, declared, omit);
+    let records = funcs.iter().map(|f| function_json(f, interior, declared, omit));
     crate::jsonfmt::write_indent2_streamed(out, &head, "functions", records, &tail)?;
     out.write_all(b"\n")
 }
@@ -2182,14 +2202,16 @@ fn functions_json(
     error: Option<&str>,
     limits: Option<&crate::limits::Limits>,
     display_address: &dyn Fn(u64) -> u64,
+    declared: &crate::funcdecl::Declared,
 ) -> String {
     let mut doc = vec![
         ("binary".into(), Json::Str(binary.to_string())),
         ("count".into(), Json::Number(entries.len().to_string())),
         ("total".into(), Json::Number(total.to_string())),
         ("error".into(), error_json(error)),
-        ("functions".into(), entries_json(entries, display_address)),
     ];
+    doc.extend(declared.notes_field());
+    doc.push(("functions".into(), entries_json(entries, display_address, declared)));
     if let Some(limits) = limits {
         doc.push(("limits".into(), crate::limits::to_json(limits, display_address)));
     }
@@ -2197,14 +2219,19 @@ fn functions_json(
 }
 
 /// The inventory-record array shared by the `functions` listing and the
-/// `--summary` document's `largest`.
-fn entries_json(entries: &[FunctionEntry], display_address: &dyn Fn(u64) -> u64) -> Json {
+/// `--summary` document's `largest`. A declared entry's record also carries
+/// `declared`.
+fn entries_json(
+    entries: &[FunctionEntry],
+    display_address: &dyn Fn(u64) -> u64,
+    declared: &crate::funcdecl::Declared,
+) -> Json {
     Json::Array(
         entries
             .iter()
             .map(|e| {
                 let a = display_address(e.addr.get_offset());
-                Json::Object(vec![
+                let mut record = vec![
                     ("name".into(), Json::Str(e.name.clone())),
                     ("address".into(), Json::Number(a.to_string())),
                     ("address_hex".into(), Json::Str(format!("0x{a:x}"))),
@@ -2214,7 +2241,9 @@ fn entries_json(entries: &[FunctionEntry], display_address: &dyn Fn(u64) -> u64)
                         object_location_json(e.object_location.as_ref()),
                     ),
                     ("size".into(), Json::Number(e.size.to_string())),
-                ])
+                ];
+                record.extend(declared.marker(e.addr.get_offset()));
+                Json::Object(record)
             })
             .collect(),
     )
@@ -2257,8 +2286,10 @@ fn result_json(
     interior: &crate::interior::Interiors,
     omit: Omit,
 ) -> Json {
-    let (mut fields, tail) = document_fields(binary, funcs.len(), language, error, total, assertions, omit);
-    let functions = funcs.iter().map(|f| function_json(f, interior, omit)).collect();
+    let declared = crate::funcdecl::Declared::default();
+    let (mut fields, tail) =
+        document_fields(binary, funcs.len(), language, error, total, assertions, &declared, omit);
+    let functions = funcs.iter().map(|f| function_json(f, interior, &declared, omit)).collect();
     fields.push(("functions".to_string(), Json::Array(functions)));
     fields.extend(tail);
     Json::Object(fields)
@@ -2269,7 +2300,9 @@ type Fields = Vec<(String, Json)>;
 
 /// The `decompile-all --json` document's fields before its `functions` array,
 /// and after it. A collection `omit` names is left out of every record and
-/// listed in the top-level `omitted`.
+/// listed in the top-level `omitted`; `notes` is present only when a
+/// declaration is not wholly mapped.
+#[allow(clippy::too_many_arguments)]
 fn document_fields(
     binary: &str,
     count: usize,
@@ -2277,6 +2310,7 @@ fn document_fields(
     error: Option<&str>,
     total: Option<usize>,
     assertions: &[kuna_console::assertions::Outcome],
+    declared: &crate::funcdecl::Declared,
     omit: Omit,
 ) -> (Fields, Fields) {
     let mut fields = vec![
@@ -2302,6 +2336,7 @@ fn document_fields(
         "error".to_string(),
         error_json(error),
     )]);
+    fields.extend(declared.notes_field());
     // (kuna `--assert`) One row per caller-supplied assertion, in the order the
     // caller gave them: what it was, where in the phase model it wrote, and
     // whether it landed. Always present (`[]` when none were passed) so an agent
@@ -2312,7 +2347,12 @@ fn document_fields(
 }
 
 /// One record of the document's `functions` array.
-fn function_json(f: &FuncResult, interior: &crate::interior::Interiors, omit: Omit) -> Json {
+fn function_json(
+    f: &FuncResult,
+    interior: &crate::interior::Interiors,
+    declared: &crate::funcdecl::Declared,
+    omit: Omit,
+) -> Json {
     let mut record = vec![
         ("name".into(), Json::Str(f.name.clone())),
         ("address".into(), Json::Number(f.address.to_string())),
@@ -2360,6 +2400,7 @@ fn function_json(f: &FuncResult, interior: &crate::interior::Interiors, omit: Om
             f.stack_objects.iter().map(stack_object_json).collect(),
         )));
     }
+    record.extend(declared.marker(f.byte_address));
     if let Some(inside) = interior.get(&f.byte_address) {
         record.push(("interior_to".into(), crate::interior::json(inside)));
     }
@@ -2562,7 +2603,9 @@ mod provenance_json_tests {
         let funcs = [function(), FuncResult { code: None, error: Some("boom".into()), ..function() }];
         for (funcs, error, total, omit) in [(&funcs[..], None, None, Omit::default()), (&funcs[..1], Some("x"), Some(9), omit), (&[][..], None, None, omit)] {
             let whole = dumps_indent2(&result_json("fixture", funcs, "c-language", error, total, &[], &Default::default(), omit));
-            assert_eq!(render_selected_json("fixture", funcs, &[], error, total, &[], &Default::default(), omit), whole + "\n");
+            assert_eq!(render_selected_json(
+                "fixture", funcs, &[], error, total, &[], &Default::default(), &Default::default(), omit,
+            ), whole + "\n");
         }
     }
 
@@ -3341,7 +3384,8 @@ mod discovery_tests {
     /// reads it unconditionally rather than inferring failure from `count`.
     #[test]
     fn the_run_level_error_field_is_always_present() {
-        let healthy = functions_json("fixture", &[], 0, None, None, &|address| address);
+        let healthy =
+            functions_json("fixture", &[], 0, None, None, &|address| address, &Default::default());
         assert!(healthy.contains("\"error\": null"), "{healthy}");
         let failed = functions_json(
             "fixture",
@@ -3350,15 +3394,16 @@ mod discovery_tests {
             Some("no functions discovered in fixture"),
             None,
             &|address| address,
+            &Default::default(),
         );
         assert!(
             failed.contains("\"error\": \"no functions discovered in fixture\""),
             "{failed}"
         );
-        let decompiled = render_result_json("fixture", &[], &[], Some("boom"), &[], &Default::default(), Default::default());
+        let decompiled = render_result_json("fixture", &[], &[], Some("boom"), &[], &Default::default(), &Default::default(), Default::default());
         assert!(decompiled.contains("\"error\": \"boom\""), "{decompiled}");
         assert!(
-            render_result_json("fixture", &[], &[], None, &[], &Default::default(), Default::default()).contains("\"error\": null")
+            render_result_json("fixture", &[], &[], None, &[], &Default::default(), &Default::default(), Default::default()).contains("\"error\": null")
         );
     }
 
@@ -3370,13 +3415,13 @@ mod discovery_tests {
             ("setlanguage".into(), "rust-language".into()),
             ("setlanguage".into(), "c-language".into()),
         ];
-        assert!(render_result_json("f", &[], &options, None, &[], &Default::default(), Default::default()).contains("\"c-language\""));
-        assert!(render_result_json("f", &[], &[], None, &[], &Default::default(), Default::default()).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &options, None, &[], &Default::default(), &Default::default(), Default::default()).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &[], None, &[], &Default::default(), &Default::default(), Default::default()).contains("\"c-language\""));
         let mut aliases = options.clone();
         aliases.push(("outlang".into(), "go".into()));
-        assert!(render_result_json("f", &[], &aliases, None, &[], &Default::default(), Default::default()).contains("\"go-language\""));
+        assert!(render_result_json("f", &[], &aliases, None, &[], &Default::default(), &Default::default(), Default::default()).contains("\"go-language\""));
         aliases.push(("setlanguage".into(), "rust-language".into()));
-        assert!(render_result_json("f", &[], &aliases, None, &[], &Default::default(), Default::default()).contains("\"rust-language\""));
+        assert!(render_result_json("f", &[], &aliases, None, &[], &Default::default(), &Default::default(), Default::default()).contains("\"rust-language\""));
     }
 }
 

@@ -19,6 +19,9 @@ mod aif_lea_padding;
 #[path = "ambiguous_selector_cli.rs"]
 mod ambiguous_selector_cli;
 
+#[path = "declared_bytes_cli.rs"]
+mod declared_bytes_cli;
+
 #[path = "argument_errors_cli.rs"]
 mod argument_errors_cli;
 
@@ -716,3 +719,6 @@ mod ppc32_pic_abi;
 
 #[path = "compact_json.rs"]
 mod compact_json;
+
+#[path = "rust_probestack.rs"]
+mod rust_probestack;

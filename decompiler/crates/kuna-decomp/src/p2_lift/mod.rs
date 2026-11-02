@@ -56,3 +56,5 @@ pub mod kuna_fpuemu; // (kuna) decode the 8087 emulator's INT 34h-3Dh as the x87
 pub mod kuna_jumptablefault; // (kuna) test-only: panic one function's jump-table recovery
 
 pub mod kuna_gojumpchain;
+
+pub mod kuna_rustprobestack;

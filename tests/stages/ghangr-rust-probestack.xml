@@ -1,0 +1,110 @@
+<!--
+  Upstream: angr test_decompiler.py::test_decompiling_rust_binary_rust_probestack.
+  P2 / flow classification; P0: rustprobestack off|auto|always (default off).
+  Authored harmless Rust-linked AMD64 fixture; no upstream executable is run.
+  Off retains three helpers and unknown R11/saved-RBP values. Auto recovers all
+  eleven values, including zero/page boundaries and the saved-RBP/return slots.
+  Flag observations, unknown frames and an effectful non-probe retain their calls.
+-->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_x86_64</com>
+  <com>option rustprobestack off</com>
+  <com>read symbols</com>
+  <com>parse line extern uint4 probe_page(uint4 x);</com>
+  <com>load function probe_page</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_observes_r11(uint4 x);</com>
+  <com>load function probe_observes_r11</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_saved_rbp(uint4 x);</com>
+  <com>load function probe_saved_rbp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_x86_64</com>
+  <com>option rustprobestack auto</com>
+  <com>read symbols</com>
+  <com>parse line extern uint4 probe_page(uint4 x);</com>
+  <com>load function probe_page</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_tail(uint4 x);</com>
+  <com>load function probe_tail</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_pages(uint4 x);</com>
+  <com>load function probe_pages</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_observes_r11(uint4 x);</com>
+  <com>load function probe_observes_r11</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_zero(uint4 x);</com>
+  <com>load function probe_zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_one(uint4 x);</com>
+  <com>load function probe_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_page_r11(uint4 x);</com>
+  <com>load function probe_page_r11</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_plus_one(uint4 x);</com>
+  <com>load function probe_plus_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_pages_r11(uint4 x);</com>
+  <com>load function probe_pages_r11</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_saved_rbp(uint4 x);</com>
+  <com>load function probe_saved_rbp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_return_slot(uint4 x);</com>
+  <com>load function probe_return_slot</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_side_effect(uint4 x);</com>
+  <com>load function probe_side_effect</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_observes_flags(uint4 x);</com>
+  <com>load function probe_observes_flags</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 probe_unknown(uint4 x);</com>
+  <com>load function probe_unknown</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer_x86_64</com>
+  <com>option rustprobestack auto</com>
+  <com>read symbols</com>
+  <com>parse line extern uint4 probe_buffer(uint4 x);</com>
+  <com>parse line extern uint4 fill_probe_page(uint1 *out,uint4 x);</com>
+  <com>load function probe_buffer</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="off and unverified flag/frame calls remain" min="5" max="5">__rust_probestack\(\);</stringmatch>
+<stringmatch name="ordinary effectful helper remains" min="1" max="1">not_a_probe\(</stringmatch>
+<stringmatch name="page frame values preserved" min="4" max="4">return x \+ 7;</stringmatch>
+<stringmatch name="live residual eight recovered" min="1" max="1">return x \+ 8;</stringmatch>
+<stringmatch name="full-page residuals recovered" min="2" max="2">return x \+ 0x1000;</stringmatch>
+<stringmatch name="single-byte residuals recovered" min="2" max="2">return x \+ 1;</stringmatch>
+<stringmatch name="zero residual and saved RBP preserved" min="2" max="2">return x;</stringmatch>
+<stringmatch name="return slot preserved" min="1" max="1">return 1;</stringmatch>
+<stringmatch name="transient helper spill leaves the complete caller buffer" min="1" max="1">v1 \[4096\];</stringmatch>
+</decompilertest>

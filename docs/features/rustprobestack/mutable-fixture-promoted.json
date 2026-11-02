@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-02T10:07:40.136220+00:00",
+  "old_hash": "0b63214689c61292cbdbbd6f0bc1bd2f8e88d2f940ec12de0b1175dfe8c8d4c9",
+  "new_hash": "0b63214689c61292cbdbbd6f0bc1bd2f8e88d2f940ec12de0b1175dfe8c8d4c9",
+  "unchanged_images_verified": 40,
+  "cli_unchanged": "1305ac2179234c781570547c740848a2d3acda6dcb88bf81293d3716d4a51792",
+  "rebuild_binary_identical": true,
+  "source_correction": "The foreign counter is declared static mut; rebuilding the corrected source produced identical executable bytes. Final proof still binds to the corrected source and new policy-guard CLI."
+}

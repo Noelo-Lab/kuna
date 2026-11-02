@@ -1,0 +1,5 @@
+{
+  "path": "auto-study/off-policy-and-main-update.patch.gz",
+  "uncompressed_sha256": "59b5b9fdd5d7fd8b39a55a59752be57869fe8b80706e9c83c0e9c81c143b3c40",
+  "reason": "Lossless gzip preserves patch context whitespace without introducing whitespace errors in the repository."
+}

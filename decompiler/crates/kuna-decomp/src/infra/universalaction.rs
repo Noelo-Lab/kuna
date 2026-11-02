@@ -765,6 +765,7 @@ pub fn universal_sched(
             // proved over the RAW p-code, and the call it leaves carries a
             // LOCKED prototype that ActionFuncLink must materialize.
             act!(crate::p2_lift::kuna_msvcstrappend::ActionMsvcStrAppend::boxed("protorecovery")),
+            act!(crate::kuna_rustprobestack::ActionRustProbestack::boxed("protorecovery")),
             act!(ActionNormalizeSetup::boxed("normalanalysis")),
             act!(ActionDefaultParams::boxed("base")),
             SchedNode::Action(Box::new(move || {

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-02T11:12:56.267959+00:00",
+  "feature_base": "c5fcb0331dbdbbe9498237d0afe0bfaa372f9246",
+  "observed_main": "328e93bc2ea3e31e2172c940e91b50bef265db40",
+  "changed_paths": [
+    "decompiler/crates/kuna-analysis/src/listing/xrefs.rs"
+  ],
+  "only_change": "Move five rustdoc comment lines from is_predicated to decode. All remaining source lines identical.",
+  "executable_source_lines_equal_after_removing_rustdoc": true,
+  "before_sha256": "124e3c8925a849ac92ae47737d5869fe0e68c77134490f0de9b2394118710d2c",
+  "after_sha256": "1d5ac6423aa8e21bd7b9c4ca6e395fdb5ce0ba1a98657150d368ecf7a9c1c736",
+  "feature_overlap": false
+}

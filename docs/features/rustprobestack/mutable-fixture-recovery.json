@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-02T09:47:28.534384+00:00",
+  "stopped_own_workspace_groups": [
+    {
+      "pid": 2717877,
+      "pgid": 2717877
+    }
+  ],
+  "production_cli_unchanged": "1305ac2179234c781570547c740848a2d3acda6dcb88bf81293d3716d4a51792",
+  "breadth_preserved_for_old_binary": true,
+  "decompiler_source_unchanged": true,
+  "old_native_fixture_observations_not_final_source_equivalence_evidence": true
+}

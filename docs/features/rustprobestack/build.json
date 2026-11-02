@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T11:01:05.497618+00:00",
+  "parent_commit": "c5fcb0331dbdbbe9498237d0afe0bfaa372f9246",
+  "baseline_root": "/home/mahaloz/kwt/angr-base-c5fc",
+  "parent_cli_sha256": "476e4ae92ad3e20538fb1a05332f5930e571581c29b99f1a294d266242fec7dd",
+  "new_cli_sha256": "5a780409701e9ea22f46fa38552933dcb29da7069c6ede7168f06940db293998",
+  "stage_assertions": [
+    3606,
+    3606
+  ],
+  "parent_artifact_provenance": "base-update.json: new independent release build from clean c5fcb033 main with frozen compiled specs."
+}

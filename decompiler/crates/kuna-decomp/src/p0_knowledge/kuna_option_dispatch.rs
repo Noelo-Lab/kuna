@@ -275,6 +275,11 @@ kuna_options! { self, p1;
         self.go_bool = mode.as_u8();
         Ok(msg)
     },
+    "rustprobestack" => {
+        let (mode, msg) = crate::kuna_rustprobestack::parse_mode(p1).map_err(KunaError::parse)?;
+        self.rust_probestack = mode;
+        Ok(msg)
+    },
     "gomorestack" => {
         let (mode, msg) = crate::kuna_gomorestack::parse_gomorestack_mode(p1).map_err(KunaError::parse)?;
         self.go_morestack = mode.as_u8();

@@ -380,7 +380,8 @@ fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<
                 notes.push(image_bound_note(prog, &region));
             }
             if args.json {
-                format!("{}\n", dumps_indent2(&result_json(args, &region, &rows, truncated, &notes)))
+                let doc_notes = crate::funcdecl::json_notes(prog, &notes);
+                format!("{}\n", dumps_indent2(&result_json(args, &region, &rows, truncated, &doc_notes)))
             } else {
                 render_text(&region, &rows, truncated)
             }
@@ -402,7 +403,8 @@ fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<
             let provenance = provenance::of(view, slice, &repairs, prog, region.start, end);
             notes.extend(provenance.notes());
             if args.json {
-                let doc = data_result_json(args, &region, &rows, truncated, &notes, &fixups, &provenance);
+                let doc_notes = crate::funcdecl::json_notes(prog, &notes);
+                let doc = data_result_json(args, &region, &rows, truncated, &doc_notes, &fixups, &provenance);
                 format!("{}\n", dumps_indent2(&doc))
             } else {
                 render_data_text(&region, &rows, truncated)
