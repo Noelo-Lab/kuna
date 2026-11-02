@@ -1,0 +1,74 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:32:default:default">
+<!--
+    kuna option bejoin callers (the default), GH-904: MIPS PIC callers and
+    unaligned loads.
+
+    MIPS PIC code (gcc's and clang's default for a shared object) calls
+    through the GOT, `lw $25,%call16(add64)($28); jalr $25`, so the caller
+    evidence, which scanned only for jal/bal, saw no caller of add64 and its
+    64-bit sum stayed joined low word first:
+        return CONCAT44(a1 + a3,(uint4)(a1 + a3 < a1) + a0 + a2);   (bug)
+    A jalr $25 is now a call to the function the GOT entry its load names
+    holds, read at the GOT pointer the caller's prologue computes from $t9,
+    when nothing between the load and the call branches or writes the
+    registers it uses.  c_add stores both words of add64's pair.
+
+    An unaligned load into $3 right after a call (lwl $3,1($16);
+    lwr $3,4($16)) named $3 as an input, since each half merges memory into
+    the register, and read as the call's low word: add_hi, the int over the
+    high word of a sum, which leaves the carry in $3, was proven 64-bit by
+    c_unal and c_unal joined its call v0:v1.  The pair overwrites $3 and
+    reads nothing of it.
+
+    Stage: P4 calls and prototypes (output-prototype), option bejoin.
+    Pass 1 is the default (callers), pass 2 option bejoin evidence.
+
+    Images: decompiler/crates/kuna-analysis/tests/fixtures/bejoin_mipspic_O2.so
+    (bejoin_mipspic.c) and bejoin_mipsunal (bejoin_mipsunal.S); see
+    bejoin_mipspic.provenance.
+
+    Assert #1: the default returns add64's sum high word first; evidence
+      keeps it low word first, and add_hi stays an int in both passes.
+    Assert #2: c_unal joins add_hi's result $3 high (the default join) in
+      both passes, since nothing of $3 is read after the call.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/bejoin_mipspic_O2.so</com>
+  <com>read symbols</com>
+  <com>lo fu add64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option bejoin evidence</com>
+  <com>lo fu add64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/bejoin_mipsunal</com>
+  <com>read symbols</com>
+  <com>option bejoin callers</com>
+  <com>lo fu c_unal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option bejoin evidence</com>
+  <com>lo fu c_unal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="bejoin-mipspic #1: the default returns add64's sum high word first" min="1" max="1">return CONCAT44\(\(uint4\)\(a1 \+ a3 &lt; a1\) \+ a0 \+ a2,a1 \+ a3\);</stringmatch>
+<stringmatch name="bejoin-mipspic #1b: evidence keeps add64 low word first" min="1" max="1">return CONCAT44\(a1 \+ a3,\(uint4\)\(a1 \+ a3 &lt; a1\) \+ a0 \+ a2\);</stringmatch>
+<stringmatch name="bejoin-mipspic #1c: add_hi stays an int in both passes" min="2" max="2">int4 add_hi\(int4 a0,uint4 a1,int4 a2,int4 a3\)</stringmatch>
+<stringmatch name="bejoin-mipspic #2: c_unal joins add_hi's call first register low in both passes" min="2" max="2">unsigned long long v4; // v1:v0</stringmatch>
+<stringmatch name="bejoin-mipspic #2b: nothing joins it v0:v1" min="0" max="0">// v0:v1</stringmatch>
+</decompilertest>

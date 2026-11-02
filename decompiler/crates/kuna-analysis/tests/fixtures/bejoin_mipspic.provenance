@@ -1,0 +1,30 @@
+bejoin_mipspic_O2.so, bejoin_mipsunal -- MIPS32 big-endian images for the
+caller evidence of option bejoin callers through PIC calls and past
+unaligned loads (GH-904; tests/stages/kuna-bejoin-mipspic.xml).
+
+What they are
+  bejoin_mipspic_O2.so  o32 PIC shared object from bejoin_mipspic.c: every
+                        call is lw $25,%call16(f)($28); jalr $25, and c_unal
+                        loads an unaligned word into $3 right after a call.
+  bejoin_mipsunal       static non-PIC executable from bejoin_mipsunal.S:
+                        add_hi leaves a carry in $3, c_unal reads an
+                        unaligned word into $3 (lwl/lwr) after jal add_hi.
+
+Why they are vendored
+  CI has no MIPS toolchain, and the assertions depend on the exact
+  instructions and register choices.
+
+Where they came from
+  Debian mips-linux-gnu-gcc 12.2.0-14 (docker) and Ubuntu
+  mipsel-linux-gnu-gcc 10.3.0 and its binutils (host, -EB):
+
+      mips-linux-gnu-gcc -O2 -fPIC -shared -nostdlib -Wl,--build-id=none \
+          bejoin_mipspic.c -o bejoin_mipspic_O2.so
+      mipsel-linux-gnu-gcc -EB -mno-abicalls -fno-pic -c bejoin_mipsunal.S -o unal.o
+      mipsel-linux-gnu-ld -EB -static -nostdlib -e c_low --build-id=none unal.o \
+          -o bejoin_mipsunal
+
+  sha256:
+    9631b19d4499470a62d043e8b2fd88d02620499561b7f8c01447e43fdf1b4098  bejoin_mipspic_O2.so
+    5b46f7291b68f1b40cddb4ad3f9aac8f7b24b1ddf2497d1eca7f3c9e94d55376  bejoin_mipsunal
+  Never executed.
