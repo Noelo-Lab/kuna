@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3571,
-    3571
+    3576,
+    3576
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2176,6 +2176,11 @@
     "data:bejoin-evidence-sparc #2: only off shifts widen's sign into the low word",
     "data:bejoin-evidence-sparc #2b: only off shifts uwiden's argument into the high word",
     "data:bejoin-evidence-sparc #3: shi keeps %o0 low in both passes, which truncates to its int",
+    "data:bejoin-mipspic #1: the default returns add64's sum high word first",
+    "data:bejoin-mipspic #1b: evidence keeps add64 low word first",
+    "data:bejoin-mipspic #1c: add_hi stays an int in both passes",
+    "data:bejoin-mipspic #2: c_unal joins add_hi's call first register low in both passes",
+    "data:bejoin-mipspic #2b: nothing joins it v0:v1",
     "data:bejoin-pairs #1: the default returns ld_ll's long long whole",
     "data:bejoin-pairs #1b: only off swaps ld_ll's words",
     "data:bejoin-pairs #2: the default returns ldfield_ll's field whole",
