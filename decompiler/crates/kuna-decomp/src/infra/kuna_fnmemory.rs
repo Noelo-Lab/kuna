@@ -8,21 +8,24 @@
 //! read. It trips once the process is over the limit AND the drive itself has
 //! added at least [`MIN_GROWTH`] since it started ([`trips`]): what the batch
 //! built up before a function began stops that function only if the function
-//! adds [`MIN_GROWTH`] on top of it. A drive that starts within a tenth of
-//! the limit first hands free heap pages back to the system and measures
-//! again. The trip holds for the rest of the drive, which releases free pages
-//! on the way out.
+//! adds [`MIN_GROWTH`] on top of it. The trip holds for the rest of the
+//! drive, which releases free pages on the way out.
 //!
 //! A driver given no limit uses the cgroup default instead
 //! ([`use_cgroup_default`]) when the process runs under a finite cgroup v2
 //! `memory.max`: a drive trips once it has added that cgroup's
 //! [`cgroup_margin`] (less under a cap with little room left) AND the cgroup
 //! holds more than it can reclaim beyond [`cgroup_limit`] ([`cgroup_trips`]).
-//! A drive that starts within a tenth of the tightest limit first hands free
-//! heap pages back, as under an explicit limit. What it compares is the whole
-//! cgroup's usage, so every process in a container shares one budget and none
-//! is given a fixed slice of it. The cgroup is read only on a sample that
-//! finds the drive grown that much.
+//! What it compares is the whole cgroup's usage, so every process in a
+//! container shares one budget and none is given a fixed slice of it. The
+//! cgroup is read only on a sample that finds the drive grown that much.
+//!
+//! The allocator keeps a function's freed transients resident, so a batch
+//! would hold the high-water of the largest function it has decompiled, and
+//! measure the next function's growth from there. A drive therefore starts by
+//! handing free heap pages back once the process holds [`ARMED_SLACK`] more
+//! than the last release left under an explicit limit, or [`MIN_GROWTH`] more
+//! otherwise, spending at most [`RELEASE_SHARE`] of the time on it ([`settle`]).
 
 use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -47,14 +50,26 @@ static LIMIT_MIB: AtomicU64 = AtomicU64::new(0);
 static CGROUP_DEFAULT: AtomicBool = AtomicBool::new(false);
 static CGROUP_LEVELS: Mutex<Vec<(String, u64)>> = Mutex::new(Vec::new());
 
-/// The smallest [`cgroup_limit`] of those levels, the one a drive's start
-/// compares the resident set against before releasing free pages.
-static CGROUP_TIGHTEST: AtomicU64 = AtomicU64::new(0);
+/// The resident set the last release left, or the lowest a drive started at
+/// since; `u64::MAX` before the first drive.
+static FLOOR: AtomicU64 = AtomicU64::new(u64::MAX);
 
-/// The resident set right after the last release at a drive's start, so a
-/// process whose live data sits near the limit does not release again for
-/// every function.
+/// When the last release ended ([`now_ns`]) and how long it took, in
+/// nanoseconds.
 static RELEASED_AT: AtomicU64 = AtomicU64::new(0);
+static RELEASE_COST: AtomicU64 = AtomicU64::new(0);
+
+/// How far over [`FLOOR`] a drive under a limit may start before free pages
+/// are handed back: freed pages a function cannot reuse would otherwise be
+/// charged to it.
+pub const ARMED_SLACK: u64 = 16 * MIB;
+
+/// With no limit armed, a release takes at most one part in this many of the
+/// time since the last one.
+const RELEASE_SHARE: u64 = 32;
+
+/// Can this platform's allocator hand free pages back ([`release_free_pages`])?
+const RELEASES: bool = cfg!(all(target_os = "linux", target_env = "gnu"));
 
 #[derive(Clone, Copy)]
 struct Drive {
@@ -82,8 +97,6 @@ pub fn set_limit_mib(mib: u64) {
 pub fn use_cgroup_default() -> bool {
     LIMIT_MIB.store(0, Ordering::Relaxed);
     let levels = capped_cgroups();
-    let tightest = levels.iter().map(|(_, cap)| cgroup_limit(*cap)).min().unwrap_or(0);
-    CGROUP_TIGHTEST.store(tightest, Ordering::Relaxed);
     let on = !levels.is_empty() && supported();
     *CGROUP_LEVELS.lock().unwrap_or_else(|e| e.into_inner()) = levels;
     CGROUP_DEFAULT.store(on, Ordering::Relaxed);
@@ -124,28 +137,19 @@ impl Armed {
     /// when no limit is set or the resident set cannot be read.
     pub fn enter() -> Armed {
         if CGROUP_DEFAULT.load(Ordering::Relaxed) {
-            return Armed::enter_with(CGROUP_TIGHTEST.load(Ordering::Relaxed), true);
+            return Armed::enter_with(0, true);
         }
         Armed::enter_with(limit_mib().saturating_mul(MIB), false)
     }
 
     /// Arm a drive against `limit` bytes of resident set, or under the cgroup
-    /// default, where `limit` is the tightest cgroup limit and only decides
-    /// the release at the start.
+    /// default. Either way the drive first [`settle`]s.
     fn enter_with(limit: u64, cgroup: bool) -> Armed {
-        let start = (limit > 0 || cgroup).then(resident_bytes).flatten().map(|rss| {
-            if rss > limit / 10 * 9 && rss >= RELEASED_AT.load(Ordering::Relaxed) + MIN_GROWTH {
-                release_free_pages();
-                let after = resident_bytes().unwrap_or(rss);
-                RELEASED_AT.store(after, Ordering::Relaxed);
-                after
-            } else {
-                rss
-            }
-        });
+        let armed = limit > 0 || cgroup;
+        let start = settle(armed, limit > 0).filter(|_| armed);
         Armed::arm(start.map(|start| Drive {
             start,
-            limit: if cgroup { 0 } else { limit },
+            limit,
             next: Instant::now() + SAMPLE_EVERY,
             tripped: false,
             cgroup,
@@ -168,10 +172,58 @@ impl Drop for Armed {
         let tripped = tripped();
         DRIVE.with(|d| d.set(self.outer));
         if tripped {
-            release_free_pages();
-            RELEASED_AT.store(resident_bytes().unwrap_or(0), Ordering::Relaxed);
+            release();
         }
     }
+}
+
+/// Hand free heap pages back before a drive once the process holds
+/// [`ARMED_SLACK`] more than [`FLOOR`] under an explicit limit (`explicit`), or
+/// otherwise [`MIN_GROWTH`] more when the last release was over
+/// [`RELEASE_SHARE`] times its own cost ago. Returns the resident set the drive
+/// starts at; `None` when it cannot be read, or when the drive is not
+/// `measured` on a platform whose allocator cannot release.
+pub fn settle(measured: bool, explicit: bool) -> Option<u64> {
+    if !measured && !RELEASES {
+        return None;
+    }
+    let rss = resident_bytes()?;
+    let floor = FLOOR.fetch_min(rss, Ordering::Relaxed).min(rss);
+    let since = now_ns().saturating_sub(RELEASED_AT.load(Ordering::Relaxed));
+    if !RELEASES || !release_due(rss, floor, explicit, since, RELEASE_COST.load(Ordering::Relaxed)) {
+        return Some(rss);
+    }
+    Some(release().unwrap_or(rss))
+}
+
+/// The release rule: a process holding `rss` over the `floor` the last release
+/// left by [`ARMED_SLACK`] under an explicit limit, or otherwise by
+/// [`MIN_GROWTH`] when `since` the last release is over [`RELEASE_SHARE`] times
+/// its `cost` (both in nanoseconds).
+pub fn release_due(rss: u64, floor: u64, explicit: bool, since: u64, cost: u64) -> bool {
+    let grown = rss.saturating_sub(floor);
+    if explicit {
+        grown >= ARMED_SLACK
+    } else {
+        grown >= MIN_GROWTH && since >= cost.saturating_mul(RELEASE_SHARE)
+    }
+}
+
+/// Hand free heap pages back and make what is left the new [`FLOOR`].
+fn release() -> Option<u64> {
+    let began = now_ns();
+    release_free_pages();
+    let done = now_ns();
+    RELEASED_AT.store(done, Ordering::Relaxed);
+    RELEASE_COST.store(done - began, Ordering::Relaxed);
+    let after = resident_bytes()?;
+    FLOOR.store(after, Ordering::Relaxed);
+    Some(after)
+}
+
+fn now_ns() -> u64 {
+    static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    EPOCH.get_or_init(Instant::now).elapsed().as_nanos() as u64
 }
 
 /// Is the armed drive over its limit? Reads the resident set at most once per
@@ -294,6 +346,18 @@ mod tests {
         assert!(!trips(260 * MIB, 270 * MIB, limit), "under its own start");
         assert!(trips(260 * MIB, 196 * MIB, limit));
         assert!(trips(300 * MIB, 100 * MIB, limit));
+    }
+
+    #[test]
+    fn free_pages_go_back_once_the_process_holds_more_than_the_last_release_left() {
+        let ms = 1_000_000;
+        assert!(!release_due(300 * MIB, 290 * MIB, true, 0, 0), "10 MiB over, under the armed slack");
+        assert!(release_due(306 * MIB, 290 * MIB, true, 0, 50 * ms), "an explicit limit releases however recent");
+        assert!(!release_due(340 * MIB, 290 * MIB, false, 10_000 * ms, 0), "50 MiB over, under MIN_GROWTH");
+        assert!(release_due(360 * MIB, 290 * MIB, false, 10_000 * ms, 20 * ms));
+        assert!(!release_due(360 * MIB, 290 * MIB, false, 600 * ms, 20 * ms), "too soon after a 20 ms release");
+        assert!(release_due(360 * MIB, 290 * MIB, false, 640 * ms, 20 * ms));
+        assert!(!release_due(200 * MIB, 290 * MIB, true, 0, 0), "under the floor");
     }
 
     #[test]

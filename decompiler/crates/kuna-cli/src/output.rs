@@ -25,6 +25,15 @@ pub fn emit_bytes(bytes: &[u8]) -> io::Result<()> {
     emit_to(&mut writer, bytes)
 }
 
+/// Write stdout through `write` as it renders, for a document too large to
+/// hold whole; the same buffering and failures as [`emit`].
+pub fn emit_streamed(write: impl FnOnce(&mut dyn Write) -> io::Result<()>) -> io::Result<()> {
+    let stdout = io::stdout();
+    let mut writer = BufWriter::new(stdout.lock());
+    write(&mut writer)?;
+    writer.flush()
+}
+
 /// Emit `text` and exit with `status` -- the command's own verdict, which a
 /// closed pipe does not overwrite.
 pub fn emit_with_status(text: &str, status: i32) -> i32 {

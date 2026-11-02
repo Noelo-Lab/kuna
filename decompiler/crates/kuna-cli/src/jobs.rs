@@ -28,7 +28,7 @@ use scratch::{pool_scratch, ScratchDir};
 use synth::{name_structs_serially, Named};
 pub(crate) use type_blocks::merge_type_definitions;
 use wire::{decode_results, encode_spec};
-pub(crate) use wire::{read_spec, ResultWriter};
+pub(crate) use wire::{decode_result, encode_result, read_spec, ResultWriter};
 
 /// Ceiling on an automatically planned chunk, when `--jobs-chunk` is omitted.
 /// A chunk is only a scheduling unit here, so this exists to keep the tail of a

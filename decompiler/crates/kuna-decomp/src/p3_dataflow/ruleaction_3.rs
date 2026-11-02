@@ -716,6 +716,9 @@ pub struct RuleMultiCollapse {
     witness: FxHashMap<OpId, SmallVec<[(OpId, int4); 4]>>,
 }
 
+/// How many witnesses' room [`RuleMultiCollapse`] keeps across a reset.
+const WITNESSES_KEPT: usize = 1024;
+
 /// How [`RuleMultiCollapse`]'s walk treats one branch `vn` when its defining
 /// branch is `def`: skipped (seen), matching, expanded (the `MULTIEQUAL`
 /// writing it), or a branch that ends the walk in failure.
@@ -792,8 +795,12 @@ impl Rule for RuleMultiCollapse {
         Some(Box::new(RuleMultiCollapse::default()))
     }
 
+    /// A function's witnesses mean nothing to the next one, and the rule lives
+    /// as long as the program: the table is cut back to [`WITNESSES_KEPT`] so
+    /// the largest function's does not stay allocated for the rest of a batch.
     fn reset(&mut self, _data: &mut Funcdata) {
         self.witness.clear();
+        self.witness.shrink_to(WITNESSES_KEPT);
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {

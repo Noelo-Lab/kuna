@@ -1972,14 +1972,28 @@ Behaviors specific to `decompile-all`:
   resident AND the function itself has added at least 64 MiB since it began;
   it is cut off at the same cooperative probes as the watchdog and recorded as
   its `error` (`"per-function memory limit exceeded (N MiB)"`), and the batch
-  continues. The 64 MiB floor is what keeps a long batch's creep (results it
-  holds, heap the allocator kept) from stopping an ordinary function, so the
-  process can end up to that much over the limit before a function is
+  continues. The 64 MiB floor is what keeps a long batch's creep (the
+  per-image facts later functions read) from stopping an ordinary function,
+  so the process can end up to that much over the limit before a function is
   blamed. The resident set is read when each function starts and then at most
-  every 50 ms while it runs. A function that starts within a tenth of the limit
-  first hands free heap pages back to the system (glibc `malloc_trim`) and
-  measures again, and a stopped function hands its own back before the next
-  one starts.
+  every 50 ms while it runs. Before a function starts, a process holding
+  16 MiB more than the last release left first hands free heap pages back to
+  the system (glibc `malloc_trim`) and measures again, so a function is not
+  charged for the freed working memory of the large function before it; a
+  stopped function hands its own back before the next one starts. With no
+  explicit limit the same release happens once the process holds 64 MiB more,
+  at most a thirty-second of the run's time. These releases happen only on
+  Linux with glibc; on Windows and macOS what the allocator keeps is its own
+  policy, and a function starts from the resident set it left. A one-worker
+  run in the callee-first order (option `protoorder`, the whole-binary
+  default) keeps each finished result in an anonymous temporary file in the
+  system temporary directory (`TMPDIR`, `%TEMP%` on Windows) until its last
+  round, as a `--jobs` worker hands its results over, and lets the call graph
+  it planned that order with go before the first function, so neither the
+  results of the functions before one nor the graph is charged to it. The
+  file has no name and goes when the process ends, however it ends; results
+  that cannot be written to it stay in memory. The `--json` document is
+  written a record at a time, so it is not held whole beside the results.
 
   An explicit limit is per process: the serial run, each `--jobs N` worker,
   and the `decomp_dbg` child of `kuna decompile` each get the value given.
@@ -2003,8 +2017,8 @@ Behaviors specific to `decompile-all`:
   can be stopped although it would have fit, which of them it is varies from
   run to run, and each such stop usually stands in for a worker the kernel
   would have killed. The cgroup is read only on a 50 ms sample that finds
-  the function grown that much, and a function that starts within a tenth
-  of the limit first hands free heap pages back. The error names the limit,
+  the function grown that much, and free heap pages go back as with no
+  explicit limit. The error names the limit,
   as for an explicit value. A pool wider than the container can hold even
   without its big functions (each worker's load counts) can still be
   killed; `--jobs N` lowers it. An explicit

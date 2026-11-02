@@ -94,3 +94,25 @@ fn every_unicode_scalar_round_trips_through_ascii_output() {
         assert_eq!(serde_json::from_str::<String>(&output).unwrap(), text);
     }
 }
+
+#[test]
+fn a_streamed_document_is_the_whole_one_rendered() {
+    let record = |i: usize| {
+        Json::Object(vec![
+            ("name".into(), Json::Str(format!("f{i}\n\u{e9}"))),
+            ("lines".into(), Json::Array(vec![Json::Number(i.to_string()), Json::Object(vec![])])),
+        ])
+    };
+    let head = vec![("binary".to_string(), Json::Str("a.out".into())), ("count".into(), Json::Number("3".into()))];
+    let tail = vec![("assertions".to_string(), Json::Array(vec![]))];
+    for n in [0, 1, 3, 2_000] {
+        for (head, tail) in [(&head[..], &tail[..]), (&[][..], &[][..])] {
+            let mut whole = head.to_vec();
+            whole.push(("functions".into(), Json::Array((0..n).map(record).collect())));
+            whole.extend_from_slice(tail);
+            let mut streamed = Vec::new();
+            write_indent2_streamed(&mut streamed, head, "functions", (0..n).map(record), tail).unwrap();
+            assert_eq!(String::from_utf8(streamed).unwrap(), dumps_indent2(&Json::Object(whole)));
+        }
+    }
+}
