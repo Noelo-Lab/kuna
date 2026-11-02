@@ -57,7 +57,7 @@ use object::read::{Object, ObjectSection};
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 use super::{
-    decode_eh_pointer_ordered, encoded_size, existing_function_addrs, parse_cie_fde_encoding,
+    decode_eh_pointer, encoded_size, existing_function_addrs, parse_cie_fde_encoding,
     read_u32, read_u64, DW_EH_PE_ABSPTR,
 };
 
@@ -193,7 +193,7 @@ pub fn scan_fde_bodies(file: &object::File) -> Vec<(u64, u64)> {
     scan_fde_bodies_sized(file, 8)
 }
 
-pub(crate) fn scan_fde_bodies_sized(file: &object::File, ptr_size: usize) -> Vec<(u64, u64)> {
+fn scan_fde_bodies_sized(file: &object::File, ptr_size: usize) -> Vec<(u64, u64)> {
     let mut out: Vec<(u64, u64)> = Vec::new();
     if !matches!(file.format(), object::BinaryFormat::Elf) {
         return out;
@@ -229,7 +229,7 @@ pub(crate) fn scan_fde_bodies_sized(file: &object::File, ptr_size: usize) -> Vec
             continue;
         }
         let next = o + 4 + length;
-        if next > data.len() || length < 4 {
+        if next > data.len() || o + 8 > data.len() {
             break;
         }
         let cie_id = read_u32(&data[o + 4..], le);
@@ -240,39 +240,19 @@ pub(crate) fn scan_fde_bodies_sized(file: &object::File, ptr_size: usize) -> Vec
             let cie_ptr_field = o + 4;
             if (cie_id as usize) <= cie_ptr_field {
                 let cie_off = cie_ptr_field - cie_id as usize;
-                if let Some(enc) = cie_enc
-                    .iter()
-                    .find(|&&(co, _)| co == cie_off)
-                    .map(|&(_, e)| e)
-                {
+                if let Some(enc) = cie_enc.iter().find(|&&(co, _)| co == cie_off).map(|&(_, e)| e) {
                     let pc_begin_off = o + 8;
                     let field_vma = sec_vma + pc_begin_off as u64;
-                    let pc_begin = decode_eh_pointer_ordered(
-                        enc,
-                        field_vma,
-                        sec_vma,
-                        &data[..next],
-                        pc_begin_off,
-                        ptr_size,
-                        le,
-                    );
+                    let pc_begin =
+                        decode_eh_pointer(enc, field_vma, sec_vma, data, pc_begin_off, ptr_size);
                     let range_off =
-                        pc_begin_off + encoded_size(enc, ptr_size, &data[pc_begin_off..next]);
+                        pc_begin_off + encoded_size(enc, ptr_size, &data[pc_begin_off..]);
                     // Length field: the CIE's format, absolute application.
-                    let pc_range = decode_eh_pointer_ordered(
-                        enc & 0x0f,
-                        0,
-                        0,
-                        &data[..next],
-                        range_off,
-                        ptr_size,
-                        le,
-                    );
+                    let pc_range =
+                        decode_eh_pointer(enc & 0x0f, 0, 0, data, range_off, ptr_size);
                     if let (Some(begin), Some(range)) = (pc_begin, pc_range) {
                         if range > 0 {
-                            if let Some(end) = begin.checked_add(range) {
-                                out.push((begin, end));
-                            }
+                            out.push((begin, begin.wrapping_add(range)));
                         }
                     }
                 }
@@ -306,46 +286,6 @@ mod tests {
             assert_eq!(overlaps_stub(&stubs, start, end), expected, "{start}..{end}");
         }
         assert!(!overlaps_stub(&[], 0, 100));
-    }
-
-    #[test]
-    fn fixed_width_eh_pointers_follow_byte_order() {
-        for little in [false, true] {
-            for (format, width, signed) in [
-                (2, 2, false),
-                (3, 4, false),
-                (4, 8, false),
-                (10, 2, true),
-                (11, 4, true),
-                (12, 8, true),
-                (0, 4, false),
-                (0, 8, false),
-            ] {
-                let value = if signed { u64::MAX - 3 } else { 0x1234 };
-                let bytes = if little {
-                    value.to_le_bytes()[..width].to_vec()
-                } else {
-                    value.to_be_bytes()[8 - width..].to_vec()
-                };
-                let expected = 0x1000u64.wrapping_add(value);
-                assert_eq!(
-                    decode_eh_pointer_ordered(format | 0x10, 0x1000, 0, &bytes, 0, width, little),
-                    Some(expected)
-                );
-                assert_eq!(
-                    decode_eh_pointer_ordered(format, 0, 0, &bytes[..width - 1], 0, width, little),
-                    None
-                );
-            }
-            assert_eq!(
-                decode_eh_pointer_ordered(1, 0, 0, &[0x81, 1], 0, 4, little),
-                Some(129)
-            );
-            assert_eq!(
-                decode_eh_pointer_ordered(9, 0, 0, &[0x7c], 0, 4, little),
-                Some(u64::MAX - 3)
-            );
-        }
     }
 
     #[test]

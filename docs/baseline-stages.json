@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3637,
-    3637
+    3638,
+    3638
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1023,6 +1023,7 @@
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
     "data:KUNA-CATALOG #15: 364 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 365 registry rows plus six individual queries",
     "data:KUNA-CATALOG #15: 369 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",

@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_369() {
+fn settable_count_is_370() {
     assert_eq!(kuna_num_settables(), 370);
     assert_eq!(SETTABLE_TABLE.len(), 370);
 }
 
 #[test]
-fn tier_counts_are_127_core_149_transform_93_analysis() {
+fn tier_counts_are_127_core_150_transform_93_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_127_core_149_transform_93_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (127, 149, 94));
+    assert_eq!((core, transform, analysis), (127, 150, 93));
 }
 
 #[test]

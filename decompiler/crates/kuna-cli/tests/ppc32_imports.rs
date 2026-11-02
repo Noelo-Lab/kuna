@@ -5,6 +5,31 @@ use std::process::Command;
 mod fixture;
 use fixture::{Fixture, Plt};
 
+fn assert_pic_proof_runs() {
+    for plt in [Plt::Short, Plt::Long] {
+        for little in [false, true] {
+            let mut fixture = Fixture::new(plt);
+            fixture.pic_collision = true;
+            fixture.little = little;
+            let bytes = fixture.bytes();
+            let file = object::File::parse(bytes.as_slice()).unwrap();
+            assert!(kuna_analysis::loader::format::resolve_imports(&file, &bytes).is_empty());
+            let enabled = kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic_abi(&file);
+            assert_eq!(enabled.len(), 1, "{plt:?} little={little}: enabled proof must run");
+            assert_eq!(enabled[0].addr, u64::from(fixture.target()));
+            assert_eq!(enabled[0].name, b"extra");
+        }
+    }
+}
+
+fn resolve_imports_in_both_modes(file: &object::File, bytes: &[u8])
+    -> Vec<kuna_analysis::loader::format::ImportSym>
+{
+    let mut imports = kuna_analysis::loader::format::resolve_imports(file, bytes);
+    imports.extend(kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic_abi(file));
+    imports
+}
+
 #[test]
 fn ppc32_import_names_follow_jump_slots_and_complete_stubs() {
     for plt in [Plt::Bss, Plt::Absolute] {
@@ -98,6 +123,7 @@ fn ppc32_no_return_contract_stops_flow_at_the_import() {
 
 #[test]
 fn ppc32_declines_unproven_import_contracts() {
+    assert_pic_proof_runs();
     for plt in [Plt::Bss, Plt::Short, Plt::Long, Plt::Absolute] {
         for change in 0..5 {
             if (change >= 2 && matches!(plt, Plt::Bss))
@@ -115,7 +141,7 @@ fn ppc32_declines_unproven_import_contracts() {
             }
             let bytes = fixture.bytes();
             let file = object::File::parse(&*bytes).unwrap();
-            let imports = kuna_analysis::loader::format::resolve_imports(&file, &bytes);
+            let imports = resolve_imports_in_both_modes(&file, &bytes);
             assert!(imports.is_empty(), "{plt:?} change={change}");
         }
     }
@@ -123,6 +149,7 @@ fn ppc32_declines_unproven_import_contracts() {
 
 #[test]
 fn ppc32_rejects_malformed_metadata_and_out_of_range_slots() {
+    assert_pic_proof_runs();
     use object::ObjectSection as _;
     for plt in [Plt::Bss, Plt::Short, Plt::Long, Plt::Absolute] {
         for change in 0..10 {
@@ -177,7 +204,7 @@ fn ppc32_rejects_malformed_metadata_and_out_of_range_slots() {
             }
             let file = object::File::parse(&*bytes).unwrap();
             assert!(
-                kuna_analysis::loader::format::resolve_imports(&file, &bytes).is_empty(),
+                resolve_imports_in_both_modes(&file, &bytes).is_empty(),
                 "{plt:?} change={change}"
             );
         }
@@ -186,6 +213,7 @@ fn ppc32_rejects_malformed_metadata_and_out_of_range_slots() {
 
 #[test]
 fn ppc32_empty_got2_must_not_supply_a_conflicting_slot() {
+    assert_pic_proof_runs();
     use object::ObjectSection as _;
     let fixture = Fixture::new(Plt::Short);
     let mut bytes = fixture.bytes();
@@ -209,7 +237,7 @@ fn ppc32_empty_got2_must_not_supply_a_conflicting_slot() {
         bytes[at..at + 4].copy_from_slice(&value.to_be_bytes());
     }
     let file = object::File::parse(&*bytes).unwrap();
-    assert!(kuna_analysis::loader::format::resolve_imports(&file, &bytes).is_empty());
+    assert!(resolve_imports_in_both_modes(&file, &bytes).is_empty());
 }
 
 /// The caller's PC-relative setup establishes r30 = DT_PPC_GOT + 4.
@@ -217,6 +245,7 @@ fn ppc32_empty_got2_must_not_supply_a_conflicting_slot() {
 /// __stack_chk_fail. Removing .got2 does not change the executed instructions.
 #[test]
 fn ppc32_caller_r30_cannot_be_replaced_by_dt_ppc_got() {
+    assert_pic_proof_runs();
     for plt in [Plt::Short, Plt::Long] {
         for little in [false, true] {
             for missing_got2 in [false, true] {
@@ -228,7 +257,7 @@ fn ppc32_caller_r30_cannot_be_replaced_by_dt_ppc_got() {
                 let file = object::File::parse(&*bytes).unwrap();
                 assert_eq!(file.section_by_name(".got2").is_none(), missing_got2);
                 assert_eq!(file.dynamic_relocations().unwrap().count(), 2);
-                let imports = kuna_analysis::loader::format::resolve_imports(&file, &bytes);
+                let imports = resolve_imports_in_both_modes(&file, &bytes);
                 assert!(
                     !imports.iter().any(|s| s.addr == u64::from(fixture.target())
                         && s.name == b"__stack_chk_fail"),
@@ -372,6 +401,7 @@ int check(void) { extra(); return 7; }
 
 #[test]
 fn ppc32_got_metadata_does_not_establish_r30() {
+    assert_pic_proof_runs();
     for plt in [Plt::Short, Plt::Long] {
         for little in [false, true] {
             for symbolized in [false, true] {
@@ -383,7 +413,7 @@ fn ppc32_got_metadata_does_not_establish_r30() {
                     let bytes = fixture.bytes();
                     let file = object::File::parse(&*bytes).unwrap();
                     assert!(
-                        kuna_analysis::loader::format::resolve_imports(&file, &bytes).is_empty(),
+                        resolve_imports_in_both_modes(&file, &bytes).is_empty(),
                         "{plt:?} little={little} symbolized={symbolized} missing_got2={missing_got2}"
                     );
                 }
@@ -393,10 +423,11 @@ fn ppc32_got_metadata_does_not_establish_r30() {
 }
 
 #[test]
-fn ppc32_shared_unwind_keeps_unnamed_stubs_in_text() {
+fn ppc32_shared_little_endian_unwind_keeps_unnamed_stubs_in_text() {
     use object::ObjectSection;
     use kuna_analysis::analyzers::entry::kuna_fdeinterior::eligible_fde_bodies;
-    for (plt, little) in [Plt::Short, Plt::Long].into_iter().flat_map(|p| [false, true].map(|le| (p, le))) {
+    for plt in [Plt::Short, Plt::Long] {
+        let little = true;
         let mut f = Fixture::new(plt);
         f.unwind_only = true;
         f.second_stub = true;
@@ -609,4 +640,26 @@ fn ppc32_pic_stage_fixture_matches_authored_bytes() {
         include_bytes!("fixtures/ppc32-pic-imports.elf").as_slice(),
         fixture.bytes()
     );
+}
+
+#[test]
+fn ppc32_default_unwind_retains_the_pc_read_body() {
+    use object::ObjectSection;
+    let mut f = Fixture::new(Plt::Short);
+    f.unwind_only = true;
+    f.caller = Some(vec![0x7c0802a6, 0x429f0009, 7, 0x7d2802a6, 0x81290000,
+        0x1c630003, 0x7c634a14, 0x7c0803a6, 0x4e800020]);
+    let mut bytes = f.bytes();
+    let file = object::File::parse(bytes.as_slice()).unwrap();
+    let frame = file.section_by_name(".eh_frame").unwrap().file_range().unwrap().0 as usize;
+    bytes[frame + 32..frame + 36].copy_from_slice(&f.word(36));
+    let path = common::scratch_file("ppc32-unwind-default", "so");
+    std::fs::write(&path, bytes).unwrap();
+    let (out, err, status) = common::run_kuna(&["decompile-all", path.to_str().unwrap(),
+        "--mode", "fast", "--json"]);
+    assert_eq!(status, 0, "{out}\n{err}");
+    let result: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let bodies = result["functions"].as_array().unwrap();
+    assert!(bodies.iter().any(|f| f["code"].as_str().is_some_and(|c| c.contains("return a0 * 3 +"))), "{out}");
+    std::fs::remove_file(path).unwrap();
 }

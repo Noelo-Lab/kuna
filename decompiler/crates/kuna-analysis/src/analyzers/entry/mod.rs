@@ -2311,26 +2311,6 @@ fn decode_eh_pointer(
     field_off: usize,
     ptr_size: usize,
 ) -> Option<u64> {
-    decode_eh_pointer_ordered(
-        enc,
-        field_vma,
-        section_vma,
-        bytes,
-        field_off,
-        ptr_size,
-        true,
-    )
-}
-
-fn decode_eh_pointer_ordered(
-    enc: u8,
-    field_vma: u64,
-    section_vma: u64,
-    bytes: &[u8],
-    field_off: usize,
-    ptr_size: usize,
-    little: bool,
-) -> Option<u64> {
     if enc == DW_EH_PE_OMIT {
         return None;
     }
@@ -2341,28 +2321,20 @@ fn decode_eh_pointer_ordered(
     let appl = enc & 0x70;
     let slice = bytes.get(field_off..)?;
 
-    let read16 = || {
-        let value: [u8; 2] = slice.get(..2)?.try_into().ok()?;
-        Some(if little {
-            u16::from_le_bytes(value)
-        } else {
-            u16::from_be_bytes(value)
-        })
-    };
     let raw: u64 = match format {
         DW_EH_PE_ABSPTR => {
             if ptr_size == 8 {
-                read_u64(slice.get(..8)?, little)
+                read_u64_opt(slice)?
             } else {
-                read_u32(slice.get(..4)?, little) as u64
+                read_u32_opt(slice)? as u64
             }
         }
-        DW_EH_PE_UDATA2 => read16()? as u64,
-        DW_EH_PE_SDATA2 => read16()? as i16 as i64 as u64,
-        DW_EH_PE_UDATA4 => read_u32(slice.get(..4)?, little) as u64,
-        DW_EH_PE_SDATA4 => read_u32(slice.get(..4)?, little) as i32 as i64 as u64,
-        DW_EH_PE_UDATA8 => read_u64(slice.get(..8)?, little),
-        DW_EH_PE_SDATA8 => read_u64(slice.get(..8)?, little),
+        DW_EH_PE_UDATA2 => read_u16_opt(slice)? as u64,
+        DW_EH_PE_SDATA2 => read_u16_opt(slice)? as i16 as i64 as u64,
+        DW_EH_PE_UDATA4 => read_u32_opt(slice)? as u64,
+        DW_EH_PE_SDATA4 => read_u32_opt(slice)? as i32 as i64 as u64,
+        DW_EH_PE_UDATA8 => read_u64_opt(slice)?,
+        DW_EH_PE_SDATA8 => read_u64_opt(slice)?,
         DW_EH_PE_ULEB128 => read_uleb128(bytes, field_off)?.0,
         DW_EH_PE_SLEB128 => read_sleb128(bytes, field_off)?.0 as u64,
         _ => return None,
@@ -2381,6 +2353,10 @@ fn decode_eh_pointer_ordered(
 // Little/big-endian + LEB128 byte readers
 // ===========================================================================
 
+fn read_u16_opt(b: &[u8]) -> Option<u16> {
+    Some(u16::from_le_bytes([*b.first()?, *b.get(1)?]))
+}
+
 fn read_u32(b: &[u8], le: bool) -> u32 {
     let a = [b[0], b[1], b[2], b[3]];
     if le {
@@ -2388,6 +2364,10 @@ fn read_u32(b: &[u8], le: bool) -> u32 {
     } else {
         u32::from_be_bytes(a)
     }
+}
+
+fn read_u32_opt(b: &[u8]) -> Option<u32> {
+    Some(u32::from_le_bytes([*b.first()?, *b.get(1)?, *b.get(2)?, *b.get(3)?]))
 }
 
 fn read_u64(b: &[u8], le: bool) -> u64 {

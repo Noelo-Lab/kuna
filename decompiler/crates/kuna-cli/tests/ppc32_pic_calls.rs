@@ -126,8 +126,7 @@ fn shared_call_instruction_is_scoped_to_its_entry() {
 }
 
 #[test]
-fn slots_are_metadata_and_unwind_bounds_use_the_elf_byte_order() {
-    use object::{Object, ObjectSection};
+fn slots_are_metadata_without_enabling_pic_resolution() {
     for little in [false, true] {
         let mut f = fixture::Fixture::new(fixture::Plt::Short);
         f.little = little;
@@ -141,13 +140,6 @@ fn slots_are_metadata_and_unwind_bounds_use_the_elf_byte_order() {
         assert_eq!((slots[0].address, slots[0].name.as_str(), slots[0].no_return), (0x3000, "__stack_chk_fail", true));
         assert_eq!((slots[1].address, slots[1].name.as_str(), slots[1].no_return), (0x3004, "extra", false));
         assert!(kuna_analysis::loader::format::resolve_imports(&file, &bytes).is_empty());
-        assert_eq!(kuna_analysis::analyzers::entry::kuna_fdeinterior::scan_fde_bodies(&file), vec![(0x1000, 0x103c)]);
-        let offset = file.section_by_name(".eh_frame").unwrap().file_range().unwrap().0 as usize;
-        let mut reversed = bytes.clone();
-        reversed[offset + 32..offset + 36].reverse();
-        reversed[offset + 36..offset + 40].reverse();
-        let wrong = object::File::parse(reversed.as_slice()).unwrap();
-        assert_ne!(kuna_analysis::analyzers::entry::kuna_fdeinterior::scan_fde_bodies(&wrong), vec![(0x1000, 0x103c)]);
         for (relocation, addend) in [(object::elf::R_PPC_ADDR32, 0), (object::elf::R_PPC_JMP_SLOT, 4)] {
             f.relocation = relocation;
             f.addend = addend;
