@@ -2318,7 +2318,11 @@ a declaration cannot supply is bytes, so `declare_function` measures each one
 when it is made against the loader's shared byte map — the map the lifter refuses
 unmapped instructions by, rather than a staged `load_fill`, which can answer out
 of a padded window — over `[start, end)`, or the entry byte alone when no end was
-given (`decompiler/crates/kuna-console/src/kuna_declaredbytes.rs`). A loader with
+given (`decompiler/crates/kuna-console/src/kuna_declaredbytes.rs`). A segment the
+image declares inaccessible (a Mach-O segment with no initial protection, such as
+`__PAGEZERO`, which the byte map serves as zero fill) is not counted, and neither is
+the last byte of the address space, which ends no half-open extent and which the
+lifter never treats as mapped. A loader with
 no shared map is asked through its section table, and one with neither through a
 probe of the entry. The outcome is `mapped`, `partial` (the entry is mapped and
 the extent runs past the mapped bytes; the first unmapped byte is kept) or

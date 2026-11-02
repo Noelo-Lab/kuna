@@ -76,6 +76,48 @@ fn a_partial_and_a_mapped_declaration_are_told_apart() {
     assert!(!stderr.contains("inside"), "{stderr}");
 }
 
+/// A segment the image declares inaccessible (arm64 Mach-O `__PAGEZERO`, which
+/// kuna reads as zero fill) holds no bytes; the Mach header after it does.
+#[test]
+fn an_inaccessible_segment_is_unmapped() {
+    let bin = common::fixture("macho_imports_arm64");
+    let (stdout, stderr, code) = common::run_kuna(&[
+        "functions",
+        &bin,
+        "--json",
+        "--define-function",
+        "0x1000=in_pagezero",
+        "--define-function",
+        "0xfffffff0-0x100000010=into_text",
+        "--define-function",
+        "0x100000000-0x100000010=mach_header",
+    ]);
+    assert_eq!(code, 0, "{stderr}");
+    let doc = json(&stdout);
+    assert_eq!(record(&doc, "in_pagezero")["declared"]["bytes"], "unmapped");
+    assert_eq!(record(&doc, "into_text")["declared"]["bytes"], "unmapped");
+    assert_eq!(record(&doc, "mach_header")["declared"]["bytes"], "mapped");
+    assert_eq!(doc["notes"].as_array().map(Vec::len), Some(2), "{doc}");
+    assert_eq!(stderr.matches("warning: declared function").count(), 2, "{stderr}");
+}
+
+/// The last byte of the address space ends no half-open extent, so it is not
+/// mapped however the extent is spelled.
+#[test]
+fn the_top_byte_of_the_address_space_is_unmapped() {
+    let bin = common::fixture("protoorder_narrowvote_x86_64");
+    let (stdout, stderr, code) = common::run_kuna(&[
+        "functions",
+        &bin,
+        "--json",
+        "--define-function",
+        "0xffffffffffffffff=at_top",
+    ]);
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(record(&json(&stdout), "at_top")["declared"]["bytes"], "unmapped");
+    assert_eq!(stderr.matches("warning: declared function at_top").count(), 1, "{stderr}");
+}
+
 #[test]
 fn an_inventory_without_declarations_gains_no_key() {
     let bin = common::fixture("protoorder_narrowvote_x86_64");

@@ -6,8 +6,9 @@
 //! the image maps nothing, which is what a routine in a boot ROM or another
 //! module, called at a fixed address, needs. What an assertion cannot supply is
 //! bytes. So each declaration is measured once, when it is made, against the
-//! image's live byte map (the one the lifter refuses unmapped instructions by),
-//! and one that is not wholly mapped is said to be: a warning on stderr, a
+//! image's live byte map (the one the lifter refuses unmapped instructions by)
+//! less the segments the image declares inaccessible, and one that is not
+//! wholly mapped is said to be: a warning on stderr, a
 //! `notes` entry in the JSON documents, and a `declared` marker on its
 //! inventory row. Before, it was listed exactly like a discovered entry and
 //! then refused by the first command that needed its bytes (issue #1438).
@@ -51,9 +52,12 @@ pub(crate) struct Declaration {
 const TRANSCRIPT_PREFIX: &str = "warning: declared function ";
 
 /// Measure the declaration at byte address `start` spanning `size` bytes
-/// (`0` = no declared end).
+/// (`0` = no declared end). The last byte of the address space ends no
+/// half-open extent, so the lifter never counts it mapped and neither does this.
 pub(crate) fn measure(prog: &ConsoleProgram, start: u64, size: u64) -> DeclaredBytes {
-    let end = start.saturating_add(size.max(1));
+    let Some(end) = start.checked_add(size.max(1)) else {
+        return DeclaredBytes::Unmapped;
+    };
     match first_unmapped(prog, start, end) {
         None => DeclaredBytes::Mapped,
         Some(at) if at == start => DeclaredBytes::Unmapped,
@@ -61,13 +65,32 @@ pub(crate) fn measure(prog: &ConsoleProgram, start: u64, size: u64) -> DeclaredB
     }
 }
 
-/// The first byte of `[lo, hi)` the input does not map, or `None`.
+/// The first byte of `[lo, hi)` the input does not map, or `None`: the first
+/// the loader does not serve, or the first in a segment the image declares
+/// inaccessible (a Mach-O `__PAGEZERO`, which the byte map serves as zero fill),
+/// whichever comes first.
+fn first_unmapped(prog: &ConsoleProgram, lo: u64, hi: u64) -> Option<u64> {
+    let loader = prog.arch().translate().loader_rc();
+    let blocked = loader
+        .borrow()
+        .inaccessible_segments()
+        .into_iter()
+        .filter(|&(vma, size)| vma < hi && vma.saturating_add(size) > lo)
+        .map(|(vma, _)| vma.max(lo))
+        .min();
+    match (first_unserved(prog, lo, hi), blocked) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
+}
+
+/// The first byte of `[lo, hi)` the loader does not serve, or `None`.
 ///
 /// The loader's shared byte map is the evidence when it has one: a staged
 /// `load_fill` can answer a read out of a padded window. A loader without one
 /// is asked through its section table, and one with neither through a probe
 /// of the entry byte.
-fn first_unmapped(prog: &ConsoleProgram, lo: u64, hi: u64) -> Option<u64> {
+fn first_unserved(prog: &ConsoleProgram, lo: u64, hi: u64) -> Option<u64> {
     let shared = prog.arch().translate().loader_rc().borrow().shared_bytes();
     if let Some(bytes) = shared {
         if bytes.mapped_covers(lo, hi) {

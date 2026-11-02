@@ -538,7 +538,8 @@ module that the code calls at a fixed address — and the declared name is what 
 calls then render as. What it cannot supply is bytes. So each declaration is checked
 against the image's mapped bytes (the extent, or just the entry when no `end` is
 given), and one that is not wholly mapped gets one `warning:` on stderr from every
-command above. The `--json` documents of `functions`, `decompile`, `decompile-all`,
+command above. A segment the image declares inaccessible, such as a Mach-O
+`__PAGEZERO`, counts as unmapped here even though `read` lists it as zero fill. The `--json` documents of `functions`, `decompile`, `decompile-all`,
 `disassemble`, `read` and `raw-pcode` also carry the sentence in a top-level
 `notes` array (`decompile-project` and `decompile-graph` say it on stderr only), and
 the entry's record in `functions` and `decompile-all` carries a `declared` object:
