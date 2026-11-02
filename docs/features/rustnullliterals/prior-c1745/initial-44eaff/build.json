@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-02T14:38:43.701628+00:00",
+  "parent_commit": "44eaff2b3853a17440c5dc880bdc4b88370227e9",
+  "baseline_root": "/home/mahaloz/kwt/angr-narrow-table-guard",
+  "parent_cli_sha256": "ad23578b9660521c2bfeb6f2bf1a9981c2d2dc4523eb690328a5a9f6f46ac6d0",
+  "new_cli_sha256": "21ec96665ba3f31219817cd9bdb7e3ca3fd8934b644ac07a88e86a70b3d5f350",
+  "stage_assertions": [
+    3675,
+    3675
+  ],
+  "strict_correctness_fix": true,
+  "option": null
+}

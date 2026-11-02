@@ -2322,6 +2322,9 @@ impl PrintC {
         };
         match atom.tag {
             TagType::Syntax => self.emit.print(&atom.name, to_emit_hl(atom.highlight)),
+            TagType::LiteralToken => {
+                self.emit.tag_variable(&atom.name, to_emit_hl(atom.highlight), &markup)
+            }
             TagType::VarToken => {
                 let n = ident(self, &atom.name);
                 let n = n.as_ref().unwrap_or(&atom.name);
@@ -10541,10 +10544,10 @@ impl PrintC {
                 // signed/unsigned integer path below, dropping both the leading
                 // typecast and the force_hex, so the pointer constant printed as `0`.
                 if (self.options.null || self.out_lang == crate::kuna_lang::OutLang::Go) && off == 0 {
-                    // option_NULL set (OFF by kuna default): emit the NULL token.
                     self.push_atom(&Atom::with_op_vn(
                         self.lang().null_literal.to_string(),
-                        TagType::VarToken,
+                        if self.out_lang == crate::kuna_lang::OutLang::Rust { TagType::LiteralToken }
+                        else { TagType::VarToken },
                         if self.out_lang == crate::kuna_lang::OutLang::Go { crate::printlanguage::SyntaxHighlight::const_color }
                         else { crate::printlanguage::SyntaxHighlight::var_color },
                         op_key(op),

@@ -1,0 +1,131 @@
+{
+  "declared_at": "2026-11-02T15:11:40.827261+00:00",
+  "scope": "Required integration of main c1745: Rust null expression correction against a newly built matching P4-return-recovery parent. The initial failed study is retained; no overall speed pass is claimed.",
+  "root": "/home/mahaloz/kwt/angr-rust-null-literals",
+  "base": "/home/mahaloz/kwt/angr-base-c1745",
+  "cases": [
+    [
+      "scalar-c",
+      "/home/mahaloz/kwt/angr-rust-null-literals/tests/fixtures/go-output/output-c",
+      "choose",
+      "c"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "null_pointer",
+      "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64",
+      "null_pointer",
+      "rust"
+    ],
+    [
+      "maybe_pointer",
+      "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64",
+      "maybe_pointer",
+      "rust"
+    ],
+    [
+      "pointer_is_null",
+      "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64",
+      "pointer_is_null",
+      "rust"
+    ],
+    [
+      "clear_pointer",
+      "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64",
+      "clear_pointer",
+      "rust"
+    ]
+  ],
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "samples_per_arm": 384,
+  "warmups_per_arm": 3,
+  "seed": 202611030,
+  "bootstrap_resamples": 20000,
+  "family_alpha": 0.05,
+  "comparisons": 14,
+  "upper_quantile": 0.9964285714285714,
+  "maximum_looks": 1,
+  "budget_pct": 5,
+  "criterion": "Every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bootstrap bound <=5 percent. One final look; no unchanged-code repeat.",
+  "execution": "Seven comparisons on disjoint physical CPU pairs;384 paired rounds, balanced randomized order, no own builds/tests/captures/backends overlap.",
+  "lightwork_reservation_amendment": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "reason": "Reserve a physical pair for light work; exclude it from workers before samples."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "failure_policy": "Retain every observation and do not repeat unchanged code to chase a passing bound. Diagnose material regressions before publication; record failed confidence bounds honestly.",
+  "build_binding": "Record final binary and source hashes after parent integration, all gates, complete breadth review, and native proofs, before sampling.",
+  "case_options": {
+    "null_pointer": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer.kuna"
+    ],
+    "maybe_pointer": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer.kuna"
+    ],
+    "pointer_is_null": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer.kuna"
+    ],
+    "clear_pointer": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer.kuna"
+    ]
+  },
+  "parent_commit": "c1745d3ebe1f0eea03bb478494c89629ab2302c0",
+  "main_integration_amendment": {
+    "declared_at": "2026-11-02T15:11:40.827261+00:00",
+    "before_any_integration_samples": true,
+    "previous_parent": "44eaff2b3853a17440c5dc880bdc4b88370227e9",
+    "parent": "c1745d3ebe1f0eea03bb478494c89629ab2302c0",
+    "reason": "Main PR1446 adds a call in P4 return recovery and changes its shared pair-retention helper, plus a stage test. Reconcile source/counts and validate a new independent parent/candidate pair. This is required main integration, not an optimization of the null fix.",
+    "initial_study": "/tmp/kuna-rust-null-literals/timing-result.json",
+    "initial_study_passed": false,
+    "all_studies_passed_can_never_be_true": true
+  },
+  "build": {
+    "at": "2026-11-02T15:14:57.232106+00:00",
+    "parent_commit": "c1745d3ebe1f0eea03bb478494c89629ab2302c0",
+    "baseline_root": "/home/mahaloz/kwt/angr-base-c1745",
+    "parent_cli_sha256": "f4dd1d2399a60f622ae3a54067733c55ce5474ab7d8620368fc7f548b68642ba",
+    "new_cli_sha256": "0cc465def1ef6a803e429f975d2a677d76f32c0dfe45bb9db6e108a82f36f5f7",
+    "stage_assertions": [
+      3682,
+      3682
+    ],
+    "strict_correctness_fix": true,
+    "option": null
+  },
+  "build_binding_sha256": {
+    "build.json": "8c4997c0c2ce87ed1d0ffadbd94d1310ffdc51d03b7534651d109c006282ba55",
+    "production-source-before-validation.json": "519d057b417930c22c856ca690415ad9c9d4d4f2ceace11fdddd7b98b6173973",
+    "parent-source-before-timing.json": "ffb4522a97909cd7a0e5d69824d808e9ebc9f293104020240f5abbf18d7d2fd0",
+    "gates-passed.json": "78cdfd3ba4b3ea8245d328488b3026377b62bdbd391aa1ea340e419bf8b628b2",
+    "breadth-review.json": "c00485326680e1eaf40cf6e5339bae1b50a1f86bc680a6f5e0dd12400dca67d3",
+    "native-proof/record.json": "16dd56e3dd7ee155ac992fc37e9988d28994b4b3b51af958dc72ef435d02c40d"
+  },
+  "bound_at": "2026-11-02T15:32:25.003164+00:00"
+}

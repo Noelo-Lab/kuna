@@ -737,3 +737,6 @@ mod rust_probestack;
 
 #[path = "highslice_guard.rs"]
 mod highslice_guard;
+
+#[path = "rust_null_pointer.rs"]
+mod rust_null_pointer;

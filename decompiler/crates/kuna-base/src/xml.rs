@@ -2151,7 +2151,7 @@ mod tests {
         // and kuna-mipsgot-local / MIPS GOT slots of what the image defines (option dynrelocs)
         // and kuna-funcstart-symbolextent / no pattern or gap start inside a sized function symbol
         // and kuna-mipsunaligned / a MIPS unaligned pair lifts as one access (option mipsunaligned)
-        assert_eq!(count, 677, "corpus file count drifted");
+        assert_eq!(count, 678, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

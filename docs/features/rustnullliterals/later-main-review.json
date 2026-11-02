@@ -1,0 +1,19 @@
+{
+  "at": "2026-11-02T16:58:46.777300+00:00",
+  "validated_branch_parent": "8db141bf41914de30128b3c8a067b912604ab281",
+  "reviewed_main": "78d0626c61bd1af59c10a07cf81ab9f9da7f7c2f",
+  "files": [
+    "decompiler/crates/kuna-analysis/src/loader/elf_plt.rs",
+    "decompiler/crates/kuna-analysis/src/loadimage_object.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/mipsgot_nostub.c",
+    "decompiler/crates/kuna-analysis/tests/fixtures/mipsgot_nostub.provenance",
+    "decompiler/crates/kuna-analysis/tests/fixtures/mipsgot_nostub_el.so",
+    "decompiler/crates/kuna-analysis/tests/fixtures/mipsgot_nostub_n64el.so",
+    "decompiler/crates/kuna-cli/tests/integration.rs",
+    "decompiler/crates/kuna-cli/tests/mips_got_nostub.rs",
+    "docs/spec/01-program-prep.md"
+  ],
+  "patch_sha256": "d2279de6beab1579cf113c172d02f39128fc9e44daeb0a45db761c5d1d8a114a",
+  "review": "The new MIPS-only change excludes zero lazy-stub GOT addresses from constant ranges and adds regression fixtures. No null emitter or shared catalog/corpus count overlap. Current timing and local gates stay bound to the8db candidate; final synthetic merge must pass current-head full CI.",
+  "merge_ci_passed": false
+}

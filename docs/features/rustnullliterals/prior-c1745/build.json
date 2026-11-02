@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-02T15:14:57.232106+00:00",
+  "parent_commit": "c1745d3ebe1f0eea03bb478494c89629ab2302c0",
+  "baseline_root": "/home/mahaloz/kwt/angr-base-c1745",
+  "parent_cli_sha256": "f4dd1d2399a60f622ae3a54067733c55ce5474ab7d8620368fc7f548b68642ba",
+  "new_cli_sha256": "0cc465def1ef6a803e429f975d2a677d76f32c0dfe45bb9db6e108a82f36f5f7",
+  "stage_assertions": [
+    3682,
+    3682
+  ],
+  "strict_correctness_fix": true,
+  "option": null
+}
