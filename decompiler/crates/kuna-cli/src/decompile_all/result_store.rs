@@ -18,6 +18,9 @@ use crate::jobs::{decode_result, encode_result};
 pub(crate) struct ResultStore {
     file: Option<std::fs::File>,
     end: u64,
+    /// A write to `file` failed: the results already on it stay there, and
+    /// every later one is kept in memory.
+    full: bool,
     slots: Vec<Option<Slot>>,
 }
 
@@ -35,7 +38,11 @@ enum Body {
 impl ResultStore {
     /// An empty store with `len` slots.
     pub(crate) fn new(len: usize) -> Self {
-        Self { file: tempfile::tempfile().ok(), end: 0, slots: (0..len).map(|_| None).collect() }
+        Self::over(tempfile::tempfile().ok(), len)
+    }
+
+    fn over(file: Option<std::fs::File>, len: usize) -> Self {
+        Self { file, end: 0, full: false, slots: (0..len).map(|_| None).collect() }
     }
 
     /// Keep `r` as slot `index`'s result, replacing any earlier one.
@@ -56,17 +63,11 @@ impl ResultStore {
 
     /// Slot `index`'s result, if it has one.
     pub(crate) fn get(&mut self, index: usize) -> Option<FuncResult> {
-        let encoded = match &self.slots[index].as_ref()?.body {
-            Body::Memory(bytes) => return Some(decode(bytes)),
-            Body::Value(r) => return Some((**r).clone()),
-            Body::File { at, len } => (*at, *len),
-        };
-        let file = self.file.as_mut().expect("a slot on file implies the store's file");
-        let mut bytes = vec![0; encoded.1];
-        file.seek(SeekFrom::Start(encoded.0))
-            .and_then(|_| file.read_exact(&mut bytes))
-            .expect("re-reading a decompile result from this run's temporary file");
-        Some(decode(&bytes))
+        Some(match &self.slots[index].as_ref()?.body {
+            Body::Memory(bytes) => decode(bytes),
+            Body::Value(r) => (**r).clone(),
+            &Body::File { at, len } => decode(&read_at(self.file.as_mut(), at, len)),
+        })
     }
 
     /// What redoing slot `index` is charged (`redo_charge`): the lines its C
@@ -82,13 +83,22 @@ impl ResultStore {
 
     /// Every result, in slot order, skipping empty slots.
     pub(crate) fn into_results(mut self) -> Vec<FuncResult> {
-        (0..self.slots.len()).filter_map(|i| self.get(i)).collect()
+        let slots = std::mem::take(&mut self.slots);
+        slots
+            .into_iter()
+            .flatten()
+            .map(|slot| match slot.body {
+                Body::Memory(bytes) => decode(&bytes),
+                Body::Value(r) => *r,
+                Body::File { at, len } => decode(&read_at(self.file.as_mut(), at, len)),
+            })
+            .collect()
     }
 
-    /// Append `encoded` to the file, returning where it starts. A failed write
-    /// gives the file up, so every later result stays in memory.
+    /// Append `encoded` to the file, returning where it starts. After a failed
+    /// write the file is only read, so every later result stays in memory.
     fn write(&mut self, encoded: &[u8]) -> Option<u64> {
-        let file = self.file.as_mut()?;
+        let file = self.file.as_mut().filter(|_| !self.full)?;
         let at = self.end;
         match file.seek(SeekFrom::Start(at)).and_then(|_| file.write_all(encoded)) {
             Ok(()) => {
@@ -96,11 +106,20 @@ impl ResultStore {
                 Some(at)
             }
             Err(_) => {
-                self.file = None;
+                self.full = true;
                 None
             }
         }
     }
+}
+
+fn read_at(file: Option<&mut std::fs::File>, at: u64, len: usize) -> Vec<u8> {
+    let file = file.expect("a slot on file implies the store's file");
+    let mut bytes = vec![0; len];
+    file.seek(SeekFrom::Start(at))
+        .and_then(|_| file.read_exact(&mut bytes))
+        .expect("re-reading a decompile result from this run's temporary file");
+    bytes
 }
 
 fn decode(bytes: &[u8]) -> FuncResult {
@@ -160,6 +179,21 @@ mod tests {
         let store = ResultStore::new(4);
         assert!(store.file.is_some());
         check(store);
-        check(ResultStore { file: None, end: 0, slots: (0..4).map(|_| None).collect() });
+        check(ResultStore::over(None, 4));
+    }
+
+    #[test]
+    fn a_failed_write_keeps_the_results_already_on_file() {
+        let spool = tempfile::NamedTempFile::new().unwrap();
+        let mut store = ResultStore::over(Some(spool.reopen().unwrap()), 3);
+        store.put(0, result("a", Some("void a(void)")));
+        assert!(matches!(store.slots[0].as_ref().map(|s| &s.body), Some(Body::File { .. })));
+        store.file = Some(std::fs::File::open(spool.path()).unwrap());
+        store.put(1, result("b", Some("void b(void)")));
+        assert!(matches!(store.slots[1].as_ref().map(|s| &s.body), Some(Body::Memory(_))));
+        store.put(2, result("c", None));
+        assert_eq!(store.get(0).map(|r| r.name).as_deref(), Some("a"));
+        let all = store.into_results();
+        assert_eq!(all.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["a", "b", "c"]);
     }
 }
