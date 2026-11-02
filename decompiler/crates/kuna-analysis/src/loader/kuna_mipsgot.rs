@@ -55,10 +55,12 @@ pub fn const_ranges(file: &object::File) -> Vec<(u64, u64)> {
         return Vec::new();
     }
     let Some(layout) = layout(file) else { return Vec::new() };
+    let Some(got) = got_bytes(file, layout.base) else { return Vec::new() };
     let ptr = if file.is_64() { 8u64 } else { 4u64 };
     let le = file.is_little_endian();
     let word = |index: u64| -> Option<u64> {
-        read_word(file, layout.base.checked_add(index.checked_mul(ptr)?)?, ptr as usize, le)
+        let at = usize::try_from(index.checked_mul(ptr)?).ok()?;
+        Some(uint(got.get(at..at.checked_add(ptr as usize)?)?, le))
     };
     let slot_of = |index: u64| layout.base.wrapping_add(index * ptr);
 
@@ -66,7 +68,7 @@ pub fn const_ranges(file: &object::File) -> Vec<(u64, u64)> {
     if layout.local > 1 {
         let module_ptr = word(1).is_some_and(|w| w >> (ptr * 8 - 1) != 0);
         let first = if module_ptr { 2 } else { 1 };
-        slots.extend((first..layout.local).filter(|&i| word(i).is_some()).map(slot_of));
+        slots.extend((first..layout.local).map_while(|i| word(i).map(|_| slot_of(i))));
     }
 
     let mut defined: Vec<(u64, u64)> = Vec::new();
@@ -79,7 +81,9 @@ pub fn const_ranges(file: &object::File) -> Vec<(u64, u64)> {
         if !matches!(sym.section(), SymbolSection::Section(_)) || matches!(st_info & 0xf, STT_TLS | STT_GNU_IFUNC) {
             continue;
         }
-        defined.push((layout.local + (index - layout.gotsym), sym.address()));
+        if let Some(got_index) = layout.local.checked_add(index - layout.gotsym) {
+            defined.push((got_index, sym.address()));
+        }
     }
     for (got_index, value) in defined {
         if word(got_index) == Some(value) {
@@ -127,14 +131,17 @@ fn layout(file: &object::File) -> Option<Layout> {
     Some(Layout { base: base?, local: local?, gotsym: gotsym?, symtabno })
 }
 
-/// The `width`-byte word at `vma`, from the section holding all of it.
-fn read_word(file: &object::File, vma: u64, width: usize, le: bool) -> Option<u64> {
+/// The bytes from `base` to the end of the allocated section holding it, so no
+/// entry is read past the GOT's own section however large the counts claim.
+fn got_bytes<'a>(file: &'a object::File, base: u64) -> Option<&'a [u8]> {
+    const SHF_ALLOC: u64 = 2;
     let sec = file.sections().find(|s| {
-        s.size() != 0 && vma >= s.address() && vma - s.address() + width as u64 <= s.size()
+        matches!(s.flags(), object::SectionFlags::Elf { sh_flags } if sh_flags & SHF_ALLOC != 0)
+            && base >= s.address()
+            && base - s.address() < s.size()
     })?;
     let data = sec.data().ok()?;
-    let at = usize::try_from(vma - sec.address()).ok()?;
-    Some(uint(data.get(at..at + width)?, le))
+    data.get(usize::try_from(base - sec.address()).ok()?..)
 }
 
 fn uint(bytes: &[u8], le: bool) -> u64 {

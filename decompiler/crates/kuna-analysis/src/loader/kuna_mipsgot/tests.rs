@@ -36,3 +36,26 @@ fn other_images_report_nothing() {
     assert!(ranges("selfplt_x86_64.so").is_empty());
     assert!(ranges("bejoin_mips32_be.o").is_empty());
 }
+
+/// A `DT_MIPS_LOCAL_GOTNO` far past the GOT's section reads no slot outside
+/// that section, and the walk ends at the section's end instead of counting on.
+#[test]
+fn a_local_count_past_the_got_section_stops_at_its_end() {
+    let path = format!("{}/tests/fixtures/mipsgot_gcc_be.so", env!("CARGO_MANIFEST_DIR"));
+    let mut bytes = std::fs::read(&path).expect("fixture");
+    let file = object::File::parse(&*bytes).expect("parses");
+    let dynamic = file.section_by_name(".dynamic").expect(".dynamic");
+    let (dyn_off, dyn_size) = dynamic.file_range().unwrap();
+    let got = file.section_by_name(".got").expect(".got");
+    let (got_lo, got_hi) = (got.address(), got.address() + got.size() - 1);
+    drop(file);
+    let local = (dyn_off as usize..(dyn_off + dyn_size) as usize)
+        .step_by(8)
+        .find(|&at| bytes[at..at + 4] == 0x7000_000au32.to_be_bytes())
+        .expect("DT_MIPS_LOCAL_GOTNO");
+    bytes[local + 4..local + 8].copy_from_slice(&u32::MAX.to_be_bytes());
+    let file = object::File::parse(&*bytes).expect("parses");
+    let ranges = const_ranges(&file);
+    assert!(!ranges.is_empty());
+    assert!(ranges.iter().all(|&(lo, hi)| got_lo <= lo && hi <= got_hi), "{ranges:x?}");
+}

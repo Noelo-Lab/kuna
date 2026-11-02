@@ -1701,7 +1701,9 @@ funcsym stream:
   binds by and gives it the body this image carries, the choice this pass makes
   for a `GLOB_DAT` slot of a defined symbol. Undefined, common, absolute, TLS
   and `STT_GNU_IFUNC` symbols are skipped, as is a multi-GOT image's secondary
-  GOT, which `R_MIPS_REL32` records relocate. `dynrelocs off` leaves every such
+  GOT, which `R_MIPS_REL32` records relocate. Every slot is read from the
+  allocated section that holds `DT_PLTGOT`, so a count that claims more entries
+  than that section holds stops at its end. `dynrelocs off` leaves every such
   slot variable.
 
   This is a different path from `relocobjects`/`relocrebase` above, which own the
