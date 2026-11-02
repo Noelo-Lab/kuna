@@ -168,3 +168,34 @@ impl crate::pass::AnalysisPass for PicSlotsPass {
         crate::pass::AnalysisOutput { ppc32_pic_slots: pic_slots(ctx.file), ..Default::default() }
     }
 }
+
+/// Recognized PIC stub ranges, independent of import identity or caller state.
+/// GNU may merge these into .text under one shared linker-generated FDE.
+pub(crate) fn pic_stub_ranges(file: &object::File<'_>) -> Vec<(u64, u64)> {
+    if file.architecture() != Architecture::PowerPc {
+        return Vec::new();
+    }
+    let mut ranges = Vec::new();
+    for section in file.sections() {
+        if !matches!(section.flags(), SectionFlags::Elf { sh_flags } if sh_flags & 6 == 6) {
+            continue;
+        }
+        let Ok(bytes) = section.data() else { continue; };
+        let first = (4 - section.address() % 4) as usize % 4;
+        for off in (first..bytes.len().saturating_sub(15)).step_by(4) {
+            let start = word(file, &bytes[off..]);
+            if !matches!(start & 0xffff_0000, 0x817e_0000 | 0x3d7e_0000) {
+                continue;
+            }
+            let words = [start, word(file, &bytes[off + 4..]),
+                word(file, &bytes[off + 8..]), word(file, &bytes[off + 12..])];
+            if (words[0] & 0xffff_0000 == 0x817e_0000 && words[1..] == [0x7d6903a6, 0x4e800420, 0x60000000])
+                || (words[0] & 0xffff_0000 == 0x3d7e_0000 && words[1] & 0xffff_0000 == 0x816b_0000
+                    && words[2..] == [0x7d6903a6, 0x4e800420]) {
+                let start = section.address() + off as u64;
+                if let Some(end) = start.checked_add(16) { ranges.push((start, end)); }
+            }
+        }
+    }
+    ranges
+}

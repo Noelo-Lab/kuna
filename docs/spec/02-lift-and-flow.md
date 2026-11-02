@@ -23,6 +23,15 @@ reaches the architecture only through the
 live implementation is
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`.
 
+With `fdeinterior` enabled, canonical PowerPC `bcl 20,31` PC reads into the
+current function's accepted FDE body follow the taken edge while preserving
+the LR write. The inline literal after the instruction is not a return
+continuation. This avoids dropping the remaining body when its interior entry
+is suppressed. The destination must be forward, strictly inside that body,
+and not a known function; other calls retain their existing treatment.
+The recognition lives in
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppcpcread.rs (is_pc_capture)`.
+
 The A32 single-register `POP {pc}` alias (`ldr pc,[sp],#4`) lifts as a return,
 including its conditional forms. Its address mode still advances SP by four
 bytes and its PC write preserves interworking. Other PC loads retain their

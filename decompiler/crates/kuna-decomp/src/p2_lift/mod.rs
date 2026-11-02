@@ -61,3 +61,5 @@ pub mod kuna_gojumpchain;
 pub mod kuna_rustprobestack;
 
 pub(crate) mod kuna_highslice_guard;
+
+pub mod kuna_ppcpcread;

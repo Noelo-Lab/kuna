@@ -4856,6 +4856,16 @@ without `.eh_frame` FDEs, which covers essentially the whole bare-metal ARM
 population (they unwind through `.ARM.exidx`), so the ARM entry-recall options
 compose with it unchanged.
 
+Function starts, fixed-width FDE addresses/ranges and LSDA landing-pad fields
+use the same ELF byte order and native address width. A relative `pcBegin` applies its base; `pcRange` uses only the format,
+not the relative application. Truncated records cannot read into the next FDE.
+Shared linker FDEs over `.glink` or complete PPC32 PIC stub sequences in
+`.text` cannot suppress those callable stubs. Stub intervals are merged once
+and queried by binary search, avoiding a per-FDE scan of every stub.
+The accepted body intervals also reach flow recovery: suppressing an interior
+entry must leave its code reachable from the owning entry. PowerPC PC reads
+are handled there as described in the lift chapter.
+
 **(kuna) Except where a `.cold` fragment is entered more than once**
 (`coldentry`, default-**on**;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_coldentry.rs`). GCC's

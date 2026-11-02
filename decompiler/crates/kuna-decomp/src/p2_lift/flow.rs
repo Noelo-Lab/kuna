@@ -332,6 +332,9 @@ pub trait FlowEnvironment {
         Ok(None)
     }
 
+    /// A PC-capture transfer to an interior the loader assigned to this function.
+    fn is_ppc_pc_capture(&self, _fd: &Funcdata, _op: OpId) -> bool { false }
+
     /// (kuna) GH-8817: is `op` a V850 `jmp [reg]` CALLIND to reclassify as
     /// BRANCHIND? (C++ `kunaIsV850IndirectJmp`).
     ///
@@ -1442,7 +1445,15 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                     let destaddr = self.branch_in0_addr(curop);
                     let popret = !destaddr.is_constant()
                         && self.env.pops_return_address(&destaddr);
-                    if !destaddr.is_constant()
+                    if self.env.is_ppc_pc_capture(&self.data, curop) {
+                        self.data.op_set_opcode_code(curop, OpCode::CPUI_BRANCH);
+                        self.new_address(curop, &destaddr)?;
+                        if self.data.obank().get(curop).expect("pc capture").get_time() >= maxtime {
+                            self.delete_remaining_ops(cursor)?;
+                            cursor = None;
+                        }
+                        *startbasic = true;
+                    } else if !destaddr.is_constant()
                         && (popret || self.env.is_return_discarding_trampoline(&destaddr))
                     {
                         // (kuna calltrampoline / callpopret) The callee throws
