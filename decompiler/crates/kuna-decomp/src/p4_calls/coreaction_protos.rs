@@ -1851,6 +1851,7 @@ impl Action for ActionReturnRecovery {
             crate::p4_calls::kuna_x87emptyreturn::drop_empty(data, &mut active, &return_ops);
             let own_input = crate::kuna_retcallhalf::accept(data, &mut active, &return_ops);
             crate::p4_calls::kuna_callwide::retain_pair(data, &mut active, &return_ops);
+            crate::kuna_bejoin::keep_proven_pair(data, &mut active, &return_ops);
             let whole_pair = crate::kuna_retcallhalf::whole_pair(data, &active, &return_ops);
             if let Some(indices) = whole_pair {
                 for index in indices {
