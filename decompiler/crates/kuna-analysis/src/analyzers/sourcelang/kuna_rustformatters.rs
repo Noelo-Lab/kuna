@@ -8,6 +8,7 @@ pub struct FormatterMetadata {
     pub integers: BTreeMap<u64, kuna_decomp::kuna_rustfmtflags::Formatter>,
     pub strings: BTreeSet<u64>,
     pub writers: super::kuna_rustfmtwrite::WriterMetadata,
+    pub io_writers: BTreeMap<u64, kuna_decomp::kuna_rustfmtio::WriterProfile>,
 }
 
 pub fn primitive_display_formatters(bytes: &[u8]) -> BTreeMap<u64, &'static str> {
@@ -49,6 +50,7 @@ pub fn formatter_metadata(bytes: &[u8]) -> FormatterMetadata {
             }).collect();
     let strings = super::kuna_rustfmtstr::collect(&file, &symbols);
     let writers = super::kuna_rustfmtwrite::collect(&file, bytes, &symbols);
+    let io_writers = super::kuna_rustfmtio::collect(&file, bytes, &symbols);
     let integers = kuna_decomp::kuna_rustfmtflags::formatter_symbols(symbols);
-    FormatterMetadata { integers, strings, writers }
+    FormatterMetadata { integers, strings, writers, io_writers }
 }

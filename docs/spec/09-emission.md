@@ -4447,3 +4447,48 @@ need no cast. Other result sizes or types remain explicit. Descriptor stores,
 result uses, branches, prototypes and IR remain unchanged. Custom writers,
 unsupported callbacks and IO-error result layouts do not qualify. Disabling the
 option retains the runtime call, and C/Go output is unchanged.
+
+
+`rustfmtio` is off in every preset: the declared speed study did not clear the
+Go-control CPU and wall-time confidence bounds, despite median deltas below
+1.3 percent. When enabled, it recovers Stdout `write!` and `writeln!` expressions only for exact
+stable Rust 1.93.1 x86-64 little-endian linked ELF implementations. The loader
+proves the full `&Stdout` write_fmt body and all four formatting-adapter callback
+bodies. All nonrelative bytes, internal branches, external target roles and
+symbol aliases must agree. In particular, generic adapter callback names alone
+do not establish the writer: write_str and write_char must call the exact
+StdoutLock write_all identity. The forwarded write_fmt must use the same adapter
+table and core formatting function. The complete table, panic text and location,
+code and unwind stubs must be immutable and nonvolatile. Resolved whole-word
+relocations are applied before comparison; unresolved, overlapping or partial
+relocations in protected spans invalidate recovery. Import slots must have one
+exact unresolved binding with the expected identity and zero addend. Private
+RELRO evidence uses the same page boundary rule as String writes. The emitter
+rechecks every protected byte against its current loader image.
+
+The two verified method bodies distinguish a reference-cell receiver from an
+optimizer-promoted inner pointer, even when both have the same method name.
+Recovery borrows the original `&Stdout` cell or reconstructs a temporary Stdout
+handle from that same inner pointer. It evaluates the original receiver once
+and never substitutes a newly acquired stdout handle. The original direct call
+must have three runtime arguments and an eight-byte integer result. Existing
+literal, primitive, string and flag proofs establish the formatting inputs.
+
+A scoped `std::io::Write` import enables the macro. Matching its Result preserves
+zero for success; an error is consumed into its pointer representation, then
+converted through usize to the original signed or unsigned integer type. This
+preserves the owned error payload for surrounding result handling, without
+dropping it or reducing it to a Boolean. Descriptor setup, branches, prototypes
+and IR remain. Other writers, producer versions, dynamic formats, callback
+profiles and result layouts stay explicit. Disabling the option restores the
+runtime call, and C/Go emission is unchanged.
+
+An empty literal stays a runtime call. In the buffered broken-pipe regression,
+the Rust 1.93.1 producer reports an error for that call, while a recovered empty
+macro built with Rust 1.90.0 reports success. Rebuilding the original empty-call
+source shows the same compiler-version difference: original and macro agree
+within 1.90.0, 1.93.1 and 1.99.1. This is a standard-library-version boundary,
+not evidence that a same-version macro changes the result. Recovery refuses it
+because the supported older execution compiler does not preserve the producer's
+behavior. Six other recovered forms match across all three execution compilers;
+no broader compiler-version equivalence is inferred.

@@ -8185,7 +8185,7 @@ impl PrintC {
         arch: &Architecture,
         op: OpId,
         plan: super::kuna_rustfmtargs::Plan,
-        writer: Option<(VarnodeId, bool)>,
+        writer: Option<super::kuna_rustfmtargs::Writer>,
     ) {
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
         self.push_atom(&Atom::with_op(plan.name, TagType::OpToken,
@@ -8193,21 +8193,28 @@ impl PrintC {
         for _ in &plan.arguments {
             self.push_op(&tokens::COMMA, Some(op_key(op)));
         }
-        if let Some((writer, pointer_bridge)) = writer {
+        if let Some(writer) = writer {
             self.push_op(&tokens::COMMA, Some(op_key(op)));
-            self.push_op(&super::kuna_langrust::rust_tokens::ADDRESSOF_MUT, Some(op_key(op)));
-            self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
-            self.push_op(self.lang().tok_typecast, Some(op_key(op)));
-            if pointer_bridge {
-                self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+            match writer {
+                super::kuna_rustfmtargs::Writer::String { value: writer, pointer_bridge } => {
+                    self.push_op(&super::kuna_langrust::rust_tokens::ADDRESSOF_MUT, Some(op_key(op)));
+                    self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+                    self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+                    if pointer_bridge {
+                        self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+                    }
+                    self.push_vn_ir(fd, arch, writer, op);
+                    if pointer_bridge {
+                        self.push_atom(&Atom::syntax("*mut _", TagType::TypeToken,
+                            crate::printlanguage::SyntaxHighlight::type_color));
+                    }
+                    self.push_atom(&Atom::syntax("*mut std::string::String", TagType::TypeToken,
+                        crate::printlanguage::SyntaxHighlight::type_color));
+                }
+                super::kuna_rustfmtargs::Writer::Io(writer) => {
+                    super::kuna_rustfmtio::push_writer(self, fd, arch, op, writer);
+                }
             }
-            self.push_vn_ir(fd, arch, writer, op);
-            if pointer_bridge {
-                self.push_atom(&Atom::syntax("*mut _", TagType::TypeToken,
-                    crate::printlanguage::SyntaxHighlight::type_color));
-            }
-            self.push_atom(&Atom::syntax("*mut std::string::String", TagType::TypeToken,
-                crate::printlanguage::SyntaxHighlight::type_color));
         }
         self.push_atom(&Atom::syntax(plan.literal, TagType::Syntax,
             crate::printlanguage::SyntaxHighlight::const_color));
@@ -8263,6 +8270,21 @@ impl PrintC {
     /// (`getHiddenThisSlot`) is the C++ method-invocation hook (always -1 here —
     /// the C++ `int4 skip = -1;` for the direct case, no C++ method format yet).
     fn op_call_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_io {
+            if let Some(plan) = super::kuna_rustfmtio::recover(fd, arch, op) {
+                let result = if plan.signed_result {
+                    &super::kuna_rustfmtio::WITH_SIGNED_RESULT
+                } else {
+                    &super::kuna_rustfmtio::WITH_UNSIGNED_RESULT
+                };
+                self.push_op(result, Some(op_key(op)));
+                self.push_atom(&Atom::syntax("", TagType::BlankToken,
+                    crate::printlanguage::SyntaxHighlight::no_color));
+                self.push_rust_format_plan_with_writer(fd, arch, op, plan.format,
+                    Some(super::kuna_rustfmtargs::Writer::Io(plan.writer)));
+                return;
+            }
+        }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_write {
             if let Some(plan) = super::kuna_rustfmtwrite::recover(fd, arch, op) {
                 if plan.result_type.is_some() {
@@ -8274,7 +8296,7 @@ impl PrintC {
                 self.push_atom(&Atom::syntax("", TagType::BlankToken,
                     crate::printlanguage::SyntaxHighlight::no_color));
                 self.push_rust_format_plan_with_writer(fd, arch, op, plan.format,
-                    Some((plan.writer, plan.pointer_bridge)));
+                    Some(super::kuna_rustfmtargs::Writer::String { value: plan.writer, pointer_bridge: plan.pointer_bridge }));
                 self.push_atom(&Atom::syntax("is_err", TagType::Syntax,
                     crate::printlanguage::SyntaxHighlight::funcname_color));
                 self.push_atom(&Atom::syntax("", TagType::BlankToken,

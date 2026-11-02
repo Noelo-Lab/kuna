@@ -1,0 +1,34 @@
+{
+  "decided_at": "2026-11-02T04:22:52.715793+00:00",
+  "option": "rustfmtio",
+  "default": "off",
+  "presets": "off in every preset",
+  "reason": "The fixed enabled study could not establish the 5% CPU/wall budget on the Go control. Preserve the whole failed study, and do not repeat enabled sampling unchanged.",
+  "enabled_study": "/tmp/kuna-rust-io-ddd/timing-result.json",
+  "enabled_binary_sha256": "9b135d0758d7d5c13dc8fa2c22ce639902c9e29d6df84c2fae5735b1b81b7be4",
+  "failed_cases": {
+    "go-control": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 1.2754507669997528,
+          "wall_ms": 1.2197968801400894
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.024083665995977555,
+          "wall_ms": 0.005918040169827776
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 5.12271344336813,
+          "wall_ms": 5.388454756626192
+        },
+        "off_to_patched": {
+          "cpu_ms": 3.6765270524697247,
+          "wall_ms": 4.082940675325257
+        }
+      },
+      "speed_budget_passed": false
+    }
+  }
+}

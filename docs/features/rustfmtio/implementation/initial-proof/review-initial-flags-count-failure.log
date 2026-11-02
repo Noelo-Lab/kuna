@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/tmp/kuna-rust-io-proposal/review-initial.py", line 15, in <module>
+    for site in proof['changes']:verify_site(site,body,calls,memory,symbols)
+  File "<string>", line 189, in verify_site
+AssertionError

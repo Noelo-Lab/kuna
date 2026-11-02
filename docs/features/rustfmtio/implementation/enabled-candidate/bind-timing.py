@@ -1,0 +1,3 @@
+from pathlib import Path
+import json,subprocess,datetime
+w=Path('/tmp/kuna-rust-io-ddd');assert not(w/'timing-randomized-attempts').exists();receipt=json.loads((w/'reanchor.json').read_text());config=json.loads((w/'timing-cases.json').read_text());assert config['baseline_commit']=='BIND_REANCHOR_BEFORE_SAMPLING';assert subprocess.check_output(['git','rev-parse','HEAD'],cwd=config['base'],text=True).strip()==receipt['new_parent'];config['baseline_commit']=receipt['new_parent'];config['bound_at']=datetime.datetime.now(datetime.timezone.utc).isoformat();(w/'timing-cases.json').write_text(json.dumps(config,indent=2)+'\n');print('Bound clean timing parent',config['baseline_commit'])

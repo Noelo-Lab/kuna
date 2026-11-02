@@ -25,6 +25,11 @@ pub struct Plan {
     pub arguments: Vec<Argument>,
 }
 
+pub(crate) enum Writer {
+    String { value: VarnodeId, pointer_bridge: bool },
+    Io(super::kuna_rustfmtio::Writer),
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum MacroKind {
     Print(bool),

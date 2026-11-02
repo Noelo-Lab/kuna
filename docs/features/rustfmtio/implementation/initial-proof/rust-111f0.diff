@@ -1,0 +1,9 @@
+--- before/fmtdemo::write_out
++++ after/fmtdemo::write_out
+@@ -9,5 +9,5 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a1;
+-  return _std::io::stdio::Stdout::write_fmt(a0,0x6697 as *mut u16,&mut v2);
++  return ({ use std::io::Write as _; match writeln!(&mut std::mem::transmute::<*mut (), std::io::Stdout>((a0 as *mut _) as *mut ()),"v: {}",&*((v2 as *const _) as *const i64)) { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } });
+ }

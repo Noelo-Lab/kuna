@@ -1,0 +1,57 @@
+warning: unused import: `kuna_base::types::Wrap`
+  --> crates/kuna-sleigh/src/kuna_sharedbytes.rs:20:5
+   |
+20 | use kuna_base::types::Wrap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `kuna-sleigh` (lib) generated 1 warning
+warning: unused import: `crate::dtype::TypeFactory`
+  --> crates/kuna-decomp/src/p5_types/kuna_fatstr.rs:56:5
+   |
+56 | use crate::dtype::TypeFactory;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `kuna-decomp` (lib) generated 1 warning
+warning: unused import: `flags as tflags`
+  --> crates/kuna-analysis/src/analyzers/gotypes/mod.rs:73:26
+   |
+73 | use kuna_decomp::dtype::{flags as tflags, type_metatype, Datatype, TypeFactory, TypeField};
+   |                          ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `kuna-analysis` (lib) generated 1 warning (run `cargo fix --lib -p kuna-analysis` to apply 1 suggestion)
+   Compiling kuna-console v0.1.0 (/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-console)
+    Finished `release` profile [optimized] target(s) in 15.37s
+     Running tests/integration.rs (target/release/deps/integration-a4461d7fc26da47f)
+
+running 7 tests
+test verify_rustfmtio::unchanged_expressions_match_native_stdout_and_broken_pipe_results ... FAILED
+test verify_rustfmtio::promoted_receiver_uses_the_original_inner_pointer ... ok
+test verify_rustfmtio::stdout_recovery_obeys_underlying_format_options ... ok
+test verify_rustfmtio::dynamic_formats_and_other_writers_remain_explicit ... ok
+test verify_rustfmtio::stdout_formats_preserve_the_receiver_and_owned_result_word ... ok
+test verify_rustfmtio::direct_call_shape_nonnull_receiver_and_eight_byte_result_are_required ... ok
+test verify_rustfmtio::producer_language_and_current_image_evidence_are_required ... ok
+
+failures:
+
+---- verify_rustfmtio::unchanged_expressions_match_native_stdout_and_broken_pipe_results stdout ----
+
+thread 'verify_rustfmtio::unchanged_expressions_match_native_stdout_and_broken_pipe_results' panicked at crates/kuna-console/tests/verify_rustfmtio.rs:366:9:
+assertion `left == right` failed: broken pipe true
+  left: [102, 97, 108, 115, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 102, 97, 108, 115, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 102, 97, 108, 115, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 102, 97, 108, 115, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10]
+ right: [102, 97, 108, 115, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    verify_rustfmtio::unchanged_expressions_match_native_stdout_and_broken_pipe_results
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 732 filtered out; finished in 5.92s
+
+error: test failed, to rerun pass `-p kuna-console --test integration`

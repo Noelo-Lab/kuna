@@ -1,0 +1,65 @@
+warning: unused import: `kuna_base::types::Wrap`
+  --> crates/kuna-sleigh/src/kuna_sharedbytes.rs:20:5
+   |
+20 | use kuna_base::types::Wrap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `kuna-sleigh` (lib) generated 1 warning
+warning: unused import: `crate::dtype::TypeFactory`
+  --> crates/kuna-decomp/src/p5_types/kuna_fatstr.rs:56:5
+   |
+56 | use crate::dtype::TypeFactory;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `kuna-decomp` (lib) generated 1 warning
+warning: unused import: `flags as tflags`
+  --> crates/kuna-analysis/src/analyzers/gotypes/mod.rs:73:26
+   |
+73 | use kuna_decomp::dtype::{flags as tflags, type_metatype, Datatype, TypeFactory, TypeField};
+   |                          ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `kuna-analysis` (lib) generated 1 warning (run `cargo fix --lib -p kuna-analysis` to apply 1 suggestion)
+   Compiling kuna-console v0.1.0 (/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-console)
+    Finished `release` profile [optimized] target(s) in 17.32s
+     Running tests/integration.rs (target/release/deps/integration-a4461d7fc26da47f)
+
+running 7 tests
+test verify_rustfmtio::dynamic_formats_and_other_writers_remain_explicit ... ok
+test verify_rustfmtio::unchanged_expressions_match_native_stdout_and_broken_pipe_results ... FAILED
+test verify_rustfmtio::promoted_receiver_uses_the_original_inner_pointer ... ok
+test verify_rustfmtio::stdout_recovery_obeys_underlying_format_options ... ok
+test verify_rustfmtio::direct_call_shape_nonnull_receiver_and_eight_byte_result_are_required ... FAILED
+test verify_rustfmtio::stdout_formats_preserve_the_receiver_and_owned_result_word ... ok
+test verify_rustfmtio::producer_language_and_current_image_evidence_are_required ... ok
+
+failures:
+
+---- verify_rustfmtio::unchanged_expressions_match_native_stdout_and_broken_pipe_results stdout ----
+
+thread 'verify_rustfmtio::unchanged_expressions_match_native_stdout_and_broken_pipe_results' panicked at crates/kuna-console/tests/verify_rustfmtio.rs:352:9:
+assertion `left == right` failed: broken pipe true
+  left: [102, 97, 108, 115, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 102, 97, 108, 115, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 102, 97, 108, 115, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 102, 97, 108, 115, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10]
+ right: [102, 97, 108, 115, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10, 116, 114, 117, 101, 10]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- verify_rustfmtio::direct_call_shape_nonnull_receiver_and_eight_byte_result_are_required stdout ----
+
+thread 'verify_rustfmtio::direct_call_shape_nonnull_receiver_and_eight_byte_result_are_required' panicked at crates/kuna-console/tests/verify_rustfmtio.rs:217:9:
+assertion `left == right` failed: mutation 5
+  left: "\n\n#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn write_unsigned(mut a0: u64, mut a1: u32) -> u64\n{\n  let mut v1: u32; // esi | stack - 0x14\n  let mut v2: *mut u32; // rax | stack - 0x10\n  let mut v3: *mut *const (); // stack - 0x8\n  \n  v2 = &mut v1;\n  v3 = fmt;\n  v1 = a1;\n  return (*Fspec0000000000010071)(a0,0x5ea8,&mut v2);\n}\n"
+ right: "\n\n#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn write_unsigned(mut a0: u64, mut a1: u32) -> u64\n{\n  let mut v1: u32; // esi | stack - 0x14\n  let mut v2: *mut u32; // rax | stack - 0x10\n  let mut v3: *mut *const (); // stack - 0x8\n  \n  v2 = &mut v1;\n  v3 = fmt;\n  v1 = a1;\n  return (*Fspec0000000000010077)(a0,0x5ea8,&mut v2);\n}\n"
+
+
+failures:
+    verify_rustfmtio::direct_call_shape_nonnull_receiver_and_eight_byte_result_are_required
+    verify_rustfmtio::unchanged_expressions_match_native_stdout_and_broken_pipe_results
+
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 732 filtered out; finished in 6.35s
+
+error: test failed, to rerun pass `-p kuna-console --test integration`

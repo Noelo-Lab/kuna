@@ -1,0 +1,12 @@
+{
+  "time": "2026-11-02T04:26:00.513130+00:00",
+  "saved_files": [
+    "decompiler/crates/kuna-decomp/src/infra/architecture.rs",
+    "decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json",
+    "docs/options.md",
+    "docs/spec/09-emission.md"
+  ],
+  "enabled_candidate_binary_sha256": "9b135d0758d7d5c13dc8fa2c22ce639902c9e29d6df84c2fae5735b1b81b7be4"
+}

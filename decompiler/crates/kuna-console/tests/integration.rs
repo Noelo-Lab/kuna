@@ -503,3 +503,5 @@ mod verify_rustsigned;
 mod verify_rustfmtstr;
 #[path = "verify_rustfmtwrite.rs"]
 mod verify_rustfmtwrite;
+#[path = "verify_rustfmtio.rs"]
+mod verify_rustfmtio;

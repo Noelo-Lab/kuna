@@ -1,0 +1,23 @@
+{
+  "initial_cli_sha256": "42c88e1fc70ff4c9ce6118fef6015883c40a9174a1ef9dd6cf3e9cb3aa185c8b",
+  "parent_cli_sha256": "ebff674185bf38266bea0adc10afda33a0bba10a699f09be32a1ab9b09e9a923",
+  "changed_functions": 11,
+  "original_fixture_source_native_comparisons": 91881,
+  "independently_reconstructed_reference_oracle_comparisons": 7128,
+  "unchanged_expressions_compile_and_execute": 11,
+  "instruction_mapping_losses": 10,
+  "mapping_loss_classification": "Only descriptor-address LEAs into RDX within replaced call lines.",
+  "initial_semantic_review_complete": true,
+  "final_integrated_binary_requires_fresh_equivalence": true,
+  "evidence_sha256": {
+    "initial-captures.json": "2452533c7c91329133f5cfe4458b264197c61e594cf08dcda7c020f7d87f1615",
+    "initial-image-proofs.json": "df63a3dfd27b731cbee06c2aa076dbae7db6bbc3fcd78cd19c626e673029894a",
+    "mapping-review.json": "f52ba01053602942330b0e72312c943d7fa3914e75206b255d650e7bc5be740e",
+    "native-execution.json": "1798d28fd17a87bdd4f7c8aabc80acbd0d4ad3408881542043ddee8e5962598f",
+    "promoted-native-execution.json": "535383a710ff2fd45d826de30a00a63ea7ab71531164138ab3ed6313c5d52b90",
+    "type-audit.json": "efb0d9da76733ffafc92a224eb7853274d5458db8efdd3bbe66189d9458c6fad",
+    "unsupported-producer-controls.json": "6431bead9d2a62868ce353c8cfa4c1fa51c3b8937d5af8647a4f23845823036a",
+    "empty-crossversion.json": "072ed86666b896adb812d729540a45b8419f926281232776a11687b87331b100",
+    "stage-ablation.json": "f18a6a3a5e68680fab703b6811cd65f88810d5a99169b04064b54439b678a3de"
+  }
+}

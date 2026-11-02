@@ -1,0 +1,60 @@
+<!--
+  Upstream: angr tests/analyses/decompiler/test_rust_decompiler.py,
+  TestRustFormatMacrosTemplateLayout::test_format_macros (write_out).
+  P9 / stdout-writer-format; P0 assertion: option rustfmtio off|on.
+  The first write remains a runtime call with recovery off. Six supported
+  forms become write!/writeln! with recovery on; empty and dynamic forms
+  stay explicit. Recovery remains opt-in in every preset.
+-->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_io_x86_64</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>option setlanguage rust-language</com>
+  <com>option rustfmtio off</com>
+  <com>load function write_unsigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option rustfmtio on</com>
+  <com>print C</com>
+  <com>load function write_signed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function write_flags</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function write_literal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function write_empty</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function write_string</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function write_pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function write_dynamic</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="off empty and dynamic formatting preserve runtime writes" min="3" max="3">Stdout::write_fmt\(</stringmatch>
+<stringmatch name="all six writes use a scoped trait import" min="6" max="6">use std::io::Write as _;</stringmatch>
+<stringmatch name="all six writes preserve the owned error word" min="6" max="6">std::mem::transmute::&lt;std::io::Error, \*mut \(\)&gt;</stringmatch>
+<stringmatch name="unsigned stdout write" min="1" max="1">write!\(.*"\[\{\}\]".*\*const u32</stringmatch>
+<stringmatch name="signed newline stdout write" min="1" max="1">writeln!\(.*"\{\}".*\*const i64</stringmatch>
+<stringmatch name="static flags and repeated indices" min="1" max="1">writeln!\(.*"\{:#010x\}/\{:·&gt;12\}"</stringmatch>
+<stringmatch name="literal braces Unicode NUL and extra newline" min="1" max="1">writeln!\(.*"\{\{é🙂\}\}\\0\\n"</stringmatch>
+<stringmatch name="empty output preserves the opaque call and error behavior" min="1" max="1">Stdout::write_fmt\(a0,1,1\)</stringmatch>
+<stringmatch name="string fill width and precision" min="1" max="1">write!\(.*"\|\{:🦀\^10.3\}\|".*from_utf8_unchecked</stringmatch>
+<stringmatch name="mixed arguments retain their order" min="1" max="1">write!\(.*"\{\}: \{\}".*\*const u32.*from_utf8_unchecked</stringmatch>
+<stringmatch name="all six writes preserve the reference-cell receiver" min="6" max="6">\*mut &amp;std::io::Stdout</stringmatch>
+<stringmatch name="success preserves the zero result word" min="6" max="6">std::result::Result::Ok\(\(\)\) =&gt; 0u64</stringmatch>
+</decompilertest>

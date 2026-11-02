@@ -1,0 +1,56 @@
+[
+  {
+    "file": "catalog.log.gz",
+    "raw_file": "catalog.log",
+    "raw_sha256": "7852f1712deaef86097ab707621d739a18eec75b56acd8d719751595f4978daa",
+    "raw_bytes": 58
+  },
+  {
+    "file": "counters.log.gz",
+    "raw_file": "counters.log",
+    "raw_sha256": "7222b1dfb9b4211912251b83051fd49d6547f1e980003d71fb96f10b2ca6a06b",
+    "raw_bytes": 664
+  },
+  {
+    "file": "lint.log.gz",
+    "raw_file": "lint.log",
+    "raw_sha256": "0814cc5de8f443ee0e3b8ddd057ef80b6d71e2a9e62013e8098953026799d90b",
+    "raw_bytes": 1834
+  },
+  {
+    "file": "original.log.gz",
+    "raw_file": "original.log",
+    "raw_sha256": "3d70f06f33e911b81016c3fba72d0c8cf6d797a161269d2b80a6547e35dba6cd",
+    "raw_bytes": 244
+  },
+  {
+    "file": "spec.log.gz",
+    "raw_file": "spec.log",
+    "raw_sha256": "0dfd24a06eda0df8ce630a8095669c7c13654db38a1906c31430a9f9ab5bc36c",
+    "raw_bytes": 57
+  },
+  {
+    "file": "stages.log.gz",
+    "raw_file": "stages.log",
+    "raw_sha256": "2d930918cc3fb51fa793b6c76148ae9b3f074f9beb82a941d9ec18e3b916c5c0",
+    "raw_bytes": 286
+  },
+  {
+    "file": "tools.log.gz",
+    "raw_file": "tools.log",
+    "raw_sha256": "d0da2f46ac72105547a9492e3b5405d65b2bf840efba5a101297937fd849ee5d",
+    "raw_bytes": 521
+  },
+  {
+    "file": "validate.log.gz",
+    "raw_file": "validate.log",
+    "raw_sha256": "631756b5bf55f805e4d2addb36cd32cfab5968b0c3015a0e5f6388b282114626",
+    "raw_bytes": 408
+  },
+  {
+    "file": "workspace-final.log.gz",
+    "raw_file": "workspace-final.log",
+    "raw_sha256": "ff6c1eae107b39b2f332645a65348d7c688bd6afc17085628b3d63adeaee76b6",
+    "raw_bytes": 872891
+  }
+]

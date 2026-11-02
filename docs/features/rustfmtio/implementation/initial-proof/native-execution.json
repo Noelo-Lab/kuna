@@ -1,0 +1,125 @@
+{
+  "native_producer": "1.93.1",
+  "texts": 156,
+  "u32_values": 263,
+  "i64_values": 264,
+  "mixed_u32_values": 9,
+  "buffering_sequences": 3,
+  "stream_modes": 3,
+  "total_comparisons": 63477,
+  "sites": [
+    {
+      "name": "write_unsigned",
+      "expression": "({ use std::io::Write as _; match write!(&mut *((a0 as *mut _) as *mut &std::io::Stdout),\"[{}]\",&*((v2 as *const _) as *const u32)) { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } })",
+      "bindings": "let a0=out as *mut &std::io::Stdout as *mut u64;let v2=&value as *const u32;",
+      "unchanged_emitted_expression": true
+    },
+    {
+      "name": "write_signed",
+      "expression": "({ use std::io::Write as _; match writeln!(&mut *((a0 as *mut _) as *mut &std::io::Stdout),\"{}\",&*((v2 as *const _) as *const i64)) { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } })",
+      "bindings": "let a0=out as *mut &std::io::Stdout as *mut u64;let v2=&value as *const i64;",
+      "unchanged_emitted_expression": true
+    },
+    {
+      "name": "write_flags",
+      "expression": "({ use std::io::Write as _; match writeln!(&mut *((a0 as *mut _) as *mut &std::io::Stdout),\"{:#010x}/{:\u00b7>12}\",&*((v2 as *const _) as *const u32),&*((v4 as *const _) as *const u32)) { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } })",
+      "bindings": "let a0=out as *mut &std::io::Stdout as *mut u64;let v2=&value as *const u32;let v4=&value as *const u32;",
+      "unchanged_emitted_expression": true
+    },
+    {
+      "name": "write_literal",
+      "expression": "({ use std::io::Write as _; match writeln!(&mut *((a0 as *mut _) as *mut &std::io::Stdout),\"{{\u00e9\ud83d\ude42}}\\0\\n\") { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } })",
+      "bindings": "let a0=out as *mut &std::io::Stdout as *mut u64;",
+      "unchanged_emitted_expression": true
+    },
+    {
+      "name": "write_string",
+      "expression": "({ use std::io::Write as _; match write!(&mut *((a0 as *mut _) as *mut &std::io::Stdout),\"|{:\ud83e\udd80^10.3}|\",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v3 as usize))) { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } })",
+      "bindings": "let a0=out as *mut &std::io::Stdout as *mut u64;let v1=text.as_ptr() as u64;let v3=text.len() as u64;",
+      "unchanged_emitted_expression": true
+    },
+    {
+      "name": "write_pair",
+      "expression": "({ use std::io::Write as _; match write!(&mut *((a0 as *mut _) as *mut &std::io::Stdout),\"{}: {}\",&*((v3 as *const _) as *const u32),std::str::from_utf8_unchecked(std::slice::from_raw_parts(v2 as *const u8,v4 as usize))) { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } })",
+      "bindings": "let a0=out as *mut &std::io::Stdout as *mut u64;let v3=&value as *const u32;let v2=text.as_ptr() as u64;let v4=text.len() as u64;",
+      "unchanged_emitted_expression": true
+    }
+  ],
+  "results": [
+    {
+      "compiler": "1.90.0",
+      "mode": "pipe",
+      "calls": 7053,
+      "stdout_sha256": "11b29e22c24ecbcaaab064e40f559a1bd315f2f7d6354be2472e889e33e223ee",
+      "stderr_sha256": "b0b3a6009c442b370ad475f94cd3d40a87cf0a128d0db91cb450b49521af7746",
+      "original_output_bytes_and_owned_result_words_match": true
+    },
+    {
+      "compiler": "1.90.0",
+      "mode": "broken-pipe",
+      "calls": 7053,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "28b843d2c875201f1671796817e6f918e67c7f319b486b2468835a8f4e862b2a",
+      "original_output_bytes_and_owned_result_words_match": true
+    },
+    {
+      "compiler": "1.90.0",
+      "mode": "device-full",
+      "calls": 7053,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "eaa6d5f1ab46dba12030a93e1f36dd117a41877231f9c78e6f1d2cb50142c352",
+      "original_output_bytes_and_owned_result_words_match": true
+    },
+    {
+      "compiler": "1.93.1",
+      "mode": "pipe",
+      "calls": 7053,
+      "stdout_sha256": "11b29e22c24ecbcaaab064e40f559a1bd315f2f7d6354be2472e889e33e223ee",
+      "stderr_sha256": "b0b3a6009c442b370ad475f94cd3d40a87cf0a128d0db91cb450b49521af7746",
+      "original_output_bytes_and_owned_result_words_match": true
+    },
+    {
+      "compiler": "1.93.1",
+      "mode": "broken-pipe",
+      "calls": 7053,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "28b843d2c875201f1671796817e6f918e67c7f319b486b2468835a8f4e862b2a",
+      "original_output_bytes_and_owned_result_words_match": true
+    },
+    {
+      "compiler": "1.93.1",
+      "mode": "device-full",
+      "calls": 7053,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "eaa6d5f1ab46dba12030a93e1f36dd117a41877231f9c78e6f1d2cb50142c352",
+      "original_output_bytes_and_owned_result_words_match": true
+    },
+    {
+      "compiler": "1.99.1",
+      "mode": "pipe",
+      "calls": 7053,
+      "stdout_sha256": "11b29e22c24ecbcaaab064e40f559a1bd315f2f7d6354be2472e889e33e223ee",
+      "stderr_sha256": "b0b3a6009c442b370ad475f94cd3d40a87cf0a128d0db91cb450b49521af7746",
+      "original_output_bytes_and_owned_result_words_match": true
+    },
+    {
+      "compiler": "1.99.1",
+      "mode": "broken-pipe",
+      "calls": 7053,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "28b843d2c875201f1671796817e6f918e67c7f319b486b2468835a8f4e862b2a",
+      "original_output_bytes_and_owned_result_words_match": true
+    },
+    {
+      "compiler": "1.99.1",
+      "mode": "device-full",
+      "calls": 7053,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "eaa6d5f1ab46dba12030a93e1f36dd117a41877231f9c78e6f1d2cb50142c352",
+      "original_output_bytes_and_owned_result_words_match": true
+    }
+  ],
+  "explicit_typed_input_bindings": true,
+  "complete_function_recompilation_claimed": false,
+  "scope": "Six recovered reference-cell fixture expressions. Empty calls remain explicit and are tested separately by exact on/off equality; their source is not recompiled into this execution sequence. Promoted-receiver and reference-image expressions require their separate review."
+}

@@ -8898,6 +8898,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "rustfmtio"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P9"
+subphase = "stdout-writer-format"
+strength = "HARD"
+rewind = "P9"
+issue = "angr-rust-io-format"
+summary = "Recover write!/writeln! for exact Rust 1.93.1 x86-64 ELF Stdout writer bodies and adapter callbacks. Preserve the original reference-cell or promoted-inner receiver and the owned eight-byte I/O result. Require complete immutable byte profiles, all symbol aliases, relocation roles and supported static formatting descriptors. Empty literals, unknown writers, producer layouts and result shapes remain explicit."
+use_when = "Off by default because the declared speed study did not clear the Go-control CPU and wall-time confidence bounds. Enable to expose verified Stdout formatting while preserving its original receiver and error word. A scoped io::Write import and Result match keep success zero and consume the original Error into its pointer representation. Literal calls require rustfmtliteral; argument calls require rustfmtargs and their formatter options."
+example = "option rustfmtio on"
+source_decompiler = "angr"
+inspiration = "angr test_rust_decompiler.py::TestRustFormatMacrosTemplateLayout::test_format_macros write_out and FormatMacroSimplifier Stdout write_fmt consumer"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "Rust Stdout writes remain opaque runtime write_fmt calls|stdout write! errors lose their owned result representation"
+live_field = "rust_fmt_io"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "outlang"
 values = "c|rust|go"
 default = "c"

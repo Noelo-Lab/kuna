@@ -528,6 +528,8 @@ Three tiers:
 | format! with mixed integer and string arguments remains format_inner | [`rustfmtstr`](#rustfmtstr) |
 | Rust String writes remain opaque core::fmt::write calls | [`rustfmtwrite`](#rustfmtwrite) |
 | write! formatting arguments remain stack descriptors and vtable addresses | [`rustfmtwrite`](#rustfmtwrite) |
+| Rust Stdout writes remain opaque runtime write_fmt calls | [`rustfmtio`](#rustfmtio) |
+| stdout write! errors lose their owned result representation | [`rustfmtio`](#rustfmtio) |
 | Go output language is unavailable | [`outlang`](#outlang) |
 | Go functions retain C declarations and control-flow syntax | [`outlang`](#outlang) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
@@ -2597,6 +2599,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Off by default because the declared speed study did not clear the small-C wall-time confidence bound. Enable to expose proven String mutation through Rust write! macros. Literal calls also require rustfmtliteral; argument calls require rustfmtargs and their formatter options. The scoped fmt::Write import and byte-result bridge preserve the known String writer contract without changing function prototypes.
 - **Where / provenance:** P9/string-writer-format · angr · opt-in-tool · angr-rust-write-format
 - **Example:** `option rustfmtwrite on`
+
+### `rustfmtio` -- on | off, default `off`
+
+- **Symptoms:** Rust Stdout writes remain opaque runtime write_fmt calls; stdout write! errors lose their owned result representation.
+- **What it does:** Recover write!/writeln! for exact Rust 1.93.1 x86-64 ELF Stdout writer bodies and adapter callbacks. Preserve the original reference-cell or promoted-inner receiver and the owned eight-byte I/O result. Require complete immutable byte profiles, all symbol aliases, relocation roles and supported static formatting descriptors. Empty literals, unknown writers, producer layouts and result shapes remain explicit.
+- **When to flip:** Off by default because the declared speed study did not clear the Go-control CPU and wall-time confidence bounds. Enable to expose verified Stdout formatting while preserving its original receiver and error word. A scoped io::Write import and Result match keep success zero and consume the original Error into its pointer representation. Literal calls require rustfmtliteral; argument calls require rustfmtargs and their formatter options.
+- **Where / provenance:** P9/stdout-writer-format · angr · opt-in-tool · angr-rust-io-format
+- **Example:** `option rustfmtio on`
 
 ### `outlang` -- c | rust | go, default `c`
 

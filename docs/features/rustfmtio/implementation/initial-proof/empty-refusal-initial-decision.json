@@ -1,0 +1,13 @@
+{
+  "reason": "Actual native broken-pipe comparison: opaque empty formatting reports an error after buffered output, while write!(writer, \"\") can return success. Refuse empty literal recovery; keep original empty function in native sequence as a refusal control.",
+  "production_files_changed": [
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtio.rs",
+    "decompiler/crates/kuna-console/tests/verify_rustfmtio.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "docs/spec/09-emission.md",
+    "tests/stages/ghangr-rustfmtio.xml"
+  ],
+  "initial_binary_sha256": "455bd8a388705e88b97cb5f297bfb4c25c0f010834ee95779f8336435bfd017f",
+  "failed_log": "console-focused-api-fixed.log",
+  "test_indirect_call_fix": "Use the original concrete target address for CALLIND instead of the per-session Fspec handle; no output normalization."
+}

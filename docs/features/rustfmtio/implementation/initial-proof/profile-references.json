@@ -1,0 +1,538 @@
+[
+  {
+    "layout": "ReferenceCell",
+    "binary_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+    "fields": [
+      {
+        "offset": 73,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x516a8",
+        "exact_symbols": [
+          "std::thread::id::ThreadId::new::COUNTER"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 99,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x516a8",
+        "exact_symbols": [
+          "std::thread::id::ThreadId::new::COUNTER"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 175,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x4ec10",
+        "exact_symbols": [],
+        "relocation": null,
+        "target_bytes_64": "00000000000000001000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000"
+      },
+      {
+        "offset": 190,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x116c0",
+        "exact_symbols": [
+          "core::fmt::write"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 314,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x4fa88",
+        "exact_symbols": [],
+        "relocation": {
+          "kind": "R_X86_64_GLOB_DAT",
+          "symbol": "free@GLIBC_2.2.5",
+          "source": "000000000004fa88  0000000600000006 R_X86_64_GLOB_DAT      0000000000000000 free@GLIBC_2.2.5 + 0"
+        }
+      },
+      {
+        "offset": 323,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x4fa88",
+        "exact_symbols": [],
+        "relocation": {
+          "kind": "R_X86_64_GLOB_DAT",
+          "symbol": "free@GLIBC_2.2.5",
+          "source": "000000000004fa88  0000000600000006 R_X86_64_GLOB_DAT      0000000000000000 free@GLIBC_2.2.5 + 0"
+        }
+      },
+      {
+        "offset": 330,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x475e0",
+        "exact_symbols": [
+          "std::thread::id::ThreadId::new::exhausted"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 335,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x14b40",
+        "exact_symbols": [
+          "core::option::expect_failed"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 344,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x1f7f0",
+        "exact_symbols": [
+          "std::sys::sync::mutex::futex::Mutex::lock_contended"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 356,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x806d",
+        "exact_symbols": [],
+        "relocation": null,
+        "target_bytes_64": "6120666f726d617474696e6720747261697420696d706c656d656e746174696f6e2072657475726e656420616e206572726f72207768656e2074686520756e64"
+      },
+      {
+        "offset": 363,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x4ebc8",
+        "exact_symbols": [],
+        "relocation": null,
+        "target_bytes_64": "00000000000000001900000000000000880200001100000000000000000000001000000000000000080000000000000000000000000000000000000000000000"
+      },
+      {
+        "offset": 373,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x12780",
+        "exact_symbols": [
+          "core::panicking::panic_fmt"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 405,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x4fa98",
+        "exact_symbols": [],
+        "relocation": {
+          "kind": "R_X86_64_GLOB_DAT",
+          "symbol": "syscall@GLIBC_2.2.5",
+          "source": "000000000004fa98  0000000900000006 R_X86_64_GLOB_DAT      0000000000000000 syscall@GLIBC_2.2.5 + 0"
+        }
+      },
+      {
+        "offset": 433,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x4fa88",
+        "exact_symbols": [],
+        "relocation": {
+          "kind": "R_X86_64_GLOB_DAT",
+          "symbol": "free@GLIBC_2.2.5",
+          "source": "000000000004fa88  0000000600000006 R_X86_64_GLOB_DAT      0000000000000000 free@GLIBC_2.2.5 + 0"
+        }
+      },
+      {
+        "offset": 442,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x4fa88",
+        "exact_symbols": [],
+        "relocation": {
+          "kind": "R_X86_64_GLOB_DAT",
+          "symbol": "free@GLIBC_2.2.5",
+          "source": "000000000004fa88  0000000600000006 R_X86_64_GLOB_DAT      0000000000000000 free@GLIBC_2.2.5 + 0"
+        }
+      },
+      {
+        "offset": 451,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x47710",
+        "exact_symbols": [
+          "core::ptr::drop_in_place<std::io::stdio::StderrLock>"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 459,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x4cfc0",
+        "exact_symbols": [],
+        "relocation": null,
+        "target_bytes": "ff25a22c00006801000000e9d0ffffff",
+        "plt_got": "0x4fc68",
+        "plt_relocation": {
+          "kind": "R_X86_64_JUMP_SLOT",
+          "symbol": "_Unwind_Resume@GCC_3.0",
+          "source": "000000000004fc68  0000000700000007 R_X86_64_JUMP_SLOT     0000000000000000 _Unwind_Resume@GCC_3.0 + 0"
+        }
+      },
+      {
+        "offset": 476,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x1f620",
+        "exact_symbols": [
+          "core::ptr::drop_in_place<std::io::error::Error>"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 485,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x47710",
+        "exact_symbols": [
+          "core::ptr::drop_in_place<std::io::stdio::StderrLock>"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 493,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x4cfc0",
+        "exact_symbols": [],
+        "relocation": null,
+        "target_bytes": "ff25a22c00006801000000e9d0ffffff",
+        "plt_got": "0x4fc68",
+        "plt_relocation": {
+          "kind": "R_X86_64_JUMP_SLOT",
+          "symbol": "_Unwind_Resume@GCC_3.0",
+          "source": "000000000004fc68  0000000700000007 R_X86_64_JUMP_SLOT     0000000000000000 _Unwind_Resume@GCC_3.0 + 0"
+        }
+      },
+      {
+        "offset": 498,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x14c73",
+        "exact_symbols": [
+          "core::panicking::panic_in_cleanup"
+        ],
+        "relocation": null
+      }
+    ],
+    "adapter_table": {
+      "address": "0x4ec10",
+      "words": [
+        "0x46540",
+        "0x10",
+        "0x8",
+        "0x48280",
+        "0x48330",
+        "0x48470"
+      ],
+      "names": [
+        [
+          "core::ptr::drop_in_place<std::io::default_write_fmt::Adapter<std::io::cursor::Cursor<&mut [u8]>>>"
+        ],
+        [],
+        [
+          "std::panicking::panic_count::LOCAL_PANIC_COUNT::{{constant}}::{{closure}}::__RUST_STD_INTERNAL_VAL"
+        ],
+        [
+          "<std::io::default_write_fmt::Adapter<T> as core::fmt::Write>::write_str"
+        ],
+        [
+          "core::fmt::Write::write_char"
+        ],
+        [
+          "core::fmt::Write::write_fmt"
+        ]
+      ]
+    },
+    "panic_location": {
+      "address": "0x4ebc8",
+      "file": "library/std/src/io/mod.rs",
+      "line": 648,
+      "column": 17
+    }
+  },
+  {
+    "layout": "PromotedInner",
+    "binary_sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+    "fields": [
+      {
+        "offset": 65,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x51a28",
+        "exact_symbols": [
+          "std::thread::id::ThreadId::new::COUNTER"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 99,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x51a28",
+        "exact_symbols": [
+          "std::thread::id::ThreadId::new::COUNTER"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 173,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x4f070",
+        "exact_symbols": [],
+        "relocation": null,
+        "target_bytes_64": "00000000000000001000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000"
+      },
+      {
+        "offset": 188,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x123c0",
+        "exact_symbols": [
+          "core::fmt::write"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 312,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x4fe18",
+        "exact_symbols": [],
+        "relocation": {
+          "kind": "R_X86_64_GLOB_DAT",
+          "symbol": "free@GLIBC_2.2.5",
+          "source": "000000000004fe18  0000000600000006 R_X86_64_GLOB_DAT      0000000000000000 free@GLIBC_2.2.5 + 0"
+        }
+      },
+      {
+        "offset": 321,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x4fe18",
+        "exact_symbols": [],
+        "relocation": {
+          "kind": "R_X86_64_GLOB_DAT",
+          "symbol": "free@GLIBC_2.2.5",
+          "source": "000000000004fe18  0000000600000006 R_X86_64_GLOB_DAT      0000000000000000 free@GLIBC_2.2.5 + 0"
+        }
+      },
+      {
+        "offset": 328,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x480b0",
+        "exact_symbols": [
+          "std::thread::id::ThreadId::new::exhausted"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 333,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x15870",
+        "exact_symbols": [
+          "core::option::expect_failed"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 348,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x20620",
+        "exact_symbols": [
+          "std::sys::sync::mutex::futex::Mutex::lock_contended"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 363,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x7fcc",
+        "exact_symbols": [],
+        "relocation": null,
+        "target_bytes_64": "6120666f726d617474696e6720747261697420696d706c656d656e746174696f6e2072657475726e656420616e206572726f72207768656e2074686520756e64"
+      },
+      {
+        "offset": 370,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x4f028",
+        "exact_symbols": [],
+        "relocation": null,
+        "target_bytes_64": "00000000000000001900000000000000880200001100000000000000000000001000000000000000080000000000000000000000000000000000000000000000"
+      },
+      {
+        "offset": 380,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x13480",
+        "exact_symbols": [
+          "core::panicking::panic_fmt"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 412,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x4fe40",
+        "exact_symbols": [],
+        "relocation": {
+          "kind": "R_X86_64_GLOB_DAT",
+          "symbol": "syscall@GLIBC_2.2.5",
+          "source": "000000000004fe40  0000000b00000006 R_X86_64_GLOB_DAT      0000000000000000 syscall@GLIBC_2.2.5 + 0"
+        }
+      },
+      {
+        "offset": 440,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x4fe18",
+        "exact_symbols": [],
+        "relocation": {
+          "kind": "R_X86_64_GLOB_DAT",
+          "symbol": "free@GLIBC_2.2.5",
+          "source": "000000000004fe18  0000000600000006 R_X86_64_GLOB_DAT      0000000000000000 free@GLIBC_2.2.5 + 0"
+        }
+      },
+      {
+        "offset": 449,
+        "size": 4,
+        "kind": "rip_relative",
+        "target": "0x4fe18",
+        "exact_symbols": [],
+        "relocation": {
+          "kind": "R_X86_64_GLOB_DAT",
+          "symbol": "free@GLIBC_2.2.5",
+          "source": "000000000004fe18  0000000600000006 R_X86_64_GLOB_DAT      0000000000000000 free@GLIBC_2.2.5 + 0"
+        }
+      },
+      {
+        "offset": 458,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x481e0",
+        "exact_symbols": [
+          "core::ptr::drop_in_place<std::io::stdio::StderrLock>"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 466,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x4d320",
+        "exact_symbols": [],
+        "relocation": null,
+        "target_bytes": "ff25ba2c00006801000000e9d0ffffff",
+        "plt_got": "0x4ffe0",
+        "plt_relocation": {
+          "kind": "R_X86_64_JUMP_SLOT",
+          "symbol": "_Unwind_Resume@GCC_3.0",
+          "source": "000000000004ffe0  0000000c00000007 R_X86_64_JUMP_SLOT     0000000000000000 _Unwind_Resume@GCC_3.0 + 0"
+        }
+      },
+      {
+        "offset": 483,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x20450",
+        "exact_symbols": [
+          "core::ptr::drop_in_place<std::io::error::Error>"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 492,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x481e0",
+        "exact_symbols": [
+          "core::ptr::drop_in_place<std::io::stdio::StderrLock>"
+        ],
+        "relocation": null
+      },
+      {
+        "offset": 500,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x4d320",
+        "exact_symbols": [],
+        "relocation": null,
+        "target_bytes": "ff25ba2c00006801000000e9d0ffffff",
+        "plt_got": "0x4ffe0",
+        "plt_relocation": {
+          "kind": "R_X86_64_JUMP_SLOT",
+          "symbol": "_Unwind_Resume@GCC_3.0",
+          "source": "000000000004ffe0  0000000c00000007 R_X86_64_JUMP_SLOT     0000000000000000 _Unwind_Resume@GCC_3.0 + 0"
+        }
+      },
+      {
+        "offset": 505,
+        "size": 4,
+        "kind": "external_branch",
+        "target": "0x159a3",
+        "exact_symbols": [
+          "core::panicking::panic_in_cleanup"
+        ],
+        "relocation": null
+      }
+    ],
+    "adapter_table": {
+      "address": "0x4f070",
+      "words": [
+        "0x470d0",
+        "0x10",
+        "0x8",
+        "0x48f40",
+        "0x48ff0",
+        "0x49130"
+      ],
+      "names": [
+        [
+          "core::ptr::drop_in_place<std::io::default_write_fmt::Adapter<std::io::cursor::Cursor<&mut [u8]>>>"
+        ],
+        [],
+        [
+          "std::panicking::panic_count::LOCAL_PANIC_COUNT::{{constant}}::{{closure}}::__RUST_STD_INTERNAL_VAL"
+        ],
+        [
+          "<std::io::default_write_fmt::Adapter<T> as core::fmt::Write>::write_str"
+        ],
+        [
+          "core::fmt::Write::write_char"
+        ],
+        [
+          "core::fmt::Write::write_fmt"
+        ]
+      ]
+    },
+    "panic_location": {
+      "address": "0x4f028",
+      "file": "library/std/src/io/mod.rs",
+      "line": 648,
+      "column": 17
+    }
+  }
+]

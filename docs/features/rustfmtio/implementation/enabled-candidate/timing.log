@@ -1,0 +1,96 @@
+scalar-c completed rounds 48
+scalar-c completed rounds 96
+scalar-c completed rounds 144
+io-reference completed rounds 48
+scalar-c completed rounds 192
+rust-large-control completed rounds 48
+scalar-c completed rounds 240
+string-optin-control completed rounds 48
+io-promoted completed rounds 48
+io-string completed rounds 48
+io-literal completed rounds 48
+io-primitive completed rounds 48
+scalar-c completed rounds 288
+go-control completed rounds 48
+io-reference completed rounds 96
+scalar-c completed rounds 336
+scalar-c completed rounds 384
+scalar-c sampling complete
+rust-large-control completed rounds 96
+io-reference completed rounds 144
+string-optin-control completed rounds 96
+io-promoted completed rounds 96
+io-literal completed rounds 96
+io-string completed rounds 96
+io-primitive completed rounds 96
+go-control completed rounds 96
+io-reference completed rounds 192
+rust-large-control completed rounds 144
+io-promoted completed rounds 144
+string-optin-control completed rounds 144
+io-reference completed rounds 240
+io-literal completed rounds 144
+io-primitive completed rounds 144
+io-string completed rounds 144
+rust-large-control completed rounds 192
+go-control completed rounds 144
+io-reference completed rounds 288
+io-promoted completed rounds 192
+string-optin-control completed rounds 192
+io-literal completed rounds 192
+io-primitive completed rounds 192
+io-string completed rounds 192
+io-reference completed rounds 336
+rust-large-control completed rounds 240
+go-control completed rounds 192
+io-reference completed rounds 384
+io-reference sampling complete
+io-promoted completed rounds 240
+string-optin-control completed rounds 240
+io-literal completed rounds 240
+io-primitive completed rounds 240
+io-string completed rounds 240
+rust-large-control completed rounds 288
+go-control completed rounds 240
+rust-large-control completed rounds 336
+io-promoted completed rounds 288
+string-optin-control completed rounds 288
+io-literal completed rounds 288
+io-primitive completed rounds 288
+io-string completed rounds 288
+rust-large-control completed rounds 384
+rust-large-control sampling complete
+go-control completed rounds 288
+io-promoted completed rounds 336
+string-optin-control completed rounds 336
+io-literal completed rounds 336
+io-primitive completed rounds 336
+io-string completed rounds 336
+io-promoted completed rounds 384
+io-promoted sampling complete
+string-optin-control completed rounds 384
+string-optin-control sampling complete
+go-control completed rounds 336
+io-literal completed rounds 384
+io-literal sampling complete
+io-primitive completed rounds 384
+io-primitive sampling complete
+io-string completed rounds 384
+io-string sampling complete
+go-control completed rounds 384
+go-control sampling complete
+FINAL BOUNDS scalar-c {'baseline_to_patched': {'cpu_ms': 0.19934696682488706, 'wall_ms': 0.24016438473686286}, 'off_to_patched': {'cpu_ms': 0.11872697212056416, 'wall_ms': 0.1312295830333543}} {'baseline_to_patched': {'cpu_ms': 0.7138410145015572, 'wall_ms': 0.7099342693578143}, 'off_to_patched': {'cpu_ms': 0.4579646659282115, 'wall_ms': 0.4698736754751084}} True
+FINAL BOUNDS go-control {'baseline_to_patched': {'cpu_ms': 1.2754507669997528, 'wall_ms': 1.2197968801400894}, 'off_to_patched': {'cpu_ms': 0.024083665995977555, 'wall_ms': 0.005918040169827776}} {'baseline_to_patched': {'cpu_ms': 5.12271344336813, 'wall_ms': 5.388454756626192}, 'off_to_patched': {'cpu_ms': 3.6765270524697247, 'wall_ms': 4.082940675325257}} False
+FINAL BOUNDS rust-large-control {'baseline_to_patched': {'cpu_ms': 0.39573537465540376, 'wall_ms': 0.4038169810804293}, 'off_to_patched': {'cpu_ms': -0.05919164939861554, 'wall_ms': -0.057768489695086966}} {'baseline_to_patched': {'cpu_ms': 0.6717158744081385, 'wall_ms': 0.6170403328733401}, 'off_to_patched': {'cpu_ms': 0.16396346562558872, 'wall_ms': 0.12714873516022532}} True
+FINAL BOUNDS io-primitive {'baseline_to_patched': {'cpu_ms': 0.8269243857643716, 'wall_ms': 0.832471763204512}, 'off_to_patched': {'cpu_ms': 0.053748765323735626, 'wall_ms': 0.056245882343231024}} {'baseline_to_patched': {'cpu_ms': 1.1378773555098622, 'wall_ms': 3.2117700254705297}, 'off_to_patched': {'cpu_ms': 0.2692478111167298, 'wall_ms': 2.20787056034088}} True
+FINAL BOUNDS io-literal {'baseline_to_patched': {'cpu_ms': 0.9762146554364692, 'wall_ms': 0.9768675884755273}, 'off_to_patched': {'cpu_ms': 0.08845311280327728, 'wall_ms': 0.07284731277414913}} {'baseline_to_patched': {'cpu_ms': 1.1029103016331414, 'wall_ms': 1.5990595596228367}, 'off_to_patched': {'cpu_ms': 0.17657920439664307, 'wall_ms': 1.424120308096079}} True
+FINAL BOUNDS io-string {'baseline_to_patched': {'cpu_ms': 0.7239845344640505, 'wall_ms': 0.7296059424442003}, 'off_to_patched': {'cpu_ms': 0.04924174244849144, 'wall_ms': 0.04689678808302844}} {'baseline_to_patched': {'cpu_ms': 1.0252803102205383, 'wall_ms': 0.9738878403384974}, 'off_to_patched': {'cpu_ms': 0.22895698957384708, 'wall_ms': 0.16209633967460185}} True
+FINAL BOUNDS io-promoted {'baseline_to_patched': {'cpu_ms': 0.7188446939658366, 'wall_ms': 0.6831950048739488}, 'off_to_patched': {'cpu_ms': -0.08690683225093254, 'wall_ms': -0.07979012598317015}} {'baseline_to_patched': {'cpu_ms': 1.1649014341668469, 'wall_ms': 1.1123677336694653}, 'off_to_patched': {'cpu_ms': 0.3851317795730399, 'wall_ms': 0.40754116636042464}} True
+FINAL BOUNDS io-reference {'baseline_to_patched': {'cpu_ms': 1.0502931563310725, 'wall_ms': 1.0873305242887543}, 'off_to_patched': {'cpu_ms': 0.03366525822752209, 'wall_ms': 0.06450286763974855}} {'baseline_to_patched': {'cpu_ms': 1.2038147691353822, 'wall_ms': 1.204417613222216}, 'off_to_patched': {'cpu_ms': 0.18630439716964495, 'wall_ms': 0.18832088897325552}} True
+FINAL BOUNDS string-optin-control {'baseline_to_patched': {'cpu_ms': 0.7585306025690519, 'wall_ms': 0.7661166607514147}, 'off_to_patched': {'cpu_ms': 0.0980632275223714, 'wall_ms': 0.07074488063298912}} {'baseline_to_patched': {'cpu_ms': 1.2829318369037472, 'wall_ms': 1.0881067220793095}, 'off_to_patched': {'cpu_ms': 0.4614032520464037, 'wall_ms': 0.7141769912399627}} True
+Traceback (most recent call last):
+  File "/tmp/kuna-rust-io-ddd/timing.py", line 69, in <module>
+    if __name__=='__main__':main()
+  File "/tmp/kuna-rust-io-ddd/timing.py", line 67, in main
+    assert accepted,'Default-on speed criterion unresolved; retain samples and keep the feature opt-in, with no unchanged-code repeat.'
+AssertionError: Default-on speed criterion unresolved; retain samples and keep the feature opt-in, with no unchanged-code repeat.

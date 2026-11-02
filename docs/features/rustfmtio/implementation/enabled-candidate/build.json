@@ -1,0 +1,12 @@
+{
+  "parent_commit": "b7745023f25688558babc621414b0d8f30332616",
+  "parent_has_pending_main_merge": true,
+  "parent_cli_sha256": "0fdc402c5cd45cbef01ada818305714c15bbd4691d105cba6e275cb4df70b341",
+  "new_cli_sha256": "9b135d0758d7d5c13dc8fa2c22ce639902c9e29d6df84c2fae5735b1b81b7be4",
+  "catalog_count": 369,
+  "live_count": 175,
+  "stage_assertions": [
+    3563,
+    3563
+  ]
+}

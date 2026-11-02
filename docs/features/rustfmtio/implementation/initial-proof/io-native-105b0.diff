@@ -1,0 +1,9 @@
+--- before/write_literal
++++ after/write_literal
+@@ -1,5 +1,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn write_literal(mut a0: *mut u64) -> i64
+ {
+-  return _std::io::stdio::Stdout::write_fmt(a0,0x6e3a as *mut u16,0x17); // tail-call
++  return ({ use std::io::Write as _; match writeln!(&mut *((a0 as *mut _) as *mut &std::io::Stdout),"{{é🙂}}\0\n") { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } }); // tail-call
+ }

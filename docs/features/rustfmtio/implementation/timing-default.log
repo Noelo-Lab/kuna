@@ -1,0 +1,75 @@
+VALIDATION COMPLETE; STARTING DECLARED DEFAULT-OFF STUDY
+scalar-c completed rounds 48
+scalar-c completed rounds 96
+scalar-c completed rounds 144
+scalar-c completed rounds 192
+rust-large-control completed rounds 48
+scalar-c completed rounds 240
+io-primitive completed rounds 48
+scalar-c completed rounds 288
+go-control completed rounds 48
+scalar-c completed rounds 336
+scalar-c completed rounds 384
+scalar-c completed rounds 432
+rust-large-control completed rounds 96
+scalar-c completed rounds 480
+io-primitive completed rounds 96
+scalar-c completed rounds 528
+scalar-c completed rounds 576
+go-control completed rounds 96
+scalar-c completed rounds 624
+rust-large-control completed rounds 144
+scalar-c completed rounds 672
+scalar-c completed rounds 720
+io-primitive completed rounds 144
+scalar-c completed rounds 768
+go-control completed rounds 144
+rust-large-control completed rounds 192
+io-primitive completed rounds 192
+rust-large-control completed rounds 240
+go-control completed rounds 192
+io-primitive completed rounds 240
+rust-large-control completed rounds 288
+go-control completed rounds 240
+io-primitive completed rounds 288
+rust-large-control completed rounds 336
+go-control completed rounds 288
+rust-large-control completed rounds 384
+io-primitive completed rounds 336
+rust-large-control completed rounds 432
+go-control completed rounds 336
+io-primitive completed rounds 384
+rust-large-control completed rounds 480
+io-primitive completed rounds 432
+go-control completed rounds 384
+rust-large-control completed rounds 528
+io-primitive completed rounds 480
+go-control completed rounds 432
+rust-large-control completed rounds 576
+io-primitive completed rounds 528
+rust-large-control completed rounds 624
+go-control completed rounds 480
+io-primitive completed rounds 576
+rust-large-control completed rounds 672
+go-control completed rounds 528
+io-primitive completed rounds 624
+rust-large-control completed rounds 720
+go-control completed rounds 576
+rust-large-control completed rounds 768
+io-primitive completed rounds 672
+go-control completed rounds 624
+io-primitive completed rounds 720
+go-control completed rounds 672
+io-primitive completed rounds 768
+go-control completed rounds 720
+go-control completed rounds 768
+FINAL DEFAULT BOUNDS scalar-c {'cpu_ms': 0.6349997507870242, 'wall_ms': 0.6262066035601643} {'cpu_ms': 0.7127419305188225, 'wall_ms': 5.722220577773627} False
+FINAL DEFAULT BOUNDS io-primitive {'cpu_ms': 1.4513740852652335, 'wall_ms': 1.5530426102711603} {'cpu_ms': 1.6819513616387163, 'wall_ms': 2.9416804373412373} True
+FINAL DEFAULT BOUNDS rust-large-control {'cpu_ms': 1.2940679407718259, 'wall_ms': 1.3989325854021573} {'cpu_ms': 1.3632430228072383, 'wall_ms': 2.685240102943048} True
+FINAL DEFAULT BOUNDS go-control {'cpu_ms': 1.7802672856308321, 'wall_ms': 1.8162470972723055} {'cpu_ms': 2.052988993786553, 'wall_ms': 3.3290988367942824} True
+Traceback (most recent call last):
+  File "/tmp/kuna-rust-io-optin/timing-default.py", line 95, in <module>
+    if __name__=='__main__':main()
+  File "/tmp/kuna-rust-io-optin/timing-default.py", line 93, in main
+    assert result['all_default_comparisons_passed'],'Fresh default-off comparison unresolved; no unchanged-code repeat.'
+AssertionError: Fresh default-off comparison unresolved; no unchanged-code repeat.

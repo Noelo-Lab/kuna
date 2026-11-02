@@ -1,0 +1,406 @@
+{
+  "records": [
+    {
+      "fixture": "native",
+      "function": "write_flags",
+      "address": "0x10560",
+      "function_and_variable_metadata_unchanged": true,
+      "call_lines": [
+        15
+      ],
+      "lost_instruction_mappings": [
+        {
+          "address": "0x10596",
+          "bytes": "488d542408",
+          "mnemonic": "lea",
+          "operands": "rdx, [rsp + 8]",
+          "classification": "Descriptor-address LEA into RDX on the replaced call line; no memory read/write or flag effect."
+        }
+      ],
+      "variable_mapping_changes": [
+        {
+          "name": "param_1",
+          "added_addresses": [],
+          "lost_addresses": [
+            66966
+          ]
+        },
+        {
+          "name": "v2",
+          "added_addresses": [
+            66980
+          ],
+          "lost_addresses": []
+        },
+        {
+          "name": "v4",
+          "added_addresses": [
+            66980
+          ],
+          "lost_addresses": []
+        }
+      ],
+      "hunks": 1
+    },
+    {
+      "fixture": "native",
+      "function": "write_literal",
+      "address": "0x105b0",
+      "function_and_variable_metadata_unchanged": true,
+      "call_lines": [
+        4
+      ],
+      "lost_instruction_mappings": [],
+      "variable_mapping_changes": [],
+      "hunks": 1
+    },
+    {
+      "fixture": "native",
+      "function": "write_pair",
+      "address": "0x105d0",
+      "function_and_variable_metadata_unchanged": true,
+      "call_lines": [
+        19
+      ],
+      "lost_instruction_mappings": [
+        {
+          "address": "0x10615",
+          "bytes": "488d542418",
+          "mnemonic": "lea",
+          "operands": "rdx, [rsp + 0x18]",
+          "classification": "Descriptor-address LEA into RDX on the replaced call line; no memory read/write or flag effect."
+        }
+      ],
+      "variable_mapping_changes": [
+        {
+          "name": "param_1",
+          "added_addresses": [],
+          "lost_addresses": [
+            67093
+          ]
+        },
+        {
+          "name": "v2",
+          "added_addresses": [
+            67107
+          ],
+          "lost_addresses": []
+        },
+        {
+          "name": "v4",
+          "added_addresses": [
+            67107
+          ],
+          "lost_addresses": []
+        },
+        {
+          "name": "v3",
+          "added_addresses": [
+            67098,
+            67107
+          ],
+          "lost_addresses": []
+        }
+      ],
+      "hunks": 1
+    },
+    {
+      "fixture": "native",
+      "function": "write_signed",
+      "address": "0x10630",
+      "function_and_variable_metadata_unchanged": true,
+      "call_lines": [
+        11
+      ],
+      "lost_instruction_mappings": [
+        {
+          "address": "0x10653",
+          "bytes": "488d542408",
+          "mnemonic": "lea",
+          "operands": "rdx, [rsp + 8]",
+          "classification": "Descriptor-address LEA into RDX on the replaced call line; no memory read/write or flag effect."
+        }
+      ],
+      "variable_mapping_changes": [
+        {
+          "name": "param_1",
+          "added_addresses": [],
+          "lost_addresses": [
+            67155
+          ]
+        },
+        {
+          "name": "v2",
+          "added_addresses": [
+            67160,
+            67169
+          ],
+          "lost_addresses": []
+        }
+      ],
+      "hunks": 1
+    },
+    {
+      "fixture": "native",
+      "function": "write_string",
+      "address": "0x10670",
+      "function_and_variable_metadata_unchanged": true,
+      "call_lines": [
+        13
+      ],
+      "lost_instruction_mappings": [
+        {
+          "address": "0x1069b",
+          "bytes": "488d542418",
+          "mnemonic": "lea",
+          "operands": "rdx, [rsp + 0x18]",
+          "classification": "Descriptor-address LEA into RDX on the replaced call line; no memory read/write or flag effect."
+        }
+      ],
+      "variable_mapping_changes": [
+        {
+          "name": "param_1",
+          "added_addresses": [],
+          "lost_addresses": [
+            67227
+          ]
+        },
+        {
+          "name": "v1",
+          "added_addresses": [
+            67241
+          ],
+          "lost_addresses": []
+        },
+        {
+          "name": "v3",
+          "added_addresses": [
+            67241
+          ],
+          "lost_addresses": []
+        }
+      ],
+      "hunks": 1
+    },
+    {
+      "fixture": "native",
+      "function": "write_unsigned",
+      "address": "0x106f0",
+      "function_and_variable_metadata_unchanged": true,
+      "call_lines": [
+        11
+      ],
+      "lost_instruction_mappings": [
+        {
+          "address": "0x10715",
+          "bytes": "488d542408",
+          "mnemonic": "lea",
+          "operands": "rdx, [rsp + 8]",
+          "classification": "Descriptor-address LEA into RDX on the replaced call line; no memory read/write or flag effect."
+        }
+      ],
+      "variable_mapping_changes": [
+        {
+          "name": "param_1",
+          "added_addresses": [],
+          "lost_addresses": [
+            67349
+          ]
+        },
+        {
+          "name": "v2",
+          "added_addresses": [
+            67354,
+            67363
+          ],
+          "lost_addresses": []
+        }
+      ],
+      "hunks": 1
+    },
+    {
+      "fixture": "promoted",
+      "function": "write_binary",
+      "address": "0xfc50",
+      "function_and_variable_metadata_unchanged": true,
+      "call_lines": [
+        13
+      ],
+      "lost_instruction_mappings": [
+        {
+          "address": "0xfc7b",
+          "bytes": "488d542408",
+          "mnemonic": "lea",
+          "operands": "rdx, [rsp + 8]",
+          "classification": "Descriptor-address LEA into RDX on the replaced call line; no memory read/write or flag effect."
+        }
+      ],
+      "variable_mapping_changes": [
+        {
+          "name": "v3",
+          "added_addresses": [
+            64640,
+            64649
+          ],
+          "lost_addresses": []
+        },
+        {
+          "name": "v1",
+          "added_addresses": [],
+          "lost_addresses": [
+            64635
+          ]
+        }
+      ],
+      "hunks": 1
+    },
+    {
+      "fixture": "promoted",
+      "function": "write_debug",
+      "address": "0xfc90",
+      "function_and_variable_metadata_unchanged": true,
+      "call_lines": [
+        13
+      ],
+      "lost_instruction_mappings": [
+        {
+          "address": "0xfcbb",
+          "bytes": "488d542408",
+          "mnemonic": "lea",
+          "operands": "rdx, [rsp + 8]",
+          "classification": "Descriptor-address LEA into RDX on the replaced call line; no memory read/write or flag effect."
+        }
+      ],
+      "variable_mapping_changes": [
+        {
+          "name": "v3",
+          "added_addresses": [
+            64704,
+            64713
+          ],
+          "lost_addresses": []
+        },
+        {
+          "name": "v1",
+          "added_addresses": [],
+          "lost_addresses": [
+            64699
+          ]
+        }
+      ],
+      "hunks": 1
+    },
+    {
+      "fixture": "promoted",
+      "function": "write_hex",
+      "address": "0xfcd0",
+      "function_and_variable_metadata_unchanged": true,
+      "call_lines": [
+        13
+      ],
+      "lost_instruction_mappings": [
+        {
+          "address": "0xfcfb",
+          "bytes": "488d542408",
+          "mnemonic": "lea",
+          "operands": "rdx, [rsp + 8]",
+          "classification": "Descriptor-address LEA into RDX on the replaced call line; no memory read/write or flag effect."
+        }
+      ],
+      "variable_mapping_changes": [
+        {
+          "name": "v3",
+          "added_addresses": [
+            64768,
+            64777
+          ],
+          "lost_addresses": []
+        },
+        {
+          "name": "v1",
+          "added_addresses": [],
+          "lost_addresses": [
+            64763
+          ]
+        }
+      ],
+      "hunks": 1
+    },
+    {
+      "fixture": "promoted",
+      "function": "write_value",
+      "address": "0xfd10",
+      "function_and_variable_metadata_unchanged": true,
+      "call_lines": [
+        13
+      ],
+      "lost_instruction_mappings": [
+        {
+          "address": "0xfd3b",
+          "bytes": "488d542408",
+          "mnemonic": "lea",
+          "operands": "rdx, [rsp + 8]",
+          "classification": "Descriptor-address LEA into RDX on the replaced call line; no memory read/write or flag effect."
+        }
+      ],
+      "variable_mapping_changes": [
+        {
+          "name": "v3",
+          "added_addresses": [
+            64832,
+            64841
+          ],
+          "lost_addresses": []
+        },
+        {
+          "name": "v1",
+          "added_addresses": [],
+          "lost_addresses": [
+            64827
+          ]
+        }
+      ],
+      "hunks": 1
+    },
+    {
+      "fixture": "reference",
+      "function": "fmtdemo::write_out",
+      "address": "0x111f0",
+      "function_and_variable_metadata_unchanged": true,
+      "call_lines": [
+        12
+      ],
+      "lost_instruction_mappings": [
+        {
+          "address": "0x11213",
+          "bytes": "488d542408",
+          "mnemonic": "lea",
+          "operands": "rdx, [rsp + 8]",
+          "classification": "Descriptor-address LEA into RDX on the replaced call line; no memory read/write or flag effect."
+        }
+      ],
+      "variable_mapping_changes": [
+        {
+          "name": "param_1",
+          "added_addresses": [],
+          "lost_addresses": [
+            70163
+          ]
+        },
+        {
+          "name": "v2",
+          "added_addresses": [
+            70168,
+            70177
+          ],
+          "lost_addresses": []
+        }
+      ],
+      "hunks": 1
+    }
+  ],
+  "changed_functions": 11,
+  "lost_instruction_mappings": 10,
+  "hunks": 11,
+  "all_metadata_and_mapping_changes_classified": true
+}

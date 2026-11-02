@@ -1,0 +1,123 @@
+{
+  "sites": [
+    {
+      "fixture": "promoted",
+      "function": "write_binary",
+      "expression": "({ use std::io::Write as _; match write!(&mut std::mem::transmute::<*mut (), std::io::Stdout>((v1 as *mut _) as *mut ()),\"{:#b}\",&*((v3 as *const _) as *const u32)) { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } })",
+      "bindings": "let v1=std::mem::transmute_copy::<std::io::Stdout,*mut ()>(&**out) as *mut i64;let v3=&value as *const u32;",
+      "unchanged_emitted_expression": true,
+      "writer_binding_basis": "Original Stdout inner pointer from the independently verified promoted-receiver profile."
+    },
+    {
+      "fixture": "promoted",
+      "function": "write_debug",
+      "expression": "({ use std::io::Write as _; match write!(&mut std::mem::transmute::<*mut (), std::io::Stdout>((v1 as *mut _) as *mut ()),\"{:?}\",&*((v3 as *const _) as *const u32)) { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } })",
+      "bindings": "let v1=std::mem::transmute_copy::<std::io::Stdout,*mut ()>(&**out) as *mut i64;let v3=&value as *const u32;",
+      "unchanged_emitted_expression": true,
+      "writer_binding_basis": "Original Stdout inner pointer from the independently verified promoted-receiver profile."
+    },
+    {
+      "fixture": "promoted",
+      "function": "write_hex",
+      "expression": "({ use std::io::Write as _; match write!(&mut std::mem::transmute::<*mut (), std::io::Stdout>((v1 as *mut _) as *mut ()),\"{:#x}\",&*((v3 as *const _) as *const u32)) { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } })",
+      "bindings": "let v1=std::mem::transmute_copy::<std::io::Stdout,*mut ()>(&**out) as *mut i64;let v3=&value as *const u32;",
+      "unchanged_emitted_expression": true,
+      "writer_binding_basis": "Original Stdout inner pointer from the independently verified promoted-receiver profile."
+    },
+    {
+      "fixture": "promoted",
+      "function": "write_value",
+      "expression": "({ use std::io::Write as _; match writeln!(&mut std::mem::transmute::<*mut (), std::io::Stdout>((v1 as *mut _) as *mut ()),\"v: {}\",&*((v3 as *const _) as *const u32)) { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } })",
+      "bindings": "let v1=std::mem::transmute_copy::<std::io::Stdout,*mut ()>(&**out) as *mut i64;let v3=&value as *const u32;",
+      "unchanged_emitted_expression": true,
+      "writer_binding_basis": "Original Stdout inner pointer from the independently verified promoted-receiver profile."
+    },
+    {
+      "fixture": "reference",
+      "function": "reference_write_out",
+      "expression": "({ use std::io::Write as _; match writeln!(&mut std::mem::transmute::<*mut (), std::io::Stdout>((a0 as *mut _) as *mut ()),\"v: {}\",&*((v2 as *const _) as *const i64)) { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } })",
+      "bindings": "let a0=std::mem::transmute_copy::<std::io::Stdout,*mut ()>(&**out) as *mut i64;let v2=&value as *const i64;",
+      "unchanged_emitted_expression": true,
+      "writer_binding_basis": "Original Stdout inner pointer from the independently verified promoted-receiver profile."
+    }
+  ],
+  "results": [
+    {
+      "compiler": "1.90.0",
+      "mode": "pipe",
+      "calls": 3948,
+      "output_bytes_and_owned_result_words_match": true,
+      "stdout_sha256": "e28fce92694910afb6e22c136618cf6f3aac3238ee81f284141716945f067acd",
+      "stderr_sha256": "c1dad7817d8ddc73a5a08d0d1915313e6a0ded37e617b7fa85224111ad87b0fd"
+    },
+    {
+      "compiler": "1.90.0",
+      "mode": "broken-pipe",
+      "calls": 3948,
+      "output_bytes_and_owned_result_words_match": true,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "d88245a59564b5bb0fa2674149061d379230e9067a0aaa703813db095bd7f847"
+    },
+    {
+      "compiler": "1.90.0",
+      "mode": "device-full",
+      "calls": 3948,
+      "output_bytes_and_owned_result_words_match": true,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "d86a00e54be0f0acae832de72734d88252d1cc790ab87a017da103c1d5405cb3"
+    },
+    {
+      "compiler": "1.93.1",
+      "mode": "pipe",
+      "calls": 3948,
+      "output_bytes_and_owned_result_words_match": true,
+      "stdout_sha256": "e28fce92694910afb6e22c136618cf6f3aac3238ee81f284141716945f067acd",
+      "stderr_sha256": "c1dad7817d8ddc73a5a08d0d1915313e6a0ded37e617b7fa85224111ad87b0fd"
+    },
+    {
+      "compiler": "1.93.1",
+      "mode": "broken-pipe",
+      "calls": 3948,
+      "output_bytes_and_owned_result_words_match": true,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "d88245a59564b5bb0fa2674149061d379230e9067a0aaa703813db095bd7f847"
+    },
+    {
+      "compiler": "1.93.1",
+      "mode": "device-full",
+      "calls": 3948,
+      "output_bytes_and_owned_result_words_match": true,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "d86a00e54be0f0acae832de72734d88252d1cc790ab87a017da103c1d5405cb3"
+    },
+    {
+      "compiler": "1.99.1",
+      "mode": "pipe",
+      "calls": 3948,
+      "output_bytes_and_owned_result_words_match": true,
+      "stdout_sha256": "e28fce92694910afb6e22c136618cf6f3aac3238ee81f284141716945f067acd",
+      "stderr_sha256": "c1dad7817d8ddc73a5a08d0d1915313e6a0ded37e617b7fa85224111ad87b0fd"
+    },
+    {
+      "compiler": "1.99.1",
+      "mode": "broken-pipe",
+      "calls": 3948,
+      "output_bytes_and_owned_result_words_match": true,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "d88245a59564b5bb0fa2674149061d379230e9067a0aaa703813db095bd7f847"
+    },
+    {
+      "compiler": "1.99.1",
+      "mode": "device-full",
+      "calls": 3948,
+      "output_bytes_and_owned_result_words_match": true,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "d86a00e54be0f0acae832de72734d88252d1cc790ab87a017da103c1d5405cb3"
+    }
+  ],
+  "total_comparisons": 35532,
+  "original_fixture_function_comparisons": 28404,
+  "reference_oracle_comparisons": 7128,
+  "reference_oracle_scope": "The reference oracle is reconstructed from the independently decoded i64 Display descriptor, newline and verified Stdout method; it is not execution of the original reference executable. Four promoted-fixture oracles use their original Rust function source.",
+  "complete_function_recompilation_claimed": false
+}

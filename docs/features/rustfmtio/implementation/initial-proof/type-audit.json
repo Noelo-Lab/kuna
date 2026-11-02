@@ -1,0 +1,301 @@
+{
+  "summary": {
+    "before": {
+      "functions_with_diagnostics": 2,
+      "diagnostics": 2,
+      "compiles": 0
+    },
+    "after": {
+      "functions_with_diagnostics": 2,
+      "diagnostics": 2,
+      "compiles": 1
+    },
+    "newly_diagnosed_functions": [],
+    "previously_compiling_now_failing": []
+  },
+  "records": [
+    {
+      "fixture": "native",
+      "address": "0x10560",
+      "name": "write_flags",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "native",
+      "address": "0x105b0",
+      "name": "write_literal",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "native",
+      "address": "0x105d0",
+      "name": "write_pair",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "native",
+      "address": "0x10630",
+      "name": "write_signed",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 8,
+                "line_end": 8,
+                "column_start": 8,
+                "column_end": 15,
+                "label": "expected `*mut u8`, found `&mut u64`",
+                "text": [
+                  {
+                    "text": "  v2 = &mut v1;",
+                    "highlight_start": 8,
+                    "highlight_end": 15
+                  }
+                ]
+              },
+              {
+                "line_start": 5,
+                "line_end": 5,
+                "column_start": 15,
+                "column_end": 22,
+                "label": "expected due to this type",
+                "text": [
+                  {
+                    "text": "  let mut v2: *mut u8; // rax | rsp | stack - 0x10",
+                    "highlight_start": 15,
+                    "highlight_end": 22
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 8,
+                "line_end": 8,
+                "column_start": 8,
+                "column_end": 15,
+                "label": "expected `*mut u8`, found `&mut u64`",
+                "text": [
+                  {
+                    "text": "  v2 = &mut v1;",
+                    "highlight_start": 8,
+                    "highlight_end": 15
+                  }
+                ]
+              },
+              {
+                "line_start": 5,
+                "line_end": 5,
+                "column_start": 15,
+                "column_end": 22,
+                "label": "expected due to this type",
+                "text": [
+                  {
+                    "text": "  let mut v2: *mut u8; // rax | rsp | stack - 0x10",
+                    "highlight_start": 15,
+                    "highlight_end": 22
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fixture": "native",
+      "address": "0x10670",
+      "name": "write_string",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "native",
+      "address": "0x106f0",
+      "name": "write_unsigned",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "promoted",
+      "address": "0xfc50",
+      "name": "write_binary",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "promoted",
+      "address": "0xfc90",
+      "name": "write_debug",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "promoted",
+      "address": "0xfcd0",
+      "name": "write_hex",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "promoted",
+      "address": "0xfd10",
+      "name": "write_value",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "reference",
+      "address": "0x111f0",
+      "name": "fmtdemo::write_out",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 9,
+                "line_end": 9,
+                "column_start": 8,
+                "column_end": 15,
+                "label": "expected `*mut u8`, found `&mut u64`",
+                "text": [
+                  {
+                    "text": "  v2 = &mut v1;",
+                    "highlight_start": 8,
+                    "highlight_end": 15
+                  }
+                ]
+              },
+              {
+                "line_start": 6,
+                "line_end": 6,
+                "column_start": 15,
+                "column_end": 22,
+                "label": "expected due to this type",
+                "text": [
+                  {
+                    "text": "  let mut v2: *mut u8; // rax | rsp | stack - 0x10",
+                    "highlight_start": 15,
+                    "highlight_end": 22
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 9,
+                "line_end": 9,
+                "column_start": 8,
+                "column_end": 15,
+                "label": "expected `*mut u8`, found `&mut u64`",
+                "text": [
+                  {
+                    "text": "  v2 = &mut v1;",
+                    "highlight_start": 8,
+                    "highlight_end": 15
+                  }
+                ]
+              },
+              {
+                "line_start": 6,
+                "line_end": 6,
+                "column_start": 15,
+                "column_end": 22,
+                "label": "expected due to this type",
+                "text": [
+                  {
+                    "text": "  let mut v2: *mut u8; // rax | rsp | stack - 0x10",
+                    "highlight_start": 15,
+                    "highlight_end": 22
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
