@@ -2623,6 +2623,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "highsliceguard"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P2"
+subphase = "switch-model"
+strength = "HARD"
+rewind = "P2"
+issue = "angr-amd64-single-block-jumptable"
+summary = "Match a logical right shift to the complete high-byte slice of the same SSA input, so a narrow comparison can bound the full-width jump-table index. Both offsets must be constant and byte-aligned, the slice must reach the input's high end, and the shift must retain the input's width. Arithmetic shifts, interior slices and unrelated inputs are rejected; existing signed, unsigned and wrapping range intersections retain their value sets."
+use_when = "Off in every preset. Enable when a narrow comparison after a logical right shift bounds a table but it renders as a computed call or reports too many branches. The exact guard identity recovers the missing switch without a non-zero-mask assumption. Measured enabled recovery added 10.8% median CPU and 11.2% median wall time on the pinned upstream walk_dir case, exceeding the 5% default speed budget; the original 675 datatest assertions were unchanged."
+example = "option highsliceguard on"
+source_decompiler = "angr"
+inspiration = "test_decompiling_amd64_single_block_jumptable; complete high-byte slice and logical-shift identity"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "narrow comparison after a logical right shift does not bound a jump table|a high-byte table index renders as jump-as-call|a Rust match over a shifted tag is missing despite an unsigned bound"
+live_field = "highslice_guard"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "switchsharedcase"
 values = "on|off"
 default = "on"

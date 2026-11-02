@@ -1,0 +1,924 @@
+{
+  "at": "2026-11-02T13:36:24.961846+00:00",
+  "complete": true,
+  "semantic_review_pending": false,
+  "new_cli_sha256": "0b9635d64ff8f34e527db6c04796fb344e380f08234a97fbabac605b41c01de7",
+  "parent_cli_sha256": "b7a5bf1856c6bdbc752c6eb3f616bc98d999cd1976b6344a309cb85f6b90996f",
+  "images": 43,
+  "distinct_functions": 33731,
+  "language_records": 75909,
+  "changed_records": 33,
+  "changes": [
+    {
+      "fixture": "highslice-native",
+      "language": "rust",
+      "address": "0x4011d6",
+      "name": "narrow_guard",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "highslice-native",
+      "language": "rust",
+      "address": "0x401524",
+      "name": "byte_guard",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "highslice-native",
+      "language": "rust",
+      "address": "0x40163e",
+      "name": "word_guard",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "highslice-native",
+      "language": "rust",
+      "address": "0x401758",
+      "name": "signed_guard",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "highslice-native",
+      "language": "c",
+      "address": "0x4011d6",
+      "name": "narrow_guard",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "highslice-native",
+      "language": "c",
+      "address": "0x401524",
+      "name": "byte_guard",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "highslice-native",
+      "language": "c",
+      "address": "0x40163e",
+      "name": "word_guard",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "highslice-native",
+      "language": "c",
+      "address": "0x401758",
+      "name": "signed_guard",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "highslice-native",
+      "language": "go",
+      "address": "0x4011d6",
+      "name": "narrow_guard",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "highslice-native",
+      "language": "go",
+      "address": "0x401524",
+      "name": "byte_guard",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "highslice-native",
+      "language": "go",
+      "address": "0x40163e",
+      "name": "word_guard",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "highslice-native",
+      "language": "go",
+      "address": "0x401758",
+      "name": "signed_guard",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "hello",
+      "language": "rust",
+      "address": "0x207f0",
+      "name": "std::env::current_exe",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "hello",
+      "language": "go",
+      "address": "0x207f0",
+      "name": "std::env::current_exe",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "hello",
+      "language": "c",
+      "address": "0x207f0",
+      "name": "std::env::current_exe",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0x9f70",
+      "name": "linux_encryptor::files::add_file",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0xbcf0",
+      "name": "linux_encryptor::files::walk_dir",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0x2e810",
+      "name": "std::env::current_exe",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0x2f2c0",
+      "name": "std::io::buffered::bufwriter::BufWriter::flush_buf",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0x2f620",
+      "name": "std::io::error::Error::fmt",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0x2f6e0",
+      "name": "std::io::error::{impl#6}::fmt",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x9f70",
+      "name": "linux_encryptor::files::add_file",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0xbcf0",
+      "name": "linux_encryptor::files::walk_dir",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x2e810",
+      "name": "std::env::current_exe",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x2f2c0",
+      "name": "std::io::buffered::bufwriter::BufWriter::flush_buf",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x2f620",
+      "name": "std::io::error::Error::fmt",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x2f6e0",
+      "name": "std::io::error::{impl#6}::fmt",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0x9f70",
+      "name": "linux_encryptor::files::add_file",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0xbcf0",
+      "name": "linux_encryptor::files::walk_dir",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0x2e810",
+      "name": "std::env::current_exe",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0x2f2c0",
+      "name": "std::io::buffered::bufwriter::BufWriter::flush_buf",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0x2f620",
+      "name": "std::io::error::Error::fmt",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0x2f6e0",
+      "name": "std::io::error::{impl#6}::fmt",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ],
+      "classification": "Exact prior C/Go table recovery; Rust differs only by the separately validated empty-arm correction. Authored execution or archived static table/ABI proof covers the recovered transfer."
+    }
+  ],
+  "all_C_Go_candidate_records_equal_predependency_review": true,
+  "all_Rust_dependency_changes_exact_empty_arm_removals": true,
+  "dependency_edits": [
+    {
+      "fixture": "native-c",
+      "address": "0x401290",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "native-c",
+      "address": "0x4014d0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "grep",
+      "address": "0x4ff0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "grep",
+      "address": "0x9130",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "rust",
+      "address": "0x1ba3e",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "rust",
+      "address": "0x1f050",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "str-native",
+      "address": "0x1aff9",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "str-native",
+      "address": "0x1e680",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "write-native",
+      "address": "0x19ed9",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "write-native",
+      "address": "0x1d6e0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "native-rust",
+      "address": "0x39660",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "native-rust",
+      "address": "0x39bc0",
+      "empty_arm_breaks": 9
+    },
+    {
+      "fixture": "native-rust",
+      "address": "0x43b00",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "native-rust",
+      "address": "0x47750",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "panic-native",
+      "address": "0x3c560",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "panic-native",
+      "address": "0x3cac0",
+      "empty_arm_breaks": 9
+    },
+    {
+      "fixture": "panic-native",
+      "address": "0x46a00",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "panic-native",
+      "address": "0x4a650",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "rust2025",
+      "address": "0x135150",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "rust2025",
+      "address": "0x141820",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "rust2025",
+      "address": "0x148cc0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "rust2025",
+      "address": "0x14f610",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "rust2025",
+      "address": "0x150620",
+      "empty_arm_breaks": 2
+    },
+    {
+      "fixture": "rust2025",
+      "address": "0x161bad",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "address": "0x2a9a0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "address": "0x36880",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "address": "0x3c7e0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "address": "0x4e591",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "str-nonlto",
+      "address": "0x39fa0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "str-nonlto",
+      "address": "0x3a500",
+      "empty_arm_breaks": 9
+    },
+    {
+      "fixture": "str-nonlto",
+      "address": "0x447f0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "str-nonlto",
+      "address": "0x48440",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "io-native",
+      "address": "0x1aae9",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "io-native",
+      "address": "0x1e1b0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "io-promoted",
+      "address": "0x1a2c9",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "io-promoted",
+      "address": "0x1d880",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "address": "0x1c990",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "address": "0x286f0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "address": "0x2e1f0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "address": "0x3f9bb",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "address": "0x27480",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "address": "0x37410",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "address": "0x3d400",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "address": "0x4f23d",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "raw-namespace",
+      "address": "0x29060",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "raw-namespace",
+      "address": "0x34df0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "raw-namespace",
+      "address": "0x3ad70",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "raw-namespace",
+      "address": "0x4cb21",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-native",
+      "address": "0x29470",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-native",
+      "address": "0x35200",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-native",
+      "address": "0x3b180",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-native",
+      "address": "0x4cf31",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "namespace-rust",
+      "address": "0x292f0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "namespace-rust",
+      "address": "0x35080",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "namespace-rust",
+      "address": "0x3b000",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "namespace-rust",
+      "address": "0x4cdb1",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-buffer",
+      "address": "0x29060",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-buffer",
+      "address": "0x34df0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-buffer",
+      "address": "0x3ad70",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-buffer",
+      "address": "0x4cb21",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "hello",
+      "address": "0x10d70",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "hello",
+      "address": "0x1ea00",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "hello",
+      "address": "0x1fb60",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "hello",
+      "address": "0x207f0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "hello",
+      "address": "0x230b0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "hello",
+      "address": "0x231a0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "hello",
+      "address": "0x23360",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "hello",
+      "address": "0x23760",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "hello",
+      "address": "0x2d510",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "hello",
+      "address": "0x44de0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x9f70",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0xbcf0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0xcca0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x27320",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x2c4d0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x2e810",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x2f2c0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x2f620",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x2f6e0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x31280",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x31650",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x31900",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x31d10",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x32630",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x35760",
+      "empty_arm_breaks": 3
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x36bc0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x3f940",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x44e80",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x47db0",
+      "empty_arm_breaks": 1
+    },
+    {
+      "fixture": "probe-upstream",
+      "address": "0x4ce80",
+      "empty_arm_breaks": 1
+    }
+  ],
+  "inherited_go_parser_failures": [
+    [
+      "raw-namespace",
+      "0x15570"
+    ],
+    [
+      "raw-namespace",
+      "0x15580"
+    ],
+    [
+      "raw-namespace",
+      "0x15720"
+    ],
+    [
+      "probe-native",
+      "0x157c0"
+    ],
+    [
+      "probe-native",
+      "0x157d0"
+    ],
+    [
+      "probe-native",
+      "0x15970"
+    ],
+    [
+      "namespace-rust",
+      "0x156c0"
+    ],
+    [
+      "namespace-rust",
+      "0x156d0"
+    ],
+    [
+      "namespace-rust",
+      "0x15870"
+    ],
+    [
+      "probe-buffer",
+      "0x15580"
+    ],
+    [
+      "probe-buffer",
+      "0x15590"
+    ],
+    [
+      "probe-buffer",
+      "0x15730"
+    ]
+  ],
+  "native_values": 26628,
+  "static_tables": 6,
+  "static_rows": 246,
+  "full_angr_parity_claimed": false,
+  "supplied_upstream_executable_executed": false,
+  "limitations": [
+    "The supplied upstream executable was inspected statically, never run. Whole upstream Rust/Go functions can retain unrelated type, string and residual-goto issues.",
+    "The fmt return width changes from64 to32 after recovery; archived Ghidra listing shows all exits pass through MOV EAX,EBX. The thunk target is independently bound by its pointer slot.",
+    "The decode_error_kind argument becomes signed32 after removing the misleading table guard; the same32 bits are passed to the existing errno decoder.",
+    "Variable renumbering and cleanup-branch ordering follow the recovered CFG. Authored controls exercise all high-byte widths admitted by the proof and representative signed/wrapping range behavior."
+  ]
+}

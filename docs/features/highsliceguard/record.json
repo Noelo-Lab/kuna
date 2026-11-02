@@ -1,0 +1,53 @@
+{
+  "feature": "highslice-guard",
+  "reference": {
+    "angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+    "binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
+    "test": "test_decompiling_amd64_single_block_jumptable",
+    "function": "0xbcf0"
+  },
+  "option": "highsliceguard",
+  "default": "off",
+  "disabled_in_all_presets": true,
+  "parent_commit": "af49462d8c34c3047d3b6a54943e02658f0ca11b",
+  "dependency_pr": "https://github.com/Noelo-Lab/kuna/pull/1448",
+  "binary_sha256": {
+    "parent": "b7a5bf1856c6bdbc752c6eb3f616bc98d999cd1976b6344a309cb85f6b90996f",
+    "candidate": "ad23578b9660521c2bfeb6f2bf1a9981c2d2dc4523eb690328a5a9f6f46ac6d0"
+  },
+  "original_assertions": 675,
+  "stage_assertions": 3670,
+  "workspace": {
+    "passed": 10299,
+    "failed": 0,
+    "ignored": 39,
+    "suites": 72
+  },
+  "catalog_options": 372,
+  "corpus_files": 672,
+  "breadth": {
+    "images": 43,
+    "distinct_functions": 33731,
+    "language_records_per_mode": 75909,
+    "default_changed_records": 0,
+    "explicit_on_changed_records": 33
+  },
+  "native_values": 26628,
+  "original_width_controls_values": 19728,
+  "combined_narrow_guard_empty_match_values": 6900,
+  "static_tables": 6,
+  "static_table_entries": 246,
+  "angr_single_block_switches": {
+    "parent": 1,
+    "candidate_default": 1,
+    "candidate_enabled": 2
+  },
+  "speed_budget_pct": 5,
+  "enabled_speed_study_passed": false,
+  "default_off_speed_study_passed": false,
+  "all_speed_comparisons_passed": false,
+  "speed_cases_per_study": 8,
+  "paired_rounds_per_case": 384,
+  "full_angr_parity_claimed": false,
+  "supplied_upstream_executable_executed": false
+}

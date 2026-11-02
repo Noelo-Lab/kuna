@@ -1,0 +1,10 @@
+{
+  "command": "gcc -O2 -fno-pie -no-pie -Wl,--build-id=none highslice_guard.S highslice_guard.c -o highslice_guard_x86_64",
+  "compiler": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+  "sha256": {
+    "highslice_guard.c": "b5f21ffc980c8fb2e35359ffee480ac74635fc5c8bd166c862ff148b41007610",
+    "highslice_guard_x86_64": "d4a0143e0705a2c7d1517dbb25915c9f288a8339a4f25eddad7d0204229023b9",
+    "highslice_guard.S": "2f1caf368ef76b14fedd18a5b7a7bac4981cb04dc4aa568aa0273a164309d6cc",
+    "highslice_guard.kuna": "218d0f5613fc4f6ac2d0fdbe1c96136bb2985dc6be844896527aefddbc04c136"
+  }
+}

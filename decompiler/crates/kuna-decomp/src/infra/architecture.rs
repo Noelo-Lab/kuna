@@ -808,6 +808,8 @@ pub struct Architecture {
     /// jumptable index by an out-of-band CBRANCH range guard the basic model's
     /// guard analysis could not turn into a bound (C++ `switch_guard_bound`).
     pub switch_guard_bound: bool,
+    /// Match complete high-byte slices to equivalent logical shifts.
+    pub highslice_guard: bool,
     /// (kuna, angr `test_switch_case_shared_case_nodes_b2sum_digest`) Recover a
     /// GCC PIC relative-offset jump table whose base register is a loop-carried
     /// MULTIEQUAL (the `lea .rodata` table base is set before a getopt-style loop
@@ -3130,6 +3132,7 @@ impl Architecture {
             switch_run_on: false, // (kuna) option switchrunon; reset_defaults sets the shipped default
             switch_run_on_guard: false, // (kuna) option switchrunonguard; reset_defaults sets the shipped default
             const_select_jump: false,
+            highslice_guard: false,
             switch_guard_bound: false,
             switch_shared_case: false,
             switch_multi_pred: false,
@@ -3578,6 +3581,7 @@ impl Architecture {
         self.switch_run_on = true; // (kuna) GH-1034 default-on: an unguarded table keeps only its leading rows inside the function when every later row runs on into two or more other functions; 0/675 datatest
         self.switch_run_on_guard = true; // (kuna) GH-1034 default-on: a guard that does not narrow the selector leaves the table unguarded for switchrunon; 0/675 datatest
         self.const_select_jump = false; // (kuna) default: upstream byte-identical (constant-select indirect branch)
+        self.highslice_guard = false;
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.switch_shared_case = true; // (kuna) DIV-14 default-on (angr loop-carried-guard PIC switch recovery; slower on the functions it recovers, kept on for quality; 0/675 byte-identical)
         self.switch_multi_pred = true; // (kuna) DIV-13 default-on (angr multi-predecessor unrolled-guard jump-table; 0/675 ablation)
@@ -4706,6 +4710,7 @@ impl Architecture {
         ctx.const_select_jump = self.const_select_jump;
         // (kuna, angr) carry the CBRANCH-guard jump-table index-bound gate
         // (`option switchguardbound`) so `JumpBasic::recoverModel` reaches it.
+        ctx.highslice_guard = self.highslice_guard;
         ctx.switch_guard_bound = self.switch_guard_bound;
         // (kuna, angr) carry the loop-carried-base relative-offset jump-table gate
         // (`option switchsharedcase`) so `JumpBasic::recoverModel` reaches it.

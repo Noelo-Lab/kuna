@@ -1,0 +1,117 @@
+{
+  "declared_at": "2026-11-02T11:58:07.619690+00:00",
+  "scope": "Exact high-byte-slice/shift guard matching versus the clean integrated probe parent; all prior highslice captures are correctness research, no timing samples have been collected.",
+  "root": "/home/mahaloz/kwt/angr-narrow-table-guard",
+  "base": "/home/mahaloz/kwt/angr-rust-empty-match",
+  "cases": [
+    [
+      "scalar-c",
+      "/home/mahaloz/kwt/angr-narrow-table-guard/tests/fixtures/go-output/output-c",
+      "choose",
+      "c"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "narrow-guard",
+      "/home/mahaloz/kwt/angr-narrow-table-guard/decompiler/crates/kuna-analysis/tests/fixtures/highslice_guard_x86_64",
+      "narrow_guard",
+      "c"
+    ],
+    [
+      "byte-guard",
+      "/home/mahaloz/kwt/angr-narrow-table-guard/decompiler/crates/kuna-analysis/tests/fixtures/highslice_guard_x86_64",
+      "byte_guard",
+      "c"
+    ],
+    [
+      "signed-guard",
+      "/home/mahaloz/kwt/angr-narrow-table-guard/decompiler/crates/kuna-analysis/tests/fixtures/highslice_guard_x86_64",
+      "signed_guard",
+      "c"
+    ],
+    [
+      "wide-guard-control",
+      "/home/mahaloz/kwt/angr-narrow-table-guard/decompiler/crates/kuna-analysis/tests/fixtures/highslice_guard_x86_64",
+      "wide_guard",
+      "c"
+    ],
+    [
+      "upstream-walk-dir",
+      "/tmp/kuna-angr-reference/general/probestack",
+      "0xbcf0",
+      "c"
+    ]
+  ],
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "samples_per_arm": 384,
+  "warmups_per_arm": 3,
+  "seed": 202611028,
+  "bootstrap_resamples": 20000,
+  "family_alpha": 0.05,
+  "comparisons": 16,
+  "upper_quantile": 0.996875,
+  "maximum_looks": 1,
+  "budget_pct": 5,
+  "criterion": "Every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bootstrap bound <=5 percent. One final look; no unchanged-code repeat.",
+  "execution": "Eight comparisons on disjoint physical CPU pairs;384 paired rounds, balanced randomized order, no own builds/tests/captures/backends overlap.",
+  "lightwork_reservation_amendment": {
+    "declared_at": "2026-11-02T11:58:07.619690+00:00",
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "reason": "Reserve a physical pair for light work; exclude it from workers before samples."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T11:58:07.619690+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "failure_policy": "Retain every observation. A failed bound does not authorize a repeat of unchanged code or publication as a default-on improvement. Diagnose material cost and improve the implementation or introduce an opt-in option before publication.",
+  "build_binding": "Record final binary and source hashes after parent integration, all gates, complete breadth review, and native proofs, before sampling.",
+  "dependency_amendment": {
+    "declared_at": "2026-11-02T13:11:04.336349+00:00",
+    "before_any_samples": true,
+    "reason": "Land the independent Rust empty-match correction first. Re-anchor the high-slice guard and validate complete outputs against that matching parent before sampling.",
+    "previous_plan": "/tmp/kuna-narrow-table-guard/timing-plan.json",
+    "new_parent_binding": "The committed, merged empty-match head and binary; resolved by prepare.py."
+  },
+  "build": {
+    "at": "2026-11-02T13:23:11.140935+00:00",
+    "parent_commit": "af49462d8c34c3047d3b6a54943e02658f0ca11b",
+    "baseline_root": "/home/mahaloz/kwt/angr-rust-empty-match",
+    "parent_cli_sha256": "b7a5bf1856c6bdbc752c6eb3f616bc98d999cd1976b6344a309cb85f6b90996f",
+    "new_cli_sha256": "0b9635d64ff8f34e527db6c04796fb344e380f08234a97fbabac605b41c01de7",
+    "stage_assertions": [
+      3670,
+      3670
+    ],
+    "parent_artifact_provenance": "Clean committed and locally validated empty-match dependency; publication is held until its PR merges; its independently validated release build and frozen154specs are reused."
+  },
+  "parent_commit": "af49462d8c34c3047d3b6a54943e02658f0ca11b",
+  "binary_binding_recorded_at": "2026-11-02T13:25:54.448045+00:00",
+  "expanded_native_validation_before_sampling": {
+    "c_and_go_and_rust_values": 19728,
+    "combined_narrow_guard_empty_match_values": 6900,
+    "must_pass_before_sampling": true
+  },
+  "final_correctness_binding_at": "2026-11-02T13:37:21.245366+00:00",
+  "source_manifest_sha256": {
+    "production-source-before-validation.json": "4855d243c7b10ef17bc75b7a85b39c3c0b3b74a5e69949baf579926eb9676725",
+    "parent-source-before-timing.json": "c4c9fb9fc11c718437f28e50836676bda26c655511fcd5a2ee1627dfe1becdea"
+  }
+}
