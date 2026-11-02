@@ -1,17 +1,21 @@
 //! `kuna read --json`'s `provenance` (GH #1401): the listed span cut where its
 //! bytes stop being the file's and become the loader's zero fill, each range
-//! naming the segment that holds it and the permissions that segment declares.
-//! The bytes themselves do not change.
+//! naming the segment that holds it and the permissions that segment declares,
+//! and every other segment that declares the same addresses (GH #1426). The
+//! bytes themselves do not change.
 //!
 //! Fixtures: `readprov_macho_arm64`, `readprov_elf_x86_64` and
-//! `readprov_pe_x86_64.exe` (see `readprov.provenance`), `macho_fat`, and the
-//! relocatable `entry_selectors_x86_64.o`. Integration tests require the built
-//! processor specs under `specs/`.
+//! `readprov_pe_x86_64.exe` (see `readprov.provenance`), `macho_fat`, the
+//! relocatable `entry_selectors_x86_64.o`, and ELF images [`elf`] writes.
+//! Integration tests require the built processor specs under `specs/`.
 
 use crate::common;
 
 fn read_in(binary: &str, start: &str, bytes: &str, extra: &[&str]) -> (serde_json::Value, String) {
-    read_path(&common::fixture(binary), start, bytes, extra)
+    let (doc, stderr) = read_path(&common::fixture(binary), start, bytes, extra);
+    assert!(doc["provenance"].as_array().unwrap().iter().all(|r| r["overlaps"] == serde_json::json!([])), "{doc}");
+    assert!(notes(&doc).iter().all(|n| !n.contains("overlapping segments")), "{doc}");
+    (doc, stderr)
 }
 
 fn read_path(path: &str, start: &str, bytes: &str, extra: &[&str]) -> (serde_json::Value, String) {
@@ -30,7 +34,8 @@ fn read(binary: &str, start: &str, bytes: &str) -> serde_json::Value {
 
 /// The ranges tile the listed span exactly, a `file` range's bytes are the
 /// file's at its offset, a `repaired` range's are not, and a `zero-fill`
-/// range reads zero.
+/// range reads zero. An overlap is another segment, and its file bytes for
+/// the range are inside that segment's file extent.
 fn assert_tiles_and_matches_the_file(doc: &serde_json::Value, path: &str) {
     let file = std::fs::read(path).unwrap();
     let listed = hex_bytes(doc["hex"].as_str().unwrap());
@@ -52,6 +57,14 @@ fn assert_tiles_and_matches_the_file(doc: &serde_json::Value, path: &str) {
             }
             "zero-fill" => assert!(got.iter().all(|&b| b == 0), "{r}"),
             other => assert_eq!(other, "unknown"),
+        }
+        for o in r["overlaps"].as_array().unwrap() {
+            let seg = &o["segment"];
+            assert_ne!(seg, &r["segment"], "{r}");
+            if let Some(off) = o["file_offset"].as_u64() {
+                let file_end = seg["file_offset"].as_u64().unwrap() + seg["file_size"].as_u64().unwrap();
+                assert!(off + (hi - lo) <= file_end && file_end <= file.len() as u64, "{r}");
+            }
         }
         at = hi;
     }
@@ -282,4 +295,191 @@ fn the_text_view_keeps_its_rows_and_says_it_on_stderr() {
     assert!(stdout.contains("0x0           00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  |................|"), "{stdout}");
     assert!(!stdout.contains("zero fill"), "{stdout}");
     assert!(stderr.contains("note: zero fill, not file bytes: 0x0..0x10 in __PAGEZERO"), "{stderr}");
+}
+
+/// A static x86-64 ELF with one `PT_LOAD` per `(p_flags, p_offset, p_vaddr,
+/// p_filesz, p_memsz)` and no section table, `len` bytes long, each `fill`
+/// written at its offset; the issue's own layout.
+fn elf(loads: &[(u32, u64, u64, u64, u64)], fill: &[(usize, &str)], len: usize) -> String {
+    let mut b = vec![0u8; len];
+    b[..7].copy_from_slice(b"\x7fELF\x02\x01\x01");
+    let mut put = |at: usize, v: u64, n: usize| b[at..at + n].copy_from_slice(&v.to_le_bytes()[..n]);
+    let entry = loads[0].2;
+    for (at, v, n) in [(16, 2, 2), (18, 62, 2), (20, 1, 4), (24, entry, 8), (32, 64, 8), (52, 64, 2), (54, 56, 2)] {
+        put(at, v, n);
+    }
+    put(56, loads.len() as u64, 2);
+    put(58, 64, 2);
+    for (i, &(flags, offset, vaddr, filesz, memsz)) in loads.iter().enumerate() {
+        let h = 64 + 56 * i;
+        for (at, v, n) in [(0, 1, 4), (4, u64::from(flags), 4), (8, offset, 8), (16, vaddr, 8), (24, vaddr, 8)] {
+            put(h + at, v, n);
+        }
+        for (at, v) in [(32, filesz), (40, memsz), (48, 0x1000)] {
+            put(h + at, v, 8);
+        }
+    }
+    for &(at, hex) in fill {
+        let bytes = hex_bytes(hex);
+        b[at..at + bytes.len()].copy_from_slice(&bytes);
+    }
+    let path = common::scratch_file("readprov-overlap", "elf");
+    std::fs::write(&path, &b).unwrap();
+    path.to_str().unwrap().to_owned()
+}
+
+/// `(source, file_offset, segment index, segment file_offset)` of each overlap.
+fn overlaps(r: &serde_json::Value) -> Vec<(String, Option<u64>, Option<u64>, Option<u64>)> {
+    let list = r["overlaps"].as_array().unwrap().iter();
+    list.map(|o| {
+        let seg = &o["segment"];
+        (o["source"].as_str().unwrap().to_owned(), o["file_offset"].as_u64(), seg["index"].as_u64(), seg["file_offset"].as_u64())
+    })
+    .collect()
+}
+
+const R_X: u32 = 5;
+
+/// The issue's two images, byte for byte (`ab.elf` and `ba.elf`): two 16-byte
+/// `PT_LOAD`s at `0x401000` from file offsets `0x1000` and `0x2000`, in both
+/// orders. The first program header's
+/// bytes are listed, as before; the range now names the other one too, and a
+/// note says the address is mapped twice and which rule picked the bytes.
+#[test]
+fn two_loads_of_one_address_list_the_one_not_read() {
+    let fill = [(0x1000, "112233445566778899aabbccddeeffc3"), (0x2000, "ffeeddccbbaa998877665544332211c3")];
+    for (offsets, hex) in [([0x1000, 0x2000], fill[0].1), ([0x2000, 0x1000], fill[1].1)] {
+        let loads = offsets.map(|off| (R_X, off, 0x401000, 0x10, 0x10));
+        let path = elf(&loads, &fill, 0x2010);
+        let (doc, stderr) = read_path(&path, "0x401000", "16", &[]);
+        assert_eq!(doc["hex"], hex);
+        assert_eq!(ranges(&doc), [row(0x401000, 0x401010, "file", Some(offsets[0]), None, "r-x")]);
+        let range = &doc["provenance"][0];
+        assert_eq!(range["segment"]["index"], 0);
+        assert_eq!(overlaps(range), [("file".to_owned(), Some(offsets[1]), Some(1), Some(offsets[1]))]);
+        assert_eq!(range["overlaps"][0]["segment"]["permissions"], "r-x");
+        let want = format!(
+            "overlapping segments: 0x401000..0x401010 is read from file offset 0x{:x} in the PT_LOAD at 0x401000 \
+             (program header 0), and the PT_LOAD at 0x401000 (program header 1) maps it from file offset 0x{:x} -- ",
+            offsets[0], offsets[1]
+        );
+        let notes = notes(&doc);
+        assert!(notes.iter().any(|n| n.starts_with(&want) && n.contains("equal starts in table order")), "{notes:?}");
+        assert!(stderr.contains("note: overlapping segments: 0x401000..0x401010"), "{stderr}");
+
+        let (stdout, _, rc) = common::run_kuna(&["read", &path, "0x401000", "--addr", "--bytes", "16"]);
+        assert_eq!(rc, 0);
+        let spaced: Vec<String> = hex_bytes(hex).iter().map(|b| format!("{b:02x}")).collect();
+        assert!(stdout.contains(&format!("0x401000      {}", spaced.join(" "))), "{stdout}");
+    }
+}
+
+/// A partial overlap is a range of its own; the bytes on either side of it
+/// have one mapping each. A data segment's zero fill that runs under the next
+/// segment's file bytes stops there, and still declares those addresses.
+#[test]
+fn an_overlap_is_cut_to_the_addresses_both_segments_declare() {
+    let path = elf(&[(R_X, 0x1000, 0x401000, 0x20, 0x20), (R_X, 0x2000, 0x401010, 0x20, 0x20)], &[], 0x2020);
+    let (doc, _) = read_path(&path, "0x401000", "48", &[]);
+    assert_eq!(
+        ranges(&doc),
+        [
+            row(0x401000, 0x401010, "file", Some(0x1000), None, "r-x"),
+            row(0x401010, 0x401020, "file", Some(0x1010), None, "r-x"),
+            row(0x401020, 0x401030, "file", Some(0x2010), None, "r-x"),
+        ]
+    );
+    let shared: Vec<_> = doc["provenance"].as_array().unwrap().iter().map(overlaps).collect();
+    assert_eq!(shared, [vec![], vec![("file".to_owned(), Some(0x2000), Some(1), Some(0x2000))], vec![]]);
+
+    let path = elf(&[(R_X, 0x1000, 0x401000, 0x10, 0x10), (6, 0x2000, 0x601000, 0x10, 0x100), (4, 0x3000, 0x601080, 0x10, 0x10)], &[], 0x3010);
+    let (doc, _) = read_path(&path, "0x601078", "16", &[]);
+    assert_eq!(
+        ranges(&doc),
+        [
+            row(0x601078, 0x601080, "zero-fill", None, None, "rw-"),
+            row(0x601080, 0x601088, "file", Some(0x3000), None, "r--"),
+        ]
+    );
+    assert!(overlaps(&doc["provenance"][0]).is_empty());
+    assert_eq!(overlaps(&doc["provenance"][1]), [("zero-fill".to_owned(), None, Some(1), Some(0x2000))]);
+    let notes = notes(&doc);
+    assert!(
+        notes.iter().any(|n| n.starts_with(
+            "overlapping segments: 0x601080..0x601088 is read from file offset 0x3000 in the PT_LOAD at 0x601080, \
+             and the PT_LOAD at 0x601000 declares it as zero fill"
+        )),
+        "{notes:?}"
+    );
+}
+
+/// Segments that meet at a page boundary (code into data, a `.bss` tail into
+/// the next segment) or share a page without sharing a byte overlap nothing.
+#[test]
+fn neighbours_that_meet_or_share_a_page_do_not_overlap() {
+    let path = elf(
+        &[(R_X, 0x1000, 0x401000, 0x1000, 0x1000), (6, 0x2000, 0x402000, 0x10, 0x1000), (4, 0x3000, 0x403000, 0x10, 0x10)],
+        &[],
+        0x3010,
+    );
+    for start in ["0x401ff8", "0x402ff8"] {
+        let (doc, _) = read_path(&path, start, "16", &[]);
+        assert_eq!(doc["provenance"].as_array().unwrap().len(), 2, "{doc}");
+        assert!(doc["provenance"].as_array().unwrap().iter().all(|r| overlaps(r).is_empty()), "{doc}");
+        assert!(notes(&doc).iter().all(|n| !n.contains("overlapping")), "{doc}");
+    }
+    let path = elf(
+        &[(R_X, 0x1000, 0x401000, 0x10, 0x10), (4, 0x1010, 0x401010, 0x10, 0x10), (6, 0x1800, 0x401800, 0x10, 0x10)],
+        &[],
+        0x1810,
+    );
+    for (start, bytes, want) in [("0x401000", "32", vec![Some(0), Some(1)]), ("0x401800", "16", vec![Some(2)])] {
+        let (doc, _) = read_path(&path, start, bytes, &[]);
+        let segments: Vec<_> = doc["provenance"].as_array().unwrap().iter().map(|r| r["segment"]["index"].as_u64()).collect();
+        assert_eq!(segments, want);
+        assert!(doc["provenance"].as_array().unwrap().iter().all(|r| overlaps(r).is_empty()), "{doc}");
+        assert!(notes(&doc).iter().all(|n| !n.contains("overlapping")), "{doc}");
+    }
+}
+
+/// A Mach-O segment and a PE section declaring another's addresses get the
+/// same answer: `__LINKEDIT` moved into `__DATA`'s file bytes, `.sealed` moved
+/// onto `.data`'s address.
+#[test]
+fn macho_segments_and_pe_sections_overlap_the_same_way() {
+    let mut macho = std::fs::read(common::fixture("readprov_macho_arm64")).unwrap();
+    let mut at = 32;
+    for _ in 0..u32::from_le_bytes(macho[16..20].try_into().unwrap()) {
+        let size = u32::from_le_bytes(macho[at + 4..at + 8].try_into().unwrap()) as usize;
+        if macho[at + 8..at + 18] == *b"__LINKEDIT" {
+            macho[at + 24..at + 32].copy_from_slice(&0x1_0000_6000u64.to_le_bytes());
+        }
+        at += size;
+    }
+    let path = common::scratch_file("readprov-macho-overlap", "bin");
+    std::fs::write(&path, &macho).unwrap();
+    let (doc, _) = read_path(path.to_str().unwrap(), "0x100006000", "8", &[]);
+    assert_eq!(ranges(&doc), [row(0x100006000, 0x100006008, "file", Some(0x6000), Some("__DATA"), "rw-")]);
+    assert_eq!(doc["provenance"][0]["segment"]["index"], 2);
+    assert_eq!(overlaps(&doc["provenance"][0]), [("file".to_owned(), Some(0x8000), Some(3), Some(0x8000))]);
+    assert_eq!(doc["provenance"][0]["overlaps"][0]["segment"]["name"], "__LINKEDIT");
+
+    let mut pe = std::fs::read(common::fixture("readprov_pe_x86_64.exe")).unwrap();
+    let lfanew = u32::from_le_bytes(pe[0x3c..0x40].try_into().unwrap()) as usize;
+    let table = lfanew + 24 + u16::from_le_bytes(pe[lfanew + 20..lfanew + 22].try_into().unwrap()) as usize;
+    let sections = u16::from_le_bytes(pe[lfanew + 6..lfanew + 8].try_into().unwrap()) as usize;
+    for h in (0..sections).map(|i| table + 40 * i) {
+        if pe[h..h + 7] == *b".sealed" {
+            pe[h + 12..h + 16].copy_from_slice(&0x3000u32.to_le_bytes());
+        }
+    }
+    let path = common::scratch_file("readprov-pe-overlap", "exe");
+    std::fs::write(&path, &pe).unwrap();
+    let (doc, _) = read_path(path.to_str().unwrap(), "0x140003000", "8", &[]);
+    assert_eq!(ranges(&doc), [row(0x140003000, 0x140003008, "file", Some(0x800), Some(".data"), "rw-")]);
+    assert_eq!(overlaps(&doc["provenance"][0]), [("file".to_owned(), Some(0xa00), Some(3), Some(0xa00))]);
+    assert_eq!(doc["provenance"][0]["overlaps"][0]["segment"]["name"], ".sealed");
+    assert!(notes(&doc).iter().any(|n| n.starts_with(
+        "overlapping segments: 0x140003000..0x140003008 is read from file offset 0x800 in .data, and .sealed maps it from file offset 0xa00"
+    )));
 }

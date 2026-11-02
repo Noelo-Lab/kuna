@@ -1,0 +1,22 @@
+{
+  "fixture": "hermetic",
+  "sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 25,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "go",
+      "functions": 25,
+      "changed": [],
+      "parsed": 25,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

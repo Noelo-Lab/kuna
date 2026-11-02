@@ -1,0 +1,58 @@
+{
+  "producer": "1.93.1",
+  "input_sha256": "82dddb9be9f81ef37914d3898d1b0dc31d37c25d42de4beddbf33aef2392be70",
+  "functions": [
+    "panic_literal",
+    "panic_empty",
+    "panic_decimal",
+    "panic_signed",
+    "panic_hex",
+    "panic_reorder",
+    "panic_narrow",
+    "panic_escaped"
+  ],
+  "inputs_per_primitive": 263,
+  "six_integer_functions": true,
+  "all_byte_patterns_and_wide_boundaries": true,
+  "executions": [
+    {
+      "executor": "1.90.0",
+      "panic_payloads": 1580,
+      "literal_bodies_unchanged": true,
+      "primitive_macro_expressions_unchanged": true,
+      "explicit_primitive_input_bindings": true,
+      "full_primitive_body_compilation_claimed": false,
+      "original_location_equivalence_claimed": false
+    },
+    {
+      "executor": "1.93.1",
+      "panic_payloads": 1580,
+      "literal_bodies_unchanged": true,
+      "primitive_macro_expressions_unchanged": true,
+      "explicit_primitive_input_bindings": true,
+      "full_primitive_body_compilation_claimed": false,
+      "original_location_equivalence_claimed": false
+    },
+    {
+      "executor": "1.99.1",
+      "panic_payloads": 1580,
+      "literal_bodies_unchanged": true,
+      "primitive_macro_expressions_unchanged": true,
+      "explicit_primitive_input_bindings": true,
+      "full_primitive_body_compilation_claimed": false,
+      "original_location_equivalence_claimed": false
+    }
+  ],
+  "refusal_controls_unchanged": [
+    "panic_generic",
+    "panic_float",
+    "panic_forwarded",
+    "1.90.0:panic_literal",
+    "1.90.0:panic_decimal",
+    "1.90.0:panic_hex",
+    "1.99.1:panic_literal",
+    "1.99.1:panic_decimal",
+    "1.99.1:panic_hex"
+  ],
+  "payload_sha256": "bb4ed795edbb9224d89d8097e184c765e74cfb304be18f3d6f4f15a2a7e5bee0"
+}

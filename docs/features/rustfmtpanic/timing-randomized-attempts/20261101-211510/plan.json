@@ -1,0 +1,20 @@
+{
+  "declared_at": "2026-11-01 21:14:22 UTC",
+  "reason": "Repeated physical-core monitoring found no sustained quiet interval; prior noisy results are retained and not reused for this inference.",
+  "method": "192 balanced randomized three-arm rounds; all six permutations per six-round block, independently shuffled. Moving interference is handled by resampling complete six-round blocks; CPU affinity is fixed within the run.",
+  "cases": [
+    "rust-large-control",
+    "go-control"
+  ],
+  "samples_per_arm": 192,
+  "warmups_per_arm": 3,
+  "seed": 20261101,
+  "bootstrap_resamples": 20000,
+  "block_rounds": 6,
+  "family_alpha": 0.05,
+  "comparisons": 8,
+  "upper_quantile": 0.99375,
+  "budget_pct": 5,
+  "acceptance": "Every original ratio-of-medians CPU/wall comparison AND every upper confidence bound on the ratio of mean CPU/wall times must be <= 5%. All complete results retained; no automatic retry on failure.",
+  "cpu_selection": "Highest minimum sibling idle percentage over five seconds among allowed physical cores; no idle threshold. No owned builds/tests/scans allowed during measurement."
+}

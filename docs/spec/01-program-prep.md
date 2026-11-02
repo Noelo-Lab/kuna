@@ -455,6 +455,28 @@ does not get its `.bss` read either; that is the conservative direction, and the
 address still resolves through the section walk, which has always described the
 whole footprint.
 
+(kuna, GH-1426) **Where declared segments overlap, the first in address order
+serves.** An image can declare an address more than once: two `PT_LOAD`s over
+one page from different file offsets, a Mach-O segment or PE section whose
+extent runs into another's. The load image neither merges them nor rejects the
+image. Its segment list is sorted by start address with a stable sort, so
+segments that start together keep the order the image's table lists them in;
+the tail trim above ends each zero-filled tail where the next segment starts;
+and the containing-segment walk takes the first segment whose mapped extent
+holds the address
+(`decompiler/crates/kuna-analysis/src/loadimage_object.rs (SegmentBytes::find_section)`,
+upstream `LoadImageBfd::findSection`'s first match). So a lower-starting
+segment's file bytes shadow a higher-starting one's, the first-listed of two
+segments at one address shadows the second, and any segment's file bytes shadow
+another's zero fill. That is a static rule, not a runtime one: Linux maps
+`PT_LOAD`s in program-header order with `MAP_FIXED`, so the *last* one wins page
+by page, and Ghidra imports the later one into default memory and the earlier
+as an overlay. kuna's bytes, and so its decompilation, follow this rule; `kuna
+read --json` lists every other segment that declares a listed address in its
+`provenance` ranges' `overlaps`
+(`decompiler/crates/kuna-cli/src/disassemble/provenance.rs`), so the choice is
+visible rather than silent.
+
 **Character sanitizing** (`symbolnamechars`, `off|safe|ident`, default `safe`;
 `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_symbolnamechars.rs`) is the
 last step of that name reduction, and it is the only one that treats the name as

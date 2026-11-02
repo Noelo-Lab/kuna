@@ -1,0 +1,19 @@
+{
+  "declared_at": "2026-11-01 22:44:54.878726+00:00",
+  "workdirs": [
+    "/tmp/kuna-rust-fmt-pieces-f874",
+    "/tmp/kuna-rust-fmt-str"
+  ],
+  "initial_attempt": "20261101-223000",
+  "reason": "Completed 192-round cases show small medians but unresolved upper bounds for older literal printing, string results and a Rust control. The remaining full first-look control must complete before case selection. No partial-case samples are used.",
+  "selection": "Re-evaluate every complete first-look case at family alpha .025 across all feature comparisons. Confirm every case failing any median or upper-bound criterion; preserve all other complete initial cases.",
+  "additional_rounds": 384,
+  "final_rounds": 576,
+  "seeds": [
+    20261106,
+    20261107
+  ],
+  "acceptance": "All median CPU/wall ratios and simultaneous upper mean-ratio bounds <=5%. Allocate .025 to the initial look and .025 to the one fixed final look, using the complete comparison family at both looks. All initial samples remain included. No third look or automatic repeat for unchanged code.",
+  "scheduling": "Use only physical CPU pairs outside every pair reserved by the active shared study; coordinator also excludes both studies. Existing shared-study descendants are the only allowed concurrent owned workloads. No owned builds/tests/corpus work during measurements.",
+  "pending_baselines": "Baseline source manifests and binary hashes must remain identical; later commit binding uses the existing reanchor proof."
+}

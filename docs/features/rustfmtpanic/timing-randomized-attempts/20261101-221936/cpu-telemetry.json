@@ -1,0 +1,6 @@
+{
+  "file": "cpu-samples.json.gz",
+  "uncompressed_sha256": "d483cd372d8311117fc811503e7b8c9eb3f74762e9259654c0df9f85d0e04232",
+  "uncompressed_bytes": 22096833,
+  "encoding": "gzip-compressed JSON; lossless copy of retained raw telemetry"
+}

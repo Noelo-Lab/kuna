@@ -1,0 +1,32 @@
+{
+  "changed_functions": 29,
+  "recovered_calls": 29,
+  "literal_calls": 14,
+  "primitive_calls": 15,
+  "execution_compilers": [
+    "1.90.0",
+    "1.93.1",
+    "1.99.1"
+  ],
+  "stream_sha256": {
+    "stdout": "6e4c09bffe4003227061994611a0331caecfd0e60e1f42dff12a0e0c9d887470",
+    "stderr": "3cf8340e5065d151c46794c079a316d6e25e87ff9f05bb25caec59ca9f378a34"
+  },
+  "all_piece_bytes_and_formatter_identities_verified": true,
+  "primitive_execution_uses_explicit_test_values": true,
+  "type_diagnostics": {
+    "before": {
+      "functions_with_diagnostics": 8,
+      "diagnostics": 8,
+      "compiles": 0
+    },
+    "after": {
+      "functions_with_diagnostics": 6,
+      "diagnostics": 6,
+      "compiles": 14
+    },
+    "newly_diagnosed_functions": [],
+    "previously_compiling_now_failing": []
+  },
+  "new_diagnostic_multisets": []
+}

@@ -749,10 +749,13 @@ pub struct Architecture {
     pub source_lang_detected: crate::kuna_sourcelang::SourceLang,
     /// Unambiguous stable rustc version from ELF compiler metadata.
     pub rustc_stable_version: Option<(u16, u16, u16)>,
+    pub rustc_pieces_layout: bool,
+    pub rust_fmt_pieces_relro: Option<(u64, u64)>,
     /// Primitive Display callback types from full Rust object-symbol identities.
     pub rust_display_formatters: std::collections::BTreeMap<u64, &'static str>,
     /// Integer callback types and traits from full Rust object-symbol identities.
     pub rust_integer_formatters: std::collections::BTreeMap<u64, crate::kuna_rustfmtflags::Formatter>,
+    pub rust_str_display_formatters: std::collections::BTreeSet<u64>,
     /// (kuna) The per-run `option sourcelang` override (`None` = auto).  Kept
     /// apart from the fact so `option sourcelang auto` restores the detected
     /// verdict and the catalog `current` reports the option, not the image.
@@ -790,6 +793,10 @@ pub struct Architecture {
     /// row of a run that leaves the function for good (option `switchrunon`).
     /// See [`crate::kuna_switchrunon`].
     pub switch_run_on: bool,
+    /// (kuna) Let `switchrunon` treat a table as unguarded when its recorded
+    /// guards do not narrow the selector it was sized from (option
+    /// `switchrunonguard`). See [`crate::kuna_switchrunon`].
+    pub switch_run_on_guard: bool,
     /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
     /// addresses (`p2_lift/kuna_constselectjump.rs`).
     pub const_select_jump: bool,
@@ -1464,6 +1471,10 @@ pub struct Architecture {
     pub rust_fmt_flags: bool,
     /// Render verified Rust format_inner initialization as a String-producing macro.
     pub rust_fmt_result: bool,
+    /// Render verified Rust panic formatting as a panic macro.
+    pub rust_fmt_panic: bool,
+    pub rust_fmt_pieces: bool,
+    pub rust_fmt_str: bool,
     /// (kuna) Flip negated-guard if/else branches for linearity: when an
     /// `if (x == 0) {A} else {B}` (equality-to-zero / negated guard) can be flipped
     /// in place, rewrite it to the positive `if (x) {B} else {A}` so the common
@@ -3086,8 +3097,11 @@ impl Architecture {
             call_wide: false,
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
             rustc_stable_version: None,
+            rustc_pieces_layout: false,
+            rust_fmt_pieces_relro: None,
             rust_display_formatters: std::collections::BTreeMap::new(),
             rust_integer_formatters: std::collections::BTreeMap::new(),
+            rust_str_display_formatters: std::collections::BTreeSet::new(),
             source_lang_detected: Default::default(), // (kuna) a load-time fact; set by the console's `load file`
             source_lang_forced: None, // (kuna) option sourcelang; reset_defaults restores auto
             fat_str: 0, // (kuna) option fatstr; reset_defaults sets the shipped default (auto)
@@ -3100,6 +3114,7 @@ impl Architecture {
             fold_flag_compare: false,
             switch_modulo_bound: false,
             switch_run_on: false, // (kuna) option switchrunon; reset_defaults sets the shipped default
+            switch_run_on_guard: false, // (kuna) option switchrunonguard; reset_defaults sets the shipped default
             const_select_jump: false,
             switch_guard_bound: false,
             switch_shared_case: false,
@@ -3236,6 +3251,9 @@ impl Architecture {
             rust_fmt_args: true,
             rust_fmt_flags: true,
             rust_fmt_result: true,
+            rust_fmt_panic: true,
+            rust_fmt_pieces: true,
+            rust_fmt_str: true,
             strip_security_check: false,
             branch_flip: false,
             name_style_angr: false,
@@ -3539,6 +3557,7 @@ impl Architecture {
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
         self.switch_run_on = true; // (kuna) GH-1034 default-on: an unguarded table keeps only its leading rows inside the function when every later row runs on into two or more other functions; 0/675 datatest
+        self.switch_run_on_guard = true; // (kuna) GH-1034 default-on: a guard that does not narrow the selector leaves the table unguarded for switchrunon; 0/675 datatest
         self.const_select_jump = false; // (kuna) default: upstream byte-identical (constant-select indirect branch)
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.switch_shared_case = true; // (kuna) DIV-14 default-on (angr loop-carried-guard PIC switch recovery; slower on the functions it recovers, kept on for quality; 0/675 byte-identical)
@@ -3655,6 +3674,9 @@ impl Architecture {
         self.rust_fmt_args = true;
         self.rust_fmt_flags = true;
         self.rust_fmt_result = true;
+        self.rust_fmt_panic = true;
+        self.rust_fmt_pieces = true;
+        self.rust_fmt_str = true;
         self.strip_security_check = true; // (kuna) DIV-82 default-on: REMOVES CODE (strips rustc's bounds/slice/divide-by-zero panic branches, the SEFCOM Oxidizer SecurityCheckRemover port). Name-triggered on seven Rust-only `core::panicking`/`core::slice::index`/`core::str` helpers, so it is structurally inert on a C binary: 0/675 datatests and 0 changed lines over the C fixtures
         self.strip_stack_guard = true; // (kuna) DIV-14 default-on: REMOVES CODE (strips the -fstack-protector canary epilogue). Per-test opt-out (`option stackguard off`) on the 2 Partial-splitting datatests keeps the corpus byte-identical
         self.branch_flip = true; // (kuna) DIV-13 default-on (angr negated-guard branch flipping; per-test opt-out on the datatests it changes)
@@ -4652,6 +4674,7 @@ impl Architecture {
         // (`option switchmodbound`) so `JumpBasic::recoverModel` reaches it.
         ctx.switch_modulo_bound = self.switch_modulo_bound;
         ctx.switch_run_on = self.switch_run_on; // switchrunon
+        ctx.switch_run_on_guard = self.switch_run_on_guard; // switchrunonguard
         ctx.lazy_entry_starts = Rc::clone(&self.lazy_entry_starts);
         // (kuna) carry the constant-select indirect-branch gate
         // (`option constselectjump`) so `JumpTable::recoverModel` reaches it.

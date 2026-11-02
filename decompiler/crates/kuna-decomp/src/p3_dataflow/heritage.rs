@@ -4579,6 +4579,7 @@ impl Heritage {
     ) {
         use kuna_num::opcodes::OpCode;
         let isbigendian = addr.is_big_endian();
+        let spc = addr.get_space().expect("split_pieces: space").clone();
         let baseoff = if isbigendian {
             addr.get_offset().wrapping_add(size as u64)
         } else {
@@ -4615,11 +4616,11 @@ impl Heritage {
             };
             let newop = fd.new_op(2, opaddress.clone());
             fd.op_set_opcode(newop, sub_typeop.clone());
-            let diff: uintb = if isbigendian {
+            let diff: uintb = spc.wrap_offset(if isbigendian {
                 baseoff.wrapping_sub(vnoff.wrapping_add(vnsize as u64))
             } else {
                 vnoff.wrapping_sub(baseoff)
-            };
+            });
             fd.op_set_input(newop, startvn, 0).expect("split_pieces: set in0");
             let cvn = fd.new_constant(4, diff);
             fd.op_set_input(newop, cvn, 1).expect("split_pieces: set in1");
@@ -4637,6 +4638,58 @@ impl Heritage {
                 }
             }
         }
+    }
+
+    /// (kuna) Split each read, write and input among `ids` that runs past the
+    /// top of `space` into the piece below the top and the piece from offset 0
+    /// ([`kuna_wrapsplit`](super::kuna_wrapsplit)). Returns whether any was split.
+    fn split_wrapped(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        space: &Rc<AddrSpace>,
+        ids: &[crate::context::VarnodeId],
+    ) -> bool {
+        let highest = space.get_highest();
+        let floor = super::kuna_wrapsplit::wrap_floor(highest);
+        let mut wrapped: Vec<_> = ids
+            .iter()
+            .rev()
+            .map_while(|&vn| {
+                let v = fd.vbank().get(vn).filter(|v| v.get_addr().get_offset() >= floor)?;
+                Some((vn, v))
+            })
+            .filter(|(_, v)| !(v.is_write_mask() || v.is_free() && v.has_no_descend()))
+            .filter_map(|(vn, v)| {
+                super::kuna_wrapsplit::wrap_cut(v.get_addr().get_offset(), v.get_size(), highest)
+                    .map(|cut| (vn, cut))
+            })
+            .collect();
+        wrapped.reverse();
+        let mut pieces = Vec::new();
+        for &(vn, cut) in &wrapped {
+            let (addr, size, written, input) = {
+                let v = fd.vbank().get(vn).expect("split_wrapped: vn");
+                (v.get_addr().clone(), v.get_size(), v.is_written(), v.is_input())
+            };
+            let refine = super::kuna_wrapsplit::wrap_refinement(size, cut);
+            if written {
+                self.refine_write(fd, vn, &addr, &refine, &mut pieces);
+            } else if input {
+                self.refine_input(fd, vn, &addr, &refine, &mut pieces);
+            } else {
+                let mut reads = vec![vn];
+                for op in fd.descend_snapshot(vn).into_iter().skip(1) {
+                    let copy = fd.new_varnode(size, &addr, None);
+                    let slot = fd.obank().get(op).expect("split_wrapped: reader").get_slot(vn);
+                    fd.op_set_input(op, copy, slot).expect("split_wrapped: reader slot");
+                    reads.push(copy);
+                }
+                for read in reads {
+                    self.refine_read(fd, read, &addr, &refine, &mut pieces);
+                }
+            }
+        }
+        !wrapped.is_empty()
     }
 
     /// Build a refinement array given an address range and a Varnode list (C++
@@ -5917,7 +5970,10 @@ impl Heritage {
             let mut needwarning = false;
             let mut warnvn: Option<crate::context::VarnodeId> = None;
 
-            let ids: Vec<crate::context::VarnodeId> = fd.vbank().loc_space_ids(&space);
+            let mut ids: Vec<crate::context::VarnodeId> = fd.vbank().loc_space_ids(&space);
+            if self.split_wrapped(fd, &space, &ids) {
+                ids = fd.vbank().loc_space_ids(&space);
+            }
             for vn in ids {
                 let v = fd.vbank().get(vn).expect("heritage: stale vn");
                 if !v.is_written() && v.has_no_descend() && !v.is_unaffected() && !v.is_input() {
@@ -6877,7 +6933,7 @@ mod tests {
     // case: it walks the spaces, builds an empty disjoint cover, places no
     // phis, renames nothing, and advances `pass`.)
 
-    fn overflowing_input_fixture() -> (Funcdata, Address) {
+    fn stack_fixture() -> (Funcdata, Rc<AddrSpace>) {
         let mut manager = build_manager();
         let ram = manager.get_space_by_name("ram").unwrap().clone();
         let stack = Rc::new(kuna_base::space::SpacebaseSpace::new(
@@ -6887,19 +6943,28 @@ mod tests {
         manager.insert_space(Rc::new(kuna_base::space::IopSpace::new(4))).unwrap();
         let arch = Rc::new(ArchContext::new(manager));
         let entry = Address::new(ram, 0x1000);
-        let mut fd = Funcdata::new("func", "func", arch, entry, 0x10000000, 0x40).unwrap();
+        let fd = Funcdata::new("func", "func", arch, entry, 0x10000000, 0x40).unwrap();
+        (fd, stack)
+    }
+
+    fn overflowing_input_fixture() -> (Funcdata, Address) {
+        let (mut fd, stack) = stack_fixture();
         let existing = fd.new_varnode(4, &Address::new(stack.clone(), 0), None);
         fd.set_input_varnode(existing).unwrap();
         (fd, Address::new(stack, 0xffff_fffa))
     }
 
     fn append_overflowing_read(fd: &mut Funcdata, block: BlockId, addr: &Address) {
+        append_read(fd, block, addr, 10);
+    }
+
+    fn append_read(fd: &mut Funcdata, block: BlockId, addr: &Address, size: int4) {
         let op = fd.new_op(1, fd.get_address().clone());
         fd.op_set_opcode_code(op, kuna_num::opcodes::OpCode::CPUI_COPY);
-        let input = fd.new_varnode(10, addr, None);
+        let input = fd.new_varnode(size, addr, None);
         fd.vbank_mut().get_mut(input).unwrap().set_active_heritage();
         fd.op_set_input(op, input, 0).unwrap();
-        fd.new_unique_out(10, op).unwrap();
+        fd.new_unique_out(size, op).unwrap();
         fd.op_insert_end(op, block);
     }
 
@@ -7016,12 +7081,59 @@ mod tests {
         assert!(!fd.vbank().get(input).unwrap().is_free(), "the unaligned read is linked");
     }
 
+    /// A 10-byte read at stack -6 of a 4-byte stack space runs past the top.
+    /// It is split into the 6 bytes below the top and the 4 from offset 0,
+    /// each an entry input (the one at 0 already existed); no heritaged
+    /// Varnode wraps or lies across the cover.
     #[test]
-    fn heritage_action_returns_error_and_can_process_the_next_function() {
-        use crate::action::ActionContext;
+    fn heritage_splits_a_read_that_wraps_past_the_top_of_its_space() {
+        use kuna_num::opcodes::OpCode;
         let (mut fd, addr) = overflowing_input_fixture();
         let block = build_cfg(&mut fd, 1, &[])[0];
         append_overflowing_read(&mut fd, block, &addr);
+        let mut h = Heritage::new();
+        h.build_info_list(&fd);
+        h.build_adt(&fd);
+        h.heritage(&mut fd, None).unwrap();
+
+        let stack = addr.get_space().unwrap().clone();
+        for vn in fd.vbank().loc_space_ids(&stack) {
+            let v = fd.vbank().get(vn).unwrap();
+            if v.is_write_mask() || (!v.is_written() && v.has_no_descend()) {
+                continue;
+            }
+            let off = v.get_addr().get_offset();
+            assert_eq!(super::super::kuna_wrapsplit::wrap_cut(off, v.get_size(), stack.get_highest()), None);
+            let (start, range) = h.globaldisjoint.find(v.get_addr()).expect("heritaged");
+            assert!(off - start.get_offset() + v.get_size() as u64 <= range.size as u64,
+                "{off:#x}+{} lies across the cover {:#x}+{}", v.get_size(), start.get_offset(), range.size);
+        }
+        let copy = *fd.bb_ops(block).last().unwrap();
+        let whole = fd.obank().get(copy).unwrap().get_in(0).unwrap();
+        let piece = fd.vbank().get(whole).unwrap().get_def().unwrap();
+        assert_eq!(fd.obank().get(piece).unwrap().code(), OpCode::CPUI_PIECE);
+        let parts: Vec<_> = (0..2)
+            .map(|slot| {
+                let vn = fd.obank().get(piece).unwrap().get_in(slot).unwrap();
+                let v = fd.vbank().get(vn).unwrap();
+                (v.get_addr().get_offset(), v.get_size(), v.is_input())
+            })
+            .collect();
+        assert!(parts.contains(&(0xffff_fffa, 6, true)), "{parts:x?}");
+        assert!(parts.contains(&(0, 4, true)), "{parts:x?}");
+    }
+
+    /// A read at stack 0 whose entry input would straddle a write-masked
+    /// input piece at stack 1..5 that no heritage range holds.
+    #[test]
+    fn heritage_action_returns_error_and_can_process_the_next_function() {
+        use crate::action::ActionContext;
+        let (mut fd, stack) = stack_fixture();
+        let piece = fd.new_varnode(4, &Address::new(stack.clone(), 1), None);
+        let piece = fd.set_input_varnode(piece).unwrap();
+        fd.vbank_mut().get_mut(piece).unwrap().set_write_mask();
+        let block = build_cfg(&mut fd, 1, &[])[0];
+        append_read(&mut fd, block, &Address::new(stack, 0), 4);
         let mut action = crate::coreaction_early::ActionHeritage::boxed("base");
         let mut ctx = ActionContext::new();
         assert_eq!(action.perform(&mut fd, &mut ctx), -1);

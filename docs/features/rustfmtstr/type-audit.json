@@ -1,0 +1,244 @@
+{
+  "summary": {
+    "before": {
+      "functions_with_diagnostics": 1,
+      "diagnostics": 1,
+      "compiles": 0
+    },
+    "after": {
+      "functions_with_diagnostics": 1,
+      "diagnostics": 1,
+      "compiles": 0
+    },
+    "newly_diagnosed_functions": [],
+    "previously_compiling_now_failing": []
+  },
+  "records": [
+    {
+      "fixture": "str-native",
+      "address": "0x10250",
+      "name": "str_flags",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "str-native",
+      "address": "0x10290",
+      "name": "str_integer",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "str-native",
+      "address": "0x102f0",
+      "name": "str_line",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "str-native",
+      "address": "0x10370",
+      "name": "str_pair",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "str-native",
+      "address": "0x103d0",
+      "name": "str_panic",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "str-native",
+      "address": "0x10410",
+      "name": "str_plain",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "str-native",
+      "address": "0x10490",
+      "name": "str_result",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 9,
+                "line_end": 9,
+                "column_start": 8,
+                "column_end": 15,
+                "label": "expected `*mut u8`, found `&mut u64`",
+                "text": [
+                  {
+                    "text": "  v2 = &mut v1;",
+                    "highlight_start": 8,
+                    "highlight_end": 15
+                  }
+                ]
+              },
+              {
+                "line_start": 5,
+                "line_end": 5,
+                "column_start": 15,
+                "column_end": 22,
+                "label": "expected due to this type",
+                "text": [
+                  {
+                    "text": "  let mut v2: *mut u8; // rax | rsp | stack - 0x18",
+                    "highlight_start": 15,
+                    "highlight_end": 22
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 9,
+                "line_end": 9,
+                "column_start": 8,
+                "column_end": 15,
+                "label": "expected `*mut u8`, found `&mut u64`",
+                "text": [
+                  {
+                    "text": "  v2 = &mut v1;",
+                    "highlight_start": 8,
+                    "highlight_end": 15
+                  }
+                ]
+              },
+              {
+                "line_start": 5,
+                "line_end": 5,
+                "column_start": 15,
+                "column_end": 22,
+                "label": "expected due to this type",
+                "text": [
+                  {
+                    "text": "  let mut v2: *mut u8; // rax | rsp | stack - 0x18",
+                    "highlight_start": 15,
+                    "highlight_end": 22
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "fixture": "str-native",
+      "address": "0x104d0",
+      "name": "str_stderr",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "str-native",
+      "address": "0x10510",
+      "name": "str_stderr_pair",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "str-native",
+      "address": "0x14c80",
+      "name": "core::option::expect_failed",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "rust",
+      "address": "0x104c0",
+      "name": "fmtdemo::make_string",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "rust",
+      "address": "0x15870",
+      "name": "core::option::expect_failed",
+      "before": {
+        "compiles": false,
+        "diagnostics": []
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"call_instruction":95664,"descriptor":{"argument_count":2,"arguments":[{"formatter":377984,"pointer_stack_offset":-96},{"formatter":378256,"pointer_stack_offset":-88}],"descriptor_stack_offset":-48,"format_pointer":0,"piece_count":3,"table":384136},"name":"_print"}

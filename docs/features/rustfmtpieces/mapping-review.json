@@ -1,0 +1,205 @@
+[
+  {
+    "fixture": "pieces-x86_64",
+    "function": "0x1000",
+    "address": "0x1000",
+    "instruction": "sub    $0x38,%rsp",
+    "classification": "synthetic prologue stack adjustment mapped through the folded descriptor address; RDI receives RSP, all five stack stores remain"
+  },
+  {
+    "fixture": "pieces-x86_64",
+    "function": "0x1042",
+    "address": "0x1042",
+    "instruction": "sub    $0x38,%rsp",
+    "classification": "synthetic prologue stack adjustment mapped through the folded descriptor address; RDI receives RSP, all five stack stores remain"
+  },
+  {
+    "fixture": "pieces-1.90.0",
+    "function": "0x16af0",
+    "address": "0x16b1a",
+    "instruction": "lea    0x8(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.90.0",
+    "function": "0x16b30",
+    "address": "0x16b5a",
+    "instruction": "lea    0x8(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.90.0",
+    "function": "0x16b70",
+    "address": "0x16b9a",
+    "instruction": "lea    0x8(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.90.0",
+    "function": "0x16bb0",
+    "address": "0x16bd7",
+    "instruction": "lea    0x8(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.90.0",
+    "function": "0x16bf0",
+    "address": "0x16c3f",
+    "instruction": "lea    0x18(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.90.0",
+    "function": "0x16c50",
+    "address": "0x16c9d",
+    "instruction": "lea    0x18(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.90.0",
+    "function": "0x16cb0",
+    "address": "0x16d1b",
+    "instruction": "lea    0x38(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.90.0",
+    "function": "0x16d30",
+    "address": "0x16dd3",
+    "instruction": "lea    0x58(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.90.0",
+    "function": "0x16e80",
+    "address": "0x16eeb",
+    "instruction": "lea    0x38(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.89.0",
+    "function": "0xca10",
+    "address": "0xca3a",
+    "instruction": "lea    0x8(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.89.0",
+    "function": "0xca50",
+    "address": "0xca7a",
+    "instruction": "lea    0x8(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.89.0",
+    "function": "0xca90",
+    "address": "0xcaba",
+    "instruction": "lea    0x8(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.89.0",
+    "function": "0xcad0",
+    "address": "0xcaf7",
+    "instruction": "lea    0x8(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.89.0",
+    "function": "0xcb10",
+    "address": "0xcb5f",
+    "instruction": "lea    0x18(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.89.0",
+    "function": "0xcb70",
+    "address": "0xcbbd",
+    "instruction": "lea    0x18(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.89.0",
+    "function": "0xcbd0",
+    "address": "0xcc3b",
+    "instruction": "lea    0x38(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.89.0",
+    "function": "0xcc50",
+    "address": "0xccf3",
+    "instruction": "lea    0x58(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-1.89.0",
+    "function": "0xcda0",
+    "address": "0xce0b",
+    "instruction": "lea    0x38(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-nightly-2025-05-22",
+    "function": "0x171b0",
+    "address": "0x171da",
+    "instruction": "lea    0x8(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-nightly-2025-05-22",
+    "function": "0x171f0",
+    "address": "0x1721a",
+    "instruction": "lea    0x8(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-nightly-2025-05-22",
+    "function": "0x17230",
+    "address": "0x1725a",
+    "instruction": "lea    0x8(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-nightly-2025-05-22",
+    "function": "0x17270",
+    "address": "0x17297",
+    "instruction": "lea    0x8(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-nightly-2025-05-22",
+    "function": "0x172b0",
+    "address": "0x172ff",
+    "instruction": "lea    0x18(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-nightly-2025-05-22",
+    "function": "0x17310",
+    "address": "0x1735d",
+    "instruction": "lea    0x18(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-nightly-2025-05-22",
+    "function": "0x17370",
+    "address": "0x173db",
+    "instruction": "lea    0x38(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-nightly-2025-05-22",
+    "function": "0x173f0",
+    "address": "0x17493",
+    "instruction": "lea    0x58(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  },
+  {
+    "fixture": "pieces-nightly-2025-05-22",
+    "function": "0x17540",
+    "address": "0x175ab",
+    "instruction": "lea    0x38(%rsp),%rdi",
+    "classification": "stack descriptor address ceases to be a rendered runtime argument; all IR and setup remain"
+  }
+]

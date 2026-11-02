@@ -1,0 +1,12 @@
+stage-before.log passed
+stage-after.log passed
+original.log passed
+stages.log passed
+tools.log passed
+lint.log passed
+spec.log passed
+catalog.log passed
+counters.log passed
+ALL NON-WORKSPACE REPOSITORY GATES PASSED
+workspace-final.log passed (existing completed workspace run; see validation-recovery.json)
+ALL REPOSITORY VALIDATION PASSED

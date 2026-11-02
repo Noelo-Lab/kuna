@@ -8185,14 +8185,42 @@ impl PrintC {
         self.push_atom(&Atom::syntax(plan.literal, TagType::Syntax,
             crate::printlanguage::SyntaxHighlight::const_color));
         for argument in plan.arguments {
+            if let super::kuna_rustfmtargs::Argument::String { data, length, pointer_bridge } = argument {
+                self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+                self.push_atom(&Atom::syntax("std::str::from_utf8_unchecked", TagType::Syntax,
+                    crate::printlanguage::SyntaxHighlight::funcname_color));
+                self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+                self.push_atom(&Atom::syntax("std::slice::from_raw_parts", TagType::Syntax,
+                    crate::printlanguage::SyntaxHighlight::funcname_color));
+                self.push_op(&tokens::COMMA, Some(op_key(op)));
+                self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+                if pointer_bridge {
+                    self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+                }
+                self.push_vn_ir(fd, arch, data, op);
+                if pointer_bridge {
+                    self.push_atom(&Atom::syntax("*const _", TagType::TypeToken,
+                        crate::printlanguage::SyntaxHighlight::type_color));
+                }
+                self.push_atom(&Atom::syntax("*const u8", TagType::TypeToken,
+                    crate::printlanguage::SyntaxHighlight::type_color));
+                self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+                self.push_vn_ir(fd, arch, length, op);
+                self.push_atom(&Atom::syntax("usize", TagType::TypeToken,
+                    crate::printlanguage::SyntaxHighlight::type_color));
+                continue;
+            }
+            let super::kuna_rustfmtargs::Argument::Primitive { pointer, primitive } = argument else {
+                unreachable!();
+            };
             self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
             self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
             self.push_op(self.lang().tok_typecast, Some(op_key(op)));
             self.push_op(self.lang().tok_typecast, Some(op_key(op)));
-            self.push_vn_ir(fd, arch, argument.pointer, op);
+            self.push_vn_ir(fd, arch, pointer, op);
             self.push_atom(&Atom::syntax("*const _", TagType::TypeToken,
                 crate::printlanguage::SyntaxHighlight::type_color));
-            self.push_atom(&Atom::syntax(format!("*const {}", argument.primitive),
+            self.push_atom(&Atom::syntax(format!("*const {primitive}"),
                 TagType::TypeToken, crate::printlanguage::SyntaxHighlight::type_color));
         }
     }
@@ -8208,6 +8236,18 @@ impl PrintC {
     /// (`getHiddenThisSlot`) is the C++ method-invocation hook (always -1 here —
     /// the C++ `int4 skip = -1;` for the direct case, no C++ method format yet).
     fn op_call_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_pieces {
+            if let Some(plan) = super::kuna_rustfmtpieces::recover(fd, arch, op) {
+                self.push_rust_format_plan(fd, arch, op, plan);
+                return;
+            }
+        }
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_panic {
+            if let Some(plan) = super::kuna_rustfmtpanic::recover(fd, arch, op) {
+                self.push_rust_format_plan(fd, arch, op, plan);
+                return;
+            }
+        }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_result {
             if let Some(plan) = super::kuna_rustfmtresult::recover(fd, arch, op) {
                 self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));

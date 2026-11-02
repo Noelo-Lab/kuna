@@ -1,0 +1,55 @@
+CONFIRMATION CASES 0 ['pieces-literal']
+CONFIRMATION CASES 1 ['str-result', 'rust-large-control']
+rust-large-control completed rounds 48
+str-result completed rounds 48
+pieces-literal completed rounds 48
+rust-large-control completed rounds 96
+str-result completed rounds 96
+pieces-literal completed rounds 96
+rust-large-control completed rounds 144
+str-result completed rounds 144
+pieces-literal completed rounds 144
+rust-large-control completed rounds 192
+str-result completed rounds 192
+pieces-literal completed rounds 192
+rust-large-control completed rounds 240
+str-result completed rounds 240
+rust-large-control completed rounds 288
+pieces-literal completed rounds 240
+str-result completed rounds 288
+rust-large-control completed rounds 336
+pieces-literal completed rounds 288
+str-result completed rounds 336
+rust-large-control completed rounds 384
+rust-large-control medians {'baseline_to_patched': {'cpu_ms': 0.3844533439244957, 'wall_ms': -0.6600019261341128}, 'off_to_patched': {'cpu_ms': -0.07074365277177641, 'wall_ms': -0.4820343044167008}}
+CONFIRMATION FINISHED 1 rust-large-control
+pieces-literal completed rounds 336
+str-result completed rounds 384
+str-result medians {'baseline_to_patched': {'cpu_ms': 0.4178018473016021, 'wall_ms': -1.3109908418202476}, 'off_to_patched': {'cpu_ms': -0.0970148513769642, 'wall_ms': -1.2057762708991948}}
+CONFIRMATION FINISHED 1 str-result
+pieces-literal completed rounds 384
+pieces-literal medians {'baseline_to_patched': {'cpu_ms': -0.13170711525631873, 'wall_ms': 0.5382391302041212}, 'off_to_patched': {'cpu_ms': -0.19431721740401642, 'wall_ms': -1.5963618694007309}}
+CONFIRMATION FINISHED 0 pieces-literal
+CONFIRMATION RESULT 0 scalar-c {'baseline_to_patched': {'cpu_ms': 0.8256460880783905, 'wall_ms': 0.7954248775914813}, 'off_to_patched': {'cpu_ms': 1.8047096355850538, 'wall_ms': 1.8632228094511036}} True
+CONFIRMATION RESULT 0 pieces-literal {'baseline_to_patched': {'cpu_ms': 1.8624964310451921, 'wall_ms': 5.0279365313772315}, 'off_to_patched': {'cpu_ms': 1.9459800222004264, 'wall_ms': 2.7910694073800424}} False
+CONFIRMATION RESULT 0 pieces-integers {'baseline_to_patched': {'cpu_ms': -0.44469093949321153, 'wall_ms': 3.7850679154009073}, 'off_to_patched': {'cpu_ms': 1.8283181439030638, 'wall_ms': 4.800967073322125}} True
+CONFIRMATION RESULT 0 older-rust-c-control {'baseline_to_patched': {'cpu_ms': 1.5856183528843286, 'wall_ms': 1.0638825401182845}, 'off_to_patched': {'cpu_ms': 1.7929156525549337, 'wall_ms': 2.5756441050513796}} True
+CONFIRMATION RESULT 0 original-angr-rust {'baseline_to_patched': {'cpu_ms': 1.5371555212908992, 'wall_ms': 3.663045999428088}, 'off_to_patched': {'cpu_ms': 3.2732714977883233, 'wall_ms': 3.587485874477399}} True
+CONFIRMATION RESULT 0 rust-newer-control {'baseline_to_patched': {'cpu_ms': 0.4726034250603262, 'wall_ms': 0.40172036573956754}, 'off_to_patched': {'cpu_ms': 1.5525196065400282, 'wall_ms': 1.515587368698491}} True
+CONFIRMATION RESULT 0 go-control {'baseline_to_patched': {'cpu_ms': 0.16520111250199004, 'wall_ms': 1.5643596055474323}, 'off_to_patched': {'cpu_ms': 0.45623559155426446, 'wall_ms': 2.4942728778442746}} True
+FEATURE CONFIRMATION 0 UNRESOLVED
+CONFIRMATION RESULT 1 scalar-c {'baseline_to_patched': {'cpu_ms': -0.8324036963681182, 'wall_ms': -0.8699718048142066}, 'off_to_patched': {'cpu_ms': 1.0592959873324495, 'wall_ms': 1.0628347688142816}} True
+CONFIRMATION RESULT 1 str-plain {'baseline_to_patched': {'cpu_ms': 0.4892804291730335, 'wall_ms': 0.9569017355037341}, 'off_to_patched': {'cpu_ms': 0.5425525045689661, 'wall_ms': 0.9734804748254293}} True
+CONFIRMATION RESULT 1 str-flags {'baseline_to_patched': {'cpu_ms': 0.7041376091261838, 'wall_ms': 1.073397220565501}, 'off_to_patched': {'cpu_ms': 0.3485008311061756, 'wall_ms': 0.6993256243693531}} True
+CONFIRMATION RESULT 1 str-result {'baseline_to_patched': {'cpu_ms': 1.3138894945446649, 'wall_ms': 3.151922043559136}, 'off_to_patched': {'cpu_ms': 2.195088749662635, 'wall_ms': 3.772132451260879}} True
+CONFIRMATION RESULT 1 reference-make-string {'baseline_to_patched': {'cpu_ms': 2.100388885553143, 'wall_ms': 3.4490730801851504}, 'off_to_patched': {'cpu_ms': 0.556267600495401, 'wall_ms': 4.2422553621033385}} True
+CONFIRMATION RESULT 1 older-rust-control {'baseline_to_patched': {'cpu_ms': 1.3248959870284578, 'wall_ms': 2.1958729625245303}, 'off_to_patched': {'cpu_ms': 0.8531541264923511, 'wall_ms': 1.0798094982280255}} True
+CONFIRMATION RESULT 1 rust-large-control {'baseline_to_patched': {'cpu_ms': 1.1363791391367204, 'wall_ms': 6.135350880017582}, 'off_to_patched': {'cpu_ms': 0.836944247289758, 'wall_ms': 5.261491250447695}} False
+CONFIRMATION RESULT 1 go-control {'baseline_to_patched': {'cpu_ms': 1.8805225098559166, 'wall_ms': 2.3640856267481967}, 'off_to_patched': {'cpu_ms': 1.97996598421974, 'wall_ms': 3.275181256377236}} True
+FEATURE CONFIRMATION 1 UNRESOLVED
+Traceback (most recent call last):
+  File "/tmp/kuna-angr-reference/feature-confirmation.py", line 109, in <module>
+    if __name__=='__main__':main()
+  File "/tmp/kuna-angr-reference/feature-confirmation.py", line 106, in main
+    assert all(accepted_features),'Fixed final confirmation unresolved; no further repeat authorized by this study.'
+AssertionError: Fixed final confirmation unresolved; no further repeat authorized by this study.

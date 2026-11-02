@@ -1,0 +1,7 @@
+cd /home/mahaloz/kwt/angr-rust-panic-main && /home/mahaloz/kwt/angr-rust-panic-main/decompiler/target/release/kuna test --datatests \
+  --datatests-dir tests/stages --baseline docs/baseline-stages.json
+datatests: 3516/3516 assertions passed
+exit: 0
+
+=== baseline parity ===
+PARITY OK

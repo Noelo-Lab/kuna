@@ -1,0 +1,10 @@
+warning: unused import: `std::hint::black_box`
+ --> /tmp/kuna-rust-fmt-pieces-f874/native-oracle.rs:1:5
+  |
+1 | use std::hint::black_box;
+  |     ^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: 1 warning emitted
+

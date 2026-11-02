@@ -208,8 +208,10 @@ four-case `switch (ri)` with the option on and keeps the compare tree with it
 off. The reduced `firstpass` and `register` pipelines run no `ActionDeadCode`,
 so there the pruned markers are absent rather than deleted later.
 
-An invalid entry-input range, including one crossing the end of its address
-space, returns a recoverable error from any of the three input-creation paths
+An invalid entry-input range, such as one that straddles an input piece no
+heritage range holds, or one crossing the end of its address space (heritage
+splits those first, below), returns a recoverable error from any of the three
+input-creation paths
 (ordinary read, same-time INDIRECT, or successor phi). The error propagates
 through recursive renaming and the heritage action to the function driver.
 Analysis stops before later passes can consume partial SSA; batch decompilation
@@ -306,6 +308,31 @@ partition as an old range would leave a global's bytes with no return COPY, so
 the store of those bytes would die. A marker that one partition holds is left
 to that partition's own revisit, as before, so a refinement that cuts no marker
 is unchanged.
+
+**Accesses that wrap past the top of a space (kuna, #1034).** Address arithmetic
+is modular in the size of the space, so an access can name bytes at both ends
+of it: an 8-byte load from ram `0xfffffffffffffffb` reads five bytes below the
+top and three from offset 0, and a stack access that starts below the entry
+stack pointer and ends above it does the same in the stack space. Upstream's
+cover is linear. `LocationMap::add` merges a range only with its neighbours in
+offset order, `TaskList::add` only with the last range, and `collect` stops a
+wrapping range at the top of the space, while `Address::overlap` reports a low
+address as inside a range that wraps onto it. A wrapping range therefore never
+merges with the ranges at offset 0. A refinement of it can cut a partition that
+starts at offset 0 and lies over a range heritaged separately; the partition
+collects that range's Varnodes, which run past its end, and `build_refinement`
+indexes past its array. Renaming can also ask for an input that overlaps
+another (`Overlapping input varnodes`), and where neither fails a write through
+the wrapping range never reaches a read of the low bytes. Before heritage walks
+a space, every read, write and input in it that runs past the top is split at
+the top (`heritage.rs (Heritage::split_wrapped)`,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_wrapsplit.rs (wrap_cut)`),
+with the refinement helpers: a read becomes the `PIECE` of the bytes below the
+top and the bytes from offset 0, and a write or an input is carved into the two
+by `SUBPIECE`s. `split_pieces` reduces each piece's byte offset modulo the space,
+so the piece at offset 0 of a 32-bit space is the right `SUBPIECE` in both byte
+orders. This keeps the value byte for byte, and no Varnode heritage sees wraps,
+so its cover stays linear. Code with no wrapping access is unchanged.
 
 **Register pairs refined at their midpoint** (`option pairrefine`,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pairrefine.rs (split_pair)`,

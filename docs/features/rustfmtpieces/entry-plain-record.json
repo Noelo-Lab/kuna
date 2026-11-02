@@ -1,0 +1,22 @@
+{
+  "fixture": "entry-plain",
+  "sha256": "4634398d909f8a704c9a9c5b7dbb281435d8615362364559b8608d45a2136179",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 9,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "go",
+      "functions": 9,
+      "changed": [],
+      "parsed": 9,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

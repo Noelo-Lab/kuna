@@ -1,0 +1,87 @@
+--- before/std::io::Write::write_fmt
++++ after/std::io::Write::write_fmt
+@@ -9,7 +9,7 @@
+   v1 = a0;
+   if core::fmt::write(&mut v1,0x54320,a1,a2) != b'\0' {
+     if v2 == 0 {
+-      core::panicking::panic_fmt(_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_,0xad,0x542d8); // no-return
++      panic!("a formatting trait implementation returned an error when the underlying stream did not"); // no-return
+     }
+     return v2;
+   }
+
+--- before/std::io::Write::write_fmt
++++ after/std::io::Write::write_fmt
+@@ -9,7 +9,7 @@
+   v1 = a0;
+   if core::fmt::write(&mut v1,0x542a8,a1,a2) != b'\0' {
+     if v2 == 0 {
+-      core::panicking::panic_fmt(_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_,0xad,0x542d8); // no-return
++      panic!("a formatting trait implementation returned an error when the underlying stream did not"); // no-return
+     }
+     return v2;
+   }
+
+--- before/std::io::Write::write_fmt
++++ after/std::io::Write::write_fmt
+@@ -9,7 +9,7 @@
+   v1 = a0;
+   if core::fmt::write(&mut v1,0x54350 as *mut (),a1,a2) != b'\0' {
+     if v2 == 0 {
+-      core::panicking::panic_fmt(_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_,0xad,0x542d8); // no-return
++      panic!("a formatting trait implementation returned an error when the underlying stream did not"); // no-return
+     }
+     return v2;
+   }
+
+--- before/std::alloc::default_alloc_error_hook
++++ after/std::alloc::default_alloc_error_hook
+@@ -215,7 +215,7 @@
+   if v23 != b'\0' {
+     v55 = &mut v54;
+     v185 = fmt;
+-    core::panicking::panic_fmt(0x5b41,&mut v55,0x54870); // no-return
++    panic!("memory allocation of {} bytes failed",&*((v55 as *const _) as *const u64)); // no-return
+   }
+   LOCK();
+   _ZN3std5alloc24default_alloc_error_hook18PREV_ALLOC_FAILURE17hbfd974c3853d70c6E = 1;
+
+--- before/core::ptr::drop_in_place
++++ after/core::ptr::drop_in_place
+@@ -5,5 +5,5 @@
+   if a0 & 1 == 0 {
+     return;
+   }
+-  core::panicking::panic_fmt(_cannot_panic_during_the_backtrace_function_,0x55,0x54e48); // no-return
++  panic!("cannot panic during the backtrace function"); // no-return
+ }
+--- before/&std::io::stdio::Stdout::write_fmt
++++ after/&std::io::stdio::Stdout::write_fmt
+@@ -75,7 +75,7 @@
+   v7 = v3;
+   if core::fmt::write(&mut v8,0x542f0,a1,a2) != b'\0' { // branch-flip
+     if v11 == 0 {
+-      core::panicking::panic_fmt(_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_,0xad,0x542d8); // no-return
++      panic!("a formatting trait implementation returned an error when the underlying stream did not"); // no-return
+     }
+     v1 = (v7 as i64 + 0xc) as *mut i32;
+     *v1 = *v1 + -1;
+
+--- before/alloc::raw_vec::capacity_overflow
++++ after/alloc::raw_vec::capacity_overflow
+@@ -2,5 +2,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn capacity_overflow()
+ {
+-  core::panicking::panic_fmt(_capacity_overflow_,0x23,0x55bc8); // no-return
++  panic!("capacity overflow"); // no-return
+ }
+--- before/core::slice::sort::shared::smallsort::panic_on_ord_violation
++++ after/core::slice::sort::shared::smallsort::panic_on_ord_violation
+@@ -2,5 +2,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn panic_on_ord_violation()
+ {
+-  core::panicking::panic_fmt(_user_provided_comparison_function_does_not_correctly_implement_a_total_ordercalled__Option::unwrap____on_a__None__value_,0x99,0x55cd0); // no-return
++  panic!("user-provided comparison function does not correctly implement a total order"); // no-return
+ }

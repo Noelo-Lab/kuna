@@ -1,0 +1,1 @@
+error: decomp_test_dbg not found in /home/mahaloz/kwt/angr-rust-panic-base-f874/decompiler/target/release -- set KUNA_DECOMP_TEST to point at it, or run `make binaries` (or `cargo build --release -p kuna-harness`)

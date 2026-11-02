@@ -1,0 +1,22 @@
+{
+  "fixture": "native-plain",
+  "sha256": "6a205d35899107445c0d702d7a6c4900180be4203770983a8a050d3ec40f2da5",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 1156,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "go",
+      "functions": 1156,
+      "changed": [],
+      "parsed": 1156,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

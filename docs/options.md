@@ -151,6 +151,9 @@ Three tiers:
 | a switch on a byte parameter has 256 cases, most of them other functions' code | [`switchrunon`](#switchrunon) |
 | a 1 KB Rust function takes minutes and gigabytes and hits --max-fn-memory | [`switchrunon`](#switchrunon) |
 | the same case bodies appear in several neighbouring functions | [`switchrunon`](#switchrunon) |
+| a small function with a byte switch inside a loop hits the time budget or --max-fn-memory | [`switchrunonguard`](#switchrunonguard) |
+| a switch preceded by an unrelated check or a test for one value has 255 or 256 cases, most of them other functions' code | [`switchrunonguard`](#switchrunonguard) |
+| a 600-byte Rust function decodes thousands of instructions from its neighbours | [`switchrunonguard`](#switchrunonguard) |
 | image-base-relative switch whose bound guard is duplicated across multiple predecessors renders as a computed call | [`switchmultipred`](#switchmultipred) |
 | 'Too many branches' where the dispatch block has several guarded incoming paths | [`switchmultipred`](#switchmultipred) |
 | msvc memmove small-count tail dispatch truncated to an indirect call | [`switchmultipred`](#switchmultipred) |
@@ -517,6 +520,12 @@ Three tiers:
 | Rust static format specifications remain opaque template bytes | [`rustfmtflags`](#rustfmtflags) |
 | Rust integer String construction retains format_inner with an output pointer | [`rustfmtresult`](#rustfmtresult) |
 | Rust format! results remain runtime calls despite recovered templates | [`rustfmtresult`](#rustfmtresult) |
+| Rust panic messages remain core::panicking::panic_fmt calls with opaque pointers | [`rustfmtpanic`](#rustfmtpanic) |
+| Rust primitive panic arguments retain runtime formatter descriptors | [`rustfmtpanic`](#rustfmtpanic) |
+| Older Rust print calls retain a stack fmt::Arguments descriptor | [`rustfmtpieces`](#rustfmtpieces) |
+| Rust literal output remains _print with opaque piece-array addresses | [`rustfmtpieces`](#rustfmtpieces) |
+| Rust string formatting remains a runtime descriptor call | [`rustfmtstr`](#rustfmtstr) |
+| format! with mixed integer and string arguments remains format_inner | [`rustfmtstr`](#rustfmtstr) |
 | Go output language is unavailable | [`outlang`](#outlang) |
 | Go functions retain C declarations and control-flow syntax | [`outlang`](#outlang) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
@@ -1691,6 +1700,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P2/switch-model · kuna · correctness-fix · gh-1034
 - **Example:** `option switchrunon off`
 
+### `switchrunonguard` -- on | off, default `on`
+
+- **Symptoms:** a small function with a byte switch inside a loop hits the time budget or --max-fn-memory; a switch preceded by an unrelated check or a test for one value has 255 or 256 cases, most of them other functions' code; a 600-byte Rust function decodes thousands of instructions from its neighbours.
+- **What it does:** Let switchrunon cut a table whose guards do not bound it from above. The basic model records the conditional branches just before the dispatch as guards whether or not they test the selector, so a byte switch behind a Result or Option tag check (a Rust deserializer's `match self.next_key()?`), or one whose loop first sends one key elsewhere (`cmp eax,1; je`), counts as guarded although nothing limits the top of the table, and switchrunon left its whole-width table alone: 255 or 256 rows that run on into the next functions' tables and the tables those reach. On, a table also counts as unguarded when the variable it was sized from can still take the largest value its size and known-zero bits allow; switchrunon's own conditions then decide the cut. When a guard took out a value below the first row, so the range wraps past its top and the rows of the lowest values come last, the rows are read in value order and the table is rebuilt from the values kept, so case 0 survives the cut. A table a guard bounds from above, and a model-2 table (whose default comes from a guard), is never touched. Off, any recorded guard keeps the table whole.
+- **When to flip:** On by default. Turn it off when a switch whose selector a preceding branch does not bound loses cases that really live in other functions' address ranges, or to compare against switchrunon's guard-free-only rule.
+- **Where / provenance:** P2/switch-model · kuna · correctness-fix · gh-1034
+- **Example:** `option switchrunonguard off`
+
 ### `switchmultipred` -- on | off, default `on` (destructive opt-in)
 
 - **Symptoms:** image-base-relative switch whose bound guard is duplicated across multiple predecessors renders as a computed call; 'Too many branches' where the dispatch block has several guarded incoming paths; msvc memmove small-count tail dispatch truncated to an indirect call.
@@ -2546,6 +2563,30 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave on with rustfmtargs to read verified integer String construction as format!. Turn off to inspect the runtime call and hidden output buffer. This does not change function signatures, infer generic formatter types or recover write!/writeln! sinks.
 - **Where / provenance:** P9/format-result · angr · opt-in-tool · angr-rust-format-result
 - **Example:** `option rustfmtresult off`
+
+### `rustfmtpanic` -- on | off, default `on`
+
+- **Symptoms:** Rust panic messages remain core::panicking::panic_fmt calls with opaque pointers; Rust primitive panic arguments retain runtime formatter descriptors.
+- **What it does:** Recover panic! from exact core::panicking::panic_fmt calls in stable Rust 1.93.0/1.93.1 little-endian 64-bit images. Require a non-returning direct call with a constant mapped nonvolatile caller-location address and verified literal or primitive integer formatting arguments. Preserve message bytes including trailing newlines, descriptor setup and surrounding IR. Primitive arguments require rustfmtargs and static specifications require rustfmtflags. Other versions, callbacks, dynamic locations and ambiguous call shapes remain explicit. C and Go output are unchanged.
+- **When to flip:** On by default to expose verified Rust panic messages and integer arguments. Turn off to retain the runtime panic_fmt call. Literal panic messages are independent of rustfmtliteral and rustfmtargs; integer arguments use rustfmtargs and rustfmtflags checks. Recompiled panic! uses the recovered source location, not the original binary's file and line.
+- **Where / provenance:** P9/panic-format · angr · opt-in-tool · angr-rust-panic-format
+- **Example:** `option rustfmtpanic off`
+
+### `rustfmtpieces` -- on | off, default `on`
+
+- **Symptoms:** Older Rust print calls retain a stack fmt::Arguments descriptor; Rust literal output remains _print with opaque piece-array addresses.
+- **What it does:** Recover print!, println!, eprint! and eprintln! from the verified piece-array fmt::Arguments layout in x86-64 ELF images built by stable Rust 1.89.0/1.90.0 or nightly 1.89.0 bf64d66bd (2025-05-21). Require exact output-sink identity, a complete stack descriptor, absent format specifications, immutable UTF-8 pieces and exact primitive Display identities. Preserve descriptor setup, typed reads and surrounding IR. Unknown compiler builds, mutable data, generic callbacks and non-default specifications remain explicit; C and Go output are unchanged.
+- **When to flip:** On by default to expose older Rust literal and integer printing. Literal recovery also requires rustfmtliteral; primitive arguments require rustfmtargs. Turn off to retain the piece-array runtime call. This does not recover format!, panic!, write!, generic arguments or older compiler builds without verified layout evidence.
+- **Where / provenance:** P9/piece-format · angr · opt-in-tool · angr-rust-piece-format
+- **Example:** `option rustfmtpieces off`
+
+### `rustfmtstr` -- on | off, default `on`
+
+- **Symptoms:** Rust string formatting remains a runtime descriptor call; format! with mixed integer and string arguments remains format_inner.
+- **What it does:** Recover string Display arguments in verified Rust 1.93.0/1.93.1 formatting calls. Require an exact x86-64 ELF forwarding body to core::fmt::Formatter::pad and two complete live aligned stack words for the string data and length. Construct a string view from those words without changing descriptor setup, IR, types or prototypes. Generic names alone, derived Debug callbacks, unknown wrappers and unsupported layouts remain explicit. C and Go output are unchanged.
+- **When to flip:** On by default to expose proven string arguments in print!, format! and panic! recovery. Requires rustfmtargs and the corresponding sink option; explicit format specifications also require rustfmtflags. Turn off to retain runtime calls containing string arguments. The original formatter contract requires valid UTF-8 storage for the recorded length.
+- **Where / provenance:** P9/string-format · angr · opt-in-tool · angr-rust-string-format
+- **Example:** `option rustfmtstr off`
 
 ### `outlang` -- c | rust | go, default `c`
 

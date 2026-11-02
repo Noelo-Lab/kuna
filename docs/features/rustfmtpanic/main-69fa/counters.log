@@ -1,0 +1,11 @@
+settables            364   (phases.toml 364 / catalog 364 / fixture 364)
+tiers                (127, 144, 93)  core/transform/analysis
+stage-corpus files   643   (83 tests/datatests, 560 tests/stages)
+next free ElementId  4180   (highest in use 4179, 81 allocated)
+catalog bucket       370  "use_when":  [min=10 max=400]
+catalog bucket       46   "source_decompiler": "angr"  [min=46 max=46]
+catalog bucket       38   "change_kind": "structure-recovery"  [min=38 max=38]
+catalog bucket       34   "change_kind": "opt-in-tool"  [min=34 max=34]
+catalog bucket       370  "change_kind":  [min=10 max=400]
+
+no drift: every hard-coded site agrees with the derived truth

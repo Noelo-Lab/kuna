@@ -1,0 +1,1884 @@
+{
+  "patched_kuna_sha256": "1836bb945a73318f83b9972cf63ab8a2e1c1d7f548f6dd0b2ffebc41e9ce9ff0",
+  "baseline_commit": "f8746b9730b525a065c89c26e358ffd7c2328bc7",
+  "options": {
+    "godwarfsig": "on"
+  },
+  "fixtures": [
+    {
+      "fixture": "hermetic",
+      "sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 25,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 25,
+          "changed": [],
+          "parsed": 25,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "hermetic-plain",
+      "sha256": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 25,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 25,
+          "changed": [],
+          "parsed": 25,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "basics122",
+      "sha256": "b0c5144b05517c764da886a30b5eeca5709b6b655e93b55ae4967042943db50f",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2018,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 2018,
+          "changed": [],
+          "parsed": 2018,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "native",
+      "sha256": "243073101d99260f354c13a6a06640d53d9eef64e4c4a4fdf8d9a5d8c6465c09",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1156,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 1156,
+          "changed": [],
+          "parsed": 1156,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "langdetect",
+      "sha256": "98a0709c40921feb13de3b88d035f01dd1a457366e9df12ddc86eeb6ee1f0d84",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1558,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 1558,
+          "changed": [],
+          "parsed": 1558,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "basics127",
+      "sha256": "62d72f2a7d729ff139c7c08fbc999a9d7e073735f81dcce752dcc6174c1959d4",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2552,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 2552,
+          "changed": [],
+          "parsed": 2552,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "native-c",
+      "sha256": "2ab52230e3235ef5517798c672c476e136122a11526b0d4a5560f04fb4bfa8d4",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 55,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 55,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        },
+        {
+          "language": "go",
+          "functions": 55,
+          "changed": [],
+          "parsed": 55,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "stripped122",
+      "sha256": "7dd6e9c20e0237149281df4ad3eb2e0fef0460b8c5958dee0ef7ed88c8bb8e32",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2017,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 2017,
+          "changed": [],
+          "parsed": 2017,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "entry-ranges",
+      "sha256": "b0f38a89fec7a625d005888c2b10b77352e63d605ac64357eccf2d0bbfabb5a0",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 9,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 9,
+          "changed": [],
+          "parsed": 9,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "grep",
+      "sha256": "f71085ac2429924667499e96cac0c82963a1982f5f503c8374ec21c6fd21902d",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 449,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 449,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "entry-plain",
+      "sha256": "4634398d909f8a704c9a9c5b7dbb281435d8615362364559b8608d45a2136179",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 9,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 9,
+          "changed": [],
+          "parsed": 9,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "native1273",
+      "sha256": "86b2eb60b0fa1cc1d79b265fd2285fce8c64dc228c7cae9011088cc066101d9c",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1495,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 1495,
+          "changed": [],
+          "parsed": 1495,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "rust",
+      "sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 455,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 455,
+          "changed": [
+            {
+              "address": "0x11da0",
+              "name": "alloc::raw_vec::capacity_overflow",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "capacity overflow"
+                    },
+                    "before": {
+                      "arguments": [
+                        "_capacity_overflow_",
+                        "0x23",
+                        "0x4e510"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 5,
+                      "source_line_start": 5
+                    },
+                    "symbolic_template_pointer": {
+                      "spelling": "_capacity_overflow_",
+                      "address": "0x6df6",
+                      "call_instruction": "0x11db7",
+                      "binding": "unique IR call with matching descriptor and caller-location operands"
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -2,5 +2,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x15720",
+              "name": "core::slice::copy_from_slice_impl::len_mismatch_fail::do_panic::runtime",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        {
+                          "pointer": "v3",
+                          "primitive": "u64"
+                        },
+                        {
+                          "pointer": "v5",
+                          "primitive": "u64"
+                        }
+                      ],
+                      "kind": "macro",
+                      "literal": "copy_from_slice: source slice length ({}) does not match destination slice length ({})"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x6307",
+                        "& mut v3",
+                        "0x4e738"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 18,
+                      "source_line_start": 18
+                    },
+                    "message_bytes_independently_verified": false
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0x1575d"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "v3",
+                    "added_call_addresses": [
+                      "0x15761"
+                    ],
+                    "lost_call_addresses": []
+                  },
+                  {
+                    "name": "v5",
+                    "added_call_addresses": [
+                      "0x15761"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -15,5 +15,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x15770",
+              "name": "core::slice::sort::shared::smallsort::panic_on_ord_violation",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "user-provided comparison function does not correctly implement a total order"
+                    },
+                    "before": {
+                      "arguments": [
+                        "_user_provided_comparison_function_does_not_correctly_implement_a_total_ordercalled__Option :: unwrap____on_a__None__value_",
+                        "0x99",
+                        "0x4e600"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 5,
+                      "source_line_start": 5
+                    },
+                    "symbolic_template_pointer": {
+                      "spelling": "_user_provided_comparison_function_does_not_correctly_implement_a_total_ordercalled__Option :: unwrap____on_a__None__value_",
+                      "address": "0x72da",
+                      "call_instruction": "0x15787",
+                      "binding": "unique IR call with matching descriptor and caller-location operands"
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -2,5 +2,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x20ba0",
+              "name": "core::ptr::drop_in_place",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "cannot panic during the backtrace function"
+                    },
+                    "before": {
+                      "arguments": [
+                        "_cannot_panic_during_the_backtrace_function_",
+                        "0x55",
+                        "0x4fa38"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 5,
+                      "source_line_start": 5
+                    },
+                    "symbolic_template_pointer": {
+                      "spelling": "_cannot_panic_during_the_backtrace_function_",
+                      "address": "0x8de4",
+                      "call_instruction": "0x20bb7",
+                      "binding": "unique IR call with matching descriptor and caller-location operands"
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -2,5 +2,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x43d90",
+              "name": "std::sys::os_str::bytes::Slice::check_public_boundary::slow_path",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        {
+                          "pointer": "v2",
+                          "primitive": "u64"
+                        }
+                      ],
+                      "kind": "macro",
+                      "literal": "byte index {} is not an OsStr boundary"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x63f5",
+                        "& mut v2",
+                        "0x4f178"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 47,
+                      "source_line_start": 47
+                    },
+                    "message_bytes_independently_verified": false
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0x43e63"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "v2",
+                    "added_call_addresses": [
+                      "0x43e67"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -44,5 +44,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            }
+          ],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "native-plain",
+      "sha256": "6a205d35899107445c0d702d7a6c4900180be4203770983a8a050d3ec40f2da5",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1156,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 1156,
+          "changed": [],
+          "parsed": 1156,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "native1273-plain",
+      "sha256": "a7bd1bd161b4ec27c9621ea107beec9197b7fd2bea618b7a7bbcf6d1a08f94ff",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1495,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 1495,
+          "changed": [],
+          "parsed": 1495,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "basics127-plain",
+      "sha256": "c6336c1c1695e2a60d8366df79d8fb6bd49c5eda7600443f03708bf14e4df973",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2552,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 2552,
+          "changed": [],
+          "parsed": 2552,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "panic-shapes",
+      "sha256": "2aae9c46507fe73bbd96b2f14680abda08a8e0b6230723e8a6e857af83a6aa41",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 19,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 19,
+          "changed": [
+            {
+              "address": "0x1000",
+              "name": "literal_panic",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "{{x}}\n"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x2000",
+                        "9",
+                        "0x2018"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 4,
+                      "source_line_start": 4
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -1,5 +1,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x1020",
+              "name": "scoped_panic",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "{{x}}\n"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x2000",
+                        "9",
+                        "0x2018"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 4,
+                      "source_line_start": 4
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -1,5 +1,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x10dc",
+              "name": "static_mutable_location",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "{{x}}\n"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x2000",
+                        "9",
+                        "0x401c"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 4,
+                      "source_line_start": 4
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -1,5 +1,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            }
+          ],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        },
+        {
+          "language": "go",
+          "functions": 19,
+          "changed": [],
+          "parsed": 19,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "rust2025",
+      "sha256": "236a96c8188b5ac75e93615118526b14b91a4aef0aca12d18f9c2a4ef91fce8a",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 7763,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 7763,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "native-rust",
+      "sha256": "a8d645aa936436b48f25da980315057d94a4e4b2996ef4f47f8ed465c4f1e3dd",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 550,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 550,
+          "changed": [
+            {
+              "address": "0x1fa40",
+              "name": "std::io::Write::write_fmt",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "a formatting trait implementation returned an error when the underlying stream did not"
+                    },
+                    "before": {
+                      "arguments": [
+                        "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                        "0xad",
+                        "0x542d8"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 12,
+                      "source_line_start": 12
+                    },
+                    "symbolic_template_pointer": {
+                      "spelling": "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                      "address": "0x7c8f",
+                      "call_instruction": "0x1fa98",
+                      "binding": "unique IR call with matching descriptor and caller-location operands"
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -9,7 +9,7 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x1fb60",
+              "name": "std::io::Write::write_fmt",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "a formatting trait implementation returned an error when the underlying stream did not"
+                    },
+                    "before": {
+                      "arguments": [
+                        "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                        "0xad",
+                        "0x542d8"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 12,
+                      "source_line_start": 12
+                    },
+                    "symbolic_template_pointer": {
+                      "spelling": "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                      "address": "0x7c8f",
+                      "call_instruction": "0x1fbb8",
+                      "binding": "unique IR call with matching descriptor and caller-location operands"
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -9,7 +9,7 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x1fc80",
+              "name": "std::io::Write::write_fmt",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "a formatting trait implementation returned an error when the underlying stream did not"
+                    },
+                    "before": {
+                      "arguments": [
+                        "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                        "0xad",
+                        "0x542d8"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 12,
+                      "source_line_start": 12
+                    },
+                    "symbolic_template_pointer": {
+                      "spelling": "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                      "address": "0x7c8f",
+                      "call_instruction": "0x1fcd8",
+                      "binding": "unique IR call with matching descriptor and caller-location operands"
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -9,7 +9,7 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x25dfb",
+              "name": "std::alloc::default_alloc_error_hook",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        {
+                          "pointer": "v55",
+                          "primitive": "u64"
+                        }
+                      ],
+                      "kind": "macro",
+                      "literal": "memory allocation of {} bytes failed"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x5b41",
+                        "& mut v55",
+                        "0x54870"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 218,
+                      "source_line_start": 218
+                    },
+                    "message_bytes_independently_verified": false
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0x25f64"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "v55",
+                    "added_call_addresses": [
+                      "0x25f84"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -215,7 +215,7 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x28820",
+              "name": "core::ptr::drop_in_place",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "cannot panic during the backtrace function"
+                    },
+                    "before": {
+                      "arguments": [
+                        "_cannot_panic_during_the_backtrace_function_",
+                        "0x55",
+                        "0x54e48"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 8,
+                      "source_line_start": 8
+                    },
+                    "symbolic_template_pointer": {
+                      "spelling": "_cannot_panic_during_the_backtrace_function_",
+                      "address": "0x89ab",
+                      "call_instruction": "0x2883e",
+                      "binding": "unique IR call with matching descriptor and caller-location operands"
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -5,5 +5,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x3f3e0",
+              "name": "&std::io::stdio::Stdout::write_fmt",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "a formatting trait implementation returned an error when the underlying stream did not"
+                    },
+                    "before": {
+                      "arguments": [
+                        "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                        "0xad",
+                        "0x542d8"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 78,
+                      "source_line_start": 78
+                    },
+                    "symbolic_template_pointer": {
+                      "spelling": "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                      "address": "0x7c8f",
+                      "call_instruction": "0x3f58d",
+                      "binding": "unique IR call with matching descriptor and caller-location operands"
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -75,7 +75,7 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x4e540",
+              "name": "alloc::raw_vec::capacity_overflow",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "capacity overflow"
+                    },
+                    "before": {
+                      "arguments": [
+                        "_capacity_overflow_",
+                        "0x23",
+                        "0x55bc8"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 5,
+                      "source_line_start": 5
+                    },
+                    "symbolic_template_pointer": {
+                      "spelling": "_capacity_overflow_",
+                      "address": "0x9298",
+                      "call_instruction": "0x4e557",
+                      "binding": "unique IR call with matching descriptor and caller-location operands"
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -2,5 +2,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x51dc0",
+              "name": "core::slice::sort::shared::smallsort::panic_on_ord_violation",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "user-provided comparison function does not correctly implement a total order"
+                    },
+                    "before": {
+                      "arguments": [
+                        "_user_provided_comparison_function_does_not_correctly_implement_a_total_ordercalled__Option :: unwrap____on_a__None__value_",
+                        "0x99",
+                        "0x55cd0"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 5,
+                      "source_line_start": 5
+                    },
+                    "symbolic_template_pointer": {
+                      "spelling": "_user_provided_comparison_function_does_not_correctly_implement_a_total_ordercalled__Option :: unwrap____on_a__None__value_",
+                      "address": "0x9951",
+                      "call_instruction": "0x51dd7",
+                      "binding": "unique IR call with matching descriptor and caller-location operands"
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -2,5 +2,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            }
+          ],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "panic-native",
+      "sha256": "b0e67472c201256e056bcb5fa7df31247af95883ac8d63e67feeda143fb58fdc",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 597,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 597,
+          "changed": [
+            {
+              "address": "0x17180",
+              "name": "panic_decimal",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        {
+                          "pointer": "v2",
+                          "primitive": "u64"
+                        }
+                      ],
+                      "kind": "macro",
+                      "literal": "value={}\n"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x5e32",
+                        "& mut v2",
+                        "0x5bc88"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 11,
+                      "source_line_start": 11
+                    },
+                    "message_bytes_independently_verified": false
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0x171aa"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "v2",
+                    "added_call_addresses": [
+                      "0x171af"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -8,5 +8,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x171c0",
+              "name": "panic_dynamic",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "Formatting argument out of range"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x6980",
+                        "0x41",
+                        "0x5bca0"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 13,
+                      "source_line_start": 13
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -10,7 +10,7 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x17230",
+              "name": "panic_empty",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": ""
+                    },
+                    "before": {
+                      "arguments": [
+                        "1",
+                        "1",
+                        "0x5bcb8"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 4,
+                      "source_line_start": 4
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -1,5 +1,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x17250",
+              "name": "panic_escaped",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        {
+                          "pointer": "v2",
+                          "primitive": "u8"
+                        }
+                      ],
+                      "kind": "macro",
+                      "literal": "{{|{0:\"<6}|{0:\\>6}|{0:\n^7}|{0:\u0000<3}|}}\n"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x69a0",
+                        "& mut v2",
+                        "0x5bcd0"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 11,
+                      "source_line_start": 11
+                    },
+                    "message_bytes_independently_verified": false
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0x1727d"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "v2",
+                    "added_call_addresses": [
+                      "0x17282"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -8,5 +8,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x17350",
+              "name": "panic_hex",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        {
+                          "pointer": "v2",
+                          "primitive": "u32"
+                        }
+                      ],
+                      "kind": "macro",
+                      "literal": "hex={:#010x}"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x69d0",
+                        "& mut v2",
+                        "0x5bd18"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 11,
+                      "source_line_start": 11
+                    },
+                    "message_bytes_independently_verified": false
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0x1737c"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "v2",
+                    "added_call_addresses": [
+                      "0x17381"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -8,5 +8,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x17390",
+              "name": "panic_literal",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "literal {{\u00e9\ud83d\ude42}}\n\n"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x69dd",
+                        "0x25",
+                        "0x5bd30"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 4,
+                      "source_line_start": 4
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -1,5 +1,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x173b0",
+              "name": "panic_narrow",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        {
+                          "pointer": "v2",
+                          "primitive": "i8"
+                        },
+                        {
+                          "pointer": "v4",
+                          "primitive": "i8"
+                        },
+                        {
+                          "pointer": "v6",
+                          "primitive": "i8"
+                        }
+                      ],
+                      "kind": "macro",
+                      "literal": "{:+} {:#x} {:08b}"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x69ef",
+                        "& mut v2",
+                        "0x5bd48"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 19,
+                      "source_line_start": 19
+                    },
+                    "message_bytes_independently_verified": false
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0x173ff"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -16,5 +16,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x17410",
+              "name": "panic_reorder",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        {
+                          "pointer": "v3",
+                          "primitive": "u16"
+                        },
+                        {
+                          "pointer": "v5",
+                          "primitive": "u32"
+                        },
+                        {
+                          "pointer": "v7",
+                          "primitive": "u16"
+                        }
+                      ],
+                      "kind": "macro",
+                      "literal": "{0:#08x} {1:+06} {2:>5o} {1:+06}"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x6a05",
+                        "& mut v3",
+                        "0x5bd60"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 21,
+                      "source_line_start": 21
+                    },
+                    "message_bytes_independently_verified": false
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0x17468"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "v5",
+                    "added_call_addresses": [
+                      "0x1746d"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -18,5 +18,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x17480",
+              "name": "panic_signed",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        {
+                          "pointer": "v2",
+                          "primitive": "i64"
+                        }
+                      ],
+                      "kind": "macro",
+                      "literal": "signed={:+}"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x6a2a",
+                        "& mut v2",
+                        "0x5bd78"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 11,
+                      "source_line_start": 11
+                    },
+                    "message_bytes_independently_verified": false
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0x174aa"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "v2",
+                    "added_call_addresses": [
+                      "0x174af"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -8,5 +8,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x28b7b",
+              "name": "std::alloc::default_alloc_error_hook",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        {
+                          "pointer": "v53",
+                          "primitive": "u64"
+                        }
+                      ],
+                      "kind": "macro",
+                      "literal": "memory allocation of {} bytes failed"
+                    },
+                    "before": {
+                      "arguments": [
+                        "0x62fa",
+                        "& mut v53",
+                        "0x5c458"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 213,
+                      "source_line_start": 213
+                    },
+                    "message_bytes_independently_verified": false
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0x28ce4"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "v53",
+                    "added_call_addresses": [
+                      "0x28d04"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -210,7 +210,7 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x2b720",
+              "name": "core::ptr::drop_in_place",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "cannot panic during the backtrace function"
+                    },
+                    "before": {
+                      "arguments": [
+                        "_cannot_panic_during_the_backtrace_function_",
+                        "0x55",
+                        "0x5ca48"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 8,
+                      "source_line_start": 8
+                    },
+                    "symbolic_template_pointer": {
+                      "spelling": "_cannot_panic_during_the_backtrace_function_",
+                      "address": "0x9325",
+                      "call_instruction": "0x2b73e",
+                      "binding": "unique IR call with matching descriptor and caller-location operands"
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -5,5 +5,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x51440",
+              "name": "alloc::raw_vec::capacity_overflow",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "capacity overflow"
+                    },
+                    "before": {
+                      "arguments": [
+                        "_capacity_overflow_",
+                        "0x23",
+                        "0x5d7c8"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 5,
+                      "source_line_start": 5
+                    },
+                    "symbolic_template_pointer": {
+                      "spelling": "_capacity_overflow_",
+                      "address": "0x9bc8",
+                      "call_instruction": "0x51457",
+                      "binding": "unique IR call with matching descriptor and caller-location operands"
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -2,5 +2,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            },
+            {
+              "address": "0x59840",
+              "name": "core::slice::sort::shared::smallsort::panic_on_ord_violation",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [],
+                      "kind": "macro",
+                      "literal": "user-provided comparison function does not correctly implement a total order"
+                    },
+                    "before": {
+                      "arguments": [
+                        "_user_provided_comparison_function_does_not_correctly_implement_a_total_ordercalled__Option :: unwrap____on_a__None__value_",
+                        "0x99",
+                        "0x5dd50"
+                      ],
+                      "kind": "runtime",
+                      "source_line_end": 5,
+                      "source_line_start": 5
+                    },
+                    "symbolic_template_pointer": {
+                      "spelling": "_user_provided_comparison_function_does_not_correctly_implement_a_total_ordercalled__Option :: unwrap____on_a__None__value_",
+                      "address": "0xab3d",
+                      "call_instruction": "0x59857",
+                      "binding": "unique IR call with matching descriptor and caller-location operands"
+                    },
+                    "message_bytes_independently_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -2,5 +2,5 @@",
+                  "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+                }
+              ]
+            }
+          ],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        },
+        {
+          "language": "go",
+          "functions": 597,
+          "changed": [],
+          "parsed": 597,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    }
+  ]
+}

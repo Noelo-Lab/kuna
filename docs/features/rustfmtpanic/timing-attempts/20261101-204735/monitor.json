@@ -1,0 +1,23 @@
+{
+  "attempt": "/tmp/kuna-rust-panic-d850/timing-attempts/20261101-204735",
+  "target_cpu": 67,
+  "sibling_cpu": 27,
+  "sibling_idle_pct": 83.35844404876045,
+  "cpu_coefficient_of_variation": {
+    "go-control": {
+      "baseline": 0.19848858133837977,
+      "off": 0.18156482920882172,
+      "patched": 0.1753730713357889
+    },
+    "rust-large-control": {
+      "baseline": 0.0886790412229004,
+      "off": 0.10995539177996878,
+      "patched": 0.08139930365306192
+    }
+  },
+  "criteria": {
+    "sibling_idle_min_pct": 95,
+    "cpu_coefficient_of_variation_max": 0.1
+  },
+  "accepted_for_speed_review": false
+}

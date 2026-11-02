@@ -1,0 +1,10 @@
+{
+  "reason": "Five-second physical-core idle preflight failed; shell sequencing accidentally launched the measurement anyway. Stopped only the owned timing process and its children; no recheck result accepted.",
+  "processes": {
+    "453204": [
+      "python3",
+      "/tmp/kuna-rust-panic-d850/timing.py",
+      "rust-large-control"
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_panic_real_x86_64</com>
+  <com>read symbols</com>
+  <com>option setlanguage rust-language</com>
+  <com>option rustfmtpanic off</com>
+  <com>load function panic_literal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function panic_decimal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option rustfmtpanic on</com>
+  <com>print C</com>
+  <com>load function panic_literal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function panic_hex</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function panic_reorder</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function panic_narrow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function panic_forwarded</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="panic off and dynamic caller location retain runtime sink" min="3" max="3">core::panicking::panic_fmt\(</stringmatch>
+<stringmatch name="literal panic keeps braces Unicode and both newlines" min="1" max="1">panic!\("literal \{\{é🙂\}\}\\n\\n"\)</stringmatch>
+<stringmatch name="decimal panic keeps terminal LF and primitive width" min="1" max="1">panic!\("value=\{\}\\n".*\*const u64</stringmatch>
+<stringmatch name="panic hexadecimal width and alternate flag" min="1" max="1">panic!\("hex=\{:#010x\}".*\*const u32</stringmatch>
+<stringmatch name="panic repeated indices retain order and formats" min="1" max="1">panic!\("\{0:#08x\} \{1:\+06\} \{2:&gt;5o\} \{1:\+06\}"</stringmatch>
+<stringmatch name="panic narrow signed arguments retain interpretation" min="1" max="1">panic!\("\{:\+\} \{:#x\} \{:08b\}".*\*const i8</stringmatch>
+</decompilertest>

@@ -1,0 +1,11 @@
+datatests: 0/8 assertions passed
+FAILURES:
+  [data] off and unknown Debug preserve the runtime sink
+  [data] every string view uses the original data and length
+  [data] plain string printing
+  [data] string widths precision and repeated indices
+  [data] two string arguments preserve order
+  [data] String results retain destination writes
+  [data] string panic message
+  [data] string stderr message
+exit: 8

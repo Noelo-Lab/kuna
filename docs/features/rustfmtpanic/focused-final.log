@@ -1,0 +1,6 @@
+Extracted from the complete workspace validation on the integrated tree.
+test verify_rustfmtpanic::recovered_panics_match_native_payloads ... ok
+test verify_rustfmtpanic::panic_recovery_requires_no_return_and_exact_argument_count ... ok
+test verify_rustfmtpanic::native_panic_macros_preserve_newlines_and_integer_formats ... ok
+test verify_rustfmtpanic::language_version_and_formatting_options_bound_recovery ... ok
+test verify_rustfmtpanic::unsupported_templates_locations_and_names_remain_runtime_calls ... ok
