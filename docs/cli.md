@@ -2940,7 +2940,7 @@ with kuna's own address column, so the two are diffable. `--json` replaces
  "fixups": [{"address","address_hex","size","kind","symbol","addend",
              "target","target_hex","file_bytes","image_bytes","returned"}],
  "provenance": [{"start","start_hex","end","end_hex","size","source",
-                 "file_offset","file_offset_hex","segment"}]}
+                 "file_offset","file_offset_hex","segment","overlaps"}]}
 ```
 
 `hex` is the whole span in one piece and `rows[].bytes` is that same string cut
@@ -3002,7 +3002,8 @@ holds and a zero kuna filled in no longer look alike. The ranges tile
 |---|---|
 | `source` | `file` (the file's bytes from `file_offset` on, which are the listed bytes except at a slot `fixups` lists), `zero-fill` (memory the segment declares past the bytes the file holds for it), `repaired` (file-backed bytes kuna rewrote before parsing the image: an ELF section table it cannot read cleared, a PE's DOS magic set to `MZ`, its data-directory count clamped; the file holds other bytes at `file_offset`), or `unknown` (an image no segment of the file describes: a relocatable object, whose layout is kuna's own, or a TE or MZ image). |
 | `file_offset` | Where the range starts in the file, counted from the file's first byte, so a fat Mach-O's slice offset is included. `null` unless `source` is `file` or `repaired`. |
-| `segment` | The segment holding the range, as the image declares it: `name` (the Mach-O segment or PE section; `null` for an ELF `PT_LOAD` and for the PE header page), `start`/`start_hex` and `size` (`vmaddr` and `vmsize`, `p_vaddr` and `p_memsz`, a section's address and `VirtualSize`), `file_offset` and `file_size` (the bytes kuna reads from the file for it: `filesize`, `p_filesz`, a section's raw data up to its `VirtualSize`), and `permissions`. `null` where `source` is `unknown`. |
+| `segment` | The segment holding the range, as the image declares it: `index` (its 0-based entry in the table that declares it: the ELF program header table, as `readelf -l` numbers it; the Mach-O load commands, as `otool -l` does; the PE section table, as `objdump -h` does; `null` for the PE header page), `name` (the Mach-O segment or PE section; `null` for an ELF `PT_LOAD` and for the PE header page), `start`/`start_hex` and `size` (`vmaddr` and `vmsize`, `p_vaddr` and `p_memsz`, a section's address and `VirtualSize`), `file_offset` and `file_size` (the bytes kuna reads from the file for it: `filesize`, `p_filesz`, a section's raw data up to its `VirtualSize`), and `permissions`. `null` where `source` is `unknown`. |
+| `overlaps` | Every other segment that declares the range's addresses, below; empty for nearly every image. |
 
 `permissions` is `r`, `w` and `x`, each or `-`, from Mach-O `initprot`, ELF
 `p_flags` or a section's `IMAGE_SCN_MEM_READ`/`WRITE`/`EXECUTE` bits; the PE
@@ -3033,6 +3034,54 @@ A read across the end of `__LINKEDIT`'s file content comes back in two ranges:
                "file_offset": 32768, "file_size": 736, "permissions": "r--"}},
   {"start_hex": "0x1000102e0", "end_hex": "0x1000102e8", "source": "zero-fill",
    "file_offset": null, "file_offset_hex": null, "segment": {"name": "__LINKEDIT", ...}}]
+```
+
+An image can also declare an address more than once: two `PT_LOAD`s over one
+page from different file offsets, a Mach-O segment or PE section whose extent
+runs into another's. The load image serves one of them, the same one for every
+surface: it orders the segments by start address, segments that start together
+in the order the image's table lists them, ends each one's zero fill where the
+next one starts, and reads an address from the first segment that covers it.
+So the first-listed of two segments at one address wins, a lower-starting
+segment's file bytes win over a higher-starting one's, and any segment's file
+bytes win over another's zero fill. That is kuna's static choice, not a
+loader's: Linux maps `PT_LOAD`s in program-header order with `MAP_FIXED`, so the
+last one wins, a whole page at a time, and Ghidra puts the later one in default
+memory and the earlier one in an overlay. The bytes and the range's `source`, `file_offset` and
+`segment` stay the served segment's. Each other segment that declares any of
+the range's addresses is listed in `overlaps`, as `{source, file_offset,
+file_offset_hex, segment}`: what that segment holds there (`file`, `repaired` or
+`zero-fill`), where its bytes for the range start in the file, and the segment
+in the same shape as above. The span is cut wherever that set changes, so every
+overlap covers its whole range. Segments that only meet (`p_vaddr + p_memsz` at
+the next `p_vaddr`) or share a page without sharing a byte are not overlaps,
+which also means a page Linux would replace whole is not listed for the bytes
+outside the later segment. A span with any overlap gets one note. Two 16-byte
+`PT_LOAD`s at `0x401000`, from file offsets `0x1000` and `0x2000` (Linux 6.8 maps
+the second's `ff ee dd ...` there):
+
+```
+$ kuna read ./ab.elf 0x401000 --addr --bytes 16
+note: overlapping segments: 0x401000..0x401010 is read from file offset 0x1000 in
+the PT_LOAD at 0x401000 (program header 0), and the PT_LOAD at 0x401000 (program
+header 1) maps it from file offset 0x2000 -- the image maps these addresses more
+than once; kuna orders its segments by start address, equal starts in table
+order, ends each one's zero fill where the next starts, and reads the first that
+covers an address; `--json` lists the others in each range's `overlaps`
+# 16 bytes at sub_401000 @ 0x401000 (0x401000..0x401010)
+0x401000      11 22 33 44 55 66 77 88 99 aa bb cc dd ee ff c3  |."3DUfw.........|
+```
+
+```json
+"provenance": [
+  {"start_hex": "0x401000", "end_hex": "0x401010", "source": "file",
+   "file_offset": 4096, "file_offset_hex": "0x1000",
+   "segment": {"index": 0, "name": null, "start_hex": "0x401000", "size": 16,
+               "file_offset": 4096, "file_size": 16, "permissions": "r-x"},
+   "overlaps": [
+     {"source": "file", "file_offset": 8192, "file_offset_hex": "0x2000",
+      "segment": {"index": 1, "name": null, "start_hex": "0x401000", "size": 16,
+                  "file_offset": 8192, "file_size": 16, "permissions": "r-x"}}]}]
 ```
 
 A listing stops at the end of **mapped memory**, whatever length was asked for.
