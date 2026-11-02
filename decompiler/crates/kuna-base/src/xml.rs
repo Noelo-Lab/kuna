@@ -2146,7 +2146,8 @@ mod tests {
         // and kuna-relocobj-ppc-mips / PowerPC and MIPS relocatable objects' calls and addresses
         // and kuna-bejoin-mipspic / MIPS PIC callers and unaligned loads (option bejoin callers)
         // and kuna-funcstart-symbolextent / no pattern or gap start inside a sized function symbol
-        assert_eq!(count, 671, "corpus file count drifted");
+        // and kuna-relocrebase-be / a big-endian object's analysis facts at its load addresses
+        assert_eq!(count, 672, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3661,
-    3661
+    3665,
+    3665
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3218,6 +3218,10 @@
     "data:relocobj #4: MIPSel PIC wrap calls ext64 through the GOT",
     "data:relocobj #5: PowerPC64 ELFv1 store calls add64",
     "data:relocobj #6: no call is left at its placeholder",
+    "data:relocrebase-be #1: greet calls puts with its string",
+    "data:relocrebase-be #2: no t9 variable",
+    "data:relocrebase-be #3: greet is listed once, at its load address",
+    "data:relocrebase-be #3b: nothing at a pre-link address",
     "data:rename after rebuilding updates initializer fields",
     "data:rename after rebuilding updates the call view",
     "data:retsplitglobal #1: the shared epilogue is cloned into all three predecessors with the option off and emitted once with it on",
