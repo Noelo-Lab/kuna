@@ -1,0 +1,6 @@
+{
+  "addr": 4544,
+  "decompiler": "ghidra",
+  "text": "\ncode * nested_address(void)\n\n{\n  return left::deep::target;\n}\n\n",
+  "addr_hex": "0x11c0"
+}

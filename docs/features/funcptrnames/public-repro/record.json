@@ -1,0 +1,27 @@
+{
+  "build": {
+    "stage_assertions": [
+      3571,
+      3571
+    ],
+    "new_cli_sha256": "384f7547f58af97719b98b7923a1f5ee530d2bedb7c4981436dbe4f0d53b8723",
+    "parent_commit": "4a9c18414ccd68449cbdbdf43a088a114a6b0c07",
+    "parent_cli_sha256": "74030097e634b93022235cbf8364ef1171071fb47a205c9393e9b0b19dd6aa1c",
+    "baseline_root": "/home/mahaloz/kwt/angr-base-4a9c"
+  },
+  "source": "namespace left { __attribute__((noinline)) unsigned target(unsigned x) { return x + 10; } }\n__attribute__((noinline)) unsigned target(unsigned x) { return x + 40; }\nextern \"C\" unsigned long get_target() { return reinterpret_cast<unsigned long>(&left::target); }\nint main() { return 0; }\n",
+  "source_sha256": "c986493eb1b1cc99a78ed8830252bf82c579bffc8c44d1e1c550bb691847f5d5",
+  "fixture_sha256": "e5f56d20e016eaacd905d50da6b90b0dc5414bdf6403d0b1e138084da05ab108",
+  "before": "unsigned long get_target(void)\n{\n  return (unsigned long)target;\n}\n",
+  "after": "unsigned long get_target(void)\n{\n  return (unsigned long)left::target;\n}\n",
+  "hello_fixture_sha256": "bfd77e92784ea3b3b9a6e2f6393095d42816950540a3363532d5d570bd2584af",
+  "hello_assertions": {
+    "qualified_function_pointer": true,
+    "no_extern_declaration": true,
+    "all_non_code_metadata_equal": true
+  },
+  "hello": {
+    "parent": "int main(int argc,char **argv)\n{\n  return std::rt::lang_start(main,(long)argc,argv,0);\n}",
+    "candidate": "int main(int argc,char **argv)\n{\n  return std::rt::lang_start(rust_hello_world::main,(long)argc,argv,0);\n}"
+  }
+}

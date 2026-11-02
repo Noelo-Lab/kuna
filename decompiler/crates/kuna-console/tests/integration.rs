@@ -94,6 +94,8 @@ mod verify_cppcallnames;
 
 #[path = "verify_cppproto.rs"]
 mod verify_cppproto;
+#[path = "verify_funcptrnames.rs"]
+mod verify_funcptrnames;
 
 #[path = "verify_cppsig.rs"]
 mod verify_cppsig;

@@ -1,6 +1,9 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 mod common;
 
+#[path = "function_pointer_namespaces.rs"]
+mod function_pointer_namespaces;
+
 #[path = "local_array_bits.rs"]
 mod local_array_bits;
 

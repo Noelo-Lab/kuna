@@ -1,0 +1,6 @@
+{
+  "addr": 4560,
+  "decompiler": "ghidra",
+  "text": "\ncode * right_address(void)\n\n{\n  return right::target;\n}\n\n",
+  "addr_hex": "0x11d0"
+}

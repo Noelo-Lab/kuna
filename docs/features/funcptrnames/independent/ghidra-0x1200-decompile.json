@@ -1,0 +1,6 @@
+{
+  "addr": 4608,
+  "decompiler": "ghidra",
+  "text": "\nundefined8 interior_address(void)\n\n{\n  return 0x101151;\n}\n\n",
+  "addr_hex": "0x1200"
+}

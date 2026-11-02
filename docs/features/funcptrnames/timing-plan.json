@@ -1,0 +1,83 @@
+{
+  "declared_at": "2026-11-02T06:27:12.703451+00:00",
+  "scope": "Default function-address namespace correction versus fresh current-main 4a9c parent. Both arms use their default namespace policy.",
+  "root": "/home/mahaloz/kwt/angr-fnptr-namespace",
+  "base": "/home/mahaloz/kwt/angr-base-4a9c",
+  "cases": [
+    [
+      "scalar-c",
+      "/home/mahaloz/kwt/angr-fnptr-namespace/tests/fixtures/go-output/output-c",
+      "choose",
+      "c"
+    ],
+    [
+      "fnptr-cpp",
+      "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/function_pointer_namespaces_x86_64",
+      "foreign_address",
+      "c"
+    ],
+    [
+      "angr-hello",
+      "/tmp/kuna-angr-reference/general/hello",
+      "main",
+      "c"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ]
+  ],
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "samples_per_arm": 384,
+  "warmups_per_arm": 3,
+  "seed": 202611026,
+  "bootstrap_resamples": 20000,
+  "family_alpha": 0.05,
+  "comparisons": 10,
+  "upper_quantile": 0.995,
+  "maximum_looks": 1,
+  "budget_pct": 5,
+  "criterion": "Every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bootstrap bound <=5 percent. One final look; no unchanged-code repeat.",
+  "execution": "Five cases in separate workers on disjoint physical CPU pairs; each two-round block contains both arm orders in random order; coordinator/telemetry use other CPUs; no owned builds, tests, corpus or decompiler research while sampling.",
+  "lightwork_reservation_amendment": {
+    "declared_at": "2026-11-02T06:27:12.703451+00:00",
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "reason": "Reserve one physical pair for light document/code review commands; exclude it from timing workers before any samples. Acceptance, sample counts and inference unchanged."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T06:27:12.703451+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48",
+    "scope": "Assert parent and candidate compiled spec bytes against the existing 154-spec manifest before and after sampling."
+  },
+  "failure_policy": "No unchanged-code repeat or discarded observations. A failed study blocks default publication; revise only for a demonstrated implementation issue or gate the fix separately.",
+  "build": {
+    "stage_assertions": [
+      3571,
+      3571
+    ],
+    "new_cli_sha256": "384f7547f58af97719b98b7923a1f5ee530d2bedb7c4981436dbe4f0d53b8723",
+    "parent_commit": "4a9c18414ccd68449cbdbdf43a088a114a6b0c07",
+    "parent_cli_sha256": "74030097e634b93022235cbf8364ef1171071fb47a205c9393e9b0b19dd6aa1c",
+    "baseline_root": "/home/mahaloz/kwt/angr-base-4a9c"
+  },
+  "implementation_refinement": {
+    "declared_at": "2026-11-02T06:37:47.955797+00:00",
+    "reason": "Decline unspellable namespace components found by full C diff review; eight negative scope controls and a positive scope control pass. No speed samples were taken on the earlier candidate. Sampling and acceptance criteria unchanged.",
+    "prior_cli_sha256": "69f1eaf8f66963a51b0a094e6fa0db1e8d87b6821fcb38d32793608d0945025a"
+  }
+}

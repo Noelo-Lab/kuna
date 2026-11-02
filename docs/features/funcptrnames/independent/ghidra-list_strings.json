@@ -1,0 +1,107 @@
+[
+  {
+    "addr": 792,
+    "string": "/lib64/ld-linux-x86-64.so.2",
+    "addr_hex": "0x318"
+  },
+  {
+    "addr": 1161,
+    "string": "__gmon_start__",
+    "addr_hex": "0x489"
+  },
+  {
+    "addr": 1176,
+    "string": "_ITM_deregisterTMCloneTable",
+    "addr_hex": "0x498"
+  },
+  {
+    "addr": 1204,
+    "string": "_ITM_registerTMCloneTable",
+    "addr_hex": "0x4b4"
+  },
+  {
+    "addr": 1230,
+    "string": "__cxa_finalize",
+    "addr_hex": "0x4ce"
+  },
+  {
+    "addr": 1245,
+    "string": "__libc_start_main",
+    "addr_hex": "0x4dd"
+  },
+  {
+    "addr": 1263,
+    "string": "strtoul",
+    "addr_hex": "0x4ef"
+  },
+  {
+    "addr": 1271,
+    "string": "printf",
+    "addr_hex": "0x4f7"
+  },
+  {
+    "addr": 1278,
+    "string": "libstdc++.so.6",
+    "addr_hex": "0x4fe"
+  },
+  {
+    "addr": 1293,
+    "string": "libm.so.6",
+    "addr_hex": "0x50d"
+  },
+  {
+    "addr": 1303,
+    "string": "libgcc_s.so.1",
+    "addr_hex": "0x517"
+  },
+  {
+    "addr": 1317,
+    "string": "libc.so.6",
+    "addr_hex": "0x525"
+  },
+  {
+    "addr": 1327,
+    "string": "GLIBC_2.34",
+    "addr_hex": "0x52f"
+  },
+  {
+    "addr": 1338,
+    "string": "GLIBC_2.2.5",
+    "addr_hex": "0x53a"
+  },
+  {
+    "addr": 4209,
+    "string": "PTE1",
+    "addr_hex": "0x1071"
+  },
+  {
+    "addr": 4363,
+    "string": "u+UH",
+    "addr_hex": "0x110b"
+  },
+  {
+    "addr": 4640,
+    "string": "UAWAVAUATSP1",
+    "addr_hex": "0x1220"
+  },
+  {
+    "addr": 4758,
+    "string": "SARAVAV",
+    "addr_hex": "0x1296"
+  },
+  {
+    "addr": 4780,
+    "string": "[A\\A]A^A_]",
+    "addr_hex": "0x12ac"
+  },
+  {
+    "addr": 8196,
+    "string": "%u %u %u %u %u %u %u %u %u\n",
+    "addr_hex": "0x2004"
+  },
+  {
+    "addr": 8455,
+    "string": ";*3$\"",
+    "addr_hex": "0x2107"
+  }
+]

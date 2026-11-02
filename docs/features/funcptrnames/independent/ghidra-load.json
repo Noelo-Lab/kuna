@@ -1,0 +1,8 @@
+{
+  "status": "started",
+  "id": "kuna-fnptr-namespace",
+  "binary_path": "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/function_pointer_namespaces_x86_64",
+  "backend": "ghidra",
+  "socket_path": "/tmp/declib_server_kuna-fnptr-namespace/decompiler.sock",
+  "project_dir": "/tmp/kuna-fnptr-namespace/ghidra"
+}

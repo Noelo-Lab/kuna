@@ -5,6 +5,25 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p9_emit
 ```
 
+Standalone C output qualifies whole function-address expressions through
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_funcptrnames.rs`. A named
+SPACEBASE reference must have code type and resolve to the exact function entry.
+The recovered global symbol and live function database must agree on its leaf
+name and complete namespace path at the instruction's use point. This preserves
+explicit high-variable renames and declines conflicting aliases, data objects,
+interior addresses and remote-provider contexts.
+Every namespace component must be a plain ASCII C++ identifier rather than a
+keyword. Rust reference/pointer type names, template spellings, anonymous scopes
+and other unspellable paths retain their previous expression: prefixing `fmt`
+with a raw `*mut T::` or `char::` would not name a C++ function.
+The existing `namespacestrategy` policy controls the prefix: `minimal` uses the
+caller namespace and local-name collisions, `all` includes every named namespace
+and any global root needed to disambiguate a local, and `none` emits the bare
+name. Local scopes belong to the function's detached database; namespace lookup
+uses only scope identities from the live architecture database. Scope tokens
+precede the existing symbol atom, preserving its instruction and varnode tags.
+Rust and Go output retain their own existing function-value spelling.
+
 Typed byte-copy stores explicitly convert a pointer initializer to its declared
 pointer type when the rendered operand is not already a pointer that type accepts
 implicitly. The operand may carry the pointer bits through an unsigned integer

@@ -1,0 +1,87 @@
+{
+  "binary": "/tmp/kuna-angr-reference/general/hello",
+  "language": "c-language",
+  "count": 1,
+  "error": null,
+  "functions": [
+    {
+      "name": "main",
+      "address": 35408,
+      "address_hex": "0x8a50",
+      "aliases": [
+        "sub_8a50"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "int main(int argc,char **argv)\n{\n  return std::rt::lang_start(rust_hello_world::main,(long)argc,argv,0);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            35412,
+            35424,
+            35430
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "argc",
+          "type": "int",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            35412,
+            35424,
+            35430
+          ]
+        },
+        {
+          "name": "argv",
+          "type": "char **",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            35412,
+            35424,
+            35430
+          ]
+        },
+        {
+          "name": "local_10",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        },
+        {
+          "name": "local_8",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -8,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": []
+}

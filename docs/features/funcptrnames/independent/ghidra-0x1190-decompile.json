@@ -1,0 +1,6 @@
+{
+  "addr": 4496,
+  "decompiler": "ghidra",
+  "text": "\n/* right::cross_address() */\n\ncode * right::cross_address(void)\n\n{\n  return left::target;\n}\n\n",
+  "addr_hex": "0x1190"
+}
