@@ -1,0 +1,6 @@
+{
+  "cause": "The single-function CLI JSON is also a functions[] envelope; both correct captures had been produced before the script looked for code at the wrong level.",
+  "fix": "Validate one function/no error then read functions[0].code.",
+  "production_code_change": false,
+  "failed_artifacts": "public-repro-json-envelope-failed"
+}

@@ -97,6 +97,9 @@ mod verify_cppproto;
 #[path = "verify_funcptrnames.rs"]
 mod verify_funcptrnames;
 
+#[path = "verify_dwarf_namespaces.rs"]
+mod verify_dwarf_namespaces;
+
 #[path = "verify_cppsig.rs"]
 mod verify_cppsig;
 

@@ -1,0 +1,2711 @@
+{
+  "complete": true,
+  "semantic_review_pending": false,
+  "images": 38,
+  "distinct_functions": 31852,
+  "language_records": 70272,
+  "counts": {
+    "changed_records": 78,
+    "qualified_comments": 29,
+    "removed_aliases": 44,
+    "unchanged_records": 70194,
+    "changed_code_records": 57
+  },
+  "structural_review_failures": [],
+  "changes": [
+    {
+      "language": "c",
+      "address": "0x142f0",
+      "before_name": "main",
+      "name": "extensions::main",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "main"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-void main(void) // return-dupe",
+        "+void extensions::main(void) // return-dupe",
+        " {",
+        "   core::alloc::layout::Layout elem_layout; // r8:rcx",
+        "   unsigned long *v1; // tmp"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "native-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x148a0",
+      "before_name": "main",
+      "name": "main",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -3,7 +3,7 @@",
+        "   void *v1; // stack - 0x8",
+        "   int v2; // edi",
+        "   ",
+        "-  v1 = main;",
+        "+  v1 = extensions::main;",
+        "   lang_start_internal(&v1,{vtable},(long)v2);",
+        "   return;",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "native-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x142f0",
+      "before_name": "main",
+      "name": "extensions::main",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "main"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// extensions::main",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn main() // return-dupe",
+        " {"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "native-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x1150",
+      "before_name": "target",
+      "name": "left::target",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-unsigned int target(unsigned int x)",
+        "+unsigned int left::target(unsigned int x)",
+        " {",
+        "   return x + 10;",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x1160",
+      "before_name": "same",
+      "name": "left::same",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "same"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-unsigned int same(unsigned int x)",
+        "+unsigned int left::same(unsigned int x)",
+        " {",
+        "-  return target(x);",
+        "+  return left::target(x);",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x1170",
+      "before_name": "target",
+      "name": "left::deep::target",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-unsigned int target(unsigned int x)",
+        "+unsigned int left::deep::target(unsigned int x)",
+        " {",
+        "   return x + 0x14;",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x1180",
+      "before_name": "target",
+      "name": "right::target",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-unsigned int target(unsigned int x)",
+        "+unsigned int right::target(unsigned int x)",
+        " {",
+        "   return x + 0x1e;",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x1190",
+      "before_name": "cross",
+      "name": "right::cross",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "cross"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-unsigned int cross(unsigned int x)",
+        "+unsigned int right::cross(unsigned int x)",
+        " {",
+        "-  return target(x);",
+        "+  return left::target(x);",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x11b0",
+      "before_name": "direct_left",
+      "name": "direct_left",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        " unsigned int direct_left(unsigned int x)",
+        " {",
+        "-  return target(x);",
+        "+  return left::target(x);",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x11c0",
+      "before_name": "direct_nested",
+      "name": "direct_nested",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        " unsigned int direct_nested(unsigned int x)",
+        " {",
+        "-  return target(x);",
+        "+  return left::deep::target(x);",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x11d0",
+      "before_name": "direct_right",
+      "name": "direct_right",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        " unsigned int direct_right(unsigned int x)",
+        " {",
+        "-  return target(x);",
+        "+  return right::target(x);",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x11f0",
+      "before_name": "direct_shadow",
+      "name": "direct_shadow",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        " unsigned int direct_shadow(unsigned int left)",
+        " {",
+        "-  return target(left);",
+        "+  return left::target(left);",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x1200",
+      "before_name": "main",
+      "name": "main",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -19,7 +19,7 @@",
+        "   v4 = direct_right(x);",
+        "   v5 = direct_global(x);",
+        "   v6 = direct_shadow(x);",
+        "-  v7 = same(x);",
+        "-  printf(\"%u %u %u %u %u %u %u\\n\",v2,v3,v4,v5,v6,v7,cross(x));",
+        "+  v7 = left::same(x);",
+        "+  printf(\"%u %u %u %u %u %u %u\\n\",v2,v3,v4,v5,v6,v7,right::cross(x));",
+        "   return 0;",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x1150",
+      "before_name": "target",
+      "name": "left::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// left::target",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn target(mut x: u32) -> u32",
+        " {"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x1160",
+      "before_name": "same",
+      "name": "left::same",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "same"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,5 +1,6 @@",
+        "+// left::same",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn same(mut x: u32) -> u32",
+        " {",
+        "-  return target(x);",
+        "+  return left::target(x);",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x1170",
+      "before_name": "target",
+      "name": "left::deep::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// left::deep::target",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn target(mut x: u32) -> u32",
+        " {"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x1180",
+      "before_name": "target",
+      "name": "right::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// right::target",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn target(mut x: u32) -> u32",
+        " {"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x1190",
+      "before_name": "cross",
+      "name": "right::cross",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "cross"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,5 +1,6 @@",
+        "+// right::cross",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn cross(mut x: u32) -> u32",
+        " {",
+        "-  return target(x);",
+        "+  return left::target(x);",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x11b0",
+      "before_name": "direct_left",
+      "name": "direct_left",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,5 +1,5 @@",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn direct_left(mut x: u32) -> u32",
+        " {",
+        "-  return target(x);",
+        "+  return left::target(x);",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x11c0",
+      "before_name": "direct_nested",
+      "name": "direct_nested",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,5 +1,5 @@",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn direct_nested(mut x: u32) -> u32",
+        " {",
+        "-  return target(x);",
+        "+  return left::deep::target(x);",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x11d0",
+      "before_name": "direct_right",
+      "name": "direct_right",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,5 +1,5 @@",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn direct_right(mut x: u32) -> u32",
+        " {",
+        "-  return target(x);",
+        "+  return right::target(x);",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x11f0",
+      "before_name": "direct_shadow",
+      "name": "direct_shadow",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,5 +1,5 @@",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn direct_shadow(mut left: u32) -> u32",
+        " {",
+        "-  return target(left);",
+        "+  return left::target(left);",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x1200",
+      "before_name": "main",
+      "name": "main",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -20,7 +20,7 @@",
+        "   v4 = direct_right(x);",
+        "   v5 = direct_global(x);",
+        "   v6 = direct_shadow(x);",
+        "-  v7 = same(x);",
+        "-  printf(__u__u__u__u__u__u__u_n_,v2,v3,v4,v5,v6,v7,cross(x));",
+        "+  v7 = left::same(x);",
+        "+  printf(__u__u__u__u__u__u__u_n_,v2,v3,v4,v5,v6,v7,right::cross(x));",
+        "   return 0;",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x1150",
+      "before_name": "target",
+      "name": "left::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// left::target",
+        " func target(x uint32) uint32 {",
+        "   return x + 0xa",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x1160",
+      "before_name": "same",
+      "name": "left::same",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "same"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// left::same",
+        " func same(x uint32) uint32 {",
+        "   return target(x)",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x1170",
+      "before_name": "target",
+      "name": "left::deep::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// left::deep::target",
+        " func target(x uint32) uint32 {",
+        "   return x + 0x14",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x1180",
+      "before_name": "target",
+      "name": "right::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// right::target",
+        " func target(x uint32) uint32 {",
+        "   return x + 0x1e",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x1190",
+      "before_name": "cross",
+      "name": "right::cross",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "cross"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// right::cross",
+        " func cross(x uint32) uint32 {",
+        "-  return target(x)",
+        "+  return left.target(x)",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x11b0",
+      "before_name": "direct_left",
+      "name": "direct_left",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,3 @@",
+        " func direct_left(x uint32) uint32 {",
+        "-  return target(x)",
+        "+  return left.target(x)",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x11c0",
+      "before_name": "direct_nested",
+      "name": "direct_nested",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,3 @@",
+        " func direct_nested(x uint32) uint32 {",
+        "-  return target(x)",
+        "+  return left.deep.target(x)",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x11d0",
+      "before_name": "direct_right",
+      "name": "direct_right",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,3 @@",
+        " func direct_right(x uint32) uint32 {",
+        "-  return target(x)",
+        "+  return right.target(x)",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x11f0",
+      "before_name": "direct_shadow",
+      "name": "direct_shadow",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,3 @@",
+        " func direct_shadow(left uint32) uint32 {",
+        "-  return target(left)",
+        "+  return left.target(left)",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x1200",
+      "before_name": "main",
+      "name": "main",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -18,7 +18,7 @@",
+        "   v4 = direct_right(x)",
+        "   v5 = direct_global(x)",
+        "   v6 = direct_shadow(x)",
+        "-  v7 = same(x)",
+        "-  printf((*int8)(unsafe.Pointer(unsafe.StringData(\"%u %u %u %u %u %u %u\\n\\x00\"))),v2,v3,v4,v5,v6,v7,cross(x))",
+        "+  v7 = left.same(x)",
+        "+  printf((*int8)(unsafe.Pointer(unsafe.StringData(\"%u %u %u %u %u %u %u\\n\\x00\"))),v2,v3,v4,v5,v6,v7,right.cross(x))",
+        "   return 0",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-cpp",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x1150",
+      "before_name": "target",
+      "name": "left::target",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-unsigned int target(unsigned int x)",
+        "+unsigned int left::target(unsigned int x)",
+        " {",
+        "   return x + 10;",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "dwarf-pointer",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x1160",
+      "before_name": "get_target",
+      "name": "get_target",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        " unsigned long get_target(void)",
+        " {",
+        "-  return (unsigned long)target;",
+        "+  return (unsigned long)left::target;",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "dwarf-pointer",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x1170",
+      "before_name": "main",
+      "name": "main",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -8,6 +8,6 @@",
+        "     nptr = argv[1];",
+        "     x = (unsigned int)strtoul(nptr,NULL,0);",
+        "   }",
+        "-  printf(\"%u\\n\",target(x));",
+        "+  printf(\"%u\\n\",left::target(x));",
+        "   return 0;",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "dwarf-pointer",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x1150",
+      "before_name": "target",
+      "name": "left::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// left::target",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn target(mut x: u32) -> u32",
+        " {"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "dwarf-pointer",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x1170",
+      "before_name": "main",
+      "name": "main",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -9,6 +9,6 @@",
+        "     nptr = argv[1];",
+        "     x = strtoul(nptr,core::ptr::null_mut__,0) as u32;",
+        "   }",
+        "-  printf(__u_n_,target(x));",
+        "+  printf(__u_n_,left::target(x));",
+        "   return 0;",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "dwarf-pointer",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x1150",
+      "before_name": "target",
+      "name": "left::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// left::target",
+        " func target(x uint32) uint32 {",
+        "   return x + 0xa",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "dwarf-pointer",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x1170",
+      "before_name": "main",
+      "name": "main",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -7,6 +7,6 @@",
+        "     nptr = *(**int8)(unsafe.Add(unsafe.Pointer(argv),1 * 8))",
+        "     x = uint32(strtoul(nptr,nil,0))",
+        "   }",
+        "-  printf((*int8)(unsafe.Pointer(unsafe.StringData(\"%u\\n\\x00\"))),target(x))",
+        "+  printf((*int8)(unsafe.Pointer(unsafe.StringData(\"%u\\n\\x00\"))),left.target(x))",
+        "   return 0",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "dwarf-pointer",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x158c0",
+      "before_name": "target",
+      "name": "dwarf_namespaces::left::target",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-unsigned int target(unsigned int x)",
+        "+unsigned int dwarf_namespaces::left::target(unsigned int x)",
+        " {",
+        "   return x + 10;",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x158d0",
+      "before_name": "same",
+      "name": "dwarf_namespaces::left::same",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "same"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-unsigned int same(unsigned int x)",
+        "+unsigned int dwarf_namespaces::left::same(unsigned int x)",
+        " {",
+        "-  return target(x); // tail-call",
+        "+  return dwarf_namespaces::left::target(x); // tail-call",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x158e0",
+      "before_name": "target",
+      "name": "dwarf_namespaces::left::deep::target",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-unsigned int target(unsigned int x)",
+        "+unsigned int dwarf_namespaces::left::deep::target(unsigned int x)",
+        " {",
+        "   return x + 0x14;",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x158f0",
+      "before_name": "target",
+      "name": "dwarf_namespaces::right::target",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-unsigned int target(unsigned int x)",
+        "+unsigned int dwarf_namespaces::right::target(unsigned int x)",
+        " {",
+        "   return x + 0x1e;",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x15900",
+      "before_name": "cross",
+      "name": "dwarf_namespaces::right::cross",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "cross"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-unsigned int cross(unsigned int x)",
+        "+unsigned int dwarf_namespaces::right::cross(unsigned int x)",
+        " {",
+        "-  return target(x); // tail-call",
+        "+  return dwarf_namespaces::left::target(x); // tail-call",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x15910",
+      "before_name": "target",
+      "name": "dwarf_namespaces::target",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-unsigned int target(unsigned int x)",
+        "+unsigned int dwarf_namespaces::target(unsigned int x)",
+        " {",
+        "   return x + 0x28;",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x15920",
+      "before_name": "direct_left",
+      "name": "direct_left",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        " unsigned int direct_left(unsigned int x)",
+        " {",
+        "-  return target(x); // tail-call",
+        "+  return dwarf_namespaces::left::target(x); // tail-call",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x15930",
+      "before_name": "direct_nested",
+      "name": "direct_nested",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        " unsigned int direct_nested(unsigned int x)",
+        " {",
+        "-  return target(x); // tail-call",
+        "+  return dwarf_namespaces::left::deep::target(x); // tail-call",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x15940",
+      "before_name": "direct_right",
+      "name": "direct_right",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        " unsigned int direct_right(unsigned int x)",
+        " {",
+        "-  return target(x); // tail-call",
+        "+  return dwarf_namespaces::right::target(x); // tail-call",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x15950",
+      "before_name": "direct_global",
+      "name": "direct_global",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        " unsigned int direct_global(unsigned int x)",
+        " {",
+        "-  return target(x); // tail-call",
+        "+  return dwarf_namespaces::target(x); // tail-call",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x15960",
+      "before_name": "main",
+      "name": "dwarf_namespaces::main",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "main"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-void main(void)",
+        "+void dwarf_namespaces::main(void)",
+        " {",
+        "   unsigned int v1; // eax",
+        "   unsigned int v2; // eax | ebx | stack - 0xd0",
+        "@@ -83,8 +83,8 @@",
+        "       v11 = direct_nested(v2);",
+        "       v12 = direct_right(v2);",
+        "       v13 = direct_global(v2);",
+        "-      v8 = same(v2);",
+        "-      v2 = cross(v2);",
+        "+      v8 = dwarf_namespaces::left::same(v2);",
+        "+      v2 = dwarf_namespaces::right::cross(v2);",
+        "       v6 = (unsigned int *)CONCAT44(((unsigned int *)&v6)[1],v2);",
+        "       v9 = &v10;",
+        "       v7 = core::fmt::num::imp::u32::fmt;"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x15cd0",
+      "before_name": "main",
+      "name": "main",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -3,7 +3,7 @@",
+        "   void *v1; // stack - 0x8",
+        "   int v2; // edi",
+        "   ",
+        "-  v1 = main;",
+        "+  v1 = dwarf_namespaces::main;",
+        "   lang_start_internal(&v1,{vtable},(long)v2);",
+        "   return;",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x158c0",
+      "before_name": "target",
+      "name": "dwarf_namespaces::left::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// dwarf_namespaces::left::target",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn target(mut x: u32) -> u32",
+        " {"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x158d0",
+      "before_name": "same",
+      "name": "dwarf_namespaces::left::same",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "same"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,5 +1,6 @@",
+        "+// dwarf_namespaces::left::same",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn same(mut x: u32) -> u32",
+        " {",
+        "-  return target(x); // tail-call",
+        "+  return dwarf_namespaces::left::target(x); // tail-call",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x158e0",
+      "before_name": "target",
+      "name": "dwarf_namespaces::left::deep::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// dwarf_namespaces::left::deep::target",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn target(mut x: u32) -> u32",
+        " {"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x158f0",
+      "before_name": "target",
+      "name": "dwarf_namespaces::right::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// dwarf_namespaces::right::target",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn target(mut x: u32) -> u32",
+        " {"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x15900",
+      "before_name": "cross",
+      "name": "dwarf_namespaces::right::cross",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "cross"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,5 +1,6 @@",
+        "+// dwarf_namespaces::right::cross",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn cross(mut x: u32) -> u32",
+        " {",
+        "-  return target(x); // tail-call",
+        "+  return dwarf_namespaces::left::target(x); // tail-call",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x15910",
+      "before_name": "target",
+      "name": "dwarf_namespaces::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// dwarf_namespaces::target",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn target(mut x: u32) -> u32",
+        " {"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x15920",
+      "before_name": "direct_left",
+      "name": "direct_left",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,5 +1,5 @@",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn direct_left(mut x: u32) -> u32",
+        " {",
+        "-  return target(x); // tail-call",
+        "+  return dwarf_namespaces::left::target(x); // tail-call",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x15930",
+      "before_name": "direct_nested",
+      "name": "direct_nested",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,5 +1,5 @@",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn direct_nested(mut x: u32) -> u32",
+        " {",
+        "-  return target(x); // tail-call",
+        "+  return dwarf_namespaces::left::deep::target(x); // tail-call",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x15940",
+      "before_name": "direct_right",
+      "name": "direct_right",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,5 +1,5 @@",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn direct_right(mut x: u32) -> u32",
+        " {",
+        "-  return target(x); // tail-call",
+        "+  return dwarf_namespaces::right::target(x); // tail-call",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x15950",
+      "before_name": "direct_global",
+      "name": "direct_global",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,5 +1,5 @@",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn direct_global(mut x: u32) -> u32",
+        " {",
+        "-  return target(x); // tail-call",
+        "+  return dwarf_namespaces::target(x); // tail-call",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x15960",
+      "before_name": "main",
+      "name": "dwarf_namespaces::main",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "main"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// dwarf_namespaces::main",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn main()",
+        " {",
+        "@@ -92,8 +93,8 @@",
+        "       v11 = direct_nested(v2);",
+        "       v12 = direct_right(v2);",
+        "       v13 = direct_global(v2);",
+        "-      v8 = same(v2);",
+        "-      v2 = cross(v2);",
+        "+      v8 = dwarf_namespaces::left::same(v2);",
+        "+      v2 = dwarf_namespaces::right::cross(v2);",
+        "       v6 = CONCAT44(v6._4_4_,v2) as *mut u32;",
+        "       v9 = &mut v10;",
+        "       v7 = fmt;"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x158c0",
+      "before_name": "target",
+      "name": "dwarf_namespaces::left::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// dwarf_namespaces::left::target",
+        " func target(x uint32) uint32 {",
+        "   return x + 0xa",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x158d0",
+      "before_name": "same",
+      "name": "dwarf_namespaces::left::same",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "same"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// dwarf_namespaces::left::same",
+        " func same(x uint32) uint32 {",
+        "   return target(x) // tail-call",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x158e0",
+      "before_name": "target",
+      "name": "dwarf_namespaces::left::deep::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// dwarf_namespaces::left::deep::target",
+        " func target(x uint32) uint32 {",
+        "   return x + 0x14",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x158f0",
+      "before_name": "target",
+      "name": "dwarf_namespaces::right::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// dwarf_namespaces::right::target",
+        " func target(x uint32) uint32 {",
+        "   return x + 0x1e",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x15900",
+      "before_name": "cross",
+      "name": "dwarf_namespaces::right::cross",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "cross"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// dwarf_namespaces::right::cross",
+        " func cross(x uint32) uint32 {",
+        "-  return target(x) // tail-call",
+        "+  return dwarf_namespaces.left.target(x) // tail-call",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x15910",
+      "before_name": "target",
+      "name": "dwarf_namespaces::target",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "target"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// dwarf_namespaces::target",
+        " func target(x uint32) uint32 {",
+        "   return x + 0x28",
+        " }"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x15920",
+      "before_name": "direct_left",
+      "name": "direct_left",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,3 @@",
+        " func direct_left(x uint32) uint32 {",
+        "-  return target(x) // tail-call",
+        "+  return dwarf_namespaces.left.target(x) // tail-call",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x15930",
+      "before_name": "direct_nested",
+      "name": "direct_nested",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,3 @@",
+        " func direct_nested(x uint32) uint32 {",
+        "-  return target(x) // tail-call",
+        "+  return dwarf_namespaces.left.deep.target(x) // tail-call",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x15940",
+      "before_name": "direct_right",
+      "name": "direct_right",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,3 @@",
+        " func direct_right(x uint32) uint32 {",
+        "-  return target(x) // tail-call",
+        "+  return dwarf_namespaces.right.target(x) // tail-call",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x15950",
+      "before_name": "direct_global",
+      "name": "direct_global",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,3 @@",
+        " func direct_global(x uint32) uint32 {",
+        "-  return target(x) // tail-call",
+        "+  return dwarf_namespaces.target(x) // tail-call",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x15960",
+      "before_name": "main",
+      "name": "dwarf_namespaces::main",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "main"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// dwarf_namespaces::main",
+        " func main() {",
+        "   var v1 uint32 // eax",
+        "   var v2 uint32 // eax | ebx | stack - 0xd0",
+        "@@ -87,8 +88,8 @@",
+        "       v11 = direct_nested(v2)",
+        "       v12 = direct_right(v2)",
+        "       v13 = direct_global(v2)",
+        "-      v8 = same(v2)",
+        "-      v2 = cross(v2)",
+        "+      v8 = left.same(v2)",
+        "+      v2 = right.cross(v2)",
+        "       v6 = (*uint32)(unsafe.Pointer(uintptr(CONCAT44(v6._4_4_,v2))))",
+        "       v9 = &v10",
+        "       v7 = (*int8)(unsafe.Pointer(fmt))"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "namespace-rust",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x15790",
+      "before_name": "main",
+      "name": "raw_scope::main",
+      "fields": [
+        "name",
+        "code",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "main"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,4 +1,4 @@",
+        "-void main(void)",
+        "+void raw_scope::main(void)",
+        " {",
+        "   unsigned int v1; // eax",
+        "   unsigned int v2; // edx"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "raw-namespace",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "c",
+      "address": "0x15a40",
+      "before_name": "main",
+      "name": "main",
+      "fields": [
+        "code"
+      ],
+      "added_names": [],
+      "removed_names": [],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -3,7 +3,7 @@",
+        "   void *v1; // stack - 0x8",
+        "   int v2; // edi",
+        "   ",
+        "-  v1 = main;",
+        "+  v1 = raw_scope::main;",
+        "   lang_start_internal(&v1,{vtable},(long)v2);",
+        "   return;",
+        " }"
+      ],
+      "classification": [
+        "function definition, direct call or C whole-function value uses the existing qualified target identity"
+      ],
+      "fixture": "raw-namespace",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 0,
+      "added_unproven_names": []
+    },
+    {
+      "language": "rust",
+      "address": "0x15790",
+      "before_name": "main",
+      "name": "raw_scope::main",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "main"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// raw_scope::main",
+        " #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]",
+        " unsafe fn main()",
+        " {"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "raw-namespace",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    },
+    {
+      "language": "go",
+      "address": "0x15790",
+      "before_name": "main",
+      "name": "raw_scope::main",
+      "fields": [
+        "name",
+        "code",
+        "line_mappings",
+        "variables",
+        "aliases"
+      ],
+      "added_names": [],
+      "removed_names": [
+        "main"
+      ],
+      "diff": [
+        "--- parent",
+        "+++ candidate",
+        "@@ -1,3 +1,4 @@",
+        "+// raw_scope::main",
+        " func main() {",
+        "   var v1 uint32 // eax",
+        "   var v2 uint32 // edx"
+      ],
+      "classification": [
+        "existing same-address qualified alias becomes the primary name",
+        "redundant generic global alias removed",
+        "leading qualified-name comment; variable and instruction lines shift by one"
+      ],
+      "fixture": "raw-namespace",
+      "normalized_code_identical": true,
+      "all_nonname_metadata_unchanged_except_comment_line_shift": true,
+      "line_shift": 1,
+      "added_unproven_names": []
+    }
+  ],
+  "go_parse_failures": [
+    {
+      "fixture": "namespace-rust",
+      "parse": {
+        "parent": {
+          "all_parse": false,
+          "failed_addresses": [
+            "0x156c0",
+            "0x156d0",
+            "0x15870"
+          ],
+          "code_unchanged_in_address_labeled_parse_input": true
+        },
+        "candidate": {
+          "all_parse": false,
+          "failed_addresses": [
+            "0x156c0",
+            "0x156d0",
+            "0x15870"
+          ],
+          "code_unchanged_in_address_labeled_parse_input": true
+        }
+      }
+    },
+    {
+      "fixture": "raw-namespace",
+      "parse": {
+        "parent": {
+          "all_parse": false,
+          "failed_addresses": [
+            "0x15570",
+            "0x15580",
+            "0x15720"
+          ],
+          "code_unchanged_in_address_labeled_parse_input": true
+        },
+        "candidate": {
+          "all_parse": false,
+          "failed_addresses": [
+            "0x15570",
+            "0x15580",
+            "0x15720"
+          ],
+          "code_unchanged_in_address_labeled_parse_input": true
+        }
+      }
+    }
+  ],
+  "manual_review_file": "manual-review.json",
+  "validation_scope_limitations": [
+    "No claim that translating C++ namespace functions into Go produces a type-checkable Go package. For example direct_shadow(left uint32) now spells left.target(left), which collides with the parameter in Go; parent target(left) already selected the unrelated +40 function. This is a P9 cross-language name-spelling follow-up, not a native-Go change; all native-Go captures seen are byte-identical.",
+    "Rust/Go per-function declarations encode enclosing namespaces in comments; no whole Rust-runtime or cross-language Go recompilation claim."
+  ]
+}

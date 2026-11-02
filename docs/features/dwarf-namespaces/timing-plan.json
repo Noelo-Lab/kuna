@@ -1,0 +1,88 @@
+{
+  "declared_at": "2026-11-02T08:02:28.807168+00:00",
+  "scope": "Default DWARF namespace reconciliation with plain C++ scope guard versus merged P9 main1d5f. Existing cppproto default is unchanged; no P1 speed samples have ever been taken.",
+  "root": "/home/mahaloz/kwt/angr-dwarf-namespace",
+  "base": "/home/mahaloz/kwt/angr-base-1d5f",
+  "cases": [
+    [
+      "scalar-c",
+      "/home/mahaloz/kwt/angr-dwarf-namespace/tests/fixtures/go-output/output-c",
+      "choose",
+      "c"
+    ],
+    [
+      "namespace-cpp",
+      "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces_cpp_x86_64",
+      "direct_left",
+      "c"
+    ],
+    [
+      "namespace-rust",
+      "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces_rust_x86_64",
+      "direct_left",
+      "rust"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ],
+    [
+      "dwarf-returned-pointer",
+      "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_function_pointer_x86_64",
+      "get_target",
+      "c"
+    ]
+  ],
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "samples_per_arm": 384,
+  "warmups_per_arm": 3,
+  "seed": 202611026,
+  "bootstrap_resamples": 20000,
+  "family_alpha": 0.05,
+  "comparisons": 12,
+  "upper_quantile": 0.9958333333333333,
+  "maximum_looks": 1,
+  "budget_pct": 5,
+  "criterion": "Every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bootstrap bound <=5 percent. One final look; no unchanged-code repeat.",
+  "execution": "Six cases in separate workers on disjoint physical CPU pairs; each two-round block contains both arm orders in random order; coordinator/telemetry use other CPUs; no owned builds, tests, corpus or decompiler research while sampling.",
+  "lightwork_reservation_amendment": {
+    "declared_at": "2026-11-02T05:33:18.439837+00:00",
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "reason": "Reserve one physical pair for light document/code review commands; exclude it from timing workers before any samples. Acceptance, sample counts and inference unchanged."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T05:33:18.439837+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48",
+    "scope": "Assert parent and candidate compiled spec bytes against the existing 154-spec manifest before and after sampling."
+  },
+  "failure_policy": "No unchanged-code repeat or discarded observations. A failed study blocks default-on publication; revise only for a demonstrated implementation issue or gate the new reconciliation separately.",
+  "earlier_plan": "The superseded five-case pre-P9 plan had zero samples. The current plan includes the returned-function-address dependency regression.",
+  "build": {
+    "at": "2026-11-02T08:03:16.059606+00:00",
+    "parent_commit": "1d5f5287431b6a4305d5341ca60a880040afbe3a",
+    "baseline_root": "/home/mahaloz/kwt/angr-base-1d5f",
+    "parent_cli_sha256": "384f7547f58af97719b98b7923a1f5ee530d2bedb7c4981436dbe4f0d53b8723",
+    "new_cli_sha256": "08f63c4dd29b2997d032be3ffa7e85447c58017174b051865ec56d0bdad1a198",
+    "stage_assertions": [
+      3582,
+      3582
+    ],
+    "parent_artifact_provenance": "setup.json proves identical merge/published source trees and reuse of the validated P9 release."
+  },
+  "binary_identity_frozen_at": "2026-11-02T08:06:28.576088+00:00"
+}

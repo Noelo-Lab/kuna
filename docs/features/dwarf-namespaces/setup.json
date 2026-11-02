@@ -1,0 +1,16 @@
+{
+  "at": "2026-11-02T07:33:18.293948+00:00",
+  "main": "1d5f5287431b6a4305d5341ca60a880040afbe3a",
+  "published_parent_head": "5e2fd55a2678eb5afec80d2106efb725dc0d7718",
+  "tree_equal_to_published_parent": true,
+  "baseline_root": "/home/mahaloz/kwt/angr-base-1d5f",
+  "binary_reuse": "Copied validated release artifacts from the exactly identical published P9 source tree; no new independent build is claimed.",
+  "binaries": {
+    "kuna": "384f7547f58af97719b98b7923a1f5ee530d2bedb7c4981436dbe4f0d53b8723",
+    "decomp_dbg": "79410d0fdcca2b3f7305a95e1cf29662899e1707709305f8648cfdc9ecee0f5c",
+    "decomp_test_dbg": "628dc079134faa7ae448e468c560743445a2bdd67203eb70d484e2e305b2cb74"
+  },
+  "compiled_specs": 154,
+  "candidate_root": "/home/mahaloz/kwt/angr-dwarf-namespace",
+  "tree_oid": "114ae8fe8cd2572d7c16f28bc28d94f8a8e4a639"
+}
