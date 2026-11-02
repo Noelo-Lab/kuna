@@ -259,3 +259,14 @@ fn a_pool_word_read_as_a_predicated_jump_reads_no_table() {
     assert_eq!(jumps_from(idx, 0xff020), Vec::<u64>::new());
     assert!(idx.switch_tables().iter().all(|t| t.dispatch != 0xff020), "{:?}", idx.switch_tables());
 }
+
+/// An `addls pc,pc,r0,lsl #3` dispatch has 8-byte slots and an unscaled
+/// `add pc,pc,r0` none: neither is read as a table of 4-byte slots.
+#[test]
+fn a_dispatch_not_scaled_by_four_reads_no_slots() {
+    let idx = fp_index();
+    for dispatch in [0xff02c, 0xff064] {
+        assert_eq!(jumps_from(idx, dispatch), Vec::<u64>::new(), "{dispatch:#x}");
+        assert!(idx.switch_tables().iter().all(|t| t.dispatch != dispatch), "{dispatch:#x}");
+    }
+}

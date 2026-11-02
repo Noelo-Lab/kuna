@@ -111,6 +111,7 @@ impl<'a> A32Tables<'a> {
         let base = from + A32_PC_OFFSET;
         let mut vals: Vec<(Key, Val)> = Vec::new();
         let mut index: Option<Key> = None;
+        let mut scaled = false;
         let mut predicated = false;
         for op in ops {
             if op.opcode == OpCode::CPUI_CBRANCH {
@@ -123,7 +124,7 @@ impl<'a> A32Tables<'a> {
                     Some(Val::Indexed(table)) if table == base => false,
                     _ => return TableRead::default(),
                 };
-                let Some(index) = index else { return TableRead::default() };
+                let Some(index) = index.filter(|_| scaled) else { return TableRead::default() };
                 let cases = match super::kuna_thumbswitch::guard_cases(
                     translate, code_space, data, decoded, from, index, predicated.then_some(ops),
                 ) {
@@ -150,6 +151,8 @@ impl<'a> A32Tables<'a> {
                     .iter()
                     .filter(|vn| value_of(vn, &vals, data).is_none())
                     .find_map(|vn| key_of(vn, data).filter(|k| matches!(k, Key::Reg(..))));
+                let by = op.ins.get(1).filter(|vn| is_constant(vn)).map(|vn| vn.offset);
+                scaled = matches!((op.opcode, by), (OpCode::CPUI_INT_LEFT, Some(2)) | (OpCode::CPUI_INT_MULT, Some(4)));
             }
             let folded = interworking(op, &vals, data).or_else(|| fold(op, &vals, data, &self.pool));
             let Some(out) = &op.out else { continue };
