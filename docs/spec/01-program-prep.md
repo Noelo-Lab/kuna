@@ -7701,7 +7701,8 @@ count, and the other table readers run on it only when it is unpredicated: a pre
 that is no A32 table gets no table at all. A literal-pool word after a call that the walk falls into is one
 such jump, since a GOT offset like `0x000ff4a8` decodes as `andeq pc,pc,...`, and the pool words after it
 must not become its cases. The reader takes a dispatch only when its index is scaled by four (`lsl #2`),
-so 8-byte slots and an unscaled `add pc,pc,rN` are not read as tables. A dispatch the walk reaches before the
+so 8-byte slots and an unscaled `add pc,pc,rN` are not read as tables, and an `ldr` table ends before its
+first word with bit 0 set, an interworking target rather than an A32 case. A dispatch the walk reaches before the
 guard that falls into it (a branch into the dispatch, or breadth-first order)
 waits at the address the guard read stopped at and is read again, A32 reader
 first, once that code is decoded.

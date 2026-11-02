@@ -270,3 +270,11 @@ fn a_dispatch_not_scaled_by_four_reads_no_slots() {
         assert!(idx.switch_tables().iter().all(|t| t.dispatch != dispatch), "{dispatch:#x}");
     }
 }
+
+/// An `ldr` table word with bit 0 set is an interworking target, not an A32
+/// case: the table ends before it.
+#[test]
+fn an_odd_ldr_table_word_ends_the_table() {
+    let idx = fp_index();
+    assert_eq!(jumps_from(idx, 0xff080), vec![0xff094, 0xff09c]);
+}

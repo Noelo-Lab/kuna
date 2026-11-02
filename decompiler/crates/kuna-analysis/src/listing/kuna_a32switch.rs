@@ -134,7 +134,9 @@ impl<'a> A32Tables<'a> {
                 };
                 let read = cases.min(self.max_entries);
                 let targets = if words {
-                    super::kuna_switchtable::targets(base, from, self.pool, exec, Some(read), read)
+                    let mut words = super::kuna_switchtable::targets(base, from, self.pool, exec, Some(read), read);
+                    words.truncate(words.iter().position(|&t| t & 1 != 0).unwrap_or(words.len()));
+                    if words.len() < MIN_ENTRIES { Vec::new() } else { words }
                 } else {
                     branch_slots(base, read, from, exec)
                 };
