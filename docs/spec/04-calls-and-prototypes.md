@@ -2748,7 +2748,12 @@ two apart. `whole`, the default, reads the function as the callee's whole
 value joined high word first, `return add64(..);`, which is right for the
 wrapper and too wide for `hi`. `high` keeps the function's first register
 alone, the callee's high word, `return (int)((uint8)add64(..) >> 0x20);`,
-which is right for `hi` and too narrow for the wrapper. A caller that reads
+which is right for `hi` and too narrow for the wrapper. Under `whole` too, a
+RETURN whose first register went through more moves than its second keeps
+the first register alone: that is gcc -O0's lowering of `(u32)(v >> 32)`
+after it moves the call's pair back (`mov r3,r0; mov r0,r3` on ARM
+big-endian), the same signal that keeps such a pair from proving the function
+above. A caller that reads
 the second register (`bejoin callers`), or a declared, DWARF or `--assert
 prototype` 8-byte return, proves the function and joins its pair whole, high
 word first, in either mode. Settling the pair does not prove the function

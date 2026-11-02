@@ -122,22 +122,35 @@ fn trial_on(active: &ParamActive, loc: &(kuna_base::address::Address, int4)) -> 
 
 /// `vn` with moves stripped: COPY (an injected `v0 = v0` included) and an
 /// INDIRECT that is not a call's creation.
-fn strip(data: &Funcdata, mut vn: VarnodeId) -> VarnodeId {
+fn strip(data: &Funcdata, vn: VarnodeId) -> VarnodeId {
+    strip_counted(data, vn).0
+}
+
+/// [`strip`], and how many of the moves it stripped put a value back into
+/// `vn`'s own register from another location.
+fn strip_counted(data: &Funcdata, mut vn: VarnodeId) -> (VarnodeId, usize) {
+    let home = data.vbank().get(vn).map(|v| (v.get_addr().clone(), v.get_size()));
+    let at = |v: VarnodeId| data.vbank().get(v).map(|v| (v.get_addr().clone(), v.get_size()));
+    let mut copies = 0;
     for _ in 0..data.vbank().num_varnodes() {
         let Some(op) = data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d)) else {
-            return vn;
+            return (vn, copies);
         };
         match op.code() {
-            OpCode::CPUI_COPY => {}
+            OpCode::CPUI_COPY => {
+                if at(vn) == home && op.get_in(0).and_then(at) != home {
+                    copies += 1;
+                }
+            }
             OpCode::CPUI_INDIRECT if !op.is_indirect_creation() => {}
-            _ => return vn,
+            _ => return (vn, copies),
         }
         match op.get_in(0) {
             Some(next) => vn = next,
-            None => return vn,
+            None => return (vn, copies),
         }
     }
-    vn
+    (vn, copies)
 }
 
 fn phi(data: &Funcdata, vn: VarnodeId) -> Option<OpId> {
@@ -203,8 +216,10 @@ fn handing_call(data: &Funcdata, hi: VarnodeId, lo: VarnodeId, pair: &crate::kun
 
 /// Settle a function's returned pair when every live RETURN hands back, untouched, the
 /// pair a call to a proven callee left. Returns `true` when the pair is to join in the
-/// ABI's order (`whole`); under `high` an unproven function's second register is made
-/// inactive instead. Runs after the trials are scored, before the output map is derived.
+/// ABI's order (`whole`); under `high`, or when a RETURN's first register went through
+/// more moves than its second (gcc -O0's `(u32)(v >> 32)`, `mov r3,r0; mov r0,r3` after
+/// the pair is moved back), the second register is made inactive instead. Runs after the
+/// trials are scored, before the output map is derived.
 pub fn settle_return(data: &Funcdata, active: &mut ParamActive, return_ops: &[OpId]) -> bool {
     let Some(pair) = word_pair(data) else { return false };
     if data.get_func_proto().is_output_locked() || crate::kuna_bejoin::proven_here(data) {
@@ -216,6 +231,7 @@ pub fn settle_return(data: &Funcdata, active: &mut ParamActive, return_ops: &[Op
     }
     let (hslot, lslot) = (active.get_trial(hi).get_slot(), active.get_trial(lo).get_slot());
     let mut live = 0;
+    let mut high_moved = false;
     for &op in return_ops {
         let Some(ret) = data.obank().get(op) else { return false };
         if ret.is_dead() || ret.get_halt_type() != 0 || crate::kuna_bejoin::never_reached(data, op) {
@@ -223,6 +239,7 @@ pub fn settle_return(data: &Funcdata, active: &mut ParamActive, return_ops: &[Op
         }
         live += 1;
         let (Some(h), Some(l)) = (ret.get_in(hslot), ret.get_in(lslot)) else { return false };
+        high_moved |= strip_counted(data, h).1 > strip_counted(data, l).1;
         let proven_call = &mut |h: VarnodeId, l: VarnodeId| match handing_call(data, h, l, &pair) {
             Some((_, true)) => true,
             Some((call, false)) => data.get_call_specs_index(call).is_some_and(|i| {
@@ -238,8 +255,8 @@ pub fn settle_return(data: &Funcdata, active: &mut ParamActive, return_ops: &[Op
         return false;
     }
     match mode(data) {
-        BeJoinPassMode::Whole => true,
-        BeJoinPassMode::High => {
+        BeJoinPassMode::Whole if !high_moved => true,
+        BeJoinPassMode::Whole | BeJoinPassMode::High => {
             active.get_trial_mut(lo).mark_inactive();
             false
         }
