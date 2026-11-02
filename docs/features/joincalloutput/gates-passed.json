@@ -1,0 +1,12 @@
+{
+  "all_four_gates_passed": true,
+  "additional_tools_lint_catalog_counters_passed": true,
+  "original_assertions": 675,
+  "stage_assertions": 3707,
+  "production_files_unchanged": 5516,
+  "release_sha256": "3bc54da6287e3ffc30d8b7c5706ee87af9934077db811151ab3304f3e9704031",
+  "workspace_retry_reason": "Test harness passed owned Command where helper expects &mut Command; only this test expression changed. Other seven passing checks remain applicable.",
+  "changed_files": [
+    "decompiler/crates/kuna-cli/tests/joined_callback_return.rs"
+  ]
+}

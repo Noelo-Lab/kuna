@@ -1,0 +1,22 @@
+{
+  "at": "2026-11-02T17:53:21.401359+00:00",
+  "parent_commit": "83a6fd8483bf4d8a6dcc5d2bb1335f8724584636",
+  "parent_cli_sha256": "097e8993d13ff2fb585edda79cf16f817cdc3f1c64bc03c75d05a3b7c2a89a61",
+  "new_cli_sha256": "3bc54da6287e3ffc30d8b7c5706ee87af9934077db811151ab3304f3e9704031",
+  "strict_correctness_fix": true,
+  "option": null,
+  "stage_assertions": [
+    3707,
+    3707
+  ],
+  "stage_keys_added": [
+    "data:Joined callback both fields come from one invocation",
+    "data:Joined callback both fields remain live",
+    "data:Joined callback callee side effect remains intact",
+    "data:Joined callback first component survives a late callback prototype",
+    "data:Joined callback narrowed second component is preserved",
+    "data:Joined callback second component is defined by the callback",
+    "data:Joined callback void contract has no return storage",
+    "data:Joined callback whole and scalar forwarding remain intact"
+  ]
+}

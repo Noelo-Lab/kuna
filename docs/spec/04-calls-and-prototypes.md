@@ -3385,7 +3385,16 @@ recovered `float` return is still read from `s0` at its callers.
 and all — into the function's Override store keyed by the call address
 (`decompiler/crates/kuna-decomp/src/p0_knowledge/overrides.rs
 (FuncProtoOverride::prototype)`). It then tries `late_restriction`, the same
-in-place merge as above. On success it commits the new input and output lists
+in-place merge as above. A locked output in join storage requires a
+restart unless the call already defines that exact address and full size (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_joincalloutput.rs
+(needs_reflow)`). The late output transfer compares physical addresses and
+cannot rebuild a joined result from a surviving call output or INDIRECT
+creation in just one component register. Accepting that transfer can discard
+the other component and leave its uses reading an undefined value. Rebuilding
+flow with the saved full prototype installs every return component before
+heritage; a caller that reads only the second component, or a narrowed part of
+it, then receives that value from the same call. Scalar and void outputs retain the
+existing in-place transfer path; void has no storage address to inspect. On success it commits the new input and output lists
 to the CALL op straight away, and the arm reports a change so the enclosing
 stackstall loop runs its rules again over the new inputs. On failure it sets
 restart-pending ((kuna) reason `ProtoForced`). Either way the site's input is

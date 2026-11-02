@@ -1,0 +1,151 @@
+{
+  "declared_at": "2026-11-02T17:39:21.883732+00:00",
+  "scope": "Corrected void handling and skip restart for an existing complete joined output. Initial source/stage failures retained; no timings were collected.",
+  "root": "/home/mahaloz/kwt/angr-joined-callback-return",
+  "base": "/home/mahaloz/kwt/angr-base-83a6f",
+  "cases": [
+    [
+      "first",
+      "/home/mahaloz/kwt/angr-joined-callback-return/decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return_x86_64",
+      "first",
+      "c"
+    ],
+    [
+      "second",
+      "/home/mahaloz/kwt/angr-joined-callback-return/decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return_x86_64",
+      "second",
+      "c"
+    ],
+    [
+      "both",
+      "/home/mahaloz/kwt/angr-joined-callback-return/decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return_x86_64",
+      "both",
+      "c"
+    ],
+    [
+      "narrow_second",
+      "/home/mahaloz/kwt/angr-joined-callback-return/decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return_x86_64",
+      "narrow_second",
+      "c"
+    ],
+    [
+      "forward",
+      "/home/mahaloz/kwt/angr-joined-callback-return/decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return_x86_64",
+      "forward",
+      "c"
+    ],
+    [
+      "scalar",
+      "/home/mahaloz/kwt/angr-joined-callback-return/decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return_x86_64",
+      "scalar",
+      "c"
+    ],
+    [
+      "invoke_void",
+      "/home/mahaloz/kwt/angr-joined-callback-return/decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return_x86_64",
+      "invoke_void",
+      "c"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ]
+  ],
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "samples_per_arm": 384,
+  "warmups_per_arm": 3,
+  "seed": 202611032,
+  "bootstrap_resamples": 20000,
+  "family_alpha": 0.05,
+  "comparisons": 18,
+  "upper_quantile": 0.9972222222222222,
+  "maximum_looks": 1,
+  "budget_pct": 5,
+  "criterion": "Every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bootstrap bound <=5 percent. One final look; no unchanged-code repeat.",
+  "execution": "Nine comparisons on disjoint physical CPU pairs; 384 balanced paired rounds, no own builds/tests/captures overlap.",
+  "lightwork_reservation_amendment": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "reason": "Reserve a physical pair for light work; exclude it from workers before samples."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "failure_policy": "Retain every observation and do not repeat unchanged code to chase a passing bound. Diagnose material regressions before publication; record failed confidence bounds honestly.",
+  "build_binding": "Record final binary and source hashes after parent integration, all gates, complete breadth review, and native proofs, before sampling.",
+  "case_options": {
+    "first": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-joined-callback-return/decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return.kuna"
+    ],
+    "second": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-joined-callback-return/decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return.kuna"
+    ],
+    "both": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-joined-callback-return/decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return.kuna"
+    ],
+    "narrow_second": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-joined-callback-return/decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return.kuna"
+    ],
+    "forward": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-joined-callback-return/decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return.kuna"
+    ],
+    "scalar": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-joined-callback-return/decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return.kuna"
+    ],
+    "invoke_void": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-joined-callback-return/decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return.kuna"
+    ]
+  },
+  "parent_commit": "83a6fd8483bf4d8a6dcc5d2bb1335f8724584636",
+  "bound_at": "2026-11-02T18:08:17.341360+00:00",
+  "void_control_amendment": {
+    "at": "2026-11-02T18:06:49.900405+00:00",
+    "reason": "Include the void-storage path corrected after the initial stage failures.",
+    "samples_before_amendment": 0
+  },
+  "build": {
+    "at": "2026-11-02T17:53:21.401359+00:00",
+    "parent_commit": "83a6fd8483bf4d8a6dcc5d2bb1335f8724584636",
+    "parent_cli_sha256": "097e8993d13ff2fb585edda79cf16f817cdc3f1c64bc03c75d05a3b7c2a89a61",
+    "new_cli_sha256": "3bc54da6287e3ffc30d8b7c5706ee87af9934077db811151ab3304f3e9704031",
+    "strict_correctness_fix": true,
+    "option": null,
+    "stage_assertions": [
+      3707,
+      3707
+    ],
+    "stage_keys_added": [
+      "data:Joined callback both fields come from one invocation",
+      "data:Joined callback both fields remain live",
+      "data:Joined callback callee side effect remains intact",
+      "data:Joined callback first component survives a late callback prototype",
+      "data:Joined callback narrowed second component is preserved",
+      "data:Joined callback second component is defined by the callback",
+      "data:Joined callback void contract has no return storage",
+      "data:Joined callback whole and scalar forwarding remain intact"
+    ]
+  }
+}
