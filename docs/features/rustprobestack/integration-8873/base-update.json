@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-02T11:34:47.885781+00:00",
+  "main": "887325c0adda6e525bc759fe0c3ac4eb86d89eba",
+  "root": "/home/mahaloz/kwt/angr-rust-probestack",
+  "base": "/home/mahaloz/kwt/angr-base-8873",
+  "previous_feature_head": "3260f3523a13d1f150f48e0bdfcd072170bb7839",
+  "pr": 1442,
+  "catalog_options": 371,
+  "corpus_files": 670,
+  "expected_stage_assertions": 3658,
+  "reason": "Integrate PPC32 PIC import support with its option and17stage fixtures; retain existing rustprobestack behavior and OFF default.",
+  "timing_policy": "Both completed studies remain failed historical evidence. No new unchanged-feature timing study or default promotion. This integration receives fresh full correctness validation, parent/current captures and native proofs.",
+  "compiled_specs": 154
+}

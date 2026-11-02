@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T11:40:06.853110+00:00",
+  "parent_commit": "887325c0adda6e525bc759fe0c3ac4eb86d89eba",
+  "baseline_root": "/home/mahaloz/kwt/angr-base-8873",
+  "parent_cli_sha256": "c0bd40cab52d4f955ca1d4b8fd42a52df9a60ac3a3d0c702984a162025f95d5d",
+  "new_cli_sha256": "1bb69f239fb5e8437fe263b1e99dba9190383e0c336eaeb3f07c00dbba4f77ee",
+  "stage_assertions": [
+    3658,
+    3658
+  ],
+  "parent_artifact_provenance": "base-update.json: new independent release build from clean 887325c0 main with frozen compiled specs."
+}

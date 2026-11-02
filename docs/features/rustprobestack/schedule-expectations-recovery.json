@@ -1,0 +1,21 @@
+{
+  "at": "2026-11-02T10:25:01.830581+00:00",
+  "failed_tests": [
+    "universalaction_listing::decompile_tree_dump_is_byte_equal_to_snapshot",
+    "verify_w8_fw_universalaction::w8_fw_universalaction_allgroups_full_order_count_head_tail",
+    "verify_w8x_allowlist::w8x_dump_is_byte_equal_to_snapshot"
+  ],
+  "changed_paths": {
+    "decompiler/crates/kuna-decomp/tests/fixtures/list_action_decompile_snapshot.txt": "18f70136fe3ea65863cb4b39f2d37b37a7171783c50aaff05c403acd1e831dcd",
+    "decompiler/crates/kuna-decomp/tests/verify_w8_fw_universalaction.rs": "a266ae9b99bd9d09712621faaa0385cfe391d9696f2a3f56be1820750532332f"
+  },
+  "only_test_expectations_changed": true,
+  "cli_unchanged": "74c564670aca8c86c15edc6fdfc0778732bec54b5a16865ee5d30e721e8a5ae0",
+  "intentional_new_schedule_entry": "protorecovery rustprobestack after msvcstrappend before normalizesetup/defaultparams",
+  "all_four_gates_to_rerun": true,
+  "timing_samples": 0,
+  "verified_manifest_changes": [
+    "decompiler/crates/kuna-decomp/tests/fixtures/list_action_decompile_snapshot.txt",
+    "decompiler/crates/kuna-decomp/tests/verify_w8_fw_universalaction.rs"
+  ]
+}

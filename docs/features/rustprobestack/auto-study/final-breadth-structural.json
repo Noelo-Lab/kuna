@@ -1,0 +1,1723 @@
+{
+  "at": "2026-11-02T10:27:02.198700+00:00",
+  "fresh_captures": true,
+  "pre_guard_captures_not_reused": true,
+  "all_function_records_equal_already_inspected_pre_guard_diff": true,
+  "images": 41,
+  "distinct_functions": 33695,
+  "language_records": 75801,
+  "changed_records": [
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x56420",
+      "name": "probe_page",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x56460",
+      "name": "probe_tail",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x564a0",
+      "name": "probe_pages",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x564e0",
+      "name": "probe_observes_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x56550",
+      "name": "probe_zero",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x56570",
+      "name": "probe_one",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x56590",
+      "name": "probe_page_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x565b0",
+      "name": "probe_plus_one",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x565d0",
+      "name": "probe_pages_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x565f0",
+      "name": "probe_saved_rbp",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x56610",
+      "name": "probe_return_slot",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x56420",
+      "name": "probe_page",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x56460",
+      "name": "probe_tail",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x564a0",
+      "name": "probe_pages",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x564e0",
+      "name": "probe_observes_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x56550",
+      "name": "probe_zero",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x56570",
+      "name": "probe_one",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x56590",
+      "name": "probe_page_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x565b0",
+      "name": "probe_plus_one",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x565d0",
+      "name": "probe_pages_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x565f0",
+      "name": "probe_saved_rbp",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x56610",
+      "name": "probe_return_slot",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x56420",
+      "name": "probe_page",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x56460",
+      "name": "probe_tail",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x564a0",
+      "name": "probe_pages",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x564e0",
+      "name": "probe_observes_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x56550",
+      "name": "probe_zero",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x56570",
+      "name": "probe_one",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x56590",
+      "name": "probe_page_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x565b0",
+      "name": "probe_plus_one",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x565d0",
+      "name": "probe_pages_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x565f0",
+      "name": "probe_saved_rbp",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x56610",
+      "name": "probe_return_slot",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56010",
+      "name": "probe_page",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56050",
+      "name": "probe_tail",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56090",
+      "name": "probe_pages",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x560d0",
+      "name": "probe_observes_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56140",
+      "name": "probe_zero",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56160",
+      "name": "probe_one",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56180",
+      "name": "probe_page_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x561a0",
+      "name": "probe_plus_one",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x561c0",
+      "name": "probe_pages_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x561e0",
+      "name": "probe_saved_rbp",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56200",
+      "name": "probe_return_slot",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56270",
+      "name": "probe_buffer",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56010",
+      "name": "probe_page",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56050",
+      "name": "probe_tail",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56090",
+      "name": "probe_pages",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x560d0",
+      "name": "probe_observes_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56140",
+      "name": "probe_zero",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56160",
+      "name": "probe_one",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56180",
+      "name": "probe_page_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x561a0",
+      "name": "probe_plus_one",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x561c0",
+      "name": "probe_pages_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x561e0",
+      "name": "probe_saved_rbp",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56200",
+      "name": "probe_return_slot",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56270",
+      "name": "probe_buffer",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56010",
+      "name": "probe_page",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56050",
+      "name": "probe_tail",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56090",
+      "name": "probe_pages",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x560d0",
+      "name": "probe_observes_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56140",
+      "name": "probe_zero",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56160",
+      "name": "probe_one",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56180",
+      "name": "probe_page_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x561a0",
+      "name": "probe_plus_one",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x561c0",
+      "name": "probe_pages_r11",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x561e0",
+      "name": "probe_saved_rbp",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56200",
+      "name": "probe_return_slot",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56270",
+      "name": "probe_buffer",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0x9f70",
+      "name": "linux_encryptor::files::add_file",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0xb720",
+      "name": "linux_encryptor::files::create_note",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0x12ff0",
+      "name": "crypto::aes::ctr",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0x3ebf0",
+      "name": "std::backtrace_rs::symbolize::gimli::elf::Object::section",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0x3f1f0",
+      "name": "std::backtrace_rs::symbolize::gimli::elf::decompress_zlib",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0x9f70",
+      "name": "linux_encryptor::files::add_file",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0xb720",
+      "name": "linux_encryptor::files::create_note",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0x12ff0",
+      "name": "crypto::aes::ctr",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0x3ebf0",
+      "name": "std::backtrace_rs::symbolize::gimli::elf::Object::section",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0x3f1f0",
+      "name": "std::backtrace_rs::symbolize::gimli::elf::decompress_zlib",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x9f70",
+      "name": "linux_encryptor::files::add_file",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0xb720",
+      "name": "linux_encryptor::files::create_note",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x12ff0",
+      "name": "crypto::aes::ctr",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x3ebf0",
+      "name": "std::backtrace_rs::symbolize::gimli::elf::Object::section",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x3f1f0",
+      "name": "std::backtrace_rs::symbolize::gimli::elf::decompress_zlib",
+      "fields": [
+        "code",
+        "line_mappings",
+        "variables"
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "fixture": "hermetic-plain",
+      "language": "c",
+      "records_equal": true,
+      "functions": 25
+    },
+    {
+      "fixture": "hermetic-plain",
+      "language": "go",
+      "records_equal": true,
+      "functions": 25
+    },
+    {
+      "fixture": "hermetic",
+      "language": "c",
+      "records_equal": true,
+      "functions": 25
+    },
+    {
+      "fixture": "hermetic",
+      "language": "go",
+      "records_equal": true,
+      "functions": 25
+    },
+    {
+      "fixture": "native-c",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 55
+    },
+    {
+      "fixture": "native-c",
+      "language": "c",
+      "records_equal": true,
+      "functions": 55
+    },
+    {
+      "fixture": "native-c",
+      "language": "go",
+      "records_equal": true,
+      "functions": 55
+    },
+    {
+      "fixture": "entry-ranges",
+      "language": "c",
+      "records_equal": true,
+      "functions": 9
+    },
+    {
+      "fixture": "entry-ranges",
+      "language": "go",
+      "records_equal": true,
+      "functions": 9
+    },
+    {
+      "fixture": "grep",
+      "language": "c",
+      "records_equal": true,
+      "functions": 449
+    },
+    {
+      "fixture": "grep",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 449
+    },
+    {
+      "fixture": "entry-plain",
+      "language": "c",
+      "records_equal": true,
+      "functions": 9
+    },
+    {
+      "fixture": "entry-plain",
+      "language": "go",
+      "records_equal": true,
+      "functions": 9
+    },
+    {
+      "fixture": "native",
+      "language": "c",
+      "records_equal": true,
+      "functions": 1156
+    },
+    {
+      "fixture": "native",
+      "language": "go",
+      "records_equal": true,
+      "functions": 1156
+    },
+    {
+      "fixture": "stripped122",
+      "language": "c",
+      "records_equal": true,
+      "functions": 2017
+    },
+    {
+      "fixture": "stripped122",
+      "language": "go",
+      "records_equal": true,
+      "functions": 2017
+    },
+    {
+      "fixture": "basics122",
+      "language": "c",
+      "records_equal": true,
+      "functions": 2018
+    },
+    {
+      "fixture": "basics122",
+      "language": "go",
+      "records_equal": true,
+      "functions": 2018
+    },
+    {
+      "fixture": "langdetect",
+      "language": "c",
+      "records_equal": true,
+      "functions": 1558
+    },
+    {
+      "fixture": "langdetect",
+      "language": "go",
+      "records_equal": true,
+      "functions": 1558
+    },
+    {
+      "fixture": "native1273",
+      "language": "c",
+      "records_equal": true,
+      "functions": 1495
+    },
+    {
+      "fixture": "native1273",
+      "language": "go",
+      "records_equal": true,
+      "functions": 1495
+    },
+    {
+      "fixture": "basics127",
+      "language": "c",
+      "records_equal": true,
+      "functions": 2552
+    },
+    {
+      "fixture": "basics127",
+      "language": "go",
+      "records_equal": true,
+      "functions": 2552
+    },
+    {
+      "fixture": "panic-shapes",
+      "language": "c",
+      "records_equal": true,
+      "functions": 19
+    },
+    {
+      "fixture": "panic-shapes",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 19
+    },
+    {
+      "fixture": "panic-shapes",
+      "language": "go",
+      "records_equal": true,
+      "functions": 19
+    },
+    {
+      "fixture": "native-plain",
+      "language": "go",
+      "records_equal": true,
+      "functions": 1156
+    },
+    {
+      "fixture": "native-plain",
+      "language": "c",
+      "records_equal": true,
+      "functions": 1156
+    },
+    {
+      "fixture": "native1273-plain",
+      "language": "c",
+      "records_equal": true,
+      "functions": 1495
+    },
+    {
+      "fixture": "native1273-plain",
+      "language": "go",
+      "records_equal": true,
+      "functions": 1495
+    },
+    {
+      "fixture": "basics127-plain",
+      "language": "c",
+      "records_equal": true,
+      "functions": 2552
+    },
+    {
+      "fixture": "basics127-plain",
+      "language": "go",
+      "records_equal": true,
+      "functions": 2552
+    },
+    {
+      "fixture": "pieces-x86_64",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 26
+    },
+    {
+      "fixture": "pieces-x86_64",
+      "language": "c",
+      "records_equal": true,
+      "functions": 26
+    },
+    {
+      "fixture": "pieces-x86_64",
+      "language": "go",
+      "records_equal": true,
+      "functions": 26
+    },
+    {
+      "fixture": "rust",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 455
+    },
+    {
+      "fixture": "rust",
+      "language": "c",
+      "records_equal": true,
+      "functions": 455
+    },
+    {
+      "fixture": "native-rust",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 550
+    },
+    {
+      "fixture": "native-rust",
+      "language": "c",
+      "records_equal": true,
+      "functions": 550
+    },
+    {
+      "fixture": "str-native",
+      "language": "c",
+      "records_equal": true,
+      "functions": 455
+    },
+    {
+      "fixture": "str-native",
+      "language": "go",
+      "records_equal": true,
+      "functions": 455
+    },
+    {
+      "fixture": "str-native",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 455
+    },
+    {
+      "fixture": "rust2025",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 7763
+    },
+    {
+      "fixture": "rust2025",
+      "language": "c",
+      "records_equal": true,
+      "functions": 7763
+    },
+    {
+      "fixture": "panic-native",
+      "language": "go",
+      "records_equal": true,
+      "functions": 597
+    },
+    {
+      "fixture": "panic-native",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 597
+    },
+    {
+      "fixture": "panic-native",
+      "language": "c",
+      "records_equal": true,
+      "functions": 597
+    },
+    {
+      "fixture": "fnptr-native",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 25
+    },
+    {
+      "fixture": "fnptr-native",
+      "language": "c",
+      "records_equal": true,
+      "functions": 25
+    },
+    {
+      "fixture": "fnptr-native",
+      "language": "go",
+      "records_equal": true,
+      "functions": 25
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 576
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "language": "c",
+      "records_equal": true,
+      "functions": 576
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "language": "go",
+      "records_equal": true,
+      "functions": 576
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "language": "c",
+      "records_equal": true,
+      "functions": 572
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 572
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "language": "go",
+      "records_equal": true,
+      "functions": 572
+    },
+    {
+      "fixture": "fnptr-return",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 14
+    },
+    {
+      "fixture": "fnptr-return",
+      "language": "c",
+      "records_equal": true,
+      "functions": 14
+    },
+    {
+      "fixture": "fnptr-return",
+      "language": "go",
+      "records_equal": true,
+      "functions": 14
+    },
+    {
+      "fixture": "fnptr-scopes",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 23
+    },
+    {
+      "fixture": "fnptr-scopes",
+      "language": "c",
+      "records_equal": true,
+      "functions": 23
+    },
+    {
+      "fixture": "fnptr-scopes",
+      "language": "go",
+      "records_equal": true,
+      "functions": 23
+    },
+    {
+      "fixture": "cppproto",
+      "language": "c",
+      "records_equal": true,
+      "functions": 25
+    },
+    {
+      "fixture": "cppproto",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 25
+    },
+    {
+      "fixture": "cppproto",
+      "language": "go",
+      "records_equal": true,
+      "functions": 25
+    },
+    {
+      "fixture": "namespace-cpp",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 23
+    },
+    {
+      "fixture": "namespace-cpp",
+      "language": "c",
+      "records_equal": true,
+      "functions": 23
+    },
+    {
+      "fixture": "namespace-cpp",
+      "language": "go",
+      "records_equal": true,
+      "functions": 23
+    },
+    {
+      "fixture": "dwarf-pointer",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 14
+    },
+    {
+      "fixture": "dwarf-pointer",
+      "language": "c",
+      "records_equal": true,
+      "functions": 14
+    },
+    {
+      "fixture": "dwarf-pointer",
+      "language": "go",
+      "records_equal": true,
+      "functions": 14
+    },
+    {
+      "fixture": "str-nonlto",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 574
+    },
+    {
+      "fixture": "str-nonlto",
+      "language": "c",
+      "records_equal": true,
+      "functions": 574
+    },
+    {
+      "fixture": "str-nonlto",
+      "language": "go",
+      "records_equal": true,
+      "functions": 574
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 562
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "language": "go",
+      "records_equal": true,
+      "functions": 562
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "language": "c",
+      "records_equal": true,
+      "functions": 562
+    },
+    {
+      "fixture": "write-native",
+      "language": "go",
+      "records_equal": true,
+      "functions": 436
+    },
+    {
+      "fixture": "write-native",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 436
+    },
+    {
+      "fixture": "write-native",
+      "language": "c",
+      "records_equal": true,
+      "functions": 436
+    },
+    {
+      "fixture": "io-native",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 447
+    },
+    {
+      "fixture": "io-native",
+      "language": "go",
+      "records_equal": true,
+      "functions": 447
+    },
+    {
+      "fixture": "io-native",
+      "language": "c",
+      "records_equal": true,
+      "functions": 447
+    },
+    {
+      "fixture": "io-promoted",
+      "language": "go",
+      "records_equal": true,
+      "functions": 425
+    },
+    {
+      "fixture": "io-promoted",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 425
+    },
+    {
+      "fixture": "io-promoted",
+      "language": "c",
+      "records_equal": true,
+      "functions": 425
+    },
+    {
+      "fixture": "namespace-rust",
+      "language": "go",
+      "records_equal": true,
+      "functions": 549
+    },
+    {
+      "fixture": "namespace-rust",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 549
+    },
+    {
+      "fixture": "namespace-rust",
+      "language": "c",
+      "records_equal": true,
+      "functions": 549
+    },
+    {
+      "fixture": "raw-namespace",
+      "language": "go",
+      "records_equal": true,
+      "functions": 541
+    },
+    {
+      "fixture": "raw-namespace",
+      "language": "c",
+      "records_equal": true,
+      "functions": 541
+    },
+    {
+      "fixture": "raw-namespace",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 541
+    },
+    {
+      "fixture": "hello",
+      "language": "c",
+      "records_equal": true,
+      "functions": 610
+    },
+    {
+      "fixture": "hello",
+      "language": "go",
+      "records_equal": true,
+      "functions": 610
+    },
+    {
+      "fixture": "hello",
+      "language": "rust",
+      "records_equal": true,
+      "functions": 610
+    }
+  ],
+  "go_parse": [
+    {
+      "fixture": "hermetic-plain",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "hermetic",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "native-c",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "entry-ranges",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "entry-plain",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "native",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "stripped122",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "basics122",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "langdetect",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "native1273",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "basics127",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "panic-shapes",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "native-plain",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "native1273-plain",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "basics127-plain",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "pieces-x86_64",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "str-native",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "panic-native",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "fnptr-native",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "fnptr-return",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "fnptr-scopes",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "cppproto",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "namespace-cpp",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "dwarf-pointer",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "str-nonlto",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "write-native",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "io-native",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "io-promoted",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "namespace-rust",
+      "inherited_failure_addresses": [
+        "0x156c0",
+        "0x156d0",
+        "0x15870"
+      ],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "raw-namespace",
+      "inherited_failure_addresses": [
+        "0x15570",
+        "0x15580",
+        "0x15720"
+      ],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "hello",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "probe-native",
+      "inherited_failure_addresses": [
+        "0x157c0",
+        "0x157d0",
+        "0x15970"
+      ],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "probe-buffer",
+      "inherited_failure_addresses": [
+        "0x15580",
+        "0x15590",
+        "0x15730"
+      ],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "probe-upstream",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    }
+  ],
+  "semantic_review_pending": true
+}

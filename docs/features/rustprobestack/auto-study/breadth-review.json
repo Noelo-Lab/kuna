@@ -1,0 +1,229 @@
+{
+  "at": "2026-11-02T10:28:39.385935+00:00",
+  "complete": true,
+  "semantic_review_pending": false,
+  "images": 41,
+  "distinct_functions": 33695,
+  "language_records": 75801,
+  "changed_records": 84,
+  "changed_distinct_functions": 28,
+  "unchanged_control_images": 38,
+  "new_cli_sha256": "74c564670aca8c86c15edc6fdfc0778732bec54b5a16865ee5d30e721e8a5ae0",
+  "parent_cli_sha256": "08f63c4dd29b2997d032be3ffa7e85447c58017174b051865ec56d0bdad1a198",
+  "classification": {
+    "probe-native": "Eleven exact helper summaries: helper removal, known R11 residuals, saved-RBP input recovery and return-slot observability. The zero residual permits ordinary unsigned identity typing. No changed controls.",
+    "probe-buffer": "The same eleven probes plus one4096-byte buffer whose complete C body remains intact except helper removal. Both optional physical stack policies retain the original call by focused tests.",
+    "probe-upstream": "Five independently inventoried helper callers. create_note/decompress_zlib only lose the helper. add_file coalesces duplicate a0 copies and reorders independent assignments. ctr reorders zero/copy assignments with equal-value storage merging. Object::section propagates three parameter copies and consistently renumbers three surviving locals."
+  },
+  "metadata_review": "All variable identity/storage deltas agree across C/Rust/Go; explicit type-spelling mapping checks their corresponding language types. Dead synthesized spills appear as unused undefined8 metadata with no printed uses. Unused gaps split around those slots; this does not shrink emitted buffers. Object::section drops three copied parameter locals, retains unused storage records and consistently renumbers the surviving locals. R11 undefined register values disappear; saved-RBP forwarding recovers the source input. Line numbers are in range and track removed calls, propagated copies and renumbering.",
+  "go_parser_failures": [
+    {
+      "fixture": "hermetic-plain",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "hermetic",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "native-c",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "entry-ranges",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "entry-plain",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "native",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "stripped122",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "basics122",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "langdetect",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "native1273",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "basics127",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "panic-shapes",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "native-plain",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "native1273-plain",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "basics127-plain",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "pieces-x86_64",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "str-native",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "panic-native",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "fnptr-native",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "fnptr-return",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "fnptr-scopes",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "cppproto",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "namespace-cpp",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "dwarf-pointer",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "str-nonlto",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "write-native",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "io-native",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "io-promoted",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "namespace-rust",
+      "inherited_failure_addresses": [
+        "0x156c0",
+        "0x156d0",
+        "0x15870"
+      ],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "raw-namespace",
+      "inherited_failure_addresses": [
+        "0x15570",
+        "0x15580",
+        "0x15720"
+      ],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "hello",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "probe-native",
+      "inherited_failure_addresses": [
+        "0x157c0",
+        "0x157d0",
+        "0x15970"
+      ],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "probe-buffer",
+      "inherited_failure_addresses": [
+        "0x15580",
+        "0x15590",
+        "0x15730"
+      ],
+      "changed_failure_records": []
+    },
+    {
+      "fixture": "probe-upstream",
+      "inherited_failure_addresses": [],
+      "changed_failure_records": []
+    }
+  ],
+  "all_off_control_records_equal": true,
+  "fresh_captures": true,
+  "pre_guard_captures_reused": false,
+  "all_fresh_records_equal_already_inspected_diff": true,
+  "native_proof_scope": "12 complete C bodies with source-proven unsigned prototypes;384 values including32 ASan buffer checks. Cross-language Rust/Go bodies are structurally reviewed, not all recompiled.",
+  "static_only_upstream": true,
+  "metadata_comparison_refinement": "Initial byte-equality comparison incorrectly assumed C/Rust/Go type spellings were identical. Final comparison explicitly maps and verifies each emitted spelling while retaining every other identity/storage field."
+}

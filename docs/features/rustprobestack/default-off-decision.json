@@ -1,0 +1,43 @@
+{
+  "at": "2026-11-02T10:47:34.224845+00:00",
+  "failed_auto_cli_sha256": "74c564670aca8c86c15edc6fdfc0778732bec54b5a16865ee5d30e721e8a5ae0",
+  "failed_default_cases": [
+    {
+      "case": "native-page",
+      "median_delta_pct": {
+        "cpu_ms": -1.1292330754396507,
+        "wall_ms": -0.5010569909692508
+      },
+      "confidence_upper_mean_delta_pct": {
+        "cpu_ms": 0.14569675684822853,
+        "wall_ms": 5.283442064312029
+      }
+    },
+    {
+      "case": "native-live-r11",
+      "median_delta_pct": {
+        "cpu_ms": -0.982819741400176,
+        "wall_ms": -0.33203231398289956
+      },
+      "confidence_upper_mean_delta_pct": {
+        "cpu_ms": 2.084070709005015,
+        "wall_ms": 6.342625331736455
+      }
+    },
+    {
+      "case": "native-buffer",
+      "median_delta_pct": {
+        "cpu_ms": -0.9011620138767773,
+        "wall_ms": -0.2887833080938651
+      },
+      "confidence_upper_mean_delta_pct": {
+        "cpu_ms": 0.8384941879506402,
+        "wall_ms": 5.59791763227609
+      }
+    }
+  ],
+  "policy": "OFF in all presets; explicit auto/always retain the verified summary; no unchanged-code repeat.",
+  "new_off_samples": 0,
+  "auto_evidence_archive": "/tmp/kuna-rust-probestack/auto-study",
+  "old_whole_binary_captures_preserved": "/tmp/kuna-rust-probestack/breadth-mutable"
+}

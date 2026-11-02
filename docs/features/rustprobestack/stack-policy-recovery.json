@@ -1,0 +1,11 @@
+{
+  "at": "2026-11-02T09:57:09.383016+00:00",
+  "stopped_waiting_promotion_queue": [
+    2798109
+  ],
+  "old_breadth_continues_on_frozen_1305_cli": true,
+  "known_counterexample": "Both optional stackviews and stackalias kept the synthesized RBP spill as an independent scalar and shrank the native page to4088; parent4096.",
+  "new_boundary": "Decline summary under either optional policy; remove unreachable split-lane hook.",
+  "final_validation_requirement": "Fresh41-image capture on the next CLI, corrected mutable fixture, all gates and native proofs.",
+  "timing_samples": 0
+}

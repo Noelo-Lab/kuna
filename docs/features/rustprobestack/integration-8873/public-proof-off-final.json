@@ -1,0 +1,45 @@
+{
+  "at": "2026-11-02T11:40:07.889408+00:00",
+  "records": [
+    {
+      "arm": "parent",
+      "command": [
+        "/home/mahaloz/kwt/angr-base-8873/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-rust-probestack-8873/public-probe",
+        "check",
+        "--language",
+        "c",
+        "--option",
+        "sourcelang",
+        "rust",
+        "--json"
+      ],
+      "cli_sha256": "c0bd40cab52d4f955ca1d4b8fd42a52df9a60ac3a3d0c702984a162025f95d5d",
+      "body": "unsigned int check(void)\n{\n  unsigned int v1; // eax | r11d\n  \n  helper();\n  return v1;\n}"
+    },
+    {
+      "arm": "candidate",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-probestack/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-rust-probestack-8873/public-probe",
+        "check",
+        "--language",
+        "c",
+        "--option",
+        "sourcelang",
+        "rust",
+        "--json",
+        "--option",
+        "rustprobestack",
+        "auto"
+      ],
+      "cli_sha256": "1bb69f239fb5e8437fe263b1e99dba9190383e0c336eaeb3f07c00dbba4f77ee",
+      "body": "unsigned long check(void)\n{\n  return 8;\n}"
+    }
+  ],
+  "source_sha256": "364eb01d177c3e51196d473d21888c69ccec1e3490bb257d823e7f8d2865e6a1",
+  "binary_sha256": "0550508cb1c13a87f0d0cba10d6dc4475cce9f323640afa911fdf3d15fb639cb",
+  "binary_executed": false
+}

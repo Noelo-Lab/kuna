@@ -1,0 +1,2 @@
+prototype probe_buffer unsigned int probe_buffer(unsigned int x)
+prototype fill_probe_page unsigned int fill_probe_page(unsigned char *out,unsigned int x)

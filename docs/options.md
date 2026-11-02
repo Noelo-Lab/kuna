@@ -536,6 +536,9 @@ Three tiers:
 | stdout write! errors lose their owned result representation | [`rustfmtio`](#rustfmtio) |
 | Go output language is unavailable | [`outlang`](#outlang) |
 | Go functions retain C declarations and control-flow syntax | [`outlang`](#outlang) |
+| Rust large-frame functions retain __rust_probestack calls | [`rustprobestack`](#rustprobestack) |
+| live stack-probe R11 residual renders as an undefined local | [`rustprobestack`](#rustprobestack) |
+| stack-probe calls obscure a known constant frame allocation | [`rustprobestack`](#rustprobestack) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
 | imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
 | a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int | [`libcsigs`](#libcsigs) |
@@ -2627,6 +2630,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Use go to inspect a function in Go syntax, including a Go binary whose source metadata is incomplete. Use c or rust to compare another spelling of the recovered function. A language selection does not prove source-language semantics that analysis has not recovered.
 - **Where / provenance:** P9/output-language · angr · opt-in-tool · angr-go-output
 - **Example:** `option outlang go`
+
+### `rustprobestack` -- off | auto | always, default `off` (destructive opt-in)
+
+- **Symptoms:** Rust large-frame functions retain __rust_probestack calls; live stack-probe R11 residual renders as an undefined local; stack-probe calls obscure a known constant frame allocation.
+- **What it does:** Off in every preset because the predeclared default comparison exceeded its 5% wall-time confidence bound. Explicit auto/always summarize the verified 57-byte AMD64 Rust stack-probe helper before SSA and call recovery. Require a direct relative call, a full RAX constant of at most 16 MiB reaching it within 48 raw ops in one block, canonical call push/store p-code, and an immediate SUB RSP,RAX that kills the helper flags. Preserve the caller return-address store, saved RBP store, restored stack pointer and exact R11 residual; ordinary dead-store analysis removes unused scratch writes. Mark the saved-RBP store as a transient callee spill so P6 permits caller buffers to reuse its bytes. Require the live shared image to prove complete mapped coverage, then read it directly without disturbing loader prefetch state. Match complete helper bytes and x86-64 register storage, never the symbol name. Decline missing bytes, modified bodies, unknown frames, intervening flag use, inline/injected/nonreturning call facts and the stackviews/stackalias memory policies. Page-touch reads and their faults are intentionally abstracted. Auto applies only to Rust images; always removes the language gate; off retains the original probe.
+- **When to flip:** Enable auto explicitly to summarize verified Rust compiler stack instrumentation while preserving live R11 and stack writes. Use off to audit page-touch and fault behavior; always accepts matching raw or non-Rust images with the same proof obligations.
+- **Where / provenance:** P2/flow-classification · angr · structure-recovery · angr-rust-probestack
+- **Example:** `option rustprobestack off`
 
 ## Analysis & loader passes
 
