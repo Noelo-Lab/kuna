@@ -283,6 +283,9 @@ mod mapped_flow_boundary;
 #[path = "mixed_tail_returns.rs"]
 mod mixed_tail_returns;
 
+#[path = "mips_stub_noreturn.rs"]
+mod mips_stub_noreturn;
+
 #[path = "macho_alias_names_cli.rs"]
 mod macho_alias_names_cli;
 
