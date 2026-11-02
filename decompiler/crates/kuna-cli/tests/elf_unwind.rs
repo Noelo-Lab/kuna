@@ -267,6 +267,30 @@ fn bcl_to_a_returning_helper_remains_a_call() {
     }
 }
 
+/// A helper that reads LR and returns through it before any `mtlr` is a call:
+/// following its `bcl` as a branch would let the helper's `blr` end the caller.
+#[test]
+fn bcl_to_a_helper_that_reads_lr_remains_a_call() {
+    let code = [
+        0x7c08_02a6, // mflr r0
+        0x429f_000d, // bcl 20,31,0x1010
+        0x3863_0001, // addi r3,r3,1
+        0x4800_000c, // b 0x1018
+        0x7c88_02a6, // mflr r4
+        0x4e80_0020, // blr
+        0x7c08_03a6, // mtlr r0
+        0x4e80_0020, // blr
+    ];
+    for little in [false, true] {
+        let path = common::scratch_file("elf-bcl-lr-helper", "elf");
+        std::fs::write(&path, fixture::image_with_code(little, &code)).unwrap();
+        let (out, err, status) = common::run_kuna(&["decompile", path.to_str().unwrap(), "bump", "--mode", "fast"]);
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(status, 0, "{out}\n{err}");
+        assert!(out.contains("1010") && out.contains("+ 1"), "little={little}: {out}");
+    }
+}
+
 /// GCC may branch from several PC reads to one block that reads LR; the read
 /// still counts when it is reached by a direct branch inside the body.
 #[test]

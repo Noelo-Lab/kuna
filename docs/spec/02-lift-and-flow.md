@@ -32,11 +32,14 @@ lie strictly inside that body and not be a known function. A `bcl` to the next
 instruction cannot be a call. When it skips literal words, the fall-through path
 from the target (following direct unconditional branches inside the body, and
 past conditional ones) must read LR with `mflr` within 32 instructions, before
-any LR return, LR write, call, other unconditional transfer or trap. A forward
-`bcl 20,31` to a helper that returns through LR is therefore still a call. All
-12,456 forward `bcl 20,31` sites in 122 compiler-built PPC32 libraries satisfy
-this rule. Other calls retain their existing treatment. The rewrite is the
-same CALL-to-BRANCH conversion the call-trampoline rule uses. The recognition
+any LR return, LR write, call, other unconditional transfer or trap. After that
+read, the path must not return through LR before `mtlr` restores it; a path
+that instead reaches a CTR jump, leaves the body or runs 64 instructions is
+accepted. A forward `bcl 20,31` to a helper that returns through LR, before or
+after reading it, is therefore still a call. All 20,573 forward `bcl 20,31`
+sites inside FDE bodies of 135 compiler-built PPC32 images satisfy this rule.
+Other calls retain their existing treatment. The rewrite is the same
+CALL-to-BRANCH conversion the call-trampoline rule uses. The recognition
 lives in `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppcpcread.rs (is_pc_capture)`.
 
 The A32 single-register `POP {pc}` alias (`ldr pc,[sp],#4`) lifts as a return,
