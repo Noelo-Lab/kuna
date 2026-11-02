@@ -122,6 +122,8 @@ mod callwide;
 pub use callwide::declarations as callwide_declarations;
 
 mod kuna_cppproto;
+mod kuna_cppnames;
+pub use kuna_cppnames::merge_symbols as merge_cpp_symbols;
 mod kuna_dwarfbounds;
 mod kuna_dwarfbyref;
 mod kuna_dwarflocation;

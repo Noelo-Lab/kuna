@@ -1,0 +1,8 @@
+{
+  "at": "2026-11-02T08:08:49.541987+00:00",
+  "cause": "Rejected42b has only qualified raw_scope::union::target identity, so bare target selector omitted it. Parent capture and compile passed; assertion correctly rejected incomplete witness before claiming regression.",
+  "fix": "Use qualified raw_scope::union::target for rejected arm and bare target for parent/final; require both exact function entry address sets to match across all arms.",
+  "production_code_change": false,
+  "failed_artifacts": "raw-namespace-proof-name-selection-failed",
+  "second_harness_attempt": "--functions filters names, so passing address strings selected no functions. No incomplete captures were accepted."
+}

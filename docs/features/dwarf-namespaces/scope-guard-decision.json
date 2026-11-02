@@ -1,0 +1,13 @@
+{
+  "confirmed_regression": "Raw Rust module r#union was emitted as invalid C++ scope, confirmed with two unchanged complete emitted functions under GCC/Clang O0/O2. Parent compiled and executed; rejected42b failed all four builds.",
+  "refinement": "Move unchanged P9 plain_scope predicate to shared kuna_namespaces; require every proposed qualified DWARF component to satisfy it before removing a bare generic fact. CPP facts still appended unchanged; cppproto off untouched.",
+  "candidate_cli_sha256": "08f63c4dd29b2997d032be3ffa7e85447c58017174b051865ec56d0bdad1a198",
+  "stage_assertions": [
+    3582,
+    3582
+  ],
+  "rejected_cli_sha256": "42b301c5b3a4f6e4b3d3b8c4c937ed3fed21dabddb8b23827a86447c9bd5f9f8",
+  "partial_validation_archive": "pre-scope-guard",
+  "speed_samples_on_rejected_candidates": 0,
+  "fresh_validation_required": true
+}

@@ -1,0 +1,7 @@
+{
+  "cli_sha256": "3b701d76f69ca97b1de593c1f3fbdc2e8582caf5b80cfb24932d67357ff96c9d",
+  "fixture_sha256": "3ae292f0b2b7084f5563d9f1b4c23d2bc2ef49a17a0bac815951d6e69c4a486d",
+  "all_three_emitted_bodies_equal_original_regression_capture": true,
+  "compile_returncode": 1,
+  "failure": "get_target refers to undeclared bare target while its definition is left::target"
+}

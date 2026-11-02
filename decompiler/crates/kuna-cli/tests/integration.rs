@@ -4,6 +4,9 @@ mod common;
 #[path = "function_pointer_namespaces.rs"]
 mod function_pointer_namespaces;
 
+#[path = "dwarf_namespaces.rs"]
+mod dwarf_namespaces;
+
 #[path = "local_array_bits.rs"]
 mod local_array_bits;
 

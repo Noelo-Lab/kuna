@@ -1,0 +1,273 @@
+{
+  "whole_user_function_bodies": 12,
+  "includes_all_changed_C_function_bodies": true,
+  "source_body_rewrites": 0,
+  "runtime_support": "Only standard headers and namespace forward declarations; all twelve user bodies including main are exact emitted text.",
+  "values_compared": 280,
+  "input_modes": 10,
+  "source_sha256": "de161ff3e8285c2cdde2af6d37e74841cbe0233645ff1ce42f0cf027b95d9e67",
+  "candidate_capture_sha256": "a75214d947df5f01ba52fbc0b54a1fefdc6be5252d2146d3ed0d8bdb18ae8cd0",
+  "candidate_cli_sha256": "08f63c4dd29b2997d032be3ffa7e85447c58017174b051865ec56d0bdad1a198",
+  "records": [
+    {
+      "compiler": "clang++",
+      "optimization": "0",
+      "samples": [
+        {
+          "args": [],
+          "native_and_recompiled_stdout": "10 20 30 40 10 10 10\n"
+        },
+        {
+          "args": [
+            "0"
+          ],
+          "native_and_recompiled_stdout": "10 20 30 40 10 10 10\n"
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "native_and_recompiled_stdout": "11 21 31 41 11 11 11\n"
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "native_and_recompiled_stdout": "17 27 37 47 17 17 17\n"
+        },
+        {
+          "args": [
+            "12345"
+          ],
+          "native_and_recompiled_stdout": "12355 12365 12375 12385 12355 12355 12355\n"
+        },
+        {
+          "args": [
+            "2147483647"
+          ],
+          "native_and_recompiled_stdout": "2147483657 2147483667 2147483677 2147483687 2147483657 2147483657 2147483657\n"
+        },
+        {
+          "args": [
+            "2147483648"
+          ],
+          "native_and_recompiled_stdout": "2147483658 2147483668 2147483678 2147483688 2147483658 2147483658 2147483658\n"
+        },
+        {
+          "args": [
+            "4294967255"
+          ],
+          "native_and_recompiled_stdout": "4294967265 4294967275 4294967285 4294967295 4294967265 4294967265 4294967265\n"
+        },
+        {
+          "args": [
+            "4294967285"
+          ],
+          "native_and_recompiled_stdout": "4294967295 9 19 29 4294967295 4294967295 4294967295\n"
+        },
+        {
+          "args": [
+            "4294967295"
+          ],
+          "native_and_recompiled_stdout": "9 19 29 39 9 9 9\n"
+        }
+      ],
+      "binary_sha256": "99019e4702a180e5f608a55d2148d747b357d8b338cece19719bbf52504c0216"
+    },
+    {
+      "compiler": "clang++",
+      "optimization": "2",
+      "samples": [
+        {
+          "args": [],
+          "native_and_recompiled_stdout": "10 20 30 40 10 10 10\n"
+        },
+        {
+          "args": [
+            "0"
+          ],
+          "native_and_recompiled_stdout": "10 20 30 40 10 10 10\n"
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "native_and_recompiled_stdout": "11 21 31 41 11 11 11\n"
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "native_and_recompiled_stdout": "17 27 37 47 17 17 17\n"
+        },
+        {
+          "args": [
+            "12345"
+          ],
+          "native_and_recompiled_stdout": "12355 12365 12375 12385 12355 12355 12355\n"
+        },
+        {
+          "args": [
+            "2147483647"
+          ],
+          "native_and_recompiled_stdout": "2147483657 2147483667 2147483677 2147483687 2147483657 2147483657 2147483657\n"
+        },
+        {
+          "args": [
+            "2147483648"
+          ],
+          "native_and_recompiled_stdout": "2147483658 2147483668 2147483678 2147483688 2147483658 2147483658 2147483658\n"
+        },
+        {
+          "args": [
+            "4294967255"
+          ],
+          "native_and_recompiled_stdout": "4294967265 4294967275 4294967285 4294967295 4294967265 4294967265 4294967265\n"
+        },
+        {
+          "args": [
+            "4294967285"
+          ],
+          "native_and_recompiled_stdout": "4294967295 9 19 29 4294967295 4294967295 4294967295\n"
+        },
+        {
+          "args": [
+            "4294967295"
+          ],
+          "native_and_recompiled_stdout": "9 19 29 39 9 9 9\n"
+        }
+      ],
+      "binary_sha256": "efdf210a510c51d8a4697487bd9935b22ac49145db7a4c93f562c9ec2a49c29d"
+    },
+    {
+      "compiler": "g++",
+      "optimization": "0",
+      "samples": [
+        {
+          "args": [],
+          "native_and_recompiled_stdout": "10 20 30 40 10 10 10\n"
+        },
+        {
+          "args": [
+            "0"
+          ],
+          "native_and_recompiled_stdout": "10 20 30 40 10 10 10\n"
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "native_and_recompiled_stdout": "11 21 31 41 11 11 11\n"
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "native_and_recompiled_stdout": "17 27 37 47 17 17 17\n"
+        },
+        {
+          "args": [
+            "12345"
+          ],
+          "native_and_recompiled_stdout": "12355 12365 12375 12385 12355 12355 12355\n"
+        },
+        {
+          "args": [
+            "2147483647"
+          ],
+          "native_and_recompiled_stdout": "2147483657 2147483667 2147483677 2147483687 2147483657 2147483657 2147483657\n"
+        },
+        {
+          "args": [
+            "2147483648"
+          ],
+          "native_and_recompiled_stdout": "2147483658 2147483668 2147483678 2147483688 2147483658 2147483658 2147483658\n"
+        },
+        {
+          "args": [
+            "4294967255"
+          ],
+          "native_and_recompiled_stdout": "4294967265 4294967275 4294967285 4294967295 4294967265 4294967265 4294967265\n"
+        },
+        {
+          "args": [
+            "4294967285"
+          ],
+          "native_and_recompiled_stdout": "4294967295 9 19 29 4294967295 4294967295 4294967295\n"
+        },
+        {
+          "args": [
+            "4294967295"
+          ],
+          "native_and_recompiled_stdout": "9 19 29 39 9 9 9\n"
+        }
+      ],
+      "binary_sha256": "dbf5644171c327f4b5c692972447730633db7fe1d6cdc3d456115d0a8bfa696a"
+    },
+    {
+      "compiler": "g++",
+      "optimization": "2",
+      "samples": [
+        {
+          "args": [],
+          "native_and_recompiled_stdout": "10 20 30 40 10 10 10\n"
+        },
+        {
+          "args": [
+            "0"
+          ],
+          "native_and_recompiled_stdout": "10 20 30 40 10 10 10\n"
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "native_and_recompiled_stdout": "11 21 31 41 11 11 11\n"
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "native_and_recompiled_stdout": "17 27 37 47 17 17 17\n"
+        },
+        {
+          "args": [
+            "12345"
+          ],
+          "native_and_recompiled_stdout": "12355 12365 12375 12385 12355 12355 12355\n"
+        },
+        {
+          "args": [
+            "2147483647"
+          ],
+          "native_and_recompiled_stdout": "2147483657 2147483667 2147483677 2147483687 2147483657 2147483657 2147483657\n"
+        },
+        {
+          "args": [
+            "2147483648"
+          ],
+          "native_and_recompiled_stdout": "2147483658 2147483668 2147483678 2147483688 2147483658 2147483658 2147483658\n"
+        },
+        {
+          "args": [
+            "4294967255"
+          ],
+          "native_and_recompiled_stdout": "4294967265 4294967275 4294967285 4294967295 4294967265 4294967265 4294967265\n"
+        },
+        {
+          "args": [
+            "4294967285"
+          ],
+          "native_and_recompiled_stdout": "4294967295 9 19 29 4294967295 4294967295 4294967295\n"
+        },
+        {
+          "args": [
+            "4294967295"
+          ],
+          "native_and_recompiled_stdout": "9 19 29 39 9 9 9\n"
+        }
+      ],
+      "binary_sha256": "5e7ae402abf458f9abf409376c5a9d385f7b5cce80ad975c4130ba66ffcf7041"
+    }
+  ]
+}
