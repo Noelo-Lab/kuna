@@ -64,3 +64,22 @@ fn macho_chained_fixups_follow_the_gate() {
         );
     }
 }
+
+/// The MIPS primary GOT, which the dynamic linker relocates with no relocation
+/// records, follows the same gate: `off` reports none of its defined-address
+/// slots constant; on, the local entries after the module pointer and the
+/// defined symbols' global entries are.
+#[test]
+fn mips_got_slots_follow_the_gate() {
+    let _gate = GATE.lock().unwrap_or_else(|e| e.into_inner());
+    let path = format!("{}/tests/fixtures/mipsgot_gcc_be.so", env!("CARGO_MANIFEST_DIR"));
+    let bytes = std::fs::read(&path).expect("MIPS fixture");
+    let file = object::File::parse(&bytes[..]).expect("parse");
+
+    std::env::set_var(DYNRELOCS_ENV, "off");
+    let off = kuna_analysis::loader::kuna_mipsgot::const_ranges(&file);
+    std::env::remove_var(DYNRELOCS_ENV);
+    assert!(off.is_empty(), "off must declare nothing constant: {off:x?}");
+
+    assert_eq!(kuna_analysis::loader::kuna_mipsgot::const_ranges(&file), vec![(0x10428u64, 0x10443u64)]);
+}
