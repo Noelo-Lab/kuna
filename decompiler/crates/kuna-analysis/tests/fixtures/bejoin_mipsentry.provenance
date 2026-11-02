@@ -1,0 +1,25 @@
+bejoin_mipsentry.elf -- MIPS32 big-endian hand-assembled image for option
+bejoin callers with a proven pair whose second register one path leaves as it
+came in (GH-904; tests/stages/kuna-bejoin-mipsclang.xml).
+
+What it is
+  Static executable from bejoin_mipsentry.s. sum_both computes $3 on both
+  paths and reads it there for $2's carry; sum_or_entry does the same on one
+  path and leaves $3 holding its entry value on the other. c_sum_both and
+  c_sum_or_entry store both words of the result, which proves both 64-bit
+  under option bejoin callers.
+
+Why it is vendored
+  CI has no MIPS toolchain, and no compiler emits sum_or_entry's shape on
+  purpose.
+
+Where it came from
+  Ubuntu binutils 2.38 (mipsel-linux-gnu-as/-ld, -EB) on the host:
+
+      mipsel-linux-gnu-as -EB -mips32 bejoin_mipsentry.s -o bejoin_mipsentry.o
+      mipsel-linux-gnu-ld -EB -static --build-id=none -e __start \
+          bejoin_mipsentry.o -o bejoin_mipsentry.elf
+
+  sha256:
+    a24cc47a5ad5a27a25fabee59c4387d53041674c10695bb753c8907949104abe  bejoin_mipsentry.elf
+  Never executed.
