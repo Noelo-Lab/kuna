@@ -526,10 +526,43 @@ section .NEOpack, which the image does not flag executable -- pass
 The `@file` form is the durable one: one declaration per line, `#` comments and
 blank lines skipped. kuna does not write boundaries back into the image, so the file
 is the artifact — generate it, diff it, and pass it to every invocation. The flag is
-accepted by `decompile`, `decompile-all`, `functions`, `decompile-project` and
-`disassemble`; a declaration is applied after analysis has had its say, so it
-overrides discovery rather than competing with it. The console spelling, for a
-hand-driven `decomp_dbg` session, is `function bounds <start> [<end>] [as <name>]`.
+accepted by `decompile`, `decompile-all`, `functions`, `decompile-project`,
+`decompile-graph`, `disassemble`, `read` and `raw-pcode`; a declaration is applied
+after analysis has had its say, so it overrides discovery rather than competing with
+it. The console spelling, for a hand-driven `decomp_dbg` session, is
+`function bounds <start> [<end>] [as <name>]`.
+
+A declaration outside the bytes the input maps is kept, and said to be. An
+assertion can name what the image does not hold — a routine in a boot ROM or another
+module that the code calls at a fixed address — and the declared name is what those
+calls then render as. What it cannot supply is bytes. So each declaration is checked
+against the image's mapped bytes (the extent, or just the entry when no `end` is
+given), and one that is not wholly mapped gets one `warning:` on stderr from every
+command above. A segment the image declares inaccessible, such as a Mach-O
+`__PAGEZERO`, counts as unmapped here even though `read` lists it as zero fill. The `--json` documents of `functions`, `decompile`, `decompile-all`,
+`disassemble`, `read` and `raw-pcode` also carry the sentence in a top-level
+`notes` array (`decompile-project` and `decompile-graph` say it on stderr only), and
+the entry's record in `functions` and `decompile-all` carries a `declared` object:
+
+```console
+$ kuna functions ./ls --json --define-function 0x999999999-0x9999999a1=asserted_unmapped
+warning: declared function asserted_unmapped at 0x999999999-0x9999999a1: its entry
+0x999999999 is not mapped in this input; the function is kept as asserted (calls to it
+use its name), but there are no bytes there to decompile or disassemble
+#   "notes": ["declared function asserted_unmapped at 0x999999999-0x9999999a1: ..."],
+#   {"name": "asserted_unmapped", "address_hex": "0x999999999", ..., "size": 8,
+#    "declared": {"bytes": "unmapped"}}
+```
+
+`declared.bytes` is `mapped` when the whole extent is in the image, `partial` when
+the entry is but the extent runs past the mapped bytes (the warning names the first
+unmapped byte), and `unmapped` when the entry itself is not mapped. Every declared
+entry carries it, so a row without `declared` is one kuna found rather than one it
+was told about. Exit statuses and the C are unchanged: `functions` still lists the
+entry and exits 0, and a command that needs the bytes of an `unmapped` entry
+(`decompile`, `disassemble`) still refuses it, now after the warning that says why.
+A section flagged non-executable is not a reason to warn; a declaration there is
+honored as described above.
 
 **`--assert <directive> | @file`** (repeatable) is the other half: where
 `--define-function` tells kuna where a function *is*, `--assert` tells it what
@@ -1709,7 +1742,12 @@ stack_offset,size,line_numbers,addresses}],types:[{name,definition,size}]}]}` (`
 `name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function; with
 `--reachable-from`, which already walks the image, it also carries a top-level `limits`
 object shaped like the `--summary` one over the listed functions, and the key is absent
-otherwise, so the plain listing never pays for the walk).
+otherwise, so the plain listing never pays for the walk). A record whose entry a
+`--define-function` or `--assert function` declared also carries
+`declared: {bytes: mapped|partial|unmapped}`, and a document in which a declaration is
+not wholly mapped carries a top-level `notes` array of the stderr `warning:` sentences
+(see `--define-function` above; the `--summary` document puts them in its `warnings`).
+Neither key appears in a run that declared nothing.
 `object_location` is `null` for linked images and undefined imports; for a relocatable
 definition it is `{section_index,section,offset,offset_hex}`. A record selected (`--addr` or `--functions`)
 inside another function's extent also carries `interior_to` (see `kuna decompile`
@@ -1782,7 +1820,8 @@ with no `omitted` still means none were recovered. A document that omits nothing
 has no `omitted` key, so the default document is unchanged. The run-level
 `language`, `count`, `error` and `assertions` and each record's `name`,
 `address`, `address_hex`, `aliases`, `object_location`, `size`, `code`, `error`
-and `unstructured_gotos` (and `interior_to`, where it applies) are always present;
+and `unstructured_gotos` (and `interior_to` and `declared`, where they apply) are
+always present;
 `code` and the exit status are what they are without the flag. An unknown key
 exits 2.
 
