@@ -1,0 +1,159 @@
+{
+  "at": "2026-11-02T18:17:51.036485+00:00",
+  "feature": "Preserve joined return components when a typed callback prototype arrives late",
+  "strict_correctness_fix": true,
+  "option": null,
+  "parent_commit": "83a6fd8483bf4d8a6dcc5d2bb1335f8724584636",
+  "parent_cli_sha256": "097e8993d13ff2fb585edda79cf16f817cdc3f1c64bc03c75d05a3b7c2a89a61",
+  "candidate_cli_sha256": "3bc54da6287e3ffc30d8b7c5706ee87af9934077db811151ab3304f3e9704031",
+  "original_assertions": 675,
+  "stage_assertions": 3707,
+  "added_stage_assertions": 8,
+  "workspace": {
+    "passed": 10332,
+    "failed": 0,
+    "ignored": 39,
+    "suites": 72
+  },
+  "all_four_gates_passed": true,
+  "tools_lint_catalog_counters_passed": true,
+  "breadth": {
+    "images": 60,
+    "distinct_functions": 34379,
+    "language_records": 77853,
+    "changed_records": 9,
+    "unchanged_existing_images": 59
+  },
+  "native_c": {
+    "complete_bodies": 8,
+    "input_comparisons": 338,
+    "single_callback_evaluation": true
+  },
+  "native_go": {
+    "complete_bodies": 7,
+    "input_comparisons": 338,
+    "compiler_versions": [
+      "1.22.5",
+      "1.27.3"
+    ],
+    "narrowed_eighth_body_compiles": false
+  },
+  "rust_native_execution_claimed": false,
+  "known_emitter_followup": "P9 special-printing SUBPIECE of an implied struct field omits the narrowing conversion; independently reproduced on unmodified main83 for a direct call in Go and Rust.",
+  "speed": {
+    "all_default_comparisons_passed": true,
+    "maximum_median_delta_pct": 0.2883101640572816,
+    "records": [
+      {
+        "case": "first",
+        "median_delta_pct": {
+          "cpu_ms": -0.21554462898253357,
+          "wall_ms": -0.21301145734777815
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.12466153303810307,
+          "wall_ms": 0.13305432022663732
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "second",
+        "median_delta_pct": {
+          "cpu_ms": -0.11392138934818163,
+          "wall_ms": -0.1025515224303275
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.17671750411162931,
+          "wall_ms": 0.178985625746354
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "both",
+        "median_delta_pct": {
+          "cpu_ms": 0.027394579784889572,
+          "wall_ms": 0.049371601470982185
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.1825306801842709,
+          "wall_ms": 0.18639800875770934
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "narrow_second",
+        "median_delta_pct": {
+          "cpu_ms": 0.27215196241072714,
+          "wall_ms": 0.2883101640572816
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.4298814767204218,
+          "wall_ms": 0.4308909759498432
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "forward",
+        "median_delta_pct": {
+          "cpu_ms": 0.051411364365572254,
+          "wall_ms": 0.05457681819700522
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.15889470170943185,
+          "wall_ms": 0.16432503119814035
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "scalar",
+        "median_delta_pct": {
+          "cpu_ms": 0.0572657129043419,
+          "wall_ms": 0.04011837592536871
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.2526308499806981,
+          "wall_ms": 0.2558887969068674
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "invoke_void",
+        "median_delta_pct": {
+          "cpu_ms": -0.12127732407235525,
+          "wall_ms": -0.10795494810273976
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.05744775917899883,
+          "wall_ms": 0.05840448899164643
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "go-control",
+        "median_delta_pct": {
+          "cpu_ms": -0.40388756043993057,
+          "wall_ms": -0.312104173520511
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.28054019771697175,
+          "wall_ms": 2.315989626575617
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "rust-large-control",
+        "median_delta_pct": {
+          "cpu_ms": 0.054678947459319005,
+          "wall_ms": 0.04168911008546328
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.09442535619561208,
+          "wall_ms": 0.9055318844288461
+        },
+        "speed_budget_passed": true
+      }
+    ]
+  },
+  "initial_void_guard_failure_retained": true,
+  "initial_workspace_test_compile_failure_retained": true
+}

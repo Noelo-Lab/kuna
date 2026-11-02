@@ -740,3 +740,6 @@ mod highslice_guard;
 
 #[path = "rust_null_pointer.rs"]
 mod rust_null_pointer;
+
+#[path = "joined_callback_return.rs"]
+mod joined_callback_return;

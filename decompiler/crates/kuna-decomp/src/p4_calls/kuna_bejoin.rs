@@ -283,6 +283,18 @@ fn written_on_every_path(data: &Funcdata, vn: VarnodeId) -> bool {
     true
 }
 
+/// Is the function being decompiled proven, under a proof mode, to return its
+/// pair as one wide value ([`evidence::proven`])?
+pub(crate) fn proven_here(data: &Funcdata) -> bool {
+    mode(data).proves() && evidence::proven(data, data.get_address())
+}
+
+/// Is the callee at `entry` proven, under a proof mode, to return its pair as
+/// one wide value: the verdict its calls join their output by?
+pub(crate) fn proven_callee(data: &Funcdata, entry: &Address) -> bool {
+    mode(data).proves() && evidence::proven(data, entry)
+}
+
 /// The `option bejoin` mode in force.
 pub fn mode(data: &Funcdata) -> BeJoinMode {
     data.get_arch().be_join

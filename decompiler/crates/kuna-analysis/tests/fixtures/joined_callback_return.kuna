@@ -1,0 +1,8 @@
+prototype make_pair struct Pair make_pair(int8 a,int8 b)
+prototype first int8 first(struct Pair (*fn)(int8,int8),int8 a,int8 b)
+prototype second int8 second(struct Pair (*fn)(int8,int8),int8 a,int8 b)
+prototype both int8 both(struct Pair (*fn)(int8,int8),int8 a,int8 b)
+prototype forward struct Pair forward(struct Pair (*fn)(int8,int8),int8 a,int8 b)
+prototype narrow_second int4 narrow_second(struct Pair (*fn)(int8,int8),int8 a,int8 b)
+prototype scalar int8 scalar(int8 (*fn)(int8,int8),int8 a,int8 b)
+prototype invoke_void void invoke_void(void (*fn)(int8,int8),int8 a,int8 b)

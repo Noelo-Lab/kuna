@@ -1858,11 +1858,13 @@ impl Action for ActionReturnRecovery {
                     active.get_trial_mut(index).mark_active();
                 }
             }
+            let handed_back =
+                whole_pair.is_none() && crate::p4_calls::kuna_bejoinpass::settle_return(data, &mut active, &return_ops);
             let manager_rc = data.get_arch().manage.clone();
             let _ = data.get_func_proto().derive_output_map(&mut active, &manager_rc);
             crate::p4_calls::kuna_voidret::whole_or_none(data, &mut active);
             crate::kuna_retinputhalf::note_moved_back_returns(data, &active, &return_ops, own_input);
-            let order = if whole_pair.is_some() && crate::kuna_bejoin::live(data) {
+            let order = if (whole_pair.is_some() || handed_back) && crate::kuna_bejoin::live(data) {
                 active.join_pair_order()
             } else {
                 crate::kuna_bejoin::join_order(&active, data, &return_ops)
