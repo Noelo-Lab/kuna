@@ -1,0 +1,69 @@
+{
+  "binary": "/tmp/kuna-dwarf-namespace-p9/public-repro/demo",
+  "language": "c-language",
+  "count": 1,
+  "error": null,
+  "functions": [
+    {
+      "name": "direct",
+      "address": 4448,
+      "address_hex": "0x1160",
+      "aliases": [
+        "sub_1160"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned int direct(unsigned int x)\n{\n  return left::target(x);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4449,
+            4455
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "x",
+          "type": "unsigned int",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4449,
+            4455
+          ]
+        },
+        {
+          "name": "local_10",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        },
+        {
+          "name": "local_8",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -8,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": []
+}

@@ -1,0 +1,165 @@
+{
+  "binary": "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces_rust_x86_64",
+  "language": "rust-language",
+  "count": 4,
+  "error": null,
+  "functions": [
+    {
+      "name": "direct_left",
+      "address": 88352,
+      "address_hex": "0x15920",
+      "aliases": [
+        "dwarf_namespaces::direct_left",
+        "sub_15920"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn direct_left(mut x: u32) -> u32\n{\n  return target(x); // tail-call\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            88352
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "x",
+          "type": "u32",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            88352
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "direct_nested",
+      "address": 88368,
+      "address_hex": "0x15930",
+      "aliases": [
+        "dwarf_namespaces::direct_nested",
+        "sub_15930"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn direct_nested(mut x: u32) -> u32\n{\n  return target(x); // tail-call\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            88368
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "x",
+          "type": "u32",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            88368
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "direct_right",
+      "address": 88384,
+      "address_hex": "0x15940",
+      "aliases": [
+        "dwarf_namespaces::direct_right",
+        "sub_15940"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn direct_right(mut x: u32) -> u32\n{\n  return target(x); // tail-call\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            88384
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "x",
+          "type": "u32",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            88384
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "direct_global",
+      "address": 88400,
+      "address_hex": "0x15950",
+      "aliases": [
+        "dwarf_namespaces::direct_global",
+        "sub_15950"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn direct_global(mut x: u32) -> u32\n{\n  return target(x); // tail-call\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            88400
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "x",
+          "type": "u32",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            88400
+          ]
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": []
+}

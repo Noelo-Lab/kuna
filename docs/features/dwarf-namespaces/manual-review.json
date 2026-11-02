@@ -1,0 +1,40 @@
+{
+  "at": "2026-11-02T08:29:30.756411+00:00",
+  "all_hunks_reviewed": true,
+  "reviewed_records": 78,
+  "fixture_counts": {
+    "native-rust": 3,
+    "namespace-cpp": 30,
+    "dwarf-pointer": 7,
+    "namespace-rust": 34,
+    "raw-namespace": 4
+  },
+  "reviewed_scope": "Namespace identity reconciliation, direct targets and C whole-function values; all changed code hunks inspected. Native compilation/semantic claims are limited to the documented authored C++/Rust proofs.",
+  "families": {
+    "native-rust": "C definition and address value now refer to extensions::main; Rust body only gains qualified-name comment.",
+    "namespace-cpp": "Definitions and direct calls bind to their original left/left::deep/right functions; true global target unchanged. All12 emitted C bodies compile/execute under GCC/ClangO0/O2.",
+    "dwarf-pointer": "C definition/getter/main agree on left::target; all3 exact emitted bodies compile/execute with explicit address check. Rust/Go call spelling follows canonical path; their pointer output unchanged.",
+    "namespace-rust": "Ordinary crate/module definitions and direct calls retain same-address identity. C runtime main pointer now agrees with dwarf_namespaces::main definition. Go scope paths follow recovered identity; module/package assembly is not claimed. Invalid reference/template/impl scopes are unchanged.",
+    "raw-namespace": "Only crate main identity/comment and C runtime pointer change; raw union module target and direct wrapper are exact parent records and compile/execute in C."
+  },
+  "limitations": [
+    "No claim that translating C++ namespace functions into Go produces a type-checkable Go package. For example direct_shadow(left uint32) now spells left.target(left), which collides with the parameter in Go; parent target(left) already selected the unrelated +40 function. This is a P9 cross-language name-spelling follow-up, not a native-Go change; all native-Go captures seen are byte-identical.",
+    "Rust/Go per-function declarations encode enclosing namespaces in comments; no whole Rust-runtime or cross-language Go recompilation claim."
+  ],
+  "all_failure_address_Go_records_equal_parent": true,
+  "native_Go_controls": [
+    "hermetic-plain",
+    "hermetic",
+    "entry-ranges",
+    "entry-plain",
+    "native",
+    "basics122",
+    "stripped122",
+    "basics127",
+    "langdetect",
+    "native1273",
+    "native-plain",
+    "native1273-plain",
+    "basics127-plain"
+  ]
+}

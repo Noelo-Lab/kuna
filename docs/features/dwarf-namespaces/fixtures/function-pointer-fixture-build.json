@@ -1,0 +1,19 @@
+{
+  "command": [
+    "clang++",
+    "-std=c++17",
+    "-O1",
+    "-g",
+    "-fno-inline",
+    "-fno-optimize-sibling-calls",
+    "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_function_pointer.cpp",
+    "-o",
+    "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_function_pointer_x86_64"
+  ],
+  "compiler_version": "Ubuntu clang version 14.0.0-1ubuntu1.1\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin\n",
+  "source_sha256": "d8fdfbd1cbc977cf2e27cb38bd146a1dbe0f6a9cb2b8b15d2910b43b0045a36f",
+  "fixture_sha256": "3ae292f0b2b7084f5563d9f1b4c23d2bc2ef49a17a0bac815951d6e69c4a486d",
+  "native_input7": "17\n",
+  "promoted_from": "/tmp/kuna-dwarf-namespace/fnptr-regression/address-return/fixture.cpp",
+  "old_regression_fixture_sha256": "fb1b48f3247d65e02f9ad4799a9689473c4cdda35e9116c2b40e6ec9e0d010e3"
+}

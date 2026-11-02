@@ -1,0 +1,214 @@
+{
+  "binary": "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_function_pointer_x86_64",
+  "language": "c-language",
+  "count": 3,
+  "error": null,
+  "functions": [
+    {
+      "name": "left::target",
+      "address": 4432,
+      "address_hex": "0x1150",
+      "aliases": [
+        "sub_1150"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned int left::target(unsigned int x)\n{\n  return x + 10;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4432,
+            4435
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "x",
+          "type": "unsigned int",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4432,
+            4435
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "get_target",
+      "address": 4448,
+      "address_hex": "0x1160",
+      "aliases": [
+        "sub_1160"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned long get_target(void)\n{\n  return (unsigned long)left::target;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4448,
+            4455
+          ]
+        }
+      ],
+      "variables": [],
+      "types": []
+    },
+    {
+      "name": "main",
+      "address": 4464,
+      "address_hex": "0x1170",
+      "aliases": [
+        "sub_1170"
+      ],
+      "object_location": null,
+      "size": 51,
+      "code": "int main(int argc,char **argv)\n{\n  char *nptr; // rdi\n  unsigned int x; // edi\n  \n  x = 0;\n  if (2 <= argc) {\n    nptr = argv[1];\n    x = (unsigned int)strtoul(nptr,NULL,0);\n  }\n  printf(\"%u\\n\",left::target(x));\n  return 0;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 6,
+          "addresses": [
+            4467
+          ]
+        },
+        {
+          "line_number": 7,
+          "addresses": [
+            4472
+          ]
+        },
+        {
+          "line_number": 8,
+          "addresses": [
+            4474
+          ]
+        },
+        {
+          "line_number": 9,
+          "addresses": [
+            4482,
+            4487
+          ]
+        },
+        {
+          "line_number": 11,
+          "addresses": [
+            4490,
+            4506
+          ]
+        },
+        {
+          "line_number": 12,
+          "addresses": [
+            4514
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "argc",
+          "type": "int",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            7
+          ],
+          "addresses": [
+            4472
+          ]
+        },
+        {
+          "name": "argv",
+          "type": "char **",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            8
+          ],
+          "addresses": [
+            4474
+          ]
+        },
+        {
+          "name": "local_10",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        },
+        {
+          "name": "local_8",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -8,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        },
+        {
+          "name": "nptr",
+          "type": "char *",
+          "kind": "register",
+          "arg_index": null,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            8,
+            9
+          ],
+          "addresses": [
+            4474,
+            4482,
+            4487
+          ]
+        },
+        {
+          "name": "x",
+          "type": "unsigned int",
+          "kind": "register",
+          "arg_index": null,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            6,
+            9,
+            11
+          ],
+          "addresses": [
+            4467,
+            4482,
+            4487,
+            4490,
+            4506
+          ]
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": []
+}

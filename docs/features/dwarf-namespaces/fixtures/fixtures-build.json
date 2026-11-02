@@ -1,0 +1,40 @@
+[
+  {
+    "command": [
+      "clang++",
+      "-std=c++17",
+      "-O1",
+      "-g",
+      "-fno-inline",
+      "-fno-optimize-sibling-calls",
+      "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces.cpp",
+      "-o",
+      "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces_cpp_x86_64"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "",
+    "sha256": "c991b06657932b02ace710f7dd8a557a6db6a45d0eeaffad5d6ab0d57e527216",
+    "native_input7": "17 27 37 47 17 17 17\n"
+  },
+  {
+    "command": [
+      "rustc",
+      "--edition=2021",
+      "--crate-name",
+      "dwarf_namespaces",
+      "-C",
+      "opt-level=1",
+      "-C",
+      "debuginfo=2",
+      "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces.rs",
+      "-o",
+      "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces_rust_x86_64"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "",
+    "sha256": "968267b715b92621e2ae1a1b40e72e55f1f5891e292cf8a391101a5d2a38cb68",
+    "native_input7": "17 27 37 47 17 17\n"
+  }
+]

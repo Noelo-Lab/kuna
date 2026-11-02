@@ -1,0 +1,20 @@
+{
+  "command": [
+    "rustc",
+    "+1.90.0",
+    "--edition=2021",
+    "--crate-name",
+    "raw_scope",
+    "-C",
+    "opt-level=1",
+    "-C",
+    "debuginfo=2",
+    "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_raw_namespace.rs",
+    "-o",
+    "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_raw_namespace_x86_64"
+  ],
+  "rustc": "rustc 1.90.0 (1159e78c4 2025-09-14)\n",
+  "source_sha256": "98f892cf1ae7da4fa21bdc49c6e29d703ce3805b5e4ce4b4b4e44f6a2bca5ce7",
+  "binary_sha256": "9e7adf8d569c8d6f06d2c0dffb47cd59323fe8d957e9dac2b17471368d8c0e42",
+  "native_input7": "17\n"
+}
