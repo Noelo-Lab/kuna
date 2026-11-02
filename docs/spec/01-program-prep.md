@@ -4743,10 +4743,11 @@ it is its code. gcc sinks a MIPS frame setup past an early `jr ra`
 (`bnez a2,L; nop; jr ra; nop; L: addiu sp,sp,-32`), which matches the
 return-then-stack-adjust pair, and the pass committed a `sub_` there that
 `decompile-all` printed as a second copy of the function's tail; on a big-endian
-object, whose analysis view keeps its pre-link addresses, the start landed at the
-section offset. The aggressive gap walk (§1.6) follows the same rule for its
-accepts. Over 1,496 MIPS, PowerPC, SPARC, ARM and x86 images this removes 492
-starts, every one inside a sized symbol, and adds none. A stripped shared object
+object, whose analysis view kept its pre-link addresses until it was rebased in its
+own byte order, the start landed at the section offset. The aggressive gap walk
+(§1.6) follows the same rule for its accepts. Over 1,496 MIPS, PowerPC, SPARC, ARM
+and x86 images this removes 492 starts, every one inside a sized symbol, and adds
+none. A stripped shared object
 keeps the sizes of its exported functions in `.dynsym`, and those filter the same
 way; an image with no sized function symbol (a fully stripped executable, Mach-O)
 is unchanged. The rule trusts the size: a symbol-less routine that hand-written
