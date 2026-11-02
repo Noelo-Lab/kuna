@@ -44,7 +44,7 @@ fn settable_count_is_372() {
 }
 
 #[test]
-fn tier_counts_are_127_core_151_transform_93_analysis() {
+fn tier_counts_are_128_core_151_transform_93_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
