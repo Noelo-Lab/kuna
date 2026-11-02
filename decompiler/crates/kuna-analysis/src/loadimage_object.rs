@@ -1118,6 +1118,14 @@ impl ObjectLoadImage {
         use crate::loader::reloc_object;
 
         let layout = reloc_object::layout_relocatable(file, fmt);
+        let got_range = layout.got_range;
+        let elfv1 = crate::loader::elfv1::Descriptors(
+            layout
+                .opd
+                .iter()
+                .map(|&(address, entry, toc)| crate::loader::elfv1::Descriptor { address, entry, toc })
+                .collect(),
+        );
         let reloc_sections = layout.section_info.clone();
         let reloc_symbols = layout.symbol_info.clone();
 
@@ -1245,13 +1253,18 @@ impl ObjectLoadImage {
             // linked-image only (a relocatable object's relocations are already
             // applied by the layout pass); on this path the entries come from
             // `msvcfpconst`, whose ranges qualify for exactly the same reason —
-            // a datum that is known by construction, not by policy.
-            dynreloc_const: fpconst.const_ranges,
+            // a datum that is known by construction, not by policy — and from
+            // a MIPS object's synthetic GOT.
+            dynreloc_const: fpconst
+                .const_ranges
+                .into_iter()
+                .chain(got_range.map(|(lo, hi)| (lo, hi - 1)))
+                .collect(),
             // A pre-link object has no Import Address Table: its external calls
             // are relocations, resolved by the layout pass.
             import_slots: Vec::new(),
             plt_local: Vec::new(),
-            elfv1: Default::default(),
+            elfv1,
             elf_functions: ElfFunctionProvenance::default(),
             spaceid: None,
             buffer: RefCell::new(vec![0u8; BUFSIZE]),

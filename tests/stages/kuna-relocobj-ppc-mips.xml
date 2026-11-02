@@ -1,0 +1,86 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+<!--
+    kuna relocatable-object loader, GH-904: the calls and addresses of a
+    PowerPC or MIPS object file (.o) are relocations the loader did not
+    apply.  Every `bl`/`jal` kept the placeholder the compiler wrote (a branch
+    to itself, or to 0), so calls printed as sub_<self> or sub_0, globals as
+    dat_0, a PIC MIPS call through the GOT as (*(void *)0x3c020000)(), and a
+    PowerPC64 ELFv1 object, whose function symbols name .opd descriptors,
+    decompiled no function at all.  The caller evidence of option bejoin
+    callers saw no call site, so add64's big-endian pair stayed joined
+    low word first.
+
+    The loader now applies the PowerPC REL24/PLTREL24/LOCAL24PC, REL14,
+    ADDR16 and REL16 halves and data words, the MIPS 26, PC16, HI16/LO16
+    pairs (REL addends), GPREL, and the GOT forms (CALL16, GOT16, GOT_DISP,
+    GOT_PAGE/OFST) against a synthetic _gp and GOT, and maps each ELFv1
+    descriptor symbol to its code.
+
+    Stage: P1 program prep (relocatable-object loader); a strict loader fix,
+    no option.  Single pass.
+
+    Images: decompiler/crates/kuna-analysis/tests/fixtures/relocobj_*.o, from
+    relocobj_calls.c (see relocobj.provenance).
+
+    Assert #1: PPC32 -fno-pic: store calls add64 and stores sink64 high word
+      first; add64 returns its sum high word first (its caller reads r4).
+    Assert #2: PPC32 -fPIC (PLTREL24): callint calls extint.
+    Assert #3: MIPS32 BE gcc -fno-pic (R_MIPS_26, HI16/LO16): store calls
+      add64 and reads its pair $2 high; callint calls extint.
+    Assert #4: MIPSel clang PIC (CALL16 through the GOT): wrap calls ext64.
+    Assert #5: PowerPC64 ELFv1: store, found at add64's code, calls add64.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">4e80002000000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/relocobj_ppc32_O2.o</com>
+  <com>read symbols</com>
+  <com>lo fu add64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/relocobj_ppc32_pic_O2.o</com>
+  <com>read symbols</com>
+  <com>lo fu callint</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/relocobj_mips32_O2.o</com>
+  <com>read symbols</com>
+  <com>lo fu store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu callint</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/relocobj_mipsel_pic_O2.o</com>
+  <com>read symbols</com>
+  <com>lo fu wrap</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/relocobj_ppc64_O2.o</com>
+  <com>read symbols</com>
+  <com>lo fu store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="relocobj #1: PPC32 add64 returns its sum high word first" min="1" max="1">return CONCAT44\(a2 \+ a0 \+ \(uint4\)CARRY4\(a3,a1\),a3 \+ a1\);</stringmatch>
+<stringmatch name="relocobj #1b: PPC32 store reads add64's pair r3 high" min="1" max="1">unsigned long long v1; // r3:r4</stringmatch>
+<stringmatch name="relocobj #1c: both stores call add64 and store sink64's high word at its address" min="2" max="2">dat_402000 = \(int4\)\(\(uint8\)v1 &gt;&gt; 0x20\);</stringmatch>
+<stringmatch name="relocobj #1d: both stores call add64" min="2" max="2">v1 = add64\(\);</stringmatch>
+<stringmatch name="relocobj #2: PPC32 PIC callint calls extint" min="1" max="1">v1 = extint\(\);</stringmatch>
+<stringmatch name="relocobj #3: MIPS32 store reads add64's pair $2 high" min="1" max="1">unsigned long long v1; // v0:v1</stringmatch>
+<stringmatch name="relocobj #3b: MIPS32 callint calls extint and reads sink32" min="1" max="1">return extint\(\) \+ dat_402020;</stringmatch>
+<stringmatch name="relocobj #4: MIPSel PIC wrap calls ext64 through the GOT" min="1" max="1">v2 = ext64\(\);</stringmatch>
+<stringmatch name="relocobj #5: PowerPC64 ELFv1 store calls add64" min="1" max="1">\*dat_400128 = add64\(a0,a1\);</stringmatch>
+<stringmatch name="relocobj #6: no call is left at its placeholder" min="0" max="0">sub_[0-9a-f]+\(</stringmatch>
+</decompilertest>

@@ -132,6 +132,9 @@ pub fn rebased_view(file: &object::File, bytes: &[u8]) -> Option<RebasedView> {
     if let Some(range) = layout.common_range {
         ranges.push(range);
     }
+    if let Some(range) = layout.got_range {
+        ranges.push(range);
+    }
     Some(RebasedView { bytes: out, ranges })
 }
 
