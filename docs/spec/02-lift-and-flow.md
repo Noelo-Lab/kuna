@@ -182,13 +182,20 @@ base, reads or writes a load's data register or writes a store's, and no
 control transfer comes first except one whose delay slot holds the partner
 (not a branch-likely, whose slot runs only when taken). The first half may
 not sit in a delay slot, a load may not use its data register as its base,
-and no branch may land after the first half and at or before the second,
-since a path entering there would run one half alone. Code decoding as
-MIPS16, microMIPS or release 6 is left alone. The whole-access form of a left
-half sets the bit at the next instruction too, so a pair whose left half is
-followed by a half that pairs with nothing is dropped. Turned off again, the
-bit is cleared on the same halves. XML images (no executable ranges) and
-every other language are unchanged, so the datatests are byte-identical.
+and no branch (an Octeon `bbit` too, when the language is Octeon) and no
+sized function symbol may land after the first half and at or before the
+second, since a path entering there would run one half alone. Code decoding
+as MIPS16, microMIPS or release 6 is left alone. The whole-access form of a
+left half sets the bit at the next instruction too, so a pair whose left
+half is followed by a half that pairs with nothing is dropped. Turned off
+again, the bit is cleared on the same halves. `kuna raw-pcode` paints the
+same pairs before it lifts, so it shows the p-code the decompiler reads.
+The scan looks at registers only: a store between the halves of a load (or
+any access between the halves of a store) that overlaps the word is assumed
+not to change what the pair moves, as it never does in compiled code, where
+the only overlaps are struct copies writing the same bytes twice. XML images
+and headerless `--raw-image` inputs (no executable ranges) and every other
+language are unchanged, so the datatests are byte-identical.
 Over 355 gcc and clang MIPS images (zlib, Lua and authored shapes, -O0 to -O3
 and -Os, big- and little-endian PIC shared objects and big-endian non-PIC
 objects) and four SQLite builds, with their DWARF stripped, 3,481 functions

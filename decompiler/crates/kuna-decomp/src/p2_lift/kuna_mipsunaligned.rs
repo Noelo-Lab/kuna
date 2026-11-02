@@ -23,12 +23,12 @@
 //! the partner except one whose delay slot holds it (not a branch-likely,
 //! whose delay slot runs only when taken). The first half may not sit in a
 //! delay slot itself, a load may not use its data register as its base, and
-//! no direct branch or jump in the image may land after the first half and at
-//! or before the second, since a path entering there would run one half
-//! alone. MIPS16, microMIPS and release 6 code is left alone. The
-//! whole-access form of a left half sets the bit at the instruction after it
-//! too, so a pair whose left half is followed by a half that pairs with
-//! nothing is dropped.
+//! no direct branch or jump in the image (an Octeon `bbit` among them) and no
+//! function symbol may land after the first half and at or before the second,
+//! since a path entering there would run one half alone. MIPS16, microMIPS
+//! and release 6 code is left alone. The whole-access form of a left half
+//! sets the bit at the instruction after it too, so a pair whose left half is
+//! followed by a half that pairs with nothing is dropped.
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -103,7 +103,7 @@ enum Control {
     Stop,
 }
 
-fn control(w: u32, at: u64) -> Control {
+fn control(w: u32, at: u64, octeon: bool) -> Control {
     let (op, rs, rt, funct) = (w >> 26, (w >> 21) & 0x1f, (w >> 16) & 0x1f, w & 0x3f);
     let branch = at.wrapping_add(4).wrapping_add(((w as u16 as i16 as i64) << 2) as u64);
     let jump = (at.wrapping_add(4) & !0x0fff_ffff) | (((w & 0x03ff_ffff) as u64) << 2);
@@ -130,6 +130,7 @@ fn control(w: u32, at: u64) -> Control {
             }
         }
         0x10 if rs == 0x10 => Control::Stop,
+        0x32 | 0x36 | 0x3a | 0x3e if octeon => Control::Delayed(Some(branch)),
         _ => Control::None,
     }
 }
@@ -233,22 +234,31 @@ fn context_set(arch: &Architecture, name: &[u8], at: &Address) -> bool {
 }
 
 /// The addresses of both halves of every unaligned pair in `arch`'s image.
-fn find_pairs(arch: &Architecture, big: bool, double: bool) -> Vec<u64> {
+fn find_pairs(arch: &Architecture, big: bool, double: bool, octeon: bool) -> Vec<u64> {
     let Some(code) = arch.manage().get_default_code_space().cloned() else { return Vec::new() };
     let runs = code_words(arch, big);
-    pairs_in(&runs, big, double, &|a| {
+    let entries: Vec<u64> = arch.func_sizes.iter().map(|&(a, _)| a).collect();
+    pairs_in(&runs, big, double, octeon, &entries, &|a| {
         let here = Address::new(Rc::clone(&code), a);
         context_set(arch, b"ISA_MODE", &here) || context_set(arch, b"REL6", &here)
     })
 }
 
-/// [`find_pairs`] over the code `runs`, leaving out a pair whose first half
-/// `other_isa` says decodes in another instruction set.
-fn pairs_in(runs: &[(u64, Vec<u32>)], big: bool, double: bool, other_isa: &dyn Fn(u64) -> bool) -> Vec<u64> {
-    let mut targets = BTreeSet::new();
+/// [`find_pairs`] over the code `runs`, leaving out a pair that a function
+/// of `entries` starts inside or whose first half `other_isa` says decodes in
+/// another instruction set.
+fn pairs_in(
+    runs: &[(u64, Vec<u32>)],
+    big: bool,
+    double: bool,
+    octeon: bool,
+    entries: &[u64],
+    other_isa: &dyn Fn(u64) -> bool,
+) -> Vec<u64> {
+    let mut targets: BTreeSet<u64> = entries.iter().copied().collect();
     for (start, words) in runs {
         for (i, &w) in words.iter().enumerate() {
-            match control(w, start + 4 * i as u64) {
+            match control(w, start + 4 * i as u64, octeon) {
                 Control::Delayed(Some(t)) | Control::Likely(t) => {
                     targets.insert(t);
                 }
@@ -267,7 +277,7 @@ fn pairs_in(runs: &[(u64, Vec<u32>)], big: bool, double: bool, other_isa: &dyn F
             if taken.contains(&i) || (first.double && !double) || (first.load && first.base == first.data) {
                 continue;
             }
-            if i > 0 && control(words[i - 1], at(i - 1)) != Control::None {
+            if i > 0 && control(words[i - 1], at(i - 1), octeon) != Control::None {
                 continue;
             }
             let mut partner = None;
@@ -276,7 +286,7 @@ fn pairs_in(runs: &[(u64, Vec<u32>)], big: bool, double: bool, other_isa: &dyn F
                     partner = Some(j);
                     break;
                 }
-                match control(words[j], at(j)) {
+                match control(words[j], at(j), octeon) {
                     Control::None => {}
                     Control::Delayed(_) => {
                         let slot = j + 1;
@@ -356,7 +366,8 @@ pub fn paint(arch: &mut Architecture) {
         let mut parts = arch.archid.split(':').skip(1);
         let big = parts.next() == Some("BE");
         let double = parts.next() == Some("64");
-        arch.kuna_mips_pairs = Some(Rc::new(find_pairs(arch, big, double)));
+        let octeon = parts.next().is_some_and(|v| v.starts_with("octeon"));
+        arch.kuna_mips_pairs = Some(Rc::new(find_pairs(arch, big, double, octeon)));
     }
     let on = arch.mips_unaligned;
     arch.kuna_mips_pairs_painted = on;

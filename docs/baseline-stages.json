@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3663,
-    3663
+    3668,
+    3668
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
