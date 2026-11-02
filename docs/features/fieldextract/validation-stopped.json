@@ -1,0 +1,30 @@
+{
+  "at": "2026-11-02T18:51:05.066858+00:00",
+  "reason": "Code review found newly inserted casts ignoring explicit nocastprinting; stop partial validation before correcting production source.",
+  "roots": [
+    3959345
+  ],
+  "owned_processes": [
+    3959345,
+    3959354,
+    3959363,
+    3959364,
+    3960961,
+    3962475,
+    3962550,
+    3962705,
+    3963842,
+    3963851,
+    3963884,
+    3963885,
+    3963886,
+    3963887,
+    3963907,
+    3964151,
+    3964202
+  ],
+  "signaled_groups": [
+    3959354,
+    3963885
+  ]
+}

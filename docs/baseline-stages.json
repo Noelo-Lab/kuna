@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3721,
-    3721
+    3735,
+    3735
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -153,6 +153,7 @@
     "data:Bit reinterpret x64 #1: storage transfers use a union",
     "data:Bit reinterpret x64 #2: numeric integer conversion stays a cast",
     "data:Bit reinterpret x64 #3: numeric float truncation stays a cast",
+    "data:C and Rust field casts respect diagnostic suppression",
     "data:C keeps ordinary byte string syntax",
     "data:C selection retains C return punctuation before and after Go",
     "data:C++ namespace despite same-named parameter",
@@ -918,6 +919,7 @@
     "data:Go byte string pointers retain a terminating zero",
     "data:Go byte-array results have no artificial fields",
     "data:Go byte-array writes have their eight-byte width",
+    "data:Go field conversions respect diagnostic suppression",
     "data:Go float storage conversion preserves bits",
     "data:Go integer pointer conversion retains uintptr bridge",
     "data:Go internal strings use data pointers",
@@ -2287,6 +2289,10 @@
     "data:byte array retains base",
     "data:byte arrays accept unscaled element indices",
     "data:byte load stays zero extended",
+    "data:c preserves shift32 extraction",
+    "data:c preserves signed_int16 extraction",
+    "data:c preserves signed_int32_wide extraction",
+    "data:c preserves signed_int8 extraction",
     "data:cached frame reads select a scalar member",
     "data:cached frame words retain scalar declarations",
     "data:callback entries retain returns",
@@ -2781,6 +2787,10 @@
     "data:globalvalue #7: the conversion reads the value",
     "data:globalvalue #8: the conversion does not read the global",
     "data:globalvalue #9: the strtoul result is stored where the binary stores it",
+    "data:go preserves shift32 extraction",
+    "data:go preserves signed_int16 extraction",
+    "data:go preserves signed_int32_wide extraction",
+    "data:go preserves signed_int8 extraction",
     "data:gobounds: conditional retained when disabled or non-Go",
     "data:gobounds: every pass retains the indexed load",
     "data:gobounds: global write before panic retained",
@@ -3309,6 +3319,10 @@
     "data:reversed save overlap retains both caller returns",
     "data:rodatastring #1: default pipeline recovers the read-only block copy as one builtin_strncpy",
     "data:rodatastring #2: rodatastring off restores the invalid array-typed cast (the filed bug)",
+    "data:rust preserves shift32 extraction",
+    "data:rust preserves signed_int16 extraction",
+    "data:rust preserves signed_int32_wide extraction",
+    "data:rust preserves signed_int8 extraction",
     "data:saved narrow interval is passed to the call",
     "data:saved narrow interval keeps its zero fallback",
     "data:saved pointer reaches store",

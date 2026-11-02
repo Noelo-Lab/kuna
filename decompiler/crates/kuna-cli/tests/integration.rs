@@ -743,3 +743,6 @@ mod rust_null_pointer;
 
 #[path = "joined_callback_return.rs"]
 mod joined_callback_return;
+
+#[path = "integer_field_extract.rs"]
+mod integer_field_extract;

@@ -1,0 +1,5 @@
+Auto-merging decompiler/crates/kuna-base/src/xml.rs
+CONFLICT (content): Merge conflict in decompiler/crates/kuna-base/src/xml.rs
+Auto-merging docs/baseline-stages.json
+CONFLICT (content): Merge conflict in docs/baseline-stages.json
+Automatic merge failed; fix conflicts and then commit the result.
