@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3658,
-    3658
+    3661,
+    3661
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2683,6 +2683,9 @@
     "data:frame versions: seed writes only four bytes",
     "data:full-page residuals recovered",
     "data:fully overwritten aggregate parameter objects retain native definitions",
+    "data:funcstart-symbolextent #1: both objects list buf_dup_char",
+    "data:funcstart-symbolextent #1b: both objects list buf_last",
+    "data:funcstart-symbolextent #2: no start inside buf_dup_char",
     "data:function pointer signature uses source aggregate",
     "data:global array anchoring is default off",
     "data:global root survives local shadow under minimal and all",

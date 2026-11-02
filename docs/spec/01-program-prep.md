@@ -4726,6 +4726,18 @@ Cortex-M vector-table oracle (6) above: with the vector-table seeds + Thumb regi
 paint, the pattern scan and the recursive-descent promotion (§1.6) lift betaflight
 STM32F405 from 1 to ~1830 discovered functions (and libopencm3 `button` from 1 to
 31, with `main` decoding as a real Thumb body rather than A32 garbage).
+A candidate strictly inside the extent of a defined function symbol that states
+its size is dropped (`entry/mod.rs (sized_function_bodies)`): the size is the
+compiler's own statement of where that function ends, so a prologue shape inside
+it is its code. gcc sinks a MIPS frame setup past an early `jr ra`
+(`bnez a2,L; nop; jr ra; nop; L: addiu sp,sp,-32`), which matches the
+return-then-stack-adjust pair, and the pass committed a `sub_` there that
+`decompile-all` printed as a second copy of the function's tail; on a big-endian
+object, whose analysis view keeps its pre-link addresses, the start landed at the
+section offset. The aggressive gap walk (§1.6) follows the same rule for its
+accepts. Over 1,496 MIPS, PowerPC, SPARC, ARM and x86 images this removes 492
+starts, every one inside a sized symbol, and adds none. A stripped image has no
+sizes and is unchanged.
 
 **LSDA landing pads** (`eh_frame_full`, default-off): the deeper
 `GccExceptionAnalyzer` markup — follow each FDE's CIE `L` augmentation to its
@@ -6197,7 +6209,9 @@ the validity walk counts that branch as adding information. The Listing's functi
 model is entry-ordered and carries no extents, so "this hole lies inside one body"
 cannot be read off the interval between known entries — on a sparsely discovered
 image nearly every hole lies between two of them, and an interval test swallows
-whole unexplored regions. It is the `fdeinterior` question (§1.5) asked of an image
+whole unexplored regions. (Where a defined function symbol states its size, the
+extent is known and no accept strictly inside it is emitted at all, the rule of
+`funcstart_patterns` in §1.5.) It is the `fdeinterior` question (§1.5) asked of an image
 with no unwind extents, and the candidate's own speculative body answers it instead:
 an accept is a fragment of its enclosing function when that body falls through or
 jumps (not calls) into an instruction the walk decoded that is not a function entry

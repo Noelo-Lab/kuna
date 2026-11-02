@@ -1,0 +1,52 @@
+<decompilertest>
+<binaryimage arch="MIPS:LE:32:default:default">
+<!--
+    kuna analysis (options funcstart_patterns and aif), GH-904: no function
+    starts inside the extent a sized function symbol declares.
+
+    gcc sinks buf_dup_char's frame setup past its early return:
+        0x00  bnez a2,0x10 / nop / jr ra / nop
+        0x10  addiu sp,sp,-32 ...
+    The MIPS pattern pair (a return before a stack adjust) matches at
+    .text+0x10, so the function-start pass committed sub_400010 inside
+    buf_dup_char's 0x74-byte symbol, and decompile-all printed the tail of
+    buf_dup_char a second time as a function of its own.  On a big-endian
+    object, whose analysis view is not rebased, the same start landed at the
+    pre-link address 0x10.  A pattern or gap-walk entry strictly inside a
+    sized function symbol is now that function's code.
+
+    Stage: P1 program prep (code/data partition), options funcstart_patterns
+    and aif (the drivers' default on every architecture but x86-64).
+    Single pass.
+
+    Images: decompiler/crates/kuna-analysis/tests/fixtures/
+    funcstart_shrinkwrap_el.o and funcstart_shrinkwrap_eb.o
+    (funcstart_shrinkwrap.c); see funcstart_shrinkwrap.provenance.
+
+    Assert #1: both objects list buf_dup_char and buf_last.
+    Assert #2: neither lists a start inside buf_dup_char.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">0800e00300000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/funcstart_shrinkwrap_el.o</com>
+  <com>option listing on</com>
+  <com>option funcstart_patterns on</com>
+  <com>option aif on</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/funcstart_shrinkwrap_eb.o</com>
+  <com>option listing on</com>
+  <com>option funcstart_patterns on</com>
+  <com>option aif on</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>quit</com>
+</script>
+<stringmatch name="funcstart-symbolextent #1: both objects list buf_dup_char" min="2" max="2">0x400000 buf_dup_char</stringmatch>
+<stringmatch name="funcstart-symbolextent #1b: both objects list buf_last" min="2" max="2">0x400074 buf_last</stringmatch>
+<stringmatch name="funcstart-symbolextent #2: no start inside buf_dup_char" min="0" max="0">sub_(4000)?10\b</stringmatch>
+</decompilertest>
