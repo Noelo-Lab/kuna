@@ -181,8 +181,8 @@ impl Drop for Armed {
 /// [`ARMED_SLACK`] more than [`FLOOR`] under an explicit limit (`explicit`), or
 /// otherwise [`MIN_GROWTH`] more when the last release was over
 /// [`RELEASE_SHARE`] times its own cost ago. Returns the resident set the drive
-/// starts at; `None` when it cannot be read, or when nothing needs it
-/// (`measured` false and nothing to release).
+/// starts at; `None` when it cannot be read, or when the drive is not
+/// `measured` on a platform whose allocator cannot release.
 pub fn settle(measured: bool, explicit: bool) -> Option<u64> {
     if !measured && !RELEASES {
         return None;
