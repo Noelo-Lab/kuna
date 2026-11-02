@@ -990,9 +990,11 @@ fn resolve_mips_imports(file: &object::File) -> Vec<PltSym> {
 /// marked **constant** so the engine folds the `lw $t9, off($gp)` indirect-call
 /// load to the stub address (the analog of `setConstant` on the GOT pointer
 /// entries in Ghidra's `MIPS_ElfExtension.fixupGot`).  Empty off-MIPS or when the
-/// `DT_MIPS_*` tags are absent.  One slot per external dynamic symbol (FUNC or
-/// not — a constant GOT pointer is harmless for non-FUNC slots and matches
-/// Ghidra, which `setConstant`s every external GOT entry).
+/// `DT_MIPS_*` tags are absent.  One slot per undefined function import that has
+/// a lazy stub. A slot holding 0 belongs to an import with no stub (its address
+/// is taken, or it is a weak reference); the dynamic linker writes the import's
+/// address there at load time, so the 0 is not its value and the slot stays
+/// variable.
 pub(crate) fn mips_got_const_ranges(file: &object::File) -> Vec<(u64, u64)> {
     if !matches!(file.architecture(), Architecture::Mips | Architecture::Mips64) {
         return Vec::new();
@@ -1000,6 +1002,7 @@ pub(crate) fn mips_got_const_ranges(file: &object::File) -> Vec<(u64, u64)> {
     let ptr = if file.is_64() { 8u64 } else { 4u64 };
     mips_external_got_entries(file)
         .into_iter()
+        .filter(|e| e.stub_addr != 0)
         .map(|e| (e.slot_addr, e.slot_addr.wrapping_add(ptr - 1)))
         .collect()
 }

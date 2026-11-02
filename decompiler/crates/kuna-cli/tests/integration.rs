@@ -364,6 +364,9 @@ mod register_parameter_replay;
 #[path = "relocation_diagnostics.rs"]
 mod relocation_diagnostics;
 
+#[path = "relocrebase_be.rs"]
+mod relocrebase_be;
+
 #[path = "retcallchain_cli.rs"]
 mod retcallchain_cli;
 
@@ -553,6 +556,9 @@ mod global_aggregate_store;
 
 #[path = "multireg_call_inputs.rs"]
 mod multireg_call_inputs;
+
+#[path = "mips_got_nostub.rs"]
+mod mips_got_nostub;
 
 #[path = "narrow_register_inputs.rs"]
 mod narrow_register_inputs;

@@ -1,0 +1,30 @@
+mipsgot_nostub_el.so, mipsgot_nostub_n64el.so -- MIPS PIC shared objects
+whose imports have no .MIPS.stubs lazy stub, so their global GOT slots hold 0
+until the dynamic linker binds them (GH-904;
+kuna-cli/tests/mips_got_nostub.rs).
+
+What they are
+  Built from mipsgot_nostub.c with -nostdlib. puts is address-taken
+  (say_ptr = puts), so the linker gives it no stub and st_value 0; hook is
+  a weak reference, also st_value 0. user calls both through their GOT
+  slots and guards the hook call with `if (hook)`.
+  mipsgot_nostub_el.so    o32 little-endian
+  mipsgot_nostub_n64el.so n64 little-endian (mips64r2; load with
+                          --target MIPS:LE:64:default)
+
+Why they are vendored
+  CI has no MIPS toolchain.
+
+Where they came from
+  Ubuntu mipsel-linux-gnu-gcc 10.3.0, GNU ld 2.38 (host):
+
+      mipsel-linux-gnu-gcc -EL -mabi=32 -O2 -fPIC -shared -nostdlib \
+          -Wl,--build-id=none mipsgot_nostub.c -o mipsgot_nostub_el.so
+      mipsel-linux-gnu-gcc -EL -mabi=64 -march=mips64r2 -O2 -fPIC -shared \
+          -nostdlib -Wl,--build-id=none mipsgot_nostub.c \
+          -o mipsgot_nostub_n64el.so
+
+  sha256:
+    03e0d83a323d7a11a10b16aaa44e18d7f66571cfe597c9b970ebf457e343c17d  mipsgot_nostub_el.so
+    577eb0a2310cbf43216b4f344edb1526e51a8f8950bd68bf44323a02a26509df  mipsgot_nostub_n64el.so
+  Never executed.
