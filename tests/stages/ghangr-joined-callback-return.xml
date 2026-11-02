@@ -1,0 +1,53 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/joined_callback_return_x86_64</com>
+  <com>read symbols</com>
+  <com>option ctypes off</com>
+  <com>option realtypes off</com>
+  <com>map prototype make_pair struct Pair make_pair(int8 a,int8 b);</com>
+  <com>map prototype first int8 first(struct Pair (*fn)(int8,int8),int8 a,int8 b);</com>
+  <com>map prototype second int8 second(struct Pair (*fn)(int8,int8),int8 a,int8 b);</com>
+  <com>map prototype both int8 both(struct Pair (*fn)(int8,int8),int8 a,int8 b);</com>
+  <com>map prototype forward struct Pair forward(struct Pair (*fn)(int8,int8),int8 a,int8 b);</com>
+  <com>map prototype narrow_second int4 narrow_second(struct Pair (*fn)(int8,int8),int8 a,int8 b);</com>
+  <com>map prototype scalar int8 scalar(int8 (*fn)(int8,int8),int8 a,int8 b);</com>
+  <com>map prototype invoke_void void invoke_void(void (*fn)(int8,int8),int8 a,int8 b);</com>
+  <com>load function make_pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function second</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function both</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function forward</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function narrow_second</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function scalar</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function invoke_void</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Joined callback first component survives a late callback prototype" min="1" max="1">return \(\*fn\)\(a,b\)\.first;</stringmatch>
+<stringmatch name="Joined callback second component is defined by the callback" min="1" max="1">v1 = \(\*fn\)\(a,b\)\.second;</stringmatch>
+<stringmatch name="Joined callback narrowed second component is preserved" min="1" max="1">return \(\*fn\)\(a,b\)\.second;</stringmatch>
+<stringmatch name="Joined callback both fields come from one invocation" min="1" max="1">v1 = \(\*fn\)\(a,b\);</stringmatch>
+<stringmatch name="Joined callback both fields remain live" min="1" max="1">return v1.first \^ v1.second;</stringmatch>
+<stringmatch name="Joined callback whole and scalar forwarding remain intact" min="2" max="2">return \(\*fn\)\(a,b\); // jump-as-call</stringmatch>
+<stringmatch name="Joined callback callee side effect remains intact" min="1" max="1">calls \+= 1;</stringmatch>
+<stringmatch name="Joined callback void contract has no return storage" min="1" max="1">^  \(\*fn\)\(a,b\); // jump-as-call</stringmatch>
+</decompilertest>
