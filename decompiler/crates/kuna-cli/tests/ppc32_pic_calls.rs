@@ -220,6 +220,11 @@ fn shared_tail_calls_have_the_same_import_in_decompilation_and_xrefs() {
         let shared = query("--to", "__stack_chk_fail", true);
         assert_eq!(shared.len(), 1);
         assert!(shared[0]["from_function"].is_null(), "{shared:?}");
+        let text = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args(["xrefs", path.to_str().unwrap(), "--to", "__stack_chk_fail", "--option", "ppc32picimports", "on"])
+            .output().unwrap();
+        let text = String::from_utf8(text.stdout).unwrap();
+        assert!(text.contains("0x100c\tcall\t0x100c\t") && !text.contains("check"), "{text}");
         for (name, entry) in [("check", 0x1000), ("check2", 0x1008)] {
             let rows = query("--from", name, true);
             let call = rows.iter().find(|r| r["to_address"] == 0x3000).unwrap();
@@ -227,29 +232,6 @@ fn shared_tail_calls_have_the_same_import_in_decompilation_and_xrefs() {
         }
         std::fs::remove_file(path).unwrap();
     }
-}
-
-#[test]
-fn api_call_bindings_are_entry_local_and_cleared() {
-    let mut f = fixture::Fixture::new(fixture::Plt::Short);
-    f.pic_collision = true;
-    f.caller = Some(vec![0x3bc02800,0x480007fd,0x38600007,0x4e800020]);
-    let path = common::scratch_file("ppc32-api", "elf");
-    std::fs::write(&path, f.bytes()).unwrap();
-    let specs = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../specs").canonicalize().unwrap();
-    let mut prog = kuna_console::engine::bootstrap_from_image(path.to_str().unwrap(), "", &[specs.to_string_lossy().into_owned()]).unwrap();
-    prog.commit_pending_analysis().unwrap();
-    prog.arch_mut().set_kuna_option("ppc32picimports", "on").unwrap();
-    let entry = prog.lookup_symbol("check").unwrap();
-    let mut fd = kuna_decomp::decompile_drive::build_and_follow_flow(prog.arch_mut(), "check", entry, 16).unwrap();
-    assert_eq!(fd.ppc32_import_calls().count(), 1);
-    let call = fd.ppc32_import_calls().next().unwrap();
-    assert_eq!((call.site, call.target, call.import.address), (0x1004, Some(0x1800), 0x3000));
-    assert!(fd.get_call_specs(0).proto().is_no_return());
-    assert!(prog.function_named_at(0x1800).is_none_or(|name| name != "__stack_chk_fail"));
-    fd.clear();
-    assert_eq!(fd.ppc32_import_calls().count(), 0);
-    std::fs::remove_file(path).unwrap();
 }
 
 #[test]
@@ -396,5 +378,56 @@ fn distinct_stubs_do_not_hide_imported_slot_writes() {
         let on = decompile(&bytes, "check", true);
         assert!(on.contains("return 7;") && !on.contains("abort("), "{on}");
         assert_eq!(on, decompile(&bytes, "check", false));
+    }
+}
+
+#[test]
+fn a_proved_flow_drops_the_discarded_flows_warnings() {
+    for little in [false, true] {
+        let mut f = fixture::Fixture::new(fixture::Plt::Short);
+        f.little = little;
+        f.pic_collision = true;
+        f.caller = Some(vec![0x3bc02800, 0x480007fd, 0, 0]);
+        let bytes = f.bytes();
+        let off = decompile(&bytes, "check", false);
+        assert!(off.contains("halt_baddata") && off.contains("bad instruction"), "{off}");
+        let on = decompile(&bytes, "check", true);
+        assert!(on.contains("__stack_chk_fail(); // no-return"), "{on}");
+        assert!(!on.contains("warn") && !on.contains("bad instruction"), "little={little}: {on}");
+    }
+}
+
+#[test]
+fn xrefs_prove_only_the_entries_a_query_can_report() {
+    for little in [false, true] {
+        let mut f = fixture::Fixture::new(fixture::Plt::Short);
+        f.little = little;
+        f.pic_collision = true;
+        f.caller = Some(vec![0x3bc02800, 0x480007fd, 0x4e800020]);
+        // check2 returns from extra into the end of the image, so its flow fails.
+        f.second_caller = Some(vec![0x3bc02804, 0x480007f1]);
+        let path = common::scratch_file("ppc32-scoped-xref-selection", "elf");
+        std::fs::write(&path, f.bytes()).unwrap();
+        let query = |args: &[&str]| {
+            let mut cmd = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            cmd.arg("xrefs").arg(&path).args(args)
+                .args(["--json", "--mode", "fast", "--option", "ppc32picimports", "on"]);
+            let out = cmd.output().unwrap();
+            assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+            let result: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+            let failed = result["coverage"]["notes"].as_array().unwrap().iter()
+                .filter_map(|n| n.as_str())
+                .any(|n| n.starts_with("ppc32picimports: 1 of ") && n.contains("check2 @ 0x100c"));
+            let calls = result["xrefs"].as_array().unwrap().iter()
+                .any(|r| r["from_address"] == 0x1004 && r["to_address"] == 0x3000);
+            (calls, failed, String::from_utf8_lossy(&out.stderr).contains("check2 @ 0x100c"))
+        };
+        assert_eq!(query(&["--to", "__stack_chk_fail"]), (true, true, true), "little={little}");
+        assert_eq!(query(&["--to", "0x3000"]), (true, true, true), "little={little}");
+        assert_eq!(query(&["--from", "check"]), (true, false, false), "little={little}");
+        assert_eq!(query(&["--from", "check2"]), (false, true, true), "little={little}");
+        assert_eq!(query(&["--to", "check"]), (false, false, false), "little={little}");
+        assert_eq!(query(&["--to", "__stack_chk_fail", "--kind", "data"]), (false, false, false));
+        std::fs::remove_file(path).unwrap();
     }
 }

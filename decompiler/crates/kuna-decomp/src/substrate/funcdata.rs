@@ -978,6 +978,17 @@ impl Funcdata {
         std::mem::take(&mut self.pending_comments)
     }
 
+    /// How many analysis comments are buffered (a mark for
+    /// [`Self::truncate_pending_comments`]).
+    pub fn pending_comment_count(&self) -> usize {
+        self.pending_comments.len()
+    }
+
+    /// Drop the comments buffered after `mark`: a discarded flow's statements.
+    pub fn truncate_pending_comments(&mut self, mark: usize) {
+        self.pending_comments.truncate(mark);
+    }
+
     /// Read-only view of the buffered analysis comments (the
     /// `(comment_type, placement_address, text)` triples that
     /// [`Self::drain_pending_comments`] will hand to the console `Architecture`'s
@@ -4227,6 +4238,11 @@ impl Funcdata {
     // clear / printRaw (W3-portable / seam-noted)
     // -----------------------------------------------------------------------
 
+    /// The caller-local PPC32 import calls this entry's flow applied.
+    pub fn ppc32_import_calls(&self) -> impl Iterator<Item = &crate::kuna_ppc32piccalls::CallBinding> {
+        self.ppc32_pic_calls.values()
+    }
+
     /// Clear everything associated with decompilation analysis
     /// (C++ `Funcdata::clear`, `funcdata.cc:84`).
     ///
@@ -4234,11 +4250,8 @@ impl Funcdata {
     /// `clearActiveOutput`, `unionMap`, `clearCallSpecs`, `clearJumpTables`,
     /// `heritage.clear`, `covermerge.clear`) are seam-noted; the W3 IR clears
     /// (`clearBlocks`, `obank.clear`, `vbank.clear`) and the flag/index reset are
-    /// faithful.
-    pub fn ppc32_import_calls(&self) -> impl Iterator<Item = &crate::kuna_ppc32piccalls::CallBinding> {
-        self.ppc32_pic_calls.values()
-    }
-
+    /// faithful. Buffered comments survive, as C++ comments already in the
+    /// database survive a restart.
     pub fn clear(&mut self) {
         self.ppc32_pic_calls.clear();
         self.kuna_regnarrow_runs = 0;

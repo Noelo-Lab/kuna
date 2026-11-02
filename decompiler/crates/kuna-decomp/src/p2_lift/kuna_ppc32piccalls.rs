@@ -29,19 +29,39 @@ pub struct CallBinding {
     pub import: ImportSlot,
 }
 
-/// Complete short/long r30-relative stub, including the short form's padding.
+/// A complete four-word secure-PLT call stub.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stub {
+    /// Short or long form loading the slot at r30 plus this delta.
+    Pic(u32),
+    /// `lis`/`lwz` form loading this fixed slot address.
+    Absolute(u32),
+}
+
+/// The single recognizer shared by the loader, the ABI proof and the caller-local
+/// proof. The short PIC form includes its padding word.
+pub fn stub(words: &[u32]) -> Option<Stub> {
+    let &[first, second, third, fourth] = words else { return None };
+    let low = second as u16 as i16 as u32;
+    if first & 0xffff_0000 == 0x817e_0000 && [second, third, fourth] == [0x7d69_03a6, 0x4e80_0420, 0x6000_0000] {
+        return Some(Stub::Pic(first as u16 as i16 as u32));
+    }
+    if second & 0xffff_0000 != 0x816b_0000 || [third, fourth] != [0x7d69_03a6, 0x4e80_0420] {
+        return None;
+    }
+    match first & 0xffff_0000 {
+        0x3d7e_0000 => Some(Stub::Pic((first << 16).wrapping_add(low))),
+        0x3d60_0000 => Some(Stub::Absolute((first << 16).wrapping_add(low))),
+        _ => None,
+    }
+}
+
+/// The r30 delta of a complete short or long PIC stub.
 pub fn stub_delta(words: &[u32]) -> Option<u32> {
-    if words.len() != 4 { return None; }
-    if words[0] & 0xffff_0000 == 0x817e_0000
-        && words[1..] == [0x7d69_03a6, 0x4e80_0420, 0x6000_0000]
-    {
-        Some(words[0] as u16 as i16 as u32)
-    } else if words[0] & 0xffff_0000 == 0x3d7e_0000
-        && words[1] & 0xffff_0000 == 0x816b_0000
-        && words[2..] == [0x7d69_03a6, 0x4e80_0420]
-    {
-        Some((words[0] << 16).wrapping_add(words[1] as u16 as i16 as u32))
-    } else { None }
+    match stub(words)? {
+        Stub::Pic(delta) => Some(delta),
+        Stub::Absolute(_) => None,
+    }
 }
 
 type Key = (i32, u64, i32);
@@ -113,14 +133,13 @@ fn direct_slot(data: &Funcdata, engine: &Architecture, target: &Address, state: 
     let words: Vec<_> = bytes.chunks_exact(4).map(|b| if little {
         u32::from_le_bytes(b.try_into().unwrap())
     } else { u32::from_be_bytes(b.try_into().unwrap()) }).collect();
-    let slot = if let Some(delta) = stub_delta(&words) {
-        let base = scalar(state.values.get(&register(engine, "r30")?).copied())?;
-        (base as u32).wrapping_add(delta)
-    } else if words[0] & 0xffff_0000 == 0x3d60_0000
-        && words[1] & 0xffff_0000 == 0x816b_0000
-        && words[2..] == [0x7d69_03a6, 0x4e80_0420] {
-        (words[0] << 16).wrapping_add(words[1] as u16 as i16 as u32)
-    } else { return None; };
+    let slot = match stub(&words)? {
+        Stub::Pic(delta) => {
+            let base = scalar(state.values.get(&register(engine, "r30")?).copied())?;
+            (base as u32).wrapping_add(delta)
+        }
+        Stub::Absolute(slot) => slot,
+    };
     engine.ppc32_pic_imports.contains_key(&u64::from(slot)).then_some(u64::from(slot))
 }
 
@@ -273,4 +292,30 @@ pub(crate) fn clear_stale_warnings(db: &mut crate::architecture::CommentDatabase
     db.retain_comments(|comment| &comment.func_addr != entry
         || comment.tp != crate::architecture::comment_type::warning
         || !comment.text.ends_with(WARNING));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn one_recognizer_classifies_every_stub_form() {
+        let tail = [0x7d69_03a6, 0x4e80_0420];
+        assert_eq!(stub(&[0x817e_fff0, tail[0], tail[1], 0x6000_0000]), Some(Stub::Pic(0xffff_fff0)));
+        assert_eq!(stub(&[0x3d7e_0001, 0x816b_8000, tail[0], tail[1]]), Some(Stub::Pic(0x8000)));
+        assert_eq!(stub(&[0x3d60_0000, 0x816b_3000, tail[0], tail[1]]), Some(Stub::Absolute(0x3000)));
+        assert_eq!(stub(&[0x3d60_0001, 0x816b_8004, tail[0], tail[1]]), Some(Stub::Absolute(0x8004)));
+        for words in [
+            vec![0x817e_0000, tail[0], tail[1], 0x4e80_0020],
+            vec![0x3d7f_0000, 0x816b_0000, tail[0], tail[1]],
+            vec![0x3d61_0000, 0x816b_0000, tail[0], tail[1]],
+            vec![0x3d60_0000, 0x816c_0000, tail[0], tail[1]],
+            vec![0x3d60_0000, 0x816b_0000, tail[0], 0x4e80_0421],
+            vec![0x817e_0000, tail[0], tail[1]],
+        ] {
+            assert_eq!(stub(&words), None, "{words:x?}");
+        }
+        assert_eq!(stub_delta(&[0x3d60_0000, 0x816b_3000, tail[0], tail[1]]), None);
+        assert_eq!(stub_delta(&[0x817e_0004, tail[0], tail[1], 0x6000_0000]), Some(4));
+    }
 }

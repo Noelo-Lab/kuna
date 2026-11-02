@@ -37,8 +37,7 @@
 //!    strictly inside it,
 //! 2. no other FDE's `pcBegin` lies strictly inside it, and
 //! 3. it does not overlap a stub section (`.plt`, `.plt.sec`, `.plt.got`,
-//!    `.iplt`, `.MIPS.stubs`, `.glink`) or a complete PPC32 PIC stub. GNU can
-//!    merge `.glink` into `.text`, where section names alone do not identify it.
+//!    `.iplt`, `.MIPS.stubs`).
 //!
 //! Guard 1 alone rejects the PLT on every binary measured; 2 and 3 are the cheap
 //! belt-and-suspenders for a stripped image whose stubs carry no name.
@@ -57,12 +56,12 @@ use object::read::{Object, ObjectSection};
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 use super::{
-    decode_eh_pointer, encoded_size, existing_function_addrs, parse_cie_fde_encoding,
-    read_u32, read_u64, DW_EH_PE_ABSPTR,
+    decode_eh_pointer, encoded_size, existing_function_addrs, parse_cie_fde_encoding, read_u32,
+    read_u64, DW_EH_PE_ABSPTR,
 };
 
 /// Section names whose contents are linker-generated stubs sharing one FDE.
-const STUB_SECTIONS: &[&str] = &[".plt", ".plt.sec", ".plt.got", ".iplt", ".MIPS.stubs", ".glink"];
+const STUB_SECTIONS: &[&str] = &[".plt", ".plt.sec", ".plt.got", ".iplt", ".MIPS.stubs"];
 
 /// (kuna) The FDE-interior entry-suppression pass (`fdeinterior`).
 ///
@@ -132,37 +131,16 @@ pub fn eligible_fde_bodies(file: &object::File, bytes: &[u8]) -> Vec<(u64, u64)>
     }
     let named = existing_function_addrs(file, bytes);
     let starts: Vec<u64> = all.iter().map(|&(start, _)| start).collect();
-    let mut stubs = stub_ranges(file);
-    stubs.extend(crate::loader::kuna_ppc32_imports::pic_stub_ranges(file));
-    let stubs = merge_stub_ranges(stubs);
+    let stubs = stub_ranges(file);
     all.iter()
         .copied()
         .filter(|&(start, end)| {
             let contains_named = contains_strictly(&named, start, end);
             let contains_start = contains_strictly(&starts, start, end);
-            let overlaps_stub = overlaps_stub(&stubs, start, end);
+            let overlaps_stub = stubs.iter().any(|&(lo, hi)| start < hi && lo < end);
             !contains_named && !contains_start && !overlaps_stub
         })
         .collect()
-}
-
-/// Merge nested and overlapping stub ranges so one predecessor answers overlap.
-fn merge_stub_ranges(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
-    ranges.sort_unstable();
-    let mut merged: Vec<(u64, u64)> = Vec::new();
-    for (lo, hi) in ranges {
-        if let Some(last) = merged.last_mut().filter(|last| lo <= last.1) {
-            last.1 = last.1.max(hi);
-        } else {
-            merged.push((lo, hi));
-        }
-    }
-    merged
-}
-
-fn overlaps_stub(stubs: &[(u64, u64)], start: u64, end: u64) -> bool {
-    let next = stubs.partition_point(|&(lo, _)| lo < end);
-    next > 0 && start < stubs[next - 1].1
 }
 
 /// Does the sorted `addrs` hold any value strictly between `start` and `end`?
@@ -173,11 +151,7 @@ fn contains_strictly(addrs: &[u64], start: u64, end: u64) -> bool {
 /// `[address, address + size)` of every linker-stub section.
 fn stub_ranges(file: &object::File) -> Vec<(u64, u64)> {
     file.sections()
-        .filter(|s| {
-            s.name()
-                .map(|n| STUB_SECTIONS.contains(&n))
-                .unwrap_or(false)
-        })
+        .filter(|s| s.name().map(|n| STUB_SECTIONS.contains(&n)).unwrap_or(false))
         .map(|s| (s.address(), s.address() + s.size()))
         .filter(|&(lo, hi)| hi > lo)
         .collect()
@@ -276,30 +250,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stub_overlap_handles_nested_ranges_and_open_endpoints() {
-        let stubs = merge_stub_ranges(vec![(40, 48), (16, 64), (80, 96), (0, 8), (64, 72)]);
-        for (start, end, expected) in [
-            (0, 4, true), (8, 16, false), (8, 17, true), (32, 40, true),
-            (48, 64, true), (71, 72, true), (72, 80, false), (95, 99, true),
-            (96, 100, false), (0, 100, true),
-        ] {
-            assert_eq!(overlaps_stub(&stubs, start, end), expected, "{start}..{end}");
-        }
-        assert!(!overlaps_stub(&[], 0, 100));
-    }
-
-    #[test]
     fn interior_is_strict() {
         let bodies = vec![(0x1000, 0x1100), (0x2000, 0x2010)];
-        assert!(
-            !is_interior(&bodies, 0x1000),
-            "an FDE start is a function, not an interior"
-        );
+        assert!(!is_interior(&bodies, 0x1000), "an FDE start is a function, not an interior");
         assert!(is_interior(&bodies, 0x1080));
-        assert!(
-            !is_interior(&bodies, 0x1100),
-            "the open end belongs to the next function"
-        );
+        assert!(!is_interior(&bodies, 0x1100), "the open end belongs to the next function");
         assert!(!is_interior(&bodies, 0x1200));
         assert!(is_interior(&bodies, 0x2008));
     }

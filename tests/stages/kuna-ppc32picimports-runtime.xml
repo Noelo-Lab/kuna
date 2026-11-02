@@ -62,5 +62,5 @@
 <stringmatch name="only the swapped image calls the terminal import" min="3" max="3">__stack_chk_fail\(</stringmatch>
 <stringmatch name="returning callers retain their original calls" min="3" max="3">sub_1800\(</stringmatch>
 <stringmatch name="all returning images retain their return" min="5" max="5">return 7;</stringmatch>
-<stringmatch name="ABI cache hits preserve the returning import identity" min="2" max="2">extra\(</stringmatch>
+<stringmatch name="ABI reloads preserve the returning import identity" min="2" max="2">extra\(</stringmatch>
 </decompilertest>

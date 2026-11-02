@@ -82,8 +82,9 @@ impl Encoding {
                 .unwrap_or_default()
                 .as_str()
                 .into(),
-            Self::Ppc32Pic => kuna_decomp::kuna_ppc32picimports::Mode::parse(&token)
-                .unwrap_or_default().as_str().into(),
+            Self::Ppc32Pic => kuna_decomp::kuna_ppc32picimports::Mode::from_env_value(value)
+                .as_str()
+                .into(),
             Self::Trimmed => value.trim().into(),
             Self::LibcTypes => {
                 if off {
@@ -209,7 +210,9 @@ mod tests {
     fn loader_value_vocabularies_are_preserved() {
         for (name, cases) in [
             ("ppc32picimports", vec![("off", Some("off")), ("on", Some("on")),
-                ("abi", Some("abi")), ("invalid", Some("off"))]),
+                (" ABI ", Some("abi")), (" TRUE ", Some("on")), ("1", Some("on")),
+                ("", Some("on")), ("0", Some("off")), ("yes", Some("off")),
+                ("invalid", Some("off"))]),
             (
                 "typedepth",
                 vec![

@@ -3849,7 +3849,7 @@ impl Architecture {
         self.analysis_armwalkmode = true; // (kuna) ARM walk decodes in the mode its control flow carries
         self.analysis_entrythumbflow = true; // (kuna) entry-reachable Thumb context default-on; inert without a Thumb-bit entry
         self.analysis_mips_gp = true;
-        self.analysis_ppc32picimports = Default::default();
+        self.analysis_ppc32picimports = crate::kuna_ppc32picimports::Mode::loaded(); // (kuna) abi when the loader applied it, else off
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
         self.analysis_relocrebase = true; // (kuna) DIV-79 relocatable-object analysis rebase default-ON (GH-289)
         self.analysis_dynrelocs = true; // (kuna) DIV-84 linked-image dynamic relocations default-ON
@@ -4002,6 +4002,8 @@ impl Architecture {
     /// `maxlinewidth`/`commentstyle`, which are recorded-no-op printer stubs
     /// with no state to reset.
     pub fn reset_wire_defaults(&mut self) {
+        // The env-backed PPC32 PIC mode is process state, so a wire reset clears it too.
+        crate::kuna_ppc32picimports::Mode::Off.set_env();
         self.reset_defaults();
         self.print.context = crate::printlanguage::PrintContext::new();
         self.print.reset_wire_option_defaults();

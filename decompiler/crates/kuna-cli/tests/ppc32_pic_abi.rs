@@ -762,6 +762,29 @@ fn ppc32_pic_driver_linked_library_names_every_stub() {
 }
 
 #[test]
+fn ppc32_pic_driver_provenance_licenses_every_linked_component() {
+    use object::{Object, ObjectSection};
+    let fixtures = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/");
+    let bytes = std::fs::read(format!("{fixtures}ppc32-pic-driver.so")).unwrap();
+    let provenance = std::fs::read_to_string(format!("{fixtures}ppc32-pic-driver.provenance")).unwrap();
+    assert!(provenance.contains(&format!("A {},{:03}-byte", bytes.len() / 1000, bytes.len() % 1000)));
+    let file = object::File::parse(&*bytes).unwrap();
+    let comment = file.section_by_name(".comment").unwrap().data().unwrap();
+    let compiler = std::str::from_utf8(comment).unwrap().trim_matches('\0');
+    let version = compiler.strip_prefix("GCC: ").unwrap();
+    assert!(provenance.contains(&format!("powerpc-linux-gnu-gcc {version}")), "{compiler}");
+    let (_, license) = provenance.split_once("\nLicense\n").expect("a License section");
+    for (component, terms) in [
+        ("check.c", "Apache-2.0"),
+        ("crti.o and crtn.o", "LGPL-2.1-or-later with"),
+        ("crtbeginS.o and crtendS.o", "GPL-3.0-or-later WITH"),
+    ] {
+        let entry = license.split("\n  - ").find(|e| e.starts_with(component)).unwrap_or_else(|| panic!("{component}"));
+        assert!(entry.split_whitespace().collect::<Vec<_>>().join(" ").contains(terms), "{component}: {entry}");
+    }
+}
+
+#[test]
 fn abi_mode_is_explicit_and_last_cli_value_wins() {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -1086,6 +1109,78 @@ fn abi_cache_distinguishes_colliding_images_in_both_load_orders() {
                     "little={little} swapped_first={swapped_first} iteration={i}"
                 );
             }
+        }
+    }
+}
+
+/// Each load proves its image once inside its scope and retains nothing after.
+/// Another buffer, even with equal bytes or a colliding legacy fingerprint, is
+/// never served from that proof.
+#[test]
+fn abi_load_scopes_share_one_proof_per_buffer_and_retain_nothing() {
+    use kuna_analysis::loader::ImportProofScope;
+    let resolve = |bytes: &[u8]| -> Vec<(u64, Vec<u8>)> {
+        let file = object::File::parse(bytes).unwrap();
+        kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic_abi(&file)
+            .into_iter().map(|s| (s.addr, s.name)).collect()
+    };
+    for little in [false, true] {
+        let (original, swapped) = fixture::cache_pair_ordered(little);
+        let copy = original.clone();
+        let scope = ImportProofScope::enter(&original);
+        assert!(!scope.proved());
+        let first = resolve(&original);
+        assert!(scope.proved());
+        assert_eq!(first, [(0x1800, b"extra".to_vec())]);
+        assert_eq!(resolve(&original), first);
+        assert_eq!(resolve(&swapped), [(0x1800, b"__stack_chk_fail".to_vec())]);
+        assert_eq!(resolve(&copy), first);
+        let nested = ImportProofScope::enter(&original);
+        assert!(nested.proved());
+        let memo = scope.memo();
+        drop(nested);
+        drop(scope);
+        assert!(!ImportProofScope::enter(&original).proved());
+        assert!(ImportProofScope::resume(&original, Some(memo.clone())).proved());
+        let other = ImportProofScope::resume(&swapped, Some(memo));
+        assert!(!other.proved());
+        assert_eq!(resolve(&swapped), [(0x1800, b"__stack_chk_fail".to_vec())]);
+    }
+}
+
+/// `abi`, `on` and the named stub's `noreturn_known` contract share one no-return
+/// list. A call that ends its function at a stub is terminal in both modes for a
+/// listed import, and returning in both for one only an ABI document lists.
+#[test]
+fn abi_and_on_agree_on_which_imports_never_return() {
+    for little in [false, true] {
+        for (name, terminal) in [("err", true), ("abort", true), ("__cxa_rethrow", false)] {
+            let mut f = Fixture::new(Plt::Short);
+            f.pic_collision = true;
+            f.little = little;
+            f.import = name;
+            let mut code = vec![0x3bc02800];
+            code.resize(0x800 / 4 - 1, 0x6000_0000);
+            code.push(0x4800_0005);
+            f.caller = Some(code);
+            assert_eq!(
+                pic_imports(&f).contains(&(0x1800, name.as_bytes().to_vec())),
+                terminal,
+                "{name} little={little}"
+            );
+            let path = common::scratch_file("ppc32-noreturn-agreement", "elf");
+            std::fs::write(&path, f.bytes()).unwrap();
+            for mode in ["on", "abi"] {
+                let (code, err, status) = common::run_kuna(&["decompile", path.to_str().unwrap(),
+                    "check", "--mode", "fast", "--option", "ppc32picimports", mode]);
+                assert_eq!(status, 0, "{code}\n{err}");
+                assert_eq!(
+                    (code.contains(&format!("{name}(")), code.contains("no-return")),
+                    (terminal, terminal),
+                    "{name} {mode} little={little}: {code}"
+                );
+            }
+            std::fs::remove_file(path).unwrap();
         }
     }
 }

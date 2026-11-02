@@ -15,7 +15,8 @@ use super::elf_plt::PltSym;
 use kuna_decomp::kuna_fasthash::{FxHashMap, FxHashSet};
 use object::{Object, ObjectSection, ObjectSymbol, SectionFlags, SectionKind, SymbolKind};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::sync::Mutex;
+use std::marker::PhantomData;
+use std::sync::{Arc, Mutex, OnceLock};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Value {
@@ -70,30 +71,6 @@ impl Value {
 /// r1, r2 and r13-r31: the registers a SysV PPC32 callee returns unchanged.
 const NONVOLATILE: u32 = 0xffff_e006;
 
-/// Imports the C, POSIX and Itanium C++ ABIs define as never returning.
-const NORETURN: &[&str] = &[
-    "abort",
-    "exit",
-    "_exit",
-    "_Exit",
-    "quick_exit",
-    "pthread_exit",
-    "longjmp",
-    "_longjmp",
-    "siglongjmp",
-    "__longjmp_chk",
-    "__stack_chk_fail",
-    "__assert_fail",
-    "__fortify_fail",
-    "__chk_fail",
-    "__cxa_throw",
-    "__cxa_rethrow",
-    "__cxa_bad_cast",
-    "__cxa_bad_typeid",
-    "__cxa_throw_bad_array_new_length",
-    "_Unwind_Resume",
-    "_ZSt9terminatev",
-];
 const SLOTS: usize = 8;
 const UNSAVED: u32 = u32::MAX;
 
@@ -356,21 +333,6 @@ fn rotate_mask(begin: u32, end: u32) -> u32 {
     }
 }
 
-fn pic_delta(words: &[u32]) -> Option<u32> {
-    if words[0] & 0xffff_0000 == 0x817e_0000
-        && words[1..] == [0x7d69_03a6, 0x4e80_0420, 0x6000_0000]
-    {
-        Some(signed(words[0]))
-    } else if words[0] & 0xffff_0000 == 0x3d7e_0000
-        && words[1] & 0xffff_0000 == 0x816b_0000
-        && words[2..] == [0x7d69_03a6, 0x4e80_0420]
-    {
-        Some((words[0] << 16).wrapping_add(signed(words[1])))
-    } else {
-        None
-    }
-}
-
 #[derive(Clone, Copy)]
 enum Reloc {
     Address(u32),
@@ -467,13 +429,12 @@ impl<'a> Image<'a> {
             .filter(|slot| self.slots.contains_key(&u64::from(*slot)))
     }
 
-    /// The stub's proven slot names a function its ABI defines as not returning.
+    /// The stub's proven slot names a function from the ELF no-return list that
+    /// `on` mode and `noreturn_known` also use.
     fn terminal(&self, stub: u32, state: &State) -> bool {
         self.slot(stub, state)
             .and_then(|slot| std::str::from_utf8(&self.slots[&u64::from(slot)]).ok())
-            .is_some_and(|name| {
-                NORETURN.contains(&name) || name.starts_with("_ZSt") && name.contains("__throw_")
-            })
+            .is_some_and(super::noreturn::elf_name_is_noreturn)
     }
 
     fn stub_at(&self, pc: u32) -> Option<u32> {
@@ -1525,70 +1486,106 @@ fn resolver_exit(file: &object::File<'_>, code: &[(u32, u32)]) -> BTreeSet<u32> 
     exits
 }
 
-/// [`prove`], remembered for the last few images: `format::resolve_imports` runs
-/// about twenty times per load. Fingerprints filter candidates; only equal image
-/// bytes can reuse a proof. Each of the four entries owns its immutable input.
+type Found = Vec<(u64, Vec<u8>)>;
+
+/// One image buffer's ABI proof, computed at most once while a load holds it.
+#[derive(Clone)]
+pub struct ImportProofMemo {
+    key: (usize, usize),
+    found: Arc<OnceLock<Found>>,
+}
+
+/// Registers an immutable image buffer while one load resolves its imports, so
+/// the twenty-odd `format::resolve_imports` calls of that load share one proof.
+/// The borrow keeps the buffer alive and unchanged, so its address identifies it;
+/// no image bytes are copied and nothing outlives the last guard. An image
+/// resolved outside every scope is proved on each request.
+pub struct ImportProofScope<'a> {
+    key: (usize, usize),
+    _bytes: PhantomData<&'a [u8]>,
+}
+
+static SCOPES: Mutex<Vec<(ImportProofMemo, usize)>> = Mutex::new(Vec::new());
+
+fn scopes() -> std::sync::MutexGuard<'static, Vec<(ImportProofMemo, usize)>> {
+    SCOPES.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn buffer_key(bytes: &[u8]) -> (usize, usize) {
+    (bytes.as_ptr() as usize, bytes.len())
+}
+
+impl<'a> ImportProofScope<'a> {
+    pub fn enter(bytes: &'a [u8]) -> Self {
+        Self::resume(bytes, None)
+    }
+
+    /// Re-enter with the memo an earlier scope over this same live buffer made.
+    /// A memo for any other buffer is ignored.
+    pub fn resume(bytes: &'a [u8], memo: Option<ImportProofMemo>) -> Self {
+        let key = buffer_key(bytes);
+        let mut scopes = scopes();
+        if let Some((_, users)) = scopes.iter_mut().find(|(m, _)| m.key == key) {
+            *users += 1;
+        } else {
+            let memo = memo
+                .filter(|m| m.key == key)
+                .unwrap_or_else(|| ImportProofMemo { key, found: Arc::default() });
+            scopes.push((memo, 1));
+        }
+        Self { key, _bytes: PhantomData }
+    }
+
+    pub fn memo(&self) -> ImportProofMemo {
+        scopes()
+            .iter()
+            .find(|(m, _)| m.key == self.key)
+            .map(|(m, _)| m.clone())
+            .expect("a live scope stays registered")
+    }
+
+    /// Whether this load has already run the proof.
+    pub fn proved(&self) -> bool {
+        self.memo().found.get().is_some()
+    }
+}
+
+impl Drop for ImportProofScope<'_> {
+    fn drop(&mut self) {
+        let mut scopes = scopes();
+        if let Some(i) = scopes.iter().position(|(m, _)| m.key == self.key) {
+            scopes[i].1 -= 1;
+            if scopes[i].1 == 0 {
+                scopes.swap_remove(i);
+            }
+        }
+    }
+}
+
+/// [`prove`], shared through the enclosing [`ImportProofScope`] when there is one.
 pub(super) fn resolve(
     file: &object::File<'_>,
     slots: &BTreeMap<u64, Vec<u8>>,
     imports: &[PltSym],
 ) -> Vec<PltSym> {
-    struct Entry {
-        key: (usize, u64, u64),
-        image: Box<[u8]>,
-        found: Vec<(u64, Vec<u8>)>,
-    }
-    static CACHE: Mutex<Vec<Entry>> = Mutex::new(Vec::new());
-    let object::File::Elf32(elf) = file else {
-        return prove(file, slots, imports);
+    let prove_found = || -> Found {
+        prove(file, slots, imports).into_iter().map(|s| (s.addr, s.name)).collect()
     };
-    let bytes = elf.data();
-    let key = fingerprint(bytes);
-    let unpack = |found: &[(u64, Vec<u8>)]| {
-        found
-            .iter()
-            .map(|(addr, name)| PltSym {
-                addr: *addr,
-                name: name.clone(),
-                slot: None,
-            })
-            .collect()
+    let memo = match file {
+        object::File::Elf32(elf) => {
+            let key = buffer_key(elf.data());
+            scopes().iter().find(|(m, _)| m.key == key).map(|(m, _)| m.found.clone())
+        }
+        _ => None,
     };
-    if let Some(hit) = CACHE
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .iter()
-        .find(|e| e.key == key && e.image.as_ref() == bytes)
-    {
-        return unpack(&hit.found);
-    }
-    let found: Vec<_> = prove(file, slots, imports)
+    let found = match memo {
+        Some(found) => found.get_or_init(prove_found).clone(),
+        None => prove_found(),
+    };
+    found
         .into_iter()
-        .map(|s| (s.addr, s.name))
-        .collect();
-    let out = unpack(&found);
-    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    if cache.len() == 4 {
-        cache.remove(0);
-    }
-    cache.push(Entry { key, image: bytes.into(), found });
-    out
-}
-
-fn fingerprint(data: &[u8]) -> (usize, u64, u64) {
-    const K: u64 = 0x9E37_79B9_7F4A_7C15;
-    let mix = |h: u64, v: u64| (h ^ v).wrapping_mul(K).rotate_left(29);
-    let (mut a, mut b) = (0x243F_6A88_85A3_08D3u64, 0x1319_8A2E_0370_7344u64);
-    let mut chunks = data.chunks_exact(16);
-    for c in &mut chunks {
-        a = mix(a, u64::from_le_bytes(c[..8].try_into().unwrap()));
-        b = mix(b, u64::from_le_bytes(c[8..].try_into().unwrap()));
-    }
-    for &byte in chunks.remainder() {
-        a = mix(a, u64::from(byte));
-        b = mix(b, u64::from(byte).rotate_left(17));
-    }
-    (data.len(), a, b)
+        .map(|(addr, name)| PltSym { addr, name, slot: None })
+        .collect()
 }
 
 /// FDE ranges and LSDA call-site landing pads. `None` when exception tables
@@ -1784,7 +1781,7 @@ fn prove(
         }
         let words: Vec<_> = bytes.chunks_exact(4).map(|b| image.read(b)).collect();
         for (i, window) in words.windows(4).enumerate() {
-            if let Some(delta) = pic_delta(window) {
+            if let Some(delta) = kuna_decomp::kuna_ppc32piccalls::stub_delta(window) {
                 image.stubs.insert(start + i as u32 * 4, delta);
             }
         }

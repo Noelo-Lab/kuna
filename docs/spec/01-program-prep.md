@@ -1487,9 +1487,10 @@ funcsym stream:
   call left behind, makes the branch an unresolved jump. A branch or table
   jump to an entry strictly inside its own function (a label whose address a
   computed goto takes) continues the walk there instead. The walk does not continue past a call to an import that its own
-  proven slot names as an ABI no-return function (`abort`, `exit`,
+  proven slot names on the base ELF no-return list (`abort`, `exit`, `err`,
   `__stack_chk_fail`, `__cxa_throw`, `_Unwind_Resume`, `std::__throw_*` and the
-  like). It also stops after a call that is the last instruction of its FDE
+  like) — the list `on` mode and the `noreturn_known` marking of the named stub
+  also use, so the three agree on every import. It also stops after a call that is the last instruction of its FDE
   range or sized symbol (a stub that call would run into if it returned is
   never named), after `sc` with `r0` = 1 or 234 (`exit`,
   `exit_group`), and after an unconditional trap.
@@ -1506,10 +1507,14 @@ funcsym stream:
   It then floods what it reaches: a stub entered from there gets no evidence,
   and its summary keeps nothing. The failure stays scoped to what that
   function's walk reaches.
-  The last four image proofs are cached. A fingerprint only selects candidates;
-  a hit requires exact equality with the entry's owned image bytes. Different
-  relocation records cannot inherit another image's identities even when their
-  fingerprints collide.
+  A load resolves imports about twenty times; it holds its image buffer in an
+  `ImportProofScope` (`decompiler/crates/kuna-analysis/src/loader/kuna_ppc32picimports.rs`)
+  so those resolutions share one proof. The scope borrows the immutable buffer,
+  so its address identifies the image while the load runs; nothing is copied or
+  retained once the load ends. The console carries the proof with the stashed
+  bytes to the deferred analyses at `read symbols`. An image resolved outside a
+  scope is proved on each request, so another image can never reuse its
+  identities, whatever its length or hash.
   The soundness argument rests on the toolchain and ABI, stated as
   assumptions. (1) Stub provenance: the linker writes a PIC stub's address
   only into branch fields (`R_PPC_REL24`, `R_PPC_PLTREL24`, `R_PPC_LOCAL24PC`).
@@ -4714,17 +4719,11 @@ entry set against them (after the deferred Listing consumers, so the gap walk is
 covered too). Not every FDE describes one function — the linker gives the whole
 PLT a single FDE, and every stub inside it is real — so a range is used only when
 it holds no other named function start, no other FDE `pcBegin`, and no linker-stub
-section (`.plt`/`.plt.sec`/`.plt.got`/`.iplt`/`.MIPS.stubs`/`.glink`). Complete
-PPC32 short and long PIC stub sequences also exclude an overlapping FDE: GNU
-can merge these stubs into `.text` under one shared unwind range. This exclusion
-does not assign an import name or require `ppc32picimports` to be enabled.
-An entry *at* an FDE start is always kept, so oracle 3's own product survives. ELF-only and inert
+section (`.plt`/`.plt.sec`/`.plt.got`/`.iplt`/`.MIPS.stubs`). An entry *at* an FDE
+start is always kept, so oracle 3's own product survives. ELF-only and inert
 without `.eh_frame` FDEs, which covers essentially the whole bare-metal ARM
 population (they unwind through `.ARM.exidx`), so the ARM entry-recall options
 compose with it unchanged.
-Stub intervals are sorted and merged once; each FDE uses a binary-search overlap
-query. Large PIC stub inventories therefore add no FDE-by-stub product scan,
-including when PIC call recovery is disabled.
 
 **(kuna) Except where a `.cold` fragment is entered more than once**
 (`coldentry`, default-**on**;

@@ -2452,7 +2452,10 @@ existing ELF list and require `noreturn_known` to remain enabled.
 
 An accepted proof rebuilds the same entry's flow, installing call-specific
 names and contracts before following the call continuation. Proved terminal
-indirect jumps become calls in that second flow. Slot and stub addresses never
+indirect jumps become calls in that second flow. The discarded first flow ran
+past those calls, so the warnings it buffered (bad instructions or truncation in
+the bytes after a terminal call) are dropped with it; comments buffered before
+it, such as a restart's, are kept. Slot and stub addresses never
 become global FunctionSymbols or externref properties. A refused proof leaves
 the original raw flow intact. Clearing or restarting Funcdata discards the
 bindings and proves them again; no image cache or process environment switch
@@ -2469,8 +2472,17 @@ unbounded flow when no extent was declared; an inventory estimate clipped at
 another entry must not hide a shared suffix. Scoped edges retain the entry
 contexts that proved them for caller labels. An incoming query reports no
 single owner when multiple entries prove the same edge; an outgoing query uses
-its selected entry. Function inventories and unrelated caller contexts remain
-unchanged.
+its selected entry, and the text and JSON renderers share that owner. Function
+inventories and unrelated caller contexts remain unchanged.
+
+An xrefs query proves only entries that can contribute a row, using
+`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ppc32_pic_call_bindings)`:
+one unpublished flow per entry, under the drive's per-function budget, without
+the replacement flow a decompile builds. `--to` an import slot proves every
+entry; `--to` any other target proves none; `--from` a function proves that
+entry alone and `--from` an instruction proves every entry. Pointer-only and
+non-call kind filters prove none. An entry whose flow fails or exceeds the
+budget is reported as a coverage note, since its import calls are then missing.
 
 ## 2.5 Arch quirks
 

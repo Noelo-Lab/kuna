@@ -422,35 +422,33 @@ fn ppc32_got_metadata_does_not_establish_r30() {
     }
 }
 
+/// PIC recovery adds nothing to the default-on FDE filter: a function whose tail
+/// has the shape of a PIC stub keeps its single-function FDE, so an interior call
+/// target is still suppressed. Any PPC32 stub exclusion belongs to the unwind
+/// bounds correction that needs it, not to this option.
 #[test]
-fn ppc32_shared_little_endian_unwind_keeps_unnamed_stubs_in_text() {
-    use object::ObjectSection;
+fn ppc32_pic_recovery_leaves_default_fde_filtering_alone() {
     use kuna_analysis::analyzers::entry::kuna_fdeinterior::eligible_fde_bodies;
-    for plt in [Plt::Short, Plt::Long] {
-        let little = true;
-        let mut f = Fixture::new(plt);
-        f.unwind_only = true;
-        f.second_stub = true;
-        f.little = little;
-        let mut bytes = f.bytes();
-        let file = object::File::parse(bytes.as_slice()).unwrap();
-        let stub = file.section_by_name(".glink").unwrap().file_range().unwrap().0 as usize;
-        let frame = file.section_by_name(".eh_frame").unwrap().file_range().unwrap().0 as usize;
-        assert_eq!(eligible_fde_bodies(&file, &bytes), vec![(0x1000, 0x1014)]);
-        // The linker may merge .glink into .text, with one FDE for all stubs.
-        let name = bytes.windows(7).position(|b| b == b".glink\0").unwrap();
-        bytes[name..name + 7].copy_from_slice(b".text\0\0");
-        bytes[frame + 28..frame + 32].copy_from_slice(&f.word(0x1800u32.wrapping_sub(0x601c)));
-        bytes[frame + 32..frame + 36].copy_from_slice(&f.word(32));
-        let file = object::File::parse(bytes.as_slice()).unwrap();
-        assert!(eligible_fde_bodies(&file, &bytes).is_empty(), "{plt:?} little={little}");
-        let ctr = if matches!(plt, Plt::Short) { 4 } else { 8 };
-        for off in [stub + ctr, stub + 16 + ctr] {
-            bytes[off..off + 4].copy_from_slice(&f.word(0x60000000));
-        }
-        let file = object::File::parse(bytes.as_slice()).unwrap();
-        assert_eq!(eligible_fde_bodies(&file, &bytes), vec![(0x1800, 0x1820)]);
-    }
+    let mut f = Fixture::new(Plt::Short);
+    f.little = true;
+    f.unwind_only = true;
+    f.caller = Some(vec![0x38600001, 0x4e800020, 0x38600002, 0x4e800020,
+        0x817e0800, 0x7d6903a6, 0x4e800420, 0x60000000]);
+    f.second_caller = Some(vec![0x7c0802a6, 0x4bffffe5, 0x4e800020]);
+    let bytes = f.bytes();
+    let file = object::File::parse(bytes.as_slice()).unwrap();
+    assert_eq!(eligible_fde_bodies(&file, &bytes), vec![(0x1000, 0x1020)]);
+    let path = common::scratch_file("ppc32-stub-shaped-tail", "so");
+    std::fs::write(&path, &bytes).unwrap();
+    let inventories: Vec<String> = ["off", "on", "abi"].iter().map(|mode| {
+        let (out, err, status) = common::run_kuna(&["functions", path.to_str().unwrap(),
+            "--option", "ppc32picimports", mode]);
+        assert_eq!(status, 0, "{out}\n{err}");
+        out
+    }).collect();
+    std::fs::remove_file(path).unwrap();
+    assert!(!inventories[0].contains("0x1008"), "{}", inventories[0]);
+    assert!(inventories.iter().all(|i| i == &inventories[0]), "{inventories:?}");
 }
 
 

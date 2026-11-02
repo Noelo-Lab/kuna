@@ -116,16 +116,18 @@ fn base_and_namespace(name: &str) -> (&str, Option<&str>) {
     }
 }
 
-/// Parse the vendored list into `(exact, wildcard_prefixes)` (mirrors the Java
-/// reader, `NoReturnFunctionAnalyzer.java:220-245`): skip `#`/blank lines, strip
-/// leading `_`, a trailing `*` makes a prefix (wildcard) entry. The shipped ELF
-/// list has no wildcards (those are Rust/Golang only), but the parse is faithful.
+/// Does the base ELF list (without per-compiler additions) name `name`? The
+/// single no-return predicate for PPC32 PIC imports in every recovery mode.
 pub(crate) fn elf_name_is_noreturn(name: &str) -> bool {
     static NAMES: std::sync::OnceLock<(Vec<String>, Vec<String>)> = std::sync::OnceLock::new();
     let (exact, wildcard) = NAMES.get_or_init(|| parse_list(ELF_NORETURN_LIST));
     name_matches(name, exact, wildcard)
 }
 
+/// Parse the vendored list into `(exact, wildcard_prefixes)` (mirrors the Java
+/// reader, `NoReturnFunctionAnalyzer.java:220-245`): skip `#`/blank lines, strip
+/// leading `_`, a trailing `*` makes a prefix (wildcard) entry. The shipped ELF
+/// list has no wildcards (those are Rust/Golang only), but the parse is faithful.
 pub(crate) fn parse_list(text: &str) -> (Vec<String>, Vec<String>) {
     let mut exact = Vec::new();
     let mut wildcard = Vec::new();

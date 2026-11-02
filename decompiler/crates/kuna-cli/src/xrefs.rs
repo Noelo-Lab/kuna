@@ -299,22 +299,12 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         &declared,
     );
 
-    if prog.arch().analysis_ppc32picimports.scoped() && !prog.arch().ppc32_pic_imports.is_empty() {
-        for entry in &entries {
-            let size = prog.declared_extent(entry.addr.get_offset());
-            if let Ok(fd) = kuna_decomp::decompile_drive::build_and_follow_flow(
-                prog.arch_mut(), &entry.name, entry.addr.clone(), size,
-            ) {
-                for call in fd.ppc32_import_calls() {
-                    index.add_scoped_call(prog.arch(), entry.addr.get_offset(), call.site, call.import.address);
-                }
-            }
-        }
-    }
     let target = resolve_target(&prog, &file, &index, &names, resolution.settle(&index)?);
+    let proof_note = add_scoped_calls(args, &mut prog, &mut index, &entries, &target);
     warn_other_entries(&index, &names, &target);
     let unwalked = unwalked_code(&file, &index, &unflagged);
-    let coverage = coverage_of(&prog, &file, &index, &names, &target, args.direction, unwalked);
+    let mut coverage = coverage_of(&prog, &file, &index, &names, &target, args.direction, unwalked);
+    coverage.notes.extend(proof_note);
     for note in &coverage.notes {
         eprintln!("note: {note}");
     }
@@ -354,6 +344,76 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     } else {
         render_text(args, &prog, &index, &names, &target, &rows, &data)
     })
+}
+
+/// Add the `ppc32picimports on` call edges this query can report. Alias classes
+/// do not depend on them, so the target is settled first and only the entries
+/// whose proofs can produce a row are flowed: every entry for an import slot
+/// (`--to`) or an instruction (`--from`), the named function alone for
+/// `--from <function>`, none otherwise. Each proof is one budgeted flow; an entry
+/// whose flow fails is reported, since its calls are then missing.
+fn add_scoped_calls(
+    args: &XrefArgs,
+    prog: &mut ConsoleProgram,
+    index: &mut XrefIndex,
+    entries: &[kuna_console::engine::FunctionEntry],
+    target: &Target,
+) -> Option<String> {
+    let arch = prog.arch();
+    if !arch.analysis_ppc32picimports.scoped()
+        || arch.ppc32_pic_imports.is_empty()
+        || !args.instructions
+        || !(args.kinds.is_empty() || args.kinds.contains(&XrefKind::Call))
+    {
+        return None;
+    }
+    let selected: Vec<_> = match args.direction {
+        Direction::To if target.class.iter().any(|a| arch.ppc32_pic_imports.contains_key(a)) => {
+            entries.iter().collect()
+        }
+        Direction::To => Vec::new(),
+        Direction::From => {
+            let own: Vec<_> =
+                entries.iter().filter(|e| e.addr.get_offset() == target.addr).collect();
+            if own.is_empty() { entries.iter().collect() } else { own }
+        }
+    };
+    if selected.is_empty() {
+        return None;
+    }
+    let budget = prog.arch().kuna_fn_budget;
+    if budget.is_none() {
+        let seconds = kuna_console::project::default_fn_budget_seconds(
+            args.mode.as_deref().unwrap_or("reliable"),
+            true,
+        );
+        prog.arch_mut().kuna_fn_budget = Some(std::time::Duration::from_secs(seconds));
+    }
+    let mut failed = Vec::new();
+    for entry in &selected {
+        let addr = entry.addr.get_offset();
+        let size = prog.declared_extent(addr);
+        match kuna_decomp::decompile_drive::ppc32_pic_call_bindings(
+            prog.arch_mut(),
+            &entry.name,
+            entry.addr.clone(),
+            size,
+        ) {
+            Ok(calls) => {
+                for call in calls {
+                    index.add_scoped_call(prog.arch(), addr, call.site, call.import.address);
+                }
+            }
+            Err(_) => failed.push(format!("{} @ 0x{addr:x}", entry.name)),
+        }
+    }
+    prog.arch_mut().kuna_fn_budget = budget;
+    let first = failed.first()?;
+    Some(format!(
+        "ppc32picimports: {} of {} functions could not be flowed (first: {first}); PPC32 PIC import calls they make are not listed",
+        failed.len(),
+        selected.len()
+    ))
 }
 
 // --- coverage ----------------------------------------------------------------
@@ -896,10 +956,7 @@ fn result_json(
                     ("to_address_hex".into(), Json::Str(format!("0x{:x}", r.to))),
                     (
                         "from_function".into(),
-                        optional_function_json(source_function(
-                            prog, index, names, r,
-                            (args.direction == Direction::From).then_some(target.addr),
-                        )),
+                        optional_function_json(row_function(args, prog, index, names, target, r)),
                     ),
                     (
                         "to_function".into(),
@@ -1023,7 +1080,7 @@ fn render_text(
                     "0x{:x}\t{}\t{}\t{}",
                     r.from,
                     r.kind.as_str(),
-                    site_label(prog, index, names, r),
+                    site_label(r.from, row_function(args, prog, index, names, target, r)),
                     r.instruction
                 );
             }
@@ -1077,11 +1134,24 @@ fn aliases(target: &Target) -> Vec<u64> {
     target.class.iter().copied().filter(|&a| a != target.addr).collect()
 }
 
-/// `name+0xoff` for an address inside a known function; the bare address when
-/// nothing owns it.
-fn site_label(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, edge: &Xref) -> String {
-    let vma = edge.from;
-    match source_function(prog, index, names, edge, None) {
+/// The function a row's source belongs to, shared by the JSON and text
+/// renderers: a `--from` query names the entry whose proof it asks about.
+fn row_function(
+    args: &XrefArgs,
+    prog: &ConsoleProgram,
+    index: &XrefIndex,
+    names: &EntryNames,
+    target: &Target,
+    edge: &Xref,
+) -> Option<(u64, String)> {
+    let context = (args.direction == Direction::From).then_some(target.addr);
+    source_function(prog, index, names, edge, context)
+}
+
+/// `name+0xoff` for an address inside its owning function; the bare address
+/// when nothing owns it.
+fn site_label(vma: u64, owner: Option<(u64, String)>) -> String {
+    match owner {
         Some((entry, name)) if entry == vma => name,
         Some((entry, name)) if entry < vma => format!("{name}+0x{:x}", vma - entry),
         Some((entry, name)) => format!("{name}-0x{:x}", entry - vma),

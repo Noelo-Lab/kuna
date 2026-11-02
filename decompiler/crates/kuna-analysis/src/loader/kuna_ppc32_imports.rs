@@ -6,6 +6,7 @@ use object::{
     Architecture, Object, ObjectKind, ObjectSection, ObjectSymbol, RelocationFlags,
     RelocationTarget, SectionFlags, SectionKind, SymbolKind,
 };
+use kuna_decomp::kuna_ppc32piccalls::{stub, Stub};
 use std::collections::{BTreeMap, HashSet};
 
 /// Relocation slots for caller-local PIC recovery. These are data, not executable
@@ -127,15 +128,13 @@ fn resolve_impl(file: &object::File<'_>, prove_pic: bool) -> Vec<PltSym> {
             let Some(code) = bytes.get(off..off.saturating_add(16)) else {
                 break;
             };
-            let first = word(file, code);
-            if first & 0xffff0000 != 0x3d600000
-                || word(file, &code[4..]) & 0xffff0000 != 0x816b0000
-                || word(file, &code[8..]) != 0x7d6903a6
-                || word(file, &code[12..]) != 0x4e800420
-            {
+            if word(file, code) & 0xffff_0000 != 0x3d60_0000 {
                 continue;
             }
-            let slot = (first << 16).wrapping_add(word(file, &code[4..]) as u16 as i16 as u32);
+            let words: [u32; 4] = std::array::from_fn(|i| word(file, &code[4 * i..]));
+            let Some(Stub::Absolute(slot)) = stub(&words) else {
+                continue;
+            };
             if let Some(name) = slots.get(&u64::from(slot)) {
                 out.push(PltSym {
                     addr: section.address() + off as u64,
@@ -158,35 +157,6 @@ pub(super) fn word(file: &object::File<'_>, bytes: &[u8]) -> u32 {
     } else {
         u32::from_be_bytes(bytes)
     }
-}
-
-/// Recognized PIC stub ranges, independent of import identity or caller state.
-/// GNU may merge these into .text under one shared linker-generated FDE.
-pub(crate) fn pic_stub_ranges(file: &object::File<'_>) -> Vec<(u64, u64)> {
-    if file.architecture() != Architecture::PowerPc {
-        return Vec::new();
-    }
-    let mut ranges = Vec::new();
-    for section in file.sections() {
-        if !matches!(section.flags(), SectionFlags::Elf { sh_flags } if sh_flags & 6 == 6) {
-            continue;
-        }
-        let Ok(bytes) = section.data() else { continue; };
-        let first = (4 - section.address() % 4) as usize % 4;
-        for off in (first..bytes.len().saturating_sub(15)).step_by(4) {
-            let start = word(file, &bytes[off..]);
-            if !matches!(start & 0xffff_0000, 0x817e_0000 | 0x3d7e_0000) {
-                continue;
-            }
-            let words = [start, word(file, &bytes[off + 4..]),
-                word(file, &bytes[off + 8..]), word(file, &bytes[off + 12..])];
-            if kuna_decomp::kuna_ppc32piccalls::stub_delta(&words).is_some() {
-                let start = section.address() + off as u64;
-                if let Some(end) = start.checked_add(16) { ranges.push((start, end)); }
-            }
-        }
-    }
-    ranges
 }
 
 /// Collect metadata even with recovery disabled, so console options remain live.

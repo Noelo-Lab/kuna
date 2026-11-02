@@ -595,7 +595,7 @@ pub struct ConsoleProgram {
     /// Listing-consumer passes (e.g. discovered-no-return). `None` on the XML
     /// datatest path (no Listing tier), so the gated build is a structural no-op
     /// there. Empty/`None` when the listing flag is off ⇒ zero cost.
-    analysis_image: Option<(String, Vec<u8>)>,
+    analysis_image: Option<(String, Vec<u8>, kuna_analysis::loader::ImportProofMemo)>,
     /// (kuna `armframes`) The whole-image frame recovery: set before the commit,
     /// it is replayed instead of searched; after it, the record that commit made.
     arm_frames: Option<kuna_analysis::aif::kuna_framereplay::ArmFrameReplay>,
@@ -2861,7 +2861,9 @@ impl ConsoleProgram {
             && self.analysis_image.is_some()
         {
             let analysis_target = self.arch.arch_id().to_string();
-            if let Some((path, bytes)) = self.analysis_image.take() {
+            if let Some((path, bytes, import_proofs)) = self.analysis_image.take() {
+                let _import_proofs =
+                    kuna_analysis::loader::ImportProofScope::resume(&bytes, Some(import_proofs));
                 // A throwaway loadimage just to satisfy the pass contracts (their
                 // `image` arg is unused — the decode reads through `translate`); a
                 // parse failure makes the deferred step a graceful no-op.
@@ -4382,6 +4384,7 @@ pub fn bootstrap_from_object_with_isa(
         kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
     }
     let explicit_isa = isa.is_some();
+    let import_proofs = kuna_analysis::loader::ImportProofScope::enter(&bytes);
     // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).
     let mut loader = if target.trim().is_empty() {
         ObjectLoadImage::from_bytes(path, &bytes)?
@@ -4667,8 +4670,8 @@ pub fn bootstrap_from_object_with_isa(
     // at `read symbols` (IfcReadSymbols -> commit_analysis_passes).
     prog.pending_analysis = pending_analysis;
     prog.analysis_code_space = Some(Rc::clone(&code_space));
-    // Stash the image bytes + path for the DEFERRED Listing build (PR6
-    // build-timing fix): the Listing is gated on `--option listing on`, set
+    // Stash the image bytes + path, with the load's import proof, for the DEFERRED
+    // Listing build (PR6 build-timing fix): the Listing is gated on `--option listing on`, set
     // by the CLI after `load file`, so it is built at the deferred commit
     // (`read symbols`) when the flag is known — not at load. `bytes` is moved
     // here (it is unused below this point).
@@ -4676,7 +4679,9 @@ pub fn bootstrap_from_object_with_isa(
     if explicit_isa {
         prog.callwide_unavailable("explicit decode mode requires a new complete image proof");
     }
-    prog.analysis_image = Some((path.to_string(), bytes));
+    let proof_memo = import_proofs.memo();
+    drop(import_proofs);
+    prog.analysis_image = Some((path.to_string(), bytes, proof_memo));
     prog.loader_data_objects = loader_data_objects;
     prog.loader_data_exports = loader_data_exports;
     prog.import_slots = import_slots;

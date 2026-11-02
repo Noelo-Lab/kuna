@@ -6,7 +6,7 @@
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
     "data:64-bit unsigned merge retains signed conversion",
-    "data:ABI cache hits preserve the returning import identity",
+    "data:ABI reloads preserve the returning import identity",
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
     "data:ALIASOVERLAP #2: the 8-byte indexed read is a local ahead of the element store",
     "data:ALIASOVERLAP #3: only the adjacent-byte stores keep the read folded",
