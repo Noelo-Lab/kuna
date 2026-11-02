@@ -29,6 +29,7 @@ pub mod kuna_loweredswitchheads; // (kuna) try a lowered-switch cascade behind e
 pub mod kuna_noreturn_externmatch; // (kuna) angr incorrect-duplication-chcon: name-matched extern no-return
 pub mod kuna_noreturnextern; // (kuna) angr tail-tail-bytes-ret-dup: undefined-extern name-based no-return
 pub mod kuna_tailcalljump;
+pub mod kuna_gottailcall; // (kuna) a one-destination computed jump to a function is a tail call when the call loses nothing
 pub mod kuna_funcboundflow; // (kuna) bound fall-through at a known function entry (no cross-function merge)
 pub mod kuna_mappedflowboundary;
 pub mod kuna_tailcallframe; // (kuna) recover a frame-teardown tail jump whose callee was never discovered

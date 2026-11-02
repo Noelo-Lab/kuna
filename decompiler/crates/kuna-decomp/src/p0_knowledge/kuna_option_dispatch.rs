@@ -220,6 +220,11 @@ kuna_options! { self, p1;
         self.tail_call_tables = tables;
         Ok(msg.to_string())
     },
+    "gottailcall" => {
+        let (val, msg) = crate::kuna_gottailcall::OptionGotTailCall.apply(p1)?;
+        self.got_tail_call = val;
+        Ok(msg)
+    },
     "tailcallframe" => on_off!(tail_call_frame, "Frame-teardown tail-call recovery"),
     "tailcallsaved" => {
         on_off!(tail_call_saved, "Saved-register restore test for a frame teardown")

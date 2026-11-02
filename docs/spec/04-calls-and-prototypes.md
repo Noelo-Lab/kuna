@@ -5868,7 +5868,15 @@ The variadic-call test itself reads the writing instruction's own ops as its own
 `xor %eax,%eax` reads the register it zeroes, as its operand and again in `ZF =
 (EAX == 0)`, so counting every read as a competing one made the test answer `no`
 for the idiom gcc actually emits (0 calls recognized over ssh-keygen). A read at
-the same instruction address as the write is that instruction's.
+the same instruction address as the write is that instruction's. Both tests
+also step over an injected no-op (`kuna_passthrough.rs (is_injected_noop)`):
+MIPS lowers the mode switch of every `jr` and `jalr` to `v0 = v0`, which reads
+and writes the return-only register and made both tests answer `yes`. A MIPS
+function whose entry block jumped or called before writing `v0` counted as
+variadic, and so did its call, and passthrough gave it nothing. `c_add(u64,
+u64)`, which only forwards `a0`..`a3` to a `jalr`, printed `void c_add(void)`,
+and zlib `adler32`'s `jr $t9` tail call printed no arguments. ARM's `r0 = r0`
+is no return-only register, so nothing else moves.
 
 The argument is as wide as the callee's body reads it — the narrowest of the
 trial, the stated parameter and the widest body read starting at `R` — so a
