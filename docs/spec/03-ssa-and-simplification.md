@@ -1504,7 +1504,11 @@ would reach that branch, and an earlier stop is a failure too. The rule
 answers "no change" without walking. Any other outcome walks, and records a
 new witness if the walk fails. The replay comes before the heritage test, whose
 failure is also "no change". Witnesses belong to the rule instance and are
-dropped when its pool resets. On a dispatch loop, where each handler's joins
+dropped when its pool resets, and the reset cuts the table back to room for
+1,024 (`ruleaction_3.rs (WITNESSES_KEPT)`): the rule lives as long as the
+program, and a cleared table keeps its capacity, so the largest function's
+table would otherwise stay allocated for the rest of a batch (40 MB after
+4,000 functions of serde-hkx's `hkxc.exe`). On a dispatch loop, where each handler's joins
 take one input per dispatch site, most applications in a sweep repeat a failed
 walk over a web nothing has edited since. On CPython 3.11's
 `_PyEval_EvalFrameDefault` (joins of about 190 inputs), one pass applies the

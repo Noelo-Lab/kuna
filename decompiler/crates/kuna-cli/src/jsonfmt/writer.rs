@@ -16,6 +16,58 @@ pub(super) fn render(value: &Json, format: Format) -> String {
     out
 }
 
+/// How much of a streamed document is buffered before it is written.
+const STREAM_CHUNK: usize = 1 << 16;
+
+/// [`super::write_indent2_streamed`].
+pub(super) fn write_streamed(
+    out: &mut dyn std::io::Write,
+    head: &[(String, Json)],
+    key: &str,
+    items: impl Iterator<Item = Json>,
+    tail: &[(String, Json)],
+) -> std::io::Result<()> {
+    let field = |buf: &mut String, first: bool, name: &str| {
+        if !first {
+            buf.push(',');
+        }
+        Format::Pretty.line(buf, 2);
+        write_string(buf, name);
+        buf.push_str(": ");
+    };
+    let mut buf = String::from("{");
+    for (i, (name, value)) in head.iter().enumerate() {
+        field(&mut buf, i == 0, name);
+        write_value(&mut buf, value, 2, Format::Pretty);
+    }
+    field(&mut buf, head.is_empty(), key);
+    buf.push('[');
+    let mut any = false;
+    for item in items {
+        if any {
+            buf.push(',');
+        }
+        any = true;
+        Format::Pretty.line(&mut buf, 4);
+        write_value(&mut buf, &item, 4, Format::Pretty);
+        if buf.len() >= STREAM_CHUNK {
+            out.write_all(buf.as_bytes())?;
+            buf.clear();
+        }
+    }
+    if any {
+        Format::Pretty.line(&mut buf, 2);
+    }
+    buf.push(']');
+    for (name, value) in tail {
+        field(&mut buf, false, name);
+        write_value(&mut buf, value, 2, Format::Pretty);
+    }
+    Format::Pretty.line(&mut buf, 0);
+    buf.push('}');
+    out.write_all(buf.as_bytes())
+}
+
 impl Format {
     fn line(self, out: &mut String, indent: usize) {
         if self != Self::Compact {
