@@ -1699,13 +1699,22 @@ callee-first driver holds every result until its last round has run: it
 writes each one, in a `--jobs` worker's result record, to an anonymous
 temporary file and reads it back when a round or the final document needs it
 (`decompiler/crates/kuna-cli/src/decompile_all/result_store.rs (ResultStore)`),
-falling back to the encoded record in memory when the file cannot be written.
+falling back to the encoded record in memory when the file cannot be made or
+written; after a failed write the file is only read, so the records already
+on it stay readable.
 It also drops the call graph, and with it the reference index, before its
 first decompile and returns the freed pages: only the plan and the callback
 park read the graph, and the park's answers about the targets are taken up
 front (`decompiler/crates/kuna-cli/src/callgraph.rs (CallGraph::callback_refs)`).
 On serde-hkx's `hkxc.exe` that is 242 of the 312 MiB of heap the first
 function started with, leaving about what a `--jobs` worker starts with.
+The `decompile-all --json` document is written to stdout a record at a time
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (write_selected_json)`), so
+neither it nor the value tree it is rendered from is held whole beside the
+results; built whole, the two took about four times the document's size at
+the end of the run. The release at a drive's start uses glibc's `malloc_trim`
+and happens only on Linux with glibc; elsewhere the drive starts from the
+resident set the allocator left.
 A drive armed only by the limit
 gets a deadline a year out so the probes run. The trip holds for the rest of
 the drive, the function's `error` names the limit, and the drive releases free

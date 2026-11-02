@@ -633,27 +633,30 @@ pub fn run(argv: &[String]) -> i32 {
                 .flatten();
             let run_error = discovery_error
                 .or_else(|| BatchOutcome::of(&run.funcs).all_failed_error(&args.binary));
-            let text = if args.json {
-                render_selected_json(
-                    &args.binary,
-                    &run.funcs,
-                    &args.options,
-                    run_error.as_deref(),
-                    filters.narrows().then_some(run.discovered),
-                    &run.assertions,
-                    &run.interior,
-                    args.omit,
-                )
-            } else {
-                render_c(&run.funcs)
-            };
+            let text = (!args.json).then(|| render_c(&run.funcs));
             report_unstructured_gotos(&run.funcs);
             // A rejected assertion is reported and the run continues (an agent
             // batching forty renames against a re-decompiled binary must not lose
             // all forty to one stale name); `--assert-strict` makes it fatal.
             let rejected = report_rejected_assertions(&run.assertions);
             let refused = any_refused_assertion(&run.assertions);
-            let status = emit_with_run_error(&text, run_error.as_deref());
+            let written = match &text {
+                Some(text) => crate::output::emit(text),
+                None => crate::output::emit_streamed(|out| {
+                    write_selected_json(
+                        out,
+                        &args.binary,
+                        &run.funcs,
+                        &args.options,
+                        run_error.as_deref(),
+                        filters.narrows().then_some(run.discovered),
+                        &run.assertions,
+                        &run.interior,
+                        args.omit,
+                    )
+                }),
+            };
+            let status = finish_with_run_error(written, run_error.as_deref());
             if status == 0 && (refused || (args.assert_strict && rejected)) {
                 return 1;
             }
@@ -1125,7 +1128,14 @@ pub(crate) fn report_unstructured_goto_sites(hits: &[(&str, usize)]) {
 }
 
 fn emit_with_run_error(text: &str, run_error: Option<&str>) -> i32 {
-    let status = crate::output::emit_with_status(text, i32::from(run_error.is_some()));
+    finish_with_run_error(crate::output::emit(text), run_error)
+}
+
+/// The exit status of a run whose stdout write ended in `written`, reporting
+/// its run-level error.
+fn finish_with_run_error(written: std::io::Result<()>, run_error: Option<&str>) -> i32 {
+    let status = i32::from(run_error.is_some());
+    let status = written.map_or_else(|e| crate::output::status_after(e, status), |()| status);
     if let Some(message) = run_error {
         eprintln!("error: {message}");
     }
@@ -2130,13 +2140,33 @@ pub(crate) fn render_selected_json(
     interior: &crate::interior::Interiors,
     omit: Omit,
 ) -> String {
+    let mut out = Vec::new();
+    write_selected_json(&mut out, binary, funcs, options, error, total, assertions, interior, omit)
+        .expect("rendering the document into memory");
+    String::from_utf8(out).expect("the document is ASCII")
+}
+
+/// [`render_selected_json`] written to `out` a record at a time: a large
+/// binary's document is never held whole beside the results it is made of.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn write_selected_json(
+    out: &mut dyn std::io::Write,
+    binary: &str,
+    funcs: &[FuncResult],
+    options: &[(String, String)],
+    error: Option<&str>,
+    total: Option<usize>,
+    assertions: &[kuna_console::assertions::Outcome],
+    interior: &crate::interior::Interiors,
+    omit: Omit,
+) -> std::io::Result<()> {
     let language = crate::loadtime::explicit_output_language(options)
         .and_then(kuna_decomp::kuna_lang::OutLang::from_print_name)
         .map(|lang| lang.print_name()).unwrap_or("c-language");
-    format!(
-        "{}\n",
-        dumps_indent2(&result_json(binary, funcs, language, error, total, assertions, interior, omit))
-    )
+    let (head, tail) = document_fields(binary, funcs.len(), language, error, total, assertions, omit);
+    let records = funcs.iter().map(|f| function_json(f, interior, omit));
+    crate::jsonfmt::write_indent2_streamed(out, &head, "functions", records, &tail)?;
+    out.write_all(b"\n")
 }
 
 /// The `functions --json` document.
@@ -2213,8 +2243,9 @@ fn stack_object_json(object: &kuna_decomp::kuna_stackobjectinfo::StackObjectInfo
     ])
 }
 
-/// Build the `decompile-all --json` document. A collection `omit` names is
-/// left out of every record and listed in the top-level `omitted`.
+/// The `decompile-all --json` document, whole, as [`write_selected_json`]
+/// writes it.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn result_json(
     binary: &str,
@@ -2226,64 +2257,28 @@ fn result_json(
     interior: &crate::interior::Interiors,
     omit: Omit,
 ) -> Json {
-    let functions = Json::Array(
-        funcs
-            .iter()
-            .map(|f| {
-                let mut record = vec![
-                    ("name".into(), Json::Str(f.name.clone())),
-                    ("address".into(), Json::Number(f.address.to_string())),
-                    ("address_hex".into(), Json::Str(format!("0x{:x}", f.address))),
-                    ("aliases".into(), aliases_json(&f.aliases)),
-                    (
-                        "object_location".into(),
-                        object_location_json(f.object_location.as_ref()),
-                    ),
-                    ("size".into(), Json::Number(f.size.to_string())),
-                    (
-                        "code".into(),
-                        f.code.clone().map(Json::Str).unwrap_or(Json::Null),
-                    ),
-                    (
-                        "error".into(),
-                        f.error.clone().map(Json::Str).unwrap_or(Json::Null),
-                    ),
-                    // (kuna outlang) The fidelity counter for Rust output: how
-                    // many jumps in `code` are a diverging `panic!` instead of a
-                    // translation. Always present, `0` on every C render, so a
-                    // consumer can filter or re-run without inspecting the text.
-                    (
-                        "unstructured_gotos".into(),
-                        Json::Number(f.unstructured_gotos().to_string()),
-                    ),
-                ];
-                if !omit.line_mappings {
-                    record.push((
-                        "line_mappings".into(),
-                        Json::Array(f.line_mappings.iter().map(line_mapping_json).collect()),
-                    ));
-                }
-                if !omit.variables {
-                    record.push(("variables".into(), Json::Array(f.variables.iter().map(var_json).collect())));
-                }
-                // (kuna `structdefs`) The layout side: the definitions of the
-                // composites this function's C names, as records. Present unless
-                // omitted, `[]` unless the option is on.
-                if !omit.types {
-                    record.push(("types".into(), Json::Array(f.types.iter().map(type_json).collect())));
-                }
-                if !omit.variables && !f.stack_objects.is_empty() {
-                    record.push(("stack_objects".into(), Json::Array(
-                        f.stack_objects.iter().map(stack_object_json).collect(),
-                    )));
-                }
-                if let Some(inside) = interior.get(&f.byte_address) {
-                    record.push(("interior_to".into(), crate::interior::json(inside)));
-                }
-                Json::Object(record)
-            })
-            .collect(),
-    );
+    let (mut fields, tail) = document_fields(binary, funcs.len(), language, error, total, assertions, omit);
+    let functions = funcs.iter().map(|f| function_json(f, interior, omit)).collect();
+    fields.push(("functions".to_string(), Json::Array(functions)));
+    fields.extend(tail);
+    Json::Object(fields)
+}
+
+/// An object's fields, in order.
+type Fields = Vec<(String, Json)>;
+
+/// The `decompile-all --json` document's fields before its `functions` array,
+/// and after it. A collection `omit` names is left out of every record and
+/// listed in the top-level `omitted`.
+fn document_fields(
+    binary: &str,
+    count: usize,
+    language: &str,
+    error: Option<&str>,
+    total: Option<usize>,
+    assertions: &[kuna_console::assertions::Outcome],
+    omit: Omit,
+) -> (Fields, Fields) {
     let mut fields = vec![
         ("binary".to_string(), Json::Str(binary.to_string())),
         // (kuna outlang) The auto language policy resolves inside the engine, so
@@ -2294,7 +2289,7 @@ fn result_json(
     if let Some(omitted) = omit.json() {
         fields.push(("omitted".to_string(), omitted));
     }
-    fields.push(("count".to_string(), Json::Number(funcs.len().to_string())));
+    fields.push(("count".to_string(), Json::Number(count.to_string())));
     if let Some(total) = total {
         fields.push(("total".to_string(), Json::Number(total.to_string())));
     }
@@ -2306,14 +2301,69 @@ fn result_json(
         // not this one.
         "error".to_string(),
         error_json(error),
-    ), ("functions".to_string(), functions)]);
+    )]);
     // (kuna `--assert`) One row per caller-supplied assertion, in the order the
     // caller gave them: what it was, where in the phase model it wrote, and
     // whether it landed. Always present (`[]` when none were passed) so an agent
     // can read it unconditionally — an assertion whose fate is unreported is an
     // assertion an agent has to verify by eye, which is the whole problem.
-    fields.push(("assertions".to_string(), assertions_json(assertions)));
-    Json::Object(fields)
+    let tail = vec![("assertions".to_string(), assertions_json(assertions))];
+    (fields, tail)
+}
+
+/// One record of the document's `functions` array.
+fn function_json(f: &FuncResult, interior: &crate::interior::Interiors, omit: Omit) -> Json {
+    let mut record = vec![
+        ("name".into(), Json::Str(f.name.clone())),
+        ("address".into(), Json::Number(f.address.to_string())),
+        ("address_hex".into(), Json::Str(format!("0x{:x}", f.address))),
+        ("aliases".into(), aliases_json(&f.aliases)),
+        (
+            "object_location".into(),
+            object_location_json(f.object_location.as_ref()),
+        ),
+        ("size".into(), Json::Number(f.size.to_string())),
+        (
+            "code".into(),
+            f.code.clone().map(Json::Str).unwrap_or(Json::Null),
+        ),
+        (
+            "error".into(),
+            f.error.clone().map(Json::Str).unwrap_or(Json::Null),
+        ),
+        // (kuna outlang) The fidelity counter for Rust output: how
+        // many jumps in `code` are a diverging `panic!` instead of a
+        // translation. Always present, `0` on every C render, so a
+        // consumer can filter or re-run without inspecting the text.
+        (
+            "unstructured_gotos".into(),
+            Json::Number(f.unstructured_gotos().to_string()),
+        ),
+    ];
+    if !omit.line_mappings {
+        record.push((
+            "line_mappings".into(),
+            Json::Array(f.line_mappings.iter().map(line_mapping_json).collect()),
+        ));
+    }
+    if !omit.variables {
+        record.push(("variables".into(), Json::Array(f.variables.iter().map(var_json).collect())));
+    }
+    // (kuna `structdefs`) The layout side: the definitions of the
+    // composites this function's C names, as records. Present unless
+    // omitted, `[]` unless the option is on.
+    if !omit.types {
+        record.push(("types".into(), Json::Array(f.types.iter().map(type_json).collect())));
+    }
+    if !omit.variables && !f.stack_objects.is_empty() {
+        record.push(("stack_objects".into(), Json::Array(
+            f.stack_objects.iter().map(stack_object_json).collect(),
+        )));
+    }
+    if let Some(inside) = interior.get(&f.byte_address) {
+        record.push(("interior_to".into(), crate::interior::json(inside)));
+    }
+    Json::Object(record)
 }
 
 /// The per-directive report (`kuna_console::assertions::Outcome`).
@@ -2503,6 +2553,17 @@ mod provenance_json_tests {
         // key above it.
         assert!(rendered.contains("\"types\": ["));
         assert!(rendered.contains("\"definition\": \"struct mystruct {"));
+    }
+
+    #[test]
+    fn the_written_document_is_the_whole_one() {
+        let mut omit = Omit::default();
+        omit.add("types").unwrap();
+        let funcs = [function(), FuncResult { code: None, error: Some("boom".into()), ..function() }];
+        for (funcs, error, total, omit) in [(&funcs[..], None, None, Omit::default()), (&funcs[..1], Some("x"), Some(9), omit), (&[][..], None, None, omit)] {
+            let whole = dumps_indent2(&result_json("fixture", funcs, "c-language", error, total, &[], &Default::default(), omit));
+            assert_eq!(render_selected_json("fixture", funcs, &[], error, total, &[], &Default::default(), omit), whole + "\n");
+        }
     }
 
     #[test]

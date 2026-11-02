@@ -1982,12 +1982,18 @@ Behaviors specific to `decompile-all`:
   charged for the freed working memory of the large function before it; a
   stopped function hands its own back before the next one starts. With no
   explicit limit the same release happens once the process holds 64 MiB more,
-  at most a thirty-second of the run's time. A one-worker run in the
-  callee-first order (option `protoorder`, the whole-binary default) keeps
-  each finished result in an anonymous temporary file until its last round,
-  as a `--jobs` worker hands its results over, and lets the call graph it
-  planned that order with go before the first function, so neither the
-  results of the functions before one nor the graph is charged to it.
+  at most a thirty-second of the run's time. These releases happen only on
+  Linux with glibc; on Windows and macOS what the allocator keeps is its own
+  policy, and a function starts from the resident set it left. A one-worker
+  run in the callee-first order (option `protoorder`, the whole-binary
+  default) keeps each finished result in an anonymous temporary file in the
+  system temporary directory (`TMPDIR`, `%TEMP%` on Windows) until its last
+  round, as a `--jobs` worker hands its results over, and lets the call graph
+  it planned that order with go before the first function, so neither the
+  results of the functions before one nor the graph is charged to it. The
+  file has no name and goes when the process ends, however it ends; results
+  that cannot be written to it stay in memory. The `--json` document is
+  written a record at a time, so it is not held whole beside the results.
 
   An explicit limit is per process: the serial run, each `--jobs N` worker,
   and the `decomp_dbg` child of `kuna decompile` each get the value given.
