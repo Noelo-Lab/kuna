@@ -89,6 +89,7 @@ pub(crate) fn decompile_callee_first(
     }
     prog.arch_mut().kuna_gottailcall = kuna_decomp::kuna_gottailcall::Ledger {
         recording: prog.arch().got_tail_call,
+        planned: plan.iter().filter_map(|&(i, _)| vote_key(&targets[i])).collect(),
         ..Default::default()
     };
     let callers = match &graph {
@@ -121,6 +122,7 @@ pub(crate) fn decompile_callee_first(
         slots.put(index, first);
         if let Some(k) = vote_key(&targets[index]) {
             reads.decompiled(k);
+            prog.arch_mut().kuna_gottailcall.seen.insert(k);
         }
         reads.settle(prog, &targets, &plan, &base, &mut slots);
     }
@@ -178,7 +180,8 @@ impl VoidReads {
     /// wrapper is redone as soon as its first reader is decompiled: only that
     /// reader is decompiled again, and every later one reads the wrapper's
     /// return the first time. Once none of those is left, every caller that
-    /// copied in a callee `gottailcall` has since filed is decompiled again
+    /// copied in a callee `gottailcall` has since filed, and has seen every
+    /// planned callee it copied in decompiled, is decompiled again
     /// (`kuna_decomp::kuna_gottailcall`), so the callee's return is settled
     /// before the caller reads it. A redo that fails keeps the first body.
     fn settle(

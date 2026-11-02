@@ -41,7 +41,7 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
-use kuna_base::types::{int4, uintb};
+use kuna_base::types::{int4, uint4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::dtype::type_metatype;
@@ -94,6 +94,10 @@ pub struct Ledger {
     pub taken: RefCell<BTreeSet<(Key, Key)>>,
     /// `(caller, callee)` tail calls that lost what the copied-in body shows.
     pub refused: BTreeSet<(Key, Key)>,
+    /// The functions the run's plan decompiles.
+    pub planned: BTreeSet<Key>,
+    /// The planned functions it has decompiled so far.
+    pub seen: BTreeSet<Key>,
 }
 
 /// Does a tail call from `data` to `dest` lose nothing, by what this run
@@ -240,11 +244,11 @@ fn takes_every_input(
     })
 }
 
-/// Drop the function's recovered-tail-call warnings before a callee-first run
-/// publishes a new flow of it. A redo can refuse a tail call the first
-/// decompile took, and the stale `// tail-call` would print on the switch the
-/// redo follows; every tail call the new flow takes warns again.
-pub(crate) fn clear_stale_warnings(arch: &mut Architecture, entry: &Address) {
+/// Drop the function's recovered-tail-call warnings that a new flow of it in
+/// a callee-first run does not raise again (`pending`). A redo can refuse a
+/// tail call the first decompile took, and the stale `// tail-call` would
+/// print on the switch the redo follows.
+pub(crate) fn clear_stale_warnings(arch: &mut Architecture, entry: &Address, pending: &[(uint4, Address, String)]) {
     if !arch.kuna_gottailcall.recording {
         return;
     }
@@ -252,27 +256,46 @@ pub(crate) fn clear_stale_warnings(arch: &mut Architecture, entry: &Address) {
         &c.func_addr != entry
             || c.tp != crate::architecture::comment_type::warning
             || !c.text.contains(": recovered tail call -> introduced call to ")
+            || pending.iter().any(|(tp, ad, txt)| *tp == c.tp && *ad == c.addr && *txt == c.text)
     });
 }
 
 /// The callers to decompile again: each one that followed a table into a
-/// callee that is now filed.
+/// callee that is now filed, once every callee it copied in has been
+/// decompiled, and each one refused a tail call at once.
 pub fn due(arch: &mut Architecture) -> BTreeSet<Key> {
     arch.kuna_gottailcall.take_due()
 }
 
 impl Ledger {
-    /// [`due`] over the ledger: the waiting callers of every filed callee,
-    /// taken off the waiting list.
+    /// [`due`] over the ledger, taking each caller it names off every waiting
+    /// list. Waiting for the last planned callee redoes a caller that copied
+    /// in many callees (a `switch` of PIC tail calls) once, not once per
+    /// callee.
     pub fn take_due(&mut self) -> BTreeSet<Key> {
         if !self.recording || self.waiting.is_empty() {
             return BTreeSet::new();
         }
-        let ready: Vec<Key> = self.waiting.keys().filter(|k| self.callable.contains_key(k)).copied().collect();
-        let mut out = BTreeSet::new();
-        for k in ready {
-            out.extend(self.waiting.remove(&k).unwrap_or_default());
+        let mut awaits: BTreeMap<Key, Vec<Key>> = BTreeMap::new();
+        for (k, callers) in &self.waiting {
+            for c in callers {
+                awaits.entry(*c).or_default().push(*k);
+            }
         }
+        let filed = |k: &Key| self.callable.contains_key(k);
+        let settled = |k: &Key| self.seen.contains(k) || !self.planned.contains(k);
+        let out: BTreeSet<Key> = awaits
+            .into_iter()
+            .filter(|(c, ks)| {
+                ks.iter().any(|k| filed(k) && self.refused.contains(&(*c, *k)))
+                    || (ks.iter().any(filed) && ks.iter().all(settled))
+            })
+            .map(|(c, _)| c)
+            .collect();
+        for callers in self.waiting.values_mut() {
+            callers.retain(|c| !out.contains(c));
+        }
+        self.waiting.retain(|_, callers| !callers.is_empty());
         out
     }
 }

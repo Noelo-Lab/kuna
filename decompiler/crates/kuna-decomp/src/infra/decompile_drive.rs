@@ -971,8 +971,9 @@ fn publish_flow(arch: &mut Architecture, mut data: Funcdata) -> KunaResult<Funcd
         if arch.mapped_flow_boundary_image {
             crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, &func_addr);
         }
-        crate::kuna_gottailcall::clear_stale_warnings(arch, &func_addr);
-        for (tp, ad, txt) in data.drain_pending_comments() {
+        let pending = data.drain_pending_comments();
+        crate::kuna_gottailcall::clear_stale_warnings(arch, &func_addr, &pending);
+        for (tp, ad, txt) in pending {
             arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
         }
     }

@@ -957,11 +957,15 @@ MIPS `$gp` slot is not a constant it reads, and an x86 `jmp [slot]` is an
 edge to the slot, not to the function. So the callee is often planned after
 its caller. `kuna_gottailcall.rs (record)` therefore also files every caller
 whose flow followed a one-destination table into a callee not yet filed.
-Once the callee is filed and voidret's redos of the round are settled,
+Once one of the callees it copied in is filed, every other one the plan
+holds has been decompiled, and voidret's redos of the round are settled,
 `kuna_gottailcall.rs (due)` names that caller, and
 `decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs` decompiles it
 again in plan order. That redo takes the tail call with the callee's
-statement in hand. That is the call-graph edge the walk misses, learned from
+statement in hand. Waiting for the last callee keeps a `switch` whose cases
+tail-call many functions through their slots to one redo instead of one per
+callee, each copying in the callees still to come. A refused caller is
+redone at once. That is the call-graph edge the walk misses, learned from
 the caller's own decompile. The ledger lives only for the length of a
 callee-first run. A single-function `kuna decompile`, `--jobs N`, `protoorder
 off` and a run narrowed past the callee file nothing and keep the copied-in
