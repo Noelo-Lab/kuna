@@ -2144,7 +2144,8 @@ mod tests {
         // and kuna-revisitrefine / refining a range a later heritage pass revisited
         // and kuna-wrapsplit + kuna-wrapsplit-be / accesses that run past the top of their space
         // and kuna-relocobj-ppc-mips / PowerPC and MIPS relocatable objects' calls and addresses
-        assert_eq!(count, 651, "corpus file count drifted");
+        // and kuna-bejoin-mipspic / MIPS PIC callers and unaligned loads (option bejoin callers)
+        assert_eq!(count, 652, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
