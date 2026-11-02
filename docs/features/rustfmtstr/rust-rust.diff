@@ -1,0 +1,19 @@
+--- before/fmtdemo::make_string
++++ after/fmtdemo::make_string
+@@ -17,6 +17,6 @@
+   v1 = a1;
+   v2 = a2;
+   v4 = a3;
+-  alloc::fmt::format::format_inner(a0,0x639a as *mut u16,&mut v3);
++  std::ptr::write((a0 as *mut _) as *mut std::string::String,format!("{}-{}",&*((v3 as *const _) as *const u32),std::str::from_utf8_unchecked(std::slice::from_raw_parts(v2 as *const u8,v4 as usize))));
+   return;
+ }
+--- before/core::option::expect_failed
++++ after/core::option::expect_failed
+@@ -11,5 +11,5 @@
+   v4 = 0x26;
+   v2 = &mut v1;
+   v3 = fmt;
+-  core::panicking::panic_fmt(0x64c5,&mut v2,0x4f3c0); // no-return
++  panic!("{}",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v4 as usize))); // no-return
+ }

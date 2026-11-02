@@ -87,7 +87,8 @@
 mod kuna_rustversion;
 pub use kuna_rustversion::{fmt_pieces_layout, stable_rustc_version};
 mod kuna_rustformatters;
-pub use kuna_rustformatters::{integer_formatters, primitive_display_formatters};
+mod kuna_rustfmtstr;
+pub use kuna_rustformatters::{formatter_metadata, integer_formatters, primitive_display_formatters, FormatterMetadata};
 
 use object::macho::{MachHeader32, MachHeader64};
 use object::read::macho::{

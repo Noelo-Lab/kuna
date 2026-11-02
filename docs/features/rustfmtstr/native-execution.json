@@ -1,0 +1,122 @@
+{
+  "producer": "1.93.1",
+  "input_sha256": "f2fc8cead4257e8141f233277d607bff1563495d890217b13299e05acc3c0b85",
+  "strings": 156,
+  "integer_values": 9,
+  "calls_per_string": 24,
+  "stream_calls_per_executor": 3744,
+  "panic_payloads_per_executor": 156,
+  "executions": [
+    {
+      "executor": "1.90.0",
+      "stream_calls": 3744,
+      "panic_payloads": 156,
+      "stdout_stderr_exact": true
+    },
+    {
+      "executor": "1.93.1",
+      "stream_calls": 3744,
+      "panic_payloads": 156,
+      "stdout_stderr_exact": true
+    },
+    {
+      "executor": "1.99.1",
+      "stream_calls": 3744,
+      "panic_payloads": 156,
+      "stdout_stderr_exact": true
+    }
+  ],
+  "unchanged_macros": [
+    {
+      "name": "str_plain",
+      "macro_expression_unchanged": true,
+      "explicit_input_bindings": "let v1=text.as_ptr() as u64;let v3=text.len() as u64;",
+      "hidden_destination": false
+    },
+    {
+      "name": "str_line",
+      "macro_expression_unchanged": true,
+      "explicit_input_bindings": "let v1=text.as_ptr() as u64;let v3=text.len() as u64;",
+      "hidden_destination": false
+    },
+    {
+      "name": "str_stderr",
+      "macro_expression_unchanged": true,
+      "explicit_input_bindings": "let v1=text.as_ptr() as u64;let v3=text.len() as u64;",
+      "hidden_destination": false
+    },
+    {
+      "name": "str_stderr_pair",
+      "macro_expression_unchanged": true,
+      "explicit_input_bindings": "let v3=&value as *const u32;let v2=text.as_ptr() as u64;let v4=text.len() as u64;",
+      "hidden_destination": false
+    },
+    {
+      "name": "str_flags",
+      "macro_expression_unchanged": true,
+      "explicit_input_bindings": "let v1=text.as_ptr() as u64;let v3=text.len() as u64;",
+      "hidden_destination": false
+    },
+    {
+      "name": "str_pair",
+      "macro_expression_unchanged": true,
+      "explicit_input_bindings": "let v1=left.as_ptr() as u64;let v4=left.len() as u64;let v2=right.as_ptr() as u64;let v5=right.len() as u64;",
+      "hidden_destination": false
+    },
+    {
+      "name": "str_integer",
+      "macro_expression_unchanged": true,
+      "explicit_input_bindings": "let v3=&value as *const u32;let v2=text.as_ptr() as u64;let v4=text.len() as u64;",
+      "hidden_destination": true
+    },
+    {
+      "name": "str_result",
+      "macro_expression_unchanged": true,
+      "explicit_input_bindings": "let v1=text.as_ptr() as u64;let v3=text.len() as u64;",
+      "hidden_destination": true
+    },
+    {
+      "name": "str_panic",
+      "macro_expression_unchanged": true,
+      "explicit_input_bindings": "let v1=text.as_ptr() as u64;let v3=text.len() as u64;",
+      "hidden_destination": false
+    }
+  ],
+  "full_body_compilation_claimed": false,
+  "original_panic_location_equivalence_claimed": false,
+  "refusal_controls": [
+    "str_custom",
+    "str_debug",
+    "str_dynamic",
+    "str_reference",
+    "str_owned",
+    "1.90.0:str_plain",
+    "1.90.0:str_integer",
+    "1.90.0:str_panic",
+    "1.99.1:str_plain",
+    "1.99.1:str_integer",
+    "1.99.1:str_panic"
+  ],
+  "streams": {
+    "streams": {
+      "stdout": {
+        "bytes": 673069,
+        "sha256": "7a71948c2cb50e1a74c3e9adeb7bb482c2c04f46c999aab3e644731610b8b3a0"
+      },
+      "stderr": {
+        "bytes": 438452,
+        "sha256": "26be8e562c7ba43f1ade11ab4ce97939c0c26f6d464ea859d8d35f0b72627ddb"
+      }
+    },
+    "panic": {
+      "stdout": {
+        "bytes": 48631,
+        "sha256": "fdf140c0ea5964f61a7b0bc2356faea592827577d99faf03e672bc6217f172d3"
+      },
+      "stderr": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  }
+}

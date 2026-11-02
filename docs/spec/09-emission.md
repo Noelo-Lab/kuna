@@ -4400,3 +4400,25 @@ descriptor type gaps can still prevent complete primitive functions from
 compiling; primitive macro execution does not imply whole-function
 recompilability. C and Go output, newer layouts and other formatting sinks are
 unchanged. Disabling `rustfmtpieces` restores the runtime-call presentation.
+
+String callback discovery likewise indexes only the forwarding and pad candidates, then rejects every conflicting or unknown alias before reading callback bytes.
+
+`rustfmtstr` extends template-layout formatting to a proven string Display
+argument. In x86-64 ELF images, complete object-symbol identities must identify
+both a generic reference Display callback and `core::fmt::Formatter::pad`.
+The callback must have the exact 18-byte body that loads the first two words of
+its argument as string data and length, preserves the formatter argument, and
+tail-jumps directly to that pad function. Conflicting aliases, another target,
+extra operations and other instruction sequences do not establish this fact.
+The generic name itself never supplies a concrete type.
+
+Recovery is restricted to stable Rust 1.93.0/1.93.1 and requires both live,
+eight-byte, aligned stack words at the existing formatting call. It constructs
+`std::str::from_utf8_unchecked(std::slice::from_raw_parts(data, length))` from
+those values. Valid UTF-8 storage follows the original `pad(&str)` call contract;
+no string contents are guessed from neighboring memory. Existing literal,
+argument, static-format, result-destination and panic-location checks still
+apply. Every setup statement, IR operation, prototype and return remains.
+Disabling the option preserves runtime calls containing these string arguments;
+unknown wrappers and derived Debug callbacks remain explicit. C and Go emission
+is unchanged.

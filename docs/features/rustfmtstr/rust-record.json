@@ -1,0 +1,304 @@
+{
+  "fixture": "rust",
+  "sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+  "patched_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+  "baseline_kuna_sha256": "2a9b5c5676fc685ad3e6944b2d73c190ff57971cc7645a5e14d88c9114ede4c6",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 455,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "rust",
+      "functions": 455,
+      "changed": [
+        {
+          "address": "0x104c0",
+          "name": "fmtdemo::make_string",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    "\"{}-{}\"",
+                    "& * ((v3 as * const _) as * const u32)",
+                    "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v2 as * const u8 , v4 as usize))"
+                  ],
+                  "destination": "(a0 as * mut _) as * mut std :: string :: String",
+                  "kind": "macro",
+                  "literal": "{}-{}",
+                  "name": "format",
+                  "parameters": [
+                    {
+                      "kind": "primitive",
+                      "pointer": "v3",
+                      "primitive": "u32"
+                    },
+                    {
+                      "data": "v2",
+                      "kind": "string",
+                      "length": "v4"
+                    }
+                  ],
+                  "raw": "std :: ptr :: write ((a0 as * mut _) as * mut std :: string :: String , format ! (\"{}-{}\" ,&* ((v3 as * const _) as * const u32) , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v2 as * const u8 , v4 as usize))))",
+                  "sink": "format",
+                  "source_line_end": 20,
+                  "source_line_start": 20
+                },
+                "before": {
+                  "arguments": [
+                    "a0",
+                    "0x639a as * mut u16",
+                    "& mut v3"
+                  ],
+                  "kind": "runtime",
+                  "raw": "alloc :: fmt :: format :: format_inner (a0 , 0x639a as * mut u16 , & mut v3)",
+                  "sink": "format",
+                  "source_line_end": 20,
+                  "source_line_start": 20
+                },
+                "independent_descriptor": {
+                  "call_instruction": 66826,
+                  "descriptor": {
+                    "argument_count": 2,
+                    "arguments": [
+                      {
+                        "data_word": null,
+                        "formatter": 84704,
+                        "length_word": null,
+                        "pointer_stack_offset": -52
+                      },
+                      {
+                        "data_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435517,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "formatter": 65312,
+                        "length_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435525,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "pointer_stack_offset": -48
+                      }
+                    ],
+                    "array_stack_offset": -32,
+                    "template": 25498
+                  },
+                  "name": "alloc::fmt::format::format_inner"
+                },
+                "template_bytes": {
+                  "address": "0x639a",
+                  "bytes": "c0012dc000",
+                  "used_arguments": [
+                    0,
+                    1
+                  ]
+                },
+                "verified_string_forwarders": [
+                  {
+                    "address": "0xff20",
+                    "bytes": "4889f0488b37488b57084889c7e9be3e0000",
+                    "target": "0x13df0",
+                    "target_name": "core::fmt::Formatter::pad",
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435517,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435525,
+                      "size": 8,
+                      "space": "unique"
+                    }
+                  }
+                ],
+                "all_template_bytes_and_argument_bindings_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x10505"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [
+              {
+                "name": "param_1",
+                "added_call_addresses": [],
+                "lost_call_addresses": [
+                  "0x10505"
+                ]
+              },
+              {
+                "name": "v3",
+                "added_call_addresses": [
+                  "0x1050a"
+                ],
+                "lost_call_addresses": []
+              }
+            ],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -17,6 +17,6 @@",
+              "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; template bytes, formatter identities and original string-data slots independently verified"
+            }
+          ]
+        },
+        {
+          "address": "0x15870",
+          "name": "core::option::expect_failed",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    "\"{}\"",
+                    "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v4 as usize))"
+                  ],
+                  "destination": null,
+                  "kind": "macro",
+                  "literal": "{}",
+                  "name": "panic",
+                  "parameters": [
+                    {
+                      "data": "v1",
+                      "kind": "string",
+                      "length": "v4"
+                    }
+                  ],
+                  "raw": "panic ! (\"{}\" , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v4 as usize)))",
+                  "sink": "panic",
+                  "source_line_end": 14,
+                  "source_line_start": 14
+                },
+                "before": {
+                  "arguments": [
+                    "0x64c5",
+                    "& mut v2",
+                    "0x4f3c0"
+                  ],
+                  "kind": "runtime",
+                  "raw": "core :: panicking :: panic_fmt (0x64c5 , & mut v2 , 0x4f3c0)",
+                  "sink": "panic",
+                  "source_line_end": 14,
+                  "source_line_start": 14
+                },
+                "independent_descriptor": {
+                  "call_instruction": 88240,
+                  "descriptor": {
+                    "argument_count": 1,
+                    "arguments": [
+                      {
+                        "data_word": {
+                          "constant": 34497,
+                          "definition": "CPUI_COPY",
+                          "offset": 18446744073709551592,
+                          "size": 8,
+                          "space": "stack"
+                        },
+                        "formatter": 80816,
+                        "length_word": {
+                          "constant": 38,
+                          "definition": "CPUI_COPY",
+                          "offset": 18446744073709551600,
+                          "size": 8,
+                          "space": "stack"
+                        },
+                        "pointer_stack_offset": -24
+                      }
+                    ],
+                    "array_stack_offset": -40,
+                    "template": 25797
+                  },
+                  "name": "core::panicking::panic_fmt"
+                },
+                "template_bytes": {
+                  "address": "0x64c5",
+                  "bytes": "c000",
+                  "used_arguments": [
+                    0
+                  ]
+                },
+                "verified_string_forwarders": [
+                  {
+                    "address": "0x13bb0",
+                    "bytes": "4889f0488b37488b57084889c7e92e020000",
+                    "target": "0x13df0",
+                    "target_name": "core::fmt::Formatter::pad",
+                    "data_word": {
+                      "constant": 34497,
+                      "definition": "CPUI_COPY",
+                      "offset": 18446744073709551592,
+                      "size": 8,
+                      "space": "stack"
+                    },
+                    "length_word": {
+                      "constant": 38,
+                      "definition": "CPUI_COPY",
+                      "offset": 18446744073709551600,
+                      "size": 8,
+                      "space": "stack"
+                    }
+                  }
+                ],
+                "all_template_bytes_and_argument_bindings_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x158ac"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [
+              {
+                "name": "v1",
+                "added_call_addresses": [
+                  "0x158b0"
+                ],
+                "lost_call_addresses": []
+              },
+              {
+                "name": "v4",
+                "added_call_addresses": [
+                  "0x158b0"
+                ],
+                "lost_call_addresses": []
+              }
+            ],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -11,5 +11,5 @@",
+              "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; template bytes, formatter identities and original string-data slots independently verified"
+            }
+          ]
+        }
+      ],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": true
+    }
+  ]
+}

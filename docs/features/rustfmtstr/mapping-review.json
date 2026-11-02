@@ -1,0 +1,134 @@
+[
+  {
+    "fixture": "str-native",
+    "function": "0x10250",
+    "address": "0x1027b",
+    "instruction": "lea    0x18(%rsp),%rsi",
+    "review_pending": false,
+    "classification": "stack address of the formatting argument descriptor",
+    "reason": "The original stdout call receives its descriptor through RSI. This LEA computes that stack address and has no memory side effect. The recovered macro reads the independently verified descriptor inputs; all descriptor stores, surrounding statements, call instruction mapping, declarations and function metadata remain.",
+    "call_instruction": "0x10280",
+    "variable_mapping_review": "Changes are confined to the replaced call: hidden String destination param_1 is emitted as the unchanged signature a0; primitive pointer or string data/length uses gain the preserved call address. No declaration or non-call use changes."
+  },
+  {
+    "fixture": "str-native",
+    "function": "0x10290",
+    "address": "0x102d9",
+    "instruction": "lea    0x20(%rsp),%rdx",
+    "review_pending": false,
+    "classification": "stack address of the formatting argument descriptor",
+    "reason": "The original format call receives its descriptor through RDX. This LEA computes that stack address and has no memory side effect. The recovered macro reads the independently verified descriptor inputs; all descriptor stores, surrounding statements, call instruction mapping, declarations and function metadata remain.",
+    "call_instruction": "0x102de",
+    "variable_mapping_review": "Changes are confined to the replaced call: hidden String destination param_1 is emitted as the unchanged signature a0; primitive pointer or string data/length uses gain the preserved call address. No declaration or non-call use changes."
+  },
+  {
+    "fixture": "str-native",
+    "function": "0x102f0",
+    "address": "0x1031b",
+    "instruction": "lea    0x18(%rsp),%rsi",
+    "review_pending": false,
+    "classification": "stack address of the formatting argument descriptor",
+    "reason": "The original stdout call receives its descriptor through RSI. This LEA computes that stack address and has no memory side effect. The recovered macro reads the independently verified descriptor inputs; all descriptor stores, surrounding statements, call instruction mapping, declarations and function metadata remain.",
+    "call_instruction": "0x10320",
+    "variable_mapping_review": "Changes are confined to the replaced call: hidden String destination param_1 is emitted as the unchanged signature a0; primitive pointer or string data/length uses gain the preserved call address. No declaration or non-call use changes."
+  },
+  {
+    "fixture": "str-native",
+    "function": "0x10370",
+    "address": "0x103b4",
+    "instruction": "lea    0x28(%rsp),%rsi",
+    "review_pending": false,
+    "classification": "stack address of the formatting argument descriptor",
+    "reason": "The original stdout call receives its descriptor through RSI. This LEA computes that stack address and has no memory side effect. The recovered macro reads the independently verified descriptor inputs; all descriptor stores, surrounding statements, call instruction mapping, declarations and function metadata remain.",
+    "call_instruction": "0x103b9",
+    "variable_mapping_review": "Changes are confined to the replaced call: hidden String destination param_1 is emitted as the unchanged signature a0; primitive pointer or string data/length uses gain the preserved call address. No declaration or non-call use changes."
+  },
+  {
+    "fixture": "str-native",
+    "function": "0x103d0",
+    "address": "0x10402",
+    "instruction": "lea    0x18(%rsp),%rsi",
+    "review_pending": false,
+    "classification": "stack address of the formatting argument descriptor",
+    "reason": "The original panic call receives its descriptor through RSI. This LEA computes that stack address and has no memory side effect. The recovered macro reads the independently verified descriptor inputs; all descriptor stores, surrounding statements, call instruction mapping, declarations and function metadata remain.",
+    "call_instruction": "0x10407",
+    "variable_mapping_review": "Changes are confined to the replaced call: hidden String destination param_1 is emitted as the unchanged signature a0; primitive pointer or string data/length uses gain the preserved call address. No declaration or non-call use changes."
+  },
+  {
+    "fixture": "str-native",
+    "function": "0x10410",
+    "address": "0x1043b",
+    "instruction": "lea    0x18(%rsp),%rsi",
+    "review_pending": false,
+    "classification": "stack address of the formatting argument descriptor",
+    "reason": "The original stdout call receives its descriptor through RSI. This LEA computes that stack address and has no memory side effect. The recovered macro reads the independently verified descriptor inputs; all descriptor stores, surrounding statements, call instruction mapping, declarations and function metadata remain.",
+    "call_instruction": "0x10440",
+    "variable_mapping_review": "Changes are confined to the replaced call: hidden String destination param_1 is emitted as the unchanged signature a0; primitive pointer or string data/length uses gain the preserved call address. No declaration or non-call use changes."
+  },
+  {
+    "fixture": "str-native",
+    "function": "0x10490",
+    "address": "0x104bc",
+    "instruction": "lea    0x10(%rsp),%rdx",
+    "review_pending": false,
+    "classification": "stack address of the formatting argument descriptor",
+    "reason": "The original format call receives its descriptor through RDX. This LEA computes that stack address and has no memory side effect. The recovered macro reads the independently verified descriptor inputs; all descriptor stores, surrounding statements, call instruction mapping, declarations and function metadata remain.",
+    "call_instruction": "0x104c1",
+    "variable_mapping_review": "Changes are confined to the replaced call: hidden String destination param_1 is emitted as the unchanged signature a0; primitive pointer or string data/length uses gain the preserved call address. No declaration or non-call use changes."
+  },
+  {
+    "fixture": "str-native",
+    "function": "0x104d0",
+    "address": "0x104fb",
+    "instruction": "lea    0x18(%rsp),%rsi",
+    "review_pending": false,
+    "classification": "stack address of the formatting argument descriptor",
+    "reason": "The original stderr call receives its descriptor through RSI. This LEA computes that stack address and has no memory side effect. The recovered macro reads the independently verified descriptor inputs; all descriptor stores, surrounding statements, call instruction mapping, declarations and function metadata remain.",
+    "call_instruction": "0x10500",
+    "variable_mapping_review": "Changes are confined to the replaced call: hidden String destination param_1 is emitted as the unchanged signature a0; primitive pointer or string data/length uses gain the preserved call address. No declaration or non-call use changes."
+  },
+  {
+    "fixture": "str-native",
+    "function": "0x10510",
+    "address": "0x10555",
+    "instruction": "lea    0x18(%rsp),%rsi",
+    "review_pending": false,
+    "classification": "stack address of the formatting argument descriptor",
+    "reason": "The original stderr call receives its descriptor through RSI. This LEA computes that stack address and has no memory side effect. The recovered macro reads the independently verified descriptor inputs; all descriptor stores, surrounding statements, call instruction mapping, declarations and function metadata remain.",
+    "call_instruction": "0x1055a",
+    "variable_mapping_review": "Changes are confined to the replaced call: hidden String destination param_1 is emitted as the unchanged signature a0; primitive pointer or string data/length uses gain the preserved call address. No declaration or non-call use changes."
+  },
+  {
+    "fixture": "str-native",
+    "function": "0x14c80",
+    "address": "0x14cbc",
+    "instruction": "lea    -0x20(%rbp),%rsi",
+    "review_pending": false,
+    "classification": "stack address of the formatting argument descriptor",
+    "reason": "The original panic call receives its descriptor through RSI. This LEA computes that stack address and has no memory side effect. The recovered macro reads the independently verified descriptor inputs; all descriptor stores, surrounding statements, call instruction mapping, declarations and function metadata remain.",
+    "call_instruction": "0x14cc0",
+    "variable_mapping_review": "Changes are confined to the replaced call: hidden String destination param_1 is emitted as the unchanged signature a0; primitive pointer or string data/length uses gain the preserved call address. No declaration or non-call use changes."
+  },
+  {
+    "fixture": "rust",
+    "function": "0x104c0",
+    "address": "0x10505",
+    "instruction": "lea    0x18(%rsp),%rdx",
+    "review_pending": false,
+    "classification": "stack address of the formatting argument descriptor",
+    "reason": "The original format call receives its descriptor through RDX. This LEA computes that stack address and has no memory side effect. The recovered macro reads the independently verified descriptor inputs; all descriptor stores, surrounding statements, call instruction mapping, declarations and function metadata remain.",
+    "call_instruction": "0x1050a",
+    "variable_mapping_review": "Changes are confined to the replaced call: hidden String destination param_1 is emitted as the unchanged signature a0; primitive pointer or string data/length uses gain the preserved call address. No declaration or non-call use changes."
+  },
+  {
+    "fixture": "rust",
+    "function": "0x15870",
+    "address": "0x158ac",
+    "instruction": "lea    -0x20(%rbp),%rsi",
+    "review_pending": false,
+    "classification": "stack address of the formatting argument descriptor",
+    "reason": "The original panic call receives its descriptor through RSI. This LEA computes that stack address and has no memory side effect. The recovered macro reads the independently verified descriptor inputs; all descriptor stores, surrounding statements, call instruction mapping, declarations and function metadata remain.",
+    "call_instruction": "0x158b0",
+    "variable_mapping_review": "Changes are confined to the replaced call: hidden String destination param_1 is emitted as the unchanged signature a0; primitive pointer or string data/length uses gain the preserved call address. No declaration or non-call use changes."
+  }
+]

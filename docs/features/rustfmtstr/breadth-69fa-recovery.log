@@ -1,0 +1,5 @@
+kuna-rust-fmt-str descriptor-evidence-69fa.compile.log PASS
+kuna-rust-fmt-str overlap-capture.log PASS
+kuna-rust-fmt-str breadth-69fa.log PASS
+kuna-rust-fmt-str FRESH 69FA BREADTH AND PRIOR REVIEW IDENTITY PASSED 60876
+BOTH CANDIDATE-INDEX FEATURES READY FOR DECLARED TIMINGS

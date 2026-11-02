@@ -1,0 +1,24 @@
+{
+  "fixture": "native-plain",
+  "sha256": "6a205d35899107445c0d702d7a6c4900180be4203770983a8a050d3ec40f2da5",
+  "patched_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+  "baseline_kuna_sha256": "2a9b5c5676fc685ad3e6944b2d73c190ff57971cc7645a5e14d88c9114ede4c6",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 1156,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "go",
+      "functions": 1156,
+      "changed": [],
+      "parsed": 1156,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}
