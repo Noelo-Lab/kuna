@@ -3195,3 +3195,5 @@ mod pointer_argument_records {
         assert!(print.take_pointer_arguments("").is_none(), "a new request drops the old record");
     }
 }
+
+mod rust_literal_atoms;

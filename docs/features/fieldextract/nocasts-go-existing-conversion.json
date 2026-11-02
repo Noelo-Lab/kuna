@@ -1,0 +1,4 @@
+{
+  "parent": "func signed_int32_wide(a int64, b int64) int64 {\n  return int64(make_pair(a,b).second)\n}\n",
+  "candidate": "func signed_int32_wide(a int64, b int64) int64 {\n  return int64(make_pair(a,b).second)\n}\n"
+}

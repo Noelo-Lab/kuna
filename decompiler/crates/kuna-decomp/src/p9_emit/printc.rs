@@ -2322,6 +2322,9 @@ impl PrintC {
         };
         match atom.tag {
             TagType::Syntax => self.emit.print(&atom.name, to_emit_hl(atom.highlight)),
+            TagType::LiteralToken => {
+                self.emit.tag_variable(&atom.name, to_emit_hl(atom.highlight), &markup)
+            }
             TagType::VarToken => {
                 let n = ident(self, &atom.name);
                 let n = n.as_ref().unwrap_or(&atom.name);
@@ -7709,14 +7712,23 @@ impl PrintC {
                             }
                             // Fall through to the cast/functional dispatch below.
                         } else {
-                            // A struct findTruncation hit at offset 0 renders as
-                            // an object_member access.
                             if ct.get_metatype() == type_metatype::TYPE_STRUCT {
                                 if let Ok(Some((idx, off2))) =
                                     ct.find_truncation(byte_off, out_sz, op, 1)
                                 {
-                                    if off2 == 0 {
-                                        if let Some(f) = ct.get_field(idx) {
+                                    if let Some(f) = ct.get_field(idx) {
+                                        let extraction = super::kuna_fieldextract::plan(
+                                            fd, op, &ct, idx, off2,
+                                        );
+                                        if off2 == 0 || extraction.is_some() {
+                                            if let Some(extraction) = &extraction {
+                                                if !self.options.nocasts {
+                                                    self.push_cast_open(&extraction.target, op);
+                                                }
+                                                if extraction.shift != 0 {
+                                                    self.push_op(&tokens::SHIFT_RIGHT, Some(op_key(op)));
+                                                }
+                                            }
                                             let fname = f.name.clone();
                                             let fident = f.ident;
                                             self.push_op(
@@ -7732,6 +7744,14 @@ impl PrintC {
                                                 fident,
                                                 op_key(op),
                                             ));
+                                            if let Some(extraction) = &extraction {
+                                                if extraction.shift != 0 {
+                                                    self.push_constant_ir(extraction.shift, 4, op);
+                                                }
+                                                if !self.options.nocasts {
+                                                    self.push_cast_close(&extraction.target);
+                                                }
+                                            }
                                             return;
                                         }
                                     }
@@ -10541,10 +10561,10 @@ impl PrintC {
                 // signed/unsigned integer path below, dropping both the leading
                 // typecast and the force_hex, so the pointer constant printed as `0`.
                 if (self.options.null || self.out_lang == crate::kuna_lang::OutLang::Go) && off == 0 {
-                    // option_NULL set (OFF by kuna default): emit the NULL token.
                     self.push_atom(&Atom::with_op_vn(
                         self.lang().null_literal.to_string(),
-                        TagType::VarToken,
+                        if self.out_lang == crate::kuna_lang::OutLang::Rust { TagType::LiteralToken }
+                        else { TagType::VarToken },
                         if self.out_lang == crate::kuna_lang::OutLang::Go { crate::printlanguage::SyntaxHighlight::const_color }
                         else { crate::printlanguage::SyntaxHighlight::var_color },
                         op_key(op),

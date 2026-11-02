@@ -1,0 +1,11 @@
+{
+  "at": "2026-11-02T15:08:55.854598+00:00",
+  "parent_commit": "c1745d3ebe1f0eea03bb478494c89629ab2302c0",
+  "old_parent": "44eaff2b3853a17440c5dc880bdc4b88370227e9",
+  "old_candidate_sha256": "21ec96665ba3f31219817cd9bdb7e3ca3fd8934b644ac07a88e86a70b3d5f350",
+  "initial_timing_study_passed": false,
+  "old_evidence": "/tmp/kuna-rust-null-literals/initial-evidence",
+  "corpus_files": 674,
+  "specs": 154,
+  "scope": "Required integration of main PR1446, which changes the P4 return-recovery hot path and adds seven stage assertions; no change to the null-expression fix."
+}

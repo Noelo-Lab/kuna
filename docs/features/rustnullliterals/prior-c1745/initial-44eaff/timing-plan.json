@@ -1,0 +1,117 @@
+{
+  "declared_at": "2026-11-02T14:11:35.690913+00:00",
+  "scope": "Rust constructed null expressions versus the committed, validated high-slice opt-in parent; strict emitter correctness correction.",
+  "root": "/home/mahaloz/kwt/angr-rust-null-literals",
+  "base": "/home/mahaloz/kwt/angr-narrow-table-guard",
+  "cases": [
+    [
+      "scalar-c",
+      "/home/mahaloz/kwt/angr-rust-null-literals/tests/fixtures/go-output/output-c",
+      "choose",
+      "c"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "null_pointer",
+      "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64",
+      "null_pointer",
+      "rust"
+    ],
+    [
+      "maybe_pointer",
+      "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64",
+      "maybe_pointer",
+      "rust"
+    ],
+    [
+      "pointer_is_null",
+      "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64",
+      "pointer_is_null",
+      "rust"
+    ],
+    [
+      "clear_pointer",
+      "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64",
+      "clear_pointer",
+      "rust"
+    ]
+  ],
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "samples_per_arm": 384,
+  "warmups_per_arm": 3,
+  "seed": 202611030,
+  "bootstrap_resamples": 20000,
+  "family_alpha": 0.05,
+  "comparisons": 14,
+  "upper_quantile": 0.9964285714285714,
+  "maximum_looks": 1,
+  "budget_pct": 5,
+  "criterion": "Every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bootstrap bound <=5 percent. One final look; no unchanged-code repeat.",
+  "execution": "Seven comparisons on disjoint physical CPU pairs;384 paired rounds, balanced randomized order, no own builds/tests/captures/backends overlap.",
+  "lightwork_reservation_amendment": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "reason": "Reserve a physical pair for light work; exclude it from workers before samples."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "failure_policy": "Retain every observation and do not repeat unchanged code to chase a passing bound. Diagnose material regressions before publication; record failed confidence bounds honestly.",
+  "build_binding": "Record final binary and source hashes after parent integration, all gates, complete breadth review, and native proofs, before sampling.",
+  "case_options": {
+    "null_pointer": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer.kuna"
+    ],
+    "maybe_pointer": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer.kuna"
+    ],
+    "pointer_is_null": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer.kuna"
+    ],
+    "clear_pointer": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer.kuna"
+    ]
+  },
+  "build": {
+    "at": "2026-11-02T14:38:43.701628+00:00",
+    "parent_commit": "44eaff2b3853a17440c5dc880bdc4b88370227e9",
+    "baseline_root": "/home/mahaloz/kwt/angr-narrow-table-guard",
+    "parent_cli_sha256": "ad23578b9660521c2bfeb6f2bf1a9981c2d2dc4523eb690328a5a9f6f46ac6d0",
+    "new_cli_sha256": "21ec96665ba3f31219817cd9bdb7e3ca3fd8934b644ac07a88e86a70b3d5f350",
+    "stage_assertions": [
+      3675,
+      3675
+    ],
+    "strict_correctness_fix": true,
+    "option": null
+  },
+  "parent_commit": "44eaff2b3853a17440c5dc880bdc4b88370227e9",
+  "build_binding_sha256": {
+    "build.json": "17b92e823f13507e7b6fc76a57dfba8088fb7c1b8f26d6ab2172fab29187f161",
+    "production-source-before-validation.json": "8b5ab8b162d5eb7579c80e4a8286c953a2e9e5a2446a7563d6f4c15e252139a8",
+    "parent-source-before-timing.json": "eb10cc79b3225ab82bc2525ec41e1d90bb3c87eb92772a56d590c8aa2e73d4c4"
+  }
+}

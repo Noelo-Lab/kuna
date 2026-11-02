@@ -364,3 +364,11 @@ Go bodies also compile and execute against a byte-checking sink.
 `kuna-ppc32picimports-runtime.xml` covers both caller-local `on` bindings and
 ABI-mode reloads of images whose legacy fingerprints collide, plus a TAR helper
 whose skipped assignment must not become a no-return import contract.
+
+`ghangr-joined-callback-return.xml` covers late typed callbacks returning an
+integer pair: either component, a narrowed high component, both components,
+whole forwarding, and scalar and void callback controls.
+
+`ghangr-integer-field-extract.xml` checks narrow, narrow-then-widen, and shifted
+integer fields in C, Go and Rust. Native CLI tests execute the complete emitted
+callers against boundary values and check that each helper is called once.

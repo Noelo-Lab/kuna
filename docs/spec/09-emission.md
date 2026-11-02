@@ -5,6 +5,21 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p9_emit
 ```
 
+An integer SUBPIECE of an implied struct value preserves the extracted width
+when rendered as a field access (`kuna_fieldextract.rs`). If the field is wider
+than the result, the emitter converts the field to the operation's integer type
+before surrounding expressions can widen it again. Thus narrowing a 64-bit
+field to signed 32 bits and then returning 64 bits keeps both conversions.
+The same extraction uses C casts, Go conversions, or Rust `as` expressions;
+the diagnostic `nocastprinting` setting still suppresses those conversions.
+An interior slice shifts the field first; its shift follows the input storage's
+byte order, so offset zero within a big-endian field denotes its high bytes.
+The field expression is evaluated once. Complete integer fields of the same
+type retain their existing spelling. Enum, float, pointer, boolean, volatile,
+incomplete and bitfield cases retain their existing paths, as do accesses
+through an explicit symbol. This corrects field extraction; it does not supply
+missing Rust signedness conversions in surrounding expressions.
+
 Standalone C output qualifies whole function-address expressions through
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_funcptrnames.rs`. A named
 SPACEBASE reference must have code type and resolve to the exact function entry.
@@ -3175,6 +3190,13 @@ What differs, and why each is a language fact rather than a preference:
   `braceelide` (DIV-38) would emit a braceless body, and `nullprinting` (DIV-35)
   would emit `NULL` (Rust spells it `core::ptr::null_mut()`). `condfold`'s comma
   operand has no Rust form either and is refused the same way.
+- **Constructed null expressions** use `printlanguage.rs (TagType)`'s
+  `LiteralToken`. `printc.rs (PrintC::emit_atom)` emits that final Rust spelling
+  through the same variable-markup path, preserving the operation and varnode
+  associations while keeping the parentheses in `core::ptr::null_mut()`.
+  Recovered variable names, including enum constants, still pass through the
+  identifier speller. The tag preserves this distinction for both constant
+  and variable highlighting. C and Go null atoms keep their existing tags.
 - **What Rust cannot express** is marked, never silently emitted. The structurer
   manufactures `goto`s as its escape hatch and Rust has no form for one that is
   neither a `break` nor a `continue`; those render as a comment plus a **diverging**

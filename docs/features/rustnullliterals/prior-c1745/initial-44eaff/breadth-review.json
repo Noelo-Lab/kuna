@@ -1,0 +1,79 @@
+{
+  "at": "2026-11-02T14:47:25.913485+00:00",
+  "complete": true,
+  "semantic_review_pending": false,
+  "new_cli_sha256": "21ec96665ba3f31219817cd9bdb7e3ca3fd8934b644ac07a88e86a70b3d5f350",
+  "parent_cli_sha256": "ad23578b9660521c2bfeb6f2bf1a9981c2d2dc4523eb690328a5a9f6f46ac6d0",
+  "images": 44,
+  "distinct_functions": 34269,
+  "language_records": 77523,
+  "changed_records": 3084,
+  "constructor_occurrences_fixed": 22066,
+  "all_c_go_records_identical": true,
+  "all_other_rust_fields_and_records_identical": true,
+  "rust_code_changes_exactly_null_constructor_spelling": true,
+  "inherited_go_parser_failures": [
+    [
+      "namespace-rust",
+      "0x156c0"
+    ],
+    [
+      "namespace-rust",
+      "0x156d0"
+    ],
+    [
+      "namespace-rust",
+      "0x15870"
+    ],
+    [
+      "probe-native",
+      "0x157c0"
+    ],
+    [
+      "probe-native",
+      "0x157d0"
+    ],
+    [
+      "probe-native",
+      "0x15970"
+    ],
+    [
+      "raw-namespace",
+      "0x15570"
+    ],
+    [
+      "raw-namespace",
+      "0x15580"
+    ],
+    [
+      "raw-namespace",
+      "0x15720"
+    ],
+    [
+      "probe-buffer",
+      "0x15580"
+    ],
+    [
+      "probe-buffer",
+      "0x15590"
+    ],
+    [
+      "probe-buffer",
+      "0x15730"
+    ],
+    [
+      "null-pointer-native",
+      "0x152f0"
+    ],
+    [
+      "null-pointer-native",
+      "0x15320"
+    ],
+    [
+      "null-pointer-native",
+      "0x15330"
+    ]
+  ],
+  "native_values": 150,
+  "full_angr_parity_claimed": false
+}
