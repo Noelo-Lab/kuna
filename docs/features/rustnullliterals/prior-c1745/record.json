@@ -1,0 +1,42 @@
+{
+  "feature": "rust-null-literals",
+  "strict_correctness_fix": true,
+  "option": null,
+  "reference": {
+    "angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+    "scope": "Rust emitter correctness found during native validation; no claim that an upstream test specifically asserts this null spelling."
+  },
+  "parent_commit": "c1745d3ebe1f0eea03bb478494c89629ab2302c0",
+  "dependency_pr": "https://github.com/Noelo-Lab/kuna/pull/1451",
+  "binary_sha256": {
+    "parent": "f4dd1d2399a60f622ae3a54067733c55ce5474ab7d8620368fc7f548b68642ba",
+    "candidate": "0cc465def1ef6a803e429f975d2a677d76f32c0dfe45bb9db6e108a82f36f5f7"
+  },
+  "original_assertions": 675,
+  "stage_assertions": 3682,
+  "workspace": {
+    "passed": 10304,
+    "failed": 0,
+    "ignored": 39,
+    "suites": 72
+  },
+  "catalog_options": 372,
+  "corpus_files": 674,
+  "breadth": {
+    "images": 46,
+    "distinct_functions": 34280,
+    "language_records": 77556,
+    "changed_records": 3084,
+    "constructor_occurrences_fixed": 22066
+  },
+  "native_values": 150,
+  "all_c_go_records_identical": true,
+  "other_rust_record_fields_identical": true,
+  "speed_budget_pct": 5,
+  "initial_speed_study_passed": false,
+  "integration_speed_study_passed": false,
+  "all_speed_comparisons_passed": false,
+  "speed_cases": 7,
+  "paired_rounds_per_case": 384,
+  "full_angr_parity_claimed": false
+}

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3698,
-    3698
+    3703,
+    3703
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2058,6 +2058,8 @@
     "data:all first case values retained",
     "data:all five functions remain",
     "data:all forty-one cases retained",
+    "data:all four authored functions remain",
+    "data:all four null constructors retain call syntax",
     "data:all last case values retained",
     "data:all narrow widths retain exact formatter types",
     "data:all out of range values retained",
@@ -3020,10 +3022,12 @@
     "data:nodejoin #5: the pipeline does not abort",
     "data:nodejoin #6: with the default segmentize the loop survives the shared-exit repair",
     "data:nodejoin #7: with the default segmentize the final read is the global and both returned words survive",
+    "data:non-null branch returns the original pointer",
     "data:none and same-scope minimal use the bare function",
     "data:nonzero overwrite survives",
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
+    "data:null syntax is not a recovered identifier",
     "data:odd destination reaches the halfword store",
     "data:off and custom formatting preserve runtime writes",
     "data:off and nondefault specifications retain the runtime sink",
@@ -3552,6 +3556,7 @@
     "data:the mixed record keeps its short field",
     "data:the no-return import ends refs only with the option abi",
     "data:the non-dominated value reaches the split callee",
+    "data:the null store targets the pointer slot",
     "data:the other valid relocation never supplies a contract",
     "data:the split register delivers a scalar double parameter",
     "data:the whole-register object is gone",

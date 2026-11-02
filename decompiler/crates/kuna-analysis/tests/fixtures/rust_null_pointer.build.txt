@@ -1,0 +1,5 @@
+Authored harmless Rust null-pointer controls.
+From this directory:
+rustc --edition=2021 -C opt-level=2 -C debuginfo=2 -C panic=abort -C codegen-units=1 rust_null_pointer.rs -o rust_null_pointer_x86_64
+rustc 1.90.0 (1159e78c4 2025-09-14)
+SHA256 690421f0136c0e9f3423263ecdcc927daab88556472a63cd70a9ece65d8556f3
