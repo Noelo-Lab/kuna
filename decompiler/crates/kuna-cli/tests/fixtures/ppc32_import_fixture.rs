@@ -491,6 +491,7 @@ fn main() {
     let bytes = if let Some(name) = args.next() {
         match name.to_str().unwrap() {
             "slot-write" => slot_write(false),
+            "tar-helper" => abi_tar_helper(false, false).bytes(),
             "cache-original" => cache_pair().0,
             "cache-swapped" => cache_pair().1,
             "abi" => abi_caller(),
@@ -1480,15 +1481,24 @@ pub fn abi_caller() -> Vec<u8> {
 /// Two authored images with different jump-slot identities and the same legacy
 /// two-lane fingerprint. Only relocation records and ignored trailer bytes differ.
 pub fn cache_pair() -> (Vec<u8>, Vec<u8>) {
+    cache_pair_ordered(false)
+}
+
+pub fn cache_pair_ordered(little: bool) -> (Vec<u8>, Vec<u8>) {
     let mut fixture = Fixture::new(Plt::Short);
     fixture.pic_collision = true;
     fixture.metadata_padding = 4;
+    fixture.little = little;
     let mut first = fixture.bytes();
     first.resize(first.len().next_multiple_of(16) + 16, 0);
     let mut second = first.clone();
-    let word = |at: usize| u32::from_be_bytes(first[at..at + 4].try_into().unwrap()) as usize;
+    let word = |at: usize| {
+        let bytes = first[at..at + 4].try_into().unwrap();
+        (if little { u32::from_le_bytes(bytes) } else { u32::from_be_bytes(bytes) }) as usize
+    };
     let headers = word(32);
-    let count = u16::from_be_bytes(first[48..50].try_into().unwrap()) as usize;
+    let count = if little { u16::from_le_bytes(first[48..50].try_into().unwrap()) }
+        else { u16::from_be_bytes(first[48..50].try_into().unwrap()) } as usize;
     let section = (1..count)
         .map(|i| headers + i * 40)
         .find(|&s| word(s + 4) == 4)
@@ -1575,5 +1585,55 @@ pub fn reversed_save(little: bool, overlap: bool) -> Fixture {
         0x41820004,
         0x4e800020,
     ]);
+    f
+}
+
+/// A TAR jump skips either an r30 assignment or the reload in a summarized helper.
+pub fn abi_tar_helper(little: bool, summarized: bool) -> Fixture {
+    let mut f = Fixture::new(Plt::Short);
+    f.little = little;
+    f.pic_collision = true;
+    let mut caller = vec![
+        0x7c0802a6,
+        0x9421fff0,
+        0x90010014,
+        0x93c10008,
+        if summarized { 0x3bc02800 } else { 0x3bc02804 },
+        0,
+        0x480007e9,
+        0x38600007,
+        0x80010014,
+        0x83c10008,
+        0x38210010,
+        0x7c0803a6,
+        0x4e800020,
+    ];
+    let start = 0x1000 + caller.len() as u32 * 4;
+    caller[5] = 0x48000001 | (start - 0x1014);
+    let helper = if summarized {
+        vec![
+            0x9421fff0,
+            0x93c10008,
+            0x3bc02804,
+            0x2c030000,
+            0x41820004,
+            0x39800000 | (start + 36),
+            0x7d8fcba6,
+            0x4e800460,
+            0x83c10008,
+            0x38210010,
+            0x4e800020,
+        ]
+    } else {
+        vec![
+            0x39800000 | (start + 16),
+            0x7d8fcba6,
+            0x4e800460,
+            0x3bc02800,
+            0x4e800020,
+        ]
+    };
+    f.caller = Some(caller);
+    f.second_caller = Some(helper);
     f
 }

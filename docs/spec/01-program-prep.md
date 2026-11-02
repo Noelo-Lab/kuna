@@ -1476,7 +1476,12 @@ funcsym stream:
   code that called it, so each caller's walk forgets everything as well. A
   straight-line helper ending in `blr`, such as libgcc's
   `_savegpr_N`/`_restgpr_N`, runs in the caller's state instead, unless it
-  reads LR. A tail branch into another function returns through LR: to the
+  reads LR. The helper recognizer, normal walk and unresolved-edge walk share
+  opcode-19 classification: only CR operations and `isync` are known fallthrough
+  forms. TAR transfers and other unmodeled forms refuse a straight-line helper
+  and flood the affected walk instead of applying skipped register writes or
+  restores. A linked TAR branch is also a potential exception call site.
+  A tail branch into another function returns through LR: to the
   walk's caller for the entry return address, and to a known address of the
   same code for a constant LR. Any other LR, such as the return address a
   call left behind, makes the branch an unresolved jump. A branch or table
@@ -1501,6 +1506,10 @@ funcsym stream:
   It then floods what it reaches: a stub entered from there gets no evidence,
   and its summary keeps nothing. The failure stays scoped to what that
   function's walk reaches.
+  The last four image proofs are cached. A fingerprint only selects candidates;
+  a hit requires exact equality with the entry's owned image bytes. Different
+  relocation records cannot inherit another image's identities even when their
+  fingerprints collide.
   The soundness argument rests on the toolchain and ABI, stated as
   assumptions. (1) Stub provenance: the linker writes a PIC stub's address
   only into branch fields (`R_PPC_REL24`, `R_PPC_PLTREL24`, `R_PPC_LOCAL24PC`).

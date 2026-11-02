@@ -360,3 +360,7 @@ control. Its console companion executes hermetic and native recovered Go bodies.
 `ghangr-go-string-pointers.xml` exercises internal byte-string arguments in C and
 Go output, including escapes, UTF-8 and the data-pointer conversion. Its emitted
 Go bodies also compile and execute against a byte-checking sink.
+
+`kuna-ppc32picimports-runtime.xml` covers both caller-local `on` bindings and
+ABI-mode cache reuse across colliding images, plus a TAR helper whose skipped
+assignment must not become a no-return import contract.

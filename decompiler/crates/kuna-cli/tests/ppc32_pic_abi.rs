@@ -1017,3 +1017,83 @@ fn ppc32_pic_paths_the_walk_cannot_follow_withhold_the_stub() {
         );
     }
 }
+
+fn check_abi_tar_helper(summarized: bool) {
+    for little in [false, true] {
+        let mut f = fixture::abi_tar_helper(little, summarized);
+        assert!(
+            pic_imports(&f).is_empty(),
+            "little={little} summarized={summarized}"
+        );
+        let path = common::scratch_file("ppc32-abi-tar", "elf");
+        std::fs::write(&path, f.bytes()).unwrap();
+        let (code, err, status) = common::run_kuna(&[
+            "decompile",
+            path.to_str().unwrap(),
+            "check",
+            "--mode",
+            "fast",
+            "--option",
+            "ppc32picimports",
+            "abi",
+        ]);
+        assert_eq!(status, 0, "{code}\n{err}");
+        assert!(
+            code.contains("return 7;") && !code.contains("__stack_chk_fail("),
+            "{code}"
+        );
+        std::fs::remove_file(path).unwrap();
+        let helper = f.second_caller.as_mut().unwrap();
+        *helper.iter_mut().find(|w| **w == 0x4e800460).unwrap() = 0x60000000;
+        assert_eq!(
+            pic_imports(&f),
+            [(0x1800, b"__stack_chk_fail".to_vec())],
+            "enabled control little={little} summarized={summarized}"
+        );
+    }
+}
+
+#[test]
+fn abi_tar_helpers_cannot_supply_skipped_register_facts() {
+    check_abi_tar_helper(false);
+}
+
+#[test]
+fn abi_tar_callee_summaries_cannot_preserve_skipped_register_restores() {
+    check_abi_tar_helper(true);
+}
+
+#[test]
+fn abi_cache_distinguishes_colliding_images_in_both_load_orders() {
+    for little in [false, true] {
+        let (original, swapped) = fixture::cache_pair_ordered(little);
+        for swapped_first in [true, false] {
+            for i in 0..6 {
+                let swapped_now = (i % 2 == 0) == swapped_first;
+                let bytes = if swapped_now { &swapped } else { &original };
+                let file = object::File::parse(bytes.as_slice()).unwrap();
+                let imports =
+                    kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic_abi(&file);
+                assert_eq!(imports.len(), 1);
+                assert_eq!(imports[0].addr, 0x1800);
+                let name: &[u8] = if swapped_now {
+                    b"__stack_chk_fail"
+                } else {
+                    b"extra"
+                };
+                assert_eq!(
+                    imports[0].name, name,
+                    "little={little} swapped_first={swapped_first} iteration={i}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn abi_tar_stage_image_matches_authored_bytes() {
+    assert_eq!(
+        include_bytes!("fixtures/ppc32-pic-tar-helper.elf").as_slice(),
+        fixture::abi_tar_helper(false, false).bytes()
+    );
+}

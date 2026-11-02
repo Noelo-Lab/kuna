@@ -314,12 +314,20 @@ fn keeps_cr(word: u32) -> bool {
     }
 }
 
+/// Only CR operations and isync are known fallthrough XL instructions. Other
+/// opcode-19 encodings require a control-flow model before retaining evidence.
+fn indirect_control(word: u32) -> Option<u32> {
+    let xo = (word >> 1) & 1023;
+    (word >> 26 == 19 && !matches!(xo, 0 | 33 | 129 | 150 | 193 | 225 | 257 | 289 | 417 | 449))
+        .then_some(xo)
+}
+
 /// A branch-and-link that transfers to a callee: the only instructions that
 /// unwind into a landing pad.
 fn calls(pc: u32, word: u32) -> bool {
     match branch(pc, word) {
         Some(b) => b.link && b.target != pc.wrapping_add(4) && !pc_capture(word),
-        None => word >> 26 == 19 && word & 1 != 0 && matches!((word >> 1) & 1023, 16 | 528),
+        None => word & 1 != 0 && matches!(indirect_control(word), Some(16 | 528 | 560)),
     }
 }
 
@@ -513,7 +521,7 @@ impl<'a> Image<'a> {
             let xo = (word >> 1) & 1023;
             let spr = ((word >> 16) & 31) | ((word >> 6) & 0x3e0);
             if matches!(op, 16..=18)
-                || op == 19 && matches!(xo, 16 | 18 | 50 | 528)
+                || indirect_control(word).is_some()
                 || !tail && op == 31 && matches!(xo, 339 | 467) && spr == 8
             {
                 return Some(false);
@@ -967,7 +975,7 @@ impl Analysis<'_, '_> {
                 }
                 continue;
             }
-            if word >> 26 == 19 && matches!((word >> 1) & 1023, 16 | 18 | 50 | 528) {
+            if indirect_control(word).is_some() {
                 let scope = image.scope(pc);
                 if !scopes.contains(&scope) {
                     scopes.push(scope);
@@ -1029,10 +1037,10 @@ impl Analysis<'_, '_> {
             return;
         }
         if word >> 26 == 19 {
-            match (word >> 1) & 1023 {
-                16 | 528 => self.indirect(walk, pc, word, state),
-                18 | 50 => self.unresolved(walk, pc),
-                _ => {
+            match indirect_control(word) {
+                Some(16 | 528) => self.indirect(walk, pc, word, state),
+                Some(_) => self.unresolved(walk, pc),
+                None => {
                     let mut state = state;
                     state.compare = None;
                     self.flow(walk, next, state);
@@ -1518,19 +1526,24 @@ fn resolver_exit(file: &object::File<'_>, code: &[(u32, u32)]) -> BTreeSet<u32> 
 }
 
 /// [`prove`], remembered for the last few images: `format::resolve_imports` runs
-/// about twenty times per load. The proof reads only the image, so the key hashes
-/// every byte of it and its length.
+/// about twenty times per load. Fingerprints filter candidates; only equal image
+/// bytes can reuse a proof. Each of the four entries owns its immutable input.
 pub(super) fn resolve(
     file: &object::File<'_>,
     slots: &BTreeMap<u64, Vec<u8>>,
     imports: &[PltSym],
 ) -> Vec<PltSym> {
-    type Entry = ((usize, u64, u64), Vec<(u64, Vec<u8>)>);
+    struct Entry {
+        key: (usize, u64, u64),
+        image: Box<[u8]>,
+        found: Vec<(u64, Vec<u8>)>,
+    }
     static CACHE: Mutex<Vec<Entry>> = Mutex::new(Vec::new());
     let object::File::Elf32(elf) = file else {
         return prove(file, slots, imports);
     };
-    let key = fingerprint(elf.data());
+    let bytes = elf.data();
+    let key = fingerprint(bytes);
     let unpack = |found: &[(u64, Vec<u8>)]| {
         found
             .iter()
@@ -1541,13 +1554,13 @@ pub(super) fn resolve(
             })
             .collect()
     };
-    if let Some((_, hit)) = CACHE
+    if let Some(hit) = CACHE
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .iter()
-        .find(|e| e.0 == key)
+        .find(|e| e.key == key && e.image.as_ref() == bytes)
     {
-        return unpack(hit);
+        return unpack(&hit.found);
     }
     let found: Vec<_> = prove(file, slots, imports)
         .into_iter()
@@ -1558,7 +1571,7 @@ pub(super) fn resolve(
     if cache.len() == 4 {
         cache.remove(0);
     }
-    cache.push((key, found));
+    cache.push(Entry { key, image: bytes.into(), found });
     out
 }
 
@@ -2062,6 +2075,27 @@ mod tests {
         words
             .iter()
             .fold(state, |s, &w| step(&image, &mut evidence, 0x1000, w, s))
+    }
+
+    #[test]
+    fn straight_helpers_reject_unmodeled_xl_transfers() {
+        for xo in [16, 18, 38, 39, 50, 51, 82, 102, 146, 274, 528, 560, 1023] {
+            let image = Image {
+                code: vec![(0x1000, vec![(19 << 26) | (xo << 1), 0x3bc02800, 0x4e800020])],
+                ..Default::default()
+            };
+            for tail in [false, true] {
+                assert!(!image.straight(0x1000, tail), "xo={xo} tail={tail}");
+            }
+        }
+        for xo in [0, 33, 129, 150, 193, 225, 257, 289, 417, 449] {
+            let image = Image {
+                code: vec![(0x1000, vec![(19 << 26) | (xo << 1), 0x3bc02800, 0x4e800020])],
+                ..Default::default()
+            };
+            assert!(image.straight(0x1000, false), "fallthrough xo={xo}");
+        }
+        assert!(calls(0x1000, 0x4e800461));
     }
 
     #[test]

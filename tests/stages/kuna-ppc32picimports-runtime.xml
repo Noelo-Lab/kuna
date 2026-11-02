@@ -25,9 +25,42 @@
   <com>load function check</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option ppc32picimports abi</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-cache-swapped.elf</com>
+  <com>read symbols</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-cache-original.elf</com>
+  <com>read symbols</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-cache-swapped.elf</com>
+  <com>read symbols</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-cache-original.elf</com>
+  <com>read symbols</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-tar-helper.elf</com>
+  <com>read symbols</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option ppc32picimports off</com>
   <com>quit</com>
 </script>
-<stringmatch name="only the swapped image calls the terminal import" min="1" max="1">__stack_chk_fail\(</stringmatch>
-<stringmatch name="returning callers retain their original calls" min="2" max="2">sub_1800\(</stringmatch>
-<stringmatch name="both returning images retain their return" min="2" max="2">return 7;</stringmatch>
+<stringmatch name="only the swapped image calls the terminal import" min="3" max="3">__stack_chk_fail\(</stringmatch>
+<stringmatch name="returning callers retain their original calls" min="3" max="3">sub_1800\(</stringmatch>
+<stringmatch name="all returning images retain their return" min="5" max="5">return 7;</stringmatch>
+<stringmatch name="ABI cache hits preserve the returning import identity" min="2" max="2">extra\(</stringmatch>
 </decompilertest>
