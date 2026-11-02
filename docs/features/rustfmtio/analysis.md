@@ -105,3 +105,8 @@ per-case bounds. [implementation/](implementation/) retains proof scripts,
 failure diagnoses, logs, source manifests and raw timing observations. The
 original design proposal and its earlier documentation-only validation are
 kept separately in `proposal.md` and `proposal-validation/`.
+The final stage-header amendment adds the upstream test, phase and option
+provenance. Parsed XML, all other production files and the release binary are
+unchanged. All four repository checks and the additional checks passed again;
+[the amendment record](implementation/stage-provenance/) retains their logs and
+source manifest. The corpus and both failed speed studies remain applicable.

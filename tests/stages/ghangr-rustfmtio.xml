@@ -1,3 +1,11 @@
+<!--
+  Upstream: angr tests/analyses/decompiler/test_rust_decompiler.py,
+  TestRustFormatMacrosTemplateLayout::test_format_macros (write_out).
+  P9 / stdout-writer-format; P0 assertion: option rustfmtio off|on.
+  The first write remains a runtime call with recovery off. Six supported
+  forms become write!/writeln! with recovery on; empty and dynamic forms
+  stay explicit. Recovery remains opt-in in every preset.
+-->
 <decompilertest>
 <binaryimage arch="x86:LE:64:default:gcc">
 <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>

@@ -37404,5 +37404,33 @@
     }
   },
   "all_presets": "off",
-  "full_go_rust_parity": false
+  "full_go_rust_parity": false,
+  "stage_header_validation": {
+    "recorded_at": "2026-11-02T05:23:35.914669+00:00",
+    "decision": {
+      "prior_commit": "a5df6057af54565ca1abe14359b8fb14c2d8585e",
+      "only_production_change": "tests/stages/ghangr-rustfmtio.xml",
+      "xml_tree_identical": true,
+      "before_sha256": "5e3a6d9422bd58e6df107e280f44fe44f1ce5f11aaded4d8a04f249ffd3e6188",
+      "after_sha256": "da0e2cdab8e1c7e3553189aada225062764d57ed11d27df047acafd1230f3d9c",
+      "cli_sha256": "4bc3a75f8c3a01d0fd1d7dfccf3f7f9aa5cba5a664c25a72f2a79e23c1b27c72",
+      "reason": "Add the leading upstream/stage/option provenance required by tests/stages/README.md. No runtime or assertion changes."
+    },
+    "gates": {
+      "all_four_gates_passed": true,
+      "additional_tools_lint_catalog_counters_passed": true,
+      "original_assertions": 675,
+      "stage_assertions": 3563,
+      "production_files_unchanged": 5305,
+      "release_sha256": "4bc3a75f8c3a01d0fd1d7dfccf3f7f9aa5cba5a664c25a72f2a79e23c1b27c72"
+    },
+    "workspace": {
+      "passed": 10132,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    },
+    "evidence": "implementation/stage-provenance/",
+    "corpus_and_timing_reused": "Parsed XML, all other production files, and release CLI are unchanged; both speed studies remain failed."
+  }
 }
