@@ -1452,7 +1452,8 @@ funcsym stream:
   `.MIPS.stubs`/GOT layout from the dynamic table (`DT_MIPS_LOCAL_GOTNO`/
   `DT_MIPS_GOTSYM`) and marks the external GOT slots constant, so with
   read-only propagation the `lw $t9, off($gp); jalr $t9` sequence folds to the
-  named import (the bootstrap turns `readonlypropagate` on for MIPS only).
+  named import (the bootstrap turns `readonlypropagate` on for MIPS only). The
+  slots of what the image itself defines are covered under `dynrelocs` below.
   PPC32 linked images use
   `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32_imports.rs (resolve)`:
   a zero-addend `R_PPC_JMP_SLOT` names its call target directly inside an
@@ -1674,6 +1675,34 @@ funcsym stream:
   `RELATIVE` pointer in ordinary `.data` — are still filled in, because that IS
   the value at process start, but are never declared constant, because the
   program may legitimately overwrite them.
+
+  A MIPS dynamic image relocates its primary GOT with no relocation records at
+  all (glibc's `elf_machine_got_rel`), so the walk above never reaches it. Its
+  first `DT_MIPS_LOCAL_GOTNO` entries are local: page or full link-time
+  addresses, to which the run-time loader adds the load bias. Entry 0 (the lazy
+  resolver) and entry 1 when its top bit is set (the GNU module pointer) are
+  written at run time. The global entries that follow map one to one onto
+  `.dynsym` from `DT_MIPS_GOTSYM` to `DT_MIPS_SYMTABNO`, and for a symbol the
+  image defines the run-time loader stores the address its lookup binds the
+  name to, which the linker already wrote as the symbol's value. At kuna's zero
+  bias each of those slots holds its run-time value, and only the run-time
+  loader ever writes one, so
+  `decompiler/crates/kuna-analysis/src/loader/kuna_mipsgot.rs (const_ranges)`
+  reports every local entry after the reserved ones, and every defined symbol's
+  global entry whose contents are that symbol's value, as constant beside the
+  import-stub slots above (`ElfFormat::const_ranges`; MIPS folds read-only
+  loads). `lw $25,%call16(add64)($gp); jalr $25` to a function of the same image
+  becomes a call to `add64`, a `%got` page load plus `%lo` names the static or
+  global it addresses, and a PIC jump table's base folds, so its switch is
+  recovered. A `jr $25` tail call through such a slot is a one-destination
+  table, which `tailcalljump` (§2.2) takes as a call or copies in. A
+  default-visibility definition in a shared object can be interposed by another
+  object's definition of the same name; the fold names the symbol the access
+  binds by and gives it the body this image carries, the choice this pass makes
+  for a `GLOB_DAT` slot of a defined symbol. Undefined, common, absolute, TLS
+  and `STT_GNU_IFUNC` symbols are skipped, as is a multi-GOT image's secondary
+  GOT, which `R_MIPS_REL32` records relocate. `dynrelocs off` leaves every such
+  slot variable.
 
   This is a different path from `relocobjects`/`relocrebase` above, which own the
   *pre-link* `ET_REL` object; a relocatable object's relocations are applied by
