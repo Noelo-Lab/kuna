@@ -27,6 +27,13 @@ colliding constructors. The recorded native compiler reproduces all six prior
 digests on the prior sources and supplies all six replacement digests. The
 atomic-refusal and generic save/restore tests also run against its output.
 
+The Octeon atomic memory operations update these six entries again. The pinned
+native compiler reproduces all six previous digests and matches the Rust
+compiler on the updated sources. Comparing its generic MIPS XML outputs before
+and after the change finds only constructor `line` attributes changed by the
+conditional guards; their instruction semantics are unchanged. The Octeon
+streams include the generation-specific atomic and ordering operations.
+
 The SPARC entries include kuna's destination corrections for `fdtoi`, `fqtoi`,
 `fstox` and `fqtox`. The first three were regenerated with Ghidra's C++
 compiler on the corrected sources, which reproduces the previous hashes on the
