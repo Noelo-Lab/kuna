@@ -1,0 +1,28 @@
+funcstart_shrinkwrap_el.o, funcstart_shrinkwrap_eb.o -- MIPS32 relocatable
+objects whose first function returns early and sets up its frame after the
+return, so a function-start pattern pair matches inside its sized symbol
+(decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs tests,
+tests/stages/kuna-funcstart-symbolextent.xml).
+
+What they are
+  funcstart_shrinkwrap_el.o  little-endian o32, non-PIC.
+  funcstart_shrinkwrap_eb.o  big-endian o32, non-PIC.
+  Source: funcstart_shrinkwrap.c. buf_dup_char opens with bnez/nop/jr ra/nop
+  and its addiu sp,sp,-32 prologue sits at .text+0x10, inside the symbol's
+  0x74-byte extent.
+
+Why they are vendored
+  CI has no MIPS toolchain, and the test depends on gcc's exact block order.
+
+Where they came from
+  Ubuntu mipsel-linux-gnu-gcc 10.3.0 and its binutils 2.38 (host):
+
+      mipsel-linux-gnu-gcc -O2 -mno-abicalls -fno-pic -c funcstart_shrinkwrap.c \
+          -o funcstart_shrinkwrap_el.o
+      mipsel-linux-gnu-gcc -EB -O2 -mno-abicalls -fno-pic -c funcstart_shrinkwrap.c \
+          -o funcstart_shrinkwrap_eb.o
+
+  sha256:
+    8f6061589965d9945fc9bc6b256b0381e41f5909544011656f937c45695eb42b  funcstart_shrinkwrap_el.o
+    869936712294fe61d491f1d2a928e345126ca1407c15fd7e7764647bdefa3d80  funcstart_shrinkwrap_eb.o
+  Never executed.

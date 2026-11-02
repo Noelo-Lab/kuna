@@ -314,8 +314,9 @@ impl AnalysisPass for FuncStartPatternPass {
 
 /// Discover function starts via the full vendored pattern set, filtered to the
 /// genuinely-new starts (inside an executable section, not already a funcsym, not
-/// the `e_entry`/dynamic/eh-frame/idiom entries `EntryDiscoveryPass` already
-/// emits). The returned vec is sorted/deduped.
+/// inside the extent a sized function symbol declares, not the
+/// `e_entry`/dynamic/eh-frame/idiom entries `EntryDiscoveryPass` already emits).
+/// The returned vec is sorted/deduped.
 ///
 /// This is the testable seam (drive it over fixture bytes); it parallels
 /// [`collect_entries`] but is the *full-pattern* superset, gated default-off.
@@ -327,6 +328,7 @@ pub fn full_pattern_starts(file: &object::File) -> Vec<u64> {
     };
     let execs = executable_sections(file);
     let funcsyms = existing_function_addrs_for_file(file);
+    let bodies = sized_function_bodies(file);
 
     // Sweep every executable section with the full pattern set.
     let mut cand: Vec<u64> = Vec::new();
@@ -342,7 +344,7 @@ pub fn full_pattern_starts(file: &object::File) -> Vec<u64> {
         if !in_executable_section(&execs, vma) {
             continue;
         }
-        if funcsyms.binary_search(&vma).is_ok() {
+        if funcsyms.binary_search(&vma).is_ok() || inside_body(&bodies, vma) {
             continue;
         }
         out.push(vma);
@@ -350,6 +352,35 @@ pub fn full_pattern_starts(file: &object::File) -> Vec<u64> {
     out.sort_unstable();
     out.dedup();
     out
+}
+
+/// The extents of every defined function symbol that states its size, as
+/// `(start, furthest end of any extent starting at or before it)` sorted by
+/// start. A prologue shape inside one (a shrink-wrapped prologue after an early
+/// `jr ra`, a loop head) is that function's own code.
+pub(crate) fn sized_function_bodies(file: &object::File) -> Vec<(u64, u64)> {
+    let mut out: Vec<(u64, u64)> = file
+        .symbols()
+        .chain(file.dynamic_symbols())
+        .filter(|sym| sym.kind() == SymbolKind::Text && !sym.is_undefined() && sym.size() != 0)
+        .map(|sym| {
+            let start = thumb_masked(file, sym.address());
+            (start, start.saturating_add(sym.size()))
+        })
+        .collect();
+    out.sort_unstable();
+    let mut reach = 0;
+    for body in &mut out {
+        reach = reach.max(body.1);
+        body.1 = reach;
+    }
+    out
+}
+
+/// Is `vma` strictly inside one of the extents [`sized_function_bodies`] lists?
+pub(crate) fn inside_body(bodies: &[(u64, u64)], vma: u64) -> bool {
+    let below = bodies.partition_point(|&(start, _)| start < vma);
+    below > 0 && vma < bodies[below - 1].1
 }
 
 /// `existing_function_addrs` over a parsed `object::File` only (the pattern pass
@@ -2445,6 +2476,25 @@ mod tests {
     fn fixture(name: &str) -> Vec<u8> {
         let path = format!("{}/tests/fixtures/{}", env!("CARGO_MANIFEST_DIR"), name);
         std::fs::read(&path).unwrap_or_else(|_| panic!("read fixture {path}"))
+    }
+
+    /// `buf_dup_char` returns early and sets up its frame after the return, so a
+    /// MIPS pattern pair matches at `.text+0x10`, inside the symbol's 0x74-byte
+    /// extent: that is the function's own code, not a start.
+    #[test]
+    fn a_prologue_inside_a_sized_symbol_is_no_start() {
+        for name in ["funcstart_shrinkwrap_el.o", "funcstart_shrinkwrap_eb.o"] {
+            let bytes = fixture(name);
+            let file = object::File::parse(bytes.as_slice()).expect("parse");
+            let set = patterns::for_arch(file.architecture(), file.is_little_endian()).expect("MIPS set");
+            let text = file.section_by_name(".text").expect(".text");
+            assert!(set.scan(text.address(), text.data().unwrap()).contains(&0x10), "{name}: the pair matches");
+            assert_eq!(full_pattern_starts(&file), Vec::<u64>::new(), "{name}");
+        }
+        let bodies = [(0x10, 0x20), (0x18, 0x30)];
+        assert!(!inside_body(&bodies, 0x10), "an extent's own start");
+        assert!(inside_body(&bodies, 0x11) && inside_body(&bodies, 0x2f), "strictly inside");
+        assert!(!inside_body(&bodies, 0x30) && !inside_body(&bodies, 0x8), "outside");
     }
 
     /// A Mach-O `LC_MAIN` states its entry as a `__TEXT`-relative FILE OFFSET, so
