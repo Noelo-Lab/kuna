@@ -192,6 +192,67 @@ pub fn join_order(active: &ParamActive, data: &Funcdata, return_ops: &[OpId]) ->
     }
 }
 
+/// Keep both registers of a pair [`evidence::proven`] finds one value as the
+/// function's output. Return recovery refuses a register whose value also
+/// reaches another output register at the RETURN, so a sum computed in the
+/// second register and read there for its carry (clang's `addu $3,$7,$5;
+/// sltu $2,$3,$7`) or sign-extended into the first (`addiu $3,$4,1; sra
+/// $2,$3,31`) lost its low word.
+pub fn keep_proven_pair(data: &Funcdata, active: &mut ParamActive, return_ops: &[OpId]) {
+    if !mode(data).proves() || data.get_func_proto().is_output_locked() {
+        return;
+    }
+    let Some(view) = data.kuna_wide() else { return };
+    if evidence::proven(data, data.get_address()) {
+        mark_written_pair(data, active, return_ops, &view.pair, true);
+    }
+}
+
+/// Mark `pair`'s two output trials active when each is one trial of
+/// `active` and every live RETURN of `return_ops` reads both as values the
+/// function wrote; with `computed`, not when either holds what a call left
+/// there (an indirect creation, which the output model never joins).
+pub(crate) fn mark_written_pair(data: &Funcdata, active: &mut ParamActive, return_ops: &[OpId], pair: &WidePair, computed: bool) {
+    let mut indices = Vec::new();
+    for (address, size) in [&pair.hi, &pair.lo] {
+        let matching: Vec<int4> = (0..active.get_num_trials())
+            .filter(|&i| {
+                let trial = active.get_trial(i);
+                trial.get_address() == address && trial.get_size() == *size && trial.get_slot() > 0 && !trial.is_unref()
+            })
+            .collect();
+        let [index] = matching[..] else { return };
+        if computed && active.get_trial(index).is_ind_create_formed() {
+            return;
+        }
+        indices.push(index);
+    }
+    if indices[0] == indices[1] {
+        return;
+    }
+    let mut live = 0;
+    for &op in return_ops {
+        let Some(ret) = data.obank().get(op) else { return };
+        if ret.is_dead() || ret.get_halt_type() != 0 || never_reached(data, op) {
+            continue;
+        }
+        live += 1;
+        for &index in &indices {
+            let trial = active.get_trial(index);
+            let Some(value) = ret.get_in(trial.get_slot()).and_then(|vn| data.vbank().get(vn)) else { return };
+            if value.get_addr() != trial.get_address() || value.get_size() != trial.get_size() || !value.is_written() {
+                return;
+            }
+        }
+    }
+    if live == 0 {
+        return;
+    }
+    for index in indices {
+        active.get_trial_mut(index).mark_active();
+    }
+}
+
 /// The `option bejoin` mode in force.
 pub fn mode(data: &Funcdata) -> BeJoinMode {
     data.get_arch().be_join
