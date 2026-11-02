@@ -2143,7 +2143,8 @@ mod tests {
         // and kuna-switchrunon / an unguarded jump table stops where its rows leave the function (option switchrunon)
         // and kuna-revisitrefine / refining a range a later heritage pass revisited
         // and kuna-wrapsplit + kuna-wrapsplit-be / accesses that run past the top of their space
-        assert_eq!(count, 643, "corpus file count drifted");
+        // and kuna-switchrunonguard / a guard that does not bound the selector leaves the table unguarded (option switchrunonguard)
+        assert_eq!(count, 644, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
