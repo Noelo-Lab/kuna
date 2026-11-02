@@ -3016,6 +3016,14 @@ Three artifacts make up the plane, all in
   `p8_structure/kuna_loopbreak_recovery.rs` legitimately retags a
   goto-to-switch-exit as `f_break_goto` (§8.3); a language whose switch does *not*
   capture `break` must re-resolve that scope or emit a jump to the wrong place.
+  A direct case edge marked `f_break_goto` is precisely an empty switch-exit
+  arm. `kuna_langrust.rs (PrintC::emit_match_arm_rust)` emits its pattern and
+  empty body without a transfer statement. Rust leaves the match naturally;
+  a bare `break` would instead leave an enclosing loop or fail to compile when
+  there is no loop. Shared case labels retain their common empty arm. Other
+  case transfers and breaks emitted inside actual loop bodies retain their
+  existing handling. This corrects Rust emission without changing C or Go
+  output, the recovered control-flow graph, or the option catalog.
 - **`kuna_langtypes.rs`** — `TypeSpeller` and `SpellCtx`. Type *recovery* (P5) is
   language-independent; only the spelling differs, and it lives in the printer for
   the reason `kuna_ctypes.rs` records: `Datatype::hash_name` makes the registered

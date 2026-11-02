@@ -817,7 +817,7 @@ impl PrintC {
         self.context.pop_mod();
     }
 
-    /// One `A | B => { ... }` arm.
+    /// One `A | B => { ... }` arm; a direct switch exit is an empty arm.
     fn emit_match_arm_rust(
         &mut self,
         fd: &Funcdata,
@@ -875,9 +875,10 @@ impl PrintC {
             .open_brace_indent(self.lang().kw_open_curly, to_emit_brace(self.options.brace_switch));
         let id2 = self.emit.begin_block(0);
         if case.gototype != 0 {
-            // An unstructured case body: the same marker a residual goto gets.
-            self.emit.tag_line();
-            self.emit_goto_statement(fd, blk, case.block, case.gototype);
+            if case.gototype != crate::block::block_flags::f_break_goto {
+                self.emit.tag_line();
+                self.emit_goto_statement(fd, blk, case.block, case.gototype);
+            }
         } else {
             self.emit_block(fd, arch, case.block);
             // A genuine C fall-through: `grab_case_basic` records the case this

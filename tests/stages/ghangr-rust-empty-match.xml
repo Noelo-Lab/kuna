@@ -1,0 +1,44 @@
+<!--
+  P9 Rust match emission: a direct edge to the switch exit is an empty arm.
+  Authored harmless AMD64 fixture, with wide guards recoverable on the parent.
+  Parent Rust fails E0268 outside a loop and returns 0 instead of 49 inside it.
+  Empty default/shared arms and actual loop exits are controls.
+  This is a strict output-language correction; no option changes the graph.
+-->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_empty_match_x86_64</com>
+  <com>option setlanguage rust-language</com>
+  <com>read symbols</com>
+  <com>parse line extern int4 empty_case(uint8 x);</com>
+  <com>load function empty_case</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern int4 empty_default(uint8 x);</com>
+  <com>load function empty_default</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern int4 empty_shared(uint8 x);</com>
+  <com>load function empty_shared</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern int4 empty_loop(uint8 x,int4 n);</com>
+  <com>load function empty_loop</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern int4 loop_break_control(int4 x,int4 n);</com>
+  <com>load function loop_break_control</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="four switches render as matches" min="4" max="4">match x &gt;&gt; 0x20</stringmatch>
+<stringmatch name="only the two real loop exits break" min="2" max="2">break;</stringmatch>
+<stringmatch name="shared empty arm retains both labels" min="1" max="1">0 \| 1 =&gt;</stringmatch>
+<stringmatch name="all five functions remain" min="5" max="5">unsafe fn </stringmatch>
+<stringmatch name="no unrecovered transfer" min="0" max="0">jump-as-call</stringmatch>
+</decompilertest>

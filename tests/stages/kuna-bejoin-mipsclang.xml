@@ -1,0 +1,86 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:32:default:default">
+<!--
+    kuna option bejoin callers (the default), GH-904: a pair whose low word
+    also feeds its high word.
+
+    clang computes a 64-bit sum's low word in the second return register
+    and reads it there for the carry (addu $3,$7,$5; sltu $2,$3,$7; addu
+    $2,$1,$2), and widens x + 1 by shifting the second register into the
+    first (addiu $3,$4,1; sra $2,$3,31).  Return recovery refuses a
+    register whose value also reaches another return register, so both
+    printed as an int and dropped the low word, even though their callers
+    store both words and prove them 64-bit:
+        int add64(..) { return a2 + a0 + (uint4)(a3 + a1 < a3); }   (bug)
+        int widen1(int4 a0) { return a0 + 1 >> 0x1f; }              (bug)
+    A pair the callers (or the function's own instructions) prove is now
+    returned whole.
+
+    Stage: P4 calls and prototypes (output-prototype), option bejoin.
+    Pass 1 is the default (callers), pass 2 option bejoin evidence.
+
+    Image: decompiler/crates/kuna-analysis/tests/fixtures/bejoin_mipsclang_O2.so
+    (bejoin_mipsclang.c); see bejoin_mipsclang.provenance.
+
+    Assert #1: the default returns add64's sum high word first; evidence,
+      which has no proof of a sum, keeps the int.
+    Assert #2: the default returns widen1's long long; evidence keeps the
+      int.
+    Assert #3: add_hi, whose callers read one word, stays an int in both
+      passes.
+
+    A pair is kept whole only where every path to the RETURN writes both
+    registers.  bejoin_mipsentry.elf (hand-assembled, see
+    bejoin_mipsentry.provenance) holds two functions its callers prove:
+    sum_both computes the low word on both paths, sum_or_entry on one and
+    leaves the second register as it came in on the other, which kept it
+    reading an uninitialized low word.
+    Assert #4: sum_both returns its pair whole.
+    Assert #5: sum_or_entry keeps the int.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/bejoin_mipsclang_O2.so</com>
+  <com>read symbols</com>
+  <com>lo fu add64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu widen1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option bejoin evidence</com>
+  <com>lo fu add64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu widen1</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/bejoin_mipsentry.elf</com>
+  <com>read symbols</com>
+  <com>option bejoin callers</com>
+  <com>lo fu sum_both</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sum_or_entry</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="bejoin-mipsclang #1: the default returns add64's sum high word first" min="1" max="1">return CONCAT44\(a2 \+ a0 \+ \(uint4\)\(a3 \+ a1 &lt; a3\),a3 \+ a1\);</stringmatch>
+<stringmatch name="bejoin-mipsclang #1b: evidence keeps add64 an int" min="1" max="1">int4 add64\(int4 a0,int4 a1,int4 a2,uint4 a3\)</stringmatch>
+<stringmatch name="bejoin-mipsclang #2: the default returns widen1's long long" min="1" max="1">int8 widen1\(int4 a0\)</stringmatch>
+<stringmatch name="bejoin-mipsclang #2b: evidence keeps widen1 the shifted int" min="1" max="1">return a0 \+ 1 &gt;&gt; 0x1f;</stringmatch>
+<stringmatch name="bejoin-mipsclang #3: add_hi stays an int in both passes" min="2" max="2">int4 add_hi\(int4 a0,int4 a1,int4 a2,uint4 a3\)</stringmatch>
+<stringmatch name="bejoin-mipsclang #4: sum_both, whose two paths both compute the low word, returns it whole" min="1" max="1">return CONCAT44\(\(uint4\)\(a1 \+ a3 &lt; a1\) \+ a0,a1 \+ a3\);</stringmatch>
+<stringmatch name="bejoin-mipsclang #5: sum_or_entry, one of whose paths leaves the second register as it came in, stays an int" min="1" max="1">int4 sum_or_entry\(int4 a0,uint4 a1,int4 a2,int4 a3\)</stringmatch>
+</decompilertest>

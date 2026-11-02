@@ -2147,7 +2147,9 @@ mod tests {
         // and kuna-bejoin-mipspic / MIPS PIC callers and unaligned loads (option bejoin callers)
         // and kuna-funcstart-symbolextent / no pattern or gap start inside a sized function symbol
         // and kuna-relocrebase-be / a big-endian object's analysis facts at its load addresses
-        assert_eq!(count, 672, "corpus file count drifted");
+        // and kuna-bejoin-mipsclang / a proven pair whose low word feeds its high word stays whole
+        // and kuna-mipsgot-local / MIPS GOT slots of what the image defines (option dynrelocs)
+        assert_eq!(count, 676, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

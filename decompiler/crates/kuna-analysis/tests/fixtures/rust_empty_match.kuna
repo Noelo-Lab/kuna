@@ -1,0 +1,5 @@
+prototype empty_case int empty_case(unsigned long x)
+prototype empty_default int empty_default(unsigned long x)
+prototype empty_shared int empty_shared(unsigned long x)
+prototype empty_loop int empty_loop(unsigned long x, int n)
+prototype loop_break_control int loop_break_control(int x, int n)
