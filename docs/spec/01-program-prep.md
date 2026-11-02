@@ -4746,8 +4746,13 @@ return-then-stack-adjust pair, and the pass committed a `sub_` there that
 object, whose analysis view keeps its pre-link addresses, the start landed at the
 section offset. The aggressive gap walk (§1.6) follows the same rule for its
 accepts. Over 1,496 MIPS, PowerPC, SPARC, ARM and x86 images this removes 492
-starts, every one inside a sized symbol, and adds none. A stripped image has no
-sizes and is unchanged.
+starts, every one inside a sized symbol, and adds none. A stripped shared object
+keeps the sizes of its exported functions in `.dynsym`, and those filter the same
+way; an image with no sized function symbol (a fully stripped executable, Mach-O)
+is unchanged. The rule trusts the size: a symbol-less routine that hand-written
+assembly places inside another function's `.size`, and that only a data pointer
+reaches, loses its pattern start. One with an FDE or a direct call is still found
+by those passes.
 
 **LSDA landing pads** (`eh_frame_full`, default-off): the deeper
 `GccExceptionAnalyzer` markup — follow each FDE's CIE `L` augmentation to its
