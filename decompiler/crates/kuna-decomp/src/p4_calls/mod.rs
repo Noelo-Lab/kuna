@@ -5,6 +5,7 @@
 
 pub mod funcdata_callsite;
 pub mod fspec;
+pub(crate) mod kuna_joincalloutput;
 pub mod modelrules;
 pub mod coreaction_protos;
 pub mod kuna_calleedeadarg;

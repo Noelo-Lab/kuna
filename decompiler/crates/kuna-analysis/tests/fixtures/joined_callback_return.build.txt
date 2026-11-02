@@ -1,0 +1,10 @@
+Authored C callbacks returning two signed 64-bit fields, plus scalar and void controls.
+Original build:
+cc -O2 -g -fwrapv -fno-pie -no-pie -o /tmp/kuna-joined-callback-return/callback /tmp/kuna-joined-callback-return/callback.c
+The original callback.c is byte-identical to joined_callback_return.c.
+Equivalent rebuild from this directory:
+cc -O2 -g -fwrapv -fno-pie -no-pie -o joined_callback_return_x86_64 joined_callback_return.c
+
+cc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+Source SHA256 d3c06c652ddd0b819477cf8f1f6553bffe4f8dde8a27c5a8117565a703c7baf3
+Binary SHA256 e0f5221e03d71bb9e2f197968c292097fb5b2120197130f5c26df0fe5fa80ef4
