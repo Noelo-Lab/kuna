@@ -1669,8 +1669,9 @@ memory goes.
 same probes with a memory limit
 (`decompiler/crates/kuna-decomp/src/infra/kuna_fnmemory.rs`): the driver sets
 it process-wide, each drive reads the resident set it starts from (first
-releasing free heap pages with glibc `malloc_trim` and reading again when it
-starts within a tenth of the limit), and
+releasing free heap pages with glibc `malloc_trim` and reading again when the
+process holds 16 MiB more than the last release left,
+`kuna_fnmemory.rs (settle)`), and
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (budget_spent)` —
 the one test every probe makes — also asks, reading the resident set at most
 every 50 ms, whether the process is over the limit and the drive itself has
@@ -1684,7 +1685,28 @@ which were otherwise kept for every call site of every function; an inlined
 callee's handles pass to the function it is inlined into, whose cloned call
 ops still name them
 (`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (FlowInfo::inline_flow)`), and the
-per-callee summaries a run caches are stored compactly (04, `calleedeadarg`). A drive armed only by the limit
+per-callee summaries a run caches are stored compactly (04, `calleedeadarg`).
+The allocator keeps a function's freed working memory resident, so without
+a release a batch would start every later function at the high-water of the
+largest one before it, and the pages a function cannot reuse would count as
+its growth. With no explicit limit (the cgroup default, or none) the drive
+start releases them once the process holds 64 MiB more than the last release
+left, at most one part in 32 of the time since the last release
+(`kuna_fnmemory.rs (release_due)`), which also returns them to the rest of
+the machine. A rule object outlives the function it ran on, so
+`RuleMultiCollapse` cuts its witness table back at each reset (03). The
+callee-first driver holds every result until its last round has run: it
+writes each one, in a `--jobs` worker's result record, to an anonymous
+temporary file and reads it back when a round or the final document needs it
+(`decompiler/crates/kuna-cli/src/decompile_all/result_store.rs (ResultStore)`),
+falling back to the encoded record in memory when the file cannot be written.
+It also drops the call graph, and with it the reference index, before its
+first decompile and returns the freed pages: only the plan and the callback
+park read the graph, and the park's answers about the targets are taken up
+front (`decompiler/crates/kuna-cli/src/callgraph.rs (CallGraph::callback_refs)`).
+On serde-hkx's `hkxc.exe` that is 242 of the 312 MiB of heap the first
+function started with, leaving about what a `--jobs` worker starts with.
+A drive armed only by the limit
 gets a deadline a year out so the probes run. The trip holds for the rest of
 the drive, the function's `error` names the limit, and the drive releases free
 heap pages on the way out. Without the flag, a process under a finite cgroup
@@ -1701,10 +1723,9 @@ floor: the margin, or half the room the cap left the process when the drive
 started if that is less, and never under 64 MiB (`kuna_fnmemory.rs
 (cgroup_trips)`). The room term is what keeps a runaway under a small cap
 from reaching the cap before the floor. The cgroup files are read only on a
-sample that finds the drive grown that much, and a drive that starts within
-a tenth of the tightest limit first releases free heap pages, as under an
-explicit limit. A fixed per-process share of the cap would stop functions the
-container could have held while the other workers were small; the shared
+sample that finds the drive grown that much. A fixed per-process share of
+the cap would stop functions the container could have held while the other
+workers were small; the shared
 budget stops only a function that has grown by the floor while the container
 is inside its margin. Inside that band the stop is a judgment: a function
 that grew by the floor while other workers filled the container can be

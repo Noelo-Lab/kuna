@@ -23,6 +23,36 @@ pub(crate) struct CallGraph {
     plt_local: Vec<(u64, u64)>,
 }
 
+/// (kuna `callbacktype`) [`CallGraph::callback_refs`]: what the graph said
+/// about each entry it was asked for. An entry it was not asked for has no
+/// references.
+pub(crate) struct CallbackRefs {
+    by_entry: BTreeMap<u64, EntryRefs>,
+}
+
+struct EntryRefs {
+    taken: Vec<(u64, Option<u64>)>,
+    called: bool,
+    callers: Option<Vec<u64>>,
+}
+
+impl CallbackRefs {
+    /// [`CallGraph::address_taken_refs`] for `entry`.
+    pub(crate) fn address_taken_refs(&self, entry: u64) -> Vec<(u64, Option<u64>)> {
+        self.by_entry.get(&entry).map_or_else(Vec::new, |r| r.taken.clone())
+    }
+
+    /// [`CallGraph::called_directly`] for `entry`.
+    pub(crate) fn called_directly(&self, entry: u64) -> bool {
+        self.by_entry.get(&entry).is_some_and(|r| r.called)
+    }
+
+    /// [`CallGraph::direct_callers`] for `entry`.
+    pub(crate) fn direct_callers(&self, entry: u64) -> Option<Vec<u64>> {
+        self.by_entry.get(&entry).map_or(Some(Vec::new()), |r| r.callers.clone())
+    }
+}
+
 impl CallGraph {
     pub(crate) fn build(
         prog: &ConsoleProgram,
@@ -125,6 +155,25 @@ impl CallGraph {
             .filter(|r| matches!(r.kind, XrefKind::Data | XrefKind::Read | XrefKind::Write))
             .map(|r| (r.from, self.owner_of(r.from)))
             .collect()
+    }
+
+    /// (kuna `callbacktype`) The answers [`Self::address_taken_refs`],
+    /// [`Self::called_directly`] and [`Self::direct_callers`] give for each of
+    /// `entries`, kept so a run can let the reference index go long before it
+    /// asks them.
+    pub(crate) fn callback_refs(&self, entries: impl IntoIterator<Item = u64>) -> CallbackRefs {
+        let by_entry = entries
+            .into_iter()
+            .map(|entry| {
+                let refs = EntryRefs {
+                    taken: self.address_taken_refs(entry),
+                    called: self.called_directly(entry),
+                    callers: self.direct_callers(entry),
+                };
+                (entry, refs)
+            })
+            .collect();
+        CallbackRefs { by_entry }
     }
 
     /// (kuna `calleevote`) Every direct call and tail jump to the function
