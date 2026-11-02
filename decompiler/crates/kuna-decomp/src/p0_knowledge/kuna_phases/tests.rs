@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_373() {
-    assert_eq!(kuna_num_settables(), 373);
-    assert_eq!(SETTABLE_TABLE.len(), 373);
+fn settable_count_is_374() {
+    assert_eq!(kuna_num_settables(), 374);
+    assert_eq!(SETTABLE_TABLE.len(), 374);
 }
 
 #[test]
-fn tier_counts_are_128_core_152_transform_93_analysis() {
+fn tier_counts_are_128_core_153_transform_93_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_128_core_152_transform_93_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (128, 152, 93));
+    assert_eq!((core, transform, analysis), (128, 153, 93));
 }
 
 #[test]
@@ -1160,7 +1160,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `truncptrflow`; its P3 row sits after `haltloopguard`.
     // +1 for `clonephiorder`; its P8 row sits after `rettriangle`.
     // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
-    assert_eq!(json.matches("},\n").count(), 372);
+    assert_eq!(json.matches("},\n").count(), 373);
 }
 
 #[test]

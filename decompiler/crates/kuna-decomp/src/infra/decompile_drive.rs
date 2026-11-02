@@ -501,14 +501,24 @@ impl FlowEnvironment for ArchFlowEnv {
         dest_outside_extent: bool,
     ) -> bool {
         let glb = fd.get_arch();
+        let arch = self.arch();
         crate::kuna_tailcalljump::kuna_is_tail_call_table(
             fd,
             op,
-            self.arch().tail_call_tables,
+            arch.tail_call_tables,
             self.query_call(dest).is_some(),
             dest == fd.get_address(),
             dest_outside_extent,
             || {
+                if arch.got_tail_call
+                    && (crate::kuna_gottailcall::callable(arch, fd, dest)
+                        || !self.mapped_flow_image().map_or_else(
+                            || self.code_bytes_mapped(dest),
+                            |image| crate::kuna_mappedflowboundary::mapped_start(image, dest),
+                        ))
+                {
+                    return true;
+                }
                 use crate::kuna_tailcalljump::{
                     output_stated_by_pieces, stated_by_pieces, stated_by_proto,
                 };

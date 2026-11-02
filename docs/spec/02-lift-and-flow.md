@@ -883,15 +883,14 @@ spec, and input recovery marks a trial on it unused
 (`funcdata_callsite.rs (check_input_trial_use)`): its value is the callee's
 own address, never an argument.
 
-In every other case the old behaviour stays: the follower walks into the
-callee as a one-case `switch`, because `RuleSwitchSingle`, which upstream
-uses to collapse that switch, is a stub here. That copied-in body is wrong in
-structure, but it still shows the callee's return value and the arguments it
-reads, which a call with no stated prototype would lose: kuna cannot recover
-a tail call's arguments or return value without one, and a whole-binary
-`decompile-all` does not recover them later either, because `protoorder`
-orders callees from the Listing's call edges, which do not include veneers.
-The same holds for a multi-entry table whose entries all name one function.
+In every other case, unless `gottailcall` below takes it, the old behaviour
+stays: the follower walks into the callee as a one-case `switch`, because
+`RuleSwitchSingle`, which upstream uses to collapse that switch, is a stub
+here. That copied-in body is wrong in structure, but it still shows the
+callee's return value and the arguments it reads, which a call with no
+stated prototype would lose: a single-function decompile cannot recover a
+tail call's arguments or return value without one. The same holds for a
+multi-entry table whose entries all name one function.
 Outside a declared extent a callee with no prototype is still tail-called and
 is printed with whatever arguments the function's own registers show and no
 return value, exactly as a direct `b f` there is. A destination that is not a
@@ -899,6 +898,74 @@ known function entry keeps the table, and outside a declared extent it still
 meets the out-of-bounds halt. A `flow ... branch` override cannot veto this
 per site: `override_flow` refuses `branch` on a computed jump, so the only
 switch is the option value.
+
+**(kuna) Tail calls through a GOT slot — `option gottailcall`, default on
+(GH-904), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_gottailcall.rs`.**
+A position-independent tail call loads its target from a GOT slot and jumps
+through it: MIPS `lw $t9,%call16(f)($gp); jr $t9`, x86-64 `-fno-plt`
+`jmp *f@GOTPCREL(%rip)`. Jump-table recovery reads the slot, so it is the
+one-destination computed jump above, and with no stated prototype the
+function printed `switch(0x1340) {` around `f`'s copied-in body, or, when
+the slot names an extern of a relocatable object, `switch(0x402000) { case
+0x402000: halt_missing(); }` with the call's arguments gone. Under
+`tailcalljump on`, `gottailcall` adds two cases to the `call_states_the_body`
+test that `decompile_drive.rs (ArchFlowEnv::is_tail_call_table)` hands
+`kuna_tailcalljump.rs (kuna_is_tail_call_table)`:
+
+- the destination has no bytes (the same mapped-bytes test
+  `flow.rs (FlowInfo::new_address)` makes): following the table can only end
+  in `halt_missing()`, so the jump is a tail call and keeps the arguments the
+  caller sets, `ext(a0 + 1); // tail-call`;
+- the destination is a function a callee-first `decompile-all` decompiled
+  earlier and filed (`kuna_gottailcall.rs (callable)`).
+
+After each function of a callee-first run, `kuna_gottailcall.rs (record)`
+files it when a call to it loses nothing a copied-in body would show. A
+function recovered with no parameters and no return value always qualifies.
+Otherwise it needs a `protoorder` statement, no declared prototype (that is
+`tailcalljump`'s rule above) and no variadic list, and two more things. If it
+returns a value, the statement must state it. Passthrough must also forward
+every parameter: each is a register, and its entry probe reads it, or it
+hands it on to a callee that takes it, by the same reads passthrough checks
+before it forwards a register (`kuna_gottailcall.rs (takes_every_input)`).
+A function whose stated parameter sits on the stack, or which passthrough
+would not see reading it, keeps the body. One example is a MIPS callee that
+reads an argument only in its `jr ra` delay slot.
+From the statement, passthrough gives the call the registers the caller
+forwards untouched and the caller the callee's return value:
+`return adler32_z(a0,a1,a2); // tail-call`, as the same code built non-PIC or
+through a PLT prints. A callee that returns a value is taken only where the
+flow so far reached no return of the caller's own, a RETURN with no call at
+its instruction, because passthrough takes no tail call's result beside one.
+
+Whether passthrough then gives the call those arguments and that return
+also depends on the caller. clang's `push %rax` stack-alignment slot reads
+as a SysV vector count, so passthrough treats the function as variadic and
+claims nothing in it. A second tail callee that states no return leaves no
+return to claim either. So `kuna_gottailcall.rs (record)` checks every tail
+call the decompile took against the result (`kuna_gottailcall.rs (loses)`).
+If the callee returns a value and the caller came out returning nothing, or
+a call to the callee passes fewer arguments than its statement names, the
+pair is refused and the caller is decompiled again with the copied-in body.
+
+The reference walk behind the callee-first plan does not see these jumps. A
+MIPS `$gp` slot is not a constant it reads, and an x86 `jmp [slot]` is an
+edge to the slot, not to the function. So the callee is often planned after
+its caller. `kuna_gottailcall.rs (record)` therefore also files every caller
+whose flow followed a one-destination table into a callee not yet filed.
+Once the callee is filed and voidret's redos of the round are settled,
+`kuna_gottailcall.rs (due)` names that caller, and
+`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs` decompiles it
+again in plan order. That redo takes the tail call with the callee's
+statement in hand. That is the call-graph edge the walk misses, learned from
+the caller's own decompile. The ledger lives only for the length of a
+callee-first run. A single-function `kuna decompile`, `--jobs N`, `protoorder
+off` and a run narrowed past the callee file nothing and keep the copied-in
+body. `option gottailcall off` restores `tailcalljump`'s own rule.
+`tests/stages/kuna-gottailcall.xml` pins the extern arm in two passes, with
+an unmapped non-function and a real one-case switch as controls, and
+`tests/cli/gottailcall-*.json` pin the callee-first arm on an x86-64
+`-fno-plt` library and a MIPS PIC object.
 
 **(kuna) Frame-teardown tail jumps — `option tailcallframe`, default on
 (DIV-109), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_tailcallframe.rs

@@ -1,0 +1,29 @@
+gottailcall_* -- the fixtures for option gottailcall (GH-904): tail calls
+through a GOT slot, each caller placed before its callee
+(tests/cli/gottailcall-*.json).
+
+What they are
+  gottailcall_x86_64.so  x86-64 shared object built -fno-plt -Wl,-z,now:
+                         g, fwd3 and tick end in jmp *f@GOTPCREL(%rip); h
+                         jumps through the undefined ext's slot.
+  gottailcall_mipsel.o   little-endian MIPS32 PIC relocatable object: g,
+                         fwd3, tick and h end in lw $t9,%call16(f)($gp);
+                         jr $t9, and h's slot names the undefined ext.
+  Source: gottailcall.c.
+
+Why they are vendored
+  The MIPS object needs a cross gcc CI does not have, and the order of
+  functions in both (callers first) decides which arm of the option runs.
+
+Where they came from
+  Ubuntu gcc 11.4.0 and mipsel-linux-gnu-gcc 10.3.0:
+
+      gcc -O2 -fno-toplevel-reorder -fPIC -fno-plt -shared -Wl,-z,now \
+          -Wl,--build-id=none -o gottailcall_x86_64.so gottailcall.c
+      mipsel-linux-gnu-gcc -O2 -fno-toplevel-reorder -fPIC -c gottailcall.c \
+          -o gottailcall_mipsel.o
+
+  sha256:
+    a0a97b04204117a92a35b818e548f394595082b64d8ee7126ea3f893f1c6b1f6  gottailcall_x86_64.so
+    6769679c5eabedc1b5fa8c757c2d70528624a8bc51e6bf3fab89e08eb4aef10c  gottailcall_mipsel.o
+  Never executed.

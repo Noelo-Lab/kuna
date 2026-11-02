@@ -570,6 +570,10 @@ pub struct Architecture {
     /// the destination lies outside a declared extent or the callee's stated
     /// prototype loses nothing.  Off under `option tailcalljump direct|off`.
     pub tail_call_tables: bool,
+    /// (kuna `gottailcall`) Also take that tail call when the destination has
+    /// no bytes, or is a function a callee-first run filed as losing nothing
+    /// to a call.  See [`crate::kuna_gottailcall`].
+    pub got_tail_call: bool,
     /// (kuna `tailcallframe`) Recover a direct `jmp` whose target is NOT a known
     /// function as a tail call when the instructions immediately before it tear
     /// down exactly the frame the entry block built — the callback-only callee no
@@ -1756,6 +1760,9 @@ pub struct Architecture {
     /// (kuna `voidret`) The void functions a caller reads a result from, and the
     /// storage each is decompiled again to return in.
     pub kuna_voidret: crate::kuna_voidret::Ledger,
+    /// (kuna `gottailcall`) What a callee-first run filed for one-destination
+    /// tail calls, and the callers waiting to be decompiled again.
+    pub kuna_gottailcall: crate::kuna_gottailcall::Ledger,
     /// (kuna `elemptr`) What each function of a batch said about each global,
     /// and the globals each must not type because another disagrees.
     pub kuna_elemptr: crate::kuna_elemptr::Ledger,
@@ -3077,6 +3084,7 @@ impl Architecture {
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
             tail_call_jumps: false,
             tail_call_tables: false, // (kuna) option tailcalljump; reset_defaults sets the shipped default
+            got_tail_call: false, // (kuna) option gottailcall; reset_defaults sets the shipped default
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
             tail_call_saved: false, // (kuna) option tailcallsaved; reset_defaults sets the shipped default
             call_trampoline: false, // (kuna) option calltrampoline; reset_defaults sets the shipped default
@@ -3330,6 +3338,7 @@ impl Architecture {
             kuna_narrowret: std::collections::HashMap::new(),
             kuna_callret_refused: std::collections::HashSet::new(),
             kuna_voidret: Default::default(),
+            kuna_gottailcall: Default::default(),
             kuna_elemptr: crate::kuna_elemptr::Ledger::default(),
             kuna_pending_name_recs: Vec::new(), // (ghidra Phase 4) staged per drive
             kuna_pending_dyn_recs: Vec::new(),  // (ghidra Phase 4) staged per drive
@@ -3542,6 +3551,7 @@ impl Architecture {
         self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.tail_call_tables = true; // (kuna) GH-781 default `tailcalljump on`: a veneer whose one destination is another function's entry is a tail call when the destination is outside a declared extent, or the callee's prototype is stated and its return value (if any) reaches a stated output. 0/675 byte-identical on the datatest corpus; `option tailcalljump direct` restores the flow into the destination
+        self.got_tail_call = true; // (kuna) GH-904 default-on: a one-destination computed jump to a function with no bytes, or to one a callee-first run filed as losing nothing to a call, is a tail call. 0/675 byte-identical on the datatest corpus; `option gottailcall off` restores tailcalljump's rule
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
         self.tail_call_saved = true; // (kuna) DIV-157 default-on: a run that raises the stack pointer without loading a single byte back through it is cdecl argument cleanup, not a frame teardown, so `push ebx; push esi; ...; call f; add esp,8; jmp L` no longer truncates the function at an internal join. Narrows `tailcallframe` only; 0/675 byte-identical on the datatest corpus. Restore the delta-only test with `option tailcallsaved off`
         self.call_trampoline = true; // (kuna) DIV-144 default-on: RESTORES CODE. Flows a `call` whose callee discards the pushed return address and jumps back into the stream (the Beria-family protector fragment) through as a branch, instead of decoding a fall-through at a return address control never reaches -- which on the witness lifts a junk byte into a store to a global that does not exist and puts the rest of the body one byte out of phase. Requires the callee's raw p-code to pass through `entrySP + ptrsize` and end in a direct branch to an address the symbol table does NOT know as a function entry, so an ordinary tail-call thunk (`add esp,4; jmp printf`) never matches; byte-identical (0/675) on the datatest corpus. Restore the fall-through decode with `option calltrampoline off`
