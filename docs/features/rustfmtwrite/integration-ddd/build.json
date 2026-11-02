@@ -1,0 +1,11 @@
+{
+  "parent_commit": "dddff1dbabdec537afd6691104a93dc3eb7c6e2c",
+  "parent_cli_sha256": "8c33c6fc908fa97e4fc155ecb4df792f8d2742ef8c7beb142761530b706c3cd5",
+  "new_cli_sha256": "0fdc402c5cd45cbef01ada818305714c15bbd4691d105cba6e275cb4df70b341",
+  "catalog_count": 368,
+  "live_count": 174,
+  "stage_assertions": [
+    3551,
+    3551
+  ]
+}

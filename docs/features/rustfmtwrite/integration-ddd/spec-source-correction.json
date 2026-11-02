@@ -1,0 +1,33 @@
+{
+  "initial_root_count": 149,
+  "expected_frozen_count": 154,
+  "root_content_differences": [
+    "Ghidra/Processors/Sparc/data/languages/SparcV9_32.sla",
+    "Ghidra/Processors/Sparc/data/languages/SparcV9_64.sla",
+    "Ghidra/Processors/MIPS/data/languages/mips64le.sla",
+    "Ghidra/Processors/MIPS/data/languages/mips64be.sla",
+    "Ghidra/Processors/MIPS/data/languages/mips32be.sla",
+    "Ghidra/Processors/MIPS/data/languages/mips32R6be.sla",
+    "Ghidra/Processors/MIPS/data/languages/mips32le.sla",
+    "Ghidra/Processors/MIPS/data/languages/mips32R6le.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_32_e500_le.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_64_isa_altivec_vle_be.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_64_isa_be.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_64_be.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_32_e500_be.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_32_quicciii_be.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_32_4xx_le.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_64_isa_vle_be.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_32_be.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_32_quicciii_le.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_32_le.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_32_e500mc_le.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_64_le.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_32_4xx_be.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_64_isa_le.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_64_isa_altivec_le.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_32_e500mc_be.sla",
+    "Ghidra/Processors/PowerPC/data/languages/ppc_64_isa_altivec_be.sla"
+  ],
+  "all_links_now_match_frozen_parent": true
+}

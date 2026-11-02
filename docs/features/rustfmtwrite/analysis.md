@@ -118,3 +118,25 @@ speed studies retain their original binary identities and were not rerun in
 full for this CLI-only integration. The feature remains off in every preset.
 The new executable hash and precise scope are in
 [integration-ac4/integration-record.json](integration-ac4/integration-record.json).
+
+## Switch-guard integration
+
+Main `dddff1dbabdec537afd6691104a93dc3eb7c6e2c` adds switch-guard recovery and an option.
+The combined catalog and stage counts were derived again; an initial stage run
+exposed the shared total-option assertion that Git had merged without adding
+both rows. Its failed result is retained, and the corrected baseline is freshly
+recorded. All checks pass: 675 original assertions, 3,551 stage assertions,
+10,117 workspace tests, zero failures and 39 ignored across 71 suites.
+
+Fresh captures of all 27 images compare against a newly built current-main
+parent. All default/off records match that parent; shared switchrunonguard
+changes are counted separately. All eight enabled-only changes retain exact
+previous before/after whole records, which is the basis for retaining native
+and mapping evidence. Old whole-corpus equality is not claimed.
+A new current-main versus default-off study uses the same four cases and fixed
+192 balanced rounds, with all median and simultaneous upper bounds below 5%.
+Maximum median CPU/wall deltas are +0.120%/+0.174%; the largest
+upper CPU/wall bound is 0.374%. The original enabled speed failure remains
+unchanged and the option remains off in every preset. Binary identities, full
+results and the fresh comparison scope are in
+[integration-ddd/integration-record.json](integration-ddd/integration-record.json).

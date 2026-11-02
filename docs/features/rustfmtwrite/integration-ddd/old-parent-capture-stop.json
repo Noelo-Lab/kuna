@@ -1,0 +1,41 @@
+{
+  "reason": "The new shared switchrunonguard feature changes whole-program output. Old-parent equality is no longer a valid acceptance criterion. Preserve captures and compare against fresh current-main parents, retaining exact equality of each feature-specific changed record.",
+  "processes": [
+    {
+      "pid": 701198,
+      "command": "python3 /tmp/kuna-rust-io-ddd/breadth.py"
+    },
+    {
+      "pid": 714711,
+      "command": "/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/release/kuna decompile-all /tmp/kuna-angr-reference/binaries/rust-fmt-2025-O3 --language c --json --jobs 1 --max-fn-seconds 600 --option godwarfsig on"
+    },
+    {
+      "pid": 716384,
+      "command": "/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/release/kuna decompile-all /home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_panic_real_x86_64 --language c --json --jobs 1 --max-fn-seconds 600 --option godwarfsig on"
+    },
+    {
+      "pid": 716512,
+      "command": "/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/release/kuna decompile-all /home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_pieces_1.89.0 --language c --json --jobs 1 --max-fn-seconds 600 --option godwarfsig on"
+    },
+    {
+      "pid": 716673,
+      "command": "/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/release/kuna decompile-all /home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_pieces_1.90.0 --language c --json --jobs 1 --max-fn-seconds 600 --option godwarfsig on"
+    },
+    {
+      "pid": 717030,
+      "command": "/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/release/kuna decompile-all /home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_pieces_nightly-2025-05-22 --language c --json --jobs 1 --max-fn-seconds 600 --option godwarfsig on"
+    },
+    {
+      "pid": 717890,
+      "command": "/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/release/kuna decompile-all /home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_str_real_x86_64 --language c --json --jobs 1 --max-fn-seconds 600 --option godwarfsig on"
+    },
+    {
+      "pid": 717956,
+      "command": "/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/release/kuna decompile-all /tmp/kuna-rust-fmt-str/native-nonlto --language c --json --jobs 1 --max-fn-seconds 600 --option godwarfsig on"
+    },
+    {
+      "pid": 721997,
+      "command": "/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/release/kuna decompile-all /home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64 --language c --json --jobs 1 --max-fn-seconds 600 --option godwarfsig on"
+    }
+  ]
+}

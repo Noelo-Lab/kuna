@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_367() {
-    assert_eq!(kuna_num_settables(), 367);
-    assert_eq!(SETTABLE_TABLE.len(), 367);
+fn settable_count_is_368() {
+    assert_eq!(kuna_num_settables(), 368);
+    assert_eq!(SETTABLE_TABLE.len(), 368);
 }
 
 #[test]
-fn tier_counts_are_127_core_147_transform_93_analysis() {
+fn tier_counts_are_127_core_148_transform_93_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_127_core_147_transform_93_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (127, 147, 93));
+    assert_eq!((core, transform, analysis), (127, 148, 93));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_173() {
+fn option_values_live_value_present_for_174() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -932,7 +932,8 @@ fn option_values_live_value_present_for_173() {
     // 160 -> 161: +1 for `haltloopguard` (halt_loop_guard).
     // 161 -> 162: +1 for `truncptrflow` (trunc_ptr_flow).
     // 168 -> 169: +1 for `switchrunon` (switch_run_on).
-    assert_eq!(with_live, 173);
+    // 172 -> 173: +1 for `switchrunonguard` (switch_run_on_guard).
+    assert_eq!(with_live, 174);
 }
 
 #[test]
@@ -1156,7 +1157,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `truncptrflow`; its P3 row sits after `haltloopguard`.
     // +1 for `clonephiorder`; its P8 row sits after `rettriangle`.
     // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
-    assert_eq!(json.matches("},\n").count(), 366);
+    // +1 for `switchrunonguard`; its P2 row sits after `switchrunon`.
+    assert_eq!(json.matches("},\n").count(), 367);
 }
 
 #[test]
