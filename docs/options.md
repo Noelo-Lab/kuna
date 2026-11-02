@@ -519,6 +519,8 @@ Three tiers:
 | Rust format! results remain runtime calls despite recovered templates | [`rustfmtresult`](#rustfmtresult) |
 | Rust panic messages remain core::panicking::panic_fmt calls with opaque pointers | [`rustfmtpanic`](#rustfmtpanic) |
 | Rust primitive panic arguments retain runtime formatter descriptors | [`rustfmtpanic`](#rustfmtpanic) |
+| Older Rust print calls retain a stack fmt::Arguments descriptor | [`rustfmtpieces`](#rustfmtpieces) |
+| Rust literal output remains _print with opaque piece-array addresses | [`rustfmtpieces`](#rustfmtpieces) |
 | Go output language is unavailable | [`outlang`](#outlang) |
 | Go functions retain C declarations and control-flow syntax | [`outlang`](#outlang) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
@@ -2556,6 +2558,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default to expose verified Rust panic messages and integer arguments. Turn off to retain the runtime panic_fmt call. Literal panic messages are independent of rustfmtliteral and rustfmtargs; integer arguments use rustfmtargs and rustfmtflags checks. Recompiled panic! uses the recovered source location, not the original binary's file and line.
 - **Where / provenance:** P9/panic-format · angr · opt-in-tool · angr-rust-panic-format
 - **Example:** `option rustfmtpanic off`
+
+### `rustfmtpieces` -- on | off, default `on`
+
+- **Symptoms:** Older Rust print calls retain a stack fmt::Arguments descriptor; Rust literal output remains _print with opaque piece-array addresses.
+- **What it does:** Recover print!, println!, eprint! and eprintln! from the verified piece-array fmt::Arguments layout in x86-64 ELF images built by stable Rust 1.89.0/1.90.0 or nightly 1.89.0 bf64d66bd (2025-05-21). Require exact output-sink identity, a complete stack descriptor, absent format specifications, immutable UTF-8 pieces and exact primitive Display identities. Preserve descriptor setup, typed reads and surrounding IR. Unknown compiler builds, mutable data, generic callbacks and non-default specifications remain explicit; C and Go output are unchanged.
+- **When to flip:** On by default to expose older Rust literal and integer printing. Literal recovery also requires rustfmtliteral; primitive arguments require rustfmtargs. Turn off to retain the piece-array runtime call. This does not recover format!, panic!, write!, generic arguments or older compiler builds without verified layout evidence.
+- **Where / provenance:** P9/piece-format · angr · opt-in-tool · angr-rust-piece-format
+- **Example:** `option rustfmtpieces off`
 
 ### `outlang` -- c | rust | go, default `c`
 

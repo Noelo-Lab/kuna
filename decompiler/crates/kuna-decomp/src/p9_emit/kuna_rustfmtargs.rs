@@ -114,10 +114,29 @@ pub(crate) fn recover_at(
         position = end;
         Some(bytes)
     })?;
-    let cells = argument_cells(fd, id, array, decoded.count)?;
-    let mut arguments = Vec::with_capacity(decoded.count);
-    let mut formatters = Vec::with_capacity(decoded.count);
-    for index in 0..decoded.count {
+    let (arguments, formatters) = primitive_arguments(fd, arch, id, array, decoded.count)?;
+    let (name, literal) = decoded.render(kind, &formatters)?;
+    Some(Plan {
+        name,
+        literal,
+        arguments,
+    })
+}
+
+pub(crate) fn primitive_arguments(
+    fd: &Funcdata,
+    arch: &Architecture,
+    id: OpId,
+    array: i64,
+    count: usize,
+) -> Option<(Vec<Argument>, Vec<Formatter>)> {
+    if count > MAX_ARGS || array % 8 != 0 {
+        return None;
+    }
+    let cells = stack_cells(fd, id, array, count * 2)?;
+    let mut arguments = Vec::with_capacity(count);
+    let mut formatters = Vec::with_capacity(count);
+    for index in 0..count {
         let pointer = cells[index * 2];
         let address = constant_word(fd, cells[index * 2 + 1])?;
         let formatter = if arch.rust_fmt_flags {
@@ -143,18 +162,18 @@ pub(crate) fn recover_at(
         arguments.push(Argument { pointer, primitive });
         formatters.push(formatter);
     }
-    let (name, literal) = decoded.render(kind, &formatters)?;
-    Some(Plan {
-        name,
-        literal,
-        arguments,
-    })
+    Some((arguments, formatters))
 }
 
-fn argument_cells(fd: &Funcdata, call: OpId, base: i64, count: usize) -> Option<Vec<VarnodeId>> {
+pub(crate) fn stack_cells(
+    fd: &Funcdata,
+    call: OpId,
+    base: i64,
+    words: usize,
+) -> Option<Vec<VarnodeId>> {
     let stack = fd.get_arch().manage().get_stack_space()?;
-    let mut cells = vec![None; count * 2];
-    let end = base.checked_add((count * 16) as i64)?;
+    let mut cells = vec![None; words];
+    let end = base.checked_add((words * 8) as i64)?;
     for id in fd.obank().iter_alive() {
         let op = fd.obank().get(id)?;
         if op.code() != OpCode::CPUI_INDIRECT || op.is_indirect_creation() {
@@ -211,7 +230,7 @@ pub(crate) fn constant_word(fd: &Funcdata, mut id: VarnodeId) -> Option<u64> {
     None
 }
 
-fn stack_offset(fd: &Funcdata, mut id: VarnodeId) -> Option<i64> {
+pub(crate) fn stack_offset(fd: &Funcdata, mut id: VarnodeId) -> Option<i64> {
     let base = fd
         .get_arch()
         .manage()
@@ -251,6 +270,36 @@ fn stack_offset(fd: &Funcdata, mut id: VarnodeId) -> Option<i64> {
         }
     }
     None
+}
+
+pub(crate) fn render_pieces(
+    literals: Vec<String>,
+    arguments: Vec<Argument>,
+    formatters: Vec<Formatter>,
+    stderr: bool,
+) -> Option<Plan> {
+    let count = arguments.len();
+    if formatters.len() != count || !(count..=count + 1).contains(&literals.len()) {
+        return None;
+    }
+    let mut pieces = Vec::new();
+    for (index, text) in literals.into_iter().enumerate() {
+        pieces.push(Piece::Literal(text));
+        if index < count {
+            pieces.push(Piece::Argument(index, Options::default()));
+        }
+    }
+    let decoded = Template {
+        pieces,
+        count,
+        indexed: false,
+    };
+    let (name, literal) = decoded.render(MacroKind::Print(stderr), &formatters)?;
+    Some(Plan {
+        name,
+        literal,
+        arguments,
+    })
 }
 
 #[derive(Debug, PartialEq)]

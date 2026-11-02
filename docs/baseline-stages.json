@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3516,
-    3516
+    3523,
+    3523
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1017,7 +1017,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 364 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 365 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -2020,7 +2020,9 @@
     "data:a non-dominated split value is typed float8",
     "data:a stale pair half does not hide the next call's single argument",
     "data:a tagged address does not become a float",
+    "data:adjacent arguments preserve empty separating pieces",
     "data:adjacent object does not steal array reference",
+    "data:all narrow widths retain exact formatter types",
     "data:all seven families are defined and option off adds none",
     "data:an integer call beside a q touch is unchanged",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
@@ -2487,6 +2489,7 @@
     "data:declorder #7: and print the same body",
     "data:default localstackviews guards the frame read before heritage",
     "data:default localstackviews uses the declared Pair view",
+    "data:default u32 argument is a typed read",
     "data:devectorize #1: option off keeps the eight lane accumulators (bug reproduced)",
     "data:devectorize #2: option off guards the stride-eight loop on 8 <= length (bug reproduced)",
     "data:devectorize #3: option off hands the remainder over at length & ~7 (bug reproduced)",
@@ -2541,6 +2544,7 @@
     "data:empty entry range off retains inference",
     "data:empty entry range on recovers a proven RET identity",
     "data:empty entry range wrong register stays uninferred",
+    "data:empty piece array is empty printing",
     "data:enabled retains declared array",
     "data:enabled short load retains base",
     "data:enabled short store retains base",
@@ -2907,6 +2911,7 @@
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
     "data:odd destination reaches the halfword store",
+    "data:off and nondefault specifications retain the runtime sink",
     "data:off loses a narrowing result",
     "data:off loses an untouched pointer result",
     "data:off reads the first Point lane as float",
@@ -2991,6 +2996,7 @@
     "data:passthrough #1: the tail-call thunk never names rdi, so it has no parameter in either pass",
     "data:passthrough #2: the function that tests the result never names rdi either, and has no parameter in either pass",
     "data:passthrough #3: the calls pass nothing in both passes, because no callee stated a prototype for the rule to read",
+    "data:piece literal keeps Unicode braces and the extra newline",
     "data:pointer callback keeps pointer contract",
     "data:pointer callback receives local address",
     "data:pointer dereference is passed by value",
@@ -3290,6 +3296,7 @@
     "data:static format off and dynamic counts preserve runtime sinks",
     "data:static formats retain repeated indices",
     "data:static unicode fill alignment width precision",
+    "data:stderr pair preserves narrow signed and wide unsigned types",
     "data:store order: division call precedes the later global write",
     "data:store order: exactly one global write per function",
     "data:store order: final call remains after both writes",

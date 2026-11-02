@@ -1,0 +1,10 @@
+{
+  "images": 24,
+  "distinct_functions": 27691,
+  "function_records": 57789,
+  "changed_functions": 29,
+  "hunks": 29,
+  "C_Go_identical": 46165,
+  "Go_parses": 18474,
+  "off_matches_parent_rust_records": 11624
+}

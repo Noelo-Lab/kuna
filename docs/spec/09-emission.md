@@ -4269,7 +4269,7 @@ symbols establish both integer width/signedness and Display, Debug, LowerHex,
 UpperHex, Octal, Binary, LowerExp or UpperExp trait identity. Only exact standard
 library paths for 8-, 16-, 32- and 64-bit integers qualify. Pointer-sized integer
 aliases may share their corresponding 64-bit formatter; different types or traits
-and unknown aliases invalidate the address. Generic formatter types are not inferred.
+and unknown aliases invalidate the address. Generic formatter types are not inferred. The loader indexes only candidate formatter addresses, then checks every symbol against those candidates; unknown aliases before or after a recognized name still invalidate the address.
 
 The bounded template decoder accepts static flags, width and precision before an
 optional explicit argument index. Dynamic count headers are refused before reading
@@ -4354,3 +4354,49 @@ The change is confined to rendering the call expression. All descriptor setup,
 IR, declarations, existing returns and no-return control flow remain intact.
 It does not recover generic arguments, other panic entry points, indirect calls
 or earlier formatting layouts, and it does not change C or Go output.
+
+## Verified Rust piece-array printing
+
+`kuna_rustfmtpieces` extends source printing to the pre-template
+`fmt::Arguments` representation. The default-on `rustfmtpieces` option accepts
+x86-64 little-endian ELF executables from stable Rust 1.89.0 and 1.90.0 and
+nightly 1.89.0 `bf64d66bd` dated 2025-05-21. Compiler comments must identify one
+unambiguous supported build; other nightly commits, missing metadata and mixed
+versions do not qualify. The stable-version fact used by the 1.93 template
+readers retains its existing meaning.
+
+An exact `_print` or `_eprint` identity, including exact namespace resolution,
+must have one runtime argument and no result. Its argument must point to an
+aligned stack descriptor. The call's non-creation INDIRECT effects must supply
+five distinct complete words: piece pointer/count, argument pointer/count, and
+a null optional-format pointer. The inactive optional-format length is not
+read. Missing, overlapping, dynamic or ambiguous cells prevent recovery.
+There may be at most sixteen arguments, and the piece count must equal that
+count or exceed it by one. Every table span and string span must be mapped,
+immutable and nonvolatile; all strings must be UTF-8 and total at most 4096
+bytes. Null pointers and overflowed spans are rejected.
+
+The loader records the supported image's RELRO extent for this renderer only.
+The upper bound is rounded down to a complete 4096-byte page, while the lower
+bound remains inside the declared segment. This supplies immutable-range
+proof for adjacent length words in relocation-backed piece arrays. It does
+not change global readonly properties or general constant propagation.
+Explicit volatile markings override both this fact and existing readonly
+properties. A relocated pointer alone is insufficient evidence for the
+surrounding table.
+
+Literal recovery also requires `rustfmtliteral`. Nonempty argument arrays also
+require `rustfmtargs`, exact full primitive Display callback identities, and
+the shared aligned stack-pointer proof for each 8/16/32/64-bit signed or
+unsigned input. Formatting specifications, generic callbacks and non-Display
+traits remain explicit. The pieces are interleaved with default placeholders
+and escaped through the shared renderer; precisely one final newline selects
+`println!` or `eprintln!`. Empty arrays, empty separating pieces, braces,
+Unicode and control characters preserve their output bytes.
+
+The pass replaces only the print call's presentation. All setup assignments,
+IR, function prototypes, returns and surrounding statements remain. Existing
+descriptor type gaps can still prevent complete primitive functions from
+compiling; primitive macro execution does not imply whole-function
+recompilability. C and Go output, newer layouts and other formatting sinks are
+unchanged. Disabling `rustfmtpieces` restores the runtime-call presentation.

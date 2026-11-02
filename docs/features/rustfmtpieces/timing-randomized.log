@@ -1,0 +1,484 @@
+scalar-c completed rounds 48
+scalar-c completed rounds 48
+scalar-c completed rounds 48
+scalar-c completed rounds 96
+scalar-c completed rounds 96
+scalar-c completed rounds 96
+scalar-c completed rounds 144
+reference-write completed rounds 48
+scalar-c completed rounds 144
+scalar-c completed rounds 144
+reference-make-string completed rounds 48
+scalar-c completed rounds 192
+rust-large-control completed rounds 48
+scalar-c completed rounds 192
+scalar-c completed rounds 192
+scalar-c completed rounds 240
+rust-newer-control completed rounds 48
+native-rust-c-control completed rounds 48
+rust-large-control completed rounds 48
+write-literal completed rounds 48
+str-plain completed rounds 48
+write-flags completed rounds 48
+write-string completed rounds 48
+write-primitive completed rounds 48
+scalar-c completed rounds 240
+scalar-c completed rounds 240
+scalar-c completed rounds 288
+str-result completed rounds 48
+str-flags completed rounds 48
+reference-write completed rounds 96
+go-control completed rounds 48
+go-control completed rounds 48
+pieces-literal completed rounds 48
+pieces-integers completed rounds 48
+scalar-c completed rounds 288
+go-control completed rounds 48
+reference-make-string completed rounds 96
+scalar-c completed rounds 288
+older-rust-c-control completed rounds 48
+scalar-c completed rounds 336
+scalar-c completed rounds 336
+scalar-c completed rounds 336
+older-rust-control completed rounds 48
+scalar-c completed rounds 384
+older-rust-control completed rounds 48
+rust-large-control completed rounds 96
+scalar-c completed rounds 384
+scalar-c completed rounds 384
+original-angr-rust completed rounds 48
+rust-newer-control completed rounds 96
+rust-large-control completed rounds 96
+scalar-c completed rounds 432
+reference-write completed rounds 144
+scalar-c completed rounds 432
+reference-make-string completed rounds 144
+scalar-c completed rounds 432
+native-rust-c-control completed rounds 96
+write-flags completed rounds 96
+str-plain completed rounds 96
+write-literal completed rounds 96
+scalar-c completed rounds 480
+write-string completed rounds 96
+scalar-c completed rounds 480
+write-primitive completed rounds 96
+str-result completed rounds 96
+str-flags completed rounds 96
+scalar-c completed rounds 480
+scalar-c completed rounds 528
+scalar-c completed rounds 528
+scalar-c completed rounds 528
+pieces-literal completed rounds 96
+go-control completed rounds 96
+go-control completed rounds 96
+go-control completed rounds 96
+scalar-c completed rounds 576
+older-rust-c-control completed rounds 96
+reference-make-string completed rounds 192
+scalar-c completed rounds 576
+scalar-c completed rounds 576
+reference-write completed rounds 192
+rust-large-control completed rounds 144
+rust-newer-control completed rounds 144
+scalar-c completed rounds 624
+rust-large-control completed rounds 144
+scalar-c completed rounds 624
+pieces-integers completed rounds 96
+scalar-c completed rounds 624
+scalar-c completed rounds 672
+write-flags completed rounds 144
+scalar-c completed rounds 672
+scalar-c completed rounds 672
+write-literal completed rounds 144
+scalar-c completed rounds 720
+str-plain completed rounds 144
+write-string completed rounds 144
+str-result completed rounds 144
+native-rust-c-control completed rounds 144
+reference-make-string completed rounds 240
+scalar-c completed rounds 720
+scalar-c completed rounds 720
+older-rust-control completed rounds 96
+str-flags completed rounds 144
+reference-write completed rounds 240
+write-primitive completed rounds 144
+older-rust-control completed rounds 96
+scalar-c completed rounds 768
+scalar-c medians {'baseline_to_patched': {'cpu_ms': 0.09500896457153019, 'wall_ms': 0.08431752120792169}, 'off_to_patched': {'cpu_ms': 0.13298636792882235, 'wall_ms': 0.1514838323806389}}
+CASE SAMPLING COMPLETE 2 scalar-c
+scalar-c completed rounds 768
+scalar-c medians {'baseline_to_patched': {'cpu_ms': -0.5030404182960302, 'wall_ms': -0.5389467976618545}, 'off_to_patched': {'cpu_ms': -0.14719605188283635, 'wall_ms': -0.13636381520256702}}
+CASE SAMPLING COMPLETE 0 scalar-c
+original-angr-rust completed rounds 96
+scalar-c completed rounds 768
+scalar-c medians {'baseline_to_patched': {'cpu_ms': 0.46624937345971507, 'wall_ms': 0.5316324232906844}, 'off_to_patched': {'cpu_ms': -0.18105172135716163, 'wall_ms': -0.17874819736060088}}
+CASE SAMPLING COMPLETE 1 scalar-c
+rust-large-control completed rounds 192
+rust-newer-control completed rounds 192
+pieces-literal completed rounds 144
+go-control completed rounds 144
+older-rust-c-control completed rounds 144
+rust-large-control completed rounds 192
+go-control completed rounds 144
+go-control completed rounds 144
+reference-make-string completed rounds 288
+reference-write completed rounds 288
+write-flags completed rounds 192
+pieces-integers completed rounds 144
+write-literal completed rounds 192
+write-string completed rounds 192
+str-result completed rounds 192
+str-plain completed rounds 192
+native-rust-c-control completed rounds 192
+str-flags completed rounds 192
+rust-newer-control completed rounds 240
+write-primitive completed rounds 192
+reference-make-string completed rounds 336
+rust-large-control completed rounds 240
+reference-write completed rounds 336
+rust-large-control completed rounds 240
+older-rust-c-control completed rounds 192
+pieces-literal completed rounds 192
+go-control completed rounds 192
+older-rust-control completed rounds 144
+older-rust-control completed rounds 144
+go-control completed rounds 192
+go-control completed rounds 192
+original-angr-rust completed rounds 144
+write-flags completed rounds 240
+reference-make-string completed rounds 384
+write-literal completed rounds 240
+reference-write completed rounds 384
+write-string completed rounds 240
+str-plain completed rounds 240
+str-result completed rounds 240
+native-rust-c-control completed rounds 240
+pieces-integers completed rounds 192
+rust-newer-control completed rounds 288
+str-flags completed rounds 240
+rust-large-control completed rounds 288
+write-primitive completed rounds 240
+rust-large-control completed rounds 288
+reference-make-string completed rounds 432
+reference-write completed rounds 432
+pieces-literal completed rounds 240
+older-rust-c-control completed rounds 240
+go-control completed rounds 240
+go-control completed rounds 240
+go-control completed rounds 240
+write-flags completed rounds 288
+write-literal completed rounds 288
+write-string completed rounds 288
+rust-newer-control completed rounds 336
+str-plain completed rounds 288
+str-result completed rounds 288
+rust-large-control completed rounds 336
+native-rust-c-control completed rounds 288
+reference-make-string completed rounds 480
+older-rust-control completed rounds 192
+rust-large-control completed rounds 336
+pieces-integers completed rounds 240
+str-flags completed rounds 288
+reference-write completed rounds 480
+write-primitive completed rounds 288
+older-rust-control completed rounds 192
+original-angr-rust completed rounds 192
+reference-make-string completed rounds 528
+pieces-literal completed rounds 288
+older-rust-c-control completed rounds 288
+write-flags completed rounds 336
+reference-write completed rounds 528
+rust-large-control completed rounds 384
+write-literal completed rounds 336
+go-control completed rounds 288
+go-control completed rounds 288
+write-string completed rounds 336
+go-control completed rounds 288
+str-plain completed rounds 336
+str-result completed rounds 336
+rust-large-control completed rounds 384
+native-rust-c-control completed rounds 336
+str-flags completed rounds 336
+write-primitive completed rounds 336
+pieces-integers completed rounds 288
+rust-newer-control completed rounds 384
+reference-make-string completed rounds 576
+reference-write completed rounds 576
+older-rust-control completed rounds 240
+rust-large-control completed rounds 432
+write-flags completed rounds 384
+older-rust-control completed rounds 240
+rust-large-control completed rounds 432
+write-literal completed rounds 384
+older-rust-c-control completed rounds 336
+pieces-literal completed rounds 336
+original-angr-rust completed rounds 240
+reference-make-string completed rounds 624
+write-string completed rounds 384
+str-result completed rounds 384
+str-plain completed rounds 384
+native-rust-c-control completed rounds 384
+reference-write completed rounds 624
+go-control completed rounds 336
+go-control completed rounds 336
+go-control completed rounds 336
+str-flags completed rounds 384
+write-primitive completed rounds 384
+pieces-integers completed rounds 336
+reference-make-string completed rounds 672
+rust-large-control completed rounds 480
+reference-write completed rounds 672
+rust-large-control completed rounds 480
+write-flags completed rounds 432
+write-literal completed rounds 432
+write-string completed rounds 432
+str-result completed rounds 432
+str-plain completed rounds 432
+older-rust-c-control completed rounds 384
+native-rust-c-control completed rounds 432
+pieces-literal completed rounds 384
+reference-make-string completed rounds 720
+rust-newer-control completed rounds 432
+str-flags completed rounds 432
+go-control completed rounds 384
+write-primitive completed rounds 432
+go-control completed rounds 384
+reference-write completed rounds 720
+go-control completed rounds 384
+older-rust-control completed rounds 288
+older-rust-control completed rounds 288
+rust-large-control completed rounds 528
+pieces-integers completed rounds 384
+original-angr-rust completed rounds 288
+rust-large-control completed rounds 528
+reference-make-string completed rounds 768
+reference-make-string medians {'baseline_to_patched': {'cpu_ms': -0.9655771317187645, 'wall_ms': -0.9688401110828471}, 'off_to_patched': {'cpu_ms': -0.06039011260596805, 'wall_ms': -0.04147169149164576}}
+CASE SAMPLING COMPLETE 1 reference-make-string
+write-flags completed rounds 480
+write-literal completed rounds 480
+reference-write completed rounds 768
+reference-write medians {'baseline_to_patched': {'cpu_ms': 0.04206383184404139, 'wall_ms': 0.055325905851133506}, 'off_to_patched': {'cpu_ms': -0.09588830450178998, 'wall_ms': -0.04753839240728697}}
+CASE SAMPLING COMPLETE 2 reference-write
+write-string completed rounds 480
+str-result completed rounds 480
+str-plain completed rounds 480
+native-rust-c-control completed rounds 480
+older-rust-c-control completed rounds 432
+pieces-literal completed rounds 432
+str-flags completed rounds 480
+write-primitive completed rounds 480
+rust-large-control completed rounds 576
+go-control completed rounds 432
+go-control completed rounds 432
+go-control completed rounds 432
+rust-large-control completed rounds 576
+pieces-integers completed rounds 432
+write-flags completed rounds 528
+rust-newer-control completed rounds 480
+write-literal completed rounds 528
+older-rust-control completed rounds 336
+write-string completed rounds 528
+str-result completed rounds 528
+older-rust-control completed rounds 336
+str-plain completed rounds 528
+native-rust-c-control completed rounds 528
+original-angr-rust completed rounds 336
+older-rust-c-control completed rounds 480
+str-flags completed rounds 528
+write-primitive completed rounds 528
+pieces-literal completed rounds 480
+rust-large-control completed rounds 624
+rust-large-control completed rounds 624
+go-control completed rounds 480
+go-control completed rounds 480
+go-control completed rounds 480
+pieces-integers completed rounds 480
+write-flags completed rounds 576
+write-literal completed rounds 576
+str-result completed rounds 576
+write-string completed rounds 576
+str-plain completed rounds 576
+native-rust-c-control completed rounds 576
+rust-large-control completed rounds 672
+rust-large-control completed rounds 672
+str-flags completed rounds 576
+older-rust-c-control completed rounds 528
+write-primitive completed rounds 576
+pieces-literal completed rounds 528
+older-rust-control completed rounds 384
+rust-newer-control completed rounds 528
+older-rust-control completed rounds 384
+go-control completed rounds 528
+original-angr-rust completed rounds 384
+write-flags completed rounds 624
+pieces-integers completed rounds 528
+go-control completed rounds 528
+go-control completed rounds 528
+write-literal completed rounds 624
+str-result completed rounds 624
+write-string completed rounds 624
+rust-large-control completed rounds 720
+str-plain completed rounds 624
+rust-large-control completed rounds 720
+native-rust-c-control completed rounds 624
+str-flags completed rounds 624
+write-primitive completed rounds 624
+older-rust-c-control completed rounds 576
+pieces-literal completed rounds 576
+write-flags completed rounds 672
+go-control completed rounds 576
+pieces-integers completed rounds 576
+rust-large-control completed rounds 768
+rust-large-control medians {'baseline_to_patched': {'cpu_ms': -0.03452659609591846, 'wall_ms': 0.030967495418599}, 'off_to_patched': {'cpu_ms': -0.028950837579622135, 'wall_ms': -0.21163169102688117}}
+CASE SAMPLING COMPLETE 2 rust-large-control
+write-literal completed rounds 672
+str-result completed rounds 672
+go-control completed rounds 576
+rust-large-control completed rounds 768
+rust-large-control medians {'baseline_to_patched': {'cpu_ms': -1.197289784865263, 'wall_ms': -1.1526292895149393}, 'off_to_patched': {'cpu_ms': -0.08951804124601725, 'wall_ms': -0.10701390165086533}}
+CASE SAMPLING COMPLETE 1 rust-large-control
+write-string completed rounds 672
+go-control completed rounds 576
+str-plain completed rounds 672
+native-rust-c-control completed rounds 672
+older-rust-control completed rounds 432
+original-angr-rust completed rounds 432
+older-rust-control completed rounds 432
+str-flags completed rounds 672
+rust-newer-control completed rounds 576
+write-primitive completed rounds 672
+older-rust-c-control completed rounds 624
+write-flags completed rounds 720
+pieces-literal completed rounds 624
+str-result completed rounds 720
+go-control completed rounds 624
+write-literal completed rounds 720
+pieces-integers completed rounds 624
+write-string completed rounds 720
+go-control completed rounds 624
+str-plain completed rounds 720
+native-rust-c-control completed rounds 720
+go-control completed rounds 624
+str-flags completed rounds 720
+write-primitive completed rounds 720
+older-rust-c-control completed rounds 672
+write-flags completed rounds 768
+write-flags medians {'baseline_to_patched': {'cpu_ms': -0.4293726037656542, 'wall_ms': -0.23147863163391902}, 'off_to_patched': {'cpu_ms': -0.07571288558800848, 'wall_ms': 0.035750825375990836}}
+CASE SAMPLING COMPLETE 2 write-flags
+original-angr-rust completed rounds 480
+older-rust-control completed rounds 480
+older-rust-control completed rounds 480
+pieces-literal completed rounds 672
+str-result completed rounds 768
+str-result medians {'baseline_to_patched': {'cpu_ms': -0.3697227079531462, 'wall_ms': -0.3097781105733999}, 'off_to_patched': {'cpu_ms': 0.10472587078207418, 'wall_ms': 0.16732853426415506}}
+CASE SAMPLING COMPLETE 1 str-result
+write-literal completed rounds 768
+write-literal medians {'baseline_to_patched': {'cpu_ms': 0.14131910803694137, 'wall_ms': 0.1284564809322264}, 'off_to_patched': {'cpu_ms': 0.02083037005153887, 'wall_ms': 0.0026122251346905045}}
+CASE SAMPLING COMPLETE 2 write-literal
+write-string completed rounds 768
+write-string medians {'baseline_to_patched': {'cpu_ms': 0.1911202587575156, 'wall_ms': 0.2097156856761373}, 'off_to_patched': {'cpu_ms': 0.07744340911977066, 'wall_ms': 0.10929204758645117}}
+CASE SAMPLING COMPLETE 2 write-string
+pieces-integers completed rounds 672
+go-control completed rounds 672
+str-plain completed rounds 768
+str-plain medians {'baseline_to_patched': {'cpu_ms': -0.6833709503198282, 'wall_ms': -0.7203995306475419}, 'off_to_patched': {'cpu_ms': -0.04998031545867532, 'wall_ms': -0.025678490741720683}}
+CASE SAMPLING COMPLETE 1 str-plain
+rust-newer-control completed rounds 624
+native-rust-c-control completed rounds 768
+native-rust-c-control medians {'baseline_to_patched': {'cpu_ms': 0.10818527133420464, 'wall_ms': 0.17766743367182425}, 'off_to_patched': {'cpu_ms': -0.05049393725296003, 'wall_ms': -0.029275003612128092}}
+CASE SAMPLING COMPLETE 2 native-rust-c-control
+go-control completed rounds 672
+str-flags completed rounds 768
+str-flags medians {'baseline_to_patched': {'cpu_ms': -0.6964793460654817, 'wall_ms': -0.7034694770305938}, 'off_to_patched': {'cpu_ms': 0.08602731981122158, 'wall_ms': 0.10025697308317927}}
+CASE SAMPLING COMPLETE 1 str-flags
+go-control completed rounds 672
+write-primitive completed rounds 768
+write-primitive medians {'baseline_to_patched': {'cpu_ms': 0.00022924948246405563, 'wall_ms': 0.024709679152090658}, 'off_to_patched': {'cpu_ms': 0.07287782526566033, 'wall_ms': -0.002812276885633125}}
+CASE SAMPLING COMPLETE 2 write-primitive
+older-rust-c-control completed rounds 720
+pieces-literal completed rounds 720
+pieces-integers completed rounds 720
+rust-newer-control completed rounds 672
+go-control completed rounds 720
+older-rust-control completed rounds 528
+older-rust-control completed rounds 528
+original-angr-rust completed rounds 528
+go-control completed rounds 720
+go-control completed rounds 720
+older-rust-c-control completed rounds 768
+older-rust-c-control medians {'baseline_to_patched': {'cpu_ms': 0.2875892324678331, 'wall_ms': 0.2820722621136085}, 'off_to_patched': {'cpu_ms': -0.025349013920916708, 'wall_ms': 0.029387312839035395}}
+CASE SAMPLING COMPLETE 0 older-rust-c-control
+pieces-literal completed rounds 768
+pieces-literal medians {'baseline_to_patched': {'cpu_ms': 0.6923105606044144, 'wall_ms': 0.7516434013851381}, 'off_to_patched': {'cpu_ms': 0.0034975369707757054, 'wall_ms': 0.02266716111889444}}
+CASE SAMPLING COMPLETE 0 pieces-literal
+rust-newer-control completed rounds 720
+pieces-integers completed rounds 768
+pieces-integers medians {'baseline_to_patched': {'cpu_ms': 0.44540610617940235, 'wall_ms': 0.36953822871943487}, 'off_to_patched': {'cpu_ms': -0.20019487387902268, 'wall_ms': -0.10381827803359611}}
+CASE SAMPLING COMPLETE 0 pieces-integers
+go-control completed rounds 768
+go-control medians {'baseline_to_patched': {'cpu_ms': -0.6840066145665569, 'wall_ms': -0.7798446308802109}, 'off_to_patched': {'cpu_ms': 0.04038069431260283, 'wall_ms': 0.03906393401864605}}
+CASE SAMPLING COMPLETE 1 go-control
+go-control completed rounds 768
+go-control medians {'baseline_to_patched': {'cpu_ms': 0.1600821029693833, 'wall_ms': 0.10425342390034675}, 'off_to_patched': {'cpu_ms': 0.04225621529547752, 'wall_ms': -0.04068511757605586}}
+CASE SAMPLING COMPLETE 2 go-control
+go-control completed rounds 768
+go-control medians {'baseline_to_patched': {'cpu_ms': 0.7919248752333852, 'wall_ms': 0.8611493060854958}, 'off_to_patched': {'cpu_ms': -0.152234468836554, 'wall_ms': -0.11835559739648005}}
+CASE SAMPLING COMPLETE 0 go-control
+older-rust-control completed rounds 576
+rust-newer-control completed rounds 768
+rust-newer-control medians {'baseline_to_patched': {'cpu_ms': 0.31775146428687506, 'wall_ms': 0.22283000025755673}, 'off_to_patched': {'cpu_ms': 0.11676743718171956, 'wall_ms': -0.3235419707734777}}
+CASE SAMPLING COMPLETE 0 rust-newer-control
+older-rust-control completed rounds 576
+original-angr-rust completed rounds 576
+older-rust-control completed rounds 624
+original-angr-rust completed rounds 624
+older-rust-control completed rounds 624
+older-rust-control completed rounds 672
+original-angr-rust completed rounds 672
+older-rust-control completed rounds 672
+older-rust-control completed rounds 720
+original-angr-rust completed rounds 720
+older-rust-control completed rounds 720
+older-rust-control completed rounds 768
+older-rust-control medians {'baseline_to_patched': {'cpu_ms': -1.2147336221479788, 'wall_ms': -0.982319059340353}, 'off_to_patched': {'cpu_ms': 0.27775193557266764, 'wall_ms': 0.5109951621799835}}
+CASE SAMPLING COMPLETE 1 older-rust-control
+original-angr-rust completed rounds 768
+original-angr-rust medians {'baseline_to_patched': {'cpu_ms': 1.06490275511808, 'wall_ms': 1.2535968002572506}, 'off_to_patched': {'cpu_ms': 0.4683670756981284, 'wall_ms': 0.6923132747234773}}
+CASE SAMPLING COMPLETE 0 original-angr-rust
+older-rust-control completed rounds 768
+older-rust-control medians {'baseline_to_patched': {'cpu_ms': 0.03906415293855048, 'wall_ms': 0.10710313133472926}, 'off_to_patched': {'cpu_ms': -0.29937009364094935, 'wall_ms': -0.7182823466783228}}
+CASE SAMPLING COMPLETE 2 older-rust-control
+FINAL BOUNDS 0 scalar-c {'baseline_to_patched': {'cpu_ms': -0.1811115172248289, 'wall_ms': 0.1494270352501233}, 'off_to_patched': {'cpu_ms': 0.8052690645267018, 'wall_ms': 2.2134348425374344}} True
+FINAL BOUNDS 0 pieces-literal {'baseline_to_patched': {'cpu_ms': 1.909694728710522, 'wall_ms': 2.126707616701678}, 'off_to_patched': {'cpu_ms': 1.283332638018072, 'wall_ms': 1.1631094873411638}} True
+FINAL BOUNDS 0 pieces-integers {'baseline_to_patched': {'cpu_ms': 1.4456147409284221, 'wall_ms': 2.170524735239336}, 'off_to_patched': {'cpu_ms': 0.9220126877742582, 'wall_ms': 2.2316096795775135}} True
+FINAL BOUNDS 0 older-rust-c-control {'baseline_to_patched': {'cpu_ms': 2.0775853846455967, 'wall_ms': 2.291665306751518}, 'off_to_patched': {'cpu_ms': 2.0814371761971766, 'wall_ms': 2.358814529694329}} True
+FINAL BOUNDS 0 original-angr-rust {'baseline_to_patched': {'cpu_ms': 2.0829020365392346, 'wall_ms': 2.1713083309323253}, 'off_to_patched': {'cpu_ms': 0.19122058103400666, 'wall_ms': 0.9887506253291403}} True
+FINAL BOUNDS 0 rust-newer-control {'baseline_to_patched': {'cpu_ms': 0.9479027330590339, 'wall_ms': 1.18450147928328}, 'off_to_patched': {'cpu_ms': 0.7133892091043303, 'wall_ms': 1.1469950204073711}} True
+FINAL BOUNDS 0 go-control {'baseline_to_patched': {'cpu_ms': 0.9885603338530374, 'wall_ms': 1.3438024466745446}, 'off_to_patched': {'cpu_ms': 0.2946129627714532, 'wall_ms': 0.9100692267891833}} True
+FEATURE FINAL 0 PASS
+FINAL BOUNDS 1 scalar-c {'baseline_to_patched': {'cpu_ms': 1.286438704558565, 'wall_ms': 2.997414829945822}, 'off_to_patched': {'cpu_ms': 0.641992324618959, 'wall_ms': 4.352925662421516}} True
+FINAL BOUNDS 1 str-plain {'baseline_to_patched': {'cpu_ms': 0.08144658954333751, 'wall_ms': 0.12021843858494394}, 'off_to_patched': {'cpu_ms': 0.6019069156325979, 'wall_ms': 0.021781431137642568}} True
+FINAL BOUNDS 1 str-flags {'baseline_to_patched': {'cpu_ms': -0.05265092533153157, 'wall_ms': 0.045743546646412114}, 'off_to_patched': {'cpu_ms': 1.2311903397984851, 'wall_ms': 1.5267088589050692}} True
+FINAL BOUNDS 1 str-result {'baseline_to_patched': {'cpu_ms': 0.44230711386297533, 'wall_ms': 0.9185703112361262}, 'off_to_patched': {'cpu_ms': 0.7487290529860812, 'wall_ms': 1.1855656380853432}} True
+FINAL BOUNDS 1 reference-make-string {'baseline_to_patched': {'cpu_ms': -0.2062282793637158, 'wall_ms': 0.10776770352934076}, 'off_to_patched': {'cpu_ms': 0.8027152017988525, 'wall_ms': 1.7593967110861175}} True
+FINAL BOUNDS 1 older-rust-control {'baseline_to_patched': {'cpu_ms': -0.8223068777797284, 'wall_ms': -0.08095355524837806}, 'off_to_patched': {'cpu_ms': 0.4330045828797425, 'wall_ms': 1.1154965080740085}} True
+FINAL BOUNDS 1 rust-large-control {'baseline_to_patched': {'cpu_ms': -0.4781771441713605, 'wall_ms': 0.1476702792205349}, 'off_to_patched': {'cpu_ms': 1.0459718555261919, 'wall_ms': 1.3866587716345817}} True
+FINAL BOUNDS 1 go-control {'baseline_to_patched': {'cpu_ms': 0.4180318992789093, 'wall_ms': 0.9628443701349751}, 'off_to_patched': {'cpu_ms': 0.8460688914174737, 'wall_ms': 1.7656041849074613}} True
+FEATURE FINAL 1 PASS
+FINAL BOUNDS 2 scalar-c {'baseline_to_patched': {'cpu_ms': 0.7984985428588199, 'wall_ms': 5.602660297777378}, 'off_to_patched': {'cpu_ms': 0.7783685781986421, 'wall_ms': 6.125015459554035}} False
+FINAL BOUNDS 2 write-primitive {'baseline_to_patched': {'cpu_ms': 0.7995241207038458, 'wall_ms': 0.5438910513820004}, 'off_to_patched': {'cpu_ms': 0.46319101962651826, 'wall_ms': 0.1897955887835303}} True
+FINAL BOUNDS 2 write-flags {'baseline_to_patched': {'cpu_ms': 0.07292245674443136, 'wall_ms': 0.44529283675074244}, 'off_to_patched': {'cpu_ms': 0.5091867106975559, 'wall_ms': 0.6566303337161672}} True
+FINAL BOUNDS 2 write-literal {'baseline_to_patched': {'cpu_ms': 0.780028109488251, 'wall_ms': 1.5065413879652974}, 'off_to_patched': {'cpu_ms': 0.5970344436629321, 'wall_ms': 1.7892523081663074}} True
+FINAL BOUNDS 2 write-string {'baseline_to_patched': {'cpu_ms': 1.5940917558420675, 'wall_ms': 2.4023297245402047}, 'off_to_patched': {'cpu_ms': 1.334080548296664, 'wall_ms': 2.136782228469258}} True
+FINAL BOUNDS 2 reference-write {'baseline_to_patched': {'cpu_ms': 0.7610840336633482, 'wall_ms': 1.5474680338114382}, 'off_to_patched': {'cpu_ms': 1.108736632295621, 'wall_ms': 1.6304435392136392}} True
+FINAL BOUNDS 2 native-rust-c-control {'baseline_to_patched': {'cpu_ms': 0.636609824799332, 'wall_ms': 1.9351190455855214}, 'off_to_patched': {'cpu_ms': 0.3442612280246546, 'wall_ms': 1.6200977958634564}} True
+FINAL BOUNDS 2 older-rust-control {'baseline_to_patched': {'cpu_ms': 0.21434755296432093, 'wall_ms': 0.1947821608516971}, 'off_to_patched': {'cpu_ms': 0.9287060317958303, 'wall_ms': 1.1418147686715265}} True
+FINAL BOUNDS 2 rust-large-control {'baseline_to_patched': {'cpu_ms': 1.7715961059329637, 'wall_ms': 1.978743937887366}, 'off_to_patched': {'cpu_ms': 1.629214543669585, 'wall_ms': 1.4095436132606707}} True
+FINAL BOUNDS 2 go-control {'baseline_to_patched': {'cpu_ms': 0.7407514863404674, 'wall_ms': 1.9820140930416021}, 'off_to_patched': {'cpu_ms': 1.0007041794112466, 'wall_ms': 2.324487529772186}} True
+FEATURE FINAL 2 UNRESOLVED
+Traceback (most recent call last):
+  File "/tmp/kuna-angr-reference/timing-candidate-index.py", line 84, in <module>
+    if __name__=='__main__':main()
+  File "/tmp/kuna-angr-reference/timing-candidate-index.py", line 82, in main
+    assert all(accepted_features),'Candidate-index study did not clear all final bounds; no repeat authorized for unchanged code.'
+AssertionError: Candidate-index study did not clear all final bounds; no repeat authorized for unchanged code.

@@ -115,7 +115,7 @@ const PT_GNU_RELRO: u32 = 0x6474_e552;
 /// program-header table (the generic `object` segment iterator yields `PT_LOAD`
 /// only, so the raw walk is the only route). `None` when the image declares no
 /// RELRO segment — a `-z norelro` link, or a static non-PIE.
-fn relro_range(bytes: &[u8]) -> Option<(u64, u64)> {
+pub(crate) fn relro_range(bytes: &[u8]) -> Option<(u64, u64)> {
     if bytes.len() < 64 || &bytes[..4] != b"\x7fELF" {
         return None;
     }

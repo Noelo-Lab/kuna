@@ -1,0 +1,81 @@
+--- before/pieces_literal
++++ after/pieces_literal
+@@ -12,5 +12,5 @@
+   v3 = 8;
+   v4 = 0;
+   v5 = 0;
+-  _print(&mut v1);
++  println!("literal {{é🙂}}\n");
+ }
+--- before/pieces_plain
++++ after/pieces_plain
+@@ -12,5 +12,5 @@
+   v3 = 8;
+   v4 = 0;
+   v5 = 0;
+-  _print(&mut v1);
++  print!("quote=\" slash=\\ nul=\0 {{}} ");
+ }
+--- before/pieces_stderr
++++ after/pieces_stderr
+@@ -12,5 +12,5 @@
+   v3 = 8;
+   v4 = 0;
+   v5 = 0;
+-  _eprint(&mut v1);
++  eprintln!("stderr\r");
+ }
+--- before/pieces_empty
++++ after/pieces_empty
+@@ -12,5 +12,5 @@
+   v3 = 8;
+   v4 = 0;
+   v5 = 0;
+-  _print(&mut v1);
++  print!("");
+ }
+--- before/pieces_u32
++++ after/pieces_u32
+@@ -18,5 +18,5 @@
+   v6 = &mut v2;
+   v7 = 1;
+   v1 = a0;
+-  _print(&mut v3);
++  println!("value {} end",&*((v2 as *const _) as *const u32));
+ }
+--- before/pieces_i64
++++ after/pieces_i64
+@@ -18,5 +18,5 @@
+   v6 = &mut v2;
+   v7 = 1;
+   v1 = a0;
+-  _print(&mut v3);
++  print!("{}",&*((v2 as *const _) as *const i64));
+ }
+--- before/pieces_pair
++++ after/pieces_pair
+@@ -24,5 +24,5 @@
+   v10 = 2;
+   v1 = a0;
+   v2 = a1;
+-  _eprint(&mut v4);
++  eprint!("{} = {}",&*((v3 as *const _) as *const i8),&*((v6 as *const _) as *const u64));
+ }
+--- before/pieces_narrow
++++ after/pieces_narrow
+@@ -36,5 +36,5 @@
+   v2 = a1;
+   v3 = a2;
+   v4 = a3;
+-  _print(&mut v6);
++  println!("[{}|{}|{}|{}]",&*((v5 as *const _) as *const u8),&*((v8 as *const _) as *const i16),&*((v10 as *const _) as *const u16),&*((v12 as *const _) as *const i32));
+ }
+--- before/pieces_adjacent
++++ after/pieces_adjacent
+@@ -24,5 +24,5 @@
+   v10 = 2;
+   v1 = a0;
+   v2 = a1;
+-  _print(&mut v4);
++  println!("{}{}",&*((v3 as *const _) as *const u64),&*((v6 as *const _) as *const i64));
+ }

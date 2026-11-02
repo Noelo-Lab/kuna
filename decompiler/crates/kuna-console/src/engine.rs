@@ -4602,7 +4602,13 @@ pub fn bootstrap_from_object_with_isa(
     sleigh.base_mut().unwrap().source_lang_detected = compiler.to_source_lang();
     sleigh.base_mut().unwrap().rustc_stable_version =
         kuna_analysis::sourcelang::stable_rustc_version(&bytes);
-    if matches!(sleigh.base().unwrap().rustc_stable_version, Some((1, 93, 0 | 1))) {
+    if let Some(layout) = kuna_analysis::sourcelang::fmt_pieces_layout(&bytes) {
+        sleigh.base_mut().unwrap().rustc_pieces_layout = true;
+        sleigh.base_mut().unwrap().rust_fmt_pieces_relro = layout.relro;
+    }
+    if matches!(sleigh.base().unwrap().rustc_stable_version, Some((1, 93, 0 | 1)))
+        || sleigh.base().unwrap().rustc_pieces_layout
+    {
         let formatters = kuna_analysis::sourcelang::integer_formatters(&bytes);
         sleigh.base_mut().unwrap().rust_display_formatters = formatters
             .iter()
