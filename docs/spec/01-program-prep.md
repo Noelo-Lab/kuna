@@ -711,8 +711,40 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   absolute, relative, PLT-relative, and image-offset fields at 8/16/32/64 bits in
   the object's byte order, plus the instruction fields and ABI formulas for ARM
   `CALL`/`JUMP24`/Thumb branches/`REL32`/`PREL31`, AArch64 branch/page/low-12
-  forms, PowerPC64 `REL24`/TOC forms, and 32-bit SPARC `WDISP30`/`WPLT30`/
-  `HI22`/`LO10`/`PC22`/`PC10`/`DISP32` forms. An entry that cannot be encoded is left
+  forms, PowerPC `REL24`/`PLTREL24`/`LOCAL24PC`/`ADDR24` calls (32- and 64-bit;
+  a `-fPIC` object's `PLTREL24` addend locates the caller's `.got2` for the
+  linker's call stub and is not added to the target), the 14-bit conditional
+  branches, the absolute (`ADDR16*`, including the 64-bit `DS`, `HIGHER` and
+  `HIGHEST` forms), PC-relative (`REL16*`) and TOC-relative halves, and the
+  `REL32`/`REL64`/`UADDR*` data words, and 32-bit SPARC `WDISP30`/`WPLT30`/
+  `HI22`/`LO10`/`PC22`/`PC10`/`DISP32` forms. A PowerPC64 ELFv1 object names each
+  function by its `.opd` descriptor: the function symbol is registered at the
+  code the descriptor's `R_PPC64_ADDR64` points at, a branch relocated against a
+  descriptor's symbol reaches that code, and the descriptors (with their TOC)
+  are the loader's ELFv1 descriptors, as a linked image's are. An undefined
+  `.TOC.` resolves to `.toc + 0x8000`.
+  MIPS relocations go through
+  `decompiler/crates/kuna-analysis/src/loader/kuna_mipsreloc.rs (Gp)`. An o32
+  object (REL) keeps each addend in the field it patches, so a `HI16`, or a
+  `GOT16` against a local symbol, takes the low half of its addend from the next
+  `LO16` against the same target, as the GNU linker pairs them; an N32/N64 object
+  (RELA) states its addends and chains up to three operations in one entry
+  (`%hi(%neg(%gp_rel(f)))` is `GPREL16`, `SUB`, `HI16`), each result the next
+  one's addend. Neither `$gp` nor a GOT exists before link, so the layout makes
+  what the linker would: a GOT after the object's other sections, with one entry
+  per symbol and addend a `CALL16`/`GOT16`/`GOT_DISP`/`CALL_HI16`-style
+  relocation names and one per 64 KiB page a local `GOT16` or a `GOT_PAGE`
+  reaches (sized from the relocations before any is applied), then the
+  small-data sections (`.sdata`, `.sbss`, `.lit4`, `.lit8`, `.srdata`), and `_gp`
+  `0x7ff0` past the GOT's start. `_gp_disp` resolves to `_gp` less the place
+  (the PIC prologue adds `$t9`, the function's entry) and an undefined `_gp` or
+  `__gnu_local_gp` to `_gp`. The GOT's entries hold what the relocations put in
+  them and nothing writes them, so the loader reports its range foldable
+  (`dynreloc_const`, beside the MSVC FP constants), and
+  `lw $t9, %call16(f)($gp); jalr $t9` decompiles to a call of `f` wherever `$t9`
+  is seeded with the entry. `R_MIPS_JALR`, a hint naming the function a `jalr`
+  calls, is not applied; microMIPS, MIPS16, R6 PC-relative and TLS relocations
+  are reported unsupported. An entry that cannot be encoded is left
   untouched and classified by reason (unsupported, unresolved target, missing
   TOC, section bounds, required veneer, alignment, range, or invalid encoding).
   The loader reports exact failure totals in at most eight groups with three

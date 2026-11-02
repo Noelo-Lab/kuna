@@ -8,7 +8,11 @@
 //!
 //! Supported instruction families are ARM `CALL`/`JUMP24`, Thumb call/jump,
 //! `REL32`, and `PREL31`; AArch64 branch, ADRP page, ADD low-12, and scaled load/
-//! store low-12 forms; PowerPC64 `REL24`, TOC16 variants, and TOC64; and SPARC
+//! store low-12 forms; PowerPC (32- and 64-bit) `REL24`/`PLTREL24`/`LOCAL24PC`
+//! and `ADDR24` branches, the 14-bit conditional-branch forms, the absolute,
+//! PC-relative (`REL16`) and TOC-relative 16-bit halves, TOC64, and the
+//! unaligned and PC-relative data words; MIPS, through
+//! [`super::kuna_mipsreloc`]; and SPARC
 //! `WDISP30`/`WPLT30` calls, the `HI22`/`LO10` and `PC22`/`PC10` `sethi`/`or`
 //! pairs, and `DISP32`. Generic
 //! absolute, relative, PLT-relative, and image-offset relocations support
@@ -56,9 +60,14 @@ enum Specific {
     Aarch64AdrPage { checked: bool },
     Aarch64AddLo12,
     Aarch64LdstLo12 { scale: u8 },
-    Ppc64Rel24,
+    PpcRel24 { addend: bool },
+    PpcAbs24,
+    PpcBranch14 { pc: bool },
+    PpcHalf16 { form: PpcHalf, pc: bool },
     Ppc64Toc16 { form: PpcHalf },
     Ppc64Toc64,
+    Data { bytes: u8, pc: bool },
+    Mips { r_type: u32 },
     SparcWdisp30,
     SparcHi22 { pc: bool },
     SparcLo10 { pc: bool },
@@ -73,6 +82,12 @@ enum PpcHalf {
     Ha,
     Ds,
     LoDs,
+    High,
+    HighA,
+    Higher,
+    HigherA,
+    Highest,
+    HighestA,
 }
 
 /// A classified relocation. Classification determines the actual byte width,
@@ -128,10 +143,23 @@ impl RelocationSpec {
                 self.call = true;
             }
         }
-        if matches!(self.specific, Specific::Ppc64Rel24) && field.len() == 4 {
+        if matches!(
+            self.specific,
+            Specific::PpcRel24 { .. } | Specific::PpcAbs24 | Specific::PpcBranch14 { .. }
+        ) && field.len() == 4
+        {
             self.call = read_u32(field, little_endian) & 1 != 0;
         }
         self
+    }
+
+    /// The ELF type of a MIPS relocation, which [`super::kuna_mipsreloc`]
+    /// applies rather than [`apply`].
+    pub fn mips_type(self) -> Option<u32> {
+        match self.specific {
+            Specific::Mips { r_type } => Some(r_type),
+            _ => None,
+        }
     }
 
     pub fn requires_symbol(self) -> bool {
@@ -148,9 +176,12 @@ impl RelocationSpec {
                 Specific::ArmBranch24
                     | Specific::ArmThumbBranch24
                     | Specific::Aarch64Branch26
-                    | Specific::Ppc64Rel24
+                    | Specific::PpcRel24 { .. }
+                    | Specific::PpcAbs24
+                    | Specific::PpcBranch14 { .. }
                     | Specific::SparcWdisp30
             )
+            || matches!(self.specific, Specific::Mips { r_type } if super::kuna_mipsreloc::targets_code(r_type))
     }
 }
 
@@ -219,7 +250,57 @@ fn classify_info(
             Some((Specific::Aarch64LdstLo12 { scale: 4 }, false))
         }
 
-        (Architecture::PowerPc64, Some(elf::R_PPC64_REL24)) => Some((Specific::Ppc64Rel24, true)),
+        (Architecture::PowerPc, Some(elf::R_PPC_REL24 | elf::R_PPC_LOCAL24PC))
+        | (Architecture::PowerPc64, Some(elf::R_PPC64_REL24 | R_PPC64_REL24_NOTOC)) => {
+            Some((Specific::PpcRel24 { addend: true }, true))
+        }
+        // A `-fPIC` object's `PLTREL24` addend locates the caller's `.got2`
+        // for the linker's call stub; it is no part of the branch target.
+        (Architecture::PowerPc, Some(elf::R_PPC_PLTREL24)) => {
+            Some((Specific::PpcRel24 { addend: false }, true))
+        }
+        (Architecture::PowerPc | Architecture::PowerPc64, Some(elf::R_PPC_ADDR24)) => {
+            Some((Specific::PpcAbs24, true))
+        }
+        (
+            Architecture::PowerPc | Architecture::PowerPc64,
+            Some(elf::R_PPC_REL14 | elf::R_PPC_REL14_BRTAKEN | elf::R_PPC_REL14_BRNTAKEN),
+        ) => Some((Specific::PpcBranch14 { pc: true }, false)),
+        (
+            Architecture::PowerPc | Architecture::PowerPc64,
+            Some(elf::R_PPC_ADDR14 | elf::R_PPC_ADDR14_BRTAKEN | elf::R_PPC_ADDR14_BRNTAKEN),
+        ) => Some((Specific::PpcBranch14 { pc: false }, false)),
+        (Architecture::PowerPc | Architecture::PowerPc64, Some(r_type))
+            if ppc_half(arch, r_type).is_some() =>
+        {
+            let (form, pc) = ppc_half(arch, r_type).unwrap_or((PpcHalf::Plain, false));
+            Some((Specific::PpcHalf16 { form, pc }, false))
+        }
+        (Architecture::PowerPc | Architecture::PowerPc64, Some(elf::R_PPC_REL32)) => {
+            Some((Specific::Data { bytes: 4, pc: true }, false))
+        }
+        (Architecture::PowerPc | Architecture::PowerPc64, Some(elf::R_PPC_UADDR32)) => {
+            Some((Specific::Data { bytes: 4, pc: false }, false))
+        }
+        (Architecture::PowerPc | Architecture::PowerPc64, Some(elf::R_PPC_UADDR16)) => {
+            Some((Specific::Data { bytes: 2, pc: false }, false))
+        }
+        (Architecture::PowerPc64, Some(elf::R_PPC64_UADDR64)) => {
+            Some((Specific::Data { bytes: 8, pc: false }, false))
+        }
+        (Architecture::PowerPc64, Some(elf::R_PPC64_REL64)) => {
+            Some((Specific::Data { bytes: 8, pc: true }, false))
+        }
+        (Architecture::PowerPc, Some(elf::R_PPC_NONE)) => return Ok(None),
+        (Architecture::Mips | Architecture::Mips64 | Architecture::Mips64_N32, Some(r_type)) => {
+            return super::kuna_mipsreloc::classify(r_type).map(|c| {
+                c.map(|(width, call)| RelocationSpec {
+                    specific: Specific::Mips { r_type },
+                    width,
+                    call,
+                })
+            });
+        }
         (Architecture::PowerPc64, Some(elf::R_PPC64_TOC16)) => Some((
             Specific::Ppc64Toc16 {
                 form: PpcHalf::Plain,
@@ -270,8 +351,9 @@ fn classify_info(
 
     if let Some((specific, call)) = specific {
         let width = match specific {
-            Specific::Ppc64Toc16 { .. } => 2,
+            Specific::Ppc64Toc16 { .. } | Specific::PpcHalf16 { .. } => 2,
             Specific::Ppc64Toc64 => 8,
+            Specific::Data { bytes, .. } => usize::from(bytes),
             _ => 4,
         };
         return Ok(Some(RelocationSpec {
@@ -367,10 +449,21 @@ fn apply_info(
         Specific::Aarch64LdstLo12 { scale } => {
             aarch64_lo12(field, little_endian, reloc, symbol, scale, true)
         }
-        Specific::Ppc64Rel24 => ppc64_rel24(field, little_endian, reloc, symbol, place),
+        Specific::PpcRel24 { addend } => {
+            ppc_rel24(field, little_endian, reloc, symbol, place, addend)
+        }
+        Specific::PpcAbs24 => ppc_abs24(field, little_endian, reloc, symbol),
+        Specific::PpcBranch14 { pc } => {
+            ppc_branch14(field, little_endian, reloc, symbol, pc.then_some(place))
+        }
+        Specific::PpcHalf16 { form, pc } => {
+            ppc_half16(field, little_endian, reloc, symbol, pc.then_some(place), form)
+        }
         Specific::Ppc64Toc16 { form } => {
             ppc64_toc16(field, little_endian, reloc, symbol, toc, form)
         }
+        Specific::Data { pc, .. } => data_word(field, little_endian, reloc, symbol, pc.then_some(place)),
+        Specific::Mips { .. } => Err(RelocationFailure::Unsupported),
         Specific::Ppc64Toc64 => ppc64_toc64(field, little_endian, reloc, toc),
         Specific::SparcWdisp30 => sparc_wdisp30(field, little_endian, reloc, symbol, place),
         Specific::SparcHi22 { pc } => {
@@ -633,24 +726,129 @@ fn lo12_encoding_matches(insn: u32, scale: u8, ldst: bool) -> bool {
     encoded == u32::from(scale)
 }
 
-fn ppc64_rel24(
+/// The PowerPC 16-bit half a `_LO`/`_HI`/`_HA`/... relocation names, and
+/// whether its value is PC-relative (`REL16*`). 64-bit only: the `DS` and
+/// `HIGHER`/`HIGHEST` forms.
+fn ppc_half(arch: Architecture, r_type: u32) -> Option<(PpcHalf, bool)> {
+    let common = match r_type {
+        elf::R_PPC_ADDR16 => Some((PpcHalf::Plain, false)),
+        elf::R_PPC_ADDR16_LO => Some((PpcHalf::Lo, false)),
+        elf::R_PPC_ADDR16_HI => Some((PpcHalf::Hi, false)),
+        elf::R_PPC_ADDR16_HA => Some((PpcHalf::Ha, false)),
+        elf::R_PPC_REL16 => Some((PpcHalf::Plain, true)),
+        elf::R_PPC_REL16_LO => Some((PpcHalf::Lo, true)),
+        elf::R_PPC_REL16_HI => Some((PpcHalf::Hi, true)),
+        elf::R_PPC_REL16_HA => Some((PpcHalf::Ha, true)),
+        _ => None,
+    };
+    if common.is_some() || arch != Architecture::PowerPc64 {
+        return common;
+    }
+    match r_type {
+        elf::R_PPC64_ADDR16_DS => Some((PpcHalf::Ds, false)),
+        elf::R_PPC64_ADDR16_LO_DS => Some((PpcHalf::LoDs, false)),
+        elf::R_PPC64_ADDR16_HIGH => Some((PpcHalf::High, false)),
+        elf::R_PPC64_ADDR16_HIGHA => Some((PpcHalf::HighA, false)),
+        elf::R_PPC64_ADDR16_HIGHER => Some((PpcHalf::Higher, false)),
+        elf::R_PPC64_ADDR16_HIGHERA => Some((PpcHalf::HigherA, false)),
+        elf::R_PPC64_ADDR16_HIGHEST => Some((PpcHalf::Highest, false)),
+        elf::R_PPC64_ADDR16_HIGHESTA => Some((PpcHalf::HighestA, false)),
+        _ => None,
+    }
+}
+
+/// `R_PPC64_REL24_NOTOC`, which the `object` crate does not name.
+const R_PPC64_REL24_NOTOC: u32 = 116;
+
+/// `b`/`bl` with a PC-relative 24-bit word displacement. `PLTREL24` passes
+/// `addend: false`: its addend is the `.got2` offset of a PIC call stub.
+fn ppc_rel24(
     field: &mut [u8],
     le: bool,
     reloc: RelocationInfo,
     symbol: u64,
     place: u64,
+    addend: bool,
 ) -> Result<(), RelocationFailure> {
     let mut insn = read_u32(field, le);
-    if insn & 0xfc00_0000 != 0x4800_0000 {
+    if insn & 0xfc00_0002 != 0x4800_0000 {
         return Err(RelocationFailure::InvalidEncoding);
     }
     let implicit = sign_extend((insn & 0x03ff_fffc) as i128, 26);
-    let value = symbol as i128 + explicit_plus_implicit(reloc, implicit) - place as i128;
+    let addend = if addend { explicit_plus_implicit(reloc, implicit) } else { 0 };
+    let value = symbol as i128 + addend - place as i128;
     require_aligned(value, 4)?;
     require_signed(value, 26)?;
     insn = (insn & !0x03ff_fffc) | ((value as u32) & 0x03ff_fffc);
     write_u32(field, le, insn);
     Ok(())
+}
+
+/// `ba`/`bla`: the absolute target in the 24-bit word field.
+fn ppc_abs24(
+    field: &mut [u8],
+    le: bool,
+    reloc: RelocationInfo,
+    symbol: u64,
+) -> Result<(), RelocationFailure> {
+    let mut insn = read_u32(field, le);
+    if insn & 0xfc00_0002 != 0x4800_0002 {
+        return Err(RelocationFailure::InvalidEncoding);
+    }
+    let implicit = sign_extend((insn & 0x03ff_fffc) as i128, 26);
+    let value = symbol as i128 + explicit_plus_implicit(reloc, implicit);
+    require_aligned(value, 4)?;
+    require_signed(value, 26)?;
+    insn = (insn & !0x03ff_fffc) | ((value as u32) & 0x03ff_fffc);
+    write_u32(field, le, insn);
+    Ok(())
+}
+
+/// `bc` (`REL14`, PC-relative) or `bca` (`ADDR14`): the 14-bit word field of
+/// a conditional branch. The branch-prediction bits are kept as they are.
+fn ppc_branch14(
+    field: &mut [u8],
+    le: bool,
+    reloc: RelocationInfo,
+    symbol: u64,
+    place: Option<u64>,
+) -> Result<(), RelocationFailure> {
+    let mut insn = read_u32(field, le);
+    if insn >> 26 != 16 || (insn & 2 != 0) == place.is_some() {
+        return Err(RelocationFailure::InvalidEncoding);
+    }
+    let implicit = sign_extend((insn & 0xfffc) as i128, 16);
+    let value =
+        symbol as i128 + explicit_plus_implicit(reloc, implicit) - place.unwrap_or(0) as i128;
+    require_aligned(value, 4)?;
+    require_signed(value, 16)?;
+    insn = (insn & !0xfffc) | ((value as u32) & 0xfffc);
+    write_u32(field, le, insn);
+    Ok(())
+}
+
+/// The absolute (`ADDR16*`) or PC-relative (`REL16*`) 16-bit halves.
+fn ppc_half16(
+    field: &mut [u8],
+    le: bool,
+    reloc: RelocationInfo,
+    symbol: u64,
+    place: Option<u64>,
+    form: PpcHalf,
+) -> Result<(), RelocationFailure> {
+    if reloc.implicit_addend {
+        return Err(RelocationFailure::InvalidEncoding);
+    }
+    let value = symbol as i128 + reloc.addend as i128 - place.unwrap_or(0) as i128;
+    if matches!(form, PpcHalf::Plain) && place.is_none() {
+        // `ADDR16` checks a bitfield: a signed or an unsigned 16-bit value.
+        if !(-0x8000..=0xffff).contains(&value) {
+            return Err(RelocationFailure::OutOfRange);
+        }
+        write_u16(field, le, value as u16);
+        return Ok(());
+    }
+    write_half(field, le, value, form)
 }
 
 fn ppc64_toc16(
@@ -668,6 +866,12 @@ fn ppc64_toc16(
         return Err(RelocationFailure::InvalidEncoding);
     }
     let value = symbol as i128 + reloc.addend as i128 - toc as i128;
+    write_half(field, le, value, form)
+}
+
+/// Encode `value` into one PowerPC 16-bit field. `Plain` and `Ds` are range
+/// checked as signed; the `DS` forms keep the instruction's two low bits.
+fn write_half(field: &mut [u8], le: bool, value: i128, form: PpcHalf) -> Result<(), RelocationFailure> {
     let old = read_u16(field, le);
     let encoded = match form {
         PpcHalf::Plain => {
@@ -675,8 +879,12 @@ fn ppc64_toc16(
             value as u16
         }
         PpcHalf::Lo => value as u16,
-        PpcHalf::Hi => (value >> 16) as u16,
-        PpcHalf::Ha => ((value + 0x8000) >> 16) as u16,
+        PpcHalf::Hi | PpcHalf::High => (value >> 16) as u16,
+        PpcHalf::Ha | PpcHalf::HighA => ((value + 0x8000) >> 16) as u16,
+        PpcHalf::Higher => (value >> 32) as u16,
+        PpcHalf::HigherA => ((value + 0x8000_8000) >> 32) as u16,
+        PpcHalf::Highest => (value >> 48) as u16,
+        PpcHalf::HighestA => ((value + 0x8000_8000_8000) >> 48) as u16,
         PpcHalf::Ds => {
             require_signed(value, 16)?;
             require_aligned(value, 4)?;
@@ -688,6 +896,28 @@ fn ppc64_toc16(
         }
     };
     write_u16(field, le, encoded);
+    Ok(())
+}
+
+/// An absolute (`UADDR*`) or PC-relative (`REL32`/`REL64`) data field of the
+/// width the relocation names, truncated as the GNU linker's 32-bit forms are
+/// only when the field spans the address.
+fn data_word(
+    field: &mut [u8],
+    le: bool,
+    reloc: RelocationInfo,
+    symbol: u64,
+    place: Option<u64>,
+) -> Result<(), RelocationFailure> {
+    let value = symbol as i128 + explicit_plus_implicit(reloc, read_signed(field, le))
+        - place.unwrap_or(0) as i128;
+    let bits = (field.len() * 8) as u8;
+    if bits < 64 && place.is_some() {
+        require_signed(value, bits)?;
+    } else if bits < 64 && !(-(1i128 << (bits - 1))..(1i128 << bits)).contains(&value) {
+        return Err(RelocationFailure::OutOfRange);
+    }
+    write_integer(field, le, value as u64);
     Ok(())
 }
 
@@ -1447,6 +1677,88 @@ mod tests {
         assert!(spec
             .refine_call_from_field(&0x4800_0001u32.to_be_bytes(), false)
             .is_call());
+    }
+
+    #[test]
+    fn ppc32_calls_encode_their_target_and_pltrel24_drops_its_got2_addend() {
+        for (r_type, addend) in [
+            (elf::R_PPC_REL24, 0),
+            (elf::R_PPC_LOCAL24PC, 0),
+            (elf::R_PPC_PLTREL24, 0x8000),
+        ] {
+            let r = RelocationInfo { addend, ..reloc(r_type, false) };
+            let spec = classify_info(Architecture::PowerPc, r).unwrap().unwrap();
+            assert!(spec.targets_code());
+            let mut bytes = 0x4800_0001u32.to_be_bytes();
+            apply_info(spec, r, &mut bytes, false, 0x400100, 0x400040, None, None).unwrap();
+            assert_eq!(u32::from_be_bytes(bytes), 0x4800_00c1, "type {r_type}");
+        }
+        // A `bla` is no `REL24` field.
+        let r = reloc(elf::R_PPC_REL24, false);
+        let spec = classify_info(Architecture::PowerPc, r).unwrap().unwrap();
+        let mut bytes = 0x4800_0003u32.to_be_bytes();
+        assert_eq!(
+            apply_info(spec, r, &mut bytes, false, 0x400100, 0x400040, None, None),
+            Err(RelocationFailure::InvalidEncoding)
+        );
+    }
+
+    #[test]
+    fn ppc_conditional_and_absolute_branches_keep_their_other_bits() {
+        let r = reloc(elf::R_PPC_REL14, false);
+        let spec = classify_info(Architecture::PowerPc, r).unwrap().unwrap();
+        let mut bytes = 0x4082_0000u32.to_be_bytes(); // bne
+        apply_info(spec, r, &mut bytes, false, 0x400020, 0x400000, None, None).unwrap();
+        assert_eq!(u32::from_be_bytes(bytes), 0x4082_0020);
+        let r = reloc(elf::R_PPC_ADDR24, false);
+        let spec = classify_info(Architecture::PowerPc, r).unwrap().unwrap();
+        let mut bytes = 0x4800_0003u32.to_be_bytes(); // bla
+        apply_info(spec, r, &mut bytes, false, 0x1000, 0x400000, None, None).unwrap();
+        assert_eq!(u32::from_be_bytes(bytes), 0x4800_1003);
+    }
+
+    #[test]
+    fn ppc_address_halves_are_absolute_or_pc_relative() {
+        for (arch, r_type, symbol, place, expected) in [
+            (Architecture::PowerPc, elf::R_PPC_ADDR16_HA, 0x41_8000u64, 0u64, 0x0042u16),
+            (Architecture::PowerPc, elf::R_PPC_ADDR16_HI, 0x41_8000, 0, 0x0041),
+            (Architecture::PowerPc, elf::R_PPC_ADDR16_LO, 0x41_8000, 0, 0x8000),
+            (Architecture::PowerPc, elf::R_PPC_ADDR16, 0xfffe, 0, 0xfffe),
+            (Architecture::PowerPc, elf::R_PPC_REL16_HA, 0x40_9000, 0x40_0000, 0x0001),
+            (Architecture::PowerPc, elf::R_PPC_REL16_LO, 0x40_9000, 0x40_0000, 0x9000),
+            (Architecture::PowerPc64, elf::R_PPC64_ADDR16_HIGHESTA, 0x1234_5678_9abc_def0, 0, 0x1234),
+            (Architecture::PowerPc64, elf::R_PPC64_ADDR16_HIGHERA, 0x1234_5678_9abc_def0, 0, 0x5679),
+        ] {
+            let r = reloc(r_type, false);
+            let spec = classify_info(arch, r).unwrap().unwrap();
+            assert_eq!(spec.width(), 2);
+            let mut bytes = [0u8; 2];
+            apply_info(spec, r, &mut bytes, false, symbol, place, None, None).unwrap();
+            assert_eq!(u16::from_be_bytes(bytes), expected, "type {r_type}");
+        }
+        let r = reloc(elf::R_PPC_ADDR16, false);
+        let spec = classify_info(Architecture::PowerPc, r).unwrap().unwrap();
+        assert_eq!(
+            apply_info(spec, r, &mut [0u8; 2], false, 0x1_0000, 0, None, None),
+            Err(RelocationFailure::OutOfRange)
+        );
+    }
+
+    #[test]
+    fn ppc_data_words_are_absolute_or_pc_relative() {
+        for (arch, r_type, width, place, expected) in [
+            (Architecture::PowerPc, elf::R_PPC_REL32, 4, 0x40_0010u64, 0x30u64),
+            (Architecture::PowerPc, elf::R_PPC_UADDR32, 4, 0, 0x40_0040),
+            (Architecture::PowerPc64, elf::R_PPC64_REL64, 8, 0x40_0010, 0x30),
+            (Architecture::PowerPc64, elf::R_PPC64_UADDR64, 8, 0, 0x40_0040),
+        ] {
+            let r = reloc(r_type, false);
+            let spec = classify_info(arch, r).unwrap().unwrap();
+            assert_eq!(spec.width(), width);
+            let mut bytes = vec![0u8; width];
+            apply_info(spec, r, &mut bytes, false, 0x40_0040, place, None, None).unwrap();
+            assert_eq!(read_integer(&bytes, false), expected, "type {r_type}");
+        }
     }
 
     #[test]

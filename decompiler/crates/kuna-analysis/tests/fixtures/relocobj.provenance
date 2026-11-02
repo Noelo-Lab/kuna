@@ -1,0 +1,37 @@
+relocobj_* -- PowerPC and MIPS relocatable objects whose calls and addresses
+are relocations (GH-904; tests/stages/kuna-relocobj-ppc-mips.xml).
+
+What they are
+  relocobj_ppc32_O2.o      PowerPC32 BE, -fno-pic: REL24 calls, ADDR16_HA/LO
+                           addresses, REL32 in .eh_frame.
+  relocobj_ppc32_pic_O2.o  PowerPC32 BE, -fPIC: PLTREL24 calls (addend 0x8000,
+                           the .got2 offset), .got2 ADDR32 words, REL32.
+  relocobj_ppc64_O2.o      PowerPC64 BE ELFv1: function symbols in .opd,
+                           REL24 calls against them, TOC16 halves, R_PPC64_TOC.
+  relocobj_mips32_O2.o     MIPS32 BE o32, -fno-pic -mno-abicalls: R_MIPS_26
+                           calls, REL HI16/LO16 address pairs.
+  relocobj_mipsel_pic_O2.o MIPS32 LE o32, PIC (the default): _gp_disp
+                           prologues, CALL16 calls with R_MIPS_JALR hints,
+                           GOT16/LO16 addresses.
+  Source: relocobj_calls.c.
+
+Why they are vendored
+  CI has no PowerPC or MIPS toolchain, and the assertions depend on the exact
+  instructions and relocations.
+
+Where they came from
+  Ubuntu clang 14.0.0 (host) and Debian mips-linux-gnu-gcc 12.2.0-14 (docker):
+
+      clang -target powerpc-linux-gnu -O2 -fno-pic -c relocobj_calls.c -o relocobj_ppc32_O2.o
+      clang -target powerpc-linux-gnu -O2 -fPIC -c relocobj_calls.c -o relocobj_ppc32_pic_O2.o
+      clang -target powerpc64-linux-gnu -O2 -c relocobj_calls.c -o relocobj_ppc64_O2.o
+      clang -target mipsel-linux-gnu -O2 -c relocobj_calls.c -o relocobj_mipsel_pic_O2.o
+      mips-linux-gnu-gcc -O2 -fno-pic -mno-abicalls -c relocobj_calls.c -o relocobj_mips32_O2.o
+
+  sha256:
+    297065f51e3363979e658b008a8652334cd17f5debdaa1be5b761458e53271b2  relocobj_mips32_O2.o
+    4d3565064499ab05f7f3a8812f675901054c8fefdc71c963f2a7a3a78faad79a  relocobj_mipsel_pic_O2.o
+    342b080cb19710357ffb665b88ec70a584dec97667d246f1e8bfa2c1940d50c2  relocobj_ppc32_O2.o
+    d8156a8e8b4e46406d207b1f77db8035fd63d6c1a55e4c2333d2fd81d6d3dd65  relocobj_ppc32_pic_O2.o
+    15f66d01cf35533d766f0af3fdf9b21e0de55e132db0ede8d2f40a5ec8241633  relocobj_ppc64_O2.o
+  Never executed.
