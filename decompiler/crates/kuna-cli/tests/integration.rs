@@ -364,6 +364,9 @@ mod register_parameter_replay;
 #[path = "relocation_diagnostics.rs"]
 mod relocation_diagnostics;
 
+#[path = "relocrebase_be.rs"]
+mod relocrebase_be;
+
 #[path = "retcallchain_cli.rs"]
 mod retcallchain_cli;
 
