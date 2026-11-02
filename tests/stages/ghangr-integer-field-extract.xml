@@ -1,0 +1,175 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract_x86_64</com>
+  <com>read symbols</com>
+  <com>option ctypes off</com>
+  <com>option realtypes off</com>
+  <com>option outlang c</com>
+  <com>option nocastprinting off</com>
+  <com>map prototype make_pair struct Pair make_pair(int8 a,int8 b);</com>
+  <com>map prototype make_unsigned struct UPair make_unsigned(int8 a,int8 b);</com>
+  <com>map prototype signed_int8 int1 signed_int8(int8 a,int8 b);</com>
+  <com>map prototype signed_int8_wide int8 signed_int8_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_uint8 uint1 signed_uint8(int8 a,int8 b);</com>
+  <com>map prototype signed_uint8_wide uint8 signed_uint8_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_int16 int2 signed_int16(int8 a,int8 b);</com>
+  <com>map prototype signed_int16_wide int8 signed_int16_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_uint16 uint2 signed_uint16(int8 a,int8 b);</com>
+  <com>map prototype signed_uint16_wide uint8 signed_uint16_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_int32 int4 signed_int32(int8 a,int8 b);</com>
+  <com>map prototype signed_int32_wide int8 signed_int32_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_uint32 uint4 signed_uint32(int8 a,int8 b);</com>
+  <com>map prototype signed_uint32_wide uint8 signed_uint32_wide(int8 a,int8 b);</com>
+  <com>map prototype unsigned_int8 int1 unsigned_int8(int8 a,int8 b);</com>
+  <com>map prototype unsigned_uint8 uint1 unsigned_uint8(int8 a,int8 b);</com>
+  <com>map prototype unsigned_int16 int2 unsigned_int16(int8 a,int8 b);</com>
+  <com>map prototype unsigned_uint16 uint2 unsigned_uint16(int8 a,int8 b);</com>
+  <com>map prototype unsigned_int32 int4 unsigned_int32(int8 a,int8 b);</com>
+  <com>map prototype unsigned_uint32 uint4 unsigned_uint32(int8 a,int8 b);</com>
+  <com>map prototype first_narrow int4 first_narrow(int8 a,int8 b);</com>
+  <com>map prototype shift8 uint1 shift8(int8 a,int8 b);</com>
+  <com>map prototype shift32 uint4 shift32(int8 a,int8 b);</com>
+  <com>map prototype signed_high int8 signed_high(int8 a,int8 b);</com>
+  <com>map prototype signed_as_unsigned uint8 signed_as_unsigned(int8 a,int8 b);</com>
+  <com>map prototype unsigned_as_signed int8 unsigned_as_signed(int8 a,int8 b);</com>
+  <com>map prototype exact_signed int8 exact_signed(int8 a,int8 b);</com>
+  <com>map prototype exact_unsigned uint8 exact_unsigned(int8 a,int8 b);</com>
+  <com>load function signed_int8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function signed_int16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function signed_int32_wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function shift32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nocastprinting on</com>
+  <com>load function signed_int32_wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract_x86_64</com>
+  <com>read symbols</com>
+  <com>option ctypes off</com>
+  <com>option realtypes off</com>
+  <com>option outlang go</com>
+  <com>option nocastprinting off</com>
+  <com>map prototype make_pair struct Pair make_pair(int8 a,int8 b);</com>
+  <com>map prototype make_unsigned struct UPair make_unsigned(int8 a,int8 b);</com>
+  <com>map prototype signed_int8 int1 signed_int8(int8 a,int8 b);</com>
+  <com>map prototype signed_int8_wide int8 signed_int8_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_uint8 uint1 signed_uint8(int8 a,int8 b);</com>
+  <com>map prototype signed_uint8_wide uint8 signed_uint8_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_int16 int2 signed_int16(int8 a,int8 b);</com>
+  <com>map prototype signed_int16_wide int8 signed_int16_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_uint16 uint2 signed_uint16(int8 a,int8 b);</com>
+  <com>map prototype signed_uint16_wide uint8 signed_uint16_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_int32 int4 signed_int32(int8 a,int8 b);</com>
+  <com>map prototype signed_int32_wide int8 signed_int32_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_uint32 uint4 signed_uint32(int8 a,int8 b);</com>
+  <com>map prototype signed_uint32_wide uint8 signed_uint32_wide(int8 a,int8 b);</com>
+  <com>map prototype unsigned_int8 int1 unsigned_int8(int8 a,int8 b);</com>
+  <com>map prototype unsigned_uint8 uint1 unsigned_uint8(int8 a,int8 b);</com>
+  <com>map prototype unsigned_int16 int2 unsigned_int16(int8 a,int8 b);</com>
+  <com>map prototype unsigned_uint16 uint2 unsigned_uint16(int8 a,int8 b);</com>
+  <com>map prototype unsigned_int32 int4 unsigned_int32(int8 a,int8 b);</com>
+  <com>map prototype unsigned_uint32 uint4 unsigned_uint32(int8 a,int8 b);</com>
+  <com>map prototype first_narrow int4 first_narrow(int8 a,int8 b);</com>
+  <com>map prototype shift8 uint1 shift8(int8 a,int8 b);</com>
+  <com>map prototype shift32 uint4 shift32(int8 a,int8 b);</com>
+  <com>map prototype signed_high int8 signed_high(int8 a,int8 b);</com>
+  <com>map prototype signed_as_unsigned uint8 signed_as_unsigned(int8 a,int8 b);</com>
+  <com>map prototype unsigned_as_signed int8 unsigned_as_signed(int8 a,int8 b);</com>
+  <com>map prototype exact_signed int8 exact_signed(int8 a,int8 b);</com>
+  <com>map prototype exact_unsigned uint8 exact_unsigned(int8 a,int8 b);</com>
+  <com>load function signed_int8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function signed_int16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function signed_int32_wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function shift32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nocastprinting on</com>
+  <com>load function signed_int32_wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract_x86_64</com>
+  <com>read symbols</com>
+  <com>option ctypes off</com>
+  <com>option realtypes off</com>
+  <com>option outlang rust</com>
+  <com>option nocastprinting off</com>
+  <com>map prototype make_pair struct Pair make_pair(int8 a,int8 b);</com>
+  <com>map prototype make_unsigned struct UPair make_unsigned(int8 a,int8 b);</com>
+  <com>map prototype signed_int8 int1 signed_int8(int8 a,int8 b);</com>
+  <com>map prototype signed_int8_wide int8 signed_int8_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_uint8 uint1 signed_uint8(int8 a,int8 b);</com>
+  <com>map prototype signed_uint8_wide uint8 signed_uint8_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_int16 int2 signed_int16(int8 a,int8 b);</com>
+  <com>map prototype signed_int16_wide int8 signed_int16_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_uint16 uint2 signed_uint16(int8 a,int8 b);</com>
+  <com>map prototype signed_uint16_wide uint8 signed_uint16_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_int32 int4 signed_int32(int8 a,int8 b);</com>
+  <com>map prototype signed_int32_wide int8 signed_int32_wide(int8 a,int8 b);</com>
+  <com>map prototype signed_uint32 uint4 signed_uint32(int8 a,int8 b);</com>
+  <com>map prototype signed_uint32_wide uint8 signed_uint32_wide(int8 a,int8 b);</com>
+  <com>map prototype unsigned_int8 int1 unsigned_int8(int8 a,int8 b);</com>
+  <com>map prototype unsigned_uint8 uint1 unsigned_uint8(int8 a,int8 b);</com>
+  <com>map prototype unsigned_int16 int2 unsigned_int16(int8 a,int8 b);</com>
+  <com>map prototype unsigned_uint16 uint2 unsigned_uint16(int8 a,int8 b);</com>
+  <com>map prototype unsigned_int32 int4 unsigned_int32(int8 a,int8 b);</com>
+  <com>map prototype unsigned_uint32 uint4 unsigned_uint32(int8 a,int8 b);</com>
+  <com>map prototype first_narrow int4 first_narrow(int8 a,int8 b);</com>
+  <com>map prototype shift8 uint1 shift8(int8 a,int8 b);</com>
+  <com>map prototype shift32 uint4 shift32(int8 a,int8 b);</com>
+  <com>map prototype signed_high int8 signed_high(int8 a,int8 b);</com>
+  <com>map prototype signed_as_unsigned uint8 signed_as_unsigned(int8 a,int8 b);</com>
+  <com>map prototype unsigned_as_signed int8 unsigned_as_signed(int8 a,int8 b);</com>
+  <com>map prototype exact_signed int8 exact_signed(int8 a,int8 b);</com>
+  <com>map prototype exact_unsigned uint8 exact_unsigned(int8 a,int8 b);</com>
+  <com>load function signed_int8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function signed_int16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function signed_int32_wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function shift32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nocastprinting on</com>
+  <com>load function signed_int32_wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="c preserves signed_int8 extraction" min="1" max="1">return \(int1\)make_pair\(a,b\)\.second;</stringmatch>
+<stringmatch name="c preserves signed_int16 extraction" min="1" max="1">return \(int2\)make_pair\(a,b\)\.second;</stringmatch>
+<stringmatch name="c preserves signed_int32_wide extraction" min="1" max="1">return \(int4\)make_pair\(a,b\)\.second;</stringmatch>
+<stringmatch name="c preserves shift32 extraction" min="1" max="1">return \(uint4\)\(make_unsigned\(a,b\)\.second >> 0x20\);</stringmatch>
+<stringmatch name="go preserves signed_int8 extraction" min="1" max="1">return int8\(make_pair\(a,b\)\.second\)</stringmatch>
+<stringmatch name="go preserves signed_int16 extraction" min="1" max="1">return int16\(make_pair\(a,b\)\.second\)</stringmatch>
+<stringmatch name="go preserves signed_int32_wide extraction" min="1" max="1">return int64\(int32\(make_pair\(a,b\)\.second\)\)</stringmatch>
+<stringmatch name="go preserves shift32 extraction" min="1" max="1">return uint32\(make_unsigned\(a,b\)\.second >> 0x20\)</stringmatch>
+<stringmatch name="rust preserves signed_int8 extraction" min="1" max="1">return make_pair\(a,b\)\.second as i8;</stringmatch>
+<stringmatch name="rust preserves signed_int16 extraction" min="1" max="1">return make_pair\(a,b\)\.second as i16;</stringmatch>
+<stringmatch name="rust preserves signed_int32_wide extraction" min="1" max="1">return \(make_pair\(a,b\)\.second as i32\) as i64;</stringmatch>
+<stringmatch name="rust preserves shift32 extraction" min="1" max="1">return \(make_unsigned\(a,b\)\.second >> 0x20\) as u32;</stringmatch>
+<stringmatch name="C and Rust field casts respect diagnostic suppression" min="2" max="2">^  return make_pair\(a,b\)\.second;</stringmatch>
+<stringmatch name="Go field conversions respect diagnostic suppression" min="1" max="1">^  return int64\(make_pair\(a,b\)\.second\)$</stringmatch>
+</decompilertest>

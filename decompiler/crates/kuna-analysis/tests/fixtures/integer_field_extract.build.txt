@@ -1,0 +1,9 @@
+Authored integer aggregate field extractions with single-evaluation helpers.
+Original build:
+cc -O2 -g -fwrapv -fno-pie -no-pie /tmp/kuna-integer-field-extract/matrix.c -o /tmp/kuna-integer-field-extract/matrix
+Equivalent rebuild from this directory:
+cc -O2 -g -fwrapv -fno-pie -no-pie integer_field_extract.c -o integer_field_extract_x86_64
+
+cc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+Source SHA256 74bead78e4116537cde844da5fcdee3e1d6cea92512d20d042b7f047e99ee32f
+Binary SHA256 d7dbb0a7cfb1516ac500c55a008b1f2ffa432e23e89f2130a95e4dd29c4ff92b

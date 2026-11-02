@@ -44,7 +44,7 @@
 </script>
 <stringmatch name="Joined callback first component survives a late callback prototype" min="1" max="1">return \(\*fn\)\(a,b\)\.first;</stringmatch>
 <stringmatch name="Joined callback second component is defined by the callback" min="1" max="1">v1 = \(\*fn\)\(a,b\)\.second;</stringmatch>
-<stringmatch name="Joined callback narrowed second component is preserved" min="1" max="1">return \(\*fn\)\(a,b\)\.second;</stringmatch>
+<stringmatch name="Joined callback narrowed second component is preserved" min="1" max="1">return \(int4\)\(\*fn\)\(a,b\)\.second;</stringmatch>
 <stringmatch name="Joined callback both fields come from one invocation" min="1" max="1">v1 = \(\*fn\)\(a,b\);</stringmatch>
 <stringmatch name="Joined callback both fields remain live" min="1" max="1">return v1.first \^ v1.second;</stringmatch>
 <stringmatch name="Joined callback whole and scalar forwarding remain intact" min="2" max="2">return \(\*fn\)\(a,b\); // jump-as-call</stringmatch>

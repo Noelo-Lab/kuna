@@ -5,6 +5,21 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p9_emit
 ```
 
+An integer SUBPIECE of an implied struct value preserves the extracted width
+when rendered as a field access (`kuna_fieldextract.rs`). If the field is wider
+than the result, the emitter converts the field to the operation's integer type
+before surrounding expressions can widen it again. Thus narrowing a 64-bit
+field to signed 32 bits and then returning 64 bits keeps both conversions.
+The same extraction uses C casts, Go conversions, or Rust `as` expressions;
+the diagnostic `nocastprinting` setting still suppresses those conversions.
+An interior slice shifts the field first; its shift follows the input storage's
+byte order, so offset zero within a big-endian field denotes its high bytes.
+The field expression is evaluated once. Complete integer fields of the same
+type retain their existing spelling. Enum, float, pointer, boolean, volatile,
+incomplete and bitfield cases retain their existing paths, as do accesses
+through an explicit symbol. This corrects field extraction; it does not supply
+missing Rust signedness conversions in surrounding expressions.
+
 Standalone C output qualifies whole function-address expressions through
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_funcptrnames.rs`. A named
 SPACEBASE reference must have code type and resolve to the exact function entry.
