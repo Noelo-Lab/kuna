@@ -2546,8 +2546,8 @@ pad outside the code, gives no evidence. No caller gives any in an image that
 has C++ exception tables (an LSDA, a `.gcc_except_table` or `.ARM.extab`
 section, or a symbol such as `__gxx_personality_v0`, `_Unwind_Resume` or
 `__cxa_begin_catch`) this cannot place: an FDE with an LSDA for an address
-outside the code (a PowerPC object, whose `R_PPC_REL32` FDE addresses the
-loader does not apply), tables that do not parse, no `.eh_frame` or
+outside the code (an object whose FDE relocations the loader cannot apply),
+tables that do not parse, no `.eh_frame` or
 `.ARM.exidx` section at all, a front end with no section table, or `setjmp`
 unwinding (`_Unwind_SjLj_*`), whose pads a dispatch the tables do not name
 reaches. A zero length word inside `.eh_frame` (the terminator of one linked
