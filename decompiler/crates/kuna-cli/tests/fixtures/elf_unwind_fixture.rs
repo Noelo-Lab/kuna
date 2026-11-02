@@ -20,17 +20,22 @@ fn put(bytes: &mut [u8], off: usize, width: usize, value: u64, little: bool) {
 }
 
 pub fn image(little: bool, wide: bool, pcrel: bool, inner: bool) -> Vec<u8> {
-    build(little, wide, pcrel, inner, false)
+    build(little, wide, pcrel, inner, false, CODE)
 }
 
 pub fn lsda_image(little: bool, wide: bool, pcrel: bool) -> Vec<u8> {
-    build(little, wide, pcrel, false, true)
+    build(little, wide, pcrel, false, true, CODE)
 }
 
-fn build(little: bool, wide: bool, pcrel: bool, inner: bool, lsda: bool) -> Vec<u8> {
+/// `bump` replaced by `code`, with its FDE covering exactly that code.
+pub fn image_with_code(little: bool, code: &[u32]) -> Vec<u8> {
+    build(little, false, true, false, false, code)
+}
+
+fn build(little: bool, wide: bool, pcrel: bool, inner: bool, lsda: bool, code: &[u32]) -> Vec<u8> {
     let width = if wide { 8 } else { 4 };
-    let mut text = vec![0; CODE.len() * 4];
-    for (i, &word) in CODE.iter().enumerate() {
+    let mut text = vec![0; code.len() * 4];
+    for (i, &word) in code.iter().enumerate() {
         put(&mut text, i * 4, 4, word.into(), little);
     }
     let mut frame = vec![0; 20];
@@ -100,10 +105,10 @@ fn build(little: bool, wide: bool, pcrel: bool, inner: bool, lsda: bool) -> Vec<
             symbols[off + 4] = 0x12;
             put(&mut symbols, off + 6, 2, 1, little);
             put(&mut symbols, off + 8, 8, address, little);
-            put(&mut symbols, off + 16, 8, (CODE.len() * 4) as u64, little);
+            put(&mut symbols, off + 16, 8, (code.len() * 4) as u64, little);
         } else {
             put(&mut symbols, off + 4, 4, address, little);
-            put(&mut symbols, off + 8, 4, (CODE.len() * 4) as u64, little);
+            put(&mut symbols, off + 8, 4, (code.len() * 4) as u64, little);
             symbols[off + 12] = 0x12;
             put(&mut symbols, off + 14, 2, 1, little);
         }

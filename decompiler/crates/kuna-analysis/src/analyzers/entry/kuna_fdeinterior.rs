@@ -131,37 +131,18 @@ pub fn eligible_fde_bodies(file: &object::File, bytes: &[u8]) -> Vec<(u64, u64)>
     }
     let named = existing_function_addrs(file, bytes);
     let starts: Vec<u64> = all.iter().map(|&(start, _)| start).collect();
-    let mut stubs = stub_ranges(file);
-    stubs.extend(crate::loader::kuna_ppc32_imports::pic_stub_ranges(file));
-    let stubs = merge_stub_ranges(stubs);
+    let stubs = stub_ranges(file);
+    let stub_starts = crate::loader::kuna_ppc32_imports::stub_starts(file);
     all.iter()
         .copied()
         .filter(|&(start, end)| {
             let contains_named = contains_strictly(&named, start, end);
             let contains_start = contains_strictly(&starts, start, end);
-            let overlaps_stub = overlaps_stub(&stubs, start, end);
-            !contains_named && !contains_start && !overlaps_stub
+            let overlaps_stub = stubs.iter().any(|&(lo, hi)| start < hi && lo < end);
+            let shared_stubs = stub_starts.binary_search(&start).is_ok();
+            !contains_named && !contains_start && !overlaps_stub && !shared_stubs
         })
         .collect()
-}
-
-/// Merge nested and overlapping stub ranges so one predecessor answers overlap.
-fn merge_stub_ranges(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
-    ranges.sort_unstable();
-    let mut merged: Vec<(u64, u64)> = Vec::new();
-    for (lo, hi) in ranges {
-        if let Some(last) = merged.last_mut().filter(|last| lo <= last.1) {
-            last.1 = last.1.max(hi);
-        } else {
-            merged.push((lo, hi));
-        }
-    }
-    merged
-}
-
-fn overlaps_stub(stubs: &[(u64, u64)], start: u64, end: u64) -> bool {
-    let next = stubs.partition_point(|&(lo, _)| lo < end);
-    next > 0 && start < stubs[next - 1].1
 }
 
 /// Does the sorted `addrs` hold any value strictly between `start` and `end`?
@@ -289,19 +270,6 @@ fn scan_fde_bodies_sized(file: &object::File, ptr_size: usize) -> Vec<(u64, u64)
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn stub_overlap_handles_nested_ranges_and_open_endpoints() {
-        let stubs = merge_stub_ranges(vec![(40, 48), (16, 64), (80, 96), (0, 8), (64, 72)]);
-        for (start, end, expected) in [
-            (0, 4, true), (8, 16, false), (8, 17, true), (32, 40, true),
-            (48, 64, true), (71, 72, true), (72, 80, false), (95, 99, true),
-            (96, 100, false), (0, 100, true),
-        ] {
-            assert_eq!(overlaps_stub(&stubs, start, end), expected, "{start}..{end}");
-        }
-        assert!(!overlaps_stub(&[], 0, 100));
-    }
 
     #[test]
     fn fixed_width_eh_pointers_follow_byte_order() {

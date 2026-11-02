@@ -24,13 +24,20 @@ live implementation is
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`.
 
 With `fdeinterior` enabled, canonical PowerPC `bcl 20,31` PC reads into the
-current function's accepted FDE body follow the taken edge while preserving
-the LR write. The inline literal after the instruction is not a return
-continuation. This avoids dropping the remaining body when its interior entry
-is suppressed. The destination must be forward, strictly inside that body,
-and not a known function; other calls retain their existing treatment.
-The recognition lives in
-`decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppcpcread.rs (is_pc_capture)`.
+current function's accepted single-function body follow the taken edge while
+preserving the LR write. The inline literal after the instruction is not a
+return continuation. This avoids dropping the remaining body when its interior
+entry is suppressed. The destination must be forward, skip at most three words,
+lie strictly inside that body and not be a known function. A `bcl` to the next
+instruction cannot be a call. When it skips literal words, the fall-through path
+from the target (following direct unconditional branches inside the body, and
+past conditional ones) must read LR with `mflr` within 32 instructions, before
+any LR return, LR write, call, other unconditional transfer or trap. A forward
+`bcl 20,31` to a helper that returns through LR is therefore still a call. All
+12,456 forward `bcl 20,31` sites in 122 compiler-built PPC32 libraries satisfy
+this rule. Other calls retain their existing treatment. The rewrite is the
+same CALL-to-BRANCH conversion the call-trampoline rule uses. The recognition
+lives in `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppcpcread.rs (is_pc_capture)`.
 
 The A32 single-register `POP {pc}` alias (`ldr pc,[sp],#4`) lifts as a return,
 including its conditional forms. Its address mode still advances SP by four

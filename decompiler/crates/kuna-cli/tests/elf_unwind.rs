@@ -46,20 +46,18 @@ fn pc_read_keeps_the_complete_body_and_result() {
             !code.contains("sub_100c") && !code.contains("halt_baddata"),
             "{code}"
         );
+        std::fs::remove_file(&path).unwrap();
+        if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+            continue;
+        }
         let c = common::scratch_file("elf-pc-read", "c");
         let exe = common::scratch_file("elf-pc-read", "out");
         std::fs::write(&c, format!("{code}\nint main(void) {{ for(int x=-10;x<=10;x++) if(bump(x)!=x*3+7) return 1; return 0; }}\n")).unwrap();
-        let out = Command::new("cc")
-            .args(["-O2", c.to_str().unwrap(), "-o", exe.to_str().unwrap()])
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
+        common::process::required_output(
+            Command::new("cc").args(["-O2", c.to_str().unwrap(), "-o", exe.to_str().unwrap()]),
         );
         assert!(Command::new(&exe).status().unwrap().success());
-        for file in [path, c, exe] {
+        for file in [c, exe] {
             std::fs::remove_file(file).unwrap();
         }
     }
@@ -201,5 +199,97 @@ fn shared_unwind_does_not_suppress_unnamed_pic_stubs_in_text() {
             let file = object::File::parse(bytes.as_slice()).unwrap();
             assert_eq!(eligible_fde_bodies(&file, &bytes), [(0x1000, 0x1024)]);
         }
+    }
+}
+
+fn with_text(little: bool, code: &[u32]) -> Vec<u8> {
+    use object::{Object, ObjectSection};
+    let mut bytes = fixture::image(little, false, true, false);
+    let file = object::File::parse(bytes.as_slice()).unwrap();
+    let offset = file.section_by_name(".text").unwrap().file_range().unwrap().0 as usize;
+    for (i, &w) in code.iter().enumerate() {
+        let word = if little { w.to_le_bytes() } else { w.to_be_bytes() };
+        bytes[offset + i * 4..offset + i * 4 + 4].copy_from_slice(&word);
+    }
+    bytes
+}
+
+/// A shared linker FDE begins with a stub; an ordinary function whose tail is
+/// stub-shaped begins with its own prologue and keeps its FDE. Absolute stubs
+/// mark a shared FDE as well as r30-relative ones.
+#[test]
+fn only_an_fde_that_starts_with_a_stub_is_a_shared_stub_range() {
+    let nop = 0x6000_0000;
+    let short = [0x817e_0000, 0x7d69_03a6, 0x4e80_0420, nop];
+    let absolute = [0x3d60_0000, 0x816b_3000, 0x7d69_03a6, 0x4e80_0420];
+    let prologue = [0x7c08_02a6, nop, nop, nop, nop];
+    for little in [false, true] {
+        for (code, shared) in [
+            ([absolute, absolute].concat(), true),
+            ([&prologue[..], &short[..]].concat(), false),
+            ([&prologue[..], &absolute[..]].concat(), false),
+        ] {
+            let bytes = with_text(little, &code);
+            let file = object::File::parse(bytes.as_slice()).unwrap();
+            assert_eq!(scan_fde_bodies(&file), [(0x1000, 0x1024)]);
+            assert_eq!(
+                eligible_fde_bodies(&file, &bytes).is_empty(),
+                shared,
+                "little={little} code={code:x?}"
+            );
+        }
+    }
+}
+
+/// A forward `bcl 20,31` to a helper that returns through LR is a local call,
+/// not a PC read: the code after the call stays in the caller.
+#[test]
+fn bcl_to_a_returning_helper_remains_a_call() {
+    for little in [false, true] {
+        let code = [
+            0x7c08_02a6, // mflr r0
+            0x429f_0011, // bcl 20,31,0x1014
+            0x3863_0001, // addi r3,r3,1
+            0x7c08_03a6, // mtlr r0
+            0x4e80_0020, // blr
+            0x1c63_0003, // mulli r3,r3,3
+            0x3863_0007, // addi r3,r3,7
+            0x4e80_0020, // blr
+            0x6000_0000,
+        ];
+        let path = common::scratch_file("elf-bcl-helper", "elf");
+        std::fs::write(&path, with_text(little, &code)).unwrap();
+        let (out, err, status) = common::run_kuna(&["decompile", path.to_str().unwrap(), "bump", "--mode", "fast"]);
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(status, 0, "{out}\n{err}");
+        assert!(out.contains("+ 1") && out.contains("1014"), "little={little}: {out}");
+        assert!(!out.contains("return a0 * 3 + 7;"), "little={little}: {out}");
+    }
+}
+
+/// GCC may branch from several PC reads to one block that reads LR; the read
+/// still counts when it is reached by a direct branch inside the body.
+#[test]
+fn pc_read_through_a_branch_to_a_shared_lr_read() {
+    let code = [
+        0x7c08_02a6, // mflr r0
+        0x429f_0009, // bcl 20,31,0x100c
+        7,
+        0x4800_0008, // b 0x1014
+        0x7fe0_0008, // trap
+        0x7d28_02a6, // mflr r9
+        0x8129_0000, // lwz r9,0(r9)
+        0x1c63_0003, // mulli r3,r3,3
+        0x7c63_4a14, // add r3,r3,r9
+        0x7c08_03a6, // mtlr r0
+        0x4e80_0020, // blr
+    ];
+    for little in [false, true] {
+        let path = common::scratch_file("elf-pc-read-branch", "elf");
+        std::fs::write(&path, fixture::image_with_code(little, &code)).unwrap();
+        let (out, err, status) = common::run_kuna(&["decompile", path.to_str().unwrap(), "bump", "--mode", "fast"]);
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(status, 0, "{out}\n{err}");
+        assert!(out.contains("return a0 * 3 + 7;") && !out.contains("halt_baddata"), "little={little}: {out}");
     }
 }

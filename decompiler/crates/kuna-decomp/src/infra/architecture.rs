@@ -396,7 +396,8 @@ pub struct Architecture {
     /// (kuna `floatglobals`) What the whole-program scan reads; `None` on every
     /// path without a loaded image.
     pub kuna_float_scan: Option<Rc<crate::kuna_floatglobals::FloatScan>>,
-    /// Function bodies whose interiors the loader suppressed as separate entries.
+    /// Single-function bodies (FDEs, or Go `pclntab` extents) whose interiors the
+    /// loader suppressed as separate entries.
     pub kuna_function_bodies: Vec<(u64, u64)>,
     /// (kuna `floatglobals`) The scan's answer, once a function asked for it.
     pub kuna_float_globals: Option<Rc<crate::kuna_floatglobals::FloatGlobals>>,
