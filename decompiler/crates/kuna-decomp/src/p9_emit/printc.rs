@@ -11420,6 +11420,23 @@ impl PrintC {
             // whole-symbol cover the C++ `setSymbol` records for a size-matching
             // entry) is also a bare-name render, so `off <= 0` covers both.
             if sym_off <= 0 {
+                if self.out_lang == crate::kuna_lang::OutLang::C
+                    && sym_type.as_ref().is_some_and(|ty| ty.get_metatype() == crate::dtype::type_metatype::TYPE_CODE)
+                {
+                    if let Some(address) = spacebase_unnamed_address(arch, fd, op, &ct, in1const, ptr_size) {
+                        let point = fd.obank().get(op).map(|o| o.get_addr().clone()).unwrap_or_default();
+                        if let Some(prefix) = crate::kuna_funcptrnames::prefix(
+                            fd, arch, &address, &point, &name, self.context.namespace_strategy(),
+                        ) {
+                            for scope in prefix {
+                                self.push_op(&tokens::SCOPE, None);
+                                self.push_atom(&Atom::syntax(
+                                    scope, TagType::Syntax, crate::printlanguage::SyntaxHighlight::global_color,
+                                ));
+                            }
+                        }
+                    }
+                }
                 // off == 0: pushSymbol(symbol, 0, op) — the bare name.
                 let atom = match in1 {
                     Some(vn) => Atom::with_op_vn(

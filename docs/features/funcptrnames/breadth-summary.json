@@ -1,0 +1,1664 @@
+{
+  "images": 35,
+  "distinct_functions": 31274,
+  "language_records": 68538,
+  "changed_records": 450,
+  "semantic_review_pending": false,
+  "new_cli_sha256": "384f7547f58af97719b98b7923a1f5ee530d2bedb7c4981436dbe4f0d53b8723",
+  "parent_cli_sha256": "74030097e634b93022235cbf8364ef1171071fb47a205c9393e9b0b19dd6aa1c",
+  "parent_commit": "4a9c18414ccd68449cbdbdf43a088a114a6b0c07",
+  "records": [
+    {
+      "fixture": "hermetic",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/tests/fixtures/go-dwarf-signatures/compressed",
+      "fixture_sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/hermetic-c-parent.json",
+          "parent_sha256": "a84c45e779909b73084b3f57e7a06afd13fb08655dad884e1feb5f81557e56e1",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/hermetic-c-candidate.json",
+          "candidate_sha256": "a84c45e779909b73084b3f57e7a06afd13fb08655dad884e1feb5f81557e56e1",
+          "fresh_parent_and_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/hermetic-c-parent-none.json": "a84c45e779909b73084b3f57e7a06afd13fb08655dad884e1feb5f81557e56e1",
+            "/tmp/kuna-fnptr-namespace/breadth/hermetic-c-candidate-none.json": "a84c45e779909b73084b3f57e7a06afd13fb08655dad884e1feb5f81557e56e1"
+          }
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/hermetic-go-parent.json",
+          "parent_sha256": "803fb2532b9de44854ba2d0d146f30bc9c3e516745b1c39c57a4b7469016dcb7",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/hermetic-go-candidate.json",
+          "candidate_sha256": "803fb2532b9de44854ba2d0d146f30bc9c3e516745b1c39c57a4b7469016dcb7",
+          "fresh_parent_and_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "hermetic-plain",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/tests/fixtures/go-dwarf-signatures/uncompressed",
+      "fixture_sha256": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/hermetic-plain-c-parent.json",
+          "parent_sha256": "7469d766b9a9b8cc9dfdb4babf6fb8fa0b66643346d4ccc85285d42c7d63315c",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/hermetic-plain-c-candidate.json",
+          "candidate_sha256": "7469d766b9a9b8cc9dfdb4babf6fb8fa0b66643346d4ccc85285d42c7d63315c",
+          "fresh_parent_and_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/hermetic-plain-c-parent-none.json": "7469d766b9a9b8cc9dfdb4babf6fb8fa0b66643346d4ccc85285d42c7d63315c",
+            "/tmp/kuna-fnptr-namespace/breadth/hermetic-plain-c-candidate-none.json": "7469d766b9a9b8cc9dfdb4babf6fb8fa0b66643346d4ccc85285d42c7d63315c"
+          }
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/hermetic-plain-go-parent.json",
+          "parent_sha256": "de8b4bfc93695d2c2f1cd2c04b37227a87eb838aa80350976311251c7b46ea49",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/hermetic-plain-go-candidate.json",
+          "candidate_sha256": "de8b4bfc93695d2c2f1cd2c04b37227a87eb838aa80350976311251c7b46ea49",
+          "fresh_parent_and_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "native-c",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/tests/fixtures/go-output/output-c",
+      "fixture_sha256": "2ab52230e3235ef5517798c672c476e136122a11526b0d4a5560f04fb4bfa8d4",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/native-c-c-parent.json",
+          "parent_sha256": "9027b8fd533967a049c30050f7a12d4fa2f5ae030974f4d55fb2dbdd1433f028",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/native-c-c-candidate.json",
+          "candidate_sha256": "9027b8fd533967a049c30050f7a12d4fa2f5ae030974f4d55fb2dbdd1433f028",
+          "fresh_parent_and_candidate": true,
+          "functions": 55,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/native-c-c-parent-none.json": "9027b8fd533967a049c30050f7a12d4fa2f5ae030974f4d55fb2dbdd1433f028",
+            "/tmp/kuna-fnptr-namespace/breadth/native-c-c-candidate-none.json": "9027b8fd533967a049c30050f7a12d4fa2f5ae030974f4d55fb2dbdd1433f028"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/native-c-rust-parent.json",
+          "parent_sha256": "5cf8d36e68606afd474d1aa15afe939420178ee8c3a6e066f17d3af818ff3017",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/native-c-rust-candidate.json",
+          "candidate_sha256": "5cf8d36e68606afd474d1aa15afe939420178ee8c3a6e066f17d3af818ff3017",
+          "fresh_parent_and_candidate": true,
+          "functions": 55,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/native-c-go-parent.json",
+          "parent_sha256": "133848cf4b259736a1cd86d2b8a099229214e0c593ffb61c598b17a1e30bf652",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/native-c-go-candidate.json",
+          "candidate_sha256": "133848cf4b259736a1cd86d2b8a099229214e0c593ffb61c598b17a1e30bf652",
+          "fresh_parent_and_candidate": true,
+          "functions": 55,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "entry-ranges",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/tests/fixtures/go-dwarf-entry-ranges/entry-ranges",
+      "fixture_sha256": "b0f38a89fec7a625d005888c2b10b77352e63d605ac64357eccf2d0bbfabb5a0",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/entry-ranges-c-parent.json",
+          "parent_sha256": "0143f746c1519f99eb192293773cea0927b892f47855dea8861b2bd69e55738b",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/entry-ranges-c-candidate.json",
+          "candidate_sha256": "0143f746c1519f99eb192293773cea0927b892f47855dea8861b2bd69e55738b",
+          "fresh_parent_and_candidate": true,
+          "functions": 9,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/entry-ranges-c-parent-none.json": "0143f746c1519f99eb192293773cea0927b892f47855dea8861b2bd69e55738b",
+            "/tmp/kuna-fnptr-namespace/breadth/entry-ranges-c-candidate-none.json": "0143f746c1519f99eb192293773cea0927b892f47855dea8861b2bd69e55738b"
+          }
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/entry-ranges-go-parent.json",
+          "parent_sha256": "074cdf26aa7252fb573cdc94e35fc37df34913f5822959831e015ea8296b24ae",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/entry-ranges-go-candidate.json",
+          "candidate_sha256": "074cdf26aa7252fb573cdc94e35fc37df34913f5822959831e015ea8296b24ae",
+          "fresh_parent_and_candidate": true,
+          "functions": 9,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "grep",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/tests/bug-repro/grep",
+      "fixture_sha256": "f71085ac2429924667499e96cac0c82963a1982f5f503c8374ec21c6fd21902d",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/grep-c-parent.json",
+          "parent_sha256": "cf835cc31013458250cd88f1e57a08fd0c06056b8633387c3fa6899816b29a1b",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/grep-c-candidate.json",
+          "candidate_sha256": "cf835cc31013458250cd88f1e57a08fd0c06056b8633387c3fa6899816b29a1b",
+          "fresh_parent_and_candidate": true,
+          "functions": 449,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/grep-c-parent-none.json": "cf835cc31013458250cd88f1e57a08fd0c06056b8633387c3fa6899816b29a1b",
+            "/tmp/kuna-fnptr-namespace/breadth/grep-c-candidate-none.json": "cf835cc31013458250cd88f1e57a08fd0c06056b8633387c3fa6899816b29a1b"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/grep-rust-parent.json",
+          "parent_sha256": "7e65c74d8b5cf01569277238de8bd18cdf1e23b34d825d903c546015d734031c",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/grep-rust-candidate.json",
+          "candidate_sha256": "7e65c74d8b5cf01569277238de8bd18cdf1e23b34d825d903c546015d734031c",
+          "fresh_parent_and_candidate": true,
+          "functions": 449,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "entry-plain",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/tests/fixtures/go-dwarf-entry-ranges/entry-ranges-plain",
+      "fixture_sha256": "4634398d909f8a704c9a9c5b7dbb281435d8615362364559b8608d45a2136179",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/entry-plain-c-parent.json",
+          "parent_sha256": "53b44d449a24f5b213decd6cee5e4ddefd536be90b0d67dbb6de9e199c03015a",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/entry-plain-c-candidate.json",
+          "candidate_sha256": "53b44d449a24f5b213decd6cee5e4ddefd536be90b0d67dbb6de9e199c03015a",
+          "fresh_parent_and_candidate": true,
+          "functions": 9,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/entry-plain-c-parent-none.json": "53b44d449a24f5b213decd6cee5e4ddefd536be90b0d67dbb6de9e199c03015a",
+            "/tmp/kuna-fnptr-namespace/breadth/entry-plain-c-candidate-none.json": "53b44d449a24f5b213decd6cee5e4ddefd536be90b0d67dbb6de9e199c03015a"
+          }
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/entry-plain-go-parent.json",
+          "parent_sha256": "0060798a3306d9c39db6cc051a33651b0eec4bd57143aa9e1a43f94dad166c28",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/entry-plain-go-candidate.json",
+          "candidate_sha256": "0060798a3306d9c39db6cc051a33651b0eec4bd57143aa9e1a43f94dad166c28",
+          "fresh_parent_and_candidate": true,
+          "functions": 9,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "native",
+      "fixture_path": "/tmp/kuna-go-output/output-go",
+      "fixture_sha256": "243073101d99260f354c13a6a06640d53d9eef64e4c4a4fdf8d9a5d8c6465c09",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/native-c-parent.json",
+          "parent_sha256": "540de76dfa61d6b065c840aac86eb70f25ce4ef4940c430ad9b56aeb82ea1704",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/native-c-candidate.json",
+          "candidate_sha256": "540de76dfa61d6b065c840aac86eb70f25ce4ef4940c430ad9b56aeb82ea1704",
+          "fresh_parent_and_candidate": true,
+          "functions": 1156,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/native-c-parent-none.json": "540de76dfa61d6b065c840aac86eb70f25ce4ef4940c430ad9b56aeb82ea1704",
+            "/tmp/kuna-fnptr-namespace/breadth/native-c-candidate-none.json": "540de76dfa61d6b065c840aac86eb70f25ce4ef4940c430ad9b56aeb82ea1704"
+          }
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/native-go-parent.json",
+          "parent_sha256": "db9550ac96865fa369ca415ffd1959814a35719f0a9b8f246abac95d0e62746b",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/native-go-candidate.json",
+          "candidate_sha256": "db9550ac96865fa369ca415ffd1959814a35719f0a9b8f246abac95d0e62746b",
+          "fresh_parent_and_candidate": true,
+          "functions": 1156,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "basics122",
+      "fixture_path": "/tmp/kuna-angr-reference/binaries/tests/x86_64/go/go1.22.5/basics",
+      "fixture_sha256": "b0c5144b05517c764da886a30b5eeca5709b6b655e93b55ae4967042943db50f",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/basics122-c-parent.json",
+          "parent_sha256": "d539a6bb90b1c2bfd946171819a2b44709e4972db2c9a6075ba34ec3cb20894e",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/basics122-c-candidate.json",
+          "candidate_sha256": "d539a6bb90b1c2bfd946171819a2b44709e4972db2c9a6075ba34ec3cb20894e",
+          "fresh_parent_and_candidate": true,
+          "functions": 2018,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/basics122-c-parent-none.json": "d539a6bb90b1c2bfd946171819a2b44709e4972db2c9a6075ba34ec3cb20894e",
+            "/tmp/kuna-fnptr-namespace/breadth/basics122-c-candidate-none.json": "d539a6bb90b1c2bfd946171819a2b44709e4972db2c9a6075ba34ec3cb20894e"
+          }
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/basics122-go-parent.json",
+          "parent_sha256": "bbc8a986f9951a68ba8e72e79703b912f4d51faa488aa63580dbf00968829c36",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/basics122-go-candidate.json",
+          "candidate_sha256": "bbc8a986f9951a68ba8e72e79703b912f4d51faa488aa63580dbf00968829c36",
+          "fresh_parent_and_candidate": true,
+          "functions": 2018,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "stripped122",
+      "fixture_path": "/tmp/kuna-angr-reference/binaries/tests/x86_64/go/go1.22.5/basics_stripped",
+      "fixture_sha256": "7dd6e9c20e0237149281df4ad3eb2e0fef0460b8c5958dee0ef7ed88c8bb8e32",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/stripped122-c-parent.json",
+          "parent_sha256": "ffa1e99e61130aa6703e1668a7d463b9a3093726df11f96b5e86423c76c68a0b",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/stripped122-c-candidate.json",
+          "candidate_sha256": "ffa1e99e61130aa6703e1668a7d463b9a3093726df11f96b5e86423c76c68a0b",
+          "fresh_parent_and_candidate": true,
+          "functions": 2017,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/stripped122-c-parent-none.json": "ffa1e99e61130aa6703e1668a7d463b9a3093726df11f96b5e86423c76c68a0b",
+            "/tmp/kuna-fnptr-namespace/breadth/stripped122-c-candidate-none.json": "ffa1e99e61130aa6703e1668a7d463b9a3093726df11f96b5e86423c76c68a0b"
+          }
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/stripped122-go-parent.json",
+          "parent_sha256": "304ac3b17c8957415607d9f08666940d943dbb7441f403689871b42f4d179757",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/stripped122-go-candidate.json",
+          "candidate_sha256": "304ac3b17c8957415607d9f08666940d943dbb7441f403689871b42f4d179757",
+          "fresh_parent_and_candidate": true,
+          "functions": 2017,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "langdetect",
+      "fixture_path": "/tmp/kuna-angr-reference/binaries/tests/x86_64/langdetect_go",
+      "fixture_sha256": "98a0709c40921feb13de3b88d035f01dd1a457366e9df12ddc86eeb6ee1f0d84",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/langdetect-c-parent.json",
+          "parent_sha256": "f253b488db408f41eb727f4e94abccb0ef406d3c4eacfe88bc7634b5ba74a498",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/langdetect-c-candidate.json",
+          "candidate_sha256": "f253b488db408f41eb727f4e94abccb0ef406d3c4eacfe88bc7634b5ba74a498",
+          "fresh_parent_and_candidate": true,
+          "functions": 1558,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/langdetect-c-parent-none.json": "f253b488db408f41eb727f4e94abccb0ef406d3c4eacfe88bc7634b5ba74a498",
+            "/tmp/kuna-fnptr-namespace/breadth/langdetect-c-candidate-none.json": "f253b488db408f41eb727f4e94abccb0ef406d3c4eacfe88bc7634b5ba74a498"
+          }
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/langdetect-go-parent.json",
+          "parent_sha256": "2af7f98c99fbee7f9eb11922b0561b4f446ff3b5b2ac0c4b26ae75bdf7ab35da",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/langdetect-go-candidate.json",
+          "candidate_sha256": "2af7f98c99fbee7f9eb11922b0561b4f446ff3b5b2ac0c4b26ae75bdf7ab35da",
+          "fresh_parent_and_candidate": true,
+          "functions": 1558,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "basics127",
+      "fixture_path": "/tmp/kuna-angr-reference/binaries/tests/x86_64/go/go1.27.1/basics",
+      "fixture_sha256": "62d72f2a7d729ff139c7c08fbc999a9d7e073735f81dcce752dcc6174c1959d4",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/basics127-c-parent.json",
+          "parent_sha256": "e2a13f03df285e7d01044eb38fa1b24e123db4f9d2621184c7217542d1b74038",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/basics127-c-candidate.json",
+          "candidate_sha256": "e2a13f03df285e7d01044eb38fa1b24e123db4f9d2621184c7217542d1b74038",
+          "fresh_parent_and_candidate": true,
+          "functions": 2552,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/basics127-c-parent-none.json": "e2a13f03df285e7d01044eb38fa1b24e123db4f9d2621184c7217542d1b74038",
+            "/tmp/kuna-fnptr-namespace/breadth/basics127-c-candidate-none.json": "e2a13f03df285e7d01044eb38fa1b24e123db4f9d2621184c7217542d1b74038"
+          }
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/basics127-go-parent.json",
+          "parent_sha256": "c5c8953929e59565e4faf93c6de5acdb77899cf2fc17f2d34b70195a00efc709",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/basics127-go-candidate.json",
+          "candidate_sha256": "c5c8953929e59565e4faf93c6de5acdb77899cf2fc17f2d34b70195a00efc709",
+          "fresh_parent_and_candidate": true,
+          "functions": 2552,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "native1273",
+      "fixture_path": "/tmp/kuna-go-dwarf-signatures/native1273",
+      "fixture_sha256": "86b2eb60b0fa1cc1d79b265fd2285fce8c64dc228c7cae9011088cc066101d9c",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/native1273-c-parent.json",
+          "parent_sha256": "b25cb10098717156dce200daf2e8897f03f41b999a2a1037eab28d221fc05816",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/native1273-c-candidate.json",
+          "candidate_sha256": "b25cb10098717156dce200daf2e8897f03f41b999a2a1037eab28d221fc05816",
+          "fresh_parent_and_candidate": true,
+          "functions": 1495,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/native1273-c-parent-none.json": "b25cb10098717156dce200daf2e8897f03f41b999a2a1037eab28d221fc05816",
+            "/tmp/kuna-fnptr-namespace/breadth/native1273-c-candidate-none.json": "b25cb10098717156dce200daf2e8897f03f41b999a2a1037eab28d221fc05816"
+          }
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/native1273-go-parent.json",
+          "parent_sha256": "1978113de496f5a2775c615114e6197795bb5a72284d2e80ff46b6a5225ed689",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/native1273-go-candidate.json",
+          "candidate_sha256": "1978113de496f5a2775c615114e6197795bb5a72284d2e80ff46b6a5225ed689",
+          "fresh_parent_and_candidate": true,
+          "functions": 1495,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "panic-shapes",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_panic_x86_64",
+      "fixture_sha256": "2aae9c46507fe73bbd96b2f14680abda08a8e0b6230723e8a6e857af83a6aa41",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/panic-shapes-c-parent.json",
+          "parent_sha256": "56d942128b55d5bbd124b7529f8e873ce18514c81c4c805415f8d43181312ee4",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/panic-shapes-c-candidate.json",
+          "candidate_sha256": "56d942128b55d5bbd124b7529f8e873ce18514c81c4c805415f8d43181312ee4",
+          "fresh_parent_and_candidate": true,
+          "functions": 19,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/panic-shapes-c-parent-none.json": "56d942128b55d5bbd124b7529f8e873ce18514c81c4c805415f8d43181312ee4",
+            "/tmp/kuna-fnptr-namespace/breadth/panic-shapes-c-candidate-none.json": "56d942128b55d5bbd124b7529f8e873ce18514c81c4c805415f8d43181312ee4"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/panic-shapes-rust-parent.json",
+          "parent_sha256": "18ef646bd5b8834ec9c51649feeca970d5823b2473a3c147a2ac883331956c16",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/panic-shapes-rust-candidate.json",
+          "candidate_sha256": "18ef646bd5b8834ec9c51649feeca970d5823b2473a3c147a2ac883331956c16",
+          "fresh_parent_and_candidate": true,
+          "functions": 19,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/panic-shapes-go-parent.json",
+          "parent_sha256": "6c66b358a61807562f7ad33fcb5963e02fd77c86de7bdd235474cd6b2f363b17",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/panic-shapes-go-candidate.json",
+          "candidate_sha256": "6c66b358a61807562f7ad33fcb5963e02fd77c86de7bdd235474cd6b2f363b17",
+          "fresh_parent_and_candidate": true,
+          "functions": 19,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "native-plain",
+      "fixture_path": "/tmp/kuna-go-dwarf-formals-5e05-review/native-plain",
+      "fixture_sha256": "6a205d35899107445c0d702d7a6c4900180be4203770983a8a050d3ec40f2da5",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/native-plain-c-parent.json",
+          "parent_sha256": "5aca5614794d1e9229327778499f548e87e253d5380985dc85795c9c9950fea8",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/native-plain-c-candidate.json",
+          "candidate_sha256": "5aca5614794d1e9229327778499f548e87e253d5380985dc85795c9c9950fea8",
+          "fresh_parent_and_candidate": true,
+          "functions": 1156,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/native-plain-c-parent-none.json": "5aca5614794d1e9229327778499f548e87e253d5380985dc85795c9c9950fea8",
+            "/tmp/kuna-fnptr-namespace/breadth/native-plain-c-candidate-none.json": "5aca5614794d1e9229327778499f548e87e253d5380985dc85795c9c9950fea8"
+          }
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/native-plain-go-parent.json",
+          "parent_sha256": "f92f65c66699b9ddc6fcaf639fd0471da6447b1f554f7ad0b999d94bce48498a",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/native-plain-go-candidate.json",
+          "candidate_sha256": "f92f65c66699b9ddc6fcaf639fd0471da6447b1f554f7ad0b999d94bce48498a",
+          "fresh_parent_and_candidate": true,
+          "functions": 1156,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "native1273-plain",
+      "fixture_path": "/tmp/kuna-go-dwarf-formals-5e05-review/native1273-plain",
+      "fixture_sha256": "a7bd1bd161b4ec27c9621ea107beec9197b7fd2bea618b7a7bbcf6d1a08f94ff",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/native1273-plain-c-parent.json",
+          "parent_sha256": "bb02c2462b1867d8871797546706d07f4dab5130101e6fb79a79447b1609eb89",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/native1273-plain-c-candidate.json",
+          "candidate_sha256": "bb02c2462b1867d8871797546706d07f4dab5130101e6fb79a79447b1609eb89",
+          "fresh_parent_and_candidate": true,
+          "functions": 1495,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/native1273-plain-c-parent-none.json": "bb02c2462b1867d8871797546706d07f4dab5130101e6fb79a79447b1609eb89",
+            "/tmp/kuna-fnptr-namespace/breadth/native1273-plain-c-candidate-none.json": "bb02c2462b1867d8871797546706d07f4dab5130101e6fb79a79447b1609eb89"
+          }
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/native1273-plain-go-parent.json",
+          "parent_sha256": "14ff3abc42f9241312a87fab9591f3d16a20956a7c9a95551e539f8737dabae9",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/native1273-plain-go-candidate.json",
+          "candidate_sha256": "14ff3abc42f9241312a87fab9591f3d16a20956a7c9a95551e539f8737dabae9",
+          "fresh_parent_and_candidate": true,
+          "functions": 1495,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "basics127-plain",
+      "fixture_path": "/tmp/kuna-go-dwarf-formals-5e05-review/basics127-plain",
+      "fixture_sha256": "c6336c1c1695e2a60d8366df79d8fb6bd49c5eda7600443f03708bf14e4df973",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/basics127-plain-c-parent.json",
+          "parent_sha256": "3506e6487394dc9c20e6627ba1720b9ef466990bdfb7e7fca9a31a1842636632",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/basics127-plain-c-candidate.json",
+          "candidate_sha256": "3506e6487394dc9c20e6627ba1720b9ef466990bdfb7e7fca9a31a1842636632",
+          "fresh_parent_and_candidate": true,
+          "functions": 2552,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/basics127-plain-c-parent-none.json": "3506e6487394dc9c20e6627ba1720b9ef466990bdfb7e7fca9a31a1842636632",
+            "/tmp/kuna-fnptr-namespace/breadth/basics127-plain-c-candidate-none.json": "3506e6487394dc9c20e6627ba1720b9ef466990bdfb7e7fca9a31a1842636632"
+          }
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/basics127-plain-go-parent.json",
+          "parent_sha256": "d056b8b24c8364ba5497b705f3612c796ab0890acb0d01e350e4d5bdd153b870",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/basics127-plain-go-candidate.json",
+          "candidate_sha256": "d056b8b24c8364ba5497b705f3612c796ab0890acb0d01e350e4d5bdd153b870",
+          "fresh_parent_and_candidate": true,
+          "functions": 2552,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "rust",
+      "fixture_path": "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "fixture_sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/rust-c-parent.json",
+          "parent_sha256": "9019bf0991b50177e05c7af9a4dd4c874fd675e3ff1f5d08cb4cc40416b82e38",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/rust-c-candidate.json",
+          "candidate_sha256": "fd890a46eefc2757f5156a39ce878b3868080ca0d52091988b77dac444d06f34",
+          "fresh_parent_and_candidate": true,
+          "functions": 455,
+          "changed": 31,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/rust-c-parent-none.json": "9019bf0991b50177e05c7af9a4dd4c874fd675e3ff1f5d08cb4cc40416b82e38",
+            "/tmp/kuna-fnptr-namespace/breadth/rust-c-candidate-none.json": "9019bf0991b50177e05c7af9a4dd4c874fd675e3ff1f5d08cb4cc40416b82e38"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/rust-rust-parent.json",
+          "parent_sha256": "3db7af23a512f8d1879ab4806cbba1d442702ff6b4427ba7dc09cc7d208fc150",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/rust-rust-candidate.json",
+          "candidate_sha256": "3db7af23a512f8d1879ab4806cbba1d442702ff6b4427ba7dc09cc7d208fc150",
+          "fresh_parent_and_candidate": true,
+          "functions": 455,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "pieces-x86_64",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_pieces_x86_64",
+      "fixture_sha256": "c6da9524b18af91d6170d1c08c51745fa22b23609a8896cb09e2c39e5a6c24b2",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-x86_64-c-parent.json",
+          "parent_sha256": "25aa07c61abcc65254ba8fcb7ab7609781a4297312a959a95617d0f6d8747728",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-x86_64-c-candidate.json",
+          "candidate_sha256": "25aa07c61abcc65254ba8fcb7ab7609781a4297312a959a95617d0f6d8747728",
+          "fresh_parent_and_candidate": true,
+          "functions": 26,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/pieces-x86_64-c-parent-none.json": "25aa07c61abcc65254ba8fcb7ab7609781a4297312a959a95617d0f6d8747728",
+            "/tmp/kuna-fnptr-namespace/breadth/pieces-x86_64-c-candidate-none.json": "25aa07c61abcc65254ba8fcb7ab7609781a4297312a959a95617d0f6d8747728"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-x86_64-rust-parent.json",
+          "parent_sha256": "8c5b7260e02543b877e1f918420e29df481e87945c8b4c7b9b3d1e7b4bddae4e",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-x86_64-rust-candidate.json",
+          "candidate_sha256": "8c5b7260e02543b877e1f918420e29df481e87945c8b4c7b9b3d1e7b4bddae4e",
+          "fresh_parent_and_candidate": true,
+          "functions": 26,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-x86_64-go-parent.json",
+          "parent_sha256": "3ffc4a8efae76377430825e9a709eb65406cd884a7e92c8384a1716a7c3ce3f8",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-x86_64-go-candidate.json",
+          "candidate_sha256": "3ffc4a8efae76377430825e9a709eb65406cd884a7e92c8384a1716a7c3ce3f8",
+          "fresh_parent_and_candidate": true,
+          "functions": 26,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "native-rust",
+      "fixture_path": "/tmp/kuna-rust-extensions-c281-review/native-1.93.1",
+      "fixture_sha256": "a8d645aa936436b48f25da980315057d94a4e4b2996ef4f47f8ed465c4f1e3dd",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/native-rust-c-parent.json",
+          "parent_sha256": "23dfb1d525b5d39366b5fdd21717d7fbdca2e935d69b3bb3c04b5da48c212ca0",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/native-rust-c-candidate.json",
+          "candidate_sha256": "8e8d8d08a1c3ae5dfe7a935061587156832d58ed1d0fc4b25875ae1e493b5322",
+          "fresh_parent_and_candidate": true,
+          "functions": 550,
+          "changed": 32,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/native-rust-c-parent-none.json": "23dfb1d525b5d39366b5fdd21717d7fbdca2e935d69b3bb3c04b5da48c212ca0",
+            "/tmp/kuna-fnptr-namespace/breadth/native-rust-c-candidate-none.json": "23dfb1d525b5d39366b5fdd21717d7fbdca2e935d69b3bb3c04b5da48c212ca0"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/native-rust-rust-parent.json",
+          "parent_sha256": "45c506692e3eb5948df4f62492f711984a92baff475131608d2c4f02b2e2cfd4",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/native-rust-rust-candidate.json",
+          "candidate_sha256": "45c506692e3eb5948df4f62492f711984a92baff475131608d2c4f02b2e2cfd4",
+          "fresh_parent_and_candidate": true,
+          "functions": 550,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "rust2025",
+      "fixture_path": "/tmp/kuna-angr-reference/binaries/rust-fmt-2025-O3",
+      "fixture_sha256": "236a96c8188b5ac75e93615118526b14b91a4aef0aca12d18f9c2a4ef91fce8a",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/rust2025-c-parent.json",
+          "parent_sha256": "c3ec1c42fd20b19b60f0853abd481faa6e73d204fbb6086210c2d53707168470",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/rust2025-c-candidate.json",
+          "candidate_sha256": "c3ec1c42fd20b19b60f0853abd481faa6e73d204fbb6086210c2d53707168470",
+          "fresh_parent_and_candidate": true,
+          "functions": 7763,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/rust2025-c-parent-none.json": "c3ec1c42fd20b19b60f0853abd481faa6e73d204fbb6086210c2d53707168470",
+            "/tmp/kuna-fnptr-namespace/breadth/rust2025-c-candidate-none.json": "c3ec1c42fd20b19b60f0853abd481faa6e73d204fbb6086210c2d53707168470"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/rust2025-rust-parent.json",
+          "parent_sha256": "9daf8bab332d3dca7a56d38917cd465c2f124232e70945f30b31178c888b65d5",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/rust2025-rust-candidate.json",
+          "candidate_sha256": "9daf8bab332d3dca7a56d38917cd465c2f124232e70945f30b31178c888b65d5",
+          "fresh_parent_and_candidate": true,
+          "functions": 7763,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "str-native",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_str_real_x86_64",
+      "fixture_sha256": "ade6bc5156662c54bbec228144697742f5d5d1f7eb5a16b99bc3903d41229658",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/str-native-c-parent.json",
+          "parent_sha256": "8062484ff9da74a136289a25bab608259707bfb74217734f01bcdd3aaf550843",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/str-native-c-candidate.json",
+          "candidate_sha256": "91987c55e6116caa968e2c275ef27cc8b7804fea740353f5259977ca0198cb05",
+          "fresh_parent_and_candidate": true,
+          "functions": 455,
+          "changed": 29,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/str-native-c-parent-none.json": "8062484ff9da74a136289a25bab608259707bfb74217734f01bcdd3aaf550843",
+            "/tmp/kuna-fnptr-namespace/breadth/str-native-c-candidate-none.json": "8062484ff9da74a136289a25bab608259707bfb74217734f01bcdd3aaf550843"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/str-native-rust-parent.json",
+          "parent_sha256": "7d568e9d7e743a4b8712c2bd584876c9bbf11c32768753e4e43daf45951560fd",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/str-native-rust-candidate.json",
+          "candidate_sha256": "7d568e9d7e743a4b8712c2bd584876c9bbf11c32768753e4e43daf45951560fd",
+          "fresh_parent_and_candidate": true,
+          "functions": 455,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/str-native-go-parent.json",
+          "parent_sha256": "7f42913ed911add5e9f285c3738c66cd214735e37f59a1403468358bcb4055d9",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/str-native-go-candidate.json",
+          "candidate_sha256": "7f42913ed911add5e9f285c3738c66cd214735e37f59a1403468358bcb4055d9",
+          "fresh_parent_and_candidate": true,
+          "functions": 455,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "panic-native",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_panic_real_x86_64",
+      "fixture_sha256": "b0e67472c201256e056bcb5fa7df31247af95883ac8d63e67feeda143fb58fdc",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/panic-native-c-parent.json",
+          "parent_sha256": "7ee864ac208a0cb68fda77aa9d40a471157c2ed9d42074d66b6344342ff22d99",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/panic-native-c-candidate.json",
+          "candidate_sha256": "243808802f9d5c05da12ce5b146354699a2bb74967b09b6f13a8a6c2700d597f",
+          "fresh_parent_and_candidate": true,
+          "functions": 597,
+          "changed": 41,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/panic-native-c-parent-none.json": "7ee864ac208a0cb68fda77aa9d40a471157c2ed9d42074d66b6344342ff22d99",
+            "/tmp/kuna-fnptr-namespace/breadth/panic-native-c-candidate-none.json": "7ee864ac208a0cb68fda77aa9d40a471157c2ed9d42074d66b6344342ff22d99"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/panic-native-rust-parent.json",
+          "parent_sha256": "cfcdce21bcfdd9c7a62f19c940b6a882ddc010ce27deac69fc1fb095ee36d780",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/panic-native-rust-candidate.json",
+          "candidate_sha256": "cfcdce21bcfdd9c7a62f19c940b6a882ddc010ce27deac69fc1fb095ee36d780",
+          "fresh_parent_and_candidate": true,
+          "functions": 597,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/panic-native-go-parent.json",
+          "parent_sha256": "3fe22880c3b6def7920be0ca389a458b38bdeb86764f2691a06a2540170a68f9",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/panic-native-go-candidate.json",
+          "candidate_sha256": "3fe22880c3b6def7920be0ca389a458b38bdeb86764f2691a06a2540170a68f9",
+          "fresh_parent_and_candidate": true,
+          "functions": 597,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "fnptr-native",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/function_pointer_namespaces_x86_64",
+      "fixture_sha256": "508e74f73ba455e35e3f3e5ed0db31802747b6183c16f19236d4897b40628499",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-native-c-parent.json",
+          "parent_sha256": "c932ca2104c70c8cdda3ffce42a618112d0c7d718af0d1d342da7f0d6797af7b",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-native-c-candidate.json",
+          "candidate_sha256": "ab80fc1d162272b4bb9014810cbf884d7df6b665491bdec48dee50772d787073",
+          "fresh_parent_and_candidate": true,
+          "functions": 25,
+          "changed": 5,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/fnptr-native-c-parent-none.json": "c932ca2104c70c8cdda3ffce42a618112d0c7d718af0d1d342da7f0d6797af7b",
+            "/tmp/kuna-fnptr-namespace/breadth/fnptr-native-c-candidate-none.json": "c932ca2104c70c8cdda3ffce42a618112d0c7d718af0d1d342da7f0d6797af7b"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-native-rust-parent.json",
+          "parent_sha256": "07c366e5ffd1b32cd860810ba8dd212e19766cd2b8abb852ca69b27b830f6139",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-native-rust-candidate.json",
+          "candidate_sha256": "07c366e5ffd1b32cd860810ba8dd212e19766cd2b8abb852ca69b27b830f6139",
+          "fresh_parent_and_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-native-go-parent.json",
+          "parent_sha256": "ffc53b0fe841885da95bb0972206ad44d6f6f459546dcce1f6ebc4f14a9c8a10",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-native-go-candidate.json",
+          "candidate_sha256": "ffc53b0fe841885da95bb0972206ad44d6f6f459546dcce1f6ebc4f14a9c8a10",
+          "fresh_parent_and_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_pieces_1.90.0",
+      "fixture_sha256": "a7ec1cdec236eb04099cc34837e909b96026c8f123c0779172756c018a1506f5",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-1.90.0-c-parent.json",
+          "parent_sha256": "3db2007bf2a31dfee166f4b234bcd9c6594f8757b1b0a4f1ae22abd5155d4d84",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-1.90.0-c-candidate.json",
+          "candidate_sha256": "940930495c9393d0c53d5c6fb8c243c392321006ee9cd85e312fb70a68997534",
+          "fresh_parent_and_candidate": true,
+          "functions": 572,
+          "changed": 39,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/pieces-1.90.0-c-parent-none.json": "3db2007bf2a31dfee166f4b234bcd9c6594f8757b1b0a4f1ae22abd5155d4d84",
+            "/tmp/kuna-fnptr-namespace/breadth/pieces-1.90.0-c-candidate-none.json": "3db2007bf2a31dfee166f4b234bcd9c6594f8757b1b0a4f1ae22abd5155d4d84"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-1.90.0-rust-parent.json",
+          "parent_sha256": "5f6e5a8ea7859ac92ad8da125cabb99544361bd2f667be1a80dd8f004deb1661",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-1.90.0-rust-candidate.json",
+          "candidate_sha256": "5f6e5a8ea7859ac92ad8da125cabb99544361bd2f667be1a80dd8f004deb1661",
+          "fresh_parent_and_candidate": true,
+          "functions": 572,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-1.90.0-go-parent.json",
+          "parent_sha256": "67e9033fd296e781bba324c7c0ec33dad43b48f0a6285d295345c9d804e06f4f",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-1.90.0-go-candidate.json",
+          "candidate_sha256": "67e9033fd296e781bba324c7c0ec33dad43b48f0a6285d295345c9d804e06f4f",
+          "fresh_parent_and_candidate": true,
+          "functions": 572,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "fnptr-return",
+      "fixture_path": "/tmp/kuna-fnptr-namespace/address-return-no-debug",
+      "fixture_sha256": "1dbe24725d79f1154c56314598e634c895e94912024d139be52b4331fb0157f3",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-return-c-parent.json",
+          "parent_sha256": "c103da2c33d27c53685c8f4bc4dba888cd368a6a6dfc5de35083c4c26886095b",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-return-c-candidate.json",
+          "candidate_sha256": "86e4dc4eaf0d8bd8694fbdde88a4eb142572ccce7f2a5b25f931bab19b326fed",
+          "fresh_parent_and_candidate": true,
+          "functions": 14,
+          "changed": 1,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/fnptr-return-c-parent-none.json": "c103da2c33d27c53685c8f4bc4dba888cd368a6a6dfc5de35083c4c26886095b",
+            "/tmp/kuna-fnptr-namespace/breadth/fnptr-return-c-candidate-none.json": "c103da2c33d27c53685c8f4bc4dba888cd368a6a6dfc5de35083c4c26886095b"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-return-rust-parent.json",
+          "parent_sha256": "d57a0eb6a2492bf912223b3bf0a71809142657b27b110f2602b447d8c713dfac",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-return-rust-candidate.json",
+          "candidate_sha256": "d57a0eb6a2492bf912223b3bf0a71809142657b27b110f2602b447d8c713dfac",
+          "fresh_parent_and_candidate": true,
+          "functions": 14,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-return-go-parent.json",
+          "parent_sha256": "996030aaa47e535419cdc804fbdaa71be314cbd71d9a2f9b3d65385b0cee0239",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-return-go-candidate.json",
+          "candidate_sha256": "996030aaa47e535419cdc804fbdaa71be314cbd71d9a2f9b3d65385b0cee0239",
+          "fresh_parent_and_candidate": true,
+          "functions": 14,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "fnptr-scopes",
+      "fixture_path": "/tmp/kuna-function-pointer-names/fixture-no-debug",
+      "fixture_sha256": "2c19c74bf4ff1af1be9a8f8bc7cb5e4e6eca6d57f8c28e1bc1b4a1fdedaa8f5f",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-scopes-c-parent.json",
+          "parent_sha256": "73ba8619c1b40cfa54a0981d6729500dd4de280a6b72f9d20b20a74873ec5bc8",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-scopes-c-candidate.json",
+          "candidate_sha256": "86314d56e8f38a36fc0c659a1bb2d5d35b87ae9695014073eb31559ac8c069d1",
+          "fresh_parent_and_candidate": true,
+          "functions": 23,
+          "changed": 4,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/fnptr-scopes-c-parent-none.json": "73ba8619c1b40cfa54a0981d6729500dd4de280a6b72f9d20b20a74873ec5bc8",
+            "/tmp/kuna-fnptr-namespace/breadth/fnptr-scopes-c-candidate-none.json": "73ba8619c1b40cfa54a0981d6729500dd4de280a6b72f9d20b20a74873ec5bc8"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-scopes-rust-parent.json",
+          "parent_sha256": "b60a739d5ccb64dafe83736addd9a2f71ea1fb4aaa40ce4f65c6e5a14551d19d",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-scopes-rust-candidate.json",
+          "candidate_sha256": "b60a739d5ccb64dafe83736addd9a2f71ea1fb4aaa40ce4f65c6e5a14551d19d",
+          "fresh_parent_and_candidate": true,
+          "functions": 23,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-scopes-go-parent.json",
+          "parent_sha256": "22808d7cd7869587f4dfef925147402cfaee4bab0d96e355455fa43746285c00",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/fnptr-scopes-go-candidate.json",
+          "candidate_sha256": "22808d7cd7869587f4dfef925147402cfaee4bab0d96e355455fa43746285c00",
+          "fresh_parent_and_candidate": true,
+          "functions": 23,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "str-nonlto",
+      "fixture_path": "/tmp/kuna-rust-fmt-str/native-nonlto",
+      "fixture_sha256": "28eb629c79f520445e6504f44097ff784ffe0e4d30b5002543068a2757ad0e6c",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/str-nonlto-c-parent.json",
+          "parent_sha256": "88d2d439ebbd71ba26839c671d9e18d742ef254a888eb1e13e04e5b48b136029",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/str-nonlto-c-candidate.json",
+          "candidate_sha256": "8092b61280a41cdaf12503aa0cfa9af9891ca55ecc5a566a482282b24f6059ce",
+          "fresh_parent_and_candidate": true,
+          "functions": 574,
+          "changed": 36,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/str-nonlto-c-parent-none.json": "88d2d439ebbd71ba26839c671d9e18d742ef254a888eb1e13e04e5b48b136029",
+            "/tmp/kuna-fnptr-namespace/breadth/str-nonlto-c-candidate-none.json": "88d2d439ebbd71ba26839c671d9e18d742ef254a888eb1e13e04e5b48b136029"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/str-nonlto-rust-parent.json",
+          "parent_sha256": "ed65bf0235d38a35c3335f9d6def5e9dfeca3deefe8ab57facaae98043c551f4",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/str-nonlto-rust-candidate.json",
+          "candidate_sha256": "ed65bf0235d38a35c3335f9d6def5e9dfeca3deefe8ab57facaae98043c551f4",
+          "fresh_parent_and_candidate": true,
+          "functions": 574,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/str-nonlto-go-parent.json",
+          "parent_sha256": "f2f365661e40005579e5d6e8222f7cb4e23e5e92f031350c226c9c60027a2baf",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/str-nonlto-go-candidate.json",
+          "candidate_sha256": "f2f365661e40005579e5d6e8222f7cb4e23e5e92f031350c226c9c60027a2baf",
+          "fresh_parent_and_candidate": true,
+          "functions": 574,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_pieces_1.89.0",
+      "fixture_sha256": "97957a440ca3c4371d2db9a6466bf7fb04446c4635902a495b298cdafde4d1f9",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-1.89.0-c-parent.json",
+          "parent_sha256": "5f3859e2ffb9f0fede6542f21f8f98b5822a1ed2eb64a387e1dd2384052138d3",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-1.89.0-c-candidate.json",
+          "candidate_sha256": "45d2a0643cbb961186e0bb05bdc8d30f358e135d4e46aea6df61d4063d654fa0",
+          "fresh_parent_and_candidate": true,
+          "functions": 576,
+          "changed": 41,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/pieces-1.89.0-c-parent-none.json": "5f3859e2ffb9f0fede6542f21f8f98b5822a1ed2eb64a387e1dd2384052138d3",
+            "/tmp/kuna-fnptr-namespace/breadth/pieces-1.89.0-c-candidate-none.json": "5f3859e2ffb9f0fede6542f21f8f98b5822a1ed2eb64a387e1dd2384052138d3"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-1.89.0-rust-parent.json",
+          "parent_sha256": "1063b9ff0429e25334449101c10814271a84c4a4f1154f14a3d690ead1590448",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-1.89.0-rust-candidate.json",
+          "candidate_sha256": "1063b9ff0429e25334449101c10814271a84c4a4f1154f14a3d690ead1590448",
+          "fresh_parent_and_candidate": true,
+          "functions": 576,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-1.89.0-go-parent.json",
+          "parent_sha256": "7a1fb4e6306b125f16061ff1f804c6205f1c9c6799cb8dbe7404a62a305b9657",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-1.89.0-go-candidate.json",
+          "candidate_sha256": "7a1fb4e6306b125f16061ff1f804c6205f1c9c6799cb8dbe7404a62a305b9657",
+          "fresh_parent_and_candidate": true,
+          "functions": 576,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "cppproto",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/cppproto_x86_64",
+      "fixture_sha256": "f530f3b7d7a3591840cc12f646da518d9a142b63745a9b080215dba4a68176f4",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/cppproto-c-parent.json",
+          "parent_sha256": "82ebf8876b226ac5dcb94671e55e6370d0bb5ba681fa64624875789d7802fbb6",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/cppproto-c-candidate.json",
+          "candidate_sha256": "82ebf8876b226ac5dcb94671e55e6370d0bb5ba681fa64624875789d7802fbb6",
+          "fresh_parent_and_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/cppproto-c-parent-none.json": "82ebf8876b226ac5dcb94671e55e6370d0bb5ba681fa64624875789d7802fbb6",
+            "/tmp/kuna-fnptr-namespace/breadth/cppproto-c-candidate-none.json": "82ebf8876b226ac5dcb94671e55e6370d0bb5ba681fa64624875789d7802fbb6"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/cppproto-rust-parent.json",
+          "parent_sha256": "f0059a65a6bc06edce348569a94bec8d231fb0c7c155d74e6a02cc52a323753d",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/cppproto-rust-candidate.json",
+          "candidate_sha256": "f0059a65a6bc06edce348569a94bec8d231fb0c7c155d74e6a02cc52a323753d",
+          "fresh_parent_and_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/cppproto-go-parent.json",
+          "parent_sha256": "a2d6b84d6a7af9bbd2a4a74ce9a302ece2a0c4a76ccd494fae527c0fc53dbb2c",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/cppproto-go-candidate.json",
+          "candidate_sha256": "a2d6b84d6a7af9bbd2a4a74ce9a302ece2a0c4a76ccd494fae527c0fc53dbb2c",
+          "fresh_parent_and_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "write-native",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64",
+      "fixture_sha256": "49e7820ee6b92f163d4c80e8c63f615405b3ed44ddbb4b4ad39b9322301cdc19",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/write-native-c-parent.json",
+          "parent_sha256": "b54f8909154b81385e170c8ffa71444b2aa9e8bfe3c23986ebbb2450fcbd2ff1",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/write-native-c-candidate.json",
+          "candidate_sha256": "9dd9e44bdd1fb2bb5fdbb5fa2f0a97f08350497f5631bfe6c332de8fccf6250e",
+          "fresh_parent_and_candidate": true,
+          "functions": 436,
+          "changed": 34,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/write-native-c-parent-none.json": "b54f8909154b81385e170c8ffa71444b2aa9e8bfe3c23986ebbb2450fcbd2ff1",
+            "/tmp/kuna-fnptr-namespace/breadth/write-native-c-candidate-none.json": "b54f8909154b81385e170c8ffa71444b2aa9e8bfe3c23986ebbb2450fcbd2ff1"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/write-native-rust-parent.json",
+          "parent_sha256": "231df489fd18fb9dc2b49b41cfa0a937b5b0f80786a551b28bc7398982e5923c",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/write-native-rust-candidate.json",
+          "candidate_sha256": "231df489fd18fb9dc2b49b41cfa0a937b5b0f80786a551b28bc7398982e5923c",
+          "fresh_parent_and_candidate": true,
+          "functions": 436,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/write-native-go-parent.json",
+          "parent_sha256": "e9c9b277cdbcb48dec7e9660717980ecffdf32b03443d5ff2c081fd820e9ec86",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/write-native-go-candidate.json",
+          "candidate_sha256": "e9c9b277cdbcb48dec7e9660717980ecffdf32b03443d5ff2c081fd820e9ec86",
+          "fresh_parent_and_candidate": true,
+          "functions": 436,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_pieces_nightly-2025-05-22",
+      "fixture_sha256": "cd285172fbd14770c68d2cd4706c65165ed75ecee27a94e9f432e758370924e5",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-nightly-2025-05-22-c-parent.json",
+          "parent_sha256": "b3d3ac8f0faabb9ca055b66c08ac4580c369db09543c8da9078876478b8e910f",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-nightly-2025-05-22-c-candidate.json",
+          "candidate_sha256": "2c4c94a073d4aba7fc566a8ea2ddb9af0c9bec924bf6e6281eb7b5466b1c2b48",
+          "fresh_parent_and_candidate": true,
+          "functions": 562,
+          "changed": 40,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/pieces-nightly-2025-05-22-c-parent-none.json": "b3d3ac8f0faabb9ca055b66c08ac4580c369db09543c8da9078876478b8e910f",
+            "/tmp/kuna-fnptr-namespace/breadth/pieces-nightly-2025-05-22-c-candidate-none.json": "b3d3ac8f0faabb9ca055b66c08ac4580c369db09543c8da9078876478b8e910f"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-nightly-2025-05-22-rust-parent.json",
+          "parent_sha256": "46b228496194604919b11d28e8b584e463bbaea40fcefac56eefb28adeeb5d24",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-nightly-2025-05-22-rust-candidate.json",
+          "candidate_sha256": "46b228496194604919b11d28e8b584e463bbaea40fcefac56eefb28adeeb5d24",
+          "fresh_parent_and_candidate": true,
+          "functions": 562,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-nightly-2025-05-22-go-parent.json",
+          "parent_sha256": "21663585f1352ba0de9157f0e27a7019e0fa07ece28718480ed856d132825b2a",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/pieces-nightly-2025-05-22-go-candidate.json",
+          "candidate_sha256": "21663585f1352ba0de9157f0e27a7019e0fa07ece28718480ed856d132825b2a",
+          "fresh_parent_and_candidate": true,
+          "functions": 562,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "io-native",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_io_x86_64",
+      "fixture_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/io-native-c-parent.json",
+          "parent_sha256": "c9f5087aea16b248bfb5a07621f0dee30f7942708ba7891661baaf455a373198",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/io-native-c-candidate.json",
+          "candidate_sha256": "afdcb4b9242b5f3861f92f0bed214298eb6946752050c42c65f24934043f7cd5",
+          "fresh_parent_and_candidate": true,
+          "functions": 447,
+          "changed": 31,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/io-native-c-parent-none.json": "c9f5087aea16b248bfb5a07621f0dee30f7942708ba7891661baaf455a373198",
+            "/tmp/kuna-fnptr-namespace/breadth/io-native-c-candidate-none.json": "c9f5087aea16b248bfb5a07621f0dee30f7942708ba7891661baaf455a373198"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/io-native-rust-parent.json",
+          "parent_sha256": "b066c9e0d5a490da0cb6985906c5301463d5ff85986faf3dd6eb7dbff241c870",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/io-native-rust-candidate.json",
+          "candidate_sha256": "b066c9e0d5a490da0cb6985906c5301463d5ff85986faf3dd6eb7dbff241c870",
+          "fresh_parent_and_candidate": true,
+          "functions": 447,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/io-native-go-parent.json",
+          "parent_sha256": "bd06ce0b9cf65b30384413d0b293013b95f3b9bac2f50340ed5792dd7976ba35",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/io-native-go-candidate.json",
+          "candidate_sha256": "bd06ce0b9cf65b30384413d0b293013b95f3b9bac2f50340ed5792dd7976ba35",
+          "fresh_parent_and_candidate": true,
+          "functions": 447,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "io-promoted",
+      "fixture_path": "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_io_promoted_x86_64",
+      "fixture_sha256": "0a3a3b2b8b6b2d36c4746b9bcae65920babdd186ed2b1851ef7fedeea9caa76e",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/io-promoted-c-parent.json",
+          "parent_sha256": "80e698686fb33d290b93903d04371250cdf9aa7b15aff212de915aece2b3ffd4",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/io-promoted-c-candidate.json",
+          "candidate_sha256": "7f086d0a4289921b57d2d6a11a783b8102c61a6c7428a07f02bd2c4c2dba9273",
+          "fresh_parent_and_candidate": true,
+          "functions": 425,
+          "changed": 27,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/io-promoted-c-parent-none.json": "80e698686fb33d290b93903d04371250cdf9aa7b15aff212de915aece2b3ffd4",
+            "/tmp/kuna-fnptr-namespace/breadth/io-promoted-c-candidate-none.json": "80e698686fb33d290b93903d04371250cdf9aa7b15aff212de915aece2b3ffd4"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/io-promoted-rust-parent.json",
+          "parent_sha256": "92dbfe50491d4560f39e02748898f89af63380868e7f9922a3a6416b3369d299",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/io-promoted-rust-candidate.json",
+          "candidate_sha256": "92dbfe50491d4560f39e02748898f89af63380868e7f9922a3a6416b3369d299",
+          "fresh_parent_and_candidate": true,
+          "functions": 425,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/io-promoted-go-parent.json",
+          "parent_sha256": "56099060e4503e30185ae70c83e229d168f5867e1bac9757fe0a891d62717a91",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/io-promoted-go-candidate.json",
+          "candidate_sha256": "56099060e4503e30185ae70c83e229d168f5867e1bac9757fe0a891d62717a91",
+          "fresh_parent_and_candidate": true,
+          "functions": 425,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "namespace-rust",
+      "fixture_path": "/home/mahaloz/kwt/angr-dwarf-namespace/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces_rust_x86_64",
+      "fixture_sha256": "968267b715b92621e2ae1a1b40e72e55f1f5891e292cf8a391101a5d2a38cb68",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/namespace-rust-c-parent.json",
+          "parent_sha256": "9f3268a060870895651be77b6a2bbc0f2f568dceb4834676444e9f3eeb66c728",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/namespace-rust-c-candidate.json",
+          "candidate_sha256": "cc5311d2e722eeba3b2ab6c6298d82f6dc474050ea738a513041b4f6af275ff3",
+          "fresh_parent_and_candidate": true,
+          "functions": 549,
+          "changed": 29,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/namespace-rust-c-parent-none.json": "9f3268a060870895651be77b6a2bbc0f2f568dceb4834676444e9f3eeb66c728",
+            "/tmp/kuna-fnptr-namespace/breadth/namespace-rust-c-candidate-none.json": "9f3268a060870895651be77b6a2bbc0f2f568dceb4834676444e9f3eeb66c728"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/namespace-rust-rust-parent.json",
+          "parent_sha256": "d1965e30dc46c8b16ba5848caed0a93d5a424b1c73936a1165bb7e21590f7b45",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/namespace-rust-rust-candidate.json",
+          "candidate_sha256": "d1965e30dc46c8b16ba5848caed0a93d5a424b1c73936a1165bb7e21590f7b45",
+          "fresh_parent_and_candidate": true,
+          "functions": 549,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/namespace-rust-go-parent.json",
+          "parent_sha256": "d2abb457a2c6ab2bda1a09ec636178d52e6f30264ceddc1908ab21466a387b10",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/namespace-rust-go-candidate.json",
+          "candidate_sha256": "d2abb457a2c6ab2bda1a09ec636178d52e6f30264ceddc1908ab21466a387b10",
+          "fresh_parent_and_candidate": true,
+          "functions": 549,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": false,
+          "non_C_exact_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "hello",
+      "fixture_path": "/tmp/kuna-angr-reference/general/hello",
+      "fixture_sha256": "bfd77e92784ea3b3b9a6e2f6393095d42816950540a3363532d5d570bd2584af",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/hello-c-parent.json",
+          "parent_sha256": "40751e633049c3557438d8326db686f60c4aa3a59532dd7d23d63514c10b9135",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/hello-c-candidate.json",
+          "candidate_sha256": "b5ae26dff417ace23aa8c42420f93a11d9695f77c024ae354932c71f7db28622",
+          "fresh_parent_and_candidate": true,
+          "functions": 610,
+          "changed": 30,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": false,
+          "none_records_equal": true,
+          "none_files": {
+            "/tmp/kuna-fnptr-namespace/breadth/hello-c-parent-none.json": "40751e633049c3557438d8326db686f60c4aa3a59532dd7d23d63514c10b9135",
+            "/tmp/kuna-fnptr-namespace/breadth/hello-c-candidate-none.json": "40751e633049c3557438d8326db686f60c4aa3a59532dd7d23d63514c10b9135"
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/hello-rust-parent.json",
+          "parent_sha256": "cb1eaa1912a36080e056f0c8c89629e2aedff433b162321e28a4cb47be29d1b1",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/hello-rust-candidate.json",
+          "candidate_sha256": "cb1eaa1912a36080e056f0c8c89629e2aedff433b162321e28a4cb47be29d1b1",
+          "fresh_parent_and_candidate": true,
+          "functions": 610,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null,
+          "non_C_exact_parent": true
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-fnptr-namespace/breadth/hello-go-parent.json",
+          "parent_sha256": "e7b7b55bd60b95e0e8627749078eb39086d46c430f5e8c4d7c10c8f3691ff3ff",
+          "candidate_file": "/tmp/kuna-fnptr-namespace/breadth/hello-go-candidate.json",
+          "candidate_sha256": "e7b7b55bd60b95e0e8627749078eb39086d46c430f5e8c4d7c10c8f3691ff3ff",
+          "fresh_parent_and_candidate": true,
+          "functions": 610,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": true,
+          "non_C_exact_parent": true
+        }
+      ]
+    }
+  ]
+}

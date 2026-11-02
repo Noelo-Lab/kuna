@@ -1,0 +1,364 @@
+{
+  "binary": "/home/mahaloz/kwt/angr-fnptr-namespace/decompiler/crates/kuna-analysis/tests/fixtures/function_pointer_namespaces_x86_64",
+  "language": "c-language",
+  "count": 9,
+  "error": null,
+  "functions": [
+    {
+      "name": "left::same_address",
+      "address": 4448,
+      "address_hex": "0x1160",
+      "aliases": [
+        "sub_1160"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned long left::same_address(void)\n{\n  return (unsigned long)left::target;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4448,
+            4455
+          ]
+        }
+      ],
+      "variables": [],
+      "types": []
+    },
+    {
+      "name": "right::cross_address",
+      "address": 4496,
+      "address_hex": "0x1190",
+      "aliases": [
+        "sub_1190"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned long right::cross_address(void)\n{\n  return (unsigned long)left::target;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4496,
+            4503
+          ]
+        }
+      ],
+      "variables": [],
+      "types": []
+    },
+    {
+      "name": "foreign_address",
+      "address": 4528,
+      "address_hex": "0x11b0",
+      "aliases": [
+        "sub_11b0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned long foreign_address(void)\n{\n  return (unsigned long)left::target;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4528,
+            4535
+          ]
+        }
+      ],
+      "variables": [],
+      "types": []
+    },
+    {
+      "name": "nested_address",
+      "address": 4544,
+      "address_hex": "0x11c0",
+      "aliases": [
+        "sub_11c0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned long nested_address(void)\n{\n  return (unsigned long)left::deep::target;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4544,
+            4551
+          ]
+        }
+      ],
+      "variables": [],
+      "types": []
+    },
+    {
+      "name": "right_address",
+      "address": 4560,
+      "address_hex": "0x11d0",
+      "aliases": [
+        "sub_11d0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned long right_address(void)\n{\n  return (unsigned long)right::target;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4560,
+            4567
+          ]
+        }
+      ],
+      "variables": [],
+      "types": []
+    },
+    {
+      "name": "global_shadow",
+      "address": 4576,
+      "address_hex": "0x11e0",
+      "aliases": [
+        "sub_11e0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned long global_shadow(unsigned long target)\n{\n  return (unsigned long)::target;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4576,
+            4583
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "target",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "scope_shadow",
+      "address": 4592,
+      "address_hex": "0x11f0",
+      "aliases": [
+        "sub_11f0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned long scope_shadow(unsigned long left)\n{\n  return (unsigned long)::left::target;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4592,
+            4599
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "left",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "interior_address",
+      "address": 4608,
+      "address_hex": "0x1200",
+      "aliases": [
+        "sub_1200"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned long interior_address(void)\n{\n  return 0x1151;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4615
+          ]
+        }
+      ],
+      "variables": [],
+      "types": []
+    },
+    {
+      "name": "data_address",
+      "address": 4624,
+      "address_hex": "0x1210",
+      "aliases": [
+        "sub_1210"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned long data_address(void)\n{\n  return (unsigned long)&_ZN4left4dataE;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4624,
+            4631
+          ]
+        }
+      ],
+      "variables": [],
+      "types": []
+    }
+  ],
+  "assertions": [
+    {
+      "directive": "prototype left::same_address unsigned long same_address(void)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype right::cross_address unsigned long cross_address(void)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype foreign_address unsigned long foreign_address(void)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype nested_address unsigned long nested_address(void)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype right_address unsigned long right_address(void)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype interior_address unsigned long interior_address(void)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype data_address unsigned long data_address(void)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype global_shadow unsigned long global_shadow(unsigned long target)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype scope_shadow unsigned long scope_shadow(unsigned long left)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype left::target unsigned int target(unsigned int x)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype left::deep::target unsigned int target(unsigned int x)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype right::target unsigned int target(unsigned int x)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype target unsigned int target(unsigned int x)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    }
+  ]
+}

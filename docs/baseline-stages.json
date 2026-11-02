@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3563,
-    3563
+    3571,
+    3571
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2490,6 +2490,7 @@
     "data:cspecprotos #4: the registered __thiscall model resolves and recovers ECX as the first parameter",
     "data:cspecprotos #5: the member access is now a parameter dereference",
     "data:cspecprotos #6: the stack argument shifts to the second slot behind the this-pointer",
+    "data:data address is unchanged under either policy",
     "data:deadwaves #1: both passes print churn",
     "data:deadwaves #2: both passes keep churn's 256 calls",
     "data:deadwaves #3: both passes leave the same live IR",
@@ -2610,6 +2611,7 @@
     "data:foldcallretphi #7: the call is never printed inside the and-and (pass 4, default)",
     "data:foldcallretphi-join #1: an undeclared call's eax output keeps its spill (pass 1 default, pass 3 off)",
     "data:foldcallretphi-join #2: the call folds into the comparison only once big is declared int4 (pass 2, default)",
+    "data:foreign cross-scope and all same-scope addresses qualify",
     "data:formal rename does not produce an uninitialized body shadow",
     "data:formal rename survives consecutive backing initializers",
     "data:formal rename survives consecutive rebuilds in the signature",
@@ -2637,6 +2639,7 @@
     "data:fully overwritten aggregate parameter objects retain native definitions",
     "data:function pointer signature uses source aggregate",
     "data:global array anchoring is default off",
+    "data:global root survives local shadow under minimal and all",
     "data:globalcallranges preserves all constructor calls",
     "data:globalcallranges preserves both function bodies",
     "data:globalcallranges preserves the first global store",
@@ -2811,6 +2814,7 @@
     "data:integer rounding survives a float-to-double widening",
     "data:integer to float remains a numeric conversion",
     "data:integer trait identities select eight format suffixes",
+    "data:interior address remains explicit under either policy",
     "data:interior replacement retains its native definition",
     "data:interior uses never emit undefined storage or partial tokens",
     "data:intfloatround off folds the float rounding away",
@@ -2898,6 +2902,7 @@
     "data:named interior use never takes the formal address",
     "data:named interior use stays on its shared backing",
     "data:named replacement retains its exact backing symbol",
+    "data:namespace root survives local namespace-name shadow",
     "data:namestyle #1 default: argument renders as aN",
     "data:namestyle #2 default: local renders as vN with a register source-location comment",
     "data:namestyle #3 default: unnamed call target renders as sub_<addr>",
@@ -2921,6 +2926,7 @@
     "data:nested PA-RISC operand: backward call target",
     "data:nested PA-RISC operand: forward call target",
     "data:nested PPC operand: full rotation and mask",
+    "data:nested namespace address",
     "data:no fabricated zero multiplication",
     "data:no shifted field store",
     "data:nodejoin #1: shared exit emits a complete body in both passes",
@@ -2930,6 +2936,7 @@
     "data:nodejoin #5: the pipeline does not abort",
     "data:nodejoin #6: with the default segmentize the loop survives the shared-exit repair",
     "data:nodejoin #7: with the default segmentize the final read is the global and both returned words survive",
+    "data:none and same-scope minimal use the bare function",
     "data:nonzero overwrite survives",
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
@@ -2968,6 +2975,7 @@
     "data:ordinary arithmetic still folds",
     "data:ordinary interior use selects its offset view",
     "data:ordinary pointer retains its address",
+    "data:other namespace address",
     "data:outlang #1: pass 1 keeps the C switch statement",
     "data:outlang #2: pass 1 keeps C case labels",
     "data:outlang #3: pass 1 keeps the C default label",

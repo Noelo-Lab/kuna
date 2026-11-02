@@ -1,0 +1,75 @@
+<!--
+  Upstream: angr test_decompiler.py::test_function_pointer_identification.
+  P9 / naming-policy; P0 assertion: option namespacestrategy none|minimal|all.
+  None reproduces the bare function value. Default minimal qualifies foreign
+  and nested targets, keeps same-scope names short, and disambiguates shadows.
+  All also preserves the required global root. Data/interior controls stay raw.
+-->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/function_pointer_namespaces_x86_64</com>
+  <com>read symbols</com>
+  <com>parse line extern unsigned long foreign_address(void);</com>
+  <com>parse line extern unsigned long nested_address(void);</com>
+  <com>parse line extern unsigned long right_address(void);</com>
+  <com>parse line extern unsigned long global_shadow(unsigned long target);</com>
+  <com>parse line extern unsigned long scope_shadow(unsigned long left);</com>
+  <com>parse line extern unsigned long interior_address(void);</com>
+  <com>parse line extern unsigned long data_address(void);</com>
+  <com>option namespacestrategy none</com>
+  <com>load function foreign_address</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option namespacestrategy minimal</com>
+  <com>print C</com>
+  <com>load function nested_address</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function right_address</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function global_shadow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function scope_shadow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function left::same_address</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function right::cross_address</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option namespacestrategy all</com>
+  <com>load function left::same_address</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function global_shadow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function interior_address</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function data_address</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option namespacestrategy none</com>
+  <com>print C</com>
+  <com>load function interior_address</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="none and same-scope minimal use the bare function" min="2" max="2">return (\(uint8\))?target;</stringmatch>
+<stringmatch name="foreign cross-scope and all same-scope addresses qualify" min="3" max="3">return (\(uint8\))?left::target;</stringmatch>
+<stringmatch name="nested namespace address" min="1" max="1">return \(uint8\)left::deep::target;</stringmatch>
+<stringmatch name="other namespace address" min="1" max="1">return \(uint8\)right::target;</stringmatch>
+<stringmatch name="global root survives local shadow under minimal and all" min="2" max="2">return \(uint8\)::target;</stringmatch>
+<stringmatch name="namespace root survives local namespace-name shadow" min="1" max="1">return \(uint8\)::left::target;</stringmatch>
+<stringmatch name="interior address remains explicit under either policy" min="2" max="2">return 0x1151;</stringmatch>
+<stringmatch name="data address is unchanged under either policy" min="2" max="2">return \(uint8\)&amp;_ZN4left4dataE;</stringmatch>
+</decompilertest>

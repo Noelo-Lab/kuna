@@ -1,0 +1,47 @@
+{
+  "feature": "funcptrnames",
+  "kind": "Strict standalone C function-value namespace correction",
+  "existing_option": "namespacestrategy",
+  "ablation": "none",
+  "default": "minimal",
+  "parent_commit": "4a9c18414ccd68449cbdbdf43a088a114a6b0c07",
+  "binary_sha256": {
+    "parent": "74030097e634b93022235cbf8364ef1171071fb47a205c9393e9b0b19dd6aa1c",
+    "candidate": "384f7547f58af97719b98b7923a1f5ee530d2bedb7c4981436dbe4f0d53b8723"
+  },
+  "upstream_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "upstream_test": "tests/analyses/decompiler/test_decompiler.py::test_function_pointer_identification",
+  "original_assertions": 675,
+  "stage_assertions": 3571,
+  "workspace": {
+    "passed": 10145,
+    "failed": 0,
+    "ignored": 39,
+    "completed_suites": 71
+  },
+  "breadth": {
+    "images": 35,
+    "distinct_functions": 31274,
+    "language_records": 68538,
+    "totals": {
+      "non_C_exact_records": 37264,
+      "changed_functions": 450,
+      "changed_lines": 816,
+      "qualified_function_values": 816
+    }
+  },
+  "native_address_comparisons": 504,
+  "native_callback_value_comparisons": 504,
+  "speed_budget_pct": 5,
+  "speed_passed": true,
+  "speed_maximum_median_delta_pct": {
+    "cpu_ms": 0.8366630714149004,
+    "wall_ms": 0.7268755976652885
+  },
+  "speed_maximum_upper_mean_delta_pct": {
+    "cpu_ms": 1.1557856404462201,
+    "wall_ms": 1.548740321799137
+  },
+  "scope": "Exact whole-function values with consistent names/scopes and plain C++ namespace components; C output only.",
+  "full_angr_parity_claimed": false
+}

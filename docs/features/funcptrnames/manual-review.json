@@ -1,0 +1,17 @@
+{
+  "at": "2026-11-02T07:01:33.801531+00:00",
+  "all_hunks_reviewed": true,
+  "breadth_review_sha256": "c95370c8e95fa5a4b13b62daad641cb686223bf115c4a0fe7b93c0fe32716ea2",
+  "qualification_inventory_sha256": "bc56730713d9dd0d507b753ab6b77633276964ade0f2af4b423baba282411652",
+  "changed_functions": 450,
+  "changed_lines": 816,
+  "distinct_qualified_targets": 62,
+  "method": "Complete per-line lexical comparison proves every changed line adds only plain non-keyword scope qualifiers. Reviewed the full distinct target inventory and the final 59 functions individually, including TLS destructors, deallocation callbacks, bignum/btree callbacks, relative scopes and the hello entry pointer. Checked the production address/type/name/full-scope agreement guard and local/live scope separation. The native fixture validates concrete target selection; every non-code field stays exact.",
+  "controls": {
+    "native_address_and_value_comparisons_each": 504,
+    "renamed_data_interior_conflicting_and_unspellable_scopes": "six focused console tests pass",
+    "none_C_and_all_Rust_Go_records_exact": true,
+    "inherited_Go_syntax_failures": 3
+  },
+  "limits": "No complete C recompilation claim for Rust runtime bodies; generic type/closure namespace spellings are deliberately unchanged."
+}

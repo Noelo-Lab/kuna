@@ -1,0 +1,5 @@
+{
+  "addr": 4496,
+  "text": "0x1190:\tLEA RAX,[0x101150]\n0x1197:\tRET",
+  "addr_hex": "0x1190"
+}
