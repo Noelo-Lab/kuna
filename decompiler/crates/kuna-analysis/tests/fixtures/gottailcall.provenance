@@ -9,7 +9,11 @@ What they are
   gottailcall_mipsel.o   little-endian MIPS32 PIC relocatable object: g,
                          fwd3, tick and h end in lw $t9,%call16(f)($gp);
                          jr $t9, and h's slot names the undefined ext.
-  Source: gottailcall.c.
+  gottailcall_refused_x86_64.so  the same x86-64 build of
+                         gottailcall_refused.c: fwd5's tail call through
+                         five's slot is refused (it would pass four of five's
+                         five arguments), so fwd5 keeps the copied-in body.
+  Source: gottailcall.c, gottailcall_refused.c.
 
 Why they are vendored
   The MIPS object needs a cross gcc CI does not have, and the order of
@@ -22,8 +26,12 @@ Where they came from
           -Wl,--build-id=none -o gottailcall_x86_64.so gottailcall.c
       mipsel-linux-gnu-gcc -O2 -fno-toplevel-reorder -fPIC -c gottailcall.c \
           -o gottailcall_mipsel.o
+      gcc -O2 -fno-toplevel-reorder -fPIC -fno-plt -shared -Wl,-z,now \
+          -Wl,--build-id=none -o gottailcall_refused_x86_64.so \
+          gottailcall_refused.c
 
   sha256:
     a0a97b04204117a92a35b818e548f394595082b64d8ee7126ea3f893f1c6b1f6  gottailcall_x86_64.so
     6769679c5eabedc1b5fa8c757c2d70528624a8bc51e6bf3fab89e08eb4aef10c  gottailcall_mipsel.o
+    009289d49d15e8459f88bc60666a4a0f016460371fff9da853163ff9af60204f  gottailcall_refused_x86_64.so
   Never executed.

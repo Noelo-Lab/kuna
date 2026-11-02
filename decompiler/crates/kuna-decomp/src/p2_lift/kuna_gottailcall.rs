@@ -240,6 +240,21 @@ fn takes_every_input(
     })
 }
 
+/// Drop the function's recovered-tail-call warnings before a callee-first run
+/// publishes a new flow of it. A redo can refuse a tail call the first
+/// decompile took, and the stale `// tail-call` would print on the switch the
+/// redo follows; every tail call the new flow takes warns again.
+pub(crate) fn clear_stale_warnings(arch: &mut Architecture, entry: &Address) {
+    if !arch.kuna_gottailcall.recording {
+        return;
+    }
+    arch.commentdb.retain_comments(|c| {
+        &c.func_addr != entry
+            || c.tp != crate::architecture::comment_type::warning
+            || !c.text.contains(": recovered tail call -> introduced call to ")
+    });
+}
+
 /// The callers to decompile again: each one that followed a table into a
 /// callee that is now filed.
 pub fn due(arch: &mut Architecture) -> BTreeSet<Key> {

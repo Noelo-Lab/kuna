@@ -947,6 +947,10 @@ call the decompile took against the result (`kuna_gottailcall.rs (loses)`).
 If the callee returns a value and the caller came out returning nothing, or
 a call to the callee passes fewer arguments than its statement names, the
 pair is refused and the caller is decompiled again with the copied-in body.
+Each flow of a callee-first run first drops the function's earlier
+recovered-tail-call warnings (`kuna_gottailcall.rs (clear_stale_warnings)`),
+and every tail call the new flow takes warns again, so a refused tail call
+leaves no `// tail-call` on the switch the redo follows.
 
 The reference walk behind the callee-first plan does not see these jumps. A
 MIPS `$gp` slot is not a constant it reads, and an x86 `jmp [slot]` is an
