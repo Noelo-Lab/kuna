@@ -694,6 +694,14 @@ pub fn build_with_unflagged_focus(
     descend(file, arch, translate, seeds, focus, (unflagged, declared), false)
 }
 
+/// The walk behind every `build*`.
+///
+/// (kuna `armframes`) On an ARM image a computed jump is tried as an A32
+/// `addls pc,pc,rN,lsl #2` / `ldrls pc,[pc,rN,lsl #2]` table
+/// ([`super::kuna_a32switch`]) before any other table read, because its
+/// PC-relative operand names the dispatch itself rather than a table, and the
+/// predicated skip of such a jump, which stays one of its `flows`, files no row
+/// ([`super::classify::Classified::predicated_skip`]).
 fn descend(
     file: &object::File,
     arch: &Architecture,
@@ -806,6 +814,10 @@ fn descend(
     let thumb_tables = (arch.analysis_thumbswitch && sections_are_runtime)
         .then(|| super::kuna_thumbswitch::HalfwordTables::new(file, data_space.clone(), max_entries))
         .flatten();
+    let a32_tables = pool
+        .as_ref()
+        .filter(|_| super::kuna_a32switch::applies(file, arch))
+        .map(|pool| super::kuna_a32switch::A32Tables::new(arch, pool));
 
     let preserve_bodies = sections_are_runtime
         && arch.analysis_funcstart_patterns
@@ -1086,18 +1098,26 @@ fn descend(
         while let Some((vma, mode)) = insn_queue.pop_front().or_else(|| {
             let p = pool.as_ref()?;
             for (vma, mode, branch) in std::mem::take(&mut woken) {
-                let read = branch_cases(
-                    translate,
-                    &code_space,
-                    data_space.as_ref(),
-                    &st.decoded,
-                    vma,
-                    Some(&branch),
-                    p,
-                    &exec,
-                    &reach,
-                    thumb_tables.as_ref(),
-                );
+                let mut read = kuna_switchtable::TableRead::default();
+                if let Some(tables) = &a32_tables {
+                    let decoded = |at: u64| st.decoded.contains(&at);
+                    read = tables.targets(translate, &code_space, &exec, &decoded, vma);
+                }
+                let predicated = a32_tables.is_some() && is_predicated(translate, &code_space, vma);
+                if read.cases.is_empty() && read.stated.is_none() && read.gap.is_none() && !predicated {
+                    read = branch_cases(
+                        translate,
+                        &code_space,
+                        data_space.as_ref(),
+                        &st.decoded,
+                        vma,
+                        Some(&branch),
+                        p,
+                        &exec,
+                        &reach,
+                        thumb_tables.as_ref(),
+                    );
+                }
                 if read.cases.is_empty() && read.stated.is_none() {
                     if let Some(gap) = read.gap {
                         waiting.entry(gap).or_default().push((vma, mode, branch));
@@ -1166,6 +1186,7 @@ fn descend(
                     .map(|op| RawOp { opcode: op.opcode, in0: op.ins.first().cloned() }),
             );
             let c = classify(&raw, vma, len);
+            let skip = a32_tables.as_ref().and_then(|_| c.predicated_skip(vma, len));
             if let Some(fall) = c.fall_through.filter(|_| !waiting.is_empty()) {
                 woken.extend(waiting.remove(&fall).into_iter().flatten());
             }
@@ -1214,7 +1235,7 @@ fn descend(
             });
             // Every row this instruction produces carries the same render, and an
             // instruction that produces none needs no render at all.
-            let mut text = if c.flows.is_empty() && drefs.is_empty() && pointer.is_none() {
+            let mut text = if c.flows.iter().all(|&t| Some(t) == skip) && drefs.is_empty() && pointer.is_none() {
                 String::new()
             } else {
                 assembly(translate, vma, &code_space)
@@ -1229,7 +1250,9 @@ fn descend(
 
             for &target in &c.flows {
                 let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
-                st.file(vma, target, kind, &text);
+                if Some(target) != skip {
+                    st.file(vma, target, kind, &text);
+                }
                 if sections_are_runtime && !in_range(&exec_set, target) {
                     stopped.insert(target);
                 }
@@ -1259,12 +1282,24 @@ fn descend(
             // table the jump indexes and take its entries up as successors of
             // THIS function: a case body is the dispatcher's own code. See
             // [`super::kuna_switchtable`].
-            if c.flows.is_empty() && c.flow.is_computed && c.flow.is_jump && !c.flow.is_call {
+            if c.flows.iter().all(|&t| Some(t) == skip) && c.flow.is_computed && c.flow.is_jump && !c.flow.is_call {
                 if let Some(p) = pool.as_ref() {
-                    let mut cases: Vec<u64> = Vec::new();
-                    let mut stated: Option<usize> = None;
+                    let a32 = a32_tables.as_ref().map_or_else(kuna_switchtable::TableRead::default, |tables| {
+                        let decoded = |at: u64| st.decoded.contains(&at);
+                        tables.decoded_targets(translate, &code_space, &exec, &decoded, vma, cap.ops(), len)
+                    });
+                    let branch = cap
+                        .ops()
+                        .iter()
+                        .find(|o| o.opcode == OpCode::CPUI_BRANCHIND)
+                        .and_then(|o| o.ins.first());
+                    let (mut cases, mut stated) = (a32.cases, a32.stated);
+                    if let (Some(gap), Some(branch)) = (a32.gap, branch) {
+                        waiting.entry(gap).or_default().push((vma, mode, branch.clone()));
+                    }
+                    let unpredicated = c.flows.is_empty();
                     for &(base, kind) in &drefs {
-                        if kind == XrefKind::Data {
+                        if unpredicated && kind == XrefKind::Data && stated.is_none() && a32.gap.is_none() {
                             cases.extend(kuna_switchtable::targets(
                                 base,
                                 vma,
@@ -1278,12 +1313,7 @@ fn descend(
                     // The base is on an instruction of its own and the entries
                     // are displacements on every x86-64 compiler, so ask what the
                     // branch register holds when the operand carried nothing.
-                    let branch = cap
-                        .ops()
-                        .iter()
-                        .find(|o| o.opcode == OpCode::CPUI_BRANCHIND)
-                        .and_then(|o| o.ins.first());
-                    if cases.is_empty() {
+                    if unpredicated && cases.is_empty() && stated.is_none() && a32.gap.is_none() {
                         let read = branch_cases(
                             translate,
                             &code_space,
@@ -1913,6 +1943,13 @@ fn branch_cases(
 ///
 /// A translator panic on exotic bytes is contained to `None` — a query surface
 /// must never take the process down over one bad address.
+/// Whether the instruction at `vma` is predicated: its p-code holds a `CBRANCH`.
+fn is_predicated(translate: &dyn Translate, code_space: &Rc<AddrSpace>, vma: u64) -> bool {
+    let mut cap = FullCapture::default();
+    decode(translate, vma, code_space, &mut cap).is_some()
+        && cap.ops().iter().any(|op| op.opcode == OpCode::CPUI_CBRANCH)
+}
+
 pub(super) fn decode(
     translate: &dyn Translate,
     vma: u64,
