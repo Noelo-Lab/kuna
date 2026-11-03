@@ -55,7 +55,10 @@ Varnode by `ActionAssignHigh` (`Funcdata::set_high_level`) at the head of the
 phalanx. The arena hands out ids in increasing order and never reuses one
 within the function, so it stores the HighVariables in a vector indexed by id
 (`variable.rs (HighSlots)`): a lookup is one index, not a tree search, and
-iteration still runs in id order. Merging looks both HighVariables of every
+iteration still runs in id order. Each slot holds its HighVariable boxed, because
+merging erases most ids and every Varnode created later takes a new one: an
+erased id keeps an empty pointer until the function ends, not a whole
+HighVariable. Merging looks both HighVariables of every
 pair it tests up several times, which made the tree search most of
 `ActionMergeType`'s time on a function with thousands of same-typed variables.
 Overlapping storage pieces of one symbol are tied together by the

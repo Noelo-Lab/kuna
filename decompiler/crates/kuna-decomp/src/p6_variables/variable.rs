@@ -1319,11 +1319,12 @@ impl HighIntersectTest {
 
 /// The live HighVariables of a bank, indexed by id. Ids are handed out in
 /// increasing order and never reused, so the ids handed out since the last
-/// [`HighSlots::clear`] index a vector directly, in id order.
+/// [`HighSlots::clear`] index a vector directly, in id order. Each is boxed:
+/// merging erases most ids, and an erased one keeps only an empty pointer.
 #[derive(Debug, Default)]
 struct HighSlots {
     base: u32,
-    slots: Vec<Option<HighVariable>>,
+    slots: Vec<Option<Box<HighVariable>>>,
     live: usize,
 }
 
@@ -1333,12 +1334,12 @@ impl HighSlots {
     }
 
     fn get(&self, id: &HighVariableId) -> Option<&HighVariable> {
-        self.slots.get(self.index(id)?)?.as_ref()
+        self.slots.get(self.index(id)?)?.as_deref()
     }
 
     fn get_mut(&mut self, id: &HighVariableId) -> Option<&mut HighVariable> {
         let i = self.index(id)?;
-        self.slots.get_mut(i)?.as_mut()
+        self.slots.get_mut(i)?.as_deref_mut()
     }
 
     fn insert(&mut self, id: HighVariableId, high: HighVariable) {
@@ -1346,7 +1347,7 @@ impl HighSlots {
         if i >= self.slots.len() {
             self.slots.resize_with(i + 1, || None);
         }
-        if self.slots[i].replace(high).is_none() {
+        if self.slots[i].replace(Box::new(high)).is_none() {
             self.live += 1;
         }
     }
@@ -1358,7 +1359,7 @@ impl HighSlots {
         while matches!(self.slots.last(), Some(None)) {
             self.slots.pop();
         }
-        Some(high)
+        Some(*high)
     }
 
     fn len(&self) -> usize {
@@ -1377,7 +1378,7 @@ impl HighSlots {
         self.slots
             .iter()
             .enumerate()
-            .filter_map(move |(i, h)| h.as_ref().map(|h| (HighVariableId(base + i as u32), h)))
+            .filter_map(move |(i, h)| h.as_deref().map(|h| (HighVariableId(base + i as u32), h)))
     }
 }
 
