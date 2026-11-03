@@ -1706,6 +1706,7 @@ without emitting a function list at all, let alone pseudocode.
   | `id` | Recognized by | `hint` |
   |---|---|---|
   | `dotnet` | PE data directory 14 (CLR header) non-zero | `managed .NET assembly: native decompilation shows only the stub; use ilspycmd` |
+  | `nativeaot` | an ELF whose section names carry `__managedcode` and `.dotnet_eh_table`, or a PE with `.unbox` and `.modules`; `version` is the ILC release in `.comment` | `NativeAOT (ILC 10.0.2) image: native code from C#; decompiles as native C, but method names need the .dbg sidecar or a NativeAOT metadata tool` |
   | `pyinstaller` | the `MEI\x0c\x0b\x0a\x0b\x0e` CArchive cookie; `version` is its Python version | `PyInstaller bundle (Python 3.12): extract with pyinstxtractor-ng` |
   | `nuitka` | `NUITKA_ONEFILE_PARENT` / `__nuitka_binary_dir` | `Nuitka-compiled Python: …; extract a onefile payload with nuitka-extractor` |
   | `autoit` | `AU3!EA06`/`AU3!EA05` in a PE | `AutoIt compiled script: extract the script with autoit-ripper` |
