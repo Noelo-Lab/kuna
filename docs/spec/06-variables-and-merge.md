@@ -52,7 +52,13 @@ win), and the naming storage is chosen by a fixed preference ladder
 persistent > input > address-tied > … > earliest-defined). HighVariables live
 in a per-function arena (`variable.rs (HighVariableBank)`), created for every
 Varnode by `ActionAssignHigh` (`Funcdata::set_high_level`) at the head of the
-phalanx; overlapping storage pieces of one symbol are tied together by the
+phalanx. The arena hands out ids in increasing order and never reuses one
+within the function, so it stores the HighVariables in a vector indexed by id
+(`variable.rs (HighSlots)`): a lookup is one index, not a tree search, and
+iteration still runs in id order. Merging looks both HighVariables of every
+pair it tests up several times, which made the tree search most of
+`ActionMergeType`'s time on a function with thousands of same-typed variables.
+Overlapping storage pieces of one symbol are tied together by the
 `variable.rs (VariableGroup)`/`(VariablePiece)` model so a 4-byte read of an
 8-byte slot stays a *piece* of the same group rather than a rival variable.
 
