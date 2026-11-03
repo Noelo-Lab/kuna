@@ -521,6 +521,15 @@ high would collide after inflating its cover to the candidate's
 mode of a wrong "implied" is a value printed at a program point where it no
 longer holds — which is why every unsafe case resolves to explicit.
 
+Upstream tests every STORE of the function against each LOAD it classifies.
+Marking changes no op, so the walk lists the function's live STOREs by block
+once (`coreaction_cleanup.rs (StoreBlocks)`) and tests a LOAD only against
+the STOREs in blocks its cover reaches; one outside them is never contained
+in the cover. The STOREs are visited in block order rather than op order,
+which cannot change the answer: the test asks whether any of them crosses
+the LOAD and may alias it. On APoseFix.dll's 205 KB `0x1806f78a0` the pass
+goes from 6.1 s to 0.8 s.
+
 Enabled system-call user ops follow the same memory fence as ordinary calls.
 `kuna_syscallregs.rs (memory_calls)` lists only the recognized, uninjected
 family user ops under chapter 02's `syscallregs` image policy; these have no
