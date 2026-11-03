@@ -1159,7 +1159,7 @@ a13 binaries). **Pinned VMAs:** `_get_greeting`@`0x100000538` → entry@`0x10000
 ("cfstring hello"), `_get_long`@`0x100000544` → entry@`0x100004028` ("a constant
 string longer than one entry"), `_get_after`@`0x100000550` → entry@`0x100004048`
 ("after the long one"). With `--option cfstrings on` each getter returns its
-literal; off, it returns the bare entry address.
+literal; off, it returns the entry by its data symbol (`&_kGreeting`).
 
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 

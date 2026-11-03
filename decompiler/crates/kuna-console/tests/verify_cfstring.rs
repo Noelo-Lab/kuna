@@ -32,14 +32,14 @@ use kuna_console::ifacedecomp::{
 use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_decomp::decompile_drive::build_and_follow_flow;
 
-/// `(getter VMA, entry address rendered when off, literal rendered when on)`.
+/// `(getter VMA, entry rendered when off, literal rendered when on)`.
 /// The second string is longer than one 32-byte entry, and the third entry sits
 /// right behind it, so it is only reachable when the second entry's `char[N]`
 /// stays inside its own entry.
 const ENTRIES: [(u64, &str, &str); 3] = [
-    (0x100000538, "0x100004008", "cfstring hello"),
-    (0x100000544, "0x100004028", "a constant string longer than one entry"),
-    (0x100000550, "0x100004048", "after the long one"),
+    (0x100000538, "&_kGreeting", "cfstring hello"),
+    (0x100000544, "&_kLong", "a constant string longer than one entry"),
+    (0x100000550, "&_kAfter", "after the long one"),
 ];
 
 fn repo_root() -> PathBuf {
@@ -107,7 +107,7 @@ fn run(mode: Mode, vma: u64) -> String {
     status.optr.clone()
 }
 
-/// The two-state proof: a `__cfstring` reference is the bare entry address by
+/// The two-state proof: a `__cfstring` reference is the entry (its data symbol) by
 /// default and becomes the string literal only when `cfstrings` is on, for every
 /// entry, including the one behind an entry whose string is longer than it.
 #[test]
@@ -117,7 +117,7 @@ fn cfstring_renders_as_literal_only_when_on() {
         let on = run(Mode::On, vma);
         assert!(
             off.contains(&format!("return {entry};")),
-            "cfstrings off must render the bare __cfstring entry address {entry}:\n{off}"
+            "cfstrings off must render the __cfstring entry {entry}:\n{off}"
         );
         assert!(!off.contains(text), "cfstrings off must not render {text:?}:\n{off}");
         assert!(
