@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3858,
-    3858
+    3861,
+    3861
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1495,6 +1495,9 @@
     "data:O32 aggregate: byte member retains its value",
     "data:O32 aggregate: declared value argument",
     "data:O32 aggregate: no residual placement shift",
+    "data:O32 call: only the read argument register is an input",
+    "data:O32 call: unread registers are not passed",
+    "data:O32 call: word arguments reach the call",
     "data:O32 slot: full-register test uses the argument",
     "data:O32 slot: inferred input remains a four-byte int",
     "data:O32 slot: no undefined upper half",

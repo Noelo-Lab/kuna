@@ -135,10 +135,38 @@ pub(crate) fn apply(data: &mut Funcdata) -> KunaResult<()> {
     let Some(input) = model.input_opt() else {
         return Ok(());
     };
-    let entries = input.get_entry();
+    let candidates: Vec<_> = extensions(input.get_entry()).cloned().collect();
+    data.kuna_call_mechanisms.register_slots = true;
+    if candidates.is_empty() {
+        return Ok(());
+    }
     let block = data.bblocks_get_block(0);
     let start = data.bblocks_block_start(block);
-    for extension in extensions(entries) {
+    // Defining an unread register would make a call appear to pass it.
+    let mut reads = Vec::new();
+    for op in data.obank().iter_alive() {
+        let Some(op) = data.obank().get(op) else {
+            continue;
+        };
+        for slot in 0..op.num_input() {
+            if let Some(vn) = op.get_in(slot).and_then(|vn| data.vbank().get(vn)) {
+                if !vn.is_constant() {
+                    reads.push((vn.get_space().get_index(), vn.get_offset(), vn.get_size()));
+                }
+            }
+        }
+    }
+    let read = |extension: &Extension| {
+        let Some(space) = extension.output.space.as_ref() else {
+            return false;
+        };
+        let low = extension.output.offset;
+        let high = low + u64::from(extension.output.size);
+        reads.iter().any(|&(index, offset, size)| {
+            index == space.get_index() && offset < high && low < offset + size as u64
+        })
+    };
+    for extension in candidates.iter().filter(|e| read(e)) {
         let container = extension.output.get_addr();
         let op = data.new_op(1, start.clone());
         data.new_varnode_out(extension.output.size as i32, &container, op)?;
@@ -151,7 +179,6 @@ pub(crate) fn apply(data: &mut Funcdata) -> KunaResult<()> {
         data.op_set_input(op, input, 0)?;
         data.op_insert_begin(op, block);
     }
-    data.kuna_call_mechanisms.register_slots = true;
     Ok(())
 }
 
@@ -232,6 +259,24 @@ pub(crate) fn apply_return(data: &mut Funcdata, index: i32) -> KunaResult<()> {
         data.op_insert_after(extend, op);
     }
     Ok(())
+}
+
+/// The argument slot a call reads from a heritaged physical register whose
+/// extension the compiler declares, in the caller's address perspective.
+pub(crate) fn input_slot(
+    call: &crate::fspec::FuncCallSpecs,
+    addr: &Address,
+    translated: &Address,
+    size: i32,
+) -> Option<(Address, i32)> {
+    let proto = call.proto();
+    if !proto.has_model() {
+        return None;
+    }
+    let extension = extensions(proto.model().input_opt()?.get_entry())
+        .find(|e| e.output.size as i32 == size && e.output.get_addr() == *translated)?;
+    let slot = addr + extension.input.offset.wrapping_sub(extension.output.offset) as i64;
+    Some((slot, extension.input.size as i32))
 }
 
 /// Recover the logical return trial when heritage groups its read with the

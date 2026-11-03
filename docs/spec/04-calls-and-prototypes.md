@@ -482,9 +482,12 @@ an explicit `sign` or `zero` extension, decoding retains both extents: `maxsize`
 still controls argument assignment, and the slot occupies the register's low
 bytes in either byte order. Before SSA, `ActionConstbase` defines the whole
 incoming register by extending that slot
-(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_registerslots.rs`). This lets
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_registerslots.rs`) for each
+such register the function reads. This lets
 full-register reads recover the same argument as word reads, including when
 no prototype is declared, without enlarging argument pairs or stack slots.
+A register the function never reads stays undefined, so a call does not
+appear to pass it.
 Entries with overlapping alternative storage, aliases no wider than the slot,
 and conditional or unspecified extensions do not supply this fact. Explicit
 custom parameter storage takes precedence over the model. The effect

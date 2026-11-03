@@ -2224,6 +2224,15 @@ impl Heritage {
                 let _ = fd.op_insert_input(op, vn, nin);
             }
         } else if ic == Containment::ContainedBy {
+            // A declared slot extension makes the slot the argument the call reads.
+            if let Some((slot, slot_size)) =
+                crate::p4_calls::kuna_registerslots::input_slot(fc, addr, trans_addr, size)
+            {
+                if fc.get_active_input().which_trial(&slot, slot_size) < 0 {
+                    Self::truncated_input_trial(fd, fc, addr, size, &slot, slot_size);
+                }
+                return;
+            }
             let partition = fd.get_arch().multi_reg_args.then(|| {
                 super::kuna_multiregargs::input_partition(
                     fc.proto(), fd.get_arch().manage(), trans_addr, size,

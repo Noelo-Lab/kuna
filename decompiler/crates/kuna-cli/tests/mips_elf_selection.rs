@@ -1000,3 +1000,37 @@ fn release6_fpxx_and_mips32_fp64_images_keep_loading() {
     }
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn o32_wide_calls_pass_word_arguments_without_unread_registers() {
+    let path = common::scratch_file("mips-o32-call-arguments", "elf");
+    // caller: save ra; addiu a1,a0,1; jal callee; addiu a2,zero,7; restore ra; return.
+    // callee: addu v0,a0,a1; addu v0,v0,a2; jr ra; nop.
+    let mut words = vec![
+        0x27bdfff0, 0xafbf000c, 0x24850001, 0x0c000410, 0x24060007, 0x8fbf000c, 0x03e00008,
+        0x27bd0010,
+    ];
+    words.resize(16, 0);
+    words.extend([0x00851021, 0x00461021, 0x03e00008, 0]);
+    for little in [false, true] {
+        let endian = if little { "LE" } else { "BE" };
+        for (fpr, abi, variant) in [(1, 1, "64-32addr-fp32"), (2, 6, "64-32addr")] {
+            let image = elf_with_fpr(little, 0x8000_1000, &words, fpr, abi);
+            let image = with_symbols(
+                little,
+                image,
+                &[("caller", 0x1000, 32), ("callee", 0x1040, 16)],
+            );
+            std::fs::write(&path, image).unwrap();
+            let target = format!("MIPS:{endian}:64:{variant}:o32");
+            for selected in [None, Some(target.as_str())] {
+                let output = run(&path, "decompile", selected);
+                assert!(output.status.success(), "{output:?}");
+                let text = String::from_utf8(output.stdout).unwrap();
+                assert!(text.contains("callee(a0,a0 + 1,7)"), "{target}: {text}");
+                assert!(text.contains("caller(int a0)"), "{target}: {text}");
+            }
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}
