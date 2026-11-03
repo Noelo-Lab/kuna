@@ -1,0 +1,66 @@
+{
+  "source": "struct Fields{int values[9];};\nint*array_address(struct Fields*p,long i){return &p->values[i];}\nint main(void){return 0;}\n",
+  "build_command": [
+    "cc",
+    "-O2",
+    "-g",
+    "-fno-pie",
+    "-no-pie",
+    "/tmp/kuna-rust-array-address/public-repro.c",
+    "-o",
+    "/tmp/kuna-rust-array-address/public-repro"
+  ],
+  "records": [
+    {
+      "arm": "parent",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-rust-array-address/public-repro",
+        "array_address",
+        "--language",
+        "rust",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off",
+        "--assert",
+        "prototype array_address int4*array_address(struct Fields*p,int8 i)"
+      ],
+      "cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+      "expected_line": "return &mut (*p).values[i as usize];",
+      "native_exit": 101,
+      "native_stdout": "",
+      "unmodified_complete_body": true
+    },
+    {
+      "arm": "candidate",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-address/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-rust-array-address/public-repro",
+        "array_address",
+        "--language",
+        "rust",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off",
+        "--assert",
+        "prototype array_address int4*array_address(struct Fields*p,int8 i)"
+      ],
+      "cli_sha256": "18001c2240f24b16bcaf99d2be4deece02ff01a5c09a400ba5d6fa324a105531",
+      "expected_line": "return (&raw mut (*p).values).wrapping_byte_offset((i as isize).wrapping_mul(4)) as *mut i32;",
+      "native_exit": 0,
+      "native_stdout": "36\n",
+      "unmodified_complete_body": true
+    }
+  ],
+  "one_past_index": 9,
+  "expected_byte_offset": 36,
+  "body_rewrites": false
+}

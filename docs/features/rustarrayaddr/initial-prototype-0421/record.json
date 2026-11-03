@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-03T04:07:58.529809+00:00",
+  "status": "FAILED",
+  "reason": "native33 bundle left_address retains preexisting array-to-integer cast E0605; no candidate execution accepted",
+  "cli_sha256": "04211981b1d8dffc78c2de34ff10e631a994adfff27fd69075ace6cd3b6b90d9",
+  "native_captures_preserved": true
+}
