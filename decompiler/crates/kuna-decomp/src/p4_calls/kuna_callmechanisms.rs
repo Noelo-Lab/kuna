@@ -14,7 +14,7 @@ use crate::pcodeinject::CALLMECHANISM_TYPE;
 pub enum CallMechanismMode {
     #[default]
     Off,
-    /// Only on a linked PPC64 ELFv1 image, whose ABI reserves `0x28(r1)` for the TOC save.
+    /// Only on a PPC64 image with validated ELFv1 descriptors, whose ABI reserves `0x28(r1)` for the TOC save.
     Auto,
     On,
 }
@@ -54,7 +54,7 @@ impl OptionCallMechanisms {
                 )))
             }
         };
-        Ok((mode, format!("Compiler prototype call mechanisms set to {p1}")))
+        Ok((mode, format!("Compiler prototype call mechanisms set to {}", mode.as_str())))
     }
 }
 
@@ -514,6 +514,7 @@ mod tests {
             assert_eq!(mode.as_str(), value);
         }
         assert_eq!(parse(""), CallMechanismMode::On);
+        assert!(OptionCallMechanisms.apply("").unwrap().1.ends_with(" on"));
         assert!(OptionCallMechanisms.apply("full").is_err());
         assert_eq!(
             [false, true].map(|fact| CallMechanismMode::Auto.fires(fact)),

@@ -4674,9 +4674,10 @@ pub fn bootstrap_from_object_with_isa(
     // syscallregs auto` acts only when it is.
     sleigh.base_mut().unwrap().image_os_userland =
         kuna_analysis::loader::format::elf_userland::is_os_userland_image(&bytes);
-    // (kuna `callmechanisms`) And whether it is a linked PPC64 ELFv1 image, whose
-    // ABI reserves `0x28(r1)` for the TOC save: `option callmechanisms auto`
-    // installs the cspec's call-boundary payloads only when it is.
+    // (kuna `callmechanisms`) And whether the loader validated PPC64 ELFv1
+    // function descriptors (a linked image's or an object's `.opd`), whose ABI
+    // reserves `0x28(r1)` for the TOC save: `option callmechanisms auto`
+    // installs the cspec's call-boundary payloads only when it did.
     sleigh.base_mut().unwrap().image_elfv1_toc = image_elfv1_toc;
     // (kuna `formatstring`) And one more: does this target pass a variadic
     // argument the way it passes a named one? On AArch64 that is the container's
