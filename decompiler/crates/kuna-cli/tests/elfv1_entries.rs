@@ -265,3 +265,48 @@ fn entry_reports_use_normalized_code_and_reachability() {
         std::fs::remove_file(path).unwrap();
     }
 }
+
+/// A call through a TOC-switching stub, the caller's `ld r2,40(r1)` reload, and a
+/// four-entry relative jump table addressed `addis/addi` from the reloaded `r2`.
+fn toc_reload_switch() -> Vec<u8> {
+    let words: [u32; 36] = [
+        0x7c0802a6, 0xf8010010, 0xf821ff81, 0x38610070, // mflr; std r0; stdu; addi r3,r1,112
+        0x48000075, 0xe8410028, 0x81210070, 0x28090003, // bl stub; ld r2,40(r1); lwz r9,112(r1); cmplwi r9,3
+        0x41810050, 0x3d420000, 0x79291764, 0x394ae040, // bgt default; addis r10,r2,0; sldi r9,r9,2; addi r10,r10,-0x1fc0
+        0x7d2a4aaa, 0x7d295214, 0x7d2903a6, 0x4e800420, // lwax; add; mtctr; bctr
+        0x10, 0x18, 0x20, 0x28,                         // table at 0x1040
+        0x3860000b, 0x48000020, 0x38600016, 0x48000018, // case 0: li r3,11; case 1: li r3,22
+        0x38600021, 0x48000010, 0x3860002c, 0x48000008, // case 2: li r3,33; case 3: li r3,44
+        0x3860ffff, 0x38210080, 0xe8010010, 0x7c0803a6, // default: li r3,-1; epilogue
+        0x4e800020, 0xf8410028, 0x38420001, 0x48000004, // blr; stub: std r2,40(r1); addi r2,r2,1; b second
+    ];
+    words.iter().flat_map(|w| w.to_be_bytes()).collect()
+}
+
+#[test]
+fn elfv1_toc_reload_after_a_call_keeps_the_jump_table_base() {
+    let decompile = |path: &std::path::Path, option: Option<&str>| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        command.env("KUNA_SPECS", common::repo_root().join("specs"))
+            .args(["decompile", path.to_str().unwrap(), ".answer"]);
+        if let Some(value) = option { command.args(["--option", "callmechanisms", value]); }
+        let out = command.output().unwrap();
+        let text = String::from_utf8(out.stdout).unwrap();
+        assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+        text
+    };
+    let recovered = |text: &str| text.contains("switch(") && !text.contains("jump-as-call")
+        && ["case 0:", "case 1:", "case 2:", "case 3:"].iter().all(|label| text.contains(label))
+        && ["0xb;", "0x16;", "0x21;", "0x2c;"].iter().all(|value| text.contains(&format!("return {value}")));
+    for abi in [0, 1, 2] {
+        let path = common::scratch_file("elfv1-toc-reload", "elf");
+        std::fs::write(&path, image_with_code(abi, &toc_reload_switch())).unwrap();
+        let default = decompile(&path, None);
+        assert!(abi == 2 || recovered(&default), "abi {abi}\n{default}");
+        let [auto, on, off] = [Some("auto"), Some("on"), Some("off")].map(|o| decompile(&path, o));
+        std::fs::remove_file(&path).unwrap();
+        assert!(off.contains("jump-as-call") && !off.contains("switch("), "abi {abi}\n{off}");
+        assert_eq!(default, auto, "abi {abi}");
+        assert_eq!(default, if abi == 2 { off } else { on }, "abi {abi}");
+    }
+}

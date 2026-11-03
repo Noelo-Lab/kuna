@@ -924,7 +924,11 @@ kuna_options! { self, p1;
     "slotptr" => on_off!(slot_ptr, "frame-slot pointer typing"),
     "reglocals" => on_off!(reg_locals, "register-local reporting"),
     "slotreport" => on_off!(slot_report, "frame-slot local reporting"),
-    "callmechanisms" => on_off!(call_mechanism_effects, "compiler prototype call mechanisms"),
+    "callmechanisms" => {
+        let (mode, msg) = crate::kuna_callmechanisms::OptionCallMechanisms.apply(p1)?;
+        self.call_mechanism_mode = mode;
+        Ok(msg)
+    },
     "slotsplit" => on_off!(slot_split, "frame-row splitting at declarations"),
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),

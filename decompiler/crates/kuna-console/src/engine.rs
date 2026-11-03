@@ -4551,6 +4551,7 @@ pub fn bootstrap_from_object_with_isa(
     // function it defines, so a call through one is built at the definition.
     let plt_local: Vec<(u64, u64)> = loader.plt_local_targets().to_vec();
     let elfv1_tocs = loader.elfv1_descriptors().entry_tocs();
+    let image_elfv1_toc = !loader.elfv1_descriptors().0.is_empty();
     let elf_functions = loader.elf_function_provenance().clone();
     let loader_aliases = loader.func_symbol_aliases();
 
@@ -4673,6 +4674,10 @@ pub fn bootstrap_from_object_with_isa(
     // syscallregs auto` acts only when it is.
     sleigh.base_mut().unwrap().image_os_userland =
         kuna_analysis::loader::format::elf_userland::is_os_userland_image(&bytes);
+    // (kuna `callmechanisms`) And whether it is a linked PPC64 ELFv1 image, whose
+    // ABI reserves `0x28(r1)` for the TOC save: `option callmechanisms auto`
+    // installs the cspec's call-boundary payloads only when it is.
+    sleigh.base_mut().unwrap().image_elfv1_toc = image_elfv1_toc;
     // (kuna `formatstring`) And one more: does this target pass a variadic
     // argument the way it passes a named one? On AArch64 that is the container's
     // answer (Apple puts every vararg on the stack), which only the image knows.

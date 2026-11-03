@@ -709,6 +709,11 @@ fn option_values_live_value_present_for_179() {
                             // same reason.  Its live value is
                             // `Architecture::syscall_regs`.
                             | "syscallregs"
+                            // (kuna) `callmechanisms` takes a MODE
+                            // (`off|auto|on`) over an enum field, for the
+                            // same reason.  Its live value is
+                            // `Architecture::call_mechanism_mode`.
+                            | "callmechanisms"
                             // (kuna) `bejoin` takes a MODE (`off|evidence|on`)
                             // over an enum field, for the same reason.  Its live
                             // value is `Architecture::be_join`.
@@ -944,7 +949,8 @@ fn option_values_live_value_present_for_179() {
     // 175 -> 176: +1 for `highsliceguard` (highslice_guard).
     // 176 -> 177: +1 for `mipsunaligned` (mips_unaligned).
     // 177 -> 178: +1 for `gottailcall` (got_tail_call).
-    assert_eq!(with_live, 179);
+    // 179 -> 178: `callmechanisms` takes `off|auto|on` and has no live_field.
+    assert_eq!(with_live, 178);
 }
 
 #[test]

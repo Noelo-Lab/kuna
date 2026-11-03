@@ -9,6 +9,55 @@ use kuna_base::xml::{DocumentStorage, Element};
 use crate::inject_sleigh::PcodeInjectLibrarySleigh;
 use crate::pcodeinject::CALLMECHANISM_TYPE;
 
+/// When compiler-spec boundary payloads are installed: `callmechanisms off|auto|on`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CallMechanismMode {
+    #[default]
+    Off,
+    /// Only on a linked PPC64 ELFv1 image, whose ABI reserves `0x28(r1)` for the TOC save.
+    Auto,
+    On,
+}
+
+impl CallMechanismMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CallMechanismMode::Off => "off",
+            CallMechanismMode::Auto => "auto",
+            CallMechanismMode::On => "on",
+        }
+    }
+
+    pub fn fires(self, image_elfv1_toc: bool) -> bool {
+        match self {
+            CallMechanismMode::Off => false,
+            CallMechanismMode::Auto => image_elfv1_toc,
+            CallMechanismMode::On => true,
+        }
+    }
+}
+
+/// Parse `option callmechanisms off|auto|on`; the caller writes the live field.
+pub struct OptionCallMechanisms;
+
+impl OptionCallMechanisms {
+    pub const NAME: &'static str = "callmechanisms";
+
+    pub fn apply(&self, p1: &str) -> KunaResult<(CallMechanismMode, String)> {
+        let mode = match p1 {
+            "off" => CallMechanismMode::Off,
+            "auto" => CallMechanismMode::Auto,
+            "on" | "" => CallMechanismMode::On,
+            other => {
+                return Err(KunaError::parse(format!(
+                    "Unknown callmechanisms value: {other} (expected off|auto|on)"
+                )))
+            }
+        };
+        Ok((mode, format!("Compiler prototype call mechanisms set to {p1}")))
+    }
+}
+
 /// Register before snippet compilation; decoding models later only resolves IDs.
 pub fn register(
     xml: Option<&str>,
@@ -453,6 +502,27 @@ impl Mechanisms {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn auto_fires_only_on_the_elfv1_toc_fact() {
+        let parse = |value| OptionCallMechanisms.apply(value).unwrap().0;
+        for (value, mode) in [
+            ("off", CallMechanismMode::Off),
+            ("auto", CallMechanismMode::Auto),
+            ("on", CallMechanismMode::On),
+        ] {
+            assert_eq!(parse(value), mode);
+            assert_eq!(mode.as_str(), value);
+        }
+        assert_eq!(parse(""), CallMechanismMode::On);
+        assert!(OptionCallMechanisms.apply("full").is_err());
+        assert_eq!(
+            [false, true].map(|fact| CallMechanismMode::Auto.fires(fact)),
+            [false, true]
+        );
+        assert_eq!([false, true].map(|fact| CallMechanismMode::Off.fires(fact)), [false; 2]);
+        assert_eq!([false, true].map(|fact| CallMechanismMode::On.fires(fact)), [true; 2]);
+    }
+
     #[test]
     fn unasserted_function_uses_the_effective_default_entry_model() {
         use kuna_base::address::Address;
