@@ -1653,6 +1653,28 @@ classified:
   family's own design notes warn against. `off` restores the upstream
   rejection, in which any LOAD or STORE of the value sinks the trial.
 
+  (kuna) `exclusivecallret` (default-on,
+  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_exclusivecallret.rs (applies, skips_use)`)
+  applies the same mutual-exclusion argument to a call and a return. GCC
+  compiles `return a(x) ? b(x) : x` with a tail call to `b`, so on e500 the same
+  scalar is the tail call's argument on one arm and the function's return on the
+  other. Each use vetoes the other's trial although no execution reaches both,
+  and the function was recovered `void`. The rule skips a `CALL`/`CALLIND`
+  descendant while scoring a `RETURN` trial, and a `RETURN` descendant while
+  scoring a call's input trial, when the two ops sit in distinct blocks, neither
+  reaches the other (the bounded walk above, which declines once its bound is
+  exceeded), the `RETURN` is a normal return and the use reads the value as data
+  rather than as a call target or return address. An input trial also requires
+  the value to be produced in a block that both uses follow through
+  single-entry, single-exit chains, so it was prepared for the branch; this
+  admits a split epilogue between the branch and the return. Co-executing uses
+  and loop-connected arms keep ordinary scoring. The rule is limited to the
+  narrow scalar shape `calloverlap auto` recovers (chapter 03): a four-byte
+  trial in the low word of a named eight-byte register on a truncated 32-bit
+  address target, such as an e500 GPR. Whether a trial has that shape does not
+  depend on the use being scored, so it is decided once per walk. `off`
+  restores the upstream rejection.
+
   (kuna) `reloadarg` (default-on,
   `decompiler/crates/kuna-decomp/src/p4_calls/kuna_reloadarg.rs (note, recheck)`)
   judges a register reloaded from the caller's own frame again once the frame is

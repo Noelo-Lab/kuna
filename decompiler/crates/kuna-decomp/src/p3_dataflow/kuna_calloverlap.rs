@@ -98,7 +98,7 @@ impl OptionCallOverlap {
 }
 
 /// Whether a call has one low-word scalar ABI slot inside this physical register.
-pub(super) fn auto_register(
+pub(crate) fn auto_register(
     manager: &kuna_base::space::AddrSpaceManager,
     proto: &crate::fspec::FuncProto,
     addr: &kuna_base::address::Address,

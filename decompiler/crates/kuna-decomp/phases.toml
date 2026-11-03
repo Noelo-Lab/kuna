@@ -8271,6 +8271,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "exclusivecallret"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P4"
+subphase = "output-prototype"
+strength = "HARD"
+rewind = "P4"
+issue = "kuna-exclusive-call-return"
+summary = "Stop a call and a return on mutually exclusive arms from vetoing each other's narrow scalar trial. `Funcdata::only_op_use` (C++ `Funcdata::onlyOpUse`, funcdata_varnode.cc:1851) rejects a trial whose value has another CALL or RETURN use. GCC compiles `return a(x) ? b(x) : x` with a tail call to `b`, so on e500 the same scalar is the tail call's argument on one arm and the function's return on the other, and the function was recovered `void` with `return x` deleted. When on, a CALL/CALLIND use no longer rejects a RETURN trial, and a RETURN use no longer rejects a call's input trial, when the two ops are in distinct blocks, neither reaches the other (exclusivearguse's bounded walk, which declines once it has visited 4096 blocks), the RETURN is a normal return and the use reads the value as data rather than as a call target or return address. An input trial also needs the value produced in a block both uses follow through single-entry, single-exit chains, so it was prepared for the branch. Limited to the shape calloverlap auto recovers: a four-byte trial in the low word of a named eight-byte register on a truncated 32-bit address target, such as an e500 GPR."
+use_when = "On by default: a use on an arm that cannot execute with the scored one never competes with it, so the veto only loses a return or an argument. Flip off to restore upstream scoring exactly, for example to tell this rule apart from calloverlap's guards when a narrow scalar return or tail-call argument moves."
+example = "option exclusivecallret off"
+source_decompiler = "kuna"
+inspiration = "An e500 wrapper `int f(int (*a)(int), int (*b)(int), int x) { return a(x) ? b(x) : x; }` (GCC -O2 -msoft-float) was recovered `void` once calloverlap auto exposed its low-word return slot: the tail call's argument vetoed the normal return."
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a function that returns a value on one arm and tail-calls on the other is recovered void|a tail call loses the argument that the function also returns on another arm"
+live_field = "exclusive_call_ret"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "callretpair"
 values = "on|off"
 default = "on"

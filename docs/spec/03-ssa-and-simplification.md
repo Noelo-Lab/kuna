@@ -834,6 +834,10 @@ Floating-point slots, ambiguous contained entries, unnamed ranges, other
 address widths and memory ranges are excluded. `off` disables the partial-range
 guards; `in` and `full` retain their broader opt-in behavior.
 
+Trial scoring for this shape has one companion rule, `exclusivecallret`
+(chapter 04, `ActionActiveParam`), which lets a call and a return on mutually
+exclusive arms keep each other's narrow scalar trial.
+
 With `option multiregargs on` (the default), a physical register range
 completely covered by two or more general ABI input slots receives separate
 call trials before dead-code elimination, at every `calloverlap` level

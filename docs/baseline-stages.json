@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3856,
-    3856
+    3859,
+    3859
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1073,7 +1073,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 378 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 379 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -2715,6 +2715,9 @@
     "data:e500 slots #2: auto keeps the constant argument",
     "data:e500 slots #3: auto keeps an arithmetic argument",
     "data:e500 slots #4: auto defines the call result",
+    "data:e500 slots #5: auto keeps the non-tail return",
+    "data:e500 slots #6: auto keeps the other arm's argument and result",
+    "data:e500 slots #7: exclusivecallret off loses the non-tail return",
     "data:each pass jumps into the true arm",
     "data:each pass prints that label",
     "data:earlyrestart #1: both passes print main",

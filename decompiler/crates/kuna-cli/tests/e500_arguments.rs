@@ -8,6 +8,10 @@ const FRAME_CALL: &[u32] = &[
 ];
 
 fn decompile(words: &[u32], little: bool, variant: &str, overlap: Option<&str>) -> String {
+    decompile_with(words, little, variant, overlap.map(|level| ("calloverlap", level)).as_slice())
+}
+
+fn decompile_with(words: &[u32], little: bool, variant: &str, options: &[(&str, &str)]) -> String {
     let path = common::scratch_file("e500-call-slots", "bin");
     let bytes: Vec<_> = words
         .iter()
@@ -33,8 +37,8 @@ fn decompile(words: &[u32], little: bool, variant: &str, overlap: Option<&str>) 
         "--mode",
         "fast",
     ];
-    if let Some(overlap) = overlap {
-        args.extend(["--option", "calloverlap", overlap]);
+    for (name, value) in options {
+        args.extend(["--option", name, value]);
     }
     let (out, err, rc) = common::run_kuna(&args);
     std::fs::remove_file(path).unwrap();
@@ -106,6 +110,46 @@ fn e500_call_result_is_defined_by_the_call() {
         assert!(!code.contains("// _r3"), "{code}");
         execute(&code.replace("void *a0", "int (*a0)(int)"),
             "static int cb(int x) { return x * 3; }\nint main(void) { for (int x=-10;x<=10;++x) if (sub_1000(cb,x)!=x*3+1) return 1; return 0; }");
+    }
+}
+
+#[test]
+fn conditional_callback_keeps_the_callers_return_value() {
+    // int f(int (*a)(int), int (*b)(int), int x) { return a(x) ? b(x) : x; }
+    // GCC -O2 -msoft-float: one normal call, one tail call, and return x.
+    let words = [
+        0x9421ffe0, 0x7c0802a6, 0x7c6903a6, 0x7ca32b78, 0x93c10018, 0x7c9e2378, 0x93e1001c,
+        0x7cbf2b78, 0x90010024, 0x4e800421, 0x2c030000, 0x7fe3fb78, 0x41820020, 0x80010024,
+        0x7fc903a6, 0x83e1001c, 0x83c10018, 0x38210020, 0x7c0803a6, 0x4e800420, 0x80010024,
+        0x83c10018, 0x83e1001c, 0x38210020, 0x7c0803a6, 0x4e800020,
+    ];
+    let mut split_epilogue = words.to_vec();
+    split_epilogue[0x50 / 4] = 0x48000018;
+    split_epilogue.extend_from_slice(&words[0x50 / 4..]);
+    for little in [false, true] {
+        for words in [&words[..], &split_epilogue] {
+            for variant in ["default", "e500mc"] {
+                assert_eq!(
+                    decompile(words, little, variant, Some("off")),
+                    decompile(words, little, variant, Some("auto")),
+                );
+            }
+            let off = decompile(words, little, "e500", Some("off"));
+            assert!(off.contains("return a2;"), "{off}");
+            let vetoed = decompile_with(words, little, "e500", &[("exclusivecallret", "off")]);
+            assert!(!vetoed.contains("return a2;"), "{vetoed}");
+            for overlap in [None, Some("auto"), Some("full")] {
+                let code = decompile(words, little, "e500", overlap);
+                assert!(code.contains("return a2;"), "{code}");
+                assert!(code.contains("(*a0)(a2)"), "{code}");
+                assert!(code.contains("return (*a1)(a2);"), "{code}");
+                execute(
+                &code.replace("void *a0", "int (*a0)(int)")
+                    .replace("void *a1", "int (*a1)(int)"),
+                "static int count;\nstatic int zero(int x) { (void)x; return 0; }\nstatic int yes(int x) { (void)x; return 1; }\nstatic int cb(int x) { ++count; return x*5+2; }\nint main(void) { for(int x=-10;x<=10;++x) { count=0; if((int)sub_1000(zero,cb,x)!=x || count) return 1; if((int)sub_1000(yes,cb,x)!=x*5+2 || count!=1) return 2; } return 0; }",
+            );
+            }
+        }
     }
 }
 

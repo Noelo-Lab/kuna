@@ -751,6 +751,10 @@ pub struct ArchContext {
     /// [`Funcdata::only_op_use`](crate::funcdata::Funcdata) through
     /// [`crate::p4_calls::kuna_exclusivearguse::access_cannot_reach_call`].
     pub exclusive_arg_use: bool,
+    /// (kuna) `option exclusivecallret`: whether a call and a return on mutually
+    /// exclusive paths keep each other's narrow scalar trial.  Read by
+    /// [`crate::p4_calls::kuna_exclusivecallret`].
+    pub exclusive_call_ret: bool,
     /// Retain register trials carrying proven stack addresses.
     pub stack_addr_arg_trial: bool,
     /// (kuna) `option callretpair`: whether the two-register CALL output arm of
@@ -1890,6 +1894,7 @@ impl ArchContext {
             // from the engine Architecture in `build_arch_handle`.
             zero_idiom_use: true,
             exclusive_arg_use: true,
+            exclusive_call_ret: true,
             stack_addr_arg_trial: false,
             // (kuna) `option callretpair` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.

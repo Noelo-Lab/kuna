@@ -19,8 +19,9 @@ output under the same asserted prototypes and checks every byte value and call
 counts. The original fixture is only decompiled.
 
 `kuna-e500-call-slots.xml` compares disabled and automatic call-overlap guards
-for scalar arguments and results inside e500's wide registers. The CLI tests
-cover both byte orders and execute a recovered callback-result wrapper.
+for scalar arguments and results inside e500's wide registers, and decompiles a
+conditional tail-call wrapper with `exclusivecallret` off and on. The CLI tests
+cover both byte orders and execute the recovered wrappers.
 
 `kuna-callwide.xml` loads the committed sealed MIPS32-BE ELF and checks the
 four-byte OFF result against the proved eight-byte result and high-piece callers.

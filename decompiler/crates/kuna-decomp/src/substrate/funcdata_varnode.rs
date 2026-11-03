@@ -2237,6 +2237,7 @@ impl Funcdata {
         varlist.push((invn, main_flags, None));
         let active_output = self.get_active_output().is_some();
         let forced_return = crate::p4_calls::kuna_voidret::scoring_return(self, opmatch);
+        let call_return = crate::p4_calls::kuna_exclusivecallret::applies(self, opmatch, trial);
         let mut reached_match = false;
         let mut i = 0;
         while i < varlist.len() {
@@ -2278,6 +2279,10 @@ impl Funcdata {
                     }
                 }
                 let mut cur_flags = base_flags;
+                // (kuna) `exclusivecallret` — see [`crate::p4_calls::kuna_exclusivecallret`].
+                if call_return && crate::p4_calls::kuna_exclusivecallret::skips_use(self, opmatch, op, invn, vn) {
+                    continue;
+                }
                 match code {
                     OpCode::CPUI_BRANCH
                     | OpCode::CPUI_CBRANCH
