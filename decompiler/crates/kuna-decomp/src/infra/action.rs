@@ -1025,7 +1025,8 @@ pub trait Rule {
 
     /// (kuna `deadwaves`) Can this rule's test read Varnodes further than one
     /// op from the op it is offered (a sub-variable or split flow walking a
-    /// whole data-flow web)? A wave offers it every op of its opcodes.
+    /// whole data-flow web, `RuleIgnoreNan` following boolean readers)? A
+    /// wave offers it every op of its opcodes.
     fn walks_far(&self) -> bool {
         false
     }
