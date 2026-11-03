@@ -188,9 +188,10 @@ fn spe_declared(path: &std::path::Path, assertions: &[&str], target: Option<&str
     for assertion in assertions {
         command.args(["--assert", assertion]);
     }
-    if let Some(target) = target {
-        command.args(["--target", target]);
-    }
+    match target {
+        Some(target) => command.args(["--target", target]),
+        None => command.args(["--option", "ppcapu", "on"]),
+    };
     let output = command.output().unwrap();
     assert!(output.status.success(), "{output:?}");
     String::from_utf8(output.stdout).unwrap()
@@ -264,6 +265,117 @@ fn spe_aggregate_arguments_remain_indirect() {
                 &format!("{typedef}\n{text}\nstatic T x = {{255}};"),
                 "pick(x) != 255",
             );
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+fn spe_caller_image(little: bool, apus: &[u32]) -> Vec<u8> {
+    let endian = if little {
+        Endianness::Little
+    } else {
+        Endianness::Big
+    };
+    let mut object = Object::new(BinaryFormat::Elf, Architecture::PowerPc, endian);
+    let word = |v: u32| {
+        if little {
+            v.to_le_bytes()
+        } else {
+            v.to_be_bytes()
+        }
+    };
+    let text = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    // caller: li r4,2; li r5,3; b add3.  add3: mullw r4,r4,r5; add r3,r3,r4; blr.
+    // touch: evaddw r3,r3,r4; blr.
+    let code: Vec<u8> = [
+        0x38800002, 0x38a00003, 0x48000004, 0x7c8429d6, 0x7c632214, 0x4e800020, 0x10632200,
+        0x4e800020,
+    ]
+    .into_iter()
+    .flat_map(word)
+    .collect();
+    object.append_section_data(text, &code, 4);
+    for (name, value, size) in [("caller", 0, 12), ("add3", 12, 12), ("touch", 24, 8)] {
+        object.add_symbol(Symbol {
+            name: name.as_bytes().to_vec(),
+            value,
+            size,
+            kind: SymbolKind::Text,
+            scope: SymbolScope::Linkage,
+            weak: false,
+            section: SymbolSection::Section(text),
+            flags: SymbolFlags::None,
+        });
+    }
+    let section = object.add_section(Vec::new(), b".PPC.EMB.apuinfo".to_vec(), SectionKind::Note);
+    let mut note: Vec<u8> = [8, apus.len() as u32 * 4, 2]
+        .into_iter()
+        .flat_map(word)
+        .collect();
+    note.extend(b"APUinfo\0");
+    note.extend(apus.iter().copied().flat_map(word));
+    object.append_section_data(section, &note, 4);
+    object.write().unwrap()
+}
+
+fn decompile(path: &std::path::Path, function: &str, args: &[&str]) -> (String, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .arg("decompile")
+        .arg(path)
+        .args([function, "--mode", "fast"])
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    (
+        String::from_utf8(output.stdout).unwrap(),
+        String::from_utf8(output.stderr).unwrap(),
+    )
+}
+
+#[test]
+fn spe_requirements_select_e500_only_under_ppcapu() {
+    let path = common::scratch_file("powerpc-apu-option", "o");
+    for little in [false, true] {
+        let endian = if little { "LE" } else { "BE" };
+        std::fs::write(&path, spe_caller_image(little, &[0x0100_0001])).unwrap();
+        let (text, _) = decompile(&path, "caller", &[]);
+        assert!(text.contains("add3(a0,2,3)"), "{text}");
+        let generic = format!("PowerPC:{endian}:32:default:default");
+        assert_eq!(text, decompile(&path, "caller", &["--target", &generic]).0);
+        assert_eq!(text, decompile(&path, "caller", &["--option", "ppcapu", "off"]).0);
+        let e500 = format!("PowerPC:{endian}:32:e500:default");
+        for function in ["caller", "touch"] {
+            assert_eq!(
+                decompile(&path, function, &["--option", "ppcapu", "on"]).0,
+                decompile(&path, function, &["--target", &e500]).0,
+                "{function}"
+            );
+        }
+        let (touch, _) = decompile(&path, "touch", &["--option", "ppcapu", "on"]);
+        assert!(!touch.contains("vector"), "{touch}");
+        let (touch, _) = decompile(&path, "touch", &[]);
+        assert!(touch.contains("vector"), "{touch}");
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn unclassified_apu_notes_keep_the_generic_decoder_under_ppcapu() {
+    let path = common::scratch_file("powerpc-apu-unknown", "o");
+    for little in [false, true] {
+        let endian = if little { "LE" } else { "BE" };
+        for apus in [&[0x0104_0001][..], &[0x0100_0002], &[0x0100_0001, 0xffff_0001]] {
+            std::fs::write(&path, spe_caller_image(little, apus)).unwrap();
+            let generic = format!("PowerPC:{endian}:32:default:default");
+            let (expected, quiet) = decompile(&path, "caller", &["--target", &generic]);
+            assert!(!quiet.contains("APU"), "{quiet}");
+            let (text, stderr) = decompile(&path, "caller", &["--option", "ppcapu", "on"]);
+            assert_eq!(text, expected);
+            assert!(stderr.contains("[kuna target]"), "{stderr}");
+            assert!(stderr.contains("APU note"), "{stderr}");
+            let (_, stderr) = decompile(&path, "caller", &[]);
+            assert!(!stderr.contains("APU"), "{stderr}");
         }
     }
     std::fs::remove_file(path).unwrap();

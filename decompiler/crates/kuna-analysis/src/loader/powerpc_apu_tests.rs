@@ -1,3 +1,4 @@
+use super::kuna_ppcaputarget::{language_id_when, notes_when};
 use crate::loadimage_object::ObjectLoadImage;
 use kuna_sleigh::loadimage::LoadImage;
 use object::{write::Object, Architecture, BinaryFormat, Endianness, FileFlags, SectionKind};
@@ -36,54 +37,59 @@ fn image(arch: Architecture, little: bool, flags: u32, apus: Option<&[u32]>) -> 
     obj.write().unwrap()
 }
 
+fn generic(bytes: &[u8], little: bool) {
+    let endian = if little { "LE" } else { "BE" };
+    let loaded = ObjectLoadImage::from_bytes("synthetic-apu.elf", bytes).unwrap();
+    assert_eq!(
+        loaded.get_arch_type(),
+        format!("PowerPC:{endian}:32:default:default").as_bytes()
+    );
+    assert!(loaded.fallback_arch_id().is_none());
+}
+
 #[test]
 fn embedded_powerpc_uses_declared_apus_not_the_embedded_abi_bit() {
     for little in [false, true] {
         let endian = if little { "LE" } else { "BE" };
         for (apus, variant) in [
-            (None, "default"),
-            (Some(&[0x0040_0001][..]), "default"),
-            (
-                Some(&[0x0041_0001, 0x0042_0001, 0x0043_0001][..]),
-                "default",
-            ),
-            (Some(&[0x0040_0001, 0x0101_0001][..]), "e500"),
-            (Some(&[0x0100_0001][..]), "e500"),
+            (None, None),
+            (Some(&[0x0040_0001][..]), None),
+            (Some(&[0x0041_0001, 0x0042_0001, 0x0043_0001][..]), None),
+            (Some(&[0x0040_0001, 0x0101_0001][..]), Some("e500")),
+            (Some(&[0x0100_0001][..]), Some("e500")),
         ] {
             let bytes = image(Architecture::PowerPc, little, 0x8000_0000, apus);
-            let loaded = ObjectLoadImage::from_bytes("synthetic-embedded.elf", &bytes).unwrap();
+            let file = object::File::parse(&bytes[..]).unwrap();
             assert_eq!(
-                loaded.get_arch_type(),
-                format!("PowerPC:{endian}:32:{variant}:default").as_bytes()
+                language_id_when(&file, true),
+                variant.map(|v| format!("PowerPC:{endian}:32:{v}:default"))
             );
-            assert!(loaded.fallback_arch_id().is_none());
+            assert!(notes_when(&file, "PowerPC", false, true).is_empty());
+            // `ppcapu` is off by default.
+            assert_eq!(language_id_when(&file, false), None);
+            generic(&bytes, little);
         }
     }
 }
 
 #[test]
-fn unsupported_apus_and_versions_do_not_guess_a_processor() {
-    for apus in [
-        &[0x0104_0001][..],
-        &[0x0102_0001],
-        &[0x0040_0002],
-        &[0xffff_0001],
-    ] {
-        let bytes = image(Architecture::PowerPc, false, 0x8000_0000, Some(apus));
-        let error = ObjectLoadImage::from_bytes("synthetic-apu.elf", &bytes).unwrap_err();
-        assert!(error.explain().contains("APU"), "{error:?}");
-        assert!(error.explain().contains("--target"), "{error:?}");
-    }
-}
-
-#[test]
-fn malformed_apu_lengths_fail_without_reading_past_the_note() {
+fn unsupported_or_malformed_apus_keep_the_generic_decoder_with_a_note() {
     for little in [false, true] {
+        let mut cases: Vec<Vec<u8>> = [
+            &[0x0104_0001][..],
+            &[0x0102_0001],
+            &[0x0040_0002],
+            &[0xffff_0001],
+            &[0x0100_0001, 0x0104_0001],
+        ]
+        .into_iter()
+        .map(|apus| image(Architecture::PowerPc, little, 0x8000_0000, Some(apus)))
+        .collect();
         let mut bytes = image(
             Architecture::PowerPc,
             little,
             0x8000_0000,
-            Some(&[0x0040_0001]),
+            Some(&[0x0100_0001]),
         );
         let owner = bytes.windows(8).position(|w| w == b"APUinfo\0").unwrap();
         let size = if little {
@@ -92,8 +98,18 @@ fn malformed_apu_lengths_fail_without_reading_past_the_note() {
             u32::MAX.to_be_bytes()
         };
         bytes[owner - 8..owner - 4].copy_from_slice(&size);
-        let error = ObjectLoadImage::from_bytes("synthetic-apu.elf", &bytes).unwrap_err();
-        assert!(error.explain().contains("APU"), "{error:?}");
+        cases.push(bytes);
+        for bytes in cases {
+            let file = object::File::parse(&bytes[..]).unwrap();
+            assert_eq!(language_id_when(&file, true), None);
+            let notes = notes_when(&file, "PowerPC:BE:32:default:default", false, true);
+            assert_eq!(notes.len(), 1);
+            assert!(notes[0].contains("APU"), "{notes:?}");
+            assert!(notes[0].contains("--target"), "{notes:?}");
+            assert!(notes_when(&file, "PowerPC", true, true).is_empty());
+            assert!(notes_when(&file, "PowerPC", false, false).is_empty());
+            generic(&bytes, little);
+        }
     }
 }
 

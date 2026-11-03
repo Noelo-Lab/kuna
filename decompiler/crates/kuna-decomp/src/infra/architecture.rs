@@ -2162,6 +2162,10 @@ pub struct Architecture {
     /// (`tailcalljump`). Read through the [`crate::kuna_ifuncfpret`] **env var**
     /// (the PLT map is baked at `load file`); this bool is for catalog visibility.
     pub analysis_ifuncfpret: bool,
+    /// (kuna) Gate e500 selection from a PowerPC ELF APU note (`ppcapu`); default
+    /// off. Read through the [`crate::kuna_ppcapu`] **env var** (the language is
+    /// chosen at `load file`); this bool is for catalog visibility.
+    pub analysis_ppcapu: bool,
     /// (kuna) Gate the relocatable-object analysis rebase (`relocrebase`); default
     /// **on** (DIV-79, GH-289). The loader lays an ELF `ET_REL` `.o` / COFF `.obj`
     /// out synthetically above `RELOC_BASE`, but the LOAD-TIME analysis passes
@@ -3412,6 +3416,7 @@ impl Architecture {
             analysis_ppc32picimports: Default::default(),
             ppc32_pic_imports: Default::default(),
             analysis_ifuncfpret: false, // (kuna) option ifuncfpret, default off (opt-in)
+            analysis_ppcapu: false, // (kuna) option ppcapu, default off (opt-in)
             analysis_relocrebase: false,
             analysis_dynrelocs: false,
             analysis_pdatachained: false,
