@@ -42,7 +42,10 @@
 //! pointer slot holds a packed chain entry (`1004000000000000` for a pointer to
 //! `0x100000410`), not the pointer. [`resolve`] writes each rebase's target and
 //! zeroes each bind, the word every other format's loader leaves in an import
-//! slot. No slot is reported constant. A classic `LC_DYLD_INFO` image needs
+//! slot. A rebase slot in a segment the linker flags `SG_READ_ONLY`
+//! (`__DATA_CONST`, which dyld maps read-only once fixed up: the `PT_GNU_RELRO`
+//! of a Mach-O) is reported constant; a `__DATA` slot is written but not
+//! declared constant. A classic `LC_DYLD_INFO` image needs
 //! neither: its rebased words are already the unslid pointers.
 //!
 //! [`fixup_sites`] lists the same slots for a reader of the loaded image (`kuna
@@ -515,7 +518,8 @@ fn relr_decode(entries: &[u64], width: u64) -> Vec<u64> {
 }
 
 /// A Mach-O image's chained fixups as writes: each rebase's resolved target, and
-/// a zero for each bind, in slot order.
+/// a zero for each bind, in slot order; the `SG_READ_ONLY` rebase slots are
+/// constant.
 fn macho_chained(file: &object::File, bytes: &[u8]) -> DynRelocs {
     let fixups = crate::loader::format::macho::resolve_chained_fixups(file, bytes);
     let width = fixups.slot_width();
@@ -525,7 +529,12 @@ fn macho_chained(file: &object::File, bytes: &[u8]) -> DynRelocs {
         .chain(fixups.binds().map(|(vma, _)| DynRelocWrite { vma, value: 0, width }))
         .collect();
     writes.sort_unstable_by_key(|w| w.vma);
-    DynRelocs { writes, const_ranges: Vec::new() }
+    let const_ranges = fixups
+        .rebases()
+        .filter(|&(vma, _)| fixups.in_readonly_segment(vma))
+        .map(|(vma, _)| (vma, vma.wrapping_add(width as u64 - 1)))
+        .collect();
+    DynRelocs { writes, const_ranges }
 }
 
 #[cfg(test)]
