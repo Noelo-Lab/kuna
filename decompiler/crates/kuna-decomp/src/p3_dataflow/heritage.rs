@@ -804,6 +804,11 @@ mod stacknode_flags {
 /// which a heritage pass leaves read-only ranges unguarded.
 pub const READONLY_CROSS_PRODUCT: u64 = 1 << 16;
 
+/// (kuna `persistcalls`) The default persistent-range by call guard count at
+/// which a pass guards each persistent global only at the calls next to its
+/// accesses.
+pub const PERSIST_CROSS_PRODUCT: u64 = 1 << 16;
+
 // =============================================================================
 // Heritage (heritage.hh:207)
 // =============================================================================
@@ -886,6 +891,19 @@ pub struct Heritage {
     /// (kuna `readonlycalls`) Whether this pass leaves read-only ranges
     /// unguarded at calls ([`Heritage::readonly_cross_product`]).
     readonly_unguarded: bool,
+    /// (kuna `persistcalls`) Whether this pass guards a persistent global only
+    /// at the calls next to its accesses ([`Heritage::persist_cross_product`]).
+    persist_sparse: bool,
+    /// (kuna `persistcalls`) This pass's LOADs and STOREs that can reach a global.
+    persist_memory: super::kuna_persistcalls::MemoryOps,
+    /// (kuna `persistcalls`) The ranges, as (space index, offset, size), some
+    /// call of which was left unguarded.
+    persist_pruned: Vec<(int4, uintb, int4)>,
+    /// (kuna `persistcalls`) For the range being guarded: where its kept call
+    /// guards start in its writes, how many there are, the block of every call
+    /// it would have guarded, in guard order, those calls and the kept ones.
+    #[allow(clippy::type_complexity)]
+    persist_skips: Option<(usize, usize, Vec<BlockId>, Vec<crate::context::OpId>, crate::kuna_fasthash::FxHashSet<crate::context::OpId>)>,
     /// (kuna `haltloopguard`) This pass's exitless loops, found at most once.
     halt_loops: Option<Vec<BlockId>>,
     /// (kuna `haltloopguard`) The ranges to keep alive at each exitless loop
@@ -960,6 +978,10 @@ impl Heritage {
             protostack_frame_reload: None,
             global_call_ranges: Default::default(),
             readonly_unguarded: false,
+            persist_sparse: false,
+            persist_memory: Default::default(),
+            persist_pruned: Vec::new(),
+            persist_skips: None,
             halt_loops: None,
             halt_loop_marks: BTreeMap::new(),
             halt_loop_reach: Vec::new(),
@@ -1132,6 +1154,7 @@ impl Heritage {
         self.disjoint.clear();
         self.globaldisjoint.clear();
         self.global_call_ranges.clear();
+        self.persist_pruned.clear();
         self.domchild.clear();
         self.augment.clear();
         self.flags.clear();
@@ -1475,7 +1498,9 @@ impl Heritage {
     /// `heritage.cc:1157`).  Normalizes mismatched read/write sizes, marks the
     /// reads/writes active, and (when `add_indirects`) drives the call / return
     /// / store / load guards.  (`inputvars` is unused by the C++ body — it reads
-    /// only `read`/`write` — so it is not threaded here.)
+    /// only `read`/`write` — so it is not threaded here.)  (kuna `persistcalls`)
+    /// `revisit` is set for a range part of which an earlier pass heritaged; it
+    /// keeps every call guard.
     //
     // `needless_range_loop`: the body mutates the slot in place (`read[slot] =
     // normalizeReadSize(...)`) *and* re-borrows `fd` mutably inside the loop, so
@@ -1488,6 +1513,7 @@ impl Heritage {
         addr: &Address,
         size: int4,
         add_indirects: bool,
+        revisit: bool,
         read: &mut [crate::context::VarnodeId],
         write: &mut Vec<crate::context::VarnodeId>,
     ) -> Option<uint4> {
@@ -1626,7 +1652,9 @@ impl Heritage {
                     fd, fd.call_specs(), addr, size, read, &full_write_ops, &partial_write_ops,
                 )
             });
-            self.guard_calls(fd, fl, addr, size, write, live.as_ref());
+            let sparse = (self.persist_sparse && !revisit && super::kuna_persistcalls::applies(fd, fl, addr))
+                .then_some((&*read, &full_write_ops[..], &partial_write_ops[..]));
+            self.guard_calls(fd, fl, addr, size, write, live.as_ref(), sparse);
             crate::kuna_syscallregs::guard_memory(fd, fl, addr, size, write);
             crate::kuna_x64syscall::guard_memory(fd, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
@@ -1749,6 +1777,11 @@ impl Heritage {
     /// faithful behavior here.  When the callspec subsystem lands, the C++ body
     /// (`heritage.cc:1444-1538`: per-call effect/trial/INDIRECT guarding) folds
     /// in unchanged.
+    ///
+    /// (kuna `persistcalls`) With `sparse` (the range's free reads and its full
+    /// and partial writes), a persistent global's unknown-effect guards are
+    /// built after the loop, only at the calls
+    /// [`kuna_persistcalls::keep`](super::kuna_persistcalls::keep) keeps.
     fn guard_calls(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
@@ -1757,11 +1790,14 @@ impl Heritage {
         size: int4,
         write: &mut Vec<crate::context::VarnodeId>,
         live: Option<&super::kuna_prunedssa::LiveCalls>,
+        sparse: Option<(&[crate::context::VarnodeId], &[crate::context::OpId], &[crate::context::OpId])>,
     ) {
         use crate::fspec::{effect_type, Containment, OFFSET_UNKNOWN};
         use kuna_base::space::spacetype;
 
         let holdind = (fl & varnode_flags::addrtied) != 0;
+        let mut deferred: Vec<crate::context::OpId> = Vec::new();
+        self.persist_skips = None;
         let readonly = self.readonly_unguarded && (fl & varnode_flags::readonly) != 0 && write.is_empty();
         let mut pruned = false;
         // (kuna) `option calloverlap off|in|full` — the two upstream partial-range
@@ -2044,6 +2080,8 @@ impl Heritage {
             let _ = fl;
             if effecttype == effect_type::UNKNOWN_EFFECT && live.is_some_and(|l| !l.needs(op)) {
                 pruned = true;
+            } else if effecttype == effect_type::UNKNOWN_EFFECT && sparse.is_some() {
+                deferred.push(op);
             } else if effecttype == effect_type::UNKNOWN_EFFECT
                 || effecttype == effect_type::RETURN_ADDRESS
             {
@@ -2080,6 +2118,69 @@ impl Heritage {
         fd.restore_call_specs(qlst);
         if pruned {
             self.seen_dead_code(&spc);
+        }
+        if let Some((read, full, partial)) = sparse {
+            let (mut keep, read_kept) = super::kuna_persistcalls::keep(
+                fd, &mut self.persist_memory, spc.get_index(), &deferred, read, full, partial,
+            );
+            let defs: Vec<crate::context::OpId> =
+                write.iter().filter_map(|&vn| fd.vbank().get(vn).and_then(|v| v.get_def())).collect();
+            let parent = |op: &crate::context::OpId| fd.obank().get(*op).and_then(|o| o.get_parent());
+            let mut joins = Vec::new();
+            while keep.len() < deferred.len() {
+                let mut blocks: Vec<BlockId> = defs.iter().filter_map(parent).collect();
+                blocks.extend(deferred.iter().filter(|op| keep.contains(op)).filter_map(parent));
+                self.calc_multiequals(fd, &blocks);
+                joins = std::mem::take(&mut self.merge);
+                let stale = super::kuna_persistcalls::stale_calls(fd, &deferred, &keep, &defs, &joins);
+                if stale.is_empty() {
+                    break;
+                }
+                keep.extend(stale);
+            }
+            let sparse_range = keep.len() < deferred.len();
+            let stale_in = if sparse_range {
+                super::kuna_persistcalls::stale_inputs(fd, &deferred, &keep, &defs, &joins)
+            } else {
+                Default::default()
+            };
+            if sparse_range {
+                self.persist_pruned.push((spc.get_index(), addr.get_offset(), size));
+                let blocks = deferred
+                    .iter()
+                    .filter_map(|&op| fd.obank().get(op).and_then(|o| o.get_parent()))
+                    .collect();
+                self.persist_skips = Some((write.len(), keep.len(), blocks, deferred.clone(), keep.clone()));
+            }
+            for op in deferred {
+                if !keep.contains(&op) {
+                    super::kuna_persistcalls::skip_guard(fd);
+                    continue;
+                }
+                let mut flag = if sparse_range && read_kept.contains(&op) {
+                    crate::op::pcodeop_addlflags::kuna_persist_guard
+                } else {
+                    0
+                };
+                if stale_in.contains(&op) {
+                    flag |= crate::op::pcodeop_addlflags::kuna_persist_stale;
+                }
+                let indop = super::kuna_renamereads::new_indirect(fd, op, addr, size, 0, &mut self.rename_reads, &mut self.guard_iops);
+                if flag != 0 {
+                    if let Some(o) = fd.obank_mut().get_mut(indop) {
+                        o.set_additional_flag(flag);
+                    }
+                }
+                if let Some(out) = fd.obank().get(indop).and_then(|o| o.get_out()) {
+                    if let Some(v) = fd.vbank_mut().get_mut(out) {
+                        v.set_active_heritage();
+                        if holdind {
+                            v.set_addr_force();
+                        }
+                    }
+                    write.push(out);
+                }
+            }
         }
     }
 
@@ -5011,6 +5112,8 @@ impl Heritage {
         // walk with the refinement resetting `idx` to the first partition mirrors
         // the C++ iterator (which is reseated to `refiter`).
         self.readonly_unguarded = self.readonly_cross_product(fd);
+        self.persist_sparse = self.persist_cross_product(fd);
+        self.persist_memory.clear();
         self.halt_loops = None;
         self.halt_loop_marks.clear();
         self.halt_loop_reach.clear();
@@ -5096,7 +5199,8 @@ impl Heritage {
             }
             self.guard_input(fd, &memrange.addr, size, &inputvars);
             let add_indirects = memrange.new_addresses();
-            let fl = self.guard(fd, &memrange.addr, size, add_indirects, &mut readvars, &mut writevars);
+            let revisit = memrange.old_addresses();
+            let fl = self.guard(fd, &memrange.addr, size, add_indirects, revisit, &mut readvars, &mut writevars);
             // calcMultiequals(writevars): the realized engine takes the write
             // *blocks* (the C++ derives them as `write[i]->getDef()->getParent()`
             // — the block each normalized write is defined in).  Inputs/written
@@ -5108,18 +5212,50 @@ impl Heritage {
                     fd.obank().get(def).and_then(|o| o.get_parent())
                 })
                 .collect();
+            let persist_skips = self.persist_skips.take();
+            let skipped = persist_skips.as_ref().map(|(start, kept, blocks, _, _)| {
+                let (start, kept) = (*start, *kept);
+                let block = |vn: &crate::context::VarnodeId| {
+                    let def = fd.vbank().get(*vn).and_then(|v| v.get_def())?;
+                    fd.obank().get(def).and_then(|o| o.get_parent())
+                };
+                let mut full: Vec<BlockId> = writevars[..start].iter().filter_map(block).collect();
+                full.extend(blocks.iter().copied());
+                full.extend(writevars[start + kept..].iter().filter_map(block));
+                self.calc_multiequals(fd, &full);
+                std::mem::take(&mut self.merge)
+            });
             self.calc_multiequals(fd, &write_blocks);
+            if let Some((_, _, _, calls, keep)) = &persist_skips {
+                let defs: Vec<crate::context::OpId> =
+                    writevars.iter().filter_map(|&vn| fd.vbank().get(vn).and_then(|v| v.get_def())).collect();
+                if !super::kuna_persistcalls::stale_calls(fd, calls, keep, &defs, &self.merge).is_empty() {
+                    super::kuna_persistcalls::restart_full(fd);
+                }
+            }
             if fl.is_some_and(|fl| !memrange.old_addresses() && self.prunes(fd, fl, &memrange.addr))
                 && super::kuna_prunedssa::prune_merges(fd, &memrange.addr, size, &mut self.merge)
             {
                 let spc = memrange.addr.get_space().expect("place_multiequals: range space").clone();
                 self.seen_dead_code(&spc);
             }
-            // Construct each MULTIEQUAL at its merge block.
-            let merge_blocks: Vec<BlockId> = self.merge.clone();
+            // Construct each MULTIEQUAL at its merge block. (kuna `persistcalls`)
+            // The joins only skipped guards would have needed are walked in the
+            // order upstream places them and keep their numbers.
+            let merge_blocks: Vec<(BlockId, bool)> = match skipped {
+                Some(full) => {
+                    let kept: crate::kuna_fasthash::FxHashSet<BlockId> = self.merge.iter().copied().collect();
+                    full.into_iter().map(|bl| (bl, kept.contains(&bl))).collect()
+                }
+                None => self.merge.iter().map(|&bl| (bl, true)).collect(),
+            };
             let multi_typeop = typeop_skeleton(OpCode::CPUI_MULTIEQUAL);
-            for bl in merge_blocks {
+            for (bl, build) in merge_blocks {
                 let size_in = fd.bblocks_ref().block(bl).size_in();
+                if !build {
+                    super::kuna_persistcalls::skip_join(fd, size_in as uint4);
+                    continue;
+                }
                 let start = crate::block::block_get_start(&fd.bblocks_ref().arena, bl);
                 let multiop = fd.new_op(size_in, start);
                 let vnout = fd
@@ -5169,6 +5305,37 @@ impl Heritage {
                 })
             });
             if read {
+                ranges += 1;
+                if ranges.saturating_mul(calls) >= threshold {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// (kuna `persistcalls`) Does this pass guard enough persistent RAM ranges
+    /// at enough calls to guard each only at the calls next to its accesses?
+    /// The product of the calls and the pass's new ranges in the default data
+    /// space must reach the option's threshold.
+    fn persist_cross_product(&self, fd: &crate::funcdata::Funcdata) -> bool {
+        let Some(threshold) = fd.get_arch().persist_calls else {
+            return false;
+        };
+        if fd.get_override().persist_calls_off() {
+            return false;
+        }
+        let calls = fd.num_calls().max(0) as u64;
+        if calls == 0 || calls.saturating_mul(self.disjoint.len() as u64) < threshold {
+            return false;
+        }
+        let Some(ram) = fd.get_arch().manage().get_default_data_space() else {
+            return false;
+        };
+        let mut ranges = 0u64;
+        for i in 0..self.disjoint.len() {
+            let range = self.disjoint.get(i);
+            if range.new_addresses() && range.addr.get_space().map(|s| s.get_index()) == Some(ram.get_index()) {
                 ranges += 1;
                 if ranges.saturating_mul(calls) >= threshold {
                     return true;
@@ -5997,6 +6164,9 @@ impl Heritage {
                     if v.has_no_descend() {
                         continue;
                     }
+                    if super::kuna_persistcalls::crosses_skipped(fd, vn, &self.persist_pruned, false) {
+                        super::kuna_persistcalls::restart_full(fd);
+                    }
                     if !needwarning
                         && self.infolist[i].deadremoved > 0
                         && !fd.is_jumptable_recovery_on()
@@ -6013,6 +6183,9 @@ impl Heritage {
                         resolved_size,
                         memrange_flags::old_addresses | memrange_flags::new_addresses,
                     );
+                    if super::kuna_persistcalls::crosses_skipped(fd, vn, &self.persist_pruned, true) {
+                        super::kuna_persistcalls::restart_full(fd);
+                    }
                     let v = fd.vbank().get(vn).expect("heritage: stale vn (prev==1)");
                     if !needwarning
                         && self.infolist[i].deadremoved > 0

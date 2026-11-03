@@ -7,6 +7,7 @@ pub mod heritage;
 mod kuna_leafmemory;
 pub(crate) mod kuna_globalcallranges;
 pub(crate) mod kuna_loadguardreads;
+pub(crate) mod kuna_persistcalls;
 pub(crate) mod kuna_prunedssa;
 pub(crate) mod kuna_renamereads;
 pub mod subflow;

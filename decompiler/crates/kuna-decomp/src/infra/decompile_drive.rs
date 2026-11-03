@@ -1177,6 +1177,11 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             return Ok(total);
         }
         reflows += 1;
+        // (kuna `persistcalls`) The last pass cannot restart, so it guards
+        // every persistent global at every call.
+        if reflows >= MAX_REFLOW {
+            fd.get_override_mut().set_persist_calls_off();
+        }
         // Re-follow flow against the same Funcdata (its Override — incl. the
         // deindirect's indirect override — survives `clear()`), then loop to
         // re-perform.  `clear()` resets the restart flag, so a fresh request must

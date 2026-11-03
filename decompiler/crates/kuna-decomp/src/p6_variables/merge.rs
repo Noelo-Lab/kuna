@@ -420,6 +420,8 @@ pub trait MergeContext: HighContext {
     fn global_copy_moves_write(&self, _global: HighVariableId, _value: HighVariableId) -> bool {
         false
     }
+    /// (kuna `persistcalls`) A merge copy is about to trim `op`'s input.
+    fn persist_trim(&mut self, _op: OpId) {}
     fn stack_copy_moves_write(&self, _storage: HighVariableId, _value: HighVariableId) -> bool {
         false
     }
@@ -1885,6 +1887,7 @@ impl Merge {
         addr: kuna_base::address::Address,
         trim_op: OpId,
     ) -> KunaResult<OpId> {
+        ctx.persist_trim(trim_op);
         let copy_op = ctx.copy_trim_op(in_vn, addr, trim_op)?;
         self.copy_trims.push(copy_op);
         Ok(copy_op)
