@@ -2156,7 +2156,7 @@ mod tests {
         // and kuna-bejoinpass / a big-endian pair a call hands back is one value (option bejoinpass)
         // and kuna-gottailcall / a one-destination jump through an extern's slot is a tail call
         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
-        assert_eq!(count, 691, "corpus file count drifted");
+        assert_eq!(count, 692, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -1,0 +1,74 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64</com>
+  <com>read symbols</com>
+  <com>option outlang rust</com>
+  <com>option ctypes off</com>
+  <com>option realtypes off</com>
+  <com>map prototype zero_unsigned void zero_unsigned(uint1(*p)[16]);</com>
+  <com>map prototype zero_signed void zero_signed(uint1(*p)[16]);</com>
+  <com>map prototype zero_field void zero_field(struct WideFields*p);</com>
+  <com>map prototype zero_second void zero_second(uint1(*p)[16]);</com>
+  <com>map prototype zero_index void zero_index(uint1(*p)[16],uint8 i);</com>
+  <com>map prototype zero_callback void zero_callback(uint1(*p)[16]);</com>
+  <com>map prototype zero_bytes void zero_bytes(struct Byte16*p);</com>
+  <com>map prototype counted_pointer uint1(*counted_pointer(uint1(*p)[16]))[16];</com>
+  <com>option rustarrayzero off</com>
+  <com>load function zero_unsigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option rustarrayzero on</com>
+  <com>load function zero_unsigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function zero_signed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function zero_field</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function zero_second</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function zero_index</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function zero_callback</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function zero_bytes</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nocastprinting on</com>
+  <com>load function zero_unsigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Rust zero byte-array store zero_unsigned preserves its place" min="1" max="1">unsafe\ fn\ zero_unsigned\(
+^\{
+\*p\ =\ \[0;\ 16\];</stringmatch>
+<stringmatch name="Rust zero byte-array store zero_signed preserves its place" min="1" max="1">unsafe\ fn\ zero_signed\(
+^\{
+\*p\ =\ \[0;\ 16\];</stringmatch>
+<stringmatch name="Rust zero byte-array store zero_field preserves its place" min="1" max="1">unsafe\ fn\ zero_field\(
+^\{
+\*\(\&amp;raw\ mut\ \(\*p\)\.value\ as\ \*mut\ \[u8;\ 16\]\)\ =\ \[0;\ 16\];</stringmatch>
+<stringmatch name="Rust zero byte-array store zero_second preserves its place" min="1" max="1">unsafe\ fn\ zero_second\(
+^\{
+\*p\.wrapping_byte_offset\(\(\(1\ as\ i64\)\ as\ isize\)\.wrapping_mul\(16\)\)\ =\ \[0;\ 16\];</stringmatch>
+<stringmatch name="Rust zero byte-array store zero_index preserves its place" min="1" max="1">unsafe\ fn\ zero_index\(
+^\{
+\*p\.wrapping_byte_offset\(\(i\ as\ isize\)\.wrapping_mul\(16\)\)\ =\ \[0;\ 16\];</stringmatch>
+<stringmatch name="Rust zero byte-array store zero_callback preserves its place" min="1" max="1">unsafe\ fn\ zero_callback\(
+^\{
+\*counted_pointer\(p\)\ =\ \[0;\ 16\];</stringmatch>
+<stringmatch name="Rust zero byte-array store zero_bytes preserves its place" min="1" max="1">unsafe\ fn\ zero_bytes\(
+^\{
+\*\(\&amp;raw\ mut\ \(\*p\)\.bytes\ as\ \*mut\ \[u8;\ 16\]\)\ =\ \[0;\ 16\];</stringmatch>
+<stringmatch name="Rust zero byte-array store off and cast suppression stay diagnostic" min="2" max="2">\*p\ =\ 0;</stringmatch>
+</decompilertest>

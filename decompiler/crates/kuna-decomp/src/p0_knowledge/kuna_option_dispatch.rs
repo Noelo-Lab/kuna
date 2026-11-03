@@ -44,6 +44,7 @@ kuna_options! { self, p1;
     },
     "partialconcat" => on_off!(partial_concat, "Partial scalar concatenation rendering"),
     "armconstshift" => on_off!(arm_constant_shift, "ARM constant-shift C11 conversion"),
+    "rustarrayzero" => on_off!(rust_array_zero, "Rust byte-array zero values"),
     "arraynotation" => {
         let (val, msg) = crate::kuna_arraynotation::OptionArrayNotation.apply(p1)?;
         self.print_mut().options.set_array_notation(val);

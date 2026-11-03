@@ -938,6 +938,9 @@ Three tiers:
 | a variable is read as `v1._6_1_` and the text does not compile | [`partialaccess`](#partialaccess) |
 | a 16-byte register pair returns as `v1._0_16_` | [`partialaccess`](#partialaccess) |
 | a libc record such as `stat` is read as `v3._24_4_` | [`partialaccess`](#partialaccess) |
+| Rust assigns scalar zero to a recovered [u8; 16] destination | [`rustarrayzero`](#rustarrayzero) |
+| a wide zero store fails with Rust E0308 | [`rustarrayzero`](#rustarrayzero) |
+| a byte-array field needs a contextually typed zero value | [`rustarrayzero`](#rustarrayzero) |
 | mapped unsigned char array uses invalid ._offset_size_ members | [`bytearrayc`](#bytearrayc) |
 | wide byte-array accesses need compilable C | [`bytearrayc`](#bytearrayc) |
 | unaligned mapped integer transfer needs an alias-safe C representation | [`bytearrayc`](#bytearrayc) |
@@ -3485,6 +3488,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** ON in the `aggressive` and `fast` presets, and `auto` turns it on at every input size, as it does `ctypes`: the emitted C should be C. The shipped default stays OFF because two XML datatest assertions pin Ghidra's `._<off>_<size>_` spelling (`Enum Reading #2`, `Stack Return #5`) and the parity harness applies no mode. Flip OFF to read Ghidra's notation, which is shorter and is what a Ghidra user expects.
 - **Where / provenance:** P9/pointer-notation · kuna · presentation-default · kuna-partialaccess
 - **Example:** `option partialaccess on`
+
+### `rustarrayzero` -- on | off, default `off`
+
+- **Symptoms:** Rust assigns scalar zero to a recovered [u8; 16] destination; a wide zero store fails with Rust E0308; a byte-array field needs a contextually typed zero value.
+- **What it does:** Emit [0; N] for a Rust STORE of constant zero into a nonempty integer byte array when the value width, destination width and element count match exactly. Elements must have size and alignment one and cannot be enums. Preserve the destination expression and evaluation count without introducing a more strongly aligned scalar pointer. Nonzero values, other element types and inconsistent widths keep their previous handling; diagnostic cast suppression remains effective. C and Go output are unchanged.
+- **When to flip:** Off in every preset. Enable when a recovered byte-array destination receives scalar zero and Rust rejects the assignment with E0308. The initial default-on build exceeded the 5% speed budget on a small C control: +5.075% CPU median across 64 balanced pairs, with -0.119% wall median. That C path does not call this helper, so the measurement is retained without a causal performance claim. The correction is opt-in under the speed policy.
+- **Where / provenance:** P9/array-cover-width · kuna · correctness-fix · rust-zero-byte-array-store
+- **Example:** `option rustarrayzero on`
 
 ### `bytearrayc` -- on | off, default `off`
 

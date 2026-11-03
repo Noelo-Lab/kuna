@@ -1578,6 +1578,28 @@ tier = "core"
 symptoms = "the emitted C contains a member named like `._4_2_` or `._0_8_`|a variable is read as `v1._6_1_` and the text does not compile|a 16-byte register pair returns as `v1._0_16_`|a libc record such as `stat` is read as `v3._24_4_`"
 
 [[settable]]
+option = "rustarrayzero"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P9"
+subphase = "array-cover-width"
+strength = "HARD"
+rewind = "P9"
+issue = "rust-zero-byte-array-store"
+summary = "Emit [0; N] for a Rust STORE of constant zero into a nonempty integer byte array when the value width, destination width and element count match exactly. Elements must have size and alignment one and cannot be enums. Preserve the destination expression and evaluation count without introducing a more strongly aligned scalar pointer. Nonzero values, other element types and inconsistent widths keep their previous handling; diagnostic cast suppression remains effective. C and Go output are unchanged."
+use_when = "Off in every preset. Enable when a recovered byte-array destination receives scalar zero and Rust rejects the assignment with E0308. The initial default-on build exceeded the 5% speed budget on a small C control: +5.075% CPU median across 64 balanced pairs, with -0.119% wall median. That C path does not call this helper, so the measurement is retained without a causal performance claim. The correction is opt-in under the speed policy."
+example = "option rustarrayzero on"
+source_decompiler = "kuna"
+inspiration = "authored wide-store fixtures discovered while auditing Rust output against pinned angr language tests"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "Rust assigns scalar zero to a recovered [u8; 16] destination|a wide zero store fails with Rust E0308|a byte-array field needs a contextually typed zero value"
+live_field = "rust_array_zero"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "bytearrayc"
 values = "on|off"
 default = "off"

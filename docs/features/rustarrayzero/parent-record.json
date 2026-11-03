@@ -1,0 +1,766 @@
+{
+  "at": "2026-11-03T06:40:52.716984+00:00",
+  "complete_bodies": 13,
+  "parent_cli_sha256": "089f142cc56ec317d3466473c586f54f9541032b08e645d6308f3262e7d59754",
+  "fixture_sha256": "d092a4e34ba7fd229f9183389de04b7a82edfaa145f746c4373e79d04c6c3074",
+  "body_rewrites": false,
+  "records": [
+    {
+      "kind": "reference",
+      "optimization": "0",
+      "comparisons": 208,
+      "stdout_sha256": "e8e6d12789e2b35fee1f74e5a11bfb1d84beb68a0673d70d3dcc618dd1212388",
+      "command": [
+        "cc",
+        "-O0",
+        "-fwrapv",
+        "-fno-inline",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/tmp/kuna-rust-array-zero-rebase/harness.c",
+        "/tmp/kuna-rust-array-zero-rebase/helpers.c",
+        "-o",
+        "/tmp/kuna-rust-array-zero-rebase/reference-0"
+      ]
+    },
+    {
+      "kind": "reference",
+      "optimization": "2",
+      "comparisons": 208,
+      "stdout_sha256": "e8e6d12789e2b35fee1f74e5a11bfb1d84beb68a0673d70d3dcc618dd1212388",
+      "command": [
+        "cc",
+        "-O2",
+        "-fwrapv",
+        "-fno-inline",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/tmp/kuna-rust-array-zero-rebase/harness.c",
+        "/tmp/kuna-rust-array-zero-rebase/helpers.c",
+        "-o",
+        "/tmp/kuna-rust-array-zero-rebase/reference-2"
+      ]
+    },
+    {
+      "kind": "parent-rust",
+      "optimization": "0",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--crate-name",
+        "array_constant_parent",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+        "-o",
+        "/tmp/kuna-rust-array-zero-rebase/parent-0"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 486,
+              "byte_end": 487,
+              "line_start": 10,
+              "line_end": 10,
+              "column_start": 8,
+              "column_end": 9,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *p = 0;",
+                  "highlight_start": 8,
+                  "highlight_end": 9
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 481,
+              "byte_end": 483,
+              "line_start": 10,
+              "line_end": 10,
+              "column_start": 3,
+              "column_end": 5,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *p = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 5
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        },
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 625,
+              "byte_end": 626,
+              "line_start": 15,
+              "line_end": 15,
+              "column_start": 8,
+              "column_end": 9,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *p = 0;",
+                  "highlight_start": 8,
+                  "highlight_end": 9
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 620,
+              "byte_end": 622,
+              "line_start": 15,
+              "line_end": 15,
+              "column_start": 3,
+              "column_end": 5,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *p = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 5
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        },
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 802,
+              "byte_end": 803,
+              "line_start": 20,
+              "line_end": 20,
+              "column_start": 45,
+              "column_end": 46,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *(&raw mut (*p).value as *mut [u8; 16]) = 0;",
+                  "highlight_start": 45,
+                  "highlight_end": 46
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 760,
+              "byte_end": 799,
+              "line_start": 20,
+              "line_end": 20,
+              "column_start": 3,
+              "column_end": 42,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *(&raw mut (*p).value as *mut [u8; 16]) = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 42
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        },
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 1002,
+              "byte_end": 1003,
+              "line_start": 25,
+              "line_end": 25,
+              "column_start": 69,
+              "column_end": 70,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *p.wrapping_byte_offset(((1 as i64) as isize).wrapping_mul(16)) = 0;",
+                  "highlight_start": 69,
+                  "highlight_end": 70
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 936,
+              "byte_end": 999,
+              "line_start": 25,
+              "line_end": 25,
+              "column_start": 3,
+              "column_end": 66,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *p.wrapping_byte_offset(((1 as i64) as isize).wrapping_mul(16)) = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 66
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        },
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 1204,
+              "byte_end": 1205,
+              "line_start": 30,
+              "line_end": 30,
+              "column_start": 60,
+              "column_end": 61,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *p.wrapping_byte_offset((i as isize).wrapping_mul(16)) = 0;",
+                  "highlight_start": 60,
+                  "highlight_end": 61
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 1147,
+              "byte_end": 1201,
+              "line_start": 30,
+              "line_end": 30,
+              "column_start": 3,
+              "column_end": 57,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *p.wrapping_byte_offset((i as isize).wrapping_mul(16)) = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 57
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        },
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 1362,
+              "byte_end": 1363,
+              "line_start": 35,
+              "line_end": 35,
+              "column_start": 25,
+              "column_end": 26,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *counted_pointer(p) = 0;",
+                  "highlight_start": 25,
+                  "highlight_end": 26
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 1340,
+              "byte_end": 1359,
+              "line_start": 35,
+              "line_end": 35,
+              "column_start": 3,
+              "column_end": 22,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *counted_pointer(p) = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 22
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        },
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 1535,
+              "byte_end": 1536,
+              "line_start": 40,
+              "line_end": 40,
+              "column_start": 45,
+              "column_end": 46,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *(&raw mut (*p).bytes as *mut [u8; 16]) = 0;",
+                  "highlight_start": 45,
+                  "highlight_end": 46
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 1493,
+              "byte_end": 1532,
+              "line_start": 40,
+              "line_end": 40,
+              "column_start": 3,
+              "column_end": 42,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *(&raw mut (*p).bytes as *mut [u8; 16]) = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 42
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "parent-rust",
+      "optimization": "2",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--crate-name",
+        "array_constant_parent",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+        "-o",
+        "/tmp/kuna-rust-array-zero-rebase/parent-2"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 486,
+              "byte_end": 487,
+              "line_start": 10,
+              "line_end": 10,
+              "column_start": 8,
+              "column_end": 9,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *p = 0;",
+                  "highlight_start": 8,
+                  "highlight_end": 9
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 481,
+              "byte_end": 483,
+              "line_start": 10,
+              "line_end": 10,
+              "column_start": 3,
+              "column_end": 5,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *p = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 5
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        },
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 625,
+              "byte_end": 626,
+              "line_start": 15,
+              "line_end": 15,
+              "column_start": 8,
+              "column_end": 9,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *p = 0;",
+                  "highlight_start": 8,
+                  "highlight_end": 9
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 620,
+              "byte_end": 622,
+              "line_start": 15,
+              "line_end": 15,
+              "column_start": 3,
+              "column_end": 5,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *p = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 5
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        },
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 802,
+              "byte_end": 803,
+              "line_start": 20,
+              "line_end": 20,
+              "column_start": 45,
+              "column_end": 46,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *(&raw mut (*p).value as *mut [u8; 16]) = 0;",
+                  "highlight_start": 45,
+                  "highlight_end": 46
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 760,
+              "byte_end": 799,
+              "line_start": 20,
+              "line_end": 20,
+              "column_start": 3,
+              "column_end": 42,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *(&raw mut (*p).value as *mut [u8; 16]) = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 42
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        },
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 1002,
+              "byte_end": 1003,
+              "line_start": 25,
+              "line_end": 25,
+              "column_start": 69,
+              "column_end": 70,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *p.wrapping_byte_offset(((1 as i64) as isize).wrapping_mul(16)) = 0;",
+                  "highlight_start": 69,
+                  "highlight_end": 70
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 936,
+              "byte_end": 999,
+              "line_start": 25,
+              "line_end": 25,
+              "column_start": 3,
+              "column_end": 66,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *p.wrapping_byte_offset(((1 as i64) as isize).wrapping_mul(16)) = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 66
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        },
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 1204,
+              "byte_end": 1205,
+              "line_start": 30,
+              "line_end": 30,
+              "column_start": 60,
+              "column_end": 61,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *p.wrapping_byte_offset((i as isize).wrapping_mul(16)) = 0;",
+                  "highlight_start": 60,
+                  "highlight_end": 61
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 1147,
+              "byte_end": 1201,
+              "line_start": 30,
+              "line_end": 30,
+              "column_start": 3,
+              "column_end": 57,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *p.wrapping_byte_offset((i as isize).wrapping_mul(16)) = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 57
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        },
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 1362,
+              "byte_end": 1363,
+              "line_start": 35,
+              "line_end": 35,
+              "column_start": 25,
+              "column_end": 26,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *counted_pointer(p) = 0;",
+                  "highlight_start": 25,
+                  "highlight_end": 26
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 1340,
+              "byte_end": 1359,
+              "line_start": 35,
+              "line_end": 35,
+              "column_start": 3,
+              "column_end": 22,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *counted_pointer(p) = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 22
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        },
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 1535,
+              "byte_end": 1536,
+              "line_start": 40,
+              "line_end": 40,
+              "column_start": 45,
+              "column_end": 46,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *(&raw mut (*p).bytes as *mut [u8; 16]) = 0;",
+                  "highlight_start": 45,
+                  "highlight_end": 46
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-zero-rebase/parent-full.rs",
+              "byte_start": 1493,
+              "byte_end": 1532,
+              "line_start": 40,
+              "line_end": 40,
+              "column_start": 3,
+              "column_end": 42,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *(&raw mut (*p).bytes as *mut [u8; 16]) = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 42
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "reference_comparisons_per_profile": 208,
+  "planned_candidate_comparisons": 416,
+  "scope": "Seven wide zero stores plus six scalar/copy controls; full128bytes compared including guards; callback counter;16-byte aligned scalar storage and deliberately unaligned byte-array storage. Parent compile failure only; no candidate native proof."
+}

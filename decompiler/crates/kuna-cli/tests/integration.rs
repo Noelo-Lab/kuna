@@ -770,3 +770,6 @@ mod rust_array_address;
 
 #[path = "rust_array_decay.rs"]
 mod rust_array_decay;
+
+#[path = "rust_array_constant.rs"]
+mod rust_array_constant;

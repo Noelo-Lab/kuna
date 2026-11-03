@@ -4756,3 +4756,36 @@ pointer bits with C at both optimization levels. It covers twelve element types,
 whole arrays and fields, explicit casts, pointer stores with guard words, calls
 and callback order, and constant one-past addresses. Readable and protected
 mappings verify these address computations do not load the array contents.
+
+
+### Rust zero values for byte-array stores
+
+With `rustarrayzero on`, `kuna_rustarrayzero.rs` renders a constant-zero STORE
+value as `[0; N]` when
+its recovered destination is exactly an N-byte integer array. The constant's
+varnode width must equal the array's storage size, and the positive element
+count must equal that size. Elements must have size and alignment one, be
+primitive signed, unsigned, or unknown integers, and not be enums. The array
+literal is contextually typed by the unchanged destination. Zero has the same
+all-zero byte representation for every accepted element type and endianness.
+
+The conversion changes only the value of the STORE. It preserves the original
+address expression, its evaluation count, the store width, and the destination's
+alignment; a byte array is not recast to a more strictly aligned integer pointer.
+Nonzero or nonconstant values, mismatched widths, noninteger elements, and other
+aggregates retain their previous paths. Cast suppression remains diagnostic.
+This corrects an invalid scalar-to-array assignment without changing wide type
+recovery or repairing unrelated scalar STORE-width mismatches.
+
+The native regression compares complete emitted bodies against C at both
+optimization levels. It checks all memory and guard bytes for wide zero stores,
+array fields, constant and variable offsets, and a counted pointer callback,
+including deliberately unaligned byte-array storage. Scalar, nonzero, and copy
+controls retain their output. The additional retained six-function wide-store
+bundle also checks carry boundaries and exact source/destination aliasing.
+
+`rustarrayzero` is off in every preset. Its initial default-on build measured a
+5.075% CPU median increase on a small C control over 64 balanced pairs, exceeding
+the 5% budget; wall median changed by -0.119%. The C path does not call this Rust
+helper, so this records the measured failure without attributing a cause. The
+original measurement is retained and the correction ships as an explicit opt-in.
