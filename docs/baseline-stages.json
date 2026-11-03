@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3811,
-    3811
+    3821,
+    3821
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -449,6 +449,16 @@
     "data:DECODEHALT #2: on, the halt names the decode failure and carries the truncation warning",
     "data:DECODEHALT #3: on, the function header says the body is incomplete",
     "data:DECODEHALT #4: exactly one of the two passes renders the pseudo-call",
+    "data:DEDUPGOTO #1: shared() twice with dedupitetail off, once with it on",
+    "data:DEDUPGOTO #2: the on pass merges the if/else tail",
+    "data:DEDUPGOTO #3: each pass prints the goto into the true arm",
+    "data:DEDUPGOTO #4: each pass prints the label the goto names",
+    "data:DEDUPGOTO #5: post() once per pass",
+    "data:DEDUPSWITCH #1: shared() twice with dedupitetail off, once with it on",
+    "data:DEDUPSWITCH #2: the on pass merges the if/else tail",
+    "data:DEDUPSWITCH #3: each pass prints case 1 as a goto into the true arm",
+    "data:DEDUPSWITCH #4: each pass prints the label on the cond_a() test",
+    "data:DEDUPSWITCH #5: post() once per pass",
     "data:DUPLABELS #1: the first copy keeps the address label",
     "data:DUPLABELS #2: the second copy has its own label",
     "data:DUPLABELS #3: the first copy calls intarith",
