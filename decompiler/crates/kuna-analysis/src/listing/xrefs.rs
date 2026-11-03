@@ -822,6 +822,7 @@ fn descend(
         data_space: data_space.as_ref(),
         got: got.as_ref(),
         preserved: &preserved,
+        deref: arm && arch.analysis_armderef,
     });
     // (kuna) `regcarry`: the register space a carried constant lives in.
     let carry_machine = CarryMachine::new(

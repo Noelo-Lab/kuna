@@ -35,6 +35,9 @@ mod verify_aifpoolslide;
 #[path = "verify_aifstrict.rs"]
 mod verify_aifstrict;
 
+#[path = "verify_armderef.rs"]
+mod verify_armderef;
+
 #[path = "verify_arm_context.rs"]
 mod verify_arm_context;
 
