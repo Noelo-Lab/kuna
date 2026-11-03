@@ -1158,8 +1158,9 @@ zig cc -target aarch64-macos -O0 -Wl,-undefined,dynamic_lookup \
 a13 binaries). **Pinned VMAs:** `_get_greeting`@`0x100000538` → entry@`0x100004008`
 ("cfstring hello"), `_get_long`@`0x100000544` → entry@`0x100004028` ("a constant
 string longer than one entry"), `_get_after`@`0x100000550` → entry@`0x100004048`
-("after the long one"). With `--option cfstrings on` each getter returns its
-literal; off, it returns the entry by its data symbol (`&_kGreeting`).
+("after the long one"). With `--option cfstrings on` each getter returns
+`CFSTR("...")` of its string (`annotate` adds `/* cfstring@0x<entry> */`); off, it
+returns the entry by its data symbol (`&_kGreeting`).
 
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 

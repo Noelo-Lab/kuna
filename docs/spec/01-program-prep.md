@@ -4191,11 +4191,22 @@ every other binary's pass list is byte-identical to before the pass existed):
   `0x10` is clear, UTF-16 otherwise). The commit seam then types the entry a
   `char[N]` spanning the entry's own four words (never the string's length, which
   would overrun the next entry and hide it) and seeds the `StringManager` at the
-  entry address with the resolved bytes, so a reference renders the literal (`NSLog("Reachability Flag Status: …")`)
+  entry address with the resolved bytes, so a reference renders the string
   across the one indirection the printer cannot follow on its own. The entries are
   marked read-only (a CFString constant is immutable), which the route requires on
   the historical writable `__DATA,__cfstring` layout (`__DATA_CONST` is already
-  read-only).
+  read-only). The commit also records each seeded entry address
+  (`Architecture::cfstring_entries`), and the C printer wraps a literal found at one
+  of them as `CFSTR("...")`
+  (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_cfstr.rs (wrap)`): the value is
+  the entry, a `CFStringRef`, not the characters, so
+  `NSLog(CFSTR("Reachability Flag Status: …"))` is what was written. The entry is
+  still typed `char[N]`, because the literal route reads strings through a
+  character pointer, so the reference's declared type stays `char *`. The Rust and
+  Go back-ends keep the plain literal. `cfstrings annotate` runs the same pass and
+  also follows each `CFSTR` with `/* cfstring@0x<entry> */`, the address a
+  disassembler or hex view shows for the entry, which the literal otherwise
+  replaces.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

@@ -1,5 +1,5 @@
 //! `cfstrings` end-to-end gate — render a Mach-O Core Foundation constant string
-//! (`__cfstring`) as the string literal it holds, instead of `dat_<addr>`.
+//! (`__cfstring`) as `CFSTR("...")` of the string it holds, instead of the entry.
 //!
 //! Fixture: `tests/fixtures/macho_cfstring` — a self-contained arm64 Mach-O built
 //! from `macho_cfstring.c` with `zig cc -target aarch64-macos -O0`. It hand-builds
@@ -9,15 +9,17 @@
 //! pointers are classic `LC_DYLD_INFO` pointers into `__TEXT,__cstring`. The build
 //! recipe + the pinned VMAs are in `tests/fixtures/README.md`.
 //!
-//! ## The two-state proof (the `verify_objc` posture)
+//! ## The three-state proof (the `verify_objc` posture)
 //!
-//! - **`--option cfstrings off`** (default): each getter returns the bare
-//!   `__cfstring` entry address — the CFString struct the printer cannot follow on
-//!   its own.
-//! - **`--option cfstrings on`**: each returns its literal — the entry's char
+//! - **`--option cfstrings off`** (default): each getter returns the
+//!   `__cfstring` entry by its data symbol — the CFString struct the printer
+//!   cannot follow on its own.
+//! - **`--option cfstrings on`**: each returns `CFSTR("...")` — the entry's char
 //!   pointer resolved, the string seeded into the `StringManager`, the entry typed
 //!   `char[N]` over its own 32 bytes only, so a long string never hides the next
 //!   entry.
+//! - **`--option cfstrings annotate`**: the same, followed by a comment naming the
+//!   entry address.
 //!
 //! Both run on the real-Mach-O path, so the XML datatest oracles never reach this.
 
@@ -32,14 +34,14 @@ use kuna_console::ifacedecomp::{
 use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_decomp::decompile_drive::build_and_follow_flow;
 
-/// `(getter VMA, entry rendered when off, literal rendered when on)`.
+/// `(getter VMA, entry rendered when off, entry address, string rendered when on)`.
 /// The second string is longer than one 32-byte entry, and the third entry sits
 /// right behind it, so it is only reachable when the second entry's `char[N]`
 /// stays inside its own entry.
-const ENTRIES: [(u64, &str, &str); 3] = [
-    (0x100000538, "&_kGreeting", "cfstring hello"),
-    (0x100000544, "&_kLong", "a constant string longer than one entry"),
-    (0x100000550, "&_kAfter", "after the long one"),
+const ENTRIES: [(u64, &str, u64, &str); 3] = [
+    (0x100000538, "&_kGreeting", 0x100004008, "cfstring hello"),
+    (0x100000544, "&_kLong", 0x100004028, "a constant string longer than one entry"),
+    (0x100000550, "&_kAfter", 0x100004048, "after the long one"),
 ];
 
 fn repo_root() -> PathBuf {
@@ -50,9 +52,11 @@ fn fixtures() -> PathBuf {
     repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures")
 }
 
+#[derive(Clone, Copy)]
 enum Mode {
     Off,
     On,
+    Annotate,
 }
 
 fn name_at(prog: &ConsoleProgram, vma: u64) -> String {
@@ -76,8 +80,13 @@ fn run(mode: Mode, vma: u64) -> String {
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
 
-    if let Mode::On = mode {
-        prog.arch_mut().set_kuna_option("cfstrings", "on").expect("cfstrings flips on");
+    let value = match mode {
+        Mode::Off => None,
+        Mode::On => Some("on"),
+        Mode::Annotate => Some("annotate"),
+    };
+    if let Some(value) = value {
+        prog.arch_mut().set_kuna_option("cfstrings", value).expect("cfstrings takes the value");
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
@@ -107,22 +116,29 @@ fn run(mode: Mode, vma: u64) -> String {
     status.optr.clone()
 }
 
-/// The two-state proof: a `__cfstring` reference is the entry (its data symbol) by
-/// default and becomes the string literal only when `cfstrings` is on, for every
+/// The three-state proof: a `__cfstring` reference is the entry (its data
+/// symbol) by default, `CFSTR("...")` of its string when `cfstrings` is on, and
+/// that plus a comment naming the entry address under `annotate`, for every
 /// entry, including the one behind an entry whose string is longer than it.
 #[test]
 fn cfstring_renders_as_literal_only_when_on() {
-    for (vma, entry, text) in ENTRIES {
+    for (vma, symbol, entry, text) in ENTRIES {
         let off = run(Mode::Off, vma);
         let on = run(Mode::On, vma);
+        let annotated = run(Mode::Annotate, vma);
         assert!(
-            off.contains(&format!("return {entry};")),
-            "cfstrings off must render the __cfstring entry {entry}:\n{off}"
+            off.contains(&format!("return {symbol};")),
+            "cfstrings off must render the __cfstring entry {symbol}:\n{off}"
         );
         assert!(!off.contains(text), "cfstrings off must not render {text:?}:\n{off}");
         assert!(
-            on.contains(&format!("return \"{text}\";")),
-            "cfstrings on must render the CFString literal {text:?}:\n{on}"
+            on.contains(&format!("return CFSTR(\"{text}\");")),
+            "cfstrings on must render CFSTR({text:?}):\n{on}"
+        );
+        assert!(!on.contains("cfstring@"), "cfstrings on must not annotate:\n{on}");
+        assert!(
+            annotated.contains(&format!("return CFSTR(\"{text}\") /* cfstring@0x{entry:x} */;")),
+            "cfstrings annotate must name the entry 0x{entry:x}:\n{annotated}"
         );
         assert!(on.contains("char *"), "cfstrings on types the constant a char pointer:\n{on}");
     }

@@ -29,8 +29,10 @@
     reached when that entry's `char[N]` stays inside the entry.
 
     Pass 1 (the default, the BUG): the getters return the entries, named by
-    their data symbols (`&_kGreeting`, `&_kAfter`), not their strings. Pass 2 (`option cfstrings on`, the FIX): they
-    return the literals `"cfstring hello"` and `"after the long one"`.
+    their data symbols (`&_kGreeting`, `&_kAfter`), not their strings. Pass 2
+    (`option cfstrings on`, the FIX): they return `CFSTR("cfstring hello")` and
+    `CFSTR("after the long one")`. Pass 3 (`option cfstrings annotate`): the same,
+    each followed by a comment naming its entry address.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c0035fd6
@@ -57,11 +59,23 @@ c0035fd6
   <com>load addr 0x100000550</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_cfstring</com>
+  <com>option cfstrings annotate</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000538</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000550</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="cfstrings off: the __cfstring reference is the entry, not its string" min="1" max="1">return &amp;_kGreeting;</stringmatch>
-<stringmatch name="cfstrings on: the __cfstring reference renders its string literal" min="1" max="1">return "cfstring hello";</stringmatch>
-<stringmatch name="cfstrings on: the returned constant is typed as a char pointer" min="1" max="1">char \* _get_greeting\(void\)</stringmatch>
+<stringmatch name="cfstrings on: the __cfstring reference renders as CFSTR of its string" min="1" max="1">return CFSTR\("cfstring hello"\);</stringmatch>
+<stringmatch name="cfstrings on and annotate: the returned constant is typed as a char pointer" min="2" max="2">char \* _get_greeting\(void\)</stringmatch>
+<stringmatch name="cfstrings annotate: the CFSTR is followed by its entry address" min="1" max="1">return CFSTR\("cfstring hello"\) /\* cfstring@0x100004008 \*/;</stringmatch>
 <stringmatch name="cfstrings off: the entry behind a long string is the entry, not its string" min="1" max="1">return &amp;_kAfter;</stringmatch>
-<stringmatch name="cfstrings on: the entry behind a long string still renders its literal" min="1" max="1">return "after the long one";</stringmatch>
+<stringmatch name="cfstrings on: the entry behind a long string still renders its literal" min="1" max="1">return CFSTR\("after the long one"\);</stringmatch>
+<stringmatch name="cfstrings annotate: the entry behind a long string names its own address" min="1" max="1">return CFSTR\("after the long one"\) /\* cfstring@0x100004048 \*/;</stringmatch>
 </decompilertest>

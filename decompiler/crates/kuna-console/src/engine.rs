@@ -5352,6 +5352,7 @@ fn commit_analysis_output(
         // the real string (char width 1 — the `char[N]` element width above).
         prog.arch().string_manager.borrow_mut().base.register_string_at(&addr, &fact.bytes, 1);
         let arch = prog.arch_mut();
+        arch.cfstring_entries.insert(fact.addr);
         let (scope, base) =
             arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
         let (sid, _) =

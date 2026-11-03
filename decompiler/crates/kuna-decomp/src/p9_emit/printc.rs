@@ -12142,6 +12142,11 @@ impl PrintC {
             let Ok(pointer) = arch.types().get_type_pointer(ptr_size, subct.clone(), 1) else { return false };
             if !self.push_go_string_pointer(&mut s, &pointer, op) { return false; }
         }
+        if self.out_lang == crate::kuna_lang::OutLang::C
+            && arch.cfstring_entries.contains(&stringaddr.get_offset())
+        {
+            s = crate::kuna_cfstr::wrap(&s, stringaddr.get_offset(), arch.cfstrings_annotate);
+        }
         self.push_atom(&Atom::with_op_vn(
             s,
             TagType::VarToken,

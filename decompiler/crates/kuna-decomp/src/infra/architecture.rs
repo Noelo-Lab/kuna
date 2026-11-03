@@ -2668,6 +2668,12 @@ pub struct Architecture {
     /// (`cfstrings`); default **off** (output-changing: renders CFString constants
     /// as string literals + adds `char[N]` symbols). Mach-O-only pass.
     pub analysis_cfstrings: bool,
+    /// (kuna `cfstrings annotate`) Follow each rendered `CFSTR("...")` with a
+    /// comment naming its `__cfstring` entry address. Default **off**.
+    pub cfstrings_annotate: bool,
+    /// (kuna `cfstrings`) The `__cfstring` entry addresses the commit seeded, so
+    /// the printer renders a literal at one of them as `CFSTR("...")`.
+    pub cfstring_entries: std::collections::BTreeSet<u64>,
     /// (kuna) Gate the PE PDB metadata recovery pass (`pdb`); default **off**. The
     /// kuna analog of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer;
     /// the MS-DIA `PdbAnalyzer` is Windows-native and out of scope) — the
@@ -3476,6 +3482,8 @@ impl Architecture {
             analysis_gonoreturn: false,
             analysis_objc: false,
             analysis_cfstrings: false,
+            cfstrings_annotate: false,
+            cfstring_entries: std::collections::BTreeSet::new(),
             analysis_pdb: true,
             macho_arm64e: false,
 
@@ -3965,6 +3973,7 @@ impl Architecture {
         self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
         self.analysis_cfstrings = false; // Mach-O __cfstring constant-string recovery default-off (Mach-O-only pass)
+        self.cfstrings_annotate = false;
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
