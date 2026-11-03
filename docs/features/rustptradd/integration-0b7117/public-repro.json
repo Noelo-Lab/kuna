@@ -1,0 +1,46 @@
+{
+  "fixture_command": [
+    "cc",
+    "-O2",
+    "-g",
+    "-fno-pie",
+    "-no-pie",
+    "/tmp/kuna-rust-pointer-index/integration-0b7117/public-repro.c",
+    "-o",
+    "/tmp/kuna-rust-pointer-index/integration-0b7117/public-repro"
+  ],
+  "source_sha256": "7a931cbc91250e4816815c241a51184edb82ca22b90ed2e5318adf03f9ba72e9",
+  "fixture_sha256": "48bf5e40e234b7402f8a3d94684a398605da3c6bd031c78a1e1c84231d8f7382",
+  "records": [
+    {
+      "arm": "parent",
+      "command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/public-repro",
+        "indexed",
+        "--language",
+        "rust",
+        "--assert",
+        "prototype indexed int4 indexed(int4*p,int8 i)"
+      ],
+      "cli_sha256": "668991fb43da6a2e3fd22770c79321c042a134cba7d184113abac796cfc85822",
+      "output_sha256": "a689b8dcbca1e31ec5cadb7f113e4fc3b9f028c767695f7642fbead494d913b6"
+    },
+    {
+      "arm": "candidate",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/public-repro",
+        "indexed",
+        "--language",
+        "rust",
+        "--assert",
+        "prototype indexed int4 indexed(int4*p,int8 i)"
+      ],
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "output_sha256": "73d602b15b1d9bb9231e4fc796a5e8af6206a28dcf714854f90ef919afe9a749"
+    }
+  ]
+}

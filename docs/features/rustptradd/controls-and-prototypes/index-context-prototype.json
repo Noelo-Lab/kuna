@@ -1,0 +1,211 @@
+{
+  "binary": "/tmp/kuna-rust-pointer-index/index-context",
+  "language": "rust-language",
+  "count": 3,
+  "error": null,
+  "functions": [
+    {
+      "name": "shift_address",
+      "address": 4198688,
+      "address_hex": "0x401120",
+      "aliases": [
+        "sub_401120"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn shift_address(mut p: *mut i32, mut n: u32) -> *mut i32\n{\n  return ((4 << (n as u8 & 0x3f)) + p as i64) as *mut i32;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198699,
+            4198702,
+            4198705
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut i32",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198699,
+            4198702,
+            4198705
+          ]
+        },
+        {
+          "name": "n",
+          "type": "u32",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198699,
+            4198702,
+            4198705
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "logical_address",
+      "address": 4198720,
+      "address_hex": "0x401140",
+      "aliases": [
+        "sub_401140"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn logical_address(mut p: *mut i32, mut n: u32) -> *mut i32\n{\n  return p.wrapping_byte_offset(((0xffffffffffffffff >> (n as u8 & 0x3f)) as isize).wrapping_mul(4));\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198733,
+            4198736,
+            4198740
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut i32",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198733,
+            4198736,
+            4198740
+          ]
+        },
+        {
+          "name": "n",
+          "type": "u32",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198733,
+            4198736,
+            4198740
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "signed_address",
+      "address": 4198752,
+      "address_hex": "0x401160",
+      "aliases": [
+        "sub_401160"
+      ],
+      "object_location": null,
+      "size": 24,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn signed_address(mut p: *mut i32, mut n: u32) -> *mut i32\n{\n  return p.wrapping_byte_offset(((-0x8000000000000000 >> (n as u8 & 0x3f)) as isize).wrapping_mul(4));\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198768,
+            4198771,
+            4198775
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut i32",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198768,
+            4198771,
+            4198775
+          ]
+        },
+        {
+          "name": "n",
+          "type": "u32",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198768,
+            4198771,
+            4198775
+          ]
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": [
+    {
+      "directive": "prototype shift_address int4*shift_address(int4*p,uint4 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype logical_address int4*logical_address(int4*p,uint4 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype signed_address int4*signed_address(int4*p,uint4 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    }
+  ]
+}

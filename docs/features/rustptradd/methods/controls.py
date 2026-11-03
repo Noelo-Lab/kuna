@@ -1,0 +1,11 @@
+from common import *
+sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();names=[line.split()[1]for line in(w/'controls.kuna').read_text().splitlines()];records=[];captures={}
+for arm,root in [('parent',Path('/home/mahaloz/kwt/angr-rust-store-conversions')),('candidate',r)]:
+ cli=root/'decompiler/target/release/kuna';cli_sha=sha(cli);cmd=[str(cli),'decompile-all',str(w/'controls'),'--json','--language','rust','--functions',','.join(names),'--assert','@'+str(w/'controls.kuna')];p=subprocess.run(cmd,env=env|{'KUNA_SPECS':str(root/'specs')},capture_output=True,check=True);(w/('controls-'+arm+'.json')).write_bytes(p.stdout);d=json.loads(p.stdout);captures[arm]={f['name']:f['code']for f in d['functions']};assert len(d['functions'])==9 and all(not f.get('error')for f in d['functions'])
+ for name,body in captures[arm].items():
+  src=w/('controls-'+arm+'-'+name+'.rs');src.write_text('#![allow(dead_code,unused_mut,unused_parens)]\n#[repr(C)]struct Arrays{prefix:i32,values:[i32;12],pointer:*mut i64}\n'+body+'\nfn main(){}\n');compile=['rustc','--edition=2021','--error-format=json',str(src),'-o',str(src.with_suffix('.out'))];p=subprocess.run(compile,capture_output=True);src.with_suffix('.jsonl').write_bytes(p.stderr)
+  errors=[json.loads(line)for line in p.stderr.splitlines()if line.startswith(b'{')];errors=[{'code':e['code']['code'],'message':e['message']}for e in errors if e.get('level')=='error'and e.get('code')];records.append({'arm':arm,'name':name,'cli_sha256':cli_sha,'capture_command':cmd,'compile_command':compile,'compile_exit':p.returncode,'errors':errors,'body_sha256':hashlib.sha256(body.encode()).hexdigest()})
+  assert(p.returncode!=0)if arm=='parent'or name in ['array_field','nested_array']else(p.returncode==0),(arm,name,errors)
+ assert sha(cli)==cli_sha
+assert captures['parent']['array_field']==captures['candidate']['array_field']
+(w/'controls-record.json').write_text(json.dumps({'scope':'Compile-only nine complete bodies; no native equivalence claim for these controls. Two retained array-valued index failures are separate work.','records':records,'source_sha256':{p:sha(w/p)for p in ['controls.c','controls.kuna','controls']},'body_rewrites':False},indent=2)+'\n');print('Nine controls: seven newly compile, two retained array index failures')

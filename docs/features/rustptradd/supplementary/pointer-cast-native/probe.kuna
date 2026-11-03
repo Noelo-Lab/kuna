@@ -1,0 +1,2 @@
+prototype unsigned_address uint8*unsigned_address(int8*p,uint8 i)
+prototype byte_address uint1*byte_address(int8*p,uint8 i)

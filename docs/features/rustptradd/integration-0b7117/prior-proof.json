@@ -1,0 +1,12 @@
+{
+  "milestone": {
+    "head": "4b6b82eab45dffec3e609af5182889ef07cb3717",
+    "tree": "18c6f799e8080020a46c91806831bdf3f112d18b",
+    "parent": "d115526dfac3f764f80620b726ccc9acc4bc9c03",
+    "candidate_cli_sha256": "de026e44572b83ab0812088d23ae1a0a499dde628fc73ffa7d62fb93b42aa3c9",
+    "at": "2026-11-03T02:40:48.514411+00:00",
+    "status": "Validated local milestone only; publication stopped because main advanced to 0b7117. Must integrate and revalidate before PR."
+  },
+  "path": "docs/features/rustptradd/record.json",
+  "scope": "Completed proof before unrelated main change; retained, not used as final integration acceptance."
+}

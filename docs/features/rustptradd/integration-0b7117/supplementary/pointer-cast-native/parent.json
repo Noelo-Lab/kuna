@@ -1,0 +1,138 @@
+{
+  "binary": "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-native/probe",
+  "language": "rust-language",
+  "count": 2,
+  "error": null,
+  "functions": [
+    {
+      "name": "unsigned_address",
+      "address": 4198688,
+      "address_hex": "0x401120",
+      "aliases": [
+        "sub_401120"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn unsigned_address(mut p: *mut i64, mut i: u64) -> *mut u64\n{\n  return &mut p[i] as *mut u64;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198692,
+            4198696
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut i64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198692,
+            4198696
+          ]
+        },
+        {
+          "name": "i",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198692,
+            4198696
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "byte_address",
+      "address": 4198704,
+      "address_hex": "0x401130",
+      "aliases": [
+        "sub_401130"
+      ],
+      "object_location": null,
+      "size": 9,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn byte_address(mut p: *mut i64, mut i: u64) -> *mut u8\n{\n  return &mut p[i] as *mut u8;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198708,
+            4198712
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut i64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198708,
+            4198712
+          ]
+        },
+        {
+          "name": "i",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198708,
+            4198712
+          ]
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": [
+    {
+      "directive": "prototype unsigned_address uint8*unsigned_address(int8*p,uint8 i)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype byte_address uint1*byte_address(int8*p,uint8 i)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    }
+  ]
+}

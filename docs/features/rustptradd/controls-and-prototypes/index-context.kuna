@@ -1,0 +1,3 @@
+prototype shift_address int4*shift_address(int4*p,uint4 n)
+prototype logical_address int4*logical_address(int4*p,uint4 n)
+prototype signed_address int4*signed_address(int4*p,uint4 n)

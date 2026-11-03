@@ -9606,6 +9606,12 @@ impl PrintC {
             self.op_go_ptradd(fd, arch, op);
             return;
         }
+        if self.out_lang == crate::kuna_lang::OutLang::Rust
+            && !self.options.nocasts
+            && self.op_rust_ptradd(fd, arch, op)
+        {
+            return;
+        }
         let printval = self
             .context
             .is_set(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE);
