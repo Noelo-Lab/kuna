@@ -1,0 +1,669 @@
+{
+  "binary": "/tmp/kuna-rust-array-zero-rebase/probe",
+  "language": "go-language",
+  "count": 13,
+  "error": null,
+  "functions": [
+    {
+      "name": "zero_unsigned",
+      "address": 4198688,
+      "address_hex": "0x401120",
+      "aliases": [
+        "sub_401120"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "func zero_unsigned(p *[16]byte) {\n  *p = 0\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 2,
+          "addresses": [
+            4198696
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*[16]byte",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2
+          ],
+          "addresses": [
+            4198696
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "zero_signed",
+      "address": 4198704,
+      "address_hex": "0x401130",
+      "aliases": [
+        "sub_401130"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "func zero_signed(p *[16]byte) {\n  *p = 0\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 2,
+          "addresses": [
+            4198712
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*[16]byte",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2
+          ],
+          "addresses": [
+            4198712
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "zero_field",
+      "address": 4198720,
+      "address_hex": "0x401140",
+      "aliases": [
+        "sub_401140"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "func zero_field(p *WideFields) {\n  *(*[16]byte)(unsafe.Pointer((*p).value)) = 0\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 2,
+          "addresses": [
+            4198728
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*WideFields",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2
+          ],
+          "addresses": [
+            4198728
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "zero_second",
+      "address": 4198736,
+      "address_hex": "0x401150",
+      "aliases": [
+        "sub_401150"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "func zero_second(p *[16]byte) {\n  *(*[16]byte)(unsafe.Add(unsafe.Pointer(p),1 * 0x10)) = 0\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 2,
+          "addresses": [
+            4198744
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*[16]byte",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2
+          ],
+          "addresses": [
+            4198744
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "zero_index",
+      "address": 4198752,
+      "address_hex": "0x401160",
+      "aliases": [
+        "sub_401160"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "func zero_index(p *[16]byte, i uint64) {\n  *(*[16]byte)(unsafe.Add(unsafe.Pointer(p),i * 0x10)) = 0\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 2,
+          "addresses": [
+            4198764
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*[16]byte",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2
+          ],
+          "addresses": [
+            4198764
+          ]
+        },
+        {
+          "name": "i",
+          "type": "uint64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2
+          ],
+          "addresses": [
+            4198764
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "zero_callback",
+      "address": 4198784,
+      "address_hex": "0x401180",
+      "aliases": [
+        "sub_401180"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "func zero_callback(p *[16]byte) {\n  *counted_pointer(p) = 0\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 2,
+          "addresses": [
+            4198792,
+            4198801
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*[16]byte",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2
+          ],
+          "addresses": [
+            4198792,
+            4198801
+          ]
+        },
+        {
+          "name": "local_10",
+          "type": "undefined16",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 16,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "zero_bytes",
+      "address": 4198816,
+      "address_hex": "0x4011a0",
+      "aliases": [
+        "sub_4011a0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "func zero_bytes(p *Byte16) {\n  *(*[16]byte)(unsafe.Pointer((*p).bytes)) = 0\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 2,
+          "addresses": [
+            4198824
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*Byte16",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2
+          ],
+          "addresses": [
+            4198824
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "one_unsigned",
+      "address": 4198832,
+      "address_hex": "0x4011b0",
+      "aliases": [
+        "sub_4011b0"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "func one_unsigned(p *[16]byte) {\n  *(*uint64)(unsafe.Pointer(*p)) = 1\n  *(*uint64)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(*p),8 * 1)))) = 0\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 2,
+          "addresses": [
+            4198836
+          ]
+        },
+        {
+          "line_number": 3,
+          "addresses": [
+            4198843
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*[16]byte",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2,
+            3
+          ],
+          "addresses": [
+            4198836,
+            4198843
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "signed_input",
+      "address": 4198864,
+      "address_hex": "0x4011d0",
+      "aliases": [
+        "sub_4011d0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "func signed_input(p *[16]byte, x int64) {\n  *(*int64)(unsafe.Pointer(*p)) = x\n  *(*int64)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(*p),8 * 1)))) = x >> 0x3f\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 2,
+          "addresses": [
+            4198868
+          ]
+        },
+        {
+          "line_number": 3,
+          "addresses": [
+            4198871,
+            4198875
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*[16]byte",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2,
+            3
+          ],
+          "addresses": [
+            4198868,
+            4198871,
+            4198875
+          ]
+        },
+        {
+          "name": "x",
+          "type": "int64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2,
+            3
+          ],
+          "addresses": [
+            4198868,
+            4198871,
+            4198875
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "unsigned_input",
+      "address": 4198880,
+      "address_hex": "0x4011e0",
+      "aliases": [
+        "sub_4011e0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "func unsigned_input(p *[16]byte, x uint64) {\n  *(*uint64)(unsafe.Pointer(*p)) = x\n  *(*uint64)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(*p),8 * 1)))) = 0\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 2,
+          "addresses": [
+            4198884
+          ]
+        },
+        {
+          "line_number": 3,
+          "addresses": [
+            4198887
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*[16]byte",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2,
+            3
+          ],
+          "addresses": [
+            4198884,
+            4198887
+          ]
+        },
+        {
+          "name": "x",
+          "type": "uint64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2
+          ],
+          "addresses": [
+            4198884
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "two_halves",
+      "address": 4198896,
+      "address_hex": "0x4011f0",
+      "aliases": [
+        "sub_4011f0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "func two_halves(p *[16]byte, lo uint64, hi uint64) {\n  *(*uint64)(unsafe.Pointer(*p)) = lo\n  *(*uint64)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(*p),8 * 1)))) = hi\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 2,
+          "addresses": [
+            4198900
+          ]
+        },
+        {
+          "line_number": 3,
+          "addresses": [
+            4198903
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*[16]byte",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2,
+            3
+          ],
+          "addresses": [
+            4198900,
+            4198903
+          ]
+        },
+        {
+          "name": "lo",
+          "type": "uint64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2
+          ],
+          "addresses": [
+            4198900
+          ]
+        },
+        {
+          "name": "hi",
+          "type": "uint64",
+          "kind": "arg",
+          "arg_index": 2,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198903
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "copy_wide",
+      "address": 4198912,
+      "address_hex": "0x401200",
+      "aliases": [
+        "sub_401200"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "func copy_wide(p *[16]byte, q *[16]byte) {\n  var v1 uint64 // xmm0_qb\n  \n  v1 = *(*uint64)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(*q),8 * 1))))\n  *(*uint64)(unsafe.Pointer(*p)) = *(*uint64)(unsafe.Pointer(*q))\n  *(*uint64)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(*p),8 * 1)))) = v1\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198916
+          ]
+        },
+        {
+          "line_number": 5,
+          "addresses": [
+            4198916,
+            4198920
+          ]
+        },
+        {
+          "line_number": 6,
+          "addresses": [
+            4198920
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*[16]byte",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            5,
+            6
+          ],
+          "addresses": [
+            4198916,
+            4198920
+          ]
+        },
+        {
+          "name": "q",
+          "type": "*[16]byte",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4,
+            5
+          ],
+          "addresses": [
+            4198916,
+            4198920
+          ]
+        },
+        {
+          "name": "v1",
+          "type": "uint64",
+          "kind": "register",
+          "arg_index": null,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4,
+            6
+          ],
+          "addresses": [
+            4198916,
+            4198920
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "zero_narrow",
+      "address": 4198928,
+      "address_hex": "0x401210",
+      "aliases": [
+        "sub_401210"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "func zero_narrow(p *uint64) {\n  *p = 0\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 2,
+          "addresses": [
+            4198932
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*uint64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            2
+          ],
+          "addresses": [
+            4198932
+          ]
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": []
+}

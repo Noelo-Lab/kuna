@@ -420,6 +420,7 @@ pub struct Architecture {
     /// (kuna `armconstshift`) Convert a signed shiftee to unsigned before a
     /// fixed ARM LSL so the emitted C shift is defined.
     pub arm_constant_shift: bool,
+    pub rust_array_zero: bool,
     /// (kuna `charbyte`) Keep `char` for a byte loaded through a `char *` when
     /// the only unsigned vote on it is a zero-extension.  Implementation:
     /// [`kuna_charbyte`](crate::p5_types::kuna_charbyte).
@@ -3059,6 +3060,7 @@ impl Architecture {
             float_bits: false, // (kuna) option floatbits; reset_defaults sets the shipped default
             partial_concat: true,
             arm_constant_shift: false,
+            rust_array_zero: false,
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
             cast_arith: false, // (kuna) option castarith; reset_defaults sets the shipped default
             cast_index: false, // (kuna) option castindex; reset_defaults sets the shipped default
@@ -3774,6 +3776,7 @@ impl Architecture {
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.partial_concat = true;
         self.arm_constant_shift = false;
+        self.rust_array_zero = false;
         self.arm_float_args = false; // (kuna) option armfloatargs: default-OFF in the catalog; ON in the `aggressive` preset with armfloatreturn, which `auto` selects under 500 KiB; inert unless the ELF states the VFP procedure-call standard
         self.narrow_ext = crate::kuna_narrowext::NarrowExtMode::Abi; // (kuna) option narrowext default `abi`: a narrow integer argument or return value is extended as the RISC-V and LoongArch procedure-call standards state
         self.arm_float_return = false; // (kuna) option armfloatreturn: default-OFF in the catalog; ON in the `aggressive` preset, which `auto` selects under 500 KiB; inert unless the ELF states the VFP procedure-call standard

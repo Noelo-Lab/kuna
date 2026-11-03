@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-03T06:30:08.658934+00:00",
+  "parent_commit": "8ced8a2e051e26b89d21096699f690646924921b",
+  "parent_tree": "d5036439456222c6f82b8f92633e3974acbf73c5",
+  "parent_cli_sha256": "245a0199db70a010cdf9b734d5f1fb6d8e6e9e478717ca3813e6546306730ac4",
+  "fixture_sha256": "d092a4e34ba7fd229f9183389de04b7a82edfaa145f746c4373e79d04c6c3074",
+  "specs": 154,
+  "complete_bodies": 13,
+  "expected_native_comparisons": 416,
+  "parent_merge_pending": false,
+  "parent_source": "main after PR1466 and PR1468",
+  "new_cli_sha256": "039faae60c7821e7be9cc755aff60409e6406191938eece747b231ba5d3d4bc4",
+  "prototype_pass": "prototype-pass/native-record.json"
+}
