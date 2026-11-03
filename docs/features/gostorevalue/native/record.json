@@ -1,0 +1,43 @@
+{
+  "complete_bodies": 33,
+  "changed_bodies": 22,
+  "inputs_per_run": 324,
+  "native_go_input_comparisons": 648,
+  "function_comparisons": 21384,
+  "output_lines_per_run": 10692,
+  "body_rewrites": false,
+  "exclusions": {
+    "nested_store": "Unchanged preexisting nested-array to unsafe.Pointer rendering error; retained parent/candidate whole bodies and excluded from native proof."
+  },
+  "candidate_cli_sha256": "b4557e50aa5b06baa5252307700b652dbecd651137ea873aa504ea364d8b82fd",
+  "records": [
+    {
+      "arm": "source",
+      "optimization": "O0",
+      "source_sha256": "da62c2565275e7d4769fcac099fed66d43123995c8b3817059a1d5fa9327eb48",
+      "executable_sha256": "7086c9edfaa1140a9ba0043234a2b680b88dc32718ee03dde291d9ed70afaba6",
+      "stdout_sha256": "095070fd83d58d72fcf91d8b6ddb7add7389a3dc9846653cb6d8bac13aa0b6f8"
+    },
+    {
+      "arm": "source",
+      "optimization": "O2",
+      "source_sha256": "da62c2565275e7d4769fcac099fed66d43123995c8b3817059a1d5fa9327eb48",
+      "executable_sha256": "a690a4b27d54f9291c963f7b245adf3f4b3446d6bc7da13b41001f2fff9e1d9a",
+      "stdout_sha256": "095070fd83d58d72fcf91d8b6ddb7add7389a3dc9846653cb6d8bac13aa0b6f8"
+    },
+    {
+      "arm": "candidate",
+      "compiler": "go1.22.5",
+      "source_sha256": "7729134e5afd7303ba1a9de40f69dda1e3ea20c2af672747b6cb5de691df908a",
+      "executable_sha256": "82134baf7f13827763a4e51cc6e816f775c2c2f7ee2ae55c73582102cfd48aef",
+      "stdout_sha256": "095070fd83d58d72fcf91d8b6ddb7add7389a3dc9846653cb6d8bac13aa0b6f8"
+    },
+    {
+      "arm": "candidate",
+      "compiler": "go1.27.3",
+      "source_sha256": "7729134e5afd7303ba1a9de40f69dda1e3ea20c2af672747b6cb5de691df908a",
+      "executable_sha256": "9f020298879413a0026128e102f21f0702c41ba3bed45523b7ea44e4a0f392d8",
+      "stdout_sha256": "095070fd83d58d72fcf91d8b6ddb7add7389a3dc9846653cb6d8bac13aa0b6f8"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "fixture_sha256": "20f8d4d494343c09bb937e1abd02ec01e78582d4e7239a72fdd25741ae26f5eb",
+  "records": [
+    {
+      "arm": "parent",
+      "command": [
+        "/home/mahaloz/kwt/angr-go-store-conversions/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-rust-integer-conversions/integration-store/public-repro",
+        "flip",
+        "--language",
+        "rust",
+        "--assert",
+        "prototype flip uint8 flip(int8 value)"
+      ],
+      "cli_sha256": "b4557e50aa5b06baa5252307700b652dbecd651137ea873aa504ea364d8b82fd",
+      "output": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn flip(mut value: i64) -> u64\n{\n  return value;\n}\n"
+    },
+    {
+      "arm": "candidate",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-rust-integer-conversions/integration-store/public-repro",
+        "flip",
+        "--language",
+        "rust",
+        "--assert",
+        "prototype flip uint8 flip(int8 value)"
+      ],
+      "cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+      "output": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn flip(mut value: i64) -> u64\n{\n  return value as u64;\n}\n"
+    }
+  ]
+}

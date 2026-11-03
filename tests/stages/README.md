@@ -357,6 +357,11 @@ overwrites a writable relocation slot, across off/on/off option toggles.
 compressed cross-unit references, result roles, caller propagation and a wrong-register
 control. Its console companion executes hermetic and native recovered Go bodies.
 
+`ghangr-go-pair-results.xml` checks opt-in paired 64-bit Go integer results,
+ordinary local struct storage, destructuring calls and nested result selection.
+Its console companion covers both option gates, malformed cross-unit DWARF,
+metadata collisions, indirect calls and complete emitted native Go bodies.
+
 `ghangr-go-string-pointers.xml` exercises internal byte-string arguments in C and
 Go output, including escapes, UTF-8 and the data-pointer conversion. Its emitted
 Go bodies also compile and execute against a byte-checking sink.
@@ -372,3 +377,7 @@ whole forwarding, and scalar and void callback controls.
 `ghangr-integer-field-extract.xml` checks narrow, narrow-then-widen, and shifted
 integer fields in C, Go and Rust. Native CLI tests execute the complete emitted
 callers against boundary values and check that each helper is called once.
+
+`ghangr-go-store-value.xml` checks Go integer destination conversions for fields,
+plain/indexed pointers and a side-effectful call, with all integer widths and
+complete native bodies covered by the CLI integration fixture.

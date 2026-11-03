@@ -914,6 +914,9 @@ Three tiers:
 | go functions lose source parameters despite dwarf | [`godwarfsig`](#godwarfsig) |
 | go identity function decompiles as void | [`godwarfsig`](#godwarfsig) |
 | go result parameters appear as inputs | [`godwarfsig`](#godwarfsig) |
+| Go paired integer results become a byte array | [`gopairreturns`](#gopairreturns) |
+| Go callers lose a second integer result | [`gopairreturns`](#gopairreturns) |
+| Go multiple-result calls cannot compile | [`gopairreturns`](#gopairreturns) |
 | comparison constant off by one versus upstream ghidra (x <= 9 vs x < 10) | [`compareform`](#compareform) |
 | need the analysis-canonical compare form to diff against upstream ghidra output | [`compareform`](#compareform) |
 | &base[index] rendering unwanted; consumer expects raw pointer arithmetic | [`arraynotation`](#arraynotation) |
@@ -3415,10 +3418,18 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 ### `godwarfsig` -- on | off, default `off`
 
 - **Symptoms:** go functions lose source parameters despite dwarf; go identity function decompiles as void; go result parameters appear as inputs.
-- **What it does:** Recover Go scalar and pointer function signatures from compiler DWARF, including bounded zlib debug sections. Resolve cross-unit type references, separate result formals using DW_AT_variable_parameter, and verify complete contracts against the little-endian amd64 Go register ABI. Pointers may target grounded scalars or flat records. Defer decompression, type interning and address-bound prototype installation until enabled. Aggregates by value, multiple results, stack arguments, hidden-context functions and incomplete metadata retain existing inference.
+- **What it does:** Recover Go scalar and pointer function signatures from compiler DWARF, including bounded zlib debug sections. Resolve cross-unit type references, separate result formals using DW_AT_variable_parameter, and verify complete contracts against the little-endian amd64 Go register ABI. Pointers may target grounded scalars or flat records. Defer decompression, type interning and address-bound prototype installation until enabled. Aggregates by value, unsupported multiple results, stack arguments, hidden-context functions and incomplete metadata retain existing inference. The separate gopairreturns option admits verified pairs of full-width integer results.
 - **When to flip:** Enable when a Go binary with DWARF loses parameter names, pointer types, or an identity function's return value. Requires the abi-internal compiler model; stripped images and other architectures are unchanged.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-angr-go-dwarf-signatures
 - **Example:** `option godwarfsig on`
+
+### `gopairreturns` -- on | off, default `off`
+
+- **Symptoms:** Go paired integer results become a byte array; Go callers lose a second integer result; Go multiple-result calls cannot compile.
+- **What it does:** With godwarfsig enabled, recover exactly two full-width signed or unsigned integer results from complete Go compiler DWARF on little-endian amd64 ABIInternal. Validate independent RAX/RBX result allocation, joined storage and unique function entries. Carry results in an ordinary struct with validated language metadata; Go declarations, calls, returns and joined expressions use multiple-result syntax without duplicating evaluation. Narrow, floating, aggregate, hidden-context, stack-ABI and incomplete contracts retain existing inference. Off in every preset.
+- **When to flip:** Enable with godwarfsig when a Go function with two 64-bit integer results loses one result or renders a byte array. Requires complete compiler DWARF and the abi-internal model.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-angr-go-pair-results
+- **Example:** `option gopairreturns on`
 
 ## Core rendering defaults
 

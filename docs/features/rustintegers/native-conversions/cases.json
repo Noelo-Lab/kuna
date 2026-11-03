@@ -1,0 +1,299 @@
+{
+  "status": "Authored planned fixtures only; not compiled, decompiled or validated. Separate helper translation unit required to preserve ordinary call ABI.",
+  "cases": [
+    {
+      "name": "as_unsigned8",
+      "bits": 8,
+      "kind": "unary_signed",
+      "prototype": "uint1 as_unsigned8(int1 value)"
+    },
+    {
+      "name": "as_signed8",
+      "bits": 8,
+      "kind": "unary_unsigned",
+      "prototype": "int1 as_signed8(uint1 value)"
+    },
+    {
+      "name": "masked8",
+      "bits": 8,
+      "kind": "unary_signed",
+      "prototype": "uint1 masked8(int1 value)"
+    },
+    {
+      "name": "mixed_add8",
+      "bits": 8,
+      "kind": "binary_mixed",
+      "prototype": "uint1 mixed_add8(uint1 left,int1 right)"
+    },
+    {
+      "name": "mixed_sub8",
+      "bits": 8,
+      "kind": "binary_mixed",
+      "prototype": "uint1 mixed_sub8(uint1 left,int1 right)"
+    },
+    {
+      "name": "mixed_and8",
+      "bits": 8,
+      "kind": "binary_mixed",
+      "prototype": "uint1 mixed_and8(uint1 left,int1 right)"
+    },
+    {
+      "name": "mixed_or8",
+      "bits": 8,
+      "kind": "binary_mixed",
+      "prototype": "uint1 mixed_or8(uint1 left,int1 right)"
+    },
+    {
+      "name": "mixed_xor8",
+      "bits": 8,
+      "kind": "binary_mixed",
+      "prototype": "uint1 mixed_xor8(uint1 left,int1 right)"
+    },
+    {
+      "name": "mixed_multiply8",
+      "bits": 8,
+      "kind": "binary_mixed",
+      "prototype": "uint1 mixed_multiply8(uint1 left,int1 right)"
+    },
+    {
+      "name": "inplace8",
+      "bits": 8,
+      "kind": "binary_inplace",
+      "prototype": "int1 inplace8(int1 left,uint1 right)"
+    },
+    {
+      "name": "as_unsigned16",
+      "bits": 16,
+      "kind": "unary_signed",
+      "prototype": "uint2 as_unsigned16(int2 value)"
+    },
+    {
+      "name": "as_signed16",
+      "bits": 16,
+      "kind": "unary_unsigned",
+      "prototype": "int2 as_signed16(uint2 value)"
+    },
+    {
+      "name": "masked16",
+      "bits": 16,
+      "kind": "unary_signed",
+      "prototype": "uint2 masked16(int2 value)"
+    },
+    {
+      "name": "mixed_add16",
+      "bits": 16,
+      "kind": "binary_mixed",
+      "prototype": "uint2 mixed_add16(uint2 left,int2 right)"
+    },
+    {
+      "name": "mixed_sub16",
+      "bits": 16,
+      "kind": "binary_mixed",
+      "prototype": "uint2 mixed_sub16(uint2 left,int2 right)"
+    },
+    {
+      "name": "mixed_and16",
+      "bits": 16,
+      "kind": "binary_mixed",
+      "prototype": "uint2 mixed_and16(uint2 left,int2 right)"
+    },
+    {
+      "name": "mixed_or16",
+      "bits": 16,
+      "kind": "binary_mixed",
+      "prototype": "uint2 mixed_or16(uint2 left,int2 right)"
+    },
+    {
+      "name": "mixed_xor16",
+      "bits": 16,
+      "kind": "binary_mixed",
+      "prototype": "uint2 mixed_xor16(uint2 left,int2 right)"
+    },
+    {
+      "name": "mixed_multiply16",
+      "bits": 16,
+      "kind": "binary_mixed",
+      "prototype": "uint2 mixed_multiply16(uint2 left,int2 right)"
+    },
+    {
+      "name": "inplace16",
+      "bits": 16,
+      "kind": "binary_inplace",
+      "prototype": "int2 inplace16(int2 left,uint2 right)"
+    },
+    {
+      "name": "as_unsigned32",
+      "bits": 32,
+      "kind": "unary_signed",
+      "prototype": "uint4 as_unsigned32(int4 value)"
+    },
+    {
+      "name": "as_signed32",
+      "bits": 32,
+      "kind": "unary_unsigned",
+      "prototype": "int4 as_signed32(uint4 value)"
+    },
+    {
+      "name": "masked32",
+      "bits": 32,
+      "kind": "unary_signed",
+      "prototype": "uint4 masked32(int4 value)"
+    },
+    {
+      "name": "mixed_add32",
+      "bits": 32,
+      "kind": "binary_mixed",
+      "prototype": "uint4 mixed_add32(uint4 left,int4 right)"
+    },
+    {
+      "name": "mixed_sub32",
+      "bits": 32,
+      "kind": "binary_mixed",
+      "prototype": "uint4 mixed_sub32(uint4 left,int4 right)"
+    },
+    {
+      "name": "mixed_and32",
+      "bits": 32,
+      "kind": "binary_mixed",
+      "prototype": "uint4 mixed_and32(uint4 left,int4 right)"
+    },
+    {
+      "name": "mixed_or32",
+      "bits": 32,
+      "kind": "binary_mixed",
+      "prototype": "uint4 mixed_or32(uint4 left,int4 right)"
+    },
+    {
+      "name": "mixed_xor32",
+      "bits": 32,
+      "kind": "binary_mixed",
+      "prototype": "uint4 mixed_xor32(uint4 left,int4 right)"
+    },
+    {
+      "name": "mixed_multiply32",
+      "bits": 32,
+      "kind": "binary_mixed",
+      "prototype": "uint4 mixed_multiply32(uint4 left,int4 right)"
+    },
+    {
+      "name": "inplace32",
+      "bits": 32,
+      "kind": "binary_inplace",
+      "prototype": "int4 inplace32(int4 left,uint4 right)"
+    },
+    {
+      "name": "as_unsigned64",
+      "bits": 64,
+      "kind": "unary_signed",
+      "prototype": "uint8 as_unsigned64(int8 value)"
+    },
+    {
+      "name": "as_signed64",
+      "bits": 64,
+      "kind": "unary_unsigned",
+      "prototype": "int8 as_signed64(uint8 value)"
+    },
+    {
+      "name": "masked64",
+      "bits": 64,
+      "kind": "unary_signed",
+      "prototype": "uint8 masked64(int8 value)"
+    },
+    {
+      "name": "mixed_add64",
+      "bits": 64,
+      "kind": "binary_mixed",
+      "prototype": "uint8 mixed_add64(uint8 left,int8 right)"
+    },
+    {
+      "name": "mixed_sub64",
+      "bits": 64,
+      "kind": "binary_mixed",
+      "prototype": "uint8 mixed_sub64(uint8 left,int8 right)"
+    },
+    {
+      "name": "mixed_and64",
+      "bits": 64,
+      "kind": "binary_mixed",
+      "prototype": "uint8 mixed_and64(uint8 left,int8 right)"
+    },
+    {
+      "name": "mixed_or64",
+      "bits": 64,
+      "kind": "binary_mixed",
+      "prototype": "uint8 mixed_or64(uint8 left,int8 right)"
+    },
+    {
+      "name": "mixed_xor64",
+      "bits": 64,
+      "kind": "binary_mixed",
+      "prototype": "uint8 mixed_xor64(uint8 left,int8 right)"
+    },
+    {
+      "name": "mixed_multiply64",
+      "bits": 64,
+      "kind": "binary_mixed",
+      "prototype": "uint8 mixed_multiply64(uint8 left,int8 right)"
+    },
+    {
+      "name": "inplace64",
+      "bits": 64,
+      "kind": "binary_inplace",
+      "prototype": "int8 inplace64(int8 left,uint8 right)"
+    },
+    {
+      "name": "branch_value",
+      "bits": 64,
+      "kind": "branch",
+      "prototype": "int8 branch_value(uint8 left,uint8 right,bool choose_left)"
+    },
+    {
+      "name": "call_unsigned",
+      "bits": 64,
+      "kind": "call_unsigned",
+      "prototype": "int8 call_unsigned(uint8 value)"
+    },
+    {
+      "name": "call_signed",
+      "bits": 64,
+      "kind": "call_signed",
+      "prototype": "uint8 call_signed(int8 value)"
+    },
+    {
+      "name": "call_add",
+      "bits": 64,
+      "kind": "call_add",
+      "prototype": "uint8 call_add(uint8 left,int8 right)"
+    },
+    {
+      "name": "high_mask",
+      "bits": 64,
+      "kind": "unary_unsigned",
+      "prototype": "int8 high_mask(uint8 value)"
+    },
+    {
+      "name": "negative_mask",
+      "bits": 64,
+      "kind": "unary_signed",
+      "prototype": "uint8 negative_mask(int8 value)"
+    },
+    {
+      "name": "float_identity",
+      "bits": 64,
+      "kind": "float_control",
+      "prototype": "float8 float_identity(float8 value)"
+    },
+    {
+      "name": "pointer_identity",
+      "bits": 64,
+      "kind": "pointer_control",
+      "prototype": "uint8 * pointer_identity(uint8 *value)"
+    },
+    {
+      "name": "bool_identity",
+      "bits": 64,
+      "kind": "bool_control",
+      "prototype": "bool bool_identity(bool value)"
+    }
+  ]
+}

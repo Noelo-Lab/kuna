@@ -1,0 +1,42 @@
+{
+  "status": "PASS",
+  "candidate_cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+  "parent_cli_sha256": "b4557e50aa5b06baa5252307700b652dbecd651137ea873aa504ea364d8b82fd",
+  "complete_functions": 4,
+  "shift_counts_per_run": 64,
+  "body_rewrites": false,
+  "candidate_function_comparisons": 512,
+  "records": [
+    {
+      "arm": "parent",
+      "optimization": "0",
+      "compile_exit": 1
+    },
+    {
+      "arm": "parent",
+      "optimization": "2",
+      "compile_exit": 1
+    },
+    {
+      "arm": "candidate",
+      "optimization": "0",
+      "compile_exit": 0,
+      "matches_reference": true
+    },
+    {
+      "arm": "candidate",
+      "optimization": "2",
+      "compile_exit": 0,
+      "matches_reference": true
+    }
+  ],
+  "failures": [],
+  "source_sha256": {
+    "probe.kuna": "f3e56e03ebeb1e89ed9b4aa8a7e63120497463cfdb2fb1e33887a7e950b5c582",
+    "run.py": "57dff0fe5fb023dfaf9924dcacb98a8d6d69a63ac9a846fd2c38e6d796bca391",
+    "candidate.rs": "9f14ecc6a56102faf11d901900269aefa1629f3349c50ee7e018d12607e872c4",
+    "probe.c": "a67283479d3573ab00aa3adbe945b470783dcffc7aea1aa5ec7e0a1575517711",
+    "parent.rs": "8ac293c373d7a76b9e2b9f0dff55098134b384f897d10b35ece039a5c44ccf30"
+  },
+  "scope": "Four supplementary complete native logical/arithmetic right-shift controls across signed/unsigned returns, all64 shiftcounts, O0/O2. Candidate512functioncomparisons matchC; parentbundlefailscompile onunsignednegative expressions."
+}

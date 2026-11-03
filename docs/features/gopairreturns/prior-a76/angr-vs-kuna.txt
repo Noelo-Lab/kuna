@@ -1,0 +1,53 @@
+Presentation whitespace normalized; exact captures are preserved in the JSON evidence.
+
+Historical angr go122 fixture SHA256 d7da37670b694b012f9ee7387f3943d1ea778f84cfb5769969dd023e3a110bb7
+
+func main.pair(a int64, b int64) (int64, int64) {
+    return a + b, a - b
+}
+
+
+func main.forward(a int64, b int64) (int64, int64) {
+    v3, v31 := main.pair(a, b)
+    return v3, v31
+}
+
+
+Historical angr go127 fixture SHA256 b8c954eab10ac48462637e5acc8dc5c93d97408ba782c27304490eb6409b9a6a
+
+func main.pair(a int64, b int64) (int64, int64) {
+    return a + b, a - b
+}
+
+
+func main.forward(a int64, b int64) (int64, int64) {
+    v3, v31 := main.pair(a, b)
+    return v3, v31
+}
+
+
+Historical angr upstream127 fixture SHA256 62d72f2a7d729ff139c7c08fbc999a9d7e073735f81dcce752dcc6174c1959d4
+
+Final public reproduction, fixture SHA256 e167e36af8187ef5c88b46d85fd7bca6d968d40ec04edd7c6c228d72de59ae5b
+
+parent CLI 602e9b096f935f1cd268dafbabc65f52addef2d120094151078a75e767918b46
+
+// main.pair
+func pair(a0 int64, a1 int64) [16]byte {
+  var v1 [16]byte // rbx:rax | rcx
+
+  *(*uint64)(unsafe.Add(unsafe.Pointer(&v1),8)) = uint64(a0 - a1)
+  *(*uint64)(unsafe.Add(unsafe.Pointer(&v1),0)) = uint64(a0 + a1)
+  return v1
+}
+
+candidate CLI 3877ad7912406ee1c8c6007ec69241b5b66c2fc1362c79846687d65d59ec3131
+
+// main.pair
+func pair(a int64, b int64) (int64, int64) {
+  var v1 struct { result0 int64; result1 int64 } // rbx:rax | rcx
+
+  v1.result1 = a - b
+  v1.result0 = a + b
+  return v1.result0,v1.result1
+}

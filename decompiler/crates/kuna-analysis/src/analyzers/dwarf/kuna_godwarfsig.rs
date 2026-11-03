@@ -5,8 +5,9 @@ use std::fmt;
 use std::rc::Rc;
 
 use kuna_decomp::architecture::Architecture;
-use kuna_decomp::dtype::{type_metatype, Datatype};
+use kuna_decomp::dtype::{type_metatype, Datatype, TypeField};
 use kuna_decomp::fspec::{ParameterPieces, PrototypePieces};
+use kuna_decomp::kuna_langfacet::LangFacet;
 use kuna_decomp::kuna_symbolnamechars::{sanitize_symbol_name, NameChars};
 
 use super::{build_datatype, kuna_dwarfbyref, DieSnap, Reader, TypeWalk};
@@ -220,15 +221,25 @@ impl Facts {
         if let Some(compressed) = &self.compressed {
             return compressed.decode(self.names).map(|facts| facts.materialize(arch)).unwrap_or_default();
         }
+        let mut repeated = BTreeSet::new();
+        if arch.analysis_gopairreturns {
+            let mut entries = BTreeSet::new();
+            for die in self.dies.values().filter(|die| die.tag == gimli::DW_TAG_subprogram && !die.declaration) {
+                if let Some(entry) = die.low_pc {
+                    if !entries.insert(entry) { repeated.insert(entry); }
+                }
+            }
+        }
         self.dies.iter().filter_map(|(offset, die)| {
             if die.tag != gimli::DW_TAG_subprogram || die.declaration {
                 return None;
             }
-            Some((die.low_pc?, self.prototype(*offset, arch)?))
+            let pieces = self.prototype(*offset, arch, !arch.analysis_gopairreturns || !repeated.contains(&die.low_pc?))?;
+            Some((die.low_pc?, pieces))
         }).collect()
     }
 
-    fn prototype(&self, offset: usize, arch: &Architecture) -> Option<PrototypePieces> {
+    fn prototype(&self, offset: usize, arch: &Architecture, unique: bool) -> Option<PrototypePieces> {
         let sub = self.dies.get(&offset)?;
         let extra = self.extras.get(&offset)?;
         if !extra.regabi || extra.trampoline || extra.closure || extra.invalid || sub.type_ref.is_some() {
@@ -308,7 +319,8 @@ impl Facts {
         let mut expected = Vec::new();
         let mut inputs = Vec::new();
         let mut names = Vec::new();
-        let mut output = None;
+        let mut outputs = [None, None];
+        let mut output_count = 0;
         let (mut integers, mut floats) = (0, 0);
         for (parameter, location, result) in parameters {
             let location = match location {
@@ -319,11 +331,14 @@ impl Facts {
             let scalar = self.scalar(parameter.type_ref?, &mut BTreeSet::new(), &mut 256)?;
             let registers = if scalar.float { FLOAT_REGISTERS } else { INTEGER_REGISTERS };
             if result {
-                if output.is_some() || (location != Location::Unavailable
-                    && location != Location::Register(registers[0].0)) { return None; }
-                output = Some((parameter.type_ref?, scalar, registers[0].1));
+                let index = output_count;
+                if index > 0 && (!arch.analysis_gopairreturns || !unique || index != 1) { return None; }
+                let &(dwarf_register, register) = registers.get(index)?;
+                if location != Location::Unavailable && location != Location::Register(dwarf_register) { return None; }
+                outputs[index] = Some((parameter.type_ref?, scalar, register));
+                output_count += 1;
             } else {
-                if output.is_some() { return None; }
+                if output_count != 0 { return None; }
                 let index = if scalar.float { &mut floats } else { &mut integers };
                 let &(dwarf_register, register) = registers.get(*index)?;
                 *index += 1;
@@ -337,6 +352,11 @@ impl Facts {
                 expected.push(register);
             }
         }
+        if output_count == 2 && outputs.iter().flatten().any(|(_, scalar, _)| scalar.size != 8
+            || !matches!(scalar.meta, type_metatype::TYPE_INT | type_metatype::TYPE_UINT))
+        {
+            return None;
+        }
         let types = arch.types();
         let mut walk = TypeWalk::new();
         let mut materialize = |offset, scalar: Scalar| {
@@ -346,11 +366,23 @@ impl Facts {
         };
         let intypes = inputs.into_iter().map(|(offset, scalar)| materialize(offset, scalar))
             .collect::<Option<Vec<_>>>()?;
-        let outtype = match output {
-            Some((offset, scalar, _)) => materialize(offset, scalar)?,
-            None => types.get_type_void().ok()?,
+        let mut outtypes = [None, None];
+        for (slot, output) in outtypes.iter_mut().zip(outputs) {
+            if let Some((offset, scalar, _)) = output {
+                *slot = Some(materialize(offset, scalar)?);
+            }
+        }
+        let outtype = match &outtypes {
+            [None, None] => types.get_type_void().ok()?,
+            [Some(single), None] => Rc::clone(single),
+            [Some(first), Some(second)] => {
+                let mut storage = Datatype::new_with_align(16, 8, type_metatype::TYPE_STRUCT);
+                storage.set_struct_fields(pair_fields(first, second), Vec::new(), 16, 8);
+                Rc::new(storage)
+            }
+            _ => return None,
         };
-        let pieces = PrototypePieces {
+        let mut pieces = PrototypePieces {
             name: sanitize_symbol_name(name, self.names).into_owned(),
             outtype: Some(outtype), intypes, innames: names, first_var_arg_slot: -1,
             output_storage: None, input_storage: Vec::new(), kuna_library_names: None,
@@ -361,8 +393,31 @@ impl Facts {
         for ((slot, register), ty) in assigned.iter().skip(1).zip(expected).zip(&pieces.intypes) {
             if !storage_matches(arch, slot, register, ty) { return None; }
         }
-        if let Some((_, _, register)) = output {
+        if let [Some((_, _, register)), None] = &outputs {
             if !storage_matches(arch, &assigned[0], register, pieces.outtype.as_ref()?) { return None; }
+        }
+        if let [Some(first), Some(second)] = &outtypes {
+            let signed = [first, second].map(|ty| ty.get_metatype() == type_metatype::TYPE_INT);
+            let facet = LangFacet::GoPairResults { signed };
+            if !pair_storage_matches(arch, &assigned[0], &facet) { return None; }
+            let [a, b] = signed.map(|signed| if signed { "i64" } else { "u64" });
+            let name = format!("__kuna_go_pair_{a}_{b}");
+            let outtype = match types.find_by_name(&name).ok()? {
+                Some(existing) => {
+                    if types.kuna_lang_facet(&name).as_ref() != Some(&facet)
+                        || facet.go_pair_fields(&existing).is_none() { return None; }
+                    existing
+                }
+                None => {
+                    if types.kuna_lang_facet(&name).is_some() { return None; }
+                    let shell = types.get_type_struct(&name).ok()?;
+                    let result = types.set_fields_struct_raw(&shell, pair_fields(first, second), Vec::new(), 16, 8, 0).ok()?;
+                    facet.go_pair_fields(&result)?;
+                    types.kuna_register_lang_facet(&name, facet).ok()?;
+                    result
+                }
+            };
+            pieces.outtype = Some(outtype);
         }
         Some(pieces)
     }
@@ -586,6 +641,27 @@ fn storage_matches(arch: &Architecture, slot: &ParameterPieces, register: &str, 
         && slot.addr.get_offset() == expected.offset
         && slot.addr.get_space().zip(expected.space.as_ref())
             .is_some_and(|(space, expected)| space.get_index() == expected.get_index())
+}
+
+fn pair_fields(first: &Rc<Datatype>, second: &Rc<Datatype>) -> Vec<TypeField> {
+    vec![TypeField::new(0, 0, "result0", Rc::clone(first)), TypeField::new(8, 8, "result1", Rc::clone(second))]
+}
+
+fn pair_storage_matches(arch: &Architecture, slot: &ParameterPieces, facet: &LangFacet) -> bool {
+    if slot.flags != 0 || slot.type_.as_ref().is_none_or(|ty| facet.go_pair_fields(ty).is_none())
+        || !slot.addr.get_space().is_some_and(|space| space.get_type() == kuna_base::space::spacetype::IPTR_JOIN)
+    {
+        return false;
+    }
+    let Ok(join) = arch.manage().find_join(slot.addr.get_offset()) else { return false };
+    if join.num_pieces() != 2 || join.get_unified().size != 16 { return false; }
+    ["RBX", "RAX"].iter().enumerate().all(|(index, name)| {
+        let Ok(expected) = arch.get_register_varnode(name.as_bytes()) else { return false };
+        let piece = join.get_piece(index as i32);
+        piece.size == 8 && expected.size == 8 && piece.offset == expected.offset
+            && piece.space.as_ref().zip(expected.space.as_ref())
+                .is_some_and(|(space, expected)| space.get_index() == expected.get_index())
+    })
 }
 
 fn hidden_context(name: &str) -> bool {

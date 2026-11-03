@@ -10,6 +10,9 @@ mod function_pointer_namespaces;
 #[path = "dwarf_namespaces.rs"]
 mod dwarf_namespaces;
 
+#[path = "dwarf_member_layout.rs"]
+mod dwarf_member_layout;
+
 #[path = "local_array_bits.rs"]
 mod local_array_bits;
 
@@ -746,3 +749,9 @@ mod joined_callback_return;
 
 #[path = "integer_field_extract.rs"]
 mod integer_field_extract;
+
+#[path = "go_store_value.rs"]
+mod go_store_value;
+
+#[path = "rust_integer_conversions.rs"]
+mod rust_integer_conversions;

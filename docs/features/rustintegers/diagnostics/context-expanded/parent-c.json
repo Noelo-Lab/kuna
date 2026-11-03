@@ -1,0 +1,815 @@
+{
+  "binary": "/tmp/kuna-rust-integer-conversions/context-expanded/fixture",
+  "language": "c-language",
+  "count": 11,
+  "error": null,
+  "functions": [
+    {
+      "name": "insert_bit",
+      "address": 4198688,
+      "address_hex": "0x401120",
+      "aliases": [
+        "sub_401120"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned long insert_bit(unsigned long a,unsigned long n)\n{\n  return a | 1L << (n & 0x3f);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198695,
+            4198699
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "a",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198695,
+            4198699
+          ]
+        },
+        {
+          "name": "n",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198695,
+            4198699
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "isolated_bit",
+      "address": 4198704,
+      "address_hex": "0x401130",
+      "aliases": [
+        "sub_401130"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned long isolated_bit(unsigned long n)\n{\n  return 1L << ((unsigned char)n & 0x3f);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198715,
+            4198718
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "n",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198715,
+            4198718
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "invert_low",
+      "address": 4198720,
+      "address_hex": "0x401140",
+      "aliases": [
+        "sub_401140"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "unsigned long invert_low(unsigned long n)\n{\n  return ~(-1L << ((unsigned char)n & 0x3f));\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198733,
+            4198736,
+            4198739
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "n",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198733,
+            4198736,
+            4198739
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "shift_again",
+      "address": 4198752,
+      "address_hex": "0x401160",
+      "aliases": [
+        "sub_401160"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "unsigned long shift_again(unsigned long n,unsigned long m)\n{\n  return (unsigned long)(1L << ((unsigned char)n & 0x3f)) >> ((unsigned char)m & 0x3f);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198763,
+            4198768,
+            4198771
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "n",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198763,
+            4198768,
+            4198771
+          ]
+        },
+        {
+          "name": "m",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198763,
+            4198768,
+            4198771
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "literal_right",
+      "address": 4198784,
+      "address_hex": "0x401180",
+      "aliases": [
+        "sub_401180"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "unsigned long literal_right(unsigned long n)\n{\n  return 0x8000000000000000 >> ((unsigned char)n & 0x3f);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198800,
+            4198803
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "n",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198800,
+            4198803
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "signed_right",
+      "address": 4198816,
+      "address_hex": "0x4011a0",
+      "aliases": [
+        "sub_4011a0"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "long signed_right(unsigned long n)\n{\n  return -0x8000000000000000 >> ((unsigned char)n & 0x3f);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198832,
+            4198835
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "n",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198832,
+            4198835
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "named_shift",
+      "address": 4198848,
+      "address_hex": "0x4011c0",
+      "aliases": [
+        "sub_4011c0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "unsigned long named_shift(unsigned long a,unsigned long n)\n{\n  return a << ((unsigned char)n & 0x3f);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198857,
+            4198860
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "a",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198857,
+            4198860
+          ]
+        },
+        {
+          "name": "n",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198857,
+            4198860
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "signed_shift",
+      "address": 4198864,
+      "address_hex": "0x4011d0",
+      "aliases": [
+        "sub_4011d0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "long signed_shift(long a,unsigned long n)\n{\n  return a << ((unsigned char)n & 0x3f);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198873,
+            4198876
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "a",
+          "type": "long",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198873,
+            4198876
+          ]
+        },
+        {
+          "name": "n",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198873,
+            4198876
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "mixed_shift",
+      "address": 4198880,
+      "address_hex": "0x4011e0",
+      "aliases": [
+        "sub_4011e0"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "unsigned long mixed_shift(unsigned long a,unsigned long n)\n{\n  return (1L << ((unsigned char)n & 0x3f)) + a;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198891,
+            4198894,
+            4198897
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "a",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198891,
+            4198894,
+            4198897
+          ]
+        },
+        {
+          "name": "n",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198891,
+            4198894,
+            4198897
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "accumulate_bits",
+      "address": 4198912,
+      "address_hex": "0x401200",
+      "aliases": [
+        "sub_401200"
+      ],
+      "object_location": null,
+      "size": 64,
+      "code": "unsigned long accumulate_bits(unsigned long n)\n{\n  unsigned long v1; // rax\n  unsigned int v2; // ecx | edx\n  \n  if (n & 0x3f) {\n    v2 = 0;\n    v1 = 0;\n    do {\n      v1 |= 1L << ((unsigned char)v2 & 0x3f);\n      v2 += 1;\n    } while (v2 < ((unsigned int)n & 0x3f));\n    return v1;\n  }\n  return 0;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 6,
+          "addresses": [
+            4198916
+          ]
+        },
+        {
+          "line_number": 7,
+          "addresses": [
+            4198921
+          ]
+        },
+        {
+          "line_number": 8,
+          "addresses": [
+            4198923
+          ]
+        },
+        {
+          "line_number": 10,
+          "addresses": [
+            4198939,
+            4198942
+          ]
+        },
+        {
+          "line_number": 11,
+          "addresses": [
+            4198945
+          ]
+        },
+        {
+          "line_number": 12,
+          "addresses": [
+            4198916,
+            4198951
+          ]
+        },
+        {
+          "line_number": 13,
+          "addresses": [
+            4198956
+          ]
+        },
+        {
+          "line_number": 15,
+          "addresses": [
+            4198962
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "n",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            6,
+            12
+          ],
+          "addresses": [
+            4198916,
+            4198951
+          ]
+        },
+        {
+          "name": "v1",
+          "type": "unsigned long",
+          "kind": "register",
+          "arg_index": null,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            8,
+            10,
+            13
+          ],
+          "addresses": [
+            4198923,
+            4198939,
+            4198942,
+            4198956
+          ]
+        },
+        {
+          "name": "v2",
+          "type": "unsigned int",
+          "kind": "register",
+          "arg_index": null,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            7,
+            10,
+            11,
+            12
+          ],
+          "addresses": [
+            4198916,
+            4198921,
+            4198939,
+            4198942,
+            4198945,
+            4198951
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "accumulate_calls",
+      "address": 4198976,
+      "address_hex": "0x401240",
+      "aliases": [
+        "sub_401240"
+      ],
+      "object_location": null,
+      "size": 48,
+      "code": "long accumulate_calls(long acc,unsigned long step,unsigned int count)\n{\n  for (; count; count = count - 1) {\n    acc += counted_unsigned(step);\n  }\n  return acc;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198987,
+            4198989,
+            4198994
+          ]
+        },
+        {
+          "line_number": 4,
+          "addresses": [
+            4199003,
+            4199008
+          ]
+        },
+        {
+          "line_number": 6,
+          "addresses": [
+            4199016,
+            4199023
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "acc",
+          "type": "long",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4,
+            6
+          ],
+          "addresses": [
+            4199003,
+            4199008,
+            4199016,
+            4199023
+          ]
+        },
+        {
+          "name": "step",
+          "type": "unsigned long",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4199003,
+            4199008
+          ]
+        },
+        {
+          "name": "count",
+          "type": "unsigned int",
+          "kind": "arg",
+          "arg_index": 2,
+          "stack_offset": null,
+          "size": 4,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198987,
+            4198989,
+            4198994
+          ]
+        },
+        {
+          "name": "local_20",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -32,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        },
+        {
+          "name": "local_18",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -24,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        },
+        {
+          "name": "local_10",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        },
+        {
+          "name": "local_8",
+          "type": "undefined8",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -8,
+          "size": 8,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": [
+    {
+      "directive": "prototype insert_bit uint8 insert_bit(uint8 a,uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype isolated_bit uint8 isolated_bit(uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype invert_low uint8 invert_low(uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype shift_again uint8 shift_again(uint8 n,uint8 m)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype literal_right uint8 literal_right(uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype signed_right int8 signed_right(uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype named_shift uint8 named_shift(uint8 a,uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype signed_shift int8 signed_shift(int8 a,uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype mixed_shift uint8 mixed_shift(uint8 a,uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype accumulate_bits uint8 accumulate_bits(uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype accumulate_calls int8 accumulate_calls(int8 acc,uint8 step,uint4 count)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype counted_unsigned uint8 counted_unsigned(uint8 value)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    }
+  ]
+}

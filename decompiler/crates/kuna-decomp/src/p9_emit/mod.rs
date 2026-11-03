@@ -17,6 +17,7 @@ pub mod cast;
 pub mod kuna_unknowncasts;
 pub mod kuna_signedread; // (kuna) a signed read of an expression that prints unsigned casts it back
 pub(crate) mod kuna_rustsigned;
+pub(crate) mod kuna_rustintegers;
 pub mod kuna_unsignedread; // (kuna) an unsigned read of an expression C evaluates as signed casts it
 pub mod kuna_narrowselector; // (kuna) a switch on a narrow expression casts it to its own width
 pub mod stringmanage;
@@ -69,6 +70,7 @@ pub mod kuna_namespaces; // (kuna) which namespaces print in front of a name
 pub mod kuna_funcptrnames;
 pub mod kuna_lang; // (kuna) the output-language plane: profile + capabilities
 pub mod kuna_langtypes; // (kuna) the type-spelling seam (TypeSpeller + SpellCtx)
+pub(crate) mod kuna_gopairreturns;
 pub mod kuna_langc; // (kuna) the c-language policy objects (CSpeller)
 pub(crate) mod kuna_rustfmtliteral;
 pub mod kuna_rustfmtargs;
@@ -97,3 +99,5 @@ pub(crate) mod kuna_stackversions;
 pub(crate) mod kuna_indirectargs;
 
 pub mod kuna_callprototypes;
+
+pub(crate) mod kuna_gostorevalue;

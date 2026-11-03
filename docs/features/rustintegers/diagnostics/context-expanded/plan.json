@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-02T23:43:36.467222+00:00",
+  "status": "Prepared source only; do not compile/run until Go timing55840 is closed.",
+  "functions": 11,
+  "input_vectors_per_run": 1280,
+  "native_rust_profiles": "O0/O2, overflow-checks=off",
+  "reference": "C O0/O2 -fwrapv; helper in separate translation unit",
+  "required": "All complete recovered bodies must compile unchanged and match original values and exact loop callback counts. Record failures; do not silently remove a probe."
+}

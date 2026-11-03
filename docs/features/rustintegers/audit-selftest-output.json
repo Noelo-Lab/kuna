@@ -1,0 +1,437 @@
+{
+  "pending": [
+    {
+      "address": "0x1",
+      "compound_assignment_counts": [
+        0,
+        0
+      ],
+      "first_difference": {
+        "candidate": "h { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(second), arguments: PathArguments::None }] } }, paren_token: Paren, args: [] }, op: BinOp::Add(Plus), right: Expr::Call { attrs: [], func: Expr::Path { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(first), arguments: PathArguments::None }] } }, paren_token: Paren, args: [] } }) }, Some(Semi))] } }] }",
+        "offset": 1416,
+        "parent": "h { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(first), arguments: PathArguments::None }] } }, paren_token: Paren, args: [] }, op: BinOp::Add(Plus), right: Expr::Call { attrs: [], func: Expr::Path { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(second), arguments: PathArguments::None }] } }, paren_token: Paren, args: [] } }) }, Some(Semi))] } }] }"
+      },
+      "fixture": "call_order",
+      "gopairreturns": "off",
+      "identity_counts": [
+        0,
+        0
+      ],
+      "modular_reassociation_counts": [
+        0,
+        0
+      ],
+      "name": "call_order",
+      "negative_constant_addition_counts": [
+        0,
+        0
+      ],
+      "original_parse_errors": {
+        "candidate": null,
+        "parent": null
+      },
+      "primitive_cast_counts": [
+        0,
+        0
+      ],
+      "reason": "Normalized syntax trees or metadata differ"
+    },
+    {
+      "address": "0x1",
+      "compound_assignment_counts": [
+        0,
+        0
+      ],
+      "first_difference": {
+        "candidate": "e_token: Brace, stmts: [Stmt::Expr(Expr::Return { attrs: [], return_token: Return, expr: Some(Expr::Binary { attrs: [], left: Expr::Call { attrs: [], func: Expr::Path { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(first), arguments: PathArguments::None }] } }, paren_token: Paren, args: [] }, op: BinOp::Add(Plus), right: Expr::Call { attrs: [], func: Expr::Path { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(first), arguments: PathArguments::None }] } }, paren_token: Paren, args: [] } }) }, Some",
+        "offset": 1251,
+        "parent": "e_token: Brace, stmts: [Stmt::Expr(Expr::Return { attrs: [], return_token: Return, expr: Some(Expr::Call { attrs: [], func: Expr::Path { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(first), arguments: PathArguments::None }] } }, paren_token: Paren, args: [] }) }, Some(Semi))] } }] }"
+      },
+      "fixture": "duplicated_call",
+      "gopairreturns": "off",
+      "identity_counts": [
+        0,
+        0
+      ],
+      "modular_reassociation_counts": [
+        0,
+        0
+      ],
+      "name": "duplicated_call",
+      "negative_constant_addition_counts": [
+        0,
+        0
+      ],
+      "original_parse_errors": {
+        "candidate": null,
+        "parent": null
+      },
+      "primitive_cast_counts": [
+        0,
+        0
+      ],
+      "reason": "Normalized syntax trees or metadata differ"
+    },
+    {
+      "address": "0x1",
+      "compound_assignment_counts": [
+        0,
+        0
+      ],
+      "first_difference": {
+        "candidate": "hArguments::None }] } }, op: BinOp::Add(Plus), right: Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } } }) }, Some(Semi))] } }] }",
+        "offset": 1504,
+        "parent": "hArguments::None }] } }, op: BinOp::Add(Plus), right: Expr::Lit { attrs: [], lit: Lit::Int { token: 9 } } }) }, Some(Semi))] } }] }"
+      },
+      "fixture": "literal_change",
+      "gopairreturns": "off",
+      "identity_counts": [
+        0,
+        0
+      ],
+      "modular_reassociation_counts": [
+        0,
+        0
+      ],
+      "name": "literal_change",
+      "negative_constant_addition_counts": [
+        0,
+        0
+      ],
+      "original_parse_errors": {
+        "candidate": null,
+        "parent": null
+      },
+      "primitive_cast_counts": [
+        0,
+        0
+      ],
+      "reason": "Normalized syntax trees or metadata differ"
+    },
+    {
+      "address": "0x1",
+      "compound_assignment_counts": [
+        0,
+        0
+      ],
+      "first_difference": {
+        "candidate": ": None, segments: [PathSegment { ident: Ident(a), arguments: PathArguments::None }] } }, op: BinOp::Sub(Minus), right: Expr::Path { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(b), arguments: PathArguments::None }] } } }) }, Some(Semi))] } }] }",
+        "offset": 1440,
+        "parent": ": None, segments: [PathSegment { ident: Ident(a), arguments: PathArguments::None }] } }, op: BinOp::Add(Plus), right: Expr::Path { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(b), arguments: PathArguments::None }] } } }) }, Some(Semi))] } }] }"
+      },
+      "fixture": "operator_change",
+      "gopairreturns": "off",
+      "identity_counts": [
+        0,
+        0
+      ],
+      "modular_reassociation_counts": [
+        0,
+        0
+      ],
+      "name": "operator_change",
+      "negative_constant_addition_counts": [
+        0,
+        0
+      ],
+      "original_parse_errors": {
+        "candidate": null,
+        "parent": null
+      },
+      "primitive_cast_counts": [
+        0,
+        0
+      ],
+      "reason": "Normalized syntax trees or metadata differ"
+    },
+    {
+      "address": "0x1",
+      "compound_assignment_counts": [
+        0,
+        0
+      ],
+      "first_difference": {
+        "candidate": "pr(Expr::Return { attrs: [], return_token: Return, expr: Some(Expr::Binary { attrs: [], left: Expr::Path { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(a), arguments: PathArguments::None }] } }, op: BinOp::Add(Plus), right: Expr::Binary { attrs: [], left: Expr::Path { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(b), arguments: PathArguments::None }] } }, op: BinOp::Mul(Star), right: Expr::Lit { attrs: [], lit: Lit::Int { token: 9 } } } }) }, Some(Semi))] } }] }",
+        "offset": 1283,
+        "parent": "pr(Expr::Return { attrs: [], return_token: Return, expr: Some(Expr::Binary { attrs: [], left: Expr::Binary { attrs: [], left: Expr::Path { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(a), arguments: PathArguments::None }] } }, op: BinOp::Add(Plus), right: Expr::Path { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(b), arguments: PathArguments::None }] } } }, op: BinOp::Mul(Star), right: Expr::Lit { attrs: [], lit: Lit::Int { token: 9 } } }) }, Some(Semi))] } }] }"
+      },
+      "fixture": "precedence_change",
+      "gopairreturns": "off",
+      "identity_counts": [
+        0,
+        0
+      ],
+      "modular_reassociation_counts": [
+        0,
+        0
+      ],
+      "name": "precedence_change",
+      "negative_constant_addition_counts": [
+        0,
+        0
+      ],
+      "original_parse_errors": {
+        "candidate": null,
+        "parent": null
+      },
+      "primitive_cast_counts": [
+        0,
+        0
+      ],
+      "reason": "Normalized syntax trees or metadata differ"
+    },
+    {
+      "address": "0x1",
+      "compound_assignment_counts": [
+        0,
+        0
+      ],
+      "first_difference": {
+        "candidate": "guments: PathArguments::None }] } }) }, block: Block { brace_token: Brace, stmts: [Stmt::Expr(Expr::Assign { attrs: [], left: Expr::Unary { attrs: [], op: UnOp::Deref(Star), expr: Expr::Call { attrs: [], func: Expr::Path { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(pointer), arguments: PathArguments::None }] } }, paren_token: Paren, args: [] } }, eq_token: Eq, right: Expr::Binary { attrs: [], left: Expr::Unary { attrs: [], op: UnOp::Deref(Star), expr: Expr::Call { attrs: [], func: Expr::Path { attrs: [], qself: None, path: Path { leading_col",
+        "offset": 1192,
+        "parent": "guments: PathArguments::None }] } }) }, block: Block { brace_token: Brace, stmts: [Stmt::Expr(Expr::Binary { attrs: [], left: Expr::Unary { attrs: [], op: UnOp::Deref(Star), expr: Expr::Call { attrs: [], func: Expr::Path { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(pointer), arguments: PathArguments::None }] } }, paren_token: Paren, args: [] } }, op: BinOp::AddAssign(PlusEq), right: Expr::Path { attrs: [], qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(a), arguments: PathArguments::None }] } } }, Some(Se"
+      },
+      "fixture": "pointer_repetition",
+      "gopairreturns": "off",
+      "identity_counts": [
+        0,
+        0
+      ],
+      "modular_reassociation_counts": [
+        0,
+        0
+      ],
+      "name": "pointer_repetition",
+      "negative_constant_addition_counts": [
+        0,
+        0
+      ],
+      "original_parse_errors": {
+        "candidate": null,
+        "parent": null
+      },
+      "primitive_cast_counts": [
+        0,
+        0
+      ],
+      "reason": "Normalized syntax trees or metadata differ"
+    }
+  ],
+  "pending_count": 6,
+  "records": [
+    {
+      "address": "0x1",
+      "compound_assignment_counts": [
+        0,
+        0
+      ],
+      "fixture": "conversion",
+      "gopairreturns": "off",
+      "identity_counts": [
+        0,
+        0
+      ],
+      "modular_reassociation_counts": [
+        0,
+        0
+      ],
+      "name": "conversion",
+      "negative_constant_addition_counts": [
+        0,
+        0
+      ],
+      "original_parse_errors": {
+        "candidate": null,
+        "parent": null
+      },
+      "primitive_cast_counts": [
+        0,
+        1
+      ]
+    },
+    {
+      "address": "0x1",
+      "compound_assignment_counts": [
+        0,
+        0
+      ],
+      "fixture": "context",
+      "gopairreturns": "off",
+      "identity_counts": [
+        0,
+        1
+      ],
+      "modular_reassociation_counts": [
+        0,
+        0
+      ],
+      "name": "context",
+      "negative_constant_addition_counts": [
+        0,
+        0
+      ],
+      "original_parse_errors": {
+        "candidate": null,
+        "parent": null
+      },
+      "primitive_cast_counts": [
+        0,
+        1
+      ]
+    },
+    {
+      "address": "0x1",
+      "compound_assignment_counts": [
+        0,
+        0
+      ],
+      "fixture": "grouping",
+      "gopairreturns": "off",
+      "identity_counts": [
+        0,
+        0
+      ],
+      "modular_reassociation_counts": [
+        1,
+        1
+      ],
+      "name": "grouping",
+      "negative_constant_addition_counts": [
+        0,
+        0
+      ],
+      "original_parse_errors": {
+        "candidate": null,
+        "parent": null
+      },
+      "primitive_cast_counts": [
+        0,
+        1
+      ]
+    },
+    {
+      "address": "0x1",
+      "compound_assignment_counts": [
+        1,
+        0
+      ],
+      "fixture": "local_assignment",
+      "gopairreturns": "off",
+      "identity_counts": [
+        0,
+        0
+      ],
+      "modular_reassociation_counts": [
+        0,
+        0
+      ],
+      "name": "local_assignment",
+      "negative_constant_addition_counts": [
+        0,
+        0
+      ],
+      "original_parse_errors": {
+        "candidate": null,
+        "parent": null
+      },
+      "primitive_cast_counts": [
+        0,
+        1
+      ]
+    },
+    {
+      "address": "0x1",
+      "compound_assignment_counts": [
+        0,
+        0
+      ],
+      "fixture": "negative_constant",
+      "gopairreturns": "off",
+      "identity_counts": [
+        0,
+        0
+      ],
+      "modular_reassociation_counts": [
+        0,
+        0
+      ],
+      "name": "negative_constant",
+      "negative_constant_addition_counts": [
+        1,
+        0
+      ],
+      "original_parse_errors": {
+        "candidate": null,
+        "parent": null
+      },
+      "primitive_cast_counts": [
+        0,
+        1
+      ]
+    },
+    {
+      "address": "0x1",
+      "compound_assignment_counts": [
+        0,
+        0
+      ],
+      "fixture": "bad_keyword",
+      "gopairreturns": "off",
+      "identity_counts": [
+        0,
+        0
+      ],
+      "modular_reassociation_counts": [
+        0,
+        0
+      ],
+      "name": "bad_keyword",
+      "negative_constant_addition_counts": [
+        0,
+        0
+      ],
+      "original_parse_errors": {
+        "candidate": "expected identifier, found keyword `fn` at Span",
+        "parent": "expected identifier, found keyword `fn` at Span"
+      },
+      "primitive_cast_counts": [
+        0,
+        0
+      ],
+      "review_only_lexical_normalization_before_parse": "Erase primitive integer casts; rename keyword identifiers fn/self and underscore path roots to reserved audit identifiers. Raw parse status is retained separately. No emitted or native-tested body is rewritten."
+    },
+    {
+      "address": "0x1",
+      "compound_assignment_counts": [
+        0,
+        0
+      ],
+      "fixture": "bad_namespace",
+      "gopairreturns": "off",
+      "identity_counts": [
+        0,
+        0
+      ],
+      "modular_reassociation_counts": [
+        0,
+        0
+      ],
+      "name": "bad_namespace",
+      "negative_constant_addition_counts": [
+        0,
+        0
+      ],
+      "original_parse_errors": {
+        "candidate": "unexpected token, expected `;` at Span",
+        "parent": "unexpected token, expected `;` at Span"
+      },
+      "primitive_cast_counts": [
+        0,
+        0
+      ],
+      "review_only_lexical_normalization_before_parse": "Erase primitive integer casts; rename keyword identifiers fn/self and underscore path roots to reserved audit identifiers. Raw parse status is retained separately. No emitted or native-tested body is rewritten."
+    }
+  ],
+  "scope": "Structural and modular-algebra classification only: primitive integer casts and exact core integer identity calls are stripped from both trees; compound assignments to local names or their fields are expanded; associative integer operators and mixed addition/subtraction are reassociated without operand reordering; addition of a negative integer constant becomes subtraction. For originally unparseable functions only, primitive casts are lexically erased and invalid fn/self/underscore-path identifiers are renamed for structural review; raw parse errors remain recorded. Parentheses are removed in the AST while other operator nesting remains. The same-width primitive guards and wrapping arithmetic are required for the algebraic classification. Native equivalence, type correctness, and preservation of existing casts are not established by this audit alone.",
+  "verified": 7
+}

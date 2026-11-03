@@ -58,6 +58,7 @@ pub struct SpellCtx {
     /// (kuna `indirectargs`) Spell an indirectly passed parameter at its value type.
     pub(crate) indirect_args: bool,
     pub(crate) go_package: Option<Rc<str>>,
+    pub(crate) go_pair_types: Option<Rc<crate::dtype::TypeFactoryImpl>>,
 }
 
 impl SpellCtx {
@@ -71,6 +72,7 @@ impl SpellCtx {
         model: crate::kuna_ctypes::CDataModel::LP64,
         indirect_args: false,
         go_package: None,
+        go_pair_types: None,
     };
 
     /// The speller for this context's output language.
