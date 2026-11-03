@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3754,
-    3754
+    3759,
+    3759
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1717,6 +1717,7 @@
     "data:Rust cast at the end of subtraction preserves shift parsing",
     "data:Rust converted call return evaluates the call once",
     "data:Rust crate-level target",
+    "data:Rust direct signed store converts unsigned arithmetic",
     "data:Rust keyword machine operations keep their callee identity",
     "data:Rust literal shift keeps its full source width",
     "data:Rust loop conversion keeps one callback evaluation",
@@ -1727,14 +1728,18 @@
     "data:Rust nested shift retains context through an existing cast",
     "data:Rust other module target",
     "data:Rust retains explicit widening after narrow arithmetic",
+    "data:Rust side effect store converts returned value once",
     "data:Rust signed byte compound assignment preserves arithmetic shift",
     "data:Rust signed byte interpretation precedes widening",
     "data:Rust signed byte less-or-equal reads signed values",
     "data:Rust signed byte less-than reads signed values",
     "data:Rust signed byte return preserves bits as unsigned",
+    "data:Rust signed byte store converts unsigned arithmetic",
     "data:Rust signed comparison overrides unsigned recovered inputs",
+    "data:Rust signed word store converts bitwise expression",
     "data:Rust unsigned byte comparison remains unsigned",
     "data:Rust unsigned short return preserves bits as signed",
+    "data:Rust unsigned short store converts signed arithmetic",
     "data:SAVED-XMM-SYSV fixture #1: a volatile-register spill observed by a direct helper remains mapped",
     "data:SAVED-XMM-WIN64 fixture #1: unaffected XMM6-9 lane spills are absent from the local frame",
     "data:SAVED-XMM-WIN64 fixture #2: the disjoint caller-owned Rect still reaches its helper and return",

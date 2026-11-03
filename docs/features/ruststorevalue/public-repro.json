@@ -1,0 +1,35 @@
+{
+  "fixture_sha256": "adb2341c2f0825d7498ae0fbc433850c38897f1fada968761ab7b3ba3eb4d79b",
+  "records": [
+    {
+      "arm": "parent",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-rust-store-conversions/public-repro",
+        "store",
+        "--language",
+        "rust",
+        "--assert",
+        "prototype store void store(int8 *p,uint8 value)"
+      ],
+      "cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+      "output": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn store(mut p: *mut i64, mut value: u64)\n{\n  *p = value;\n}\n"
+    },
+    {
+      "arm": "candidate",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-rust-store-conversions/public-repro",
+        "store",
+        "--language",
+        "rust",
+        "--assert",
+        "prototype store void store(int8 *p,uint8 value)"
+      ],
+      "cli_sha256": "7fc4e7732ca312f885fc0489a6f9c3deb68a9f174b8e0e4eba0ffa4bd59aac21",
+      "output": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn store(mut p: *mut i64, mut value: u64)\n{\n  *p = value as i64;\n}\n"
+    }
+  ]
+}

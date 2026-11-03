@@ -4642,3 +4642,21 @@ not evidence that a same-version macro changes the result. Recovery refuses it
 because the supported older execution compiler does not preserve the producer's
 behavior. Six other recovered forms match across all three execution compilers;
 no broader compiler-version equivalence is inferred.
+
+### Rust integer store values
+
+`kuna_ruststorevalue.rs` converts a STORE value to the integer type reached
+through the rendered pointer when their 1-, 2-, 4- or 8-byte primitive widths
+match but their signedness differs. The value keeps its bits; for example,
+a `u64` expression assigned through an `i64` pointer receives `as i64`.
+The shared Rust integer conversion helper retains the source width of
+context-dependent literal expressions before applying the destination cast.
+
+The pointer is emitted once as the assignment destination and the complete
+value expression once as its right-hand side. Named pointers use their
+rendered declaration type; implied field pointers use their read-facing type.
+The emitter restores its expression modifiers after rendering the value.
+Cast suppression retains its existing output. Enums, floats, booleans,
+pointers used as values, mismatched widths and unsupported integer widths
+retain their prior paths. This conversion does not change memory-operation
+widths or repair raw-pointer indexing.

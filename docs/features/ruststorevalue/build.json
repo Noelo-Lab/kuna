@@ -1,0 +1,21 @@
+{
+  "at": "2026-11-03T01:12:40.857299+00:00",
+  "parent_commit": "c2f6607386f3c6cd46f94a17efebdc9a74609ad6",
+  "parent_worktree_head": "c2f6607386f3c6cd46f94a17efebdc9a74609ad6",
+  "parent_tree": "08cd977cf6425295c85385bd13701e038ac04243",
+  "parent_cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+  "new_cli_sha256": "7fc4e7732ca312f885fc0489a6f9c3deb68a9f174b8e0e4eba0ffa4bd59aac21",
+  "catalog_count": 376,
+  "corpus_files": 686,
+  "stage_assertions": [
+    3759,
+    3759
+  ],
+  "stage_keys_added": [
+    "data:Rust direct signed store converts unsigned arithmetic",
+    "data:Rust side effect store converts returned value once",
+    "data:Rust signed byte store converts unsigned arithmetic",
+    "data:Rust signed word store converts bitwise expression",
+    "data:Rust unsigned short store converts signed arithmetic"
+  ]
+}
