@@ -236,8 +236,9 @@ struct DieSnap {
     bit_size: Option<u64>,
     /// (kuna `dwarfstructs`) `DW_AT_bit_offset` — the DWARF 2/3 bitfield spelling:
     /// bits from the MOST significant bit of the container named by
-    /// `DW_AT_byte_size`.
-    bit_offset: Option<u64>,
+    /// `DW_AT_byte_size`. GCC writes a negative one for a packed field that
+    /// extends past its container.
+    bit_offset: Option<i64>,
     /// (kuna `dwarfstructs`) `DW_AT_data_bit_offset` — the DWARF 4/5 bitfield
     /// spelling: bits from the start of the aggregate.
     data_bit_offset: Option<u64>,
@@ -448,7 +449,10 @@ fn snapshot_unit_with_go(
             snap.bit_size = v.udata_value();
         }
         if let Some(v) = entry.attr_value(gimli::DW_AT_bit_offset) {
-            snap.bit_offset = v.udata_value();
+            snap.bit_offset = match v {
+                gimli::AttributeValue::Sdata(offset) => Some(offset),
+                v => v.udata_value().and_then(|offset| i64::try_from(offset).ok()),
+            };
         }
         if let Some(v) = entry.attr_value(gimli::DW_AT_data_bit_offset) {
             snap.data_bit_offset = v.udata_value();

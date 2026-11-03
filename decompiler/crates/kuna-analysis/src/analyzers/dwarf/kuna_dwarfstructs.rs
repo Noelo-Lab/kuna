@@ -297,26 +297,15 @@ pub(super) fn resolve_name(
     None
 }
 
-/// Walk the `DW_TAG_member` children into kuna fields.
+/// Walk the `DW_TAG_member` children into kuna fields and bitfields.
 ///
 /// A member is SKIPPED (never fatal) when it has no name, no buildable type, a
-/// zero-width or `void` type, a negative offset, a location that is not a
-/// constant displacement, a bit size it cannot place, or is a static member —
-/// one exotic member costs its own field, not the whole layout. A member with no
-/// location starts the container. Bitfield members go to the second list (or
-/// back to the first when they are byte-exact);
-/// `DW_TAG_variant_part`/`DW_TAG_variant` children are not members and are not
-/// read. LOSS: an ANONYMOUS member (a C11 anonymous struct/union inside a struct)
-/// carries no `DW_AT_name` and is skipped rather than flattened into the parent.
-///
-/// Struct fields are sorted by offset (`collect_bit_fields` and
-/// `has_bit_fields_in_range` binary-search both lists, and the wire encoder
-/// interleaves them by offset) and deduplicated on it. Bitfields are sorted in
-/// memory order, as `BitRange::overlap_test` orders them for
-/// `find_matching_bit_field`: within a byte, the more significant field first
-/// on a big-endian target. UNION fields keep
-/// declaration order and are NOT deduplicated: every union member sits at offset
-/// 0, so deduplicating on the offset would collapse a union to its first member.
+/// zero-width or `void` type, an unusable location or bit position, or is a
+/// static member. A member with no location starts the container. LOSS: an
+/// ANONYMOUS member is skipped rather than flattened into the parent. Struct
+/// fields are sorted and deduplicated by offset; union fields keep declaration
+/// order. Bitfields are sorted in memory order, which `find_matching_bit_field`
+/// binary-searches.
 fn collect_members(
     die: &DieSnap,
     dies: &BTreeMap<usize, DieSnap>,
@@ -329,6 +318,7 @@ fn collect_members(
     let mut fields: Vec<TypeField> = Vec::new();
     let mut raw_bits: Vec<(i64, int4, String, Rc<Datatype>)> = Vec::new();
     let big_endian = types.is_big_endian();
+    let end_bit = die.byte_size.and_then(|s| i64::try_from(s).ok()).and_then(|s| s.checked_mul(8));
     for &coff in &die.children {
         let Some(m) = dies.get(&coff) else { continue };
         if m.tag != gimli::DW_TAG_member || m.name.is_empty() || is_static_member(m) {
@@ -341,7 +331,11 @@ fn collect_members(
             continue;
         }
         if m.bit_size.is_some() {
-            if let Some((start, num_bits)) = bitfield_bits(m, big_endian) {
+            let inside = |&(start, num_bits): &(i64, int4)| {
+                end_bit.map_or(true, |end| start + i64::from(num_bits) <= end)
+            };
+            let placed = bitfield_bits(m, ty.get_size(), big_endian).filter(inside);
+            if let Some((start, num_bits)) = placed {
                 raw_bits.push((start, num_bits, m.name.clone(), ty));
             }
             continue;
@@ -356,34 +350,25 @@ fn collect_members(
         }
         fields.push(TypeField::new(off as int4, off as int4, m.name.clone(), ty));
     }
-    // A "bitfield" that is byte-aligned AND a whole number of natural-width bytes
-    // is not one: `unsigned c:16` starting at bit 16 of a 4-byte unit IS the two
-    // bytes at +2. Emitting it as a plain field of that width is exact, and it
-    // keeps it out of the bitfield extraction machinery -- see
-    // [`byte_exact_bitfield`].
-    // A union has no bitfield list to install into (`TypeUnion::setFields` takes
-    // fields only), so a union's true bitfields are a documented LOSS; its
-    // byte-exact ones still land as ordinary members at offset 0.
+    // A union has no bitfield list (`TypeUnion::setFields` takes fields only), so
+    // its true bitfields are a documented LOSS; byte-exact ones land at offset 0.
     let mut true_bits: Vec<(i64, int4, String, Rc<Datatype>)> = Vec::new();
-    for (abs_start, num_bits, name, ty) in raw_bits {
-        match byte_exact_bitfield(abs_start, num_bits, types, &ty) {
+    for (start, num_bits, name, ty) in raw_bits {
+        match byte_exact_bitfield(start, num_bits, types, &ty) {
             Some((off, plain)) => {
                 let off = if union { 0 } else { off };
                 fields.push(TypeField::new(off, off, name, plain));
             }
             None if union => {}
-            None => true_bits.push((abs_start, num_bits, name, ty)),
+            None => true_bits.push((start, num_bits, name, ty)),
         }
     }
     if !union {
         fields.sort_by_key(|f| (f.offset, f.field_type.get_size()));
         fields.dedup_by_key(|f| f.offset);
     }
-    let mut bits = group_bitfields(true_bits, big_endian);
-    bits.sort_by_key(|b| {
-        (b.byte_offset + b.byte_size, if big_endian { -b.least_sig_bit } else { b.least_sig_bit })
-    });
-    (fields, bits)
+    true_bits.sort_by_key(|b| b.0);
+    (fields, group_bitfields(true_bits, big_endian))
 }
 
 /// A C++ `static` data member is a global, not part of the layout. DWARF 2-4
@@ -405,64 +390,54 @@ pub(super) fn member_offset(m: &DieSnap) -> Option<i64> {
     }
 }
 
-/// The bit position and width of one bitfield member, or `None` when it cannot
-/// be placed.
-///
-/// The position counts from the start of the aggregate in the target's bit
-/// order, as `DW_AT_data_bit_offset` (DWARF 4/5) does: upward from the least
-/// significant bit of byte 0 on a little-endian target, from its most
-/// significant bit on a big-endian one. DWARF 2/3 gives
-/// `DW_AT_data_member_location` plus a storage unit `DW_AT_byte_size` and
-/// `DW_AT_bit_offset`, which counts from the unit's most significant bit: the
-/// unit's first bit in memory order on a big-endian target, its last on a
-/// little-endian one.
-fn bitfield_bits(m: &DieSnap, big_endian: bool) -> Option<(i64, int4)> {
-    let num_bits = m.bit_size.filter(|&b| b > 0 && b <= 64)? as int4;
-    if let Some(dbo) = m.data_bit_offset {
-        return Some((i64::try_from(dbo).ok()?, num_bits));
-    }
-    let container = m.byte_size.filter(|&b| b > 0 && b <= 16)? as int4;
-    let bit_offset = int4::try_from(m.bit_offset?).ok()?;
-    let byte_offset = member_offset(m).filter(|&o| o >= 0)?;
-    let within = container * 8 - bit_offset - num_bits;
-    if within < 0 {
-        return None;
-    }
-    let start = if big_endian { bit_offset } else { within };
-    Some((byte_offset * 8 + start as i64, num_bits))
+/// A bitfield's first bit and width, or `None` when it cannot be placed. The bit
+/// counts from the start of the aggregate in the target's bit order, as
+/// `DW_AT_data_bit_offset` does: from the least significant bit of byte 0 on a
+/// little-endian target, from its most significant bit on a big-endian one.
+/// DWARF 2/3 `DW_AT_bit_offset` counts from the most significant bit of a
+/// storage unit of `DW_AT_byte_size` bytes (the member type's size when absent);
+/// without either bit offset the member starts at its byte offset.
+fn bitfield_bits(m: &DieSnap, type_size: int4, big_endian: bool) -> Option<(i64, int4)> {
+    let num_bits = m.bit_size.filter(|&b| b > 0 && b <= 64)? as i64;
+    let base = || member_offset(m).filter(|&o| o >= 0)?.checked_mul(8);
+    let start = match (m.data_bit_offset, m.bit_offset) {
+        (Some(dbo), _) => i64::try_from(dbo).ok()?,
+        (None, None) => base()?,
+        (None, Some(bit_offset)) => {
+            let unit = match m.byte_size {
+                Some(b) => i64::try_from(b).ok().filter(|&b| b > 0 && b <= 16)?,
+                None => i64::from(type_size),
+            };
+            let within = match big_endian {
+                true => bit_offset,
+                false => (unit * 8 - num_bits).checked_sub(bit_offset)?,
+            };
+            base()?.checked_add(within)?
+        }
+    };
+    let end = start.checked_add(num_bits)?;
+    (start >= 0 && end / 8 <= i64::from(int4::MAX)).then_some((start, num_bits as int4))
 }
 
-/// A bitfield that occupies whole, aligned bytes of a natural width, as a plain
-/// field: `(struct byte offset, resized member type)`. `None` for a real bitfield.
-///
-/// This is exact in either byte order -- the bytes a byte-aligned field covers,
-/// read in the target's order, are its value -- and it is also CONTAINMENT.
-/// `BitFieldPullTransform` (`p5_types/bitfield/pull.rs`) diverges when several
-/// pulls share one extraction chain: the second record's `op_destroy_recursive`
-/// walks a `mod_op` whose operands the first record's walk already unset, and
-/// `Funcdata::op_destroy_recursive` asserts on the cleared slot ("null input
-/// (C++ UB)"). `struct { int head; unsigned f1:4, f2:12, f3:16; }` with all
-/// three read reproduces it, as does a single read of a byte-aligned field
-/// through a load of exactly its bytes, in either byte order. It is NOT specific
-/// to this pass -- the wire `<bitfield>` decode builds the same shapes.
-/// Tolerating the cleared slot only converts the assertion into a
-/// non-terminating rule pool, so the fix belongs in that transform and is left to
-/// it; taking the byte-exact members out of the bitfield list keeps the shapes
-/// this pass produces inside what the transform handles.
+/// A bitfield covering whole aligned bytes of a natural width, as a plain field:
+/// `(struct byte offset, resized member type)`, exact in either byte order.
+/// `None` for a real bitfield. Such fields stay out of the bitfield list because
+/// `BitFieldPullTransform` (`p5_types/bitfield/pull.rs`) asserts in
+/// `op_destroy_recursive` when one is read through a load of exactly its bytes.
 fn byte_exact_bitfield(
-    abs_start: i64,
+    start: i64,
     num_bits: int4,
     types: &dyn TypeFactory,
     ty: &Rc<Datatype>,
 ) -> Option<(int4, Rc<Datatype>)> {
-    if abs_start % 8 != 0 || num_bits % 8 != 0 {
+    if start % 8 != 0 || num_bits % 8 != 0 {
         return None;
     }
     let bytes = num_bits / 8;
     if !matches!(bytes, 1 | 2 | 4 | 8) {
         return None;
     }
-    let off = int4::try_from(abs_start / 8).ok()?;
+    let off = int4::try_from(start / 8).ok()?;
     let plain = if ty.get_size() == bytes {
         Rc::clone(ty)
     } else {
@@ -471,17 +446,10 @@ fn byte_exact_bitfield(
     (plain.get_size() == bytes).then_some((off, plain))
 }
 
-/// Fold the bitfield members into kuna's container frame: each one gets the
-/// SMALLEST byte span that covers it, and its least-significant bit is its
-/// position within that span read as an integer in the target's byte order.
-///
-/// The span is per member rather than per storage unit on purpose. The printer's
-/// `checkBitFieldMember` (`p9_emit/printc.rs`) decides `.` versus `->` by looking
-/// for a `PTRSUB` under the access when `byte_offset != 0`, and the compiler emits
-/// that `PTRSUB` at the offset of the bytes it actually loads. A whole-storage-unit
-/// container reports `byte_offset == 0` for a member the compiler reaches at +3,
-/// the `PTRSUB` is then not skipped, and the access renders `p.b` on a pointer --
-/// invalid C. The minimal span is what the access geometry agrees with.
+/// Fold the bitfields into kuna's container frame: each gets the SMALLEST byte
+/// span that covers it, the span the compiler's own access and the printer's
+/// `.`-versus-`->` test (`checkBitFieldMember`) agree on, and its least
+/// significant bit within that span read in the target's byte order.
 fn group_bitfields(
     raw: Vec<(i64, int4, String, Rc<Datatype>)>,
     big_endian: bool,
@@ -490,7 +458,7 @@ fn group_bitfields(
     for (start, num_bits, name, ty) in raw {
         let byte_offset = (start / 8) as int4;
         let least_sig_bit = if big_endian {
-            ((8 - (start + num_bits as i64) % 8) % 8) as int4
+            ((8 - (start + i64::from(num_bits)) % 8) % 8) as int4
         } else {
             (start % 8) as int4
         };
@@ -586,11 +554,27 @@ mod tests {
 
     type Layout = (Vec<(int4, int4, String)>, Vec<(String, int4, int4, int4)>);
 
-    /// `struct { unsigned lo:3, hi:5, wide:16, top:8; unsigned a:4, b:12, c:16;
-    /// int lost:4; }` with its bitfields spelled `data_bit_offset` (`dwarf5`) or
-    /// DWARF 2/3 `byte_size` + `bit_offset` + location, as `(offset, size, name)`
-    /// fields and `(name, byte offset, byte size, least significant bit)` bits.
-    fn bit_layout(big_endian: bool, dwarf5: bool) -> Layout {
+    /// An `unsigned int` bitfield whose first bit, in the target's bit order, is
+    /// `start`: spelled `DW_AT_data_bit_offset` (`dwarf5`), or as a 4-byte unit
+    /// with `DW_AT_bit_offset` and a location.
+    fn bitfield(name: &str, start: u64, width: u64, big_endian: bool, dwarf5: bool) -> DieSnap {
+        let mut m = die(gimli::DW_TAG_member, name);
+        m.type_ref = Some(1);
+        m.bit_size = Some(width);
+        if dwarf5 {
+            m.data_bit_offset = Some(start);
+        } else {
+            let within = (start % 32) as i64;
+            m.byte_size = Some(4);
+            m.bit_offset = Some(if big_endian { within } else { 32 - within - width as i64 });
+            m.data_member_location = Some((start / 32 * 4) as i64);
+        }
+        m
+    }
+
+    /// The `(offset, size, name)` fields and `(name, byte offset, byte size, least
+    /// significant bit)` bitfields of a 12-byte struct of `members`.
+    fn layout(big_endian: bool, members: Vec<DieSnap>) -> Layout {
         let types = TypeFactoryImpl::new();
         types.set_default_alignment_map();
         types.set_max_basetype_size(8);
@@ -604,53 +588,67 @@ mod tests {
         dies.insert(1, uint);
         let mut record = die(gimli::DW_TAG_structure_type, "Bits");
         record.byte_size = Some(12);
-        let members = [("lo", 0, 3), ("hi", 3, 5), ("wide", 8, 16), ("top", 24, 8),
-            ("a", 32, 4), ("b", 36, 12), ("c", 48, 16)];
-        for (i, &(name, msb_first, width)) in members.iter().enumerate() {
-            let mut m = die(gimli::DW_TAG_member, name);
-            m.type_ref = Some(1);
-            m.bit_size = Some(width);
-            if dwarf5 {
-                let lsb_first = (msb_first / 32) * 32 + 32 - (msb_first % 32) - width;
-                m.data_bit_offset = Some(if big_endian { msb_first } else { lsb_first });
-            } else {
-                m.byte_size = Some(4);
-                m.bit_offset = Some(msb_first % 32);
-                m.data_member_location = Some((msb_first / 32 * 4) as i64);
-            }
+        record.children = (2..2 + members.len()).collect();
+        for (i, m) in members.into_iter().enumerate() {
             dies.insert(2 + i, m);
         }
-        let mut lost = die(gimli::DW_TAG_member, "lost");
-        lost.type_ref = Some(1);
-        lost.bit_size = Some(4);
-        lost.data_member_location = Some(8);
-        dies.insert(20, lost);
-        record.children = (2..2 + members.len()).chain([20]).collect();
         let (fields, bits) = collect_members(&record, &dies, &types, 8,
             &mut TypeWalk::with_gate(false), false, false);
         (fields.iter().map(|f| (f.offset, f.field_type.get_size(), f.name.clone())).collect(),
-         bits.iter().map(|b| (b.name.clone(), b.byte_offset, b.byte_size, b.least_sig_bit)).collect())
+         bits.iter()
+            .map(|b| (b.name.clone(), b.byte_offset, b.byte_size, b.least_sig_bit))
+            .collect())
     }
 
     #[test]
-    fn big_endian_bitfields_count_from_the_first_byte_in_either_spelling() {
-        let expected: Layout = (
-            vec![(1, 2, "wide".into()), (3, 1, "top".into()), (6, 2, "c".into())],
-            vec![("lo".into(), 0, 1, 5), ("hi".into(), 0, 1, 0), ("a".into(), 4, 1, 4),
-                 ("b".into(), 4, 2, 0)],
-        );
-        assert_eq!(bit_layout(true, false), expected);
-        assert_eq!(bit_layout(true, true), expected);
+    fn bitfields_follow_the_target_bit_order_in_either_spelling() {
+        // struct { unsigned lo:3, hi:5, wide:16, top:8; unsigned a:4, b:12, c:16; }
+        let declared = [("lo", 0, 3), ("hi", 3, 5), ("wide", 8, 16), ("top", 24, 8),
+            ("a", 32, 4), ("b", 36, 12), ("c", 48, 16)];
+        let fields = vec![(1, 2, "wide".to_string()), (3, 1, "top".into()), (6, 2, "c".into())];
+        for (big_endian, bits) in [
+            (true, [("lo", 0, 1, 5), ("hi", 0, 1, 0), ("a", 4, 1, 4), ("b", 4, 2, 0)]),
+            (false, [("lo", 0, 1, 0), ("hi", 0, 1, 3), ("a", 4, 1, 0), ("b", 4, 2, 4)]),
+        ] {
+            let bits: Vec<_> = bits.iter().map(|&(n, o, s, l)| (n.to_string(), o, s, l)).collect();
+            for dwarf5 in [false, true] {
+                let members = declared.iter()
+                    .map(|&(n, s, w)| bitfield(n, s, w, big_endian, dwarf5)).collect();
+                assert_eq!(layout(big_endian, members), (fields.clone(), bits.clone()),
+                    "big_endian={big_endian} dwarf5={dwarf5}");
+            }
+        }
     }
 
     #[test]
-    fn little_endian_bitfields_count_from_the_least_significant_bit() {
-        let expected: Layout = (
-            vec![(0, 1, "top".into()), (1, 2, "wide".into()), (4, 2, "c".into())],
-            vec![("hi".into(), 3, 1, 0), ("lo".into(), 3, 1, 5), ("b".into(), 6, 2, 0),
-                 ("a".into(), 7, 1, 4)],
-        );
-        assert_eq!(bit_layout(false, false), expected);
-        assert_eq!(bit_layout(false, true), expected);
+    fn bitfields_are_listed_in_memory_order() {
+        // struct { unsigned a:6, c:4, d:6; }: c and d end in the same byte.
+        for (big_endian, expected) in [
+            (true, [("a", 0, 1, 2), ("c", 0, 2, 6), ("d", 1, 1, 0)]),
+            (false, [("a", 0, 1, 0), ("c", 0, 2, 6), ("d", 1, 1, 2)]),
+        ] {
+            let members = [("a", 0, 6), ("c", 6, 4), ("d", 10, 6)].iter()
+                .map(|&(n, s, w)| bitfield(n, s, w, big_endian, true)).collect();
+            let expected: Vec<_> =
+                expected.iter().map(|&(n, o, s, l)| (n.to_string(), o, s, l)).collect();
+            assert_eq!(layout(big_endian, members).1, expected, "big_endian={big_endian}");
+        }
+    }
+
+    #[test]
+    fn bitfields_without_a_bit_offset_or_with_a_negative_one_are_placed() {
+        let mut packed = bitfield("packed", 0, 30, false, false);
+        packed.bit_offset = Some(-6);
+        let mut bare = die(gimli::DW_TAG_member, "bare");
+        bare.type_ref = Some(1);
+        bare.bit_size = Some(4);
+        bare.data_member_location = Some(8);
+        let mut too_wide = bitfield("too_wide", 64, 65, false, true);
+        too_wide.bit_size = Some(65);
+        let past_the_end = bitfield("past_the_end", 92, 8, false, true);
+        let (fields, bits) = layout(false, vec![packed, bare.clone(), too_wide, past_the_end]);
+        assert!(fields.is_empty(), "{fields:?}");
+        assert_eq!(bits, vec![("packed".to_string(), 1, 4, 0), ("bare".into(), 8, 1, 0)]);
+        assert_eq!(layout(true, vec![bare]).1, vec![("bare".to_string(), 8, 1, 4)]);
     }
 }

@@ -3336,14 +3336,16 @@ moves.
   on a big-endian target both `DW_AT_data_bit_offset` and `DW_AT_bit_offset`
   count from the most significant bit of the first byte (of the aggregate and of
   the storage unit respectively), and a span's least significant bit lies in its
-  last byte. Bitfields are listed in memory order, the more significant field
-  first within a big-endian byte, which is the order the bitfield lookup's binary
-  search expects. A member with `DW_AT_bit_size` that cannot be placed is
-  skipped. A "bitfield" occupying whole aligned bytes of a natural width is not
-  one and goes in as a plain field of that width, which is exact in either byte
-  order and keeps a known `BitFieldPullTransform` divergence (three bitfields
-  sharing one extraction chain, or one byte-aligned field read alone) out of
-  reach. Offsets are installed through a raw
+  last byte. `DW_AT_bit_offset` is signed (GCC writes a negative one for a packed
+  field that extends past its unit), the unit defaults to the member type's size
+  when `DW_AT_byte_size` is absent, and a bitfield with a location but no bit
+  offset starts at that byte. Bitfields are listed in memory order, the order the
+  bitfield lookup's binary search expects. A member with `DW_AT_bit_size` that
+  cannot be placed, or that ends past the aggregate, is skipped. A "bitfield"
+  occupying whole aligned bytes of a natural width is not one and goes in as a
+  plain field of that width, which is exact in either byte order and keeps a
+  known `BitFieldPullTransform` divergence (three bitfields sharing one
+  extraction chain, or one byte-aligned field read alone) out of reach. Offsets are installed through a raw
   field-setting entry point rather than the C packing rules, because the layout is
   the compiler's own answer for the target ABI and re-deriving it would silently
   disagree with the bytes the decompiler reads.
