@@ -310,3 +310,40 @@ fn elfv1_toc_reload_after_a_call_keeps_the_jump_table_base() {
         assert_eq!(default, if abi == 2 { off } else { on }, "abi {abi}");
     }
 }
+
+/// `int valid(int); void both(int,int), one(int);`
+/// `void route(int a, int b) { if (valid(a) && valid(b)) both(a, b); else one(a); }`
+/// at `-O2 -fPIC`, with same-module callees: `route` (0x1040) never reloads its TOC.
+fn short_circuit_calls() -> Vec<u8> {
+    let words: [u32; 48] = [
+        0x2c030004, 0x38600001, 0x7c60181e, 0x4e800020, 0x00000000, 0x00000000,
+        0x00000000, 0x60000000, 0x4e800020, 0x00000000, 0x00000000, 0x00000000,
+        0x4e800020, 0x00000000, 0x00000000, 0x00000000, 0x7c0802a6, 0xfbc1fff0,
+        0xfbe1fff8, 0x7c7e1b78, 0xf8010010, 0x7c9f2378, 0xf821ff81, 0x4bffffa5,
+        0x2c030000, 0x41c20014, 0x7fe3fb78, 0x4bffff95, 0x2c030000, 0x40c2002c,
+        0x38210080, 0x7fc3f378, 0xe8010010, 0xebc1fff0, 0xebe1fff8, 0x7c0803a6,
+        0x4bffffa0, 0x60000000, 0x60000000, 0x60000000, 0x38210080, 0x7fe4fb78,
+        0xe8010010, 0x7fc3f378, 0xebe1fff8, 0xebc1fff0, 0x7c0803a6, 0x4bffff64,
+    ];
+    words.iter().flat_map(|w| w.to_be_bytes()).collect()
+}
+
+#[test]
+fn elfv1_calls_without_a_toc_reload_keep_their_short_circuit_condition() {
+    let path = common::scratch_file("elfv1-no-reload", "elf");
+    std::fs::write(&path, image_with_code(1, &short_circuit_calls())).unwrap();
+    let [default, on, off] = [None, Some("on"), Some("off")].map(|option| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        command.env("KUNA_SPECS", common::repo_root().join("specs"))
+            .args(["decompile", path.to_str().unwrap(), "0x1040", "--addr"]);
+        if let Some(value) = option { command.args(["--option", "callmechanisms", value]); }
+        let out = command.output().unwrap();
+        let text = String::from_utf8(out.stdout).unwrap();
+        assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+        text
+    });
+    std::fs::remove_file(&path).unwrap();
+    assert!(off.contains(") && ("), "{off}");
+    assert_eq!(default, off);
+    assert!(!on.contains(") && ("), "the payload after each call splits the condition\n{on}");
+}

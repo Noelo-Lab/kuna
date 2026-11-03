@@ -14,7 +14,8 @@ use crate::pcodeinject::CALLMECHANISM_TYPE;
 pub enum CallMechanismMode {
     #[default]
     Off,
-    /// Only on a PPC64 image with validated ELFv1 descriptors, whose ABI reserves `0x28(r1)` for the TOC save.
+    /// Only on a PPC64 image with validated ELFv1 descriptors, whose ABI reserves `0x28(r1)` for the TOC
+    /// save, and there only a return payload whose stored slot the next instruction reloads.
     Auto,
     On,
 }
@@ -202,14 +203,110 @@ pub fn apply_return(data: &mut crate::funcdata::Funcdata, index: i32) -> KunaRes
     let operations = arch
         .call_mechanisms
         .operations(id, arch.manage(), &mut context)?;
+    if arch.call_mechanism_reload_only && !reloads_stored_slot(data, op, &operations) {
+        return Ok(());
+    }
     install_after(data, op, &operations)?;
     data.kuna_call_mechanisms.applied.insert(op, id);
     Ok(())
 }
 
+/// A storage location named by a base register plus a constant offset.
+#[derive(PartialEq)]
+struct Slot {
+    space: i32,
+    base: (i32, u64, u32),
+    offset: u64,
+}
+
+/// The slots a payload's stores write, as base register plus constant offset.
+fn payload_slots(operations: &[Operation]) -> Vec<Slot> {
+    use kuna_base::space::spacetype::{IPTR_CONSTANT, IPTR_PROCESSOR};
+    use kuna_num::opcodes::OpCode::{CPUI_INT_ADD, CPUI_STORE};
+    let key = |v: &kuna_num::pcoderaw::VarnodeData| {
+        v.space.as_ref().map(|space| (space.get_index(), v.offset, v.size))
+    };
+    let kind = |v: &kuna_num::pcoderaw::VarnodeData| v.space.as_ref().map(|space| space.get_type());
+    let base_plus = |pointer: &kuna_num::pcoderaw::VarnodeData| -> Option<((i32, u64, u32), u64)> {
+        if kind(pointer) == Some(IPTR_PROCESSOR) {
+            return Some((key(pointer)?, 0));
+        }
+        let add = operations
+            .iter()
+            .find(|op| op.opcode == CPUI_INT_ADD && op.output.as_ref().and_then(key) == key(pointer))?;
+        let [a, b] = add.inputs.as_slice() else { return None };
+        match (kind(a), kind(b)) {
+            (Some(IPTR_PROCESSOR), Some(IPTR_CONSTANT)) => Some((key(a)?, b.offset)),
+            (Some(IPTR_CONSTANT), Some(IPTR_PROCESSOR)) => Some((key(b)?, a.offset)),
+            _ => None,
+        }
+    };
+    operations
+        .iter()
+        .filter(|op| op.opcode == CPUI_STORE && op.inputs.len() == 3)
+        .filter_map(|store| {
+            let (base, offset) = base_plus(&store.inputs[1])?;
+            Some(Slot { space: store.inputs[0].offset as i32, base, offset })
+        })
+        .collect()
+}
+
+/// Does the instruction after `call` load back a slot the payload stores (the ELFv1
+/// `ld r2,40(r1)` TOC reload)? Ops placed at the call's own address are skipped.
+fn reloads_stored_slot(
+    data: &crate::funcdata::Funcdata,
+    call: crate::context::OpId,
+    operations: &[Operation],
+) -> bool {
+    use kuna_base::space::spacetype::{IPTR_CONSTANT, IPTR_PROCESSOR};
+    use kuna_num::opcodes::OpCode::{CPUI_INT_ADD, CPUI_LOAD};
+    let slots = payload_slots(operations);
+    let ops = data.obank();
+    let Some(call_op) = ops.get(call) else { return false };
+    let mut next = call_op.basic_neighbours().1;
+    while let Some(op) = next.and_then(|id| ops.get(id)) {
+        if op.get_addr() != call_op.get_addr() {
+            break;
+        }
+        next = op.basic_neighbours().1;
+    }
+    let Some(reload) = next.and_then(|id| ops.get(id)) else { return false };
+    let varnode = |id: Option<crate::context::VarnodeId>| id.and_then(|id| data.vbank().get(id));
+    let key = |v: &crate::varnode::Varnode| (v.get_space().get_index(), v.get_offset(), v.get_size() as u32);
+    let instruction: Vec<_> = ops.iter_at(reload.get_addr()).filter_map(|(_, id)| ops.get(id)).collect();
+    let base_plus = |pointer: &crate::varnode::Varnode| -> Option<((i32, u64, u32), u64)> {
+        if pointer.get_space().get_type() == IPTR_PROCESSOR {
+            return Some((key(pointer), 0));
+        }
+        let add = instruction.iter().find(|op| {
+            op.code() == CPUI_INT_ADD && varnode(op.get_out()).is_some_and(|out| key(out) == key(pointer))
+        })?;
+        let (a, b) = (varnode(add.get_in(0))?, varnode(add.get_in(1))?);
+        match (a.get_space().get_type(), b.get_space().get_type()) {
+            (IPTR_PROCESSOR, IPTR_CONSTANT) => Some((key(a), b.get_offset())),
+            (IPTR_CONSTANT, IPTR_PROCESSOR) => Some((key(b), a.get_offset())),
+            _ => None,
+        }
+    };
+    instruction.iter().any(|load| {
+        if load.code() != CPUI_LOAD {
+            return false;
+        }
+        let (Some(space), Some(pointer)) = (varnode(load.get_in(0)), varnode(load.get_in(1))) else {
+            return false;
+        };
+        base_plus(pointer).is_some_and(|(base, offset)| {
+            slots.contains(&Slot { space: space.get_offset() as i32, base, offset })
+        })
+    })
+}
+
 /// Apply the current model's entry-boundary effects before the first operation.
 pub fn apply_entry(data: &mut crate::funcdata::Funcdata) -> KunaResult<()> {
-    if !data.get_arch().call_mechanism_effects || data.bblocks_get_size() == 0 {
+    if !data.get_arch().call_mechanism_effects
+        || data.get_arch().call_mechanism_reload_only
+        || data.bblocks_get_size() == 0
+    {
         return Ok(());
     }
     let Some(model) = evaluation_model(data) else {
