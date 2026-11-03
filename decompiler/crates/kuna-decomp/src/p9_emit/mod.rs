@@ -22,6 +22,7 @@ pub(crate) mod kuna_ruststorevalue;
 pub(crate) mod kuna_rustptradd;
 pub(crate) mod kuna_rustarrayindex;
 pub(crate) mod kuna_rustarrayaddr;
+pub(crate) mod kuna_rustarraydecay;
 pub mod kuna_unsignedread; // (kuna) an unsigned read of an expression C evaluates as signed casts it
 pub mod kuna_narrowselector; // (kuna) a switch on a narrow expression casts it to its own width
 pub mod stringmanage;

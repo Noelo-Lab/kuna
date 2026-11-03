@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-03T05:16:08.767216+00:00",
+  "all_four_gates_passed": true,
+  "additional_tools_lint_catalog_counters_passed": true,
+  "workspace_passed": 10374,
+  "workspace_failed": 0,
+  "workspace_ignored": 39,
+  "workspace_suites": 72,
+  "native97_passed": true,
+  "extra_constant4_passed": true,
+  "structural_review_complete": true,
+  "source_test_name_correction": "interrupted-test-name-validation/record.json",
+  "no_timing_yet": true
+}

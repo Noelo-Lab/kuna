@@ -173,6 +173,10 @@ pub struct IfaceDecompData {
     /// next `decompile` can adopt that IR instead of following the same flow a
     /// second time.  See [`PristineFlow`].
     pub pristine_flow: Option<PristineFlow>,
+    /// (kuna decompile-all watchdog) The flow a `decompile` stopped at its
+    /// budget or memory limit left out of the shell in `fd`, which
+    /// [`Self::follow_stopped_flow`] follows for a command that reads the IR.
+    pub stopped_flow: Option<PristineFlow>,
     /// (kuna) How many times a `decompile` adopted the loaded IR instead of
     /// re-following the flow.  Observability only -- nothing reads it to make a
     /// decision; it is what lets a test assert the fast path was actually taken
@@ -306,8 +310,35 @@ impl IfaceDecompData {
         self.pending_proto_overrides.clear();
         self.pending_param_maps.clear();
         self.pristine_flow = None;
+        self.stopped_flow = None;
         self.pending_local_checks.clear();
         self.printed_checks = None;
+    }
+
+    /// (kuna decompile-all watchdog) Follow the flow a budget-stopped
+    /// `decompile` left out of the shell in `fd`, for a command that reads the
+    /// IR (`print raw`, the `region` commands), which then prints what it did
+    /// when the stop followed the flow again at once.
+    pub fn follow_stopped_flow(&mut self) {
+        let Some(recipe) = self.stopped_flow.take() else { return };
+        let (Some(prog), Some(shell)) = (self.conf.as_mut(), self.fd.as_ref()) else { return };
+        if shell.get_address() != &recipe.entry || !shell.obank().empty() {
+            return;
+        }
+        let reason = shell.kuna_pipeline_failure().map(str::to_string);
+        let followed = build_and_follow_flow_with_override(
+            prog.arch_mut(),
+            &recipe.name,
+            recipe.entry,
+            recipe.size,
+            &recipe.flow_overrides,
+        );
+        if let Ok(mut fd) = followed {
+            if let Some(reason) = reason {
+                fd.set_kuna_pipeline_failure(&reason);
+            }
+            self.fd = Some(fd);
+        }
     }
 }
 
@@ -1277,6 +1308,7 @@ decomp_command!(
         .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         // (kuna) Stamp the follow so an immediately-following `decompile` can adopt
         // this IR rather than following the same flow again (see `PristineFlow`).
+        dcp.stopped_flow = None;
         dcp.pristine_flow = Some(PristineFlow {
             command_seq,
             name: resolved_name,
@@ -1380,6 +1412,7 @@ decomp_command!(
             build_and_follow_flow_within_budget(prog.arch_mut(), &name, offset, declared, &flow_overrides)
                 .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
         // (kuna) Same follow stamp as `load function` (see `PristineFlow`).
+        dcp.stopped_flow = None;
         dcp.pristine_flow = Some(PristineFlow {
             command_seq,
             name: name_stamp,
@@ -2329,20 +2362,32 @@ decomp_command!(
                 .push((callpoint, pieces));
         }
         // Restore the program (and the fresh Funcdata on success) regardless.
-        if result.is_err() {
+        if let (Err(error), Some(recipe)) = (&result, adopted_recipe) {
             // Re-follow the adopted IR so the console is left holding the same
             // un-decompiled `dcp.fd` the rebuild path would have left (see
-            // `adopted_recipe`).  `None` whenever nothing was adopted.
-            if let Some(recipe) = &adopted_recipe {
-                if let Ok(fd) = build_and_follow_flow_with_override(
-                    prog.arch_mut(),
+            // `adopted_recipe`).  A drive stopped at its budget or memory limit
+            // keeps a shell built without following again: that follow would
+            // run past the limit that just stopped the drive.  A command that
+            // reads the IR follows it then (`follow_stopped_flow`).
+            if kuna_decomp::decompile_drive::is_budget_stop(error) {
+                if let Ok(fd) = kuna_decomp::decompile_drive::budget_stop_shell(
+                    prog.arch(),
                     &recipe.name,
                     recipe.entry.clone(),
                     recipe.size,
-                    &recipe.flow_overrides,
                 ) {
-                    dcp_mut(status)?.fd = Some(fd);
+                    let dcp = dcp_mut(status)?;
+                    dcp.fd = Some(fd);
+                    dcp.stopped_flow = Some(recipe);
                 }
+            } else if let Ok(fd) = build_and_follow_flow_with_override(
+                prog.arch_mut(),
+                &recipe.name,
+                recipe.entry.clone(),
+                recipe.size,
+                &recipe.flow_overrides,
+            ) {
+                dcp_mut(status)?.fd = Some(fd);
             }
         }
         let dcp = dcp_mut(status)?;
@@ -2367,6 +2412,7 @@ decomp_command!(
                     .collect();
                 dcp.printed_checks = (!expected.is_empty()).then_some((check_lines, expected));
                 dcp.fd = Some(fd);
+                dcp.stopped_flow = None;
                 for line in &refusals {
                     status.out(line);
                 }
@@ -2551,6 +2597,7 @@ decomp_command!(
         // size) and write it to the bulk stream, mirroring `print C`.
         let raw = {
             let dcp = dcp_mut(status)?;
+            dcp.follow_stopped_flow();
             if dcp.fd.is_none() {
                 return Err(IfaceError::execution("No function selected"));
             }

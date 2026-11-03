@@ -465,6 +465,11 @@ impl Cover {
         }
     }
 
+    /// The inclusive block-index ranges \b this covers, ascending.
+    pub fn block_runs(&self) -> impl Iterator<Item = (int4, int4)> + '_ {
+        self.runs.iter().map(|r| (r.lo, r.hi))
+    }
+
     /// Iterate the `(block_index, CoverBlock)` entries in ascending block order
     /// (C++ `begin`/`end`).
     pub fn iter(&self) -> impl Iterator<Item = (int4, &CoverBlock)> {

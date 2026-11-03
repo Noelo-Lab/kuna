@@ -9,9 +9,9 @@ use crate::printc::{op_key, op_token, tokens, PrintC};
 use crate::printlanguage::{modifiers, Atom, OpToken, SyntaxHighlight, TagType, TokenType};
 use kuna_num::opcodes::OpCode;
 
-static RAW_ADDRESS: OpToken = op_token("&raw mut ", "", 1, 62, false, TokenType::UnaryPrefix, 0, 0);
+pub(crate) static RAW_ADDRESS: OpToken = op_token("&raw mut ", "", 1, 62, false, TokenType::UnaryPrefix, 0, 0);
 
-fn array_place(fd: &Funcdata, base: VarnodeId) -> bool {
+pub(crate) fn array_place(fd: &Funcdata, base: VarnodeId) -> bool {
     let Some(node) = fd.vbank().get(base).filter(|node| node.is_implied()) else { return false; };
     let Some(def) = node.get_def() else { return false; };
     let Some(operation) = fd.obank().get(def).filter(|op| op.code() == OpCode::CPUI_PTRSUB) else {
