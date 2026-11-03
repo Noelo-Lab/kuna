@@ -1,0 +1,192 @@
+{
+  "at": "2026-11-02T21:23:20.762981+00:00",
+  "command": [
+    "cc",
+    "-O2",
+    "-g",
+    "-fwrapv",
+    "-fno-pie",
+    "-no-pie",
+    "-o",
+    "/home/mahaloz/kwt/angr-go-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64",
+    "/home/mahaloz/kwt/angr-go-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.c",
+    "/home/mahaloz/kwt/angr-go-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_helpers.c"
+  ],
+  "compiler": "cc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+  "source_sha256": "dadd8c8f9c1d43d68bc64dc8bb1a9cdb5e82f2a3241c23944f3f1ed72c1d2e5e",
+  "binary_sha256": "1eebe16c56ed9a1236a708596690cccfa9c1107d293f1e6f1874668c72f839c8",
+  "assertions_sha256": "18e7c57088738f5348863bd68a969f0efdf5bbeee0d794fe5464520207d14f56",
+  "cases": [
+    {
+      "name": "signed8",
+      "width": 8,
+      "kind": "signed"
+    },
+    {
+      "name": "unsigned8",
+      "width": 8,
+      "kind": "unsigned"
+    },
+    {
+      "name": "signed_plain8",
+      "width": 8,
+      "kind": "signed_plain"
+    },
+    {
+      "name": "unsigned_plain8",
+      "width": 8,
+      "kind": "unsigned_plain"
+    },
+    {
+      "name": "signed_xor8",
+      "width": 8,
+      "kind": "signed_xor"
+    },
+    {
+      "name": "signed_constant8",
+      "width": 8,
+      "kind": "signed_constant"
+    },
+    {
+      "name": "unsigned_constant8",
+      "width": 8,
+      "kind": "unsigned_constant"
+    },
+    {
+      "name": "signed16",
+      "width": 16,
+      "kind": "signed"
+    },
+    {
+      "name": "unsigned16",
+      "width": 16,
+      "kind": "unsigned"
+    },
+    {
+      "name": "signed_plain16",
+      "width": 16,
+      "kind": "signed_plain"
+    },
+    {
+      "name": "unsigned_plain16",
+      "width": 16,
+      "kind": "unsigned_plain"
+    },
+    {
+      "name": "signed_xor16",
+      "width": 16,
+      "kind": "signed_xor"
+    },
+    {
+      "name": "signed_constant16",
+      "width": 16,
+      "kind": "signed_constant"
+    },
+    {
+      "name": "unsigned_constant16",
+      "width": 16,
+      "kind": "unsigned_constant"
+    },
+    {
+      "name": "signed32",
+      "width": 32,
+      "kind": "signed"
+    },
+    {
+      "name": "unsigned32",
+      "width": 32,
+      "kind": "unsigned"
+    },
+    {
+      "name": "signed_plain32",
+      "width": 32,
+      "kind": "signed_plain"
+    },
+    {
+      "name": "unsigned_plain32",
+      "width": 32,
+      "kind": "unsigned_plain"
+    },
+    {
+      "name": "signed_xor32",
+      "width": 32,
+      "kind": "signed_xor"
+    },
+    {
+      "name": "signed_constant32",
+      "width": 32,
+      "kind": "signed_constant"
+    },
+    {
+      "name": "unsigned_constant32",
+      "width": 32,
+      "kind": "unsigned_constant"
+    },
+    {
+      "name": "signed64",
+      "width": 64,
+      "kind": "signed"
+    },
+    {
+      "name": "unsigned64",
+      "width": 64,
+      "kind": "unsigned"
+    },
+    {
+      "name": "signed_plain64",
+      "width": 64,
+      "kind": "signed_plain"
+    },
+    {
+      "name": "unsigned_plain64",
+      "width": 64,
+      "kind": "unsigned_plain"
+    },
+    {
+      "name": "signed_xor64",
+      "width": 64,
+      "kind": "signed_xor"
+    },
+    {
+      "name": "signed_constant64",
+      "width": 64,
+      "kind": "signed_constant"
+    },
+    {
+      "name": "unsigned_constant64",
+      "width": 64,
+      "kind": "unsigned_constant"
+    },
+    {
+      "name": "side_effect",
+      "kind": "side_effect",
+      "width": 64
+    },
+    {
+      "name": "array_store",
+      "kind": "array_store",
+      "width": 64
+    },
+    {
+      "name": "nested_store",
+      "kind": "nested_store",
+      "width": 64
+    },
+    {
+      "name": "float_store",
+      "kind": "float_store",
+      "width": 64
+    },
+    {
+      "name": "pointer_store",
+      "kind": "pointer_store",
+      "width": 64
+    },
+    {
+      "name": "bool_store",
+      "kind": "bool_store",
+      "width": 64
+    }
+  ],
+  "helpers_sha256": "3cec6b6c4217fcf3545a9fedc09585b301fb9a01a73ffecd459fc7ea7d63a72f"
+}

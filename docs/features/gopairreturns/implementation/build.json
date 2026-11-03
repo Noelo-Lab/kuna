@@ -1,0 +1,30 @@
+{
+  "at": "2026-11-02T23:15:50.094880+00:00",
+  "parent_commit": "460ac0a18f0efcce2e28f794050ad74e70b371ae",
+  "parent_cli_sha256": "b545021c00cf8a9a73329c1318464c571dc2afa00245a33a398b0ba090cb0d1c",
+  "new_cli_sha256": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305",
+  "option": "gopairreturns",
+  "default": "off",
+  "requires": "godwarfsig on",
+  "catalog_count": 376,
+  "corpus_files": 683,
+  "stage_assertions": [
+    3737,
+    3737
+  ],
+  "stage_keys_added": [
+    "data:Go pair option off retains the register byte carrier",
+    "data:Go pair word shift reads its low word once",
+    "data:Go pair zero carrier becomes two integer fields",
+    "data:Go paired callers assign both fields from one invocation",
+    "data:Go paired nested call evaluates outside adapter parameter scope",
+    "data:Go paired returns project both fields",
+    "data:Go paired signatures preserve both source integer results",
+    "data:Go unsigned pair retains both unsigned result types"
+  ],
+  "catalog_label_rename": [
+    "data:KUNA-CATALOG #15: 375 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 376 registry rows plus six individual queries"
+  ],
+  "publication_requires_parent_pr_merged": true
+}

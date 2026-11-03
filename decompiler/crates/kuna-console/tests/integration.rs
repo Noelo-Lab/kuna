@@ -501,6 +501,8 @@ mod verify_outlang_go;
 
 #[path = "verify_godwarfsig.rs"]
 mod verify_godwarfsig;
+#[path = "verify_gopairreturns.rs"]
+mod verify_gopairreturns;
 
 #[path = "verify_rustextensions.rs"]
 mod verify_rustextensions;

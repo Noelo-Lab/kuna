@@ -749,3 +749,6 @@ mod joined_callback_return;
 
 #[path = "integer_field_extract.rs"]
 mod integer_field_extract;
+
+#[path = "go_store_value.rs"]
+mod go_store_value;

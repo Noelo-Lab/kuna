@@ -1,0 +1,8 @@
+{
+  "previous_cli_sha256": "132450827a3a308c329d873f4fa8774e42171a777a02f8d7d3aaaf0c8685bdf9",
+  "candidate_cli_sha256": "3877ad7912406ee1c8c6007ec69241b5b66c2fc1362c79846687d65d59ec3131",
+  "images": 67,
+  "matched_function_records": 176670,
+  "changed_function_records": 0,
+  "claim": "Every complete enabled and disabled function record equals the previously reviewed candidate after replacing result lists with fixed slots and bypassing disabled call dispatch."
+}

@@ -1,0 +1,5 @@
+Import only complete amd64 Go ABIInternal contracts with scalar inputs and exactly two 64-bit integer results. Prove RAX/RBX joined storage, reject repeated concrete entries and metadata collisions, and attach a validated two-field language facet. Use fixed two-slot result storage so scalar contracts do not acquire result-list allocations.
+
+Keep ordinary struct storage throughout the engine. Go emission uses two-result declarations and single-evaluation assignments, projections and forwarding adapters. Bounded carrier conversions handle zero extensions, exact word shifts and verified opaque results. C and Rust retain ordinary struct representation; unsupported Rust carrier expressions remain documented.
+
+Keep the feature off in every preset and require godwarfsig. Validate native complete bodies, every changed whole-image record, the original corpus and stages, all workspace checks, and hash-bound default-overhead and option-flip timing. Preserve previous failed or inconclusive evidence.

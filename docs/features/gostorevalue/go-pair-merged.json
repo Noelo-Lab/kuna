@@ -1,0 +1,11 @@
+{
+  "at": "2026-11-03T00:10:15.819304+00:00",
+  "pr": 1454,
+  "url": "https://github.com/Noelo-Lab/kuna/pull/1454",
+  "merged_commit": "4b5e23aed28e4e4d9d87a61ad454586a8b07eedd",
+  "merged_tree": "b42d6c0ed0c62d229db647d241fba45b1a8a0159",
+  "head": "367af34164ad0ddfe1d77b49885b98507cba5afd",
+  "merged_at": "2026-11-03T00:09:59Z",
+  "matches_fully_validated_tree": true,
+  "all_nine_ci_checks_passed": true
+}

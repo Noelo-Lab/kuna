@@ -1,0 +1,41 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64</com>
+  <com>read symbols</com>
+  <com>option outlang go</com>
+  <com>option ctypes off</com>
+  <com>option realtypes off</com>
+  <com>map prototype signed8 void signed8(struct Fields *p,uint1 a,uint1 b);</com>
+  <com>map prototype unsigned16 void unsigned16(struct Fields *p,int2 a,int2 b);</com>
+  <com>map prototype signed_xor32 void signed_xor32(struct Fields *p,int4 a);</com>
+  <com>map prototype counted_destination struct Fields *counted_destination(struct Fields *p);</com>
+  <com>map prototype counted_value uint8 counted_value(uint8 a,uint8 b);</com>
+  <com>map prototype side_effect void side_effect(struct Fields *p,uint8 a,uint8 b);</com>
+  <com>map prototype array_store void array_store(int8 *p,uint8 i,uint8 a);</com>
+  <com>load function signed8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function unsigned16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function signed_xor32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function side_effect</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function array_store</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Go signed byte store converts unsigned arithmetic" min="1" max="1">\(\*p\)\.s8 = int8\(b \+ a\)</stringmatch>
+<stringmatch name="Go unsigned short store converts signed arithmetic" min="1" max="1">\(\*p\)\.u16 = uint16\(b \+ a\)</stringmatch>
+<stringmatch name="Go signed word store converts bitwise expression" min="1" max="1">\(\*p\)\.s32 = int32\(uint32\(a\) \^ 0x1\)</stringmatch>
+<stringmatch name="Go side effect store converts returned value once" min="1" max="1">\(\*counted_destination\(p\)\)\.s64 = int64\(v1\)</stringmatch>
+<stringmatch name="Go indexed signed store converts unsigned value" min="1" max="1">unsafe\.Add\(unsafe\.Pointer\(p\),i \* 8\)\) = int64\(a\)</stringmatch>
+</decompilertest>

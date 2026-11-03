@@ -2287,6 +2287,8 @@ pub struct Architecture {
     pub analysis_cppproto: bool,
     /// Recover verified Go scalar/pointer register-ABI signatures from DWARF.
     pub analysis_godwarfsig: bool,
+    /// Recover verified amd64 Go pairs of full-width integer results.
+    pub analysis_gopairreturns: bool,
     /// (kuna) Gate full-depth DWARF type resolution (`typedepth`); default
     /// **on**. The type mapper's recursion guard becomes upstream's per-DIE
     /// re-entry counter (`DWARFDataTypeImporter.trackRecursion`) instead of a
@@ -3426,6 +3428,7 @@ impl Architecture {
             analysis_dwarf_lines: false,
             analysis_cppproto: false,
             analysis_godwarfsig: false,
+            analysis_gopairreturns: false,
             analysis_typedepth: false,
             analysis_dwarfstructs: false,
             analysis_dwarfvariants: false,
@@ -3913,6 +3916,7 @@ impl Architecture {
         self.analysis_variantnames = true; // (kuna) discriminant-value naming default-ON (acts only where a variant part was imported, so the parity gates cannot see it)
         self.analysis_cppproto = true; // (kuna) DIV: DWARF C++ prototype arm default-ON (recovers ground truth the name-only walk drops; real-ELF DWARF path only, so every parity gate is byte-identical)
         self.analysis_godwarfsig = false;
+        self.analysis_gopairreturns = false;
         // (kuna) DIV: demangled C++ signatures default to the PROVEN tier — only
         // the prototypes the mangling entails (ctor/dtor/cv-qualified member/
         // unqualified global), measured at precision 1.0000 on google/leveldb.
