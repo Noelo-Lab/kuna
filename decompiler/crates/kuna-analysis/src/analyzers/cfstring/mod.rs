@@ -19,9 +19,9 @@
 //! the struct and renders `dat_<addr>`. This pass resolves each entry's `data`
 //! pointer (through the chained-fixup overlay on an arm64(e) image, a raw word on
 //! a classic `LC_DYLD_INFO` image), reads the string, and emits a [`CFStringFact`].
-//! The commit seam types the entry a `char[N]` and pre-seeds the `StringManager`
-//! at the entry address with the resolved bytes, so a reference renders the
-//! literal.
+//! The commit seam types the entry an opaque `struct __CFString`, whose pointer
+//! is `CFStringRef`, and pre-seeds the `StringManager` at the entry address with
+//! the resolved bytes, so a reference renders the literal.
 //!
 //! # Gating & faithfulness
 //!

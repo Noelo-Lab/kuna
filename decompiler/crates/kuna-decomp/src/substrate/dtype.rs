@@ -4307,6 +4307,11 @@ pub trait TypeFactory {
     fn kuna_lang_facet(&self, _name: &str) -> Option<crate::kuna_langfacet::LangFacet> {
         None
     }
+
+    /// (kuna `cfstrings`) Make the named pointer `ptr` the type every later
+    /// pointer request of its size and word size returns for its pointee, so an
+    /// inferred `struct __CFString *` is spelled `CFStringRef`.
+    fn kuna_prefer_named_pointer(&self, _ptr: &Rc<Datatype>) {}
 }
 
 // =============================================================================
@@ -4958,6 +4963,9 @@ pub struct TypeFactoryImpl {
     /// `variant_layouts`, the records key by name so they survive
     /// `clear_noncore`.  See [`crate::kuna_langfacet::LangFacet`].
     lang_facets: RefCell<BTreeMap<String, crate::kuna_langfacet::LangFacet>>,
+    /// (kuna `cfstrings`) Named pointers preferred for their pointee, keyed by
+    /// the pointee's id. See [`TypeFactory::kuna_prefer_named_pointer`].
+    named_pointers: RefCell<BTreeMap<uint8, Rc<Datatype>>>,
 }
 
 impl Default for TypeFactoryImpl {
@@ -4996,6 +5004,7 @@ impl TypeFactoryImpl {
             remote_types: RefCell::new(None),
             variant_layouts: RefCell::new(BTreeMap::new()),
             lang_facets: RefCell::new(BTreeMap::new()),
+            named_pointers: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -6611,8 +6620,24 @@ impl TypeFactoryImpl {
                 pt = base; // Strip the first ARRAY type
             }
         }
+        if let Some(named) = self.named_pointer(s, &pt, ws) {
+            return Ok(named);
+        }
         let res = self.find_add(self.build_pointer(s, pt, ws))?;
         self.calc_truncate(res)
+    }
+
+    /// (kuna `cfstrings`) The preferred named pointer to `pt`, if one was set.
+    fn named_pointer(&self, s: int4, pt: &Rc<Datatype>, ws: uint4) -> Option<Rc<Datatype>> {
+        let map = self.named_pointers.borrow();
+        if map.is_empty() {
+            return None;
+        }
+        let named = map.get(&pt.get_id())?;
+        let same = named.get_size() == s
+            && named.get_word_size() == Some(ws)
+            && named.get_ptr_to().is_some_and(|to| Rc::ptr_eq(&to, pt));
+        same.then(|| Rc::clone(named))
     }
 
     /// Construct an absolute pointer (C++ `getTypePointer`, type.cc:4341-4350).
@@ -6622,6 +6647,9 @@ impl TypeFactoryImpl {
             if let Some(st) = pt.get_stripped() {
                 pt = st;
             }
+        }
+        if let Some(named) = self.named_pointer(s, &pt, ws) {
+            return Ok(named);
         }
         let res = self.find_add(self.build_pointer(s, pt, ws))?;
         self.calc_truncate(res)
@@ -7516,6 +7544,11 @@ impl TypeFactory for TypeFactoryImpl {
     }
     fn kuna_lang_facet(&self, name: &str) -> Option<crate::kuna_langfacet::LangFacet> {
         self.lang_facets.borrow().get(name).cloned()
+    }
+    fn kuna_prefer_named_pointer(&self, ptr: &Rc<Datatype>) {
+        if let Some(to) = ptr.get_ptr_to() {
+            self.named_pointers.borrow_mut().insert(to.get_id(), Rc::clone(ptr));
+        }
     }
 }
 

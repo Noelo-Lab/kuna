@@ -14,10 +14,10 @@
 //! - **`--option cfstrings off`**: each getter returns the
 //!   `__cfstring` entry by its data symbol — the CFString struct the printer
 //!   cannot follow on its own.
-//! - **`--option cfstrings on`** (default): each returns `CFSTR("...")` — the entry's char
-//!   pointer resolved, the string seeded into the `StringManager`, the entry typed
-//!   `char[N]` over its own 32 bytes only, so a long string never hides the next
-//!   entry.
+//! - **`--option cfstrings on`** (default): each returns `CFSTR("...")` and is
+//!   typed `CFStringRef` — the entry's char pointer resolved, the string seeded
+//!   into the `StringManager`, the entry typed an opaque `struct __CFString` over
+//!   its own 32 bytes only, so a long string never hides the next entry.
 //! - **`--option cfstrings annotate`**: the same, followed by a comment naming the
 //!   entry address.
 //!
@@ -36,8 +36,8 @@ use kuna_decomp::decompile_drive::build_and_follow_flow;
 
 /// `(getter VMA, entry rendered when off, entry address, string rendered when on)`.
 /// The second string is longer than one 32-byte entry, and the third entry sits
-/// right behind it, so it is only reachable when the second entry's `char[N]`
-/// stays inside its own entry.
+/// right behind it, so it is only reachable when the second entry's type stays
+/// inside its own entry.
 const ENTRIES: [(u64, &str, u64, &str); 3] = [
     (0x100000538, "&_kGreeting", 0x100004008, "cfstring hello"),
     (0x100000544, "&_kLong", 0x100004028, "a constant string longer than one entry"),
@@ -138,6 +138,14 @@ fn cfstring_renders_as_literal_only_when_on() {
             annotated.contains(&format!("return CFSTR(\"{text}\") /* cfstring@0x{entry:x} */;")),
             "cfstrings annotate must name the entry 0x{entry:x}:\n{annotated}"
         );
-        assert!(on.contains("char *"), "cfstrings on types the constant a char pointer:\n{on}");
+        assert!(
+            on.contains("CFStringRef ") && !on.contains("char *"),
+            "cfstrings on types the constant a CFStringRef:\n{on}"
+        );
+        assert!(
+            annotated.contains("CFStringRef "),
+            "cfstrings annotate types the constant a CFStringRef:\n{annotated}"
+        );
+        assert!(!off.contains("CFStringRef"), "cfstrings off leaves the type alone:\n{off}");
     }
 }

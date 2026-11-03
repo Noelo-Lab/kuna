@@ -4188,9 +4188,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   `dat_<addr>`. The pass reads each entry, resolves its `char *` through the
   chained-fixup overlay (§1.2) on an arm64(e) image or as a raw word on a classic
   `LC_DYLD_INFO` image, and decodes the string (8-bit when the `flags` unicode bit
-  `0x10` is clear, UTF-16 otherwise). The commit seam then types the entry a
-  `char[N]` spanning the entry's own four words (never the string's length, which
-  would overrun the next entry and hide it) and seeds the `StringManager` at the
+  `0x10` is clear, UTF-16 otherwise). The commit seam then types the entry an
+  opaque `struct __CFString` spanning the entry's own four words (never the
+  string's length, which would overrun the next entry and hide it) and seeds the `StringManager` at the
   entry address with the resolved bytes, so a reference renders the string
   across the one indirection the printer cannot follow on its own. The entries are
   marked read-only (a CFString constant is immutable), which the route requires on
@@ -4200,10 +4200,25 @@ every other binary's pass list is byte-identical to before the pass existed):
   of them as `CFSTR("...")`
   (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_cfstr.rs (wrap)`): the value is
   the entry, a `CFStringRef`, not the characters, so
-  `NSLog(CFSTR("Reachability Flag Status: …"))` is what was written. The entry is
-  still typed `char[N]`, because the literal route reads strings through a
-  character pointer, so the reference's declared type stays `char *`. The Rust and
-  Go back-ends keep the plain literal. `cfstrings annotate` runs the same pass and
+  `NSLog(CFSTR("Reachability Flag Status: …"))` is what was written. The printer
+  reads an entry's seeded string through a `char` element whatever the
+  reference's type (`cfstring_char` in
+  `decompiler/crates/kuna-decomp/src/p9_emit/printc.rs`), at both the constant
+  arm and the global-symbol arm, so the entry's own type is free to say what the
+  value is: the commit declares `struct __CFString` at the entry size and a
+  pointer to it named `CFStringRef`
+  (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_cfstr.rs (declare_types)`),
+  reusing a `CFStringRef` and `__CFString` the type factory already holds (an
+  opaque one is completed to the entry size), and registers that pointer as the
+  one the factory returns for any later pointer to the struct
+  (`TypeFactory::kuna_prefer_named_pointer`). Type inference therefore types a
+  reference to an entry `CFStringRef`, and the type propagates to the returns,
+  parameters and locals that carry it: a getter is
+  `CFStringRef get_greeting(void) { return CFSTR("cfstring hello"); }`. When an
+  existing `__CFString` has another size, or an existing `CFStringRef` is not a
+  pointer to it, the entry falls back to a `char[N]` and the reference to
+  `char *`. The Rust and Go back-ends keep the plain literal, with the pointer to
+  the struct as its type. `cfstrings annotate` runs the same pass and
   also follows each `CFSTR` with `/* cfstring@0x<entry> */`, the address a
   disassembler or hex view shows for the entry, which the literal otherwise
   replaces. The pass is on by default: it runs only on a Mach-O and only on the

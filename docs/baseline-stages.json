@@ -2528,7 +2528,7 @@
     "data:cfstrings annotate: the entry behind a long string names its own address",
     "data:cfstrings off: the __cfstring reference is the entry, not its string",
     "data:cfstrings off: the entry behind a long string is the entry, not its string",
-    "data:cfstrings on and annotate: the returned constant is typed as a char pointer",
+    "data:cfstrings on and annotate: the returned constant is typed as a CFStringRef",
     "data:cfstrings on: the __cfstring reference renders as CFSTR of its string",
     "data:cfstrings on: the entry behind a long string still renders its literal",
     "data:charbyte #10: and the call needs a cast back (dashlen off; argbyte and sibling, whose pointers stay uint1 *, in both passes)",

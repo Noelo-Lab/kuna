@@ -2666,7 +2666,7 @@ pub struct Architecture {
     pub analysis_objc: bool,
     /// (kuna) Gate the Mach-O `__cfstring` constant-string recovery pass
     /// (`cfstrings`); default **on** (renders CFString constants as
-    /// `CFSTR("...")` + adds `char[N]` symbols). Mach-O-only pass.
+    /// `CFSTR("...")` typed `CFStringRef`). Mach-O-only pass.
     pub analysis_cfstrings: bool,
     /// (kuna `cfstrings annotate`) Follow each rendered `CFSTR("...")` with a
     /// comment naming its `__cfstring` entry address. Default **off**.

@@ -12,7 +12,8 @@
 
     Stage / sub-stage: P1 external-refinement, the Mach-O `cfstrings`
     analysis pass (`kuna-analysis/src/analyzers/cfstring/mod.rs`), whose
-    facts the commit seam turns into a `char[N]` entry plus a StringManager
+    facts the commit seam turns into an opaque `struct __CFString` entry,
+    whose pointer the type factory spells `CFStringRef`, plus a StringManager
     seed at the entry address (`kuna-console/src/engine.rs`).
 
     P0 assertion: `option cfstrings on|off|annotate` (default on). It is a commit-time
@@ -26,12 +27,12 @@
     address. `_get_greeting` @0x100000538 returns "cfstring hello" @0x100004008;
     `_get_after` @0x100000550 returns the entry @0x100004048, which sits right
     behind an entry whose string is longer than its own 32 bytes, so it is only
-    reached when that entry's `char[N]` stays inside the entry.
+    reached when that entry's type stays inside the entry.
 
     Pass 1 (`option cfstrings off`, the BUG): the getters return the entries, named by
     their data symbols (`&_kGreeting`, `&_kAfter`), not their strings. Pass 2
     (`option cfstrings on`, the default, the FIX): they return `CFSTR("cfstring hello")` and
-    `CFSTR("after the long one")`. Pass 3 (`option cfstrings annotate`): the same,
+    `CFSTR("after the long one")`, typed `CFStringRef`. Pass 3 (`option cfstrings annotate`): the same,
     each followed by a comment naming its entry address.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
@@ -74,7 +75,7 @@ c0035fd6
 </script>
 <stringmatch name="cfstrings off: the __cfstring reference is the entry, not its string" min="1" max="1">return &amp;_kGreeting;</stringmatch>
 <stringmatch name="cfstrings on: the __cfstring reference renders as CFSTR of its string" min="1" max="1">return CFSTR\("cfstring hello"\);</stringmatch>
-<stringmatch name="cfstrings on and annotate: the returned constant is typed as a char pointer" min="2" max="2">char \* _get_greeting\(void\)</stringmatch>
+<stringmatch name="cfstrings on and annotate: the returned constant is typed as a CFStringRef" min="2" max="2">CFStringRef _get_greeting\(void\)</stringmatch>
 <stringmatch name="cfstrings annotate: the CFSTR is followed by its entry address" min="1" max="1">return CFSTR\("cfstring hello"\) /\* cfstring@0x100004008 \*/;</stringmatch>
 <stringmatch name="cfstrings off: the entry behind a long string is the entry, not its string" min="1" max="1">return &amp;_kAfter;</stringmatch>
 <stringmatch name="cfstrings on: the entry behind a long string still renders its literal" min="1" max="1">return CFSTR\("after the long one"\);</stringmatch>
