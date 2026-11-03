@@ -3332,11 +3332,18 @@ moves.
   with either the DWARF 4/5 `DW_AT_data_bit_offset` or the DWARF 2/3
   `byte_size` + `bit_offset` spelling, each placed in the smallest byte span that
   covers it — the geometry the compiler's own access agrees with, and the one the
-  printer's `.`-versus-`->` test reads. A "bitfield" occupying whole aligned bytes
-  of a natural width is not one and goes in as a plain field of that width, which
-  is exact on a little-endian target and keeps a known
-  `BitFieldPullTransform` divergence (three bitfields sharing one extraction
-  chain) out of reach. Offsets are installed through a raw
+  printer's `.`-versus-`->` test reads. Positions follow the target's bit order:
+  on a big-endian target both `DW_AT_data_bit_offset` and `DW_AT_bit_offset`
+  count from the most significant bit of the first byte (of the aggregate and of
+  the storage unit respectively), and a span's least significant bit lies in its
+  last byte. Bitfields are listed in memory order, the more significant field
+  first within a big-endian byte, which is the order the bitfield lookup's binary
+  search expects. A member with `DW_AT_bit_size` that cannot be placed is
+  skipped. A "bitfield" occupying whole aligned bytes of a natural width is not
+  one and goes in as a plain field of that width, which is exact in either byte
+  order and keeps a known `BitFieldPullTransform` divergence (three bitfields
+  sharing one extraction chain, or one byte-aligned field read alone) out of
+  reach. Offsets are installed through a raw
   field-setting entry point rather than the C packing rules, because the layout is
   the compiler's own answer for the target ABI and re-deriving it would silently
   disagree with the bytes the decompiler reads.
