@@ -473,6 +473,17 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::objc::ObjcMetadataPass));
     }
 
+    // (kuna) Swift runtime-metadata recovery (SwiftMetadataPass): on a Swift
+    // image (the `sourcelang` detector saw its `swift5_*` sections, mangled
+    // symbols or runtime imports) in one of the two formats Swift ships in,
+    // read the reflection sections and name the metadata accessors, vtable and
+    // override implementations, protocol witnesses and the descriptor records
+    // themselves. Default-OFF (`--option swiftmetadata`, the objc precedent);
+    // an image without the sections produces nothing.
+    if compiler == Compiler::Swift && matches!(format, object::BinaryFormat::MachO | object::BinaryFormat::Elf) {
+        passes.push(Box::new(crate::swift::SwiftMetadataPass));
+    }
+
     // S1 PE PDB metadata recovery (PdbPass): on a Windows PE, read the CodeView
     // fingerprint (`{guid, age, path}`), locate the external `.pdb` (tier-1: the
     // `kuna_pdb_path` env var, the fid `kuna_fid_db` precedent), fingerprint-gate
@@ -1685,9 +1696,12 @@ mod tests {
     #[test]
     fn non_go_compilers_have_same_pass_ids() {
         let base = ids(&passes_for(Compiler::Gcc, NON_PE));
-        for c in [Compiler::Clang, Compiler::Swift, Compiler::Unknown] {
+        for c in [Compiler::Clang, Compiler::Unknown] {
             assert_eq!(ids(&passes_for(c, NON_PE)), base, "{c:?} pass ids must match the base set");
         }
+        // Swift adds its metadata pass after the base (the next test but one).
+        let swift = ids(&passes_for(Compiler::Swift, NON_PE));
+        assert_eq!(&swift[..base.len()], &base[..], "Swift set is the base set + extras");
         let rust = ids(&passes_for(Compiler::Rustc, NON_PE));
         assert_eq!(&rust[..base.len()], &base[..], "Rust set is the base set + extras");
         assert_eq!(rust.last(), Some(&"fatstrrecords"), "Rust appends the record pass");
@@ -1860,6 +1874,26 @@ mod tests {
         // No non-Mach-O format carries it.
         for f in [object::BinaryFormat::Elf, object::BinaryFormat::Pe, object::BinaryFormat::Coff] {
             assert!(!ids(&passes_for(Compiler::Clang, f)).contains(&"objc"), "{f:?} must not carry objc");
+        }
+    }
+
+    /// The Swift metadata pass is registered only for a Swift image in one of
+    /// the two formats Swift ships in (Mach-O, ELF), after every format block,
+    /// and for no other compiler or format.
+    #[test]
+    fn swiftmetadata_pass_registered_for_swift_macho_and_elf_only() {
+        for f in [object::BinaryFormat::MachO, object::BinaryFormat::Elf] {
+            let swift = ids(&passes_for(Compiler::Swift, f));
+            assert_eq!(swift.last(), Some(&"swiftmetadata"), "{f:?}: swiftmetadata is appended last");
+            let base = ids(&passes_for(Compiler::Clang, f));
+            assert_eq!(&swift[..base.len()], &base[..], "{f:?}: the Swift set is the base set + swiftmetadata");
+            assert_eq!(swift.len(), base.len() + 1);
+        }
+        for f in [object::BinaryFormat::Pe, object::BinaryFormat::Coff] {
+            assert!(!ids(&passes_for(Compiler::Swift, f)).contains(&"swiftmetadata"), "{f:?} must not carry swiftmetadata");
+        }
+        for c in [Compiler::Gcc, Compiler::Clang, Compiler::Rustc, Compiler::Go, Compiler::Unknown] {
+            assert!(!ids(&passes_for(c, NON_PE)).contains(&"swiftmetadata"), "{c:?} must not carry swiftmetadata");
         }
     }
 

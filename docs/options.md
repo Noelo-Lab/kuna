@@ -890,6 +890,9 @@ Three tiers:
 | read symbols dominates a single-function run on an entry-dense image | [`lazyfuncs`](#lazyfuncs) |
 | objective-c methods render as sub_<addr> instead of -[Class sel] | [`objc`](#objc) |
 | __objc_ metadata present but classes and selectors unnamed in a mach-o | [`objc`](#objc) |
+| swift binary functions render as sub_<addr> although swift5 metadata sections are present | [`swiftmetadata`](#swiftmetadata) |
+| type metadata accessors unnamed in a stripped swift mach-o | [`swiftmetadata`](#swiftmetadata) |
+| protocol witnesses and class methods of a stripped swift app have no names | [`swiftmetadata`](#swiftmetadata) |
 | stripped windows pe functions stay FUN_<addr> although a matching .pdb exists | [`pdb`](#pdb) |
 | pdb symbol names not applied to a pe | [`pdb`](#pdb) |
 | a .pdb beside the exe is ignored | [`pdb`](#pdb) |
@@ -3370,6 +3373,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off (default; no IMP is renamed and there is zero behavior change). Flip on for a Mach-O Objective-C binary to recover method names — a stripped IMP renders -[Greeter greet:] instead of sub_<addr>, and the class/selector strings are named.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-objc
 - **Example:** `option objc on`
+
+### `swiftmetadata` -- on | off, default `off`
+
+- **Symptoms:** swift binary functions render as sub_<addr> although swift5 metadata sections are present; type metadata accessors unnamed in a stripped swift mach-o; protocol witnesses and class methods of a stripped swift app have no names.
+- **What it does:** Run the Swift runtime-metadata recovery pass: on a Mach-O or ELF image, read the swift5_* reflection sections a stripped Swift binary keeps (__swift5_types / swift5_type_metadata, the nominal type context descriptors; __swift5_protos, the protocol descriptors; __swift5_proto, the conformance descriptors; __swift5_fieldmd, the field descriptors) and name what they point at, in the demangler's name-only conventions so the names read like symbol-table names: each type's metadata accessor (Module.Type.type_metadata_accessor), each class vtable slot's implementation by position and kind (Module.Class.vtable#3.getter - the slot carries no selector), each override whose overridden method descriptor is an import (Module.Sub.viewDidLoad(), the real member name, read from the …Tq import the override table points at), each resilient protocol witness (<Module.Type:Swift.Hashable>.hash(into:) when the requirement descriptor is an import, <T:P>.requirement#2 for a local protocol, Module.P.requirement#2.default for a default implementation), and the records themselves (….nominal_type_descriptor, ….protocol_descriptor, ….module_descriptor, <T:P>.protocol_conformance_descriptor, <T:P>.protocol_witness_table, ….reflection_field_descriptor). Type paths follow the parent chain (Module.Outer.Inner; a private/anonymous context is transparent; an extension context demangles its extended type; a parent in another image is named through its module-descriptor import). Function names use the FID-precedent label-gated rename: a real symbol is never overwritten, only an engine sub_*/FUN_* placeholder. Everything in the sections is 32-bit self-relative, so no fixup resolution is needed except for indirect references, which go through the chained-fixup overlay (rebases) or the import table (binds); a record the reader cannot follow is skipped, never guessed. Registered for Mach-O and ELF (the formats Swift ships in); an image without the sections produces nothing, so every other binary is byte-identical. DISABLED by default (output-changing: names stripped functions and descriptor records; real-binary-path only, so every parity gate is byte-identical).
+- **When to flip:** Off (default; nothing is named and there is zero behavior change). Flip on for a stripped Swift binary: metadata accessors, class vtable implementations, overrides of imported methods and protocol witnesses render under their type's path instead of sub_<addr>, and the descriptor records are named.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-swiftmetadata
+- **Example:** `option swiftmetadata on`
 
 ### `pdb` -- on | off, default `on`
 

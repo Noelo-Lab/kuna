@@ -1,0 +1,71 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Swift runtime-metadata recovery (`option swiftmetadata on|off`).
+
+    Issue: a stripped Swift binary names nothing. On the Toyota iOS app
+    (84 MB arm64, 314,038 functions, 304,309 of them `sub_<addr>`) the
+    `__swift5_*` reflection sections still describe 14,677 types, 1,317
+    protocols and 30,938 conformances, and point at 57,147 of the stripped
+    functions: every type's metadata accessor, every class vtable slot's
+    implementation, and every protocol witness.
+
+    Stage / sub-stage: P1 external-refinement, the Swift metadata pass
+    (`kuna-analysis/src/analyzers/swift/`), beside the ObjC metadata pass.
+
+    P0 assertion: `option swiftmetadata on|off` (default off).
+
+    The XML wrapper only supplies the harness architecture. Both passes
+    clear it and load the real fixture `swift_metadata_elf`: an x86-64 ELF
+    executable built with swiftc 6.3 and `llvm-strip` (strip all), so no
+    symbol survives for its own functions (see the fixtures README for the
+    source and the pinned VMAs from the unstripped build).
+
+    Pass 1 (`option swiftmetadata off`, the default) reproduces the BUG: the
+    metadata accessor at 0x30b0, the vtable method at 0x2fe0 and the witness
+    at 0x2ab0 are `sub_30b0`, `sub_2fe0`, `sub_2ab0`. Pass 2 (`option
+    swiftmetadata on`) is the FIX: the same functions are
+    `metafix.Point.type_metadata_accessor`, `metafix.Animal.vtable#4.method`
+    and `<metafix.Square:Swift.Hashable>.hash(into:)`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_metadata_elf</com>
+  <com>option swiftmetadata off</com>
+  <com>read symbols</com>
+  <com>load addr 0x30b0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2fe0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2ab0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_metadata_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x30b0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2fe0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2ab0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="swiftmetadata off: the metadata accessor is a placeholder" min="1" max="1">sub_30b0\(</stringmatch>
+<stringmatch name="swiftmetadata off: the vtable method is a placeholder" min="1" max="1">sub_2fe0\(</stringmatch>
+<stringmatch name="swiftmetadata off: the protocol witness is a placeholder" min="1" max="1">sub_2ab0\(</stringmatch>
+<stringmatch name="swiftmetadata on: the metadata accessor is named after its type" min="1" max="1">metafix\.Point\.type_metadata_accessor\(</stringmatch>
+<stringmatch name="swiftmetadata on: the vtable slot is named by class, position and kind" min="1" max="1">metafix\.Animal\.vtable#4\.method\(</stringmatch>
+<stringmatch name="swiftmetadata on: the witness is named by conformance and requirement" min="1" max="1">&lt;metafix\.Square:Swift\.Hashable&gt;\.hash\(into:\)\(</stringmatch>
+</decompilertest>

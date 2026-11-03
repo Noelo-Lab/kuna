@@ -2664,6 +2664,12 @@ pub struct Architecture {
     /// byte-identical. x86-64, no-chained-fixups path (the arm64 +
     /// LC_DYLD_CHAINED_FIXUPS resolver is a deferred follow-on).
     pub analysis_objc: bool,
+    /// (kuna) `option swiftmetadata` — the Swift runtime-metadata recovery pass
+    /// (`kuna-analysis::analyzers::swift`): names metadata accessors, vtable and
+    /// override implementations, protocol witnesses and descriptor records from
+    /// the `swift5_*` reflection sections. Default-off, output-changing; inert on
+    /// an image without the sections.
+    pub analysis_swiftmetadata: bool,
     /// (kuna) Gate the PE PDB metadata recovery pass (`pdb`); default **off**. The
     /// kuna analog of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer;
     /// the MS-DIA `PdbAnalyzer` is Windows-native and out of scope) — the
@@ -3471,6 +3477,7 @@ impl Architecture {
             analysis_gotypes: false,
             analysis_gonoreturn: false,
             analysis_objc: false,
+            analysis_swiftmetadata: false,
             analysis_pdb: true,
             macho_arm64e: false,
 
@@ -3959,6 +3966,7 @@ impl Architecture {
         self.analysis_gotypes = true; // Go runtime-type harvest default-on (Go-only pass)
         self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
+        self.analysis_swiftmetadata = false; // Swift runtime-metadata recovery default-off (inert without swift5_* sections)
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
