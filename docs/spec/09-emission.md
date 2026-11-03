@@ -3246,6 +3246,58 @@ is consumed by Ghidra's C token model and Rust text in C token slots is a GUI
 regression. `kuna decompile-project` errors, because its `.c`/`.h`/`.asm` export
 is C-shaped end to end.
 
+**Verified Go pairs (`gopairreturns`).** `p9_emit/kuna_gopairreturns.rs` renders
+the pair-result metadata imported by `godwarfsig` when both options are on.
+With either option off, call emission bypasses the pair adapter and projection
+dispatch before inspecting any call contract.
+Every consumer verifies the full two-field, 16-byte, eight-aligned integer
+layout against its language facet; a name prefix or an ordinary two-field
+record is insufficient. `SpellCtx` shares the enabled architecture's type
+factory without copying its metadata table. Function declarations and function
+pointer types use the same `(int64, uint64)`-style result spelling. Local
+storage remains an anonymous struct with named result fields.
+
+A statement call assigns both fields from one invocation. An implied call
+passes its two results as the sole arguments of a function literal returning
+the struct; the original call evaluates outside that literal's parameter
+scope, so generated parameter names cannot capture caller identifiers. Returns
+project a stable local's two fields, forward a matching pair call directly,
+or use the inverse function literal to evaluate any other joined expression
+once. PIECE constructs the struct from its low and high eight-byte operands,
+with explicit scalar conversions where required. A verified pair cast of an
+implied eight-to-sixteen-byte zero extension constructs the low field and a
+zero high field, including a wholly zero pair. A 16-byte left shift by exactly
+64 bits instead constructs a zero low field and takes the input's low word.
+Go reads that word from validated pair storage or a materialized 16-byte local;
+it does not apply an integer shift to a byte array. The selected input is
+read once. Other shift amounts, volatile values and unproven storage retain
+the ordinary emission path. An opaque 16-byte integer or byte carrier from a
+call, load or materialized local may also feed a proven pair. Go passes that
+carrier once into a function literal that reads its two words; C uses a
+compound union value with the proven pair layout. A call may have an opaque
+16-byte return type, or an unlocked unresolved prototype with an existing
+16-byte result varnode. The latter retains the recovered result width even
+when the provisional prototype still says void. A locked void return or an
+already typed pair does not qualify for this conversion.
+These adapters avoid an invalid direct conversion between a byte array or
+128-bit integer and the pair struct. Existing field extraction
+and partial stores retain their ordinary struct semantics. An eight-byte
+SUBPIECE at offset zero or eight projects the corresponding validated field,
+including from an implied indirect call, and converts signedness at the scalar
+field rather than casting the whole struct to an integer. If call-output
+extraction instead narrows a field to fewer than eight bytes, the shared
+integer field renderer preserves that width, including a narrowed second
+result from a callback, without evaluating the call twice. If call-output
+trimming has already reduced an amd64 ABIInternal call to one eight-byte
+register, an exact RAX/RBX storage match selects the first/second result from
+the single-evaluation adapter. C and Rust make the same projection directly
+from the ordinary struct-valued call while both import options are enabled.
+A callee's two-result type alone does not turn
+that narrowed output back into a whole struct. Operation and
+variable associations remain attached to the recovered expressions. C and
+Rust continue to render the ordinary proven struct; with either import option
+off, their previous output is unchanged.
+
 **Go output (`outlang go`).** `p9_emit/kuna_langgo.rs` adds a Go profile and type
 speller to the shared RPN and block printer. `outlang c|rust|go` is a cataloged
 alias of `setlanguage`; the engine default is C and the CLI automatic policy is

@@ -3071,7 +3071,7 @@ moves.
   cross-unit graph. Concrete one-hop abstract origins must account for every
   inherited formal exactly once and in order; additional concrete formals may
   only be results. Malformed references, missing roles, closures, trampolines,
-  ABI0 wrappers, unsupported composites by value and multiple results are
+  ABI0 wrappers, unsupported composites by value and unsupported multiple results are
   refused as a whole, retaining existing inference.
 
   Go compilation units never supply prototypes through the generic C or C++
@@ -3101,6 +3101,24 @@ moves.
   bitfields and invalid extents are refused. Materialized pointees and fields
   must still match the validated graph; a generic void-pointer fallback cannot
   silently satisfy a typed contract.
+
+  `gopairreturns` extends this importer only when `godwarfsig` is also on;
+  both remain off by default. Exactly two signed or unsigned 64-bit integer
+  results may follow the scalar inputs. Result allocation restarts independently
+  at RAX and RBX. Explicit result locations must name those registers in source
+  order; unavailable locations still require the compiler and complete type
+  contract. Repeated concrete function entries are ambiguous and cannot receive
+  a pair contract. The bounded result list uses two fixed slots, including for
+  scalar contracts, so this extension adds no per-result list allocation.
+  Narrow, floating, mixed, aggregate and three-result contracts
+  remain unsupported. Assignment first uses a temporary ordinary 16-byte struct;
+  its zero-flag join must contain RBX then RAX, each eight bytes in the exact
+  architectural register space. Input assignments retain their existing checks.
+  Only after this proof is the struct interned with fields `result0` and
+  `result1` at offsets zero and eight and a `GoPairResults` language facet.
+  The facet stores signedness, never interned type references. Existing names
+  require matching metadata and complete layout; unrelated names or stale
+  metadata cannot be overwritten. No metatype or pcode output count changes.
 
   Native Go zlib debug sections are retained compressed at load time. Their
   combined stored/declared extents are bounded to 64 MiB and are inflated only

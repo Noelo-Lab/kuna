@@ -69,6 +69,7 @@ pub mod kuna_namespaces; // (kuna) which namespaces print in front of a name
 pub mod kuna_funcptrnames;
 pub mod kuna_lang; // (kuna) the output-language plane: profile + capabilities
 pub mod kuna_langtypes; // (kuna) the type-spelling seam (TypeSpeller + SpellCtx)
+pub(crate) mod kuna_gopairreturns;
 pub mod kuna_langc; // (kuna) the c-language policy objects (CSpeller)
 pub(crate) mod kuna_rustfmtliteral;
 pub mod kuna_rustfmtargs;

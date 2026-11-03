@@ -112,7 +112,7 @@ pub const CAPABILITY_IS_DEFAULT: bool = true;
 // in source order; keeping them positional makes the `tokens::*` table a
 // line-for-line transcription of the printc.cc table.
 #[allow(clippy::too_many_arguments)]
-const fn op_token(
+pub(crate) const fn op_token(
     print1: &'static str,
     print2: &'static str,
     stage: int4,
@@ -6049,6 +6049,7 @@ impl PrintC {
     /// C++ `PrintC::emitExpression` (printc.cc:2544): if the op has an output,
     /// open an assignment to it, then push the op's expression and recurse.
     pub(crate) fn emit_expression_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.rt_ctx.go_pair_types.is_some() && self.emit_go_pair_assignment(fd, arch, op) { return; }
         if self.out_lang == crate::kuna_lang::OutLang::C {
             if let Some(assignment) = crate::kuna_stackbytes::assignment(fd, op) {
                 self.emit_byte_assignment_ir(fd, arch, op, assignment);
@@ -6314,9 +6315,11 @@ impl PrintC {
                     self.emit.spaces(1, 0);
                     if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
                         if self.out_lang == crate::kuna_lang::OutLang::Go {
-                            if let Some(target) = fd.get_func_proto().get_output_type() {
-                                self.push_go_value_as(fd, arch, vn, op, target);
-                            } else { self.push_vn_ir(fd, arch, vn, op); }
+                            if self.rt_ctx.go_pair_types.is_none() || !self.push_go_pair_return(fd, arch, vn, op) {
+                                if let Some(target) = fd.get_func_proto().get_output_type() {
+                                    self.push_go_value_as(fd, arch, vn, op, target);
+                                } else { self.push_vn_ir(fd, arch, vn, op); }
+                            }
                         } else { self.push_vn_ir(fd, arch, vn, op); }
                     }
                 }
@@ -6345,7 +6348,9 @@ impl PrintC {
             OpCode::CPUI_BOOL_NEGATE => self.op_bool_negate_ir(fd, arch, op),
             // SUBPIECE (printc.cc:863 opSubpiece): a field-extraction special-print
             // (`symbol.field`) or the cast/functional dispatch.
+            OpCode::CPUI_SUBPIECE if self.rt_ctx.go_pair_types.is_some() && self.push_go_pair_extract(fd, arch, op) => {},
             OpCode::CPUI_SUBPIECE => self.op_subpiece_ir(fd, arch, op, read_op),
+            OpCode::CPUI_PIECE if self.rt_ctx.go_pair_types.is_some() && self.push_go_pair_piece(fd, arch, op) => {},
             OpCode::CPUI_PIECE if self.op_partial_concat_ir(fd, arch, op) => {},
             // SEGMENTOP (printc.cc:1169 opSegmentOp): only the near pointer in
             // slot 2 prints; slot 0 is the space and slot 1 the segment.
@@ -7294,6 +7299,15 @@ impl PrintC {
     /// [`op_type_cast_ir`](Self::op_type_cast_ir), leaving the cast out when
     /// `implied` (kuna `castimplied`: C's own conversion performs it).
     fn op_type_cast_ir_with(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, implied: bool) {
+        if arch.analysis_godwarfsig && arch.analysis_gopairreturns {
+            if let Some(operation) = fd.obank().get(op) {
+                if let (Some(input), Some(output)) = (operation.get_in(0), operation.get_out()) {
+                    if self.push_pair_carrier(fd, arch, input, op, &fd.vn_type_def_facing(output)) {
+                        return;
+                    }
+                }
+            }
+        }
         if self.out_lang == crate::kuna_lang::OutLang::Go {
             self.op_go_cast(fd, arch, op);
             return;
@@ -8144,7 +8158,7 @@ impl PrintC {
     }
 
     /// Close a conversion opened by [`push_cast_open`], after the operand.
-    fn push_cast_close(&mut self, ct: &std::rc::Rc<crate::dtype::Datatype>) {
+    pub(crate) fn push_cast_close(&mut self, ct: &std::rc::Rc<crate::dtype::Datatype>) {
         if self.lang().forms.cast == crate::kuna_lang::CastForm::PostfixAs {
             self.push_cast_type(ct);
         }
@@ -8290,6 +8304,21 @@ impl PrintC {
     /// (`getHiddenThisSlot`) is the C++ method-invocation hook (always -1 here —
     /// the C++ `int4 skip = -1;` for the direct case, no C++ method format yet).
     fn op_call_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if !arch.analysis_gopairreturns || !arch.analysis_godwarfsig {
+            self.op_call_raw_ir(fd, arch, op);
+            return;
+        }
+        let projection = if self.rt_ctx.go_pair_types.is_some() {
+            self.push_go_pair_call_adapter(fd, arch, op)
+        } else if let Some(index) = super::kuna_gopairreturns::call_projection(fd, arch, op) {
+            self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+            Some(index)
+        } else { None };
+        self.op_call_raw_ir(fd, arch, op);
+        if let Some(index) = projection { self.push_go_pair_projection(op, index); }
+    }
+
+    pub(crate) fn op_call_raw_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_io {
             if let Some(plan) = super::kuna_rustfmtio::recover(fd, arch, op) {
                 let result = if plan.signed_result {
@@ -10448,7 +10477,7 @@ impl PrintC {
     /// `PrintC` leaf-naming (`pushVnExplicit`/`pushUnnamedLocation`, printc.cc:
     /// 1900-2017): annotation -> constant -> SymbolEntry -> register name ->
     /// kuna `dat_<addr>` global -> `Space<hex>` fallback.
-    fn push_vn_explicit_ir(&mut self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) {
+    pub(crate) fn push_vn_explicit_ir(&mut self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId) {
         let v = match fd.vbank().get(vn) {
             Some(v) => v,
             None => return,
@@ -12832,6 +12861,8 @@ impl RealTypeCtx {
             model: crate::kuna_ctypes::CDataModel::from_types(&*arch.types()),
             indirect_args: arch.indirect_args,
             go_package: None,
+            go_pair_types: (lang == crate::kuna_lang::OutLang::Go
+                && arch.analysis_godwarfsig && arch.analysis_gopairreturns).then(|| arch.types_rc()),
         }
     }
 }
