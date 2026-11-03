@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3837,
-    3837
+    3846,
+    3846
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1051,7 +1051,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 379 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 380 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -1492,6 +1492,15 @@
     "data:OBJCREFS #7: on names the stub after its selector, in both arms",
     "data:OBJCREFS #8: the stub's prototype pins the argument past the selector register",
     "data:OBJCREFS #9: a chained bind slot is named from its import, in both arms",
+    "data:OBJCSDK #1: without headers the double argument is lost",
+    "data:OBJCSDK #2: without headers the CGRect argument is one garbage word",
+    "data:OBJCSDK #3: with headers setAlpha: takes the receiver and its double",
+    "data:OBJCSDK #4: with headers setTag: takes an NSInteger",
+    "data:OBJCSDK #5: with headers a getter takes only the receiver",
+    "data:OBJCSDK #6: a CGRect return is a struct in d0..d3",
+    "data:OBJCSDK #7: a CGRect argument is spread over its members",
+    "data:OBJCSDK #8: a two-argument method keeps both",
+    "data:OBJCSDK #9: the stub itself returns the struct",
     "data:OCTEON #1 low_sum retains ordinary addition",
     "data:OCTEON #2 bit branch retains the tested bit",
     "data:OCTEON #3 extension instructions have ordinary semantics",
