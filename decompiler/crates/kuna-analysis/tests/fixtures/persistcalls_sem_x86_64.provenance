@@ -1,0 +1,27 @@
+persistcalls_sem_x86_64 -- the GH-1034 correctness fixture for option
+`persistcalls` (tests/stages/kuna-persistcalls.xml).
+
+What it is
+  A 16,216-byte x86-64 ELF built from persistcalls_sem_x86_64.c. `revisit`
+  (built at -O0) reads the two-byte u0.s[0] on both sides of a call and later
+  rewrites u0 at four bytes through a pointer that only folds in a later
+  heritage pass. `loopstore` holds a value across a loop of calls and stores it
+  to a global after the loop. With every call left unguarded that the guards'
+  placement allowed, the first printed `return 1;` and the second moved the
+  store in front of the loop. `snip` and `snipsys` (built at -O2) join sg's
+  value after two calls and, in one branch, make two calls (with a system
+  call between them in `snipsys`); merging copies the joined value back to
+  sg in front of the first guard of that branch, which printed `sg = v1;`
+  after `f2();` once that call was left unguarded.
+
+Why it is vendored
+  The stage test pins the printed C, which depends on the exact code the
+  compiler emits (CI's gcc 15 lays these functions out differently).
+
+Where it came from
+  gcc 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04.3), GNU ld 2.38, x86-64 Linux:
+
+      gcc -O1 -fno-pie -no-pie -fno-inline -fcf-protection=none -o persistcalls_sem_x86_64 persistcalls_sem_x86_64.c
+
+  sha256 04a92329ee84b289019418f80c4392021acdc9a5bc2c12833ccdfbb43b510cf4.
+  Run with no arguments it prints 0 0 21 42.

@@ -249,6 +249,9 @@ pub struct Override {
     /// (kuna `formatstring`) Call points whose prototype override is a resolved
     /// format string, installed with an open tail it sheds after P4.
     format_calls: BTreeSet<Address>,
+    /// (kuna `persistcalls`) Guard every persistent global at every call on the
+    /// restart re-flow.
+    persist_calls_off: bool,
 }
 
 impl Override {
@@ -270,6 +273,7 @@ impl Override {
         self.flowoverride.clear();
         self.msvc_cookie_calls.clear();
         self.format_calls.clear();
+        self.persist_calls_off = false;
     }
 
     /// Generate the \e warning message related to a dead-code delay
@@ -380,6 +384,18 @@ impl Override {
     /// format string's?
     pub fn is_format_call(&self, addr: &Address) -> bool {
         self.format_calls.contains(addr)
+    }
+
+    /// (kuna `persistcalls`) Guard every persistent global at every call from
+    /// the next re-flow on.
+    pub fn set_persist_calls_off(&mut self) {
+        self.persist_calls_off = true;
+    }
+
+    /// (kuna `persistcalls`) Has a re-flow been asked to guard every
+    /// persistent global at every call?
+    pub fn persist_calls_off(&self) -> bool {
+        self.persist_calls_off
     }
 
     /// Has the late `/GS` recognizer seeded this exact call site?

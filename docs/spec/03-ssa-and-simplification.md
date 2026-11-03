@@ -460,6 +460,95 @@ which is why N is the option's value: `on` leaves read-only ranges unguarded
 in every pass with a call, so every function prints the way one above the
 threshold does, and `off` keeps every guard, upstream's placement.
 
+Under `option persistcalls N` (default 65536), a heritage pass that would
+guard at least N persistent-range and call pairs (its calls times its new
+ranges in the default data space,
+`heritage.rs (Heritage::persist_cross_product)`) gives a writable persistent
+global an unknown-effect INDIRECT only at the calls that need one
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_persistcalls.rs (keep)`).
+Upstream guards every persistent global at every call with an unknown effect
+on it (`Heritage::guardCalls`), and since the range is address-tied and its
+INDIRECT outputs are direct writes, `ActionDeadCode` keeps all of them: a
+function touching thousands of globals across thousands of calls builds one
+INDIRECT per pair. libpython3.11's 83 KB finalizer at 0x3b72c0 guards 1,725
+globals at 4,060 calls, 7.0 million INDIRECTs, and needed 9.5 GB and eight
+minutes.
+
+A guard reads the value before the call and defines the value after it. A
+skipped call therefore leaves the value from before it standing for the value
+after it, which is safe only where nothing that can print or fold that value
+sees it. The walks over the CFG that decide which calls keep their guard
+follow from that. The reads are the range's free reads, its partial writes
+(which read the bytes they keep), every return (its persist COPY), and every
+LOAD and STORE in the range's space not made through the stack pointer, since
+a pointer that later folds to a constant turns a LOAD into a read and a STORE
+into a write of part of the range. A system call that guards memory
+(`syscallregs`, `x64syscall`) reads and writes the range through its own
+INDIRECT and counts as a STORE. A call keeps its guard when a write reaches
+it with no call in between (a forward walk from the writes, stopped by calls),
+so the call can still read that write; when a read follows it with no call or
+full write in between (the backward walk), so the read sees the call's effect;
+and when a read reaches it the same way, so a value read before the call and
+still live after it stays apart from the global (`ActionMarkImplied`'s cover
+check) instead of being printed as a read after the call. Merging tests the
+global's cover, so the global must stay live wherever upstream's chain of
+guards keeps it live: a last backward walk keeps each call from which some
+path meets a full write, a STORE or the end of the path before a read or a
+kept guard, deciding at each call as it is met, so a run of calls before a
+full write keeps only its last and a loop of calls before one keeps a guard
+in the loop. It asks for every path, not some, because a later pass can fold
+away the branch whose reader a call relied on. Finally, a MULTIEQUAL is a
+definition merging may copy out where it is made, so no join may take, on an
+edge in, the value from before a skipped call: the joins the kept guards and
+writes need are computed, the last skipped call on each such edge keeps its
+guard, and the joins are computed again until none does
+(`kuna_persistcalls.rs (stale_calls)`). What is left crosses a skipped call
+only into a kept guard's input. Nothing prints that input until merging
+cannot give it the variable of the guard's output and copies it to the global
+in front of the call (`Merge::mergeIndirect`'s snip), or the guard collapses
+into it. With every guard built the input is the value just before the call,
+so the copy stores what the global already holds; across a skipped call it
+stores the value from before that call and undoes it (`sg = v1;` printed
+after `f2();`). The kept guards whose input crosses a skipped call are marked
+`kuna_persist_stale` (`kuna_persistcalls.rs (stale_inputs)`), and a merge copy
+of such a guard's input or its collapse restarts the function, below. Read-only ranges are
+`readonlycalls`' (above), volatile ones keep every guard, and so does a range
+an earlier pass already heritaged in part (a revisit), whose old markers are
+rebuilt from the new range's reads. The finalizer keeps 11,700 of its 7.0
+million guards and prints the same C in eight seconds and 220 MB. The skipped
+guards take the op and Varnode numbers they would have had
+(`kuna_persistcalls.rs (skip_guard)`), and so do the MULTIEQUALs only they would
+have needed: `Heritage::place_multiequals` computes the joins for every guard,
+walks them in that order, and builds only those the kept writes need
+(`kuna_persistcalls.rs (skip_join)` for the rest), so later ops and Varnodes
+are numbered as if every guard had been built.
+
+Later events can still make a skipped guard matter, and each restarts the
+function with every guard built (`kuna_persistcalls.rs (restart_full)`, an
+`Override` flag that survives the re-flow). Before a later pass links a new
+Varnode into a range whose calls were left unguarded, heritage checks it
+(`kuna_persistcalls.rs (crosses_skipped)`): a read must have every path into it
+meet a guard of the range, another definition or the function entry before a
+call with no guard, and every path out meet a definition or its end first
+(`kuna_persistcalls.rs (guarded)`); a partial write, which reads the bytes it
+keeps, must meet such a definition first; and a Varnode reaching past the
+range always restarts, because refining or revisiting the range rebuilds its
+value from the skipped calls' inputs. Once every guard is built, the joins
+are checked again with every definition the range got, its STORE and syscall
+guards included, and one taking a stale value restarts too. And
+`RuleIndirectCollapse` can remove a guard whose call died or became a COPY;
+for a guard kept for a read on such a range (marked `kuna_persist_guard`), the
+same check runs from the guard before it is removed; a guard marked
+`kuna_persist_stale` restarts whenever it collapses or merging copies its
+input (`funcdata_merge.rs (persist_trim)`, from `Merge::allocateCopyTrim`). A
+restart from merging leaves merge state behind, so `Funcdata::clear` clears
+it, as upstream's `covermerge.clear()` does. The pass a function runs once its
+re-flow budget is spent cannot restart, so it keeps every guard
+(`decompile_drive.rs (run_pipeline)`). Jump-table recovery
+partials cannot restart and always keep every guard, and below the threshold
+every call keeps upstream's guard; `persistcalls on` places the sparse guards
+in every pass with a call and `off` restores upstream's placement.
+
 Under `option prunedssa` (default on) a stack range that is neither persistent
 nor address-tied gets the unknown-effect INDIRECT only at a call after which a
 read of the range can follow (`kuna_prunedssa.rs (live_calls)`), the same

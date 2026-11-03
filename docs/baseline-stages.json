@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3759,
-    3759
+    3776,
+    3776
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1051,7 +1051,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 376 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 377 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -3178,6 +3178,23 @@
     "data:passthrough #1: the tail-call thunk never names rdi, so it has no parameter in either pass",
     "data:passthrough #2: the function that tests the result never names rdi either, and has no parameter in either pass",
     "data:passthrough #3: the calls pass nothing in both passes, because no callee stated a prototype for the rule to read",
+    "data:persistcalls #10: persistcalls on drops the guard of small's that only passes a value on",
+    "data:persistcalls #11: revisit reads u0 again after the call with the option off and on",
+    "data:persistcalls #12: revisit compares the two reads with the option off and on",
+    "data:persistcalls #13: loopstore stores after the loop with the option off and on",
+    "data:persistcalls #14: loopstore keeps the call's value in a variable",
+    "data:persistcalls #15: snip writes sg back in front of the branch's first call with the option off and on",
+    "data:persistcalls #16: snipsys writes sg back in front of the call before the system call with the option off and on",
+    "data:persistcalls #17: no pass writes sg back after a call that changed it",
+    "data:persistcalls #1: all three passes print churn",
+    "data:persistcalls #2: all three passes keep churn's 288 calls and small's 3",
+    "data:persistcalls #3: all three passes keep churn's 256 global writes",
+    "data:persistcalls #4: all three passes read each global back after the calls before it",
+    "data:persistcalls #5: all three passes print small the same",
+    "data:persistcalls #6: upstream placement keeps every guard in churn's live IR",
+    "data:persistcalls #7: every pass numbers churn's ops as upstream placement does",
+    "data:persistcalls #8: past the threshold churn keeps the guards next to its accesses",
+    "data:persistcalls #9: small keeps every guard below the threshold",
     "data:piece literal keeps Unicode braces and the extra newline",
     "data:plain string printing",
     "data:pointer callback keeps pointer contract",
