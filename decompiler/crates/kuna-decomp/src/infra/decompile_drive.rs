@@ -749,7 +749,9 @@ pub fn build_and_follow_flow_with_override(
 /// still running when either runs out fails with the budget error instead of
 /// leaving a truncated IR for the drive to adopt. The follow includes every
 /// jump-table recovery, whose sub-pipeline is the costliest part of a huge
-/// function. With neither armed it is the plain follow.
+/// function. With neither armed it is the plain follow. The returned IR
+/// carries how long the follow took ([`Funcdata::flow_spent`]), which the drive
+/// that adopts it charges to its own budget.
 pub fn build_and_follow_flow_within_budget(
     arch: &mut Architecture,
     name: &str,
@@ -757,9 +759,29 @@ pub fn build_and_follow_flow_within_budget(
     size: int4,
     flow_overrides: &[(Address, kuna_base::types::uint4)],
 ) -> KunaResult<Funcdata> {
-    within_flow_budget(arch, |arch| {
+    let started = std::time::Instant::now();
+    let mut fd = within_flow_budget(arch, |arch| {
         build_and_follow_flow_with_override(arch, name, entry, size, flow_overrides)
-    })
+    })?;
+    fd.set_flow_spent(started.elapsed());
+    Ok(fd)
+}
+
+/// (kuna decompile-all watchdog) Did `error` stop a drive at its budget or
+/// memory limit ([`budget_error`])?
+pub fn is_budget_stop(error: &KunaError) -> bool {
+    let text = error.explain();
+    text.starts_with(BUDGET_EXCEEDED) || text.starts_with(MEMORY_EXCEEDED)
+}
+
+/// (kuna decompile-all watchdog) The un-decompiled `Funcdata` a console keeps
+/// for printing the shell of a function whose drive [`is_budget_stop`]ped,
+/// built without following its flow again: the budget that would bound the
+/// follow is spent, and the shell prints nothing the follow adds.
+pub fn budget_stop_shell(arch: &Architecture, name: &str, entry: Address, size: int4) -> KunaResult<Funcdata> {
+    let mut fd = arch.new_funcdata(name, entry, size)?;
+    fd.set_flag_raw(funcdata_flags::processing_started);
+    Ok(fd)
 }
 
 /// The caller-local PPC32 import calls `ppc32picimports on` proves for one entry.
@@ -1717,8 +1739,9 @@ fn decompile_func_full_with_objects_inner(
     let outer_deadline = arch.kuna_fn_deadline;
     let memory = arch.kuna_drive_publishes().then(crate::kuna_fnmemory::Armed::enter);
     let now = std::time::Instant::now();
+    let followed = prefollowed.as_ref().map_or(std::time::Duration::ZERO, Funcdata::flow_spent);
     let requested_deadline = match fn_budget(arch) {
-        Some(budget) => Some(now + budget),
+        Some(budget) => Some(now + budget.saturating_sub(followed)),
         None if memory.as_ref().is_some_and(|guard| guard.is_armed()) => Some(now + MEMORY_ONLY_HORIZON),
         None => None,
     };
@@ -3348,7 +3371,7 @@ const MEMORY_ONLY_HORIZON: std::time::Duration = std::time::Duration::from_secs(
 fn budget_error(arch: &Architecture) -> Option<KunaError> {
     let deadline = arch.kuna_fn_deadline?;
     if let Some(mib) = crate::kuna_fnmemory::tripped_limit_mib() {
-        return Some(KunaError::lowlevel(format!("per-function memory limit exceeded ({mib} MiB)")));
+        return Some(KunaError::lowlevel(format!("{MEMORY_EXCEEDED} ({mib} MiB)")));
     }
     if std::time::Instant::now() < deadline {
         return None;
@@ -3356,8 +3379,11 @@ fn budget_error(arch: &Architecture) -> Option<KunaError> {
     let secs = fn_budget(arch).map(|b| b.as_secs()).unwrap_or(0);
     let site = FN_BUDGET_SITE.with(|s| s.borrow().clone());
     let at = site.map(|s| format!(" in {s}")).unwrap_or_default();
-    Some(KunaError::lowlevel(format!("per-function decompile budget exceeded ({secs} s){at}")))
+    Some(KunaError::lowlevel(format!("{BUDGET_EXCEEDED} ({secs} s){at}")))
 }
+
+const BUDGET_EXCEEDED: &str = "per-function decompile budget exceeded";
+const MEMORY_EXCEEDED: &str = "per-function memory limit exceeded";
 
 /// (kuna decompile-all watchdog) Bounds the rendering of a function by what
 /// its drive left of the per-function budget ([`Funcdata::render_budget`]):
@@ -3390,7 +3416,7 @@ impl RenderBudget {
             return None;
         }
         let site = FN_BUDGET_SITE.with(|s| s.borrow().clone()).unwrap_or_default();
-        Some(KunaError::lowlevel(format!("per-function decompile budget exceeded ({} s) in {site}", self.secs)))
+        Some(KunaError::lowlevel(format!("{BUDGET_EXCEEDED} ({} s) in {site}", self.secs)))
     }
 }
 

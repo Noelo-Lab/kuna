@@ -49,6 +49,10 @@ name = "integration"
 path = "tests/integration.rs"
 
 [[test]]
+name = "verify_budget_stop"
+path = "tests/verify_budget_stop.rs"
+
+[[test]]
 name = "verify_dwarfstructs"
 path = "tests/verify_dwarfstructs.rs"
 

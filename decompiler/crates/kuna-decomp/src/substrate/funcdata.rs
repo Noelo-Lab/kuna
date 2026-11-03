@@ -278,6 +278,10 @@ pub struct Funcdata {
     /// (kuna decompile-all watchdog) What was left of the per-function budget
     /// when the drive handed this function back; rendering it may use no more.
     render_budget: Option<std::time::Duration>,
+    /// (kuna decompile-all watchdog) How long following this function's flow
+    /// took outside a drive (the console's `load`); a drive that adopts it
+    /// charges that to its budget.
+    flow_spent: std::time::Duration,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
     /// The real `JumpTable` (`jumptable.{hh,cc}`) now lives here: the recovery
@@ -791,6 +795,7 @@ impl Funcdata {
             kuna_restart_now: false,
             dead_wave_log: None,
             render_budget: None,
+            flow_spent: std::time::Duration::ZERO,
             jumpvec: Vec::new(),
             vbank,
             kuna_storage_sources: Default::default(),
@@ -2551,6 +2556,17 @@ impl Funcdata {
     /// (kuna decompile-all watchdog) What the drive left of the budget for rendering.
     pub fn render_budget(&self) -> Option<std::time::Duration> {
         self.render_budget
+    }
+
+    /// (kuna decompile-all watchdog) How long this function's flow follow took
+    /// before a drive adopted it.
+    pub fn flow_spent(&self) -> std::time::Duration {
+        self.flow_spent
+    }
+
+    /// (kuna decompile-all watchdog) Record how long the flow follow took.
+    pub fn set_flow_spent(&mut self, spent: std::time::Duration) {
+        self.flow_spent = spent;
     }
 
     /// (kuna decompile-all watchdog) Record what the drive left of the budget.
