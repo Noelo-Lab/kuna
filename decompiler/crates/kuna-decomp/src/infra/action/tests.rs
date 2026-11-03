@@ -814,3 +814,77 @@ fn dead_waves_remove_the_chain_a_sweep_would_and_visit_only_its_links() {
     assert_eq!(swept_far, waved_far);
     assert!(swept_far >= 40 * 40, "{swept_far}");
 }
+
+/// A chain of `n` two-input `opc` ops, each reading the one before twice and
+/// the last read by nothing, beside `n` INT_ADDs, under the real dead-op
+/// removal rule with `deadcascade` at `cascade`. Returns the ops left, how many
+/// ops the log rule was offered, and the order the chain was removed in.
+fn run_cascade_chain(n: u64, opc: OpCode, cascade: Option<u32>) -> (Vec<u64>, usize, Vec<u64>) {
+    let mut arch = ArchContext::new(build_manager());
+    arch.pool_dead_waves = false;
+    arch.dead_cascade = cascade;
+    let glb = Rc::new(arch);
+    let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+    ram.clear_flags(addrspace_flags::does_deadcode);
+    let mut fd = Funcdata::new("func", "func", glb, Address::new(ram, 0x1000), 0x10000000, 0x40).unwrap();
+    let mut prev = fd.new_constant(4, 7);
+    for i in 0..n {
+        let op = make_op(&mut fd, 0x1000 + 0x10 * i, opc);
+        if opc == OpCode::CPUI_MULTIEQUAL {
+            fd.obank_mut().get_mut(op).unwrap().set_flag(crate::op::pcodeop_flags::marker);
+        }
+        fd.op_set_all_input(op, &[prev, prev]).unwrap();
+        let at = ram_addr(&fd, 0x100 + 8 * i);
+        prev = fd.new_varnode_out(4, &at, op).unwrap();
+        make_op(&mut fd, 0x1008 + 0x10 * i, OpCode::CPUI_INT_ADD);
+    }
+    let log: Log = Rc::new(RefCell::new(Vec::new()));
+    let mut pool = ActionPool::new(ruleflags::rule_repeatapply, "pool");
+    pool.add_rule(
+        RuleState::new("deadcode", 0, "earlyremoval"),
+        Box::new(crate::ruleaction_1::RuleEarlyRemoval::new("deadcode")),
+    );
+    pool.add_rule(
+        RuleState::new("analysis", 0, "log"),
+        Box::new(LogRule { tag: "log".into(), log: log.clone(), group: "analysis" }),
+    );
+    fd.start_dead_wave_log();
+    let mut ctx = ActionContext::new();
+    pool.perform(&mut fd, &mut ctx);
+    let offset = |fd: &Funcdata, id: OpId| fd.obank().get(id).unwrap().get_addr().get_offset();
+    let removed: Vec<OpId> = fd.take_dead_wave_log().0;
+    let alive = fd
+        .obank()
+        .iter_all()
+        .filter(|(_, id)| !removed.contains(id))
+        .map(|(_, id)| offset(&fd, id))
+        .collect();
+    let order = removed.iter().map(|&id| offset(&fd, id)).collect();
+    let offers = log.borrow().len();
+    (alive, offers, order)
+}
+
+/// (kuna `deadcascade`) The real removal rule takes a dead chain of joins out
+/// in the pass that removes its last link, or from the given pass of the pool's
+/// run, in the order one-link-per-pass removal would, and leaves the same ops;
+/// a chain of other ops still dies one link per pass.
+#[test]
+fn dead_cascade_removes_a_join_chain_in_one_pass_in_the_order_passes_would() {
+    let join = OpCode::CPUI_MULTIEQUAL;
+    let (passes_alive, passes_offers, passes_order) = run_cascade_chain(40, join, None);
+    let (cascade_alive, cascade_offers, cascade_order) = run_cascade_chain(40, join, Some(0));
+    assert_eq!(passes_alive, cascade_alive);
+    assert_eq!(passes_alive.len(), 40, "{passes_alive:?}");
+    assert!(passes_alive.iter().all(|off| off % 0x10 == 8), "{passes_alive:?}");
+    assert_eq!(passes_order, cascade_order);
+    assert_eq!(passes_order.len(), 40);
+    assert!(passes_offers > 40 * 20, "{passes_offers}");
+    assert!(cascade_offers <= 2 * 80, "{cascade_offers}");
+    let (later_alive, later_offers, later_order) = run_cascade_chain(40, join, Some(10));
+    assert_eq!(later_alive, passes_alive);
+    assert_eq!(later_order, passes_order);
+    assert!(later_offers > 10 * 40 && later_offers < 13 * 40, "{later_offers}");
+    let (_, xor_offers, xor_order) = run_cascade_chain(40, OpCode::CPUI_INT_XOR, Some(0));
+    assert_eq!(xor_order.len(), 40);
+    assert!(xor_offers > 40 * 20, "{xor_offers}");
+}

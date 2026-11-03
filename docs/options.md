@@ -174,6 +174,9 @@ Three tiers:
 | a huge function spends most of its time in oppool1 | [`deadwaves`](#deadwaves) |
 | rule pool sweep count in the thousands for one function | [`deadwaves`](#deadwaves) |
 | each pool sweep removes only a handful of dead INDIRECT or MULTIEQUAL ops | [`deadwaves`](#deadwaves) |
+| a huge function spends most of its time in oppool1 | [`deadcascade`](#deadcascade) |
+| rule pool sweep count in the thousands for one function | [`deadcascade`](#deadcascade) |
+| each pool sweep removes only a handful of dead INDIRECT or MULTIEQUAL ops | [`deadcascade`](#deadcascade) |
 | a huge function is analysed twice from flow following on | [`earlyrestart`](#earlyrestart) |
 | the second half of a long run repeats the first | [`earlyrestart`](#earlyrestart) |
 | dozens of garbage *v = *v + c; lines after a __stack_chk_fail call in a .o | [`noreturn_externmatch`](#noreturn_externmatch) |
@@ -1789,6 +1792,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave on. Turn off to compare against the plain sweep when a rule whose test reads two or more ops away from the op it fires on, without walking a data-flow web, is suspected of firing later than it would have.
 - **Where / provenance:** P3/simplification-quiescence · ghidra · speed · GH-1034
 - **Example:** `option deadwaves off`
+
+### `deadcascade` -- off | on | <n>, default `32`
+
+- **Symptoms:** a huge function spends most of its time in oppool1; rule pool sweep count in the thousands for one function; each pool sweep removes only a handful of dead INDIRECT or MULTIEQUAL ops.
+- **What it does:** From pass N of one run of a rule pool (default 32), when dead-op removal (`RuleEarlyRemoval`) takes out a join (MULTIEQUAL) or a guard (INDIRECT), also take out at once the joins and guards behind the pool's cursor that defined what it read and that nothing reads any more, and theirs in turn. The cursor has usually passed the op defining what a removed op read, so without this a chain of call guards and joins nothing reads dies one link per pool pass, and each pass sweeps the whole function (or, with `deadwaves`, walks it). The chain goes in the order the later passes would have removed it: one batch per pass, each in sequence order. Definitions at or ahead of the cursor, and dead ops of other kinds, are left to the passes as before. A run that has gone N passes is almost always taking such chains apart; a shorter run, which is nearly every run, removes as upstream does. Removing earlier than upstream changes when the other rules see a value lose a reader, which can change how variables merge, so the cascade waits for the long runs. `on` cascades from the first pass, `off` never.
+- **When to flip:** Leave at the default. Set `off` to get upstream's one-link-per-pass removal everywhere, `on` or a smaller N to speed up functions whose pools run tens of passes, at the price of variable assignment that can differ from upstream's.
+- **Where / provenance:** P3/simplification-quiescence · kuna · speed · GH-1034
+- **Example:** `option deadcascade off`
 
 ### `earlyrestart` -- on | off, default `on`
 

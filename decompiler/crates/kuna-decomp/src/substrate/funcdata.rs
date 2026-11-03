@@ -275,6 +275,9 @@ pub struct Funcdata {
     /// dead-op removal took out and the Varnodes it read
     /// (`infra/action.rs (ActionPool::apply_wave)`).
     dead_wave_log: Option<(Vec<OpId>, Vec<VarnodeId>)>,
+    /// (kuna `deadcascade`) Does dead-op removal in the running pool pass take
+    /// the dead chain behind the removed op out with it?
+    dead_cascade_now: bool,
     /// (kuna decompile-all watchdog) What was left of the per-function budget
     /// when the drive handed this function back; rendering it may use no more.
     render_budget: Option<std::time::Duration>,
@@ -790,6 +793,7 @@ impl Funcdata {
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
             kuna_restart_now: false,
             dead_wave_log: None,
+            dead_cascade_now: false,
             render_budget: None,
             jumpvec: Vec::new(),
             vbank,
@@ -2508,6 +2512,18 @@ impl Funcdata {
     /// (kuna `earlyrestart`) Record that heritage bumped a dead-code delay.
     pub fn kuna_set_restart_now(&mut self) {
         self.kuna_restart_now = true;
+    }
+
+    /// (kuna `deadcascade`) Set whether dead-op removal in the running pool
+    /// pass cascades.
+    pub(crate) fn set_dead_cascade_now(&mut self, on: bool) {
+        self.dead_cascade_now = on;
+    }
+
+    /// (kuna `deadcascade`) Does dead-op removal in the running pool pass
+    /// cascade?
+    pub(crate) fn dead_cascade_now(&self) -> bool {
+        self.dead_cascade_now
     }
 
     /// (kuna `deadwaves`) Start recording dead-op removals for a pool pass.

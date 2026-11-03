@@ -1726,6 +1726,10 @@ pub struct ArchContext {
     /// pool pass removed when removal was its only change, shared from the
     /// real architecture. Read by `ActionPool::apply`.
     pub pool_dead_waves: bool,
+    /// (kuna `deadcascade`) From this many passes into one run of a rule pool
+    /// (`None` = never), dead-op removal also removes the dead chain behind the
+    /// removed op; shared from the real architecture. Read by `ActionPool`.
+    pub dead_cascade: Option<u32>,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -2169,6 +2173,7 @@ impl ArchContext {
             unrolled_guard: false, // (kuna) angr opt-in default off (upstream byte-identical)
             jumptable_share_partial: true, // (kuna) DIV: upstream stageJumpTable shape
             pool_dead_waves: true,
+            dead_cascade: Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES),
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.

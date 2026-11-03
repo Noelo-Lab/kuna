@@ -877,6 +877,10 @@ pub struct Architecture {
     /// removal, the next pass revisits only the ops next to what it removed
     /// (`infra/action.rs (ActionPool::apply_wave)`).
     pub pool_dead_waves: bool,
+    /// (kuna `deadcascade`) From this many passes into one run of a rule pool
+    /// (`None` = never), dead-op removal also removes the dead chain of joins
+    /// and guards behind the removed op (`p3_dataflow/kuna_deadcascade.rs`).
+    pub dead_cascade: Option<u32>,
     /// (kuna, angr `test_decompiling_incorrect_duplication_chcon_main`) Treat a
     /// direct CALL to a function whose *name* matches the vendored ELF
     /// known-no-return list as no-return at the `query_call_no_return` flow hook,
@@ -3169,6 +3173,7 @@ impl Architecture {
             jumptable_share_partial: true,
             early_restart: true,
             pool_dead_waves: true,
+            dead_cascade: Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES),
             noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
             local_stack_views: true,
@@ -3624,6 +3629,7 @@ impl Architecture {
         self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
         self.early_restart = true;
         self.pool_dead_waves = true;
+        self.dead_cascade = Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES);
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_views = false;
         self.local_stack_views = true;
@@ -4764,6 +4770,7 @@ impl Architecture {
         // `Funcdata::stage_jump_table` reaches it.
         ctx.jumptable_share_partial = self.jumptable_share_partial;
         ctx.pool_dead_waves = self.pool_dead_waves;
+        ctx.dead_cascade = self.dead_cascade;
         ctx.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate

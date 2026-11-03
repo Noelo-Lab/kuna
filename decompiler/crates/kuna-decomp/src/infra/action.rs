@@ -1214,6 +1214,8 @@ pub struct ActionPool {
     /// (kuna `deadwaves`) The opcodes a rule that walks far fires on
     /// ([`Rule::walks_far`]), indexed by opcode.
     far: Vec<bool>,
+    /// (kuna `deadcascade`) Passes made in the current run of the pool.
+    run_passes: u32,
 }
 
 /// The resumable op cursor.  Modelled as the last *consumed* [`SeqNum`] so the
@@ -1253,6 +1255,7 @@ impl ActionPool {
             wave_seed: None,
             wave: None,
             far: vec![false; OpCode::CPUI_MAX as usize],
+            run_passes: 0,
         }
     }
 
@@ -1444,6 +1447,7 @@ impl ActionPool {
     /// Close a completed pass: clear the cursor memo, flush the stash, and keep
     /// what dead-op removal recorded for a following wave.
     fn end_pass(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) {
+        data.set_dead_cascade_now(false);
         self.next_op = None;
         self.lookahead_epoch = None;
         self.wave = None;
@@ -1552,6 +1556,9 @@ impl Action for ActionPool {
     /// [`wave_wants`](ActionPool::wave_wants) names.
     fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         if self.base.status != statusflags::status_mid {
+            self.run_passes = if self.base.status == statusflags::status_start { 1 } else { self.run_passes + 1 };
+            let cascade = data.get_arch().dead_cascade.is_some_and(|n| self.run_passes > n);
+            data.set_dead_cascade_now(cascade);
             self.op_state = OpCursor::Unstarted;
             self.rule_index = 0;
             let quiet = self.base.count > 0 && self.pass_removals > 0 && self.pass_others == 0;

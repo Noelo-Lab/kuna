@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_377() {
-    assert_eq!(kuna_num_settables(), 377);
-    assert_eq!(SETTABLE_TABLE.len(), 377);
+fn settable_count_is_378() {
+    assert_eq!(kuna_num_settables(), 378);
+    assert_eq!(SETTABLE_TABLE.len(), 378);
 }
 
 #[test]
-fn tier_counts_are_130_core_153_transform_94_analysis() {
+fn tier_counts_are_130_core_154_transform_94_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_130_core_153_transform_94_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (130, 153, 94));
+    assert_eq!((core, transform, analysis), (130, 154, 94));
 }
 
 #[test]
@@ -656,6 +656,9 @@ fn option_values_live_value_present_for_178() {
                             // (kuna) `persistcalls` takes `off|on|<n>`, a guard
                             // count; its live value is `Architecture::persist_calls`.
                             | "persistcalls"
+                            // (kuna) `deadcascade` takes `off|on|<n>`, a pass
+                            // count; its live value is `Architecture::dead_cascade`.
+                            | "deadcascade"
                             // (kuna) `retsplitlimit` takes `off|<n>`, an op count;
                             // its live value is `Architecture::ret_split_limit`.
                             | "retsplitlimit"
@@ -1170,7 +1173,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
     // +1 for `bejoinpass`; its P4 row sits after `bejoin`.
     // +1 for `persistcalls`; its P3 row sits after `readonlycalls`.
-    assert_eq!(json.matches("},\n").count(), 376);
+    // +1 for `deadcascade`; its P3 row sits after `deadwaves`.
+    assert_eq!(json.matches("},\n").count(), 377);
 }
 
 #[test]
