@@ -2239,8 +2239,13 @@ mod w10_printc_cast_render {
     }
 
     fn build_fd() -> Funcdata {
-        let manage = build_manager();
-        let glb = Rc::new(ContextArch::new(manage));
+        build_fd_with_aggregate_fields(false)
+    }
+
+    fn build_fd_with_aggregate_fields(enabled: bool) -> Funcdata {
+        let mut arch = ContextArch::new(build_manager());
+        arch.aggregate_fields = enabled;
+        let glb = Rc::new(arch);
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x1000_0000, 0x40).unwrap()
@@ -2805,6 +2810,77 @@ mod w10_printc_cast_render {
             let text = printer.emit_mut().output_str();
             assert!(text.starts_with("SUB"), "{text}");
             assert!(!text.contains("union"), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_whole_struct_edge_does_not_append_its_single_field() {
+        use crate::dtype::{DatatypeKind, TypeField};
+        let types = crate::dtype::TypeFactoryImpl::new();
+        let mut record = Datatype::new_with_align(8, 8, type_metatype::TYPE_STRUCT);
+        record.name = "SingleDouble".into();
+        record.id = Datatype::hash_name(&record.name);
+        record.flags |= crate::dtype::flags::needs_resolution;
+        record.kind = DatatypeKind::Struct {
+            field: vec![TypeField::new(0, 0, "d", named("double", 8, type_metatype::TYPE_FLOAT))],
+            bitfield: vec![],
+        };
+        let record = Rc::new(record);
+        for (whole, enabled) in [(true, true), (false, true), (true, false), (false, false)] {
+            let mut fd = build_fd_with_aggregate_fields(enabled);
+            let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_COPY);
+            let input = fd.new_varnode(8, &Address::new(ram(&fd), 0x400), Some(record.clone()));
+            fd.op_set_input(op, input, 0).unwrap();
+            let resolution = if whole {
+                crate::unionresolve::ResolvedUnion::new(record.clone())
+            } else {
+                crate::unionresolve::ResolvedUnion::new_field(record.clone(), 0, &types).unwrap()
+            };
+            fd.set_union_field(&record, op, 0, resolution);
+            let mut printer = PrintC::new();
+            printer.set_output_stream();
+            let emitted = printer.push_partial_symbol_ir(
+                &fd, &bare_arch(), "x", record.clone(), 0, 8, input, op, 0, true,
+            );
+            let field = !whole || !enabled;
+            assert_eq!(emitted, field, "whole={whole} aggregatefields={enabled}");
+            assert_eq!(printer.emit_mut().output_str(), if field { "x.d" } else { "" });
+        }
+    }
+
+    #[test]
+    fn a_nested_struct_walk_stops_at_the_resolved_edge_type() {
+        use crate::dtype::{DatatypeKind, TypeField};
+        let types = crate::dtype::TypeFactoryImpl::new();
+        let mut inner = Datatype::new_with_align(8, 8, type_metatype::TYPE_STRUCT);
+        inner.name = "InnerDouble".into();
+        inner.id = Datatype::hash_name(&inner.name);
+        inner.flags |= crate::dtype::flags::needs_resolution;
+        inner.kind = DatatypeKind::Struct {
+            field: vec![TypeField::new(0, 0, "d", named("double", 8, type_metatype::TYPE_FLOAT))],
+            bitfield: vec![],
+        };
+        let mut outer = Datatype::new_with_align(8, 8, type_metatype::TYPE_STRUCT);
+        outer.name = "OuterDouble".into();
+        outer.id = Datatype::hash_name(&outer.name);
+        outer.flags |= crate::dtype::flags::needs_resolution;
+        outer.kind = DatatypeKind::Struct {
+            field: vec![TypeField::new(0, 0, "a", Rc::new(inner))], bitfield: vec![],
+        };
+        let outer = Rc::new(outer);
+        for enabled in [true, false] {
+            let mut fd = build_fd_with_aggregate_fields(enabled);
+            let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_COPY);
+            let input = fd.new_varnode(8, &Address::new(ram(&fd), 0x400), Some(outer.clone()));
+            fd.op_set_input(op, input, 0).unwrap();
+            let resolution = crate::unionresolve::ResolvedUnion::new_field(outer.clone(), 0, &types).unwrap();
+            fd.set_union_field(&outer, op, 0, resolution);
+            let mut printer = PrintC::new();
+            printer.set_output_stream();
+            assert!(printer.push_partial_symbol_ir(
+                &fd, &bare_arch(), "x", outer.clone(), 0, 8, input, op, 0, true,
+            ));
+            assert_eq!(printer.emit_mut().output_str(), if enabled { "x.a" } else { "x.a.d" });
         }
     }
 

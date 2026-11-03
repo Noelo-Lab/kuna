@@ -445,11 +445,13 @@
     <description>octeon3 core subset, big endian, N64; explicit target</description>
     <compiler name="default" spec="octeon_n64_soft.cspec" id="default"/>
     <compiler name="n64" spec="octeon_n64_soft.cspec" id="n64"/>
+    <compiler name="n64 hard float" spec="octeon_n64_hard.cspec" id="hard"/>
   </language>
   <language processor="MIPS" endian="big" size="32" variant="octeon3-32addr" version="1.0" slafile="octeon3be.sla" processorspec="mips64.pspec" id="MIPS:BE:64:octeon3-32addr">
     <description>octeon3 core subset, big endian, N32; explicit target</description>
     <truncate_space space="ram" size="4"/>
     <compiler name="default" spec="octeon_n32_soft.cspec" id="default"/>
     <compiler name="n32" spec="octeon_n32_soft.cspec" id="n32"/>
+    <compiler name="n32 hard float" spec="octeon_n32_hard.cspec" id="hard"/>
   </language>
 </language_definitions>

@@ -1279,7 +1279,7 @@ impl ObjectLoadImage {
             // are relocations, resolved by the layout pass.
             import_slots: Vec::new(),
             plt_local: Vec::new(),
-            mips_linkage: None,
+            mips_linkage: crate::loader::kuna_mipsstubs::class_linkage(&file),
             elfv1,
             elf_functions: ElfFunctionProvenance::default(),
             spaceid: None,
@@ -1755,6 +1755,11 @@ fn language_id_for(
     if let Some(target) = target {
         return Ok(target.as_bytes().to_vec());
     }
+    if let Some(id) = crate::loader::kuna_mipsocteon::language_id(file)
+        .map_err(|error| KunaError::lowlevel(format!("File: {filename}: {error}; pass an explicit --target")))?
+    {
+        return Ok(id.into_bytes());
+    }
     let little = file.is_little_endian();
     let endian = if little { "LE" } else { "BE" };
     // (PR-8 §3.7) Pointer-auth arm64e spec selection, GATED + opt-in: an arm64e
@@ -2050,6 +2055,7 @@ pub fn elf_language_ids() -> Vec<String> {
             out.push(id);
         }
     }
+    out.extend(crate::loader::kuna_mipsocteon::language_ids());
     out.sort();
     out.dedup();
     out

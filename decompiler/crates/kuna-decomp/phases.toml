@@ -6001,6 +6001,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "aggregatefields"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P5"
+subphase = "aggregate-union"
+strength = "HARD"
+rewind = "P3"
+issue = "#1394"
+summary = "Keep a structured value whole until its fields can be named. Four places otherwise split or misname it. `RuleConcatZero` rewrites a concatenation whose low bytes are zero into a shifted integer even when the result is a struct or array, so `RulePieceStructure` never sees the field it builds and a returned record prints as `(S)((ulong)x << 32)`. Single-component resolution scores a COPY or RETURN of a declared container as its only field, so a function returning its unchanged `struct S` argument prints `return x.d;`. Cleanup splitting runs after the main simplification pool and leaves the nested truncations it creates, so a field extracted from an already truncated aggregate keeps an artificial partial instead of its member name, along with truncations nothing reads. The partial-symbol walk descends into a single-field struct even where the operation's resolved type is that whole struct, appending a member twice (`x.a.d.d`) or assigning a whole struct to its own field (`v2.field_0x8.__0 = (field_0x8)...`). On, a struct- or array-typed concatenation with a zero low piece stays a PIECE for structured-piece recovery; a RETURN of the function's locked output type, and both edges of each COPY on the chain feeding it, resolve to the whole container when the value is an equal-width COPY chain from a type-locked input of that container; each new cleanup-split SUBPIECE collapses through the double-subpiece rule and the truncations it orphaned are removed through the dead-code rule; and the walk stops at an operation whose resolved or facing type is the whole struct. Off restores upstream's behavior at all four places. ABI padding pieces of a join, which only `directfields` compiler-spec joins create, are always handled as logical constants: they have no storage, so this option does not govern them."
+use_when = "On by default: 0/675 datatest assertions move and a whole-binary comparison over 861 public images changed one non-MIPS image, where a whole-struct Rust assignment lost an extra `.__0`; a Go pair result with a zero half also stores its named fields instead of a byte carrier. Flip off to compare with upstream Ghidra's field-first resolution, or when a struct return or a cleanup-split field prints differently from a reference decompiler."
+example = "option aggregatefields off"
+source_decompiler = "kuna"
+inspiration = "Octeon N32/N64 hard-float aggregate returns (one or two direct float fields with padding, nested single-field records) from original GCC 7.3 and 4.7 fixtures in tests/fixtures/octeon-elf-abi"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a function returning its unchanged single-field struct argument prints return x.d;|a nested single-field member prints twice, x.a.d.d|a whole-struct assignment writes the struct into its own field, v.field_0x8.__0 = (field_0x8)...|a returned record prints as a shifted integer cast to the struct type|a field of a split aggregate prints as an artificial partial such as _4_8_ instead of its member name"
+live_field = "aggregate_fields"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "framelayout"
 values = "on|off"
 default = "on"

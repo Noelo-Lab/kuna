@@ -870,6 +870,11 @@ pub struct ArchContext {
     /// `add_carry_chain`, DIV-2 default-on).  Read by
     /// [`RuleAddCarryChain`](crate::kuna_addcarrychain::RuleAddCarryChain).
     pub add_carry_chain: bool,
+    /// (kuna) `aggregatefields`, default-on: keep a structured concatenation
+    /// with low zero bytes for field recovery, resolve an unchanged declared
+    /// container returned whole, collapse cleanup-split truncations, and stop a
+    /// partial-symbol walk at a whole-struct edge. Off restores upstream.
+    pub aggregate_fields: bool,
     /// (kuna) `stubtailcall`, default-on: flow loader-proven lazy-binding stubs as
     /// tail calls ([`crate::kuna_stubtailcall`]).
     pub stub_tail_call: bool,
@@ -1957,6 +1962,7 @@ impl ArchContext {
             x87_integer_userops: Vec::new(),
             fold_flag_compare: false,    // GH-1276/8777 flagcompare
             add_carry_chain: false,      // GH-8913 addcarrychain
+            aggregate_fields: false,     // aggregatefields
             stub_tail_call: false,       // stubtailcall
             got_import_proto: false,     // gotimportproto
             ov_less_simplify: false,     // GH-7190 ovlesssimplify

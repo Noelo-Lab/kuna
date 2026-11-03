@@ -24,15 +24,30 @@ fn is_resolver_stub(bytes: &[u8], little: bool, index: u64) -> bool {
 /// The MIPS ELF linkage facts a loader proves once per image.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MipsLinkage {
+    /// The ELF32 class: its pointers sign-extend in a 64-bit register.
+    pub elf32: bool,
+    pub little: bool,
     /// Resolver call site and end of each complete, symbol/GOT-backed
     /// lazy-binding stub.
     pub transfers: Vec<(u64, u64)>,
 }
 
+/// The class and byte order of a MIPS ELF, with no stubs: what a relocatable
+/// object, which has none, contributes. `None` off MIPS ELF.
+pub fn class_linkage(file: &object::File<'_>) -> Option<MipsLinkage> {
+    (file.format() == object::BinaryFormat::Elf && super::kuna_mipsabi::is_mips(file.architecture()))
+        .then(|| MipsLinkage {
+            elf32: !file.is_64(),
+            little: file.is_little_endian(),
+            ..MipsLinkage::default()
+        })
+}
+
 /// The linkage of a linked MIPS ELF; `None` off MIPS ELF.
 pub fn linkage(file: &object::File<'_>) -> Option<MipsLinkage> {
-    (file.format() == object::BinaryFormat::Elf && super::kuna_mipsabi::is_mips(file.architecture()))
-        .then(|| MipsLinkage { transfers: scan_transfers(file) })
+    let mut linkage = class_linkage(file)?;
+    linkage.transfers = scan_transfers(file);
+    Some(linkage)
 }
 
 /// Resolver instruction and end of each complete, symbol/GOT-backed import stub.
