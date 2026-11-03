@@ -267,12 +267,27 @@ impl<'a> Reader<'a> {
         }
     }
 
+    /// A NUL-terminated UTF-8 name (a Swift identifier may be any Unicode
+    /// letters); `None` when empty, unterminated within 4 KiB, not UTF-8,
+    /// or holding a control character.
     fn cstr(&self, at: u64) -> Option<String> {
-        let s = self.img.read_cstr(at)?;
-        if s.is_empty() {
+        let mut bytes = Vec::new();
+        let mut p = at;
+        loop {
+            let b = *self.img.read(p, 1)?.first()?;
+            if b == 0 {
+                break;
+            }
+            if b < 0x20 || b == 0x7f || bytes.len() >= 4096 {
+                return None;
+            }
+            bytes.push(b);
+            p += 1;
+        }
+        if bytes.is_empty() {
             return None;
         }
-        Some(s)
+        String::from_utf8(bytes).ok()
     }
 
     /// Every 4-byte self-relative entry of the section named `name`.

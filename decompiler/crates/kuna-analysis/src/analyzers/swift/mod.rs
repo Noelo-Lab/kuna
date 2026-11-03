@@ -70,8 +70,9 @@ impl AnalysisPass for SwiftMetadataPass {
             object::BinaryFormat::Elf => &ELF_SECTIONS,
             _ => return out,
         };
-        if ctx.file.section_by_name(names.types).is_none()
-            && ctx.file.section_by_name(names.conformances).is_none()
+        if [names.types, names.protocols, names.conformances]
+            .iter()
+            .all(|s| ctx.file.section_by_name(s).is_none())
         {
             return out;
         }
