@@ -831,7 +831,7 @@ impl Rule for PropOneRule {
                 continue;
             }
             let invn = data.obank().get(def).unwrap().get_in(0).unwrap();
-            data.note_wave_input_change(op, vn);
+            data.note_wave_input_change(op, vn, invn);
             data.op_set_input(op, invn, i).unwrap();
             return 1;
         }
@@ -937,4 +937,74 @@ fn copy_waves_propagate_the_join_as_sweeps_do_and_visit_only_its_neighbourhood()
     assert!(waved_offers["CPUI_INT_XOR"] <= 2 * 30, "{waved_offers:?}");
     assert!(waved_offers["CPUI_INT_ADD"] <= 4 * 30, "{waved_offers:?}");
     assert_eq!(swept_far, waved_far);
+}
+
+/// Turns an INT_ADD whose output a MULTIEQUAL reads into an INT_OR.
+struct JoinReadRule;
+
+impl Rule for JoinReadRule {
+    fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        let Some(out) = data.obank().get(op).and_then(|o| o.get_out()) else {
+            return 0;
+        };
+        let joined = data
+            .vbank()
+            .get(out)
+            .unwrap()
+            .descend_iter()
+            .any(|r| data.obank().get(r).is_some_and(|o| o.code() == OpCode::CPUI_MULTIEQUAL));
+        if !joined {
+            return 0;
+        }
+        data.op_set_opcode(op, TypeOp::new(OpCode::CPUI_INT_OR, 0, "INT_OR"));
+        1
+    }
+    fn get_op_list(&self) -> Vec<OpCode> {
+        vec![OpCode::CPUI_INT_ADD]
+    }
+    fn clone_rule(&self, _g: &ActionGroupList) -> Option<Box<dyn Rule>> {
+        Some(Box::new(JoinReadRule))
+    }
+}
+
+/// `t = INT_ADD 7,7; w = COPY t; MULTIEQUAL w; INT_XOR w,w` under a pool of
+/// [dead-copy, propagate-one, join-read]. Returns the INT_ADD's opcode after
+/// the pool runs to its fixpoint.
+fn run_join_read(copy_waves: bool) -> OpCode {
+    let mut arch = ArchContext::new(build_manager());
+    arch.pool_dead_waves = true;
+    arch.pool_copy_waves = copy_waves;
+    let glb = Rc::new(arch);
+    let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+    let mut fd = Funcdata::new("func", "func", glb, Address::new(ram, 0x1000), 0x10000000, 0x40).unwrap();
+    let add = make_op(&mut fd, 0x1000, OpCode::CPUI_INT_ADD);
+    let c7 = fd.new_constant(4, 7);
+    fd.op_set_all_input(add, &[c7, c7]).unwrap();
+    let at = ram_addr(&fd, 0x100);
+    let t = fd.new_varnode_out(4, &at, add).unwrap();
+    let copy = make_op(&mut fd, 0x1010, OpCode::CPUI_COPY);
+    fd.op_set_all_input(copy, &[t]).unwrap();
+    let at = ram_addr(&fd, 0x108);
+    let w = fd.new_varnode_out(4, &at, copy).unwrap();
+    let join = make_op(&mut fd, 0x1020, OpCode::CPUI_MULTIEQUAL);
+    fd.op_set_all_input(join, &[w]).unwrap();
+    let xor = make_op(&mut fd, 0x1030, OpCode::CPUI_INT_XOR);
+    fd.op_set_all_input(xor, &[w, w]).unwrap();
+    let mut pool = ActionPool::new(ruleflags::rule_repeatapply, "pool");
+    pool.add_rule(RuleState::new("analysis", 0, "earlyremoval"), Box::new(DeadCopyRule));
+    pool.add_rule(RuleState::new("analysis", 0, "propagatecopy"), Box::new(PropOneRule));
+    pool.add_rule(RuleState::new("analysis", 0, "joinread"), Box::new(JoinReadRule));
+    let mut ctx = ActionContext::new();
+    pool.perform(&mut fd, &mut ctx);
+    fd.obank().get(add).unwrap().code()
+}
+
+/// (kuna `copywaves`) A propagation that leaves its COPY alive hands the
+/// COPY's input a new reader; the wave offers that input's definition, so a
+/// rule testing the definition's readers fires before the pool converges, as
+/// it does under the sweep.
+#[test]
+fn copy_waves_offer_the_definition_of_the_propagated_value() {
+    assert_eq!(run_join_read(false), OpCode::CPUI_INT_OR);
+    assert_eq!(run_join_read(true), OpCode::CPUI_INT_OR);
 }

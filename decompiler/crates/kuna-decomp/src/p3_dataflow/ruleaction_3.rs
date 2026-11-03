@@ -2055,7 +2055,7 @@ impl Rule for RulePropagateCopy {
             }
             crate::p3_dataflow::kuna_stackreadscope::record_propagated_read(data, copyop, invn);
             data.kuna_inherit_storage(invn, vn);
-            data.note_wave_input_change(op, vn);
+            data.note_wave_input_change(op, vn, invn);
             data.op_set_input(op, invn, i).expect("RulePropagateCopy: opSetInput"); // propagate just a single copy
             return 1;
         }
