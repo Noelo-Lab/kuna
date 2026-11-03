@@ -752,3 +752,6 @@ mod integer_field_extract;
 
 #[path = "go_store_value.rs"]
 mod go_store_value;
+
+#[path = "rust_integer_conversions.rs"]
+mod rust_integer_conversions;

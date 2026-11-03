@@ -2367,6 +2367,9 @@ impl PrintC {
     /// [`crate::printlanguage::parentheses`] with the previous token for the
     /// `HiddenFunction` arm.
     fn parentheses_top(&self, op2: &OpToken) -> bool {
+        if op2.paren_before_angle && crate::kuna_rustintegers::cast_before_angle(&self.revpol) {
+            return true;
+        }
         let top = self.revpol.last().expect("parentheses on empty revpol");
         let prev = if self.revpol.len() > 1 {
             Some(self.revpol[self.revpol.len() - 2].tok)
@@ -5963,7 +5966,8 @@ impl PrintC {
             return false;
         }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts
-            && crate::kuna_rustsigned::plan(fd, op).is_some()
+            && (crate::kuna_rustsigned::plan(fd, op).is_some()
+                || self.rust_integer_binary_plan(fd, arch, op).is_some())
         {
             return false;
         }
@@ -6320,6 +6324,10 @@ impl PrintC {
                                     self.push_go_value_as(fd, arch, vn, op, target);
                                 } else { self.push_vn_ir(fd, arch, vn, op); }
                             }
+                        } else if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
+                            let converted = fd.get_func_proto().get_output_type()
+                                .is_some_and(|target| self.push_rust_integer_as(fd, arch, vn, op, target));
+                            if !converted { self.push_vn_ir(fd, arch, vn, op); }
                         } else { self.push_vn_ir(fd, arch, vn, op); }
                     }
                 }
@@ -6331,6 +6339,12 @@ impl PrintC {
                         let target = fd.obank().get(op).and_then(|o| o.get_out()).map(|out| fd.vn_type_def_facing(out));
                         if let Some(target) = target { self.push_go_value_as(fd, arch, vn, op, &target); }
                         else { self.push_vn_ir(fd, arch, vn, op); }
+                    } else if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
+                        let target = fd.obank().get(op).and_then(|o| o.get_out())
+                            .map(|out| self.rust_integer_output_type(fd, arch, out));
+                        let converted = target.as_ref()
+                            .is_some_and(|target| self.push_rust_integer_as(fd, arch, vn, op, target));
+                        if !converted { self.push_vn_ir(fd, arch, vn, op); }
                     } else { self.push_vn_ir(fd, arch, vn, op); }
                 }
             }
@@ -6461,6 +6475,7 @@ impl PrintC {
             return;
         }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
+            if self.op_rust_integer_binary(fd, arch, tok, op) { return; }
             if let Some(plan) = crate::kuna_rustsigned::plan(fd, op) {
                 self.emit_rust_signed_text(fd, arch, tok, op, plan);
                 return;
@@ -7362,6 +7377,11 @@ impl PrintC {
                 .map(|out| crate::kuna_bitcast::array_float_conversion(fd, op)
                     .unwrap_or_else(|| fd.vn_type_def_facing(out)))
         };
+        if self.out_lang == crate::kuna_lang::OutLang::Rust {
+            if let (Some(ct), Some(vn)) = (cast_ty.as_ref(), fd.obank().get(op).and_then(|o| o.get_in(0))) {
+                if self.push_rust_integer_conversion(fd, arch, vn, op, ct, true) { return; }
+            }
+        }
         if let Some(ct) = &cast_ty {
             self.push_cast_open(ct, op);
         }

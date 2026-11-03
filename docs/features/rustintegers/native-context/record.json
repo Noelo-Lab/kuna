@@ -1,0 +1,224 @@
+{
+  "status": "PASS",
+  "candidate_cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+  "parent_cli_sha256": "b4557e50aa5b06baa5252307700b652dbecd651137ea873aa504ea364d8b82fd",
+  "fixture_sha256": "dc5daf5ea440c2120598e5fbe7a81991d525f205482c91dbd9ece929c4a82ce1",
+  "complete_functions": 15,
+  "input_vectors_per_run": 1280,
+  "native_rust_input_comparisons": 2560,
+  "function_comparisons": 38400,
+  "body_rewrites": false,
+  "c_go_unchanged": true,
+  "records": [
+    {
+      "arm": "reference",
+      "opt": "0",
+      "stdout_sha256": "085304c2a9b2699b27e4ddd0f389e75be7f7849f4d08905dce2c9e6a859f21a7"
+    },
+    {
+      "arm": "reference",
+      "opt": "2",
+      "stdout_sha256": "085304c2a9b2699b27e4ddd0f389e75be7f7849f4d08905dce2c9e6a859f21a7"
+    },
+    {
+      "arm": "parent",
+      "opt": "0",
+      "compile_exit": 1
+    },
+    {
+      "arm": "parent",
+      "opt": "2",
+      "compile_exit": 1
+    },
+    {
+      "arm": "candidate",
+      "opt": "0",
+      "compile_exit": 0,
+      "execute_exit": 0,
+      "matches_reference": true,
+      "stdout_sha256": "085304c2a9b2699b27e4ddd0f389e75be7f7849f4d08905dce2c9e6a859f21a7",
+      "first_difference": []
+    },
+    {
+      "arm": "candidate",
+      "opt": "2",
+      "compile_exit": 0,
+      "execute_exit": 0,
+      "matches_reference": true,
+      "stdout_sha256": "085304c2a9b2699b27e4ddd0f389e75be7f7849f4d08905dce2c9e6a859f21a7",
+      "first_difference": []
+    }
+  ],
+  "failures": [],
+  "commands": [
+    [
+      "cc",
+      "-O2",
+      "-g",
+      "-fwrapv",
+      "-fno-inline",
+      "-fno-optimize-sibling-calls",
+      "-fno-pie",
+      "-no-pie",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/context.c",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/helpers.c",
+      "-o",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/fixture"
+    ],
+    [
+      "/home/mahaloz/kwt/angr-go-store-conversions/decompiler/target/release/kuna",
+      "decompile-all",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/fixture",
+      "--functions",
+      "insert_bit,isolated_bit,invert_low,shift_again,literal_right,signed_right,named_shift,signed_shift,mixed_shift,accumulate_bits,accumulate_calls,mixed_less,mixed_left,mixed_sub_less,mixed_sub_left",
+      "--language",
+      "c",
+      "--json",
+      "--assert",
+      "@/tmp/kuna-rust-integer-conversions/integration-store/native-context/context.kuna"
+    ],
+    [
+      "/home/mahaloz/kwt/angr-go-store-conversions/decompiler/target/release/kuna",
+      "decompile-all",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/fixture",
+      "--functions",
+      "insert_bit,isolated_bit,invert_low,shift_again,literal_right,signed_right,named_shift,signed_shift,mixed_shift,accumulate_bits,accumulate_calls,mixed_less,mixed_left,mixed_sub_less,mixed_sub_left",
+      "--language",
+      "go",
+      "--json",
+      "--assert",
+      "@/tmp/kuna-rust-integer-conversions/integration-store/native-context/context.kuna"
+    ],
+    [
+      "/home/mahaloz/kwt/angr-go-store-conversions/decompiler/target/release/kuna",
+      "decompile-all",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/fixture",
+      "--functions",
+      "insert_bit,isolated_bit,invert_low,shift_again,literal_right,signed_right,named_shift,signed_shift,mixed_shift,accumulate_bits,accumulate_calls,mixed_less,mixed_left,mixed_sub_less,mixed_sub_left",
+      "--language",
+      "rust",
+      "--json",
+      "--assert",
+      "@/tmp/kuna-rust-integer-conversions/integration-store/native-context/context.kuna"
+    ],
+    [
+      "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/target/release/kuna",
+      "decompile-all",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/fixture",
+      "--functions",
+      "insert_bit,isolated_bit,invert_low,shift_again,literal_right,signed_right,named_shift,signed_shift,mixed_shift,accumulate_bits,accumulate_calls,mixed_less,mixed_left,mixed_sub_less,mixed_sub_left",
+      "--language",
+      "c",
+      "--json",
+      "--assert",
+      "@/tmp/kuna-rust-integer-conversions/integration-store/native-context/context.kuna"
+    ],
+    [
+      "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/target/release/kuna",
+      "decompile-all",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/fixture",
+      "--functions",
+      "insert_bit,isolated_bit,invert_low,shift_again,literal_right,signed_right,named_shift,signed_shift,mixed_shift,accumulate_bits,accumulate_calls,mixed_less,mixed_left,mixed_sub_less,mixed_sub_left",
+      "--language",
+      "go",
+      "--json",
+      "--assert",
+      "@/tmp/kuna-rust-integer-conversions/integration-store/native-context/context.kuna"
+    ],
+    [
+      "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/target/release/kuna",
+      "decompile-all",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/fixture",
+      "--functions",
+      "insert_bit,isolated_bit,invert_low,shift_again,literal_right,signed_right,named_shift,signed_shift,mixed_shift,accumulate_bits,accumulate_calls,mixed_less,mixed_left,mixed_sub_less,mixed_sub_left",
+      "--language",
+      "rust",
+      "--json",
+      "--assert",
+      "@/tmp/kuna-rust-integer-conversions/integration-store/native-context/context.kuna"
+    ],
+    [
+      "cc",
+      "-O0",
+      "-g",
+      "-fwrapv",
+      "-fno-inline",
+      "-fno-optimize-sibling-calls",
+      "-fno-pie",
+      "-no-pie",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DKUNA_NATIVE_MAIN",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/context.c",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/helpers.c",
+      "-o",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/reference-0"
+    ],
+    [
+      "cc",
+      "-O2",
+      "-g",
+      "-fwrapv",
+      "-fno-inline",
+      "-fno-optimize-sibling-calls",
+      "-fno-pie",
+      "-no-pie",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DKUNA_NATIVE_MAIN",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/context.c",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/helpers.c",
+      "-o",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/reference-2"
+    ],
+    [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=0",
+      "-C",
+      "overflow-checks=off",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/parent.rs",
+      "-o",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/parent-0"
+    ],
+    [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=2",
+      "-C",
+      "overflow-checks=off",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/parent.rs",
+      "-o",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/parent-2"
+    ],
+    [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=0",
+      "-C",
+      "overflow-checks=off",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/candidate.rs",
+      "-o",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/candidate-0"
+    ],
+    [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=2",
+      "-C",
+      "overflow-checks=off",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/candidate.rs",
+      "-o",
+      "/tmp/kuna-rust-integer-conversions/integration-store/native-context/candidate-2"
+    ]
+  ]
+}

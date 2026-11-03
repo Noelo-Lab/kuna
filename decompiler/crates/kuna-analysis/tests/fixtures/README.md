@@ -1675,3 +1675,7 @@ below `0x1000`, where an address formed from the PC (`adrp` + `add`/`ldr`, `adr`
 `control_number(s)` is not. Sources `lowpage_macho.s`, `lowpage_<arch>.S` and
 `lowpage_arm.ld`; recipe, toolchain and SHA-256s in `lowpage.provenance`. Pinned by
 `kuna-cli/tests/xrefs_low_page.rs`.
+
+`rust_integer_conversions_x86_64` contains 49 authored primitive-conversion probes, with source-true prototype assertions and native C/Rust harnesses. Its provenance file records compiler flags and hashes; helpers are a separate translation unit.
+
+`rust_integer_context_x86_64` contains fifteen authored shift, loop, and cast-boundary probes. The native C/Rust harness checks all 64 shift counts, boundary words, nested shifts, and exact callback counts. `rust_integer_context.provenance.json` records the compiler command and hashes.

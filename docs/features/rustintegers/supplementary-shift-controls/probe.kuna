@@ -1,0 +1,4 @@
+prototype logical_min int8 logical_min(uint8 n)
+prototype logical_max int8 logical_max(uint8 n)
+prototype arithmetic_min uint8 arithmetic_min(uint8 n)
+prototype arithmetic_negative uint8 arithmetic_negative(uint8 n)

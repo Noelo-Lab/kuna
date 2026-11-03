@@ -4296,6 +4296,42 @@ emission. Shift outputs must be core integer storage of the same width. Explicit
 cast suppression still suppresses these conversions. Unsigned comparisons and
 logical shifts, and output languages other than Rust, are unchanged.
 
+### Rust integer assignment and arithmetic conversions
+
+Rust requires explicit conversions between signed and unsigned primitive integers
+of the same width. `kuna_rustintegers.rs` applies those conversions to returns,
+COPY assignments, and the operands of addition, subtraction, multiplication,
+and bitwise AND, OR and XOR. Named values use their printed local or recovered
+variable type; implied expressions use their read-facing type. A binary
+operation uses its output's printed storage type. An in-place assignment is
+expanded when its operands need these conversions. Each operand remains a
+single expression evaluation.
+
+The conversion preserves the integer's bit pattern at widths 1, 2, 4 and 8 bytes.
+Core text types follow Rust's unsigned byte spelling. Constant conversions first
+establish their source integer width, avoiding an out-of-range inferred literal.
+Before a same-width explicit cast or a new conversion around a context-dependent
+implied integer expression, the emitter
+establishes its source width with `::core::convert::identity::<T>`. This keeps an
+unsuffixed literal in a shift such as `1 << n` from falling back to `i32` after
+the outer cast removes its surrounding type context. A bounded walk follows the
+value operand of shifts/unary operations and both operands of integer binary
+operations; named values and explicitly typed operations already establish their
+types. An exhausted walk declines the conversion. The identity evaluates its
+operand once and preserves its value.
+Rust casts also retain parentheses when the next printed token is an angle
+comparison or shift after an enclosing right-hand arithmetic expression. The
+emitter walks those pending expressions until a printed token or closing
+delimiter ends the boundary, so `a + (b as u64) < c` cannot be parsed as generic
+arguments. This applies to existing Rust casts as well as newly added ones.
+The helper declines mismatched widths, enums, noninteger values and aggregates;
+it does not infer aggregate layout or repair memory STORE widths. Cosmetic cast
+suppression disables these conversions. C and Go emission are unchanged.
+
+Native validation uses wrapping arithmetic, with Rust overflow checks disabled,
+to match the binary's integer operations. The conversion does not itself select
+checked versus wrapping arithmetic for a source build.
+
 ### Rust machine-operation names
 
 A functional `CALLOTHER` names the architecture's machine operation. When Rust

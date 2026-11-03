@@ -1,0 +1,41 @@
+{
+  "at": "2026-11-02T23:15:24.294180+00:00",
+  "description": "Authored x86_64 signedness-conversion probes. Helpers are compiled as a separate translation unit to preserve ordinary call ABI.",
+  "compiler": "cc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+  "command": [
+    "cc",
+    "-O2",
+    "-g",
+    "-fwrapv",
+    "-fno-pie",
+    "-no-pie",
+    "-fno-inline",
+    "-fno-optimize-sibling-calls",
+    "rust_integer_conversions.c",
+    "rust_integer_conversions_helpers.c",
+    "-o",
+    "rust_integer_conversions_x86_64"
+  ],
+  "original_execution_command": [
+    "cc",
+    "-O2",
+    "-g",
+    "-fwrapv",
+    "-fno-pie",
+    "-no-pie",
+    "-fno-inline",
+    "-fno-optimize-sibling-calls",
+    "/tmp/kuna-rust-integer-conversions/expanded-native/rust_integer_conversions.c",
+    "/tmp/kuna-rust-integer-conversions/expanded-native/rust_integer_conversions_helpers.c",
+    "-o",
+    "/tmp/kuna-rust-integer-conversions/expanded-native/fixture"
+  ],
+  "sha256": {
+    "rust_integer_conversions_harness.c": "35d7e36ec3f615718f4584b927f720fc01402c2308e987afb0a3e2734f02a6ea",
+    "rust_integer_conversions_x86_64": "8964f74089852c3d6164953bca3f113fc63898eda22c5879587fe51deac9e4b0",
+    "rust_integer_conversions_helpers.c": "7416197f03b8fea25418a74977e078b3ec109c02002396e4487c1a4fdbcafecf",
+    "rust_integer_conversions.c": "5975a54cf93c1039d456f560e2b7386bbf3d4634d94bfca95fd79bfa6206fcc9",
+    "rust_integer_conversions.kuna": "f4388ea9e2a96816c6ead3d0afa0e75da5c0e430493b3865ff3a91156ece172b",
+    "rust_integer_conversions_harness.rs": "5e112c83f6ea14f7bf442203a661f586fd8179df07b67b46a609958f87b8cb14"
+  }
+}

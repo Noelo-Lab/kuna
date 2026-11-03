@@ -1,0 +1,206 @@
+{
+  "binary": "/tmp/kuna-rust-integer-conversions/shift-signedness-controls/fixture",
+  "language": "rust-language",
+  "count": 4,
+  "error": null,
+  "functions": [
+    {
+      "name": "logical_min",
+      "address": 4198688,
+      "address_hex": "0x401120",
+      "aliases": [
+        "sub_401120"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn logical_min(mut n: u64) -> i64\n{\n  return 0x8000000000000000 >> (n as u8 & 0x3f);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198704,
+            4198707
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "n",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198704,
+            4198707
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "logical_max",
+      "address": 4198720,
+      "address_hex": "0x401140",
+      "aliases": [
+        "sub_401140"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn logical_max(mut n: u64) -> i64\n{\n  return 0xffffffffffffffff >> (n as u8 & 0x3f);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198733,
+            4198736
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "n",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198733,
+            4198736
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "arithmetic_min",
+      "address": 4198752,
+      "address_hex": "0x401160",
+      "aliases": [
+        "sub_401160"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn arithmetic_min(mut n: u64) -> u64\n{\n  return -0x8000000000000000 >> (n as u8 & 0x3f);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198768,
+            4198771
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "n",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198768,
+            4198771
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "arithmetic_negative",
+      "address": 4198784,
+      "address_hex": "0x401180",
+      "aliases": [
+        "sub_401180"
+      ],
+      "object_location": null,
+      "size": 17,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn arithmetic_negative(mut n: u64) -> u64\n{\n  return -3 >> (n as u8 & 0x3f);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198797,
+            4198800
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "n",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198797,
+            4198800
+          ]
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": [
+    {
+      "directive": "prototype logical_min int8 logical_min(uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype logical_max int8 logical_max(uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype arithmetic_min uint8 arithmetic_min(uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype arithmetic_negative uint8 arithmetic_negative(uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    }
+  ]
+}
