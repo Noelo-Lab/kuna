@@ -976,7 +976,12 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   A bind's ordinal also names the symbol it binds
   (`decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (bind_name)`),
   which is what lets a `__objc_classrefs` slot bound to `_OBJC_CLASS_$_UIView`
-  be named without an address. The resolver also records which segments the
+  be named without an address. The bind also keeps its addend: the import
+  record's (`DYLD_CHAINED_IMPORT_ADDEND*`) plus the entry's own (eight bits in
+  `PTR_64`, a signed 19 bits in a plain arm64e bind; an authenticated bind spends
+  those bits on its signing context and has none). A C++ RTTI record points at
+  `vtable for __si_class_type_info + 16` this way, so a slot whose addend is not
+  zero holds an address inside the import, not the import itself. The resolver also records which segments the
   linker flagged `SG_READ_ONLY`, the Mach-O statement that dyld maps the segment
   read-only once its fixups are in (`__DATA_CONST`); `dynrelocs` (§1.3) reads
   it as the `PT_GNU_RELRO` of a Mach-O.
