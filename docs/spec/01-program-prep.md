@@ -219,7 +219,9 @@ AltiVec support. `EF_PPC_EMB` alone likewise does not select a processor. Unknow
 APU versions and malformed or unsupported requirements keep the generic decoder
 and print a `[kuna target]` note. Explicit `--target` takes precedence. A
 selected language never falls back to a different ISA if its specification is
-missing. The explicit e500mc target uses the standard PowerPC32 compiler model, preserving FPR arguments and returns.
+missing. The explicit e500mc target uses the standard PowerPC32 FPR argument and
+return convention, while its 64-bit integer results keep the explicit `r3:r4`
+pair (`r4:r3` little-endian) with the high word first.
 The SPE compiler models join 64-bit integer arguments from aligned pairs of
 32-bit GPR slots, preserving byte order and spilling the whole argument when
 no aligned pair remains. Following arguments use the remaining register or

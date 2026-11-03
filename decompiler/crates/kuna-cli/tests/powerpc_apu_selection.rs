@@ -380,3 +380,27 @@ fn unclassified_apu_notes_keep_the_generic_decoder_under_ppcapu() {
     }
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn e500mc_returns_a_64_bit_value_high_word_first() {
+    let path = common::scratch_file("powerpc-e500mc-pair", "bin");
+    // lis r3,0x1122; ori r3,r3,0x3344; lis r4,0x5566; ori r4,r4,0x7788; blr.
+    let code: Vec<u8> = [0x3c601122u32, 0x60633344, 0x3c805566, 0x60847788, 0x4e800020]
+        .into_iter()
+        .flat_map(u32::to_be_bytes)
+        .collect();
+    std::fs::write(&path, code).unwrap();
+    let (text, _) = decompile(
+        &path,
+        "0x1000",
+        &[
+            "--raw-image",
+            "--base",
+            "0x1000",
+            "--target",
+            "PowerPC:BE:32:e500mc:default",
+        ],
+    );
+    assert!(text.contains("return 0x1122334455667788;"), "{text}");
+    std::fs::remove_file(path).unwrap();
+}
