@@ -2157,7 +2157,8 @@ mod tests {
         // and kuna-gottailcall / a one-destination jump through an extern's slot is a tail call
         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
         // and kuna-dedupitetail-gototarget / a goto into an unwrapped if clause keeps its target
-        assert_eq!(count, 692, "corpus file count drifted");
+        // and kuna-dedupitetail-switchgoto / a switch case goto into an unwrapped if clause keeps its target
+        assert_eq!(count, 693, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
