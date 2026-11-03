@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-03T04:43:39.509158+00:00",
+  "parent_commit": "19a4a5531980b8138b79822adb07b559ee2260cf",
+  "parent_tree": "41ef015db30e4da384113cd7df02996d40a85679",
+  "parent_cli_sha256": "18001c2240f24b16bcaf99d2be4deece02ff01a5c09a400ba5d6fa324a105531",
+  "parent_pr": "https://github.com/Noelo-Lab/kuna/pull/1467",
+  "parent_merge_pending": true,
+  "specs": 154,
+  "fixture_sha256": "6775a3a02efe332516210999a169e0cb50ce42eb1d78553fb333c576571bbfe8",
+  "complete_bodies": 97,
+  "expected_native_comparisons": 776,
+  "preimplementation_fixture_expansion": "Preserved original73 fixture/captures in native73 and parent-record-73.json. Added24 explicit retyped and pointer-to-array cases before any implementation/timing."
+}

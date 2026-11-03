@@ -1,0 +1,93 @@
+diff --git a/decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustarrayaddr.rs b/decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustarrayaddr.rs
+index 5cf1ca877..552d59243 100644
+--- a/decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustarrayaddr.rs
++++ b/decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustarrayaddr.rs
+@@ -9,9 +9,9 @@ use crate::printc::{op_key, op_token, tokens, PrintC};
+ use crate::printlanguage::{modifiers, Atom, OpToken, SyntaxHighlight, TagType, TokenType};
+ use kuna_num::opcodes::OpCode;
+ 
+-static RAW_ADDRESS: OpToken = op_token("&raw mut ", "", 1, 62, false, TokenType::UnaryPrefix, 0, 0);
++pub(crate) static RAW_ADDRESS: OpToken = op_token("&raw mut ", "", 1, 62, false, TokenType::UnaryPrefix, 0, 0);
+ 
+-fn array_place(fd: &Funcdata, base: VarnodeId) -> bool {
++pub(crate) fn array_place(fd: &Funcdata, base: VarnodeId) -> bool {
+     let Some(node) = fd.vbank().get(base).filter(|node| node.is_implied()) else { return false; };
+     let Some(def) = node.get_def() else { return false; };
+     let Some(operation) = fd.obank().get(def).filter(|op| op.code() == OpCode::CPUI_PTRSUB) else {
+diff --git a/decompiler/crates/kuna-decomp/src/p9_emit/kuna_ruststorevalue.rs b/decompiler/crates/kuna-decomp/src/p9_emit/kuna_ruststorevalue.rs
+index dc73a7083..c4911e044 100644
+--- a/decompiler/crates/kuna-decomp/src/p9_emit/kuna_ruststorevalue.rs
++++ b/decompiler/crates/kuna-decomp/src/p9_emit/kuna_ruststorevalue.rs
+@@ -1,4 +1,4 @@
+-//! Preserve integer bits when Rust stores require a destination type conversion.
++//! Convert Rust store values to their destination type without changing their bits.
+ 
+ use crate::architecture::Architecture;
+ use crate::context::{OpId, VarnodeId};
+@@ -20,7 +20,7 @@ impl PrintC {
+         };
+         let saved = self.context.mods();
+         self.context.set_mods(mods);
+-        let converted = self.push_rust_integer_as(fd, arch, value, op, &target);
++        let converted = self.push_rust_value_as(fd, arch, value, op, &target);
+         self.context.set_mods(saved);
+         converted
+     }
+diff --git a/decompiler/crates/kuna-decomp/src/p9_emit/mod.rs b/decompiler/crates/kuna-decomp/src/p9_emit/mod.rs
+index 5fa3d3457..11605ed20 100644
+--- a/decompiler/crates/kuna-decomp/src/p9_emit/mod.rs
++++ b/decompiler/crates/kuna-decomp/src/p9_emit/mod.rs
+@@ -22,6 +22,7 @@ pub(crate) mod kuna_ruststorevalue;
+ pub(crate) mod kuna_rustptradd;
+ pub(crate) mod kuna_rustarrayindex;
+ pub(crate) mod kuna_rustarrayaddr;
++pub(crate) mod kuna_rustarraydecay;
+ pub mod kuna_unsignedread; // (kuna) an unsigned read of an expression C evaluates as signed casts it
+ pub mod kuna_narrowselector; // (kuna) a switch on a narrow expression casts it to its own width
+ pub mod stringmanage;
+diff --git a/decompiler/crates/kuna-decomp/src/p9_emit/printc.rs b/decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+index 6d1802bb4..297d0bf10 100644
+--- a/decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
++++ b/decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+@@ -6326,7 +6326,7 @@ impl PrintC {
+                             }
+                         } else if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
+                             let converted = fd.get_func_proto().get_output_type()
+-                                .is_some_and(|target| self.push_rust_integer_as(fd, arch, vn, op, target));
++                                .is_some_and(|target| self.push_rust_value_as(fd, arch, vn, op, target));
+                             if !converted { self.push_vn_ir(fd, arch, vn, op); }
+                         } else { self.push_vn_ir(fd, arch, vn, op); }
+                     }
+@@ -6343,7 +6343,7 @@ impl PrintC {
+                         let target = fd.obank().get(op).and_then(|o| o.get_out())
+                             .map(|out| self.rust_integer_output_type(fd, arch, out));
+                         let converted = target.as_ref()
+-                            .is_some_and(|target| self.push_rust_integer_as(fd, arch, vn, op, target));
++                            .is_some_and(|target| self.push_rust_value_as(fd, arch, vn, op, target));
+                         if !converted { self.push_vn_ir(fd, arch, vn, op); }
+                     } else { self.push_vn_ir(fd, arch, vn, op); }
+                 }
+@@ -7355,6 +7355,11 @@ impl PrintC {
+             .get(op)
+             .and_then(|o| o.get_out())
+             .map(|out| fd.vn_type_def_facing(out));
++        if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
++            if let (Some(target), Some(value)) = (out_def.as_ref(), fd.obank().get(op).and_then(|o| o.get_in(0))) {
++                if self.push_rust_array_pointer(fd, arch, value, op, target) { return; }
++            }
++        }
+         if out_def.as_ref().map(|t| t.is_pointer_to_array()).unwrap_or(false)
+             && self.check_address_of_cast(fd, op)
+         {
+@@ -8589,6 +8594,11 @@ impl PrintC {
+             } else { self.push_vn_ir(fd, arch, vn, op); }
+             return;
+         }
++        if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
++            if let Some(target) = proto.filter(|p| p.has_store()).and_then(|p| p.get_param(slot - 1)).and_then(|p| p.get_type()) {
++                if self.push_rust_array_pointer(fd, arch, vn, op, target) { return; }
++            }
++        }
+         if self.out_lang != crate::kuna_lang::OutLang::C
+             || !self.rt_ctx.indirect_args
+             || !crate::kuna_indirectargs::is_indirect_value(

@@ -1,0 +1,28 @@
+{
+  "at": "2026-11-03T04:29:07.148992+00:00",
+  "status": "Research plan only; no checkout, implementation, build or speed samples. Current raw-array-address feature must be published/merged separately.",
+  "candidate_parent_cli_sha256": "18001c2240f24b16bcaf99d2be4deece02ff01a5c09a400ba5d6fa324a105531",
+  "witnesses": [
+    "/tmp/kuna-rust-array-address/constant-probe/record.json",
+    "/tmp/kuna-rust-wide-store-research/automatic-record.json"
+  ],
+  "confirmed_gaps": [
+    "Complete constant integer_end and pointer_end functions return array values after whole-array raw pointer advancement; E0308 unchanged by current address feature.",
+    "Wide store bodies contain nonprimitive array-to-pointer casts (E0605).",
+    "wide_zero assigns0 to[u8;16] (E0308); scalar store-width/128-bit recovery is a separate mechanism."
+  ],
+  "proposed_single_feature": "Rust implicit/explicit array-to-raw-pointer decay at typed pointer consumers, using proven array places and raw addresses without loads/references; preserve target pointer type and operand evaluation.",
+  "implementation_to_investigate": [
+    "Current push_rust_array_address_cast handles only primitive integers. Reuse the proven array-place geometry for pointer targets without treating arbitrary expressions as arrays.",
+    "Typed consumers include RETURN, COPY, pointer STORE values and call arguments, plus explicit CAST; avoid blindly changing every PTRSUB because generic subscript/load/store paths intentionally request array places.",
+    "Pointer-to-array check_address_of_cast runs before generic cast handling and may need a scoped raw-address path.",
+    "Whole-array PTRADD followed by PTRSUB0 produces a proven array place even at constant onepast; raw-address formation should consume it without evaluating array contents."
+  ],
+  "validation_plan": [
+    "Retain full failed four-function constant bundle and six wide-store bundle. Fixing decay does not imply zero-store or128-bit type repair.",
+    "Authored complete returns, assignments, pointer stores and call arguments across integer/float/bool/pointer array elements; existing integer-address forms as controls.",
+    "Native C/Rust comparisons atO0/O2 with valid/onepast pointers, readable and PROT_NONE memory and callback evaluation counts.",
+    "Separate PR; P9 prose/stage/counters; original675unchanged; all4 gates/tools/lint/catalog; exact-parent broad C/Go/Rust comparisons and fixed predeclared speed plan."
+  ],
+  "parity_complete": false
+}

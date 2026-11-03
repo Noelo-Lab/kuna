@@ -4728,3 +4728,31 @@ levels and compares pointer bits with C. It covers signed and unsigned indices,
 integer, floating, pointer and boolean array fields, nested arrays, one-past
 addresses, callback order and modular integer address arithmetic. The same
 functions run over readable and protected memory without reading the array.
+
+
+### Rust array-to-pointer conversions
+
+`kuna_rustarraydecay.rs` handles a proven array place consumed as a raw pointer
+by a return, assignment, STORE, known call parameter, or explicit cast. It takes
+`&raw mut` of the whole array and casts to the consumer's pointer type. The place
+is evaluated once, without loading the array or constructing a reference. This
+also covers constant one-past expressions represented as a pointer-to-array
+advance followed by implicit decay.
+
+The array-place proof is shared with raw array addresses. Source and target
+pointers must have matching 32- or 64-bit widths, use byte addressing, and not
+be formal relative pointers. The bounded search can cross at most seven implied
+COPY or CAST operations whose inputs and outputs remain pointers of that same
+width; it cannot cross a load, call, integer conversion, or explicit variable.
+These bit-preserving pointer conversions are subsumed by the actual consumer's
+pointer cast, including erased `void *` returns and pointer-to-array results.
+Unknown call parameters, unproved array forms, and value loads retain their
+existing paths. Cast suppression retains diagnostic output. Array projection
+still requires valid containing storage; this does not repair wide scalar
+stores recovered as byte arrays or establish arbitrary base-pointer validity.
+
+The native regression compiles 97 complete emitted bodies and compares their
+pointer bits with C at both optimization levels. It covers twelve element types,
+whole arrays and fields, explicit casts, pointer stores with guard words, calls
+and callback order, and constant one-past addresses. Readable and protected
+mappings verify these address computations do not load the array contents.
