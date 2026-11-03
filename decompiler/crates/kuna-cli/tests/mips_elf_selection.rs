@@ -966,3 +966,37 @@ void _start(void) {{
     std::fs::remove_file(source).unwrap();
     std::fs::remove_file(executable).unwrap();
 }
+
+#[test]
+fn release6_fpxx_and_mips32_fp64_images_keep_loading() {
+    let path = common::scratch_file("mips-fpr-fallback", "elf");
+    for little in [false, true] {
+        let endian = if little { "LE" } else { "BE" };
+        // srl v0,a0,31; jr ra (jalr zero,ra on R6); nop.
+        for (flags, ret, size, abi, target, note) in [
+            (0x9000_1000, 0x03e00009, 1, 5, "32:R6:default", false),
+            (0x7000_1000, 0x03e00008, 2, 6, "32:default:default", true),
+            (0x7000_1200, 0x03e00008, 2, 7, "32:default:default", true),
+        ] {
+            let words = [0x000417c2, ret, 0];
+            std::fs::write(&path, elf_with_fpr(little, flags, &words, size, abi)).unwrap();
+            let target = format!("MIPS:{endian}:{target}");
+            let expected = run(&path, "decompile", Some(&target));
+            assert!(expected.status.success(), "{expected:?}");
+            let stderr = String::from_utf8(expected.stderr).unwrap();
+            assert!(!stderr.contains("floating-point registers"), "{stderr}");
+            let actual = run(&path, "decompile", None);
+            assert!(actual.status.success(), "{actual:?}");
+            assert_eq!(actual.stdout, expected.stdout, "{target}");
+            let text = String::from_utf8(actual.stdout).unwrap();
+            assert!(text.contains("return a0 >> 0x1f;"), "{target}: {text}");
+            let stderr = String::from_utf8(actual.stderr).unwrap();
+            assert_eq!(
+                stderr.contains("[kuna target]") && stderr.contains("64-bit floating-point registers"),
+                note,
+                "{target}: {stderr}"
+            );
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}

@@ -152,6 +152,12 @@ fn mips_floating_point_metadata_selects_fprs_independently() {
             (0x8200_1000, 1, 1, "64:micro64-32addr-fp32:o32"),
             (0x7000_1000, 1, 1, "32:default:default"),
             (0x9000_1000, 2, 6, "32:R6:default"),
+            (0x9000_1000, 1, 5, "32:R6:default"),
+            (0xa000_1000, 1, 5, "64:64-32R6addr:o32"),
+            (0x7000_1000, 1, 5, "32:default:default"),
+            (0x8000_1000, 1, 5, "64:64-32addr-fp32:o32"),
+            (0x7000_1000, 2, 6, "32:default:default"),
+            (0x7000_1200, 2, 7, "32:default:default"),
             (0x8000_0020, 2, 1, "64:64-32addr:n32"),
         ] {
             let bytes = mips_float_image(
@@ -215,7 +221,7 @@ fn conflicting_or_unsupported_mips_fp_metadata_requires_an_override() {
             (0x8000_1000, 0, 8),
             (0xa000_1000, 1, 1),
             (0x8000_0020, 1, 1),
-            (0x7000_1000, 2, 6),
+            (0x9000_1000, 1, 1),
         ] {
             cases.push((flags, vec![(b".MIPS.abiflags", mips_fp_record(size, abi))]));
         }

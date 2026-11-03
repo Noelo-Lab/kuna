@@ -233,6 +233,10 @@ FP ABI, GNU FP attributes and the legacy FP64 header flag. The shared ABI reader
 (`decompiler/crates/kuna-analysis/src/loader/kuna_mipsabi.rs`) accepts records
 from sections or `PT_MIPS_ABIFLAGS` segments and rejects conflicting records. O32 defaults to
 paired 32-bit FPRs, except on Release 6; declared FP64 uses whole 64-bit FPRs.
+FPXX code runs with either width, so its CPR1 size is only a minimum: a
+Release 6 FPXX image uses the R6 decoder, whose FPRs are 64 bits wide.
+Pre-R6 MIPS32 code that declares 64-bit FPRs keeps the MIPS32 decoder and
+prints a `[kuna target]` note, because no bundled MIPS32 language has 64-bit FPRs.
 FP ABI `ANY` (zero) supplies no evidence: it can accompany a concrete ABI in
 either metadata source, including repeated GNU tags or sections. The shared
 reader applies this rule before merging declarations, for both target selection

@@ -46,7 +46,17 @@ fn unsupported(message: &str) -> KunaError {
     KunaError::lowlevel(format!("{message}; pass an explicit --target language id"))
 }
 
+struct Selection {
+    id: String,
+    /// The image declares 64-bit FPRs, which no bundled MIPS32 language models.
+    fp64_on_mips32: bool,
+}
+
 fn mips_id(flags: u32, elf64: bool, endian: &str, fp: MipsFloat) -> KunaResult<String> {
+    select(flags, elf64, endian, fp).map(|selection| selection.id)
+}
+
+fn select(flags: u32, elf64: bool, endian: &str, fp: MipsFloat) -> KunaResult<Selection> {
     let isa = flags & EF_MIPS_ARCH;
     let isa64 = match isa {
         EF_MIPS_ARCH_3 | EF_MIPS_ARCH_4 | EF_MIPS_ARCH_5 | EF_MIPS_ARCH_64 | EF_MIPS_ARCH_64R2
@@ -95,13 +105,20 @@ fn mips_id(flags: u32, elf64: bool, endian: &str, fp: MipsFloat) -> KunaResult<S
         None | Some(0 | 2 | 3 | 5) => None,
         _ => return Err(unsupported("unsupported MIPS floating-point ABI")),
     };
-    let fpr = agree(fp.registers, abi_width)?;
-    let fpr = agree(fpr, (flags & MIPS_FP64 != 0).then_some(8))?
+    // FPXX code runs with either register width, so its CPR1 size is a minimum.
+    let registers = fp.registers.filter(|_| fp.abi != Some(5));
+    let fpr = agree(registers, abi_width)?;
+    let mut fpr = agree(fpr, (flags & MIPS_FP64 != 0).then_some(8))?
         .unwrap_or(if r6 || (wide && model != "o32") { 8 } else { 4 });
-    if (r6 && fpr != 8) || (wide && fpr == 4 && model != "o32") || (!wide && !r6 && fpr == 8) {
+    if (r6 && fpr != 8) || (wide && fpr == 4 && model != "o32") {
         return Err(unsupported(
             "no bundled MIPS language for the declared ISA, ABI and FPR width",
         ));
+    }
+    // Pre-R6 MIPS32 with 64-bit FPRs keeps the MIPS32 decoder; `notes` says so.
+    let fp64_on_mips32 = !wide && !r6 && fpr == 8;
+    if fp64_on_mips32 {
+        fpr = 4;
     }
     let variant = match (wide, elf64, r6, micro, fpr) {
         (true, false, false, true, 4) => "micro64-32addr-fp32",
@@ -118,27 +135,31 @@ fn mips_id(flags: u32, elf64: bool, endian: &str, fp: MipsFloat) -> KunaResult<S
             "no bundled MIPS EABI compiler model for this instruction mode",
         ));
     }
-    Ok(format!(
-        "MIPS:{endian}:{}:{variant}:{model}",
-        if wide { 64 } else { 32 }
-    ))
+    Ok(Selection {
+        id: format!("MIPS:{endian}:{}:{variant}:{model}", if wide { 64 } else { 32 }),
+        fp64_on_mips32,
+    })
+}
+
+fn mips_selection(file: &object::File<'_>, flags: u32) -> KunaResult<Option<Selection>> {
+    if flags & 0x00ff_0000 != 0 {
+        return Ok(None);
+    }
+    let record = super::kuna_mipsabi::abi_flags(file).map_err(unsupported)?;
+    if record.is_some_and(|r| r.extension(file.is_little_endian()) != 0) {
+        return Ok(None);
+    }
+    let endian = if file.is_little_endian() { "LE" } else { "BE" };
+    select(flags, file.is_64(), endian, mips_float(file, record)?).map(Some)
 }
 
 pub(crate) fn language_id(file: &object::File<'_>) -> KunaResult<Option<String>> {
     let Some(flags) = flags(file) else {
         return Ok(None);
     };
-    let endian = if file.is_little_endian() { "LE" } else { "BE" };
     match file.architecture() {
         Architecture::Mips | Architecture::Mips64 | Architecture::Mips64_N32 => {
-            if flags & 0x00ff_0000 != 0 {
-                return Ok(None);
-            }
-            let record = super::kuna_mipsabi::abi_flags(file).map_err(unsupported)?;
-            if record.is_some_and(|r| r.extension(file.is_little_endian()) != 0) {
-                return Ok(None);
-            }
-            mips_id(flags, file.is_64(), endian, mips_float(file, record)?).map(Some)
+            Ok(mips_selection(file, flags)?.map(|selection| selection.id))
         }
         _ => Ok(None),
     }
@@ -157,6 +178,14 @@ pub(crate) fn notes(file: &object::File<'_>, language: &str, explicit: bool) -> 
                 && language.contains(":64:")
             {
                 notes.push(format!("64-bit MIPS instructions in ELF32 with no ABI declaration; assuming O64 ({language}); use --target to specify another ABI"));
+            }
+            if !explicit
+                && mips_selection(file, flags)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|s| s.fp64_on_mips32 && s.id == language)
+            {
+                notes.push(format!("MIPS32 code declares 64-bit floating-point registers, which no bundled MIPS32 language models; using {language}, so double-precision values in odd registers may be misread; use --target to specify another language"));
             }
         }
         _ => {}
