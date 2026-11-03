@@ -877,6 +877,11 @@ pub struct Architecture {
     /// removal, the next pass revisits only the ops next to what it removed
     /// (`infra/action.rs (ActionPool::apply_wave)`).
     pub pool_dead_waves: bool,
+    /// (kuna `copywaves`) A pass whose only changes were dead-op removals and
+    /// copy propagations is followed by a wave too, and a wave offers an op it
+    /// reaches only for its opcode just the far-walking rules
+    /// (`infra/action.rs (ActionPool::wave_wants)`).
+    pub pool_copy_waves: bool,
     /// (kuna, angr `test_decompiling_incorrect_duplication_chcon_main`) Treat a
     /// direct CALL to a function whose *name* matches the vendored ELF
     /// known-no-return list as no-return at the `query_call_no_return` flow hook,
@@ -3169,6 +3174,7 @@ impl Architecture {
             jumptable_share_partial: true,
             early_restart: true,
             pool_dead_waves: true,
+            pool_copy_waves: true,
             noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
             local_stack_views: true,
@@ -3624,6 +3630,7 @@ impl Architecture {
         self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
         self.early_restart = true;
         self.pool_dead_waves = true;
+        self.pool_copy_waves = true;
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_views = false;
         self.local_stack_views = true;
@@ -4764,6 +4771,7 @@ impl Architecture {
         // `Funcdata::stage_jump_table` reaches it.
         ctx.jumptable_share_partial = self.jumptable_share_partial;
         ctx.pool_dead_waves = self.pool_dead_waves;
+        ctx.pool_copy_waves = self.pool_copy_waves;
         ctx.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate

@@ -1461,6 +1461,30 @@ the op it fires on without walking a web can see a removal the wave does not
 offer it; that rule then fires at the next full sweep instead. With
 `deadwaves off` every pass sweeps every op.
 
+(kuna `copywaves`, default on) `RulePropagateCopy` replaces one input of an op
+with the input of the COPY defining it and stops (upstream's "propagate just a
+single copy"), and a rule applies at most once per op per pass, so a join with
+hundreds of copied inputs takes hundreds of passes. serde-hkx's hkxc.exe
+0x1406198f0 has one: the stack pointer at its shared exit block reads the COPY
+each path's last call left, 626 to 674 of them. Each of those passes also
+removes the COPY the pass before freed, and every one swept the whole
+function. With `copywaves` an input replacement is a change a wave can follow:
+the rule records the op and the Varnodes it touches before and after
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::note_wave_input_change)`; `action.rs (Rule::replaces_inputs_only)`
+marks the rule), so a pass whose only changes were removals and such
+replacements is followed by a wave over the op, its output's readers, and the
+definition and readers of every Varnode it read before and after, and an
+input replacement inside a wave widens the wave instead of ending it. The
+second change makes each wave cheaper: an op the wave reaches only because a
+far-walking rule fires on its opcode is offered just the far-walking rules
+(`action.rs (ActionPool::wave_wants)`), since the others test only what lies
+next to the op and the previous pass changed nothing there; once a rule
+applies to it the rest of its rules are tested as usual. The same limit as
+`deadwaves` applies: a rule reading two or more ops away without walking a web
+can see a change the wave does not offer it. With `copywaves off`, `deadwaves`
+behaves as described above.
+
 Three pools exist in the `decompile` tree
 (`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
 (universal_sched)`): **oppool1**, 141 registered rules, sits inside the

@@ -398,6 +398,7 @@ kuna_options! { self, p1;
     "haltloopguard" => on_off!(halt_loop_guard, "Global stores live in an exitless loop"),
     "truncptrflow" => on_off!(trunc_ptr_flow, "Truncated-space pointer flow"),
     "deadwaves" => on_off!(pool_dead_waves, "Rule-pool dead-removal waves"),
+    "copywaves" => on_off!(pool_copy_waves, "Rule-pool copy-propagation waves"),
     "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
     "loweredswitch" => {
         let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;

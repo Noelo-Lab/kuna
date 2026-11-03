@@ -174,6 +174,9 @@ Three tiers:
 | a huge function spends most of its time in oppool1 | [`deadwaves`](#deadwaves) |
 | rule pool sweep count in the thousands for one function | [`deadwaves`](#deadwaves) |
 | each pool sweep removes only a handful of dead INDIRECT or MULTIEQUAL ops | [`deadwaves`](#deadwaves) |
+| a huge function spends most of its time in oppool1 | [`copywaves`](#copywaves) |
+| rule pool sweep count in the thousands for one function | [`copywaves`](#copywaves) |
+| each pool sweep propagates one copy into the same join | [`copywaves`](#copywaves) |
 | a huge function is analysed twice from flow following on | [`earlyrestart`](#earlyrestart) |
 | the second half of a long run repeats the first | [`earlyrestart`](#earlyrestart) |
 | dozens of garbage *v = *v + c; lines after a __stack_chk_fail call in a .o | [`noreturn_externmatch`](#noreturn_externmatch) |
@@ -1789,6 +1792,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave on. Turn off to compare against the plain sweep when a rule whose test reads two or more ops away from the op it fires on, without walking a data-flow web, is suspected of firing later than it would have.
 - **Where / provenance:** P3/simplification-quiescence · ghidra · speed · GH-1034
 - **Example:** `option deadwaves off`
+
+### `copywaves` -- on | off, default `on`
+
+- **Symptoms:** a huge function spends most of its time in oppool1; rule pool sweep count in the thousands for one function; each pool sweep propagates one copy into the same join.
+- **What it does:** Widen `deadwaves` in two ways. A pass whose only changes were dead-op removals and copy propagations (`RulePropagateCopy`, which replaces one input of an op with the input of the COPY defining it) is followed by a wave as well, over the op it changed, its output's readers, and the definition and readers of each Varnode it read before and after. And a wave offers an op it reaches only because a far-walking rule fires on its opcode just the far-walking rules, until one of them applies: the others test only what lies next to the op, which no change of the previous pass touched. `RulePropagateCopy` propagates one input per application and a rule applies once per op per pass, so a join with hundreds of copied inputs (the stack pointer at a shared exit after every path's last call) takes hundreds of passes; with this they are waves. Off keeps `deadwaves` as it was.
+- **When to flip:** Leave on. Turn off to compare against `deadwaves` alone when a rule whose test reads two or more ops away from the op it fires on, without walking a data-flow web, is suspected of firing later than it would have.
+- **Where / provenance:** P3/simplification-quiescence · kuna · speed · GH-1034
+- **Example:** `option copywaves off`
 
 ### `earlyrestart` -- on | off, default `on`
 

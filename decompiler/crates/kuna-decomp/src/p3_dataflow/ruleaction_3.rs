@@ -1919,6 +1919,10 @@ impl Rule for RulePropagateCopy {
         Some(Box::new(RulePropagateCopy))
     }
 
+    fn replaces_inputs_only(&self) -> bool {
+        true
+    }
+
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         let (return_copy, machine_read) = {
             let operation = data.obank().get(op).expect("RulePropagateCopy: stale op");
@@ -2051,6 +2055,7 @@ impl Rule for RulePropagateCopy {
             }
             crate::p3_dataflow::kuna_stackreadscope::record_propagated_read(data, copyop, invn);
             data.kuna_inherit_storage(invn, vn);
+            data.note_wave_input_change(op, vn);
             data.op_set_input(op, invn, i).expect("RulePropagateCopy: opSetInput"); // propagate just a single copy
             return 1;
         }
