@@ -1,0 +1,50 @@
+{
+  "at": "2026-11-02T20:56:14.914151+00:00",
+  "scope": "Review of all 155 language/name groups across the first complete 439-change capture. Normalized views coalesce temporary identifiers and duplicate lines; original per-function diffs remain authoritative. This is structural review, not whole-runtime native equivalence.",
+  "views": {
+    "breadth-review-groups.json": "2d08d92e882d29a8d612190c0c88d1d5faa47350b5b91265f4561a8cca33c389",
+    "review-go-normalized.txt": "1bb7d428aeb9ae1249465d66f49fd8c9c3fc8bdef5b71d937bd2f34b96719953",
+    "review-other-languages-normalized.txt": "751e978d7dd9850dc9f142c320c8a9bf14e2f385fe380ff2336e4ef2d6eb801d",
+    "review-runtime-pair-lines.txt": "2b248d8f429070a75fa29b74c49b771663029adb948901c25662ea23bbc0a7cf"
+  },
+  "conclusions": {
+    "imported_callees": "Explicit exact two full-width integer results become fields at offsets0,8; argument names/types follow the checked DWARF contract. Ordinary aggregate/mixed/narrow/more-than-two-result imports remain excluded.",
+    "callers": "Paired calls use one invocation with RAX/RBX projections; downstream high-variable typing changes names, casts, pointer views and some loop shapes. Cross-function inference outside imported contracts remains incomplete.",
+    "sysGrow_closure": "The former void closure now returns a pair, matching the source addrRangeToSummaryRange closure (runtime/mpagealloc_64bit.go).",
+    "c": "Ordinary struct shape/projections have native proof using explicit-width ctypes/realtypes off; broad default C output still includes identifier/type-spelling/runtime dependency gaps.",
+    "rust": "Ordinary pair shape/projections reviewed, but no claim that the changed Go runtime bodies compile as Rust. Byte-array pseudo-members, casts to aggregates, signedness and wrapping literals remain open.",
+    "opaque_calls": "First capture retains invalid raw-to-struct casts in mheap.allocSpan; round2 extends the guarded adapter to unresolved unlocked return prototypes. Fresh full capture and native binding required."
+  },
+  "remaining_gaps": [
+    {
+      "id": "go-signed-field-assignment",
+      "example": "mergeCarrier in inferred-raw-probe/native/go.body; runtime.blockAlignSummaryRange first result; allocSpan signed stores",
+      "description": "The declared signed destination may receive an emitted uint64 expression without its outer conversion. Existing general Go assignment/store conversion coverage is incomplete."
+    },
+    {
+      "id": "go-untyped-bool-return",
+      "example": "internal/poll.init.func1 on gopair127",
+      "description": "A source bool closure still acquires an inferred uint64 return with CONCAT71 after enabling pair recovery. No native equivalence claim; needs precise narrow return recovery."
+    },
+    {
+      "id": "go-untyped-slice-return",
+      "example": "runtime.heapBitsSlice and runtime.(*mspan).heapBits",
+      "description": "Source returns a three-word slice; prior void recovery and new one-word recovery are both incomplete. Slice ABI reconstruction is excluded from this pair option."
+    },
+    {
+      "id": "go-untyped-call-arguments",
+      "example": "runtime.(*mspan).base and syscall.Syscall6 call sites",
+      "description": "Calls without proven complete contracts retain inferred extra inputs or unrecovered outputs. Signature propagation beyond the exact pair contract remains incomplete."
+    },
+    {
+      "id": "rust-aggregate-carriers",
+      "example": "main.highPair/runtime.(*mheap).allocSpan; main.signedUnsigned/main.onesPair",
+      "description": "Rust byte-array to struct conversions, signed destination casts and out-of-range literals still need work."
+    }
+  ],
+  "source_evidence": {
+    "/tmp/kuna-toolchains/go1.27.3/go/src/internal/poll/copy_file_range_linux.go": "39829503f0b04fdb7ccbfa7928f0faf87bffa6143ea66a11ecd2352d92e7cb04",
+    "/tmp/kuna-toolchains/go1.27.3/go/src/runtime/mpagealloc_64bit.go": "7b813530b97d23615798cd2359170ee9e1afd8c6e4ffc93d53903f0db0727a75",
+    "/tmp/kuna-toolchains/go1.27.3/go/src/runtime/mbitmap.go": "7b37b6496357b8d5e07c56c7a9e5099a32af960fc26ec6f120f46ea172bdf770"
+  }
+}

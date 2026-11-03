@@ -1,0 +1,184 @@
+{
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "samples_per_arm": 128,
+  "warmups_per_arm": 3,
+  "bootstrap_resamples": 5000,
+  "maximum_looks": 1,
+  "budget_pct": 5,
+  "criterion": "Both CPU and wall ratio-of-medians deltas must be at most5% in each of the six default-off comparisons. Three opt-in comparisons report costs separately. Report all per-case95% upper mean-ratio bounds as uncertainty; they are not acceptance gates. One final look, fixed128balanced pairs, no unchanged-code repeat after failure.",
+  "lightwork_reservation_amendment": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "reason": "Reserve a physical pair for light work; exclude it from workers before samples."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "declared_at": "2026-11-02T23:10:56.582926+00:00",
+  "scope": "Updated-main integration of default-off Go paired-result recovery",
+  "root": "/home/mahaloz/kwt/angr-go-pair-results",
+  "base": "/home/mahaloz/kwt/angr-go-pair-parent-460",
+  "seed": 202611059,
+  "parent_commit": "460ac0a18f0efcce2e28f794050ad74e70b371ae",
+  "cases": [
+    [
+      "off-c-small",
+      "/home/mahaloz/kwt/angr-go-pair-results/tests/fixtures/go-pair-results/contracts",
+      "main.pair",
+      "c"
+    ],
+    [
+      "off-go-import122",
+      "/home/mahaloz/kwt/angr-go-pair-results/tests/fixtures/go-pair-results/go1.22.5-pair",
+      "main.pair",
+      "go"
+    ],
+    [
+      "off-go-import127",
+      "/home/mahaloz/kwt/angr-go-pair-results/tests/fixtures/go-pair-results/go1.27.3-pair",
+      "main.consumeEffect",
+      "go"
+    ],
+    [
+      "off-go-noimport127",
+      "/home/mahaloz/kwt/angr-go-pair-results/tests/fixtures/go-pair-results/go1.27.3-pair",
+      "main.main",
+      "go"
+    ],
+    [
+      "off-rust-large",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "off-go-runtime",
+      "/tmp/kuna-go-output/output-go",
+      "runtime.(*mheap).allocSpan",
+      "go"
+    ],
+    [
+      "on-c-forward",
+      "/home/mahaloz/kwt/angr-go-pair-results/tests/fixtures/go-pair-results/go1.27.3-pair",
+      "main.forward",
+      "c"
+    ],
+    [
+      "on-go-forward",
+      "/home/mahaloz/kwt/angr-go-pair-results/tests/fixtures/go-pair-results/go1.27.3-pair",
+      "main.forward",
+      "go"
+    ],
+    [
+      "on-rust-forward",
+      "/home/mahaloz/kwt/angr-go-pair-results/tests/fixtures/go-pair-results/go1.27.3-pair",
+      "main.forward",
+      "rust"
+    ]
+  ],
+  "comparisons": 18,
+  "upper_quantile": 0.95,
+  "execution": "Nine comparisons on disjoint physical CPU pairs;128 balanced paired rounds. No owned builds/tests/captures overlap. Lightweight work pinned3,43. Persist samples after each balanced block without inspecting intermediate effects.",
+  "case_options": {
+    "off-c-small": [
+      "--option",
+      "godwarfsig",
+      "off"
+    ],
+    "off-go-import122": [
+      "--option",
+      "godwarfsig",
+      "on"
+    ],
+    "off-go-import127": [
+      "--option",
+      "godwarfsig",
+      "on"
+    ],
+    "off-go-noimport127": [
+      "--option",
+      "godwarfsig",
+      "off"
+    ],
+    "off-rust-large": [
+      "--option",
+      "godwarfsig",
+      "off"
+    ],
+    "off-go-runtime": [
+      "--option",
+      "godwarfsig",
+      "on"
+    ],
+    "on-c-forward": [
+      "--option",
+      "godwarfsig",
+      "on"
+    ],
+    "on-go-forward": [
+      "--option",
+      "godwarfsig",
+      "on"
+    ],
+    "on-rust-forward": [
+      "--option",
+      "godwarfsig",
+      "on"
+    ]
+  },
+  "required_cases": [
+    "off-c-small",
+    "off-go-import122",
+    "off-go-import127",
+    "off-go-noimport127",
+    "off-rust-large",
+    "off-go-runtime"
+  ],
+  "integration_revision": "Main advanced froma324 to460 with DWARF member-layout corrections. Integrate/rebuild both arms and rerun correctness, whole-image comparison and native proofs.",
+  "prior_study": "../integration-350-round3/timing-result.json",
+  "study_change_reason": "New integration study declared before its build or any samples, while no a324 effect estimates have been inspected. Use the repository median speed budget for final integration and report uncertainty explicitly, instead of extending the earlier stricter simultaneous-mean-bound study. Earlier a76 study passed that stronger criterion; a324 was cancelled solely because main advanced and has no final estimate. These studies are distinct and must not be presented as equivalent.",
+  "cancelled_study": "../integration-a324/timing-cancelled.json",
+  "declared_binary_sha256": {
+    "parent": "b545021c00cf8a9a73329c1318464c571dc2afa00245a33a398b0ba090cb0d1c",
+    "candidate": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305"
+  },
+  "build": {
+    "at": "2026-11-02T23:15:50.094880+00:00",
+    "parent_commit": "460ac0a18f0efcce2e28f794050ad74e70b371ae",
+    "parent_cli_sha256": "b545021c00cf8a9a73329c1318464c571dc2afa00245a33a398b0ba090cb0d1c",
+    "new_cli_sha256": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305",
+    "option": "gopairreturns",
+    "default": "off",
+    "requires": "godwarfsig on",
+    "catalog_count": 376,
+    "corpus_files": 683,
+    "stage_assertions": [
+      3737,
+      3737
+    ],
+    "stage_keys_added": [
+      "data:Go pair option off retains the register byte carrier",
+      "data:Go pair word shift reads its low word once",
+      "data:Go pair zero carrier becomes two integer fields",
+      "data:Go paired callers assign both fields from one invocation",
+      "data:Go paired nested call evaluates outside adapter parameter scope",
+      "data:Go paired returns project both fields",
+      "data:Go paired signatures preserve both source integer results",
+      "data:Go unsigned pair retains both unsigned result types"
+    ],
+    "catalog_label_rename": [
+      "data:KUNA-CATALOG #15: 375 registry rows plus six individual queries",
+      "data:KUNA-CATALOG #15: 376 registry rows plus six individual queries"
+    ],
+    "publication_requires_parent_pr_merged": true
+  },
+  "bound_at": "2026-11-02T23:41:25.329881+00:00"
+}

@@ -3071,7 +3071,7 @@ moves.
   cross-unit graph. Concrete one-hop abstract origins must account for every
   inherited formal exactly once and in order; additional concrete formals may
   only be results. Malformed references, missing roles, closures, trampolines,
-  ABI0 wrappers, unsupported composites by value and multiple results are
+  ABI0 wrappers, unsupported composites by value and unsupported multiple results are
   refused as a whole, retaining existing inference.
 
   Go compilation units never supply prototypes through the generic C or C++
@@ -3101,6 +3101,24 @@ moves.
   bitfields and invalid extents are refused. Materialized pointees and fields
   must still match the validated graph; a generic void-pointer fallback cannot
   silently satisfy a typed contract.
+
+  `gopairreturns` extends this importer only when `godwarfsig` is also on;
+  both remain off by default. Exactly two signed or unsigned 64-bit integer
+  results may follow the scalar inputs. Result allocation restarts independently
+  at RAX and RBX. Explicit result locations must name those registers in source
+  order; unavailable locations still require the compiler and complete type
+  contract. Repeated concrete function entries are ambiguous and cannot receive
+  a pair contract. The bounded result list uses two fixed slots, including for
+  scalar contracts, so this extension adds no per-result list allocation.
+  Narrow, floating, mixed, aggregate and three-result contracts
+  remain unsupported. Assignment first uses a temporary ordinary 16-byte struct;
+  its zero-flag join must contain RBX then RAX, each eight bytes in the exact
+  architectural register space. Input assignments retain their existing checks.
+  Only after this proof is the struct interned with fields `result0` and
+  `result1` at offsets zero and eight and a `GoPairResults` language facet.
+  The facet stores signedness, never interned type references. Existing names
+  require matching metadata and complete layout; unrelated names or stale
+  metadata cannot be overwritten. No metatype or pcode output count changes.
 
   Native Go zlib debug sections are retained compressed at load time. Their
   combined stored/declared extents are bounded to 64 MiB and are inflated only
@@ -3300,7 +3318,16 @@ moves.
   hidden-return-buffer call: a *phantom* `rethidden` parameter appeared in front of
   the real ones and the body then did arithmetic on it. This arm reads
   `DW_AT_byte_size`, walks the `DW_TAG_member` children, places each at its
-  `DW_AT_data_member_location` **verbatim**, and recurses each member's
+  `DW_AT_data_member_location` **verbatim**, accepting both integer attributes
+  and DWARF 2's single `DW_OP_plus_uconst` expression. As upstream reads it, an
+  absent location places the member at offset zero (DWARF lets a producer omit
+  it there), a location that is present but not a constant displacement skips
+  the member rather than misplacing it, and a static member (external or
+  declaration-only) is not part of the layout. Global `DW_OP_addr` locations
+  are read in the DWARF reader's byte order and must be exactly one address of
+  the unit's address size; an address followed by more operations is not a
+  static location.
+  The mapper recurses each member's
   `DW_AT_type` through the same DIE switch; bitfields come off `DW_AT_bit_size`
   with either the DWARF 4/5 `DW_AT_data_bit_offset` or the DWARF 2/3
   `byte_size` + `bit_offset` spelling, each placed in the smallest byte span that
@@ -3427,9 +3454,12 @@ moves.
   single-level overlay cannot describe — rustc 1.90 emitted none across the 75
   variant parts in the two witnesses measured for this change); no variant with
   any field at all (a C-like enum, which rustc emits as a
-  `DW_TAG_enumeration_type` instead); a discriminant whose type is not
-  integer-shaped, zero-width, or wider than the enum; a zero-width or absent
-  `DW_AT_byte_size`; and a `DW_AT_declaration` DIE.
+  `DW_TAG_enumeration_type` instead); a discriminant whose location cannot be
+  decoded, or whose type is not integer-shaped, zero-width, or wider than the
+  enum; a zero-width or absent `DW_AT_byte_size`; and a `DW_AT_declaration` DIE.
+  Payload members are placed by the member rule above: a member without a
+  location starts the payload, and a static member or one whose location cannot
+  be decoded is skipped.
 
   Refused AFTER the shell is interned — it has to exist before the members are
   walked so a recursive payload has something to point at — the answer cannot be

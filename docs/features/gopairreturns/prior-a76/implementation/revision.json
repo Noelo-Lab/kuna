@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-02T21:19:32.975014+00:00",
+  "previous": "/tmp/kuna-go-pair-results-implementation/integration-350-round2",
+  "previous_cli": "132450827a3a308c329d873f4fa8774e42171a777a02f8d7d3aaaf0c8685bdf9",
+  "prior_default_speed_passed": false,
+  "files_before": {
+    "decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_godwarfsig.rs": "0c9f584e5c9b3ddfa591d6d2b6614ce220e94fda84c75b6ad6ef4d725be24963",
+    "decompiler/crates/kuna-decomp/src/p9_emit/printc.rs": "19f9235d449e889e57e57ad47e8321e8718558d2fd5b775414f952f91b186b59",
+    "docs/spec/01-program-prep.md": "c56534f65f44246ffe244b129beb03dba55d2d4990e7a0ce9a0f62de438666b6",
+    "docs/spec/09-emission.md": "64653202985e1b52a19c1fdd7b8baf43ec7663acd4adeb884a9738fab34b7977"
+  }
+}

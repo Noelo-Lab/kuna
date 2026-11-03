@@ -220,6 +220,11 @@ kuna_options! { self, p1;
         self.tail_call_tables = tables;
         Ok(msg.to_string())
     },
+    "gottailcall" => {
+        let (val, msg) = crate::kuna_gottailcall::OptionGotTailCall.apply(p1)?;
+        self.got_tail_call = val;
+        Ok(msg)
+    },
     "tailcallframe" => on_off!(tail_call_frame, "Frame-teardown tail-call recovery"),
     "tailcallsaved" => {
         on_off!(tail_call_saved, "Saved-register restore test for a frame teardown")
@@ -1239,6 +1244,7 @@ kuna_options! { self, p1;
         on_off!(analysis_cppproto, "DWARF C++ prototype recovery arm")
     },
     "godwarfsig" => on_off!(analysis_godwarfsig, "Go DWARF scalar and pointer signatures"),
+    "gopairreturns" => on_off!(analysis_gopairreturns, "Go DWARF paired integer results"),
     "cppsig" => {
         let (mode, msg) = crate::kuna_cppsig::parse_cppsig_mode(p1)?;
         self.analysis_cppsig = mode;

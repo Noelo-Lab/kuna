@@ -337,7 +337,8 @@ fn return_only(proto: &crate::fspec::FuncProto, addr: &Address, size: int4) -> b
 /// and nothing else has a reason to write the register the call is about to
 /// overwrite. A variadic callee's recovered list can stop on a tail
 /// register its body saves (gnulib `open_safer(char const *,int,...)` saves only
-/// `rdx`), so the caller's side is what says the tail is optional.
+/// `rdx`), so the caller's side is what says the tail is optional. An injected
+/// no-op (a MIPS mode switch's `v0 = v0`) is neither read nor write.
 pub(crate) fn set_up_as_variadic(data: &Funcdata, idx: int4) -> bool {
     let fc = data.get_call_specs(idx);
     let proto = fc.proto();
@@ -354,6 +355,10 @@ pub(crate) fn set_up_as_variadic(data: &Funcdata, idx: int4) -> bool {
         let Some(o) = data.obank().get(op) else { return false };
         if matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER) {
             return false;
+        }
+        if is_injected_noop(data, op) {
+            cur = data.op_previous_op(op);
+            continue;
         }
         let reads_it = (0..o.num_input()).filter_map(|i| o.get_in(i)).any(|v| {
             data.vbank().get(v).map(|v| return_only(proto, v.get_addr(), v.get_size())).unwrap_or(false)
@@ -399,7 +404,8 @@ pub(crate) fn tests_the_vararg_count(data: &Funcdata) -> bool {
 }
 
 /// Does the entry block read the return-only register before writing it,
-/// counting a read by a `STORE` of its value only with `stores`?
+/// counting a read by a `STORE` of its value only with `stores`? An injected
+/// no-op moves nothing: a MIPS mode switch's `v0 = v0` is no such read.
 fn vararg_count_read(data: &Funcdata, stores: bool) -> bool {
     if data.bblocks_get_size() == 0 {
         return false;
@@ -411,6 +417,10 @@ fn vararg_count_read(data: &Funcdata, stores: bool) -> bool {
         let Some(o) = data.obank().get(op) else { return false };
         if matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER) {
             return false;
+        }
+        if is_injected_noop(data, op) {
+            cur = o.basic_neighbours().1;
+            continue;
         }
         for i in 0..o.num_input() {
             if !stores && i == 2 && o.code() == OpCode::CPUI_STORE {

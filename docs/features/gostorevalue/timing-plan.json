@@ -1,0 +1,198 @@
+{
+  "declared_at": "2026-11-02T22:13:37.772929+00:00",
+  "status": "Declared before integrated release build and before any STORE speed sampling. Do not run while Go paired-result timing is active.",
+  "feature": "strict Go integer STORE destination conversion",
+  "root": "/home/mahaloz/kwt/angr-go-store-conversions",
+  "base": "/home/mahaloz/kwt/angr-go-pair-results",
+  "seed": 202611056,
+  "samples_per_arm": 64,
+  "warmups_per_arm": 3,
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "cases": [
+    [
+      "c-store",
+      "/home/mahaloz/kwt/angr-go-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64",
+      "signed64",
+      "c"
+    ],
+    [
+      "go-store",
+      "/home/mahaloz/kwt/angr-go-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64",
+      "signed64",
+      "go"
+    ],
+    [
+      "go-import122",
+      "/home/mahaloz/kwt/angr-go-pair-results/tests/fixtures/go-pair-results/go1.22.5-pair",
+      "main.pair",
+      "go"
+    ],
+    [
+      "go-pair-import127",
+      "/home/mahaloz/kwt/angr-go-pair-results/tests/fixtures/go-pair-results/go1.27.3-pair",
+      "main.forward",
+      "go"
+    ],
+    [
+      "go-runtime",
+      "/tmp/kuna-go-output/output-go",
+      "runtime.(*mheap).allocSpan",
+      "go"
+    ],
+    [
+      "go-pair-runtime",
+      "/tmp/kuna-go-output/output-go",
+      "runtime.(*mheap).allocSpan",
+      "go"
+    ],
+    [
+      "rust-large",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ]
+  ],
+  "case_options": {
+    "c-store": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-go-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.kuna",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "go-store": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-go-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.kuna",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "go-import122": [
+      "--option",
+      "godwarfsig",
+      "on",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "go-pair-import127": [
+      "--option",
+      "godwarfsig",
+      "on",
+      "--option",
+      "gopairreturns",
+      "on"
+    ],
+    "go-runtime": [
+      "--option",
+      "godwarfsig",
+      "on",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "go-pair-runtime": [
+      "--option",
+      "godwarfsig",
+      "on",
+      "--option",
+      "gopairreturns",
+      "on"
+    ],
+    "rust-large": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ]
+  },
+  "required_cases": [
+    "c-store",
+    "go-store",
+    "go-import122",
+    "go-pair-import127",
+    "go-runtime",
+    "go-pair-runtime",
+    "rust-large"
+  ],
+  "budget_pct": 5,
+  "acceptance": "Both CPU and wall median candidate/parent deltas must be at most5% for every case. One final analysis; no unchanged-code repeat after failure. This is the repository median speed criterion; confidence bounds are reported as uncertainty, not used as a hidden post-hoc gate.",
+  "confidence_reporting": "95% one-sided paired-block-bootstrap upper bounds on mean CPU/wall ratios,2000resamples per case; not simultaneous bounds. Report alongside medians and retain every sample.",
+  "bootstrap_resamples": 2000,
+  "upper_quantile": 0.95,
+  "parent_cli_sha256": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305",
+  "candidate_cli_sha256": "b4557e50aa5b06baa5252307700b652dbecd651137ea873aa504ea364d8b82fd",
+  "source_revision_note": "Published Go paired-result tree plus allocation-free Go STORE signedness conversion; all correctness validation complete. Parent PR merge and exact-tree verification required before STORE publication.",
+  "fixture_sha256": {
+    "/home/mahaloz/kwt/angr-go-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64": "1eebe16c56ed9a1236a708596690cccfa9c1107d293f1e6f1874668c72f839c8",
+    "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+    "/home/mahaloz/kwt/angr-go-pair-results/tests/fixtures/go-pair-results/go1.27.3-pair": "f1bddc056cfd6ad43210a10c73fbfe7001a770b949e980d6ec6a20cdc53342d0",
+    "/tmp/kuna-go-output/output-go": "243073101d99260f354c13a6a06640d53d9eef64e4c4a4fdf8d9a5d8c6465c09",
+    "/home/mahaloz/kwt/angr-go-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.kuna": "18e7c57088738f5348863bd68a969f0efdf5bbeee0d794fe5464520207d14f56",
+    "/home/mahaloz/kwt/angr-go-pair-results/tests/fixtures/go-pair-results/go1.22.5-pair": "ed86997939e7bec802e492d205041528efa9180b52646a9aaea4030ac91c1cdb"
+  },
+  "lightwork_reservation_amendment": {
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "policy": "No concurrent owned builds/tests/decompilations or checkout/evidence finalization; only small static reads/writes pinned reserved CPUs."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "parent_amendment": {
+    "at": "2026-11-02T23:17:32.625048+00:00",
+    "status": "Before STORE integration build or sampling; Go paired-result implementation has moved to main460. Publication and exact merged-tree check remain required before STORE integration.",
+    "parent_source": "Go pair integration-460 after all gates/CI/merge; if changed, amend binding before STORE build.",
+    "acceptance_unchanged": true
+  },
+  "build": {
+    "at": "2026-11-02T23:52:03.891660+00:00",
+    "parent_commit": "367af34164ad0ddfe1d77b49885b98507cba5afd",
+    "parent_worktree_head": "367af34164ad0ddfe1d77b49885b98507cba5afd",
+    "parent_cli_sha256": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305",
+    "new_cli_sha256": "b4557e50aa5b06baa5252307700b652dbecd651137ea873aa504ea364d8b82fd",
+    "change_kind": "strict Go integer STORE destination conversion bug fix",
+    "catalog_count": 376,
+    "corpus_files": 684,
+    "stage_assertions": [
+      3742,
+      3742
+    ],
+    "stage_keys_added": [
+      "data:Go indexed signed store converts unsigned value",
+      "data:Go side effect store converts returned value once",
+      "data:Go signed byte store converts unsigned arithmetic",
+      "data:Go signed word store converts bitwise expression",
+      "data:Go unsigned short store converts signed arithmetic"
+    ]
+  },
+  "bound_at": "2026-11-03T00:10:21.403979+00:00",
+  "raw_sample_persistence": "Atomic checkpoint after every balanced block; declared before the first timing sample."
+}

@@ -1,0 +1,43 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/gottailcall_mipsel.o",
+    "binary_sha256": "6769679c5eabedc1b5fa8c757c2d70528624a8bc51e6bf3fab89e08eb4aef10c",
+    "binary_size": 1952,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/gottailcall_mipsel.o",
+    "selector": "g",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int g\\(int a0\\)\n\\{\n  return f\\(a0 \\+ 1\\); // tail-call",
+      "void h\\(int a0\\)\n\\{\n  ext\\(a0 \\+ 1\\); // tail-call",
+      "void tick\\(void\\)\n\\{\n  bump\\(\\); // tail-call",
+      "int fwd3\\(int a0,int a1,int a2\\)",
+      "return a0 \\* a1 \\+ a2;"
+    ],
+    "stdout_absent": [
+      "halt_missing",
+      "switch\\(0x400060\\)"
+    ]
+  },
+  "notes": "MIPS PIC object: g and tick tail-call through $t9 with f's and bump's prototypes; h's slot names the undefined ext, and the call keeps its argument instead of halt_missing(). fwd3 keeps three's body: three reads a2 only in its jr ra delay slot, which passthrough does not see, so a call would drop it.",
+  "probe_id": "p-acccde634ff6"
+}

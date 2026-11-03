@@ -1,0 +1,41 @@
+{
+  "at": "2026-11-03T00:12:23.418347+00:00",
+  "feature": "Go same-width integer STORE signedness conversion",
+  "parent_commit": "367af34164ad0ddfe1d77b49885b98507cba5afd",
+  "parent_tree": "b42d6c0ed0c62d229db647d241fba45b1a8a0159",
+  "merged_parent_commit": "4b5e23aed28e4e4d9d87a61ad454586a8b07eedd",
+  "candidate_cli_sha256": "b4557e50aa5b06baa5252307700b652dbecd651137ea873aa504ea364d8b82fd",
+  "parent_cli_sha256": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305",
+  "gates": {
+    "all_four_gates_passed": true,
+    "additional_tools_lint_catalog_counters_passed": true,
+    "original_assertions": 675,
+    "stage_assertions": 3742,
+    "production_files_unchanged": 5580,
+    "release_sha256": "b4557e50aa5b06baa5252307700b652dbecd651137ea873aa504ea364d8b82fd"
+  },
+  "workspace": {
+    "passed": 10357,
+    "failed": 0,
+    "ignored": 39,
+    "suites": 72
+  },
+  "native_complete_bodies": 33,
+  "native_input_comparisons": 648,
+  "native_function_comparisons": 21384,
+  "breadth_images": 72,
+  "breadth_distinct_functions": 37908,
+  "breadth_language_function_records": 117131,
+  "changed_go_records": 2619,
+  "structural_review_pending": 0,
+  "c_rust_records_unchanged": true,
+  "new_decompilation_errors": 0,
+  "new_go_parse_errors": 0,
+  "max_cpu_or_wall_median_delta_pct": 0.9648497120009925,
+  "max_95pct_upper_mean_delta_pct": 4.64695780323376,
+  "upper_bound_is_acceptance_gate": false,
+  "whole_runtime_native_equivalence_claimed": false,
+  "limits": {
+    "nested_store": "Unchanged preexisting nested-array to unsafe.Pointer rendering error; retained parent/candidate whole bodies and excluded from native proof."
+  }
+}

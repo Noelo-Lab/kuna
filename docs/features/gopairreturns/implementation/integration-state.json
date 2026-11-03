@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-02T23:11:17.863883+00:00",
+  "head": "92efe57945b68f939347a02cf4e454aa9686e291",
+  "merge_head": "460ac0a18f0efcce2e28f794050ad74e70b371ae",
+  "parent": "/home/mahaloz/kwt/angr-go-pair-parent-460",
+  "parent_clean": true,
+  "specs": 154,
+  "timing_plan_declared_before_build": true
+}

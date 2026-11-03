@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-02T19:35:17.432062+00:00",
+  "generator": "python3 tests/fixtures/go-pair-results/contracts.py",
+  "source_sha256": "cbf45f476e56f74bdaeabb7a7d704063f6e609ad3f3ab9356e8c1bcbd5036695",
+  "functions": 22,
+  "fixtures": {
+    "contracts": "9de0b5429ac57d7075ae8bc22b864b86784f6d0d14932ae01113fe2c99d2a594",
+    "contracts-plain": "ca067cc9cb0761d36474f1c62f5dcc08184d59daf4dbfb0457c84d21cd618c18"
+  },
+  "tools": {
+    "as": "GNU assembler (GNU Binutils for Ubuntu) 2.38",
+    "ld": "GNU ld (GNU Binutils for Ubuntu) 2.38",
+    "objcopy": "GNU objcopy (GNU Binutils for Ubuntu) 2.38"
+  }
+}

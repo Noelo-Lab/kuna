@@ -270,6 +270,7 @@ impl GoSpeller {
         if depth > 16 {
             return "unsafe.Pointer".into();
         }
+        if let Some(storage) = super::kuna_gopairreturns::storage_type(cx, ty) { return storage; }
         match ty.get_metatype() {
             type_metatype::TYPE_PTR | type_metatype::TYPE_PTRREL => match ty.get_ptr_to() {
                 Some(inner) if inner.get_metatype() == type_metatype::TYPE_VOID => {
@@ -316,7 +317,8 @@ impl GoSpeller {
                     .filter(|t| t.get_metatype() != type_metatype::TYPE_VOID)
                 {
                     result.push(' ');
-                    result.push_str(&self.expression(cx, output, depth + 1));
+                    result.push_str(&super::kuna_gopairreturns::result_type(cx, output)
+                        .unwrap_or_else(|| self.expression(cx, output, depth + 1)));
                 }
                 result
             }
@@ -453,7 +455,8 @@ impl PrintC {
             .flatten()
             .filter(|t| t.get_metatype() != type_metatype::TYPE_VOID)
         {
-            let ty = declarator_parts(output, self.rt_ctx.clone()).0;
+            let ty = super::kuna_gopairreturns::result_type(&self.rt_ctx, output)
+                .unwrap_or_else(|| declarator_parts(output, self.rt_ctx.clone()).0);
             self.emit.print(" ", SyntaxHighlight::NoColor);
             let ret = self.emit.begin_return_type(markup);
             self.emit.tag_type(&ty, SyntaxHighlight::TypeColor, markup);
@@ -1021,6 +1024,11 @@ impl PrintC {
         op: OpId,
         target: &Rc<Datatype>,
     ) {
+        if self.rt_ctx.go_pair_types.is_some()
+            && self.push_pair_carrier(fd, arch, value, op, target)
+        {
+            return;
+        }
         let source = self.go_value_type(fd, arch, value, op);
         if let Some(raw) = integer_constant(fd, value)
             .filter(|_| integer_type(&source) && integer_type(target))

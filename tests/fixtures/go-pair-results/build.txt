@@ -1,0 +1,17 @@
+Authored Go integer-pair fixture; compile with Go 1.22.5 and Go 1.27.3 on linux/amd64.
+GOTOOLCHAIN=local CGO_ENABLED=0 go build -trimpath -buildvcs=false -o go<VERSION>-pair pair.go
+Optimizations and compiler DWARF enabled. The checked-in images were built from pair.go; contracts.py separately builds synthetic compressed/plain cross-unit DWARF controls.
+[
+  {
+    "version": "go1.22.5",
+    "binary": "go1.22.5-pair",
+    "sha256": "ed86997939e7bec802e492d205041528efa9180b52646a9aaea4030ac91c1cdb",
+    "source_sha256": "d5579a38fa834495f1ffea1811f1b82838c64cc705dc404db53405e93fc0bae9"
+  },
+  {
+    "version": "go1.27.3",
+    "binary": "go1.27.3-pair",
+    "sha256": "f1bddc056cfd6ad43210a10c73fbfe7001a770b949e980d6ec6a20cdc53342d0",
+    "source_sha256": "d5579a38fa834495f1ffea1811f1b82838c64cc705dc404db53405e93fc0bae9"
+  }
+]
