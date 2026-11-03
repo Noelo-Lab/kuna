@@ -61,7 +61,7 @@ use super::{
 };
 
 /// Section names whose contents are linker-generated stubs sharing one FDE.
-const STUB_SECTIONS: &[&str] = &[".plt", ".plt.sec", ".plt.got", ".iplt", ".MIPS.stubs"];
+pub(crate) const STUB_SECTIONS: &[&str] = &[".plt", ".plt.sec", ".plt.got", ".iplt", ".MIPS.stubs"];
 
 /// (kuna) The FDE-interior entry-suppression pass (`fdeinterior`).
 ///

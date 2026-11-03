@@ -2132,6 +2132,12 @@ pub struct Architecture {
     /// the ARM mode its control flow carries, on an image whose metadata states
     /// no mode; default on.
     pub analysis_armwalkmode: bool,
+    /// (kuna) `armpltslot`: an ARM PLT stub files its slot as a `Read` and no
+    /// row for the partial sums it builds the slot's address from; default on.
+    pub analysis_armpltslot: bool,
+    /// (kuna) `armcondskip`: on ARM the skip a predicated instruction lifts to
+    /// files no `Jump` to the next instruction; default on.
+    pub analysis_armcondskip: bool,
     /// (kuna) Gate the entry-reachable Thumb context walk (`entrythumbflow`) for a
     /// mixed ARM image whose container entry carries the Thumb bit but whose
     /// machine word makes no whole-image mode claim; default on. The walk decodes
@@ -3406,6 +3412,8 @@ impl Architecture {
             analysis_arm_markers: false,
             analysis_armfuncmode: false,
             analysis_armwalkmode: false,
+            analysis_armpltslot: false,
+            analysis_armcondskip: false,
             analysis_entrythumbflow: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
@@ -3893,6 +3901,8 @@ impl Architecture {
         self.analysis_arm_markers = true;
         self.analysis_armfuncmode = true; // (kuna) even ARM function symbol = A32 when no mapping symbols
         self.analysis_armwalkmode = true; // (kuna) ARM walk decodes in the mode its control flow carries
+        self.analysis_armpltslot = true; // (kuna) ARM PLT stub files its slot, not its partial sums
+        self.analysis_armcondskip = true; // (kuna) ARM condition skip files no jump to the next instruction
         self.analysis_entrythumbflow = true; // (kuna) entry-reachable Thumb context default-on; inert without a Thumb-bit entry
         self.analysis_mips_gp = true;
         self.analysis_ppc32picimports = crate::kuna_ppc32picimports::Mode::loaded(); // (kuna) abi when the loader applied it, else off

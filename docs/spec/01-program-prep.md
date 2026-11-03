@@ -7722,6 +7722,94 @@ the same spread an A/A run shows. Recomputing the forms costs 6 to 24 ns per
 decoded instruction, 0.1–0.4% of the walk over the x86-64, AArch64 and ARM C
 libraries and bash. Emitted C is unchanged.
 
+(kuna) **PLT stubs** (`armpltslot`, default on). A GNU ld A32 PLT entry builds its GOT slot's address in
+`ip` and jumps through it: `add ip,pc,#0,12` (SLEIGH renders it `adr r12,...`),
+`add ip,ip,#N,20` (one more add with `--long-plt`), then `ldr pc,[ip,#M]!`. The
+constant scan reads each step on its own, so it filed the PC value as a `Data`
+row, and also `N<<12` once the GOT lies far enough from the stub for that
+immediate to land in a mapped section: two rows per stub, neither an address the
+stub uses. The walk now follows the chain in its own order
+(`decompiler/crates/kuna-analysis/src/listing/kuna_pltstub.rs`): each step is the
+instruction the walk decoded, in the mode it chose, and an open chain waits for
+the walk to decode its fall-through; it never decodes ahead. It runs on ARM images
+only, and only on instructions inside the linker's stub sections (the list
+`fdeinterior` uses; on ARM, `.plt` and the `.iplt` that holds a static image's
+IFUNC stubs in the same template), where the linker puts its stubs: a hand-written `adr; add; ldr pc` veneer elsewhere
+keeps its rows, and an image without section headers follows no chain, since
+nothing there says where the stubs are. Any such instruction that sets one
+register to a constant starts a chain,
+whether or not that first value lands in a mapped section (a stub far from its
+GOT can have its `pc + N<<20` in a gap between segments). A chain is one register set
+to a constant, one or two further instructions that only add constants to it
+(each write of the register is an `INT_ADD` or `INT_SUB` of exactly one value
+computed from the register itself and one constant, or a `COPY` of such a sum, so
+`mov ip,#K`, `movw ip,#K`, `mov ip,ip` and `add ip,ip,ip` each break the chain), then a load through it plus a constant whose value is the target of a
+`BRANCHIND` (a value computed from the loaded word, such as `ldr pc` clearing the
+Thumb bit, stands for it, so `ldm ip,{r0,pc}` names `pc`'s word), from a slot in
+a mapped section; a chain whose slot is unmapped is not a stub. Only `COPY`, `INT_ADD` and `INT_SUB` of constants are evaluated, and
+a middle step must neither touch memory nor branch. The constant rows of an open
+chain are held back; the chain's instructions file no constant `Data` row once it
+completes, and the load files the slot as a `Read`, which is what
+IDA reports for the stub and what an x86 stub's `jmp [slot]` already gives
+(register pair carrying files the same row on its own, and the two give one); the
+slot's file word (the PLT's resolver) is not followed. The calls into the stub,
+and its import name, are unchanged. A run that leaves the shape at any step keeps
+the rows the constant scan gives it, so an `adr` whose register is then used any
+other way is still a reference. GCC 14 for armhf emits the A32 stub for Thumb code
+too; the Thumb-only PLT (`--thumb-plt`, M-profile) is not recognised.
+`--option armpltslot off` follows no chain, so every stub files the constant
+scan's rows again, next to the slot's `Read` that register pair carrying files. The call graph reads the reference rows, so `decompile-all`
+can visit functions in a different callee-first order, and the shared type
+factory hands out the first free `struct_N` in that order
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/ledger.rs`). In
+the comparisons made, only anonymous struct numbering changed: on musl
+`libstdc++.so` for ARM, 272 of 5832 functions, each byte-identical under a
+one-to-one renaming of its `struct_N` names. Off gives the earlier output byte
+for byte.
+
+(kuna) **Condition skips** (`armcondskip`, default on). SLEIGH lifts a predicated instruction (`ldrne`,
+`moveq`, `popeq {..,pc}`, `bxne r3`, an instruction in a Thumb `it` block) to a
+`CBRANCH` to the next instruction ahead of its own ops: the path where the
+condition fails. The reference walk filed that `CBRANCH` as a `Jump` to the next
+instruction, one row for every predicated instruction in the program, which no
+other tool reports. Ghidra keeps a `goto inst_next` out of an instruction's
+flows (`SleighInstructionPrototype` gives it `BRANCH_TO_END`, not `JUMPOUT`).
+The resolved p-code no longer says `inst_next`, so the reference walk reads the
+shape from the instruction's ops instead: a `CBRANCH` to the instruction's own
+fall-through that other ops follow (`Classified::condition_skip`). Such a skip
+stays one of the instruction's flows, so every
+walk still takes it and PIC pool composition, no-return propagation, AIF and the
+Listing walk see the same shape as before; only the reference walk files no row
+for it, unless the skip runs into the entry of another function from an
+instruction with no fall-through of its own (`bxne lr`, `ldrne pc`, `popne
+{..,pc}`, the `addls pc` of a table dispatch) right before that function. Then
+the skip is the one way into the other function, which the call graph counts
+among its callers and tail jumps (`callbacktype`, `calleevote`), so it keeps its
+`Jump`. A predicated instruction that falls through (`ldrne`, `moveq`, `strne`,
+a pool word decoded as `andeq`) reaches the same entry by its fall-through,
+which files no row either, so its skip files nothing. The walk holds each such
+skip, with the mode it decoded the instruction in, until it ends, and decides
+against the final entry set (seeds, prologue roots, entries found from calls,
+focus and gap-walk entries), so the order in which it finds an entry cannot
+change the answer; only a kept skip's instruction is rendered, in that mode. A conditional branch whose label is the next instruction (`bne` to the
+next line) is a `CBRANCH` and nothing after it, so it keeps its `Jump`, as in
+Ghidra, where its target is an operand, not `inst_next`. A predicated branch
+whose label is the next instruction (`it eq; beq.w` to the next line) lifts to
+the skip and then the branch, both to the next instruction; only the first is
+the skip, and the branch keeps its `Jump`. A predicated
+instruction with no ops of its own after the skip would keep its row too. The
+rule applies to ARM images only (A32 and Thumb). The same `goto inst_next` comes
+ahead of the ops of x86 `cmovcc` and `rep` string instructions, AArch64 `ccmp`,
+`ccmn`, `fcmp` and `fcsel`, PowerPC conditional returns (`beqlr`), MIPS `bc1t`
+and the SPARC `call`, and on those architectures each still files a `Jump` to its
+own fall-through. `--option armcondskip off` gives the earlier rule on ARM too:
+every skip files its `Jump`, except the predicated skip of an A32 table dispatch
+whose table `armframes` reads. As with `armpltslot`, the call graph reads these
+rows, and in the comparisons made only anonymous struct numbering changed: 62
+of 2063 functions of musl `libc.so` for ARM (59 of its stripped copy), each
+byte-identical under a one-to-one renaming of its `struct_N` names. Off gives
+the earlier output byte for byte.
+
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.
 The descent's successors are `classify`'s static targets plus fall-through, and a
@@ -7980,9 +8068,9 @@ function that leaves through `bxne r0` or `bl abort` is proved no-return
 exactly as before. Where A32 tables are read, both walks only recognise the
 skip (`Classified::predicated_skip` in
 `decompiler/crates/kuna-analysis/src/listing/classify.rs`): a computed jump
-whose only flow is its skip is read as a table, and the reference walk files
-no `Jump` row for the skip. Under `armframes off`, and on every other
-architecture, the skip keeps its row and no A32 table is read. The switch record states the guard's case count, so a table longer than
+whose only flow is its skip is read as a table. Under `armframes off`, and on
+every other architecture, no A32 table is read. On ARM the skip files no `Jump`
+row under every option (the condition-skip rule above). The switch record states the guard's case count, so a table longer than
 `jumptablemax` is marked truncated. A dispatch whose table gives no case (a run
 shorter than two entries, or `b caseN` slots past the section end) states no
 count, and the other table readers run on it only when it is unpredicated: a predicated computed jump

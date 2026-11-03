@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3819,
-    3819
+    3827,
+    3827
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1040,6 +1040,14 @@
     "data:KUNA-AIFPOOLSLIDE #6: and is never moved past its first word",
     "data:KUNA-AIFPOOLSLIDE #7: the entry on the pool word in front of the string is listed only with the option off",
     "data:KUNA-AIFPOOLSLIDE #8: the string the code loads is never a function",
+    "data:KUNA-ARMCONDSKIP #1: the option parses and round-trips in both directions, and is inert on the console path -- clamp's first predicated pair renders identically in all three passes",
+    "data:KUNA-ARMCONDSKIP #2: clamp's second predicated pair renders identically in all three passes",
+    "data:KUNA-ARMCONDSKIP #3: the catalog documents it as a default-on option",
+    "data:KUNA-ARMCONDSKIP #4: the catalog row places it in P1 code/data partition",
+    "data:KUNA-ARMPLTSLOT #1: the option parses and round-trips in both directions, and is inert on the console path -- main's call through the puts stub renders identically in all three passes",
+    "data:KUNA-ARMPLTSLOT #2: main's calls through the printf and strlen stubs render identically in all three passes",
+    "data:KUNA-ARMPLTSLOT #3: the catalog documents it as a default-on option",
+    "data:KUNA-ARMPLTSLOT #4: the catalog row places it in P1 code/data partition",
     "data:KUNA-ASSERT #1: routed assertions take effect (compareform original + namelock rename)",
     "data:KUNA-ASSERT #2: kassert list reports the P3 config assertion with rewind scope",
     "data:KUNA-ASSERT #3: kassert list reports the cosmetic P9 assertion as HINT via HARD mechanism",
@@ -1051,7 +1059,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 378 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 380 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
