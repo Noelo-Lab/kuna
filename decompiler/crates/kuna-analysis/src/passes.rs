@@ -461,9 +461,9 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // is a Mach-O, read each `__cfstring` entry's resolved char pointer and emit
     // the string so a `CFSTR("...")` reference renders the literal instead of
     // `dat_<addr>`. Registered ONLY for a Mach-O target (structural no-op
-    // elsewhere). Default-OFF (`--option cfstrings`): the output is committed only
-    // when the gate is on (`engine.rs::analysis_pass_enabled`), so a default run is
-    // byte-identical.
+    // elsewhere). Default-on (`--option cfstrings`): the output is committed only
+    // when the gate is on (`engine.rs::analysis_pass_enabled`), so `off` is
+    // byte-identical to a build without the pass.
     if format == object::BinaryFormat::MachO {
         passes.push(Box::new(crate::cfstring::CFStringPass));
     }

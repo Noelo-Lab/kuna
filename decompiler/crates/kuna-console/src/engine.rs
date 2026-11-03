@@ -3302,10 +3302,10 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // renames IMP functions + adds class/selector symbols). Registered here so it
         // is gated by `analysis_objc` rather than running by the fail-open default.
         "objc" => arch.analysis_objc,
-        // (kuna) Mach-O `__cfstring` constant-string recovery — default-off,
-        // output-changing (renders CFString constants as literals + adds `char[N]`
-        // symbols). Registered here so the fail-open `_ => true` never silently
-        // runs it by default; `off` renders `dat_<addr>` exactly as before.
+        // (kuna) Mach-O `__cfstring` constant-string recovery — default-on,
+        // output-changing (renders CFString constants as `CFSTR("...")` + adds
+        // `char[N]` symbols). Registered here so `off` really skips it; `off`
+        // renders the entry exactly as before.
         "cfstrings" => arch.analysis_cfstrings,
         // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
         // stripped functions to their real PDB names). PE-only + externally gated on
@@ -5322,7 +5322,7 @@ fn commit_analysis_output(
     //     instead of `dat_<addr>`, exactly as for a `__cstring` literal but across
     //     the CFString struct indirection the printer cannot follow on its own.
     //     The entry ranges were marked read-only by the pass (arm 1b), which the
-    //     route requires. Empty unless `--option cfstrings on` (gated above).
+    //     route requires. Empty under `--option cfstrings off` (gated above).
     for fact in &out.cfstrings {
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         let occupied = {

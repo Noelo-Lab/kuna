@@ -4179,7 +4179,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   small/relative forms), reading pointer slots through the chained-fixup overlay
   (§1.2) on arm64, and rename each IMP `-[Class sel]`/`+[Class sel]` behind the
   placeholder label gate.
-- **Core Foundation constant strings** (`cfstrings`, Mach-O-only, default-off;
+- **Core Foundation constant strings** (`cfstrings`, Mach-O-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/cfstring/mod.rs`): a `CFSTR("x")`
   compiles to a four-word `CFString` struct in `__cfstring` (`isa`, `flags`, a
   `char *` into `__cstring`/`__ustring`, and a character `length`). Code references
@@ -4206,7 +4206,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   Go back-ends keep the plain literal. `cfstrings annotate` runs the same pass and
   also follows each `CFSTR` with `/* cfstring@0x<entry> */`, the address a
   disassembler or hex view shows for the entry, which the literal otherwise
-  replaces.
+  replaces. The pass is on by default: it runs only on a Mach-O and only on the
+  real-binary path, so the XML datatest corpus never reaches it, and on the 80 MB
+  Toyota arm64 app one decompile is within run-to-run noise of `off`. `off`
+  renders each reference as the entry itself: its symbol (`&_kGreeting`) where the
+  image names it, its address on a stripped image.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

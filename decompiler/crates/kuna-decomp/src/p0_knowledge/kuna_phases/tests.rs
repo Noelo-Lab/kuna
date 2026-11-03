@@ -506,7 +506,7 @@ fn option_values_live_value_present_for_178() {
         "objc",
         // (kuna) Mach-O __cfstring constant-string recovery — an analysis-pass gate
         // with no codegen live reader (read console-side via kuna_live_value), like
-        // the gates around it. Default-off, Mach-O-only.
+        // the gates around it. Default-on, Mach-O-only.
         "cfstrings",
         // (kuna) PE PDB metadata recovery — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), like the gates around

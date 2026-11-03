@@ -11,10 +11,10 @@
 //!
 //! ## The three-state proof (the `verify_objc` posture)
 //!
-//! - **`--option cfstrings off`** (default): each getter returns the
+//! - **`--option cfstrings off`**: each getter returns the
 //!   `__cfstring` entry by its data symbol — the CFString struct the printer
 //!   cannot follow on its own.
-//! - **`--option cfstrings on`**: each returns `CFSTR("...")` — the entry's char
+//! - **`--option cfstrings on`** (default): each returns `CFSTR("...")` — the entry's char
 //!   pointer resolved, the string seeded into the `StringManager`, the entry typed
 //!   `char[N]` over its own 32 bytes only, so a long string never hides the next
 //!   entry.
@@ -81,13 +81,11 @@ fn run(mode: Mode, vma: u64) -> String {
         .expect("bootstrap fixture with built processor specs");
 
     let value = match mode {
-        Mode::Off => None,
-        Mode::On => Some("on"),
-        Mode::Annotate => Some("annotate"),
+        Mode::Off => "off",
+        Mode::On => "on",
+        Mode::Annotate => "annotate",
     };
-    if let Some(value) = value {
-        prog.arch_mut().set_kuna_option("cfstrings", value).expect("cfstrings takes the value");
-    }
+    prog.arch_mut().set_kuna_option("cfstrings", value).expect("cfstrings takes the value");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let name = name_at(&prog, vma);
@@ -117,7 +115,7 @@ fn run(mode: Mode, vma: u64) -> String {
 }
 
 /// The three-state proof: a `__cfstring` reference is the entry (its data
-/// symbol) by default, `CFSTR("...")` of its string when `cfstrings` is on, and
+/// symbol) when `cfstrings` is off, `CFSTR("...")` of its string when it is on, and
 /// that plus a comment naming the entry address under `annotate`, for every
 /// entry, including the one behind an entry whose string is longer than it.
 #[test]

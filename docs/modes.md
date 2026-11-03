@@ -126,7 +126,7 @@ build failure. The options it enables:
   also need `listing`, which this preset supplies; off ARM they are measured
   no-ops (identical entry sets on 90 x86-64 twins and 12 i386 PE images).
 
-`returndup` (DIV-54) and `pdb` (DIV-129) became shipped defaults and are
+`returndup` (DIV-54), `pdb` (DIV-129) and `cfstrings` became shipped defaults and are
 deliberately kept on the list: the preset **owns** the option, so an earlier
 `--option returndup off` on the same command line is re-enabled by
 `--mode aggressive`, and the preset's contract ("every recovery pass on") does not

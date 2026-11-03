@@ -15,7 +15,7 @@
     facts the commit seam turns into a `char[N]` entry plus a StringManager
     seed at the entry address (`kuna-console/src/engine.rs`).
 
-    P0 assertion: `option cfstrings on|off` (default off). It is a commit-time
+    P0 assertion: `option cfstrings on|off|annotate` (default on). It is a commit-time
     gate, so it is set after `load file` and before the `read symbols` that
     commits the analysis.
 
@@ -28,9 +28,9 @@
     behind an entry whose string is longer than its own 32 bytes, so it is only
     reached when that entry's `char[N]` stays inside the entry.
 
-    Pass 1 (the default, the BUG): the getters return the entries, named by
+    Pass 1 (`option cfstrings off`, the BUG): the getters return the entries, named by
     their data symbols (`&_kGreeting`, `&_kAfter`), not their strings. Pass 2
-    (`option cfstrings on`, the FIX): they return `CFSTR("cfstring hello")` and
+    (`option cfstrings on`, the default, the FIX): they return `CFSTR("cfstring hello")` and
     `CFSTR("after the long one")`. Pass 3 (`option cfstrings annotate`): the same,
     each followed by a comment naming its entry address.
 -->
@@ -42,6 +42,7 @@ c0035fd6
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_cfstring</com>
+  <com>option cfstrings off</com>
   <com>read symbols</com>
   <com>load addr 0x100000538</com>
   <com>decompile</com>
