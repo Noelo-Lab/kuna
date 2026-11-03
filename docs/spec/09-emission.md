@@ -1954,6 +1954,15 @@ pointee; snapshot declarations and byte arithmetic keep their existing
 representations. Matching types, implied expressions, relative pointers and
 explicit `nocasts` retain their ordinary rendering.
 
+A bitfield read or written through a LOAD or STORE chooses member (`.`) or
+pointer (`->`) syntax in `printc.rs (check_bit_field_member)`. As upstream
+does, a bitfield at a nonzero byte offset skips the PTRSUB that reaches its
+storage before looking for a member access underneath. A PTRSUB whose offset
+falls strictly inside the bitfield's container is skipped as well: it reaches
+part of a container that starts at offset zero, as the C parser lays out a run
+of bitfields, so a two-byte load of `wide` at offset 1 prints `p->wide` rather
+than `p.wide`.
+
 **Precedence without an AST.** Operators and leaves are not buffered into a
 tree; they stream through a reverse-polish stack. `printc.rs (PrintC::push_op)`
 pushes an operator's static token — the singleton table `printc.rs (tokens)`

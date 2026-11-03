@@ -1486,7 +1486,7 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId, store
         Some(d) => d,
         None => return true,
     };
-    let opc = data.obank().get(def).expect("checkImpliedCover: stale def").code();
+    let load = crate::bitfield::pull::printed_load(data, def);
 
     // Refresh `vn`'s Cover (C++ `getCover()` lazily calls `updateCover`).  The
     // merge pass allocates the Cover (calcCover); if none was allocated, the
@@ -1497,17 +1497,18 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId, store
     }
     let has_cover = data.vbank().get(vn).map(|v| v.cover().is_some()).unwrap_or(false);
 
-    if opc == OpCode::CPUI_LOAD && has_cover {
+    if let Some(load) = load.filter(|_| has_cover) {
         // Check for loads crossing stores.
         let load_space_off = data
             .obank()
-            .get(def)
+            .get(load)
             .and_then(|o| o.get_in(0))
             .and_then(|s| data.vbank().get(s))
             .map(|s| s.get_offset())
             .unwrap_or(0);
-        let load_ptr = data.obank().get(def).and_then(|o| o.get_in(1));
-        let load_size = data.vbank().get(vn).map(|v| v.get_size()).unwrap_or(1);
+        let load_ptr = data.obank().get(load).and_then(|o| o.get_in(1));
+        let load_size = data.obank().get(load).and_then(|o| o.get_out())
+            .and_then(|v| data.vbank().get(v)).map_or(1, |v| v.get_size());
         let store_ops = data.vbank().get(vn).and_then(|v| v.cover()).map(|c| stores.within(c)).unwrap_or_default();
         for storeop in store_ops {
             let sop = match data.obank().get(storeop) {
@@ -1557,14 +1558,14 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId, store
             }
         }
     }
-    if opc == OpCode::CPUI_LOAD && has_cover
+    if load.is_some() && has_cover
         && crate::p6_variables::kuna_stackloadcover::crosses_write(data, vn)
     {
         return false;
     }
     // (kuna `indexaliasguard global`) a load stays ahead of a store to a global
     // it may read; see [`crate::p3_dataflow::kuna_indexaliasguard`].
-    if opc == OpCode::CPUI_LOAD
+    if load.is_some()
         && has_cover
         && crate::p3_dataflow::kuna_indexaliasguard::load_crosses_global_store(data, vn)
     {
@@ -1578,7 +1579,7 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId, store
     // (kuna syscallregs) a system call's error flag reads like the call it
     // follows, so it is printed ahead of any later call as well.
     if (data.obank().get(def).map(|o| o.is_call()).unwrap_or(false)
-        || opc == OpCode::CPUI_LOAD
+        || load.is_some()
         || crate::kuna_syscallregs::is_error_flag(data, def))
         && has_cover
     {
