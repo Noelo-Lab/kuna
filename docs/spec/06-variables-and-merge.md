@@ -458,6 +458,16 @@ marking (below), three passes fuse variables to reduce clutter:
   first already-accepted variable it passes the speculative rung and the
   cover test with; failures just keep it separate. This is the pass that
   turns dozens of same-typed temporaries into a handful of reused `vN`s.
+  A persistent, input or address-tied high fails the speculative rung
+  whatever it is paired with, and a merge never gives a high one of those
+  properties, so `merge_linear` neither tests such a high nor keeps it among
+  the accepted ones (`merge.rs (Merge::never_speculative)`). Upstream tests it
+  against every accepted variable and every later candidate against it; the
+  merges are the same, but a group of thousands of same-typed globals made
+  that quadratic: APoseFix.dll's 205 KB `0x1806c5440` and `0x1806f78a0` each
+  carry one group of 11,085 same-typed highs, 11,040 of them read-only
+  globals and 35 address-tied, and the pass made 61.4 million pair tests in
+  25 s for 6 merges.
 
 **Explicit vs implied** — which values get a named token at all. Between the
 required and speculative groups, `coreaction_cleanup.rs (ActionMarkExplicit)`
