@@ -1,0 +1,25 @@
+diff --git a/decompiler/crates/kuna-decomp/src/p9_emit/mod.rs b/decompiler/crates/kuna-decomp/src/p9_emit/mod.rs
+index a79596b71..5fa3d3457 100644
+--- a/decompiler/crates/kuna-decomp/src/p9_emit/mod.rs
++++ b/decompiler/crates/kuna-decomp/src/p9_emit/mod.rs
+@@ -21,6 +21,7 @@ pub(crate) mod kuna_rustintegers;
+ pub(crate) mod kuna_ruststorevalue;
+ pub(crate) mod kuna_rustptradd;
+ pub(crate) mod kuna_rustarrayindex;
++pub(crate) mod kuna_rustarrayaddr;
+ pub mod kuna_unsignedread; // (kuna) an unsigned read of an expression C evaluates as signed casts it
+ pub mod kuna_narrowselector; // (kuna) a switch on a narrow expression casts it to its own width
+ pub mod stringmanage;
+diff --git a/decompiler/crates/kuna-decomp/src/p9_emit/printc.rs b/decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+index 2f913c231..d1f6d2394 100644
+--- a/decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
++++ b/decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+@@ -9608,7 +9608,7 @@ impl PrintC {
+         }
+         if self.out_lang == crate::kuna_lang::OutLang::Rust
+             && !self.options.nocasts
+-            && self.op_rust_ptradd(fd, arch, op)
++            && (self.op_rust_ptradd(fd, arch, op) || self.op_rust_array_address(fd, arch, op))
+         {
+             return;
+         }

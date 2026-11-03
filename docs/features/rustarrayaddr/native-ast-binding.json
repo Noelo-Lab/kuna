@@ -1,0 +1,13 @@
+{
+  "candidate_cli_sha256": "18001c2240f24b16bcaf99d2be4deece02ff01a5c09a400ba5d6fa324a105531",
+  "parent_cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+  "captures": {
+    "native/parent-rust.json": "cd4f6597f0602183597abff9c3a8345195bec4f375782a2d8e5b4dac2318e585",
+    "native/candidate-rust.json": "5b6d67bbc76b46ad640d87a00607be0856f44f9658533a23bda7c291773bd63c",
+    "native-ast-review.json": "0429b52c5bf969455d113172c7a9ede2716965d7c43b6d92776aab6fc12dfcf8",
+    "ast-audit/src/main.rs": "7f529da7a60f9d4dcb4e7c2314b5731394c226f644ce61d9af52642bbe5fb954",
+    "ast-audit/target/release/kuna-rust-array-address-audit": "66103675b19ed3bae752ad00a72bf4b1714bb958f0556d7cb5658e19d8bd70de"
+  },
+  "changed_bodies": 33,
+  "pending": 0
+}

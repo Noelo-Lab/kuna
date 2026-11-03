@@ -764,3 +764,6 @@ mod rust_pointer_index;
 
 #[path = "rust_array_index.rs"]
 mod rust_array_index;
+
+#[path = "rust_array_address.rs"]
+mod rust_array_address;

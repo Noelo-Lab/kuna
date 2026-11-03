@@ -1,0 +1,50 @@
+{
+  "changed_records": 2,
+  "pending": 0,
+  "records": [
+    {
+      "address": "0x401120",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "constant-array-addresses",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "integer_eight",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401140",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "constant-array-addresses",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "pointer_eight",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(u8), arguments: PathArguments::None }] } } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    }
+  ],
+  "scope": "Exact AST reconstruction of new raw-array address arithmetic and array-to-integer decay. Places, indices, integer contexts, existing casts, calls and surrounding AST remain identical. New byte scales and pointer targets are recorded, not inferred from old AST. This does not prove whole-program native equivalence or arbitrary field-base validity.",
+  "self_checks": 22
+}

@@ -1,0 +1,310 @@
+{
+  "scope": "Six complete automatically recovered DWARF128-bit-store bodies; no assertion directives. Compile-only failure witness, not runtime equivalence. Separate from current33-body array-address fix.",
+  "body_rewrites": false,
+  "records": [
+    {
+      "arm": "parent",
+      "cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-wide-store-research/wide",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "wide_copy,wide_zero,wide_unsigned,wide_signed,wide_halves,wide_add",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "body_rewrites": false,
+      "compiler_profiles": [
+        {
+          "optimization": "0",
+          "compile_exit": 1,
+          "errors": [
+            {
+              "code": "E0606",
+              "message": "casting `&mut u8` as `*mut u64` is invalid"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0606",
+              "message": "casting `&mut u8` as `*mut u64` is invalid"
+            },
+            {
+              "code": "E0308",
+              "message": "mismatched types"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0606",
+              "message": "casting `&mut u8` as `*mut u64` is invalid"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut i64`"
+            },
+            {
+              "code": "E0606",
+              "message": "casting `&mut u8` as `*mut i64` is invalid"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0606",
+              "message": "casting `&mut u8` as `*mut u64` is invalid"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0606",
+              "message": "casting `&mut u8` as `*mut i64` is invalid"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0606",
+              "message": "casting `&mut u8` as `*mut u64` is invalid"
+            }
+          ],
+          "command": [
+            "rustc",
+            "--edition=2021",
+            "--crate-name",
+            "wide_store_probe",
+            "--error-format=json",
+            "-C",
+            "opt-level=0",
+            "/tmp/kuna-rust-wide-store-research/automatic-parent.rs",
+            "-o",
+            "/tmp/kuna-rust-wide-store-research/automatic-parent-0"
+          ]
+        },
+        {
+          "optimization": "2",
+          "compile_exit": 1,
+          "errors": [
+            {
+              "code": "E0606",
+              "message": "casting `&mut u8` as `*mut u64` is invalid"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0606",
+              "message": "casting `&mut u8` as `*mut u64` is invalid"
+            },
+            {
+              "code": "E0308",
+              "message": "mismatched types"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0606",
+              "message": "casting `&mut u8` as `*mut u64` is invalid"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut i64`"
+            },
+            {
+              "code": "E0606",
+              "message": "casting `&mut u8` as `*mut i64` is invalid"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0606",
+              "message": "casting `&mut u8` as `*mut u64` is invalid"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0606",
+              "message": "casting `&mut u8` as `*mut i64` is invalid"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0606",
+              "message": "casting `&mut u8` as `*mut u64` is invalid"
+            }
+          ],
+          "command": [
+            "rustc",
+            "--edition=2021",
+            "--crate-name",
+            "wide_store_probe",
+            "--error-format=json",
+            "-C",
+            "opt-level=2",
+            "/tmp/kuna-rust-wide-store-research/automatic-parent.rs",
+            "-o",
+            "/tmp/kuna-rust-wide-store-research/automatic-parent-2"
+          ]
+        }
+      ]
+    },
+    {
+      "arm": "address_candidate",
+      "cli_sha256": "18001c2240f24b16bcaf99d2be4deece02ff01a5c09a400ba5d6fa324a105531",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-address/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-wide-store-research/wide",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "wide_copy,wide_zero,wide_unsigned,wide_signed,wide_halves,wide_add",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "body_rewrites": false,
+      "compiler_profiles": [
+        {
+          "optimization": "0",
+          "compile_exit": 1,
+          "errors": [
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0308",
+              "message": "mismatched types"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut i64`"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            }
+          ],
+          "command": [
+            "rustc",
+            "--edition=2021",
+            "--crate-name",
+            "wide_store_probe",
+            "--error-format=json",
+            "-C",
+            "opt-level=0",
+            "/tmp/kuna-rust-wide-store-research/automatic-address_candidate.rs",
+            "-o",
+            "/tmp/kuna-rust-wide-store-research/automatic-address_candidate-0"
+          ]
+        },
+        {
+          "optimization": "2",
+          "compile_exit": 1,
+          "errors": [
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0308",
+              "message": "mismatched types"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut i64`"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            },
+            {
+              "code": "E0605",
+              "message": "non-primitive cast: `[u8; 16]` as `*mut u64`"
+            }
+          ],
+          "command": [
+            "rustc",
+            "--edition=2021",
+            "--crate-name",
+            "wide_store_probe",
+            "--error-format=json",
+            "-C",
+            "opt-level=2",
+            "/tmp/kuna-rust-wide-store-research/automatic-address_candidate.rs",
+            "-o",
+            "/tmp/kuna-rust-wide-store-research/automatic-address_candidate-2"
+          ]
+        }
+      ]
+    }
+  ],
+  "all_function_records_unchanged": false,
+  "rejected_assertions_preserved_at": "capture.json"
+}

@@ -1,0 +1,28 @@
+# Raw Rust array addresses
+
+The public repro computes a pointer to element 9 of a 9-element array. The parent emits `&mut (*p).values[i as usize]`, whose bounds check panics at this valid one-past address. The candidate takes `&raw mut` of the whole array and applies the instruction's wrapping byte offset, returning byte offset 36 without forming a reference or loading the array. Same-width primitive integer casts of a proven array place likewise take its raw address before conversion.
+
+The proof accepts an implied PTRSUB at the exact start of a nonempty struct array field, or offset zero through a pointer to a nonempty array. It excludes unresolved fields, unions, relative pointers, non-byte-addressed pointers and other array-place forms. PTRADD requires matching 32/64-bit pointer and primitive index widths, a constant byte scale and a bounded integer-context query. Index arithmetic keeps its width before `isize`; each operand is evaluated once. Cast suppression remains diagnostic; array notation off keeps the prior PTRADD path. Array field projection still needs a valid containing object; arbitrary null/dangling field bases are not established.
+
+The registered native test uses 33 complete emitted Rust bodies without rewriting them. At O0/O2, 2224 function/input comparisons agree with C, covering signed/unsigned indices, twelve integer/floating/pointer/boolean element types, valid one-past addresses, nested arrays, callback order, modular integer address arithmetic and 64 shift counts. Every case runs in readable and PROT_NONE memory without reading pointed-to values. Rust uses overflow-checks=off and C uses -fwrapv on x86_64. The parent bundle has two E0606 errors and one E0605 error per profile; the separately compiled public body panics at index 9. The initial prototype fixed 32 forms but retained the left-shift case's array-to-integer cast. Its failed complete 33-body bundle is preserved in `initial-prototype-0421/`; adding raw array decay at integer casts made all 33 pass. Native captures were repeated after the final stage/corpus rebuild, and all current proof binds to CLI `18001c2240f24b16bcaf99d2be4deece02ff01a5c09a400ba5d6fa324a105531`.
+
+The candidate was captured fresh across 72 images, 37908 distinct functions and 138972 language/function records. Exact frozen parent captures from merged array-index PR1464 are hash-verified. All 404 changed Rust records are classified: 2358 raw-address transformations and 104 integer casts. The audit reconstructs only these forms and requires places, indices, integer contexts, existing casts, calls and all surrounding AST to remain identical. Its 22 positive/negative controls reject changed operands, narrowed indices, lost casts, references substituted for raw pointers, nonwrapping arithmetic and duplicated calls. New byte scales and pointer targets are recorded; they come from IR and cannot be inferred from the old AST alone.
+
+C/Go records remain identical. Variable identity, types and storage remain unchanged; all 0 changed provenance records match the exact union of source-line mappings. There are no new engine or Rust parser errors; 0 inherited raw parser failures retain diagnostics, with identifier-only normalization for structural review. The upstream probestack binary is inspected statically and never executed. Structural comparison does not establish whole-runtime equivalence. Unresolved global/local array forms, array-to-pointer cast paths, arbitrary field-base validity, scalar STORE-width repair and multiarchitecture native parity remain outside this change. The retained constant-address probe compiles all four bodies and still fails on two unchanged compile-time one-past forms: their IR advances a pointer to a whole array and then needs implicit array-to-pointer decay. Its two constant-index 8 transformations are structurally classified, but no native pass is claimed for the failed bundle. The separate six-body 128-bit-store probe also still fails array-to-pointer casts and a byte-array/scalar assignment; all five changed address portions are structurally classified. Raw captures, rejected initial prototype directives and full compiler diagnostics are preserved under `remaining-array-decay/`.
+
+All four repository checks plus tooling/lint/catalog/counters pass: 10373 workspace tests, 675 original assertions and 3802 stage assertions. Eight assertions were added; the prior valid array-address assertion now expects raw byte arithmetic under the same passing key. No prior assertion was lost, and the original baseline is unchanged.
+
+The fixed speed plan uses 64 balanced pairs across eight cases, three warmups per arm and a 5% CPU/wall median budget. Every case passes; the largest median delta is 2.410%. The largest 95% upper mean bound is 9.266%, reported as uncertainty rather than an acceptance threshold. Every sample and CPU telemetry record is retained. Sources, binaries, fixtures and all 154 compiled specs were verified before and after timing.
+
+| Case | CPU median | Wall median | CPU upper mean bound | Wall upper mean bound |
+|---|---:|---:|---:|---:|
+| c-array | -1.756% | -1.494% | +1.692% | +2.249% |
+| go-array | -2.417% | -2.809% | +0.845% | +2.271% |
+| rust-array | -1.299% | -0.767% | +0.646% | +0.938% |
+| rust-callback | +0.770% | +0.755% | +2.762% | +3.878% |
+| rust-index-context | -0.181% | -0.108% | +2.489% | +2.044% |
+| rust-large | -9.705% | -19.174% | -0.557% | +3.273% |
+| rust-count | -0.762% | -2.886% | +3.355% | +9.266% |
+| rust-inflate | +1.389% | +2.410% | +3.224% | +2.399% |
+
+`record.json` binds the proof to the exact parent tree and its actual merge. Complete changed records are losslessly compressed and round-trip hash-checked. `manifest.json` hashes the evidence files.

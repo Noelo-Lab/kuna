@@ -4696,7 +4696,35 @@ The helper accepts matching varnode/type widths of 1, 2, 4 or 8 bytes and exclud
 enums and noninteger types. Cast suppression retains diagnostic output. The
 raw-pointer wrapping path and plain pointer-addition notation are separate paths.
 This repairs valid array indexing without establishing correctness of raw-pointer
-fallbacks, one-past array addresses, global byte-scale recovery or uninitialized
-local arrays. The native regression checks complete emitted field and nested-array
+fallbacks, global byte-scale recovery or uninitialized local arrays. Proven
+array-place addresses use the raw-address path described below. The native regression checks complete emitted field and nested-array
 bodies, valid addresses, all store and guard bytes, callback order, and literal
 shift expressions against C at both optimization levels.
+
+
+### Rust raw array addresses
+
+`kuna_rustarrayaddr.rs` forms a raw pointer to a proven whole-array place with
+`&raw mut`, then applies the PTRADD byte scale using `wrapping_byte_offset` and
+`wrapping_mul`. It casts the result to the recovered output pointer type. This
+avoids subscripting, bounds checks, references and array loads when computing an
+address, including a valid one-past pointer. A same-width primitive integer cast
+of the same proven array place also takes its raw address before the cast; Rust
+has no implicit array-to-pointer decay.
+
+The proof accepts an implied PTRSUB at the exact start of a nonempty struct
+array field, or offset zero through a pointer to a nonempty array. It excludes
+unresolved fields, unions, relative pointers, non-byte-addressed pointers and
+other array-place forms. PTRADD requires matching 32- or 64-bit pointer and
+primitive integer-index widths and a constant byte scale. The existing bounded
+integer-context query preserves literal-dependent index arithmetic before
+converting to `isize`. Each operand is evaluated once. Load/store uses retain
+the array-index path. Cast suppression retains diagnostic output, and disabled
+array notation retains its previous PTRADD path. Array projection still requires a valid containing
+object; this does not establish correctness for arbitrary null or dangling bases.
+
+The native regression compiles complete emitted functions at both optimization
+levels and compares pointer bits with C. It covers signed and unsigned indices,
+integer, floating, pointer and boolean array fields, nested arrays, one-past
+addresses, callback order and modular integer address arithmetic. The same
+functions run over readable and protected memory without reading the array.

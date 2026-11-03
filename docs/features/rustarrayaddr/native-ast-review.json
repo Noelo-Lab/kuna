@@ -1,0 +1,697 @@
+{
+  "changed_records": 33,
+  "pending": 0,
+  "records": [
+    {
+      "address": "0x401120",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_i8_s",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i8), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401130",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_i8_u",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i8), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401140",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_u8_s",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(u8), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401150",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_u8_u",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(u8), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401160",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_i16_s",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i16), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401170",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_i16_u",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i16), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401180",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_u16_s",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(u16), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401190",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_u16_u",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(u16), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4011a0",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_i32_s",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4011b0",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_i32_u",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4011c0",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_u32_s",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(u32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4011d0",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_u32_u",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(u32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4011e0",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_i64_s",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i64), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4011f0",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_i64_u",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i64), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401200",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_u64_s",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(u64), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401210",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_u64_u",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(u64), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401220",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_float32_s",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(f32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401230",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_float32_u",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(f32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401240",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_float64_s",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(f64), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401250",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_float64_u",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(f64), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401260",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_pointers_s",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(u8), arguments: PathArguments::None }] } } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401270",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_pointers_u",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(u8), arguments: PathArguments::None }] } } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401280",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_flags_s",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(bool), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401290",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "address_flags_u",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(bool), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4012a0",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "nested_address_s",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4012b0",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "nested_address_u",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4012c0",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "callback_address",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4012f0",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "wrap_signed",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401300",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "wrap_unsigned",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401310",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "wrap_byte",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401320",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "logical_address",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401340",
+      "array_integer_casts": 0,
+      "byte_scales": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "signed_address",
+      "parent_parse_error": null,
+      "pointer_targets": [
+        "Type::Ptr { star_token: Star, const_token: None, mutability: Some(Mut), elem: Type::Path { qself: None, path: Path { leading_colon: None, segments: [PathSegment { ident: Ident(i32), arguments: PathArguments::None }] } } }"
+      ],
+      "raw_address_transformations": 1,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401360",
+      "array_integer_casts": 1,
+      "byte_scales": [],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_address_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "left_address",
+      "parent_parse_error": null,
+      "pointer_targets": [],
+      "raw_address_transformations": 0,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    }
+  ],
+  "scope": "Exact AST reconstruction of new raw-array address arithmetic and array-to-integer decay. Places, indices, integer contexts, existing casts, calls and surrounding AST remain identical. New byte scales and pointer targets are recorded, not inferred from old AST. This does not prove whole-program native equivalence or arbitrary field-base validity.",
+  "self_checks": 22
+}

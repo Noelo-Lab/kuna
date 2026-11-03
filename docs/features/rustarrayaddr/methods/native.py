@@ -1,0 +1,25 @@
+from common import *
+base=Path('/home/mahaloz/kwt/angr-rust-array-index');f=w/'native';build=json.loads((w/'prototype-build.json').read_text());sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();names=json.loads((f/'cases.json').read_text());assert len(names)==33;records=[];captures={};references={}
+cmd=['cc','-O2','-g','-fno-inline','-fno-pie','-no-pie',str(f/'array_address.c'),str(f/'array_address_helpers.c'),'-o',str(f/'array_address_x86_64')];subprocess.run(cmd,capture_output=True,check=True);records.append({'kind':'fixture','command':cmd,'sha256':sha(f/'array_address_x86_64')})
+for opt in ['0','2']:
+ cmd=['cc','-O'+opt,'-fwrapv','-fno-inline','-std=c11','-Wall','-Wextra','-Werror',str(f/'harness.c'),str(f/'array_address_helpers.c'),'-o',str(f/('reference-'+opt))];p=subprocess.run(cmd,capture_output=True);(f/('reference-'+opt+'-build.log')).write_bytes(p.stderr);assert p.returncode==0,p.stderr.decode();p=subprocess.run([str(f/('reference-'+opt))],capture_output=True,check=True);assert len(p.stdout.splitlines())==1114;(f/('reference-'+opt+'.stdout')).write_bytes(p.stdout);references[opt]=p.stdout;records.append({'kind':'reference','optimization':opt,'command':cmd,'output_sha256':hashlib.sha256(p.stdout).hexdigest()})
+assert references['0']==references['2'];print('C references agree1112 comparisons/profile in readable and protected memory',flush=True)
+for arm,root in [('parent',base),('candidate',r)]:
+ cli=root/'decompiler/target/release/kuna';digest=sha(cli);assert digest==build['parent_cli_sha256'if arm=='parent'else'new_cli_sha256']
+ for language in ['c','go','rust']:
+  cmd=[str(cli),'decompile-all',str(f/'array_address_x86_64'),'--language',language,'--json','--functions',','.join(names),'--assert','@'+str(f/'array_address.kuna'),'--option','ctypes','off','--option','realtypes','off'];p=subprocess.run(cmd,capture_output=True,check=True,env=env|{'KUNA_SPECS':str(root/'specs')});(f/(arm+'-'+language+'.json')).write_bytes(p.stdout);(f/(arm+'-'+language+'.log')).write_bytes(p.stderr);d=json.loads(p.stdout);assert len(d['functions'])==33 and all(not x.get('error')for x in d['functions']);assert all(a['status']=='applied'for a in d['assertions']);captures[arm,language]=d['functions'];records.append({'kind':'capture','arm':arm,'language':language,'command':cmd,'cli_sha256':digest,'capture_sha256':hashlib.sha256(p.stdout).hexdigest()})
+  if language!='rust':continue
+  bodies={x['name']:x['code']for x in d['functions']};source=(f/'harness.rs').read_text().replace('/* EMITTED_BODIES */','\n'.join(bodies[name]for name in names));(f/(arm+'.rs')).write_text(source)
+  print(arm,'without raw address',[name for name in names if '&raw mut'not in bodies[name]],flush=True)
+  for opt in ['0','2']:
+   cmd=['rustc','--edition=2021','--error-format=json','-C','opt-level='+opt,'-C','overflow-checks=off',str(f/(arm+'.rs')),'-o',str(f/(arm+'-'+opt))];p=subprocess.run(cmd,capture_output=True);(f/(arm+'-'+opt+'-build.jsonl')).write_bytes(p.stderr);errors=[json.loads(line)for line in p.stderr.splitlines()if line.startswith(b'{')];errors=[{'code':e['code']['code'],'message':e['message']}for e in errors if e.get('level')=='error'and e.get('code')];row={'kind':'native','arm':arm,'optimization':opt,'command':cmd,'compile_exit':p.returncode,'errors':errors}
+   if arm=='candidate':assert p.returncode==0,p.stderr.decode()
+   if p.returncode==0:
+    result=subprocess.run([str(f/(arm+'-'+opt))],capture_output=True);(f/(arm+'-'+opt+'.stdout')).write_bytes(result.stdout);(f/(arm+'-'+opt+'.stderr')).write_bytes(result.stderr);row.update(execution_exit=result.returncode,output_sha256=hashlib.sha256(result.stdout).hexdigest())
+    if arm=='candidate':assert result.returncode==0 and result.stdout==references[opt],('native mismatch',opt,result.returncode,result.stderr.decode())
+    else:assert result.returncode!=0 or result.stdout!=references[opt],'Parent unexpectedly already correct'
+   else:assert errors,'Expected structured parent compiler diagnostics'
+   records.append(row);print(arm,opt,'compile',row['compile_exit'],'execute',row.get('execution_exit'),'errors',errors,flush=True)
+ assert sha(cli)==digest
+assert all(captures['parent',language]==captures['candidate',language]for language in ['c','go'])
+result={'status':'PASS','complete_bodies':33,'native_function_comparisons':2224,'function_comparisons_per_profile':1112,'output_lines_per_profile':1114,'body_rewrites':False,'parent_cli_sha256':build['parent_cli_sha256'],'candidate_cli_sha256':build['new_cli_sha256'],'c_go_records_unchanged':True,'scope':'x86_64 complete emitted address bodies at O0/O2 versus C; integer/float/pointer/bool array locations, valid one-past addresses, nested arrays, callback order, unsigned modular address arithmetic and64 shift counts. Both readable and PROT_NONE memory are used. No pointed-to values are read. Arbitrary invalid field-base projections and unresolved array-place forms are outside scope.','records':records};(w/'native-record.json').write_text(json.dumps(result,indent=2)+'\n');print('Address native33 PASS2224 comparisons',flush=True)

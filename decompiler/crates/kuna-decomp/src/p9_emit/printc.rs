@@ -7379,6 +7379,7 @@ impl PrintC {
         };
         if self.out_lang == crate::kuna_lang::OutLang::Rust {
             if let (Some(ct), Some(vn)) = (cast_ty.as_ref(), fd.obank().get(op).and_then(|o| o.get_in(0))) {
+                if self.push_rust_array_address_cast(fd, arch, vn, op, ct) { return; }
                 if self.push_rust_integer_conversion(fd, arch, vn, op, ct, true) { return; }
             }
         }
@@ -9608,7 +9609,7 @@ impl PrintC {
         }
         if self.out_lang == crate::kuna_lang::OutLang::Rust
             && !self.options.nocasts
-            && self.op_rust_ptradd(fd, arch, op)
+            && (self.op_rust_ptradd(fd, arch, op) || self.op_rust_array_address(fd, arch, op))
         {
             return;
         }

@@ -1,0 +1,23 @@
+{
+  "cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+  "command": [
+    "/home/mahaloz/kwt/angr-rust-array-index/decompiler/target/release/kuna",
+    "decompile-all",
+    "/tmp/kuna-rust-wide-store-research/wide",
+    "--json",
+    "--language",
+    "rust",
+    "--functions",
+    "wide_copy,wide_zero,wide_unsigned,wide_signed,wide_halves,wide_add",
+    "--assert",
+    "@/tmp/kuna-rust-wide-store-research/wide.kuna",
+    "--option",
+    "ctypes",
+    "off",
+    "--option",
+    "realtypes",
+    "off"
+  ],
+  "scope": "Exploratory automatic captures only; requested prototype assertions rejected and retained. Must re-establish supported128-bit declarations before treating this as typed-store evidence.",
+  "prototype_assertions": "All6rejected: uint16/int16 are not accepted builtin prototype names. These captures reflect automatic DWARF-derived byte arrays, not successfully asserted128-bit integer pointers."
+}

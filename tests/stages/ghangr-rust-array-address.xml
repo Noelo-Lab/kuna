@@ -1,0 +1,57 @@
+<decompilertest>
+<!-- P9 raw array-address regression; nocastprinting keeps diagnostic output. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/array_address_x86_64</com>
+  <com>read symbols</com>
+  <com>option outlang rust</com>
+  <com>option ctypes off</com>
+  <com>option realtypes off</com>
+  <com>map prototype address_i64_s int8*address_i64_s(struct AddressFields*p,int8 i);</com>
+  <com>map prototype address_pointers_s uint1**address_pointers_s(struct AddressFields*p,int8 i);</com>
+  <com>map prototype nested_address_u int4*nested_address_u(int4(*p)[9],int8 i,uint8 j);</com>
+  <com>map prototype callback_address int4*callback_address(struct AddressFields*p,int8 i);</com>
+  <com>map prototype wrap_unsigned uint4*wrap_unsigned(struct AddressFields*p,uint8 i);</com>
+  <com>map prototype signed_address int4*signed_address(struct AddressFields*p,uint4 n);</com>
+  <com>map prototype left_address int4*left_address(struct AddressFields*p,uint4 n);</com>
+  <com>map prototype counted_index int8 counted_index(int8 i);</com>
+  <com>map prototype counted_base struct AddressFields*counted_base(struct AddressFields*p);</com>
+  <com>load function address_i64_s</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function address_pointers_s</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function nested_address_u</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function callback_address</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function wrap_unsigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function signed_address</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function left_address</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nocastprinting on</com>
+  <com>load function address_i64_s</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Rust raw array address uses the byte scale" min="1" max="1">\(\&amp;raw\ mut\ \(\*p\)\.i64\)\.wrapping_byte_offset\(\(i\ as\ isize\)\.wrapping_mul\(8\)\)</stringmatch>
+<stringmatch name="Rust pointer array address keeps pointer elements" min="1" max="1">\(\&amp;raw\ mut\ \(\*p\)\.pointers\)\.wrapping_byte_offset\(\(i\ as\ isize\)\.wrapping_mul\(8\)\)</stringmatch>
+<stringmatch name="Rust raw nested array address keeps outer scaling" min="1" max="1">\(\&amp;raw\ mut\ \*p\.wrapping_byte_offset\(\(i\ as\ isize\)\.wrapping_mul\(36\)\)\)</stringmatch>
+<stringmatch name="Rust raw array address keeps callback order" min="1" max="1">\(\&amp;raw\ mut\ \(\*counted_base\(p\)\)\.i32\)</stringmatch>
+<stringmatch name="Rust raw array address preserves result pointer casts" min="1" max="1">as\ \*mut\ i32\)\ as\ \*mut\ u32;</stringmatch>
+<stringmatch name="Rust raw array address preserves literal width" min="1" max="1">::core::convert::identity::&lt;i64&gt;\(\-0x8000000000000000\ &gt;&gt;\ \(n\ as\ u8\ \&amp;\ 0x3f\)\)</stringmatch>
+<stringmatch name="Rust array integer decay uses a raw address" min="1" max="1">\&amp;raw\ mut\ \(\*p\)\.i32\ as\ i64\ \+</stringmatch>
+<stringmatch name="Rust array address cast suppression stays diagnostic" min="1" max="1">return\ \&amp;mut\ \(\*p\)\.i64\[i\];</stringmatch>
+</decompilertest>
