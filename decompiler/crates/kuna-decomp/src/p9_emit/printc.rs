@@ -6326,7 +6326,7 @@ impl PrintC {
                             }
                         } else if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
                             let converted = fd.get_func_proto().get_output_type()
-                                .is_some_and(|target| self.push_rust_integer_as(fd, arch, vn, op, target));
+                                .is_some_and(|target| self.push_rust_value_as(fd, arch, vn, op, target));
                             if !converted { self.push_vn_ir(fd, arch, vn, op); }
                         } else { self.push_vn_ir(fd, arch, vn, op); }
                     }
@@ -6343,7 +6343,7 @@ impl PrintC {
                         let target = fd.obank().get(op).and_then(|o| o.get_out())
                             .map(|out| self.rust_integer_output_type(fd, arch, out));
                         let converted = target.as_ref()
-                            .is_some_and(|target| self.push_rust_integer_as(fd, arch, vn, op, target));
+                            .is_some_and(|target| self.push_rust_value_as(fd, arch, vn, op, target));
                         if !converted { self.push_vn_ir(fd, arch, vn, op); }
                     } else { self.push_vn_ir(fd, arch, vn, op); }
                 }
@@ -7355,6 +7355,11 @@ impl PrintC {
             .get(op)
             .and_then(|o| o.get_out())
             .map(|out| fd.vn_type_def_facing(out));
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
+            if let (Some(target), Some(value)) = (out_def.as_ref(), fd.obank().get(op).and_then(|o| o.get_in(0))) {
+                if self.push_rust_array_pointer(fd, arch, value, op, target) { return; }
+            }
+        }
         if out_def.as_ref().map(|t| t.is_pointer_to_array()).unwrap_or(false)
             && self.check_address_of_cast(fd, op)
         {
@@ -8588,6 +8593,11 @@ impl PrintC {
                 self.push_go_value_as(fd, arch, vn, op, target);
             } else { self.push_vn_ir(fd, arch, vn, op); }
             return;
+        }
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
+            if let Some(target) = proto.filter(|p| p.has_store()).and_then(|p| p.get_param(slot - 1)).and_then(|p| p.get_type()) {
+                if self.push_rust_array_pointer(fd, arch, vn, op, target) { return; }
+            }
         }
         if self.out_lang != crate::kuna_lang::OutLang::C
             || !self.rt_ctx.indirect_args

@@ -1,0 +1,11 @@
+{
+  "at": "2026-11-03T05:05:39.552523+00:00",
+  "status": "INTENTIONALLY_INTERRUPTED",
+  "reason": "Corrected a test-function-name typo during final source inspection; full validation restarts on final test source. Production implementation and CLI unchanged; broad captures continue.",
+  "path": "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/crates/kuna-cli/tests/rust_array_decay.rs",
+  "old_function": "complete_rust_array_decayes_match_native_without_memory_reads",
+  "new_function": "complete_rust_array_decay_matches_native_pointer_consumers",
+  "old_sha256": "5032397ed45fad2f58546ce96628ecd7bfafea1c19a1394b5b73662ba5fb1eb5",
+  "new_sha256": "635c5cad89ebcc72cf50be0cec244b41ba74bf928b2795ef04bbbd28a43afa60",
+  "release_sha256": "a1bc22c5d2a4b10662a9338ed48d1a2f85144ef4a9178b30b19eec7a76305bda"
+}

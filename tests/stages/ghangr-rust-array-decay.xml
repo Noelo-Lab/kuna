@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/array_decay_x86_64</com>
+  <com>read symbols</com>
+  <com>option outlang rust</com>
+  <com>option ctypes off</com>
+  <com>option realtypes off</com>
+  <com>map prototype erased_i32 void*erased_i32(struct DecayFields*p);</com>
+  <com>map prototype array_i32 int4(*array_i32(struct DecayFields*p))[9];</com>
+  <com>map prototype stored_i32 void stored_i32(int4**out,struct DecayFields*p);</com>
+  <com>map prototype field_i64 int8*field_i64(struct DecayFields*p);</com>
+  <com>map prototype retyped_i64 uint1*retyped_i64(struct DecayFields*p);</com>
+  <com>map prototype end_pointers uint1**end_pointers(uint1*(*p)[9]);</com>
+  <com>map prototype whole_flags bool*whole_flags(bool(*p)[9]);</com>
+  <com>map prototype passed_counted int4*passed_counted(struct DecayFields*p);</com>
+  <com>map prototype pass_value_i32 int4*pass_value_i32(int4*p);</com>
+  <com>map prototype counted_base struct DecayFields*counted_base(struct DecayFields*p);</com>
+  <com>load function field_i64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function whole_flags</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function end_pointers</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function erased_i32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function retyped_i64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function array_i32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function stored_i32</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function passed_counted</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nocastprinting on</com>
+  <com>load function field_i64</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Rust array decay field_i64 keeps its pointer consumer" min="1" max="1">return\ \&amp;raw\ mut\ \(\*p\)\.i64\ as\ \*mut\ i64;</stringmatch>
+<stringmatch name="Rust array decay whole_flags keeps its pointer consumer" min="1" max="1">return\ \&amp;raw\ mut\ \*p\ as\ \*mut\ bool;</stringmatch>
+<stringmatch name="Rust array decay end_pointers keeps its pointer consumer" min="1" max="1">return\ \&amp;raw\ mut\ \*p\.wrapping_byte_offset\(\(\(1\ as\ i64\)\ as\ isize\)\.wrapping_mul\(72\)\)\ as\ \*mut\ \*mut\ u8;</stringmatch>
+<stringmatch name="Rust array decay erased_i32 keeps its pointer consumer" min="1" max="1">return\ \&amp;raw\ mut\ \(\*p\)\.i32\ as\ \*mut\ \(\);</stringmatch>
+<stringmatch name="Rust array decay retyped_i64 keeps its pointer consumer" min="1" max="1">return\ \&amp;raw\ mut\ \(\*p\)\.i64\ as\ \*mut\ u8;</stringmatch>
+<stringmatch name="Rust array decay array_i32 keeps its pointer consumer" min="1" max="1">return\ \&amp;raw\ mut\ \(\*p\)\.i32\ as\ \*mut\ \[i32;\ 9\];</stringmatch>
+<stringmatch name="Rust array decay stored_i32 keeps its pointer consumer" min="1" max="1">\*out\ =\ \&amp;raw\ mut\ \(\*p\)\.i32\ as\ \*mut\ i32;</stringmatch>
+<stringmatch name="Rust array decay passed_counted keeps its pointer consumer" min="1" max="1">return\ pass_value_i32\(\&amp;raw\ mut\ \(\*v1\)\.i32\ as\ \*mut\ i32\);</stringmatch>
+<stringmatch name="Rust array decay cast suppression stays diagnostic" min="1" max="1">return\ \(\*p\)\.i64;</stringmatch>
+</decompilertest>

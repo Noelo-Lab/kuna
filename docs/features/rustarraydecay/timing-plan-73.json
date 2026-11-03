@@ -1,0 +1,204 @@
+{
+  "declared_at": "2026-11-03T04:43:39.509609+00:00",
+  "feature": "Rust array-to-raw-pointer decay at typed pointer consumers",
+  "status": "Declared before implementation/build/speed samples; final source binding follows all validation.",
+  "root": "/home/mahaloz/kwt/angr-rust-array-decay",
+  "base": "/home/mahaloz/kwt/angr-rust-array-address",
+  "seed": 202611071,
+  "samples_per_arm": 64,
+  "warmups_per_arm": 3,
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "cases": [
+    [
+      "c-array",
+      "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/crates/kuna-analysis/tests/fixtures/array_decay_x86_64",
+      "field_i64",
+      "c"
+    ],
+    [
+      "go-array",
+      "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/crates/kuna-analysis/tests/fixtures/array_decay_x86_64",
+      "field_i64",
+      "go"
+    ],
+    [
+      "rust-array",
+      "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/crates/kuna-analysis/tests/fixtures/array_decay_x86_64",
+      "field_i64",
+      "rust"
+    ],
+    [
+      "rust-callback",
+      "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/crates/kuna-analysis/tests/fixtures/array_decay_x86_64",
+      "passed_counted",
+      "rust"
+    ],
+    [
+      "rust-index-context",
+      "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/crates/kuna-analysis/tests/fixtures/array_decay_x86_64",
+      "end_pointers",
+      "rust"
+    ],
+    [
+      "rust-large",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "rust-count",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x12810",
+      "rust"
+    ],
+    [
+      "rust-inflate",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x170bc",
+      "rust"
+    ]
+  ],
+  "case_options": {
+    "c-array": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-array-decay/decompiler/crates/kuna-analysis/tests/fixtures/array_decay.kuna"
+    ],
+    "go-array": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-array-decay/decompiler/crates/kuna-analysis/tests/fixtures/array_decay.kuna"
+    ],
+    "rust-array": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-array-decay/decompiler/crates/kuna-analysis/tests/fixtures/array_decay.kuna"
+    ],
+    "rust-callback": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-array-decay/decompiler/crates/kuna-analysis/tests/fixtures/array_decay.kuna"
+    ],
+    "rust-index-context": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-array-decay/decompiler/crates/kuna-analysis/tests/fixtures/array_decay.kuna"
+    ],
+    "rust-large": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "rust-count": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "rust-inflate": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ]
+  },
+  "required_cases": [
+    "c-array",
+    "go-array",
+    "rust-array",
+    "rust-callback",
+    "rust-index-context",
+    "rust-large",
+    "rust-count",
+    "rust-inflate"
+  ],
+  "budget_pct": 5,
+  "acceptance": "Both CPU and wall median candidate/parent deltas must be at most5% for every case. One final analysis; no unchanged-code repeat after failure. This is the repository median speed criterion; confidence bounds are reported as uncertainty, not used as a hidden post-hoc gate.",
+  "confidence_reporting": "95% one-sided paired-block-bootstrap upper bounds on mean CPU/wall ratios,2000resamples per case; not simultaneous bounds. Report alongside medians and retain every sample.",
+  "bootstrap_resamples": 2000,
+  "upper_quantile": 0.95,
+  "parent_cli_sha256": "18001c2240f24b16bcaf99d2be4deece02ff01a5c09a400ba5d6fa324a105531",
+  "fixture_sha256": {
+    "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/crates/kuna-analysis/tests/fixtures/array_decay_x86_64": "04e5286f9a6d44f9ea588e4db0a886d47d2d3672ec72c690bb93bc01bfc9b9a4",
+    "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/crates/kuna-analysis/tests/fixtures/array_decay.kuna": "45bb2423b9305f3ea8066035d27c107a0df63276a21f0f2259253b51580a9c09",
+    "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb"
+  },
+  "lightwork_reservation_amendment": {
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "policy": "No concurrent owned builds/tests/decompilations or checkout/evidence finalization; only small static reads/writes pinned reserved CPUs."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "raw_sample_persistence": "Atomic checkpoint after every balanced block; declared before the first timing sample."
+}

@@ -1,0 +1,157 @@
+{
+  "candidate_cli_sha256": "a1bc22c5d2a4b10662a9338ed48d1a2f85144ef4a9178b30b19eec7a76305bda",
+  "body_rewrites": false,
+  "constant_bundle_status": "PASS",
+  "constant_complete_bodies": 4,
+  "constant_native_comparisons": 8,
+  "constant_records": [
+    {
+      "optimization": "0",
+      "complete_bodies": 4,
+      "native_comparisons": 4,
+      "stdout_sha256": "72f7ae045ed1657bba96d5a9d679fb51a08a63d7fad5378d88579ef938f278cf"
+    },
+    {
+      "optimization": "2",
+      "complete_bodies": 4,
+      "native_comparisons": 4,
+      "stdout_sha256": "72f7ae045ed1657bba96d5a9d679fb51a08a63d7fad5378d88579ef938f278cf"
+    }
+  ],
+  "wide_bundle_status": "FULL_SIX_BODY_COMPILE_FAILURE_RETAINED",
+  "wide_records": [
+    {
+      "optimization": "0",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--crate-name",
+        "wide_decay_probe",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "/tmp/kuna-rust-array-decay/extras/wide-full.rs",
+        "-o",
+        "/tmp/kuna-rust-array-decay/extras/wide-candidate-0"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-decay/extras/wide-full.rs",
+              "byte_start": 593,
+              "byte_end": 594,
+              "line_start": 13,
+              "line_end": 13,
+              "column_start": 8,
+              "column_end": 9,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *p = 0;",
+                  "highlight_start": 8,
+                  "highlight_end": 9
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-decay/extras/wide-full.rs",
+              "byte_start": 588,
+              "byte_end": 590,
+              "line_start": 13,
+              "line_end": 13,
+              "column_start": 3,
+              "column_end": 5,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *p = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 5
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "optimization": "2",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--crate-name",
+        "wide_decay_probe",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "/tmp/kuna-rust-array-decay/extras/wide-full.rs",
+        "-o",
+        "/tmp/kuna-rust-array-decay/extras/wide-candidate-2"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0308",
+          "message": "mismatched types",
+          "spans": [
+            {
+              "file_name": "/tmp/kuna-rust-array-decay/extras/wide-full.rs",
+              "byte_start": 593,
+              "byte_end": 594,
+              "line_start": 13,
+              "line_end": 13,
+              "column_start": 8,
+              "column_end": 9,
+              "is_primary": true,
+              "text": [
+                {
+                  "text": "  *p = 0;",
+                  "highlight_start": 8,
+                  "highlight_end": 9
+                }
+              ],
+              "label": "expected `[u8; 16]`, found integer",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            },
+            {
+              "file_name": "/tmp/kuna-rust-array-decay/extras/wide-full.rs",
+              "byte_start": 588,
+              "byte_end": 590,
+              "line_start": 13,
+              "line_end": 13,
+              "column_start": 3,
+              "column_end": 5,
+              "is_primary": false,
+              "text": [
+                {
+                  "text": "  *p = 0;",
+                  "highlight_start": 3,
+                  "highlight_end": 5
+                }
+              ],
+              "label": "expected due to the type of this binding",
+              "suggested_replacement": null,
+              "suggestion_applicability": null,
+              "expansion": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "scope": "Four previously retained constant address bodies now compile and match C at O0/O2. Full six-body automatically recovered wide-store bundle still fails; no native wide-store proof claimed."
+}

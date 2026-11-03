@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3802,
-    3802
+    3811,
+    3811
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1715,6 +1715,15 @@
     "data:Rust array arithmetic shift preserves its width",
     "data:Rust array callback store evaluates operands once",
     "data:Rust array cast suppression keeps diagnostic output",
+    "data:Rust array decay array_i32 keeps its pointer consumer",
+    "data:Rust array decay cast suppression stays diagnostic",
+    "data:Rust array decay end_pointers keeps its pointer consumer",
+    "data:Rust array decay erased_i32 keeps its pointer consumer",
+    "data:Rust array decay field_i64 keeps its pointer consumer",
+    "data:Rust array decay passed_counted keeps its pointer consumer",
+    "data:Rust array decay retyped_i64 keeps its pointer consumer",
+    "data:Rust array decay stored_i32 keeps its pointer consumer",
+    "data:Rust array decay whole_flags keeps its pointer consumer",
     "data:Rust array integer decay uses a raw address",
     "data:Rust array left shift preserves its width",
     "data:Rust array load converts its signed index",
