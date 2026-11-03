@@ -761,3 +761,6 @@ mod rust_store_value;
 
 #[path = "rust_pointer_index.rs"]
 mod rust_pointer_index;
+
+#[path = "rust_array_index.rs"]
+mod rust_array_index;

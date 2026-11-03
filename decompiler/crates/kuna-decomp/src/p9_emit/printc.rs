@@ -9635,6 +9635,13 @@ impl PrintC {
             self.push_vn_ir_m(fd, arch, in0, op, m);
         }
         if let Some(in1) = in1 {
+            if self.out_lang == crate::kuna_lang::OutLang::Rust
+                && !self.options.nocasts
+                && (printval || self.options.array_notation())
+                && self.push_rust_array_index(fd, arch, in1, op, m)
+            {
+                return;
+            }
             self.push_vn_ir_m(fd, arch, in1, op, m);
         }
     }

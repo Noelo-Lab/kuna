@@ -37,7 +37,7 @@ fn shape(ty: &Datatype) -> Option<(i32, bool)> {
     Some((ty.get_size(), signed))
 }
 
-fn needs_integer_context(fd: &Funcdata, value: VarnodeId, op: OpId, depth: u8) -> Option<bool> {
+pub(crate) fn needs_integer_context(fd: &Funcdata, value: VarnodeId, op: OpId, depth: u8) -> Option<bool> {
     if depth == 0 { return None; }
     let node = fd.vbank().get(value)?;
     if node.is_constant() {

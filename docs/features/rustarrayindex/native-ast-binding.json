@@ -1,0 +1,8 @@
+{
+  "candidate_cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+  "native_record_sha256": "dec30280b1da2ec0d31eb87b723352003745e76ec22d9566ace18620fa7f5a8b",
+  "parent_capture_sha256": "9cfc72fff88c01f5d901c7801e3d5458857fd8e41fb0dd6af34161af58019003",
+  "candidate_capture_sha256": "b04f21fd92e751d83ddbc0bd885e9561dec49561e91a7a9d19959d659adab31d",
+  "report_sha256": "3d165f9a5c31b9e3999946d144e74e4f7a970ecde53d66c153783efcae51e260",
+  "body_rewrites": false
+}
