@@ -647,7 +647,8 @@ pub struct ArchContext {
     pub call_mechanisms: Rc<crate::kuna_callmechanisms::Mechanisms>,
     /// (kuna) `callmechanisms` — apply compiler-spec prototype entry/return p-code.
     pub call_mechanism_effects: bool,
-    /// (kuna) `callmechanisms auto` — only return payloads whose stored slot the next instruction reloads.
+    /// (kuna) `callmechanisms auto` — only return payloads whose stored slot the next instruction
+    /// reloads, forwarded into that reload when possible.
     pub call_mechanism_reload_only: bool,
     /// Shared spaces retain the pointer identities and indices used by lifted
     /// Varnodes. [`Self::new_shared`] accepts the engine's manager; [`Self::new`]

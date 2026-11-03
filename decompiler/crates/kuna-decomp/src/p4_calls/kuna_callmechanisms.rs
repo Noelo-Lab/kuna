@@ -15,7 +15,8 @@ pub enum CallMechanismMode {
     #[default]
     Off,
     /// Only on a PPC64 image with validated ELFv1 descriptors, whose ABI reserves `0x28(r1)` for the TOC
-    /// save, and there only a return payload whose stored slot the next instruction reloads.
+    /// save, and there only a return payload whose stored slot the next instruction reloads,
+    /// forwarded into that reload when it is a single register store.
     Auto,
     On,
 }
@@ -203,11 +204,58 @@ pub fn apply_return(data: &mut crate::funcdata::Funcdata, index: i32) -> KunaRes
     let operations = arch
         .call_mechanisms
         .operations(id, arch.manage(), &mut context)?;
-    if arch.call_mechanism_reload_only && !reloads_stored_slot(data, op, &operations) {
-        return Ok(());
+    if arch.call_mechanism_reload_only {
+        let Some((load, store)) = reloads_stored_slot(data, op, &operations) else {
+            return Ok(());
+        };
+        if let Some(value) = forwardable_value(&operations, store, data, load) {
+            forward_reload(data, load, &value)?;
+            data.kuna_call_mechanisms.applied.insert(op, id);
+            return Ok(());
+        }
     }
     install_after(data, op, &operations)?;
     data.kuna_call_mechanisms.applied.insert(op, id);
+    Ok(())
+}
+
+/// The register a payload consisting only of `store` (plus the temporaries naming its
+/// address) writes, when it is as wide as the reload reads.
+fn forwardable_value(
+    operations: &[Operation],
+    store: usize,
+    data: &crate::funcdata::Funcdata,
+    load: crate::context::OpId,
+) -> Option<kuna_num::pcoderaw::VarnodeData> {
+    use kuna_base::space::spacetype::{IPTR_INTERNAL, IPTR_PROCESSOR};
+    let temporary_only = operations.iter().enumerate().all(|(index, op)| {
+        index == store
+            || op.output.as_ref().and_then(|v| v.space.as_ref()).map(|space| space.get_type())
+                == Some(IPTR_INTERNAL)
+    });
+    let value = operations[store].inputs.get(2)?.clone();
+    let width = data.obank().get(load)?.get_out().and_then(|vn| data.vbank().get(vn))?.get_size();
+    (temporary_only
+        && value.space.as_ref()?.get_type() == IPTR_PROCESSOR
+        && value.size as i32 == width)
+        .then_some(value)
+}
+
+/// Store-to-load forwarding of the payload's effect: the reload reads the stored register
+/// directly, so no store is left in the frame for later passes to keep.
+fn forward_reload(
+    data: &mut crate::funcdata::Funcdata,
+    load: crate::context::OpId,
+    value: &kuna_num::pcoderaw::VarnodeData,
+) -> KunaResult<()> {
+    let space = value
+        .space
+        .clone()
+        .ok_or_else(|| KunaError::lowlevel("Compiler mechanism value has no space"))?;
+    let source = data.new_varnode_space_off(value.size as i32, space, value.offset);
+    data.op_set_input(load, source, 0)?;
+    data.op_remove_input(load, 1);
+    data.op_set_opcode(load, crate::typeop::type_op_for(kuna_num::opcodes::OpCode::CPUI_COPY));
     Ok(())
 }
 
@@ -219,8 +267,9 @@ struct Slot {
     offset: u64,
 }
 
-/// The slots a payload's stores write, as base register plus constant offset.
-fn payload_slots(operations: &[Operation]) -> Vec<Slot> {
+/// The slots a payload's stores write, as base register plus constant offset, with each
+/// store's index.
+fn payload_slots(operations: &[Operation]) -> Vec<(usize, Slot)> {
     use kuna_base::space::spacetype::{IPTR_CONSTANT, IPTR_PROCESSOR};
     use kuna_num::opcodes::OpCode::{CPUI_INT_ADD, CPUI_STORE};
     let key = |v: &kuna_num::pcoderaw::VarnodeData| {
@@ -243,26 +292,28 @@ fn payload_slots(operations: &[Operation]) -> Vec<Slot> {
     };
     operations
         .iter()
-        .filter(|op| op.opcode == CPUI_STORE && op.inputs.len() == 3)
-        .filter_map(|store| {
+        .enumerate()
+        .filter(|(_, op)| op.opcode == CPUI_STORE && op.inputs.len() == 3)
+        .filter_map(|(index, store)| {
             let (base, offset) = base_plus(&store.inputs[1])?;
-            Some(Slot { space: store.inputs[0].offset as i32, base, offset })
+            Some((index, Slot { space: store.inputs[0].offset as i32, base, offset }))
         })
         .collect()
 }
 
-/// Does the instruction after `call` load back a slot the payload stores (the ELFv1
-/// `ld r2,40(r1)` TOC reload)? Ops placed at the call's own address are skipped.
+/// The LOAD by which the instruction after `call` reads back a slot the payload stores
+/// (the ELFv1 `ld r2,40(r1)` TOC reload), with that store's index. Ops placed at the
+/// call's own address are skipped.
 fn reloads_stored_slot(
     data: &crate::funcdata::Funcdata,
     call: crate::context::OpId,
     operations: &[Operation],
-) -> bool {
+) -> Option<(crate::context::OpId, usize)> {
     use kuna_base::space::spacetype::{IPTR_CONSTANT, IPTR_PROCESSOR};
     use kuna_num::opcodes::OpCode::{CPUI_INT_ADD, CPUI_LOAD};
     let slots = payload_slots(operations);
     let ops = data.obank();
-    let Some(call_op) = ops.get(call) else { return false };
+    let call_op = ops.get(call)?;
     let mut next = call_op.basic_neighbours().1;
     while let Some(op) = next.and_then(|id| ops.get(id)) {
         if op.get_addr() != call_op.get_addr() {
@@ -270,15 +321,18 @@ fn reloads_stored_slot(
         }
         next = op.basic_neighbours().1;
     }
-    let Some(reload) = next.and_then(|id| ops.get(id)) else { return false };
+    let reload = next.and_then(|id| ops.get(id))?;
     let varnode = |id: Option<crate::context::VarnodeId>| id.and_then(|id| data.vbank().get(id));
     let key = |v: &crate::varnode::Varnode| (v.get_space().get_index(), v.get_offset(), v.get_size() as u32);
-    let instruction: Vec<_> = ops.iter_at(reload.get_addr()).filter_map(|(_, id)| ops.get(id)).collect();
+    let instruction: Vec<_> = ops
+        .iter_at(reload.get_addr())
+        .filter_map(|(_, id)| ops.get(id).map(|op| (id, op)))
+        .collect();
     let base_plus = |pointer: &crate::varnode::Varnode| -> Option<((i32, u64, u32), u64)> {
         if pointer.get_space().get_type() == IPTR_PROCESSOR {
             return Some((key(pointer), 0));
         }
-        let add = instruction.iter().find(|op| {
+        let (_, add) = instruction.iter().find(|(_, op)| {
             op.code() == CPUI_INT_ADD && varnode(op.get_out()).is_some_and(|out| key(out) == key(pointer))
         })?;
         let (a, b) = (varnode(add.get_in(0))?, varnode(add.get_in(1))?);
@@ -288,16 +342,14 @@ fn reloads_stored_slot(
             _ => None,
         }
     };
-    instruction.iter().any(|load| {
+    instruction.iter().find_map(|&(id, load)| {
         if load.code() != CPUI_LOAD {
-            return false;
+            return None;
         }
-        let (Some(space), Some(pointer)) = (varnode(load.get_in(0)), varnode(load.get_in(1))) else {
-            return false;
-        };
-        base_plus(pointer).is_some_and(|(base, offset)| {
-            slots.contains(&Slot { space: space.get_offset() as i32, base, offset })
-        })
+        let (space, pointer) = (varnode(load.get_in(0))?, varnode(load.get_in(1))?);
+        let (base, offset) = base_plus(pointer)?;
+        let slot = Slot { space: space.get_offset() as i32, base, offset };
+        slots.iter().find(|(_, stored)| *stored == slot).map(|(index, _)| (id, *index))
     })
 }
 

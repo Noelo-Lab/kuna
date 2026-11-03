@@ -313,8 +313,8 @@ fn elfv1_toc_reload_after_a_call_keeps_the_jump_table_base() {
 
 /// `int valid(int); void both(int,int), one(int);`
 /// `void route(int a, int b) { if (valid(a) && valid(b)) both(a, b); else one(a); }`
-/// at `-O2 -fPIC`, with same-module callees: `route` (0x1040) never reloads its TOC.
-fn short_circuit_calls() -> Vec<u8> {
+/// at `-O2 -fPIC`. With same-module callees `route` (0x1040) never reloads its TOC.
+fn short_circuit_local_calls() -> Vec<u8> {
     let words: [u32; 48] = [
         0x2c030004, 0x38600001, 0x7c60181e, 0x4e800020, 0x00000000, 0x00000000,
         0x00000000, 0x60000000, 0x4e800020, 0x00000000, 0x00000000, 0x00000000,
@@ -328,22 +328,43 @@ fn short_circuit_calls() -> Vec<u8> {
     words.iter().flat_map(|w| w.to_be_bytes()).collect()
 }
 
+/// The same `route` with external callees: three PLT call stubs, then `route` (0x1060),
+/// which reloads its TOC with `ld r2,40(r1)` after every call but never reads it.
+fn short_circuit_plt_calls() -> Vec<u8> {
+    let words: [u32; 62] = [
+        0xf8410028, 0xe9828148, 0x7d8903a6, 0xe8428150, 0x28220000, 0x4ce20420,
+        0x4800011c, 0x00000000, 0xf8410028, 0xe9828130, 0x7d8903a6, 0xe8428138,
+        0x28220000, 0x4ce20420, 0x480000f4, 0x00000000, 0xf8410028, 0xe9828118,
+        0x7d8903a6, 0xe8428120, 0x28220000, 0x4ce20420, 0x480000cc, 0x00000000,
+        0x7c0802a6, 0xf8010010, 0xf821ff91, 0xf88100a8, 0xf86100a0, 0x4bffffcd,
+        0xe8410028, 0x2c030000, 0x41c20018, 0xe86100a8, 0x4bffffb9, 0xe8410028,
+        0x2c030000, 0x40c2002c, 0xe86100a0, 0x4bffff85, 0xe8410028, 0x38210070,
+        0xe8010010, 0x7c0803a6, 0x4e800020, 0x60000000, 0x60000000, 0x60000000,
+        0xe88100a8, 0xe86100a0, 0x4bffff39, 0xe8410028, 0x38210070, 0xe8010010,
+        0x7c0803a6, 0x4e800020, 0x00000000, 0x00000001, 0x80000000, 0x60000000,
+        0x00000000, 0x0001fc00,
+    ];
+    words.iter().flat_map(|w| w.to_be_bytes()).collect()
+}
+
 #[test]
-fn elfv1_calls_without_a_toc_reload_keep_their_short_circuit_condition() {
-    let path = common::scratch_file("elfv1-no-reload", "elf");
-    std::fs::write(&path, image_with_code(1, &short_circuit_calls())).unwrap();
-    let [default, on, off] = [None, Some("on"), Some("off")].map(|option| {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
-        command.env("KUNA_SPECS", common::repo_root().join("specs"))
-            .args(["decompile", path.to_str().unwrap(), "0x1040", "--addr"]);
-        if let Some(value) = option { command.args(["--option", "callmechanisms", value]); }
-        let out = command.output().unwrap();
-        let text = String::from_utf8(out.stdout).unwrap();
-        assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
-        text
-    });
-    std::fs::remove_file(&path).unwrap();
-    assert!(off.contains(") && ("), "{off}");
-    assert_eq!(default, off);
-    assert!(!on.contains(") && ("), "the payload after each call splits the condition\n{on}");
+fn elfv1_calls_keep_their_short_circuit_condition() {
+    for (code, address) in [(short_circuit_local_calls(), "0x1040"), (short_circuit_plt_calls(), "0x1060")] {
+        let path = common::scratch_file("elfv1-short-circuit", "elf");
+        std::fs::write(&path, image_with_code(1, &code)).unwrap();
+        let [default, on, off] = [None, Some("on"), Some("off")].map(|option| {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            command.env("KUNA_SPECS", common::repo_root().join("specs"))
+                .args(["decompile", path.to_str().unwrap(), address, "--addr"]);
+            if let Some(value) = option { command.args(["--option", "callmechanisms", value]); }
+            let out = command.output().unwrap();
+            let text = String::from_utf8(out.stdout).unwrap();
+            assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+            text
+        });
+        std::fs::remove_file(&path).unwrap();
+        assert!(off.contains(") && ("), "{address}\n{off}");
+        assert_eq!(default, off, "{address}");
+        assert!(!on.contains(") && ("), "a store after each call splits the condition at {address}\n{on}");
+    }
 }
