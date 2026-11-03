@@ -22,7 +22,11 @@
      with the option off and on: revisit reads u0.s[0] on both sides of a call
      before a later pass widens u0 to four bytes (it printed return 1), and
      loopstore stores a value computed before a loop of calls after the loop
-     (the store moved in front of the loop).
+     (the store moved in front of the loop). snip and snipsys join sg after
+     two calls, then call f2 and f1 (with a system call between them in
+     snipsys) on one branch: merging copies the joined value back to sg in
+     front of that branch's first guard, so a guard reading the value from
+     before an unguarded f2 printed the copy after f2, undoing it.
 -->
 </binaryimage>
 <script>
@@ -74,11 +78,23 @@
   <com>load function loopstore</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load function snip</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function snipsys</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option persistcalls on</com>
   <com>load function revisit</com>
   <com>decompile</com>
   <com>print C</com>
   <com>load function loopstore</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function snip</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function snipsys</com>
   <com>decompile</com>
   <com>print C</com>
 </script>
@@ -96,4 +112,12 @@
 <stringmatch name="persistcalls #12: revisit compares the two reads with the option off and on" min="2" max="2">^  return v1 == v2;$</stringmatch>
 <stringmatch name="persistcalls #13: loopstore stores after the loop with the option off and on" min="2" max="2">^  arr\._8_4_ = v1;$</stringmatch>
 <stringmatch name="persistcalls #14: loopstore keeps the call's value in a variable" min="2" max="2">^  v1 = fi\(arr\._8_4_\);$</stringmatch>
+<stringmatch name="persistcalls #15: snip writes sg back in front of the branch's first call with the option off and on" min="2" max="2">^    sg = v1;$
+^    f2\(\);$
+^    f1\(\); // tail-call$</stringmatch>
+<stringmatch name="persistcalls #16: snipsys writes sg back in front of the call before the system call with the option off and on" min="2" max="2">^    sg = v1;$
+^    f2\(\);$
+^    syscall\(\);$</stringmatch>
+<stringmatch name="persistcalls #17: no pass writes sg back after a call that changed it" min="0" max="0">^    f2\(\);$
+^    sg = v1;$</stringmatch>
 </decompilertest>

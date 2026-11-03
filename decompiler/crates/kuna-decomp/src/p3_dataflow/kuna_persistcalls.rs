@@ -42,14 +42,22 @@
 //! writes are its full and partial writes and every such STORE. For the last
 //! walk a LOAD reads nothing and a STORE may write all of the range, which is
 //! what each is until it folds. A return reads the range too (its persist
-//! COPY), so the call before it keeps its guard.
+//! COPY), so the call before it keeps its guard. A system call that guards
+//! memory reads and writes the range through its own INDIRECT, so it counts as
+//! a STORE.
 //!
 //! What is left is a value that crosses skipped calls only into a kept guard's
-//! input, which nothing prints. A join is the other place such a value could
-//! land: a MULTIEQUAL that takes, on one edge, the value from before a skipped
-//! call is a stale definition merging may copy out where it is made. So the
-//! last skipped call on each such edge keeps its guard, until no join of the
-//! range takes one ([`stale_calls`]).
+//! input. A join is the other place such a value could land: a MULTIEQUAL that
+//! takes, on one edge, the value from before a skipped call is a stale
+//! definition merging may copy out where it is made. So the last skipped call
+//! on each such edge keeps its guard, until no join of the range takes one
+//! ([`stale_calls`]). A kept guard's input is not printed either, until merging
+//! cannot give it the guard's output's variable and copies it to the global in
+//! front of the call, or the guard collapses into it. With every guard built
+//! that input is the value just before the call and the copy stores what the
+//! global already holds; here it would undo the skipped calls. The guards whose
+//! input crosses one are marked ([`stale_inputs`]), and either event restarts
+//! the function with every guard built.
 
 use kuna_base::address::Address;
 use kuna_base::space::spacetype;
@@ -70,8 +78,9 @@ const CALL: u8 = 9;
 
 type Event = (usize, u32, u8, OpId);
 
-/// The LOAD and STORE ops of one space that can reach a global, and the
-/// function's returns, collected once per heritage pass.
+/// The LOAD and STORE ops of one space that can reach a global (system calls
+/// that guard memory among the STOREs), and the function's returns, collected
+/// once per heritage pass.
 #[derive(Debug, Default)]
 pub(crate) struct MemoryOps {
     space: Option<i32>,
@@ -117,6 +126,8 @@ impl MemoryOps {
                 }
             }
         }
+        self.stores.extend(crate::kuna_syscallregs::memory_calls(fd));
+        self.stores.extend(crate::kuna_x64syscall::memory_calls(fd));
     }
 }
 
@@ -188,6 +199,71 @@ pub(crate) fn stale_calls(
                     work.extend((0..b.size_in()).map(|k| index(b.get_in(k))));
                 }
             }
+        }
+    }
+    stale
+}
+
+/// The calls of `keep` whose guard reads the value from before a skipped call
+/// of `calls`: on some path back from the call, the first definition of the
+/// range (`defs`, a kept call), join or call met is a call left unguarded.
+/// Merging may copy such an input to the global in front of the call, and a
+/// collapse makes it the call's output: either undoes the skipped call.
+pub(crate) fn stale_inputs(
+    fd: &Funcdata,
+    calls: &[OpId],
+    keep: &FxHashSet<OpId>,
+    defs: &[OpId],
+    joins: &[BlockId],
+) -> FxHashSet<OpId> {
+    let n = num_blocks(fd);
+    let mut events: Vec<Event> = Vec::with_capacity(calls.len() + defs.len());
+    for &op in defs {
+        push(fd, op, KILL, &mut events);
+    }
+    for &op in calls {
+        push(fd, op, if keep.contains(&op) { DEF } else { CALL }, &mut events);
+    }
+    events.sort_unstable_by_key(|&(bl, order, kind, _)| (bl, order, kind));
+    let bblocks = fd.bblocks_ref();
+    let mut stale = FxHashSet::default();
+    let Some(root) = bblocks.root else { return stale };
+    let rootb = bblocks.block(root);
+    let index = |b: BlockId| bblocks.block(b).get_index() as usize;
+    let mut join = vec![false; n];
+    for &bl in joins {
+        join[index(bl)] = true;
+    }
+    let mut empty = vec![true; n];
+    let mut out = vec![false; n];
+    let mut work = Vec::new();
+    for block in events.chunk_by(|a, b| a.0 == b.0) {
+        empty[block[0].0] = false;
+        if block[block.len() - 1].2 == CALL {
+            out[block[0].0] = true;
+            work.push(block[0].0);
+        }
+    }
+    while let Some(at) = work.pop() {
+        let b = bblocks.block(rootb.get_block(at as i32));
+        for k in 0..b.size_out() {
+            let next = index(b.get_out(k));
+            if empty[next] && !join[next] && !out[next] {
+                out[next] = true;
+                work.push(next);
+            }
+        }
+    }
+    for block in events.chunk_by(|a, b| a.0 == b.0) {
+        let bl = block[0].0;
+        let b = bblocks.block(rootb.get_block(bl as i32));
+        let entry = !join[bl] && (0..b.size_in()).any(|k| out[index(b.get_in(k))]);
+        let mut before = entry;
+        for &(_, _, kind, op) in block {
+            if kind == DEF && before {
+                stale.insert(op);
+            }
+            before = kind == CALL;
         }
     }
     stale

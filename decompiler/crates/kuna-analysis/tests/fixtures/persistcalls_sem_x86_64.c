@@ -30,6 +30,22 @@ __attribute__((noinline)) int loopstore(int a) {
   *p = t;
   return u1.i[0];
 }
+/* sg's value joins two calls, then one branch reads it and the other makes
+   two calls. Merging copies the joined value back to sg in front of a call;
+   with every guard built that is the branch's first call, f2, and a copy in
+   front of f1 would undo whatever f2 stored. */
+int sg, sh;
+__attribute__((noinline, optimize("O2"))) void snip(int a) {
+  if (a & 1) f1(); else f2();
+  if (sh > 17) { f2(); f1(); } else { arr[a & 7] = sg + 8; fi(sg); }
+}
+/* The same through a system call: its guard reads sg too, so the call in
+   front of it keeps its guard and the copy stays in front of f2. */
+static inline __attribute__((always_inline)) long sys39(void) { long r; __asm__ volatile("syscall" : "=a"(r) : "0"(39L) : "rcx", "r11", "memory"); return r; }
+__attribute__((noinline, optimize("O2"))) void snipsys(int a) {
+  if (a & 1) f1(); else f2();
+  if (sh > 17) { f2(); sys39(); f1(); } else { arr[a & 7] = sg + 8; fi(sg); }
+}
 int main(void) {
   int r = revisit();
   u1.i[0] = 0;

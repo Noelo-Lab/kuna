@@ -12,7 +12,7 @@ use kuna_num::opcodes::OpCode;
 use crate::context::{ArchContext, BlockId, OpId, VarnodeId};
 use crate::funcdata::Funcdata;
 
-use super::{guarded, keep, MemoryOps};
+use super::{guarded, keep, stale_inputs, MemoryOps};
 
 const X: u64 = 0x4000;
 
@@ -209,4 +209,29 @@ fn a_restart_turns_the_sparse_guards_off_once() {
     fd.set_restart_pending(false);
     super::restart_full(&mut fd);
     assert!(!fd.has_restart_pending(), "a re-flow that already guards every call asks for no second restart");
+}
+
+#[test]
+fn a_kept_guard_reading_across_a_skipped_call_is_stale() {
+    let mut fd = build_fd();
+    // 0 -> 1 -> 3, 0 -> 2 -> 3, 3 -> 4 -> 5 -> 6
+    let b = blocks(&mut fd, 7, &[(0, 1), (0, 2), (1, 3), (2, 3), (3, 4), (4, 5), (5, 6)]);
+    let s0 = call(&mut fd, b[0]);
+    let k0 = call(&mut fd, b[0]);
+    let s1 = call(&mut fd, b[1]);
+    let w = write(&mut fd, b[2]);
+    let k3 = call(&mut fd, b[3]);
+    let s4 = call(&mut fd, b[4]);
+    let k6 = call(&mut fd, b[6]);
+    let calls = [s0, k0, s1, k3, s4, k6];
+    let kept: crate::kuna_fasthash::FxHashSet<OpId> = [k0, k3, k6].into_iter().collect();
+    let stale = stale_inputs(&fd, &calls, &kept, &[w], &[]);
+    assert!(stale.contains(&k0), "k0 reads the value from before s0");
+    assert!(stale.contains(&k3), "on the arm through 1, k3 reads the value from before s1");
+    assert!(stale.contains(&k6), "k6 reads the value from before s4, through block 5, which has no access");
+    let stale = stale_inputs(&fd, &calls, &kept, &[w], &[b[3], b[5]]);
+    assert!(!stale.contains(&k3), "a join of the range defines the value k3 reads");
+    assert!(!stale.contains(&k6), "and so does one at block 5");
+    let kept: crate::kuna_fasthash::FxHashSet<OpId> = calls.into_iter().collect();
+    assert!(stale_inputs(&fd, &calls, &kept, &[w], &[]).is_empty(), "with every guard built no input is stale");
 }

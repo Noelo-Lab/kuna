@@ -1052,6 +1052,14 @@ impl MergeContext for Funcdata {
         }
         self.do_snip_reads_insert_point(vn)
     }
+    fn persist_trim(&mut self, op: OpId) {
+        if self.obank().get(op).is_some_and(|o| {
+            o.code() == OpCode::CPUI_INDIRECT
+                && o.get_addlflags() & crate::op::pcodeop_addlflags::kuna_persist_stale != 0
+        }) {
+            crate::p3_dataflow::kuna_persistcalls::restart_full(self);
+        }
+    }
     fn indirect_inherit_union(&mut self, _outvn: VarnodeId, _newop: OpId, _indop: OpId) {
         // needsResolution union inheritance: no union types in the merged tree.
     }

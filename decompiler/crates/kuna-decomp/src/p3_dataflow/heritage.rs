@@ -2126,11 +2126,12 @@ impl Heritage {
             let defs: Vec<crate::context::OpId> =
                 write.iter().filter_map(|&vn| fd.vbank().get(vn).and_then(|v| v.get_def())).collect();
             let parent = |op: &crate::context::OpId| fd.obank().get(*op).and_then(|o| o.get_parent());
+            let mut joins = Vec::new();
             while keep.len() < deferred.len() {
                 let mut blocks: Vec<BlockId> = defs.iter().filter_map(parent).collect();
                 blocks.extend(deferred.iter().filter(|op| keep.contains(op)).filter_map(parent));
                 self.calc_multiequals(fd, &blocks);
-                let joins = std::mem::take(&mut self.merge);
+                joins = std::mem::take(&mut self.merge);
                 let stale = super::kuna_persistcalls::stale_calls(fd, &deferred, &keep, &defs, &joins);
                 if stale.is_empty() {
                     break;
@@ -2138,6 +2139,11 @@ impl Heritage {
                 keep.extend(stale);
             }
             let sparse_range = keep.len() < deferred.len();
+            let stale_in = if sparse_range {
+                super::kuna_persistcalls::stale_inputs(fd, &deferred, &keep, &defs, &joins)
+            } else {
+                Default::default()
+            };
             if sparse_range {
                 self.persist_pruned.push((spc.get_index(), addr.get_offset(), size));
                 let blocks = deferred
@@ -2151,11 +2157,14 @@ impl Heritage {
                     super::kuna_persistcalls::skip_guard(fd);
                     continue;
                 }
-                let flag = if sparse_range && read_kept.contains(&op) {
+                let mut flag = if sparse_range && read_kept.contains(&op) {
                     crate::op::pcodeop_addlflags::kuna_persist_guard
                 } else {
                     0
                 };
+                if stale_in.contains(&op) {
+                    flag |= crate::op::pcodeop_addlflags::kuna_persist_stale;
+                }
                 let indop = super::kuna_renamereads::new_indirect(fd, op, addr, size, 0, &mut self.rename_reads, &mut self.guard_iops);
                 if flag != 0 {
                     if let Some(o) = fd.obank_mut().get_mut(indop) {

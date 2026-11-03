@@ -233,6 +233,10 @@ pub mod pcodeop_addlflags {
     /// a following read sees, on a range some earlier call was left unguarded
     /// over. Set by `Heritage::guard_calls`; read by `RuleIndirectCollapse`.
     pub const kuna_persist_guard: uint4 = 0x2000000;
+    /// (kuna `persistcalls`) This call guard of a persistent global reads the
+    /// value from before a call left unguarded. Set by `Heritage::guard_calls`;
+    /// a merge copy of its input or its collapse restarts the function.
+    pub const kuna_persist_stale: uint4 = 0x4000000;
 }
 
 // ---------------------------------------------------------------------------
