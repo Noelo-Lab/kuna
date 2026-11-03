@@ -1,0 +1,196 @@
+{
+  "status": "PASS",
+  "complete_bodies": 3,
+  "comparisons": 1620,
+  "body_rewrites": false,
+  "registered": false,
+  "scope": "Supplementary narrowed/scaled byte load/store and signed-to-unsigned raw-pointer pointee conversion; all memory accesses valid, full bytes and guards compared; C/Rust O0/O2.",
+  "records": [
+    {
+      "kind": "fixture",
+      "command": [
+        "cc",
+        "-O2",
+        "-g",
+        "-fno-pie",
+        "-no-pie",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/probe.c",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/probe"
+      ]
+    },
+    {
+      "kind": "reference",
+      "optimization": "0",
+      "command": [
+        "cc",
+        "-O0",
+        "-fwrapv",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/harness.c",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/reference-0"
+      ],
+      "output_sha256": "1370be4b112bd98c7a48aec640c7b93ca55971d72457df70a2f28bd71df75743"
+    },
+    {
+      "kind": "reference",
+      "optimization": "2",
+      "command": [
+        "cc",
+        "-O2",
+        "-fwrapv",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/harness.c",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/reference-2"
+      ],
+      "output_sha256": "1370be4b112bd98c7a48aec640c7b93ca55971d72457df70a2f28bd71df75743"
+    },
+    {
+      "arm": "parent",
+      "optimization": "0",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/probe",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "byte_load,unsigned_load,byte_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/probe.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/parent.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/parent-0"
+      ],
+      "compile_exit": 1,
+      "cli_sha256": "668991fb43da6a2e3fd22770c79321c042a134cba7d184113abac796cfc85822"
+    },
+    {
+      "arm": "parent",
+      "optimization": "2",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-base-0b7117/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/probe",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "byte_load,unsigned_load,byte_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/probe.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/parent.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/parent-2"
+      ],
+      "compile_exit": 1,
+      "cli_sha256": "668991fb43da6a2e3fd22770c79321c042a134cba7d184113abac796cfc85822"
+    },
+    {
+      "arm": "candidate",
+      "optimization": "0",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/probe",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "byte_load,unsigned_load,byte_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/probe.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/candidate-0"
+      ],
+      "compile_exit": 0,
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "matches_reference": true,
+      "comparisons": 810
+    },
+    {
+      "arm": "candidate",
+      "optimization": "2",
+      "capture_command": [
+        "/home/mahaloz/kwt/angr-rust-pointer-index/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/probe",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "byte_load,unsigned_load,byte_store",
+        "--assert",
+        "@/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/probe.kuna"
+      ],
+      "compile_command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/candidate-2"
+      ],
+      "compile_exit": 0,
+      "cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+      "matches_reference": true,
+      "comparisons": 810
+    }
+  ],
+  "files": {
+    "candidate-0-build.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate.json": "60963dd605f54c5fe15b991e59de9eed7a29335225ba5d348cbcafe70949b2c2",
+    "candidate-0.stdout": "1370be4b112bd98c7a48aec640c7b93ca55971d72457df70a2f28bd71df75743",
+    "probe.kuna": "a8726fcfcfbcc280038b47caf29ce3345158b544da48e3e6a740e53fd0e0b326",
+    "parent.json": "bddf36bf985ceea577990265c29f67d31dd9ba81f5f36d9de7315211cee3fb9e",
+    "reference-0.stdout": "1370be4b112bd98c7a48aec640c7b93ca55971d72457df70a2f28bd71df75743",
+    "candidate.rs": "01b764521e0992b701af73176a2393bedfc851985b4f87e3bec040e03542944d",
+    "harness.c": "e94df047889f4184767e99f1dca0ac000db366c2e0b872b85dd5f0f9e5d9dd41",
+    "reference-2.stdout": "1370be4b112bd98c7a48aec640c7b93ca55971d72457df70a2f28bd71df75743",
+    "probe.c": "56967ce8b27a0d4125e9d5eff18168dec75ab4d931b57b5e58e7c50b8effe893",
+    "candidate-2-build.jsonl": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-2.stdout": "1370be4b112bd98c7a48aec640c7b93ca55971d72457df70a2f28bd71df75743",
+    "parent-2-build.jsonl": "33834695941b5b5a159d85b134d8adf861f015662db10eb3a58dd033d438489f",
+    "parent.rs": "18cf6076f1d4cc4334605d8c0bf5761e409c1547cf4471837d3c42cf53af36f7",
+    "parent-0-build.jsonl": "33834695941b5b5a159d85b134d8adf861f015662db10eb3a58dd033d438489f"
+  }
+}

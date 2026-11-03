@@ -343,6 +343,23 @@ kuna_options! { self, p1;
         self.readonly_calls = val;
         Ok(msg)
     },
+    "persistcalls" => {
+        let field = p1.trim();
+        let (val, msg) = match field {
+            "off" => (None, "Persistent globals are guarded at every call".to_string()),
+            "on" => (Some(1), "Persistent globals are guarded only next to their accesses".to_string()),
+            _ => {
+                let n = field
+                    .parse::<u64>()
+                    .ok()
+                    .filter(|_| !field.is_empty() && field.bytes().all(|b| b.is_ascii_digit()))
+                    .ok_or_else(|| KunaError::parse("Must specify off, on or a decimal guard count"))?;
+                (Some(n), format!("Persistent globals are guarded only next to their accesses from {n} guards"))
+            }
+        };
+        self.persist_calls = val;
+        Ok(msg)
+    },
     "prunedssa" => on_off!(pruned_ssa, "Pruned SSA heritage markers"),
     "loadguardreads" => on_off!(load_guard_reads, "LOAD guards read at renaming"),
     "localstackviews" => on_off!(local_stack_views, "Bounded local stack views"),

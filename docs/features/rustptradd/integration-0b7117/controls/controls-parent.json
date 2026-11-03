@@ -1,0 +1,637 @@
+{
+  "binary": "/tmp/kuna-rust-pointer-index/integration-0b7117/controls",
+  "language": "rust-language",
+  "count": 9,
+  "error": null,
+  "functions": [
+    {
+      "name": "array_field",
+      "address": 4198688,
+      "address_hex": "0x401120",
+      "aliases": [
+        "sub_401120"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn array_field(mut p: *mut Arrays, mut i: i64) -> i32\n{\n  return (*p).values[i];\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198692,
+            4198696
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut Arrays",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198692,
+            4198696
+          ]
+        },
+        {
+          "name": "i",
+          "type": "i64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198692,
+            4198696
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "pointer_field",
+      "address": 4198704,
+      "address_hex": "0x401130",
+      "aliases": [
+        "sub_401130"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn pointer_field(mut p: *mut Arrays, mut i: i64) -> i64\n{\n  return (*p).pointer[i];\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198708,
+            4198712,
+            4198716
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut Arrays",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198708,
+            4198712,
+            4198716
+          ]
+        },
+        {
+          "name": "i",
+          "type": "i64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198708,
+            4198712,
+            4198716
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "nested_array",
+      "address": 4198720,
+      "address_hex": "0x401140",
+      "aliases": [
+        "sub_401140"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn nested_array(mut p: *mut [i32; 12], mut i: i64, mut j: i64) -> i32\n{\n  return p[i][j];\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198735,
+            4198738
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut [i32; 12]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198735,
+            4198738
+          ]
+        },
+        {
+          "name": "i",
+          "type": "i64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198735,
+            4198738
+          ]
+        },
+        {
+          "name": "j",
+          "type": "i64",
+          "kind": "arg",
+          "arg_index": 2,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198735,
+            4198738
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "float_load",
+      "address": 4198752,
+      "address_hex": "0x401160",
+      "aliases": [
+        "sub_401160"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn float_load(mut p: *mut f64, mut i: i64) -> f64\n{\n  return p[i];\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198756,
+            4198761
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut f64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198756,
+            4198761
+          ]
+        },
+        {
+          "name": "i",
+          "type": "i64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198756,
+            4198761
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "float_store",
+      "address": 4198768,
+      "address_hex": "0x401170",
+      "aliases": [
+        "sub_401170"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn float_store(mut p: *mut f64, mut i: i64, mut value: f64)\n{\n  p[i] = value;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198772
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut f64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198772
+          ]
+        },
+        {
+          "name": "i",
+          "type": "i64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198772
+          ]
+        },
+        {
+          "name": "value",
+          "type": "f64",
+          "kind": "arg",
+          "arg_index": 2,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198772
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "pointer_load",
+      "address": 4198784,
+      "address_hex": "0x401180",
+      "aliases": [
+        "sub_401180"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn pointer_load(mut p: *mut *mut i32, mut i: i64) -> *mut i32\n{\n  return p[i];\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198788,
+            4198792
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut *mut i32",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198788,
+            4198792
+          ]
+        },
+        {
+          "name": "i",
+          "type": "i64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198788,
+            4198792
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "pointer_store",
+      "address": 4198800,
+      "address_hex": "0x401190",
+      "aliases": [
+        "sub_401190"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn pointer_store(mut p: *mut *mut i32, mut i: i64, mut value: *mut i32)\n{\n  p[i] = value;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198804
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut *mut i32",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198804
+          ]
+        },
+        {
+          "name": "i",
+          "type": "i64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198804
+          ]
+        },
+        {
+          "name": "value",
+          "type": "*mut i32",
+          "kind": "arg",
+          "arg_index": 2,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198804
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "bool_load",
+      "address": 4198816,
+      "address_hex": "0x4011a0",
+      "aliases": [
+        "sub_4011a0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn bool_load(mut p: *mut bool, mut i: i64) -> bool\n{\n  return p[i];\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198820,
+            4198824
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut bool",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198820,
+            4198824
+          ]
+        },
+        {
+          "name": "i",
+          "type": "i64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198820,
+            4198824
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "bool_store",
+      "address": 4198832,
+      "address_hex": "0x4011b0",
+      "aliases": [
+        "sub_4011b0"
+      ],
+      "object_location": null,
+      "size": 8,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn bool_store(mut p: *mut bool, mut i: i64, mut value: bool)\n{\n  p[i] = value;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198836
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut bool",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198836
+          ]
+        },
+        {
+          "name": "i",
+          "type": "i64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198836
+          ]
+        },
+        {
+          "name": "value",
+          "type": "bool",
+          "kind": "arg",
+          "arg_index": 2,
+          "stack_offset": null,
+          "size": 1,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198836
+          ]
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": [
+    {
+      "directive": "prototype array_field int4 array_field(struct Arrays*p,int8 i)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype pointer_field int8 pointer_field(struct Arrays*p,int8 i)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype nested_array int4 nested_array(int4(*p)[12],int8 i,int8 j)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype float_load float8 float_load(float8*p,int8 i)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype float_store void float_store(float8*p,int8 i,float8 value)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype pointer_load int4*pointer_load(int4**p,int8 i)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype pointer_store void pointer_store(int4**p,int8 i,int4*value)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype bool_load bool bool_load(bool*p,int8 i)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype bool_store void bool_store(bool*p,int8 i,bool value)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    }
+  ]
+}

@@ -1,0 +1,213 @@
+{
+  "binary": "/tmp/kuna-rust-pointer-index/integration-0b7117/pointer-cast-memory/probe",
+  "language": "rust-language",
+  "count": 3,
+  "error": null,
+  "functions": [
+    {
+      "name": "byte_load",
+      "address": 4198688,
+      "address_hex": "0x401120",
+      "aliases": [
+        "sub_401120"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn byte_load(mut p: *mut i64, mut i: i64) -> u8\n{\n  return *(p.wrapping_byte_offset((i as isize).wrapping_mul(8)) as *mut u8);\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198692,
+            4198696
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut i64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198692,
+            4198696
+          ]
+        },
+        {
+          "name": "i",
+          "type": "i64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198692,
+            4198696
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "unsigned_load",
+      "address": 4198704,
+      "address_hex": "0x401130",
+      "aliases": [
+        "sub_401130"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn unsigned_load(mut p: *mut i64, mut i: i64) -> u64\n{\n  return *p.wrapping_byte_offset((i as isize).wrapping_mul(8)) as u64;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198708,
+            4198712
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut i64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198708,
+            4198712
+          ]
+        },
+        {
+          "name": "i",
+          "type": "i64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198708,
+            4198712
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "byte_store",
+      "address": 4198720,
+      "address_hex": "0x401140",
+      "aliases": [
+        "sub_401140"
+      ],
+      "object_location": null,
+      "size": 8,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn byte_store(mut p: *mut i64, mut i: i64, mut v: u8)\n{\n  *(p.wrapping_byte_offset((i as isize).wrapping_mul(8)) as *mut u8) = v;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198724
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut i64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198724
+          ]
+        },
+        {
+          "name": "i",
+          "type": "i64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198724
+          ]
+        },
+        {
+          "name": "v",
+          "type": "u8",
+          "kind": "arg",
+          "arg_index": 2,
+          "stack_offset": null,
+          "size": 1,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198724
+          ]
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": [
+    {
+      "directive": "prototype byte_load uint1 byte_load(int8*p,int8 i)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype unsigned_load uint8 unsigned_load(int8*p,int8 i)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype byte_store void byte_store(int8*p,int8 i,uint1 v)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    }
+  ]
+}

@@ -4312,6 +4312,9 @@ impl Funcdata {
         // `new HighVariable`s are freed); the W7 high bank is cleared here to
         // mirror that lifecycle.
         self.high_bank.clear();
+        if let Some(merge) = self.covermerge.as_mut() {
+            merge.clear();
+        }
         // (kuna, ghidra Phase 4) The wire symbols are keyed by HighVariableId,
         // so they MUST die with the arena that issued those ids — a restart
         // would otherwise let a rebuilt high inherit another variable's symbol
