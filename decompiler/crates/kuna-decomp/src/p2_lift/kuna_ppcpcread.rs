@@ -3,9 +3,10 @@
 //! `bcl 20,31,target` is the ISA's PC-read form. Branching to the next
 //! instruction cannot be a call. Skipping one to three literal words is a PC read
 //! only when the code at `target` goes on to read LR (`mflr`) before returning
-//! through LR, overwriting it or calling, and then restores LR (`mtlr`) before
-//! any return through it. A forward `bcl 20,31` to a helper that returns through
-//! LR, before or after reading it, keeps its call semantics.
+//! through LR, overwriting it or calling, and then loads one of the skipped words
+//! through the register the `mflr` wrote before that register is overwritten or
+//! the path returns, calls or traps. A forward `bcl 20,31` to a helper that never
+//! loads those words keeps its call semantics.
 use crate::{context::OpId, funcdata::Funcdata};
 use kuna_base::address::Address;
 
@@ -13,8 +14,8 @@ use kuna_base::address::Address;
 const MAX_SKIP: u64 = 12;
 /// How many instructions the LR read may be scheduled after the target.
 const LR_READ_WINDOW: usize = 32;
-/// How many instructions after the LR read are searched for an LR return.
-const LR_RESTORE_WINDOW: usize = 64;
+/// How many instructions after the LR read are searched for the literal load.
+const LITERAL_LOAD_WINDOW: usize = 32;
 const MFLR: u32 = 0x7c08_02a6;
 const MTLR: u32 = 0x7c08_03a6;
 const LR_MOVE_MASK: u32 = 0xfc1f_ffff;
@@ -49,41 +50,68 @@ pub(crate) fn is_pc_capture(
         return false;
     }
     word_at(fd, site).is_some_and(|w| w & 0xffff_0003 == 0x429f_0001)
-        && (dest.get_offset() == site.get_offset() + 4 || reads_lr(fd, dest.get_addr(), (start, end)))
+        && (dest.get_offset() == site.get_offset() + 4
+            || loads_literal(fd, dest.get_addr(), (start, end), dest.get_offset() - site.get_offset() - 4))
 }
 
 /// The fall-through path from `target` reads LR before anything could consume or
-/// replace it, and does not return through LR before restoring it.
-fn reads_lr(fd: &Funcdata, target: &Address, body: (u64, u64)) -> bool {
+/// replace it, then loads one of the `skip` bytes after the `bcl` through the
+/// register that read.
+fn loads_literal(fd: &Funcdata, target: &Address, body: (u64, u64), skip: u64) -> bool {
     let mut path = FallThrough { fd, pc: Some(target.clone()), body };
     for word in path.by_ref().take(LR_READ_WINDOW) {
         if word & LR_MOVE_MASK == MFLR {
+            let reg = (word >> 21) & 31;
             return path
-                .take(LR_RESTORE_WINDOW)
+                .take(LITERAL_LOAD_WINDOW)
                 .find_map(|word| {
-                    if word & LR_MOVE_MASK == MTLR {
+                    if is_load_from(word, reg, skip) {
                         Some(true)
-                    } else if word >> 26 == 19 && (word >> 1) & 0x3ff == 16 {
+                    } else if writes_gpr(word, reg) || leaves_path(word) {
                         Some(false)
                     } else {
                         None
                     }
                 })
-                .unwrap_or(true);
+                .unwrap_or(false);
         }
-        let op = word >> 26;
-        let xo = (word >> 1) & 0x3ff;
-        if matches!(op, 3 | 17)
-            || op == 18 && word & 3 != 0
-            || op == 16 && word & 1 != 0
-            || op == 19 && matches!(xo, 16 | 528 | 560)
-            || op == 31 && xo == 4
-            || word & LR_MOVE_MASK == MTLR
-        {
+        if leaves_path(word) || word & LR_MOVE_MASK == MTLR {
             return false;
         }
     }
     false
+}
+
+/// A return, call, CTR/TAR jump, absolute branch, system call or trap.
+fn leaves_path(word: u32) -> bool {
+    let (op, xo) = (word >> 26, (word >> 1) & 0x3ff);
+    matches!(op, 3 | 17)
+        || op == 18 && word & 3 != 0
+        || op == 16 && word & 1 != 0
+        || op == 19 && matches!(xo, 16 | 528 | 560)
+        || op == 31 && xo == 4
+}
+
+/// A D-form load based on `reg` whose displacement lies within `skip` bytes.
+fn is_load_from(word: u32, reg: u32, skip: u64) -> bool {
+    matches!(word >> 26, 32..=35 | 40..=43 | 48..=51)
+        && (word >> 16) & 31 == reg
+        && u64::try_from(word as u16 as i16).is_ok_and(|disp| disp < skip)
+}
+
+/// Whether `word` may write general register `reg`; unlisted forms are assumed to
+/// write both register fields.
+fn writes_gpr(word: u32, reg: u32) -> bool {
+    let (op, rt, ra, xo) = (word >> 26, (word >> 21) & 31, (word >> 16) & 31, (word >> 1) & 0x3ff);
+    match op {
+        3 | 10 | 11 | 16..=19 | 36 | 38 | 44 | 47 | 48 | 50 | 52 | 54 | 59 | 63 => false,
+        37 | 39 | 45 | 49 | 51 | 53 | 55 => ra == reg,
+        7 | 8 | 12..=15 | 32 | 34 | 40 | 42 => rt == reg,
+        46 => rt <= reg,
+        31 if matches!(xo, 0 | 4 | 32 | 150 | 151 | 215 | 407 | 661..=663 | 725 | 727 | 918 | 983) => false,
+        31 if matches!(xo, 183 | 247 | 439 | 695 | 759) => ra == reg,
+        _ => rt == reg || ra == reg,
+    }
 }
 
 /// Instruction words on the fall-through path inside `body`, following direct

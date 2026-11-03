@@ -267,27 +267,74 @@ fn bcl_to_a_returning_helper_remains_a_call() {
     }
 }
 
-/// A helper that reads LR and returns through it before any `mtlr` is a call:
-/// following its `bcl` as a branch would let the helper's `blr` end the caller.
+/// A helper that reads LR but never loads a skipped word through that register is
+/// a call, whether it returns through LR, restores LR first, tail-jumps away or
+/// overwrites the register before loading through it.
 #[test]
-fn bcl_to_a_helper_that_reads_lr_remains_a_call() {
+fn bcl_to_a_helper_without_a_literal_load_remains_a_call() {
+    let helpers: [&[u32]; 5] = [
+        &[0x7c88_02a6, 0x4e80_0020], // mflr r4; blr
+        &[0x7c88_02a6, 0x7c88_03a6, 0x4e80_0020], // mflr r4; mtlr r4; blr
+        &[
+            0x7c08_02a6, // mflr r0
+            0x9421_fff0, // stwu r1,-16(r1)
+            0x9001_0014, // stw r0,20(r1)
+            0x3860_0007, // li r3,7
+            0x8001_0014, // lwz r0,20(r1)
+            0x7c08_03a6, // mtlr r0
+            0x3821_0010, // addi r1,r1,16
+            0x4e80_0020, // blr
+        ],
+        &[0x7c88_02a6, 0x4800_0000], // mflr r4; b .
+        &[0x7d28_02a6, 0x3920_0000, 0x8129_0000, 0x4e80_0020], // mflr r9; li r9,0; lwz r9,0(r9); blr
+    ];
+    for helper in helpers {
+        let tail = 0x10 + 4 * helper.len() as u32;
+        let code = [
+            &[
+                0x7c08_02a6, // mflr r0
+                0x429f_000d, // bcl 20,31,0x1010
+                0x3863_0001, // addi r3,r3,1
+                0x4800_0000 | tail - 0x0c,
+            ][..],
+            helper,
+            &[0x7c08_03a6, 0x4e80_0020], // mtlr r0; blr
+        ]
+        .concat();
+        for little in [false, true] {
+            let path = common::scratch_file("elf-bcl-lr-helper", "elf");
+            std::fs::write(&path, fixture::image_with_code(little, &code)).unwrap();
+            let (out, err, status) = common::run_kuna(&["decompile", path.to_str().unwrap(), "bump", "--mode", "fast"]);
+            std::fs::remove_file(path).unwrap();
+            assert_eq!(status, 0, "{out}\n{err}");
+            assert!(out.contains("sub_1010(") && out.contains("+ 1"), "little={little} helper={helper:x?}: {out}");
+        }
+    }
+}
+
+/// The literal load may be scheduled after unrelated instructions.
+#[test]
+fn pc_read_literal_load_may_follow_other_instructions() {
     let code = [
         0x7c08_02a6, // mflr r0
-        0x429f_000d, // bcl 20,31,0x1010
-        0x3863_0001, // addi r3,r3,1
-        0x4800_000c, // b 0x1018
-        0x7c88_02a6, // mflr r4
-        0x4e80_0020, // blr
+        0x429f_0009, // bcl 20,31,0x100c
+        7,
+        0x7d28_02a6, // mflr r9
+        0x93e1_fffc, // stw r31,-4(r1)
+        0x7c3f_0b78, // mr r31,r1
+        0x1c63_0003, // mulli r3,r3,3
+        0x8129_0000, // lwz r9,0(r9)
+        0x7c63_4a14, // add r3,r3,r9
         0x7c08_03a6, // mtlr r0
         0x4e80_0020, // blr
     ];
     for little in [false, true] {
-        let path = common::scratch_file("elf-bcl-lr-helper", "elf");
+        let path = common::scratch_file("elf-pc-read-scheduled", "elf");
         std::fs::write(&path, fixture::image_with_code(little, &code)).unwrap();
         let (out, err, status) = common::run_kuna(&["decompile", path.to_str().unwrap(), "bump", "--mode", "fast"]);
         std::fs::remove_file(path).unwrap();
         assert_eq!(status, 0, "{out}\n{err}");
-        assert!(out.contains("1010") && out.contains("+ 1"), "little={little}: {out}");
+        assert!(out.contains("return a0 * 3 + 7;") && !out.contains("halt_baddata"), "little={little}: {out}");
     }
 }
 

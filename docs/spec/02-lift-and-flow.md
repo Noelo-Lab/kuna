@@ -32,12 +32,15 @@ lie strictly inside that body and not be a known function. A `bcl` to the next
 instruction cannot be a call. When it skips literal words, the fall-through path
 from the target (following direct unconditional branches inside the body, and
 past conditional ones) must read LR with `mflr` within 32 instructions, before
-any LR return, LR write, call, other unconditional transfer or trap. After that
-read, the path must not return through LR before `mtlr` restores it; a path
-that instead reaches a CTR jump, leaves the body or runs 64 instructions is
-accepted. A forward `bcl 20,31` to a helper that returns through LR, before or
-after reading it, is therefore still a call. All 20,573 forward `bcl 20,31`
-sites inside FDE bodies of 135 compiler-built PPC32 images satisfy this rule.
+any LR return, LR write, call, other unconditional transfer or trap. Within the
+next 32 instructions, a D-form load based on the register that `mflr` wrote
+must read one of the skipped words, with a displacement inside the skip, before
+any instruction that may overwrite that register and before any return, call,
+CTR jump, absolute branch or trap. A forward `bcl 20,31` to a helper that
+never loads those words, whether it returns through LR, restores LR first or
+tail-jumps away, is therefore still a call. All 20,573 forward `bcl 20,31`
+sites inside FDE bodies of 135 compiler-built PPC32 images satisfy this rule;
+the 570 that skip literal words load one within 19 instructions of the `mflr`.
 Other calls retain their existing treatment. The rewrite is the same
 CALL-to-BRANCH conversion the call-trampoline rule uses. The recognition
 lives in `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppcpcread.rs (is_pc_capture)`.
