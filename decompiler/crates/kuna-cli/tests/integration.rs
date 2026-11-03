@@ -758,3 +758,6 @@ mod rust_integer_conversions;
 
 #[path = "rust_store_value.rs"]
 mod rust_store_value;
+
+#[path = "rust_pointer_index.rs"]
+mod rust_pointer_index;

@@ -1,0 +1,24 @@
+{
+  "at": "2026-11-03T02:06:19.767787+00:00",
+  "parent_commit": "d115526dfac3f764f80620b726ccc9acc4bc9c03",
+  "parent_worktree_head": "d115526dfac3f764f80620b726ccc9acc4bc9c03",
+  "parent_tree": "af1423797609972837da654e04480e4aa2752dee",
+  "parent_cli_sha256": "7fc4e7732ca312f885fc0489a6f9c3deb68a9f174b8e0e4eba0ffa4bd59aac21",
+  "new_cli_sha256": "de026e44572b83ab0812088d23ae1a0a499dde628fc73ffa7d62fb93b42aa3c9",
+  "catalog_count": 376,
+  "corpus_files": 687,
+  "stage_assertions": [
+    3767,
+    3767
+  ],
+  "stage_keys_added": [
+    "data:Rust arithmetic index keeps its signed shift width",
+    "data:Rust indexed address does not borrow its pointee",
+    "data:Rust indexed callback store evaluates the pointer once",
+    "data:Rust indexed load dereferences a wrapping byte pointer",
+    "data:Rust indexed record field preserves its byte scale",
+    "data:Rust indexed store preserves the four-byte scale",
+    "data:Rust logical index keeps its unsigned shift width",
+    "data:Rust pointer index cast suppression keeps diagnostic output"
+  ]
+}

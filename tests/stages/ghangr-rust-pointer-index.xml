@@ -1,0 +1,61 @@
+<decompilertest>
+<!-- P9 Rust raw-pointer PTRADD regression from the Go/Rust parity audit.
+     Default output uses wrapping byte offsets; nocastprinting preserves the
+     diagnostic path with raw-pointer indexing. Native CLI tests execute the
+     complete bodies and compare memory, addresses, and callback order. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pointer_index_x86_64</com>
+  <com>read symbols</com>
+  <com>option outlang rust</com>
+  <com>option ctypes off</com>
+  <com>option realtypes off</com>
+  <com>map prototype address_u16_u uint2* address_u16_u(uint2*p,uint8 i);</com>
+  <com>map prototype store_i32_s void store_i32_s(int4*p,int8 i,int4 value);</com>
+  <com>map prototype load_i64_s int8 load_i64_s(int8*p,int8 i);</com>
+  <com>map prototype field_load int4 field_load(struct Record*p,int8 i);</com>
+  <com>map prototype callback_store void callback_store(int8*p,int8 i,int8 value);</com>
+  <com>map prototype logical_address int4*logical_address(int4*p,uint4 n);</com>
+  <com>map prototype signed_address int4*signed_address(int4*p,uint4 n);</com>
+  <com>map prototype counted_index int8 counted_index(int8 i);</com>
+  <com>map prototype counted_base int8*counted_base(int8*p);</com>
+  <com>map prototype counted_value int8 counted_value(int8 value);</com>
+  <com>load function load_i64_s</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function store_i32_s</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function address_u16_u</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function field_load</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function callback_store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function logical_address</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function signed_address</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nocastprinting on</com>
+  <com>load function load_i64_s</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Rust indexed load dereferences a wrapping byte pointer" min="1" max="1">return \*p\.wrapping_byte_offset\(\(i as isize\)\.wrapping_mul\(8\)\);</stringmatch>
+<stringmatch name="Rust indexed store preserves the four-byte scale" min="1" max="1">\*p\.wrapping_byte_offset\(\(i as isize\)\.wrapping_mul\(4\)\) = value;</stringmatch>
+<stringmatch name="Rust indexed address does not borrow its pointee" min="1" max="1">return p\.wrapping_byte_offset\(\(i as isize\)\.wrapping_mul\(2\)\);</stringmatch>
+<stringmatch name="Rust indexed record field preserves its byte scale" min="1" max="1">return \(\*p\.wrapping_byte_offset\(\(i as isize\)\.wrapping_mul\(16\)\)\)\.value;</stringmatch>
+<stringmatch name="Rust indexed callback store evaluates the pointer once" min="1" max="1">\*counted_base\(p\)\.wrapping_byte_offset\(\(v2 as isize\)\.wrapping_mul\(8\)\) = v1;</stringmatch>
+<stringmatch name="Rust logical index keeps its unsigned shift width" min="1" max="1">::core::convert::identity::&lt;u64&gt;\(0xffffffffffffffff &gt;&gt; \(n as u8 \&amp; 0x3f\)\)</stringmatch>
+<stringmatch name="Rust arithmetic index keeps its signed shift width" min="1" max="1">::core::convert::identity::&lt;i64&gt;\(\-0x8000000000000000 &gt;&gt; \(n as u8 \&amp; 0x3f\)\)</stringmatch>
+<stringmatch name="Rust pointer index cast suppression keeps diagnostic output" min="1" max="1">return p\[i\];</stringmatch>
+</decompilertest>

@@ -1,0 +1,943 @@
+{
+  "changed_records": 55,
+  "pending": 0,
+  "records": [
+    {
+      "address": "0x401120",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "language": "rust",
+      "name": "load_i8_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401130",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "language": "rust",
+      "name": "store_i8_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401140",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "language": "rust",
+      "name": "address_i8_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401150",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "language": "rust",
+      "name": "load_i8_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401160",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "language": "rust",
+      "name": "store_i8_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401170",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "language": "rust",
+      "name": "address_i8_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401180",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "language": "rust",
+      "name": "load_u8_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401190",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "language": "rust",
+      "name": "store_u8_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4011a0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "language": "rust",
+      "name": "address_u8_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4011b0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "language": "rust",
+      "name": "load_u8_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4011c0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "language": "rust",
+      "name": "store_u8_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4011d0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 1 } }"
+      ],
+      "language": "rust",
+      "name": "address_u8_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4011e0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "language": "rust",
+      "name": "load_i16_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4011f0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "language": "rust",
+      "name": "store_i16_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401200",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "language": "rust",
+      "name": "address_i16_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401210",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "language": "rust",
+      "name": "load_i16_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401220",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "language": "rust",
+      "name": "store_i16_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401230",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "language": "rust",
+      "name": "address_i16_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401240",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "language": "rust",
+      "name": "load_u16_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401250",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "language": "rust",
+      "name": "store_u16_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401260",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "language": "rust",
+      "name": "address_u16_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401270",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "language": "rust",
+      "name": "load_u16_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401280",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "language": "rust",
+      "name": "store_u16_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401290",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 2 } }"
+      ],
+      "language": "rust",
+      "name": "address_u16_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4012a0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "language": "rust",
+      "name": "load_i32_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4012b0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "language": "rust",
+      "name": "store_i32_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4012c0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "language": "rust",
+      "name": "address_i32_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4012d0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "language": "rust",
+      "name": "load_i32_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4012e0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "language": "rust",
+      "name": "store_i32_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4012f0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "language": "rust",
+      "name": "address_i32_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401300",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "language": "rust",
+      "name": "load_u32_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401310",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "language": "rust",
+      "name": "store_u32_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401320",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "language": "rust",
+      "name": "address_u32_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401330",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "language": "rust",
+      "name": "load_u32_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401340",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "language": "rust",
+      "name": "store_u32_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401350",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "language": "rust",
+      "name": "address_u32_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401360",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "load_i64_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401370",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "store_i64_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401380",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "address_i64_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401390",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "load_i64_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4013a0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "store_i64_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4013b0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "address_i64_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4013c0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "load_u64_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4013d0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "store_u64_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4013e0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "address_u64_s",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4013f0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "load_u64_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401400",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "store_u64_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401410",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "address_u64_u",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401420",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 16 } }"
+      ],
+      "language": "rust",
+      "name": "field_load",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401430",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 16 } }"
+      ],
+      "language": "rust",
+      "name": "field_store",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401440",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "callback_load",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401470",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "callback_store",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4014c0",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 8 } }"
+      ],
+      "language": "rust",
+      "name": "callback_address",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401520",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "language": "rust",
+      "name": "logical_address",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401540",
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "pointer-native",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "index_transformations": 1,
+      "instruction_scale_expressions": [
+        "Expr::Lit { attrs: [], lit: Lit::Int { token: 4 } }"
+      ],
+      "language": "rust",
+      "name": "signed_address",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    }
+  ],
+  "scope": "Exact AST reconstruction of pointer index/address expressions; base, index, dereference and surrounding AST retained. Instruction scale is recorded but cannot be inferred from the old AST alone. This is not whole-program native equivalence.",
+  "self_checks": 14
+}

@@ -4660,3 +4660,24 @@ Cast suppression retains its existing output. Enums, floats, booleans,
 pointers used as values, mismatched widths and unsupported integer widths
 retain their prior paths. This conversion does not change memory-operation
 widths or repair raw-pointer indexing.
+
+
+### Rust raw-pointer indices
+
+`kuna_rustptradd.rs` renders a raw-pointer PTRADD as
+`base.wrapping_byte_offset((index as isize).wrapping_mul(scale))`.
+The byte scale comes from the instruction, so it does not depend on the
+recovered pointee's Rust layout. Index conversion and multiplication retain
+modular address arithmetic. Literal-dependent index expressions keep their
+recovered integer width before the `isize` conversion. A value use adds one
+dereference; an address use leaves a raw pointer without creating a reference.
+The base and index each appear once, in their existing order. A different
+output pointee receives an explicit pointer cast.
+
+This path requires matching 32- or 64-bit raw-pointer and integer-index
+widths, byte-addressed pointers and a constant scale. Array-valued sources,
+constant bases, relative pointers and implied PTRSUB/COPY bases retain their
+existing paths. These exclusions avoid treating an array value as a pointer
+receiver. `nocastprinting` retains its previous diagnostic output. This
+corrects raw-pointer index syntax; it does not infer array layouts or repair
+unrelated pointer arithmetic and memory widths.

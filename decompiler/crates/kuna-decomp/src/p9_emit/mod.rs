@@ -19,6 +19,7 @@ pub mod kuna_signedread; // (kuna) a signed read of an expression that prints un
 pub(crate) mod kuna_rustsigned;
 pub(crate) mod kuna_rustintegers;
 pub(crate) mod kuna_ruststorevalue;
+pub(crate) mod kuna_rustptradd;
 pub mod kuna_unsignedread; // (kuna) an unsigned read of an expression C evaluates as signed casts it
 pub mod kuna_narrowselector; // (kuna) a switch on a narrow expression casts it to its own width
 pub mod stringmanage;
