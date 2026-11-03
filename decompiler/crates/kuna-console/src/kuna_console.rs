@@ -1191,6 +1191,7 @@ impl IfaceCommandAction for IfcKunaRegionTree {
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         let os = {
             let dcp = dcp_mut(status)?;
+            dcp.follow_stopped_flow();
             let fd = match dcp.fd.as_ref() {
                 Some(fd) => fd,
                 None => return Err(IfaceError::execution("No function selected")),
@@ -1224,6 +1225,7 @@ impl IfaceCommandAction for IfcKunaRegionBlocks {
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         let os = {
             let dcp = dcp_mut(status)?;
+            dcp.follow_stopped_flow();
             let fd = match dcp.fd.as_ref() {
                 Some(fd) => fd,
                 None => return Err(IfaceError::execution("No function selected")),
@@ -1281,6 +1283,7 @@ impl IfaceCommandAction for IfcKunaRegionWalk {
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         let os = {
             let dcp = dcp_mut(status)?;
+            dcp.follow_stopped_flow();
             let fd = match dcp.fd.as_ref() {
                 Some(fd) => fd,
                 None => return Err(IfaceError::execution("No function selected")),

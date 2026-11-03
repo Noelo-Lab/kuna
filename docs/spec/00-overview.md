@@ -1668,11 +1668,19 @@ charged for the follow: the IR carries how long the follow took
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata::flow_spent)`)
 and the adopting drive's deadline is that much nearer, so `kuna decompile`'s
 budget bounds the follow and the analysis together, as a `decompile-all`
-drive's does. When the adopting drive stops at its budget or memory limit,
+drive's does. A `decompile` that rebuilds the flow instead (a console fact
+between the two commands, `formatstring full`) follows it again inside its
+own drive and is not charged for the load's follow. When the adopting drive
+stops at its budget or memory limit,
 the console keeps for `print C`'s failure shell a function it builds without
 following the flow again (`decompile_drive.rs (budget_stop_shell)`): that
 follow, every jump-table recovery included, would run past the limit that
-stopped the drive, and the shell prints nothing it adds. The follow
+stopped the drive, and the shell prints nothing it adds. A later command that
+reads the IR — `print raw` and the `region` commands, which `kuna decompile
+--raw` / `--regions` run — follows it then, unbudgeted, so it prints the raw
+p-code and regions it printed when the stop followed again at once
+(`decompiler/crates/kuna-console/src/ifacedecomp.rs
+(IfaceDecompData::follow_stopped_flow)`). The follow
 recovers every jump table, and a jump table's sub-pipeline heritages
 everything flow has reached, so in a huge function the follow is where the
 memory goes.

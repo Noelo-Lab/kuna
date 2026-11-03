@@ -9,6 +9,9 @@
 //! 2. When the drive stopped, the console followed the flow again just to
 //!    keep an un-decompiled function for `print C`'s failure shell.
 //!
+//! The shell is now built without that follow; `print raw` and the `region`
+//! commands (`kuna decompile --raw` / `--regions`) follow it when they run.
+//!
 //! On a 205 KB function a 120 s budget stopped after about 220 s, while the
 //! same function decompiled with no budget in 210 s. This binary sets the
 //! process-wide default budget `decomp_dbg --max-fn-seconds` sets, so it runs
@@ -21,6 +24,7 @@ use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_console::interface::IfaceStatus;
+use kuna_console::kuna_console::register_kuna_commands;
 use kuna_decomp::decompile_drive::{
     build_and_follow_flow_within_budget, decompile_func_full_with_override_dyn_prefollowed, is_budget_stop,
     set_default_fn_budget_secs, DrivePurpose,
@@ -57,6 +61,7 @@ fn drive(cmds: &[&str], mut between: impl FnMut(usize, &mut IfaceDecompData)) ->
     let count = cmds.len();
     let mut status = ConsoleCommands::into_status(cmds);
     register_decomp_commands(&mut status);
+    register_kuna_commands(&mut status);
     dcp(&mut status).conf = Some(prog);
     for i in 0..count {
         between(i, dcp(&mut status));
@@ -65,14 +70,16 @@ fn drive(cmds: &[&str], mut between: impl FnMut(usize, &mut IfaceDecompData)) ->
     (status.optr.clone(), status)
 }
 
-/// The failure shell `print C` rendered last, from its prototype line on,
-/// with its reason replaced.
-fn shell(transcript: &str) -> String {
+/// The failure shell `print C` rendered last, from its prototype line to its
+/// closing brace, with its reason replaced, and what the transcript printed
+/// after it.
+fn shell(transcript: &str) -> (String, &str) {
     let warn = transcript.rfind("/* WARNING: decompilation failed: ").expect("the shell names the failure");
     let proto = transcript[..warn].rfind("main(").expect("the shell prints the prototype");
     let line = transcript[..proto].rfind('\n').map_or(0, |i| i + 1);
     let end = warn + transcript[warn..].find("*/").unwrap() + 2;
-    format!("{}<reason>{}", &transcript[line..warn], &transcript[end..]).trim().to_string()
+    let close = end + transcript[end..].find("\n}").expect("the shell closes its brace") + 2;
+    (format!("{}<reason>{}", &transcript[line..warn], &transcript[end..close]), transcript[close..].trim())
 }
 
 #[test]
@@ -114,23 +121,36 @@ fn a_drive_charges_the_follow_it_adopts_to_its_budget() {
 #[test]
 fn a_budget_stopped_decompile_keeps_its_shell_without_following_again() {
     set_default_fn_budget_secs(BUDGET.as_secs());
-    let (adopted, mut status) = drive(&["load function main", "decompile", "print C"], |i, dcp| {
+    let spend = |i: usize, dcp: &mut IfaceDecompData| {
         if i == 1 {
             dcp.fd.as_mut().expect("main is loaded").set_flow_spent(BUDGET);
         }
-    });
+    };
+    let (adopted, mut status) = drive(&["load function main", "decompile", "print C"], spend);
     assert_eq!(dcp(&mut status).adopted_flows, 1, "the decompile adopts the loaded IR:\n{adopted}");
     assert!(adopted.contains("per-function decompile budget exceeded (600 s)"), "{adopted}");
     assert!(
         dcp(&mut status).fd.as_ref().expect("a shell is kept for print C").obank().empty(),
         "the shell is not followed again"
     );
-    let (rebuilt, mut status) = drive(&["load function main", "echo x", "decompile", "print C"], |i, dcp| {
+    let (rebuilt, mut status) = drive(&["load function main", "echo x", "decompile", "print C", "print raw"], |i, dcp| {
         if i == 2 {
             dcp.conf.as_mut().unwrap().arch_mut().kuna_fn_budget = Some(Duration::ZERO);
         }
     });
     assert_eq!(dcp(&mut status).adopted_flows, 0, "a command in between rebuilds the flow");
     assert!(rebuilt.contains("per-function decompile budget exceeded (0 s)"), "{rebuilt}");
-    assert_eq!(shell(&adopted), shell(&rebuilt), "the stop prints the shell the loaded IR prints");
+    assert_eq!(shell(&adopted).0, shell(&rebuilt).0, "the stop prints the shell the loaded IR prints");
+    let (followed, _) = drive(&["load function main", "decompile", "print C", "print raw"], spend);
+    assert!(shell(&rebuilt).1.contains("Basic Block"), "{rebuilt}");
+    assert_eq!(shell(&followed), shell(&rebuilt), "print raw follows the flow the shell skipped");
+    let (regions, _) = drive(&["load function main", "decompile", "print C", "region blocks"], spend);
+    assert!(regions.contains("Regions for main: "), "the region commands follow it too:\n{regions}");
+    let (again, _) = drive(&["load function main", "decompile", "decompile", "print C", "print raw"], |i, dcp| {
+        spend(i, dcp);
+        if i == 2 {
+            dcp.conf.as_mut().unwrap().arch_mut().kuna_fn_budget = Some(Duration::ZERO);
+        }
+    });
+    assert_eq!(shell(&again), shell(&rebuilt), "a second stopped decompile keeps the flow to follow");
 }
