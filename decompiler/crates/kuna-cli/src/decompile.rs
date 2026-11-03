@@ -1176,9 +1176,9 @@ fn usage() {
          reports that instead of being killed by the system (omitted: under a\n\
          cgroup memory cap, once it grew by the cap's margin and the cgroup\n\
          nears its cap; 0 disables).\n\
-         --max-fn-seconds N stops the decompile once its drive has run N seconds\n\
-         and reports that, naming the pass it was in (default 120, as with\n\
-         --json; 0 disables).\n\
+         --max-fn-seconds N stops the decompile once following its flow and\n\
+         analyzing it have run N seconds and reports that, naming the pass it\n\
+         was in (default 120, as with --json; 0 disables).\n\
          \n\
          --define-function <start[-end][=name] | @file> (repeatable) declares where a\n\
          function starts and ends: start names an entry discovery missed, the\n\

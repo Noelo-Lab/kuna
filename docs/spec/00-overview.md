@@ -1621,7 +1621,9 @@ range heritage's guard placement visits and before each
 address the written-slot guard guards, every 256 new values a pointer walk of
 `stackstoreguard` visits, every 64 steps of a variable-merging pass
 (`decompiler/crates/kuna-decomp/src/p6_variables/merge.rs (Merge::budget)`,
-chapter 06), before each region attempt of region identification (chapter
+chapter 06), every 1024 seeds the implied-variable walk visits
+(`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs
+(MARK_IMPLIED_PROBE_STRIDE)`), before each region attempt of region identification (chapter
 07), before each call-argument trial `ActionActiveParam` scores and every 256
 steps of the trial's use walks (chapter 04), and again after the final layout checks: the drive
 publishes its deadline to
@@ -1661,7 +1663,16 @@ follow still running when either runs out fails the load with that one's
 error, whose site is `flow following` unless a probe inside the follow (a
 jump-table step) named one, which `kuna decompile` reports as the function's failure, so a
 truncated IR is never adopted, and the drive that adopts a completed one arms
-its own, measuring from where the follow left the resident set. The follow
+its own, measuring from where the follow left the resident set. Its clock is
+charged for the follow: the IR carries how long the follow took
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata::flow_spent)`)
+and the adopting drive's deadline is that much nearer, so `kuna decompile`'s
+budget bounds the follow and the analysis together, as a `decompile-all`
+drive's does. When the adopting drive stops at its budget or memory limit,
+the console keeps for `print C`'s failure shell a function it builds without
+following the flow again (`decompile_drive.rs (budget_stop_shell)`): that
+follow, every jump-table recovery included, would run past the limit that
+stopped the drive, and the shell prints nothing it adds. The follow
 recovers every jump table, and a jump table's sub-pipeline heritages
 everything flow has reached, so in a huge function the follow is where the
 memory goes.

@@ -2329,20 +2329,30 @@ decomp_command!(
                 .push((callpoint, pieces));
         }
         // Restore the program (and the fresh Funcdata on success) regardless.
-        if result.is_err() {
+        if let (Err(error), Some(recipe)) = (&result, &adopted_recipe) {
             // Re-follow the adopted IR so the console is left holding the same
             // un-decompiled `dcp.fd` the rebuild path would have left (see
-            // `adopted_recipe`).  `None` whenever nothing was adopted.
-            if let Some(recipe) = &adopted_recipe {
-                if let Ok(fd) = build_and_follow_flow_with_override(
+            // `adopted_recipe`).  A drive stopped at its budget or memory limit
+            // keeps a shell built without following again: that follow would
+            // run past the limit that just stopped the drive.
+            let shell = if kuna_decomp::decompile_drive::is_budget_stop(error) {
+                kuna_decomp::decompile_drive::budget_stop_shell(
+                    prog.arch(),
+                    &recipe.name,
+                    recipe.entry.clone(),
+                    recipe.size,
+                )
+            } else {
+                build_and_follow_flow_with_override(
                     prog.arch_mut(),
                     &recipe.name,
                     recipe.entry.clone(),
                     recipe.size,
                     &recipe.flow_overrides,
-                ) {
-                    dcp_mut(status)?.fd = Some(fd);
-                }
+                )
+            };
+            if let Ok(fd) = shell {
+                dcp_mut(status)?.fd = Some(fd);
             }
         }
         let dcp = dcp_mut(status)?;

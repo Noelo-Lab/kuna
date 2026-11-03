@@ -2003,7 +2003,10 @@ Behaviors specific to `decompile-all`:
   construction, total export time, or memory. Driver policy, not a stage-model
   settable — zero output change for a function whose drive and render complete
   before expiry; the console / `decomp_dbg` parity path arms it only when given
-  `decomp_dbg --max-fn-seconds N`, which `kuna decompile` passes.
+  `decomp_dbg --max-fn-seconds N`, which `kuna decompile` passes. On `kuna
+  decompile` the budget covers the flow follow `load` made as well as the
+  drive, as it does on `decompile-all`, and a stopped function's shell is
+  printed without following its flow again.
 
 - **Per-function memory limit** — `--max-fn-memory MiB` (`0` disables) on
   `decompile-all`, `decompile-project`, `decompile-graph` and `kuna decompile`.
