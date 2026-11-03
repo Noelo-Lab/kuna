@@ -1,0 +1,251 @@
+{
+  "records": [
+    {
+      "fixture": "whole_rhs",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "whole_rhs",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=a+b;}"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=(a+b)as i64;}"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "old_cast_retained",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "old_cast_retained",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=a as u64;}"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=(a as u64)as i64;}"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "context",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "context",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=1<<a;}"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=::core::convert::identity::<u64>(1<<a)as i64;}"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "negative_first",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "negative_first",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=-1+a;}"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=(-1+a)as i64;}"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "keyword_field",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "keyword_field",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){(*p).fn=a+b;}"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){(*p).fn=(a+b)as i64;}"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "keyword_rhs",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "keyword_rhs",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=(*q).fn;}"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=(*q).fn as i64;}"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "partial_rhs",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "partial_rhs",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=a+b;}"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=a+(b as i64);}"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "changed_lhs",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "changed_lhs",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=a;}"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*q=a as i64;}"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "changed_call_order",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "changed_call_order",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=first()+second();}"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=(second()+first())as i64;}"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "duplicated_call",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "duplicated_call",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=first();}"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=(first()+first())as i64;}"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "old_cast_lost",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "old_cast_lost",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=a as u32;}"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=a as i64;}"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "changed_literal",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "changed_literal",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=a+1;}"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){*p=(a+2)as i64;}"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "outside_assignment",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "outside_assignment",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){return a;}"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(p:*mut i64,q:*mut i64,a:i64,b:i64){return a as i64;}"
+          }
+        }
+      ]
+    }
+  ]
+}

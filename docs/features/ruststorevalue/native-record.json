@@ -1,0 +1,266 @@
+{
+  "status": "PASS",
+  "parent_cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+  "candidate_cli_sha256": "7fc4e7732ca312f885fc0489a6f9c3deb68a9f174b8e0e4eba0ffa4bd59aac21",
+  "parent_commit": "c2f6607386f3c6cd46f94a17efebdc9a74609ad6",
+  "fixture_sha256": "1eebe16c56ed9a1236a708596690cccfa9c1107d293f1e6f1874668c72f839c8",
+  "complete_bodies": 33,
+  "input_pairs_per_run": 324,
+  "native_function_comparisons": 21384,
+  "body_rewrites": false,
+  "c_go_unchanged": true,
+  "unchanged_rust_controls": [
+    "nested_store",
+    "float_store",
+    "pointer_store",
+    "bool_store"
+  ],
+  "changed_rust_functions": [
+    "signed8",
+    "unsigned8",
+    "signed_plain8",
+    "unsigned_plain8",
+    "signed_xor8",
+    "signed16",
+    "unsigned16",
+    "signed_plain16",
+    "unsigned_plain16",
+    "signed_xor16",
+    "signed32",
+    "unsigned32",
+    "signed_plain32",
+    "unsigned_plain32",
+    "signed_xor32",
+    "signed64",
+    "unsigned64",
+    "signed_plain64",
+    "unsigned_plain64",
+    "signed_xor64",
+    "side_effect",
+    "array_store"
+  ],
+  "guard_bytes": true,
+  "pointer_and_value_callback_counts": true,
+  "records": [
+    {
+      "arm": "parent",
+      "language": "c",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/target/release/kuna",
+        "decompile-all",
+        "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64",
+        "--language",
+        "c",
+        "--json",
+        "--functions",
+        "signed8,unsigned8,signed_plain8,unsigned_plain8,signed_xor8,signed_constant8,unsigned_constant8,signed16,unsigned16,signed_plain16,unsigned_plain16,signed_xor16,signed_constant16,unsigned_constant16,signed32,unsigned32,signed_plain32,unsigned_plain32,signed_xor32,signed_constant32,unsigned_constant32,signed64,unsigned64,signed_plain64,unsigned_plain64,signed_xor64,signed_constant64,unsigned_constant64,side_effect,nested_store,float_store,pointer_store,bool_store,array_store",
+        "--assert",
+        "@/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "capture_sha256": "e44c7b7e44191a89336b20a8a3a7cc91fe3772f5df83b3ba456e47e5359983e0"
+    },
+    {
+      "arm": "parent",
+      "language": "go",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/target/release/kuna",
+        "decompile-all",
+        "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64",
+        "--language",
+        "go",
+        "--json",
+        "--functions",
+        "signed8,unsigned8,signed_plain8,unsigned_plain8,signed_xor8,signed_constant8,unsigned_constant8,signed16,unsigned16,signed_plain16,unsigned_plain16,signed_xor16,signed_constant16,unsigned_constant16,signed32,unsigned32,signed_plain32,unsigned_plain32,signed_xor32,signed_constant32,unsigned_constant32,signed64,unsigned64,signed_plain64,unsigned_plain64,signed_xor64,signed_constant64,unsigned_constant64,side_effect,nested_store,float_store,pointer_store,bool_store,array_store",
+        "--assert",
+        "@/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "capture_sha256": "9bb0939e0d5b040fd924cd1d9e1412e5dd68cc78f4e31895ce10dd2c7d659c2a"
+    },
+    {
+      "arm": "parent",
+      "language": "rust",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/target/release/kuna",
+        "decompile-all",
+        "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "signed8,unsigned8,signed_plain8,unsigned_plain8,signed_xor8,signed_constant8,unsigned_constant8,signed16,unsigned16,signed_plain16,unsigned_plain16,signed_xor16,signed_constant16,unsigned_constant16,signed32,unsigned32,signed_plain32,unsigned_plain32,signed_xor32,signed_constant32,unsigned_constant32,signed64,unsigned64,signed_plain64,unsigned_plain64,signed_xor64,signed_constant64,unsigned_constant64,side_effect,nested_store,float_store,pointer_store,bool_store,array_store",
+        "--assert",
+        "@/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "capture_sha256": "2fd40e4452ec7f9222a72ee09ff09fd15ea9c9a3be65421f2646cc88c993d003"
+    },
+    {
+      "arm": "candidate",
+      "language": "c",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/target/release/kuna",
+        "decompile-all",
+        "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64",
+        "--language",
+        "c",
+        "--json",
+        "--functions",
+        "signed8,unsigned8,signed_plain8,unsigned_plain8,signed_xor8,signed_constant8,unsigned_constant8,signed16,unsigned16,signed_plain16,unsigned_plain16,signed_xor16,signed_constant16,unsigned_constant16,signed32,unsigned32,signed_plain32,unsigned_plain32,signed_xor32,signed_constant32,unsigned_constant32,signed64,unsigned64,signed_plain64,unsigned_plain64,signed_xor64,signed_constant64,unsigned_constant64,side_effect,nested_store,float_store,pointer_store,bool_store,array_store",
+        "--assert",
+        "@/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "capture_sha256": "e44c7b7e44191a89336b20a8a3a7cc91fe3772f5df83b3ba456e47e5359983e0"
+    },
+    {
+      "arm": "candidate",
+      "language": "go",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/target/release/kuna",
+        "decompile-all",
+        "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64",
+        "--language",
+        "go",
+        "--json",
+        "--functions",
+        "signed8,unsigned8,signed_plain8,unsigned_plain8,signed_xor8,signed_constant8,unsigned_constant8,signed16,unsigned16,signed_plain16,unsigned_plain16,signed_xor16,signed_constant16,unsigned_constant16,signed32,unsigned32,signed_plain32,unsigned_plain32,signed_xor32,signed_constant32,unsigned_constant32,signed64,unsigned64,signed_plain64,unsigned_plain64,signed_xor64,signed_constant64,unsigned_constant64,side_effect,nested_store,float_store,pointer_store,bool_store,array_store",
+        "--assert",
+        "@/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "capture_sha256": "9bb0939e0d5b040fd924cd1d9e1412e5dd68cc78f4e31895ce10dd2c7d659c2a"
+    },
+    {
+      "arm": "candidate",
+      "language": "rust",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/target/release/kuna",
+        "decompile-all",
+        "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "signed8,unsigned8,signed_plain8,unsigned_plain8,signed_xor8,signed_constant8,unsigned_constant8,signed16,unsigned16,signed_plain16,unsigned_plain16,signed_xor16,signed_constant16,unsigned_constant16,signed32,unsigned32,signed_plain32,unsigned_plain32,signed_xor32,signed_constant32,unsigned_constant32,signed64,unsigned64,signed_plain64,unsigned_plain64,signed_xor64,signed_constant64,unsigned_constant64,side_effect,nested_store,float_store,pointer_store,bool_store,array_store",
+        "--assert",
+        "@/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.kuna",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "capture_sha256": "031000e4702d4d77a3dc5343652123ae7d61f8fe763790d1336a44ca19114010"
+    },
+    {
+      "kind": "native",
+      "optimization": "0",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-store-conversions/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-store-conversions/candidate-0"
+      ],
+      "function_comparisons": 10692,
+      "output_sha256": "db8e5cb82128d913bc742d04e09e5acfa8370015e3a4f0b4f0f4e904bc8402a0"
+    },
+    {
+      "kind": "native",
+      "optimization": "2",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-store-conversions/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-store-conversions/candidate-2"
+      ],
+      "function_comparisons": 10692,
+      "output_sha256": "db8e5cb82128d913bc742d04e09e5acfa8370015e3a4f0b4f0f4e904bc8402a0"
+    }
+  ],
+  "exclusions": [
+    {
+      "arm": "parent",
+      "name": "array_store",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-store-conversions/parent-array.rs",
+        "-o",
+        "/tmp/kuna-rust-store-conversions/parent-array"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "name": "array_store",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--error-format=json",
+        "/tmp/kuna-rust-store-conversions/candidate-array.rs",
+        "-o",
+        "/tmp/kuna-rust-store-conversions/candidate-array"
+      ],
+      "compile_exit": 1,
+      "errors": [
+        {
+          "code": "E0608",
+          "message": "cannot index into a value of type `*mut i64`"
+        }
+      ]
+    }
+  ],
+  "source_sha256": {
+    "harness.c": "4f8c8eb55bd8cfb8dea3fca83526918d75f16cf890a5f62dd85e255f5f327229",
+    "harness.rs": "414d906897f343aecd124d74f7dccf3c3d921414f02b3879483a05e63176a87a",
+    "native.py": "33d77d9e503aabdd7c2574d56c0f22a037f43fc86467d67f5ef54d3fe082e524",
+    "candidate.rs": "124b470b33c2d9f42e4f490acfa82205ca1949d989e62efad12d25c56c8c61eb",
+    "parent.rs": "217da23a2cfb3540bb939e2ca01f111a9911b6de1e2022e6c64dd3dd7ef6ebb4",
+    "cases.json": "756e1f250ffef21b4005ff66646845101ef8dcc81d744708e8581cad4bc3e43d"
+  }
+}

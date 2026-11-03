@@ -1679,3 +1679,5 @@ below `0x1000`, where an address formed from the PC (`adrp` + `add`/`ldr`, `adr`
 `rust_integer_conversions_x86_64` contains 49 authored primitive-conversion probes, with source-true prototype assertions and native C/Rust harnesses. Its provenance file records compiler flags and hashes; helpers are a separate translation unit.
 
 `rust_integer_context_x86_64` contains fifteen authored shift, loop, and cast-boundary probes. The native C/Rust harness checks all 64 shift counts, boundary words, nested shifts, and exact callback counts. `rust_integer_context.provenance.json` records the compiler command and hashes.
+
+`rust_store_value_harness.c` and `.rs` compare 33 complete Rust bodies emitted from the existing `go_store_value_x86_64` fixture with C at O0/O2. They check all destination and guard bytes, sibling fields, nested fields, and exact pointer/value callback counts over 324 boundary pairs. `array_store` retains an existing raw-pointer indexing error and is excluded from native compilation.

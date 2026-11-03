@@ -1,0 +1,205 @@
+{
+  "declared_at": "2026-11-03T01:07:55.038944+00:00",
+  "status": "Declared before final registered-test release rebuild and before any STORE timing samples; preliminary candidate897c8b native proof already completed.",
+  "feature": "Rust same-width integer STORE conversion",
+  "root": "/home/mahaloz/kwt/angr-rust-store-conversions",
+  "base": "/home/mahaloz/kwt/angr-rust-integer-conversions",
+  "seed": 202611063,
+  "samples_per_arm": 64,
+  "warmups_per_arm": 3,
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "cases": [
+    [
+      "c-store",
+      "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64",
+      "signed64",
+      "c"
+    ],
+    [
+      "go-store",
+      "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64",
+      "signed64",
+      "go"
+    ],
+    [
+      "rust-store",
+      "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64",
+      "signed64",
+      "rust"
+    ],
+    [
+      "rust-sideeffect",
+      "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64",
+      "side_effect",
+      "rust"
+    ],
+    [
+      "rust-large",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "rust-count",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x12810",
+      "rust"
+    ],
+    [
+      "rust-inflate",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x170bc",
+      "rust"
+    ]
+  ],
+  "case_options": {
+    "c-store": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.kuna"
+    ],
+    "go-store": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.kuna"
+    ],
+    "rust-store": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.kuna"
+    ],
+    "rust-sideeffect": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.kuna"
+    ],
+    "rust-large": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "rust-count": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "rust-inflate": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ]
+  },
+  "required_cases": [
+    "c-store",
+    "go-store",
+    "rust-store",
+    "rust-sideeffect",
+    "rust-large",
+    "rust-count",
+    "rust-inflate"
+  ],
+  "budget_pct": 5,
+  "acceptance": "Both CPU and wall median candidate/parent deltas must be at most5% for every case. One final analysis; no unchanged-code repeat after failure. This is the repository median speed criterion; confidence bounds are reported as uncertainty, not used as a hidden post-hoc gate.",
+  "confidence_reporting": "95% one-sided paired-block-bootstrap upper bounds on mean CPU/wall ratios,2000resamples per case; not simultaneous bounds. Report alongside medians and retain every sample.",
+  "bootstrap_resamples": 2000,
+  "upper_quantile": 0.95,
+  "parent_cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+  "candidate_cli_sha256": "7fc4e7732ca312f885fc0489a6f9c3deb68a9f174b8e0e4eba0ffa4bd59aac21",
+  "source_revision_note": "Rust STORE conversion only; published Rust integer-conversion parent must remain frozen and its actual merged tree must match before STORE publication.",
+  "fixture_sha256": {
+    "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value_x86_64": "1eebe16c56ed9a1236a708596690cccfa9c1107d293f1e6f1874668c72f839c8",
+    "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/crates/kuna-analysis/tests/fixtures/go_store_value.kuna": "18e7c57088738f5348863bd68a969f0efdf5bbeee0d794fe5464520207d14f56",
+    "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb"
+  },
+  "lightwork_reservation_amendment": {
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "policy": "No concurrent owned builds/tests/decompilations or checkout/evidence finalization; only small static reads/writes pinned reserved CPUs."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "raw_sample_persistence": "Atomic checkpoint after every balanced block; declared before the first timing sample.",
+  "build": {
+    "at": "2026-11-03T01:12:40.857299+00:00",
+    "parent_commit": "c2f6607386f3c6cd46f94a17efebdc9a74609ad6",
+    "parent_worktree_head": "c2f6607386f3c6cd46f94a17efebdc9a74609ad6",
+    "parent_tree": "08cd977cf6425295c85385bd13701e038ac04243",
+    "parent_cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+    "new_cli_sha256": "7fc4e7732ca312f885fc0489a6f9c3deb68a9f174b8e0e4eba0ffa4bd59aac21",
+    "catalog_count": 376,
+    "corpus_files": 686,
+    "stage_assertions": [
+      3759,
+      3759
+    ],
+    "stage_keys_added": [
+      "data:Rust direct signed store converts unsigned arithmetic",
+      "data:Rust side effect store converts returned value once",
+      "data:Rust signed byte store converts unsigned arithmetic",
+      "data:Rust signed word store converts bitwise expression",
+      "data:Rust unsigned short store converts signed arithmetic"
+    ]
+  },
+  "bound_at": "2026-11-03T01:29:53.995654+00:00"
+}

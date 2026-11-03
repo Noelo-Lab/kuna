@@ -8938,6 +8938,11 @@ impl PrintC {
             {
                 return;
             }
+            if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts
+                && self.push_rust_store_value(fd, arch, ptr, val, op, mods)
+            {
+                return;
+            }
             self.push_vn_ir_m(fd, arch, val, op, mods);
         }
     }

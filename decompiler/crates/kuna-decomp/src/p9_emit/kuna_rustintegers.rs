@@ -89,7 +89,7 @@ impl PrintC {
         crate::printc::declared_variable_type(fd, arch.decl_high_type, value)
     }
 
-    fn rust_integer_value_type(
+    pub(crate) fn rust_integer_value_type(
         &self,
         fd: &Funcdata,
         arch: &Architecture,

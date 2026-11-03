@@ -1,0 +1,225 @@
+{
+  "scope": "48 ordinary authored widening/narrowing signed/unsigned stores, complete emitted bodies, byte guards and 18 values at O0/O2. Does not prove arbitrary inconsistent inferred types or unknown128-bit stores.",
+  "complete_bodies": 48,
+  "body_rewrites": false,
+  "records": [
+    {
+      "arm": "parent",
+      "cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+      "outcomes": [
+        {
+          "optimization": "0",
+          "compile_exit": 1
+        },
+        {
+          "optimization": "2",
+          "compile_exit": 1
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "cli_sha256": "7fc4e7732ca312f885fc0489a6f9c3deb68a9f174b8e0e4eba0ffa4bd59aac21",
+      "outcomes": [
+        {
+          "optimization": "0",
+          "compile_exit": 0,
+          "matches_reference": true
+        },
+        {
+          "optimization": "2",
+          "compile_exit": 0,
+          "matches_reference": true
+        }
+      ]
+    }
+  ],
+  "commands": [
+    {
+      "command": [
+        "cc",
+        "-O2",
+        "-g",
+        "-fno-inline",
+        "-fno-pie",
+        "-no-pie",
+        "/tmp/kuna-rust-store-research/width-native/fixture.c",
+        "-o",
+        "/tmp/kuna-rust-store-research/width-native/fixture"
+      ],
+      "stem": "fixture-build",
+      "exit": 0
+    },
+    {
+      "command": [
+        "cc",
+        "-O0",
+        "-fwrapv",
+        "/tmp/kuna-rust-store-research/width-native/reference.c",
+        "-o",
+        "/tmp/kuna-rust-store-research/width-native/reference-0"
+      ],
+      "stem": "reference-0-build",
+      "exit": 0
+    },
+    {
+      "command": [
+        "/tmp/kuna-rust-store-research/width-native/reference-0"
+      ],
+      "stem": "reference-0",
+      "exit": 0
+    },
+    {
+      "command": [
+        "cc",
+        "-O2",
+        "-fwrapv",
+        "/tmp/kuna-rust-store-research/width-native/reference.c",
+        "-o",
+        "/tmp/kuna-rust-store-research/width-native/reference-2"
+      ],
+      "stem": "reference-2-build",
+      "exit": 0
+    },
+    {
+      "command": [
+        "/tmp/kuna-rust-store-research/width-native/reference-2"
+      ],
+      "stem": "reference-2",
+      "exit": 0
+    },
+    {
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-store-research/width-native/fixture",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "i8_to_i16,i8_to_u16,i8_to_i32,i8_to_u32,i8_to_i64,i8_to_u64,u8_to_i16,u8_to_u16,u8_to_i32,u8_to_u32,u8_to_i64,u8_to_u64,i16_to_i8,i16_to_u8,i16_to_i32,i16_to_u32,i16_to_i64,i16_to_u64,u16_to_i8,u16_to_u8,u16_to_i32,u16_to_u32,u16_to_i64,u16_to_u64,i32_to_i8,i32_to_u8,i32_to_i16,i32_to_u16,i32_to_i64,i32_to_u64,u32_to_i8,u32_to_u8,u32_to_i16,u32_to_u16,u32_to_i64,u32_to_u64,i64_to_i8,i64_to_u8,i64_to_i16,i64_to_u16,i64_to_i32,i64_to_u32,u64_to_i8,u64_to_u8,u64_to_i16,u64_to_u16,u64_to_i32,u64_to_u32",
+        "--assert",
+        "@/tmp/kuna-rust-store-research/width-native/assertions.kuna"
+      ],
+      "stem": "parent-capture",
+      "exit": 0
+    },
+    {
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-store-research/width-native/parent.rs",
+        "-o",
+        "/tmp/kuna-rust-store-research/width-native/parent-0"
+      ],
+      "stem": "parent-0-build",
+      "exit": 1
+    },
+    {
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-store-research/width-native/parent.rs",
+        "-o",
+        "/tmp/kuna-rust-store-research/width-native/parent-2"
+      ],
+      "stem": "parent-2-build",
+      "exit": 1
+    },
+    {
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-store-conversions/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-store-research/width-native/fixture",
+        "--language",
+        "rust",
+        "--json",
+        "--functions",
+        "i8_to_i16,i8_to_u16,i8_to_i32,i8_to_u32,i8_to_i64,i8_to_u64,u8_to_i16,u8_to_u16,u8_to_i32,u8_to_u32,u8_to_i64,u8_to_u64,i16_to_i8,i16_to_u8,i16_to_i32,i16_to_u32,i16_to_i64,i16_to_u64,u16_to_i8,u16_to_u8,u16_to_i32,u16_to_u32,u16_to_i64,u16_to_u64,i32_to_i8,i32_to_u8,i32_to_i16,i32_to_u16,i32_to_i64,i32_to_u64,u32_to_i8,u32_to_u8,u32_to_i16,u32_to_u16,u32_to_i64,u32_to_u64,i64_to_i8,i64_to_u8,i64_to_i16,i64_to_u16,i64_to_i32,i64_to_u32,u64_to_i8,u64_to_u8,u64_to_i16,u64_to_u16,u64_to_i32,u64_to_u32",
+        "--assert",
+        "@/tmp/kuna-rust-store-research/width-native/assertions.kuna"
+      ],
+      "stem": "candidate-capture",
+      "exit": 0
+    },
+    {
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-store-research/width-native/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-store-research/width-native/candidate-0"
+      ],
+      "stem": "candidate-0-build",
+      "exit": 0
+    },
+    {
+      "command": [
+        "/tmp/kuna-rust-store-research/width-native/candidate-0"
+      ],
+      "stem": "candidate-0",
+      "exit": 0
+    },
+    {
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-store-research/width-native/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-store-research/width-native/candidate-2"
+      ],
+      "stem": "candidate-2-build",
+      "exit": 0
+    },
+    {
+      "command": [
+        "/tmp/kuna-rust-store-research/width-native/candidate-2"
+      ],
+      "stem": "candidate-2",
+      "exit": 0
+    }
+  ],
+  "candidate_function_comparisons": 1728,
+  "native_inputs_per_run": 18,
+  "source_sha256": {
+    "fixture.c": "84db50cd3bc128fa82a59cced08c9bf09760b3bea024105edf6a8821f5ba1204",
+    "fixture": "529651bb39c0cb2588d6de5dfbf57d3ad6afee0ac771923711897ccaeb988ed4",
+    "assertions.kuna": "76df6b42c1c1e8c9c70009ace76f59586a1c3da58063f89db2088b1d52e972fe",
+    "harness.rs": "80c89c2e230c911f9fcd73e72649f111771e840e2f31f378d8617ee7681a816e",
+    "reference.c": "410b50198b0a68c0868632f000aa36b0a3e2ff9e025bffdd84e2a8b58dcb2846",
+    "parent.rs": "8bf75f42474502f391b27c3a93b3b4c61f776546261510ec94bf190cd174d478",
+    "candidate.rs": "8c29b29a131271208ff32cc18120b06f4a87fe7c2a78c4d369391fbf1da6586a"
+  },
+  "driver_sha256": "af500609042f06b97e1a29e3b3d5457e73cd39ed6351a8759bc8a1b61b6f5329",
+  "output_sha256": {
+    "parent-2-build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "parent-capture.stdout": "1c2448da0611174a3efaf0d426e9da031e9922b1ebebe2059936ea3f79abb06a",
+    "reference-0-build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-0.stdout": "7e13cf48ffd6499ab01e694a8a713240166c48ef0f722ae8d070d514b205c0fb",
+    "fixture-build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "reference-0.stdout": "7e13cf48ffd6499ab01e694a8a713240166c48ef0f722ae8d070d514b205c0fb",
+    "candidate-0-build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-2-build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "reference-2.stdout": "7e13cf48ffd6499ab01e694a8a713240166c48ef0f722ae8d070d514b205c0fb",
+    "candidate-2.stdout": "7e13cf48ffd6499ab01e694a8a713240166c48ef0f722ae8d070d514b205c0fb",
+    "parent-0-build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "candidate-capture.stdout": "5aae9cc0380971743e6f271ebedf2d4545c81609d37574ece2bb62a7cca44df9",
+    "reference-2-build.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}
