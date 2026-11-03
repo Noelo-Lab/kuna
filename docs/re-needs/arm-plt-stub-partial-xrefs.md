@@ -139,4 +139,4 @@ _not yet refuted_
 - the matcher follows the chain as the walk decodes it (rows of an open chain held, released when it breaks or the body drains) instead of decoding ahead, so it uses the walk's mode selection and commits no context out of order
 - a chain starts on any constant register write (not only one whose value is mapped); the slot is the word the `BRANCHIND` consumes and must be mapped; the matcher runs on ARM only
 - a chain's add must be computed from its register (`mov ip,#K` breaks it); a reloaded register names no slot; chains run only inside the linker stub sections (`.plt`, `.iplt`), and an image without section headers follows none
-- gated behind `armpltslot` (default on): the change renumbers anonymous structs in some functions of large ARM images, so it ships as an option; off gives the earlier rows and `decompile-all` output byte for byte
+- gated behind `armpltslot` (default on): the call graph reads these rows, so the change can reorder `decompile-all`'s visits, and it ships as an option; on musl `libc.so` and `libstdc++.so` for ARM the `decompile-all` output is byte-identical with it on and off, and off gives the earlier rows

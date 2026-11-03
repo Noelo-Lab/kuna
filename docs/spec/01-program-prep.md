@@ -7759,13 +7759,10 @@ other way is still a reference. GCC 14 for armhf emits the A32 stub for Thumb co
 too; the Thumb-only PLT (`--thumb-plt`, M-profile) is not recognised.
 `--option armpltslot off` follows no chain, so every stub files the constant
 scan's rows again, next to the slot's `Read` that register pair carrying files. The call graph reads the reference rows, so `decompile-all`
-can visit functions in a different callee-first order, and the shared type
-factory hands out the first free `struct_N` in that order
-(`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/ledger.rs`). In
-the comparisons made, only anonymous struct numbering changed: on musl
-`libstdc++.so` for ARM, 272 of 5832 functions, each byte-identical under a
-one-to-one renaming of its `struct_N` names. Off gives the earlier output byte
-for byte.
+can visit functions in a different callee-first order; synthesized structures
+are named as a serial run names them whatever the order, and on musl `libc.so`
+(and its stripped copy) and `libstdc++.so` for ARM the output is byte-identical
+with the option on and off.
 
 (kuna) **Condition skips** (`armcondskip`, default on). SLEIGH lifts a predicated instruction (`ldrne`,
 `moveq`, `popeq {..,pc}`, `bxne r3`, an instruction in a Thumb `it` block) to a
@@ -7805,10 +7802,8 @@ and the SPARC `call`, and on those architectures each still files a `Jump` to it
 own fall-through. `--option armcondskip off` gives the earlier rule on ARM too:
 every skip files its `Jump`, except the predicated skip of an A32 table dispatch
 whose table `armframes` reads. As with `armpltslot`, the call graph reads these
-rows, and in the comparisons made only anonymous struct numbering changed: 62
-of 2063 functions of musl `libc.so` for ARM (59 of its stripped copy), each
-byte-identical under a one-to-one renaming of its `struct_N` names. Off gives
-the earlier output byte for byte.
+rows, and on the same images the `decompile-all` output is byte-identical with
+the option on and off.
 
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.
