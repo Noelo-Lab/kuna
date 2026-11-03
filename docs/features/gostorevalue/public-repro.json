@@ -1,0 +1,47 @@
+{
+  "fixture_sha256": "2587da3d2b6010dccb5a1e86a0c6b08f71203e51d86327a195735d52518696d1",
+  "records": [
+    {
+      "arm": "parent",
+      "command": [
+        "/home/mahaloz/kwt/angr-go-pair-results/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-go-store-conversions/integration-pair/public-repro",
+        "put",
+        "--language",
+        "go",
+        "--assert",
+        "prototype put void put(int8 *p,uint8 a,uint8 b)",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305",
+      "output": "func put(p *int64, a uint64, b uint64) {\n  *p = a + b\n}\n"
+    },
+    {
+      "arm": "candidate",
+      "command": [
+        "/home/mahaloz/kwt/angr-go-store-conversions/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-go-store-conversions/integration-pair/public-repro",
+        "put",
+        "--language",
+        "go",
+        "--assert",
+        "prototype put void put(int8 *p,uint8 a,uint8 b)",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "b4557e50aa5b06baa5252307700b652dbecd651137ea873aa504ea364d8b82fd",
+      "output": "func put(p *int64, a uint64, b uint64) {\n  *p = int64(a + b)\n}\n"
+    }
+  ]
+}

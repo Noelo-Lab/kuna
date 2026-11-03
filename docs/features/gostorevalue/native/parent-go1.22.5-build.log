@@ -1,0 +1,12 @@
+# command-line-arguments
+/tmp/kuna-go-store-conversions/integration-pair/native/parent.go:8:13: cannot use b + a (value of type byte) as int8 value in assignment
+/tmp/kuna-go-store-conversions/integration-pair/native/parent.go:11:13: cannot use b + a (value of type int8) as byte value in assignment
+/tmp/kuna-go-store-conversions/integration-pair/native/parent.go:14:8: cannot use b + a (value of type byte) as int8 value in assignment
+/tmp/kuna-go-store-conversions/integration-pair/native/parent.go:17:8: cannot use b + a (value of type int8) as byte value in assignment
+/tmp/kuna-go-store-conversions/integration-pair/native/parent.go:20:13: cannot use byte(a) ^ 0x1 (value of type byte) as int8 value in assignment
+/tmp/kuna-go-store-conversions/integration-pair/native/parent.go:29:14: cannot use b + a (value of type uint16) as int16 value in assignment
+/tmp/kuna-go-store-conversions/integration-pair/native/parent.go:32:14: cannot use b + a (value of type int16) as uint16 value in assignment
+/tmp/kuna-go-store-conversions/integration-pair/native/parent.go:35:8: cannot use b + a (value of type uint16) as int16 value in assignment
+/tmp/kuna-go-store-conversions/integration-pair/native/parent.go:38:8: cannot use b + a (value of type int16) as uint16 value in assignment
+/tmp/kuna-go-store-conversions/integration-pair/native/parent.go:41:14: cannot use uint16(a) ^ 0x1 (value of type uint16) as int16 value in assignment
+/tmp/kuna-go-store-conversions/integration-pair/native/parent.go:41:14: too many errors

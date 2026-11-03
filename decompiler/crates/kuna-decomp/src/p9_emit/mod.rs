@@ -98,3 +98,5 @@ pub(crate) mod kuna_stackversions;
 pub(crate) mod kuna_indirectargs;
 
 pub mod kuna_callprototypes;
+
+pub(crate) mod kuna_gostorevalue;

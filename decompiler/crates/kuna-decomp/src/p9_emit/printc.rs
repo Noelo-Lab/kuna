@@ -8913,6 +8913,11 @@ impl PrintC {
         // then the value — exactly as op_binary_ir inverts in0/in1.
         self.push_vn_ir_m(fd, arch, ptr, op, m);
         if let Some(val) = val {
+            if self.out_lang == crate::kuna_lang::OutLang::Go
+                && self.push_go_store_value(fd, arch, ptr, val, op, mods)
+            {
+                return;
+            }
             self.push_vn_ir_m(fd, arch, val, op, mods);
         }
     }

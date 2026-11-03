@@ -3240,6 +3240,18 @@ deliberately outside this count: it is a different lossy construct, and naming
 one number `unstructured_gotos` that meant two things would be worse than
 reporting the one.
 
+Go integer stores use `p9_emit/kuna_gostorevalue.rs` to match the rendered
+pointer's pointee type. When both source and destination are signed or unsigned
+integers of the same one-, two-, four- or eight-byte width with different
+signedness, the value receives an explicit destination conversion. The guard
+compares integer metadata without constructing type-name strings. This
+preserves its stored bits while satisfying Go's assignment rules, including
+field, plain-pointer and indexed destinations. The pointer and value are each
+emitted once, with the original expression modifiers. Floating, boolean,
+pointer, opaque and width-mismatched values retain their existing handling;
+this conversion does not reinterpret their representations. It also does not
+change local partial-field assignments, which use a separate emission path.
+
 Two surfaces refuse the language rather than half-honouring it. `kuna-ghidra`
 pins its Clang token-markup document to C (`process.rs`), because that document
 is consumed by Ghidra's C token model and Rust text in C token slots is a GUI

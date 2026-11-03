@@ -377,3 +377,7 @@ whole forwarding, and scalar and void callback controls.
 `ghangr-integer-field-extract.xml` checks narrow, narrow-then-widen, and shifted
 integer fields in C, Go and Rust. Native CLI tests execute the complete emitted
 callers against boundary values and check that each helper is called once.
+
+`ghangr-go-store-value.xml` checks Go integer destination conversions for fields,
+plain/indexed pointers and a side-effectful call, with all integer widths and
+complete native bodies covered by the CLI integration fixture.
