@@ -1,0 +1,43 @@
+{
+  "source": "review.c",
+  "source_sha256": "1f4d36ddd91d2f2da70bd4346600c45ca61910b00571bb98a75775a9784e3b4b",
+  "compiler": "x86_64-linux-gnu-gcc-15",
+  "compiler_sha256": "b5f1b773a7c733738352000c92a077dc5852a1a2fc6d836b1e411be1e9ec5f88",
+  "version": "gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
+  "builds": [
+    {
+      "output": "review-dwarf4.o",
+      "argv": [
+        "gcc",
+        "-O1",
+        "-gdwarf-4",
+        "-gno-record-gcc-switches",
+        "-fcf-protection=none",
+        "-fno-stack-protector",
+        "-fdebug-prefix-map=$PWD=.",
+        "-c",
+        "review.c",
+        "-o",
+        "review-dwarf4.o"
+      ],
+      "sha256": "98962a75abdfb72e35c6cdb90e9357cd31ddb3edd0a6afceb6d3cc53b3c923cd"
+    },
+    {
+      "output": "review-no-debug.o",
+      "argv": [
+        "gcc",
+        "-O1",
+        "-g0",
+        "-gno-record-gcc-switches",
+        "-fcf-protection=none",
+        "-fno-stack-protector",
+        "-fdebug-prefix-map=$PWD=.",
+        "-c",
+        "review.c",
+        "-o",
+        "review-no-debug.o"
+      ],
+      "sha256": "bfcbabf095eb82e714307b79752ef100672409e3c6c3a0e39ef8dc9b241865d8"
+    }
+  ]
+}

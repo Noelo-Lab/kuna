@@ -516,6 +516,12 @@ impl BitFieldPullTransform {
 
     /// Follow a bitfield forward one level through all its descendants (C++
     /// `processForward`, bitfield.cc:1344-1399).
+    ///
+    /// Divergence: when the root itself holds exactly the field, C++ records a
+    /// complete pull of the root, and `applyRecord` then unsets the root's
+    /// definition and makes the root both input and output of the new pull.
+    /// `apply_root_record` preserves that definition and pulls once before all
+    /// reads, including marker reads.
     fn process_forward(&mut self, data: &Funcdata, state: BitFieldNodeState) {
         if state.is_field_aligned() && state.does_sign_extension_match() {
             self.pull_list.push(PullRecord::normal(&state, None));
@@ -698,6 +704,10 @@ impl BitFieldPullTransform {
     /// Perform transform corresponding to the given PullRecord (C++
     /// `BitFieldPullTransform::applyRecord`, bitfield.cc:1435-1499).
     fn apply_record(&mut self, data: &mut Funcdata, mut rec: PullRecord, state: &mut TransformState) {
+        if rec.read_op.is_none() && rec.read_vn == Some(self.root) {
+            self.apply_root_record(data, rec, state);
+            return;
+        }
         let mod_op: OpId;
         if rec.read_op.is_none() {
             // null readOp -> readVn contains a complete pull.
@@ -750,7 +760,10 @@ impl BitFieldPullTransform {
         data.op_set_input(pull_op, c_pos, 1).ok();
         let c_num = data.new_constant(4, rec.num_bits as uintb);
         data.op_set_input(pull_op, c_num, 2).ok();
-        if Some(mod_op) != rec.read_op {
+        if let Some(load) = self.load_op {
+            let source = data.vbank().get(in_vn).and_then(|v| v.get_def()).unwrap_or(load);
+            data.op_insert_after(pull_op, source);
+        } else if Some(mod_op) != rec.read_op {
             data.op_insert_after(pull_op, mod_op);
         } else {
             data.op_insert_before(pull_op, mod_op);
@@ -794,6 +807,44 @@ impl BitFieldPullTransform {
             if dead {
                 data.op_destroy_recursive(mod_op, &mut state.dead_scratch);
             }
+        }
+        state.count += 1;
+    }
+
+    /// Pull a root without replacing its definition or losing its input symbol.
+    /// Rewire existing readers before adding the pull's own root read, so the
+    /// inserted operation cannot read its output or be traced repeatedly.
+    fn apply_root_record(&mut self, data: &mut Funcdata, rec: PullRecord, state: &mut TransformState) {
+        let root = data.vbank().get(self.root).unwrap();
+        let size = root.get_size();
+        let definition = root.get_def();
+        let address = definition.and_then(|op| data.obank().get(op))
+            .map_or_else(|| data.get_address().clone(), |op| op.get_addr().clone());
+        let pull = data.new_op(3, address);
+        let field = rec.dt.as_ref().unwrap();
+        data.op_set_opcode_code(pull, if field.get_metatype() == type_metatype::TYPE_INT {
+            OpCode::CPUI_SPULL
+        } else {
+            OpCode::CPUI_ZPULL
+        });
+        let output = data.new_unique_out(size, pull).unwrap();
+        data.total_replace(self.root, output).unwrap();
+        data.op_set_input(pull, self.root, 0).unwrap();
+        let position = data.new_constant(4, rec.pos as uintb);
+        let width = data.new_constant(4, rec.num_bits as uintb);
+        data.op_set_input(pull, position, 1).unwrap();
+        data.op_set_input(pull, width, 2).unwrap();
+        data.vbank_mut().get_mut(self.root).unwrap().update_type(Rc::clone(&state.partial_type));
+        let arch = Rc::clone(data.get_arch());
+        if let Some(types) = arch.types() {
+            if let Ok(dt) = types.resize_integer(Rc::clone(field), size) {
+                data.vbank_mut().get_mut(output).unwrap().update_type(dt);
+            }
+        }
+        if let Some(definition) = definition {
+            data.op_insert_after(pull, definition);
+        } else {
+            data.op_insert_begin(pull, data.bblocks_get_block(0));
         }
         state.count += 1;
     }
@@ -920,6 +971,23 @@ impl BitFieldPullTransform {
             }
         }
         data.op_mark_non_printing_pub(ptrsub);
+    }
+}
+
+/// The memory read printed by an operation, including a bitfield pull whose
+/// LOAD has been absorbed. Its value must obey the same ordering checks as a
+/// directly printed LOAD even though the pull itself is a pure p-code op.
+pub(crate) fn printed_load(data: &Funcdata, op: OpId) -> Option<OpId> {
+    let operation = data.obank().get(op)?;
+    match operation.code() {
+        OpCode::CPUI_LOAD => Some(op),
+        OpCode::CPUI_ZPULL | OpCode::CPUI_SPULL => {
+            let load = data.vbank().get(operation.get_in(0)?)?.get_def()?;
+            data.obank().get(load)
+                .filter(|o| o.code() == OpCode::CPUI_LOAD && o.not_printed())
+                .map(|_| load)
+        }
+        _ => None,
     }
 }
 
