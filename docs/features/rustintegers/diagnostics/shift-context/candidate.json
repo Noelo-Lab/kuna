@@ -1,0 +1,123 @@
+{
+  "binary": "/tmp/kuna-rust-integer-conversions/shift-context/probe",
+  "language": "rust-language",
+  "count": 2,
+  "error": null,
+  "functions": [
+    {
+      "name": "insert_bit",
+      "address": 4198688,
+      "address_hex": "0x401120",
+      "aliases": [
+        "sub_401120"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn insert_bit(mut a: u64, mut n: u64) -> u64\n{\n  return a | (1 << (n & 0x3f)) as u64;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198695,
+            4198699
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "a",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198695,
+            4198699
+          ]
+        },
+        {
+          "name": "n",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198695,
+            4198699
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "isolated_bit",
+      "address": 4198704,
+      "address_hex": "0x401130",
+      "aliases": [
+        "sub_401130"
+      ],
+      "object_location": null,
+      "size": 15,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn isolated_bit(mut n: u64) -> u64\n{\n  return (1 << (n as u8 & 0x3f)) as u64;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198715,
+            4198718
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "n",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198715,
+            4198718
+          ]
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": [
+    {
+      "directive": "prototype insert_bit uint8 insert_bit(uint8 a,uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    },
+    {
+      "directive": "prototype isolated_bit uint8 isolated_bit(uint8 n)",
+      "kind": "prototype",
+      "phase": "P4",
+      "subphase": "prototype-source",
+      "status": "applied",
+      "detail": null,
+      "fatal": false
+    }
+  ]
+}

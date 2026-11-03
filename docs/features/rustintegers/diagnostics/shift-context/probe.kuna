@@ -1,0 +1,2 @@
+prototype insert_bit uint8 insert_bit(uint8 a,uint8 n)
+prototype isolated_bit uint8 isolated_bit(uint8 n)

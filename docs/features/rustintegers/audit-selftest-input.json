@@ -1,0 +1,251 @@
+{
+  "records": [
+    {
+      "fixture": "conversion",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "conversion",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return a; }"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return a as u64; }"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "context",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "context",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return (1 << a); }"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return ::core::convert::identity::<i64>(1 << a) as u64; }"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "grouping",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "grouping",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return a + b - 9; }"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return a + ((b - 9) as u64); }"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "local_assignment",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "local_assignment",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { a += b; }"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { a = a + b as i64; }"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "negative_constant",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "negative_constant",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return a + -9; }"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return a - (9 as i64); }"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "bad_keyword",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "bad_keyword",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { let mut fn: i64; fn = a; return fn; }"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { let mut fn: i64; fn = a as i64; return fn; }"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "bad_namespace",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "bad_namespace",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return _::path(a); }"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return _::path(a) as u64; }"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "call_order",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "call_order",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return first() + second(); }"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return second() + first(); }"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "duplicated_call",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "duplicated_call",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return first(); }"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return first() + first(); }"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "literal_change",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "literal_change",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return a + 9; }"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return a + 8; }"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "operator_change",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "operator_change",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return a + b; }"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return a - b; }"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "precedence_change",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "precedence_change",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return (a + b) * 9; }"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { return a + b * 9; }"
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "pointer_repetition",
+      "changes": [
+        {
+          "address": "0x1",
+          "name": "pointer_repetition",
+          "gopairreturns": "off",
+          "fields": [
+            "code"
+          ],
+          "parent": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { *pointer() += a; }"
+          },
+          "candidate": {
+            "code": "unsafe fn probe(mut a: i64, b: i64) -> i64 { *pointer() = *pointer() + a; }"
+          }
+        }
+      ]
+    }
+  ]
+}

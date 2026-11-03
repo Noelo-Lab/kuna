@@ -1,0 +1,225 @@
+{
+  "status": "FAIL; retain every probe for diagnosis",
+  "candidate_cli_sha256": "bccacf03cd48d7e5012e67d2f56342730a820499949c65ebddbd91ed8bcd7b27",
+  "parent_cli_sha256": "66e4333c4a1a8ab1be4aca046ac5efb5d71af78f0185d27ed61887e0b21d5727",
+  "fixture_sha256": "52b2f9fe3fcac209eab0441e0a91f6678cc7d4969e6de1f35b9acdaec2aaf580",
+  "complete_functions": 15,
+  "input_vectors_per_run": 1280,
+  "native_rust_input_comparisons": null,
+  "function_comparisons": null,
+  "body_rewrites": false,
+  "c_go_unchanged": true,
+  "records": [
+    {
+      "arm": "reference",
+      "opt": "0",
+      "stdout_sha256": "085304c2a9b2699b27e4ddd0f389e75be7f7849f4d08905dce2c9e6a859f21a7"
+    },
+    {
+      "arm": "reference",
+      "opt": "2",
+      "stdout_sha256": "085304c2a9b2699b27e4ddd0f389e75be7f7849f4d08905dce2c9e6a859f21a7"
+    },
+    {
+      "arm": "parent",
+      "opt": "0",
+      "compile_exit": 1
+    },
+    {
+      "arm": "parent",
+      "opt": "2",
+      "compile_exit": 1
+    },
+    {
+      "arm": "candidate",
+      "opt": "0",
+      "compile_exit": 1
+    },
+    {
+      "arm": "candidate",
+      "opt": "2",
+      "compile_exit": 1
+    }
+  ],
+  "failures": [
+    {
+      "opt": "0",
+      "reason": "compile"
+    },
+    {
+      "opt": "2",
+      "reason": "compile"
+    }
+  ],
+  "commands": [
+    [
+      "cc",
+      "-O2",
+      "-g",
+      "-fwrapv",
+      "-fno-inline",
+      "-fno-optimize-sibling-calls",
+      "-fno-pie",
+      "-no-pie",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/context.c",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/helpers.c",
+      "-o",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/fixture"
+    ],
+    [
+      "/home/mahaloz/kwt/angr-go-pair-parent-a324/decompiler/target/release/kuna",
+      "decompile-all",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/fixture",
+      "--functions",
+      "insert_bit,isolated_bit,invert_low,shift_again,literal_right,signed_right,named_shift,signed_shift,mixed_shift,accumulate_bits,accumulate_calls,mixed_less,mixed_left,mixed_sub_less,mixed_sub_left",
+      "--language",
+      "c",
+      "--json",
+      "--assert",
+      "@/tmp/kuna-rust-integer-conversions/angle-subtraction-before/context.kuna"
+    ],
+    [
+      "/home/mahaloz/kwt/angr-go-pair-parent-a324/decompiler/target/release/kuna",
+      "decompile-all",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/fixture",
+      "--functions",
+      "insert_bit,isolated_bit,invert_low,shift_again,literal_right,signed_right,named_shift,signed_shift,mixed_shift,accumulate_bits,accumulate_calls,mixed_less,mixed_left,mixed_sub_less,mixed_sub_left",
+      "--language",
+      "go",
+      "--json",
+      "--assert",
+      "@/tmp/kuna-rust-integer-conversions/angle-subtraction-before/context.kuna"
+    ],
+    [
+      "/home/mahaloz/kwt/angr-go-pair-parent-a324/decompiler/target/release/kuna",
+      "decompile-all",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/fixture",
+      "--functions",
+      "insert_bit,isolated_bit,invert_low,shift_again,literal_right,signed_right,named_shift,signed_shift,mixed_shift,accumulate_bits,accumulate_calls,mixed_less,mixed_left,mixed_sub_less,mixed_sub_left",
+      "--language",
+      "rust",
+      "--json",
+      "--assert",
+      "@/tmp/kuna-rust-integer-conversions/angle-subtraction-before/context.kuna"
+    ],
+    [
+      "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/target/release/kuna",
+      "decompile-all",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/fixture",
+      "--functions",
+      "insert_bit,isolated_bit,invert_low,shift_again,literal_right,signed_right,named_shift,signed_shift,mixed_shift,accumulate_bits,accumulate_calls,mixed_less,mixed_left,mixed_sub_less,mixed_sub_left",
+      "--language",
+      "c",
+      "--json",
+      "--assert",
+      "@/tmp/kuna-rust-integer-conversions/angle-subtraction-before/context.kuna"
+    ],
+    [
+      "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/target/release/kuna",
+      "decompile-all",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/fixture",
+      "--functions",
+      "insert_bit,isolated_bit,invert_low,shift_again,literal_right,signed_right,named_shift,signed_shift,mixed_shift,accumulate_bits,accumulate_calls,mixed_less,mixed_left,mixed_sub_less,mixed_sub_left",
+      "--language",
+      "go",
+      "--json",
+      "--assert",
+      "@/tmp/kuna-rust-integer-conversions/angle-subtraction-before/context.kuna"
+    ],
+    [
+      "/home/mahaloz/kwt/angr-rust-integer-conversions/decompiler/target/release/kuna",
+      "decompile-all",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/fixture",
+      "--functions",
+      "insert_bit,isolated_bit,invert_low,shift_again,literal_right,signed_right,named_shift,signed_shift,mixed_shift,accumulate_bits,accumulate_calls,mixed_less,mixed_left,mixed_sub_less,mixed_sub_left",
+      "--language",
+      "rust",
+      "--json",
+      "--assert",
+      "@/tmp/kuna-rust-integer-conversions/angle-subtraction-before/context.kuna"
+    ],
+    [
+      "cc",
+      "-O0",
+      "-g",
+      "-fwrapv",
+      "-fno-inline",
+      "-fno-optimize-sibling-calls",
+      "-fno-pie",
+      "-no-pie",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DKUNA_NATIVE_MAIN",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/context.c",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/helpers.c",
+      "-o",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/reference-0"
+    ],
+    [
+      "cc",
+      "-O2",
+      "-g",
+      "-fwrapv",
+      "-fno-inline",
+      "-fno-optimize-sibling-calls",
+      "-fno-pie",
+      "-no-pie",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DKUNA_NATIVE_MAIN",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/context.c",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/helpers.c",
+      "-o",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/reference-2"
+    ],
+    [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=0",
+      "-C",
+      "overflow-checks=off",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/parent.rs",
+      "-o",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/parent-0"
+    ],
+    [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=2",
+      "-C",
+      "overflow-checks=off",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/parent.rs",
+      "-o",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/parent-2"
+    ],
+    [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=0",
+      "-C",
+      "overflow-checks=off",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/candidate.rs",
+      "-o",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/candidate-0"
+    ],
+    [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=2",
+      "-C",
+      "overflow-checks=off",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/candidate.rs",
+      "-o",
+      "/tmp/kuna-rust-integer-conversions/angle-subtraction-before/candidate-2"
+    ]
+  ]
+}

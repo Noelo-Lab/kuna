@@ -1,0 +1,59 @@
+{
+  "at": "2026-11-03T00:55:14.479699+00:00",
+  "feature": "Rust primitive integer conversions and expression context",
+  "parent_commit": "d01ff0ab8c7b55819fecdb9b2ba2944ff5cd2382",
+  "parent_tree": "4b1229a6935ad2b5cd9ef8d0568b7a51d4177473",
+  "merged_parent_commit": "48f08347bd15f1f73e9511bbe92d770976670f58",
+  "candidate_cli_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352",
+  "parent_cli_sha256": "b4557e50aa5b06baa5252307700b652dbecd651137ea873aa504ea364d8b82fd",
+  "gates": {
+    "all_four_gates_passed": true,
+    "additional_tools_lint_catalog_counters_passed": true,
+    "original_assertions": 675,
+    "stage_assertions": 3754,
+    "production_files_unchanged": 5596,
+    "release_sha256": "f846b2b4f01492a8c26ae22eac3b8563368d756996290ee42cfa76ef29c2f352"
+  },
+  "workspace": {
+    "passed": 10361,
+    "failed": 0,
+    "ignored": 39,
+    "suites": 72
+  },
+  "registered_native_complete_bodies": 64,
+  "registered_native_function_comparisons": 70152,
+  "supplementary_native_complete_bodies": 4,
+  "supplementary_native_function_comparisons": 512,
+  "breadth": {
+    "complete": true,
+    "scope": "Complete changed records classified by syntax-tree and modular-integer transformations, alongside whole-body native probes and source guard review. This does not establish native equivalence for whole runtime images.",
+    "images": 72,
+    "distinct_functions": 37908,
+    "language_function_records": 138972,
+    "changed_rust_records": 12742,
+    "classified_records": 12742,
+    "pending_records": 0,
+    "c_go_records_unchanged": true,
+    "native_complete_bodies": 64,
+    "native_function_comparisons": 70152,
+    "new_decompiler_errors": 0,
+    "new_rust_parse_errors": 0,
+    "existing_rust_parse_failures": 66,
+    "rust_parse_failures_resolved": 28,
+    "ast_report_sha256": "e678aa0585577f82c354f80ae96f5c092c7db2215eb3f1a72db019dc7c259333",
+    "audit_source_sha256": "500200c229b5001f07d283da1ed14acb456e2d3adb6aaf50bc586aa28bd4d240",
+    "audit_binary_sha256": "77ccdf3265b11a21886f70b28ccaa2a61bbb9a91c16f438420d5dd1c100d7fef",
+    "limitations": [
+      "Native Rust checks use overflow-checks=off to model wrapping machine arithmetic.",
+      "Primitive casts and exact core identity calls are stripped for structural comparison; rendered-type correctness also relies on same-width source guards and targeted native probes.",
+      "Associative integer operations may regroup without reordering operands; local name/field compound assignments expand without evaluating a pointer expression twice.",
+      "For the 94 records with a raw parse error in either arm, the review also erases primitive casts lexically and renames invalid fn/self/underscore-path identifiers before parsing; raw output and parser status remain retained. This is review-only normalization, not a native body rewrite.",
+      "STORE-width and direct-STORE signedness repairs are outside this feature."
+    ],
+    "pending": []
+  },
+  "max_cpu_or_wall_median_delta_pct": 0.41333158557685934,
+  "max_95pct_upper_mean_delta_pct": 0.6670269113943059,
+  "upper_bound_is_acceptance_gate": false,
+  "whole_runtime_native_equivalence_claimed": false
+}
