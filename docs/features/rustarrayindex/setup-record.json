@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-03T03:19:02.096370+00:00",
+  "parent_commit": "684c6c76782ccbb5e387eb00a27086a795428ed2",
+  "parent_tree": "ad0327081010d3eaeed17be47ff136c1ea51d3de",
+  "parent_cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+  "parent_pr": "https://github.com/Noelo-Lab/kuna/pull/1463",
+  "parent_merge_pending": true,
+  "specs": 154,
+  "fixture_sha256": "8482dd58009c268b544dcdaba45e4c87918007e0efa3d28a0d6ae5c0414704d9",
+  "complete_bodies": 45,
+  "expected_native_comparisons": 23112
+}

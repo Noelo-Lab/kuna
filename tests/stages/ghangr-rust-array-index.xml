@@ -1,0 +1,69 @@
+<decompilertest>
+<!-- P9 Rust array-index regression. Default output preserves integer width
+     before converting to usize; nocastprinting retains diagnostic output. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/array_index_x86_64</com>
+  <com>read symbols</com>
+  <com>option outlang rust</com>
+  <com>option ctypes off</com>
+  <com>option realtypes off</com>
+  <com>map prototype load_i64_s int8 load_i64_s(struct ArrayFields*p,int8 i);</com>
+  <com>map prototype store_u8_u void store_u8_u(struct ArrayFields*p,uint8 i,uint1 value);</com>
+  <com>map prototype array_address_s int4*array_address_s(struct ArrayFields*p,int8 i);</com>
+  <com>map prototype nested_load_s int4 nested_load_s(int4(*p)[9],int8 i,int8 j);</com>
+  <com>map prototype callback_store void callback_store(struct ArrayFields*p,int8 i,int4 value);</com>
+  <com>map prototype right_context int4 right_context(struct ArrayFields*p,uint8 shift);</com>
+  <com>map prototype signed_context int4 signed_context(struct ArrayFields*p,uint8 shift);</com>
+  <com>map prototype left_context int4 left_context(struct ArrayFields*p,uint8 shift);</com>
+  <com>map prototype constant_load int4 constant_load(struct ArrayFields*p);</com>
+  <com>map prototype counted_index int8 counted_index(int8 i);</com>
+  <com>map prototype counted_base struct ArrayFields*counted_base(struct ArrayFields*p);</com>
+  <com>map prototype counted_value int4 counted_value(int4 value);</com>
+  <com>load function load_i64_s</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function store_u8_u</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function array_address_s</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function nested_load_s</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function callback_store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function right_context</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function signed_context</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function left_context</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function constant_load</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option nocastprinting on</com>
+  <com>load function load_i64_s</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Rust array load converts its signed index" min="1" max="1">return\ \(\*p\)\.i64\[i\ as\ usize\];</stringmatch>
+<stringmatch name="Rust array store converts its unsigned index" min="1" max="1">\(\*p\)\.u8\[i\ as\ usize\]\ =\ value;</stringmatch>
+<stringmatch name="Rust valid array address converts its index" min="1" max="1">return\ \&amp;mut\ \(\*p\)\.i32\[i\ as\ usize\];</stringmatch>
+<stringmatch name="Rust nested array preserves the outer pointer scale" min="1" max="1">return\ \(\*p\.wrapping_byte_offset\(\(i\ as\ isize\)\.wrapping_mul\(36\)\)\)\[j\ as\ usize\];</stringmatch>
+<stringmatch name="Rust array callback store evaluates operands once" min="1" max="1">\(\*counted_base\(p\)\)\.i32\[v2\ as\ usize\]\ =\ v1;</stringmatch>
+<stringmatch name="Rust array logical shift preserves its width" min="1" max="1">::core::convert::identity::&lt;u64&gt;\(7\ &gt;&gt;\ \(shift\ as\ u8\ \&amp;\ 0x3f\)\)</stringmatch>
+<stringmatch name="Rust array arithmetic shift preserves its width" min="1" max="1">::core::convert::identity::&lt;i64&gt;\(\(\-8\ &gt;&gt;\ \(shift\ as\ u8\ \&amp;\ 0x3f\)\)\ \+\ 8\)</stringmatch>
+<stringmatch name="Rust array left shift preserves its width" min="1" max="1">::core::convert::identity::&lt;i64&gt;\(1\ &lt;&lt;\ \(shift\ as\ u8\ \&amp;\ 3\)\)</stringmatch>
+<stringmatch name="Rust constant array index keeps contextual inference" min="1" max="1">return\ \(\*p\)\.i32\[3\];</stringmatch>
+<stringmatch name="Rust array cast suppression keeps diagnostic output" min="1" max="1">return\ \(\*p\)\.i64\[i\];</stringmatch>
+</decompilertest>

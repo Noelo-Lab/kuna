@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-03T03:21:53.135569+00:00",
+  "parent_commit": "684c6c76782ccbb5e387eb00a27086a795428ed2",
+  "parent_worktree_head": "684c6c76782ccbb5e387eb00a27086a795428ed2",
+  "parent_tree": "ad0327081010d3eaeed17be47ff136c1ea51d3de",
+  "parent_cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+  "new_cli_sha256": "73cf05419d41cf16ec60b8308c3784f2e720cf0d2402b161add609b5d484cf79",
+  "scope": "Initial array-index source and registered native fixture; stage testcase and final validation not yet installed."
+}

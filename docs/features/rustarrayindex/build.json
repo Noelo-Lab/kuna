@@ -1,0 +1,26 @@
+{
+  "at": "2026-11-03T03:28:00.982462+00:00",
+  "parent_commit": "684c6c76782ccbb5e387eb00a27086a795428ed2",
+  "parent_worktree_head": "684c6c76782ccbb5e387eb00a27086a795428ed2",
+  "parent_tree": "ad0327081010d3eaeed17be47ff136c1ea51d3de",
+  "parent_cli_sha256": "07ec71b5f28e84d003428f78738196f1edd7ec5c6220c36f5db018b49724b0d3",
+  "new_cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+  "catalog_count": 377,
+  "corpus_files": 689,
+  "stage_assertions": [
+    3794,
+    3794
+  ],
+  "stage_keys_added": [
+    "data:Rust array arithmetic shift preserves its width",
+    "data:Rust array callback store evaluates operands once",
+    "data:Rust array cast suppression keeps diagnostic output",
+    "data:Rust array left shift preserves its width",
+    "data:Rust array load converts its signed index",
+    "data:Rust array logical shift preserves its width",
+    "data:Rust array store converts its unsigned index",
+    "data:Rust constant array index keeps contextual inference",
+    "data:Rust nested array preserves the outer pointer scale",
+    "data:Rust valid array address converts its index"
+  ]
+}

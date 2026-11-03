@@ -1,0 +1,89 @@
+{
+  "at": "2026-11-03T02:25:11.959002+00:00",
+  "status": "All local gates/native/breadth review and fixed speed plan complete on final615159. Pointer parent PR1463 merged. Evidence archival/publication pending; noarraycommit/PR.",
+  "evidence": "/tmp/kuna-rust-pointer-index/controls-record.json",
+  "confirmed_gaps": {
+    "array_field": "return (*p).values[i]; for i:i64, values:[i32;12]; unchanged E0277",
+    "nested_array": "return (*p.wrapping_byte_offset((i as isize).wrapping_mul(48)))[j]; for j:i64; outer raw-pointer indexing fixed, inner array E0277 remains"
+  },
+  "candidate_scope": "Rust generic SUBSCRIPT integer indices need usize. Keep complete index expression evaluation once and preserve its integer width before target-sized conversion. Reuse existing integer-context handling. Distinguish actual subscript output from generic pointer addition and honor nocastprinting. Do not assume every fallback is an array or claim raw-pointer fallback repair.",
+  "validation": [
+    "Authored struct array fields and nested arrays with nonnegative valid indices, widths1/2/4/8, loads/stores, full guard bytes and callback order.",
+    "Capture parent/compiler failure and compare complete unmodified candidate bodies to C at O0/O2.",
+    "Track global/local arrays and pointer fallback cases explicitly; preserve unresolved failures.",
+    "One separate PR, natural-language P9 spec, stage case/counters/baseline, all four gates/tools/lint/catalog, full language comparisons and fixed speed plan."
+  ],
+  "remaining_big_parity": [
+    "Go string/slice/aggregate ABI and interface results, multiarchitecture contracts",
+    "Rust Option/enum/niche recovery and typed return stability",
+    "Rust actual STORE-width repair/inconsistent inferred types/unknown128",
+    "Rust identifiers and callback signatures/fallback emission"
+  ],
+  "parent_proof": {
+    "record": "/tmp/kuna-rust-array-index/parent-record.json",
+    "complete_bodies": 40,
+    "reference_lines_per_profile": 7776,
+    "parent_error_code": "E0277",
+    "parent_error_count_per_profile": 38,
+    "parent_cli_sha256": "de026e44572b83ab0812088d23ae1a0a499dde628fc73ffa7d62fb93b42aa3c9"
+  },
+  "context_research": {
+    "record": "/tmp/kuna-rust-array-index/context-research/record.json",
+    "scope": "Ten pre-array-change captures on integrated pointer CLI07ec; no native execution or array fix.",
+    "observations": [
+      "Field_address needs usize but uses &mut indexing; one-past-array address behavior remains a separate issue even after valid-index compilation is repaired.",
+      "Narrow signed/unsigned parameters widen before subscripting; target conversion must preserve that existing expression.",
+      "Global captures use GLOBAL[i * 4]; symbol declaration/type and byte scale need separate investigation before any global-array correctness claim.",
+      "Local array result uses a[i], but emitted uninitialized array declaration is a separate compilation gap.",
+      "Masked logical/signed/left literal shifts cross a subpiece conversion; existing scalar conversion context may require a separate correction. Keep raw diagnostics; do not rewrite native bodies."
+    ],
+    "rust_reference": "https://doc.rust-lang.org/reference/expressions/array-expr.html#array-and-slice-indexing-expressions",
+    "next_native_context_cases": [
+      "7u64 >> shift with all64 shift counts yields valid indices0..7 and exposes defaulti32 shift width.",
+      "(-8i64 >> shift)+8 yields valid indices0..7 for all64 counts.",
+      "1u64 << (shift&3) yields valid indices1,2,4,8 for all64 counts."
+    ]
+  },
+  "additional_context_native_parent": {
+    "path": "/tmp/kuna-rust-array-index/context-native/record.json",
+    "complete_bodies": 3,
+    "reference_cases_per_profile": 192,
+    "observed_parent_errors": [
+      "E0277"
+    ],
+    "scope": "Direct literal-dependent array indices cover all64 shift counts with valid indices. Parent three-function bundle fails compilation; C references agree at O0/O2. Not candidate proof."
+  },
+  "implementation_notes": {
+    "module": "p9_emit/kuna_rustarrayindex.rs",
+    "hook": "Generic op_ptradd_ir only when emitting SUBSCRIPT; do not change plain BINARY_PLUS or raw-pointer wrapping path.",
+    "input_scope": "Nonconstant matching-width primitive integer/unknown indices, sizes1/2/4/8; exclude enums and noninteger types.",
+    "render": "Preserve the complete existing index expression and its integer context, then cast to usize. Reuse push_rust_integer_conversion with explicit_cast true; no body rewriting. Save/restore printing modifiers.",
+    "remaining_scope": "Does not prove raw-pointer fallbacks, one-past-array addresses, global byte-scale recovery, uninitialized local arrays or nested-subpiece literal context."
+  },
+  "updated_at": "2026-11-03T03:43:38.153872+00:00",
+  "native45_research": {
+    "record": "/tmp/kuna-rust-array-index/parent45-record.json",
+    "fixtures": "/tmp/kuna-rust-array-index/native45",
+    "scope": "Fresh45-function authored fixture on current integrated pointer CLI07ec; pointer publication still pending. C O0/O2 agree11556 rows/profile; Rust parent fails41E0277 errors/profile. No array candidate yet. Original40-function research preserved separately.",
+    "complete_bodies": 45,
+    "reference_lines_per_profile": 11556,
+    "planned_candidate_comparisons": 23112,
+    "cases": [
+      "32 scalar load/store signed/unsigned element and index combinations",
+      "2 already-valid constant/zero controls",
+      "2 valid array-address cases",
+      "2 callback cases",
+      "4 nested array cases",
+      "3 direct literal-width contexts, all64 shifts over18 memory patterns"
+    ],
+    "bounds": "All executed C accesses are within arrays; native candidate must use identical valid indices and compare full memory+guard bytes. One-past addresses remain separate."
+  },
+  "current_scope": "Nonconstant primitive integer PTRADD subscript indices convert to usize after preserving bounded integer context. Constant controls unchanged. Valid array addresses only; one-past bounds panic reproduced separately.",
+  "pointer_parent_merge": "4fa0832734dea98b1f650a5c14d1504316848b97",
+  "speed_result": {
+    "max_cpu_or_wall_median_delta_pct": 0.6665849884516684,
+    "max_95pct_upper_mean_delta_pct": 10.98468876435908,
+    "upper_bound_is_acceptance_gate": false,
+    "note": "Wall-time uncertainty is wider than median deltas; every raw sample is retained. No unchanged-code repeat."
+  }
+}

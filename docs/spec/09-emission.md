@@ -4681,3 +4681,22 @@ existing paths. These exclusions avoid treating an array value as a pointer
 receiver. `nocastprinting` retains its previous diagnostic output. This
 corrects raw-pointer index syntax; it does not infer array layouts or repair
 unrelated pointer arithmetic and memory widths.
+
+### Rust array index conversions
+
+The Rust generic PTRADD subscript path renders a nonconstant primitive integer
+index as `usize`, as required by Rust arrays and slices. The complete index
+expression is evaluated once. Its rendered integer type and any literal-dependent
+arithmetic retain their original width before the target-sized conversion; the
+bounded integer-context query refuses expressions whose context cannot be
+established. The conversion applies to load, store and array-notation address
+expressions. Existing constant subscripts retain Rust's contextual type inference.
+
+The helper accepts matching varnode/type widths of 1, 2, 4 or 8 bytes and excludes
+enums and noninteger types. Cast suppression retains diagnostic output. The
+raw-pointer wrapping path and plain pointer-addition notation are separate paths.
+This repairs valid array indexing without establishing correctness of raw-pointer
+fallbacks, one-past array addresses, global byte-scale recovery or uninitialized
+local arrays. The native regression checks complete emitted field and nested-array
+bodies, valid addresses, all store and guard bytes, callback order, and literal
+shift expressions against C at both optimization levels.

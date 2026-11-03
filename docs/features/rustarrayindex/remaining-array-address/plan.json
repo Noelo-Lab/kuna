@@ -1,0 +1,26 @@
+{
+  "status": "Reproduced after valid-index compilation repair; no address implementation/worktree. Parent array PR not yet published.",
+  "at": "2026-11-03T03:33:24.967805+00:00",
+  "witness": "/tmp/kuna-rust-array-address/record.json",
+  "parent_cli_sha256": "615159a683af0b6d441ba1eaaace417736ab1f46ca975e221d0ba4fb1483462d",
+  "known_gap": "Rust &mut array[i as usize] checks array bounds, so valid C one-past address i==9 panics. Complete unmodified emitted body matches i0/8 and panics101 at9; C offsets64/96/100.",
+  "candidate_scope": "Array-address rendering must preserve raw address semantics without references, implicit bounds checks or pointee reads. Restrict to proven address-valued PTRADD bases, exact instruction byte scale, matching target widths, single evaluation and cast suppression. Do not claim array loads/stores or global byte-scale recovery fixed by address-only changes.",
+  "validation_plan": [
+    "Native address-only fixtures with every supported element size, beginning/end/one-past, pointer-result types and callbacks; no dereference of out-of-range pointers.",
+    "Keep prior valid-index/native45 and pointer/native57 tests green.",
+    "Separate module/P9 spec/stagecase and allfour/tools/lint/catalog/counters, broad language comparisons and a predeclared speed plan."
+  ],
+  "order": "Begin implementation only after array-index feature publication; keep one PR per feature.",
+  "rendering_research": {
+    "rust_reference": "https://doc.rust-lang.org/std/ptr/macro.addr_of_mut.html",
+    "candidate_shape": "(&raw mut proven_array_place).wrapping_byte_offset((index as isize).wrapping_mul(exact_PTRADD_byte_scale)) as target_raw_pointer",
+    "guard_notes": [
+      "Must prove the emitted base is an array place; an implied PTRSUB or COPY alone is insufficient.",
+      "Direct struct-array field PTRSUB with exact field start, or pointer-to-array PTRSUB at offset0, are initial candidate cases; resolved unions/global symbols/copies require separate evidence before acceptance.",
+      "Preserve raw-pointer wrapping path, index width context, single evaluation, actual instruction byte scale, output pointer type and cast-suppressed diagnostics.",
+      "Raw address-of avoids references and bounds checks only when applied to the whole known array place, not array[index].",
+      "Field projection itself still requires an in-bounds object; do not claim arbitrary null/dangling field-base arithmetic. No pointee reads are needed."
+    ],
+    "not_implemented": true
+  }
+}
