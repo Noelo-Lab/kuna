@@ -1103,6 +1103,10 @@ pub struct ActionMarkImplied {
     base: ActionBase,
 }
 
+/// (kuna decompile-all watchdog) Seeds [`ActionMarkImplied`] walks between
+/// budget probes: one pass over a 200 KB function runs for seconds.
+const MARK_IMPLIED_PROBE_STRIDE: usize = 1024;
+
 impl ActionMarkImplied {
     /// Construct in group `g` (C++ `ActionMarkImplied::ActionMarkImplied`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
@@ -1125,7 +1129,7 @@ impl Action for ActionMarkImplied {
         }
         Some(Box::new(ActionMarkImplied { base: self.base.clone() }))
     }
-    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:3519 — ActionMarkImplied::apply: a depth-first walk
         // of each non-free, not-yet-marked Varnode's descend tree, classifying
         // each leaf as implied (if its cover permits) or explicit.
@@ -1133,7 +1137,10 @@ impl Action for ActionMarkImplied {
         let stores = StoreBlocks::new(data);
         // C++ iterates beginLoc()..endLoc(); iter_loc() is the loc-set order.
         let seeds: Vec<crate::context::VarnodeId> = data.vbank().iter_loc().collect();
-        for seed in seeds {
+        for (i, seed) in seeds.into_iter().enumerate() {
+            if i % MARK_IMPLIED_PROBE_STRIDE == 0 && ctx.deadline_expired_at(|| "action markimplied".to_string()) {
+                break;
+            }
             {
                 let v = match data.vbank().get(seed) {
                     Some(v) => v,
