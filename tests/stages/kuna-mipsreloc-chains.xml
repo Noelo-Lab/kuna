@@ -1,0 +1,75 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:64:default">
+<!--
+    kuna relocatable-object loader: a MIPS relocation may be one operation of
+    a longer expression. GNU as writes `%hi(%neg(%gp_rel(f)))` in an N32
+    object as three records at one offset, GPREL16, SUB and HI16, each taking
+    the result of the one before; an N64 record packs up to three operations
+    and an expression may continue into the next record at the same offset.
+    The loader applied each N32 record on its own and each N64 record alone,
+    so every N32 .cpsetup left $gp at the function's entry and its GOT reads
+    landed below .text (`*dat_3f8080`), and a call through a composed
+    expression kept its placeholder (sub_0, halt_baddata, trap).
+
+    Stage: P1 program prep (relocatable-object loader); a strict loader fix,
+    no option. Single pass.
+
+    Images: tests/fixtures/octeon-relocations/pic-gcc73-n32.o (GCC 7.3 N32 PIC,
+    pic.c) and call-composed-{n32,64}-be.o (call-composed.S); see that
+    directory's README and provenance files.
+
+    Assert #1: N32 PIC read_global reads global_value through the GOT.
+    Assert #2: N32 PIC call_external calls external through the GOT.
+    Assert #3: every composed N32 and N64 call names its callee.
+    Assert #4: no call is left at a placeholder or bad instruction.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-relocations/pic-gcc73-n32.o</com>
+  <com>read symbols</com>
+  <com>lo fu read_global</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu call_external</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-relocations/call-composed-n32-be.o</com>
+  <com>read symbols</com>
+  <com>lo fu composed_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scalar_chain_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cross_record_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu relative_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-relocations/call-composed-64-be.o</com>
+  <com>read symbols</com>
+  <com>lo fu composed_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scalar_chain_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cross_record_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu relative_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="mipsreloc-chains #1: N32 PIC read_global reads global_value" min="1" max="1">return x \+ global_value;</stringmatch>
+<stringmatch name="mipsreloc-chains #2: N32 PIC call_external calls external" min="1" max="1">return external\(</stringmatch>
+<stringmatch name="mipsreloc-chains #3: composed N32 and N64 calls name their callees" min="8" max="8">  (composed|scalar|cross|relative)_target\(7,0xb\);</stringmatch>
+<stringmatch name="mipsreloc-chains #4: no placeholder call or bad instruction" min="0" max="0">sub_[0-9a-f]+\(|halt_baddata|trap\(|dat_3f8</stringmatch>
+</decompilertest>

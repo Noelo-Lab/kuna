@@ -153,15 +153,6 @@ impl RelocationSpec {
         self
     }
 
-    /// The ELF type of a MIPS relocation, which [`super::kuna_mipsreloc`]
-    /// applies rather than [`apply`].
-    pub fn mips_type(self) -> Option<u32> {
-        match self.specific {
-            Specific::Mips { r_type } => Some(r_type),
-            _ => None,
-        }
-    }
-
     pub fn requires_symbol(self) -> bool {
         !matches!(self.specific, Specific::Ppc64Toc64)
     }

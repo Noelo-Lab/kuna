@@ -816,15 +816,27 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   object (REL) keeps each addend in the field it patches, so a `HI16`, or a
   `GOT16` against a local symbol, takes the low half of its addend from the next
   `LO16` against the same target, as the GNU linker pairs them; an N32/N64 object
-  (RELA) states its addends and chains up to three operations in one entry
+  (RELA) states its addends and chains operations into one expression
   (`%hi(%neg(%gp_rel(f)))` is `GPREL16`, `SUB`, `HI16`), each result the next
-  one's addend. Neither `$gp` nor a GOT exists before link, so the layout makes
+  one's addend. An N32 object spells the chain as one record per operation at
+  the same offset; an N64 record packs up to three operations, its second using
+  the `r_ssym` special symbol (zero, `$gp`, the input `$gp` or the place), and
+  its chain continues into the next record at that offset until an
+  `R_MIPS_NONE`. Each operation computes what the GNU linker does, including a
+  32-bit result truncated before a later 64-bit one, and only the final value
+  must fit its field; an expression with an operation that cannot be applied
+  writes nothing, and a packed record whose operations resume after a `NONE` is
+  rejected. A GP-relative value against a local symbol, and every `GPREL32`,
+  adds back the input `$gp` that a partial link recorded in `.reginfo` or an
+  `ODK_REGINFO` entry of `.MIPS.options`: absent, it is 0; malformed or
+  conflicting, the expressions that need it fail as unresolved. Neither `$gp` nor a GOT exists before link, so the layout makes
   what the linker would: a GOT after the object's other sections, with one entry
   per symbol and addend a `CALL16`/`GOT16`/`GOT_DISP`/`CALL_HI16`-style
   relocation names and one per 64 KiB page a local `GOT16` or a `GOT_PAGE`
   reaches (sized from the relocations before any is applied), then the
   small-data sections (`.sdata`, `.sbss`, `.lit4`, `.lit8`, `.srdata`), and `_gp`
-  `0x7ff0` past the GOT's start. `_gp_disp` resolves to `_gp` less the place
+  `0x7ff0` past the GOT's start, unless the object's own definitions of `_gp`
+  agree on a value, which the GP-relative fields then use. `_gp_disp` resolves to `_gp` less the place
   (the PIC prologue adds `$t9`, the function's entry) and an undefined `_gp` or
   `__gnu_local_gp` to `_gp`. The GOT's entries hold what the relocations put in
   them and nothing writes them, so the loader reports its range foldable

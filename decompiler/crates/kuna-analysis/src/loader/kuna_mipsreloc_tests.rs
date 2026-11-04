@@ -190,3 +190,258 @@ fn small_data_sections_are_recognized_by_name() {
         assert!(!is_small_data(name), "{name}");
     }
 }
+
+fn fixture(name: &str) -> Vec<u8> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/octeon-relocations");
+    std::fs::read(dir.join(name)).unwrap()
+}
+
+fn layout(bytes: &[u8]) -> super::super::reloc_object::RelocLayout {
+    let file = object::File::parse(bytes).unwrap();
+    super::super::reloc_object::layout_relocatable(&file, &super::super::format::elf::ElfFormat)
+}
+
+fn read_at(data: &[u8], at: u64, width: usize, le: bool) -> u64 {
+    read(&data[at as usize..at as usize + width], le)
+}
+
+/// Original N32/N64 and o32 objects whose GNU-linked images put `.text` and
+/// `$gp` where the loader does: composed N32 records, packed and spanning N64
+/// records, REL HI/LO pairs, GP-relative and literal fields, a partial link's
+/// input `$gp`, and calls through composed expressions all match GNU ld.
+#[test]
+fn relocated_text_matches_the_gnu_linked_originals() {
+    let mut stems = vec!["implicit-32-be".to_string(), "gp-32-be".to_string()];
+    for kind in ["expressions", "call-composed", "gp", "gp-partial"] {
+        for abi in ["n32", "64"] {
+            for endian in ["be", "le"] {
+                stems.push(format!("{kind}-{abi}-{endian}"));
+            }
+        }
+    }
+    for stem in stems {
+        let object_bytes = fixture(&format!("{stem}.o"));
+        let linked_bytes = fixture(&format!("{stem}.elf"));
+        let linked = object::File::parse(&*linked_bytes).unwrap();
+        let layout = layout(&object_bytes);
+        assert!(layout.diagnostics.is_empty(), "{stem}: {:?}", layout.diagnostics.report_lines());
+        let text = linked.section_by_name(".text").unwrap();
+        let (_, laid) = layout.segments.iter().find(|(a, _)| *a == text.address()).unwrap();
+        assert_eq!(laid, text.data().unwrap(), "{stem}");
+    }
+}
+
+/// Each GOT load reaches a slot holding what the GNU-linked GOT's slot holds;
+/// the slots may be ordered differently, and every other bit matches.
+#[test]
+fn got_loads_reach_the_values_gnu_linked() {
+    let mut stems = vec!["got-32-be".to_string()];
+    for abi in ["n32", "64"] {
+        for endian in ["be", "le"] {
+            stems.push(format!("got-{abi}-{endian}"));
+        }
+    }
+    for stem in stems {
+        let object_bytes = fixture(&format!("{stem}.o"));
+        let linked_bytes = fixture(&format!("{stem}.elf"));
+        let file = object::File::parse(&*object_bytes).unwrap();
+        let linked = object::File::parse(&*linked_bytes).unwrap();
+        let le = file.is_little_endian();
+        let width = if file.is_64() { 8 } else { 4 };
+        let layout = layout(&object_bytes);
+        assert!(layout.diagnostics.is_empty(), "{stem}: {:?}", layout.diagnostics.report_lines());
+        let gp = layout.got_range.unwrap().0 + GP_BIAS;
+        let gnu_gp = linked.symbols().find(|s| s.name() == Ok("_gp")).unwrap().address();
+        let gnu_got = linked.section_by_name(".got").unwrap();
+        let text = linked.section_by_name(".text").unwrap();
+        let mut expected = text.data().unwrap().to_vec();
+        let (_, laid) = layout.segments.iter().find(|(a, _)| *a == text.address()).unwrap();
+        let mut actual = laid.clone();
+        let value = |address: u64| {
+            let (base, data) = layout
+                .segments
+                .iter()
+                .find(|(base, data)| address >= *base && address + width <= base + data.len() as u64)
+                .unwrap();
+            read_at(data, address - base, width as usize, le)
+        };
+        let mut slots = 0;
+        for (offset, reloc) in file.section_by_name(".text").unwrap().relocations() {
+            let RelocationFlags::Elf { r_type } = reloc.flags() else { unreachable!() };
+            let weak = match reloc.target() {
+                RelocationTarget::Symbol(i) => file.symbol_by_index(i).is_ok_and(|s| s.is_undefined() && s.is_weak()),
+                _ => false,
+            };
+            // A split offset's high half is 0 in both small GOTs, so its low half
+            // alone locates the slot; the `lui` halves are compared as other bits.
+            if weak || !matches!(r_type & 0xff, GOT16 | CALL16 | GOT_DISP | GOT_PAGE | GOT_LO16 | CALL_LO16) {
+                continue;
+            }
+            let ours = read_at(&actual, offset, 4, le);
+            let gnu = read_at(&expected, offset, 4, le);
+            let slot = gp.wrapping_add(ours as u16 as i16 as i64 as u64);
+            let gnu_slot = gnu_gp.wrapping_add(gnu as u16 as i16 as i64 as u64);
+            let gnu_value = read_at(gnu_got.data().unwrap(), gnu_slot - gnu_got.address(), width as usize, le);
+            assert_eq!(value(slot), gnu_value, "{stem} at {offset:#x}");
+            for word in [&mut actual, &mut expected] {
+                let at = offset as usize;
+                let masked = read_at(word, offset, 4, le) & !0xffff;
+                write(&mut word[at..at + 4], le, masked);
+            }
+            slots += 1;
+        }
+        assert!(slots >= 5, "{stem}");
+        assert_eq!(actual, expected, "{stem}: bits outside the GOT offsets");
+    }
+}
+
+fn synthetic(arch: object::Architecture, endian: Endianness, relocations: &[(u64, u32, u64)]) -> Vec<u8> {
+    let mut obj = Writer::new(BinaryFormat::Elf, arch, endian);
+    let data = obj.section_id(object::write::StandardSection::Data);
+    obj.append_section_data(data, &[0xa5; 16], 8);
+    for (index, &(offset, r_type, value)) in relocations.iter().enumerate() {
+        let symbol = obj.add_symbol(Symbol {
+            name: format!("target{index}").into_bytes(),
+            value,
+            size: 0,
+            kind: SymbolKind::Data,
+            scope: SymbolScope::Linkage,
+            weak: false,
+            section: SymbolSection::Absolute,
+            flags: SymbolFlags::None,
+        });
+        obj.add_relocation(data, WriteRelocation { offset, symbol, addend: 0, flags: RelocationFlags::Elf { r_type } })
+            .unwrap();
+    }
+    obj.write().unwrap()
+}
+
+/// A chain with an unsupported operation fails as a whole, leaving its field
+/// alone; an independent field beside it is still written.
+#[test]
+fn an_unsupported_operation_fails_its_whole_expression() {
+    const TLS_GD: u32 = 42;
+    for (arch, records) in [
+        (Architecture::Mips64_N32, vec![(0, R32, 0x1234_5678), (0, TLS_GD, 0), (8, R32, 0x1234_5678)]),
+        (Architecture::Mips64, vec![(0, R32 | (TLS_GD << 8), 0x1234_5678), (8, R32, 0x1234_5678)]),
+        (Architecture::Mips64, vec![(0, R32 | (SUB << 8) | (HI16 << 16) | (19 << 24), 0x1234_5678), (8, R32, 0x1234_5678)]),
+    ] {
+        for endian in [Endianness::Big, Endianness::Little] {
+            let layout = layout(&synthetic(arch, endian, &records));
+            let data = &layout.segments[0].1;
+            assert_eq!(&data[..8], &[0xa5; 8], "{arch:?} {endian:?}");
+            assert_eq!(read_at(data, 8, 4, endian == Endianness::Little), 0x1234_5678);
+            assert!(!layout.diagnostics.is_empty());
+        }
+    }
+}
+
+/// N64 operations after an `R_MIPS_NONE` in the same record are not a second
+/// expression: the record is malformed and writes nothing.
+#[test]
+fn n64_operations_after_none_reject_the_record() {
+    for endian in [Endianness::Big, Endianness::Little] {
+        for r_type in [R64 << 8, R64 | (SUB << 16), (SUB << 8) | (R64 << 16), R64 | (255 << 16)] {
+            let layout = layout(&synthetic(Architecture::Mips64, endian, &[(0, r_type, 0x1234_8000), (8, R32, 0x5678_1234)]));
+            let data = &layout.segments[0].1;
+            assert_eq!(&data[..8], &[0xa5; 8], "{endian:?} {r_type:#x}");
+            assert_eq!(read_at(data, 8, 4, endian == Endianness::Little), 0x5678_1234);
+            assert_eq!(layout.diagnostics.total(), 1);
+        }
+    }
+}
+
+/// An N64 record's `r_ssym` names `0`, `$gp`, the input `$gp` or the place,
+/// not a symbol-table entry.
+#[test]
+fn n64_special_symbols_are_linker_values() {
+    for endian in [Endianness::Big, Endianness::Little] {
+        for (ssym, expected) in [
+            (0, 0xffff_ffff_edcb_8000u64),
+            (1, 0xffff_ffff_ee2b_8088),
+            (2, 0xffff_ffff_ee3b_80a0),
+            (3, 0xffff_ffff_ee0b_8008),
+        ] {
+            let mut obj = Writer::new(BinaryFormat::Elf, Architecture::Mips64, endian);
+            let data = obj.section_id(object::write::StandardSection::Data);
+            obj.append_section_data(data, &[0xa5; 16], 8);
+            let add = |obj: &mut Writer, name: &str, value| {
+                obj.add_symbol(Symbol {
+                    name: name.as_bytes().to_vec(),
+                    value,
+                    size: 0,
+                    kind: SymbolKind::Data,
+                    scope: SymbolScope::Linkage,
+                    weak: false,
+                    section: SymbolSection::Absolute,
+                    flags: SymbolFlags::None,
+                })
+            };
+            add(&mut obj, "_gp", 0x60_0088);
+            add(&mut obj, "decoy", 0x9876_5432);
+            let target = add(&mut obj, "target", 0x1234_8000);
+            let options = obj.add_section(Vec::new(), b".MIPS.options".to_vec(), SectionKind::ReadOnlyData);
+            let mut record = [0u8; 40];
+            record[0] = 1;
+            record[1] = 40;
+            let gp0 = if endian == Endianness::Big { 0x70_00a0u64.to_be_bytes() } else { 0x70_00a0u64.to_le_bytes() };
+            record[32..].copy_from_slice(&gp0);
+            obj.append_section_data(options, &record, 8);
+            let r_type = R64 | (SUB << 8) | (R64 << 16) | (ssym << 24);
+            obj.add_relocation(data, WriteRelocation { offset: 8, symbol: target, addend: 0, flags: RelocationFlags::Elf { r_type } })
+                .unwrap();
+            let layout = layout(&obj.write().unwrap());
+            assert!(layout.diagnostics.is_empty(), "{:?}", layout.diagnostics.report_lines());
+            let data = &layout.segments[0].1;
+            assert_eq!(&data[..8], &[0xa5; 8]);
+            assert_eq!(read_at(data, 8, 8, endian == Endianness::Little), expected, "{endian:?} r_ssym {ssym}");
+        }
+    }
+}
+
+/// Only expressions that read the input `$gp` fail when its record is
+/// malformed; the partial link's other fields still match GNU ld.
+#[test]
+fn a_malformed_input_gp_fails_only_the_fields_that_use_it() {
+    for abi in ["n32", "64"] {
+        for endian in ["be", "le"] {
+            let stem = format!("gp-partial-{abi}-{endian}");
+            let mut bytes = fixture(&format!("{stem}.o"));
+            let linked_bytes = fixture(&format!("{stem}.elf"));
+            let file = object::File::parse(&*bytes).unwrap();
+            assert_eq!(input_gp(&file), Ok(0x40_8000));
+            let le = endian == "le";
+            let text = file.section_by_name(".text").unwrap();
+            let original = text.data().unwrap().to_vec();
+            let dependent: Vec<usize> = text
+                .relocations()
+                .filter(|(_, r)| match r.target() {
+                    RelocationTarget::Symbol(i) => file.symbol_by_index(i).unwrap().name() == Ok("local_target"),
+                    _ => false,
+                })
+                .map(|(offset, _)| offset as usize)
+                .collect();
+            assert_eq!(dependent.len(), 2, "{stem}: a local literal and a GPREL32");
+            let linked = object::File::parse(&*linked_bytes).unwrap();
+            let mut expected = linked.section_by_name(".text").unwrap().data().unwrap().to_vec();
+            for at in dependent {
+                expected[at..at + 4].copy_from_slice(&original[at..at + 4]);
+            }
+            let section = file.section_by_name(if abi == "n32" { ".reginfo" } else { ".MIPS.options" }).unwrap();
+            if abi == "n32" {
+                let table = read_at(&bytes, 32, 4, le) as usize;
+                let stride = read_at(&bytes, 46, 2, le) as usize;
+                let size = table + stride * section.index().0 + 20;
+                bytes[size..size + 4].fill(0);
+            } else {
+                let (start, _) = section.file_range().unwrap();
+                bytes[start as usize + 1] = 0;
+            }
+            let file = object::File::parse(&*bytes).unwrap();
+            assert!(input_gp(&file).is_err());
+            let layout = layout(&bytes);
+            assert_eq!(layout.segments[0].1, expected, "{stem}");
+            assert_eq!(layout.diagnostics.total(), 2);
+        }
+    }
+}

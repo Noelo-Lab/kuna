@@ -374,7 +374,11 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         cursor = align_up(cursor, 16).wrapping_add(g.size());
         gp = Some(g);
     }
-    let got_base = gp.as_ref().map(|g| g.gp().wrapping_sub(kuna_mipsreloc::GP_BIAS));
+    if let (Some(g), Some(defined)) = (gp.as_mut(), kuna_mipsreloc::defined_gp(file, &vma_of)) {
+        g.set_gp(defined);
+    }
+    let got_base = gp.as_ref().map(|g| g.base());
+    let input_gp = if mips { kuna_mipsreloc::input_gp(file) } else { Ok(0) };
 
     // Externs (undefined referenced symbols) live in a synthetic area above the
     // laid-out sections — the angr extern-object analog.  Allocated on demand.
@@ -427,6 +431,60 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         } else {
             Vec::new()
         };
+        if let Some(g) = gp.as_mut() {
+            let gp_value = g.gp();
+            let mut resolve = |target: RelocationTarget| {
+                let local = kuna_mipsreloc::is_local(file, target);
+                if let RelocationTarget::Symbol(idx) = target {
+                    if let Some(special) = kuna_mipsreloc::special_symbol(file, idx, gp_value) {
+                        let address = special.unwrap_or(0);
+                        return Some(kuna_mipsreloc::Target { address, local, gp_disp: special.is_none() });
+                    }
+                }
+                let address = match target {
+                    RelocationTarget::Symbol(idx) => {
+                        resolve_symbol(
+                            file,
+                            idx,
+                            &vma_of,
+                            &mut extern_of,
+                            &mut extern_order,
+                            &mut extern_cursor,
+                            &mut common_allocator,
+                            architecture,
+                        )?
+                        .address
+                    }
+                    RelocationTarget::Section(idx) => *vma_of.get(&idx)?,
+                    RelocationTarget::Absolute => 0,
+                    _ => return None,
+                };
+                Some(kuna_mipsreloc::Target { address, local, gp_disp: false })
+            };
+            let applied = g.apply_section(
+                architecture,
+                &mut laid[li].data,
+                sec_vma,
+                &relocs,
+                &lo_halves,
+                input_gp,
+                &mut resolve,
+            );
+            for (record, reason) in applied.failures {
+                let (offset, reloc) = &relocs[record];
+                let r_type = match reloc.flags() {
+                    RelocationFlags::Elf { r_type } => Some(r_type),
+                    _ => None,
+                };
+                diagnostics.record(architecture, r_type, reason, sec_vma, *offset);
+            }
+            for callee in applied.callees {
+                if let RelocationTarget::Symbol(idx) = callee {
+                    code_externs.insert(idx);
+                }
+            }
+            continue;
+        }
         if matches!(architecture, Architecture::Sparc | Architecture::Sparc32Plus)
             && sec.kind() == SectionKind::Text
         {
@@ -436,7 +494,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
                 little_endian,
             ));
         }
-        for (ri, (offset, reloc)) in relocs.into_iter().enumerate() {
+        for (offset, reloc) in relocs {
             let r_type = match reloc.flags() {
                 RelocationFlags::Elf { r_type } => Some(r_type),
                 _ => None,
@@ -471,12 +529,9 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
                 continue;
             }
             let spec = spec.refine_call_from_field(&laid[li].data[off..end], little_endian);
-            let special = match (&gp, reloc.target()) {
-                (Some(g), RelocationTarget::Symbol(idx)) => {
-                    kuna_mipsreloc::special_symbol(file, idx, g.gp())
-                }
+            let special = match reloc.target() {
                 // `.TOC.`, which ELFv2 code reaches `r2` through, is the linker's.
-                (None, RelocationTarget::Symbol(idx)) if architecture == Architecture::PowerPc64 => toc
+                RelocationTarget::Symbol(idx) if architecture == Architecture::PowerPc64 => toc
                     .filter(|_| {
                         file.symbol_by_index(idx)
                             .is_ok_and(|sym| sym.is_undefined() && sym.name() == Ok(".TOC."))
@@ -556,20 +611,6 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
                 continue;
             };
             let place = sec_vma.wrapping_add(offset);
-            if let (Some(mips_type), Some(g)) = (spec.mips_type(), gp.as_mut()) {
-                let target = kuna_mipsreloc::Target {
-                    address: target.address,
-                    local: kuna_mipsreloc::is_local(file, reloc.target()),
-                    gp_disp: special == Some(None),
-                };
-                let lo = lo_halves.get(ri).copied().flatten();
-                if let Err(reason) =
-                    g.apply(mips_type, &reloc, &mut laid[li].data[off..end], target, place, lo)
-                {
-                    diagnostics.record(architecture, r_type, reason, sec_vma, offset);
-                }
-                continue;
-            }
             if let Err(reason) = reloc_apply::apply(
                 spec,
                 &reloc,
