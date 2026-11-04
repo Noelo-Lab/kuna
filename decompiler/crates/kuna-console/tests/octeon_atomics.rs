@@ -2,6 +2,7 @@
 use std::path::PathBuf;
 
 use kuna_base::xml::DocumentStorage;
+use kuna_decomp::kuna_octeoneffects::OcteonEffectsMode;
 use kuna_console::{
     assertions::{self, Body, Directive},
     engine::{bootstrap_program, EntrySelector},
@@ -13,11 +14,21 @@ fn decompile(words: &[u32], n32: bool, prototype: &str) -> String {
 }
 
 fn decompile_config(words: &[u32], n32: bool, prototype: Option<&str>, readonly: bool) -> String {
+    decompile_mode(words, n32, prototype, readonly, OcteonEffectsMode::default())
+}
+
+fn decompile_mode(
+    words: &[u32],
+    n32: bool,
+    prototype: Option<&str>,
+    readonly: bool,
+    mode: OcteonEffectsMode,
+) -> String {
     let target = format!(
         "MIPS:BE:64:octeon2{}:default",
         if n32 { "-32addr" } else { "" }
     );
-    decompile_target(words, &target, prototype, readonly)
+    decompile_target(words, &target, prototype, readonly, mode)
 }
 
 fn decompile_target(
@@ -25,6 +36,7 @@ fn decompile_target(
     target: &str,
     prototype: Option<&str>,
     readonly: bool,
+    mode: OcteonEffectsMode,
 ) -> String {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     let bytes: String = words.iter().map(|w| format!("{w:08x}")).collect();
@@ -42,6 +54,7 @@ fn decompile_target(
     )
     .unwrap();
     program.arch_mut().readonlypropagate = true;
+    program.arch_mut().octeon_effects = mode;
     if let Some(prototype) = prototype {
         program.set_assertions(vec![Directive {
             raw: format!("prototype probe {prototype}"),
@@ -77,7 +90,7 @@ fn every_advertised_compiler_profile_preserves_memory_and_reservation_effects() 
                     if n32 { "-32addr" } else { "" }
                 );
                 let code = decompile_target(&[0xd0880000, 0xf0850000, 0x00a0102d, 0x03e00008, 0], &target,
-                    Some("unsigned long long probe(unsigned long long *pointer, unsigned long long value)"), false);
+                    Some("unsigned long long probe(unsigned long long *pointer, unsigned long long value)"), false, OcteonEffectsMode::default());
                 assert!(code.contains("octeon_load_linked64"), "{target}: {code}");
                 assert!(
                     code.contains("octeon_store_conditional64"),
@@ -88,7 +101,7 @@ fn every_advertised_compiler_profile_preserves_memory_and_reservation_effects() 
                 }
                 // sd a1,0(a0); saad a2,(a0); ld v0,0(a0); jr ra; nop
                 let code = decompile_target(&[0xfc850000, 0x70860019, 0xdc820000, 0x03e00008, 0], &target,
-                    Some("unsigned long long probe(unsigned long long *pointer, unsigned long long value, unsigned long long increment)"), false);
+                    Some("unsigned long long probe(unsigned long long *pointer, unsigned long long value, unsigned long long increment)"), false, OcteonEffectsMode::default());
                 assert!(code.contains("octeon_fetch_add64"), "{target}: {code}");
                 assert!(code.contains("*pointer = value"), "{target}: {code}");
                 assert!(!code.contains("return value;"), "{target}: {code}");
@@ -98,18 +111,23 @@ fn every_advertised_compiler_profile_preserves_memory_and_reservation_effects() 
 }
 
 #[test]
-fn explicit_atomics_prevent_readonly_image_constants_and_partial_overlap_folding() {
+fn atomics_treat_image_memory_as_stores_do_and_keep_partial_overlaps() {
+    // ori a0,zero,0x2000; daddiu a1,zero,7; laad zero,(a0),a1; ld v0,0(a0)
     for n32 in [false, true] {
-        let code = decompile_config(
-            &[
-                0x34042000, 0x64050007, 0x708504df, 0xdc820000, 0x03e00008, 0,
-            ],
+        let words = [0x34042000, 0x64050007, 0x708504df, 0xdc820000, 0x03e00008, 0];
+        let code = decompile_config(&words, n32, Some("unsigned long long probe(void)"), false);
+        assert!(code.contains("octeon_fetch_add64"), "{code}");
+        assert!(!code.contains("return 0x1122334455667788"), "writable memory folded: {code}");
+        // Read-only image bytes fold after an atomic exactly as after `sd`.
+        let atomic = decompile_config(&words, n32, Some("unsigned long long probe(void)"), true);
+        let store = decompile_config(
+            &[0x34042000, 0x64050007, 0xfc850000, 0xdc820000, 0x03e00008, 0],
             n32,
             Some("unsigned long long probe(void)"),
             true,
         );
-        assert!(code.contains("octeon_fetch_add64"), "{code}");
-        assert!(!code.contains("return 0x1122334455667788"), "{code}");
+        assert!(atomic.contains("return 0x1122334455667788"), "{atomic}");
+        assert!(store.contains("return 0x1122334455667788"), "{store}");
         // Zero an eight-byte object, then update only its low word.
         let code = decompile(
             &[
@@ -245,5 +263,51 @@ fn multiple_atomic_results_keep_their_sequenced_memory_observations() {
             code.find("pointer,first").unwrap() < code.find("pointer,second").unwrap(),
             "{code}"
         );
+    }
+}
+
+#[test]
+fn a_barrier_neither_forces_a_stack_spill_nor_blocks_readonly_folding() {
+    for n32 in [false, true] {
+        for mode in [OcteonEffectsMode::Writes, OcteonEffectsMode::Ordered] {
+            // daddiu sp,sp,-16; sd a0,8(sp); syncw; ld v0,8(sp); jr ra; daddiu sp,sp,16
+            let code = decompile_mode(
+                &[0x67bdfff0, 0xffa40008, 0x10f, 0xdfa20008, 0x03e00008, 0x67bd0010],
+                n32,
+                Some("unsigned long long probe(unsigned long long value)"),
+                false,
+                mode,
+            );
+            assert!(code.contains("octeon_syncw("), "{mode:?}: {code}");
+            assert!(code.contains("return value;"), "{mode:?}: {code}");
+            // ori a0,zero,0x2000; syncw; ld v0,0(a0); jr ra; nop
+            let code = decompile_mode(
+                &[0x34042000, 0x10f, 0xdc820000, 0x03e00008, 0],
+                n32,
+                Some("unsigned long long probe(void)"),
+                true,
+                mode,
+            );
+            assert!(code.contains("return 0x1122334455667788"), "{mode:?}: {code}");
+        }
+    }
+}
+
+#[test]
+fn the_mode_decides_which_operations_guard_writable_memory() {
+    // ori a0,zero,0x2000; daddiu a1,zero,7; sd a1,0(a0); OP; ld v0,0(a0); jr ra; nop
+    let program = |op: u32| [0x34042000, 0x64050007, 0xfc850000, op, 0xdc820000, 0x03e00008, 0];
+    let laad = 0x708504df;
+    let syncw = 0x10f;
+    for n32 in [false, true] {
+        let reused = |op: u32, mode: OcteonEffectsMode| {
+            let code = decompile_mode(&program(op), n32, Some("unsigned long long probe(void)"), false, mode);
+            code.chars().filter(|c| !c.is_whitespace()).collect::<String>().contains("return7;")
+        };
+        assert!(reused(laad, OcteonEffectsMode::Off), "off leaves the atomic opaque");
+        assert!(!reused(laad, OcteonEffectsMode::Writes));
+        assert!(!reused(laad, OcteonEffectsMode::Ordered));
+        assert!(reused(syncw, OcteonEffectsMode::Writes), "a barrier writes nothing");
+        assert!(!reused(syncw, OcteonEffectsMode::Ordered), "ordered rereads after a barrier");
     }
 }

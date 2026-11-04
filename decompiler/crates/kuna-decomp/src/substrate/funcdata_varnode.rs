@@ -1777,9 +1777,6 @@ impl Funcdata {
     /// cluster's `v1 = 1.1234567812345` initializers come from folding the
     /// IEEE-754 bytes that live in read-only RAM into a constant here.
     pub fn fillin_read_only(&mut self, vn: VarnodeId) -> KunaResult<bool> {
-        if crate::kuna_octeoneffects::blocks_readonly(self, vn) {
-            return Ok(false);
-        }
         // Can't replace output.
         let (is_written, defop) = {
             let v = self.vbank().get(vn).expect("fillin_read_only: stale vn");

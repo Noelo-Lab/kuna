@@ -6,7 +6,7 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/substrate/dtype.rs
 ```
 
-For target-checked Octeon memory user operations, local input-type queries
+For the Octeon memory user operations `octeoneffects` resolves (any mode but `off`), local input-type queries
 identify the address operand as a pointer to an unsigned value of the access
 width. Payloads and scalar results are unsigned bit patterns; SLEIGH expresses
 word-result sign extension separately. Type inference and the merge phase's

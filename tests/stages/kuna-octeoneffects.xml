@@ -1,0 +1,48 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:64:octeon2:default">
+<!--
+    kuna octeoneffects: an Octeon atomic writes memory through its address
+    operand, but a user operation has no memory effect of its own, so a
+    store before it was forwarded past it.
+
+    update  (0x1000): ori a0,zero,0x2000; daddiu a1,zero,7; sd a1,0(a0);
+                      laad zero,(a0),a1; ld v0,0(a0); jr ra; nop
+    barrier (0x1100): the same with syncw in place of laad
+    spill   (0x1200): daddiu sp,sp,-16; sd a0,8(sp); syncw; ld v0,8(sp);
+                      jr ra; daddiu sp,sp,16
+
+    Stage: P3 dataflow (heritage guards). Three passes:
+    off (the bug: update returns the stored 7), writes (the default: update
+    rereads; a barrier writes nothing, so barrier returns 7 and the spill
+    stays a value), ordered (barrier rereads too).
+
+    Assert #1: `return 7;` only for update under off and barrier under writes.
+    Assert #2: the spill across syncw stays the incoming value under writes.
+    Assert #3: every pass keeps the barrier statement.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">3404200064050007fc850000708504dfdc82000003e0000800000000</bytechunk>
+<bytechunk space="ram" offset="0x1100" readonly="true">3404200064050007fc8500000000010fdc82000003e0000800000000</bytechunk>
+<bytechunk space="ram" offset="0x1200" readonly="true">67bdfff0ffa400080000010fdfa2000803e0000867bd0010</bytechunk>
+<bytechunk space="ram" offset="0x2000">0000000000000000</bytechunk>
+<symbol space="ram" offset="0x1000" name="update"/>
+<symbol space="ram" offset="0x1100" name="barrier"/>
+<symbol space="ram" offset="0x1200" name="spill"/>
+</binaryimage>
+<script>
+<com>parse line extern unsigned long long update(void);</com>
+<com>parse line extern unsigned long long barrier(void);</com>
+<com>parse line extern unsigned long long spill(unsigned long long value);</com>
+<com>option octeoneffects off</com>
+<com>lo fu update</com><com>decompile</com><com>print C</com>
+<com>option octeoneffects writes</com>
+<com>lo fu update</com><com>decompile</com><com>print C</com>
+<com>lo fu barrier</com><com>decompile</com><com>print C</com>
+<com>lo fu spill</com><com>decompile</com><com>print C</com>
+<com>option octeoneffects ordered</com>
+<com>lo fu barrier</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="octeoneffects #1: off forwards past the atomic; writes forwards past a barrier only" min="2" max="2">return 7;</stringmatch>
+<stringmatch name="octeoneffects #2: a stack spill across syncw stays the value" min="1" max="1">return value;</stringmatch>
+<stringmatch name="octeoneffects #3: the barrier statement is kept" min="3" max="3">octeon_syncw\(\);</stringmatch>
+</decompilertest>

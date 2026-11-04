@@ -600,6 +600,9 @@ pub struct Architecture {
     /// (kuna) `option bejoinpass`: how a big-endian pair a call hands back to
     /// the RETURN joins. Read by [`crate::p4_calls::kuna_bejoinpass`].
     pub be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode,
+    /// (kuna `octeoneffects`) Which Octeon atomic, reservation and ordering user
+    /// operations guard memory; see [`crate::kuna_octeoneffects`].
+    pub octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode,
     /// Retain register-pair returns established by complete declared caller evidence.
     pub call_wide: bool,
     /// (kuna) The halves of the image's MIPS unaligned load/store pairs, once
@@ -2250,6 +2253,7 @@ impl Architecture {
             stack_addr_arg_trial: false,
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
             be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode::Off, // (kuna) option bejoinpass; reset_defaults sets the shipped default
+            octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode::Off, // (kuna) option octeoneffects; reset_defaults sets the shipped default
             call_wide: false,
             kuna_mips_pairs: None,
             kuna_mips_pairs_painted: false,
@@ -2561,6 +2565,7 @@ impl Architecture {
         self.ret_split_limit = Some(crate::p8_structure::kuna_retsplitlimit::DEFAULT_LIMIT); // (kuna) GH-1034 default-on: a return block whose split would clone more than 2^20 ops keeps its gotos
         self.stack_addr_arg_trial = false;
         self.be_join = crate::kuna_bejoin::BeJoinMode::Callers; // (kuna) option bejoin default `callers` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart, two adjacent loads, a proven callee's pair) or a caller reads the second register after the call; `evidence` drops the callers, `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
+        self.octeon_effects = crate::kuna_octeoneffects::OcteonEffectsMode::Writes; // (kuna) option octeoneffects default `writes`: only Octeon languages declare these operations, which raw and XML datatest images never use (0/675); `ordered` also guards across ordering operations, `off` restores opaque user operations
         self.be_join_pass = crate::kuna_bejoinpass::BeJoinPassMode::Whole; // (kuna) option bejoinpass default `whole` (#904): a pair a call hands back untouched joins in the order of its proven side, and an unproven function handing back a proven callee's pair returns the callee's whole value
         self.call_wide = false;
         self.kuna_callwide.clear();
@@ -3379,7 +3384,8 @@ impl Architecture {
         ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
         ctx.linux_syscall = self.linux_syscall.fires(self.image_linux_elf); // (kuna) linuxsyscall
         ctx.msvc_str_append = self.msvc_str_append; // msvcstrappend
-        ctx.octeon_memory_userops = crate::kuna_octeoneffects::userop_ids(&self.userops, &self.archid);
+        ctx.octeon_effects = self.octeon_effects; // octeoneffects
+        ctx.octeon_memory_userops = crate::kuna_octeoneffects::userop_ids(&self.userops, self.octeon_effects);
         ctx.x64_syscall = self.x64_syscall; // (kuna) x64syscall
         ctx.x64_syscall_memory_target = self.archid == "x86:LE:64:default:gcc";
         ctx.syscall_regs = self.syscall_regs.fires(self.image_os_userland); // (kuna) syscallregs

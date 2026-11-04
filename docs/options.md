@@ -668,6 +668,9 @@ Three tiers:
 | Control flow encountered bad instruction data in a DOS function that does float math | [`fpuemu`](#fpuemu) |
 | a phantom function starts inside an INT 35h instruction's operand bytes | [`fpuemu`](#fpuemu) |
 | swi(0x3d) calls where the program waits for the coprocessor | [`fpuemu`](#fpuemu) |
+| a value stored before an Octeon atomic add is returned instead of the reloaded memory | [`octeoneffects`](#octeoneffects) |
+| an Octeon fetch-and-add result or old value prints with the wrong width or as a signed int | [`octeoneffects`](#octeoneffects) |
+| a reload after syncw reuses the value stored before it (use ordered) | [`octeoneffects`](#octeoneffects) |
 | a stack array is declared with 4 elements while a loop subscripts it further | [`arrayextent`](#arrayextent) |
 | the elements after the fourth of a local array are separate scalars that are assigned and never read | [`arrayextent`](#arrayextent) |
 | a recompiled function reads past a local array under AddressSanitizer | [`arrayextent`](#arrayextent) |
@@ -2238,6 +2241,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Leave auto: a DOS program linked with the 8087 emulator decompiles its float code, and every other input (no fpuEmu bit outside x86-16.sla, no emulator code in the image) is byte-identical. Use on for a raw-image or .COM program that uses the emulator but has too little float code for the evidence, off to read the interrupts as the bytes encode them.
 - **Where / provenance:** P2/decode-context · kuna · correctness-fix · kuna-1288-fpuemu
 - **Example:** `kuna decompile-all dazzle.exe --option fpuemu off`
+
+### `octeoneffects` -- off | writes | ordered, default `writes`
+
+- **Symptoms:** a value stored before an Octeon atomic add is returned instead of the reloaded memory; an Octeon fetch-and-add result or old value prints with the wrong width or as a signed int; a reload after syncw reuses the value stored before it (use ordered).
+- **What it does:** Give the Octeon atomic, reservation and ordering user operations (`octeonAtomics.sinc`) memory effects and types. A fetch-and-add, exchange, store-conditional or cache-block zero writes memory through its address operand, but a user operation has no memory effect of its own, so a store before it was forwarded past it and a later read reused the pre-update value. `writes` places a heritage guard across each of those writers over writable RAM and stack ranges, as a call guard does: read-only image ranges are never guarded, so a GOT or `.rodata` read still folds, and a guard on a local whose address never escapes collapses, so a spill stays a plain value. `ordered` also guards across the load-linked and every ordering operation (SYNC, SYNCW, SYNCWS, SYNCS, SYNCIO, SYNCIOALL, SYNCIOBDMA, other SYNC selectors), so a value is never reused across an ordering point another core could act on; this is conservative about concurrent modification, not a claim that a barrier writes memory. Both also type the address operand as a pointer to the access width (only at the target RAM width, so N32 keeps full-width GPR values) and stored values and results as unsigned. `off` leaves every Octeon user operation opaque, as upstream does.
+- **When to flip:** Default `writes`: only Octeon languages declare these operations, so 0/675 datatest assertions move and other targets are unaffected. Use `ordered` for concurrent code where a reload after a barrier must stay a reload (another core may change the location); it places one guard per ordering operation per global range, so a function with 200 barriers and 200 globals decompiles about 11x slower than under `writes`. Use `off` to compare with upstream's opaque user operations.
+- **Where / provenance:** P3/heritage-guard · kuna · correctness-fix · octeon-atomics
+- **Example:** `option octeoneffects ordered`
 
 ### `arrayextent` -- off | bound | on, default `on`
 

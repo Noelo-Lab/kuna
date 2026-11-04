@@ -697,34 +697,11 @@ pub fn guard_memory(
     size: int4,
     write: &mut Vec<crate::context::VarnodeId>,
 ) {
-    use crate::varnode::varnode_flags;
-    use kuna_base::space::spacetype;
-
-    if !data.get_arch().syscall_regs
-        || flags & varnode_flags::readonly != 0
-        || !addr.get_space().is_some_and(|s| {
-            s.get_type() == spacetype::IPTR_SPACEBASE
-                || data.get_arch().manage().get_default_data_space()
-                    .is_some_and(|ram| ram.get_index() == s.get_index())
-        })
-    {
+    if !data.get_arch().syscall_regs || !crate::kuna_memoryguard::guarded(data, flags, addr) {
         return;
     }
-    for op in memory_calls(data) {
-        let guard = data.new_indirect_op(op, addr, size, 0);
-        if let Some(input) = data.obank().get(guard).and_then(|o| o.get_in(0)) {
-            data.vbank_mut().get_mut(input)
-                .expect("syscall memory input").set_active_heritage();
-        }
-        if let Some(output) = data.obank().get(guard).and_then(|o| o.get_out()) {
-            let v = data.vbank_mut().get_mut(output).expect("syscall memory output");
-            v.set_active_heritage();
-            if flags & varnode_flags::addrtied != 0 {
-                v.set_addr_force();
-            }
-            write.push(output);
-        }
-    }
+    let ops = memory_calls(data);
+    crate::kuna_memoryguard::guard(data, &ops, flags, addr, size, write);
 }
 
 /// Does the rewritten system call `op` read `vn` as one of its registers?

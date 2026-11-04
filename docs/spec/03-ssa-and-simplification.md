@@ -2400,18 +2400,27 @@ address. On N32, `RulePtrFlow` applies the same narrowing to that input; atomic
 values, returned old values and other consumers of the original GPR retain
 their full width. Ordering operations have no pointer input.
 
-`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_octeoneffects.rs` resolves
-the known uninjected operations only for explicit Octeon targets. Heritage
-places memory guards across them for RAM and stack storage, including partial
-overlaps. A guard retains preceding stores even when the instruction result or
-the guarded memory value has no subsequent scalar consumer. Local alias
-heuristics cannot collapse it. Later reads therefore cannot reuse a value from
-before an atomic update or an ordering operation. This is deliberately
-conservative about aliasing and concurrent modification; it does not claim
-that an ordering instruction itself writes all memory. Readonly image values
-are not folded in a function containing these effects, because an explicit
-atomic write can contradict the image annotation. Other targets and unrelated
-user operations keep their existing treatment.
+**(kuna) Octeon memory effects — `option octeoneffects`, default `writes`,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_octeoneffects.rs`.** It
+resolves the uninjected atomic, reservation and ordering operations an Octeon
+language declares. A fetch-and-add, exchange, store-conditional or cache-block
+zero writes memory through its address operand, so under `writes` heritage
+places a guard across each of them over writable RAM and stack ranges,
+including partial overlaps, through the shared helper in
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_memoryguard.rs (guard)` that
+the system-call guards also use. A guard retains preceding stores even when the
+instruction result has no scalar consumer, and a later read cannot reuse a
+value from before the update. Read-only image ranges are never guarded, so a
+GOT or `.rodata` read still folds as it does after an ordinary store, and only
+an address-tied range is forced: a guard on a local whose address never
+escapes collapses under `RuleIndirectCollapse`, so a spill stays a value.
+`ordered` also guards across the load-linked and every ordering operation;
+this is conservative about concurrent modification, not a claim that an
+ordering instruction writes memory, and the barrier itself stays a statement
+either way. Its guards grow with ordering operations times global ranges, so
+it stays opt-in. `off` resolves none of the operations, leaving them opaque as
+upstream does. Other targets and unrelated user operations keep their
+existing treatment.
 
 Truncation can leave hundreds of fresh SUBPIECEs of one stack or base
 register in a single pool pass. While the option is live, `RuleSelectCse`
