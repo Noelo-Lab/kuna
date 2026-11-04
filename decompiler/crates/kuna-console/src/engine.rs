@@ -4030,6 +4030,24 @@ fn input_isa_stash(
     vec![("input_isa", explicit)]
 }
 
+/// (kuna) An ELF image's import slots, which only a MIPS relocatable object
+/// has (the GOT entry of an undefined weak function, which the run-time loader
+/// fills). No pass reports them, so they are stashed under the PE/Mach-O
+/// import-binding pass's id (`peimportcall`) and committed with its facts.
+fn elf_import_slot_stash(
+    bytes: &[u8],
+    slots: &[(u64, u64)],
+) -> Option<(&'static str, kuna_analysis::pass::AnalysisOutput)> {
+    use object::Object as _;
+    let elf = kuna_analysis::loadimage_object::parse_object(bytes)
+        .is_ok_and(|file| file.format() == object::BinaryFormat::Elf);
+    (elf && !slots.is_empty()).then(|| {
+        let mut output = kuna_analysis::pass::AnalysisOutput::default();
+        output.externref = slots.to_vec();
+        ("peimportcall", output)
+    })
+}
+
 /// A program with nothing loaded beyond the engine: every stash empty, every
 /// declaration absent. Each bootstrap fills in what its loader supplies.
 fn empty_program(
@@ -4738,6 +4756,7 @@ pub fn bootstrap_from_object_with_isa(
         sleigh.base().unwrap().translate(),
     );
     pending_analysis.extend(input_isa_stash(input_context_paints));
+    pending_analysis.extend(elf_import_slot_stash(&bytes, loader.import_slot_ranges()));
 
     // (kuna `dynrelocs`) The PT_GNU_RELRO-frozen dynamic-relocation slots, read
     // off the same loader while it is still in hand. `readonly_ranges` above

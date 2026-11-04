@@ -254,10 +254,14 @@ pub struct RelocLayout {
     /// Half-open extent of allocated ELF COMMON storage, separate from extern slots.
     pub common_range: Option<(u64, u64)>,
     /// Half-open extent of a MIPS object's synthetic GOT: its entries hold what
-    /// the relocations put there and nothing else writes them.
+    /// the relocations put there and nothing else writes them, except its
+    /// [`Self::import_slots`].
     pub got_range: Option<(u64, u64)>,
     /// A MIPS object's synthetic `$gp`.
     pub gp: Option<u64>,
+    /// Half-open import slots in the GOT: an undefined weak symbol's entry,
+    /// which the run-time loader fills and which therefore does not fold.
+    pub import_slots: Vec<(u64, u64)>,
     /// A PowerPC64 ELFv1 object's function descriptors: `(descriptor, entry,
     /// TOC)`, sorted by descriptor address.
     pub opd: Vec<(u64, u64, Option<u64>)>,
@@ -378,6 +382,10 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
     }
     let got_base = gp.as_ref().map(|g| g.base());
     let input_gp = if mips { kuna_mipsreloc::input_gp(file) } else { Ok(0) };
+    let weak = |target: RelocationTarget| match target {
+        RelocationTarget::Symbol(idx) => file.symbol_by_index(idx).is_ok_and(|s| s.is_undefined() && s.is_weak()),
+        _ => false,
+    };
 
     // Externs (undefined referenced symbols) live in a synthetic area above the
     // laid-out sections — the angr extern-object analog.  Allocated on demand.
@@ -474,6 +482,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
                 &relocs,
                 &lo_halves,
                 input_gp,
+                &weak,
                 &mut resolve,
             );
             for (record, reason) in applied.failures {
@@ -678,6 +687,34 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
     }
     funcsizes.sort_unstable_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
     funcsizes.dedup_by_key(|s| s.0);
+    // A MIPS object's import slots: the GOT entry of each undefined weak symbol,
+    // which the run-time loader fills. One a call reaches is named after it, as
+    // an Import Address Table slot is, so `(*slot)(x)` calls the import while a
+    // test of the slot still reads it.
+    let mut import_slots = Vec::new();
+    if let Some(g) = &gp {
+        for (idx, slot) in g.imports() {
+            import_slots.push((slot, slot + g.entry()));
+            let Ok(sym) = file.symbol_by_index(idx) else { continue };
+            if !code_externs.contains(&idx) && sym.kind() != SymbolKind::Text {
+                continue;
+            }
+            if let Ok(n) = sym.name_bytes().map(<[u8]>::to_vec) {
+                if !n.is_empty() {
+                    symbol_info.push(RelocSymbolInfo {
+                        name: String::from_utf8_lossy(&n).into_owned(),
+                        vma: slot,
+                        section_index: None,
+                        section_name: None,
+                        section_offset: None,
+                        binding: symbol_binding(&sym),
+                        undefined: true,
+                    });
+                    funcsyms.push((slot, n));
+                }
+            }
+        }
+    }
     // Extern functions: name each external *code target* at its synthetic slot
     // so `call ext` renders by name instead of a bare address. A code target is
     // an undefined symbol reached through a PLT-relative reloc (reliable even for
@@ -746,6 +783,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         common_range: common_allocator.range(),
         got_range,
         gp: gp.as_ref().map(kuna_mipsreloc::Gp::gp),
+        import_slots,
         opd: {
             opd_descriptors.sort_unstable();
             opd_descriptors.dedup();

@@ -893,7 +893,13 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   resolves to `_gp` less the place (the PIC prologue adds `$t9`, the function's
   entry) and a global `_gp` or an undefined `__gnu_local_gp` to `_gp`. The GOT's entries hold what the relocations put in
   them and nothing writes them, so the loader reports its range foldable
-  (`dynreloc_const`, beside the MSVC FP constants), and
+  (`dynreloc_const`, beside the MSVC FP constants). The exception is the entry
+  of an undefined weak symbol, which the run-time loader fills with the
+  symbol's address, or 0 when nothing defines it: each such symbol gets its own
+  entry holding 0, reported as an import slot outside the foldable range and,
+  when a call reaches it, named after the symbol as an Import Address Table
+  slot is, so `if (f) f(x);` keeps its test. A direct call or address
+  relocation against the symbol still resolves to its synthetic extern. Otherwise
   `lw $t9, %call16(f)($gp); jalr $t9` decompiles to a call of `f` wherever `$t9`
   is seeded with the entry. `R_MIPS_JALR`, a hint naming the function a `jalr`
   calls, is not applied; microMIPS, MIPS16, R6 PC-relative and TLS relocations
@@ -2638,9 +2644,13 @@ the resolved callee's no-return flag onto the prototype it hands `ActionDeindire
 `decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs (Database::build_global_query)`
 dropped it, where upstream returns the callee's live `Funcdata`), which is what makes
 the deindirect schedule the restart whose re-flow plants the artificial halt. The
-extra upstream Win32 no-return-name list remains on the PE/COFF arm only. Off, PE
-and Mach-O import-slot calls render byte for byte as before; other formats are
-unaffected either way.
+extra upstream Win32 no-return-name list remains on the PE/COFF arm only. An ELF
+image runs no such pass, but a MIPS relocatable object's loader makes import
+slots, the GOT entry of each undefined weak function: the engine stashes the
+loader's ranges under this pass's id
+(`decompiler/crates/kuna-console/src/engine.rs (elf_import_slot_stash)`), so
+they commit with that pass's facts and the call in `if (f) f(x);` binds to `f`.
+Other images are unaffected.
 The `externref` mark also protects the slot until that resolution: P3 read-only
 folding cannot replace it with an on-disk thunk/name RVA, even if a hostile or
 single-section PE mapped the IAT executable and non-writable.
