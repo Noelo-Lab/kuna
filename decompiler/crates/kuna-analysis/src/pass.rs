@@ -735,7 +735,7 @@ pub struct AnalysisCtx<'a> {
     /// typed parser; the ELF impl ignores it.
     pub bytes: &'a [u8],
     /// The loaded image backing byte reads at a vma.
-    pub image: &'a ObjectLoadImage,
+    pub image: Option<&'a ObjectLoadImage>,
     /// The engine architecture (read access to types/spaces/options).
     pub arch: &'a Architecture,
     /// The optional Listing/xref disassembly model (`--option listing on`,

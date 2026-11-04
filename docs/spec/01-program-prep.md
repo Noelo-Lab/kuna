@@ -96,8 +96,13 @@ The entry arm is where a single-function run pays for the whole inventory: a
 `createFunctionIfMissing` per discovered entry costs about a kilobyte, so an image
 whose `.eh_frame` enumerates every function (377,429 on a 51 MB Android `.so`)
 spends some 315 MB of a run that reads one of them. `lazyfuncs` (default **off**)
-splits the commit: the names install exactly as above, but the entry starts are
-parked on the `Architecture`
+splits the commit: anonymous `sub_<addr>` entries retain compact addresses and
+registration order instead of allocating names and name-index slots
+(`decompiler/crates/kuna-console/src/engine/lazy_inventory.rs (inventory_symbols)`).
+Names are generated when enumerated; address and anonymous-name selection use
+the compact entries without constructing the whole canonical inventory. Real
+names and entries carrying other commit facts keep their symbol records.
+The entry starts are parked on the `Architecture`
 (`decompiler/crates/kuna-decomp/src/infra/architecture.rs (set_lazy_entry_starts)`)
 and no `Function` is created. An entry some other fact of the same commit attaches
 to is not parked — a committed name (`_INIT_<i>`, the entry oracle's `main`), a
@@ -129,6 +134,22 @@ are materialized — never a constant that merely looks like an address, nor a
 p-code-relative `BRANCH` offset — so the lazy symbol table is always a subset of the
 eager one. The saving is a property of one function's run: a whole-binary surface
 materializes what it walks.
+
+The same option parks detected strings as compact address/length/width facts
+instead of creating a global type and symbol for every literal in the image.
+After a lift, constants landing in those ranges materialize only the strings the
+function read, and the drive repeats so type propagation sees the eager path's
+`char[N]` or wide-character symbol
+(`decompiler/crates/kuna-decomp/src/p1_partition/kuna_lazystrings.rs (materialize)`).
+
+CLI loads gate `objc` and `strings` before their pass runs. This is earlier than
+the normal commit-time option filter: a disabled pass produces no discarded fact
+tree, while an enabled pass reaches the identical commit. The `functions`
+inventory suppresses `strings` because string data cannot change a function row.
+Object-backed loads share segment slices with the normalized input image and copy
+a segment only when relocation or an asserted-byte overlay writes it; deferred
+discovery uses the installed engine loader instead of constructing a second
+segment image.
 
 Two timing consequences shape the tier. First, anything that must influence the
 **loader itself** runs before any `option` line exists, so load-time gates are

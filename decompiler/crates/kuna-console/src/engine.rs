@@ -30,6 +30,8 @@
 //! function entry the faithful way (the binaryimage's own symbol records, which
 //! is precisely what `readLoaderSymbols` reads).
 
+mod lazy_inventory;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::rc::Rc;
 
@@ -66,6 +68,7 @@ pub use crate::entry_selector::{
 /// One function symbol discovered in the `<binaryimage>` (name → entry address).
 #[derive(Debug, Clone)]
 struct ProgramSymbol {
+    ordinal: u64,
     name: String,
     addr: Address,
     object_location: Option<ObjectLocation>,
@@ -117,7 +120,8 @@ impl SymbolStream {
         stream
     }
 
-    fn push(&mut self, sym: ProgramSymbol) {
+    fn push(&mut self, mut sym: ProgramSymbol) {
+        sym.ordinal = next_revision();
         self.by_name.entry(sym.name.clone()).or_default().push(self.records.len());
         self.records.push(Some(sym));
         self.live += 1;
@@ -527,6 +531,8 @@ pub struct ConsoleProgram {
     /// the `readLoaderSymbols` hook. Object/XML names are collected at load;
     /// synthetic input names are collected after options are applied.
     symbols: SymbolStream,
+    anonymous_entries: Vec<(u64, u64)>,
+    anonymous_symbols: std::cell::OnceCell<Vec<ProgramSymbol>>,
     /// Entry addresses awaiting synthetic names. Raw and TE inputs have no
     /// source names, so their names are generated at `read symbols`, after the
     /// CLI has applied options such as `namestyle`.
@@ -595,7 +601,8 @@ pub struct ConsoleProgram {
     /// Listing-consumer passes (e.g. discovered-no-return). `None` on the XML
     /// datatest path (no Listing tier), so the gated build is a structural no-op
     /// there. Empty/`None` when the listing flag is off ⇒ zero cost.
-    analysis_image: Option<(String, Vec<u8>, kuna_analysis::loader::ImportProofMemo)>,
+    analysis_image:
+        Option<(String, std::sync::Arc<[u8]>, kuna_analysis::loader::ImportProofMemo)>,
     /// (kuna `armframes`) The whole-image frame recovery: set before the commit,
     /// it is replayed instead of searched; after it, the record that commit made.
     arm_frames: Option<kuna_analysis::aif::kuna_framereplay::ArmFrameReplay>,
@@ -756,7 +763,7 @@ impl ConsoleProgram {
     /// The number of function symbols collected for the `readLoaderSymbols`
     /// hook.
     pub fn num_symbols(&self) -> usize {
-        self.symbols.len()
+        self.symbols.len() + self.anonymous_entries.len()
     }
 
     /// C++ `conf->getDescription()` — the load-success description line.
@@ -862,7 +869,7 @@ impl ConsoleProgram {
         // binary's ORIGINAL name and the one the listing renders. Idempotent, and
         // a no-op for every real name.
         let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
-        self.symbols.lookup(name).map(|s| s.addr.clone())
+        self.symbols.lookup(name).map(|s| s.addr.clone()).or_else(|| self.anonymous_address(name))
     }
 
     /// (kuna) Iterate every function symbol kuna knows for the loaded program as
@@ -877,7 +884,7 @@ impl ConsoleProgram {
     /// caller (the decbench backend's `should_skip_function`), matching the
     /// raw-backend convention — the engine reports every function it found.
     pub fn function_entries(&self) -> impl Iterator<Item = (&str, &Address)> {
-        self.symbols.iter().map(|s| (s.name.as_str(), &s.addr))
+        self.inventory_symbols().map(|s| (s.name.as_str(), &s.addr))
     }
 
     /// (kuna, issue #197) The **canonical** whole-binary function enumeration:
@@ -932,7 +939,9 @@ impl ConsoleProgram {
                 return Rc::clone(entries);
             }
         }
-        let entries = Rc::new(self.build_function_entries_canonical());
+        let mut entries = self.build_function_entries_canonical();
+        self.append_anonymous_entries(&mut entries);
+        let entries = Rc::new(entries);
         *self.canonical_entries.borrow_mut() = Some((key.0, key.1, Rc::clone(&entries)));
         entries
     }
@@ -941,7 +950,7 @@ impl ConsoleProgram {
     /// spelling a name selector would match first). O(1) on the name index.
     pub(crate) fn has_symbol_spelled(&self, name: &str) -> bool {
         let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
-        self.symbols.lookup(name).is_some()
+        (self.symbols.lookup(name).is_some() || self.anonymous_address(name).is_some())
             || self.loader_aliases.values().any(|names| names.iter().any(|alias| alias == name))
     }
 
@@ -1053,11 +1062,10 @@ impl ConsoleProgram {
         if declared > 0 {
             return declared as u64;
         }
-        let entries: Vec<u64> = self
-            .function_entries_canonical()
-            .iter()
-            .map(|e| e.addr.get_offset())
-            .collect();
+        if !self.anonymous_entries.is_empty() {
+            return self.compact_extent_at(entry);
+        }
+        let entries = self.entry_offsets();
         crate::funcextent::extent_at(
             entry,
             &entries,
@@ -1175,6 +1183,11 @@ impl ConsoleProgram {
         // must still resolve. Idempotent, so the bounded spelling resolves as
         // well, and a no-op for every real name.
         let want = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(want, "::");
+        if self.symbols.lookup(want).is_none() {
+            if let Some(addr) = self.anonymous_address(want) {
+                return Some(self.entry_at_or_named(addr.get_offset()));
+            }
+        }
         let matches = self.entries_named(&self.function_entries_canonical(), want);
         // On a miss, the (kuna, RE-need `string-owner-function-name`) placeholder
         // fallback [`Self::resolve_entry`] takes, so the two name lookups answer
@@ -1248,6 +1261,9 @@ impl ConsoleProgram {
     /// still `None` and the caller keeps decompiling exactly where it was asked.
     pub fn find_entry_at(&self, vma: u64) -> Option<FunctionEntry> {
         let want = self.thumb_normalized(vma);
+        if !self.anonymous_entries.is_empty() {
+            return self.find_compact_entry_at(want);
+        }
         self.function_entries_canonical()
             .into_iter()
             .find(|e| e.addr.get_offset() == want)
@@ -1271,6 +1287,9 @@ impl ConsoleProgram {
     /// no function starting there (`docs/cli.md`, `interior_to`). The inventory
     /// is enumerated once for the whole batch.
     pub fn entries_containing(&self, vmas: &[u64]) -> Vec<Option<FunctionEntry>> {
+        if !self.anonymous_entries.is_empty() {
+            return self.compact_entries_containing(vmas);
+        }
         let entries = self.function_entries_canonical();
         vmas.iter()
             .map(|&vma| {
@@ -1300,6 +1319,11 @@ impl ConsoleProgram {
                 // binary's ORIGINAL name must still resolve. Idempotent, so the
                 // bounded spelling resolves as well.
                 let want = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(want, "::");
+                if self.symbols.lookup(want).is_none() {
+                    if let Some(addr) = self.anonymous_address(want) {
+                        return Ok(self.entry_at_or_named(addr.get_offset()));
+                    }
+                }
                 let entries = self.function_entries_shared();
                 let entries: &[FunctionEntry] = &entries;
                 let mut candidates = self.entries_named(entries, want);
@@ -2206,12 +2230,13 @@ impl ConsoleProgram {
         entries: &[(String, Address)],
     ) -> KunaResult<usize> {
         self.callwide_changed();
+        self.anonymous_symbols.take();
         let taken: std::collections::HashSet<String> =
             self.symbols.iter().map(|s| s.name.clone()).collect();
         let mut seeded = 0usize;
         for (name, addr) in entries {
             let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
-            if taken.contains(name) {
+            if taken.contains(name) || self.anonymous_address(name).is_some() {
                 continue;
             }
             if self.arch().symboltab.find_function_across_scopes(addr).is_some() {
@@ -2219,6 +2244,7 @@ impl ConsoleProgram {
             }
             let object_location = self.object_location_at(addr.get_offset());
             self.symbols.push(ProgramSymbol {
+                ordinal: 0,
                 name: name.to_string(),
                 addr: addr.clone(),
                 provenance: if object_location.is_some() {
@@ -2295,6 +2321,15 @@ impl ConsoleProgram {
 
     fn register_symbol_record(&mut self, name: &str, addr: Address, sole: bool) {
         self.callwide_changed();
+        self.anonymous_symbols.take();
+        if let Some(prior) = self.anonymous_address(name) {
+            if sole || prior == addr {
+                let index = self.anonymous_entries.binary_search_by_key(
+                    &prior.get_offset(), |entry| entry.0,
+                ).unwrap();
+                self.anonymous_entries.remove(index);
+            }
+        }
         // (kuna `symbolnamebound`) Same bound as the loader stream above, so an
         // analysis-discovered or hand-mapped name agrees with the scope path the
         // symbol table nests it under.
@@ -2307,6 +2342,7 @@ impl ConsoleProgram {
         }
         let object_location = self.object_location_at(addr.get_offset());
         self.symbols.push(ProgramSymbol {
+            ordinal: 0,
             name: name.to_string(),
             addr,
             provenance: prior.unwrap_or(if object_location.is_some() {
@@ -2742,6 +2778,7 @@ impl ConsoleProgram {
             let symbols = entries
                 .into_iter()
                 .map(|addr| ProgramSymbol {
+                    ordinal: 0,
                     name: self.arch().name_function(&addr),
                     addr,
                     object_location: None,
@@ -2893,29 +2930,22 @@ impl ConsoleProgram {
             || want_coldentry)
             && self.analysis_image.is_some()
         {
-            let analysis_target = self.arch.arch_id().to_string();
             if let Some((path, bytes, import_proofs)) = self.analysis_image.take() {
                 let _import_proofs =
                     kuna_analysis::loader::ImportProofScope::resume(&bytes, Some(import_proofs));
-                // A throwaway loadimage just to satisfy the pass contracts (their
-                // `image` arg is unused — the decode reads through `translate`); a
-                // parse failure makes the deferred step a graceful no-op.
-                if let Ok(image) = ObjectLoadImage::from_bytes_silent_with_target(
-                    &path,
-                    &bytes,
-                    &analysis_target,
-                )
-                {
+                let image_path = std::path::Path::new(&path);
+                let image_path = image_path.exists().then_some(image_path);
                     // Deferred entry-discovery passes FIRST: their entries must be
                     // in `merged` before `committed_entry_seeds` is read below, which
                     // is what hands the load-time inventory to the Listing walk as
                     // extra roots (`armdiscseed`).
                     if want_funcstart_patterns || want_coldentry {
                         let arch = self.arch();
-                        let entry_out = kuna_analysis::passes::run_deferred_entry_passes(
+                        let entry_out =
+                            kuna_analysis::passes::run_deferred_entry_passes_without_image(
                             &bytes,
-                            &image,
                             arch,
+                            image_path,
                             &|id| analysis_pass_enabled(arch, id),
                         );
                         for (_, out) in entry_out {
@@ -2948,7 +2978,6 @@ impl ConsoleProgram {
                         let plan = kuna_analysis::listing::WalkPlan::from_env(arch);
                         let consumer_out = kuna_analysis::passes::run_listing_consumers_replaying(
                             &bytes,
-                            &image,
                             arch,
                             arch.translate(),
                             &noreturn_seed_addrs,
@@ -2974,16 +3003,15 @@ impl ConsoleProgram {
                     // data references it needs). Its facts go through the existing
                     // string/readonly commit arms.
                     if want_operand_refs {
-                        let out = kuna_analysis::passes::run_operand_refs(
-                            &bytes,
-                            &image,
-                            self.arch(),
-                        );
+                        let out =
+                            kuna_analysis::passes::run_operand_refs(&bytes, self.arch());
                         merged.merge(out);
                     } else if want_wide32_alone {
-                        merged.merge(kuna_analysis::passes::run_wide_strings32(&bytes, &image, self.arch()));
+                        merged.merge(kuna_analysis::passes::run_wide_strings32(
+                            &bytes,
+                            self.arch(),
+                        ));
                     }
-                }
             }
         } else {
             // Both deferred passes off: drop the stash (no deferred build).
@@ -3916,6 +3944,8 @@ fn empty_program(
         declared_names: BTreeMap::new(),
         declared_bytes: BTreeMap::new(),
         declared_revision: 0,
+        anonymous_entries: Vec::new(),
+        anonymous_symbols: std::cell::OnceCell::new(),
         canonical_entries: std::cell::RefCell::new(None),
         assertions: Vec::new(),
         assertion_outcomes: Vec::new(),
@@ -4417,14 +4447,12 @@ pub fn bootstrap_from_object_with_isa(
     for note in &load_notes {
         kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
     }
+    let bytes: std::sync::Arc<[u8]> = bytes.into();
     let explicit_isa = isa.is_some();
     let import_proofs = kuna_analysis::loader::ImportProofScope::enter(&bytes);
     // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).
-    let mut loader = if target.trim().is_empty() {
-        ObjectLoadImage::from_bytes(path, &bytes)?
-    } else {
-        ObjectLoadImage::from_bytes_with_target(path, &bytes, target)?
-    };
+    let mut loader =
+        ObjectLoadImage::from_shared_bytes_with_target(path, std::sync::Arc::clone(&bytes), target)?;
 
     // resolveArchitecture: the arch id is the loader's getArchType() (the object
     // machine → SLEIGH language id), unless an explicit target overrides it;
@@ -5032,7 +5060,20 @@ fn commit_analysis_output(
         let starts: Vec<u64> = out.entries.iter().copied().filter(|v| !eager.contains(v)).collect();
         prog.arch_mut().set_lazy_entry_starts(starts);
     }
+    let named_placeholders: std::collections::HashSet<u64> = if lazy_funcs {
+        prog.symbols.iter().filter_map(|s| {
+            u64::from_str_radix(s.name.strip_prefix("sub_")?, 16).ok()
+        }).collect()
+    } else {
+        std::collections::HashSet::new()
+    };
     for &vma in &out.entries {
+        if lazy_funcs && !eager.contains(&vma) && prog.arch().name_style_angr
+            && !named_placeholders.contains(&vma) && prog.thumb_normalized(vma) == vma
+        {
+            prog.anonymous_entries.push((vma, next_revision()));
+            continue;
+        }
         let addr = Address::new(Rc::clone(code_space), vma);
         let name = out
             .entry_names
@@ -5053,6 +5094,11 @@ fn commit_analysis_output(
         }
         prog.register_symbol(&name, addr);
     }
+
+    prog.anonymous_entries.sort_unstable_by(|a, b| a.0.cmp(&b.0).then_with(|| b.1.cmp(&a.1)));
+    prog.anonymous_entries.dedup_by_key(|entry| entry.0);
+    prog.anonymous_symbols.take();
+    prog.symbols.revision = next_revision();
 
     // 3. No-return functions: resolve each matched function and set the no-return
     //    flag (the batch form of OptionNoReturn::apply). A fact with no matching
@@ -5247,14 +5293,31 @@ fn commit_analysis_output(
     //    The shared `len / char_size` element count stays exact for both: a
     //    terminated fact's len includes its NUL slot, a bounded fact's len IS
     //    the element count (char_size 1, no terminator byte to add).
-    for (fact, char_size) in out
-        .bounded_strings
-        .iter()
-        .map(|f| (f, 1u32))
-        .chain(wide32.iter().map(|f| (f, 4u32)))
-        .chain(wide.iter().map(|f| (f, 2u32)))
-        .chain(out.strings.iter().map(|f| (f, 1u32)))
-    {
+    if lazy_funcs {
+        let facts = out
+            .bounded_strings
+            .iter()
+            .map(|f| (f, 1u8, 0u8))
+            .chain(wide32.iter().map(|f| (f, 4u8, 1u8)))
+            .chain(wide.iter().map(|f| (f, 2u8, 2u8)))
+            .chain(out.strings.iter().map(|f| (f, 1u8, 3u8)))
+            .map(|(fact, char_size, priority)| kuna_decomp::kuna_lazystrings::Fact {
+                addr: fact.addr,
+                len: fact.len,
+                char_size,
+                priority,
+            })
+            .collect();
+        prog.arch_mut().set_lazy_string_facts(facts);
+    } else {
+        for (fact, char_size) in out
+            .bounded_strings
+            .iter()
+            .map(|f| (f, 1u32))
+            .chain(wide32.iter().map(|f| (f, 4u32)))
+            .chain(wide.iter().map(|f| (f, 2u32)))
+            .chain(out.strings.iter().map(|f| (f, 1u32)))
+        {
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         // Conservative guard: skip an address that already carries a symbol (an
         // existing data/function symbol must not be shadowed). Ghidra likewise
@@ -5265,6 +5328,7 @@ fn commit_analysis_output(
                 Some(global) => {
                     arch.symboltab.find_function(global, &addr).is_some()
                         || arch.is_lazy_entry(addr.get_offset())
+                        || arch.is_lazy_string_start(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container(global, &addr, 1, &Address::new_invalid())
@@ -5306,7 +5370,8 @@ fn commit_analysis_output(
             arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
         let (sid, _) =
             arch.symboltab.add_symbol_mapped(scope, &base, arr, &addr, &Address::new_invalid())?;
-        arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
+            arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
+        }
     }
 
     // 4b. (kuna `libctypes`) Data symbols the analysis tier types outright — the
@@ -5342,6 +5407,7 @@ fn commit_analysis_output(
                 Some(global) => {
                     arch.symboltab.find_function(global, &addr).is_some()
                         || arch.is_lazy_entry(addr.get_offset())
+                        || arch.is_lazy_string_start(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container(global, &addr, 1, &Address::new_invalid())
@@ -5405,6 +5471,7 @@ fn commit_analysis_output(
                 Some(global) => {
                     arch.symboltab.find_function(global, &addr).is_some()
                         || arch.is_lazy_entry(addr.get_offset())
+                        || arch.is_lazy_string_start(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container(global, &addr, 1, &Address::new_invalid())
@@ -5895,6 +5962,7 @@ fn read_loader_symbols_generic(loader: &dyn LoadImage) -> Vec<ProgramSymbol> {
         let name =
             kuna_decomp::kuna_symbolnamebound::bound_scope_path(&name, "::").into_owned();
         out.push(ProgramSymbol {
+            ordinal: 0,
             name,
             addr: record.address,
             object_location: None,
@@ -6149,6 +6217,7 @@ mod symbolstream_tests {
 
     fn sym(sp: &Rc<AddrSpace>, name: &str, off: u64) -> ProgramSymbol {
         ProgramSymbol {
+            ordinal: 0,
             name: name.to_string(),
             addr: Address::new(Rc::clone(sp), off),
             object_location: None,

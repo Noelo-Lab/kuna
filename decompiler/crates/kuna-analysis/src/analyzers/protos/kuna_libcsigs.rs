@@ -766,7 +766,11 @@ impl AnalysisPass for LibcSigsPass {
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
-        let (resolved, reloc_imports) = super::loaded_import_addrs(ctx.file, ctx.bytes, ctx.image);
+        let (resolved, reloc_imports) = super::loaded_import_addrs(
+            ctx.file,
+            ctx.bytes,
+            ctx.image.expect("load-time analysis image"),
+        );
         let imported = super::loaded_function_names(ctx.file, ctx.bytes, &reloc_imports, true);
         let types = ctx.arch.types();
         let (_addr_size, word_size) = ctx.arch.data_org();

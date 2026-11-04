@@ -128,6 +128,7 @@ fn settings(
     options: &[(String, String)],
     slice: Option<&str>,
     decode_lanes: usize,
+    functions_inventory: bool,
 ) -> BTreeMap<&'static str, Option<String>> {
     let mut values = BTreeMap::new();
     for (name, value) in options {
@@ -147,6 +148,25 @@ fn settings(
             Some(decode_lanes.to_string()),
         );
     }
+    let objc = last_option_value(options, "objc").unwrap_or("off");
+    values.insert(
+        kuna_analysis::passes::LOAD_OBJC_ENV,
+        Some(if matches!(objc.trim(), "on" | "1" | "true") { "on" } else { "off" }.into()),
+    );
+    let strings = if functions_inventory {
+        "off"
+    } else {
+        last_option_value(options, "strings").unwrap_or("on")
+    };
+    values.insert(
+        kuna_analysis::passes::LOAD_STRINGS_ENV,
+        Some(if matches!(strings.trim(), "off" | "0" | "false") {
+            "off"
+        } else {
+            "on"
+        }
+        .into()),
+    );
     values
 }
 
@@ -155,7 +175,7 @@ pub(crate) fn apply_to_command(
     options: &[(String, String)],
     slice: Option<&str>,
 ) {
-    for (name, value) in settings(options, slice, 1) {
+    for (name, value) in settings(options, slice, 1, false) {
         match value {
             Some(value) => cmd.env(name, value),
             None => cmd.env_remove(name),
@@ -167,9 +187,10 @@ pub(crate) fn apply_to_process(
     options: &[(String, String)],
     slice: Option<&str>,
     decode_lanes: usize,
+    functions_inventory: bool,
 ) -> LoadtimeEnv {
     let mut env = LoadtimeEnv::default();
-    for (name, value) in settings(options, slice, decode_lanes) {
+    for (name, value) in settings(options, slice, decode_lanes, functions_inventory) {
         env.set(name, value.as_deref());
     }
     env
@@ -300,11 +321,14 @@ mod tests {
                 ("KUNA_MACHO_ARM64E", None),
                 ("KUNA_MACHO_SLICE", Some("arm64")),
                 ("KUNA_DWARFVARIANTS", Some("off")),
+                (kuna_analysis::passes::LOAD_OBJC_ENV, Some("off")),
+                (kuna_analysis::passes::LOAD_STRINGS_ENV, Some("on")),
             ])
         );
-        assert!(settings(&[], Some("  "), 1).is_empty());
+        assert_eq!(settings(&[], Some("  "), 1, false).len(), 2);
         assert_eq!(
-            settings(&[], None, 4)[kuna_analysis::listing::kuna_pdecode::DECODE_JOBS_ENV],
+            settings(&[], None, 4, false)
+                [kuna_analysis::listing::kuna_pdecode::DECODE_JOBS_ENV],
             Some("4".into())
         );
     }

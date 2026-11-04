@@ -1475,7 +1475,7 @@ pub fn warn_protoorder_inert(options: &[(String, String)], surface: &str) {
 /// The loaded program is handed back with it: the triage filters and `--summary`
 /// both ask further questions of the same load rather than paying for a second.
 fn list_functions(args: &Args) -> Result<(ConsoleProgram, Vec<FunctionEntry>), String> {
-    let prog = load_program(args, DriverDefaults::Inventory)?;
+    let prog = load_program(args, DriverDefaults::Functions)?;
     // One record per entry address, address-ordered, alias names carried as data
     // (issue #197 — this used to dedup by (address, name), so a function the
     // loader and an analysis pass both named was listed twice).
@@ -1487,9 +1487,12 @@ fn list_functions(args: &Args) -> Result<(ConsoleProgram, Vec<FunctionEntry>), S
 ///
 /// Both variants take the same DISCOVERY policy (DIV-20/DIV-68); they differ only
 /// in whether the Listing is built on an architecture where it discovers nothing.
+#[derive(Clone, Copy)]
 pub(crate) enum DriverDefaults {
     /// `kuna functions` — enumeration only.
     Inventory,
+    /// `kuna functions` — inventory without body-only string markup.
+    Functions,
     /// `kuna decompile-all` / `kuna decompile-project` — enumeration plus bodies.
     Decompile,
     /// `kuna xrefs` — a reference query that runs its OWN recursive descent, so
@@ -1515,6 +1518,10 @@ impl DriverDefaults {
     /// still takes — the reference walk consumes both of them directly.
     fn wants_listing(&self) -> bool {
         !matches!(self, DriverDefaults::Query)
+    }
+
+    fn functions_inventory(&self) -> bool {
+        matches!(self, DriverDefaults::Functions)
     }
 }
 
@@ -1601,7 +1608,6 @@ pub(crate) fn driver_default_options(
     wants_listing: bool,
     options: &[(String, String)],
 ) -> Vec<(&'static str, &'static str)> {
-    let named = |name: &str| options.iter().any(|(option, _)| option == name);
     // The discovery bundle needs the object view the deferred consumers re-parse;
     // a raw or TE input has none, so it takes no discovery default at all rather
     // than an inert one. (`image_bytes` is deliberately not used here: a TE is
@@ -1615,6 +1621,17 @@ pub(crate) fn driver_default_options(
                 .map(|file| file.architecture() != object::Architecture::X86_64)
         })
         .unwrap_or(false);
+
+    driver_default_options_for_arch(non_x86_64, decompiles, wants_listing, options)
+}
+
+fn driver_default_options_for_arch(
+    non_x86_64: bool,
+    decompiles: bool,
+    wants_listing: bool,
+    options: &[(String, String)],
+) -> Vec<(&'static str, &'static str)> {
+    let named = |name: &str| options.iter().any(|(option, _)| option == name);
 
     let mut injected = Vec::new();
     // (kuna DIV-120) A function past the instruction budget reports the body kuna
@@ -1659,8 +1676,12 @@ pub(crate) fn load_program(
     // option recording too: `relocobjects`, `i386_pie_plt`, `relocrebase`,
     // `typedepth` and `dwarfstructs` update their env bridges again inside
     // `set_kuna_option` and must not leak into a later load.
-    let _loadtime_env =
-        apply_loadtime_env(&args.options, args.slice.as_deref(), jobs::decode_lanes(args));
+    let _loadtime_env = apply_loadtime_env(
+        &args.options,
+        args.slice.as_deref(),
+        jobs::decode_lanes(args),
+        defaults.functions_inventory(),
+    );
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
@@ -1713,8 +1734,9 @@ pub(crate) fn load_program(
         format!("{msg}{raw_hint}")
     })?;
 
-    for (name, value) in driver_default_options(
-        &binary,
+    let non_x86_64 = !prog.arch().archid.starts_with("x86:LE:64:");
+    for (name, value) in driver_default_options_for_arch(
+        non_x86_64,
         defaults.decompiles(),
         defaults.wants_listing(),
         &args.options,
