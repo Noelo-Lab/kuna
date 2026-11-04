@@ -248,6 +248,13 @@ impl FlowEnvironment for ArchFlowEnv {
         if op.get_type() != crate::userop::userop_type::injected {
             return false;
         }
+        // (kuna `octeoneffects`) Upstream's ll/sc/sync lifting replaces the
+        // Octeon operation only under `off`.
+        if let Some(id) = op.get_inject_id() {
+            if arch.octeon_upstream_inject.contains(&(id as int4)) {
+                return arch.octeon_effects == crate::kuna_octeoneffects::OcteonEffectsMode::Off;
+            }
+        }
         if !arch.cortexmpriv {
             if let Some(id) = op.get_inject_id() {
                 if crate::kuna_cortexmpriv::is_our_fixup(arch.cortexmpriv_inject, id as int4) {

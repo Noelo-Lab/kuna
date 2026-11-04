@@ -15,9 +15,11 @@ python3 tests/fixtures/octeon-atomics/build.py \
   --output /tmp/octeon-atomics.json
 ```
 
-`provenance.json` records source and text hashes from GNU as 2.30 and GNU
-objcopy 2.47.20260726. These original fixtures are covered by the repository's
-license. No third-party implementation or firmware is included.
+`provenance.json` records source and text hashes and the tool versions, GNU as
+2.30 and GNU objcopy 2.47.20260726; the same tools reproduce it byte for byte.
+`--objcopy` needs big-endian MIPS ELF support. These original fixtures are
+covered by the repository's license. No third-party implementation or firmware
+is included.
 
 The tests assert memory preservation and an uncertain SC result, independently
 of any executor's reservation choices. SAA/SAAD start at Plus; LA and ZCB/ZCBT

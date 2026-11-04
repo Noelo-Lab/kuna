@@ -582,6 +582,10 @@ fn option_values_live_value_present_for_73() {
                             // (kuna) `bejoinpass` likewise (`off|whole|high`);
                             // its live value is `Architecture::be_join_pass`.
                             | "bejoinpass"
+                            // (kuna) `octeoneffects` likewise
+                            // (`off|atomic|ordered`); its live value is
+                            // `Architecture::octeon_effects`.
+                            | "octeoneffects"
                             | "bytearrayc"
                             // (kuna) `structdefs` is a PrintC option: its live
                             // state is `PrintC::options.struct_defs`, which the

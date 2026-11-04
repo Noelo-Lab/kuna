@@ -24,7 +24,14 @@ def main():
             subprocess.run([args.objcopy, '-O', 'binary', '-j', '.text', str(obj), str(raw)], check=True)
             data = raw.read_bytes()
             result['outputs'][abi] = {'sha256': hashlib.sha256(data).hexdigest(), 'hex': data.hex()}
+    result['tools'] = {'assembler': version(args.assembler, 'as'), 'objcopy': version(args.objcopy, 'objcopy')}
     args.output.write_text(json.dumps(result, indent=2)+'\n')
+
+
+def version(tool, name):
+    """`GNU <name> <version>` from the first line of `tool --version`."""
+    line = subprocess.run([tool, '--version'], check=True, capture_output=True, text=True).stdout.splitlines()[0]
+    return f'GNU {name} {line.split()[-1]}'
 
 
 if __name__ == '__main__':

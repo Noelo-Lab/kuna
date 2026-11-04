@@ -1694,7 +1694,7 @@ impl Rule for RulePtrFlow {
         match op_code(data, op) {
             OpCode::CPUI_CALLOTHER => {
                 let Some(effect) = crate::kuna_octeoneffects::effect(data, op) else { return 0 };
-                if effect.width == 0 { return 0; }
+                if !effect.addressed() { return 0; }
                 let Some(space) = data.get_arch().manage().get_default_data_space() else { return 0 };
                 let size = space.get_addr_size() as int4;
                 let Some(mut vn) = op_in(data, op, 1) else { return 0 };

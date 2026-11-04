@@ -5160,7 +5160,7 @@ impl Funcdata {
     /// its output.  Falls back to a fresh unknown only when no TypeFactory is
     /// attached (hand-built fixtures) or the op-code's dispatch errors.
     pub(crate) fn op_output_type_local_pub(&self, op: OpId) -> Rc<Datatype> {
-        if let Some(ty) = crate::kuna_octeoneffects::output_type(self, op) {
+        if let Some(ty) = crate::userop::callother_output_local(self, op) {
             return ty;
         }
         let (sz, opc) = match self.obank.get(op) {
@@ -5184,7 +5184,7 @@ impl Funcdata {
 
     /// `op->inputTypeLocal(slot)` — see `op_output_type_local_pub`.
     pub(crate) fn op_input_type_local_pub(&self, op: OpId, slot: int4) -> Rc<Datatype> {
-        if let Some(ty) = crate::kuna_octeoneffects::input_type(self, op, slot) {
+        if let Some(ty) = crate::userop::callother_input_local(self, op, slot) {
             return ty;
         }
         let (sz, opc) = match self.obank.get(op) {

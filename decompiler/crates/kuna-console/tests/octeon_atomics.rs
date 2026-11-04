@@ -269,7 +269,7 @@ fn multiple_atomic_results_keep_their_sequenced_memory_observations() {
 #[test]
 fn a_barrier_neither_forces_a_stack_spill_nor_blocks_readonly_folding() {
     for n32 in [false, true] {
-        for mode in [OcteonEffectsMode::Writes, OcteonEffectsMode::Ordered] {
+        for mode in [OcteonEffectsMode::Atomic, OcteonEffectsMode::Ordered] {
             // daddiu sp,sp,-16; sd a0,8(sp); syncw; ld v0,8(sp); jr ra; daddiu sp,sp,16
             let code = decompile_mode(
                 &[0x67bdfff0, 0xffa40008, 0x10f, 0xdfa20008, 0x03e00008, 0x67bd0010],
@@ -305,9 +305,47 @@ fn the_mode_decides_which_operations_guard_writable_memory() {
             code.chars().filter(|c| !c.is_whitespace()).collect::<String>().contains("return7;")
         };
         assert!(reused(laad, OcteonEffectsMode::Off), "off leaves the atomic opaque");
-        assert!(!reused(laad, OcteonEffectsMode::Writes));
+        assert!(!reused(laad, OcteonEffectsMode::Atomic));
         assert!(!reused(laad, OcteonEffectsMode::Ordered));
-        assert!(reused(syncw, OcteonEffectsMode::Writes), "a barrier writes nothing");
+        assert!(reused(syncw, OcteonEffectsMode::Atomic), "a barrier writes nothing");
         assert!(!reused(syncw, OcteonEffectsMode::Ordered), "ordered rereads after a barrier");
+    }
+}
+
+#[test]
+fn a_store_read_only_by_a_load_linked_is_kept() {
+    // ori a0,zero,0x2000; sd a1,0(a0); lld t0,0(a0); sd zero,0(a0); jr ra; or v0,t0,zero
+    for n32 in [false, true] {
+        for mode in [OcteonEffectsMode::Atomic, OcteonEffectsMode::Ordered] {
+            let code = decompile_mode(
+                &[0x34042000, 0xfc850000, 0xd08c0000, 0xfc800000, 0x03e00008, 0x01801025],
+                n32,
+                Some("unsigned long long probe(unsigned long long unused, unsigned long long value)"),
+                false,
+                mode,
+            );
+            let stored = code.find("= value;").unwrap_or_else(|| panic!("{mode:?}: {code}"));
+            assert!(stored < code.find("octeon_load_linked64(").unwrap(), "{mode:?}: {code}");
+        }
+    }
+}
+
+#[test]
+fn off_lifts_reservations_and_barriers_as_upstream_does() {
+    // ori a0,zero,0x2000; daddiu a1,zero,7; sd a1,0(a0); sc a2,0(a0); ld v0,0(a0); jr ra; nop
+    // then the same with syncw, and with ll t0,0(a0) returned through v0
+    let store = [0x34042000, 0x64050007, 0xfc850000, 0xe0860000, 0xdc820000, 0x03e00008, 0];
+    let barrier = [0x34042000, 0x64050007, 0xfc850000, 0x10f, 0xdc820000, 0x03e00008, 0];
+    let load = [0x34042000, 0xc0820000, 0x03e00008, 0];
+    for n32 in [false, true] {
+        let off = |words: &[u32]| decompile_mode(words, n32, None, false, OcteonEffectsMode::Off);
+        let code = off(&store);
+        let compact: String = code.chars().filter(|c| !c.is_whitespace()).collect();
+        assert!(!code.contains("octeon_"), "{code}");
+        assert!(compact.contains("CONCAT44(a2,7)"), "the store-conditional stores: {code}");
+        let code = off(&barrier);
+        assert!(code.contains("SYNC(4);") && !code.contains("octeon_"), "{code}");
+        let code = off(&load);
+        assert!(!code.contains("octeon_"), "{code}");
     }
 }

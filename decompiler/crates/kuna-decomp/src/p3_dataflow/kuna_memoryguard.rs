@@ -32,11 +32,9 @@ pub fn guarded(data: &Funcdata, flags: uint4, addr: &Address) -> bool {
 }
 
 /// Guard the range `[addr, addr+size)` with heritage properties `flags` across
-/// each of `ops`, pushing every guard output onto `write`.
+/// each of `ops`, pushing every guard output onto `write`. Callers check
+/// [`guarded`] first, before finding `ops`.
 pub fn guard(data: &mut Funcdata, ops: &[OpId], flags: uint4, addr: &Address, size: int4, write: &mut Vec<VarnodeId>) {
-    if ops.is_empty() || !guarded(data, flags, addr) {
-        return;
-    }
     for &op in ops {
         let guard = data.new_indirect_op(op, addr, size, 0);
         if let Some(input) = data.obank().get(guard).and_then(|o| o.get_in(0)) {

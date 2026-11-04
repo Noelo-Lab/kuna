@@ -57,7 +57,7 @@ use crate::typeop::type_op_info;
 /// size-correct `TYPE_UNKNOWN` if the factory query fails (the C++ getBase never
 /// fails for a valid size).
 pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
-    if let Some(ty) = crate::kuna_octeoneffects::output_type(data, op) {
+    if let Some(ty) = crate::userop::callother_output_local(data, op) {
         return ty;
     }
     let arch = Rc::clone(data.get_arch());
@@ -151,7 +151,7 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
         }
     }
 
-    if let Some(ty) = crate::kuna_octeoneffects::input_type(data, op, slot) {
+    if let Some(ty) = crate::userop::callother_input_local(data, op, slot) {
         return ty;
     }
 

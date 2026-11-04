@@ -8,9 +8,11 @@ Anchors:
 
 For the Octeon memory user operations `octeoneffects` resolves (any mode but `off`), local input-type queries
 identify the address operand as a pointer to an unsigned value of the access
-width. Payloads and scalar results are unsigned bit patterns; SLEIGH expresses
+width; a cache-block zero clears a whole block, so its address stays untyped.
+Payloads and scalar results are unsigned bit patterns; SLEIGH expresses
 word-result sign extension separately. Type inference and the merge phase's
-local queries use the same classifier. Pointer typing requires the address
+local queries both ask the one user-operation query
+(`decompiler/crates/kuna-decomp/src/p2_lift/userop.rs (callother_input_local)`). Pointer typing requires the address
 operand to have the target RAM width, so N32 does not turn the full physical
 GPR or a 64-bit atomic payload into a 32-bit pointer. Unknown user operations
 and operations replaced by a compiler-spec injection are not assigned these

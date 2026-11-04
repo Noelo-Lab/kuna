@@ -1204,5 +1204,25 @@ impl UserOpManage {
     }
 }
 
+/// (kuna) `UserPcodeOp::getOutputLocal(op)` for a CALLOTHER: the local output
+/// type its user operation gives it, or `None` for the op-code default. The
+/// merge phase's `Funcdata` queries and type inference both route here, so a
+/// typed user operation is declared once.
+pub fn callother_output_local(
+    data: &crate::funcdata::Funcdata,
+    op: crate::context::OpId,
+) -> Option<Rc<crate::dtype::Datatype>> {
+    crate::kuna_octeoneffects::output_type(data, op)
+}
+
+/// (kuna) `UserPcodeOp::getInputLocal(op, slot)`; see [`callother_output_local`].
+pub fn callother_input_local(
+    data: &crate::funcdata::Funcdata,
+    op: crate::context::OpId,
+    slot: int4,
+) -> Option<Rc<crate::dtype::Datatype>> {
+    crate::kuna_octeoneffects::input_type(data, op, slot)
+}
+
 #[cfg(test)]
 mod tests;

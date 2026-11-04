@@ -1,9 +1,10 @@
 //! (kuna `octeoneffects`) Memory effects and types of the Octeon atomic,
 //! reservation and ordering user operations declared by `octeonAtomics.sinc`.
-//! An atomic update, a store-conditional or a cache-block zero writes memory
-//! through its address operand; `writes` (the default) guards writable memory
-//! across those, `ordered` also across the load-linked and ordering operations,
-//! and `off` leaves every user operation without a memory effect.
+//! An atomic update, load-linked, store-conditional or cache-block zero accesses
+//! memory through its address operand; `atomic` (the default) guards writable
+//! memory across those, `ordered` also across every ordering operation, and
+//! `off` lifts the instructions upstream's MIPS spec also decodes (`ll`, `lld`,
+//! `sc`, `scd`, `sync`) as upstream does, through the fixups in [`UPSTREAM`].
 use std::rc::Rc;
 
 use kuna_base::{
@@ -23,12 +24,13 @@ use crate::{
 /// What `option octeoneffects` guards.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum OcteonEffectsMode {
-    /// No memory effects or types: every user operation is opaque.
+    /// Upstream's lifting: `ll`/`sc` as a plain load and an always-successful
+    /// store, `sync` as `SYNC(n)`, and no memory effects or types for the rest.
     Off,
-    /// Atomic updates, store-conditionals and cache-block zeroing.
+    /// Atomic updates, load-linked, store-conditionals and cache-block zeroing.
     #[default]
-    Writes,
-    /// Those, the load-linked and every ordering operation.
+    Atomic,
+    /// Those and every ordering operation.
     Ordered,
 }
 
@@ -36,7 +38,7 @@ impl OcteonEffectsMode {
     pub fn as_str(self) -> &'static str {
         match self {
             OcteonEffectsMode::Off => "off",
-            OcteonEffectsMode::Writes => "writes",
+            OcteonEffectsMode::Atomic => "atomic",
             OcteonEffectsMode::Ordered => "ordered",
         }
     }
@@ -45,11 +47,11 @@ impl OcteonEffectsMode {
     pub fn parse(p1: &str) -> KunaResult<(OcteonEffectsMode, String)> {
         let mode = match p1 {
             "off" => OcteonEffectsMode::Off,
-            "writes" => OcteonEffectsMode::Writes,
+            "atomic" => OcteonEffectsMode::Atomic,
             "ordered" => OcteonEffectsMode::Ordered,
             other => {
                 return Err(KunaError::parse(format!(
-                    "Unknown octeoneffects value: {other} (expected off|writes|ordered)"
+                    "Unknown octeoneffects value: {other} (expected off|atomic|ordered)"
                 )))
             }
         };
@@ -71,8 +73,9 @@ pub enum Kind {
     Order,
 }
 
-/// One operation's address-operand access width in bytes (0 for none),
-/// whether its second payload input is a stored value, and its result width.
+/// One operation's kind, the width in bytes its address operand's pointer is
+/// typed to (0 leaves it untyped), whether its second payload input is a
+/// stored value, and its result width.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Effect {
     pub kind: Kind,
@@ -86,14 +89,16 @@ impl Effect {
         Effect { kind, width, value, result }
     }
 
-    /// Does the operation write memory through its address operand?
-    pub fn writes(self) -> bool {
-        matches!(self.kind, Kind::Update | Kind::StoreConditional | Kind::ZeroBlock)
+    /// Does the operation access memory through an address operand?
+    pub fn addressed(self) -> bool {
+        self.kind != Kind::Order
     }
 }
 
 const ORDER: Effect = Effect::new(Kind::Order, 0, false, 0);
 
+/// A cache-block zero clears a whole block, not a value of any width, so its
+/// address stays untyped.
 const OPERATIONS: &[(&str, Effect)] = &[
     ("octeon_fetch_add32", Effect::new(Kind::Update, 4, true, 4)),
     ("octeon_fetch_add64", Effect::new(Kind::Update, 8, true, 8)),
@@ -103,8 +108,8 @@ const OPERATIONS: &[(&str, Effect)] = &[
     ("octeon_load_linked64", Effect::new(Kind::LoadLinked, 8, false, 8)),
     ("octeon_store_conditional32", Effect::new(Kind::StoreConditional, 4, true, 1)),
     ("octeon_store_conditional64", Effect::new(Kind::StoreConditional, 8, true, 1)),
-    ("octeon_zero_cache_block", Effect::new(Kind::ZeroBlock, 1, false, 0)),
-    ("octeon_zero_cache_block_transient", Effect::new(Kind::ZeroBlock, 1, false, 0)),
+    ("octeon_zero_cache_block", Effect::new(Kind::ZeroBlock, 0, false, 0)),
+    ("octeon_zero_cache_block_transient", Effect::new(Kind::ZeroBlock, 0, false, 0)),
     ("octeon_sync", ORDER),
     ("octeon_syncio", ORDER),
     ("octeon_syncioall", ORDER),
@@ -115,9 +120,49 @@ const OPERATIONS: &[(&str, Effect)] = &[
     ("octeon_sync_unknown", ORDER),
 ];
 
-/// The spec's uninjected Octeon operations, by user-op index. Only an Octeon
-/// language declares these names; `off` resolves none.
-pub fn userop_ids(userops: &UserOpManage, mode: OcteonEffectsMode) -> Vec<(u32, Effect)> {
+/// One callother fixup: the user operation, its output and input operand names,
+/// and the p-code upstream's `mips32Instructions.sinc`/`mips64Instructions.sinc`
+/// lift the instruction to.
+pub struct Fixup {
+    pub name: &'static [u8],
+    pub output: &'static [u8],
+    pub inputs: &'static [&'static [u8]],
+    pub body: &'static [u8],
+}
+
+/// Upstream's lifting of each Octeon operation that replaced a generic MIPS
+/// constructor. Registered at architecture bootstrap, before any option is
+/// read, and applied only under `off` (`decompile_drive::is_injected_userop`).
+pub const UPSTREAM: &[Fixup] = &[
+    Fixup { name: b"octeon_load_linked32", output: b"result", inputs: &[b"addr"], body: b"result = *[ram]:4 addr;\n" },
+    Fixup { name: b"octeon_load_linked64", output: b"result", inputs: &[b"addr"], body: b"result = *[ram]:8 addr;\n" },
+    Fixup {
+        name: b"octeon_store_conditional32",
+        output: b"success",
+        inputs: &[b"addr", b"value"],
+        body: b"*[ram]:4 addr = value;\nsuccess = 1:1;\n",
+    },
+    Fixup {
+        name: b"octeon_store_conditional64",
+        output: b"success",
+        inputs: &[b"addr", b"value"],
+        body: b"*[ram]:8 addr = value;\nsuccess = 1:1;\n",
+    },
+    Fixup { name: b"octeon_sync", output: b"", inputs: &[], body: b"SYNC(0:1);\n" },
+    Fixup { name: b"octeon_syncio", output: b"", inputs: &[], body: b"SYNC(1:1);\n" },
+    Fixup { name: b"octeon_synciobdma", output: b"", inputs: &[], body: b"SYNC(2:1);\n" },
+    Fixup { name: b"octeon_syncioall", output: b"", inputs: &[], body: b"SYNC(3:1);\n" },
+    Fixup { name: b"octeon_syncw", output: b"", inputs: &[], body: b"SYNC(4:1);\n" },
+    Fixup { name: b"octeon_syncws", output: b"", inputs: &[], body: b"SYNC(5:1);\n" },
+    Fixup { name: b"octeon_syncs", output: b"", inputs: &[], body: b"SYNC(6:1);\n" },
+    Fixup { name: b"octeon_sync_unknown", output: b"", inputs: &[b"kind"], body: b"SYNC(kind);\n" },
+];
+
+/// The spec's Octeon operations, by user-op index. An operation counts if it
+/// is uninjected or carries only this module's own [`UPSTREAM`] fixup (`ours`);
+/// a compiler spec's own fixup wins. Only an Octeon language declares these
+/// names, and `off` resolves none.
+pub fn userop_ids(userops: &UserOpManage, mode: OcteonEffectsMode, ours: &[int4]) -> Vec<(u32, Effect)> {
     if mode == OcteonEffectsMode::Off {
         return Vec::new();
     }
@@ -126,7 +171,7 @@ pub fn userop_ids(userops: &UserOpManage, mode: OcteonEffectsMode) -> Vec<(u32, 
         .filter_map(|(name, effect)| {
             userops
                 .get_op_by_name(name.as_bytes())
-                .filter(|u| u.get_inject_id().is_none())
+                .filter(|u| u.get_inject_id().is_none_or(|id| ours.contains(&(id as int4))))
                 .map(|u| (u.get_index() as u32, *effect))
         })
         .collect()
@@ -150,28 +195,28 @@ pub fn effect(data: &Funcdata, op: OpId) -> Option<Effect> {
         .find_map(|(id, effect)| (u64::from(*id) == index.get_offset()).then_some(*effect))
 }
 
-/// Does `op` affect memory under the current mode?
+/// Does `op` take a guard under the current mode?
 pub fn guards(data: &Funcdata, op: OpId) -> bool {
-    effect(data, op).is_some_and(|e| e.writes() || data.get_arch().octeon_effects == OcteonEffectsMode::Ordered)
+    effect(data, op).is_some_and(|e| e.addressed() || data.get_arch().octeon_effects == OcteonEffectsMode::Ordered)
 }
 
-/// Could `op` change the RAM or stack range at `addr` (heritage's
-/// indirect-effect question for a CALLOTHER)?
-pub fn affects(data: &Funcdata, op: OpId, addr: &Address) -> bool {
-    guards(data, op) && crate::kuna_memoryguard::memory_space(data, addr)
-}
-
-/// Guard writable memory across the operations the mode selects.
-pub fn guard_memory(data: &mut Funcdata, flags: uint4, addr: &Address, size: int4, write: &mut Vec<VarnodeId>) {
+/// Guard writable memory across the operations the mode selects. `ops` caches
+/// those operations for the heritage pass: guarding adds no CALLOTHER.
+pub fn guard_memory(
+    data: &mut Funcdata,
+    ops: &mut Option<Vec<OpId>>,
+    flags: uint4,
+    addr: &Address,
+    size: int4,
+    write: &mut Vec<VarnodeId>,
+) {
     if data.get_arch().octeon_memory_userops.is_empty() || !crate::kuna_memoryguard::guarded(data, flags, addr) {
         return;
     }
-    let ops: Vec<OpId> = data
-        .obank()
-        .iter_code(OpCode::CPUI_CALLOTHER)
-        .filter(|&op| guards(data, op))
-        .collect();
-    crate::kuna_memoryguard::guard(data, &ops, flags, addr, size, write);
+    let ops = ops.get_or_insert_with(|| {
+        data.obank().iter_code(OpCode::CPUI_CALLOTHER).filter(|&op| guards(data, op)).collect()
+    });
+    crate::kuna_memoryguard::guard(data, ops, flags, addr, size, write);
 }
 
 pub fn input_type(data: &Funcdata, op: OpId, slot: int4) -> Option<Rc<Datatype>> {
@@ -206,29 +251,29 @@ mod tests {
 
     #[test]
     fn modes_parse_and_print() {
-        for mode in [OcteonEffectsMode::Off, OcteonEffectsMode::Writes, OcteonEffectsMode::Ordered] {
+        for mode in [OcteonEffectsMode::Off, OcteonEffectsMode::Atomic, OcteonEffectsMode::Ordered] {
             assert_eq!(OcteonEffectsMode::parse(mode.as_str()).unwrap().0, mode);
         }
-        assert!(OcteonEffectsMode::parse("on").is_err());
-        assert_eq!(OcteonEffectsMode::default(), OcteonEffectsMode::Writes);
+        assert!(OcteonEffectsMode::parse("writes").is_err());
+        assert_eq!(OcteonEffectsMode::default(), OcteonEffectsMode::Atomic);
     }
 
     #[test]
-    fn only_updates_store_conditionals_and_block_zeroing_write() {
-        let writers: Vec<&str> = OPERATIONS.iter().filter(|(_, e)| e.writes()).map(|(n, _)| *n).collect();
-        assert_eq!(
-            writers,
-            [
-                "octeon_fetch_add32",
-                "octeon_fetch_add64",
-                "octeon_exchange32",
-                "octeon_exchange64",
-                "octeon_store_conditional32",
-                "octeon_store_conditional64",
-                "octeon_zero_cache_block",
-                "octeon_zero_cache_block_transient",
-            ]
-        );
+    fn every_operation_but_an_ordering_one_is_addressed() {
+        let ordering: Vec<&str> = OPERATIONS.iter().filter(|(_, e)| !e.addressed()).map(|(n, _)| *n).collect();
+        assert!(ordering.iter().all(|n| n.starts_with("octeon_sync")));
+        assert_eq!(ordering.len(), 8);
         assert!(OPERATIONS.iter().filter(|(_, e)| e.kind == Kind::Order).all(|(_, e)| e.width == 0));
+        assert!(OPERATIONS.iter().filter(|(_, e)| e.kind == Kind::ZeroBlock).all(|(_, e)| e.width == 0));
+    }
+
+    #[test]
+    fn upstream_fixups_cover_only_reservations_and_barriers() {
+        for fixup in UPSTREAM {
+            let name = std::str::from_utf8(fixup.name).unwrap();
+            let (_, effect) = OPERATIONS.iter().find(|(n, _)| *n == name).expect("fixup names an operation");
+            assert!(matches!(effect.kind, Kind::LoadLinked | Kind::StoreConditional | Kind::Order), "{name}");
+        }
+        assert_eq!(UPSTREAM.len(), 12);
     }
 }

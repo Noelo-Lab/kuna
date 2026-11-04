@@ -903,6 +903,8 @@ pub struct Heritage {
     /// it would have guarded, in guard order, those calls and the kept ones.
     #[allow(clippy::type_complexity)]
     persist_skips: Option<(usize, usize, Vec<BlockId>, Vec<crate::context::OpId>, crate::kuna_fasthash::FxHashSet<crate::context::OpId>)>,
+    /// (kuna `octeoneffects`) This pass's guarded Octeon operations, found at most once.
+    octeon_ops: Option<Vec<crate::context::OpId>>,
     /// (kuna `haltloopguard`) This pass's exitless loops, found at most once.
     halt_loops: Option<Vec<BlockId>>,
     /// (kuna `haltloopguard`) The ranges to keep alive at each exitless loop
@@ -981,6 +983,7 @@ impl Heritage {
             persist_memory: Default::default(),
             persist_pruned: Vec::new(),
             persist_skips: None,
+            octeon_ops: None,
             halt_loops: None,
             halt_loop_marks: BTreeMap::new(),
             halt_loop_reach: Vec::new(),
@@ -1656,7 +1659,7 @@ impl Heritage {
             self.guard_calls(fd, fl, addr, size, write, live.as_ref(), sparse);
             crate::kuna_syscallregs::guard_memory(fd, fl, addr, size, write);
             crate::kuna_x64syscall::guard_memory(fd, fl, addr, size, write);
-            super::kuna_octeoneffects::guard_memory(fd, fl, addr, size, write);
+            super::kuna_octeoneffects::guard_memory(fd, &mut self.octeon_ops, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
             if (fl & varnode_flags::persist) != 0 {
                 let heads = self.halt_loops.get_or_insert_with(|| super::kuna_haltloopguard::exitless_loops(fd));
@@ -3491,8 +3494,8 @@ impl Heritage {
     /// For a CALL/CALLIND we consult the call's `FuncCallSpecs`: a missing
     /// call-spec assumes an indirect effect (`true`); otherwise the effect is
     /// "indirect" unless `hasEffectTranslate` reports the range `unaffected`.
-    /// An Octeon CALLOTHER that `octeoneffects` guards can affect RAM and stack
-    /// ranges. Other CALLOTHER/NEW writers affect only their own output (`false`).
+    /// CALLOTHER/NEW (the only other writers reaching here) are assumed to have
+    /// no effect on `fd` variables except their own output (`false`).
     fn call_op_indirect_effect(
         &self,
         fd: &crate::funcdata::Funcdata,
@@ -3512,7 +3515,8 @@ impl Heritage {
                 }
             }
         } else {
-            super::kuna_octeoneffects::affects(fd, op, addr)
+            // CALLOTHER, NEW: no effect on -fd- variables except op->getOut().
+            false
         }
     }
 
@@ -5074,6 +5078,7 @@ impl Heritage {
         self.readonly_unguarded = self.readonly_cross_product(fd);
         self.persist_sparse = self.persist_cross_product(fd);
         self.persist_memory.clear();
+        self.octeon_ops = None;
         self.halt_loops = None;
         self.halt_loop_marks.clear();
         self.halt_loop_reach.clear();
