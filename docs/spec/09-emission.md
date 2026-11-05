@@ -3953,7 +3953,20 @@ as read at two types and left undeclared, the existing rule for `dat_<addr>`.
 The header exporter diagnoses one name at multiple addresses and multiple names
 sharing one address instead of silently combining or splitting their storage.
 Whole named objects also retain the independent-storage overlap guard; overlapping
-views require shared storage instead of separate declarations. With `globalref`
+views require shared storage instead of separate declarations. A connected group
+of consistently typed, fixed-size character arrays can share its earliest array
+when that array contains every byte of the group
+(`decompiler/crates/kuna-console/src/kuna_stringoverlaps.rs (declarations)`). The
+header declares that owner once and defines each contained name as an array
+lvalue at its byte offset into the owner. This preserves array extents, address
+taking, shared writes, and relocation when the owner is linked. A conflicting
+name or type, a name used by a parameter, local, or member elsewhere in the
+emitted C, an uncertain extent, a non-character view, or a group extending
+beyond the owner keeps the existing diagnostic; no independent overlapping
+objects are declared. Streaming exports retain the name evidence before discarding
+each function body, so the same collision checks apply regardless of arrival
+order. A header built without complete body evidence keeps the diagnostic.
+With `globalref`
 on, a native `void *` constant into a complete mapped object is rendered relative
 to its base, including interior field addresses. Requesting type definitions
 (`structdefs on` or the shared header of a C project export) extends this to
