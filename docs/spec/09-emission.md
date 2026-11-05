@@ -15,6 +15,8 @@ preserves ASCII-safe string escapes, including DEL and UTF-16 surrogate pairs.
 Both this adapter and the shared `jsonfmt` string writer use `UnicodeEscape`
 from `decompiler/crates/kuna-cli/src/jsonfmt/writer.rs` for Unicode escapes.
 Field order, optional fields, numeric spelling and the trailing newline are preserved.
+`scripts/bench_functions_macho.py` generates an arm64 Mach-O with a configurable
+number of one-instruction functions for reproducing inventory memory measurements.
 
 An integer SUBPIECE of an implied struct value preserves the extracted width
 when rendered as a field access (`kuna_fieldextract.rs`). If the field is wider
