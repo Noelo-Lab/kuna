@@ -3337,6 +3337,25 @@ Variadic tails use the blank identifier so they cannot capture a source name.
 This is a presentation of the recovered ABI: it does not infer missing Go
 multi-results, receivers, strings, slices or interfaces.
 
+`p9_emit/kuna_gopointerarith.rs` preserves the live pointer base of byte
+arithmetic emitted as Go. When a pointer result or conversion contains an
+integer addition with exactly one declared pointer operand, it emits
+`unsafe.Add(unsafe.Pointer(base), offset)` followed by the required pointer
+conversion. Both operands and the result must have the architecture's native
+four- or eight-byte pointer width. A bounded chain of implied same-width
+copies and casts may be removed to expose the addition and its operands.
+The base must be a non-implied pointer value and the offset a named integer or constant;
+volatile values, globals, annotations, effectful expressions, two-pointer
+additions and other widths retain their existing handling. Negative constant
+offsets use the signed interpretation of the native word, and named signed
+offsets retain their type. No operand is evaluated twice. This avoids losing
+Go allocation provenance by converting the pointer through an integer, while
+leaving genuinely integer addresses on the existing conversion path.
+This does not repair an unsupported artificial pointer member of a byte-array
+carrier; that member retains its existing type error even when its surrounding
+pointer arithmetic is corrected.
+The diagnostic `nocastprinting` setting retains its existing behavior.
+
 `p9_emit/kuna_gobyteview.rs` makes bounded artificial members of byte-array
 storage usable under Go output. A final unnamed piece covering the whole array
 reads or writes the array value directly. A one-, two-, four- or eight-byte
