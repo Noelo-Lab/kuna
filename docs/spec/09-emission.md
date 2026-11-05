@@ -4371,12 +4371,26 @@ For example, `!0xff` must stay an unsigned byte with value zero rather than
 becoming an inferred `i32` with a nonzero value. The same bounded context walk
 used by integer conversions decides whether the annotation is needed.
 
+An implied bitwise expression can still render as Boolean when a merged local's
+printed type is Boolean but its individual p-code value has an integer type.
+Before inserting the comparison, a bounded walk recognizes Boolean operands of
+`&`, `|`, `^` and logical negation, including comparison results and calls with a
+known Boolean result. Such expressions retain their Boolean identity cast instead of
+acquiring the invalid comparison `bool != 0`. Named leaves use their printed
+type; byte storage alone is insufficient evidence. Unknown leaves, integer
+constants, byte complements and enum types do not establish a Boolean expression.
+The walk checks at most eight levels and preserves the original operators, so eager bitwise
+operands remain eager and callbacks are neither duplicated nor short-circuited.
+
 Native validation compiles complete emitted C and Rust functions under the same
 asserted Boolean prototypes. Every byte value, signed-byte interpretation,
 masked value and low-byte callback result agrees, including nonzero upper words
 with a zero low byte. Callback counters check single evaluation. These checks
 validate the asserted source-type conversion; they do not execute an original
 function with a potentially noncanonical machine Boolean representation.
+Additional loop probes check merged Boolean locals at assignments, returns and
+stores, with independent result formulas, ordered callback traces and adjacent
+store canaries at both optimization levels zero and two.
 
 ### Narrow recovered scalar call results
 
