@@ -344,9 +344,10 @@ mod tests {
                 ("KUNA_DWARFVARIANTS", Some("off")),
                 (kuna_analysis::passes::LOAD_OBJC_ENV, Some("off")),
                 (kuna_analysis::passes::LOAD_STRINGS_ENV, Some("on")),
+                (kuna_analysis::passes::LOAD_DEMAND_STRINGS_ENV, Some("off")),
             ])
         );
-        assert_eq!(settings(&[], Some("  "), 1, false).len(), 2);
+        assert_eq!(settings(&[], Some("  "), 1, false).len(), 3);
         assert_eq!(
             settings(&[], None, 4, false)
                 [kuna_analysis::listing::kuna_pdecode::DECODE_JOBS_ENV],
