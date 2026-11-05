@@ -1,5 +1,9 @@
 # Stage-model issue testcases
 
+`ghangr-rust-boolean-expressions.xml` checks bitwise expressions over merged
+Boolean locals. Its CLI companion executes complete emitted C and Rust functions
+against independent result formulas, callback traces and store canaries at O0/O2.
+
 `ghangr-scalar-call-results.xml` checks the no-record and explicit-prototype
 controls for narrowed scalar calls. The CLI probes exercise callee-first recovery;
 the native companion compiles and executes complete emitted C, Go and Rust callees
