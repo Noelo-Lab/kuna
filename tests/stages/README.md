@@ -395,3 +395,9 @@ callers against boundary values and check that each helper is called once.
 `ghangr-go-store-value.xml` checks Go integer destination conversions for fields,
 plain/indexed pointers and a side-effectful call, with all integer widths and
 complete native bodies covered by the CLI integration fixture.
+
+`ghangr-go-pointer-arithmetic-32.xml` and `ghangr-go-pointer-arithmetic-64.xml`
+check live pointer bases through constant, negative and signed dynamic byte
+offsets in Go loads, stores and returns. Integer-address reconstruction remains
+a control. The CLI companion builds both authored assembly fixtures and runs
+the complete emitted functions with Go pointer checks and full-array canaries.

@@ -91,6 +91,7 @@ pub(crate) mod kuna_rustfmtpanic;
 pub(crate) mod kuna_rustfmtpieces;
 pub mod kuna_langrust; // (kuna) the rust-language policy objects (profile + caps)
 pub mod kuna_langgo;
+pub(crate) mod kuna_gopointerarith;
 pub mod kuna_gopackage;
 pub(crate) mod kuna_gobyteview;
 pub(crate) mod kuna_gobyteextract;
