@@ -167,6 +167,13 @@ fn settings(
         }
         .into()),
     );
+    let demand_strings = !functions_inventory
+        && matches!(last_option_value(options, "lazyfuncs"), Some("on" | "1" | "true"))
+        && matches!(last_option_value(options, "listing"), Some("off" | "0" | "false"));
+    values.insert(
+        kuna_analysis::passes::LOAD_DEMAND_STRINGS_ENV,
+        Some(if demand_strings { "on" } else { "off" }.into()),
+    );
     values
 }
 
@@ -226,6 +233,20 @@ impl Drop for LoadtimeEnv {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn demand_strings_requires_lazy_functions_and_no_listing() {
+        for (lazy, listing, inventory, expected) in [
+            ("on", "off", false, "on"),
+            ("off", "off", false, "off"),
+            ("on", "on", false, "off"),
+            ("on", "off", true, "off"),
+        ] {
+            let options = [("lazyfuncs".into(), lazy.into()), ("listing".into(), listing.into())];
+            let values = settings(&options, None, 1, inventory);
+            assert_eq!(values[kuna_analysis::passes::LOAD_DEMAND_STRINGS_ENV].as_deref(), Some(expected));
+        }
+    }
 
     #[test]
     fn loader_value_vocabularies_are_preserved() {

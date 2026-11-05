@@ -382,6 +382,8 @@ pub struct AnalysisOutput {
     pub externref: Vec<(u64, u64)>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
     pub strings: Vec<StringFact>,
+    /// String matching deferred until referenced addresses are known.
+    pub lazy_strings: Vec<crate::strings::kuna_lazyprobe::Plan>,
     /// (kuna `fatstr`) Length-BOUNDED string literals recovered from static
     /// `(ptr, len)` records (`strings::kuna_strrecords`): `len` is the exact
     /// byte count, there is NO terminator, and the commit arm plants these
@@ -670,6 +672,7 @@ impl AnalysisOutput {
         self.readonly.extend(other.readonly);
         self.externref.extend(other.externref);
         self.strings.extend(other.strings);
+        self.lazy_strings.extend(other.lazy_strings);
         self.bounded_strings.extend(other.bounded_strings);
         self.wide_strings.extend(other.wide_strings);
         self.wide_strings32.extend(other.wide_strings32);

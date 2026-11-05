@@ -4560,6 +4560,11 @@ pub fn bootstrap_from_object_with_isa(
         // `Listing::build` can decode through it. Default-off ⇒ unused.
         sleigh.base().unwrap().translate(),
     );
+    for (_, out) in &mut pending_analysis {
+        for plan in &mut out.lazy_strings {
+            plan.bind_input(std::sync::Arc::clone(&bytes));
+        }
+    }
     pending_analysis.extend(input_isa_stash(input_context_paints));
 
     // (kuna `dynrelocs`) The PT_GNU_RELRO-frozen dynamic-relocation slots, read
@@ -4862,7 +4867,7 @@ fn commit_analysis_output(
     } else {
         Vec::new()
     };
-    let out = out;
+    let mut out = out;
 
     // Keep lookup identities even when richer debug information wins the map;
     // a spelling shared by several objects resolves to its lowest address.
@@ -5051,6 +5056,20 @@ fn commit_analysis_output(
     //    site and the printer rendered `sub_<addr>` (DIV-59).
     // (kuna `lazyfuncs`) On, an entry keeps its NAME but no `Function` is created here.
     let lazy_funcs = prog.arch().analysis_lazyfuncs;
+    let plans = std::mem::take(&mut out.lazy_strings);
+    if !plans.is_empty() {
+        if lazy_funcs {
+            prog.arch_mut().lazy_string_probe = Some(Rc::new(move |values, wide| {
+                plans.iter().flat_map(|plan| plan.probe(values, wide)).collect()
+            }));
+        } else {
+            for fact in plans.iter().flat_map(|plan| plan.all()) {
+                let string = kuna_analysis::pass::StringFact { addr: fact.addr, len: fact.len };
+                if fact.char_size == 1 { out.strings.push(string); }
+                else { out.wide_strings.push(string); }
+            }
+        }
+    }
     let eager = if lazy_funcs {
         crate::kuna_lazyfuncs::fact_entries(&out)
     } else {

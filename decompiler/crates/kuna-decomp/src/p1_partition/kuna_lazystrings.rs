@@ -18,8 +18,10 @@ pub struct Fact {
     pub priority: u8,
 }
 
+pub type Probe = dyn Fn(&[u64], bool) -> Vec<Fact>;
+
 pub fn materialize(arch: &mut Architecture, fd: &Funcdata) -> KunaResult<usize> {
-    if arch.lazy_string_facts.is_empty() {
+    if arch.lazy_string_facts.is_empty() && arch.lazy_string_probe.is_none() {
         return Ok(0);
     }
     let mut constants: Vec<u64> = fd
@@ -33,13 +35,16 @@ pub fn materialize(arch: &mut Architecture, fd: &Funcdata) -> KunaResult<usize> 
     constants.dedup();
     let facts = Rc::clone(&arch.lazy_string_facts);
     let mut selected = Vec::new();
-    for value in constants {
+    for &value in &constants {
         let above = facts.partition_point(|fact| fact.addr <= value);
         for fact in facts[..above].iter().rev().take(4) {
             if value >= fact.addr && value - fact.addr < u64::from(fact.len) {
                 selected.push(*fact);
             }
         }
+    }
+    if let Some(probe) = &arch.lazy_string_probe {
+        selected.extend(probe(&constants, arch.analysis_widestrings));
     }
     selected.sort_by_key(|fact| (fact.addr, fact.priority));
     selected.dedup();

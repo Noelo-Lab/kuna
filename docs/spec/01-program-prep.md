@@ -145,6 +145,11 @@ After a lift, constants landing in those ranges materialize only the strings the
 function read, and the drive repeats so type propagation sees the eager path's
 `char[N]` or wide-character symbol
 (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_lazystrings.rs (materialize)`).
+For Mach-O CLI runs with `lazyfuncs on` and `listing off`, the string pass instead
+records a deferred probe. Referenced addresses use the same ASCII and UTF-16
+matching rules, including interior pointers, NUL extents and pointer-slot rejection
+(`decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_lazyprobe.rs`).
+The eager scan remains available when the commit does not use lazy functions.
 
 CLI loads gate `objc` and `strings` before their pass runs. This is earlier than
 the normal commit-time option filter: a disabled pass produces no discarded fact
