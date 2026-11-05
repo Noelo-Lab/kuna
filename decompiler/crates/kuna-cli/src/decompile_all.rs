@@ -9,6 +9,7 @@
 //! bodies is a run-level failure.
 
 mod callee_first;
+mod functions_serialize;
 mod omit;
 mod result_store;
 
@@ -1181,17 +1182,23 @@ pub fn run_functions(argv: &[String]) -> i32 {
                     return 1;
                 }
             };
-            let text = if args.json {
+            let written = if args.json {
                 let limits = graph.as_ref().map(|g| crate::limits::measure(&prog, g, &entries));
-                functions_json(
-                    &args.binary,
-                    &entries,
-                    total,
-                    discovery_error.as_deref(),
-                    limits.as_ref(),
-                    &|address| prog.output_code_offset(address),
-                    &crate::funcdecl::Declared::of(&prog),
-                )
+                let limits = limits.as_ref().map(|limits| {
+                    crate::limits::to_json(limits, &|address| prog.output_code_offset(address))
+                });
+                crate::output::emit_streamed(|out| {
+                    functions_serialize::write(
+                        out,
+                        &args.binary,
+                        &entries,
+                        total,
+                        discovery_error.as_deref(),
+                        limits.as_ref(),
+                        &|address| prog.output_code_offset(address),
+                        &crate::funcdecl::Declared::of(&prog),
+                    )
+                })
             } else {
                 let mut text = String::new();
                 for e in &entries {
@@ -1205,9 +1212,9 @@ pub fn run_functions(argv: &[String]) -> i32 {
                     let address = prog.output_code_offset(e.addr.get_offset());
                     let _ = writeln!(text, "0x{address:x}\t{}{extra}", e.name);
                 }
-                text
+                crate::output::emit(&text)
             };
-            emit_with_run_error(&text, discovery_error.as_deref())
+            finish_with_run_error(written, discovery_error.as_deref())
         }
         Err(e) => {
             eprintln!("error: {e}");
@@ -2195,12 +2202,13 @@ pub(crate) fn write_selected_json(
 /// so a triage-narrowed listing says what it was narrowed from. They are equal on
 /// an unfiltered run. `limits` is present only when the selection already walked
 /// the image (`--reachable-from`): the plain listing never pays for that walk.
+#[cfg(test)]
 fn functions_json(
     binary: &str,
     entries: &[FunctionEntry],
     total: usize,
     error: Option<&str>,
-    limits: Option<&crate::limits::Limits>,
+    limits: Option<&Json>,
     display_address: &dyn Fn(u64) -> u64,
     declared: &crate::funcdecl::Declared,
 ) -> String {
@@ -2213,7 +2221,7 @@ fn functions_json(
     doc.extend(declared.notes_field());
     doc.push(("functions".into(), entries_json(entries, display_address, declared)));
     if let Some(limits) = limits {
-        doc.push(("limits".into(), crate::limits::to_json(limits, display_address)));
+        doc.push(("limits".into(), limits.clone()));
     }
     format!("{}\n", dumps_indent2(&Json::Object(doc)))
 }

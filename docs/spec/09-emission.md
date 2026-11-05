@@ -5,6 +5,17 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p9_emit
 ```
 
+The CLI's `functions --json` serializes borrowed inventory records through
+`decompiler/crates/kuna-cli/src/decompile_all/functions_serialize.rs`. It visits
+one record at a time without constructing a document-wide `Json` array or
+copying names and aliases. Records go directly to the stdout boundary's buffered
+writer through a fixed 64 KiB serialization buffer, so no complete output string
+is retained. `serde_json` owns the JSON structure and indentation; an adapter
+preserves ASCII-safe string escapes, including DEL and UTF-16 surrogate pairs.
+Both this adapter and the shared `jsonfmt` string writer use `UnicodeEscape`
+from `decompiler/crates/kuna-cli/src/jsonfmt/writer.rs` for Unicode escapes.
+Field order, optional fields, numeric spelling and the trailing newline are preserved.
+
 An integer SUBPIECE of an implied struct value preserves the extracted width
 when rendered as a field access (`kuna_fieldextract.rs`). If the field is wider
 than the result, the emitter converts the field to the operation's integer type
