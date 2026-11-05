@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3825,
-    3825
+    3830,
+    3830
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -424,6 +424,7 @@
     "data:Call push #3: both passes keep the call in the loop",
     "data:Call push #4: both passes keep a stack-passed argument",
     "data:Call push #5: both passes keep the push call 1f reads back",
+    "data:Console has no recorded return in either option arm",
     "data:DECLARED-CALLBACK-C #10: callback parameters are recursive abstract declarators",
     "data:DECLARED-CALLBACK-C #11: a callback returning a callback preserves both signatures",
     "data:DECLARED-CALLBACK-C #12: ctypes spells the callback return as a target C scalar",
@@ -539,6 +540,8 @@
     "data:EXTENT-DIRECT #4: an in-range recovered indirect target remains local",
     "data:EXTENT-DIRECT #5: the stated interior indirect entry is not inferred as a callee",
     "data:EXTENT-FALLTHROUGH #1: both passes decode the body inside the asserted outer extent",
+    "data:Explicit Go prototype retains the narrowing conversion",
+    "data:Explicit Rust prototype retains the narrowing cast",
     "data:FAST-FUNCDISC #1: loader-known entry is present in both inventories",
     "data:FAST-FUNCDISC #2: direct callee is absent off and present on",
     "data:FAST-FUNCDISC #3: the newly inventoried callee has a real decompiled body",
@@ -1710,6 +1713,8 @@
     "data:RUSTABI #7: with the option on the consumer reads the payload out of the call's result, not out of thin air",
     "data:RUSTABI #8: with the option on the discriminant guard reads the same call result",
     "data:RUSTABI #9: a callee proven never to write the second return register is not paired -- the reader is unchanged in BOTH passes",
+    "data:Recovered callee still returns a full word",
+    "data:Rust Boolean conversion keeps its byte comparison",
     "data:Rust arithmetic index keeps its signed shift width",
     "data:Rust arithmetic shift overrides unsigned recovered input",
     "data:Rust array address cast suppression stays diagnostic",

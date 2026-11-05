@@ -1,5 +1,10 @@
 # Stage-model issue testcases
 
+`ghangr-scalar-call-results.xml` checks the no-record and explicit-prototype
+controls for narrowed scalar calls. The CLI probes exercise callee-first recovery;
+the native companion compiles and executes complete emitted C, Go and Rust callees
+and callers across signed, unsigned, Boolean and full-width results.
+
 `ghangr-rust-boolean-conversions.xml` checks byte-to-Boolean casts, masked values
 and narrowed callback results. Its CLI companion compiles complete C and Rust
 output under the same asserted prototypes and checks every byte value and call

@@ -60,7 +60,10 @@ impl PrintC {
                     matches!(operation.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))
                 {
                     let Some(index) = fd.get_call_specs_index(def) else { return false; };
-                    let Some(result) = fd.get_call_specs(index).proto().get_output_type() else { return false; };
+                    let proto = fd.get_call_specs(index).proto();
+                    let result = self.call_result_plan(fd, arch, def).map(|plan| plan.target)
+                        .or_else(|| proto.has_store().then(|| proto.get_output_type().cloned()).flatten());
+                    let Some(result) = result else { return false; };
                     if result.get_size() != 1 || result.is_enum_type()
                         || !matches!(result.get_metatype(), type_metatype::TYPE_INT
                             | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN)

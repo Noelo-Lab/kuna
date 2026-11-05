@@ -4353,7 +4353,8 @@ conversion serves explicit casts, COPY assignments, returns and typed STORE
 values. It uses the printed source type and requires a one-byte integer value
 and a one-byte Boolean destination. Enum values, nonintegers and inconsistent
 storage widths retain their existing handling. An implied call must have a
-compatible byte result in its call prototype. Wider results must retain their
+compatible byte result in its call prototype or the verified scalar call-result
+conversion described below. Wider results must retain their
 separate narrowing operation: a byte extracted from a callback result becomes
 `callback() as u8 != 0`, not a comparison of the complete result. The expression
 also replaces the outer Boolean cast when the `boolbyte` SUBPIECE path inserts
@@ -4376,6 +4377,47 @@ masked value and low-byte callback result agrees, including nonzero upper words
 with a zero low byte. Callback counters check single evaluation. These checks
 validate the asserted source-type conversion; they do not execute an original
 function with a potentially noncanonical machine Boolean representation.
+
+### Narrow recovered scalar call results
+
+`kuna_callresult.rs` makes the conversion explicit when a Go or Rust caller keeps
+the low part of a wider integer returned by an already-decompiled callee.
+The callee's recorded return statement describes the emitted function's type
+and storage, even when the caller's unlocked output prototype is still void.
+The emitter reads that statement from the caller's analysis snapshot, including
+statements withdrawn from type inference. It does not change the inference rule
+that requires identical return storage and width before propagating a type.
+When no return-type statement exists, the emitter can use the computed return
+recorded with callee-first parameter recovery under `passthrough`. This includes
+untyped scalar returns that print as integers, such as an identity function's
+eight-byte result. The storage-only result record is insufficient: the return
+must have a recorded type and be computed on every live return path.
+
+The source and target must be primitive integers of 1, 2, 4 or 8 bytes, with a
+strictly smaller target. The target uses its printed local type. Both types must
+match their recorded storage widths, and the target must occupy the exact low
+slice of the source in the same byte-addressed processor space. Big-endian
+storage places that slice at the source's end. Overflowing ranges, other spaces,
+enums, pointers, floats and aggregates are excluded. A nonvoid call prototype
+must agree with the recorded source type. Locked prototypes keep their existing
+cast handling, and recursive calls cannot use a prior statement about their own
+function. Aggregate result adapters and Rust formatting calls keep their
+specialized rendering.
+
+A one-byte Boolean destination first narrows the call result to an unsigned
+byte and then compares that byte with zero. This preserves a false result for
+nonzero upper bytes with a zero low byte. The call is evaluated once. Numeric
+destinations use Rust's `as` or Go's typed conversion, preserving the retained
+bits and target signedness. C emission is unchanged; Rust cosmetic cast
+suppression bypasses the conversion, while Go retains its required conversions.
+
+Native checks compile complete emitted callees and callers with signed and
+unsigned 8-, 16- and 32-bit destinations, Boolean results and full-width
+forwarding. Typed and untyped callee returns are both covered. The CLI test
+requests `protoorder types` explicitly because its function selection is
+filtered; an ordinary whole-program callee-first run already records this
+metadata. Console-only decompilation without recorded returns is a negative
+control, and asserted callee prototypes retain their existing conversion path.
 
 ### Rust machine-operation names
 
