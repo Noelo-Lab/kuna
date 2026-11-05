@@ -2,7 +2,7 @@
 
 use object::{Object, ObjectSection};
 
-use std::sync::Arc;
+use crate::image_bytes::ImageBytes;
 use kuna_decomp::kuna_lazystrings::Fact;
 
 use super::{is_loaded_initialized, is_string_char, kuna_ptrslot::PointerSlots};
@@ -11,7 +11,7 @@ use super::{is_loaded_initialized, is_string_char, kuna_ptrslot::PointerSlots};
 pub struct Plan {
     min_len: usize,
     wide_min_len: usize,
-    input: Option<Arc<[u8]>>,
+    input: Option<ImageBytes>,
 }
 
 impl Plan {
@@ -23,7 +23,7 @@ impl Plan {
         }
     }
 
-    pub fn bind_input(&mut self, input: Arc<[u8]>) {
+    pub fn bind_input(&mut self, input: ImageBytes) {
         self.input = Some(input);
     }
 
@@ -175,7 +175,7 @@ mod tests {
     fn image_probe_matches_eager_pass_at_all_referenced_strings() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/macho_objc_arm64");
-        let bytes: Arc<[u8]> = std::fs::read(path).unwrap().into();
+        let bytes = ImageBytes::from(std::fs::read(path).unwrap());
         let mut plan = Plan::new(4, 5);
         plan.bind_input(bytes);
         let expected = plan.all();

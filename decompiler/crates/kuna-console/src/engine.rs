@@ -602,7 +602,7 @@ pub struct ConsoleProgram {
     /// datatest path (no Listing tier), so the gated build is a structural no-op
     /// there. Empty/`None` when the listing flag is off ⇒ zero cost.
     analysis_image:
-        Option<(String, std::sync::Arc<[u8]>, kuna_analysis::loader::ImportProofMemo)>,
+        Option<(String, kuna_analysis::image_bytes::ImageBytes, kuna_analysis::loader::ImportProofMemo)>,
     /// (kuna `armframes`) The whole-image frame recovery: set before the commit,
     /// it is replayed instead of searched; after it, the record that commit made.
     arm_frames: Option<kuna_analysis::aif::kuna_framereplay::ArmFrameReplay>,
@@ -4408,51 +4408,56 @@ pub fn bootstrap_from_object_with_isa(
     let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
     let registry = build_registry();
 
-    // Read the image bytes once: reused for the loader AND the analysis-pass
-    // object::File view (the analyzers need a parsed object the loader drops).
-    let bytes = std::fs::read(path)
-        .map_err(|e| KunaError::lowlevel(format!("Unable to open image file: {path}: {e}")))?;
-    // (PR-8) Mach-O fat / universal (`0xcafebabe`) peel: `object::File::parse`
-    // is a thin, single-arch view and cannot parse a fat header, so a universal
-    // binary is reduced to ONE arch slice's bytes here — the single, canonical
-    // slice-selection point (design §3.4). Everything downstream (the loader, the
-    // analysis passes, the deferred-Listing stash) then sees the SAME thin slice,
-    // exactly as for a thin Mach-O. The slice preference is `--slice` (env
-    // `KUNA_MACHO_SLICE`) or the `--target` stem, else x86-64 → arm64 → first.
-    // Non-fat input is untouched (the peel returns the bytes verbatim).
-    let bytes = select_macho_slice(bytes, target);
-    // (kuna) ELF section-table tolerance: the second normalization at this same
-    // canonical point. An ELF's section table is link-time metadata, but `object`
-    // validates it eagerly, so one corrupt half-word rejected an image whose
-    // program headers described every loadable byte -- and every kuna surface
-    // exited 1 on a file `readelf -l` reads happily. Clearing the unusable table
-    // here (and only here) means the loader AND the analysis passes below see the
-    // same recovered view. A file with a usable section table is untouched.
-    let (bytes, shdr_note) = kuna_analysis::loader::elf_shdr::tolerate_unusable_section_table(bytes);
-    // (kuna) PE DOS-magic tolerance: an `e_magic` that is not `MZ` in front of an
-    // `e_lfanew` that still reaches `PE\0\0` is rewritten in the loaded copy only,
-    // before the data-directory clamp, which reads the headers behind it.
-    let (bytes, dosmagic_note) = kuna_analysis::loader::pe_dosmagic::tolerate_corrupt_dos_magic(bytes);
-    // (kuna) PE data-directory tolerance: the same normalization one format over.
-    // A PE's `NumberOfRvaAndSizes` is declared separately from the room its own
-    // optional header gives the directory array, and packers overwrite it; Windows
-    // reads whatever fits, `object` insists on the declared count and rejects the
-    // image before any code is mapped. Clamping here (and only here) keeps the
-    // loader and the analysis passes on the same recovered view, and reads the
-    // imports from the real table rather than fabricating one.
-    let (bytes, datadir_note) =
-        kuna_analysis::loader::pe_datadirs::tolerate_oversized_data_directories(bytes);
-    let load_notes: Vec<String> =
-        [shdr_note, dosmagic_note, datadir_note].into_iter().flatten().collect();
+    let (bytes, load_notes) = match kuna_analysis::image_bytes::ImageBytes::map_thin_macho(path)? {
+        Some(bytes) => (bytes, Vec::new()),
+        None => {
+            // Read the image bytes once: reused for the loader AND the analysis-pass
+            // object::File view (the analyzers need a parsed object the loader drops).
+            let bytes = std::fs::read(path)
+                .map_err(|e| KunaError::lowlevel(format!("Unable to open image file: {path}: {e}")))?;
+            // (PR-8) Mach-O fat / universal (`0xcafebabe`) peel: `object::File::parse`
+            // is a thin, single-arch view and cannot parse a fat header, so a universal
+            // binary is reduced to ONE arch slice's bytes here — the single, canonical
+            // slice-selection point (design §3.4). Everything downstream (the loader, the
+            // analysis passes, the deferred-Listing stash) then sees the SAME thin slice,
+            // exactly as for a thin Mach-O. The slice preference is `--slice` (env
+            // `KUNA_MACHO_SLICE`) or the `--target` stem, else x86-64 → arm64 → first.
+            // Non-fat input is untouched (the peel returns the bytes verbatim).
+            let bytes = select_macho_slice(bytes, target);
+            // (kuna) ELF section-table tolerance: the second normalization at this same
+            // canonical point. An ELF's section table is link-time metadata, but `object`
+            // validates it eagerly, so one corrupt half-word rejected an image whose
+            // program headers described every loadable byte -- and every kuna surface
+            // exited 1 on a file `readelf -l` reads happily. Clearing the unusable table
+            // here (and only here) means the loader AND the analysis passes below see the
+            // same recovered view. A file with a usable section table is untouched.
+            let (bytes, shdr_note) = kuna_analysis::loader::elf_shdr::tolerate_unusable_section_table(bytes);
+            // (kuna) PE DOS-magic tolerance: an `e_magic` that is not `MZ` in front of an
+            // `e_lfanew` that still reaches `PE\0\0` is rewritten in the loaded copy only,
+            // before the data-directory clamp, which reads the headers behind it.
+            let (bytes, dosmagic_note) = kuna_analysis::loader::pe_dosmagic::tolerate_corrupt_dos_magic(bytes);
+            // (kuna) PE data-directory tolerance: the same normalization one format over.
+            // A PE's `NumberOfRvaAndSizes` is declared separately from the room its own
+            // optional header gives the directory array, and packers overwrite it; Windows
+            // reads whatever fits, `object` insists on the declared count and rejects the
+            // image before any code is mapped. Clamping here (and only here) keeps the
+            // loader and the analysis passes on the same recovered view, and reads the
+            // imports from the real table rather than fabricating one.
+            let (bytes, datadir_note) =
+                kuna_analysis::loader::pe_datadirs::tolerate_oversized_data_directories(bytes);
+            let load_notes: Vec<String> =
+                [shdr_note, dosmagic_note, datadir_note].into_iter().flatten().collect();
+            (kuna_analysis::image_bytes::ImageBytes::from(bytes), load_notes)
+        }
+    };
     for note in &load_notes {
         kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
     }
-    let bytes: std::sync::Arc<[u8]> = bytes.into();
     let explicit_isa = isa.is_some();
     let import_proofs = kuna_analysis::loader::ImportProofScope::enter(&bytes);
     // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).
     let mut loader =
-        ObjectLoadImage::from_shared_bytes_with_target(path, std::sync::Arc::clone(&bytes), target)?;
+        ObjectLoadImage::from_image_bytes_with_target(path, bytes.clone(), target)?;
 
     // resolveArchitecture: the arch id is the loader's getArchType() (the object
     // machine → SLEIGH language id), unless an explicit target overrides it;
@@ -4562,7 +4567,7 @@ pub fn bootstrap_from_object_with_isa(
     );
     for (_, out) in &mut pending_analysis {
         for plan in &mut out.lazy_strings {
-            plan.bind_input(std::sync::Arc::clone(&bytes));
+            plan.bind_input(bytes.clone());
         }
     }
     pending_analysis.extend(input_isa_stash(input_context_paints));
@@ -5905,6 +5910,11 @@ pub fn bootstrap_from_file(
     target: &str,
     spec_roots: &[String],
 ) -> KunaResult<ConsoleProgram> {
+    if kuna_analysis::image_bytes::ImageBytes::map_thin_macho(path)
+        .ok().flatten().is_some()
+    {
+        return bootstrap_from_object(path, target, spec_roots);
+    }
     let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to recognize imagefile {path}: {e}")))?;
     if is_mz_dos_image(&bytes) {

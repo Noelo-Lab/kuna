@@ -130,17 +130,17 @@ fn demangle_funcsym_name(name: Vec<u8>, mode: NameChars) -> Vec<u8> {
 #[derive(Debug)]
 enum SegmentData {
     Owned(Vec<u8>),
-    Shared { image: Arc<[u8]>, start: usize, end: usize },
+    Shared { image: crate::image_bytes::ImageBytes, start: usize, end: usize },
 }
 
 impl SegmentData {
-    fn from_slice(data: &[u8], image: Option<&Arc<[u8]>>) -> Self {
+    fn from_slice(data: &[u8], image: Option<&crate::image_bytes::ImageBytes>) -> Self {
         if let Some(image) = image {
             let base = image.as_ptr() as usize;
             let start = (data.as_ptr() as usize).saturating_sub(base);
             if start <= image.len() && data.len() <= image.len() - start {
                 return Self::Shared {
-                    image: Arc::clone(image),
+                    image: image.clone(),
                     start,
                     end: start + data.len(),
                 };
@@ -740,6 +740,14 @@ impl ObjectLoadImage {
         bytes: Arc<[u8]>,
         target: &str,
     ) -> KunaResult<ObjectLoadImage> {
+        Self::from_image_bytes_with_target(filename, bytes.into(), target)
+    }
+
+    pub fn from_image_bytes_with_target(
+        filename: &str,
+        bytes: crate::image_bytes::ImageBytes,
+        target: &str,
+    ) -> KunaResult<ObjectLoadImage> {
         Self::from_bytes_with_diagnostics(
             filename,
             &bytes,
@@ -754,7 +762,7 @@ impl ObjectLoadImage {
         bytes: &[u8],
         emit_diagnostics: bool,
         target: Option<&str>,
-        shared_image: Option<Arc<[u8]>>,
+        shared_image: Option<crate::image_bytes::ImageBytes>,
     ) -> KunaResult<ObjectLoadImage> {
         // Parse the object file.
         let file = parse_object(bytes).map_err(|e| {
@@ -2358,6 +2366,29 @@ mod tests {
         image.load_fill(&mut got, &Address::new(ram, 0x1000)).unwrap();
         assert_eq!(got, [0xcc]);
         assert_eq!(&*object, original, "copy-on-write changed the shared input");
+    }
+
+    #[test]
+    fn mapped_input_segments_copy_only_when_written() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/macho_imports_arm64");
+        let original = std::fs::read(&path).unwrap();
+        let input = crate::image_bytes::ImageBytes::map_thin_macho(path.to_str().unwrap())
+            .unwrap().unwrap();
+        assert!(matches!(input, crate::image_bytes::ImageBytes::Mapped(_)));
+        let file = parse_object(&input).unwrap();
+        let text = file.sections().find(|section| section.name() == Ok("__text")).unwrap();
+        let address = text.address();
+        let byte = text.data().unwrap()[0] ^ 0xff;
+        let mut image = ObjectLoadImage::from_image_bytes_with_target("mapped", input.clone(), "").unwrap();
+        let ram = Rc::clone(manager().get_default_code_space().unwrap());
+        image.attach_to_space(Rc::clone(&ram));
+        image.overlay_span(address, &[byte]).unwrap();
+        let mut got = [0];
+        image.load_fill(&mut got, &Address::new(ram, address)).unwrap();
+        assert_eq!(got, [byte]);
+        assert_eq!(&*input, original.as_slice());
+        assert_eq!(std::fs::read(path).unwrap(), original);
     }
 
     /// Build a minimal little-endian ELF64 x86-64 image with one PT_LOAD

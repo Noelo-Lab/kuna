@@ -432,8 +432,7 @@ fn summarize(
         code_bytes: selected.iter().map(|e| e.size).sum(),
         buckets,
         largest,
-        runtime: kuna_analysis::loader::elf_shdr::read_image(binary)
-            .map(|bytes| crate::runtime_hints::detect(&bytes, true))
+        runtime: crate::image::inspect(binary, |bytes| Some(crate::runtime_hints::detect(bytes, true)))
             .unwrap_or_default(),
         limits: crate::limits::measure(prog, graph, selected),
     }
@@ -1612,11 +1611,9 @@ pub(crate) fn driver_default_options(
     // a raw or TE input has none, so it takes no discovery default at all rather
     // than an inert one. (`image_bytes` is deliberately not used here: a TE is
     // an ordinary "no object view" answer, not an error, on this path.)
-    let non_x86_64 = kuna_analysis::loader::elf_shdr::read_image(binary)
-        .ok()
-        .filter(|bytes| !kuna_analysis::loadimage_te::is_te_image(bytes))
-        .and_then(|bytes| {
-            kuna_analysis::loadimage_object::parse_object(&bytes)
+    let non_x86_64 = crate::image::inspect(binary, |bytes| {
+            if kuna_analysis::loadimage_te::is_te_image(bytes) { return None }
+            kuna_analysis::loadimage_object::parse_object(bytes)
                 .ok()
                 .map(|file| file.architecture() != object::Architecture::X86_64)
         })
@@ -1924,9 +1921,10 @@ pub fn detected_output_language(
     {
         Some(lang) => kuna_analysis::sourcelang::Compiler::from_forced_lang(lang),
         None => {
-            let bytes = kuna_analysis::loader::elf_shdr::read_image(binary).ok()?;
-            let file = kuna_analysis::loadimage_object::parse_object(&bytes).ok()?;
-            kuna_analysis::sourcelang::effective_compiler(&file, &bytes)
+            crate::image::inspect(binary, |bytes| {
+                let file = kuna_analysis::loadimage_object::parse_object(bytes).ok()?;
+                Some(kuna_analysis::sourcelang::effective_compiler(&file, bytes))
+            })?
         }
     };
     match compiler {
