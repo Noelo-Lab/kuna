@@ -759,6 +759,9 @@ mod rust_integer_conversions;
 #[path = "rust_boolean_conversions.rs"]
 mod rust_boolean_conversions;
 
+#[path = "scalar_call_results.rs"]
+mod scalar_call_results;
+
 #[path = "rust_store_value.rs"]
 mod rust_store_value;
 

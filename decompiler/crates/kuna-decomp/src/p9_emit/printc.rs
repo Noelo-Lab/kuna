@@ -8450,6 +8450,7 @@ impl PrintC {
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         let proto = fd.get_call_specs_index(op).map(|index| fd.get_call_specs(index).proto());
         self.push_word_result_open(fd, arch, op);
+        let result_conversion = self.push_call_result_open(fd, arch, op);
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
 
         if opc == OpCode::CPUI_CALLIND {
@@ -8507,6 +8508,7 @@ impl PrintC {
                     crate::printlanguage::SyntaxHighlight::no_color,
                 ));
             }
+            self.push_call_result_close(result_conversion, op);
             return;
         }
 
@@ -8553,6 +8555,7 @@ impl PrintC {
                 crate::printlanguage::SyntaxHighlight::no_color,
             ));
         }
+        self.push_call_result_close(result_conversion, op);
     }
 
     fn emit_indirect_input_aliases(&mut self, fd: &Funcdata) {

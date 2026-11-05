@@ -1,0 +1,20 @@
+{
+  "at": "2026-11-05T13:45:30.541787+00:00",
+  "description": "Authored x86-64 recovered scalar return probes. Assert only caller prototypes so the callee return is recovered before callers. This binary is an analysis fixture and has not been executed.",
+  "compiler": "cc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+  "command": [
+    "cc",
+    "-O1",
+    "-fno-inline",
+    "-fno-optimize-sibling-calls",
+    "-fno-pie",
+    "-no-pie",
+    "scalar_call_results.c",
+    "-o",
+    "scalar_call_results_x86_64"
+  ],
+  "sha256": {
+    "scalar_call_results.c": "b1f7dcabd7ece6b5b710185a4fa02bd2f5a8a76fb96d0d97d9df13a75046356c",
+    "scalar_call_results_x86_64": "eb55c947094a55d641bc18b2a0f16dc137a7c464a47b9b37cdce2e014e30b5c3"
+  }
+}
