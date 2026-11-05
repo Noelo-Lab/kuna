@@ -5909,6 +5909,7 @@ pub fn bootstrap_from_file(
     if is_object_binary(&bytes) {
         // Real object-format binary (ELF / PE / Mach-O / COFF): drive the
         // object-crate loader.
+        drop(bytes);
         return bootstrap_from_object(path, target, spec_roots);
     }
     if !bytes
