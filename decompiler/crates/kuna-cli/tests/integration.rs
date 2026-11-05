@@ -756,6 +756,9 @@ mod go_store_value;
 #[path = "rust_integer_conversions.rs"]
 mod rust_integer_conversions;
 
+#[path = "rust_boolean_conversions.rs"]
+mod rust_boolean_conversions;
+
 #[path = "rust_store_value.rs"]
 mod rust_store_value;
 

@@ -18,6 +18,7 @@ pub mod kuna_unknowncasts;
 pub mod kuna_signedread; // (kuna) a signed read of an expression that prints unsigned casts it back
 pub(crate) mod kuna_rustsigned;
 pub(crate) mod kuna_rustintegers;
+pub(crate) mod kuna_rustboolcast;
 pub(crate) mod kuna_ruststorevalue;
 pub(crate) mod kuna_rustptradd;
 pub(crate) mod kuna_rustarrayindex;

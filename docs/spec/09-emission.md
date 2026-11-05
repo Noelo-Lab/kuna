@@ -4345,6 +4345,38 @@ Native validation uses wrapping arithmetic, with Rust overflow checks disabled,
 to match the binary's integer operations. The conversion does not itself select
 checked versus wrapping arithmetic for a source build.
 
+### Rust Boolean conversions
+
+`kuna_rustboolcast.rs` renders a primitive byte consumed as a Boolean as
+`value != 0`, because Rust does not permit an integer `as bool` cast. The same
+conversion serves explicit casts, COPY assignments, returns and typed STORE
+values. It uses the printed source type and requires a one-byte integer value
+and a one-byte Boolean destination. Enum values, nonintegers and inconsistent
+storage widths retain their existing handling. An implied call must have a
+compatible byte result in its call prototype. Wider results must retain their
+separate narrowing operation: a byte extracted from a callback result becomes
+`callback() as u8 != 0`, not a comparison of the complete result. The expression
+also replaces the outer Boolean cast when the `boolbyte` SUBPIECE path inserts
+an intermediate unsigned-byte cast. Rust retains the intermediate cast even
+when the upper bits are proven zero, so both truncation forms yield a valid
+Boolean expression. The source is evaluated once, and the normal
+operator stack preserves surrounding Boolean and arithmetic precedence.
+Cosmetic cast suppression disables the conversion.
+C and Go emission are unchanged.
+
+An implied integer expression composed of untyped literals retains its byte
+context through `::core::convert::identity::<u8>` or `::<i8>` before comparison.
+For example, `!0xff` must stay an unsigned byte with value zero rather than
+becoming an inferred `i32` with a nonzero value. The same bounded context walk
+used by integer conversions decides whether the annotation is needed.
+
+Native validation compiles complete emitted C and Rust functions under the same
+asserted Boolean prototypes. Every byte value, signed-byte interpretation,
+masked value and low-byte callback result agrees, including nonzero upper words
+with a zero low byte. Callback counters check single evaluation. These checks
+validate the asserted source-type conversion; they do not execute an original
+function with a potentially noncanonical machine Boolean representation.
+
 ### Rust machine-operation names
 
 A functional `CALLOTHER` names the architecture's machine operation. When Rust

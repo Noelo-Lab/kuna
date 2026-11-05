@@ -1,5 +1,10 @@
 # Stage-model issue testcases
 
+`ghangr-rust-boolean-conversions.xml` checks byte-to-Boolean casts, masked values
+and narrowed callback results. Its CLI companion compiles complete C and Rust
+output under the same asserted prototypes and checks every byte value and call
+counts. The original fixture is only decompiled.
+
 `kuna-callwide.xml` loads the committed sealed MIPS32-BE ELF and checks the
 four-byte OFF result against the proved eight-byte result and high-piece callers.
 Its CLI companion executes the original bytes and untouched emitted C/header
