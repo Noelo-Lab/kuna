@@ -905,7 +905,7 @@ fn render_text(region: &Region, rows: &[Row], truncated: bool) -> String {
         }
     );
     for r in rows {
-        let line = format!("{:<14}{:<22}{}", format!("0x{:x}", r.addr), r.hex(), r.text());
+        let line = format!("{:<13} {:<22}{}", format!("0x{:x}", r.addr), r.hex(), r.text());
         let _ = writeln!(out, "{}", line.trim_end());
     }
     out
