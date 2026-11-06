@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3848,
-    3848
+    3852,
+    3852
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -545,7 +545,10 @@
     "data:EXTENT-DIRECT #4: an in-range recovered indirect target remains local",
     "data:EXTENT-DIRECT #5: the stated interior indirect entry is not inferred as a callee",
     "data:EXTENT-FALLTHROUGH #1: both passes decode the body inside the asserted outer extent",
+    "data:Explicit Go consumer preserves sign extension",
+    "data:Explicit Go consumer preserves zero extension",
     "data:Explicit Go prototype retains the narrowing conversion",
+    "data:Explicit Rust consumer preserves zero extension",
     "data:Explicit Rust prototype retains the narrowing cast",
     "data:FAST-FUNCDISC #1: loader-known entry is present in both inventories",
     "data:FAST-FUNCDISC #2: direct callee is absent off and present on",
@@ -1395,6 +1398,7 @@
     "data:Merged Boolean AND assignment retains Boolean identity",
     "data:Merged Boolean OR assignment retains Boolean identity",
     "data:Merged Boolean XOR assignments retain Boolean identity",
+    "data:Missing recorded consumer preserves ordinary narrow argument",
     "data:N32 stack: float argument keeps high slot bytes",
     "data:N32 stack: inferred ten arguments reach addition",
     "data:N32 stack: integer argument keeps low slot bytes",

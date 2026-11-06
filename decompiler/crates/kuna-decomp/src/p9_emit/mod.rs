@@ -20,6 +20,7 @@ pub(crate) mod kuna_rustsigned;
 pub(crate) mod kuna_rustintegers;
 pub(crate) mod kuna_rustboolcast;
 pub(crate) mod kuna_callresult;
+pub(crate) mod kuna_callargextend;
 pub(crate) mod kuna_ruststorevalue;
 pub(crate) mod kuna_rustptradd;
 pub(crate) mod kuna_rustarrayindex;

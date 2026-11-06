@@ -4452,6 +4452,44 @@ filtered; an ordinary whole-program callee-first run already records this
 metadata. Console-only decompilation without recorded returns is a negative
 control, and asserted callee prototypes retain their existing conversion path.
 
+### Integer arguments at recovered call boundaries
+
+`kuna_callargextend.rs` makes primitive Go and Rust arguments agree with an
+already-decompiled callee's parameter type. A direct call must have final input
+storage for each argument, and the parameter's position and storage address must
+match the recorded callee input. Its type must occupy the recorded parameter
+width. Same-width arguments receive an explicit signedness conversion when their
+printed type differs from the callee's type. Rust also applies this conversion
+when the call already has a parameter prototype.
+When the printed argument already matches the recorded callee, it is retained
+without applying a conflicting unlocked call-site type guess.
+
+Subvariable flow may remove a zero extension from a call input. If the callee
+still prints a wider parameter, the emitter restores that extension only when
+the call retains a zero-extension marker matching the argument slot, retained
+width and current argument count. It first converts the value to an unsigned
+integer of the retained width, then to the callee's wider integer type. This
+keeps a negative signed low word from being sign-extended. A constant instead
+prints its masked, nonnegative low bits, which fit either wider signedness.
+Expressions are evaluated once. Without the marker, widening follows the
+existing expression and prototype paths, preserving genuine sign extension.
+
+Both types must be primitive integers of 1, 2, 4 or 8 bytes. Enums, pointers,
+Booleans, floats, aggregates, narrowing contracts, recursive calls and indirect
+calls do not use a recovered parameter snapshot here. The storage range must
+fit in a byte-addressed processor space. A locked parameter or closed locked
+prototype takes precedence over a recovered snapshot. Missing or stale storage
+and extension evidence leave existing rendering in control. C output is
+unchanged, and Rust's cosmetic cast suppression retains its existing behavior.
+
+Complete emitted C, Go and Rust callers and their unmodified recovered callees
+are checked against independent bit-mask and sign-extension formulas. The
+fixture covers byte, halfword and word inputs, signed low words, signed wider
+parameters, full-width forwarding, and eight-byte stores with adjacent canaries.
+Filtered CLI tests explicitly request `protoorder types` to collect the callee
+contracts. Console tests without that snapshot exercise the ordinary prototype
+path; they do not stand in for the positive recovered-callee checks.
+
 ### Rust machine-operation names
 
 A functional `CALLOTHER` names the architecture's machine operation. When Rust

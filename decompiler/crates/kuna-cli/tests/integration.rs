@@ -767,6 +767,9 @@ mod rust_boolean_expressions;
 #[path = "scalar_call_results.rs"]
 mod scalar_call_results;
 
+#[path = "call_argument_extensions.rs"]
+mod call_argument_extensions;
+
 #[path = "rust_store_value.rs"]
 mod rust_store_value;
 
