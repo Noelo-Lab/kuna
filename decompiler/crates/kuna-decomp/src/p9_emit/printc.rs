@@ -8605,6 +8605,7 @@ impl PrintC {
         &mut self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId, slot: i32,
         proto: Option<&crate::fspec::FuncProto>,
     ) {
+        if self.push_extended_call_argument(fd, arch, vn, op, slot) { return; }
         if self.out_lang == crate::kuna_lang::OutLang::Go {
             if let Some(target) = proto.filter(|p| p.has_store()).and_then(|p| p.get_param(slot - 1)).and_then(|p| p.get_type()) {
                 self.push_go_value_as(fd, arch, vn, op, target);
@@ -8613,7 +8614,9 @@ impl PrintC {
         }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
             if let Some(target) = proto.filter(|p| p.has_store()).and_then(|p| p.get_param(slot - 1)).and_then(|p| p.get_type()) {
-                if self.push_rust_array_pointer(fd, arch, vn, op, target) { return; }
+                if self.push_rust_array_pointer(fd, arch, vn, op, target)
+                    || self.push_rust_integer_as(fd, arch, vn, op, target)
+                { return; }
             }
         }
         if self.out_lang != crate::kuna_lang::OutLang::C

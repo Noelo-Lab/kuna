@@ -1,5 +1,9 @@
 # Stage-model issue testcases
 
+`ghangr-call-argument-extensions.xml` checks explicit and missing parameter
+contracts. The CLI companion executes complete emitted C, Go and Rust callers
+and callees, covering zero extension, sign extension, signedness and store canaries.
+
 `ghangr-rust-boolean-expressions.xml` checks bitwise expressions over merged
 Boolean locals. Its CLI companion executes complete emitted C and Rust functions
 against independent result formulas, callback traces and store canaries at O0/O2.
