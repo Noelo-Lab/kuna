@@ -2893,6 +2893,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "copywaves"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "GH-1034"
+summary = "Widen `deadwaves` in two ways. A pass whose only changes were dead-op removals and copy propagations (`RulePropagateCopy`, which replaces one input of an op with the input of the COPY defining it) is followed by a wave as well, over the op it changed, its output's readers, and the definition and readers of each Varnode it read before and after. And a wave offers an op it reaches only because a far-walking rule fires on its opcode just the far-walking rules, until one of them applies: the others test only what lies next to the op, which no change of the previous pass touched. `RulePropagateCopy` propagates one input per application and a rule applies once per op per pass, so a join with hundreds of copied inputs (the stack pointer at a shared exit after every path's last call) takes hundreds of passes; with this they are waves. Off keeps `deadwaves` as it was."
+use_when = "Leave on. Turn off to compare against `deadwaves` alone when a rule whose test reads two or more ops away from the op it fires on, without walking a data-flow web, is suspected of firing later than it would have."
+example = "option copywaves off"
+source_decompiler = "kuna"
+inspiration = "serde-hkx 0.7.3 hkxc.exe 0x1406198f0: the stack pointer's join at the shared exit block 0x1406490f3 has 626 to 674 inputs, each the COPY a call's stack-pointer restore left; 1,810 of oppool1's 6,215 passes over the function and its jump-table sub-pipelines each propagated one of them, removed the COPY freed the pass before and one dead join or guard, and swept every op."
+change_kind = "speed"
+tier = "transform"
+symptoms = "a huge function spends most of its time in oppool1|rule pool sweep count in the thousands for one function|each pool sweep propagates one copy into the same join"
+live_field = "pool_copy_waves"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "earlyrestart"
 values = "on|off"
 default = "on"

@@ -2158,7 +2158,8 @@ mod tests {
         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
         // and kuna-stubtailcall / a loader-proven lazy-binding stub flowed as a tail call
         // and kuna-gotimportproto / a type-only declaration bound at a MIPS GOT import call
-        assert_eq!(count, 700, "corpus file count drifted");
+        // and kuna-copywaves / copy propagations seed rule-pool waves (option copywaves)
+        assert_eq!(count, 704, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

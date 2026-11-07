@@ -2553,6 +2553,26 @@ impl Funcdata {
         log.1.extend((0..o.num_input()).filter_map(|k| o.get_in(k)));
     }
 
+    /// (kuna `copywaves`) Record that `op`'s input `old` is being replaced by
+    /// `new`: the op and each Varnode it touches, its inputs, the one replaced,
+    /// the one replacing it and its output.
+    pub(crate) fn note_wave_input_change(&mut self, op: OpId, old: VarnodeId, new: VarnodeId) {
+        let Some(log) = self.dead_wave_log.as_mut() else {
+            return;
+        };
+        let Some(o) = self.obank.get(op) else {
+            return;
+        };
+        log.0.push(op);
+        let mut vns: Vec<VarnodeId> = (0..o.num_input()).filter_map(|k| o.get_in(k)).collect();
+        vns.push(old);
+        vns.push(new);
+        vns.extend(o.get_out());
+        vns.sort_unstable();
+        vns.dedup();
+        log.1.extend(vns);
+    }
+
     /// (kuna decompile-all watchdog) What the drive left of the budget for rendering.
     pub fn render_budget(&self) -> Option<std::time::Duration> {
         self.render_budget

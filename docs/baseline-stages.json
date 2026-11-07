@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3857,
-    3857
+    3870,
+    3870
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1075,7 +1075,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 380 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 381 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -1494,6 +1494,15 @@
     "data:NULTERMINATOR #7: pad_after on closes the array one element after the terminator",
     "data:NULTERMINATOR #8: pad_after on renders buf[33] = 0",
     "data:NULTERMINATOR #9: pad_after off splits the terminator into its own char",
+    "data:O32 aggregate: byte member retains its value",
+    "data:O32 aggregate: declared value argument",
+    "data:O32 aggregate: no residual placement shift",
+    "data:O32 call: only the read argument register is an input",
+    "data:O32 call: unread registers are not passed",
+    "data:O32 call: word arguments reach the call",
+    "data:O32 slot: full-register test uses the argument",
+    "data:O32 slot: inferred input remains a four-byte int",
+    "data:O32 slot: no undefined upper half",
     "data:OCTEON #1 low_sum retains ordinary addition",
     "data:OCTEON #2 bit branch retains the tested bit",
     "data:OCTEON #3 extension instructions have ordinary semantics",
@@ -2672,6 +2681,10 @@
     "data:cookiescramble #1: the /GS cookie mix drops both stack-passed arguments (bug reproduced)",
     "data:cookiescramble #2: option off leaves the dropped arguments as dead stores to locals",
     "data:cookiescramble #3: option on recovers both stack-passed arguments",
+    "data:copywaves #1: both passes print churn",
+    "data:copywaves #2: both passes keep churn's 256 calls",
+    "data:copywaves #3: both passes leave the same live IR",
+    "data:copywaves #4: both passes create the same ops",
     "data:counted PIC transfer retains tail caller return",
     "data:cspecprotos #1: default model, the ECX this-pointer is not a parameter",
     "data:cspecprotos #2: default model, the this-pointer degrades to an uninitialized local",
