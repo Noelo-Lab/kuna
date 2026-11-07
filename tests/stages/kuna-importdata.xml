@@ -7,8 +7,9 @@
     with the import's address, `ldr x8,[slot]; ldr w8,[x8]`. kuna names that
     slot for the import and paints it externref, which is how a CALL through it
     deindirects to the import; a DATA read is not a call, so it printed as a
-    dereference of the anonymous slot. On the A13 trustd that is 921 reads,
-    `if (*dat_1041cc6c8 == ...)` for the stack-protector guard on Toyota.
+    dereference of the anonymous slot. In an arm64e iOS system daemon that is
+    921 reads, and `if (*dat_1041cc6c8 == ...)` for the stack-protector guard in
+    a large third-party iOS app.
 
     Stage / sub-stage: P9 naming-policy, `PrintC::op_load`
     (`kuna-decomp/src/p9_emit/printc.rs`, `import_slot_name`), resolved as
