@@ -358,6 +358,8 @@ fn pc_read_literal_load_may_follow_other_instructions() {
         0x93e1_fffc, // stw r31,-4(r1)
         0x7c3f_0b78, // mr r31,r1
         0x1c63_0003, // mulli r3,r3,3
+        0x7d49_03a6, // mtctr r10
+        0x7d49_02a6, // mfctr r10
         0x8129_0000, // lwz r9,0(r9)
         0x7c63_4a14, // add r3,r3,r9
         0x7c08_03a6, // mtlr r0
