@@ -313,15 +313,36 @@ Straight-line installation retains operation order and memory effects. Each
 invocation reserves a fresh contiguous unique-space range, preserving overlaps
 and partial temporary references within the payload without sharing temporaries
 between calls.
-Installing them is option `callmechanisms` (`on|off`, default **off**); with it
-off, models still carry their payload identities but no effect is installed and
-late restrictions behave as before. It is off by default because a stock spec
-states one wrongly for most binaries that use it: `ppc_64_le.cspec`'s default
-model stores `r2Save` to `0x28(r1)` after every call, which is the TOC save
-slot only under ELFv1. Every little-endian PPC64 binary uses ELFv2, where the
-TOC is saved at `0x18(r1)` and `0x28(r1)` is ordinary frame storage, so the
-store replaced a local the function keeps there with the TOC pointer after each
-call. With it on,
+Installing them is option `callmechanisms` (`off|auto|on`, default **auto**);
+when it does not fire, models still carry their payload identities but no
+effect is installed and late restrictions behave as before. `on` installs the
+payloads on every image and `off` on none. `auto` acts only when `load file`
+found validated PowerPC64 ELFv1 function descriptors in a linked image's or a
+relocatable object's `.opd`, the same evidence that seeds each entry's TOC
+register; the XML bootstrap never records that fact. Even then it installs no
+entry payloads, and applies a return payload only at a call whose next
+instruction loads from a slot the payload stores: the same base register,
+constant offset and address space. Ops placed at the call's own address are
+skipped when finding that instruction. When the payload is that one store of a
+register as wide as the load, plus the temporaries naming its address, `auto`
+forwards it instead of installing it: the load becomes a COPY of the stored
+register, and no store is left in the frame. Any other payload is installed as
+written. The stock PPC64 default models store `r2Save` to
+`0x28(r1)` after every call. Under ELFv1 that is the TOC save doubleword in
+every frame's linkage area. A linker-generated call stub saves the caller's
+TOC there, and the caller reloads it with `ld r2,40(r1)` after the call.
+`r2Save` is assigned by `bl` and by the `std r2,40(r1)` that precedes an
+indirect call, so the reload reads back the TOC the caller held instead of a
+stack slot the function never wrote. TOC-relative addresses after the call
+then keep their constant value, including a jump table's base. A call with no
+reload, such as a same-module `bl` the linker left a `nop` after, is left
+alone, and a forwarded reload whose `r2` is never read is dead code: an unread
+store after each call would otherwise sit in each condition block and keep a
+short-circuit `a() && b()` from forming. `auto` treats every other image as
+`off` does. Every little-endian PPC64 binary, and some
+big-endian ones, use ELFv2, where the TOC is saved at `0x18(r1)` and
+`0x28(r1)` is ordinary frame storage, so the store would replace a local the
+function keeps there with the TOC pointer after each call. When it fires,
 `ActionDefaultParams` installs return-boundary effects after each modeled call;
 `ActionConstbase` installs entry-boundary effects before the entry block's first
 operation. A per-function ledger prevents duplicate insertion and is discarded
@@ -477,6 +498,42 @@ range lie in an entry covering the least-significant bytes
 (`Containment::NoContainment`)? Entry lookup goes through a range-map resolver built once per
 list (`ParamListStandard::populate_resolver`).
 
+A named register can be wider than its ABI slot. For an exclusion entry with
+an explicit `sign` or `zero` extension, decoding retains both extents: `maxsize`
+still controls argument assignment, and the slot occupies the register's low
+bytes in either byte order. Before SSA, `ActionConstbase` defines the whole
+incoming register by extending that slot
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_registerslots.rs`) for each
+such register the function reads. This lets
+full-register reads recover the same argument as word reads, including when
+no prototype is declared, without enlarging argument pairs or stack slots.
+A register the function never reads stays undefined, so a call does not
+appear to pass it.
+Entries with overlapping alternative storage, aliases no wider than the slot,
+and conditional or unspecified extensions do not supply this fact. Explicit
+custom parameter storage takes precedence over the model. The effect
+is installed once per analysis and reset when the function is cleared.
+Wide-register MIPS O32 uses this for the sign extension of each four-byte
+integer argument word into its eight-byte register. Its compiler specs keep the
+whole 64-bit `sp` as the stack pointer, as the N32 and N64 specs do, because
+code addresses the stack through `sp`: an outgoing store such as
+`sw a0,16(sp)` is then a call's fifth argument. The FP32 languages' default
+compiler is O32 too, so `narrowext` applies the same type-aware argument rules
+as the explicit `o32` compiler name.
+
+`registerextension="sign|zero"` can state just the slot-to-register extension,
+separately from how a smaller C type fills the slot. It requires a named register
+wider than a single exclusion slot. Wide O32 return entries use this declaration:
+a four-byte scalar result uses the existing assumed-extension query; a joined
+result extends each returned word in its own register. A smaller result extends
+into the word only when the existing type-aware rule supplies that fact, before
+the word extends into the full register. This preserves unsigned-byte extension
+under `narrowext compiler` without inventing the word's otherwise unspecified bits.
+The call linker handles declared results; output heritage uses the same physical
+extent to recover a four-byte trial for an inferred result read as a whole
+register. Neither path enlarges the return slots or enables generic call-overlap
+recovery. Overlapping alternative entries do not supply an unconditional extension.
+
 The `ParamListStandard` kinds (`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
 (ParamListKind)`) collapse the upstream subclass tree into one struct: `Standard`
 (ordered input resources), `StandardOut` / `RegisterOut` (return-value storage),
@@ -606,6 +663,51 @@ a struct containing one long double. The joined quad output entry follows its
 overlapping v0 resource so the compiler-spec decoder can resolve the overlap.
 `decompiler/crates/kuna-console/tests/octeon_abi.rs` checks the actual models,
 register exhaustion, following arguments, type layout and original GCC DWARF.
+
+Octeon III's BE N32/N64 `hard` models share eight argument slots between
+a0..t3 and f12..f19. Fixed float/double arguments use the corresponding FPR;
+quad scalars consume an aligned pair. The variable tail uses GPRs, with float
+register values in the low bytes and stack values at the leading slot bytes.
+Fixed structs place full aligned direct double fields in FPRs and other eight-byte
+chunks in GPRs. Nested structs and arrays are not recursively classified as
+floating fields, and a quad field does not prevent a later direct double from
+using its FPR slot. `join_dual_class directfields="true"` selects this
+field-based classification, including padding and primitives spanning multiple
+tiles. Their dual-class join explicitly requests alignment; this
+`join_dual_class align` extension requires shared register groups and skips
+unaligned slots in both classes together. Existing dual-class rules retain
+their previous behavior when the attribute is absent.
+
+Hard-float scalar quad returns use f0/f2, while a struct containing one quad
+returns in f0/f1. Structs of at most 16 bytes with one or two direct floating
+fields use f0/f2 even when the field precisions differ; nested, array-containing,
+integer and float/integer structs use v0/v1. Larger structs require a hidden
+return pointer. The `float-field-struct` filter applies field-count and size
+limits without recursive flattening and excludes structs containing integer
+bitfields. Their ordinary direct double fields still use FPR argument slots;
+the mixed aggregate return uses GPRs. `join_per_primitive directfields="true"`
+allocates each direct field and preserves its declared offset, including internal
+and trailing padding. Zero join pieces represent unspecified padding without
+inventing a physical register dependency; heritage discards writes to them.
+This form is restricted
+to output resources. The opt-in implementation is in
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_aggregateabi.rs`. N32 preserves even f20..f30 and N64 preserves
+f24..f31; other FPRs and v0/v1 are call-clobbered. Original GCC 7.3 and 4.7
+fixtures cover both hard-float ABIs without a compiler dependency in CI.
+The selected Octeon compiler ID also supplies the floating-point convention to
+typed-call recovery. An explicit `default`, its N32 `n32` or N64 `n64` alias, or
+`hard` override remains authoritative when container attributes are missing or
+contradictory. Typed-call recovery and the narrow-extension rule classify these
+compiler IDs through one table
+(`decompiler/crates/kuna-decomp/src/p1_partition/kuna_octeonid.rs (hard_float)`),
+so two IDs naming the same compiler spec cannot disagree.
+
+Both models declare the entire v0/v1 return registers call-clobbered. A caller
+may use v0 for an indirect-call target before the call and then read its new
+64-bit result; that pre-call pointer is not a preserved return value. Declaring
+the physical clobbers lets heritage create fresh output trials before a typed
+indirect prototype is recovered. The N32 stack fixture covers both inferred
+and declared calls at the 32-bit pointer / 64-bit result boundary.
 
 ### Recovery: trials → parameters
 
@@ -1652,6 +1754,33 @@ classified:
   co-executes with the call, so relaxing that shape is the fabrication the
   family's own design notes warn against. `off` restores the upstream
   rejection, in which any LOAD or STORE of the value sinks the trial.
+
+  (kuna) `exclusivecallret` (default-on,
+  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_exclusivecallret.rs (applies, skips_use)`)
+  applies the same mutual-exclusion argument to a call and a return. GCC
+  compiles `return a(x) ? b(x) : x` with a tail call to `b`, so on e500 the same
+  scalar is the tail call's argument on one arm and the function's return on the
+  other. Each use vetoes the other's trial although no execution reaches both,
+  and the function was recovered `void`. The rule skips a `CALL`/`CALLIND`
+  descendant while scoring a `RETURN` trial, and a `RETURN` descendant while
+  scoring a call's input trial, when the two ops sit in distinct blocks, neither
+  reaches the other (the bounded walk above, which declines once its bound is
+  exceeded), the `RETURN` is a normal return and the use reads the value as data
+  rather than as a call target or return address. An input trial also requires
+  the value to be produced in a block that both uses follow through
+  single-entry, single-exit chains, so it was prepared for the branch; this
+  admits a split epilogue between the branch and the return. Co-executing uses
+  and loop-connected arms keep ordinary scoring. The register alone cannot show
+  whether a call on the other arm reads the value. When the compiler sets the
+  returned value before the branch, a call that takes no arguments gains that
+  value as an argument, such as a stack-protector failure call after the result
+  is computed; the generic PowerPC decoder renders these calls the same way.
+  The rule is limited to the
+  narrow scalar shape `calloverlap auto` recovers (chapter 03): a four-byte
+  trial in the low word of a named eight-byte register on a truncated 32-bit
+  address target, such as an e500 GPR. Whether a trial has that shape does not
+  depend on the use being scored, so it is decided once per walk. `off`
+  restores the upstream rejection.
 
   (kuna) `reloadarg` (default-on,
   `decompiler/crates/kuna-decomp/src/p4_calls/kuna_reloadarg.rs (note, recheck)`)
@@ -3553,6 +3682,12 @@ zero-extends; an enum takes the sign of the integer its `DW_AT_type` names when
 it has no `DW_AT_encoding`, as clang emits it; and an anonymous enum narrower
 than 32 bits falls back to an integer of its own sign, unsigned when DWARF
 states none.
+
+The Octeon N32/N64 soft- and hard-float compiler IDs participate in the MIPS
+argument rule. Their spelling does not change the ABI's integer promotions;
+32-bit unsigned integers are sign-extended and unsigned bytes and halfwords
+are zero-extended. The `compiler` policy remains necessary to infer the same
+extension for narrow MIPS return values.
 
 The value says which rules apply. `abi`, the default, applies a rule wherever
 an ABI document states it: RISC-V and LoongArch arguments and return values,
@@ -8658,8 +8793,19 @@ the declared model (or the undeclared default), as `ActionDefaultParams` already
 does for a direct call. Output-only pieces leave the inputs unlocked. The
 symbol's call-fixup injection is kept, and its no-return flag is carried under
 `peimportcall`, as on the other two paths. Pieces with no explicit storage
-(library, loader and DWARF prototypes) keep the code-type lookup unchanged. The
-construction lives in
+(library, loader and DWARF prototypes) keep the code-type lookup unchanged:
+incomplete debug-information pieces must not replace a result read by the
+caller with a locked void return. The sole type-only exception,
+`option gotimportproto` (default on,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_gotimportproto.rs (binds_type_only)`),
+is an entry identified by the MIPS ELF loader's external-symbol GOT: its
+concrete, non-void declaration supplies the imported call's argument and return
+storage, because a preserved incoming argument register cannot establish an
+import's arity. Unknown, missing or void return types, incomplete parameter
+types and variadic declarations, which fix no arity, decline that case, and off
+keeps the storage requirement for imports too.
+Ordinary MIPS definitions and other architectures retain the code-type
+behavior. The construction lives in
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_qualifiedcall.rs`.
 
 **(kuna) Go boolean-return narrowing** (`option gobool off|auto|always`,

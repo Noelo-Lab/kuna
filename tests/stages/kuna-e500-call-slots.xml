@@ -1,0 +1,45 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:e500">
+<!-- Synthetic scalar ABI slots inside the eight-byte physical GPRs. -->
+<bytechunk space="ram" offset="0x1000" readonly="true">7c6c1b787d8903a6386000074e800420</bytechunk>
+<symbol space="ram" offset="0x1000" name="constant_call"/>
+<bytechunk space="ram" offset="0x1100" readonly="true">7c6c1b787d8903a6386400074e800420</bytechunk>
+<symbol space="ram" offset="0x1100" name="arithmetic_call"/>
+<bytechunk space="ram" offset="0x1200" readonly="true">9421fff07c0802a6900100147c6c1b787c8323787d8903a64e800421800100147c0803a638210010386300014e800020</bytechunk>
+<symbol space="ram" offset="0x1200" name="call_result"/>
+<bytechunk space="ram" offset="0x1300" readonly="true">9421ffe07c0802a67c6903a67ca32b7893c100187c9e237893e1001c7cbf2b78900100244e8004212c0300007fe3fb7841820020800100247fc903a683e1001c83c10018382100207c0803a64e8004208001002483c1001883e1001c382100207c0803a64e800020</bytechunk>
+<symbol space="ram" offset="0x1300" name="conditional_call"/>
+</binaryimage>
+<script>
+<com>option calloverlap off</com>
+<com>lo fu constant_call</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option calloverlap auto</com>
+<com>lo fu constant_call</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu arithmetic_call</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu call_result</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option exclusivecallret off</com>
+<com>lo fu conditional_call</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option exclusivecallret on</com>
+<com>lo fu conditional_call</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="e500 slots #1: off loses the constant argument" min="1" max="1">\(\*a0\)\(\)</stringmatch>
+<stringmatch name="e500 slots #2: auto keeps the constant argument" min="1" max="1">\(\*a0\)\(7\)</stringmatch>
+<stringmatch name="e500 slots #3: auto keeps an arithmetic argument" min="1" max="1">\(\*a0\)\(a1 \+ 7\)</stringmatch>
+<stringmatch name="e500 slots #4: auto defines the call result" min="1" max="1">return \(\*a0\)\(a1\) \+ 1;</stringmatch>
+<stringmatch name="e500 slots #5: auto keeps the non-tail return" min="1" max="1">return a2;</stringmatch>
+<stringmatch name="e500 slots #6: auto keeps the other arm's argument and result" min="1" max="1">return \(\*a1\)\(a2\);</stringmatch>
+<stringmatch name="e500 slots #7: exclusivecallret off loses the non-tail return" min="1" max="1">void conditional_call\(</stringmatch>
+</decompilertest>

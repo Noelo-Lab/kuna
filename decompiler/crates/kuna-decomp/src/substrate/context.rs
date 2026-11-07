@@ -647,6 +647,9 @@ pub struct ArchContext {
     pub call_mechanisms: Rc<crate::kuna_callmechanisms::Mechanisms>,
     /// (kuna) `callmechanisms` — apply compiler-spec prototype entry/return p-code.
     pub call_mechanism_effects: bool,
+    /// (kuna) `callmechanisms auto` — only return payloads whose stored slot the next instruction
+    /// reloads, forwarded into that reload when possible.
+    pub call_mechanism_reload_only: bool,
     /// Shared spaces retain the pointer identities and indices used by lifted
     /// Varnodes. [`Self::new_shared`] accepts the engine's manager; [`Self::new`]
     /// wraps an owned manager for fixtures.
@@ -751,6 +754,10 @@ pub struct ArchContext {
     /// [`Funcdata::only_op_use`](crate::funcdata::Funcdata) through
     /// [`crate::p4_calls::kuna_exclusivearguse::access_cannot_reach_call`].
     pub exclusive_arg_use: bool,
+    /// (kuna) `option exclusivecallret`: whether a call and a return on mutually
+    /// exclusive paths keep each other's narrow scalar trial.  Read by
+    /// [`crate::p4_calls::kuna_exclusivecallret`].
+    pub exclusive_call_ret: bool,
     /// Retain register trials carrying proven stack addresses.
     pub stack_addr_arg_trial: bool,
     /// (kuna) `option callretpair`: whether the two-register CALL output arm of
@@ -870,6 +877,17 @@ pub struct ArchContext {
     /// `add_carry_chain`, DIV-2 default-on).  Read by
     /// [`RuleAddCarryChain`](crate::kuna_addcarrychain::RuleAddCarryChain).
     pub add_carry_chain: bool,
+    /// (kuna) `aggregatefields`, default-on: keep a structured concatenation
+    /// with low zero bytes for field recovery, resolve an unchanged declared
+    /// container returned whole, collapse cleanup-split truncations, and stop a
+    /// partial-symbol walk at a whole-struct edge. Off restores upstream.
+    pub aggregate_fields: bool,
+    /// (kuna) `stubtailcall`, default-on: flow loader-proven lazy-binding stubs as
+    /// tail calls ([`crate::kuna_stubtailcall`]).
+    pub stub_tail_call: bool,
+    /// (kuna) `gotimportproto`, default-on: bind type-only declarations at
+    /// loader-proven MIPS GOT import calls ([`crate::kuna_gotimportproto`]).
+    pub got_import_proto: bool,
     /// (kuna) GH-7190: collapse the OV-flag signed-less-than idiom to INT_SLESS
     /// (C++ `ov_less_simplify`, DIV-2 default-on).  Read by
     /// [`RuleOvLessSimplify`](crate::kuna_ovlesssimplify::RuleOvLessSimplify).
@@ -1241,9 +1259,10 @@ pub struct ArchContext {
     /// `callee_arity_cut` is also set.
     pub callee_arity_scratch: bool,
     /// (kuna) completion level for the two upstream partial-range call-overlap
-    /// guards (`calloverlap`): `0` = both stay inert (what kuna shipped before the
-    /// option), `1` = `Heritage::guardCallOverlappingInput` only, `2` = that plus
-    /// `Heritage::tryOutputOverlapGuard`, i.e. upstream Ghidra.  Read by
+    /// guards (`calloverlap`): off (what kuna shipped before the option), auto
+    /// (the default: both guards for a narrow scalar slot in a wide register),
+    /// in (`Heritage::guardCallOverlappingInput` for every contained slot) or
+    /// full (that plus `Heritage::tryOutputOverlapGuard`, i.e. upstream Ghidra).  Read by
     /// [`Heritage::guard_calls`](crate::p3_dataflow::heritage::Heritage) at both
     /// `ContainedBy` arms; the level vocabulary lives in
     /// [`crate::p3_dataflow::kuna_calloverlap`].
@@ -1726,6 +1745,14 @@ pub struct ArchContext {
     /// pool pass removed when removal was its only change, shared from the
     /// real architecture. Read by `ActionPool::apply`.
     pub pool_dead_waves: bool,
+    /// (kuna `deadcascade`) After this many passes of one run of a rule pool
+    /// (`None` = never), dead-op removal also removes the dead chain behind the
+    /// removed op; shared from the real architecture. Read by `ActionPool`.
+    pub dead_cascade: Option<u32>,
+    /// (kuna `copywaves`) Copy propagations seed a wave too, and a wave offers
+    /// an op reached only for its opcode just the far-walking rules; shared
+    /// from the real architecture. Read by `ActionPool`.
+    pub pool_copy_waves: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -1814,6 +1841,11 @@ pub struct ArchContext {
     /// because `build_arch_handle` hands the same snapshot to every function of
     /// a run.
     pub callee_protos: Rc<Vec<(int4, kuna_base::types::uintb, crate::fspec::PrototypePieces)>>,
+    /// Loader-proven tail transfers, flowed as a call and return; explicit
+    /// per-function flow overrides take precedence.
+    pub loader_transfer_sites: Rc<std::collections::BTreeSet<Address>>,
+    /// MIPS GOT import entries identified by the loader, never ordinary definitions.
+    pub loader_mips_imports: Rc<std::collections::BTreeSet<Address>>,
     /// The calling convention each declared callee was declared under, keyed the
     /// same way [`Self::callee_protos`] is.  Snapshotted at `build_arch_handle`
     /// from the architecture's declared-convention map and read back by
@@ -1860,6 +1892,7 @@ impl ArchContext {
         ArchContext {
             call_mechanisms: Rc::default(),
             call_mechanism_effects: false,
+            call_mechanism_reload_only: false,
             manage,
             min_laned_register_size: 4,
             x87_empty_storage: None,
@@ -1901,6 +1934,7 @@ impl ArchContext {
             // from the engine Architecture in `build_arch_handle`.
             zero_idiom_use: true,
             exclusive_arg_use: true,
+            exclusive_call_ret: true,
             stack_addr_arg_trial: false,
             // (kuna) `option callretpair` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
@@ -1958,6 +1992,9 @@ impl ArchContext {
             x87_integer_userops: Vec::new(),
             fold_flag_compare: false,    // GH-1276/8777 flagcompare
             add_carry_chain: false,      // GH-8913 addcarrychain
+            aggregate_fields: false,     // aggregatefields
+            stub_tail_call: false,       // stubtailcall
+            got_import_proto: false,     // gotimportproto
             ov_less_simplify: false,     // GH-7190 ovlesssimplify
             recover_array_stride: false, // GH-8724 arraystride
             memset_recover: false,       // GH-9230/1537 memsetrecover
@@ -2072,7 +2109,7 @@ impl ArchContext {
             callee_arity_body: true,     // calleearitybody (default-on)
             callee_arity_cut: true,      // calleearitycut (default-on)
             callee_arity_scratch: true,  // calleearityscratch (default-on)
-            call_overlap: 0,             // calloverlap (0 = both overlap guards inert)
+            call_overlap: crate::kuna_calloverlap::LEVEL_AUTO, // calloverlap (default auto)
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             cond_exe_ret: true,          // condexeret (default-on)
             cond_exe_ret_use: true,      // condexeretuse (default-on)
@@ -2181,6 +2218,8 @@ impl ArchContext {
             unrolled_guard: false, // (kuna) angr opt-in default off (upstream byte-identical)
             jumptable_share_partial: true, // (kuna) DIV: upstream stageJumpTable shape
             pool_dead_waves: true,
+            dead_cascade: Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES),
+            pool_copy_waves: true,
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.
@@ -2212,6 +2251,8 @@ impl ArchContext {
             infer_ptr_spaces: Vec::new(),
             // No declared callee prototypes until build_arch_handle snapshots them.
             callee_protos: Rc::new(Vec::new()),
+            loader_transfer_sites: Rc::default(),
+            loader_mips_imports: Rc::default(),
             // No tracked registers until build_arch_handle snapshots the context DB.
             tracked_sets: kuna_base::partmap::PartMap::default(),
         }
