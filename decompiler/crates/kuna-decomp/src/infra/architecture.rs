@@ -881,6 +881,15 @@ pub struct Architecture {
     /// removal, the next pass revisits only the ops next to what it removed
     /// (`infra/action.rs (ActionPool::apply_wave)`).
     pub pool_dead_waves: bool,
+    /// (kuna `deadcascade`) After this many passes of one run of a rule pool
+    /// (`None` = never), dead-op removal also removes the dead chain of joins
+    /// and guards behind the removed op (`p3_dataflow/kuna_deadcascade.rs`).
+    pub dead_cascade: Option<u32>,
+    /// (kuna `copywaves`) A pass whose only changes were dead-op removals and
+    /// copy propagations is followed by a wave too, and a wave offers an op it
+    /// reaches only for its opcode just the far-walking rules
+    /// (`infra/action.rs (ActionPool::wave_wants)`).
+    pub pool_copy_waves: bool,
     /// (kuna, angr `test_decompiling_incorrect_duplication_chcon_main`) Treat a
     /// direct CALL to a function whose *name* matches the vendored ELF
     /// known-no-return list as no-return at the `query_call_no_return` flow hook,
@@ -3175,6 +3184,8 @@ impl Architecture {
             jumptable_share_partial: true,
             early_restart: true,
             pool_dead_waves: true,
+            dead_cascade: Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES),
+            pool_copy_waves: true,
             noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
             local_stack_views: true,
@@ -3630,6 +3641,8 @@ impl Architecture {
         self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
         self.early_restart = true;
         self.pool_dead_waves = true;
+        self.dead_cascade = Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES);
+        self.pool_copy_waves = true;
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_views = false;
         self.local_stack_views = true;
@@ -4771,6 +4784,8 @@ impl Architecture {
         // `Funcdata::stage_jump_table` reaches it.
         ctx.jumptable_share_partial = self.jumptable_share_partial;
         ctx.pool_dead_waves = self.pool_dead_waves;
+        ctx.dead_cascade = self.dead_cascade;
+        ctx.pool_copy_waves = self.pool_copy_waves;
         ctx.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate
@@ -7349,20 +7364,27 @@ impl Architecture {
             return Err(KunaError::lowlevel("ParamEntry not fully specified"));
         }
         // Storage address: <register name=".."/> or <addr space=".." offset=".."/>.
-        let (space, addressbase) = self.decode_pentry_storage(pentry)?;
+        let (space, mut addressbase, register) = self.decode_pentry_storage(pentry)?;
+        let extension = crate::p4_calls::kuna_registerslots::decode(
+            pentry, register, size, alignment, flags,
+        )?;
+        if let Some(extension) = &extension {
+            addressbase = extension.input.offset;
+        }
         flags |= crate::p4_calls::kuna_stackparamalign::decode(pentry, &space, alignment, size)?;
-        crate::fspec::ParamEntry::seed(
+        let mut entry = crate::fspec::ParamEntry::seed(
             group, type_, space, addressbase, size, minsize, alignment, flags, normalstack,
             grouped, prev, self.manage(),
-        )
+        )?;
+        entry.register_extension = extension;
+        Ok(entry)
     }
 
-    /// Resolve a `<pentry>`'s storage element to `(space, offset)` (C++
-    /// `Address::decode` over `<register>`/`<addr>`).
+    /// Resolve storage, retaining the physical extent of a named register.
     fn decode_pentry_storage(
         &self,
         pentry: &Rc<kuna_base::xml::Element>,
-    ) -> KunaResult<(Rc<kuna_base::space::AddrSpace>, uintb)> {
+    ) -> KunaResult<(Rc<kuna_base::space::AddrSpace>, uintb, Option<kuna_num::pcoderaw::VarnodeData>)> {
         for child in pentry.get_children().iter() {
             match child.get_name() {
                 "register" => {
@@ -7371,8 +7393,9 @@ impl Architecture {
                     let vd = self.translate.get_register_varnode(nm.as_bytes())?;
                     let space = vd
                         .space
+                        .clone()
                         .ok_or_else(|| KunaError::lowlevel("register has no space"))?;
-                    return Ok((space, vd.offset));
+                    return Ok((space, vd.offset, Some(vd)));
                 }
                 "addr" => {
                     let spname = attr_str(child, "space")
@@ -7392,12 +7415,12 @@ impl Architecture {
                     // decodes to offset 0 and `decode_default_proto` fails -> empty model.
                     if space.get_type() == kuna_base::space::spacetype::IPTR_JOIN {
                         let off = self.decode_join_addr(child)?;
-                        return Ok((space, off));
+                        return Ok((space, off, None));
                     }
                     let off = attr_str(child, "offset")
                         .and_then(|s| parse_int(&s))
                         .unwrap_or(0);
-                    return Ok((space, off));
+                    return Ok((space, off, None));
                 }
                 _ => {}
             }
