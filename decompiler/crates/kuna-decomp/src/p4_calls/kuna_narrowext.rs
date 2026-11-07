@@ -117,7 +117,10 @@ fn mips_documented(id: &str) -> bool {
     let variant = parts.next().unwrap_or("");
     match parts.next().unwrap_or("") {
         "o32" | "n32" => true,
-        "default" => !variant.contains("32addr") && !variant.contains("32R6addr"),
+        "default" => {
+            matches!(variant, "64-32addr-fp32" | "micro64-32addr-fp32")
+                || (!variant.contains("32addr") && !variant.contains("32R6addr"))
+        }
         _ => false,
     }
 }

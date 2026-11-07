@@ -2158,7 +2158,7 @@ mod tests {
         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
         // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
         // and kuna-copywaves / copy propagations seed rule-pool waves (option copywaves)
-        assert_eq!(count, 700, "corpus file count drifted");
+        assert_eq!(count, 703, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
