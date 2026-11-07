@@ -1090,6 +1090,16 @@ and the 32-bit (file-offset keyed) and 64-bit (cache-offset keyed) local-symbol
 entries. Each sub-cache and the `.symbols` file must carry the UUID its main
 header records.
 
+A cache is untrusted input, so every read is checked against the length of
+the file it comes from before anything is allocated. A named sub-cache suffix
+holding `/`, `\` or `..` is refused, since it would name a file outside the
+cache's directory. A load command shorter than the fixed fields of its kind
+is skipped, a local-symbol range that overflows is left unreplaced, and a
+slide page size above 64 KiB is refused. Image entries that share a header
+address (aliases) share one parsed layout. The load commands read across all
+headers, the segments copied into one rebuilt image, and the code scanned for
+cross-image references may each add up to no more than the cache files hold.
+
 The rebuild (`kuna_dyldcache/extract.rs (DyldCache::extract)`) keeps every
 segment at its cache address and lays the segments out page-aligned, `__TEXT`
 first at file offset 0, so the rewritten header and load commands sit where the
@@ -2131,7 +2141,9 @@ funcsym stream:
   images actually reached. The result rides in the rebuilt Mach-O as an
   `LC_NOTE` owned by `kuna.dyld.xrefs`, so `kuna unpack` writes it too, and the
   stub walk reads it back as imports: a call target becomes an import stub, and
-  a slot becomes an import slot, so `peimportcall` binds a call through it. The
+  a slot becomes an import slot, so `peimportcall` binds a call through it. A
+  note cut short by `sizeofcmds`, or whose blob lies past the file, reads as no
+  note. The
   gate is read at that point, so `off` leaves the note unread and every island
   call `sub_<addr>(...)`. On the iOS 16.4.1 cache, CoreFoundation's note names
   699 of its call targets and 65 GOT slots; `libobjc`'s `class_copyMethodList`

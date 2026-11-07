@@ -45,21 +45,31 @@ pub fn selected_image() -> Option<String> {
 /// Neither needs a loaded image: the next `load file` reads both.
 pub fn set_option(name: &str, value: &str) -> Option<KunaResult<String>> {
     Some(match name {
-        "dyldimage" => Ok(match image_name(value) {
-            Some(image) => {
-                set_dyldimage_env(image);
-                format!("dyld shared cache image set to {image}")
-            }
-            None => {
-                std::env::remove_var(DYLDIMAGE_ENV);
-                "dyld shared cache image selection cleared".to_string()
-            }
-        }),
-        "dyldcrossrefs" => crate::options::on_or_off(value).map(|on| {
-            set_dyldcrossrefs_env(on);
-            format!("dyld shared cache cross-image reference naming turned {}", if on { "on" } else { "off" })
-        }),
+        "dyldimage" => Ok(set_dyldimage(value)),
+        "dyldcrossrefs" => set_dyldcrossrefs(value),
         _ => return None,
+    })
+}
+
+/// Apply `option dyldimage VALUE`.
+pub fn set_dyldimage(value: &str) -> String {
+    match image_name(value) {
+        Some(image) => {
+            set_dyldimage_env(image);
+            format!("dyld shared cache image set to {image}")
+        }
+        None => {
+            std::env::remove_var(DYLDIMAGE_ENV);
+            "dyld shared cache image selection cleared".to_string()
+        }
+    }
+}
+
+/// Apply `option dyldcrossrefs VALUE`.
+pub fn set_dyldcrossrefs(value: &str) -> KunaResult<String> {
+    crate::options::on_or_off(value).map(|on| {
+        set_dyldcrossrefs_env(on);
+        format!("dyld shared cache cross-image reference naming turned {}", if on { "on" } else { "off" })
     })
 }
 
@@ -69,15 +79,12 @@ mod tests {
 
     #[test]
     fn crossrefs_default_on_and_off_tokens() {
-        std::env::remove_var(DYLDCROSSREFS_ENV);
-        assert!(dyldcrossrefs_enabled());
         for off in ["off", "0", "false"] {
-            std::env::set_var(DYLDCROSSREFS_ENV, off);
-            assert!(!dyldcrossrefs_enabled(), "`{off}` disables");
+            assert!(!crate::options::parse_env_toggle(off, true), "`{off}` disables");
         }
-        set_dyldcrossrefs_env(true);
-        assert!(dyldcrossrefs_enabled());
-        std::env::remove_var(DYLDCROSSREFS_ENV);
+        for on in ["on", "1", "true", "", "anything"] {
+            assert!(crate::options::parse_env_toggle(on, true), "`{on}` keeps it on");
+        }
     }
 
     #[test]

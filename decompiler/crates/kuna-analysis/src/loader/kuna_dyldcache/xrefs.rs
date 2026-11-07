@@ -66,7 +66,7 @@ pub fn decode(blob: &[u8]) -> Vec<Xref> {
     let Some(count) = blob.get(..4).map(|b| u32_at(b, 0) as usize) else {
         return Vec::new();
     };
-    let names_at = 4 + count.saturating_mul(16);
+    let names_at = count.saturating_mul(16).saturating_add(4);
     let Some(names) = blob.get(names_at..) else {
         return Vec::new();
     };
@@ -93,23 +93,28 @@ pub fn read_note(bytes: &[u8]) -> Vec<Xref> {
         return Vec::new();
     }
     let (ncmds, sizeofcmds) = (u32_at(bytes, 16) as usize, u32_at(bytes, 20) as usize);
-    let Some(cmds) = bytes.get(32..32 + sizeofcmds) else {
+    let Some(cmds) = bytes[32..].get(..sizeofcmds) else {
         return Vec::new();
     };
-    let mut at = 0;
+    let mut at = 0usize;
     for _ in 0..ncmds {
-        let Some(c) = cmds.get(at..at + 8) else {
+        let Some(c) = cmds.get(at..at.saturating_add(8)) else {
             break;
         };
         let (cmd, size) = (u32_at(c, 0), u32_at(c, 4) as usize);
         if cmd == super::extract::LC_NOTE && size >= 40 && cmds.get(at + 8..at + 24) == Some(NOTE_OWNER) {
-            let (off, len) = (u64_at(cmds, at + 24) as usize, u64_at(cmds, at + 32) as usize);
+            let Some(note) = cmds.get(at..at + 40) else {
+                break;
+            };
+            let (Ok(off), Ok(len)) = (usize::try_from(u64_at(note, 24)), usize::try_from(u64_at(note, 32))) else {
+                break;
+            };
             return bytes.get(off..off.saturating_add(len)).map(decode).unwrap_or_default();
         }
         if size < 8 {
             break;
         }
-        at += size;
+        at = at.saturating_add(size);
     }
     Vec::new()
 }
@@ -125,11 +130,16 @@ pub(super) fn collect<'v>(
 ) -> Vec<Xref> {
     let mut targets = BTreeSet::new();
     let mut slots = Vec::new();
+    let mut budget = cache.total_len;
     for seg in &layout.segments {
         for sec in &seg.sections {
+            if sec.size > budget {
+                continue;
+            }
             let Some(bytes) = view(sec.addr, sec.size as usize) else {
                 continue;
             };
+            budget -= sec.size;
             if sec.is_code() {
                 if !a64 {
                     continue;
@@ -227,15 +237,19 @@ struct Names<'a> {
 }
 
 impl<'a> Names<'a> {
+    /// Every image's segment ranges; an alias (an entry sharing another's
+    /// header address) adds none of its own.
     fn new(cache: &'a DyldCache) -> Names<'a> {
+        let mut seen = std::collections::HashSet::new();
         let mut ranges: Vec<(u64, u64, usize)> = (0..cache.images().len())
+            .filter(|&i| seen.insert(cache.images()[i].address))
             .filter_map(|i| cache.image_layout(i).ok().map(|l| (i, l)))
             .flat_map(|(i, layout)| {
                 layout
                     .segments
                     .iter()
                     .filter(|s| s.name != "__LINKEDIT")
-                    .map(|s| (s.vmaddr, s.vmaddr + s.vmsize, i))
+                    .map(|s| (s.vmaddr, s.vmaddr.saturating_add(s.vmsize), i))
                     .collect::<Vec<_>>()
             })
             .collect();
@@ -297,7 +311,7 @@ impl<'a> Names<'a> {
             .segments
             .iter()
             .flat_map(|s| &s.sections)
-            .find(|s| s.section_type() == S_SYMBOL_STUBS && addr >= s.addr && addr < s.addr + s.size)?;
+            .find(|s| s.section_type() == S_SYMBOL_STUBS && addr >= s.addr && addr < s.addr.saturating_add(s.size))?;
         let stride = sec.reserved2 as u64;
         if stride == 0 || (addr - sec.addr) % stride != 0 {
             return None;

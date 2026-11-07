@@ -15,7 +15,7 @@
 //! input is an ordinary Mach-O. See [`extract`] for the rebuild and [`xrefs`] for
 //! how calls into other images are named.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -84,10 +84,19 @@ pub fn image_size(path: &Path, name: Option<&str>) -> Option<Result<u64, String>
 struct CacheFile {
     file: File,
     name: String,
+    len: u64,
 }
 
 impl CacheFile {
+    /// The `len` bytes at `offset`; an error, before anything is allocated, for
+    /// a range the file does not hold.
     fn read_at(&self, offset: u64, len: usize) -> Result<Vec<u8>, String> {
+        if offset.checked_add(len as u64).is_none_or(|end| end > self.len) {
+            return Err(format!(
+                "{}: {len} bytes at {offset:#x} lie past the end of the {}-byte file",
+                self.name, self.len
+            ));
+        }
         let mut buf = vec![0u8; len];
         let mut f = &self.file;
         f.seek(SeekFrom::Start(offset))
@@ -112,7 +121,10 @@ pub struct Mapping {
 
 impl Mapping {
     fn contains(&self, va: u64, len: u64) -> bool {
-        va >= self.address && va.saturating_add(len) <= self.address + self.size
+        match (va.checked_add(len), self.address.checked_add(self.size)) {
+            (Some(end), Some(limit)) => va >= self.address && end <= limit,
+            _ => false,
+        }
     }
 }
 
@@ -143,7 +155,13 @@ pub struct DyldCache {
     base: u64,
     locals: Option<LocalSymbols>,
     slides: RefCell<HashMap<usize, Option<slide::SlideInfo>>>,
-    layouts: RefCell<HashMap<usize, Option<std::rc::Rc<extract::ImageLayout>>>>,
+    /// Image layouts by header address, so aliases of one image share one.
+    layouts: RefCell<HashMap<u64, Option<std::rc::Rc<extract::ImageLayout>>>>,
+    /// The bytes of every cache file: no image's segments or load commands
+    /// can legitimately add up to more.
+    total_len: u64,
+    /// The load-command bytes read into `layouts` so far, bounded by `total_len`.
+    layout_bytes: Cell<u64>,
 }
 
 fn u32_at(b: &[u8], off: usize) -> u32 {
@@ -238,7 +256,7 @@ fn subcache_names(main: &CacheFile, path: &Path, h: &Header) -> Result<Vec<(Path
     let named = h.has(HDR_CACHE_SUBTYPE, 4);
     let stride = if named { 56 } else { 24 };
     let table = main.read_at(off as u64, count as usize * stride)?;
-    Ok(table
+    table
         .chunks_exact(stride)
         .enumerate()
         .map(|(i, entry)| {
@@ -248,11 +266,14 @@ fn subcache_names(main: &CacheFile, path: &Path, h: &Header) -> Result<Vec<(Path
             } else {
                 format!(".{}", i + 1)
             };
+            if suffix.contains(['/', '\\']) || suffix.contains("..") {
+                return Err(format!("{}: sub-cache suffix {suffix:?} is not a file-name suffix", main.name));
+            }
             let mut name = path.as_os_str().to_owned();
             name.push(&suffix);
-            (PathBuf::from(name), entry[..16].try_into().unwrap())
+            Ok((PathBuf::from(name), entry[..16].try_into().unwrap()))
         })
-        .collect())
+        .collect()
 }
 
 impl DyldCache {
@@ -261,7 +282,8 @@ impl DyldCache {
     pub fn open(path: &Path) -> Result<DyldCache, String> {
         let open = |p: &Path| -> Result<CacheFile, String> {
             let file = File::open(p).map_err(|e| format!("{}: {e}", p.display()))?;
-            Ok(CacheFile { file, name: p.display().to_string() })
+            let len = file.metadata().map_err(|e| format!("{}: {e}", p.display()))?.len();
+            Ok(CacheFile { file, name: p.display().to_string(), len })
         };
         let main = open(path)?;
         let h = Header::read(&main)?;
@@ -279,6 +301,7 @@ impl DyldCache {
         }
         let locals = Self::open_local_symbols(path, &h, &mut files, &open)?;
         let images = Self::read_images(&files[0], &h)?;
+        let total_len = files.iter().map(|f| f.len).sum();
         Ok(DyldCache {
             files,
             mappings,
@@ -287,6 +310,8 @@ impl DyldCache {
             locals,
             slides: RefCell::default(),
             layouts: RefCell::default(),
+            total_len,
+            layout_bytes: Cell::new(0),
         })
     }
 
@@ -352,8 +377,7 @@ impl DyldCache {
         let table = main.read_at(off as u64, count as usize * 32)?;
         let rows: Vec<(u64, u64)> =
             table.chunks_exact(32).map(|r| (u64_at(r, 0), u32_at(r, 24) as u64)).collect();
-        let size = main.file.metadata().map_err(|e| format!("{}: {e}", main.name))?.len();
-        let pool = StringPool::read_at(&|o, len| main.read_at(o, len), size, rows.iter().map(|r| r.1))?;
+        let pool = StringPool::read_at(&|o, len| main.read_at(o, len), main.len, rows.iter().map(|r| r.1))?;
         Ok(rows
             .into_iter()
             .map(|(address, name)| CacheImage {
@@ -397,7 +421,11 @@ impl DyldCache {
         let m = self
             .mapping_of(va, len as u64)
             .ok_or_else(|| format!("address range {va:#x}+{len:#x} is not mapped by the cache"))?;
-        self.files[m.file].read_at(m.file_offset + (va - m.address), len)
+        let offset = m
+            .file_offset
+            .checked_add(va - m.address)
+            .ok_or_else(|| format!("address {va:#x} maps past the end of its file"))?;
+        self.files[m.file].read_at(offset, len)
     }
 
     /// The bytes at `[va, va + len)` with the slide info of their mapping applied
@@ -413,7 +441,10 @@ impl DyldCache {
         };
         let page = info.page_size as u64;
         let lo = m.address + (va - m.address) / page * page;
-        let hi = (m.address + (va + len as u64 - m.address).div_ceil(page) * page).min(m.address + m.size);
+        let hi = m
+            .address
+            .saturating_add((va + len as u64 - m.address).div_ceil(page).saturating_mul(page))
+            .min(m.address + m.size);
         let mut pages = self.read_va(lo, (hi - lo) as usize)?;
         info.apply(&mut pages, ((lo - m.address) / page) as usize);
         let start = (va - lo) as usize;
@@ -443,10 +474,10 @@ impl DyldCache {
         };
         let address = self.images[index].address;
         let key = if locals.keyed_by_vm_offset {
-            address - self.base
+            address.wrapping_sub(self.base)
         } else {
             match self.mapping_of(address, 1) {
-                Some(m) => m.file_offset + (address - m.address),
+                Some(m) => m.file_offset.wrapping_add(address - m.address),
                 None => return Ok(Vec::new()),
             }
         };
@@ -556,7 +587,9 @@ impl StringPool {
             }
             let mut end = (last + NAME_TAIL).min(size);
             let mut bytes = read(lo, (end - lo) as usize)?;
-            while end < size && !bytes[(last - lo) as usize..].contains(&0) {
+            let mut scanned = (last - lo) as usize;
+            while end < size && !bytes[scanned..].contains(&0) {
+                scanned = bytes.len();
                 let more = (end + NAME_TAIL).min(size);
                 bytes.extend(read(end, (more - end) as usize)?);
                 end = more;

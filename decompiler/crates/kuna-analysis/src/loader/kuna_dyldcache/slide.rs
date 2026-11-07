@@ -39,6 +39,9 @@ const V2_END: u16 = 0x8000;
 const V2_INDEX: u16 = 0x3FFF;
 const V3_NO_REBASE: u16 = 0xFFFF;
 const MAX_CHAIN: usize = 1 << 14;
+/// Caches use 4 KiB or 16 KiB pages; a larger one would make every slid read
+/// that many bytes.
+const MAX_PAGE_SIZE: u32 = 1 << 16;
 
 fn u16s(raw: &[u8], offset: usize, count: usize) -> Result<Vec<u16>, String> {
     let end = offset + count * 2;
@@ -89,8 +92,8 @@ impl SlideInfo {
         if matches!(info.kind, Kind::V1) {
             return Ok(None);
         }
-        if info.page_size == 0 || !info.page_size.is_power_of_two() {
-            return Err(format!("slide info page size {page_size:#x} is not a power of two"));
+        if !info.page_size.is_power_of_two() || info.page_size > MAX_PAGE_SIZE {
+            return Err(format!("slide info page size {page_size:#x} is not a power of two up to {MAX_PAGE_SIZE:#x}"));
         }
         Ok(Some(info))
     }

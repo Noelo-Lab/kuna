@@ -103,3 +103,114 @@ fn without_its_symbols_file_a_redacted_local_stays_nameless() {
     assert_eq!(at_helper, [""]);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// A copy of the fixture cache in a fresh directory, its main file patched.
+fn patched_fixture(tag: &str, patch: impl FnOnce(&mut Vec<u8>)) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("kuna-dyld-{tag}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for suffix in ["", ".01", ".symbols"] {
+        let name = format!("dyld_shared_cache_arm64e{suffix}");
+        std::fs::copy(fixture().with_file_name(&name), dir.join(&name)).unwrap();
+    }
+    let main = dir.join("dyld_shared_cache_arm64e");
+    let mut bytes = std::fs::read(&main).unwrap();
+    patch(&mut bytes);
+    std::fs::write(&main, bytes).unwrap();
+    main
+}
+
+fn put(bytes: &mut [u8], at: usize, value: &[u8]) {
+    bytes[at..at + value.len()].copy_from_slice(value);
+}
+
+/// The fixture's first image header, at file offset 0x1000; its sixth and last
+/// load command is an 80-byte `LC_DYSYMTAB` at 0x11e8.
+const IMAGE0: usize = 0x1000;
+const IMAGE0_DYSYMTAB: usize = 0x11e8;
+
+#[test]
+fn a_truncated_note_is_read_as_no_note() {
+    let mut seg = 0x19u32.to_le_bytes().to_vec();
+    seg.extend(72u32.to_le_bytes());
+    seg.resize(72, 0);
+    let mut note = 0x31u32.to_le_bytes().to_vec();
+    note.extend(40u32.to_le_bytes());
+    note.extend(xrefs::NOTE_OWNER);
+    let cmds = [seg, note].concat();
+    let mut image = vec![0u8; 0x1000];
+    for (i, v) in [0xfeed_facfu32, 0x0100_000c, 0, 2, 2, cmds.len() as u32].into_iter().enumerate() {
+        put(&mut image, i * 4, &v.to_le_bytes());
+    }
+    put(&mut image, 32, &cmds);
+    assert!(read_note(&image).is_empty(), "the note's offset and size lie past sizeofcmds");
+    put(&mut image, 20, &(cmds.len() as u32 + 16).to_le_bytes());
+    put(&mut image, 32 + cmds.len(), &u64::MAX.to_le_bytes());
+    put(&mut image, 40 + cmds.len(), &u64::MAX.to_le_bytes());
+    assert!(read_note(&image).is_empty(), "the note's blob lies past the file");
+    put(&mut image, 20, &u32::MAX.to_le_bytes());
+    assert!(read_note(&image).is_empty(), "sizeofcmds runs past the file");
+}
+
+#[test]
+fn a_read_past_the_end_of_a_cache_file_is_refused_before_allocating() {
+    let main = patched_fixture("bigslide", |b| put(b, 0x260 + 56 + 32, &(1u64 << 50).to_le_bytes()));
+    let cache = DyldCache::open(&main).unwrap();
+    let err = cache.extract(0).unwrap_err();
+    assert!(err.contains("past the end"), "{err}");
+    std::fs::remove_dir_all(main.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn a_sub_cache_suffix_cannot_name_another_directory() {
+    let main = patched_fixture("traverse", |b| put(b, 0x320 + 24, b"/../../etc/hostname\0"));
+    let err = DyldCache::open(&main).err().unwrap();
+    assert!(err.contains("not a file-name suffix"), "{err}");
+    std::fs::remove_dir_all(main.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn a_load_command_cut_by_sizeofcmds_is_skipped() {
+    let main = patched_fixture("cutcmd", |b| put(b, IMAGE0 + 20, &(536u32 - 40).to_le_bytes()));
+    let cache = DyldCache::open(&main).unwrap();
+    let bytes = cache.extract(0).unwrap();
+    assert!(object::File::parse(bytes.as_slice()).is_ok());
+    std::fs::remove_dir_all(main.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn a_local_symbol_range_that_wraps_is_not_replaced() {
+    let main = patched_fixture("wraplocals", |b| {
+        put(b, IMAGE0_DYSYMTAB + 8, &u32::MAX.to_le_bytes());
+        put(b, IMAGE0_DYSYMTAB + 12, &2u32.to_le_bytes());
+    });
+    let cache = DyldCache::open(&main).unwrap();
+    assert!(cache.extract(0).is_ok());
+    std::fs::remove_dir_all(main.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn image_entries_aliasing_one_header_share_its_layout() {
+    let main = patched_fixture("alias", |b| put(b, 0x360 + 32, &0x1_8000_1000u64.to_le_bytes()));
+    let cache = DyldCache::open(&main).unwrap();
+    let (a, b) = (cache.image_layout(0).unwrap(), cache.image_layout(1).unwrap());
+    assert!(std::rc::Rc::ptr_eq(&a, &b));
+    assert_eq!(cache.layout_bytes.get(), 536, "the shared header's commands are counted once");
+    std::fs::remove_dir_all(main.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn a_string_pool_without_a_terminator_is_scanned_once() {
+    let size = 8192 * NAME_TAIL;
+    let reads = std::cell::Cell::new(0u64);
+    let read = |off: u64, len: usize| -> Result<Vec<u8>, String> {
+        reads.set(reads.get() + len as u64);
+        assert!(off + len as u64 <= size);
+        Ok(vec![b'a'; len])
+    };
+    let start = std::time::Instant::now();
+    let pool = StringPool::read_at(&read, size, [1u64].into_iter()).unwrap();
+    let elapsed = start.elapsed();
+    assert_eq!(pool.get_at(1).len() as u64, size - 1);
+    assert_eq!(reads.get(), size - 1);
+    assert!(elapsed < std::time::Duration::from_secs(5), "a 32 MiB pool took {elapsed:?}");
+}
