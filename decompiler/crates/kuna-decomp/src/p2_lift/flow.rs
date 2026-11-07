@@ -645,6 +645,8 @@ pub struct FlowInfo<'a, E: FlowEnvironment> {
     /// Does the function have registered flow override instructions
     /// (C++ `flowoverride_present`).
     flowoverride_present: bool,
+    /// Whether `stubtailcall` applies to this run.
+    loader_transfers_present: bool,
     /// Exact instruction addresses where a `BRANCH` override applied during
     /// this flow follow.
     applied_branch_overrides: std::collections::BTreeSet<Address>,
@@ -733,6 +735,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         // env-routed `has_flow_override` is the W2-era boundary default (always false)
         // and is OR'd in only for back-compat with envs that still carry it.
         let flowoverride_present = data.get_override().has_flow_override() || env.has_flow_override();
+        let loader_transfers_present = crate::kuna_stubtailcall::active(data.get_arch());
         FlowInfo {
             data,
             env,
@@ -753,6 +756,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
             minaddr: entry.clone(),
             maxaddr: entry,
             flowoverride_present,
+            loader_transfers_present,
             applied_branch_overrides: std::collections::BTreeSet::new(),
             flags: 0,
             qlst_count: 0,
@@ -1771,10 +1775,15 @@ following this call as a branch"
         let marker: Option<OpId> = if emptyflag { None } else { self.dead_tail() };
 
         // (the per-function Override lives on the Funcdata; `localoverride`).
-        let flowoverride: uint4 = if self.flowoverride_present {
+        let explicit: uint4 = if self.flowoverride_present {
             self.data.get_override().get_flow_override(curaddr)
         } else {
             crate::overrides::flow_type::NONE
+        };
+        let flowoverride = if self.loader_transfers_present {
+            crate::kuna_stubtailcall::flow_override(self.data.get_arch(), curaddr, explicit)
+        } else {
+            explicit
         };
 
         let mode = self.arm_context.then(|| self.env.arm_decode_mode(curaddr)).flatten();

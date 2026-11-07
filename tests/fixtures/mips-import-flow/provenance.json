@@ -1,0 +1,2252 @@
+{
+  "sources": {
+    "flow.c": "8759973f0fadc3d2508df7844a891c0e4c911a08c4b2d5e25e07bfe59a1b6b52",
+    "select.c": "402d4b3f26a2011215f8533ac71011dc96f236b650ae82e6c70f944f52d8a171"
+  },
+  "tools": {
+    "cc": {
+      "sha256": "5d26f5ed013593e77d0237dac6f3179f68cdbb681f8c20d7948444b7ff3e0b49",
+      "version": "mips64-octeon-linux-gnu-gcc (GCC) 7.3.0"
+    },
+    "assembler": {
+      "sha256": "688576aeb8e742698e80e981ccde0981dc62d7933f836a18b3802246b5d84947",
+      "version": "GNU assembler (GNU Binutils for Ubuntu) 2.45.90.20260125"
+    },
+    "ld": {
+      "sha256": "2865846ece2642439cfae404ef930bfc5494c4babd2347757878b8f0f8f761cf",
+      "version": "GNU ld (GNU Binutils) 2.47.20260726"
+    },
+    "strip": {
+      "sha256": "0887ad2859533ea96923c40886f6c1f60643f2c435c49df89eac98b6a588385f",
+      "version": "GNU strip (GNU Binutils for Ubuntu) 2.45.90.20260125"
+    },
+    "nm": {
+      "sha256": "1fd313eeb35b9fbda41a3f9a51af9c8b1c1d471927b7f3046580d15937155f0a",
+      "version": "GNU nm (GNU Binutils) 2.47.20260726"
+    }
+  },
+  "images": [
+    {
+      "file": "select-mips32r2-be.elf",
+      "source": "select.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-static",
+        "-e",
+        "__start"
+      ],
+      "sha256": "cfc3034a5774cf03725176547ea7c07e18b3a2486c30cd6b0bfa80ab840c005d",
+      "symbols": {
+        "__start": {
+          "address": 4198460,
+          "size": 8
+        },
+        "callit": {
+          "address": 4198400,
+          "size": 60
+        }
+      }
+    },
+    {
+      "file": "select-octeon-be.elf",
+      "source": "select.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-static",
+        "-e",
+        "__start"
+      ],
+      "sha256": "83fbb14e5f9ce2ae0a71c19294146b86ad6c8ea340596908539342cb92e388ab",
+      "symbols": {
+        "__start": {
+          "address": 4198460,
+          "size": 8
+        },
+        "callit": {
+          "address": 4198400,
+          "size": 60
+        }
+      }
+    },
+    {
+      "file": "select-octeon2-be.elf",
+      "source": "select.c",
+      "flags": [
+        "-march=octeon2",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=octeon2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-static",
+        "-e",
+        "__start"
+      ],
+      "sha256": "72d63db4b4ca41c420ef188afa9c14987a40cd9a9e056537cd47f0114348dd01",
+      "symbols": {
+        "__start": {
+          "address": 4198460,
+          "size": 8
+        },
+        "callit": {
+          "address": 4198400,
+          "size": 60
+        }
+      }
+    },
+    {
+      "file": "select-octeon3-be.elf",
+      "source": "select.c",
+      "flags": [
+        "-march=octeon3",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=octeon3"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-static",
+        "-e",
+        "__start"
+      ],
+      "sha256": "2955451f59af2c67e447b7b060b662bfd309fd5f591483e6bb1338ba619c7494",
+      "symbols": {
+        "__start": {
+          "address": 4198460,
+          "size": 8
+        },
+        "callit": {
+          "address": 4198400,
+          "size": 60
+        }
+      }
+    },
+    {
+      "file": "flow-mips32r2-be-local-plain.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "8dc20604d99a2615f91eb2a52302819c8c0948619077fc8790322ea6232d7425",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4344,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4408,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-mips32r2-be-local-plain-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "21bcb4f05fe23471c0dd3a96022f408c59b10d59df8b0221132e781a38f77aa9",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4344,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4408,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-mips32r2-be-local-ssp.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "2cc250009e9e46d4dba2ddec121b1791a6f36b93d3e8239e722c5afbd799b09b",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4528,
+          "size": 36
+        },
+        "first": {
+          "address": 4344,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4452,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-mips32r2-be-local-ssp-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "426caeb50caf6b63b59af5bb35240869bec6717f9aecac62398498eda5119350",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4528,
+          "size": 36
+        },
+        "first": {
+          "address": 4344,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4452,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-mips32r2-be-exported-plain.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "5201fadeadc9055c17a5f0d574471fa28c22e8c000e7c330e8b4bff60e049659",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4340,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4404,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-mips32r2-be-exported-plain-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "83c86f5fac5254dd11717280170ce0de3f4b2b201cd24c79da0b227f62bdc795",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4340,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4404,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-mips32r2-be-exported-ssp.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "f1593befb37193162c7cef8b71717711a4a0be863d88f768a57a84775280736a",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4524,
+          "size": 36
+        },
+        "first": {
+          "address": 4340,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4448,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-mips32r2-be-exported-ssp-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "370fa8b891e03bb132452756e39413dcabe429dc76974837166dd6b16c3b6f0d",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4524,
+          "size": 36
+        },
+        "first": {
+          "address": 4340,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4448,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-octeon-be-local-plain.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "51f9405c8b7913b1388d18edd4c22640befc2076725f61b6e7d9a972ab18977a",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4344,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4408,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-octeon-be-local-plain-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "59012de2b12bb9024ec67f7a5a598fcfdf131a81c467e98e9b6bdca93e2d0744",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4344,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4408,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-octeon-be-local-ssp.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "f884858bb241192d777e8b86a0df7c259b83779b14c753389d432ba4f66bb145",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4528,
+          "size": 36
+        },
+        "first": {
+          "address": 4344,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4452,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-octeon-be-local-ssp-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "e483549373d4dee025a4c44109d8af19148bd894f127fe73cd323950c772dfac",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4528,
+          "size": 36
+        },
+        "first": {
+          "address": 4344,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4452,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-octeon-be-exported-plain.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "6af90bec492e9e21064529bfce276f9a10ee663d1952202bc1a6e5d792214ccb",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4340,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4404,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-octeon-be-exported-plain-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "3c4e31ae838f1d52346b4ac7b5af092dfe41a67c0c8cc46258b95a11c0592ed4",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4340,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4404,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-octeon-be-exported-ssp.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "8516f3d6623bf245981b5b20f21a40cbddef2a1396c24a78eb0796aa99f53544",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4524,
+          "size": 36
+        },
+        "first": {
+          "address": 4340,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4448,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-octeon-be-exported-ssp-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EB",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "9707bce359b130c13e4624ca322b3d9d685927e6da06874c15825af05463f134",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4524,
+          "size": 36
+        },
+        "first": {
+          "address": 4340,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4448,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "select-mips32r2-le.elf",
+      "source": "select.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-static",
+        "-e",
+        "__start"
+      ],
+      "sha256": "924c82058d2d74f72347d1976706e79662c262e491a82211588816d6c073a907",
+      "symbols": {
+        "__start": {
+          "address": 4198460,
+          "size": 8
+        },
+        "callit": {
+          "address": 4198400,
+          "size": 60
+        }
+      }
+    },
+    {
+      "file": "select-octeon-le.elf",
+      "source": "select.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-static",
+        "-e",
+        "__start"
+      ],
+      "sha256": "bc816d4dd8d6300fa55ac38e93b20eb33fd6145bd8c5d11c0690471b32af49bd",
+      "symbols": {
+        "__start": {
+          "address": 4198460,
+          "size": 8
+        },
+        "callit": {
+          "address": 4198400,
+          "size": 60
+        }
+      }
+    },
+    {
+      "file": "select-octeon2-le.elf",
+      "source": "select.c",
+      "flags": [
+        "-march=octeon2",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=octeon2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-static",
+        "-e",
+        "__start"
+      ],
+      "sha256": "2fc1bebefa60df3acc3d1dfb3ae6c589d95f2a18e8c2407292d77496ecf4e8fb",
+      "symbols": {
+        "__start": {
+          "address": 4198460,
+          "size": 8
+        },
+        "callit": {
+          "address": 4198400,
+          "size": 60
+        }
+      }
+    },
+    {
+      "file": "select-octeon3-le.elf",
+      "source": "select.c",
+      "flags": [
+        "-march=octeon3",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=octeon3"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-static",
+        "-e",
+        "__start"
+      ],
+      "sha256": "1a5affad491dcbbff931fdb512bbafb4846ccc8e8640d16e893c301b843830be",
+      "symbols": {
+        "__start": {
+          "address": 4198460,
+          "size": 8
+        },
+        "callit": {
+          "address": 4198400,
+          "size": 60
+        }
+      }
+    },
+    {
+      "file": "flow-mips32r2-le-local-plain.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "913e6d4445257560c269d545826b0e0c1cf4c8a7fec30c584638125bdccad28c",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4344,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4408,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-mips32r2-le-local-plain-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "71121cc560d319fabc2867b94e12ec961f76b9f187d8f0c388cb721216cce5cc",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4344,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4408,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-mips32r2-le-local-ssp.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "37e0bd2dd08e39b3f2d165544a18301b63d24c769e78cafd30c5226da56ef628",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4528,
+          "size": 36
+        },
+        "first": {
+          "address": 4344,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4452,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-mips32r2-le-local-ssp-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "b6f6bc5ba19062ba1153adb1b08b13245085bd6536af0eb7439b53104607c0d2",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4528,
+          "size": 36
+        },
+        "first": {
+          "address": 4344,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4452,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-mips32r2-le-exported-plain.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "d550d9c3e0b36ead5f011b31b56b5b827295b0bb5af4936b57904bf8b46777a1",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4340,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4404,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-mips32r2-le-exported-plain-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "53d568940deedd3f47830bd33510247e74d8d03a712f69b651d172b14887ebc8",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4340,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4404,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-mips32r2-le-exported-ssp.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "fdade479b6a77b48d6c16fdd622f0d9f63c40884e745f4058d112b3acff9ef7c",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4524,
+          "size": 36
+        },
+        "first": {
+          "address": 4340,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4448,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-mips32r2-le-exported-ssp-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=mips32r2",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=mips32r2"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "cc2e8a601991f6198323f03015eef847262ddbd84eaf741c20623b4b4bb02ba6",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4524,
+          "size": 36
+        },
+        "first": {
+          "address": 4340,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4448,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-octeon-le-local-plain.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "c1f2fed48c3925b3473be986b4500ba9a6032a048da96d27fd1fb7bc886b99b6",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4344,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4408,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-octeon-le-local-plain-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "99e2f8ee18cf60111bfebe0f3191f088cd2815a69e86d1e5de0504c8856438cb",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4344,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4408,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-octeon-le-local-ssp.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "8441aa2f020b905001fc6261135d17a2581366f57ab725a5b21c659720ccc7fa",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4528,
+          "size": 36
+        },
+        "first": {
+          "address": 4344,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4452,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-octeon-le-local-ssp-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "6c96af0e7d31a8f19dcc331dd2ecab59c65761b0d94ce74790b2559df6113cd1",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4528,
+          "size": 36
+        },
+        "first": {
+          "address": 4344,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4452,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-octeon-le-exported-plain.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "691a018c7b3b1c947a21ad4ceeb2c479953e62d700f0a194b1653f8e0932122c",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4340,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4404,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-octeon-le-exported-plain-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fno-stack-protector",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "9f09c05be4e6d6ee1d5e9d6c209911f842a373a23f06714a962c4d04b165861a",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "first": {
+          "address": 4340,
+          "size": 64
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4404,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-octeon-le-exported-ssp.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "fb62eb15564ccdffda0bee1d43f13dfe3a5fceda2d315831a4bb321b2183a9c4",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4524,
+          "size": 36
+        },
+        "first": {
+          "address": 4340,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4448,
+          "size": 76
+        }
+      }
+    },
+    {
+      "file": "flow-octeon-le-exported-ssp-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon",
+        "-mabi=32",
+        "-EL",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong",
+        "-DEXPORTED"
+      ],
+      "assembly_flags": [
+        "-32",
+        "-EL",
+        "-march=octeon"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32ltsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "d67f781a355544454eae4f2e1a81d686b7da094efbe7a3724f106b26addfc633",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 192
+        },
+        "fail": {
+          "address": 4524,
+          "size": 36
+        },
+        "first": {
+          "address": 4340,
+          "size": 108
+        },
+        "twice": {
+          "address": 4288,
+          "size": 52
+        },
+        "unknown_then_store": {
+          "address": 4448,
+          "size": 76
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-octeon3-n32.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon3",
+        "-mabi=n32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong"
+      ],
+      "assembly_flags": [
+        "-n32",
+        "-EB",
+        "-march=octeon3"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmipn32",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "b7e023e0ed39034b139e89cb96f340e13d24d616555b797f018606863b980342",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 164
+        },
+        "fail": {
+          "address": 4492,
+          "size": 36
+        },
+        "first": {
+          "address": 4316,
+          "size": 104
+        },
+        "twice": {
+          "address": 4260,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4420,
+          "size": 72
+        }
+      }
+    },
+    {
+      "file": "flow-octeon3-n32-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon3",
+        "-mabi=n32",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong"
+      ],
+      "assembly_flags": [
+        "-n32",
+        "-EB",
+        "-march=octeon3"
+      ],
+      "link_flags": [
+        "-m",
+        "elf32btsmipn32",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "81e80d2006ef4eb43b4f8c5e4fa087210124f4f7d21c9327a3c7df3297ba5f6d",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 164
+        },
+        "fail": {
+          "address": 4492,
+          "size": 36
+        },
+        "first": {
+          "address": 4316,
+          "size": 104
+        },
+        "twice": {
+          "address": 4260,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4420,
+          "size": 72
+        }
+      },
+      "stripped": true
+    },
+    {
+      "file": "flow-octeon3-64.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon3",
+        "-mabi=64",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong"
+      ],
+      "assembly_flags": [
+        "-64",
+        "-EB",
+        "-march=octeon3"
+      ],
+      "link_flags": [
+        "-m",
+        "elf64btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "6152ab725c336c55efffa13f185bd593c4646f68779b4178c5a3a296e3a599c2",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 164
+        },
+        "fail": {
+          "address": 4492,
+          "size": 36
+        },
+        "first": {
+          "address": 4316,
+          "size": 104
+        },
+        "twice": {
+          "address": 4260,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4420,
+          "size": 72
+        }
+      }
+    },
+    {
+      "file": "flow-octeon3-64-stripped.so",
+      "source": "flow.c",
+      "flags": [
+        "-march=octeon3",
+        "-mabi=64",
+        "-EB",
+        "-msoft-float",
+        "-O1",
+        "-fno-builtin",
+        "-ffreestanding",
+        "-fno-ident",
+        "-fPIC",
+        "-mabicalls",
+        "-fstack-protector-strong"
+      ],
+      "assembly_flags": [
+        "-64",
+        "-EB",
+        "-march=octeon3"
+      ],
+      "link_flags": [
+        "-m",
+        "elf64btsmip",
+        "-z",
+        "max-page-size=0x1000",
+        "--build-id=none",
+        "-shared"
+      ],
+      "sha256": "15689811af2a7f2ee780cae8fae8856ab6cfd5ef5ce5bf897d224068b1174c55",
+      "symbols": {
+        "duplicate": {
+          "address": 4096,
+          "size": 164
+        },
+        "fail": {
+          "address": 4492,
+          "size": 36
+        },
+        "first": {
+          "address": 4316,
+          "size": 104
+        },
+        "twice": {
+          "address": 4260,
+          "size": 56
+        },
+        "unknown_then_store": {
+          "address": 4420,
+          "size": 72
+        }
+      },
+      "stripped": true
+    }
+  ]
+}

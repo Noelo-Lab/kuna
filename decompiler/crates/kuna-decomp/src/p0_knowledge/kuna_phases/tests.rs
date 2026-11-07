@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_381() {
-    assert_eq!(kuna_num_settables(), 381);
-    assert_eq!(SETTABLE_TABLE.len(), 381);
+fn settable_count_is_385() {
+    assert_eq!(kuna_num_settables(), 385);
+    assert_eq!(SETTABLE_TABLE.len(), 385);
 }
 
 #[test]
-fn tier_counts_are_132_core_155_transform_94_analysis() {
+fn tier_counts_are_135_core_155_transform_95_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_132_core_155_transform_94_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (132, 155, 94));
+    assert_eq!((core, transform, analysis), (135, 155, 95));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_181() {
+fn option_values_live_value_present_for_184() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -515,6 +515,9 @@ fn option_values_live_value_present_for_181() {
         // (kuna) x86-64 IFUNC PLT-stub naming: a load-time gate read via the
         // `kuna_ifuncfpret` env var (no codegen live reader), like `i386_pie_plt`.
         "ifuncfpret",
+        // (kuna) PowerPC APU-note language selection: a load-time gate read via
+        // the `kuna_ppcapu` env var, like `ifuncfpret`.
+        "ppcapu",
         // (kuna) Relocatable-object analysis rebase (GH-289): a load-time gate read
         // via the `kuna_relocrebase` env var (the analyzer tier runs inside `load
         // file`), like `i386_pie_plt`. Default-ON (DIV-79).
@@ -948,8 +951,10 @@ fn option_values_live_value_present_for_181() {
     // 176 -> 177: +1 for `mipsunaligned` (mips_unaligned).
     // 177 -> 178: +1 for `gottailcall` (got_tail_call).
     // 179 -> 180: +1 for `copywaves` (pool_copy_waves).
+    // 180 -> 182: +2 for `stubtailcall` (stub_tail_call) and `gotimportproto` (got_import_proto).
+    // 182 -> 183: +1 for `aggregatefields` (aggregate_fields).
     // 179 -> 180: +1 for `exclusivecallret` (exclusive_call_ret).
-    assert_eq!(with_live, 181);
+    assert_eq!(with_live, 184);
 }
 
 #[test]
@@ -1177,8 +1182,11 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `persistcalls`; its P3 row sits after `readonlycalls`.
     // +1 for `copywaves`; its P3 row sits after `deadwaves`.
     // +1 for `deadcascade`; its P3 row sits after `copywaves`.
+    // +2 for `stubtailcall` (after `mappedflowboundary`) and `gotimportproto` (after `pltlocal`).
+    // +1 for `aggregatefields`; its P5 row sits after `fieldtype`.
+    // +1 for `ppcapu`; its P1 row sits after `ifuncfpret`.
     // +1 for `exclusivecallret`; its P4 row sits after `exclusivearguse`.
-    assert_eq!(json.matches("},\n").count(), 380);
+    assert_eq!(json.matches("},\n").count(), 384);
 }
 
 #[test]

@@ -2159,7 +2159,10 @@ mod tests {
         // and kuna-e500-call-slots / e500 scalar call slots inside 64-bit registers (option calloverlap)
         // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
         // and kuna-copywaves / copy propagations seed rule-pool waves (option copywaves)
-        assert_eq!(count, 704, "corpus file count drifted");
+        // and kuna-stubtailcall / a loader-proven lazy-binding stub flowed as a tail call
+        // and kuna-gotimportproto / a type-only declaration bound at a MIPS GOT import call
+        // and kuna-aggregatefields / declared records kept whole until their fields are named
+        assert_eq!(count, 709, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

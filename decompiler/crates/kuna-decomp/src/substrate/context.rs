@@ -874,6 +874,17 @@ pub struct ArchContext {
     /// `add_carry_chain`, DIV-2 default-on).  Read by
     /// [`RuleAddCarryChain`](crate::kuna_addcarrychain::RuleAddCarryChain).
     pub add_carry_chain: bool,
+    /// (kuna) `aggregatefields`, default-on: keep a structured concatenation
+    /// with low zero bytes for field recovery, resolve an unchanged declared
+    /// container returned whole, collapse cleanup-split truncations, and stop a
+    /// partial-symbol walk at a whole-struct edge. Off restores upstream.
+    pub aggregate_fields: bool,
+    /// (kuna) `stubtailcall`, default-on: flow loader-proven lazy-binding stubs as
+    /// tail calls ([`crate::kuna_stubtailcall`]).
+    pub stub_tail_call: bool,
+    /// (kuna) `gotimportproto`, default-on: bind type-only declarations at
+    /// loader-proven MIPS GOT import calls ([`crate::kuna_gotimportproto`]).
+    pub got_import_proto: bool,
     /// (kuna) GH-7190: collapse the OV-flag signed-less-than idiom to INT_SLESS
     /// (C++ `ov_less_simplify`, DIV-2 default-on).  Read by
     /// [`RuleOvLessSimplify`](crate::kuna_ovlesssimplify::RuleOvLessSimplify).
@@ -1827,6 +1838,11 @@ pub struct ArchContext {
     /// because `build_arch_handle` hands the same snapshot to every function of
     /// a run.
     pub callee_protos: Rc<Vec<(int4, kuna_base::types::uintb, crate::fspec::PrototypePieces)>>,
+    /// Loader-proven tail transfers, flowed as a call and return; explicit
+    /// per-function flow overrides take precedence.
+    pub loader_transfer_sites: Rc<std::collections::BTreeSet<Address>>,
+    /// MIPS GOT import entries identified by the loader, never ordinary definitions.
+    pub loader_mips_imports: Rc<std::collections::BTreeSet<Address>>,
     /// The calling convention each declared callee was declared under, keyed the
     /// same way [`Self::callee_protos`] is.  Snapshotted at `build_arch_handle`
     /// from the architecture's declared-convention map and read back by
@@ -1960,6 +1976,9 @@ impl ArchContext {
             x87_integer_userops: Vec::new(),
             fold_flag_compare: false,    // GH-1276/8777 flagcompare
             add_carry_chain: false,      // GH-8913 addcarrychain
+            aggregate_fields: false,     // aggregatefields
+            stub_tail_call: false,       // stubtailcall
+            got_import_proto: false,     // gotimportproto
             ov_less_simplify: false,     // GH-7190 ovlesssimplify
             recover_array_stride: false, // GH-8724 arraystride
             memset_recover: false,       // GH-9230/1537 memsetrecover
@@ -2216,6 +2235,8 @@ impl ArchContext {
             infer_ptr_spaces: Vec::new(),
             // No declared callee prototypes until build_arch_handle snapshots them.
             callee_protos: Rc::new(Vec::new()),
+            loader_transfer_sites: Rc::default(),
+            loader_mips_imports: Rc::default(),
             // No tracked registers until build_arch_handle snapshots the context DB.
             tracked_sets: kuna_base::partmap::PartMap::default(),
         }

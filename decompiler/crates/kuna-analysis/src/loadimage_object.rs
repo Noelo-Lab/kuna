@@ -545,6 +545,8 @@ pub struct ObjectLoadImage {
     /// dynamic relocations bind to a function it defines, ascending by stub. See
     /// [`crate::loader::kuna_pltlocal`].
     plt_local: Vec<(u64, u64)>,
+    /// MIPS ELF lazy-binding stubs and GOT-proven imports, found once at load.
+    mips_linkage: Option<crate::loader::kuna_mipsstubs::MipsLinkage>,
     elfv1: crate::loader::elfv1::Descriptors,
     elf_functions: ElfFunctionProvenance,
     /// The address space the file bytes map to (C++ `spaceid`, null until
@@ -722,6 +724,13 @@ impl ObjectLoadImage {
             effective_arch,
             target,
         )?;
+        if emit_diagnostics {
+            for note in crate::loader::kuna_ppcaputarget::notes(
+                &file, &String::from_utf8_lossy(&archtype), target.is_some(),
+            ) {
+                kuna_base::notes::say_once(filename, &format!("[kuna target] {filename}: {note}"));
+            }
+        }
         if emit_diagnostics {
             for note in crate::loader::kuna_mipstarget::notes(
                 &file, &String::from_utf8_lossy(&archtype), target.is_some(),
@@ -978,9 +987,11 @@ impl ObjectLoadImage {
         // (F) Per-format import resolution goes through the boundary; for ELF
         // `ElfFormat::resolve_imports` just calls the unchanged
         // `elf_plt::resolve_plt_imports`.
-        let ppc32_names: std::collections::HashMap<_, _> = if is_elf && file.architecture() == object::Architecture::PowerPc {
-            funcsyms.iter().enumerate().map(|(i, s)| (s.addr, i)).collect()
-        } else { std::collections::HashMap::new() };
+        let import_names: std::collections::HashMap<_, _> = funcsyms.iter().enumerate()
+            .filter(|(_, s)| is_elf && (file.architecture() == Architecture::PowerPc
+                || (crate::loader::kuna_mipsabi::is_mips(file.architecture())
+                    && s.name == b"_MIPS_STUBS_")))
+            .map(|(i, s)| (s.addr, i)).collect();
         // A Mach-O export the symbol table already named is that name in its C
         // spelling (`audit_export_a` for `_audit_export_a`), which lookup accepts
         // anyway; it is a second name only where this stream named the address.
@@ -993,7 +1004,7 @@ impl ObjectLoadImage {
                 }
                 let name = demangle_funcsym_name(p.name, namechars);
                 funcsyms.push(FuncSym { addr: p.addr, name, size: 0 });
-            } else if let Some(&i) = ppc32_names.get(&p.addr) {
+            } else if let Some(&i) = import_names.get(&p.addr) {
                 let name = demangle_funcsym_name(p.name, namechars);
                 let previous = std::mem::replace(&mut funcsyms[i].name, name);
                 aliases.push(FuncSym { addr: p.addr, name: previous, size: 0 });
@@ -1052,6 +1063,7 @@ impl ObjectLoadImage {
         let const_ranges = fmt.const_ranges(&file, bytes);
 
         let plt_local = fmt.local_import_targets(&file, bytes);
+        let mips_linkage = crate::loader::kuna_mipsstubs::linkage(&file);
 
         // (kuna) The import pointer slots the funcsym walk above just registered
         // names at — recorded as addresses so the enumeration can tell a pointer
@@ -1105,6 +1117,7 @@ impl ObjectLoadImage {
             dynreloc_const,
             import_slots,
             plt_local,
+            mips_linkage,
             elfv1,
             elf_functions,
             spaceid: None,
@@ -1280,6 +1293,7 @@ impl ObjectLoadImage {
             // are relocations, resolved by the layout pass.
             import_slots: Vec::new(),
             plt_local: Vec::new(),
+            mips_linkage: crate::loader::kuna_mipsstubs::class_linkage(&file),
             elfv1,
             elf_functions: ElfFunctionProvenance::default(),
             spaceid: None,
@@ -1369,6 +1383,12 @@ impl ObjectLoadImage {
     /// relocations bind to a function it defines, ascending by stub.
     pub fn plt_local_targets(&self) -> &[(u64, u64)] {
         &self.plt_local
+    }
+
+    /// The MIPS ELF lazy-binding stubs and GOT-proven imports; `None` for any
+    /// other image.
+    pub fn mips_linkage(&self) -> Option<&crate::loader::kuna_mipsstubs::MipsLinkage> {
+        self.mips_linkage.as_ref()
     }
 
     /// (kuna `globalref`) Sorted, merged `[start, stop]` ranges of the sections
@@ -1705,6 +1725,12 @@ impl LoadImage for ObjectLoadImage {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
         }
+        if let Some(linkage) = &mut self.mips_linkage {
+            for r in &mut linkage.transfers {
+                r.0 = r.0.wadd(badjust);
+                r.1 = r.1.wadd(badjust);
+            }
+        }
         for r in &mut self.data_objects {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
@@ -1742,6 +1768,14 @@ fn language_id_for(
 ) -> KunaResult<Vec<u8>> {
     if let Some(target) = target {
         return Ok(target.as_bytes().to_vec());
+    }
+    if let Some(id) = crate::loader::kuna_mipsocteon::language_id(file)
+        .map_err(|error| KunaError::lowlevel(format!("File: {filename}: {error}; pass an explicit --target")))?
+    {
+        return Ok(id.into_bytes());
+    }
+    if let Some(id) = crate::loader::kuna_ppcaputarget::language_id(file) {
+        return Ok(id.into_bytes());
     }
     if let Some(id) = crate::loader::kuna_mipstarget::language_id(file)? {
         return Ok(id.into_bytes());
@@ -1807,6 +1841,9 @@ fn fallback_language_id(
     arch: Architecture,
     primary: &[u8],
 ) -> Option<Vec<u8>> {
+    if file.format() == object::BinaryFormat::Elf && arch == Architecture::PowerPc {
+        return None;
+    }
     if file.format() == object::BinaryFormat::Elf
         && matches!(arch, Architecture::Mips | Architecture::Mips64 | Architecture::Mips64_N32)
     {
@@ -2046,7 +2083,9 @@ pub fn elf_language_ids() -> Vec<String> {
             out.push(id);
         }
     }
+    out.extend(crate::loader::kuna_ppcaputarget::language_ids());
     out.extend(crate::loader::kuna_mipstarget::language_ids());
+    out.extend(crate::loader::kuna_mipsocteon::language_ids());
     out.sort();
     out.dedup();
     out
@@ -3209,11 +3248,8 @@ mod tests {
         // layout (`DT_MIPS_LOCAL_GOTNO`/`DT_MIPS_GOTSYM`); `resolve_mips_imports`
         // names each import's `.MIPS.stubs` stub address (= the dynsym `st_value`).
         let syms = fixture_funcsyms("plt_mips32");
-        // `puts`/`printf` are the user-visible imports.  (`__libc_start_main`'s stub
-        // at 0x4007e0 == the `.MIPS.stubs` section start, so the `.symtab`
-        // `_MIPS_STUBS_` section label is registered there first and wins the dedup
-        // — a faithful, harmless overlap with a startup-only import.)
-        for (addr, want) in [(0x400800u64, "puts"), (0x4007f0, "printf")] {
+        // The linker label at the section start is an alias of the first import.
+        for (addr, want) in [(0x400800u64, "puts"), (0x4007f0, "printf"), (0x4007e0, "__libc_start_main")] {
             assert_eq!(
                 syms.get(&addr).map(String::as_str),
                 Some(want),
