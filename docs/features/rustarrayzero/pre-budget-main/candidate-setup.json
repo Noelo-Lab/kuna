@@ -1,0 +1,22 @@
+{
+  "at": "2026-11-03T06:27:16.423688+00:00",
+  "root": "/home/mahaloz/kwt/angr-rust-array-zero",
+  "branch": "fix/angr-rust-array-zero",
+  "base_commit": "8ced8a2e051e26b89d21096699f690646924921b",
+  "base_tree": "d5036439456222c6f82b8f92633e3974acbf73c5",
+  "copied_untracked": [
+    "decompiler/crates/kuna-analysis/tests/fixtures/array_constant.c",
+    "decompiler/crates/kuna-analysis/tests/fixtures/array_constant_harness.c",
+    "decompiler/crates/kuna-analysis/tests/fixtures/array_constant_harness.rs",
+    "decompiler/crates/kuna-analysis/tests/fixtures/array_constant_helpers.c",
+    "decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+    "decompiler/crates/kuna-cli/tests/rust_array_constant.rs",
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustarrayzero.rs",
+    "tests/stages/ghangr-rust-array-zero.xml"
+  ],
+  "specs": 154,
+  "fixes": [
+    "live-field count179",
+    "explicit aggressive-preset exclusion"
+  ]
+}

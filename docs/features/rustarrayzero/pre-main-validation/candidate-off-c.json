@@ -1,0 +1,669 @@
+{
+  "binary": "/tmp/kuna-rust-array-constant/probe",
+  "language": "c-language",
+  "count": 13,
+  "error": null,
+  "functions": [
+    {
+      "name": "zero_unsigned",
+      "address": 4198688,
+      "address_hex": "0x401120",
+      "aliases": [
+        "sub_401120"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "void zero_unsigned(xunknown1 (*p)[16])\n{\n  *p = 0;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198696
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "xunknown1 (*)[16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198696
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "zero_signed",
+      "address": 4198704,
+      "address_hex": "0x401130",
+      "aliases": [
+        "sub_401130"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "void zero_signed(xunknown1 (*p)[16])\n{\n  *p = 0;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198712
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "xunknown1 (*)[16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198712
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "zero_field",
+      "address": 4198720,
+      "address_hex": "0x401140",
+      "aliases": [
+        "sub_401140"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "void zero_field(WideFields *p)\n{\n  *&p->value = 0;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198728
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "WideFields *",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198728
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "zero_second",
+      "address": 4198736,
+      "address_hex": "0x401150",
+      "aliases": [
+        "sub_401150"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "void zero_second(xunknown1 (*p)[16])\n{\n  p[1] = 0;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198744
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "xunknown1 (*)[16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198744
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "zero_index",
+      "address": 4198752,
+      "address_hex": "0x401160",
+      "aliases": [
+        "sub_401160"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "void zero_index(xunknown1 (*p)[16],uint8 i)\n{\n  p[i] = 0;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198764
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "xunknown1 (*)[16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198764
+          ]
+        },
+        {
+          "name": "i",
+          "type": "uint8",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198764
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "zero_callback",
+      "address": 4198784,
+      "address_hex": "0x401180",
+      "aliases": [
+        "sub_401180"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "void zero_callback(xunknown1 (*p)[16])\n{\n  *counted_pointer(p) = 0;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198792,
+            4198801
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "xunknown1 (*)[16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198792,
+            4198801
+          ]
+        },
+        {
+          "name": "local_10",
+          "type": "undefined16",
+          "kind": "stack",
+          "arg_index": null,
+          "stack_offset": -16,
+          "size": 16,
+          "line_numbers": [],
+          "addresses": []
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "zero_bytes",
+      "address": 4198816,
+      "address_hex": "0x4011a0",
+      "aliases": [
+        "sub_4011a0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "void zero_bytes(Byte16 *p)\n{\n  *(xunknown1 (*)[16])p->bytes = 0;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198824
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "Byte16 *",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198824
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "one_unsigned",
+      "address": 4198832,
+      "address_hex": "0x4011b0",
+      "aliases": [
+        "sub_4011b0"
+      ],
+      "object_location": null,
+      "size": 32,
+      "code": "void one_unsigned(xunknown1 (*p)[16])\n{\n  *(xunknown8 *)*p = 1;\n  *(xunknown8 *)&(*p)[8] = 0;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198836
+          ]
+        },
+        {
+          "line_number": 4,
+          "addresses": [
+            4198843
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "xunknown1 (*)[16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3,
+            4
+          ],
+          "addresses": [
+            4198836,
+            4198843
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "signed_input",
+      "address": 4198864,
+      "address_hex": "0x4011d0",
+      "aliases": [
+        "sub_4011d0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "void signed_input(xunknown1 (*p)[16],int8 x)\n{\n  *(int8 *)*p = x;\n  *(int8 *)&(*p)[8] = x >> 0x3f;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198868
+          ]
+        },
+        {
+          "line_number": 4,
+          "addresses": [
+            4198871,
+            4198875
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "xunknown1 (*)[16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3,
+            4
+          ],
+          "addresses": [
+            4198868,
+            4198871,
+            4198875
+          ]
+        },
+        {
+          "name": "x",
+          "type": "int8",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3,
+            4
+          ],
+          "addresses": [
+            4198868,
+            4198871,
+            4198875
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "unsigned_input",
+      "address": 4198880,
+      "address_hex": "0x4011e0",
+      "aliases": [
+        "sub_4011e0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "void unsigned_input(xunknown1 (*p)[16],uint8 x)\n{\n  *(uint8 *)*p = x;\n  *(xunknown8 *)&(*p)[8] = 0;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198884
+          ]
+        },
+        {
+          "line_number": 4,
+          "addresses": [
+            4198887
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "xunknown1 (*)[16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3,
+            4
+          ],
+          "addresses": [
+            4198884,
+            4198887
+          ]
+        },
+        {
+          "name": "x",
+          "type": "uint8",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198884
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "two_halves",
+      "address": 4198896,
+      "address_hex": "0x4011f0",
+      "aliases": [
+        "sub_4011f0"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "void two_halves(xunknown1 (*p)[16],uint8 lo,uint8 hi)\n{\n  *(uint8 *)*p = lo;\n  *(uint8 *)&(*p)[8] = hi;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198900
+          ]
+        },
+        {
+          "line_number": 4,
+          "addresses": [
+            4198903
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "xunknown1 (*)[16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3,
+            4
+          ],
+          "addresses": [
+            4198900,
+            4198903
+          ]
+        },
+        {
+          "name": "lo",
+          "type": "uint8",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198900
+          ]
+        },
+        {
+          "name": "hi",
+          "type": "uint8",
+          "kind": "arg",
+          "arg_index": 2,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198903
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "copy_wide",
+      "address": 4198912,
+      "address_hex": "0x401200",
+      "aliases": [
+        "sub_401200"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "void copy_wide(xunknown1 (*p)[16],xunknown1 (*q)[16])\n{\n  xunknown8 v1; // xmm0_qb\n  \n  v1 = *(xunknown8 *)&(*q)[8];\n  *(xunknown8 *)*p = *(xunknown8 *)*q;\n  *(xunknown8 *)&(*p)[8] = v1;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 5,
+          "addresses": [
+            4198916
+          ]
+        },
+        {
+          "line_number": 6,
+          "addresses": [
+            4198916,
+            4198920
+          ]
+        },
+        {
+          "line_number": 7,
+          "addresses": [
+            4198920
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "xunknown1 (*)[16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            6,
+            7
+          ],
+          "addresses": [
+            4198916,
+            4198920
+          ]
+        },
+        {
+          "name": "q",
+          "type": "xunknown1 (*)[16]",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            5,
+            6
+          ],
+          "addresses": [
+            4198916,
+            4198920
+          ]
+        },
+        {
+          "name": "v1",
+          "type": "xunknown8",
+          "kind": "register",
+          "arg_index": null,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            5,
+            7
+          ],
+          "addresses": [
+            4198916,
+            4198920
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "zero_narrow",
+      "address": 4198928,
+      "address_hex": "0x401210",
+      "aliases": [
+        "sub_401210"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "void zero_narrow(uint8 *p)\n{\n  *p = 0;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 3,
+          "addresses": [
+            4198932
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "uint8 *",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            3
+          ],
+          "addresses": [
+            4198932
+          ]
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": []
+}

@@ -592,12 +592,13 @@ mod tests {
         /// bounds and remains explicit in every preset.
         /// `rustprobestack` did not clear its default wall-time confidence bounds.
         /// `highsliceguard` added 10.8% CPU time when recovering the upstream table.
+        /// `rustarrayzero` missed the initial default-on CPU median budget.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "callmechanisms", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "rustfmtwrite", "rustfmtio", "rustprobestack", "highsliceguard",
+              "armconstshift", "callmechanisms", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "rustfmtwrite", "rustfmtio", "rustprobestack", "highsliceguard", "rustarrayzero",
               // `lazyfuncs` changes no output, but its saving is a single-function
               // property: the whole-binary surfaces the presets drive (decompile-all,
               // the web front-end, the benchmark) materialize every target they walk
