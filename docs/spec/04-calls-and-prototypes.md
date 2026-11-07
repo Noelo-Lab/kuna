@@ -493,7 +493,10 @@ and conditional or unspecified extensions do not supply this fact. Explicit
 custom parameter storage takes precedence over the model. The effect
 is installed once per analysis and reset when the function is cleared.
 Wide-register MIPS O32 uses this for the sign extension of each four-byte
-integer argument word into its eight-byte register. The FP32 languages' default
+integer argument word into its eight-byte register. Its compiler specs keep the
+whole 64-bit `sp` as the stack pointer, as the N32 and N64 specs do, because
+code addresses the stack through `sp`: an outgoing store such as
+`sw a0,16(sp)` is then a call's fifth argument. The FP32 languages' default
 compiler is O32 too, so `narrowext` applies the same type-aware argument rules
 as the explicit `o32` compiler name.
 

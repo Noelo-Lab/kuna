@@ -17,7 +17,7 @@
 			<entry size="8" alignment="8" />
 		</size_alignment_map>
   </data_organization>
-  <stackpointer register="sp_lo" space="ram"/>
+  <stackpointer register="sp" space="ram"/>
   <funcptr align="2"/>
   <global>
     <range space="ram"/>
