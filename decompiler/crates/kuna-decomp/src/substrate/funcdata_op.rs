@@ -310,7 +310,12 @@ impl Funcdata {
         self.attach_output(op, vn, false)
     }
 
+    /// (kuna) A constant, including a slice of an ABI join's padding piece, is
+    /// never written: attaching one is refused before `op` changes.
     fn attach_output(&mut self, op: OpId, vn: VarnodeId, refresh: bool) -> KunaResult<()> {
+        if self.vbank().get(vn).is_some_and(|v| v.is_constant()) {
+            return Err(KunaError::lowlevel("a constant cannot be an op output"));
+        }
         // Already set to this vn.
         if self.obank().get(op).expect("op_set_output: stale op").get_out() == Some(vn) {
             return Ok(());

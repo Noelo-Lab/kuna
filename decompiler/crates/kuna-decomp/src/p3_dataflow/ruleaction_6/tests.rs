@@ -865,3 +865,38 @@ fn clone_rule_filters_on_group() {
     let other = ActionGroupList::from_names(["somethingelse"]);
     assert!(rule.clone_rule(&other).is_none());
 }
+
+#[test]
+fn padding_subtrees_keep_temporary_storage() {
+    use kuna_base::space::{JoinSpace, VarnodeStorage};
+    let mut manager = build_manager();
+    manager.insert_space(Rc::new(JoinSpace::new(3, false))).unwrap();
+    let ram_space = Rc::clone(manager.get_space_by_name("ram").unwrap());
+    let constant = Rc::clone(manager.get_constant_space().unwrap());
+    let pieces = [
+        VarnodeStorage { space: Some(constant), offset: 0, size: 4 },
+        VarnodeStorage { space: Some(Rc::clone(&ram_space)), offset: 0x40, size: 4 },
+    ];
+    let join = manager.find_add_join(&pieces, 0).unwrap().get_unified().get_addr();
+    let glb = Rc::new(ArchContext::new(manager));
+    let mut fd = Funcdata::new("func", "func", glb, Address::new(ram_space.clone(), 0x1000),
+        0x10000000, 0x40).unwrap();
+    let field = fd.new_varnode(4, &Address::new(ram_space, 0x40), Some(unk(4)));
+    let padding = mk_op(&mut fd, 2, 0x100, OpCode::CPUI_PIECE);
+    for slot in 0..2 {
+        let zero = mk_const(&mut fd, 2, 0);
+        set_in(&mut fd, padding, zero, slot);
+    }
+    let padded = fd.new_unique_out(4, padding).unwrap();
+    let root = mk_op(&mut fd, 2, 0x104, OpCode::CPUI_PIECE);
+    set_in(&mut fd, root, padded, 0);
+    set_in(&mut fd, root, field, 1);
+    let whole = fd.new_varnode(8, &join, Some(Rc::new(Datatype::new(8, type_metatype::TYPE_STRUCT))));
+    let seq = fd.obank().get(root).unwrap().get_seq_num().clone();
+    let whole = fd.vbank_mut().set_def(whole, DefOpInfo { id: root, seqnum: seq }, &mut no_replace()).unwrap();
+    fd.obank_mut().get_mut(root).unwrap().set_output(Some(whole));
+    assert_eq!(RulePieceStructure::new("test").apply_op(root, &mut fd), 1);
+    let padded = fd.obank().get(padding).unwrap().get_out().unwrap();
+    assert!(!fd.vbank().get(padded).unwrap().is_constant(), "padding subtree must not write the constant space");
+    assert_eq!(fd.obank().get(root).unwrap().get_in(0), Some(padded));
+}
