@@ -543,18 +543,9 @@ impl Namer<'_> {
     /// (`<*:Swift.RawRepresentable>.init(rawValue:)`, a later such body
     /// `.2`, `.3`, …); anything else keeps the engine placeholder.
     fn resolve_claims(&self, out: &mut AnalysisOutput) {
-        let dump = std::env::var("KUNA_SWIFTMETADATA_DUMP").ok();
-        let mut dumped = String::new();
         let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut next: HashMap<String, usize> = HashMap::new();
         for (&addr, claims) in self.claims.borrow().iter() {
-            if dump.is_some() {
-                for c in claims {
-                    dumped.push_str(&format!(
-                        "{addr:x}\t{}\t{}\t{}\n",
-                        c.name, c.owner, c.getter
-                    ));
-                }
-            }
             let mut names: Vec<&str> = claims.iter().map(|c| c.name.as_str()).collect();
             names.sort_unstable();
             names.dedup();
@@ -571,11 +562,16 @@ impl Namer<'_> {
             } else {
                 continue;
             };
-            let base = name.clone();
-            let mut k = 2;
-            while !used.insert(name.clone()) {
-                name = format!("{base}.{k}");
-                k += 1;
+            if !used.insert(name.clone()) {
+                let k = next.entry(name.clone()).or_insert(2);
+                let base = std::mem::take(&mut name);
+                loop {
+                    name = format!("{base}.{k}");
+                    *k += 1;
+                    if used.insert(name.clone()) {
+                        break;
+                    }
+                }
             }
             out.symbols.push(SymFact {
                 addr,
@@ -583,9 +579,6 @@ impl Namer<'_> {
                 kind: SymKind::Function,
             });
             out.fid_names.push(FidMatch { addr, name });
-        }
-        if let Some(path) = dump {
-            let _ = std::fs::write(path, dumped);
         }
     }
 

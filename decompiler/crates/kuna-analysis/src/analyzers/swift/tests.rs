@@ -165,6 +165,39 @@ fn folded_functions_are_named_without_a_false_owner() {
     assert!(!namer.ambiguous_self(0x3000), "not code: never claimed");
 }
 
+/// A repeated name takes the first free `.k`, with names that already
+/// carry a suffix taken into account, and many repeats stay in order.
+#[test]
+fn repeated_names_take_the_next_free_suffix() {
+    let md = Metadata::default();
+    let imports = HashMap::new();
+    let namer = Namer {
+        md: &md,
+        imports: &imports,
+        memo: Default::default(),
+        code: vec![(0x1000, 0x100000)],
+        claims: Default::default(),
+        budget: std::cell::Cell::new(usize::MAX),
+    };
+    let one = |addr: u64, name: &str| namer.claim(addr, name.to_string(), "M.A", None, false);
+    one(0x1000, "X");
+    one(0x1010, "X.2");
+    one(0x1020, "X");
+    one(0x1030, "X");
+    for i in 0..3000u64 {
+        one(0x2000 + i, "Y");
+    }
+    let mut out = AnalysisOutput::default();
+    namer.resolve_claims(&mut out);
+    let names: Vec<&str> = out.fid_names.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(&names[..4], ["X", "X.2", "X.3", "X.4"]);
+    assert_eq!(names[4], "Y");
+    for (i, n) in names[5..].iter().enumerate() {
+        assert_eq!(*n, format!("Y.{}", i + 2));
+    }
+    assert_eq!(names.len(), 4 + 3000);
+}
+
 fn fixture() -> Vec<u8> {
     std::fs::read(concat!(
         env!("CARGO_MANIFEST_DIR"),
