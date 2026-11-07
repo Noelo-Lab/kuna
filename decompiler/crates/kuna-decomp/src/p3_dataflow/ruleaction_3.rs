@@ -643,6 +643,11 @@ impl Rule for RuleIndirectCollapse {
                 if o.is_indirect_creation() || o.no_indirect_collapse() {
                     return 0;
                 }
+                if crate::kuna_octeoneffects::effect(data, indop)
+                    .is_some_and(|effect| effect.kind == crate::kuna_octeoneffects::Kind::ZeroBlock)
+                {
+                    return 0;
+                }
                 let output = data.vbank().get(op_out(data, op).expect("indirect output"))
                     .expect("live indirect output");
                 if data.get_call_specs_index(indop).is_some_and(|index| {

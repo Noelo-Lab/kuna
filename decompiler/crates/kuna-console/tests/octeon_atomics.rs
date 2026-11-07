@@ -349,3 +349,182 @@ fn off_lifts_reservations_and_barriers_as_upstream_does() {
         assert!(!code.contains("octeon_"), "{code}");
     }
 }
+
+#[test]
+fn pointer_loads_stay_before_selected_octeon_memory_effects() {
+    let operations = [
+        (0x70850018, "octeon_fetch_add32"),
+        (0x70850019, "octeon_fetch_add64"),
+        (0x7085059f, "octeon_exchange32"),
+        (0x708505df, "octeon_exchange64"),
+        (0xc0880000, "octeon_load_linked32"),
+        (0xd0880000, "octeon_load_linked64"),
+        (0xe0850000, "octeon_store_conditional32"),
+        (0xf0850000, "octeon_store_conditional64"),
+        (0x7080071f, "octeon_zero_cache_block"),
+        (0x7080075f, "octeon_zero_cache_block_transient"),
+    ];
+    for n32 in [false, true] {
+        for mode in [OcteonEffectsMode::Atomic, OcteonEffectsMode::Ordered] {
+            for (operation, name) in operations {
+                // ld v0,0(a0); OP; jr ra; nop
+                let code = decompile_mode(
+                    &[0xdc820000, operation, 0x03e00008, 0],
+                    n32,
+                    Some("unsigned long long probe(unsigned long long *pointer, unsigned long long value)"),
+                    false,
+                    mode,
+                );
+                let load = code.find("= *pointer;").unwrap_or_else(|| panic!("{mode:?}: {code}"));
+                assert!(load < code.find(name).unwrap(), "{mode:?}: {code}");
+                assert!(!code.contains("return *pointer;"), "{mode:?}: {code}");
+            }
+        }
+        for selector in 0..=7 {
+            let code = decompile_mode(
+                &[0xdc820000, (selector << 6) | 0xf, 0x03e00008, 0],
+                n32,
+                Some("unsigned long long probe(unsigned long long *pointer)"),
+                false,
+                OcteonEffectsMode::Ordered,
+            );
+            assert!(code.find("= *pointer;").is_some_and(|p| p < code.find("octeon_sync").unwrap()), "{code}");
+        }
+        for mode in [OcteonEffectsMode::Off, OcteonEffectsMode::Atomic] {
+            let code = decompile_mode(
+                &[0xdc820000, 0x10f, 0x03e00008, 0],
+                n32,
+                Some("unsigned long long probe(unsigned long long *pointer)"),
+                false,
+                mode,
+            );
+            assert!(code.contains("return *pointer;"), "{mode:?}: {code}");
+        }
+    }
+}
+
+#[test]
+fn a_pointer_load_cannot_sink_into_an_expression_beyond_a_conditional_atomic() {
+    // ld v0,0(a0); beq a2,zero,done; nop; saad a1,(a0);
+    // done: jr ra; daddu v0,v0,a2
+    for n32 in [false, true] {
+        let code = decompile(
+            &[0xdc820000, 0x10c00002, 0, 0x70850019, 0x03e00008, 0x0046102d],
+            n32,
+            "unsigned long long probe(unsigned long long *pointer, unsigned long long value, unsigned long long extra)",
+        );
+        assert!(code.find("= *pointer;").is_some_and(|p| p < code.find("if (").unwrap()), "{code}");
+        assert!(!code.contains("return *pointer"), "{code}");
+        assert!(code.contains("extra"), "{code}");
+    }
+}
+
+#[test]
+fn cache_block_zeroing_keeps_neighboring_unescaped_stack_aliases() {
+    for n32 in [false, true] {
+        for mode in [OcteonEffectsMode::Atomic, OcteonEffectsMode::Ordered] {
+            for operation in [0x7080071f, 0x7080075f] {
+                for offset in [8, 24] {
+                    // daddiu sp,sp,-32; sd a1,offset(sp); daddiu a0,sp,16;
+                    // zcb[t] (a0); ld v0,offset(sp); jr ra; daddiu sp,sp,32
+                    let code = decompile_mode(
+                        &[0x67bdffe0, 0xffa50000 | offset, 0x67a40010, operation,
+                          0xdfa20000 | offset, 0x03e00008, 0x67bd0020],
+                        n32,
+                        Some("unsigned long long probe(unsigned long long unused, unsigned long long value)"),
+                        false,
+                        mode,
+                    );
+                    assert!(!code.contains("return value;"), "{mode:?}: {code}");
+                    let store = code.find("= value;").unwrap_or_else(|| panic!("{mode:?}: {code}"));
+                    assert!(store < code.find("octeon_zero_cache_block").unwrap(), "{mode:?}: {code}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_scalar_atomic_still_leaves_an_unescaped_neighbor_unchanged() {
+    // As zero_neighbor, with saad a2,(a0) accessing only offset 16.
+    for n32 in [false, true] {
+        let code = decompile(
+            &[0x67bdffe0, 0xffa50008, 0x67a40010, 0x70860019,
+              0xdfa20008, 0x03e00008, 0x67bd0020],
+            n32,
+            "unsigned long long probe(unsigned long long unused, unsigned long long value, unsigned long long increment)",
+        );
+        assert!(code.contains("return value;"), "{code}");
+    }
+}
+
+#[test]
+fn recovered_pointer_snapshots_execute_with_the_original_old_value() {
+    use std::process::Command;
+
+    let compilers: Vec<_> = ["cc", "clang"].into_iter().filter(|compiler| {
+        match Command::new(compiler).arg("--version").output() {
+            Ok(result) => { assert!(result.status.success()); true }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => panic!("{compiler}: {error}"),
+        }
+    }).collect();
+    if compilers.is_empty() {
+        eprintln!("native pointer-snapshot execution requires a C compiler");
+        return;
+    }
+    for n32 in [false, true] {
+        for conditional in [false, true] {
+            let words: &[u32] = if conditional {
+                &[0xdc820000, 0x10c00002, 0, 0x70850019, 0x03e00008, 0x0046102d]
+            } else {
+                &[0xdc820000, 0x70850019, 0x03e00008, 0]
+            };
+            let prototype = if conditional {
+                "unsigned long long probe(unsigned long long *pointer, unsigned long long value, unsigned long long extra)"
+            } else {
+                "unsigned long long probe(unsigned long long *pointer, unsigned long long value)"
+            };
+            let code = decompile(words, n32, prototype);
+            let call = if conditional { "probe(&word,increment,extra)" } else { "probe(&word,increment)" };
+            let source = format!(r#"
+#include <stdint.h>
+typedef uint64_t uint8;
+static uint8 octeon_fetch_add64(uint8 *pointer,uint8 value) {{
+    uint8 old = *pointer;
+    *pointer = old + value;
+    return old;
+}}
+{code}
+int main(void) {{
+    const uint8 values[] = {{0,7,UINT64_MAX,UINT64_C(0x8123456789abcdef)}};
+    for (unsigned i = 0; i < 4; ++i) {{
+        for (unsigned j = 0; j < 4; ++j) {{
+            for (uint8 extra = 0; extra <= 3; extra += 3) {{
+                uint8 old = values[i], increment = values[j], word = old;
+                uint8 result = {call};
+                uint8 expected = old + ({conditional} ? extra : 0);
+                uint8 memory = old + ((!{conditional} || extra) ? increment : 0);
+                if (result != expected || word != memory) return 1;
+            }}
+        }}
+    }}
+    return 0;
+}}
+"#, conditional = u8::from(conditional));
+            let file = crate::common::scratch_file("octeon-pointer-snapshot", "c");
+            let executable = file.with_extension("exe");
+            std::fs::write(&file, source).unwrap();
+            for compiler in &compilers {
+                for optimization in ["-O0", "-O2"] {
+                    let result = Command::new(compiler)
+                        .args(["-std=c11", optimization, "-Werror=implicit-function-declaration", "-Werror=incompatible-pointer-types"])
+                        .arg(&file).arg("-o").arg(&executable).output().unwrap();
+                    assert!(result.status.success(), "{compiler}: {}\n{code}", String::from_utf8_lossy(&result.stderr));
+                    let result = Command::new(&executable).output().unwrap();
+                    assert!(result.status.success(), "{compiler} {optimization}: old value or updated memory differs: {code}");
+                }
+            }
+        }
+    }
+}

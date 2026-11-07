@@ -1584,6 +1584,7 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId, store
     {
         for callop in crate::kuna_syscallregs::memory_calls(data).into_iter()
             .chain(crate::kuna_x64syscall::memory_calls(data))
+            .chain(crate::kuna_octeoneffects::memory_ops(data))
         {
             let (blk, point) = op_cover_pair(data, callop);
             if data.vbank().get(vn).and_then(|v| v.cover())

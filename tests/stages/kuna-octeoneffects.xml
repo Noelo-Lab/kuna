@@ -14,6 +14,14 @@
     reserve (0x1300): the same as update with sc a2,0(a0) in place of laad
     linked  (0x1400): ori a0,zero,0x2000; sd a1,0(a0); lld t0,0(a0);
                       sd zero,0(a0); jr ra; or v0,t0,zero
+    snapshot (0x1500): ld v0,0(a0); saad a1,(a0); jr ra; nop
+    zero_neighbor (0x1600): daddiu sp,sp,-32; sd a1,8(sp);
+                      daddiu a0,sp,16; zcb (a0); ld v0,8(sp);
+                      jr ra; daddiu sp,sp,32
+    ordered_snapshot (0x1700): ld v0,0(a0); syncw; jr ra; nop
+    zero_neighbor_transient (0x1800): as zero_neighbor, but offset 24 and zcbt
+    Source/build provenance: tests/fixtures/octeon-atomics/memory.S,
+    build.py and provenance.json (GNU as -EB -64 -march=octeon2).
 
     Stage: P2 lift (callother fixups) and P3 dataflow (heritage guards).
     Three passes: off (update returns the stored 7; barrier and reserve lift
@@ -27,18 +35,31 @@
     Assert #4: off lifts syncw as upstream's SYNC(4).
     Assert #5: off lifts sc as upstream's plain store into the reloaded word.
     Assert #6: atomic keeps the store the load-linked reads.
+    Assert #7: atomic and ordered capture the pointer load before the atomic.
+    Assert #8: ordered captures a pointer load before the barrier too.
+    Assert #9: off retains opaque-operation load motion as a control.
+    Assert #10: only off forwards a neighboring stack value past ZCB/ZCBT.
+    Assert #11: full-block guards keep the neighboring stores before zeroing.
 -->
 <bytechunk space="ram" offset="0x1000" readonly="true">3404200064050007fc850000708504dfdc82000003e0000800000000</bytechunk>
 <bytechunk space="ram" offset="0x1100" readonly="true">3404200064050007fc8500000000010fdc82000003e0000800000000</bytechunk>
 <bytechunk space="ram" offset="0x1200" readonly="true">67bdfff0ffa400080000010fdfa2000803e0000867bd0010</bytechunk>
 <bytechunk space="ram" offset="0x1300" readonly="true">3404200064050007fc850000e0860000dc82000003e0000800000000</bytechunk>
 <bytechunk space="ram" offset="0x1400" readonly="true">34042000fc850000d08c0000fc80000003e0000801801025</bytechunk>
+<bytechunk space="ram" offset="0x1500" readonly="true">dc8200007085001903e0000800000000</bytechunk>
+<bytechunk space="ram" offset="0x1600" readonly="true">67bdffe0ffa5000867a400107080071fdfa2000803e0000867bd0020</bytechunk>
+<bytechunk space="ram" offset="0x1700" readonly="true">dc8200000000010f03e0000800000000</bytechunk>
+<bytechunk space="ram" offset="0x1800" readonly="true">67bdffe0ffa5001867a400107080075fdfa2001803e0000867bd0020</bytechunk>
 <bytechunk space="ram" offset="0x2000">0000000000000000</bytechunk>
 <symbol space="ram" offset="0x1000" name="update"/>
 <symbol space="ram" offset="0x1100" name="barrier"/>
 <symbol space="ram" offset="0x1200" name="spill"/>
 <symbol space="ram" offset="0x1300" name="reserve"/>
 <symbol space="ram" offset="0x1400" name="linked"/>
+<symbol space="ram" offset="0x1500" name="snapshot"/>
+<symbol space="ram" offset="0x1600" name="zero_neighbor"/>
+<symbol space="ram" offset="0x1700" name="ordered_snapshot"/>
+<symbol space="ram" offset="0x1800" name="zero_neighbor_transient"/>
 </binaryimage>
 <script>
 <com>parse line extern unsigned long long update(void);</com>
@@ -46,23 +67,46 @@
 <com>parse line extern unsigned long long spill(unsigned long long value);</com>
 <com>parse line extern unsigned long long reserve(unsigned long long unused0,unsigned long long unused1,unsigned int value);</com>
 <com>parse line extern unsigned long long linked(unsigned long long unused,unsigned long long value);</com>
+<com>parse line extern unsigned long long snapshot(unsigned long long *pointer,unsigned long long increment);</com>
+<com>parse line extern unsigned long long ordered_snapshot(unsigned long long *pointer);</com>
+<com>parse line extern unsigned long long zero_neighbor(unsigned long long unused,unsigned long long neighbor_value);</com>
+<com>parse line extern unsigned long long zero_neighbor_transient(unsigned long long unused,unsigned long long neighbor_value);</com>
 <com>option octeoneffects off</com>
 <com>lo fu update</com><com>decompile</com><com>print C</com>
 <com>lo fu barrier</com><com>decompile</com><com>print C</com>
 <com>lo fu reserve</com><com>decompile</com><com>print C</com>
+<com>lo fu snapshot</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_neighbor</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_neighbor_transient</com><com>decompile</com><com>print C</com>
 <com>option octeoneffects atomic</com>
 <com>lo fu update</com><com>decompile</com><com>print C</com>
 <com>lo fu barrier</com><com>decompile</com><com>print C</com>
 <com>lo fu spill</com><com>decompile</com><com>print C</com>
 <com>lo fu linked</com><com>decompile</com><com>print C</com>
+<com>lo fu snapshot</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_neighbor</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_neighbor_transient</com><com>decompile</com><com>print C</com>
+<com>lo fu ordered_snapshot</com><com>decompile</com><com>print C</com>
 <com>option octeoneffects ordered</com>
 <com>lo fu barrier</com><com>decompile</com><com>print C</com>
+<com>lo fu snapshot</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_neighbor</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_neighbor_transient</com><com>decompile</com><com>print C</com>
+<com>lo fu ordered_snapshot</com><com>decompile</com><com>print C</com>
 <com>quit</com>
 </script>
 <stringmatch name="octeoneffects #1: off forwards past the atomic and barrier; atomic past a barrier only" min="3" max="3">return 7;</stringmatch>
 <stringmatch name="octeoneffects #2: a stack spill across syncw stays the value" min="1" max="1">return value;</stringmatch>
-<stringmatch name="octeoneffects #3: atomic and ordered keep the barrier as an Octeon operation" min="3" max="3">octeon_syncw\(\);</stringmatch>
+<stringmatch name="octeoneffects #3: atomic and ordered keep the barrier as an Octeon operation" min="5" max="5">octeon_syncw\(\);</stringmatch>
 <stringmatch name="octeoneffects #4: off lifts syncw as upstream SYNC(4)" min="1" max="1">SYNC\(4\);</stringmatch>
 <stringmatch name="octeoneffects #5: off lifts sc as upstream's plain store" min="1" max="1">CONCAT44\(value,7\)</stringmatch>
 <stringmatch name="octeoneffects #6: atomic keeps the store a load-linked reads" min="1" max="1">= value;</stringmatch>
+<stringmatch name="octeoneffects #7: pointer snapshots stay before atomic updates" min="2" max="2">= \*pointer;
+  octeon_fetch_add64\(pointer,increment\);</stringmatch>
+<stringmatch name="octeoneffects #8: ordered preserves pointer load ordering at a barrier" min="1" max="1">= \*pointer;
+  octeon_syncw\(\);</stringmatch>
+<stringmatch name="octeoneffects #9: opaque atomic and unordered barrier controls still inline the load" min="2" max="2">return \*pointer;</stringmatch>
+<stringmatch name="octeoneffects #10: only off forwards a neighboring stack value across zeroing" min="2" max="2">return neighbor_value;</stringmatch>
+<stringmatch name="octeoneffects #11: both zero operations retain neighboring stores in both guarded modes" min="4" max="4">= neighbor_value;
+  octeon_zero_cache_block</stringmatch>
 </decompilertest>

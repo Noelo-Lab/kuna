@@ -6,6 +6,16 @@ uses of addresses. They use Octeon II encodings shared with III. The globals
 are intentionally at `0x2000` for the XML binary images. Each function starts
 on a 32-byte boundary, with the first loaded at `0x1000`.
 
+The snapshot functions retain a pointer read before an atomic or an ordered
+barrier, including a conditional update and a later arithmetic use. The two
+zero-neighbor functions read unescaped stack slots on either side of the ZCB
+operand. A cache-block operation may affect those slots even though their own
+addresses never escape. Their tests retain conservative guards without assuming
+a particular frame alignment or interpreting every guarded local as zero.
+The console companion also compiles and executes the unchanged recovered
+pointer-snapshot C with available native C compilers at O0/O2, checking old
+values and updated memory, including wrapping arithmetic and both branches.
+
 The stage and Rust tests contain the instruction bytes and need no cross
 compiler, SDK, QEMU or external binaries. To regenerate the encoding report:
 

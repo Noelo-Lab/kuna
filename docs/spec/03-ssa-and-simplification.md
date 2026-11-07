@@ -2415,9 +2415,16 @@ reads is kept, and a later read cannot reuse a value from before the update.
 Read-only image ranges are never guarded, so a GOT or `.rodata` read still
 folds as it does after an ordinary store, and only an address-tied range is
 forced: a guard on a local whose address never escapes collapses under
-`RuleIndirectCollapse`, so a spill stays a value. The guarded operations are
-found once per heritage pass. `ordered` also guards across every ordering
-operation, so a store before a barrier is kept; this is conservative about
+`RuleIndirectCollapse`, so a spill stays a value. Cache-block zeroing is the
+exception: it can overwrite such a local through a neighboring stack address,
+so its guards survive even when that local's own address never escapes. No
+scalar-width or stack-alignment proof establishes disjoint cache blocks here;
+the guards conservatively cover all writable ranges. The guarded operations are
+found once per heritage pass. `ActionMarkImplied` also checks LOAD covers against
+the selected Octeon operations, keeping a pointer load in an explicit statement
+before an operation it originally preceded. Heritage guards alone do not stop
+an unresolved LOAD expression from moving to a later use. `ordered` also guards
+across every ordering operation, so a store before a barrier is kept; this is conservative about
 concurrent modification, not a claim that an ordering instruction writes
 memory, and the barrier itself stays a statement either way. Its guards grow
 with ordering operations times global ranges, so it stays opt-in; under

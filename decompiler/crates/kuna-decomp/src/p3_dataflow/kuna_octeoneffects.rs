@@ -200,6 +200,14 @@ pub fn guards(data: &Funcdata, op: OpId) -> bool {
     effect(data, op).is_some_and(|e| e.addressed() || data.get_arch().octeon_effects == OcteonEffectsMode::Ordered)
 }
 
+/// Selected operations that a memory observation must not move across.
+pub fn memory_ops(data: &Funcdata) -> Vec<OpId> {
+    if data.get_arch().octeon_memory_userops.is_empty() {
+        return Vec::new();
+    }
+    data.obank().iter_code(OpCode::CPUI_CALLOTHER).filter(|&op| guards(data, op)).collect()
+}
+
 /// Guard writable memory across the operations the mode selects. `ops` caches
 /// those operations for the heritage pass: guarding adds no CALLOTHER.
 pub fn guard_memory(
@@ -213,9 +221,7 @@ pub fn guard_memory(
     if data.get_arch().octeon_memory_userops.is_empty() || !crate::kuna_memoryguard::guarded(data, flags, addr) {
         return;
     }
-    let ops = ops.get_or_insert_with(|| {
-        data.obank().iter_code(OpCode::CPUI_CALLOTHER).filter(|&op| guards(data, op)).collect()
-    });
+    let ops = ops.get_or_insert_with(|| memory_ops(data));
     crate::kuna_memoryguard::guard(data, ops, flags, addr, size, write);
 }
 

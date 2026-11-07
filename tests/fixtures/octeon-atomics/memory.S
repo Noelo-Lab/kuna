@@ -65,3 +65,46 @@ function partial_global
     jr $31
     nop
 endfunction partial_global
+
+function pointer_snapshot
+    ld $2,0($4)
+    saad $5,($4)
+    jr $31
+    nop
+endfunction pointer_snapshot
+
+function conditional_snapshot
+    ld $2,0($4)
+    beq $6,$0,1f
+    nop
+    saad $5,($4)
+1:  jr $31
+    daddu $2,$2,$6
+endfunction conditional_snapshot
+
+function ordered_snapshot
+    ld $2,0($4)
+    syncw
+    jr $31
+    nop
+endfunction ordered_snapshot
+
+function zero_neighbor
+    daddiu $29,$29,-32
+    sd $5,8($29)
+    daddiu $4,$29,16
+    zcb ($4)
+    ld $2,8($29)
+    jr $31
+    daddiu $29,$29,32
+endfunction zero_neighbor
+
+function zero_neighbor_transient
+    daddiu $29,$29,-32
+    sd $5,24($29)
+    daddiu $4,$29,16
+    zcbt ($4)
+    ld $2,24($29)
+    jr $31
+    daddiu $29,$29,32
+endfunction zero_neighbor_transient
