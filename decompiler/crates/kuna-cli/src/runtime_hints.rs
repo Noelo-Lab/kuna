@@ -9,6 +9,7 @@
 //! actionable entries as one `note:` line each on stderr (see `docs/cli.md`).
 
 use kuna_analysis::analyzers::sourcelang::{effective_compiler_bytes, Compiler};
+use object::{Object, ObjectSection};
 use regex::bytes::Regex;
 use std::sync::OnceLock;
 
@@ -134,22 +135,26 @@ fn ilc_version(b: &[u8]) -> Option<String> {
     version.contains('.').then(|| version.to_string())
 }
 
-/// Strong markers of a .NET NativeAOT image. On ELF, `__managedcode` and
-/// `.dotnet_eh_table` both live in `.shstrtab`; on a Windows PE, where the
-/// default link merges `.managedcode` into `.text`, the `.unbox` and `.modules`
-/// sections still survive. Requiring the pair keeps an arbitrary image that
-/// happens to spell one of them out from being labeled.
+/// Strong markers of a .NET NativeAOT image, with the ILC release its
+/// `.comment` section records. On ELF, `__managedcode` and `.dotnet_eh_table`
+/// are both section names; on a Windows PE, where the default link merges
+/// `.managedcode` into `.text`, the `.unbox` and `.modules` sections still
+/// survive. Requiring a pair of section names keeps an image that merely spells
+/// them out in its data from being labeled.
 fn nativeaot_version(b: &[u8], pe: Option<&PeView>) -> Option<Option<String>> {
-    let has = |needle: &[u8]| b.windows(needle.len()).any(|w| w == needle);
-    let elf = b.starts_with(b"\x7fELF")
-        && has(b"__managedcode")
-        && has(b".dotnet_eh_table");
     let windows = pe.is_some_and(|p| {
         !p.clr
             && p.section_names.iter().any(|n| n.as_slice() == b".unbox")
             && p.section_names.iter().any(|n| n.as_slice() == b".modules")
     });
-    (elf || windows).then(|| ilc_version(b))
+    if !windows && !b.starts_with(b"\x7fELF") {
+        return None;
+    }
+    let file = object::File::parse(b).ok();
+    let section = |name: &str| file.as_ref()?.section_by_name(name);
+    let elf = section("__managedcode").is_some() && section(".dotnet_eh_table").is_some();
+    let comment = || section(".comment").and_then(|s| s.data().ok());
+    (windows || elf).then(|| comment().and_then(ilc_version))
 }
 
 fn hint(id: &'static str, version: Option<String>, text: String, actionable: bool) -> RuntimeHint {
@@ -365,6 +370,17 @@ mod tests {
         b
     }
 
+    /// Point section `index` of a PE32+ image from [`pe`] at `data`, appended.
+    fn pe_section_data(mut image: Vec<u8>, index: usize, data: &[u8]) -> Vec<u8> {
+        let header = 0x84 + 20 + 0xf0 + index * 40;
+        let (len, at) = (data.len() as u32, image.len() as u32);
+        image[header + 8..header + 12].copy_from_slice(&len.to_le_bytes());
+        image[header + 16..header + 20].copy_from_slice(&len.to_le_bytes());
+        image[header + 20..header + 24].copy_from_slice(&at.to_le_bytes());
+        image.extend_from_slice(data);
+        image
+    }
+
     fn cookie(pyvers: u32, lib: &[u8]) -> Vec<u8> {
         let mut c = PYI_MAGIC.to_vec();
         c.extend_from_slice(&0x1000u32.to_be_bytes());
@@ -390,12 +406,26 @@ mod tests {
         assert!(detect(&pe(0x10b, false, &[b".text"], &[]), false).is_empty());
     }
 
+    fn elf(sections: &[(&[u8], &[u8])]) -> Vec<u8> {
+        use object::{write, Architecture, BinaryFormat, Endianness, SectionKind};
+        let mut obj = write::Object::new(BinaryFormat::Elf, Architecture::X86_64, Endianness::Little);
+        for (name, data) in sections {
+            let id = obj.add_section(Vec::new(), name.to_vec(), SectionKind::Data);
+            obj.append_section_data(id, data, 1);
+        }
+        obj.write().unwrap()
+    }
+
+    const ILC_COMMENT: &[u8] = b"\0GCC: (GNU) 13.3.0\0.NET: ilc 10.0.2-servicing.25612.105+hash\0";
+
     #[test]
     fn nativeaot_elf_is_named_with_its_ilc_version() {
-        let mut elf = b"\x7fELF".to_vec();
-        elf.resize(0x100, 0);
-        elf.extend_from_slice(b"__managedcode\0__unbox\0.dotnet_eh_table\0");
-        elf.extend_from_slice(b".comment\0.NET: ilc 10.0.2-servicing.25612.105+hash\0");
+        let elf = elf(&[
+            (b"__managedcode", b"\xc3"),
+            (b"__unbox", b"\xc3"),
+            (b".dotnet_eh_table", b"\0"),
+            (b".comment", ILC_COMMENT),
+        ]);
         let hints = detect(&elf, false);
         assert_eq!(ids(&hints), ["nativeaot"]);
         assert_eq!(hints[0].version.as_deref(), Some("10.0.2"));
@@ -404,13 +434,40 @@ mod tests {
     }
 
     #[test]
+    fn nativeaot_version_comes_from_the_comment_section() {
+        let managed: &[(&[u8], &[u8])] = &[(b"__managedcode", b"\xc3"), (b".dotnet_eh_table", b"\0")];
+        let decoy: (&[u8], &[u8]) = (b".rodata", b"built with ilc 1.2.3\0");
+        let image = elf(&[managed[0], decoy, managed[1], (b".comment", ILC_COMMENT)]);
+        assert_eq!(detect(&image, false)[0].version.as_deref(), Some("10.0.2"));
+
+        let no_comment = detect(&elf(&[managed[0], decoy, managed[1]]), false);
+        assert_eq!(ids(&no_comment), ["nativeaot"]);
+        assert_eq!(no_comment[0].version, None);
+        assert!(no_comment[0].hint.starts_with("NativeAOT image:"));
+    }
+
+    #[test]
+    fn nativeaot_markers_spelled_out_in_data_are_not_section_names() {
+        let image = elf(&[
+            (b".text", b"\xc3"),
+            (b".rodata", b"__managedcode\0.dotnet_eh_table\0.NET: ilc 1.2.3\0"),
+            (b".comment", ILC_COMMENT),
+        ]);
+        assert!(detect(&image, false).is_empty());
+    }
+
+    #[test]
+    fn an_image_carrying_the_detector_literals_is_not_nativeaot() {
+        let exe = std::fs::read(std::env::current_exe().unwrap()).unwrap();
+        let has = |needle: &[u8]| exe.windows(needle.len()).any(|w| w == needle);
+        assert!(has(b"__managedcode") && has(b".dotnet_eh_table"));
+        assert!(!ids(&detect(&exe, false)).contains(&"nativeaot"));
+    }
+
+    #[test]
     fn nativeaot_windows_pe_is_named_by_unbox_and_modules() {
-        let image = pe(
-            0x20b,
-            false,
-            &[b".text", b".unbox", b".modules"],
-            b"\0.NET: ilc 10.0.2-servicing.25612.105+hash\0",
-        );
+        let sections: &[&[u8]] = &[b".text", b".unbox", b".modules", b".comment"];
+        let image = pe_section_data(pe(0x20b, false, sections, b"\0ilc 1.2.3\0"), 3, ILC_COMMENT);
         let hints = detect(&image, false);
         assert_eq!(ids(&hints), ["nativeaot"]);
         assert_eq!(hints[0].version.as_deref(), Some("10.0.2"));
@@ -421,8 +478,7 @@ mod tests {
 
     #[test]
     fn nativeaot_needs_both_elf_markers_and_an_elf() {
-        let mut only_managed = b"\x7fELF".to_vec();
-        only_managed.extend_from_slice(b"__managedcode\0");
+        let only_managed = elf(&[(b"__managedcode", b"\xc3"), (b".comment", ILC_COMMENT)]);
         assert!(detect(&only_managed, false).is_empty());
 
         let pe_image = pe(0x20b, false, &[b".text"], b"__managedcode\0.dotnet_eh_table\0");
