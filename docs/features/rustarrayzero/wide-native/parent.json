@@ -1,0 +1,448 @@
+{
+  "binary": "/tmp/kuna-rust-array-zero-rebase/wide-native/wide",
+  "language": "rust-language",
+  "count": 6,
+  "error": null,
+  "functions": [
+    {
+      "name": "wide_copy",
+      "address": 4198688,
+      "address_hex": "0x401120",
+      "aliases": [
+        "sub_401120"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn wide_copy(mut p: *mut [u8; 16], mut q: *mut [u8; 16])\n{\n  let mut v1: u64; // xmm0_qb\n  \n  v1 = *(((&raw mut *q).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64);\n  *(&raw mut *p as *mut u64) = *(&raw mut *q as *mut u64);\n  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64) = v1;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 6,
+          "addresses": [
+            4198692
+          ]
+        },
+        {
+          "line_number": 7,
+          "addresses": [
+            4198692,
+            4198696
+          ]
+        },
+        {
+          "line_number": 8,
+          "addresses": [
+            4198696
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut [u8; 16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            7,
+            8
+          ],
+          "addresses": [
+            4198692,
+            4198696
+          ]
+        },
+        {
+          "name": "q",
+          "type": "*mut [u8; 16]",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            6,
+            7
+          ],
+          "addresses": [
+            4198692,
+            4198696
+          ]
+        },
+        {
+          "name": "v1",
+          "type": "u64",
+          "kind": "register",
+          "arg_index": null,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            6,
+            8
+          ],
+          "addresses": [
+            4198692,
+            4198696
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "wide_zero",
+      "address": 4198704,
+      "address_hex": "0x401130",
+      "aliases": [
+        "sub_401130"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn wide_zero(mut p: *mut [u8; 16])\n{\n  *p = 0;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198712
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut [u8; 16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198712
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "wide_unsigned",
+      "address": 4198720,
+      "address_hex": "0x401140",
+      "aliases": [
+        "sub_401140"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn wide_unsigned(mut p: *mut [u8; 16], mut x: u64)\n{\n  *(&raw mut *p as *mut u64) = x;\n  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64) = 0;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198724
+          ]
+        },
+        {
+          "line_number": 5,
+          "addresses": [
+            4198727
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut [u8; 16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4,
+            5
+          ],
+          "addresses": [
+            4198724,
+            4198727
+          ]
+        },
+        {
+          "name": "x",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198724
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "wide_signed",
+      "address": 4198736,
+      "address_hex": "0x401150",
+      "aliases": [
+        "sub_401150"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn wide_signed(mut p: *mut [u8; 16], mut x: i64)\n{\n  *(&raw mut *p as *mut i64) = x;\n  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut i64) = x >> 0x3f;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198740
+          ]
+        },
+        {
+          "line_number": 5,
+          "addresses": [
+            4198743,
+            4198747
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut [u8; 16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4,
+            5
+          ],
+          "addresses": [
+            4198740,
+            4198743,
+            4198747
+          ]
+        },
+        {
+          "name": "x",
+          "type": "i64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4,
+            5
+          ],
+          "addresses": [
+            4198740,
+            4198743,
+            4198747
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "wide_halves",
+      "address": 4198752,
+      "address_hex": "0x401160",
+      "aliases": [
+        "sub_401160"
+      ],
+      "object_location": null,
+      "size": 16,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn wide_halves(mut p: *mut [u8; 16], mut lo: u64, mut hi: u64)\n{\n  *(&raw mut *p as *mut u64) = lo;\n  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64) = hi;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 4,
+          "addresses": [
+            4198756
+          ]
+        },
+        {
+          "line_number": 5,
+          "addresses": [
+            4198759
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut [u8; 16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4,
+            5
+          ],
+          "addresses": [
+            4198756,
+            4198759
+          ]
+        },
+        {
+          "name": "lo",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            4
+          ],
+          "addresses": [
+            4198756
+          ]
+        },
+        {
+          "name": "hi",
+          "type": "u64",
+          "kind": "arg",
+          "arg_index": 2,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            5
+          ],
+          "addresses": [
+            4198759
+          ]
+        }
+      ],
+      "types": []
+    },
+    {
+      "name": "wide_add",
+      "address": 4198768,
+      "address_hex": "0x401170",
+      "aliases": [
+        "sub_401170"
+      ],
+      "object_location": null,
+      "size": 27,
+      "code": "#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]\nunsafe fn wide_add(mut p: *mut [u8; 16], mut q: *mut [u8; 16])\n{\n  let mut v1: u64; // rax\n  let mut v2: i64; // rdx\n  \n  v1 = *(&raw mut *q as *mut u64);\n  v2 = *(((&raw mut *q).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut i64);\n  *(&raw mut *p as *mut u64) = v1 + 1;\n  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64) = v2 as u64 + (0xffffffffffffffff <= v1) as u64;\n}",
+      "error": null,
+      "unstructured_gotos": 0,
+      "line_mappings": [
+        {
+          "line_number": 7,
+          "addresses": [
+            4198772
+          ]
+        },
+        {
+          "line_number": 8,
+          "addresses": [
+            4198775
+          ]
+        },
+        {
+          "line_number": 9,
+          "addresses": [
+            4198779,
+            4198787
+          ]
+        },
+        {
+          "line_number": 10,
+          "addresses": [
+            4198779,
+            4198783,
+            4198790
+          ]
+        }
+      ],
+      "variables": [
+        {
+          "name": "p",
+          "type": "*mut [u8; 16]",
+          "kind": "arg",
+          "arg_index": 0,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            9,
+            10
+          ],
+          "addresses": [
+            4198779,
+            4198783,
+            4198787,
+            4198790
+          ]
+        },
+        {
+          "name": "q",
+          "type": "*mut [u8; 16]",
+          "kind": "arg",
+          "arg_index": 1,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            7,
+            8
+          ],
+          "addresses": [
+            4198772,
+            4198775
+          ]
+        },
+        {
+          "name": "v1",
+          "type": "u64",
+          "kind": "register",
+          "arg_index": null,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            7,
+            9,
+            10
+          ],
+          "addresses": [
+            4198772,
+            4198779,
+            4198783,
+            4198787,
+            4198790
+          ]
+        },
+        {
+          "name": "v2",
+          "type": "i64",
+          "kind": "register",
+          "arg_index": null,
+          "stack_offset": null,
+          "size": 8,
+          "line_numbers": [
+            8,
+            10
+          ],
+          "addresses": [
+            4198775,
+            4198779,
+            4198783,
+            4198790
+          ]
+        }
+      ],
+      "types": []
+    }
+  ],
+  "assertions": []
+}

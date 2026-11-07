@@ -4,7 +4,7 @@
     Objective-C reference slots and selector stubs (`option objc on|off`,
     `option objcrefconst on|off`).
 
-    Issue: on an iOS app (Toyota.app, 84 MB arm64, Swift + ObjC) every message
+    Issue: on a large third-party iOS app (84 MB arm64, Swift + ObjC) every message
     send read `objc_msgSendSuper2(&super, dat_1045b76f0)` even with `objc on`,
     and 274 of 1,622 calls in a 500-function sample were `sub_1034xxxxx(obj)`:
     the `__objc_selrefs` slot the selector is loaded from had no name, and the

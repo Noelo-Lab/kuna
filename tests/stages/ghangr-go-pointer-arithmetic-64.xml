@@ -1,0 +1,60 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">488b4708c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="load_offset"/>
+<bytechunk space="ram" offset="0x100005" readonly="true">48897708c3</bytechunk>
+<symbol space="ram" offset="0x100005" name="store_offset"/>
+<bytechunk space="ram" offset="0x10000a" readonly="true">488d4708c3</bytechunk>
+<symbol space="ram" offset="0x10000a" name="return_offset"/>
+<bytechunk space="ram" offset="0x10000f" readonly="true">488b0437c3</bytechunk>
+<symbol space="ram" offset="0x10000f" name="load_dynamic"/>
+<bytechunk space="ram" offset="0x100014" readonly="true">48891437c3</bytechunk>
+<symbol space="ram" offset="0x100014" name="store_dynamic"/>
+<bytechunk space="ram" offset="0x100019" readonly="true">488d0437c3</bytechunk>
+<symbol space="ram" offset="0x100019" name="return_dynamic"/>
+<bytechunk space="ram" offset="0x10001e" readonly="true">488d47f8c3</bytechunk>
+<symbol space="ram" offset="0x10001e" name="return_negative"/>
+<bytechunk space="ram" offset="0x100023" readonly="true">488d4708c3</bytechunk>
+<symbol space="ram" offset="0x100023" name="integer_address"/>
+</binaryimage>
+<script>
+<com>option outlang go</com>
+<com>parse line extern uint8 load_offset(void *base);</com>
+<com>parse line extern void store_offset(void *base,uint8 value);</com>
+<com>parse line extern uint8 *return_offset(void *base);</com>
+<com>parse line extern uint8 load_dynamic(void *base,int8 offset);</com>
+<com>parse line extern void store_dynamic(void *base,int8 offset,uint8 value);</com>
+<com>parse line extern uint8 *return_dynamic(void *base,int8 offset);</com>
+<com>parse line extern uint8 *return_negative(void *base);</com>
+<com>parse line extern uint8 *integer_address(uint8 base);</com>
+<com>load function load_offset</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function store_offset</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function return_offset</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function load_dynamic</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function store_dynamic</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function return_dynamic</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function return_negative</com>
+<com>decompile</com>
+<com>print C</com>
+<com>load function integer_address</com>
+<com>decompile</com>
+<com>print C</com>
+</script>
+<stringmatch name="Go64 pointer: live pointer bases survive all seven additions" min="7" max="7">unsafe\.Add\(unsafe\.Pointer\(base\),</stringmatch>
+<stringmatch name="Go64 pointer: dynamic offsets preserve their signed variable" min="3" max="3">unsafe\.Add\(unsafe\.Pointer\(base\),offset\)</stringmatch>
+<stringmatch name="Go64 pointer: negative offset is a signed byte displacement" min="1" max="1">unsafe\.Add\(unsafe\.Pointer\(base\),-0x8\)</stringmatch>
+<stringmatch name="Go64 pointer: integer addresses keep their explicit reconstruction" min="1" max="1">unsafe\.Pointer\(uintptr\(base \+ 0x</stringmatch>
+<stringmatch name="Go64 pointer: pointer arithmetic has no signed integer roundtrip" min="0" max="0">int[36][24]\(uintptr\(unsafe\.Pointer\(base\)\)\)</stringmatch>
+</decompilertest>

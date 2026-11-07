@@ -20,7 +20,8 @@ impl PrintC {
         };
         let saved = self.context.mods();
         self.context.set_mods(mods);
-        let converted = self.push_rust_value_as(fd, arch, value, op, &target);
+        let converted = (arch.rust_array_zero && self.push_rust_array_zero(fd, value, &target))
+            || self.push_rust_value_as(fd, arch, value, op, &target);
         self.context.set_mods(saved);
         converted
     }

@@ -1,0 +1,26 @@
+{
+  "at": "2026-11-03T07:02:47.900379+00:00",
+  "status": "BYTE_IDENTICAL_REBUILD",
+  "cwd": "/tmp/kuna-rust-array-decay",
+  "command": [
+    "cc",
+    "-O2",
+    "-g",
+    "-std=c11",
+    "-fno-pie",
+    "-no-pie",
+    "-fno-inline",
+    "/tmp/kuna-rust-array-constant/probe.c",
+    "/tmp/kuna-rust-array-constant/helpers.c",
+    "-o",
+    "/tmp/kuna-rust-array-zero-rebase/fixture-rebuilt"
+  ],
+  "compiler": "cc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+  "binary_sha256": "d092a4e34ba7fd229f9183389de04b7a82edfaa145f746c4373e79d04c6c3074",
+  "repo_source_sha256": {
+    "array_constant.c": "fa954e31b20b742370215feaf1e46c32f472adea8392fdb8b5a8699ac8859bdc",
+    "array_constant_helpers.c": "28c844d84f9d1635e9f0ff48b9b0aeb384e4c93b031e82cfb7d5a62f856d3689"
+  },
+  "repo_rebuild_recipe": "cc -O2 -g -std=c11 -fno-pie -no-pie -fno-inline array_constant.c array_constant_helpers.c -o array_constant_x86_64",
+  "note": "Exact original paths/cwd reproduce the tracked binary SHA. Building with repository source names changes DWARF paths; C sources are hash-identical."
+}

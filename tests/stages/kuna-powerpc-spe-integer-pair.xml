@@ -1,0 +1,18 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:e500:default">
+<!-- Synthetic mr r3,r5; mr r4,r6; blr skips r4 to align the integer pair. -->
+<bytechunk space="ram" offset="0x1000" readonly="true">7ca32b787cc433784e800020</bytechunk>
+<symbol space="ram" offset="0x1000" name="pick"/>
+</binaryimage>
+<script>
+  <com>option ctypes on</com>
+  <com>parse line extern long long pick(int pad,long long x);</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SPE integer pair: declared arguments" min="1" max="1">long long pick\(int pad,long long x\)</stringmatch>
+<stringmatch name="SPE integer pair: value survives alignment" min="1" max="1">return x;</stringmatch>
+<stringmatch name="SPE integer pair: no undefined pieces" min="0" max="0">CONCAT|unaff_|halt_baddata</stringmatch>
+</decompilertest>

@@ -9,8 +9,9 @@
 //! `protocol_t` `_OBJC_PROTOCOL_$_<name>`, the `__objc_protorefs` slot
 //! `protoRef_<name>`.
 
-use object::read::{Object, ObjectSection};
+use object::read::Object;
 
+use super::kuna_objcrefs::section_slots;
 use super::methods::{self, Method};
 use super::sections::MachoImage;
 
@@ -36,10 +37,9 @@ pub struct Protocol {
 /// Every protocol of `file`, in `__objc_protolist` order.
 pub fn protocols(img: &MachoImage, file: &object::File) -> Vec<Protocol> {
     let ps = img.ptr_size();
-    let Some(sec) = file.section_by_name(SEC_PROTOLIST) else { return Vec::new() };
     let mut out = Vec::new();
-    for i in 0..sec.size() / ps {
-        let Some(addr) = img.rebase_ptr(sec.address().wrapping_add(i * ps)) else { continue };
+    for slot in section_slots(file, SEC_PROTOLIST, ps) {
+        let Some(addr) = img.rebase_ptr(slot) else { continue };
         let Some(name) = protocol_name(img, addr) else { continue };
         let mut methods = Vec::new();
         for off in protocol_t::METHOD_LISTS {
@@ -76,5 +76,19 @@ mod tests {
         let decls: Vec<(&str, Option<&str>, u64)> =
             protos[0].methods.iter().map(|m| (m.selector.as_str(), m.types.as_deref(), m.imp)).collect();
         assert_eq!(decls, [("greet:", Some("i20@0:8i16"), 0), ("wave", Some("v16@0:8"), 0)]);
+    }
+
+    /// A `__objc_protolist` header claiming far more bytes than the file holds
+    /// is walked only over the bytes present, not once per claimed slot.
+    #[test]
+    fn oversized_protolist_header_is_bounded_by_file_data() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_objc_meta_arm64");
+        let bytes = std::fs::read(path).expect("read fixture");
+        for size in [0x0800_0000_0000_0000u64, u64::MAX] {
+            let patched = super::super::kuna_objcrefs::with_section_size(bytes.clone(), SEC_PROTOLIST, size);
+            let file = object::File::parse(patched.as_slice()).expect("parse Mach-O");
+            let img = MachoImage::with_fixups(&file, resolve_chained_fixups(&file, &patched));
+            assert!(protocols(&img, &file).len() <= 1, "size {size:#x}");
+        }
     }
 }
