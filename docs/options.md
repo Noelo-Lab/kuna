@@ -991,6 +991,10 @@ Three tiers:
 | v850-style explicit flag compare collapsed to a clean signed less-than | [`ovlesssimplify`](#ovlesssimplify) |
 | want the raw CONCAT11(CARRY1(...)) intrinsics visible instead of one wide add | [`addcarrychain`](#addcarrychain) |
 | 8-bit adc carry-chain pair (6502 style) folded into a single 16-bit addition | [`addcarrychain`](#addcarrychain) |
+| a MIPS import stub decompiles with a funcboundflow fall-through warning | [`stubtailcall`](#stubtailcall) |
+| the last MIPS lazy-binding stub fails with Unable to load bytes | [`stubtailcall`](#stubtailcall) |
+| a MIPS lazy-binding stub ends in halt_baddata or runs into section padding | [`stubtailcall`](#stubtailcall) |
+| instructions after .MIPS.stubs are decoded as part of the last stub | [`stubtailcall`](#stubtailcall) |
 | a function that runs into undecodable, encrypted or packed bytes ends with a plain return; and no warning | [`decodehalt`](#decodehalt) |
 | a self-decrypting stub decompiles to case 0x<hex>: return; with error null in --json | [`decodehalt`](#decodehalt) |
 | nothing in the emitted C says the decompiled body is incomplete | [`decodehalt`](#decodehalt) |
@@ -1176,6 +1180,9 @@ Three tiers:
 | a wrapper in a .so gets no parameters while the function it forwards to takes several | [`pltlocal`](#pltlocal) |
 | an --assert prototype at the plt stub address restores the arguments decompile-all does not find | [`pltlocal`](#pltlocal) |
 | decompile-all --option protoorder cycles does not reach a callee called through its own plt stub | [`pltlocal`](#pltlocal) |
+| a MIPS call to strlen or memcpy through the GOT renders with no arguments | [`gotimportproto`](#gotimportproto) |
+| a libc import called from MIPS PIC code loses the argument it was passed | [`gotimportproto`](#gotimportproto) |
+| a declared import prototype is ignored at a jalr t9 call | [`gotimportproto`](#gotimportproto) |
 | a function that returns a value on one path and tail-calls a function on the other is printed void | [`mixedtailret`](#mixedtailret) |
 | if (6 <= *a0) return; getv(); // tail-call where the source returns *a0 on that path | [`mixedtailret`](#mixedtailret) |
 | a function returns xmm0 although its callee and its other path return an int in eax | [`mixedtailret`](#mixedtailret) |
@@ -1331,6 +1338,11 @@ Three tiers:
 | free(*(void **)((long)v1 + (long)v2 * 8)) | [`castindex`](#castindex) |
 | an array walk through a void * base prints two casts per element | [`castindex`](#castindex) |
 | a pointer difference of two char * is cast to long on both sides | [`castindex`](#castindex) |
+| a function returning its unchanged single-field struct argument prints return x.d; | [`aggregatefields`](#aggregatefields) |
+| a nested single-field member prints twice, x.a.d.d | [`aggregatefields`](#aggregatefields) |
+| a whole-struct assignment writes the struct into its own field, v.field_0x8.__0 = (field_0x8)... | [`aggregatefields`](#aggregatefields) |
+| a returned record prints as a shifted integer cast to the struct type | [`aggregatefields`](#aggregatefields) |
+| a field of a split aggregate prints as an artificial partial such as _4_8_ instead of its member name | [`aggregatefields`](#aggregatefields) |
 | the JSON variables array is empty although the function plainly has a stack frame | [`framelayout`](#framelayout) |
 | fewer locals reported than the source declares | [`framelayout`](#framelayout) |
 | a stack slot the disassembly writes is missing from variables | [`framelayout`](#framelayout) |
@@ -3633,6 +3645,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P5/simplification-quiescence · ghidra-upstream · correctness-fix · GH-8913
 - **Example:** `option addcarrychain off`
 
+### `stubtailcall` -- on | off, default `on`
+
+- **Symptoms:** a MIPS import stub decompiles with a funcboundflow fall-through warning; the last MIPS lazy-binding stub fails with Unable to load bytes; a MIPS lazy-binding stub ends in halt_baddata or runs into section padding; instructions after .MIPS.stubs are decoded as part of the last stub.
+- **What it does:** Flow a loader-proven MIPS lazy-binding stub as a tail call. A `.MIPS.stubs` entry loads the lazy resolver from the GOT, saves the caller's return address in t7, calls the resolver with `jalr t9` and passes the dynamic-symbol index in the delay slot; the resolver binds the import and jumps to it with that return address restored, so control never returns to the stub. Decoded as an ordinary call, flow falls through into the next stub or past the end of `.MIPS.stubs`: a stub decompiles with a truncated-flow warning, the last stub runs into whatever follows the section and fails to decompile when nothing is mapped there, and the Listing decodes the bytes after the last stub as its continuation. The object loader validates each stub against its dynamic-symbol/GOT identity, executable section and complete instruction sequence. On, flow keeps the resolver call, including its delay slot and register writes, and ends the stub with a return after it, and the Listing ends the stub at the call. A stub's no-return status still comes from its import's name. An explicit per-function flow override always wins. Raw and XML images, and stubs the loader cannot validate, are never affected.
+- **When to flip:** On by default: it applies only to validated lazy-binding stubs, which raw and XML inputs never have (0/675 datatest assertions move). Flip off to see the resolver call fall through as upstream decodes it, or to compare stub bodies with a reference decompiler. The Listing and xrefs walks read it when they are built, so set it before `read symbols`, as `--option` does.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · #1394
+- **Example:** `option stubtailcall off`
+
 ### `decodehalt` -- on | off, default `on`
 
 - **Symptoms:** a function that runs into undecodable, encrypted or packed bytes ends with a plain return; and no warning; a self-decrypting stub decompiles to case 0x<hex>: return; with error null in --json; nothing in the emitted C says the decompiled body is incomplete; a branch that leaves a --define-function extent renders as an ordinary return; kuna disassemble reports .byte at an address the decompiled C returns from; PowerPC64 isel becomes halt_baddata with no target-selection advice.
@@ -3985,6 +4005,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P4/prototype-source · ghidra · correctness-fix · GH-1342
 - **Example:** `option pltlocal off`
 
+### `gotimportproto` -- on | off, default `on`
+
+- **Symptoms:** a MIPS call to strlen or memcpy through the GOT renders with no arguments; a libc import called from MIPS PIC code loses the argument it was passed; a declared import prototype is ignored at a jalr t9 call.
+- **What it does:** Bind a declared prototype that states no storage to a call through a loader-proven MIPS external-symbol GOT entry. A declaration that names only types (a libc type database entry or a `parse line` prototype) is normally not forced on an indirect call: the call keeps the arguments its trials recover, because an incomplete declaration from a partial debug-info unit would otherwise erase a result the caller uses. A MIPS PIC call to an import loads its target from the import's external-symbol GOT slot and calls through `jalr t9`, so the loader proves the callee, and a preserved incoming argument register cannot establish the import's arity: a call that passes its own first argument through to `strlen` has the same instructions as a call that passes nothing. On, such a call takes the declared prototype when the loader proved the entry an import and every parameter and the return are concrete, non-void types. Missing, void and unknown types, variadic declarations (which fix no arity: binding `printf` would read the saved gp slot after its stack arguments as one more argument), and entries without import provenance keep the storage requirement.
+- **When to flip:** On by default: it applies only to loader-proven MIPS GOT imports, which raw and XML inputs never have (0/675 datatest assertions move). Flip off when a type database entry for an import is wrong for the binary, so the call keeps the arguments its trials recover.
+- **Where / provenance:** P4/prototype-source · kuna · correctness-fix · #1394
+- **Example:** `option gotimportproto off`
+
 ### `mixedtailret` -- on | off, default `off`
 
 - **Symptoms:** a function that returns a value on one path and tail-calls a function on the other is printed void; if (6 <= *a0) return; getv(); // tail-call where the source returns *a0 on that path; a function returns xmm0 although its callee and its other path return an int in eax; the return value a function tests before returning it is lost beside a tail call.
@@ -4248,6 +4276,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: an array walk through a `void *` or wrongly-typed base reads `((long *)v7)[v19]` (one cast) instead of `*(long *)((long)v7 + v19 * 8)` (two), an `int` index loses its `(long)` because C converts a subscript itself, and a byte-pointer difference reads `v24 - v14` (none) instead of `(long)v24 - (long)v14` (two). Turn it off to see upstream Ghidra's spelling, which keeps the byte arithmetic visible, or to ablate this cast class alone (`castarith` is independent: it handles a constant addend).
 - **Where / provenance:** P9/cast-policy · ida · presentation-default · kuna-castindex
 - **Example:** `option castindex off`
+
+### `aggregatefields` -- on | off, default `on`
+
+- **Symptoms:** a function returning its unchanged single-field struct argument prints return x.d;; a nested single-field member prints twice, x.a.d.d; a whole-struct assignment writes the struct into its own field, v.field_0x8.__0 = (field_0x8)...; a returned record prints as a shifted integer cast to the struct type; a field of a split aggregate prints as an artificial partial such as _4_8_ instead of its member name.
+- **What it does:** Keep a structured value whole until its fields can be named. Four places otherwise split or misname it. `RuleConcatZero` rewrites a concatenation whose low bytes are zero into a shifted integer even when the result is a struct or array, so `RulePieceStructure` never sees the field it builds and a returned record prints as `(S)((ulong)x << 32)`. Single-component resolution scores a COPY or RETURN of a declared container as its only field, so a function returning its unchanged `struct S` argument prints `return x.d;`. Cleanup splitting runs after the main simplification pool and leaves the nested truncations it creates, so a field extracted from an already truncated aggregate keeps an artificial partial instead of its member name, along with truncations nothing reads. The partial-symbol walk descends into a single-field struct even where the operation's resolved type is that whole struct, appending a member twice (`x.a.d.d`) or assigning a whole struct to its own field (`v2.field_0x8.__0 = (field_0x8)...`). On, a struct- or array-typed concatenation with a zero low piece stays a PIECE for structured-piece recovery; a RETURN of the function's locked output type, and both edges of each COPY on the chain feeding it, resolve to the whole container when the value is an equal-width COPY chain from a type-locked input of that container; each new cleanup-split SUBPIECE collapses through the double-subpiece rule and the truncations it orphaned are removed through the dead-code rule; and the walk stops at an operation whose resolved or facing type is the whole struct. Off restores upstream's behavior at all four places. ABI padding pieces of a join, which only `directfields` compiler-spec joins create, are always handled as logical constants: they have no storage, so this option does not govern them.
+- **When to flip:** On by default: 0/675 datatest assertions move and a whole-binary comparison over 861 public images changed one non-MIPS image, where a whole-struct Rust assignment lost an extra `.__0`; a Go pair result with a zero half also stores its named fields instead of a byte carrier. Flip off to compare with upstream Ghidra's field-first resolution, or when a struct return or a cleanup-split field prints differently from a reference decompiler.
+- **Where / provenance:** P5/aggregate-union · kuna · correctness-fix · #1394
+- **Example:** `option aggregatefields off`
 
 ### `framelayout` -- on | off, default `on`
 

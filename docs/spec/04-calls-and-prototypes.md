@@ -643,6 +643,51 @@ overlapping v0 resource so the compiler-spec decoder can resolve the overlap.
 `decompiler/crates/kuna-console/tests/octeon_abi.rs` checks the actual models,
 register exhaustion, following arguments, type layout and original GCC DWARF.
 
+Octeon III's BE N32/N64 `hard` models share eight argument slots between
+a0..t3 and f12..f19. Fixed float/double arguments use the corresponding FPR;
+quad scalars consume an aligned pair. The variable tail uses GPRs, with float
+register values in the low bytes and stack values at the leading slot bytes.
+Fixed structs place full aligned direct double fields in FPRs and other eight-byte
+chunks in GPRs. Nested structs and arrays are not recursively classified as
+floating fields, and a quad field does not prevent a later direct double from
+using its FPR slot. `join_dual_class directfields="true"` selects this
+field-based classification, including padding and primitives spanning multiple
+tiles. Their dual-class join explicitly requests alignment; this
+`join_dual_class align` extension requires shared register groups and skips
+unaligned slots in both classes together. Existing dual-class rules retain
+their previous behavior when the attribute is absent.
+
+Hard-float scalar quad returns use f0/f2, while a struct containing one quad
+returns in f0/f1. Structs of at most 16 bytes with one or two direct floating
+fields use f0/f2 even when the field precisions differ; nested, array-containing,
+integer and float/integer structs use v0/v1. Larger structs require a hidden
+return pointer. The `float-field-struct` filter applies field-count and size
+limits without recursive flattening and excludes structs containing integer
+bitfields. Their ordinary direct double fields still use FPR argument slots;
+the mixed aggregate return uses GPRs. `join_per_primitive directfields="true"`
+allocates each direct field and preserves its declared offset, including internal
+and trailing padding. Zero join pieces represent unspecified padding without
+inventing a physical register dependency; heritage discards writes to them.
+This form is restricted
+to output resources. The opt-in implementation is in
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_aggregateabi.rs`. N32 preserves even f20..f30 and N64 preserves
+f24..f31; other FPRs and v0/v1 are call-clobbered. Original GCC 7.3 and 4.7
+fixtures cover both hard-float ABIs without a compiler dependency in CI.
+The selected Octeon compiler ID also supplies the floating-point convention to
+typed-call recovery. An explicit `default`, its N32 `n32` or N64 `n64` alias, or
+`hard` override remains authoritative when container attributes are missing or
+contradictory. Typed-call recovery and the narrow-extension rule classify these
+compiler IDs through one table
+(`decompiler/crates/kuna-decomp/src/p1_partition/kuna_octeonid.rs (hard_float)`),
+so two IDs naming the same compiler spec cannot disagree.
+
+Both models declare the entire v0/v1 return registers call-clobbered. A caller
+may use v0 for an indirect-call target before the call and then read its new
+64-bit result; that pre-call pointer is not a preserved return value. Declaring
+the physical clobbers lets heritage create fresh output trials before a typed
+indirect prototype is recovered. The N32 stack fixture covers both inferred
+and declared calls at the 32-bit pointer / 64-bit result boundary.
+
 ### Recovery: trials → parameters
 
 The recovery direction runs on `ParamTrial`/`ParamActive`
@@ -3589,6 +3634,12 @@ zero-extends; an enum takes the sign of the integer its `DW_AT_type` names when
 it has no `DW_AT_encoding`, as clang emits it; and an anonymous enum narrower
 than 32 bits falls back to an integer of its own sign, unsigned when DWARF
 states none.
+
+The Octeon N32/N64 soft- and hard-float compiler IDs participate in the MIPS
+argument rule. Their spelling does not change the ABI's integer promotions;
+32-bit unsigned integers are sign-extended and unsigned bytes and halfwords
+are zero-extended. The `compiler` policy remains necessary to infer the same
+extension for narrow MIPS return values.
 
 The value says which rules apply. `abi`, the default, applies a rule wherever
 an ABI document states it: RISC-V and LoongArch arguments and return values,
@@ -8601,8 +8652,19 @@ the declared model (or the undeclared default), as `ActionDefaultParams` already
 does for a direct call. Output-only pieces leave the inputs unlocked. The
 symbol's call-fixup injection is kept, and its no-return flag is carried under
 `peimportcall`, as on the other two paths. Pieces with no explicit storage
-(library, loader and DWARF prototypes) keep the code-type lookup unchanged. The
-construction lives in
+(library, loader and DWARF prototypes) keep the code-type lookup unchanged:
+incomplete debug-information pieces must not replace a result read by the
+caller with a locked void return. The sole type-only exception,
+`option gotimportproto` (default on,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_gotimportproto.rs (binds_type_only)`),
+is an entry identified by the MIPS ELF loader's external-symbol GOT: its
+concrete, non-void declaration supplies the imported call's argument and return
+storage, because a preserved incoming argument register cannot establish an
+import's arity. Unknown, missing or void return types, incomplete parameter
+types and variadic declarations, which fix no arity, decline that case, and off
+keeps the storage requirement for imports too.
+Ordinary MIPS definitions and other architectures retain the code-type
+behavior. The construction lives in
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_qualifiedcall.rs`.
 
 **(kuna) Go boolean-return narrowing** (`option gobool off|auto|always`,
