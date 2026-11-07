@@ -6,8 +6,8 @@
 
     Issue: the linker folds functions with identical bodies, so one address
     is the target of several metadata records of unrelated types, and the
-    pass named it after whichever record sorted first (on the Toyota iOS
-    app, 2,350 of the 57,147 named functions; 2,037 of them claimed by more
+    pass named it after whichever record sorted first (on a large
+    third-party iOS app, 2,350 of the 57,147 named functions; 2,037 of them claimed by more
     than one type) while the layout arm typed its `self` after another.
 
     Stage / sub-stage: P1 external-refinement, the Swift metadata pass
