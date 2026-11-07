@@ -23,6 +23,19 @@ mod tests;
 /// The largest payload the decompressors will produce.
 const DECODED_LIMIT: usize = 1 << 30;
 
+/// Without a declared size, a payload may decode to at most this many times its
+/// compressed length (real kernelcaches are a few times larger), and never less
+/// than [`MIN_LIMIT`].
+const MAX_RATIO: usize = 64;
+const MIN_LIMIT: usize = 16 << 20;
+
+/// The decode limit for `input_len` compressed bytes: the declared size when
+/// there is one, else the ratio cap, never past [`DECODED_LIMIT`].
+fn decode_limit(input_len: usize, declared: Option<usize>) -> usize {
+    let cap = DECODED_LIMIT.min(input_len.saturating_mul(MAX_RATIO).max(MIN_LIMIT));
+    declared.map_or(cap, |d| d.min(DECODED_LIMIT))
+}
+
 /// The loadable image after [`peel`], plus a one-line note on what was done.
 pub struct Peeled {
     pub bytes: Vec<u8>,
@@ -94,7 +107,8 @@ fn unwrap_payload(bytes: &[u8]) -> Result<(Vec<u8>, String), String> {
                 ));
             }
             let hint = im4p.decoded_size.unwrap_or(0);
-            let (payload, codec) = decompress(im4p.data, hint)?;
+            let limit = decode_limit(im4p.data.len(), im4p.decoded_size);
+            let (payload, codec) = decompress(im4p.data, hint, limit)?;
             if let Some(size) = im4p.decoded_size.filter(|&s| s != payload.len()) {
                 return Err(format!(
                     "IM4P '{}' declares {size} decoded bytes but decoded to {}",
@@ -112,19 +126,19 @@ fn unwrap_payload(bytes: &[u8]) -> Result<(Vec<u8>, String), String> {
             Ok((payload, note))
         }
         None => {
-            let (payload, codec) = decompress(bytes, 0)?;
+            let (payload, codec) = decompress(bytes, 0, decode_limit(bytes.len(), None))?;
             let note = format!("decoded {codec} payload ({} -> {} bytes)", bytes.len(), payload.len());
             Ok((payload, note))
         }
     }
 }
 
-fn decompress(data: &[u8], size_hint: usize) -> Result<(Vec<u8>, &'static str), String> {
+fn decompress(data: &[u8], size_hint: usize, limit: usize) -> Result<(Vec<u8>, &'static str), String> {
     if lzss::is_complzss(data) {
-        return Ok((lzss::decode(data, DECODED_LIMIT)?, "complzss"));
+        return Ok((lzss::decode(data, limit)?, "complzss"));
     }
     if lzfse::is_lzfse(data) {
-        let out = lzfse::decode(data, size_hint, DECODED_LIMIT).map_err(|e| e.to_string())?;
+        let out = lzfse::decode(data, size_hint, limit).map_err(|e| e.to_string())?;
         return Ok((out, "LZFSE"));
     }
     Ok((data.to_vec(), "uncompressed"))
@@ -176,8 +190,9 @@ impl<'a> Im4p<'a> {
                     if size.len() > 8 {
                         return Err("IM4P decoded size does not fit 64 bits".into());
                     }
+                    let size = size.iter().fold(0u64, |acc, &b| (acc << 8) | b as u64);
                     decoded_size =
-                        Some(size.iter().fold(0u64, |acc, &b| (acc << 8) | b as u64) as usize);
+                        Some(usize::try_from(size).map_err(|_| "IM4P decoded size does not fit this platform")?);
                 }
                 _ => {}
             }

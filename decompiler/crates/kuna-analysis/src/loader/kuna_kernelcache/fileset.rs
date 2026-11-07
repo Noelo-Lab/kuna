@@ -208,7 +208,8 @@ fn nlist_name<'a>(bytes: &'a [u8], syms: &Symbols, index: usize) -> Option<&'a [
 /// record of the callee's name is the kext's undefined `nlist`. Each one that
 /// another entry exports as code is rewritten to `N_ABS | N_EXT` at that address
 /// (the kernel's definition wins over a kext's), which the Mach-O import walk
-/// reads as an external function. Returns how many were bound.
+/// reads as an external function. Each distinct entry header is read once, so
+/// entries aliasing one header cost no more than one. Returns how many were bound.
 fn bind_to_collection(bytes: &mut [u8], all: &[FilesetEntry], index: usize) -> usize {
     let Some(own) = symbols(bytes, all[index].fileoff as usize) else { return 0 };
     let mut wanted: std::collections::HashMap<Vec<u8>, Option<(u64, bool)>> = own
@@ -216,8 +217,9 @@ fn bind_to_collection(bytes: &mut [u8], all: &[FilesetEntry], index: usize) -> u
         .clone()
         .filter_map(|i| nlist_name(bytes, &own, i).map(|n| (n.to_vec(), None)))
         .collect();
-    for (i, entry) in all.iter().enumerate() {
-        if i == index {
+    let mut seen = std::collections::HashSet::from([all[index].fileoff]);
+    for entry in all {
+        if !seen.insert(entry.fileoff) {
             continue;
         }
         let at = entry.fileoff as usize;
@@ -305,4 +307,38 @@ fn rd_u32(b: &[u8], off: usize) -> Option<u32> {
 
 fn rd_u64(b: &[u8], off: usize) -> Option<u64> {
     b.get(off..off.checked_add(8)?).map(|s| u64::from_le_bytes(s.try_into().unwrap()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Entries aliasing one header are read against it once: ten thousand
+    /// entries naming one 50,000-command header cost one parse, not 10,000.
+    #[test]
+    fn aliased_entries_are_read_once() {
+        let mut image = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/kernelcache/fileset.macho"))
+            .unwrap();
+        let all = entries(&image).unwrap();
+        let kext = all.iter().position(|e| e.filetype != MH_EXECUTE).unwrap();
+        let expected = bind_to_collection(&mut image.clone(), &all, kext);
+        let ncmds = 50_000u32;
+        let at = image.len().next_multiple_of(8);
+        image.resize(at, 0);
+        for v in [MH_MAGIC_64, 0x0100_000c, 0, MH_EXECUTE, ncmds, ncmds * 8, 0, 0] {
+            image.extend_from_slice(&v.to_le_bytes());
+        }
+        for _ in 0..ncmds {
+            image.extend_from_slice(&0x7fff_ffffu32.to_le_bytes());
+            image.extend_from_slice(&8u32.to_le_bytes());
+        }
+        let alias = FilesetEntry { id: "alias".into(), fileoff: at as u64, filetype: MH_EXECUTE };
+        let mut aliased = all.clone();
+        aliased.extend(std::iter::repeat_n(alias, 10_000));
+        let start = std::time::Instant::now();
+        let bound = bind_to_collection(&mut image, &aliased, kext);
+        let elapsed = start.elapsed();
+        assert_eq!(bound, expected);
+        assert!(elapsed < std::time::Duration::from_millis(500), "10k aliases took {elapsed:?}");
+    }
 }

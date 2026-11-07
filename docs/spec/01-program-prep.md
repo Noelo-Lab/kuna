@@ -1076,10 +1076,15 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   payload by its magic: LZFSE (`bvx2` FSE blocks, `bvxn` LZVN blocks, `bvx-`
   stored blocks; v1 `bvx1` headers are refused) or `complzss` (Okumura LZSS,
   checked against the header's size and Adler-32). A decoded size different
-  from the IM4P's record is an error, not a truncation. Then, for an
+  from the IM4P's record is an error, not a truncation. The record also bounds
+  the decode: output stops, with an error, as soon as it would pass the
+  declared size. Without a record the bound is 64 times the payload (at least
+  16 MiB), and never past 1 GiB. An FSE bit stream may preload bytes from
+  before its payload, as the reference encoder's does, but consuming them is
+  a truncation error rather than a read of zeros. Then, for an
   `MH_FILESET`, every rebase of the collection's fixup table is written into
   its slot — the kernel formats `DYLD_CHAINED_PTR_64_KERNEL_CACHE`,
-  `ARM64E_KERNEL` and `X86_64_KERNEL_CACHE` are decoded in the same
+  `ARM64E_KERNEL`, `ARM64E_FIRMWARE` and `X86_64_KERNEL_CACHE` are decoded in the same
   `chained.rs` as the userland ones, targets are offsets from the collection
   base, and pointer-authentication bits are dropped. The kernel-cache formats
   name the collection a target lies in by its `cacheLevel`, xnu's index of the
@@ -1109,7 +1114,8 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   not the kernel, each undefined symbol that another entry exports from an
   instruction-bearing section is rewritten to `N_ABS | N_EXT` at that address,
   the kernel's definition winning over a kext's and an ambiguity between kexts
-  left unbound
+  left unbound. Each distinct entry header is read once, however many entries
+  name its offset
   (`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/fileset.rs (bind_to_collection)`),
   and the Mach-O import walk names each such symbol of an `MH_KEXT_BUNDLE` as
   an external function

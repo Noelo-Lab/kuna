@@ -11,5 +11,9 @@ Inputs for the `kernelcache` option (`loader/kuna_kernelcache`), and for
 | `kernelcache.img4` | IMG4 { IM4P `krnl` { LZFSE(`fileset.macho`) }, IM4M stub } |
 | `kernelcache.lzss.im4p` | a bare IM4P whose payload is a `complzss` container of `fileset.macho` |
 
-All of the fileset files are written by `gen_fileset.py` (Python 3 plus the
-reference `lzfse` CLI on `PATH`); the arm64 instructions are hand-encoded there.
+`gen_fileset.py` writes `fileset.macho`, `kernelcache.img4` and
+`kernelcache.lzss.im4p` (Python 3 plus the reference `lzfse` CLI on `PATH`,
+which encodes the IMG4's payload); the arm64 instructions are hand-encoded
+there. It does not write the three `*.lzfse` vectors: those come from the
+reference encoder run on the matching `.bin` (`lzfse -encode -i text.bin -o
+text.bvx2.lzfse`, and likewise for the other two).

@@ -24,8 +24,9 @@ pub(super) fn decode(bytes: &[u8], limit: usize) -> Result<Vec<u8>, String> {
     if size > limit {
         return Err(format!("complzss declares {size} decoded bytes, over the {limit}-byte limit"));
     }
-    let src = bytes
-        .get(HEADER_LEN..HEADER_LEN + csize)
+    let src = HEADER_LEN
+        .checked_add(csize)
+        .and_then(|end| bytes.get(HEADER_LEN..end))
         .ok_or("complzss compressed size runs past the end of the payload")?;
     let out = decode_stream(src, size)?;
     if out.len() != size {

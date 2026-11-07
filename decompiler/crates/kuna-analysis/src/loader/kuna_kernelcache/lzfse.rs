@@ -1,6 +1,7 @@
 //! LZFSE decoding (Apple's `lzfse` reference format): the `bvx-` raw, `bvxn`
 //! LZVN and `bvx2` FSE-coded blocks, ended by `bvx$`. Decode only, bounds-checked
-//! throughout; any malformed field is an error rather than a guess.
+//! throughout; any malformed field is an error rather than a guess. The table
+//! decoding follows the BSD-3 lzfse reference implementation (see `NOTICE`).
 
 const MAGIC_END: u32 = u32::from_le_bytes(*b"bvx$");
 const MAGIC_RAW: u32 = u32::from_le_bytes(*b"bvx-");
@@ -367,12 +368,15 @@ impl ValueTable {
     }
 }
 
-/// The FSE bit stream, read backwards from the end of its payload.
+/// The FSE bit stream, read backwards from the end of its payload. `phantom`
+/// counts the low bits of `accum` loaded from before the payload's start: they
+/// read as zero and pulling them is an error, since no valid stream does.
 struct BitIn<'a> {
     buf: &'a [u8],
     pos: usize,
     accum: u64,
     nbits: u32,
+    phantom: u32,
 }
 
 impl<'a> BitIn<'a> {
@@ -382,17 +386,18 @@ impl<'a> BitIn<'a> {
         }
         let width = if n != 0 { 8 } else { 7 };
         let pos = buf.len().saturating_sub(width);
-        let accum = le_bytes(&buf[pos..]).checked_shl(8 * (width - (buf.len() - pos)) as u32).unwrap_or(0);
+        let missing = (width - (buf.len() - pos)) as u32;
+        let accum = le_bytes(&buf[pos..]).checked_shl(8 * missing).unwrap_or(0);
         let nbits = (n + 8 * width as i32) as u32;
         if nbits < 64 && accum >> nbits != 0 {
             return Err("bad LZFSE bit-stream header");
         }
-        Ok(Self { buf, pos, accum, nbits })
+        Ok(Self { buf, pos, accum, nbits, phantom: 8 * missing })
     }
 
     /// Refill to at least 56 bits. Near the start of the payload the encoder's
     /// stream may refill from bytes before it, which are never consumed; they
-    /// read as zero here.
+    /// read as zero here and are counted in `phantom`.
     fn flush(&mut self) {
         let nbytes = ((63 - self.nbits) >> 3) as usize;
         if nbytes == 0 {
@@ -404,10 +409,11 @@ impl<'a> BitIn<'a> {
         self.pos = from;
         self.accum = (self.accum << (8 * nbytes)) | incoming;
         self.nbits += 8 * nbytes as u32;
+        self.phantom += 8 * missing as u32;
     }
 
     fn pull(&mut self, n: u32) -> Result<u64, Error> {
-        if n > self.nbits {
+        if n > self.nbits.saturating_sub(self.phantom) {
             return Err(TRUNCATED);
         }
         self.nbits -= n;
@@ -477,4 +483,20 @@ fn rd_u32(b: &[u8], off: usize) -> Option<u32> {
 
 fn rd_u64(b: &[u8], off: usize) -> Option<u64> {
     b.get(off..off.checked_add(8)?).map(|s| u64::from_le_bytes(s.try_into().unwrap()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Bits loaded from before the payload's start read as zero but cannot be
+    /// consumed: a stream that needs them is truncated, not zero-padded.
+    #[test]
+    fn bits_from_before_the_payload_cannot_be_pulled() {
+        let mut bits = BitIn::new(&[0xa5], 0).unwrap();
+        assert_eq!(bits.pull(8), Ok(0xa5));
+        assert_eq!(bits.pull(1), Err(TRUNCATED));
+        bits.flush();
+        assert_eq!(bits.pull(1), Err(TRUNCATED));
+    }
 }
