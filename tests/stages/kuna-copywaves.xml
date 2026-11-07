@@ -1,0 +1,33 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- GH-1034, P3 rule pools, option copywaves. churn (the prunedssa
+     fixture) reads 256 read-only table words between 256 calls; its rule
+     pools propagate copies into joins and remove dead INDIRECT and MULTIEQUAL
+     chains a few changes per pass. Pass 1 runs deadwaves alone (copywaves
+     off): a pass with a copy propagation is followed by a full sweep, and a
+     wave offers every rule to the ops it reaches for their opcode. Pass 2 is
+     the default: those passes are waves too, and such ops get only the
+     far-walking rules. Both passes print the same body, leave the same live IR
+     and create the same ops.
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/prunedssa_x86_64</com>
+  <com>read symbols</com>
+  <com>option copywaves off</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>option copywaves on</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+</script>
+<stringmatch name="copywaves #1: both passes print churn" min="2" max="2">^uint8 churn\(int8 a0,char \*a1\)$</stringmatch>
+<stringmatch name="copywaves #2: both passes keep churn's 256 calls" min="512" max="512">sink\(</stringmatch>
+<stringmatch name="copywaves #3: both passes leave the same live IR" min="2" max="2">Count - pcode = 8135</stringmatch>
+<stringmatch name="copywaves #4: both passes create the same ops" min="2" max="2">Count - created = 35936</stringmatch>
+</decompilertest>

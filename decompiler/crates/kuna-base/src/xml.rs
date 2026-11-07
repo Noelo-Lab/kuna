@@ -2157,7 +2157,9 @@ mod tests {
         // and kuna-gottailcall / a one-destination jump through an extern's slot is a tail call
         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
         // and kuna-ppc64-toc-reload-switch / an ELFv1 TOC reload keeps a jump table's base (option callmechanisms)
-        assert_eq!(count, 699, "corpus file count drifted");
+        // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
+        // and kuna-copywaves / copy propagations seed rule-pool waves (option copywaves)
+        assert_eq!(count, 704, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

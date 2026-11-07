@@ -132,6 +132,7 @@ pub fn compiled_ids(library: &PcodeInjectLibrarySleigh, name: &str) -> (i32, i32
 
 #[derive(Debug, Default)]
 pub struct State {
+    pub(crate) register_slots: bool,
     applied: std::collections::HashMap<crate::context::OpId, i32>,
     entry: Option<i32>,
     pub failure: Option<String>,
