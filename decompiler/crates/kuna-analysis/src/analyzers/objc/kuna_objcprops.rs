@@ -22,8 +22,8 @@ mod property_list_t {
 /// A property's selectors with their encodings: `(selector, encoding)`.
 pub fn declarations(img: &MachoImage, list_va: u64) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    let Some(ent) = img.read_u32(list_va + property_list_t::ENTSIZE) else { return out };
-    let Some(count) = img.read_u32(list_va + property_list_t::COUNT) else { return out };
+    let Some(ent) = list_va.checked_add(property_list_t::ENTSIZE).and_then(|a| img.read_u32(a)) else { return out };
+    let Some(count) = list_va.checked_add(property_list_t::COUNT).and_then(|a| img.read_u32(a)) else { return out };
     let entsize = (ent & 0xffff) as u64;
     if entsize < 2 * img.ptr_size() {
         return out;
@@ -31,7 +31,9 @@ pub fn declarations(img: &MachoImage, list_va: u64) -> Vec<(String, String)> {
     for i in 0..count.min(4096) as u64 {
         let rec = list_va.wrapping_add(property_list_t::FIRST).wrapping_add(i.wrapping_mul(entsize));
         let Some(name) = img.rebase_ptr(rec).and_then(|p| img.read_cstr(p)) else { continue };
-        let Some(attrs) = img.rebase_ptr(rec + img.ptr_size()).and_then(|p| img.read_cstr(p)) else { continue };
+        let Some(attrs) = rec.checked_add(img.ptr_size()).and_then(|a| img.rebase_ptr(a)).and_then(|p| img.read_cstr(p)) else {
+            continue;
+        };
         out.extend(from_attributes(&name, &attrs));
     }
     out

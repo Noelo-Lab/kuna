@@ -560,6 +560,20 @@ mod tests {
         assert_eq!(r, vec![(0x100, 0x110), (0x118, 0x120)]);
     }
 
+    /// A hostile spelling reaches `split_method` through [`shape`]: it is
+    /// refused at the depth cap and compared as text, not recursed.
+    #[test]
+    fn record_survives_a_hostile_spelling() {
+        let deep = format!("v@:{}i", "^".repeat(1_000_000));
+        let mut sel = Selectors::default();
+        sel.record("x", Some("v16@0:8"));
+        sel.record("x", Some(&deep));
+        assert_eq!(sel.encoding("x"), None);
+        sel.record("y", Some(&deep));
+        sel.record("y", Some(&deep));
+        assert_eq!(sel.encoding("y"), Some(deep.as_str()));
+    }
+
     #[test]
     fn record_keeps_the_class_bearing_spelling_and_drops_disagreement() {
         let mut sel = Selectors::default();
