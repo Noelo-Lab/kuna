@@ -1164,6 +1164,21 @@ slots `imported_counter`@`0x100004000` and `imported_name`@`0x100004008`. With
 `--option importdata on`, `_main` reads `imported_counter` / `imported_name`; off,
 it reads `*dat_100004000` / `*dat_100004008`.
 
+`macho_gotdata_local` (arm64, ~50 KB, from `macho_gotdata_local.c`) is the case
+where the slot pointer is a named local: `_read_thrice`@`0x100000510` loads the
+`imported_counter` slot (`__got`@`0x100004000`) into `x19` and reads through it
+across three calls. With `importdata` on, the first read is of the slot itself and
+renders `imported_counter`; the two reads through the local stay `*v1`, so the
+local's assignment keeps its readers. Built with clang 14 and the `ld64.lld` that
+ships with the Rust toolchain:
+
+```bash
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+clang -target arm64-apple-macos11 -O1 -c macho_gotdata_local.c -o m.o
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
+       -e _main -o macho_gotdata_local m.o
+```
+
 ### `elf_gotdata_x86_64.so` / `elf_gotdata_aarch64.so` — ELF GOT data imports
 
 Two `-fPIC` shared objects (~3.5 KB each) built from `elf_gotdata.c`, for the ELF
