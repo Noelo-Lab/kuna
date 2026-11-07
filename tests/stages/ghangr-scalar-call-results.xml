@@ -1,0 +1,47 @@
+<!-- Go/Rust parity, P9 scalar call-result emission; strict correction, no new option.
+     The console does not record callee-first return statements. Its callrettype
+     off/on passes therefore remain negative controls, and an explicit callee
+     prototype keeps the existing cast path. The positive recovered-callee
+     witnesses are tests/cli/scalar-call-results-{go,rust}.json and the native
+     kuna-cli scalar_call_results integration test, using this same authored ELF.
+     Neither the callee nor its prototype is replaced in those native checks. -->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/scalar_call_results_x86_64</com>
+  <com>read symbols</com>
+  <com>map prototype narrow_bool bool narrow_bool(bool skip,uint8 value);</com>
+  <com>option outlang rust</com>
+  <com>option callrettype off</com>
+  <com>load function wide_value</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function narrow_bool</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callrettype on</com>
+  <com>load function wide_value</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function narrow_bool</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>map prototype wide_value uint8 wide_value(uint8 value);</com>
+  <com>load function narrow_bool</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option outlang go</com>
+  <com>load function narrow_bool</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Console has no recorded return in either option arm" min="2" max="2">v1 = wide_value\(value\);</stringmatch>
+<stringmatch name="Recovered callee still returns a full word" min="2" max="2">fn wide_value\(mut a0: u64\) -&gt; u64</stringmatch>
+<stringmatch name="Explicit Rust prototype retains the narrowing cast" min="1" max="1">v1 = wide_value\(value\) as u8;</stringmatch>
+<stringmatch name="Rust Boolean conversion keeps its byte comparison" min="3" max="3">return v1 != 0;</stringmatch>
+<stringmatch name="Explicit Go prototype retains the narrowing conversion" min="1" max="1">v1 = byte\(wide_value\(value\)\)</stringmatch>
+</decompilertest>

@@ -7384,6 +7384,7 @@ impl PrintC {
         };
         if self.out_lang == crate::kuna_lang::OutLang::Rust {
             if let (Some(ct), Some(vn)) = (cast_ty.as_ref(), fd.obank().get(op).and_then(|o| o.get_in(0))) {
+                if self.push_rust_boolean_conversion(fd, arch, vn, op, ct) { return; }
                 if self.push_rust_array_address_cast(fd, arch, vn, op, ct) { return; }
                 if self.push_rust_integer_conversion(fd, arch, vn, op, ct, true) { return; }
             }
@@ -7831,6 +7832,14 @@ impl PrintC {
         // is restored.
         use crate::kuna_boolbyte::TruncationForm;
         match self.subpiece_cast_form(fd, arch, op) {
+            Some(TruncationForm::Cast | TruncationForm::CastThroughByte)
+                if self.out_lang == crate::kuna_lang::OutLang::Rust
+                    && fd.obank().get(op).and_then(|operation| operation.get_out())
+                        .is_some_and(|value| fd.vn_type_def_facing(value).get_metatype()
+                            == crate::dtype::type_metatype::TYPE_BOOL) =>
+            {
+                self.op_bool_truncation_ir(fd, arch, op)
+            }
             Some(TruncationForm::CastThroughByte) => self.op_bool_truncation_ir(fd, arch, op),
             Some(_) => {
                 let implied = self.implied_cast_drops(fd, arch, op, read_op);
@@ -7924,6 +7933,11 @@ impl PrintC {
             (Some(o), Some(b)) if !self.options.nocasts => (o, b),
             _ => return self.op_type_cast_ir(fd, arch, op),
         };
+        if self.out_lang == crate::kuna_lang::OutLang::Rust
+            && self.push_rust_truncated_boolean_conversion(fd, arch, op, &out_ty, &byte_ty)
+        {
+            return;
+        }
         self.push_cast_open(&out_ty, op);
         self.push_cast_open(&byte_ty, op);
         if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
@@ -8436,6 +8450,7 @@ impl PrintC {
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         let proto = fd.get_call_specs_index(op).map(|index| fd.get_call_specs(index).proto());
         self.push_word_result_open(fd, arch, op);
+        let result_conversion = self.push_call_result_open(fd, arch, op);
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
 
         if opc == OpCode::CPUI_CALLIND {
@@ -8493,6 +8508,7 @@ impl PrintC {
                     crate::printlanguage::SyntaxHighlight::no_color,
                 ));
             }
+            self.push_call_result_close(result_conversion, op);
             return;
         }
 
@@ -8539,6 +8555,7 @@ impl PrintC {
                 crate::printlanguage::SyntaxHighlight::no_color,
             ));
         }
+        self.push_call_result_close(result_conversion, op);
     }
 
     fn emit_indirect_input_aliases(&mut self, fd: &Funcdata) {
@@ -8588,6 +8605,7 @@ impl PrintC {
         &mut self, fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId, slot: i32,
         proto: Option<&crate::fspec::FuncProto>,
     ) {
+        if self.push_extended_call_argument(fd, arch, vn, op, slot) { return; }
         if self.out_lang == crate::kuna_lang::OutLang::Go {
             if let Some(target) = proto.filter(|p| p.has_store()).and_then(|p| p.get_param(slot - 1)).and_then(|p| p.get_type()) {
                 self.push_go_value_as(fd, arch, vn, op, target);
@@ -8596,7 +8614,9 @@ impl PrintC {
         }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
             if let Some(target) = proto.filter(|p| p.has_store()).and_then(|p| p.get_param(slot - 1)).and_then(|p| p.get_type()) {
-                if self.push_rust_array_pointer(fd, arch, vn, op, target) { return; }
+                if self.push_rust_array_pointer(fd, arch, vn, op, target)
+                    || self.push_rust_integer_as(fd, arch, vn, op, target)
+                { return; }
             }
         }
         if self.out_lang != crate::kuna_lang::OutLang::C
@@ -9743,6 +9763,7 @@ impl PrintC {
         // taken out of.
         let mut unnamed_in: Option<std::rc::Rc<crate::dtype::Datatype>> = None;
         let volatile_annotation = fd.vbank().get(vn).is_some_and(|v| v.is_annotation() && v.is_volatile());
+        let facing_type = crate::kuna_aggregatefields::edge_type(fd, vn, op, slot);
 
         while let Some(cur) = ct.clone() {
             // (kuna arraycoverwidth) The upstream whole-symbol break exits the
@@ -9771,18 +9792,18 @@ impl PrintC {
                 && (sz == 0
                     || (sz == cur.get_size()
                         && (!cur.needs_resolution()
-                            || cur.get_metatype() == type_metatype::TYPE_PTR)))
+                            || cur.get_metatype() == type_metatype::TYPE_PTR
+                            || (cur.get_metatype() == type_metatype::TYPE_STRUCT
+                                && facing_type.as_ref().is_some_and(|ty| std::rc::Rc::ptr_eq(ty, &cur))))))
             {
                 break;
             }
             let mut succeeded = false;
             let meta = cur.get_metatype();
             if meta == type_metatype::TYPE_STRUCT {
-                // TypeStruct::findTruncation walks the field table (no cache).
-                // (printc.cc:2044-2056; the needsResolution()/findResolve guard at
-                // 2039-2043 only applies to a struct that itself needsResolution,
-                // which the corpus structs do not — it would require the union
-                // cache and is a no-op for a plain struct.)
+                if crate::kuna_aggregatefields::resolves_whole_struct(fd, &cur, sz, op, slot) {
+                    break;
+                }
                 match cur.find_truncation(off, sz, op, slot) {
                     Ok(Some((idx, newoff))) => {
                         if let Some(f) = cur.get_field(idx) {
@@ -13202,7 +13223,7 @@ pub(crate) fn op_key(op: OpId) -> crate::printlanguage::IrKey {
 }
 
 /// A stable per-varnode key for the `Atom` varnode slot (the C++ `Varnode *`).
-fn vn_key(vn: VarnodeId) -> crate::printlanguage::IrKey {
+pub(crate) fn vn_key(vn: VarnodeId) -> crate::printlanguage::IrKey {
     use slotmap::Key;
     vn.data().as_ffi()
 }

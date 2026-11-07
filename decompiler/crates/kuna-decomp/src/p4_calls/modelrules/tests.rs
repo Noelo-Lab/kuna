@@ -319,6 +319,40 @@ fn filter_homogeneous_float_aggregate() {
     assert!(!f.filter(&dt_float(4)));
 }
 
+#[test]
+fn direct_float_struct_filter_keeps_field_identity_offsets_and_size_limits() {
+    let filter = DatatypeFilter::FloatFields { max_primitives: 2, size: SizeRestriction::new(1, 16) };
+    for fields in [vec![(0, dt_float(4)), (8, dt_float(8))], vec![(0, dt_float(8)), (8, dt_float(4))]] {
+        assert!(filter.filter(&dt_struct(16, 8, &fields)));
+    }
+    assert!(filter.filter(&dt_struct(16, 16, &[(0, dt_float(4))])));
+    assert!(filter.filter(&dt_struct(16, 16, &[(0, dt_float(16))])));
+    let mut with_bits = (*dt_struct(16, 8, &[(0, dt_float(8))])).clone();
+    with_bits.flags |= crate::dtype::flags::has_bitfields;
+    if let DatatypeKind::Struct { bitfield, .. } = &mut with_bits.kind {
+        let mut bit = crate::dtype::TypeBitField::new(1, 1, true, "b", dt_int(4));
+        bit.byte_offset = 8;
+        bitfield.push(bit);
+    }
+    let with_bits = Rc::new(with_bits);
+    assert!(!filter.filter(&with_bits));
+    assert!(super::super::kuna_aggregateabi::direct_fields(&with_bits).is_some(),
+        "integer bitfields must not discard a separate direct floating argument field");
+    for rejected in [
+        dt_float(8), dt_array(dt_float(8), 1), dt_union(8, 8, &[dt_float(8)]),
+        dt_struct(8, 8, &[(0, dt_struct(8, 8, &[(0, dt_float(8))]))]),
+        dt_struct(8, 8, &[(0, dt_array(dt_float(8), 1))]),
+        dt_struct(16, 8, &[(0, dt_float(8)), (8, dt_int(8))]),
+        dt_struct(12, 4, &[(0, dt_float(4)), (4, dt_float(4)), (8, dt_float(4))]),
+        dt_struct(32, 16, &[(0, dt_float(16)), (16, dt_float(16))]),
+        dt_struct(8, 8, &[(4, dt_float(8))]),
+        dt_struct(8, 4, &[(0, dt_float(4)), (2, dt_float(4))]),
+        dt_struct(0, 1, &[]),
+    ] {
+        assert!(!filter.filter(&rejected), "{rejected:?}");
+    }
+}
+
 // =========================================================================
 // QualifierFilter predicates
 // =========================================================================
@@ -839,6 +873,22 @@ fn decode_rule_hidden_return_strategy() {
         .assign_address(&dt_int(8), &proto_empty(), -1, &PanicFactory, &mut status, &mut res, &model, &mgr)
         .unwrap();
     assert_eq!(r, AssignActionResponse::hiddenret_ptrparam);
+}
+
+#[test]
+fn dual_alignment_requires_shared_slots_and_is_explicitly_opted_in() {
+    let mgr = AddrSpaceManager::new();
+    let reg = reg_space_le();
+    for shared in [false, true] {
+        let mut model = ParamListStandard::new(ParamListKind::Standard);
+        model.push_entry(excl_entry_class(0, type_class::TYPECLASS_FLOAT, &reg, 0x10, 8, &[], &mgr));
+        model.push_entry(excl_entry(if shared { 0 } else { 1 }, &reg, 0x20, 8, model.get_entry(), &mgr));
+        model.finish_decode();
+        for align in [false, true] {
+            let xml = format!("<rule><datatype name=\"struct\"/><join_dual_class align=\"{align}\"/></rule>");
+            assert_eq!(decode_rule(&xml, &model, &mgr).is_ok(), !align || shared);
+        }
+    }
 }
 
 #[test]

@@ -1,0 +1,560 @@
+{
+  "declared_at": "2026-11-03T06:32:48.589939+00:00",
+  "feature": "Rust zero byte-array stores: final default-off overhead and explicit on/off cost",
+  "status": "Rebased to actual main8ced, including two independent P6 performance changes. Final default-off overhead and final option on/off cost will be measured with fresh samples; no prior timing is carried across the base change.",
+  "root": "/home/mahaloz/kwt/angr-rust-array-zero",
+  "base": "/home/mahaloz/kwt/angr-array-zero-base-8ced",
+  "seed": 202611074,
+  "samples_per_arm": 64,
+  "warmups_per_arm": 3,
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "cases": [
+    [
+      "c-zero",
+      "/home/mahaloz/kwt/angr-rust-array-zero/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_unsigned",
+      "c"
+    ],
+    [
+      "go-zero",
+      "/home/mahaloz/kwt/angr-rust-array-zero/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_unsigned",
+      "go"
+    ],
+    [
+      "rust-zero",
+      "/home/mahaloz/kwt/angr-rust-array-zero/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_unsigned",
+      "rust"
+    ],
+    [
+      "rust-field",
+      "/home/mahaloz/kwt/angr-rust-array-zero/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_field",
+      "rust"
+    ],
+    [
+      "rust-callback",
+      "/home/mahaloz/kwt/angr-rust-array-zero/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_callback",
+      "rust"
+    ],
+    [
+      "rust-large",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "rust-count",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x12810",
+      "rust"
+    ],
+    [
+      "rust-inflate",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x170bc",
+      "rust"
+    ],
+    [
+      "enabled-c-zero",
+      "/home/mahaloz/kwt/angr-rust-array-zero/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_unsigned",
+      "c"
+    ],
+    [
+      "enabled-go-zero",
+      "/home/mahaloz/kwt/angr-rust-array-zero/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_unsigned",
+      "go"
+    ],
+    [
+      "enabled-rust-zero",
+      "/home/mahaloz/kwt/angr-rust-array-zero/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_unsigned",
+      "rust"
+    ],
+    [
+      "enabled-rust-field",
+      "/home/mahaloz/kwt/angr-rust-array-zero/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_field",
+      "rust"
+    ],
+    [
+      "enabled-rust-callback",
+      "/home/mahaloz/kwt/angr-rust-array-zero/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_callback",
+      "rust"
+    ],
+    [
+      "enabled-rust-large",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "enabled-rust-count",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x12810",
+      "rust"
+    ],
+    [
+      "enabled-rust-inflate",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x170bc",
+      "rust"
+    ]
+  ],
+  "case_options": {
+    "c-zero": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "go-zero": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "rust-zero": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "rust-field": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "rust-callback": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "rust-large": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "rust-count": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "rust-inflate": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "enabled-c-zero": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "enabled-go-zero": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "enabled-rust-zero": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "enabled-rust-field": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "enabled-rust-callback": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "enabled-rust-large": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "enabled-rust-count": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "enabled-rust-inflate": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ]
+  },
+  "required_cases": [
+    "c-zero",
+    "go-zero",
+    "rust-zero",
+    "rust-field",
+    "rust-callback",
+    "rust-large",
+    "rust-count",
+    "rust-inflate"
+  ],
+  "budget_pct": 5,
+  "acceptance": "Default-off versus parent CPU/wall median deltas must be at most5% for every required case. Enabled on/off cost is measured and retained; this option remains default-off because the initial default-on build failed. No unchanged-code repetition after any failure.",
+  "confidence_reporting": "95% one-sided paired-block-bootstrap upper bounds on mean CPU/wall ratios,2000resamples per case; not simultaneous bounds. Report alongside medians and retain every sample.",
+  "bootstrap_resamples": 2000,
+  "upper_quantile": 0.95,
+  "parent_cli_sha256": "245a0199db70a010cdf9b734d5f1fb6d8e6e9e478717ca3813e6546306730ac4",
+  "fixture_sha256": {
+    "/home/mahaloz/kwt/angr-rust-array-zero/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64": "d092a4e34ba7fd229f9183389de04b7a82edfaa145f746c4373e79d04c6c3074",
+    "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb"
+  },
+  "lightwork_reservation_amendment": {
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "policy": "No concurrent owned builds/tests/decompilations or checkout/evidence finalization; only small static reads/writes pinned reserved CPUs."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "raw_sample_persistence": "Atomic checkpoint after every balanced block; declared before the first timing sample.",
+  "root_selection": {
+    "c-zero": {
+      "parent": "base",
+      "candidate": "root"
+    },
+    "go-zero": {
+      "parent": "base",
+      "candidate": "root"
+    },
+    "rust-zero": {
+      "parent": "base",
+      "candidate": "root"
+    },
+    "rust-field": {
+      "parent": "base",
+      "candidate": "root"
+    },
+    "rust-callback": {
+      "parent": "base",
+      "candidate": "root"
+    },
+    "rust-large": {
+      "parent": "base",
+      "candidate": "root"
+    },
+    "rust-count": {
+      "parent": "base",
+      "candidate": "root"
+    },
+    "rust-inflate": {
+      "parent": "base",
+      "candidate": "root"
+    },
+    "enabled-c-zero": {
+      "parent": "root",
+      "candidate": "root"
+    },
+    "enabled-go-zero": {
+      "parent": "root",
+      "candidate": "root"
+    },
+    "enabled-rust-zero": {
+      "parent": "root",
+      "candidate": "root"
+    },
+    "enabled-rust-field": {
+      "parent": "root",
+      "candidate": "root"
+    },
+    "enabled-rust-callback": {
+      "parent": "root",
+      "candidate": "root"
+    },
+    "enabled-rust-large": {
+      "parent": "root",
+      "candidate": "root"
+    },
+    "enabled-rust-count": {
+      "parent": "root",
+      "candidate": "root"
+    },
+    "enabled-rust-inflate": {
+      "parent": "root",
+      "candidate": "root"
+    }
+  },
+  "arm_options": {
+    "c-zero": {
+      "parent": [],
+      "candidate": []
+    },
+    "go-zero": {
+      "parent": [],
+      "candidate": []
+    },
+    "rust-zero": {
+      "parent": [],
+      "candidate": []
+    },
+    "rust-field": {
+      "parent": [],
+      "candidate": []
+    },
+    "rust-callback": {
+      "parent": [],
+      "candidate": []
+    },
+    "rust-large": {
+      "parent": [],
+      "candidate": []
+    },
+    "rust-count": {
+      "parent": [],
+      "candidate": []
+    },
+    "rust-inflate": {
+      "parent": [],
+      "candidate": []
+    },
+    "enabled-c-zero": {
+      "parent": [
+        "--option",
+        "rustarrayzero",
+        "off"
+      ],
+      "candidate": [
+        "--option",
+        "rustarrayzero",
+        "on"
+      ]
+    },
+    "enabled-go-zero": {
+      "parent": [
+        "--option",
+        "rustarrayzero",
+        "off"
+      ],
+      "candidate": [
+        "--option",
+        "rustarrayzero",
+        "on"
+      ]
+    },
+    "enabled-rust-zero": {
+      "parent": [
+        "--option",
+        "rustarrayzero",
+        "off"
+      ],
+      "candidate": [
+        "--option",
+        "rustarrayzero",
+        "on"
+      ]
+    },
+    "enabled-rust-field": {
+      "parent": [
+        "--option",
+        "rustarrayzero",
+        "off"
+      ],
+      "candidate": [
+        "--option",
+        "rustarrayzero",
+        "on"
+      ]
+    },
+    "enabled-rust-callback": {
+      "parent": [
+        "--option",
+        "rustarrayzero",
+        "off"
+      ],
+      "candidate": [
+        "--option",
+        "rustarrayzero",
+        "on"
+      ]
+    },
+    "enabled-rust-large": {
+      "parent": [
+        "--option",
+        "rustarrayzero",
+        "off"
+      ],
+      "candidate": [
+        "--option",
+        "rustarrayzero",
+        "on"
+      ]
+    },
+    "enabled-rust-count": {
+      "parent": [
+        "--option",
+        "rustarrayzero",
+        "off"
+      ],
+      "candidate": [
+        "--option",
+        "rustarrayzero",
+        "on"
+      ]
+    },
+    "enabled-rust-inflate": {
+      "parent": [
+        "--option",
+        "rustarrayzero",
+        "off"
+      ],
+      "candidate": [
+        "--option",
+        "rustarrayzero",
+        "on"
+      ]
+    }
+  },
+  "comparisons": {
+    "c-zero": "final-default-off-versus-frozen-parent",
+    "go-zero": "final-default-off-versus-frozen-parent",
+    "rust-zero": "final-default-off-versus-frozen-parent",
+    "rust-field": "final-default-off-versus-frozen-parent",
+    "rust-callback": "final-default-off-versus-frozen-parent",
+    "rust-large": "final-default-off-versus-frozen-parent",
+    "rust-count": "final-default-off-versus-frozen-parent",
+    "rust-inflate": "final-default-off-versus-frozen-parent",
+    "enabled-c-zero": "final-option-on-versus-off",
+    "enabled-go-zero": "final-option-on-versus-off",
+    "enabled-rust-zero": "final-option-on-versus-off",
+    "enabled-rust-field": "final-option-on-versus-off",
+    "enabled-rust-callback": "final-option-on-versus-off",
+    "enabled-rust-large": "final-option-on-versus-off",
+    "enabled-rust-count": "final-option-on-versus-off",
+    "enabled-rust-inflate": "final-option-on-versus-off"
+  },
+  "enabled_cases": [
+    "enabled-c-zero",
+    "enabled-go-zero",
+    "enabled-rust-zero",
+    "enabled-rust-field",
+    "enabled-rust-callback",
+    "enabled-rust-large",
+    "enabled-rust-count",
+    "enabled-rust-inflate"
+  ],
+  "rebase_parent_commit": "8ced8a2e051e26b89d21096699f690646924921b"
+}

@@ -1,0 +1,28 @@
+{
+  "source": "Original minimal callback/caller regression.",
+  "compiler": "gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0",
+  "dwz": "dwz version 0.16",
+  "command": [
+    "gcc",
+    "-O0",
+    "-g",
+    "-gdwarf-4",
+    "-fno-pie",
+    "-no-pie",
+    "-fdebug-prefix-map=.=.",
+    "-o",
+    "partial-unit.elf",
+    "initialize.c",
+    "caller.c",
+    "other.c"
+  ],
+  "before_dwz_sha256": "2b2678c5d919a3fb9b43fae9496a1c61303d2413af00b9716aec453cba70d14d",
+  "sha256": {
+    "decl.h": "22ddbda9dc237d5dc16aa62ecdf3fbbfb54e14ba3a4261652de64e99c91988cb",
+    "initialize.c": "f9dd56fe2e8a948a73bd3e269dba1f0129a98d5c9c282c283fb476116a8bbfbf",
+    "caller.c": "4297426e4fdd97660158af49f21547c54f38bbd353e6b74ca8bd1c8675332446",
+    "other.c": "c0896c2efb5632e6c7e3d09dfd9bf8b3f0fc3ace63c2494bc03bbd6fc2d71bfe",
+    "partial-unit.elf": "93b5e7d23aa177bdb5842f1e83192ed544d1e512064ac92e065f8db6e8ec893a"
+  },
+  "original_exit_code": 1
+}
