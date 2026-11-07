@@ -4403,8 +4403,8 @@ every other binary's pass list is byte-identical to before the pass existed):
     `sub_<addr>` left on an ObjC app (77 of 1,892 on a 1.9 MB iOS app). The
     class is read off the `class_t` a rebase slot points at or off the bind name
     (`_OBJC_CLASS_$_UIView` → `UIView`), and the two method lists go through the
-    same rename as a class's own: `-[UIView(YYAdd) setLeft:]`,
-    `+[NSMutableDictionary(Branch) dictionaryWithJSON:]`. A category whose class
+    same rename as a class's own: `-[UIView(Layout) setLeft:]`,
+    `+[NSMutableDictionary(JSON) dictionaryWithJSON:]`. A category whose class
     slot resolves to nothing is labelled `-[(Category) sel]` rather than guessed.
     Protocol and property lists are not read; nothing in the C would show them.
   - **Protocols**
@@ -4415,7 +4415,7 @@ every other binary's pass list is byte-identical to before the pass existed):
     0`) because the declaration carries the one thing a sent-only selector lacks:
     its **type encoding**. `UITableViewDelegate` redeclared in the image spells
     the signature of every `tableView:didSelectRowAtIndexPath:` send, so those
-    encodings feed the `objc_msgSend$<sel>` stub prototypes above (kcm: 13 more
+    encodings feed the `objc_msgSend$<sel>` stub prototypes above (that app: 13 more
     stubs typed, the fixture's `objc_msgSend$wave(self)` from `v16@0:8`). A
     `__objc_protorefs` slot is `protoRef_<P>` and folds like the other refs. A
     class's own conformance list is not read: it names nothing the C would show.
@@ -4427,7 +4427,7 @@ every other binary's pass list is byte-identical to before the pass existed):
     loads and adds to `self` (`ldrsw x8, [x8, #off]; ldr d0, [x19, x8]`), because
     under the non-fragile ABI the runtime may slide an offset when a superclass
     from another image grows. The offset variable was already labelled, but as a
-    1-byte symbol a 4-byte load never matched, so 505 ivar accesses on kcm read
+    1-byte symbol a 4-byte load never matched, so 505 ivar accesses on that app read
     `*(long *)((long)self + dat_1001aea74)`; it is now the 4-byte data object
     `<Class>::<ivar>`. Statically the word holds the compile-time layout, so the
     pass builds `struct <Class>` with each ivar at that offset (type from the
@@ -4441,9 +4441,9 @@ every other binary's pass list is byte-identical to before the pass existed):
     at the commit) and reports the offset variables constant through the same
     `dynrelocs` fold path as the refs, so `*(double *)((long)self + Foo::ratio)`
     renders `self->ratio` and `objc_storeStrong((long)self + Foo::_name, x)`
-    renders `objc_storeStrong(&self->_name, x)` (kcm: 5,207 field accesses, 0
-    anonymous offset loads; Toyota's Swift classes expose their stored
-    properties the same way, `self->swiftRUMMonitor`). A class that got no
+    renders `objc_storeStrong(&self->_name, x)` (that app: 5,207 field accesses, 0
+    anonymous offset loads; an 84 MB Swift + ObjC app's Swift classes expose
+    their stored properties the same way). A class that got no
     layout — one of another image behind a category, or one with no field of
     its own — still types `self` as a pointer to its declared record, so the
     receiver is a `<Class> *` even when it is opaque. Off (the option is read

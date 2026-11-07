@@ -177,7 +177,7 @@ pub(super) fn emit(
 
 /// The address of every pointer-sized slot of the named section, bounded by the
 /// bytes the file actually backs it with (a header size alone is untrusted).
-fn section_slots(file: &object::File, name: &str, ps: u64) -> Vec<u64> {
+pub(super) fn section_slots(file: &object::File, name: &str, ps: u64) -> Vec<u64> {
     let Some(sec) = file.section_by_name(name) else { return Vec::new() };
     let Ok(data) = sec.data() else { return Vec::new() };
     let (base, n) = (sec.address(), (data.len() as u64).min(sec.size()) / ps);
@@ -185,6 +185,28 @@ fn section_slots(file: &object::File, name: &str, ps: u64) -> Vec<u64> {
         return Vec::new();
     }
     (0..n).map(|i| base + i * ps).collect()
+}
+
+/// (test) `bytes` with the `size` field of the 64-bit section `name` rewritten.
+#[cfg(test)]
+pub(crate) fn with_section_size(mut bytes: Vec<u8>, name: &str, size: u64) -> Vec<u8> {
+    let u32_at = |b: &[u8], o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap()) as usize;
+    let (mut off, mut hit) = (32, 0);
+    for _ in 0..u32_at(&bytes, 16) {
+        let (cmd, cmdsize) = (u32_at(&bytes, off), u32_at(&bytes, off + 4));
+        if cmd == 0x19 {
+            for j in 0..u32_at(&bytes, off + 64) {
+                let s = off + 72 + 80 * j;
+                if bytes[s..s + 16].split(|&b| b == 0).next() == Some(name.as_bytes()) {
+                    bytes[s + 40..s + 48].copy_from_slice(&size.to_le_bytes());
+                    hit += 1;
+                }
+            }
+        }
+        off += cmdsize;
+    }
+    assert_eq!(hit, 1, "{name}");
+    bytes
 }
 
 /// Append the slot `[va, va + ps)`, merging with the previous range when adjacent.
@@ -393,27 +415,6 @@ mod tests {
         assert!(img.chained());
         assert_eq!(img.rebase_ptr(0x100004000), None);
         assert_eq!(img.bind_name(0x100004000), Some("_ext"));
-    }
-
-    /// `bytes` with the `size` field of the 64-bit section `name` rewritten.
-    fn with_section_size(mut bytes: Vec<u8>, name: &str, size: u64) -> Vec<u8> {
-        let u32_at = |b: &[u8], o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap()) as usize;
-        let (mut off, mut hit) = (32, 0);
-        for _ in 0..u32_at(&bytes, 16) {
-            let (cmd, cmdsize) = (u32_at(&bytes, off), u32_at(&bytes, off + 4));
-            if cmd == 0x19 {
-                for j in 0..u32_at(&bytes, off + 64) {
-                    let s = off + 72 + 80 * j;
-                    if bytes[s..s + 16].split(|&b| b == 0).next() == Some(name.as_bytes()) {
-                        bytes[s + 40..s + 48].copy_from_slice(&size.to_le_bytes());
-                        hit += 1;
-                    }
-                }
-            }
-            off += cmdsize;
-        }
-        assert_eq!(hit, 1, "{name}");
-        bytes
     }
 
     /// A ref section whose header claims far more bytes than the file holds
