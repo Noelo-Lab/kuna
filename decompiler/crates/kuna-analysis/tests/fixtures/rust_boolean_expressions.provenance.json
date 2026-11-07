@@ -1,0 +1,25 @@
+{
+  "at": "2026-11-05T17:54:43.326161+00:00",
+  "description": "Authored Boolean loop expressions that retain integer bitwise p-code over merged Boolean locals. The fixture is only decompiled; native checks execute emitted C/Rust inside authored observers.",
+  "compiler": "cc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+  "command": [
+    "cc",
+    "-O2",
+    "-g",
+    "-fno-pie",
+    "-no-pie",
+    "-fno-inline",
+    "-fno-optimize-sibling-calls",
+    "rust_boolean_expressions.c",
+    "rust_boolean_expressions_helpers.c",
+    "-o",
+    "rust_boolean_expressions_x86_64"
+  ],
+  "fixture_executed": false,
+  "sha256": {
+    "rust_boolean_expressions.c": "a8253e2bf597fdfe690b9418330efce341487f231a9433d4ab7309d4e4936c18",
+    "rust_boolean_expressions_helpers.c": "1e5bf538d95a978c84fb351d888001c8d78bb690610e443b4e278cbe460ebee5",
+    "rust_boolean_expressions.kuna": "a0e1e08dc13a3bb7f9cacfa7bac24deddd9f598b544c8ee0615ced5fa54baebe",
+    "rust_boolean_expressions_x86_64": "70a8854628143f81e7d1bce4779963fe723ec6ef57570f6b04fdd6c5f7dc7127"
+  }
+}

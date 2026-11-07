@@ -236,8 +236,9 @@ struct DieSnap {
     bit_size: Option<u64>,
     /// (kuna `dwarfstructs`) `DW_AT_bit_offset` — the DWARF 2/3 bitfield spelling:
     /// bits from the MOST significant bit of the container named by
-    /// `DW_AT_byte_size`.
-    bit_offset: Option<u64>,
+    /// `DW_AT_byte_size`. A packed field that extends past its container has a
+    /// negative one ([`signed_bit_offset`]).
+    bit_offset: Option<i64>,
     /// (kuna `dwarfstructs`) `DW_AT_data_bit_offset` — the DWARF 4/5 bitfield
     /// spelling: bits from the start of the aggregate.
     data_bit_offset: Option<u64>,
@@ -447,8 +448,8 @@ fn snapshot_unit_with_go(
         if let Some(v) = entry.attr_value(gimli::DW_AT_bit_size) {
             snap.bit_size = v.udata_value();
         }
-        if let Some(v) = entry.attr_value(gimli::DW_AT_bit_offset) {
-            snap.bit_offset = v.udata_value();
+        if let Some(v) = entry.attr_value_raw(gimli::DW_AT_bit_offset) {
+            snap.bit_offset = signed_bit_offset(&v);
         }
         if let Some(v) = entry.attr_value(gimli::DW_AT_data_bit_offset) {
             snap.data_bit_offset = v.udata_value();
@@ -1322,10 +1323,27 @@ impl AnalysisPass for DwarfPass {
     }
 }
 
+/// A raw (unnormalized) `DW_AT_bit_offset` as a signed bit count. GCC writes a
+/// negative one as `DW_FORM_sdata`; clang writes it as the two's complement in a
+/// `DW_FORM_data8`, which gimli's normalized value would read as a huge
+/// unsigned one, so a fixed-size form is sign-extended from its width.
+fn signed_bit_offset<R: gimli::Reader>(v: &gimli::AttributeValue<R>) -> Option<i64> {
+    v.sdata_value()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use kuna_decomp::dtype::TypeFactoryImpl;
+
+    #[test]
+    fn a_bit_offset_reads_negative_in_either_producer_spelling() {
+        type Value = gimli::AttributeValue<gimli::EndianSlice<'static, gimli::LittleEndian>>;
+        for (value, expected) in [(Value::Sdata(-6), -6), (Value::Data8(0xffff_ffff_ffff_fffa), -6),
+            (Value::Data1(0x18), 24), (Value::Udata(3), 3)] {
+            assert_eq!(signed_bit_offset(&value), Some(expected), "{value:?}");
+        }
+    }
 
     #[test]
     fn constant_locations_keep_the_dwarf_byte_order_and_member_offsets() {

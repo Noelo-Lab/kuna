@@ -1,0 +1,12 @@
+{
+  "at": "2026-11-03T06:40:52.221982+00:00",
+  "parent_commit": "d5a1042bbd5497d2be4fe3b2c0b02cd2ce3dcad3",
+  "parent_tree": "baedbc18898f839f128d56455109eee3537a840f",
+  "parent_cli_sha256": "089f142cc56ec317d3466473c586f54f9541032b08e645d6308f3262e7d59754",
+  "fixture_sha256": "d092a4e34ba7fd229f9183389de04b7a82edfaa145f746c4373e79d04c6c3074",
+  "specs": 154,
+  "complete_bodies": 13,
+  "expected_native_comparisons": 416,
+  "parent_merge_pending": false,
+  "parent_source": "main after PR1466, PR1468 and PR1465"
+}

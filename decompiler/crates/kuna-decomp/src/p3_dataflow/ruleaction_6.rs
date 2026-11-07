@@ -1415,6 +1415,13 @@ impl Rule for RulePieceStructure {
             if addr.renormalize(vnsize, data.get_arch().manage()).is_err() {
                 continue;
             }
+            if addr.is_constant() {
+                if node.is_leaf() {
+                    let padding = data.new_constant(vnsize, addr.get_offset());
+                    let _ = data.op_set_input(node.get_op(), padding, node.get_slot());
+                }
+                continue;
+            }
             // C++ `if (vn->getAddr() == addr) { if (!isLeaf || !separateSymbol) {...} }`
             // — the two guards are independent and the inner block `continue`s, so
             // the falls-through-to-leaf-handling structure is preserved by `&&`.
