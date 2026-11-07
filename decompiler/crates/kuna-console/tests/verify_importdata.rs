@@ -28,6 +28,9 @@ use kuna_decomp::decompile_drive::build_and_follow_flow;
 /// The pinned VMA of `_main` in the fixture (PIE imagebase `0x100000000`).
 const MAIN_VMA: u64 = 0x100000448;
 
+/// The pinned VMA of `_read_thrice` in `macho_gotdata_local`.
+const READ_THRICE_VMA: u64 = 0x100000510;
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
@@ -48,9 +51,14 @@ fn name_at(prog: &ConsoleProgram, vma: u64) -> String {
 
 /// Bootstrap the fixture, set `importdata`, commit, then decompile `_main`.
 fn run(on: bool) -> String {
+    run_at("macho_gotdata", MAIN_VMA, on)
+}
+
+/// Bootstrap `fixture`, set `importdata`, commit, then decompile the function at `vma`.
+fn run_at(fixture: &str, vma: u64, on: bool) -> String {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
-    let bin = fixtures().join("macho_gotdata");
+    let bin = fixtures().join(fixture);
     assert!(bin.exists(), "missing fixture {bin:?}");
 
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
@@ -60,14 +68,14 @@ fn run(on: bool) -> String {
         .expect("importdata flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
-    let name = name_at(&prog, MAIN_VMA);
+    let name = name_at(&prog, vma);
     let code_space =
         prog.arch().manage().get_default_code_space().expect("a default code space").clone();
-    let addr = Address::new(Rc::clone(&code_space), MAIN_VMA);
+    let addr = Address::new(Rc::clone(&code_space), vma);
     let fd = {
         let arch = prog.arch_mut();
         build_and_follow_flow(arch, &name, addr, kuna_console::engine::UNBOUNDED_SIZE)
-            .expect("the _main funcdata builds")
+            .expect("the funcdata builds")
     };
 
     let cmds: Vec<String> = ["decompile".into(), "print C".into()].to_vec();
@@ -107,4 +115,16 @@ fn import_slot_data_read_renders_the_import_only_when_on() {
         !off.contains("v1 = imported_counter;"),
         "importdata off must not render the import read (proves the value is the option's):\n{off}"
     );
+}
+
+/// A slot pointer the body keeps in a local is not named through: the reads
+/// through `v1` stay `*v1`, so `v1 = dat_100004000;` keeps its readers. Naming
+/// them `imported_counter` left that assignment dead.
+#[test]
+fn reads_through_a_local_slot_pointer_keep_the_local() {
+    let on = run_at("macho_gotdata_local", READ_THRICE_VMA, true);
+    eprintln!("---- importdata ON ----\n{on}");
+    assert!(on.contains("v1 = dat_100004000;"), "the slot pointer is held in v1:\n{on}");
+    assert_eq!(on.matches("sink(*v1);").count(), 2, "both reads through v1 keep the local:\n{on}");
+    assert_eq!(on.matches("sink(imported_counter);").count(), 1, "the direct slot read names the import:\n{on}");
 }
