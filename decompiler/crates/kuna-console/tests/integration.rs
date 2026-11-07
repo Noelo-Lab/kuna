@@ -469,6 +469,9 @@ mod verify_w11_elf_plt_names;
 #[path = "verify_widestrings.rs"]
 mod verify_widestrings;
 
+#[path = "verify_xreffp.rs"]
+mod verify_xreffp;
+
 #[path = "wrapped_stack_encode.rs"]
 mod wrapped_stack_encode;
 
