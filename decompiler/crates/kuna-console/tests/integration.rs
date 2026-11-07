@@ -14,6 +14,8 @@ mod verify_gobyteview;
 mod octeon_n64_arguments;
 #[path = "octeon_abi.rs"]
 mod octeon_abi;
+#[path = "mips_import_flow.rs"]
+mod mips_import_flow;
 #[path = "n32_stack.rs"]
 mod n32_stack;
 

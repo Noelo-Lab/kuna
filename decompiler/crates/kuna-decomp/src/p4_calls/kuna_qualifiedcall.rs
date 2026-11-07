@@ -4,7 +4,9 @@ use kuna_base::address::Address;
 
 pub fn prototype(arch: &ArchContext, entry: &Address) -> Option<FuncProto> {
     let pieces = arch.callee_proto_pieces(entry)?;
-    if pieces.input_storage.is_empty() && pieces.output_storage.is_none() {
+    if pieces.input_storage.is_empty() && pieces.output_storage.is_none()
+        && !crate::kuna_gotimportproto::binds_type_only(arch, entry, &pieces)
+    {
         return None;
     }
     let model = arch

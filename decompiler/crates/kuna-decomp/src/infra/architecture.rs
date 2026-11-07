@@ -261,6 +261,16 @@ pub struct Architecture {
     pub loader_entry_tracks:
         std::collections::BTreeMap<Address, kuna_sleigh::globalcontext::TrackedSet>,
 
+    /// MIPS ELF t9 register and its entry probe: the seed value where the loader
+    /// recognizes PIC setup. Probed only for an entry no seed already covers.
+    pub loader_mips_t9: Option<(kuna_num::pcoderaw::VarnodeData, Rc<dyn Fn(&Address) -> Option<u64>>)>,
+
+    /// Loader-proven tail transfers: a call whose callee returns to this
+    /// function's caller, decoded as a call followed by a return.
+    pub loader_transfer_sites: Rc<std::collections::BTreeSet<Address>>,
+    /// MIPS GOT import entries identified by the loader, never ordinary definitions.
+    pub loader_mips_imports: Rc<std::collections::BTreeSet<Address>>,
+
     // --- Configuration data (architecture.hh:170-208) ---------------------
     /// How many levels to let parameter trims recurse (C++ `trim_recurse_max`).
     pub trim_recurse_max: int4,
@@ -472,6 +482,15 @@ pub struct Architecture {
     /// (kuna GH-8913) Fuse 8-bit carry-chain 16-bit adds into one wide add
     /// (C++ `add_carry_chain`).
     pub add_carry_chain: bool,
+    /// (kuna `aggregatefields`) Keep structured values whole until their fields
+    /// can be named; see [`crate::context::ArchContext::aggregate_fields`].
+    pub aggregate_fields: bool,
+    /// (kuna `stubtailcall`) Flow loader-proven lazy-binding stubs as tail calls,
+    /// in the decompiler and the Listing; see [`crate::kuna_stubtailcall`].
+    pub stub_tail_call: bool,
+    /// (kuna `gotimportproto`) Bind type-only declarations at loader-proven MIPS
+    /// GOT import calls; see [`crate::kuna_gotimportproto`].
+    pub got_import_proto: bool,
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
     /// (C++ `v850_indirect_branch`).
     pub v850_indirect_branch: bool,
@@ -3025,6 +3044,9 @@ impl Architecture {
             input_arm_isa_override: false,
             arm_inventory_modes: Vec::new(),
             loader_entry_tracks: std::collections::BTreeMap::new(),
+            loader_mips_t9: None,
+            loader_transfer_sites: Rc::default(),
+            loader_mips_imports: Rc::default(),
 
             symbol_snapshots: RefCell::new(SymbolSnapshots::default()),
             kuna_snapshot_cache: std::env::var_os("KUNA_NO_SYMBOL_SNAPSHOT_CACHE").is_none(),
@@ -3088,6 +3110,9 @@ impl Architecture {
             caller_ptr: false, // (kuna) option callerptr
             codescalar: false, // (kuna) option codescalar; reset_defaults sets the shipped default
             add_carry_chain: false,
+            aggregate_fields: false, // (kuna) option aggregatefields; reset_defaults sets the shipped default
+            stub_tail_call: false, // (kuna) option stubtailcall; reset_defaults sets the shipped default
+            got_import_proto: false, // (kuna) option gotimportproto; reset_defaults sets the shipped default
             v850_indirect_branch: false,
             fastfail_noreturn: false, // (kuna) option fastfailnoreturn; reset_defaults sets the shipped default
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
@@ -3818,6 +3843,9 @@ impl Architecture {
         self.codescalar = true; // (kuna) DIV-138 default-on: a `code` pointee is never a value type, so blocking it can only replace a widthless scalar with the size-correct default
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
+        self.aggregate_fields = true; // (kuna) option aggregatefields default-on: 0/675 datatest assertions move; restore upstream's field-only resolution with `option aggregatefields off`
+        self.stub_tail_call = true; // (kuna) option stubtailcall default-on: only loader-proven MIPS lazy-binding stubs, which raw and XML images never have (0/675); restore the plain resolver call with `option stubtailcall off`
+        self.got_import_proto = true; // (kuna) option gotimportproto default-on: only loader-proven MIPS GOT imports, which raw and XML images never have (0/675); restore the storage requirement with `option gotimportproto off`
         self.model_stack_probe_loop = true; // (kuna) DIV-3 default-on (GH-8017)
         self.analyze_for_loops = true;
         self.present_lessequal = true; // (kuna) DIV-2 default-on (GH-558)
@@ -4547,6 +4575,9 @@ impl Architecture {
             .collect();
         ctx.fold_flag_compare = self.fold_flag_compare; // GH-1276/8777 flagcompare
         ctx.add_carry_chain = self.add_carry_chain; // GH-8913 addcarrychain
+        ctx.aggregate_fields = self.aggregate_fields; // aggregatefields
+        ctx.stub_tail_call = self.stub_tail_call; // stubtailcall
+        ctx.got_import_proto = self.got_import_proto; // gotimportproto
         ctx.ov_less_simplify = self.ov_less_simplify; // GH-7190 ovlesssimplify
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
@@ -4824,6 +4855,8 @@ impl Architecture {
         // `ActionDefaultParams` copies a known callee's locked `FuncProto` into the
         // call site (C++ `coreaction.cc:2385` `fc->copy(otherfunc->getFuncProto())`).
         ctx.callee_protos = callee_protos;
+        ctx.loader_transfer_sites = Rc::clone(&self.loader_transfer_sites);
+        ctx.loader_mips_imports = Rc::clone(&self.loader_mips_imports);
         // (kuna) The convention each of those callees was DECLARED under, keyed
         // the same way the pieces are (entry address).  The declaration names the
         // function, the parked pieces carry that name, and the read side
@@ -4855,16 +4888,26 @@ impl Architecture {
         // populated by `set track`) so `ActionConstbase` can query it for the
         // function entry address through the detached per-function skeleton.
         ctx.tracked_sets = self.with_context_db(|db| db.clone_trackbase());
-        if let Some(entry) = entry {
-            if let Some(seeds) = self.loader_entry_tracks.get(entry) {
+        let loader_seeds = |entry: &Address| self.loader_entry_tracks.contains_key(entry)
+            || (self.analysis_mips_gp && self.loader_mips_t9.is_some());
+        if let Some(entry) = entry.filter(|&entry| loader_seeds(entry)) {
+            let mut track = ctx.tracked_sets.get_value(entry).clone();
+            let before = track.len();
+            for seed in self.loader_entry_tracks.get(entry).into_iter().flatten() {
+                if !track.iter().any(|value| value.loc == seed.loc) {
+                    track.push(seed.clone());
+                }
+            }
+            if let Some((loc, probe)) = self.loader_mips_t9.as_ref().filter(|_| self.analysis_mips_gp) {
+                if !track.iter().any(|value| value.loc == *loc) {
+                    if let Some(val) = probe(entry) {
+                        track.push(kuna_sleigh::globalcontext::TrackedContext { loc: loc.clone(), val });
+                    }
+                }
+            }
+            if track.len() != before {
                 if let Some(stop) = entry.get_offset().checked_add(1) {
                     let end = Address::new(Rc::clone(entry.get_space().unwrap()), stop);
-                    let mut track = ctx.tracked_sets.get_value(entry).clone();
-                    for seed in seeds {
-                        if !track.iter().any(|value| value.loc == seed.loc) {
-                            track.push(seed.clone());
-                        }
-                    }
                     *ctx.tracked_sets.clear_range(entry, &end) = track;
                 }
             }

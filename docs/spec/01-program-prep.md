@@ -261,6 +261,24 @@ O32 aggregate arguments preserve memory order within their four-byte slots.
 Big-endian models left-justify structs and unions; little-endian models keep
 their native justification. Separate compiler declarations carry this distinction
 for both FPR widths without changing scalar extension or register-pair rules.
+Octeon selection reconciles the MIPS machine flags, ELF class and N32 flag,
+ISA-extension and register-width declarations, and GNU floating-point
+attributes (`decompiler/crates/kuna-analysis/src/loader/kuna_mipsocteon.rs`).
+BE N32/N64 soft-float profiles select Octeon, Plus, II or III; the qualified
+III hard-float profiles select the `hard` compiler model. Plus requires its
+distinct ISA-extension declaration: indistinguishable legacy flags retain the
+base Octeon target. Conflicting, incomplete or unsupported profiles require an
+explicit target, which always takes precedence. Legacy vendor FP header bits
+do not override standard attributes. The shared reader in
+`decompiler/crates/kuna-analysis/src/loader/kuna_mipsabi.rs` accepts matching
+section and `PT_MIPS_ABIFLAGS` records, rejects malformed or conflicting records,
+and treats FP ANY as unspecified. Call recovery uses the same evidence, including
+in images without section headers. Non-Octeon target selection is unchanged.
+Octeon III accepts the VZ capability declaration emitted by its compiler;
+this does not assert that every privileged VZ instruction is modeled.
+Octeon N32/N64 selection does not intercept ELF32 O32 images, including
+little-endian images carrying Octeon machine flags: they retain generic MIPS
+selection, and an explicit target still takes precedence.
 
 (kuna) **A Go image composes the `:golang` compiler field instead**
 (`decompiler/crates/kuna-analysis/src/loadimage_object.rs (language_id_for)`,
@@ -2197,6 +2215,27 @@ Function addresses remain in the ELF address space; only the seeded register
 value changes. Native ELF64 values and 32-bit register seeds stay intact. Thus
 an ELF32 entry at `0x80001000` supplies `0xffffffff80001000` to a 64-bit `t9`,
 and a full-register signed comparison sees a negative pointer.
+For an ELF loaded as MIPS, the same `mips_gp` policy also seeds `t9` when a
+function is created without a symbol, including stripped and sectionless images.
+That fallback requires a complete PIC address setup prefix: LUI, an ADDU/DADDU
+using t9, and its matching ADDIU/DADDIU, optionally after stack-frame setup.
+`decompiler/crates/kuna-analysis/src/loader/kuna_mipsentry.rs` rejects unrelated
+incoming t9 uses and does not scan through control flow. Zero words are not part
+of the prefix: an address in alignment padding cannot borrow the setup of the
+function after it. A discovered interior
+block beginning with saved registers and a plain indirect call must retain the
+incoming call target instead of acquiring its own address. The probe reads the
+image bytes directly rather than through the load image's staging window, so it
+changes no later read.
+Symbol and fallback seeds share one value rule
+(`decompiler/crates/kuna-analysis/src/loader/kuna_mipsentry.rs (class_pointer)`):
+an ELF32 entry is sign-extended, as 32-bit code leaves a pointer in a 64-bit
+register, and every tracked value is truncated to its register's width. N32,
+and O32 under a 64-bit-register target, therefore see a sign-extended t9; a
+32-bit-register target sees the address itself. Explicit
+tracked values take precedence over this entry default; raw and XML images do
+not acquire the ELF convention. N32 participates in MIPS ISA, entry, floating
+ABI and GOT dispatch despite the object reader's separate architecture tag.
 
 (kuna) **A PowerPC64 ELFv1 function symbol names a descriptor, not code**
 (`decompiler/crates/kuna-analysis/src/loader/elfv1.rs (Descriptors::read)`, the
@@ -3392,11 +3431,22 @@ moves.
   with either the DWARF 4/5 `DW_AT_data_bit_offset` or the DWARF 2/3
   `byte_size` + `bit_offset` spelling, each placed in the smallest byte span that
   covers it — the geometry the compiler's own access agrees with, and the one the
-  printer's `.`-versus-`->` test reads. A "bitfield" occupying whole aligned bytes
-  of a natural width is not one and goes in as a plain field of that width, which
-  is exact on a little-endian target and keeps a known
-  `BitFieldPullTransform` divergence (three bitfields sharing one extraction
-  chain) out of reach. Offsets are installed through a raw
+  printer's `.`-versus-`->` test reads. Positions follow the target's bit order:
+  on a big-endian target both `DW_AT_data_bit_offset` and `DW_AT_bit_offset`
+  count from the most significant bit of the first byte (of the aggregate and of
+  the storage unit respectively), and a span's least significant bit lies in its
+  last byte. `DW_AT_bit_offset` is signed: a packed field that extends past its
+  unit has a negative one, which GCC writes as `DW_FORM_sdata` and clang as the
+  two's complement in a `DW_FORM_data8`, so a fixed-size form is sign-extended
+  from its width. The unit defaults to the member type's size
+  when `DW_AT_byte_size` is absent, and a bitfield with a location but no bit
+  offset starts at that byte. Bitfields are listed in memory order, the order the
+  bitfield lookup's binary search expects. A member with `DW_AT_bit_size` that
+  cannot be placed, or that ends past the aggregate, is skipped. A "bitfield"
+  occupying whole aligned bytes of a natural width is not one and goes in as a
+  plain field of that width, which is exact in either byte order and keeps a
+  known `BitFieldPullTransform` divergence (three bitfields sharing one
+  extraction chain, or one byte-aligned field read alone) out of reach. Offsets are installed through a raw
   field-setting entry point rather than the C packing rules, because the layout is
   the compiler's own answer for the target ABI and re-deriving it would silently
   disagree with the bytes the decompiler reads.
@@ -8468,7 +8518,8 @@ Known pass decides that by name at the stub address, and propagation draws
 nothing from the body. MIPS is where the body misleads. A `.MIPS.stubs` lazy
 stub is `lw $t9,-0x7ff0($gp); move $t7,$ra; jalr $t9; li $t8,<dynsym index>`;
 the resolver jumps to the import, which returns to the caller through `$t7`, so
-control never reaches the word after the stub. The Listing still models the
+control never reaches the word after the stub. Unless `stubtailcall` ends the
+walk at the resolver (see *MIPS lazy-binding imports*), the Listing models the
 `jalr` as a returning call whose fall-through is the next stub's entry, and the
 reachability rule below therefore concluded every stub laid out in front of a
 Known no-return stub (`exit`, `abort`, `__stack_chk_fail`) no-return, then the
@@ -8652,3 +8703,38 @@ The same symbol walk records integer formatting traits in
 LowerHex, UpperHex, Octal, Binary, LowerExp and UpperExp retain exact type and
 trait identity; the Display-only map is derived from these facts without another
 object parse. Unknown or conflicting aliases invalidate the shared address.
+
+### MIPS lazy-binding imports
+
+`decompiler/crates/kuna-analysis/src/loader/kuna_mipsstubs.rs` validates each
+MIPS lazy-binding stub against its dynamic-symbol/GOT identity, executable
+section and complete instruction sequence, in o32, n32 and n64 images. The
+object loader records the validated stubs once per image (`MipsLinkage`). For a
+MIPS language, bootstrap installs their resolver sites, and the GOT-proven
+imports from the ELF function provenance, in the architecture; every Listing
+walk, including a resumed one, and the reference walk behind `kuna xrefs`
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (descend)`) take only
+the sites bootstrap installed.
+With `option stubtailcall` on (the default) the Listing models each resolver
+transfer, including the delay slot, as an opaque computed jump. The walk applies
+this when it decodes the call
+(`decompiler/crates/kuna-analysis/src/listing/walk.rs (step)`), so it never
+follows the call's fall-through into the next stub, section padding or a
+following section, and files no reference along it. Both walks read the option
+when they are built. A stub's no-return status
+still comes from its import's name, as no-return propagation above describes;
+an unknown resolver destination supplies no terminal evidence. Ordinary
+functions and unrecognized instruction sequences retain their original flow.
+This applies to serial, parallel and resumed Listing construction. The same
+validated resolver sites are passed to the decompiler's flow recovery, so a
+stub decompiled alone ends with its tail call instead of falling through into
+the next stub or section padding.
+
+The real dynamic import name takes precedence over the linker-generated
+`_MIPS_STUBS_` label at the same address; the label remains an alias, so a
+call through the first stub names its import.
+Without a callee prototype, a preserved incoming argument register cannot
+establish import arity: calls with and without that argument can have identical
+instructions. A declared prototype supplies that missing contract
+(`gotimportproto`, §4).
+

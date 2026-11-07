@@ -117,8 +117,8 @@ pub struct MipsMarkerPass;
 fn scan_mips_markers(file: &object::File, t9_size: u32) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     // canAnalyze gate: MIPS only. On any other language the pass contributes
-    // nothing (== canAnalyze false). N32 has its own object architecture.
-    if !matches!(file.architecture(), object::Architecture::Mips | object::Architecture::Mips64 | object::Architecture::Mips64_N32) {
+    // nothing (== canAnalyze false).
+    if !super::kuna_mipsabi::is_mips(file.architecture()) {
         return out;
     }
     // Only ELF carries these conventions (the only format kuna loads for MIPS).
@@ -224,10 +224,10 @@ pub struct MipsIsaModePass;
 pub(crate) fn scan_mips_isa_markers(file: &object::File) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     // canHandle gate: MIPS only (the analog of MIPS_ElfExtension.canHandle:331,
-    // e_machine == EM_MIPS), including N32. On any other language the pass contributes
+    // e_machine == EM_MIPS). On any other language the pass contributes
     // nothing (the belt half: the commit boundary also swallows an "ISA_MODE not
     // registered" error, so this is a strict no-op off-MIPS).
-    if !matches!(file.architecture(), object::Architecture::Mips | object::Architecture::Mips64 | object::Architecture::Mips64_N32) {
+    if !super::kuna_mipsabi::is_mips(file.architecture()) {
         return out;
     }
     // Only ELF carries these conventions (the only format kuna loads for MIPS).
@@ -317,6 +317,34 @@ impl AnalysisPass for MipsIsaModePass {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn elf32_entry_pointers_are_sign_extended_whatever_the_abi() {
+        use object::write::{Object as Writer, Symbol, SymbolSection};
+        use object::{Architecture, BinaryFormat, Endianness, FileFlags, SectionKind, SymbolScope};
+        for (arch, e_flags, expected) in [
+            (Architecture::Mips, 0x808e0020, Architecture::Mips64_N32),
+            (Architecture::Mips, 0x70001000, Architecture::Mips),
+            (Architecture::Mips64, 0x808e0000, Architecture::Mips64),
+        ] {
+            let mut object = Writer::new(BinaryFormat::Elf, arch, Endianness::Big);
+            object.flags = FileFlags::Elf { os_abi: 0, abi_version: 0, e_flags };
+            let section = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+            object.append_section_data(section, &[0; 4], 4);
+            for (name, address) in [(b"low".as_slice(), 0x1000), (b"high".as_slice(), 0x81234560)] {
+                object.add_symbol(Symbol { name: name.to_vec(), value: address, size: 4,
+                    kind: SymbolKind::Text, scope: SymbolScope::Linkage, weak: false,
+                    section: SymbolSection::Section(section), flags: SymbolFlags::None });
+            }
+            let bytes = object.write().unwrap();
+            let file = object::File::parse(bytes.as_slice()).unwrap();
+            assert_eq!(file.architecture(), expected);
+            let out = scan_mips_markers(&file, 8);
+            assert_eq!(t9_seed_at(&out, 0x1000), Some(0x1000));
+            let high = if file.is_64() { 0x81234560 } else { 0xffffffff81234560 };
+            assert_eq!(t9_seed_at(&out, 0x81234560), Some(high), "{expected:?}");
+        }
+    }
 
     /// The dynamic MIPS LE fixture (a linked ET_DYN with PT_LOAD, so the decode
     /// e2e works — unlike the ARM `.o`, this host HAS a MIPS toolchain).

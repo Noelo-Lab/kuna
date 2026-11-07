@@ -23,6 +23,24 @@ reaches the architecture only through the
 live implementation is
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`.
 
+With `option stubtailcall` on (the default), loader-validated MIPS
+lazy-binding resolver sites carry call-and-return overrides in the shared
+architecture snapshot
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_stubtailcall.rs (flow_override)`). The resolver binds the import
+and jumps to it with the stub caller's return address restored, so the stub is a
+tail call: flow recovery keeps the indirect call, including its delay slot and
+register writes, and ends the stub with a return after it. It is not an
+indirect branch, so no jump-table recovery or fallback warning applies. It does
+not follow a nonexistent local return into the next stub or section padding,
+and does not declare the imported function no-return. Explicit per-function
+flow overrides take precedence. Raw inputs and unvalidated stubs do not acquire
+these facts. The object loader validates the stubs once per image
+(`decompiler/crates/kuna-analysis/src/loader/kuna_mipsstubs.rs (MipsLinkage)`);
+for a MIPS language bootstrap installs their resolver sites, and the Listing and
+`kuna xrefs` walks follow the same sites.
+Off, the resolver call is decoded as an ordinary call that falls through into
+the next stub, as upstream decodes it, and the Listing keeps that fall-through.
+
 The A32 single-register `POP {pc}` alias (`ldr pc,[sp],#4`) lifts as a return,
 including its conditional forms. Its address mode still advances SP by four
 bytes and its PC write preserves interworking. Other PC loads retain their

@@ -7,6 +7,7 @@ pub mod funcdata_callsite;
 pub mod fspec;
 pub(crate) mod kuna_joincalloutput;
 pub mod modelrules;
+mod kuna_aggregateabi;
 pub mod coreaction_protos;
 pub mod kuna_calleedeadarg;
 pub mod kuna_hiddenretarg; // (kuna) a value left in the hidden-return register is no argument a callee cannot take
@@ -94,3 +95,4 @@ pub mod kuna_callmechanisms;
 pub(crate) mod kuna_registerslots;
 
 pub mod kuna_qualifiedcall;
+pub mod kuna_gotimportproto; // (kuna) a type-only declaration binds at a loader-proven MIPS GOT import call

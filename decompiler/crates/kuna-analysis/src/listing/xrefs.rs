@@ -86,7 +86,7 @@ use super::kuna_pltstub::PltStubs;
 use super::kuna_poolref::PoolImage;
 use super::kuna_regcarry::{self, Machine as CarryMachine};
 use super::kuna_switchtable;
-use super::model::{FlowKind, RawOp};
+use super::model::{FlowKind, FlowType, RawOp};
 #[path = "kuna_prefixreuse.rs"]
 mod kuna_prefixreuse;
 
@@ -777,6 +777,11 @@ fn descend(
     // to classify data references against it (they would all be wrong).
     let exec_set = range_union(exec.clone());
     let sections_are_runtime = !exec.is_empty() && seeds.iter().any(|&s| in_range(&exec_set, s));
+    let stub_sites: HashSet<u64> = if arch.stub_tail_call {
+        arch.loader_transfer_sites.iter().map(Address::get_offset).collect()
+    } else {
+        HashSet::new()
+    };
     let mapped = if sections_are_runtime { range_union(mapped_ranges(file)) } else { Vec::new() };
 
     // Paint the decode-mode context (ARM `TMode` / MIPS `ISA_MODE`) before the
@@ -1234,7 +1239,15 @@ fn descend(
                     .iter()
                     .map(|op| RawOp { opcode: op.opcode, in0: op.ins.first().cloned() }),
             );
-            let c = classify(&raw, vma, len);
+            let mut c = classify(&raw, vma, len);
+            if stub_sites.contains(&vma) {
+                c.flow = FlowType {
+                    kind: FlowKind::ComputedJump, is_jump: true, is_computed: true, is_indirect: true,
+                    ..Default::default()
+                };
+                c.fall_through = None;
+                c.flows.clear();
+            }
             let skip = a32_tables.as_ref().and_then(|_| c.predicated_skip(vma, len));
             let mut condition = condskip.then(|| c.condition_skip(&raw, vma, len)).flatten();
             if let Some(fall) = c.fall_through.filter(|_| !waiting.is_empty()) {
