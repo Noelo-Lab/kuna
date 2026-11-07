@@ -80,10 +80,10 @@ fn fixture_has_no_current_field() {
     // phases.toml settableTable (counts asserted in kuna_phases/tests.rs).
     // Every row carries the tier field appended after change_kind.
     // ... and the symptoms array appended after tier (C3).
-fn fixture_has_all_383_settables() {
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 383);
-    assert_eq!(FIXTURE.matches("\"tier\": ").count(), 383);
-    assert_eq!(FIXTURE.matches("\"symptoms\": ").count(), 383);
+fn fixture_has_all_384_settables() {
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 384);
+    assert_eq!(FIXTURE.matches("\"tier\": ").count(), 384);
+    assert_eq!(FIXTURE.matches("\"symptoms\": ").count(), 384);
 }
 
 #[test]
