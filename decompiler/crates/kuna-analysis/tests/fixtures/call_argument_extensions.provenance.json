@@ -1,0 +1,20 @@
+{
+  "at": "2026-11-06T00:53:26.410160+00:00",
+  "description": "Authored direct-call zero-extension probes, including signed source bits, signed wider callees and canary-checkable stores. This analysis fixture is not executed.",
+  "compiler": "cc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+  "command": [
+    "cc",
+    "-O1",
+    "-fno-inline",
+    "-fno-optimize-sibling-calls",
+    "-fno-pie",
+    "-no-pie",
+    "call_argument_extensions.c",
+    "-o",
+    "call_argument_extensions_x86_64"
+  ],
+  "sha256": {
+    "call_argument_extensions.c": "1d32d11188b94b7d32d55193bd74b2d641f346ac56bfcfe02047a0b5305a317a",
+    "call_argument_extensions_x86_64": "195ab36ae206b5fe8a9aa1c1dd68764f8888d70fbd7f29a46f63e95d2428ca4b"
+  }
+}

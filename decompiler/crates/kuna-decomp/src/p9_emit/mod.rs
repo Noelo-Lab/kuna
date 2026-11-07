@@ -18,6 +18,9 @@ pub mod kuna_unknowncasts;
 pub mod kuna_signedread; // (kuna) a signed read of an expression that prints unsigned casts it back
 pub(crate) mod kuna_rustsigned;
 pub(crate) mod kuna_rustintegers;
+pub(crate) mod kuna_rustboolcast;
+pub(crate) mod kuna_callresult;
+pub(crate) mod kuna_callargextend;
 pub(crate) mod kuna_ruststorevalue;
 pub(crate) mod kuna_rustptradd;
 pub(crate) mod kuna_rustarrayindex;
@@ -89,6 +92,7 @@ pub(crate) mod kuna_rustfmtpanic;
 pub(crate) mod kuna_rustfmtpieces;
 pub mod kuna_langrust; // (kuna) the rust-language policy objects (profile + caps)
 pub mod kuna_langgo;
+pub(crate) mod kuna_gopointerarith;
 pub mod kuna_gopackage;
 pub(crate) mod kuna_gobyteview;
 pub(crate) mod kuna_gobyteextract;

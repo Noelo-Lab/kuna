@@ -90,7 +90,8 @@ impl PrintC {
         op: OpId,
         target: &Rc<Datatype>,
     ) -> bool {
-        self.push_rust_array_pointer(fd, arch, value, op, target)
+        self.push_rust_boolean_conversion(fd, arch, value, op, target)
+            || self.push_rust_array_pointer(fd, arch, value, op, target)
             || self.push_rust_integer_as(fd, arch, value, op, target)
     }
 }
