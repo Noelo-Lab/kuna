@@ -280,7 +280,9 @@ impl Action for ActionConstbase {
         let bb = data.bblocks_get_block(0);
         let bb_start = data.bblocks_block_start(bb);
 
-        if let Err(error) = crate::kuna_callmechanisms::apply_entry(data) {
+        if let Err(error) = crate::kuna_callmechanisms::apply_entry(data)
+            .and_then(|_| crate::p4_calls::kuna_registerslots::apply(data))
+        {
             data.kuna_call_mechanisms.failure = Some(error.to_string());
             return 0;
         }

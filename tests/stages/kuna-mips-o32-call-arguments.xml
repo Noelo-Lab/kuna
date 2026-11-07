@@ -1,0 +1,22 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:64:64-32addr:o32">
+<!-- Synthetic caller: save ra; addiu a1,a0,1; jal callee; addiu a2,zero,7
+     (delay slot); restore ra; return. Callee: addu v0,a0,a1; addu v0,v0,a2;
+     jr ra; nop. O32 passes each four-byte word in the low half of an
+     eight-byte register; the caller never touches a3. -->
+<bytechunk space="ram" offset="0x1000" readonly="true">27bdfff0afbf000c248500010c000410240600078fbf000c03e0000827bd0010</bytechunk>
+<bytechunk space="ram" offset="0x1040" readonly="true">008510210046102103e0000800000000</bytechunk>
+<symbol space="ram" offset="0x1000" name="caller"/>
+<symbol space="ram" offset="0x1040" name="callee"/>
+</binaryimage>
+<script>
+  <com>option ctypes on</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="O32 call: word arguments reach the call" min="1" max="1">callee\(a0,a0 \+ 1,7\)</stringmatch>
+<stringmatch name="O32 call: only the read argument register is an input" min="1" max="1">caller\(int a0\)</stringmatch>
+<stringmatch name="O32 call: unread registers are not passed" min="0" max="0">a3|unaff_|CONCAT|halt_baddata</stringmatch>
+</decompilertest>

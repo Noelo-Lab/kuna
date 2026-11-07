@@ -1,5 +1,28 @@
 # Stage-model issue testcases
 
+`ghangr-call-argument-extensions.xml` checks explicit and missing parameter
+contracts. The CLI companion executes complete emitted C, Go and Rust callers
+and callees, covering zero extension, sign extension, signedness and store canaries.
+
+`ghangr-rust-boolean-expressions.xml` checks bitwise expressions over merged
+Boolean locals. Its CLI companion executes complete emitted C and Rust functions
+against independent result formulas, callback traces and store canaries at O0/O2.
+
+`ghangr-scalar-call-results.xml` checks the no-record and explicit-prototype
+controls for narrowed scalar calls. The CLI probes exercise callee-first recovery;
+the native companion compiles and executes complete emitted C, Go and Rust callees
+and callers across signed, unsigned, Boolean and full-width results.
+
+`ghangr-rust-boolean-conversions.xml` checks byte-to-Boolean casts, masked values
+and narrowed callback results. Its CLI companion compiles complete C and Rust
+output under the same asserted prototypes and checks every byte value and call
+counts. The original fixture is only decompiled.
+
+`kuna-e500-call-slots.xml` compares disabled and automatic call-overlap guards
+for scalar arguments and results inside e500's wide registers, and decompiles a
+conditional tail-call wrapper with `exclusivecallret` off and on. The CLI tests
+cover both byte orders and execute the recovered wrappers.
+
 `kuna-callwide.xml` loads the committed sealed MIPS32-BE ELF and checks the
 four-byte OFF result against the proved eight-byte result and high-piece callers.
 Its CLI companion executes the original bytes and untouched emitted C/header
@@ -240,7 +263,7 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 | `kuna-rodatastring.xml` | a string block-copied out of read-only memory into the frame renders as invalid C: `v1[0] = (char[8])msg._0_8_;` (there is no array cast) and the literal never appears (DIV-113) | `option rodatastring on\|off` (new kuna settable, P5 `constsequence`) |
 | `kuna-calleenamedlocals.xml` | kuna [#762](https://github.com/Noelo-Lab/kuna/issues/762): two distinct pointer locals passed to one `consume(Node *object)` both took the name `object`, `dedupvardecls` kept one declaration, and the store after the inner loop cleared the last member's flag instead of the representative's; the same defect through a struct-by-value argument (its fields stored into another struct, or into a same-named global), a user rename (`&v2` printed as the other slot's address), and a slot named like a global (its narrow views read the global), plus a global array a suffixed local must not capture | P6 local naming (a callee-parameter name is made unique against names already bound to other highs; struct roots share only among themselves) + P9 declaration emission (the identical-line collapse only merges lines of one Symbol, and every high printed through another declaration follows its final name); correctness fix, no option. Passes 2 and 3 pin `option dedupvardecls off` and `option namestyle ghidra` |
 | `kuna-stacksolver-unsolved.xml` | kuna [#1288](https://github.com/Noelo-Lab/kuna/issues/1288) (a PKLITE-packed DOS executable decompiled as a raw real-mode image grew memory without bound: `DEC SP` in its packed body solved a stack variable to 65535, the `StackSolver` sentinel for "unsolved", and two such variables re-pushed each other forever; where the solve did finish, the genuine 65535 still read as unsolved and the function kept a raw stack-pointer local) | P6 variables, `ActionStackPtrFlow` extra-pop solve | none (strict fix): the solve terminates and the loop around the call is emitted; `h` reads its return address at entry + 2 with no raw stack-pointer local |
-| `kuna-objcrefs.xml` | Toyota.app (84 MB arm64 iOS, Swift + ObjC): every message send read `objc_msgSendSuper2(&super, dat_1045b76f0)` even with `objc on`, and 274 of 1,622 calls in a 500-function sample were `sub_1034xxxxx(obj)` through an anonymous `__objc_stubs` entry. P1 external-refinement (`analyzers/objc/kuna_objcrefs.rs` names `__objc_selrefs` / `__objc_classrefs` / `__objc_superrefs` slots and the `objc_msgSend$<sel>` stubs with a pinned prototype; `loader/kuna_dynrelocs.rs (macho_chained)` unpacks the chained-fixup rebases under `dynrelocs`) → P3 fold of the constant slots | `option objc on\|off` (names), `option objcrefconst on\|off` (new kuna settable; the slot fold) |
+| `kuna-objcrefs.xml` | A large third-party iOS app (84 MB arm64, Swift + ObjC): every message send read `objc_msgSendSuper2(&super, dat_1045b76f0)` even with `objc on`, and 274 of 1,622 calls in a 500-function sample were `sub_1034xxxxx(obj)` through an anonymous `__objc_stubs` entry. P1 external-refinement (`analyzers/objc/kuna_objcrefs.rs` names `__objc_selrefs` / `__objc_classrefs` / `__objc_superrefs` slots and the `objc_msgSend$<sel>` stubs with a pinned prototype; `loader/kuna_dynrelocs.rs (macho_chained)` unpacks the chained-fixup rebases under `dynrelocs`) → P3 fold of the constant slots | `option objc on\|off` (names), `option objcrefconst on\|off` (new kuna settable; the slot fold) |
 | `kuna-ptrauthtrap.xml` | iOS 16.4.1 `trustd` (arm64e): 205 functions printed `if ((v1 ^ v1 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); }` before a tail call, the compiler's inline check of an `autibsp` result that SLEIGH hides. P2 flow-classification (`p2_lift/kuna_ptrauthtrap.rs` removes every CBRANCH edge into a `brk #0xc470..0xc473` trap block pre-SSA) | `option ptrauthtrap on\|off` (new kuna settable) |
 | `kuna-authptrcall.xml` | iOS 16.4.1 `trustd` (arm64e): three `___chkstk_darwin` calls through `__auth_ptr` rendered `(*dat_1000716c0)(...)` while every `__auth_got` call was named; `__auth_ptr` has no indirect-symbol entries. P1 external-refinement (`loader/kuna_authptrcall.rs` names each `__auth_ptr` bind slot from its chained bind and paints it `externref`) | `option authptrcall on\|off` (new kuna settable) |
 
@@ -384,3 +407,14 @@ callers against boundary values and check that each helper is called once.
 `ghangr-go-store-value.xml` checks Go integer destination conversions for fields,
 plain/indexed pointers and a side-effectful call, with all integer widths and
 complete native bodies covered by the CLI integration fixture.
+
+`ghangr-go-pointer-arithmetic-32.xml` and `ghangr-go-pointer-arithmetic-64.xml`
+check live pointer bases through constant, negative and signed dynamic byte
+offsets in Go loads, stores and returns. Integer-address reconstruction remains
+a control. The CLI companion builds both authored assembly fixtures and runs
+the complete emitted functions with Go pointer checks and full-array canaries.
+
+`kuna-elf-unwind-pcread.xml` checks an authored PowerPC PC-relative literal read:
+with FDE ownership disabled it remains a call; with ownership enabled the
+complete body returns `a0 * 3 + 7`. The fixture generator is
+`decompiler/crates/kuna-cli/tests/fixtures/elf_unwind_fixture.rs`.

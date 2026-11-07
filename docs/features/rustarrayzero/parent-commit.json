@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-03T06:40:40.953861+00:00",
+  "source": "Actual main after independent PR1466, PR1468 and PR1465",
+  "published_commit": "d5a1042bbd5497d2be4fe3b2c0b02cd2ce3dcad3",
+  "merged_commit": "d5a1042bbd5497d2be4fe3b2c0b02cd2ce3dcad3",
+  "published_tree": "baedbc18898f839f128d56455109eee3537a840f",
+  "merged_tree": "baedbc18898f839f128d56455109eee3537a840f",
+  "candidate_cli_sha256": "089f142cc56ec317d3466473c586f54f9541032b08e645d6308f3262e7d59754",
+  "prior_feature_parent": "https://github.com/Noelo-Lab/kuna/pull/1471",
+  "upstream_changes": [
+    "https://github.com/Noelo-Lab/kuna/pull/1466",
+    "https://github.com/Noelo-Lab/kuna/pull/1468",
+    "https://github.com/Noelo-Lab/kuna/pull/1465"
+  ]
+}
