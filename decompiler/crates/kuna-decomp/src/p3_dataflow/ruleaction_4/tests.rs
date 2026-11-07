@@ -1162,6 +1162,62 @@ fn concatzero_rejects_nonzero_const() {
     assert_eq!(RuleConcatZero::new().apply_op(cat, &mut fd), 0);
 }
 
+#[test]
+fn concatzero_preserves_structured_values_for_field_recovery() {
+    for (enabled, metatype, kept) in [
+        (true, type_metatype::TYPE_STRUCT, true),
+        (true, type_metatype::TYPE_INT, false),
+        (false, type_metatype::TYPE_STRUCT, false),
+    ] {
+        let mut fd = build_fd_with(|ctx| ctx.aggregate_fields = enabled);
+        let block = mk_block(&mut fd);
+        let value = mk_vn(&mut fd, 12, 0x10);
+        let zero = fd.new_constant(4, 0);
+        let (op, output) = mk_def(&mut fd, block, OpCode::CPUI_PIECE, 16, 0x30, &[value, zero]);
+        fd.vbank_mut().get_mut(output).unwrap()
+            .update_type(Rc::new(Datatype::new(16, metatype)));
+        assert_eq!(RuleConcatZero::new().apply_op(op, &mut fd), i32::from(!kept),
+            "aggregatefields={enabled} {metatype:?}");
+        let code = fd.obank().get(op).unwrap().code();
+        assert_eq!(code, if kept { OpCode::CPUI_PIECE } else { OpCode::CPUI_INT_LEFT });
+        if kept {
+            assert_eq!(fd.obank().get(op).unwrap().get_in(0), Some(value));
+            assert_eq!(fd.obank().get(op).unwrap().get_in(1), Some(zero));
+        }
+    }
+}
+
+#[test]
+fn every_copy_on_the_chain_to_the_return_resolves_the_whole_container() {
+    use crate::fspec::ProtoStore;
+    for enabled in [true, false] {
+        let mut fd = build_fd_with(|ctx| ctx.aggregate_fields = enabled);
+        let parent = Rc::new(Datatype::new(8, type_metatype::TYPE_STRUCT));
+        let mut store = crate::fspec::ProtoStoreInternal::new(Rc::new(Datatype::new(0, type_metatype::TYPE_VOID)));
+        store.set_output(&crate::fspec::ParameterPieces {
+            addr: Address::new(ram_space(&fd), 0x80),
+            type_: Some(Rc::clone(&parent)),
+            flags: 0,
+        });
+        fd.get_func_proto_mut().set_store(Box::new(store));
+        fd.get_func_proto_mut().set_output_lock(true);
+        let block = mk_block(&mut fd);
+        let input = mk_vn(&mut fd, 8, 0x10);
+        fd.vbank_mut().get_mut(input).unwrap().update_type_locked(Rc::clone(&parent), true, true);
+        let (first, middle) = mk_def(&mut fd, block, OpCode::CPUI_COPY, 8, 0x20, &[input]);
+        let (second, last) = mk_def(&mut fd, block, OpCode::CPUI_COPY, 8, 0x30, &[middle]);
+        let ret = mk_op(&mut fd, 2, 0x40, OpCode::CPUI_RETURN);
+        let offset = fd.new_constant(4, 0);
+        fd.op_set_input(ret, offset, 0).unwrap();
+        fd.op_set_input(ret, last, 1).unwrap();
+        fd.op_insert(ret, block, None);
+        for (op, slot) in [(first, -1), (first, 0), (second, -1), (second, 0), (ret, 1)] {
+            assert_eq!(crate::kuna_aggregatefields::returns_whole_container(&fd, op, slot, &parent), enabled,
+                "aggregatefields={enabled} op={op:?} slot={slot}");
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // RuleZextCommute  (creates an earlier INT_RIGHT)
 // ---------------------------------------------------------------------------

@@ -3006,6 +3006,7 @@ impl ConsoleProgram {
             &mut merged.entries,
             &fde_bodies,
         );
+        self.arch_mut().kuna_function_bodies = fde_bodies;
         // (kuna, `coldentry`) The FDE-interior entries a multi-entry `.cold`
         // fragment is jumped into at, added past the suppression above.
         let cold_entries = std::mem::take(&mut merged.fde_interior_entries);
@@ -4366,6 +4367,26 @@ pub fn bootstrap_from_object(
     bootstrap_from_object_with_isa(path, target, spec_roots, isa)
 }
 
+/// The MIPS t9 entry probe: the PIC-setup seed for `entry`, truncated to the
+/// `register_bytes`-wide t9. It reads the loader's live bytes on each call
+/// rather than holding them, because `adjust_vma` must own them exclusively to
+/// rebase the image; the loader is never mutably borrowed while a function
+/// handle is built.
+fn mips_t9_probe(
+    image: Rc<std::cell::RefCell<Box<dyn kuna_sleigh::loadimage::LoadImage>>>,
+    elf32: bool,
+    little: bool,
+    register_bytes: u32,
+) -> Rc<dyn Fn(&Address) -> Option<u64>> {
+    let mask = kuna_base::address::calc_mask(register_bytes as i32);
+    Rc::new(move |entry| {
+        let loader = image.try_borrow();
+        debug_assert!(loader.is_ok(), "load image mutably borrowed while building a function handle");
+        let bytes = loader.ok()?.shared_bytes()?;
+        Some(kuna_analysis::loader::kuna_mipsentry::value(&*bytes, entry.get_offset(), elf32, little)? & mask)
+    })
+}
+
 /// Explicit-input-context form of [`bootstrap_from_object`]. Front-ends use
 /// this to avoid process-global state; the interactive console wrapper above
 /// retains the environment bridge used by `load file`.
@@ -4480,6 +4501,7 @@ pub fn bootstrap_from_object_with_isa(
     let parsed = is_arm32_language(&arch_id)
         .then(|| kuna_analysis::loadimage_object::parse_object(&*bytes).ok())
         .flatten();
+    let mips_linkage = loader.mips_linkage().filter(|_| arch_id.starts_with("MIPS:")).cloned();
     let isa = isa.or_else(|| {
         let file = parsed.as_ref()?;
         kuna_analysis::loadimage_object::arm_isa_hint(file, &bytes).map(|thumb| {
@@ -4551,6 +4573,7 @@ pub fn bootstrap_from_object_with_isa(
     // function it defines, so a call through one is built at the definition.
     let plt_local: Vec<(u64, u64)> = loader.plt_local_targets().to_vec();
     let elfv1_tocs = loader.elfv1_descriptors().entry_tocs();
+    let image_elfv1_toc = !loader.elfv1_descriptors().0.is_empty();
     let elf_functions = loader.elf_function_provenance().clone();
     let loader_aliases = loader.func_symbol_aliases();
 
@@ -4673,6 +4696,11 @@ pub fn bootstrap_from_object_with_isa(
     // syscallregs auto` acts only when it is.
     sleigh.base_mut().unwrap().image_os_userland =
         kuna_analysis::loader::format::elf_userland::is_os_userland_image(&bytes);
+    // (kuna `callmechanisms`) And whether the loader validated PPC64 ELFv1
+    // function descriptors (a linked image's or an object's `.opd`), whose ABI
+    // reserves `0x28(r1)` for the TOC save: `option callmechanisms auto`
+    // installs the cspec's TOC-reload return payloads only when it did.
+    sleigh.base_mut().unwrap().image_elfv1_toc = image_elfv1_toc;
     // (kuna `formatstring`) And one more: does this target pass a variadic
     // argument the way it passes a named one? On AArch64 that is the container's
     // answer (Apple puts every vararg on the stack), which only the image knows.
@@ -4696,6 +4724,17 @@ pub fn bootstrap_from_object_with_isa(
     let description = sleigh.base().unwrap().get_description().to_string();
 
     let mut prog = empty_program(sleigh, registry, ProgramContainer::Object, description);
+    if let Some(linkage) = mips_linkage {
+        let (elf32, little) = (linkage.elf32, linkage.little);
+        prog.arch_mut().loader_transfer_sites = Rc::new(linkage.transfers.into_iter()
+            .map(|(site, _)| Address::new(Rc::clone(&code_space), site)).collect());
+        prog.arch_mut().loader_mips_imports = Rc::new(elf_functions.imports.iter()
+            .map(|&entry| Address::new(Rc::clone(&code_space), entry)).collect());
+        if let Ok(loc) = prog.arch().get_register_varnode(b"t9") {
+            prog.arch_mut().loader_mips_t9 = Some((loc.clone(), mips_t9_probe(
+                prog.arch().translate().loader_rc(), elf32, little, loc.size)));
+        }
+    }
     prog.load_notes = load_notes;
     prog.symbols = SymbolStream::from_loader(symbols);
     prog.object_sections = object_sections;
@@ -5601,8 +5640,8 @@ fn commit_analysis_output(
     // 7. Tracked register VALUES (the kuna analog of MipsAddressAnalyzer's
     //    per-function register-value seeding / the console `set track <reg> <val>
     //    <start> <end>`). For each fact, resolve the register varnode and seed the
-    //    constant over `[func_addr, func_addr+1)` via `create_set` — the exact
-    //    `IfcSettrackedrange` recipe (ifacedecomp.rs IfcSettrackedrange). The
+    //    constant, truncated to the register's width, over `[func_addr,
+    //    func_addr+1)` via `create_set` — the exact `IfcSettrackedrange` recipe (ifacedecomp.rs IfcSettrackedrange). The
     //    per-function `build_arch_handle` then snapshots the track base into the
     //    per-function ArchContext (`tracked_sets = clone_trackbase()`), and `ActionConstbase` (S3)
     //    emits `COPY #val -> reg` at the entry block, which constant propagation
@@ -5625,7 +5664,7 @@ fn commit_analysis_output(
         // (setRegisterValue(funcAddr, funcAddr, …)); +1 makes the [addr1, addr2)
         // create_set range non-empty (addr2 > addr1, as IfcSettrackedrange requires).
         let end = Address::new(Rc::clone(code_space), fact.func_addr.wrapping_add(1));
-        let val = fact.value;
+        let val = fact.value & kuna_base::address::calc_mask(loc.size as i32);
         prog.arch().with_context_db_mut(|db| {
             // C++ createSet(addr1,addr2); track = def (copy default as base); push —
             // the exact IfcSettrackedrange body for a ranged `set track`.

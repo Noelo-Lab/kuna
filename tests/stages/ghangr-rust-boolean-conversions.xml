@@ -1,0 +1,47 @@
+<!-- Go/Rust parity: primitive Boolean consumers in P9 emission.
+     Explicit source prototypes exercise a correctness fix without a new option.
+     Rust retains byte narrowing and compares with zero; C retains its cast. -->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_integer_conversions_x86_64</com>
+  <com>read symbols</com>
+  <com>map prototype as_unsigned8 bool as_unsigned8(uint1 value);</com>
+  <com>map prototype as_signed8 bool as_signed8(int1 value);</com>
+  <com>map prototype masked8 bool masked8(int1 value);</com>
+  <com>map prototype call_unsigned bool call_unsigned(uint8 value);</com>
+  <com>map prototype counted_unsigned uint8 counted_unsigned(uint8 value);</com>
+  <com>map prototype call_signed bool call_signed(int8 value);</com>
+  <com>map prototype counted_signed int8 counted_signed(int8 value);</com>
+  <com>option outlang rust</com>
+  <com>load function as_unsigned8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function as_signed8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function masked8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function call_unsigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function call_signed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option outlang c</com>
+  <com>load function as_unsigned8</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Rust signed and unsigned Boolean consumers compare once" min="2" max="2">return value != 0;</stringmatch>
+<stringmatch name="Rust masked byte keeps bitwise precedence" min="1" max="1">return \(value as u8 &amp; 0x55\) != 0;</stringmatch>
+<stringmatch name="Rust unsigned callback result narrows before Boolean conversion" min="1" max="1">return counted_unsigned\(value\) as u8 != 0;</stringmatch>
+<stringmatch name="Rust signed callback result narrows before Boolean conversion" min="1" max="1">return counted_signed\(value\) as u8 != 0;</stringmatch>
+<stringmatch name="Rust never uses an integer as bool cast" min="0" max="0">as bool</stringmatch>
+<stringmatch name="C keeps its ordinary Boolean cast" min="1" max="1">return \(bool\)value;</stringmatch>
+</decompilertest>

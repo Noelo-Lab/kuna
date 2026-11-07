@@ -1,4 +1,6 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
+#[path = "mips_elf_selection.rs"]
+mod mips_elf_selection;
 mod common;
 
 #[path = "rust_empty_match.rs"]
@@ -752,9 +754,23 @@ mod integer_field_extract;
 
 #[path = "go_store_value.rs"]
 mod go_store_value;
+#[path = "go_pointer_arithmetic.rs"]
+mod go_pointer_arithmetic;
 
 #[path = "rust_integer_conversions.rs"]
 mod rust_integer_conversions;
+
+#[path = "rust_boolean_conversions.rs"]
+mod rust_boolean_conversions;
+
+#[path = "rust_boolean_expressions.rs"]
+mod rust_boolean_expressions;
+
+#[path = "scalar_call_results.rs"]
+mod scalar_call_results;
+
+#[path = "call_argument_extensions.rs"]
+mod call_argument_extensions;
 
 #[path = "rust_store_value.rs"]
 mod rust_store_value;
@@ -773,3 +789,18 @@ mod rust_array_decay;
 
 #[path = "rust_array_constant.rs"]
 mod rust_array_constant;
+
+#[path = "mips_import_flow.rs"]
+mod mips_import_flow;
+
+#[path = "qualified_call.rs"]
+mod qualified_call;
+
+#[path = "powerpc_apu_selection.rs"]
+mod powerpc_apu_selection;
+
+#[path = "elf_unwind.rs"]
+mod elf_unwind;
+
+#[path = "e500_arguments.rs"]
+mod e500_arguments;
