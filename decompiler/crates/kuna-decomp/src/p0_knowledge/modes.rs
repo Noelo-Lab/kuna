@@ -682,7 +682,7 @@ mod tests {
             // (kuna `unwindstarts`) Mach-O `__unwind_info` function-start discovery.
             // Inert when `LC_FUNCTION_STARTS` is present (every unwind start is
             // already a function-starts entry, a strict subset -- 0 change measured
-            // on the 84 MB Toyota app), so its only gain is on a stripped Mach-O; the
+            // on an 84 MB third-party iOS app), so its only gain is on a stripped Mach-O; the
             // stripped App-Store apps it was measured on exceed the 500 KiB
             // `auto`->`aggressive` threshold, so the default path (`auto` under
             // 500 KiB) would exercise nothing it changes. Promote to the preset

@@ -4,7 +4,7 @@
     Mach-O __unwind_info function starts (`option unwindstarts on|off`).
 
     Issue: a Mach-O whose LC_FUNCTION_STARTS was stripped loses almost its whole
-    function inventory. On a decrypted 249 MB arm64 Instagram.app with no
+    function inventory. On a 249 MB arm64 third-party iOS app with no
     LC_FUNCTION_STARTS, kuna discovered 23 of the real __text functions; the
     rest of its 59,222 entries were __got slots and __stubs. arm64 has no
     default prologue sweep, so LC_MAIN, the exports, __mod_init_func and the
