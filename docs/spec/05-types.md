@@ -3412,6 +3412,26 @@ DynamicHash symbol, consulted through
 override surface for this whole section (the `aggregate-union` row in
 `decompiler/crates/kuna-decomp/phases.toml`); (3) the scoring engine.
 
+**Whole aggregates (`aggregatefields`).** The `aggregatefields` row in
+`decompiler/crates/kuna-decomp/phases.toml` (default on) keeps a structured
+value whole until its fields can be named, at four places owned by three
+chapters: the concatenation and cleanup-split rules (§3), the partial-symbol
+walk (§9), and this resolution rule. Each place asks one predicate in
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_aggregatefields.rs`, which
+answers as upstream when the option is off. With it on,
+single-component structs and arrays retain the whole container when a RETURN
+value matches the function's locked output type and is an unchanged copy of a
+locked input of that container type. Equal-width COPY chains preserve this
+evidence: both edges of every copy on the chain to the return resolve to the
+whole container, so no copy's definition and use disagree. A
+scalar used to construct a single-field return is still resolved to the field;
+the declared output alone does not establish a whole-container input. The
+return-address slot and unlocked or differently typed returns supply no evidence.
+Off restores upstream `scoreSingleComponent`, which resolves such a RETURN to
+the field and prints `return x.d;` for a function returning its `struct S`
+argument unchanged. ABI padding pieces of a join stay logical constants under
+either setting.
+
 **Facet trials and scoring.**
 `decompiler/crates/kuna-decomp/src/p5_types/unionresolve_run.rs
 (ScoreUnionFields)` fits every candidate field (plus "the union as a whole",

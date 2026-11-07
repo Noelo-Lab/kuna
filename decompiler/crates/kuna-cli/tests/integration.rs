@@ -1,4 +1,6 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
+#[path = "mips_elf_selection.rs"]
+mod mips_elf_selection;
 mod common;
 
 #[path = "rust_empty_match.rs"]
@@ -790,3 +792,18 @@ mod rust_array_constant;
 
 #[path = "high_address_branches.rs"]
 mod high_address_branches;
+
+#[path = "mips_import_flow.rs"]
+mod mips_import_flow;
+
+#[path = "qualified_call.rs"]
+mod qualified_call;
+
+#[path = "powerpc_apu_selection.rs"]
+mod powerpc_apu_selection;
+
+#[path = "elf_unwind.rs"]
+mod elf_unwind;
+
+#[path = "e500_arguments.rs"]
+mod e500_arguments;
