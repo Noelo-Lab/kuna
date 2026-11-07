@@ -12,19 +12,11 @@ pub fn float_arg_registers(file: &object::File<'_>) -> Option<bool> {
     if file.format() != object::BinaryFormat::Elf {
         return None;
     }
-    let little = file.is_little_endian();
     match file.architecture() {
         A::Arm => super::kuna_armfloatabi::args_evidence(file),
-        A::Mips | A::Mips64 => {
-            let abiflags = match file.section_by_name(".MIPS.abiflags") {
-                Some(section) => Some(mips_abiflags(section.data().ok()?, little)?),
-                None => None,
-            };
-            let attribute = gnu_fp_abi(file)?;
-            let value = match (abiflags, attribute) {
-                (Some(a), Some(b)) if a != b => return None,
-                (a, b) => a.or(b)?,
-            };
+        A::Mips | A::Mips64 | A::Mips64_N32 => {
+            let record = super::kuna_mipsabi::abi_flags(file).ok()?;
+            let value = super::kuna_mipsabi::fp_abi(file, record).ok()??;
             match value {
                 1 | 5 | 6 | 7 => Some(true),
                 3 => Some(false),
@@ -48,29 +40,21 @@ pub fn float_arg_registers(file: &object::File<'_>) -> Option<bool> {
     }
 }
 
-/// The `fp_abi` byte of a version-0 `.MIPS.abiflags` record.
-fn mips_abiflags(data: &[u8], little: bool) -> Option<u32> {
-    let version: [u8; 2] = data.get(..2)?.try_into().ok()?;
-    let version = if little {
-        u16::from_le_bytes(version)
-    } else {
-        u16::from_be_bytes(version)
-    };
-    if version != 0 || data.len() < 24 {
-        return None;
-    }
-    Some(u32::from(data[7]))
-}
-
 /// The file-scope `Tag_GNU_*_ABI_FP` of every `.gnu.attributes` section:
 /// `Some(None)` when none states it, `None` when they conflict or are malformed.
-fn gnu_fp_abi(file: &object::File<'_>) -> Option<Option<u32>> {
+pub(super) fn gnu_fp_abi(file: &object::File<'_>) -> Option<Option<u32>> {
+    let mips = matches!(
+        file.architecture(),
+        object::Architecture::Mips
+            | object::Architecture::Mips64
+            | object::Architecture::Mips64_N32
+    );
     let mut answer = None;
     for section in file
         .sections()
         .filter(|s| s.name() == Ok(".gnu.attributes"))
     {
-        if let Some(value) = gnu_tag4(section.data().ok()?, file.is_little_endian())? {
+        if let Some(value) = gnu_tag4(section.data().ok()?, file.is_little_endian(), mips)? {
             if answer.is_some_and(|old| old != value) {
                 return None;
             }
@@ -82,7 +66,7 @@ fn gnu_fp_abi(file: &object::File<'_>) -> Option<Option<u32>> {
 
 /// Read tag 4 from the `gnu` vendor's file-scope attributes: except for
 /// `Tag_compatibility` (32), odd tags take a string and even tags a number.
-fn gnu_tag4(data: &[u8], little: bool) -> Option<Option<u32>> {
+fn gnu_tag4(data: &[u8], little: bool, zero_is_unspecified: bool) -> Option<Option<u32>> {
     if data.first() != Some(&b'A') || data.len() > 1024 * 1024 {
         return None;
     }
@@ -127,7 +111,7 @@ fn gnu_tag4(data: &[u8], little: bool) -> Option<Option<u32>> {
                     string(scope, &mut pos)?;
                 } else {
                     let value = uleb(scope, &mut pos)?;
-                    if tag == 4 {
+                    if tag == 4 && !(zero_is_unspecified && value == 0) {
                         if answer.is_some_and(|old| old != value) {
                             return None;
                         }
@@ -200,20 +184,20 @@ mod tests {
     fn gnu_attributes_skip_strings_and_read_the_fp_tag() {
         for little in [true, false] {
             let data = attributes(b"gnu", &[5, b'x', 0, 32, 1, b'y', 0, 8, 1, 4, 2], little);
-            assert_eq!(gnu_tag4(&data, little), Some(Some(2)));
+            assert_eq!(gnu_tag4(&data, little, false), Some(Some(2)));
             assert_eq!(
-                gnu_tag4(&attributes(b"gnu", &[8, 1], little), little),
+                gnu_tag4(&attributes(b"gnu", &[8, 1], little), little, false),
                 Some(None)
             );
             assert_eq!(
-                gnu_tag4(&attributes(b"xyz", &[4, 1], little), little),
+                gnu_tag4(&attributes(b"xyz", &[4, 1], little), little, false),
                 Some(None)
             );
             let conflict = attributes(b"gnu", &[4, 1, 4, 2], little);
-            assert_eq!(gnu_tag4(&conflict, little), None);
+            assert_eq!(gnu_tag4(&conflict, little, false), None);
             let good = attributes(b"gnu", &[4, 1], little);
             for end in 1..good.len() {
-                assert_ne!(gnu_tag4(&good[..end], little), Some(Some(1)));
+                assert_ne!(gnu_tag4(&good[..end], little, false), Some(Some(1)));
             }
         }
     }
@@ -229,6 +213,13 @@ mod tests {
                     &[(b".MIPS.abiflags", abiflags(value))],
                 );
                 assert_eq!(evidence(&flags), expected);
+                let n32 = elf(
+                    Architecture::Mips,
+                    endian,
+                    0x80000020,
+                    &[(b".MIPS.abiflags", abiflags(value))],
+                );
+                assert_eq!(evidence(&n32), expected);
                 let gnu = elf(
                     Architecture::Mips,
                     endian,
@@ -249,6 +240,53 @@ mod tests {
             assert_eq!(evidence(&conflict), None);
             assert_eq!(
                 evidence(&elf(Architecture::Mips, endian, 0x70001000, &[])),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn mips_fp_any_is_ignored_in_repeated_tags_and_sections() {
+        for (endian, little) in [(Endianness::Little, true), (Endianness::Big, false)] {
+            for (value, expected) in [
+                (1, Some(true)),
+                (3, Some(false)),
+                (6, Some(true)),
+                (0, None),
+            ] {
+                for tags in [vec![4, 0, 4, value], vec![4, value, 4, 0]] {
+                    let bytes = elf(
+                        Architecture::Mips,
+                        endian,
+                        0x80001000,
+                        &[(b".gnu.attributes", attributes(b"gnu", &tags, little))],
+                    );
+                    assert_eq!(evidence(&bytes), expected);
+                }
+                for (a, b) in [(0, value), (value, 0)] {
+                    let bytes = elf(
+                        Architecture::Mips,
+                        endian,
+                        0x80001000,
+                        &[
+                            (b".gnu.attributes", attributes(b"gnu", &[4, a], little)),
+                            (b".gnu.attributes", attributes(b"gnu", &[4, b], little)),
+                        ],
+                    );
+                    assert_eq!(evidence(&bytes), expected);
+                }
+            }
+            let bytes = elf(
+                Architecture::Mips,
+                endian,
+                0x80001000,
+                &[(
+                    b".gnu.attributes",
+                    attributes(b"gnu", &[4, 1, 4, 0, 4, 3], little),
+                )],
+            );
+            assert_eq!(
+                gnu_fp_abi(&object::File::parse(bytes.as_slice()).unwrap()),
                 None
             );
         }

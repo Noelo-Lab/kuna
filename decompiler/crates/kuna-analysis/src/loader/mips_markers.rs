@@ -112,18 +112,20 @@ pub struct MipsMarkerPass;
 /// (non-zero, non-UND) address. Undefined imports (`.dynsym` address 0) are
 /// skipped — a stub has no body to seed. Idempotent against the funcsym stream:
 /// the commit boundary keys the tracked set by the entry address.
-fn scan_mips_markers(file: &object::File) -> AnalysisOutput {
+/// ELF32 pointers sign-extend into a wider selected register; the function's
+/// address and native ELF64 values retain their original representation.
+fn scan_mips_markers(file: &object::File, t9_size: u32) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     // canAnalyze gate: MIPS only. On any other language the pass contributes
-    // nothing (== canAnalyze false). MIPS32 and MIPS64 both report Architecture::Mips
-    // (object) / Mips64 — accept both.
-    if !matches!(file.architecture(), object::Architecture::Mips | object::Architecture::Mips64) {
+    // nothing (== canAnalyze false). N32 has its own object architecture.
+    if !matches!(file.architecture(), object::Architecture::Mips | object::Architecture::Mips64 | object::Architecture::Mips64_N32) {
         return out;
     }
     // Only ELF carries these conventions (the only format kuna loads for MIPS).
     if !matches!(file.format(), object::BinaryFormat::Elf) {
         return out;
     }
+    let extend_pointer = !file.is_64() && t9_size > 4;
 
     for sym in file.symbols().chain(file.dynamic_symbols()) {
         // Only defined functions: STT_FUNC with a real (non-zero, defined)
@@ -142,7 +144,12 @@ fn scan_mips_markers(file: &object::File) -> AnalysisOutput {
         // assumeT9EntryAddress: t9 == the function's own entry address on entry
         // (the MIPS PIC `jalr t9` convention). MipsAddressAnalyzer.unknownValue:492
         // setRegisterValue(funcAddr, funcAddr, t9=funcAddr).
-        out.tracked_regs.push(TrackedRegFact { func_addr: addr, reg: T9, value: addr });
+        let value = if extend_pointer {
+            i64::from(addr as u32 as i32) as u64
+        } else {
+            addr
+        };
+        out.tracked_regs.push(TrackedRegFact { func_addr: addr, reg: T9, value });
     }
 
     out
@@ -158,7 +165,10 @@ impl AnalysisPass for MipsMarkerPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        scan_mips_markers(ctx.file)
+        let Ok(t9) = ctx.arch.get_register_varnode(T9.as_bytes()) else {
+            return AnalysisOutput::default();
+        };
+        scan_mips_markers(ctx.file, t9.size)
     }
 }
 
@@ -214,11 +224,10 @@ pub struct MipsIsaModePass;
 pub(crate) fn scan_mips_isa_markers(file: &object::File) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     // canHandle gate: MIPS only (the analog of MIPS_ElfExtension.canHandle:331,
-    // e_machine == EM_MIPS). MIPS32 and MIPS64 both report Architecture::Mips /
-    // Mips64 (object) — accept both. On any other language the pass contributes
+    // e_machine == EM_MIPS), including N32. On any other language the pass contributes
     // nothing (the belt half: the commit boundary also swallows an "ISA_MODE not
     // registered" error, so this is a strict no-op off-MIPS).
-    if !matches!(file.architecture(), object::Architecture::Mips | object::Architecture::Mips64) {
+    if !matches!(file.architecture(), object::Architecture::Mips | object::Architecture::Mips64 | object::Architecture::Mips64_N32) {
         return out;
     }
     // Only ELF carries these conventions (the only format kuna loads for MIPS).
@@ -323,6 +332,73 @@ mod tests {
             .map(|t| t.value)
     }
 
+    #[test]
+    fn entry_pointer_values_follow_elf_class_and_selected_register_width() {
+        use object::write::{Object as Writer, Symbol, SymbolSection};
+        use object::{Architecture, BinaryFormat, Endianness, FileFlags, SectionKind, SymbolScope};
+
+        for endian in [Endianness::Little, Endianness::Big] {
+            for (arch, flags) in [
+                (Architecture::Mips, 0x8000_1000),
+                (Architecture::Mips, 0x8000_1100),
+                (Architecture::Mips, 0x8000_0020),
+                (Architecture::Mips64, 0x8000_0000),
+            ] {
+                for address in [
+                    0x1000,
+                    0x7fff_fffc,
+                    0x8000_0000,
+                    0xffff_fffc,
+                    0x1_8000_1000,
+                    0xffff_ffff_8000_1000,
+                ] {
+                    if arch == Architecture::Mips && address > u64::from(u32::MAX) {
+                        continue;
+                    }
+                    let mut obj = Writer::new(BinaryFormat::Elf, arch, endian);
+                    obj.flags = FileFlags::Elf {
+                        os_abi: 0,
+                        abi_version: 0,
+                        e_flags: flags,
+                    };
+                    let text = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+                    obj.append_section_data(text, &[0; 12], 4);
+                    obj.add_symbol(Symbol {
+                        name: b"entry_sign".to_vec(),
+                        value: address,
+                        size: 12,
+                        kind: SymbolKind::Text,
+                        scope: SymbolScope::Linkage,
+                        weak: false,
+                        section: SymbolSection::Section(text),
+                        flags: SymbolFlags::None,
+                    });
+                    let bytes = obj.write().unwrap();
+                    let file = object::File::parse(bytes.as_slice()).unwrap();
+                    for size in [4, 8] {
+                        let out = scan_mips_markers(&file, size);
+                        assert_eq!(out.tracked_regs.len(), 1);
+                        assert_eq!(out.tracked_regs[0].func_addr, address);
+                        let expected = if arch == Architecture::Mips && size == 8 {
+                            if address >= 0x8000_0000 {
+                                0xffff_ffff_0000_0000 | address
+                            } else {
+                                address
+                            }
+                        } else {
+                            address
+                        };
+                        assert_eq!(
+                            t9_seed_at(&out, address),
+                            Some(expected),
+                            "{arch:?} {endian:?} {flags:#x} t9:{size} {address:#x}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     /// The merge-blocking gate: the pass over the MIPS fixture must emit a
     /// `t9 = entry` fact for each defined function, with the value EQUAL to the
     /// entry address (the PIC `jalr t9` convention). Pins the fixture's VMAs.
@@ -330,7 +406,7 @@ mod tests {
     fn mips_markers_emit_t9_facts() {
         let bytes = mips_gp();
         let file = object::File::parse(bytes.as_slice()).expect("parse mips_gp_le32");
-        let out = scan_mips_markers(&file);
+        let out = scan_mips_markers(&file, 4);
 
         assert!(!out.tracked_regs.is_empty(), "must emit at least one t9 seed");
         // Every fact seeds t9 to its own func_addr (t9 == entry).
@@ -360,6 +436,32 @@ mod tests {
         assert_eq!(gp, 0x411040 + MIPS_GP_BIAS, "_gp == .got + 0x7ff0 (GP bias)");
     }
 
+    #[test]
+    fn n32_keeps_the_elf32_symbol_and_got_metadata_paths() {
+        let mut bytes = mips_gp();
+        let file = object::File::parse(bytes.as_slice()).unwrap();
+        let seeds = scan_mips_markers(&file, 4).tracked_regs;
+        let imports = crate::loader::elf_plt::resolve_plt_imports(&file, &bytes);
+        let ranges = crate::loader::elf_plt::mips_got_const_ranges(&file);
+        assert!(!seeds.is_empty() && !imports.is_empty() && !ranges.is_empty());
+
+        // Only the ELF32 metadata is exercised; the O32 instructions are not run.
+        bytes[36..40].copy_from_slice(&0x8000_0020u32.to_le_bytes());
+        let n32 = object::File::parse(bytes.as_slice()).unwrap();
+        assert_eq!(n32.architecture(), object::Architecture::Mips64_N32);
+        let actual = scan_mips_markers(&n32, 8).tracked_regs;
+        assert_eq!(actual.len(), seeds.len());
+        for (actual, expected) in actual.iter().zip(&seeds) {
+            assert_eq!((actual.func_addr, actual.reg, actual.value), (expected.func_addr, expected.reg, expected.value));
+        }
+        let actual = crate::loader::elf_plt::resolve_plt_imports(&n32, &bytes);
+        assert_eq!(actual.len(), imports.len());
+        for (actual, expected) in actual.iter().zip(&imports) {
+            assert_eq!((&actual.name, actual.addr), (&expected.name, expected.addr));
+        }
+        assert_eq!(crate::loader::elf_plt::mips_got_const_ranges(&n32), ranges);
+    }
+
     /// A non-MIPS object must emit ZERO facts — the `canAnalyze == processor==MIPS`
     /// gate. Driven over the x86-64 fauxware fixture: without this gate a `t9` seed
     /// on a non-MIPS language would reach the commit boundary (which must also no-op,
@@ -370,7 +472,7 @@ mod tests {
         let bytes = std::fs::read(path).expect("read fauxware fixture");
         let file = object::File::parse(bytes.as_slice()).expect("parse fauxware");
         assert_ne!(file.architecture(), object::Architecture::Mips);
-        let out = scan_mips_markers(&file);
+        let out = scan_mips_markers(&file, 4);
         assert!(
             out.tracked_regs.is_empty(),
             "a non-MIPS object must emit no t9 seeds (canAnalyze gate)"
