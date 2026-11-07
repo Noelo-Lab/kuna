@@ -4,7 +4,7 @@
     Objective-C categories, protocols and instance layouts (`option objc on|off`,
     `option objcivars on|off`).
 
-    Issue: on an ObjC-heavy iOS app (ios_kcm, 1.9 MB arm64) the `objc` pass left
+    Issue: on an ObjC-heavy third-party iOS app (1.9 MB arm64) the `objc` pass left
     every category method a `sub_<addr>` (77 of them: categories extend classes
     that live in other images, so the class walk never reaches their IMPs), every
     ivar access read `*(long *)((long)self + dat_1001aea74)` (505 sites: the

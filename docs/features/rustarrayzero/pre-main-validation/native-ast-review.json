@@ -1,0 +1,144 @@
+{
+  "changed_records": 8,
+  "pending": 0,
+  "records": [
+    {
+      "address": "0x401120",
+      "array_zero_stores": 1,
+      "byte_counts": [
+        16
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_constant_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "zero_unsigned",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401130",
+      "array_zero_stores": 1,
+      "byte_counts": [
+        16
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_constant_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "zero_signed",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401140",
+      "array_zero_stores": 1,
+      "byte_counts": [
+        16
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_constant_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "zero_field",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401150",
+      "array_zero_stores": 1,
+      "byte_counts": [
+        16
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_constant_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "zero_second",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401160",
+      "array_zero_stores": 1,
+      "byte_counts": [
+        16
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_constant_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "zero_index",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401180",
+      "array_zero_stores": 1,
+      "byte_counts": [
+        16
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_constant_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "zero_callback",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x4011a0",
+      "array_zero_stores": 1,
+      "byte_counts": [
+        16
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "array_constant_x86_64",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "zero_bytes",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    },
+    {
+      "address": "0x401130",
+      "array_zero_stores": 1,
+      "byte_counts": [
+        16
+      ],
+      "candidate_parse_error": null,
+      "classified": true,
+      "fixture": "retained_wide6",
+      "gopairreturns": "off",
+      "identifier_normalization_only": false,
+      "language": "rust",
+      "name": "wide_zero",
+      "parent_parse_error": null,
+      "raw_candidate_parse_error": null,
+      "raw_parent_parse_error": null
+    }
+  ],
+  "scope": "Recursive paired AST comparison permits replacing only an assignment RHS literal zero with a positive-length repeat of literal zero. Assignment destinations, casts, calls, ordering and all surrounding AST remain identical. Byte counts are recorded; old scalar syntax alone does not prove storage width. This does not prove whole-program native equivalence or arbitrary pointer validity.",
+  "self_checks": 20
+}

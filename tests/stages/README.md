@@ -1,5 +1,28 @@
 # Stage-model issue testcases
 
+`ghangr-call-argument-extensions.xml` checks explicit and missing parameter
+contracts. The CLI companion executes complete emitted C, Go and Rust callers
+and callees, covering zero extension, sign extension, signedness and store canaries.
+
+`ghangr-rust-boolean-expressions.xml` checks bitwise expressions over merged
+Boolean locals. Its CLI companion executes complete emitted C and Rust functions
+against independent result formulas, callback traces and store canaries at O0/O2.
+
+`ghangr-scalar-call-results.xml` checks the no-record and explicit-prototype
+controls for narrowed scalar calls. The CLI probes exercise callee-first recovery;
+the native companion compiles and executes complete emitted C, Go and Rust callees
+and callers across signed, unsigned, Boolean and full-width results.
+
+`ghangr-rust-boolean-conversions.xml` checks byte-to-Boolean casts, masked values
+and narrowed callback results. Its CLI companion compiles complete C and Rust
+output under the same asserted prototypes and checks every byte value and call
+counts. The original fixture is only decompiled.
+
+`kuna-e500-call-slots.xml` compares disabled and automatic call-overlap guards
+for scalar arguments and results inside e500's wide registers, and decompiles a
+conditional tail-call wrapper with `exclusivecallret` off and on. The CLI tests
+cover both byte orders and execute the recovered wrappers.
+
 `kuna-callwide.xml` loads the committed sealed MIPS32-BE ELF and checks the
 four-byte OFF result against the proved eight-byte result and high-piece callers.
 Its CLI companion executes the original bytes and untouched emitted C/header
@@ -240,9 +263,9 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 | `kuna-rodatastring.xml` | a string block-copied out of read-only memory into the frame renders as invalid C: `v1[0] = (char[8])msg._0_8_;` (there is no array cast) and the literal never appears (DIV-113) | `option rodatastring on\|off` (new kuna settable, P5 `constsequence`) |
 | `kuna-calleenamedlocals.xml` | kuna [#762](https://github.com/Noelo-Lab/kuna/issues/762): two distinct pointer locals passed to one `consume(Node *object)` both took the name `object`, `dedupvardecls` kept one declaration, and the store after the inner loop cleared the last member's flag instead of the representative's; the same defect through a struct-by-value argument (its fields stored into another struct, or into a same-named global), a user rename (`&v2` printed as the other slot's address), and a slot named like a global (its narrow views read the global), plus a global array a suffixed local must not capture | P6 local naming (a callee-parameter name is made unique against names already bound to other highs; struct roots share only among themselves) + P9 declaration emission (the identical-line collapse only merges lines of one Symbol, and every high printed through another declaration follows its final name); correctness fix, no option. Passes 2 and 3 pin `option dedupvardecls off` and `option namestyle ghidra` |
 | `kuna-stacksolver-unsolved.xml` | kuna [#1288](https://github.com/Noelo-Lab/kuna/issues/1288) (a PKLITE-packed DOS executable decompiled as a raw real-mode image grew memory without bound: `DEC SP` in its packed body solved a stack variable to 65535, the `StackSolver` sentinel for "unsolved", and two such variables re-pushed each other forever; where the solve did finish, the genuine 65535 still read as unsolved and the function kept a raw stack-pointer local) | P6 variables, `ActionStackPtrFlow` extra-pop solve | none (strict fix): the solve terminates and the loop around the call is emitted; `h` reads its return address at entry + 2 with no raw stack-pointer local |
-| `kuna-objcrefs.xml` | Toyota.app (84 MB arm64 iOS, Swift + ObjC): every message send read `objc_msgSendSuper2(&super, dat_1045b76f0)` even with `objc on`, and 274 of 1,622 calls in a 500-function sample were `sub_1034xxxxx(obj)` through an anonymous `__objc_stubs` entry. P1 external-refinement (`analyzers/objc/kuna_objcrefs.rs` names `__objc_selrefs` / `__objc_classrefs` / `__objc_superrefs` slots and the `objc_msgSend$<sel>` stubs with a pinned prototype; `loader/kuna_dynrelocs.rs (macho_chained)` unpacks the chained-fixup rebases under `dynrelocs`) → P3 fold of the constant slots | `option objc on\|off` (names), `option objcrefconst on\|off` (new kuna settable; the slot fold) |
-| `kuna-objcmeta.xml` | ios_kcm (1.9 MB arm64 ObjC app): with `objc on` every category method stayed `sub_<addr>` (77: categories extend classes of other images, out of the class walk's reach), every ivar access read `*(long *)((long)self + dat_1001aea74)` (505 sites: the offset variable's 1-byte label never matched the 4-byte load) and a protocol-declared selector typed nothing. P1 external-refinement (`analyzers/objc/kuna_objccats.rs`, `kuna_objcprotos.rs`, `kuna_objcivars.rs`: `-[Class(Category) sel]` renames, `_OBJC_PROTOCOL_$_` names + declared encodings for the stubs, a struct per class from `class_ro_t.ivars` typing `self`) → P3 fold of the offset variables | `option objc on\|off` (names), `option objcivars on\|off` (new kuna settable; struct + typed self + offset fold) |
-| `kuna-objcsdk.xml` | ios_kcm: 2,897 of 25,084 `objc_msgSend$<sel>` calls rendered with no argument (`setHidden:();`), `setAlpha:` showed `0x3ff0000000000000`, `setFrame:` one word for a CGRect — a framework selector is declared nowhere in the image. P1 external-refinement (`analyzers/objc/kuna_objcsdk.rs` reads `@interface`/`@protocol` methods, `@property` getter/setter pairs and `typedef`s from a user-named SDK or header directory into runtime-style encodings; the stub prototype path pins scalars to x/d registers, spreads an HFA `CGRect` over `d0..d3`, returns the flat struct) | `option objcsdk <directory>\|off` (new kuna settable, env-bridged load-time) |
+| `kuna-objcrefs.xml` | A large third-party iOS app (84 MB arm64, Swift + ObjC): every message send read `objc_msgSendSuper2(&super, dat_1045b76f0)` even with `objc on`, and 274 of 1,622 calls in a 500-function sample were `sub_1034xxxxx(obj)` through an anonymous `__objc_stubs` entry. P1 external-refinement (`analyzers/objc/kuna_objcrefs.rs` names `__objc_selrefs` / `__objc_classrefs` / `__objc_superrefs` slots and the `objc_msgSend$<sel>` stubs with a pinned prototype; `loader/kuna_dynrelocs.rs (macho_chained)` unpacks the chained-fixup rebases under `dynrelocs`) → P3 fold of the constant slots | `option objc on\|off` (names), `option objcrefconst on\|off` (new kuna settable; the slot fold) |
+| `kuna-objcmeta.xml` | A third-party iOS app (1.9 MB arm64 ObjC): with `objc on` every category method stayed `sub_<addr>` (77: categories extend classes of other images, out of the class walk's reach), every ivar access read `*(long *)((long)self + dat_1001aea74)` (505 sites: the offset variable's 1-byte label never matched the 4-byte load) and a protocol-declared selector typed nothing. P1 external-refinement (`analyzers/objc/kuna_objccats.rs`, `kuna_objcprotos.rs`, `kuna_objcivars.rs`: `-[Class(Category) sel]` renames, `_OBJC_PROTOCOL_$_` names + declared encodings for the stubs, a struct per class from `class_ro_t.ivars` typing `self`) → P3 fold of the offset variables | `option objc on\|off` (names), `option objcivars on\|off` (new kuna settable; struct + typed self + offset fold) |
+| `kuna-objcsdk.xml` | A 1.9 MB third-party iOS app: 2,897 of 25,084 `objc_msgSend$<sel>` calls rendered with no argument (`setHidden:();`), `setAlpha:` showed `0x3ff0000000000000`, `setFrame:` one word for a CGRect — a framework selector is declared nowhere in the image. P1 external-refinement (`analyzers/objc/kuna_objcsdk.rs` reads `@interface`/`@protocol` methods, `@property` getter/setter pairs and `typedef`s from a user-named SDK or header directory into runtime-style encodings; the stub prototype path pins scalars to x/d registers, spreads an HFA `CGRect` over `d0..d3`, returns the flat struct) | `option objcsdk <directory>\|off` (new kuna settable, env-bridged load-time) |
 | `kuna-objctypes.xml` | with the `objcivars` structs only `self` was typed: a getter returned `objc_object *`, an ivar of a local class was `objc_object *`, and a field read through either stayed `*(int *)((long)v + 8)` although the property attribute (`T@"Base"`) and ivar encoding (`@"Base"`) name the class. P1 external-refinement (`analyzers/objc/kuna_objcprops.rs` reads every `property_list_t` into class-naming getter/setter encodings; `Selectors::record` keeps the class-naming spelling of agreeing declarations; the decoder resolves `@"Base"` to the layout's struct, declared-record completion included) → P5 field resolution through the typed pointer | `option objc on\|off`, `option objcivars on\|off` (no new settable) |
 
 `kuna-storecopyeffects.xml` pins the AArch64 address-spill store across calls,
@@ -385,3 +408,14 @@ callers against boundary values and check that each helper is called once.
 `ghangr-go-store-value.xml` checks Go integer destination conversions for fields,
 plain/indexed pointers and a side-effectful call, with all integer widths and
 complete native bodies covered by the CLI integration fixture.
+
+`ghangr-go-pointer-arithmetic-32.xml` and `ghangr-go-pointer-arithmetic-64.xml`
+check live pointer bases through constant, negative and signed dynamic byte
+offsets in Go loads, stores and returns. Integer-address reconstruction remains
+a control. The CLI companion builds both authored assembly fixtures and runs
+the complete emitted functions with Go pointer checks and full-array canaries.
+
+`kuna-elf-unwind-pcread.xml` checks an authored PowerPC PC-relative literal read:
+with FDE ownership disabled it remains a call; with ownership enabled the
+complete body returns `a0 * 3 + 7`. The fixture generator is
+`decompiler/crates/kuna-cli/tests/fixtures/elf_unwind_fixture.rs`.

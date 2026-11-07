@@ -151,8 +151,16 @@ pub fn struct_name(encoding: &str) -> Option<&str> {
 }
 
 /// The leaf member codes of a struct encoding, nested structs flattened:
-/// `{CGRect={CGPoint=dd}{CGSize=dd}}` → `dddd`. `None` for a malformed layout.
+/// `{CGRect={CGPoint=dd}{CGSize=dd}}` → `dddd`. `None` for a malformed layout
+/// or one nested deeper than [`MAX_STRUCT_DEPTH`].
 pub fn struct_members(encoding: &str) -> Option<Vec<char>> {
+    struct_members_at(encoding, 0)
+}
+
+fn struct_members_at(encoding: &str, level: usize) -> Option<Vec<char>> {
+    if level > MAX_STRUCT_DEPTH {
+        return None;
+    }
     let body = encoding.strip_prefix('{')?.strip_suffix('}')?;
     let (_, members) = body.split_once('=')?;
     let mut out = Vec::new();
@@ -168,7 +176,7 @@ pub fn struct_members(encoding: &str) -> Option<Vec<char>> {
             '}' => {
                 depth = depth.checked_sub(1)?;
                 if depth == 0 {
-                    out.extend(struct_members(&members[start..=i])?);
+                    out.extend(struct_members_at(&members[start..=i], level + 1)?);
                 }
             }
             c if depth == 0 => out.push(c),
@@ -263,6 +271,9 @@ struct Parser<'a> {
 
 /// The deepest `^` nesting decoded; a real encoding is two or three deep.
 const MAX_POINTER_DEPTH: usize = 32;
+
+/// The deepest by-value struct nesting flattened; `CGRect` is two deep.
+const MAX_STRUCT_DEPTH: usize = 32;
 
 impl<'a> Parser<'a> {
     fn new(s: &'a str) -> Parser<'a> {
@@ -438,7 +449,12 @@ impl<'a> Parser<'a> {
         self.pos += 1;
         match c {
             b'^' => {
+                self.depth += 1;
+                if self.depth > MAX_POINTER_DEPTH {
+                    return None;
+                }
                 self.type_text()?;
+                self.depth -= 1;
             }
             b'{' => self.skip_balanced(b'{', b'}'),
             b'(' => self.skip_balanced(b'(', b')'),
@@ -587,6 +603,20 @@ mod tests {
         assert_eq!(args, ["@", ":", "{CGRect=dddd}", "@\"UIView\"", "^v", "@?"]);
         assert!(split_method("").is_none());
         assert!(split_method("v@:!").is_none());
+    }
+
+    /// A binary-controlled encoding a million `^` or `{` deep is refused at
+    /// the depth caps instead of recursing once per level; a real depth parses.
+    #[test]
+    fn hostile_nesting_is_refused_not_recursed() {
+        let n = 1_000_000;
+        assert!(split_method(&format!("v@:{}i", "^".repeat(n))).is_none());
+        assert_eq!(split_method("^^^i16@0:8").unwrap().0, "^^^i");
+        let nested = format!("{}i{}", "{S=".repeat(n), "}".repeat(n));
+        assert_eq!(struct_members(&nested), None);
+        assert!(split_method(&format!("v@:{nested}")).is_some(), "a by-value struct is skipped linearly");
+        let deep = format!("{}d{}", "{S=".repeat(8), "}".repeat(8));
+        assert_eq!(struct_members(&deep), Some(vec!['d']));
     }
 
     #[test]

@@ -2,7 +2,7 @@
 //! `category_t` records they point at.
 //!
 //! A category adds methods to a class defined elsewhere, often in another image
-//! (`UIView(YYAdd)`), so its IMPs reach no `class_t` of this image and the class
+//! (`UIView(Layout)`), so its IMPs reach no `class_t` of this image and the class
 //! walk never sees them: on an ObjC-heavy iOS app they are the bulk of the
 //! `sub_<addr>` functions left after `objc`. Each record is parsed to its name,
 //! class (a rebase slot's `class_t`, or an imported class's bind name) and the
@@ -11,9 +11,8 @@
 //! getters and setters (`kuna_objcprops`); the protocol list is not read, since
 //! nothing in the emitted C would show it.
 
-use object::read::{Object, ObjectSection};
-
 use super::classt;
+use super::kuna_objcrefs::section_slots;
 use super::sections::MachoImage;
 
 const SEC_CATLIST: &str = "__objc_catlist";
@@ -53,9 +52,8 @@ pub fn categories(img: &MachoImage, file: &object::File) -> Vec<Category> {
     let ps = img.ptr_size();
     let mut out = Vec::new();
     for section in [SEC_CATLIST, SEC_NLCATLIST] {
-        let Some(sec) = file.section_by_name(section) else { continue };
-        for i in 0..sec.size() / ps {
-            let Some(cat) = img.rebase_ptr(sec.address().wrapping_add(i * ps)) else { continue };
+        for slot in section_slots(file, section, ps) {
+            let Some(cat) = img.rebase_ptr(slot) else { continue };
             let Some(name) = img.rebase_ptr(cat.wrapping_add(category_t::NAME)).and_then(|p| img.read_cstr(p)) else {
                 continue;
             };
@@ -106,5 +104,19 @@ mod tests {
         let labels: Vec<&str> = cats.iter().map(|c| c.label.as_str()).collect();
         assert_eq!(labels, ["Base(Extra)", "Remote(Extra)"]);
         assert!(cats.iter().all(|c| c.instance_methods.is_some() && c.class_methods.is_some()));
+    }
+
+    /// A `__objc_catlist` header claiming far more bytes than the file holds is
+    /// walked only over the bytes present, not once per claimed slot.
+    #[test]
+    fn oversized_catlist_header_is_bounded_by_file_data() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_objc_meta_arm64");
+        let bytes = std::fs::read(path).expect("read fixture");
+        for size in [0x0800_0000_0000_0000u64, u64::MAX] {
+            let patched = super::super::kuna_objcrefs::with_section_size(bytes.clone(), SEC_CATLIST, size);
+            let file = object::File::parse(patched.as_slice()).expect("parse Mach-O");
+            let img = MachoImage::with_fixups(&file, resolve_chained_fixups(&file, &patched));
+            assert!(categories(&img, &file).len() <= 2, "size {size:#x}");
+        }
     }
 }

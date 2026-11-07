@@ -7,6 +7,7 @@ pub mod funcdata_callsite;
 pub mod fspec;
 pub(crate) mod kuna_joincalloutput;
 pub mod modelrules;
+mod kuna_aggregateabi;
 pub mod coreaction_protos;
 pub mod kuna_calleedeadarg;
 pub mod kuna_hiddenretarg; // (kuna) a value left in the hidden-return register is no argument a callee cannot take
@@ -23,6 +24,7 @@ pub mod kuna_calleescratchbody; // (kuna) a scratch-only clobberer is still a bo
 pub mod kuna_callsitestackargs;
 pub mod kuna_dfunaffected;
 pub mod kuna_exclusivearguse; // (kuna) a dereference on the other arm of a branch does not compete with a call on this one
+pub mod kuna_exclusivecallret; // (kuna) a call and a return on mutually exclusive arms do not compete
 pub mod kuna_noreturnretuse;
 pub mod kuna_returnpair;
 pub mod kuna_retinputhalf;
@@ -91,5 +93,7 @@ pub mod kuna_floatregister;
 pub mod kuna_x87free;
 
 pub mod kuna_callmechanisms;
+pub(crate) mod kuna_registerslots;
 
 pub mod kuna_qualifiedcall;
+pub mod kuna_gotimportproto; // (kuna) a type-only declaration binds at a loader-proven MIPS GOT import call

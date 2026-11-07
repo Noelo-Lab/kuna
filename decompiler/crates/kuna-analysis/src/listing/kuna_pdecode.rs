@@ -324,6 +324,7 @@ pub(super) struct ParallelInputs<'a> {
     pub seed_funcs: &'a BTreeMap<u64, DiscoveredFunction>,
     pub painter: &'a ContextPainter,
     pub local_entries: &'a BTreeMap<u64, u64>,
+    pub tail_transfers: &'a BTreeMap<u64, u64>,
     pub policy: WalkPolicy,
     pub detail: ListingDetail,
 }
@@ -854,6 +855,7 @@ fn run(
     let seed = admitted.seed;
     let exec_ranges = inputs.exec_ranges;
     let local_entries = inputs.local_entries;
+    let tail_transfers = inputs.tail_transfers;
     let policy = inputs.policy;
     let detail = inputs.detail;
 
@@ -867,6 +869,7 @@ fn run(
             code_space: &kit.space,
             exec_ranges,
             local_entries,
+            tail_transfers,
             policy,
             detail,
             tables: None,

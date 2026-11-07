@@ -115,9 +115,10 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
 }
 
 /// Drop `//` and `/* */` comments and preprocessor lines; newlines are kept so
-/// `@interface` lines stay line-delimited.
+/// `@interface` lines stay line-delimited. Every other byte is copied as is, so
+/// a non-ASCII character survives intact.
 fn strip_comments(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
+    let mut out: Vec<u8> = Vec::with_capacity(text.len());
     let b = text.as_bytes();
     let mut i = 0;
     let mut line_start = true;
@@ -130,7 +131,7 @@ fn strip_comments(text: &str) -> String {
             i += 2;
             while i < b.len() && !(b[i] == b'*' && b.get(i + 1) == Some(&b'/')) {
                 if b[i] == b'\n' {
-                    out.push('\n');
+                    out.push(b'\n');
                 }
                 i += 1;
             }
@@ -140,7 +141,7 @@ fn strip_comments(text: &str) -> String {
             while i < b.len() && b[i] != b'\n' {
                 if b[i] == b'\\' && b.get(i + 1) == Some(&b'\n') {
                     i += 1;
-                    out.push('\n');
+                    out.push(b'\n');
                 }
                 i += 1;
             }
@@ -155,18 +156,18 @@ fn strip_comments(text: &str) -> String {
                 i += 1;
             }
             i = (i + 1).min(b.len());
-            out.push_str(&text[start..i]);
+            out.extend_from_slice(&b[start..i]);
             line_start = false;
             continue;
         } else {
             line_start = b[i] == b'\n' || (line_start && b[i].is_ascii_whitespace());
-            out.push(b[i] as char);
+            out.push(b[i]);
             i += 1;
             continue;
         }
         line_start = true;
     }
-    out
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// The type names the headers define, resolved lazily to encodings.
@@ -492,7 +493,8 @@ fn statements(text: &str) -> Vec<String> {
 }
 
 /// Tokens of a type text: identifiers, `*`, and balanced `<…>` / `(…)` groups
-/// kept whole.
+/// kept whole. A non-ASCII character is part of the identifier it touches, which
+/// [`is_ident`] then rejects, so such a name is never split into ASCII pieces.
 fn tokens(text: &str) -> Vec<&str> {
     let b = text.as_bytes();
     let mut out = Vec::new();
@@ -501,9 +503,9 @@ fn tokens(text: &str) -> Vec<&str> {
         let c = b[i];
         if c.is_ascii_whitespace() || c == b',' {
             i += 1;
-        } else if c.is_ascii_alphanumeric() || c == b'_' {
+        } else if c.is_ascii_alphanumeric() || c == b'_' || !c.is_ascii() {
             let s = i;
-            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_' || !b[i].is_ascii()) {
                 i += 1;
             }
             out.push(&text[s..i]);
@@ -686,6 +688,32 @@ mod tests {
         assert_eq!(out["setView:"].as_deref(), Some("v@:@\"UIView\""));
         record(&mut out, "setView:".into(), Some("v@:q".into()));
         assert_eq!(out["setView:"], None);
+    }
+
+    /// Non-ASCII text in a comment, a string literal, a typedef name and a
+    /// declared type is read without slicing a character apart: the typedef
+    /// name is not split into ASCII pieces, the type it cannot spell is not
+    /// guessed, and the neighbouring declarations still encode.
+    #[test]
+    fn non_ascii_header_text_is_read_whole() {
+        let text = strip_comments(concat!(
+            "// Café — résumé\n/* naïve */\n",
+            "typedef NSString * CaféName;\n",
+            "@interface W\n",
+            "- (void)setAlpha:(CGFloat é)alpha;\n",
+            "- (void)setBeta:(CGFloat)beta API_DEPRECATED(\"use — setGamma:\", ios(2.0, 13.0));\n",
+            "@property (copy) NSString *title; // ünïcode\n",
+            "@end\n",
+        ));
+        assert!(text.contains("\"use — setGamma:\"") && !text.contains("Café —"));
+        let mut types = Types::default();
+        types.scan_typedefs(&text);
+        assert!(!types.typedefs.contains_key("Name") && !types.typedefs.contains_key("Caf"));
+        let mut out = HashMap::new();
+        scan_declarations(&text, &types, &mut out);
+        assert_eq!(out.get("setAlpha:"), Some(&None));
+        assert_eq!(out.get("setBeta:").cloned().flatten().as_deref(), Some("v@:d"));
+        assert_eq!(out.get("setTitle:").cloned().flatten().as_deref(), Some("v@:@\"NSString\""));
     }
 
     #[test]

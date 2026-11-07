@@ -5,7 +5,7 @@
 
     Issue: a selector stub `objc_msgSend$setAlpha:` has a prototype only when
     something in the image declares the selector, and a UIKit setter never
-    does, so its calls kept the untyped call-site inference: on ios_kcm 2,897
+    does, so its calls kept the untyped call-site inference: on a 1.9 MB iOS app 2,897
     of 25,084 stub calls rendered with no argument at all
     (`objc_msgSend$setHidden:();`), `setAlpha:` showed the bit pattern of its
     double in an integer slot, and `setFrame:` passed one garbage word for a
