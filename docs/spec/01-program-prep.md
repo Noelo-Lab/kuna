@@ -4263,11 +4263,18 @@ every other binary's pass list is byte-identical to before the pass existed):
   context demangles its extended type, a parent in another image is named
   through its module-descriptor import). Only a code address is ever named as a
   function (a base-protocol or associated-type witness row points at data), and
-  function names use the FID-precedent placeholder gate. On the Toyota iOS app
-  (314,038 functions, 304,309 of them `sub_<addr>`) the pass names 57,147
-  stripped functions — 14,615 metadata accessors, 15,204 vtable slots, 27,322
+  function names use the FID-precedent placeholder gate. On a large
+  third-party iOS app (314,038 functions, 304,309 of them `sub_<addr>`) the
+  pass names 57,147 stripped functions — 14,615 metadata accessors, 15,204 vtable slots, 27,322
   witnesses, 6 overrides — every one at an address function discovery already
-  found, in about 0.3 s and 135 MB over the baseline decompile. The pass is
+  found, in about 0.3 s and 135 MB over the baseline decompile. The work is
+  bounded by the image: a conformance descriptor several section entries name
+  is read once, every record row (a descriptor, a vtable, override,
+  requirement or witness row, a witness-table word) is charged against one row
+  per four bytes of the image, which a real image never exceeds since each row
+  occupies at least that much of it, and the names built (type paths included)
+  stop at 16 MiB plus the image's length, so repeated or overlapping records
+  in a crafted file cannot multiply into millions of names. The pass is
   registered only for `Compiler::Swift` (§1.3's detector) in Mach-O or ELF, so
   every other image's pass set is unchanged; the stage test
   `tests/stages/kuna-swiftmetadata.xml` runs the fully stripped swiftc-built

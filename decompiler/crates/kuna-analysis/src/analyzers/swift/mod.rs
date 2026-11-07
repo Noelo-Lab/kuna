@@ -99,7 +99,7 @@ impl AnalysisPass for SwiftMetadataPass {
             img: &img,
             bind_slots: &bind_slots,
         };
-        let md = reader.read_all(ctx.file, names);
+        let md = reader.read_all(ctx.file, names, ctx.bytes.len());
         // An ELF image binds a descriptor of another image through a GOT slot
         // whose dynamic relocation names the symbol.
         for (addr, reloc) in ctx.file.dynamic_relocations().into_iter().flatten() {
@@ -126,6 +126,7 @@ impl AnalysisPass for SwiftMetadataPass {
             imports: &imports,
             memo: Default::default(),
             code,
+            budget: std::cell::Cell::new(NAME_BYTES.saturating_add(ctx.bytes.len())),
         };
         namer.emit(&mut out);
         out
@@ -174,11 +175,18 @@ fn member_after_protocol(name: &str) -> Option<String> {
     Some(member.to_string())
 }
 
+/// The bytes of names the pass builds beyond the image's own length. A
+/// real image's names come to a fraction of its size; the budget stops a
+/// crafted one whose long paths repeat across many records.
+const NAME_BYTES: usize = 16 << 20;
+
 struct Namer<'a> {
     md: &'a Metadata,
     imports: &'a HashMap<u64, String>,
     memo: std::cell::RefCell<HashMap<u64, Option<String>>>,
     code: Vec<(u64, u64)>,
+    /// Name bytes left to build ([`NAME_BYTES`] plus the image length).
+    budget: std::cell::Cell<usize>,
 }
 
 impl Namer<'_> {
@@ -192,7 +200,9 @@ impl Namer<'_> {
             return cached.clone();
         }
         let ctx = self.md.contexts.get(&addr);
-        let result = ctx.and_then(|c| self.path_of(c, depth));
+        let result = ctx
+            .and_then(|c| self.path_of(c, depth))
+            .filter(|p| self.spend(p));
         self.memo.borrow_mut().insert(addr, result.clone());
         result
     }
@@ -248,10 +258,25 @@ impl Namer<'_> {
         self.code.iter().any(|&(lo, hi)| addr >= lo && addr < hi)
     }
 
+    /// Charge `name` to the budget; `false` (and nothing more is named)
+    /// once it is spent.
+    fn spend(&self, name: &str) -> bool {
+        match self.budget.get().checked_sub(name.len()) {
+            Some(left) => {
+                self.budget.set(left);
+                true
+            }
+            None => {
+                self.budget.set(0);
+                false
+            }
+        }
+    }
+
     fn emit(&self, out: &mut AnalysisOutput) {
         let code = &self.code;
         let mut function = |addr: u64, name: String| {
-            if !code.iter().any(|&(lo, hi)| addr >= lo && addr < hi) {
+            if !code.iter().any(|&(lo, hi)| addr >= lo && addr < hi) || !self.spend(&name) {
                 return;
             }
             out.symbols.push(SymFact {
@@ -318,7 +343,7 @@ impl Namer<'_> {
             }
         }
         for c in &self.md.conformances {
-            let Some(cn) = self.conformance_name(c) else {
+            let Some(cn) = self.conformance_name(c).filter(|n| self.spend(n)) else {
                 continue;
             };
             data.push(SymFact {
@@ -343,7 +368,7 @@ impl Namer<'_> {
                             if !matches!(kind, 1..=6 | 8) {
                                 continue;
                             }
-                            let slot = w + self.md.ptr_size * (1 + k as u64);
+                            let slot = w.wrapping_add(self.md.ptr_size * (1 + k as u64));
                             if let Some(f) = self.md.words.get(&slot) {
                                 function(*f, format!("{cn}.requirement#{k}"));
                             }
@@ -379,7 +404,7 @@ impl Namer<'_> {
         // Dedup by address: the first (lowest-addressed descriptor) wins.
         let mut seen = std::collections::HashSet::new();
         for d in data {
-            if seen.insert(d.addr) {
+            if seen.insert(d.addr) && self.spend(&d.name) {
                 out.symbols.push(d);
             }
         }

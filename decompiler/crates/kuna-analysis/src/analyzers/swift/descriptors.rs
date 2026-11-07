@@ -10,7 +10,7 @@
 //! (named through the import table). A malformed record is skipped; a
 //! section that is absent yields nothing.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use object::read::{Object, ObjectSection};
 
@@ -313,34 +313,61 @@ impl<'a> Reader<'a> {
         out
     }
 
-    pub fn read_all(&self, file: &object::File, names: &SectionNames) -> Metadata {
+    /// Every record the sections reach in an image of `image_len` bytes.
+    /// Each conformance descriptor is read once however many entries name
+    /// it, and every record row (a descriptor, a vtable, override,
+    /// requirement or witness row, a witness-table word) takes at least four
+    /// bytes of its own in a real image, so the walk stops after
+    /// `image_len / 4` rows: repeated or overlapping records in a crafted
+    /// file cannot multiply the work.
+    pub fn read_all(
+        &self,
+        file: &object::File,
+        names: &SectionNames,
+        image_len: usize,
+    ) -> Metadata {
         let mut md = Metadata {
             ptr_size: self.img.ptr_size(),
             ..Metadata::default()
         };
+        let mut rows = image_len / 4;
         md.types = self.section_entries(file, names.types);
         md.protocols = self.section_entries(file, names.protocols);
         for &addr in md.types.iter().chain(md.protocols.iter()) {
-            self.context_closure(addr, &mut md.contexts, 0);
+            self.context_closure(addr, &mut md.contexts, 0, &mut rows);
         }
+        let mut seen = HashSet::new();
         for addr in self.section_entries(file, names.conformances) {
-            if let Some(c) = self.conformance(addr) {
-                if let TypeRef::Descriptor(Target::Direct(t)) = c.type_ref {
-                    self.context_closure(t, &mut md.contexts, 0);
-                }
-                if let Target::Direct(p) = c.protocol {
-                    self.context_closure(p, &mut md.contexts, 0);
-                    if let (Some(w), Some(proto)) = (c.witness_table, md.contexts.get(&p)) {
-                        for k in 0..=proto.requirements.len() as u64 {
-                            let slot = w + md.ptr_size * k;
-                            if let Some(v) = self.img.read_ptr(slot) {
-                                md.words.insert(slot, v);
-                            }
+            if !seen.insert(addr) {
+                continue;
+            }
+            let Some(c) = self.conformance(addr) else {
+                continue;
+            };
+            let Some(left) = rows.checked_sub(1 + c.witnesses.len()) else {
+                break;
+            };
+            rows = left;
+            if let TypeRef::Descriptor(Target::Direct(t)) = c.type_ref {
+                self.context_closure(t, &mut md.contexts, 0, &mut rows);
+            }
+            if let Target::Direct(p) = c.protocol {
+                self.context_closure(p, &mut md.contexts, 0, &mut rows);
+                if let (Some(w), Some(proto)) = (c.witness_table, md.contexts.get(&p)) {
+                    let words = proto.requirements.len() + 1;
+                    let Some(left) = rows.checked_sub(words) else {
+                        break;
+                    };
+                    rows = left;
+                    for k in 0..words as u64 {
+                        let slot = w.wrapping_add(md.ptr_size * k);
+                        if let Some(v) = self.img.read_ptr(slot) {
+                            md.words.insert(slot, v);
                         }
                     }
                 }
-                md.conformances.push(c);
             }
+            md.conformances.push(c);
         }
         for ctx in md.contexts.values() {
             for (row, _) in &ctx.requirements {
@@ -365,25 +392,38 @@ impl<'a> Reader<'a> {
         md
     }
 
-    /// Read the descriptor at `addr` and its parent chain into `out`.
-    fn context_closure(&self, addr: u64, out: &mut HashMap<u64, Context>, depth: usize) {
-        if depth > 32 || out.contains_key(&addr) {
+    /// Read the descriptor at `addr` and its parent chain into `out`, each
+    /// descriptor charging its rows to `rows`.
+    fn context_closure(
+        &self,
+        addr: u64,
+        out: &mut HashMap<u64, Context>,
+        depth: usize,
+        rows: &mut usize,
+    ) {
+        if depth > 32 || *rows == 0 || out.contains_key(&addr) {
             return;
         }
         let Some(ctx) = self.context(addr) else {
             return;
         };
+        let cost = 1 + ctx.vtable.len() + ctx.overrides.len() + ctx.requirements.len();
+        let Some(left) = rows.checked_sub(cost) else {
+            *rows = 0;
+            return;
+        };
+        *rows = left;
         let parent = ctx.parent;
         out.insert(addr, ctx);
         if let Some(Target::Direct(p)) = parent {
-            self.context_closure(p, out, depth + 1);
+            self.context_closure(p, out, depth + 1, rows);
         }
     }
 
     fn context(&self, addr: u64) -> Option<Context> {
         let flags = self.img.read_u32(addr)?;
         let kind = ContextKind::from_flags(flags);
-        let parent = self.rel_indirectable(addr + 4);
+        let parent = self.rel_indirectable(addr.wrapping_add(4));
         let mut ctx = Context {
             addr,
             kind,
@@ -398,25 +438,27 @@ impl<'a> Reader<'a> {
         };
         match kind {
             ContextKind::Module => {
-                ctx.name = self.rel(addr + 8).and_then(|p| self.cstr(p));
+                ctx.name = self.rel(addr.wrapping_add(8)).and_then(|p| self.cstr(p));
             }
             ContextKind::Extension => {
-                ctx.name = self.rel(addr + 8).and_then(|p| self.mangled_name(p));
+                ctx.name = self
+                    .rel(addr.wrapping_add(8))
+                    .and_then(|p| self.mangled_name(p));
             }
             ContextKind::Protocol => {
-                ctx.name = self.rel(addr + 8).and_then(|p| self.cstr(p));
-                let num_sig = self.img.read_u32(addr + 12)?;
-                let num_req = self.img.read_u32(addr + 16)?;
+                ctx.name = self.rel(addr.wrapping_add(8)).and_then(|p| self.cstr(p));
+                let num_sig = self.img.read_u32(addr.wrapping_add(12))?;
+                let num_req = self.img.read_u32(addr.wrapping_add(16))?;
                 if num_req > MAX_REQUIREMENTS {
                     return None;
                 }
                 // Trailing: one 12-byte GenericRequirementDescriptor per
                 // signature requirement, then the requirement rows.
-                let mut at = addr + 24 + num_sig as u64 * 12;
+                let mut at = addr.wrapping_add(24 + num_sig as u64 * 12);
                 for _ in 0..num_req {
-                    let default_impl = self.rel(at + 4);
+                    let default_impl = self.rel(at.wrapping_add(4));
                     ctx.requirements.push((at, default_impl));
-                    at += 8;
+                    at = at.wrapping_add(8);
                 }
                 // Default implementations of base-protocol / associated-type
                 // rows are not functions; the row flags tell the kind.
@@ -428,9 +470,9 @@ impl<'a> Reader<'a> {
                 }
             }
             ContextKind::Class | ContextKind::Struct | ContextKind::Enum => {
-                ctx.name = self.rel(addr + 8).and_then(|p| self.cstr(p));
-                ctx.accessor = self.rel(addr + 12);
-                ctx.fields = self.rel(addr + 16);
+                ctx.name = self.rel(addr.wrapping_add(8)).and_then(|p| self.cstr(p));
+                ctx.accessor = self.rel(addr.wrapping_add(12));
+                ctx.fields = self.rel(addr.wrapping_add(16));
                 if kind == ContextKind::Class {
                     self.class_tables(&mut ctx)?;
                 }
@@ -444,16 +486,16 @@ impl<'a> Reader<'a> {
     fn class_tables(&self, ctx: &mut Context) -> Option<()> {
         let flags = ctx.flags;
         let specific = flags >> 16;
-        let mut at = ctx.addr + 44;
+        let mut at = ctx.addr.wrapping_add(44);
         if flags & 0x80 != 0 {
             // TypeGenericContextDescriptorHeader: two instantiation words,
             // then {numParams, numRequirements, numKeyArguments, flags} as
             // u16s, the parameter bytes (padded to 4), the requirements
             // (12 bytes each), then pack shapes and values when flagged.
-            let counts = self.img.read_u32(at + 8)?;
+            let counts = self.img.read_u32(at.wrapping_add(8))?;
             let (num_params, num_reqs) = (counts & 0xffff, counts >> 16);
-            let header_flags = self.img.read_u32(at + 12)? >> 16;
-            at += 16 + ((num_params as u64 + 3) & !3) + num_reqs as u64 * 12;
+            let header_flags = self.img.read_u32(at.wrapping_add(12))? >> 16;
+            at = at.wrapping_add(16 + ((num_params as u64 + 3) & !3) + num_reqs as u64 * 12);
             if header_flags & 0x2 != 0 {
                 // Conditional inverted protocols: a layout this reader
                 // does not follow.
@@ -461,38 +503,38 @@ impl<'a> Reader<'a> {
             }
             if header_flags & 0x1 != 0 {
                 let num_packs = self.img.read_u32(at)? & 0xffff;
-                at += 4 + num_packs as u64 * 8;
+                at = at.wrapping_add(4 + num_packs as u64 * 8);
             }
             if header_flags & 0x4 != 0 {
                 let num_values = self.img.read_u32(at)?;
-                at += 4 + num_values as u64 * 8;
+                at = at.wrapping_add(4 + num_values as u64 * 8);
             }
         }
         if specific & (1 << 13) != 0 {
-            at += 4; // ResilientSuperclass
+            at = at.wrapping_add(4); // ResilientSuperclass
         }
         match specific & 3 {
-            1 => at += 12, // SingletonMetadataInitialization
-            2 => at += 4,  // ForeignMetadataInitialization
+            1 => at = at.wrapping_add(12), // SingletonMetadataInitialization
+            2 => at = at.wrapping_add(4),  // ForeignMetadataInitialization
             _ => {}
         }
         if specific & (1 << 15) != 0 {
             let _vtable_offset = self.img.read_u32(at)?;
-            let size = self.img.read_u32(at + 4)?;
+            let size = self.img.read_u32(at.wrapping_add(4))?;
             if size > MAX_VTABLE {
                 return None;
             }
-            at += 8;
+            at = at.wrapping_add(8);
             for index in 0..size as usize {
                 let mflags = self.img.read_u32(at)?;
-                let impl_addr = self.rel(at + 4);
+                let impl_addr = self.rel(at.wrapping_add(4));
                 ctx.vtable.push(VTableEntry {
                     index,
                     kind: MethodKind::from_flags(mflags),
                     addr: at,
                     impl_addr,
                 });
-                at += 8;
+                at = at.wrapping_add(8);
             }
         }
         if specific & (1 << 14) != 0 {
@@ -500,18 +542,18 @@ impl<'a> Reader<'a> {
             if count > MAX_VTABLE {
                 return None;
             }
-            at += 4;
+            at = at.wrapping_add(4);
             for index in 0..count as usize {
                 let base_class = self.rel_indirectable(at)?;
-                let method = self.rel_indirectable(at + 4)?;
-                let impl_addr = self.rel(at + 8);
+                let method = self.rel_indirectable(at.wrapping_add(4))?;
+                let impl_addr = self.rel(at.wrapping_add(8));
                 ctx.overrides.push(OverrideEntry {
                     index,
                     base_class,
                     method,
                     impl_addr,
                 });
-                at += 12;
+                at = at.wrapping_add(12);
             }
         }
         Some(())
@@ -519,14 +561,14 @@ impl<'a> Reader<'a> {
 
     fn conformance(&self, addr: u64) -> Option<Conformance> {
         let protocol = self.rel_indirectable(addr)?;
-        let flags = self.img.read_u32(addr + 12)?;
+        let flags = self.img.read_u32(addr.wrapping_add(12))?;
         let type_ref = match (flags >> 3) & 3 {
-            0 => TypeRef::Descriptor(self.rel_indirectable(addr + 4)?),
-            1 => TypeRef::Descriptor(self.rel_indirectable_slot(addr + 4)?),
-            2 => TypeRef::ObjCClassName(self.rel(addr + 4)?),
-            _ => TypeRef::ObjCClass(self.rel(addr + 4)?),
+            0 => TypeRef::Descriptor(self.rel_indirectable(addr.wrapping_add(4))?),
+            1 => TypeRef::Descriptor(self.rel_indirectable_slot(addr.wrapping_add(4))?),
+            2 => TypeRef::ObjCClassName(self.rel(addr.wrapping_add(4))?),
+            _ => TypeRef::ObjCClass(self.rel(addr.wrapping_add(4))?),
         };
-        let witness_table = self.rel(addr + 8);
+        let witness_table = self.rel(addr.wrapping_add(8));
         let mut c = Conformance {
             addr,
             protocol,
@@ -537,25 +579,25 @@ impl<'a> Reader<'a> {
         };
         // Trailing objects: retroactive context, conditional requirements,
         // conditional pack descriptors, resilient witnesses header + rows.
-        let mut at = addr + 16;
+        let mut at = addr.wrapping_add(16);
         if flags & (1 << 6) != 0 {
-            at += 4;
+            at = at.wrapping_add(4);
         }
         let num_cond = (flags >> 8) & 0xff;
-        at += num_cond as u64 * 12;
+        at = at.wrapping_add(num_cond as u64 * 12);
         let num_packs = (flags >> 18) & 3;
-        at += num_packs as u64 * 4;
+        at = at.wrapping_add(num_packs as u64 * 4);
         if flags & (1 << 16) != 0 {
             let count = self.img.read_u32(at)?;
             if count > MAX_REQUIREMENTS {
                 return None;
             }
-            at += 4;
+            at = at.wrapping_add(4);
             for _ in 0..count {
                 let requirement = self.rel_indirectable(at)?;
-                let impl_addr = self.rel(at + 4);
+                let impl_addr = self.rel(at.wrapping_add(4));
                 c.witnesses.push((requirement, impl_addr));
-                at += 8;
+                at = at.wrapping_add(8);
             }
         }
         Some(c)
@@ -576,25 +618,25 @@ impl<'a> Reader<'a> {
 
     fn field_descriptor(&self, addr: u64) -> Option<FieldDescriptor> {
         let mangled_type_name = self.rel(addr);
-        let superclass = self.rel(addr + 4);
-        let kind = (self.img.read_u32(addr + 8)? & 0xffff) as u16;
-        let record_size = self.img.read_u32(addr + 8)? >> 16;
-        let num = self.img.read_u32(addr + 12)?;
+        let superclass = self.rel(addr.wrapping_add(4));
+        let kind = (self.img.read_u32(addr.wrapping_add(8))? & 0xffff) as u16;
+        let record_size = self.img.read_u32(addr.wrapping_add(8))? >> 16;
+        let num = self.img.read_u32(addr.wrapping_add(12))?;
         if record_size != 12 || num > MAX_FIELDS {
             return None;
         }
         let mut records = Vec::new();
-        let mut at = addr + 16;
+        let mut at = addr.wrapping_add(16);
         for _ in 0..num {
             let flags = self.img.read_u32(at)?;
-            let mangled = self.rel(at + 4);
-            let name = self.rel(at + 8).and_then(|p| self.cstr(p));
+            let mangled = self.rel(at.wrapping_add(4));
+            let name = self.rel(at.wrapping_add(8)).and_then(|p| self.cstr(p));
             records.push(FieldRecord {
                 flags,
                 mangled_type_name: mangled,
                 name,
             });
-            at += 12;
+            at = at.wrapping_add(12);
         }
         Some(FieldDescriptor {
             addr,
