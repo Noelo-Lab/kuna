@@ -11,7 +11,8 @@
     (`int8 *v3; // r13`), a call drops the `self` it passes, and a caller's
     test of the error register after a throwing call reads the zero it
     stored before it, so `try?`'s error path folds away. Only a getter,
-    whose arity is known, had its `self` typed (8,560 on the Toyota iOS app).
+    whose arity is known, had its `self` typed (8,560 on a large
+    third-party iOS app).
 
     Stage / sub-stage: P1 external-refinement, the Swift metadata pass
     (`kuna-analysis/src/analyzers/swift/kuna_swiftcall.rs`), with the model
