@@ -1170,8 +1170,10 @@ Two `-fPIC` shared objects (~3.5 KB each) built from `elf_gotdata.c`, for the EL
 half of `importdata` (pass `elfgotimports`; `kuna-console/tests/verify_elfgotimports.rs`,
 `tests/stages/kuna-elfgotimports.xml`). Each reads `imported_counter`, `environ` and
 `stdout` through `R_*_GLOB_DAT` slots it leaves undefined, and `exported_value`,
-which it defines (a `GLOB_DAT` to a defined, preemptible symbol). Built with the
-container's clang + lld, no libc:
+which it defines (a `GLOB_DAT` to a defined, preemptible symbol). The committed
+files were built with clang and LLD 22.1.8 (their `.comment` section says so), no
+libc; the devcontainer's older clang + lld take the same recipe but may lay the
+image out differently, so the pinned VMAs below are the committed files':
 
 ```
 clang --target=x86_64-linux-gnu  -O1 -fPIC -shared -fuse-ld=lld -nostdlib \
