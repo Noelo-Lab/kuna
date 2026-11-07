@@ -52,7 +52,16 @@ win), and the naming storage is chosen by a fixed preference ladder
 persistent > input > address-tied > … > earliest-defined). HighVariables live
 in a per-function arena (`variable.rs (HighVariableBank)`), created for every
 Varnode by `ActionAssignHigh` (`Funcdata::set_high_level`) at the head of the
-phalanx; overlapping storage pieces of one symbol are tied together by the
+phalanx. The arena hands out ids in increasing order and never reuses one
+within the function, so it stores the HighVariables in a vector indexed by id
+(`variable.rs (HighSlots)`): a lookup is one index, not a tree search, and
+iteration still runs in id order. Each slot holds its HighVariable boxed, because
+merging erases most ids and every Varnode created later takes a new one: an
+erased id keeps an empty pointer until the function ends, not a whole
+HighVariable. Merging looks both HighVariables of every
+pair it tests up several times, which made the tree search most of
+`ActionMergeType`'s time on a function with thousands of same-typed variables.
+Overlapping storage pieces of one symbol are tied together by the
 `variable.rs (VariableGroup)`/`(VariablePiece)` model so a 4-byte read of an
 8-byte slot stays a *piece* of the same group rather than a rival variable.
 
@@ -458,6 +467,16 @@ marking (below), three passes fuse variables to reduce clutter:
   first already-accepted variable it passes the speculative rung and the
   cover test with; failures just keep it separate. This is the pass that
   turns dozens of same-typed temporaries into a handful of reused `vN`s.
+  A persistent, input or address-tied high fails the speculative rung
+  whatever it is paired with, and a merge never gives a high one of those
+  properties, so `merge_linear` neither tests such a high nor keeps it among
+  the accepted ones (`merge.rs (Merge::never_speculative)`). Upstream tests it
+  against every accepted variable and every later candidate against it; the
+  merges are the same, but a group of thousands of same-typed globals made
+  that quadratic: APoseFix.dll's 205 KB `0x1806c5440` and `0x1806f78a0` each
+  carry one group of 11,085 same-typed highs, 11,040 of them read-only
+  globals and 35 address-tied, and the pass made 61.4 million pair tests in
+  25 s for 6 merges.
 
 **Explicit vs implied** — which values get a named token at all. Between the
 required and speculative groups, `coreaction_cleanup.rs (ActionMarkExplicit)`
@@ -510,6 +529,15 @@ high would collide after inflating its cover to the candidate's
 (`merge.rs (Merge::inflate_test)`, copy shadows again forgiven). The failure
 mode of a wrong "implied" is a value printed at a program point where it no
 longer holds — which is why every unsafe case resolves to explicit.
+
+Upstream tests every STORE of the function against each LOAD it classifies.
+Marking changes no op, so the walk lists the function's live STOREs by block
+once (`coreaction_cleanup.rs (StoreBlocks)`) and tests a LOAD only against
+the STOREs in blocks its cover reaches; one outside them is never contained
+in the cover. The STOREs are visited in block order rather than op order,
+which cannot change the answer: the test asks whether any of them crosses
+the LOAD and may alias it. On APoseFix.dll's 205 KB `0x1806f78a0` the pass
+goes from 6.1 s to 0.8 s.
 
 Enabled system-call user ops follow the same memory fence as ordinary calls.
 `kuna_syscallregs.rs (memory_calls)` lists only the recognized, uninjected

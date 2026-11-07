@@ -1,0 +1,82 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-630031c54ca9",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--functions",
+    "consume,consume_signed,consume_store,pass_u8,pass_u16,pass_u32,same_width,pass_signed,keep_signed,signed_u8,signed_u16,signed_u32,store_u8,store_u16,store_u32,store_signed,pass_signed8,pass_signed16,store_signed8,store_signed16",
+    "--language",
+    "go",
+    "--option",
+    "protoorder",
+    "types",
+    "--assert",
+    "prototype pass_u8 uint8 pass_u8(uint8 value)",
+    "--assert",
+    "prototype pass_u16 uint8 pass_u16(uint8 value)",
+    "--assert",
+    "prototype pass_u32 uint8 pass_u32(uint8 value)",
+    "--assert",
+    "prototype same_width uint8 same_width(uint8 value)",
+    "--assert",
+    "prototype pass_signed uint8 pass_signed(int4 value)",
+    "--assert",
+    "prototype keep_signed uint8 keep_signed(int4 value)",
+    "--assert",
+    "prototype signed_u8 int8 signed_u8(uint8 value)",
+    "--assert",
+    "prototype signed_u16 int8 signed_u16(uint8 value)",
+    "--assert",
+    "prototype signed_u32 int8 signed_u32(uint8 value)",
+    "--assert",
+    "prototype store_u8 uint8 store_u8(uint8 *destination,uint8 value)",
+    "--assert",
+    "prototype store_u16 uint8 store_u16(uint8 *destination,uint8 value)",
+    "--assert",
+    "prototype store_u32 uint8 store_u32(uint8 *destination,uint8 value)",
+    "--assert",
+    "prototype store_signed uint8 store_signed(uint8 *destination,int4 value)",
+    "--assert",
+    "prototype pass_signed8 uint8 pass_signed8(int1 value)",
+    "--assert",
+    "prototype pass_signed16 uint8 pass_signed16(int2 value)",
+    "--assert",
+    "prototype store_signed8 uint8 store_signed8(uint8 *destination,int1 value)",
+    "--assert",
+    "prototype store_signed16 uint8 store_signed16(uint8 *destination,int2 value)"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/call_argument_extensions_x86_64",
+    "binary_sha256": "195ab36ae206b5fe8a9aa1c1dd68764f8888d70fbd7f29a46f63e95d2428ca4b",
+    "binary_size": 16360,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/call_argument_extensions_x86_64",
+    "selector": "pass_signed",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "return\\ consume\\(uint64\\(byte\\(value\\)\\)\\)",
+      "return\\ consume\\(uint64\\(uint16\\(value\\)\\)\\)",
+      "return\\ consume\\(uint64\\(uint32\\(value\\)\\)\\)",
+      "return\\ consume\\(uint64\\(int64\\(value\\)\\)\\)",
+      "return\\ consume_signed\\(int64\\(value\\ \\&\\ 0xffffffff\\)\\)",
+      "return\\ consume_store\\(destination,uint64\\(uint32\\(value\\)\\)\\)",
+      "return\\ consume\\(value\\)"
+    ]
+  },
+  "notes": "Callee-first recovery retains unasserted consumer types. Complete emitted bodies are compiled and executed against independent bit-mask/sign-extension formulas and store canaries by kuna-cli/tests/call_argument_extensions.rs; the original fixture is never executed."
+}

@@ -1,0 +1,9 @@
+from common import *
+sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();base=Path('/home/mahaloz/kwt/angr-rust-array-address');source='int *array_decay(int (*p)[9]) { return *p; }\nint main(void) { return 0; }\n';(w/'public-repro.c').write_text(source);subprocess.run(['cc','-O2','-g','-fno-pie','-no-pie',str(w/'public-repro.c'),'-o',str(w/'public-repro')],check=True);records=[]
+for arm,root in [('parent',base),('candidate',r)]:
+ cli=root/'decompiler/target/release/kuna';cmd=[str(cli),'decompile',str(w/'public-repro'),'array_decay','--language','rust','--option','ctypes','off','--option','realtypes','off','--assert','prototype array_decay int4*array_decay(int4(*p)[9])'];p=subprocess.run(cmd,env=env|{'KUNA_SPECS':str(root/'specs')},capture_output=True,check=True);(w/('public-repro-'+arm+'.rs')).write_bytes(p.stdout);(w/('public-repro-'+arm+'.log')).write_bytes(p.stderr);path=w/('public-native-'+arm+'.rs');path.write_bytes(p.stdout+b'\nfn main(){unsafe{let mut a=[0i32;9];let p=&raw mut a;println!("{}",(array_decay(p)as usize).wrapping_sub(p as usize));}}\n');cc=['rustc','--edition=2021','--crate-name','public_decay_'+arm,'--error-format=json',str(path),'-o',str(w/('public-native-'+arm))];p=subprocess.run(cc,capture_output=True);(w/('public-native-'+arm+'.jsonl')).write_bytes(p.stderr);row={'arm':arm,'command':cmd,'cli_sha256':sha(cli),'compile_exit':p.returncode,'body_rewrites':False}
+ if arm=='parent':assert p.returncode!=0 and b'E0308'in p.stderr
+ else:
+  assert p.returncode==0,p.stderr.decode();p=subprocess.run([str(w/('public-native-'+arm))],capture_output=True,check=True);assert p.stdout==b'0\n';(w/('public-native-'+arm+'.stdout')).write_bytes(p.stdout);row.update(execution_exit=0,byte_offset=0)
+ records.append(row)
+(w/'public-repro.json').write_text(json.dumps({'status':'PASS','complete_body_unmodified':True,'records':records},indent=2)+'\n');print('Public array decay: parentE0308; candidate offset0',flush=True)

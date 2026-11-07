@@ -174,6 +174,9 @@ Three tiers:
 | a huge function spends most of its time in oppool1 | [`deadwaves`](#deadwaves) |
 | rule pool sweep count in the thousands for one function | [`deadwaves`](#deadwaves) |
 | each pool sweep removes only a handful of dead INDIRECT or MULTIEQUAL ops | [`deadwaves`](#deadwaves) |
+| a huge function spends most of its time in oppool1 | [`copywaves`](#copywaves) |
+| rule pool sweep count in the thousands for one function | [`copywaves`](#copywaves) |
+| each pool sweep propagates one copy into the same join | [`copywaves`](#copywaves) |
 | a huge function spends most of its time in oppool1 | [`deadcascade`](#deadcascade) |
 | rule pool sweep count in the thousands for one function | [`deadcascade`](#deadcascade) |
 | each pool sweep removes only a handful of dead INDIRECT or MULTIEQUAL ops | [`deadcascade`](#deadcascade) |
@@ -941,6 +944,9 @@ Three tiers:
 | a variable is read as `v1._6_1_` and the text does not compile | [`partialaccess`](#partialaccess) |
 | a 16-byte register pair returns as `v1._0_16_` | [`partialaccess`](#partialaccess) |
 | a libc record such as `stat` is read as `v3._24_4_` | [`partialaccess`](#partialaccess) |
+| Rust assigns scalar zero to a recovered [u8; 16] destination | [`rustarrayzero`](#rustarrayzero) |
+| a wide zero store fails with Rust E0308 | [`rustarrayzero`](#rustarrayzero) |
+| a byte-array field needs a contextually typed zero value | [`rustarrayzero`](#rustarrayzero) |
 | mapped unsigned char array uses invalid ._offset_size_ members | [`bytearrayc`](#bytearrayc) |
 | wide byte-array accesses need compilable C | [`bytearrayc`](#bytearrayc) |
 | unaligned mapped integer transfer needs an alias-safe C representation | [`bytearrayc`](#bytearrayc) |
@@ -1793,10 +1799,18 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P3/simplification-quiescence · ghidra · speed · GH-1034
 - **Example:** `option deadwaves off`
 
+### `copywaves` -- on | off, default `on`
+
+- **Symptoms:** a huge function spends most of its time in oppool1; rule pool sweep count in the thousands for one function; each pool sweep propagates one copy into the same join.
+- **What it does:** Widen `deadwaves` in two ways. A pass whose only changes were dead-op removals and copy propagations (`RulePropagateCopy`, which replaces one input of an op with the input of the COPY defining it) is followed by a wave as well, over the op it changed, its output's readers, and the definition and readers of each Varnode it read before and after. And a wave offers an op it reaches only because a far-walking rule fires on its opcode just the far-walking rules, until one of them applies: the others test only what lies next to the op, which no change of the previous pass touched. `RulePropagateCopy` propagates one input per application and a rule applies once per op per pass, so a join with hundreds of copied inputs (the stack pointer at a shared exit after every path's last call) takes hundreds of passes; with this they are waves. Off keeps `deadwaves` as it was.
+- **When to flip:** Leave on. Turn off to compare against `deadwaves` alone when a rule whose test reads two or more ops away from the op it fires on, without walking a data-flow web, is suspected of firing later than it would have.
+- **Where / provenance:** P3/simplification-quiescence · kuna · speed · GH-1034
+- **Example:** `option copywaves off`
+
 ### `deadcascade` -- off | on | <n>, default `32`
 
 - **Symptoms:** a huge function spends most of its time in oppool1; rule pool sweep count in the thousands for one function; each pool sweep removes only a handful of dead INDIRECT or MULTIEQUAL ops.
-- **What it does:** From pass N of one run of a rule pool (default 32), when dead-op removal (`RuleEarlyRemoval`) takes out a join (MULTIEQUAL) or a guard (INDIRECT), also take out at once the joins and guards behind the pool's cursor that defined what it read and that nothing reads any more, and theirs in turn. The cursor has usually passed the op defining what a removed op read, so without this a chain of call guards and joins nothing reads dies one link per pool pass, and each pass sweeps the whole function (or, with `deadwaves`, walks it). The chain goes in the order the later passes would have removed it: one batch per pass, each in sequence order. Definitions at or ahead of the cursor, and dead ops of other kinds, are left to the passes as before. A run that has gone N passes is almost always taking such chains apart; a shorter run, which is nearly every run, removes as upstream does. Removing earlier than upstream changes when the other rules see a value lose a reader, which can change how variables merge, so the cascade waits for the long runs. `on` cascades from the first pass, `off` never.
+- **What it does:** Once one run of a rule pool has made N passes (default 32), when dead-op removal (`RuleEarlyRemoval`) takes out a join (MULTIEQUAL) or a guard (INDIRECT), also take out at once the joins and guards behind the pool's cursor that defined what it read and that nothing reads any more, and theirs in turn. The cursor has usually passed the op defining what a removed op read, so without this a chain of call guards and joins nothing reads dies one link per pool pass, and each pass sweeps the whole function (or, with `deadwaves`, walks it). The chain goes in the order the later passes would have removed it: one batch per pass, each in sequence order. Definitions at or ahead of the cursor, and dead ops of other kinds, are left to the passes as before. A run that has gone N passes is almost always taking such chains apart; a shorter run, which is nearly every run, removes as upstream does. Removing earlier than upstream changes when the other rules see a value lose a reader, which can change how variables merge, so the cascade waits for the long runs. `on` cascades from the first pass, `off` never.
 - **When to flip:** Leave at the default. Set `off` to get upstream's one-link-per-pass removal everywhere, `on` or a smaller N to speed up functions whose pools run tens of passes, at the price of variable assignment that can differ from upstream's.
 - **Where / provenance:** P3/simplification-quiescence · kuna · speed · GH-1034
 - **Example:** `option deadcascade off`
@@ -3496,6 +3510,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** ON in the `aggressive` and `fast` presets, and `auto` turns it on at every input size, as it does `ctypes`: the emitted C should be C. The shipped default stays OFF because two XML datatest assertions pin Ghidra's `._<off>_<size>_` spelling (`Enum Reading #2`, `Stack Return #5`) and the parity harness applies no mode. Flip OFF to read Ghidra's notation, which is shorter and is what a Ghidra user expects.
 - **Where / provenance:** P9/pointer-notation · kuna · presentation-default · kuna-partialaccess
 - **Example:** `option partialaccess on`
+
+### `rustarrayzero` -- on | off, default `off`
+
+- **Symptoms:** Rust assigns scalar zero to a recovered [u8; 16] destination; a wide zero store fails with Rust E0308; a byte-array field needs a contextually typed zero value.
+- **What it does:** Emit [0; N] for a Rust STORE of constant zero into a nonempty integer byte array when the value width, destination width and element count match exactly. Elements must have size and alignment one and cannot be enums. Preserve the destination expression and evaluation count without introducing a more strongly aligned scalar pointer. Nonzero values, other element types and inconsistent widths keep their previous handling; diagnostic cast suppression remains effective. C and Go output are unchanged.
+- **When to flip:** Off in every preset. Enable when a recovered byte-array destination receives scalar zero and Rust rejects the assignment with E0308. The initial default-on build exceeded the 5% speed budget on a small C control: +5.075% CPU median across 64 balanced pairs, with -0.119% wall median. That C path does not call this helper, so the measurement is retained without a causal performance claim. The correction is opt-in under the speed policy.
+- **Where / provenance:** P9/array-cover-width · kuna · correctness-fix · rust-zero-byte-array-store
+- **Example:** `option rustarrayzero on`
 
 ### `bytearrayc` -- on | off, default `off`
 

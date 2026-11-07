@@ -1301,6 +1301,12 @@ impl Merge {
     /// The variables are sorted by earliest block, then each is matched against the
     /// stack of accepted variables; a match needs the speculative test to pass and
     /// no Cover intersection (else that particular pairing is skipped).
+    ///
+    /// A persistent, input or address-tied variable fails the speculative test
+    /// against every other, and merging never gives another variable those
+    /// properties, so it is neither matched nor stacked: upstream tests it
+    /// against the whole stack and every later variable against it, which is
+    /// quadratic in a group of thousands of same-typed globals.
     pub fn merge_linear(&mut self, ctx: &mut dyn MergeContext, highvec: &mut [HighVariableId]) -> KunaResult<()> {
         if highvec.len() <= 1 {
             return Ok(());
@@ -1315,6 +1321,9 @@ impl Merge {
         let mut highstack: Vec<HighVariableId> = Vec::new();
         let order: Vec<HighVariableId> = highvec.to_vec();
         for high in order {
+            if Self::never_speculative(ctx, high) {
+                continue;
+            }
             let mut merged_into = false;
             for &out in &highstack {
                 self.budget()?;
@@ -1331,6 +1340,12 @@ impl Merge {
             }
         }
         Ok(())
+    }
+
+    /// Does [`Self::merge_test_speculative`] refuse `high` whatever it is paired
+    /// with?
+    fn never_speculative(ctx: &mut dyn MergeContext, high: HighVariableId) -> bool {
+        ctx.high_is_persist(high) || ctx.high_is_input(high) || ctx.high_is_addr_tied(high)
     }
 
     /// Stable sort `highvec` by [`compare_high_by_block`] (the C++ `std::sort`).
@@ -2691,6 +2706,7 @@ mod tests {
         pieces: BTreeMap<u64, (HighVariableId, Vec<u64>)>,
         copy_shadow: bool,
         merged: Vec<(HighVariableId, HighVariableId, bool)>,
+        persist_reads: u64,
     }
 
     impl Mock {
@@ -2709,6 +2725,7 @@ mod tests {
                 pieces: BTreeMap::new(),
                 copy_shadow: false,
                 merged: Vec::new(),
+                persist_reads: 0,
             }
         }
         fn hs(&self, h: HighVariableId) -> &HighState {
@@ -2779,6 +2796,7 @@ mod tests {
             self.hs(h).input
         }
         fn high_is_persist(&mut self, h: HighVariableId) -> bool {
+            self.persist_reads += 1;
             self.hs(h).persist
         }
         fn high_is_extra_out(&mut self, h: HighVariableId) -> bool {
@@ -3594,6 +3612,34 @@ mod tests {
         for (_, _, spec) in &m.merged {
             assert!(*spec, "mergeLinear merges must be speculative");
         }
+    }
+
+    /// Globals of one type never merge speculatively, so a group of thousands
+    /// of them must not be tested pair by pair: the two locals among them merge
+    /// exactly as they would alone, and each global is read once.
+    #[test]
+    fn merge_linear_does_not_pair_up_globals() {
+        let mut m = Mock::new();
+        let shared = dt(8, type_metatype::TYPE_UNKNOWN);
+        let globals = 300u32;
+        for n in 1..=globals + 2 {
+            let mut s = HighState::default();
+            s.has_cover = true;
+            s.type_ = Some(shared.clone());
+            s.cover = cover_block(n as int4 - 1, 0, 5);
+            s.instances = vec![vid(n as u64)];
+            s.persist = n != 7 && n != 200;
+            add_high(&mut m, n, s);
+            m.vn_addr.insert(vkey(vid(n as u64)), Address::new_invalid());
+        }
+        let mut merge = Merge::new(HighIntersectTest::new(PcodeOpSet::new(
+            Box::new(Vec::new),
+            Box::new(|_, _| true),
+        )));
+        let mut highvec: Vec<HighVariableId> = (1..=globals + 2).map(hid).collect();
+        merge.merge_linear(&mut m, &mut highvec).unwrap();
+        assert_eq!(m.merged, vec![(hid(7), hid(200), true)]);
+        assert!(m.persist_reads <= 2 * u64::from(globals + 2) + 4, "{} reads", m.persist_reads);
     }
 
     // --- Merge::clear resets the cache + trim/partial lists ----------------

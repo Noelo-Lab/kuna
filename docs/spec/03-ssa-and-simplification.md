@@ -1451,7 +1451,8 @@ rules only the ops
 names: the dead ops (destroyed, as the sweep destroys them), the definition and
 readers of each Varnode a removed op read, every op of an opcode a far-walking
 rule fires on (the sub-variable and split flows, which walk a whole data-flow
-web, `action.rs (Rule::walks_far)`), and the same neighbourhood of each op the
+web, and `RuleIgnoreNan`, which follows a NaN test through three levels of
+boolean readers; `action.rs (Rule::walks_far)`), and the same neighbourhood of each op the
 wave itself removes. Removals are recorded as they happen
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
 (Funcdata::note_dead_removal)`). The first application other than a removal
@@ -1461,11 +1462,45 @@ the op it fires on without walking a web can see a removal the wave does not
 offer it; that rule then fires at the next full sweep instead. With
 `deadwaves off` every pass sweeps every op.
 
+(kuna `copywaves`, default on) `RulePropagateCopy` replaces one input of an op
+with the input of the COPY defining it and stops (upstream's "propagate just a
+single copy"), and a rule applies at most once per op per pass, so a join with
+hundreds of copied inputs takes hundreds of passes. serde-hkx's hkxc.exe
+0x1406198f0 has one: the stack pointer at its shared exit block reads the COPY
+each path's last call left, 626 to 674 of them. Each of those passes also
+removes the COPY the pass before freed, and every one swept the whole
+function. With `copywaves` an input replacement is a change a wave can follow:
+the rule records the op and the Varnodes it touches before and after
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::note_wave_input_change)`; `action.rs (Rule::replaces_inputs_only)`
+marks the rule), so a pass whose only changes were removals and such
+replacements is followed by a wave over the op, its output's readers, and the
+definition and readers of every Varnode it read before and after, and an
+input replacement inside a wave widens the wave instead of ending it. The
+second change makes each wave cheaper: an op the wave reaches only because a
+far-walking rule fires on its opcode is offered just the far-walking rules
+(`action.rs (ActionPool::wave_wants)`), since the others test only what lies
+next to the op and the previous pass changed nothing there; once a rule
+applies to it the rest of its rules are tested as usual. The same limit as
+`deadwaves` applies: a rule reading two or more ops away without walking a web
+can see a change the wave does not offer it, and `RulePropagateCopy`'s own
+`kuna_globalstorekeep` refusal is one, since it reads the readers of the COPY's
+input and walks the blocks after the store
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalstorekeep.rs
+(declines)`). Neither mechanism ends a pool run with a full sweep: the run stops
+at its first pass that changes nothing, which can be a wave. Such a rule is
+caught by the schedule around oppool1, the only pool holding `RuleEarlyRemoval`
+and `RulePropagateCopy`: the `stackstall` group repeats oppool1 while it
+changed anything, and the first pass of every pool run is a full sweep (a wave
+needs an earlier change in the same run), so the rule fires one stackstall
+iteration later. With `copywaves off`, `deadwaves` behaves as described above.
+
 (kuna `deadcascade`, default 32) A wave is cheaper than a sweep but still
 walks the whole function, and the far-walking rules still run on every op of
 their opcodes, so a chain of a thousand links still costs a thousand passes.
-From pass N of one run of a pool (`action.rs (ActionPool::apply)` counts the
-passes since the run began and sets `Funcdata::set_dead_cascade_now`), when
+Once one run of a pool has made N passes (`action.rs (ActionPool::apply)`
+counts the passes since the run began and sets
+`Funcdata::set_dead_cascade_now`), when
 `RuleEarlyRemoval` removes a join (`MULTIEQUAL`) or a guard (`INDIRECT`), it
 also removes the joins and guards behind the cursor that defined what that op
 read and that nothing reads any more, and theirs in turn
@@ -1480,8 +1515,8 @@ any other, and the checks are `RuleEarlyRemoval`'s own
 removal happens relative to the other rules' tests: a rule that counts a
 value's readers sees a dead reader gone passes earlier, and the Varnodes the
 removals free are reused in another order. Cascading from the first pass of
-every run (`deadcascade on`) changed the variable assignment of 0.6% of a
-54,000-function corpus, and, through every kind of dead op, folded the two
+every run (`deadcascade on`) changed the variable assignment of 346 of
+68,488 corpus functions, and, through every kind of dead op, folded the two
 paths' `v + 1` and `v + 100` of `cons` in the `rustabi` stage test into one
 add after the join. So the cascade is held to joins and guards, whose chains
 are the long ones (a guard per call, a join per merge point), and waits for a

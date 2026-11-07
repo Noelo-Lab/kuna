@@ -1,0 +1,14 @@
+{
+  "at": "2026-11-03T06:28:57.428198+00:00",
+  "source": "Actual fetched main branch tip after merged PR1466 and PR1468",
+  "published_commit": "8ced8a2e051e26b89d21096699f690646924921b",
+  "merged_commit": "8ced8a2e051e26b89d21096699f690646924921b",
+  "published_tree": "d5036439456222c6f82b8f92633e3974acbf73c5",
+  "merged_tree": "d5036439456222c6f82b8f92633e3974acbf73c5",
+  "candidate_cli_sha256": "245a0199db70a010cdf9b734d5f1fb6d8e6e9e478717ca3813e6546306730ac4",
+  "prior_feature_parent": "https://github.com/Noelo-Lab/kuna/pull/1471",
+  "upstream_changes": [
+    "https://github.com/Noelo-Lab/kuna/pull/1466",
+    "https://github.com/Noelo-Lab/kuna/pull/1468"
+  ]
+}

@@ -1,0 +1,56 @@
+<!-- Merged Boolean locals remain Boolean across bitwise expressions in Rust.
+     Explicit prototypes exercise the correctness fix; C is the control. -->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_boolean_expressions_x86_64</com>
+  <com>read symbols</com>
+  <com>map prototype loop_xor bool loop_xor(int4 a,int4 b,int4 count,void *p);</com>
+  <com>map prototype loop_and bool loop_and(int4 a,int4 b,int4 count,void *p);</com>
+  <com>map prototype loop_or bool loop_or(int4 a,int4 b,int4 count,void *p);</com>
+  <com>map prototype loop_eager bool loop_eager(int4 a,int4 b,int4 count,void *p);</com>
+  <com>map prototype loop_and_call bool loop_and_call(int4 a,int4 b,int4 count,void *p);</com>
+  <com>map prototype loop_or_call bool loop_or_call(int4 a,int4 b,int4 count,void *p);</com>
+  <com>map prototype loop_store void loop_store(bool *out,int4 a,int4 b,int4 count);</com>
+  <com>map prototype barrier void barrier(void);</com>
+  <com>map prototype observe bool observe(int4 value);</com>
+  <com>option outlang rust</com>
+  <com>load function loop_xor</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function loop_and</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function loop_or</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function loop_eager</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function loop_and_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function loop_or_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function loop_store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option outlang c</com>
+  <com>load function loop_xor</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Merged Boolean XOR assignments retain Boolean identity" min="2" max="2">v1 = \(v1 \^ \(count == 3\)\) as bool;</stringmatch>
+<stringmatch name="Merged Boolean AND assignment retains Boolean identity" min="1" max="1">v1 = \(v1 &amp; \(count != 3\)\) as bool;</stringmatch>
+<stringmatch name="Merged Boolean OR assignment retains Boolean identity" min="1" max="1">v1 = \(v1 \| \(count == 3\)\) as bool;</stringmatch>
+<stringmatch name="Callback Boolean expressions preserve all three bitwise operators" min="3" max="3">v1 = \(v1 [&amp;|^] observe\(count\)\) as bool;</stringmatch>
+<stringmatch name="Boolean returns retain identity casts" min="6" max="6">return \(\(p == core::ptr::null_mut\(\)\) [&amp;|^] v1\) as bool;</stringmatch>
+<stringmatch name="Boolean store retains identity cast" min="1" max="1">\*out = \(v1 &amp; \(a == 4\)\) as bool;</stringmatch>
+<stringmatch name="Boolean expressions are never compared with integer zero" min="0" max="0">\(v1 [&amp;|^].*\) != 0;</stringmatch>
+<stringmatch name="C keeps its Boolean bitwise return" min="1" max="1">return \(bool\)\(p == NULL &amp; v1\);</stringmatch>
+</decompilertest>

@@ -1,0 +1,38 @@
+<!-- Go/Rust parity, P9 integer call arguments; strict correction, no new option.
+     The console has no callee-first parameter snapshot. Unasserted consumers
+     therefore exercise the no-evidence path; explicit prototypes establish the
+     ordinary typed boundary. Positive recovered-callee checks and complete native
+     bodies are in tests/cli/call-argument-extensions-{go,rust}.json and the
+     kuna-cli call_argument_extensions integration test. Original ELF is not run. -->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/call_argument_extensions_x86_64</com>
+  <com>read symbols</com>
+  <com>map prototype pass_signed uint8 pass_signed(int4 value);</com>
+  <com>option outlang rust</com>
+  <com>load function pass_signed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>map prototype consume uint8 consume(uint8 value);</com>
+  <com>load function pass_signed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option outlang go</com>
+  <com>load function pass_signed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>map prototype keep_signed uint8 keep_signed(int4 value);</com>
+  <com>load function keep_signed</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Missing recorded consumer preserves ordinary narrow argument" min="1" max="1">consume\(value\)</stringmatch>
+<stringmatch name="Explicit Rust consumer preserves zero extension" min="1" max="1">consume\(\(value as u32\) as u64\)</stringmatch>
+<stringmatch name="Explicit Go consumer preserves zero extension" min="1" max="1">consume\(uint64\(uint32\(value\)\)\)</stringmatch>
+<stringmatch name="Explicit Go consumer preserves sign extension" min="1" max="1">consume\(uint64\(int64\(value\)\)\)</stringmatch>
+</decompilertest>

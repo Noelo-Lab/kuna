@@ -1025,8 +1025,16 @@ pub trait Rule {
 
     /// (kuna `deadwaves`) Can this rule's test read Varnodes further than one
     /// op from the op it is offered (a sub-variable or split flow walking a
-    /// whole data-flow web)? A wave offers it every op of its opcodes.
+    /// whole data-flow web, `RuleIgnoreNan` following boolean readers)? A
+    /// wave offers it every op of its opcodes.
     fn walks_far(&self) -> bool {
+        false
+    }
+
+    /// (kuna `copywaves`) Does this rule only ever replace an input of the op
+    /// it is offered (`RulePropagateCopy`), recording the change with
+    /// `Funcdata::note_wave_input_change`?
+    fn replaces_inputs_only(&self) -> bool {
         false
     }
 }
@@ -1206,6 +1214,8 @@ pub struct ActionPool {
     /// current pass.
     pass_removals: u32,
     pass_others: u32,
+    /// (kuna `copywaves`) Input replacements in the current pass.
+    pass_inputs: u32,
     /// (kuna `deadwaves`) What the previous pass removed and the Varnodes those
     /// ops read, kept when removal was all that pass changed.
     wave_seed: Option<(Vec<OpId>, Vec<crate::context::VarnodeId>)>,
@@ -1252,6 +1262,7 @@ impl ActionPool {
             pending_error: None,
             pass_removals: 0,
             pass_others: 0,
+            pass_inputs: 0,
             wave_seed: None,
             wave: None,
             far: vec![false; OpCode::CPUI_MAX as usize],
@@ -1314,7 +1325,10 @@ impl ActionPool {
     /// Returns `0` if no breakpoint, `-1` on a breakpoint (the caller then
     /// re-enters to resume).  The `op_state` cursor and `rule_index` carry the
     /// resume position.
-    fn process_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+    ///
+    /// (kuna `copywaves`) With `far_only`, the rules that do not walk far are
+    /// skipped until one rule applies.
+    fn process_op(&mut self, op: OpId, data: &mut Funcdata, mut far_only: bool) -> int4 {
         if data.obank().get(op).map(|o| o.is_dead()).unwrap_or(true) {
             self.advance_op_state(data, op);
             data.obank_mut().destroy(op);
@@ -1334,13 +1348,19 @@ impl ActionPool {
             if self.allrules[rl_idx].state.is_disabled() {
                 continue;
             }
+            if far_only && !self.allrules[rl_idx].rule.walks_far() {
+                continue;
+            }
             self.allrules[rl_idx].state.count_tests += 1;
             let res = self.allrules[rl_idx].rule.apply_op(op, data);
             if res > 0 {
+                far_only = false;
                 if self.allrules[rl_idx].rule.removes_dead_ops()
                     && data.obank().get(op).is_none_or(|o| o.is_dead())
                 {
                     self.pass_removals += 1;
+                } else if self.allrules[rl_idx].rule.replaces_inputs_only() && data.get_arch().pool_copy_waves {
+                    self.pass_inputs += 1;
                 } else {
                     self.pass_others += 1;
                 }
@@ -1461,18 +1481,27 @@ impl ActionPool {
         self.base.breakpoint != 0 || self.allrules.iter().any(|r| r.state.breakpoint != 0)
     }
 
-    /// (kuna `deadwaves`) Does a wave offer `op` to the rules? The pass before
-    /// changed nothing but remove dead ops, which it left dead in the tree, so
-    /// every test it made elsewhere fails again unless it reads what a removal
-    /// changed: a wave offers, in the sweep's own order, the dead ops (which it
-    /// destroys, as the sweep does), the definition and readers of each
-    /// Varnode a removed op read, every op of an opcode a far-walking rule
-    /// fires on, and the same neighbourhood of each op it removes.
-    fn wave_wants(&self, data: &Funcdata, op: OpId) -> bool {
+    /// (kuna `deadwaves`) Does a wave offer `op` to the rules, and only its
+    /// far-walking ones? The pass before changed nothing but remove dead ops
+    /// (and, with `copywaves`, replace inputs the way `RulePropagateCopy`
+    /// does), so every test it made elsewhere fails again unless it reads what
+    /// a change touched: a wave offers, in the sweep's own order, the dead ops
+    /// (which it destroys, as the sweep does), the definition and readers of
+    /// each Varnode a change touched, every op of an opcode a far-walking rule
+    /// fires on, and the same neighbourhood of each change it makes. With
+    /// `copywaves`, an op offered only for its opcode is offered only the
+    /// far-walking rules, until one of them applies.
+    fn wave_wants(&self, data: &Funcdata, op: OpId) -> (bool, bool) {
         let Some(o) = data.obank().get(op) else {
-            return true;
+            return (true, false);
         };
-        o.is_dead() || self.far[o.code() as usize] || self.wave.as_ref().is_some_and(|w| w.contains(&op))
+        if o.is_dead() || self.wave.as_ref().is_some_and(|w| w.contains(&op)) {
+            return (true, false);
+        }
+        if self.far[o.code() as usize] {
+            return (true, data.get_arch().pool_copy_waves);
+        }
+        (false, false)
     }
 }
 
@@ -1527,6 +1556,7 @@ impl Action for ActionPool {
         self.wave = None;
         self.pass_removals = 0;
         self.pass_others = 0;
+        self.pass_inputs = 0;
         for entry in &mut self.allrules {
             entry.state.reset_state();
             entry.rule.reset(data);
@@ -1561,10 +1591,12 @@ impl Action for ActionPool {
             data.set_dead_cascade_now(cascade);
             self.op_state = OpCursor::Unstarted;
             self.rule_index = 0;
-            let quiet = self.base.count > 0 && self.pass_removals > 0 && self.pass_others == 0;
+            let quiet =
+                self.base.count > 0 && self.pass_removals + self.pass_inputs > 0 && self.pass_others == 0;
             let seed = self.wave_seed.take().filter(|_| quiet);
             self.pass_removals = 0;
             self.pass_others = 0;
+            self.pass_inputs = 0;
             self.wave = None;
             if data.get_arch().pool_dead_waves {
                 data.start_dead_wave_log();
@@ -1591,13 +1623,14 @@ impl Action for ActionPool {
                     return 0;
                 }
             }
-            if self.wave.is_some() && !self.wave_wants(data, op) {
+            let (offer, far_only) = if self.wave.is_some() { self.wave_wants(data, op) } else { (true, false) };
+            if !offer {
                 self.advance_op_state(data, op);
                 continue;
             }
             let others = self.pass_others;
             let mark = data.dead_wave_log_mark();
-            let r = self.process_op(op, data);
+            let r = self.process_op(op, data, far_only);
             if r != 0 {
                 self.next_op = None;
                 self.lookahead_epoch = None;

@@ -1,0 +1,178 @@
+{
+  "at": "2026-11-03T04:52:13.534872+00:00",
+  "status": "FAILED",
+  "complete_bodies": 97,
+  "candidate_native_executed": false,
+  "errors": [
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "lines": [
+        [
+          {
+            "text": "  return &raw mut (*p).i8 as *mut i8;",
+            "highlight_start": 10,
+            "highlight_end": 37
+          }
+        ]
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "lines": [
+        [
+          {
+            "text": "  return &raw mut (*p).u8 as *mut u8;",
+            "highlight_start": 10,
+            "highlight_end": 37
+          }
+        ]
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "lines": [
+        [
+          {
+            "text": "  return &raw mut (*p).i16 as *mut i16;",
+            "highlight_start": 10,
+            "highlight_end": 39
+          }
+        ]
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "lines": [
+        [
+          {
+            "text": "  return &raw mut (*p).u16 as *mut u16;",
+            "highlight_start": 10,
+            "highlight_end": 39
+          }
+        ]
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "lines": [
+        [
+          {
+            "text": "  return &raw mut (*p).i32 as *mut i32;",
+            "highlight_start": 10,
+            "highlight_end": 39
+          }
+        ]
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "lines": [
+        [
+          {
+            "text": "  return &raw mut (*p).u32 as *mut u32;",
+            "highlight_start": 10,
+            "highlight_end": 39
+          }
+        ]
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "lines": [
+        [
+          {
+            "text": "  return &raw mut (*p).i64 as *mut i64;",
+            "highlight_start": 10,
+            "highlight_end": 39
+          }
+        ]
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "lines": [
+        [
+          {
+            "text": "  return &raw mut (*p).u64 as *mut u64;",
+            "highlight_start": 10,
+            "highlight_end": 39
+          }
+        ]
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "lines": [
+        [
+          {
+            "text": "  return &raw mut (*p).float32 as *mut f32;",
+            "highlight_start": 10,
+            "highlight_end": 43
+          }
+        ]
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "lines": [
+        [
+          {
+            "text": "  return &raw mut (*p).float64 as *mut f64;",
+            "highlight_start": 10,
+            "highlight_end": 43
+          }
+        ]
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "lines": [
+        [
+          {
+            "text": "  return &raw mut (*p).pointers as *mut *mut u8;",
+            "highlight_start": 10,
+            "highlight_end": 48
+          }
+        ]
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "lines": [
+        [
+          {
+            "text": "  return &raw mut (*p).flags as *mut bool;",
+            "highlight_start": 10,
+            "highlight_end": 42
+          }
+        ]
+      ]
+    },
+    {
+      "code": "E0308",
+      "message": "mismatched types",
+      "lines": [
+        [
+          {
+            "text": "  return &raw mut (*p).flags as *mut bool;",
+            "highlight_start": 10,
+            "highlight_end": 42
+          }
+        ]
+      ]
+    }
+  ],
+  "reason": "All12erased-pointer returns produce array element pointers instead of the declared void pointer, through hidden pointer conversion wrappers. No candidate nativePASS."
+}
