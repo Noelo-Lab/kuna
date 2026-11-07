@@ -4451,7 +4451,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   descriptors share (private types of the same name), so nothing is ever
   read through the wrong name. Layouts built inside other layouts (a nested
   struct's, a superclass's) nest at most 32 deep, as a context's parent chain
-  does; a type reached deeper keeps its bytes untyped. What then binds: the metadata records as typed
+  does, and so do the optionals around a field's type; a type reached deeper
+  keeps its bytes untyped. What then binds: the metadata records as typed
   data (`….type_metadata` as `swift.type_metadata`, `….class_metadata`,
   `….value_witness_table`); the accessor prototypes
   (`swift.type_metadata *Module.Type.type_metadata_accessor(long request)`, so

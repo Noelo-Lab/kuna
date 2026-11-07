@@ -588,12 +588,16 @@ impl<'a> Types<'a> {
         }
         let resolver = |kind: u8, pos: usize, value: u64| self.resolve(at, kind, pos, value);
         let node = demangle_swift_type(mangled, &resolver)?;
-        self.kuna_type(&node, hint)
+        self.kuna_type(&node, hint, 0)
     }
 
     /// The kuna type of a demangled Swift type, sized `hint` bytes in its
-    /// container, or `None` for one outside the mapping.
-    fn kuna_type(&self, node: &NodeRef, hint: u32) -> Option<Rc<Datatype>> {
+    /// container, or `None` for one outside the mapping (or wrapped in more
+    /// than [`MAX_NESTING`] optionals).
+    fn kuna_type(&self, node: &NodeRef, hint: u32, depth: usize) -> Option<Rc<Datatype>> {
+        if depth > MAX_NESTING {
+            return None;
+        }
         let inner = if node.kind == Kind::Type {
             node.first()?
         } else {
@@ -629,7 +633,7 @@ impl<'a> Types<'a> {
                     return None;
                 }
                 let arg = inner.child(1)?.first()?;
-                let t = self.kuna_type(arg, hint)?;
+                let t = self.kuna_type(arg, hint, depth + 1)?;
                 let nil_is_zero = t.get_metatype() == type_metatype::TYPE_PTR
                     || matches!(t.get_name(), "Swift.String" | "swift.closure")
                     || t.get_name().starts_with("Swift.Array<")
