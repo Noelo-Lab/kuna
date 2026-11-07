@@ -3,11 +3,11 @@
 <!--
     Swift name demangling (`option swiftdemangle on|off`).
 
-    Issue: a Swift binary renders its symbols as mangled soup. On the Toyota
+    Issue: a Swift binary renders its symbols as mangled soup. On a large third-party
     iOS app (84 MB arm64, Swift + Objective-C) kuna printed the imported
     `$sSo9OS_os_logC0B0E9subsystem8categoryABSS_SStcfC` and, with the ObjC
     metadata pass on, Swift classes under their runtime names
-    (`-[_TtC6Toyota24AddMileageViewController viewDidLoad]`). The earlier
+    (`-[_TtC6Sample24MainScreenViewController viewDidLoad]`). The earlier
     name-only subset demangled 26% of the Swift symbols; the demangler now
     reads the whole stable grammar (`$s`) and the ObjC runtime type names
     (`_Tt`) and demangles all of them.

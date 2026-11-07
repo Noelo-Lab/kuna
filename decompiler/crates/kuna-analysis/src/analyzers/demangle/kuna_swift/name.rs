@@ -1,19 +1,28 @@
 //! (kuna `swiftdemangle`) The name-only printer: the dotted Swift
 //! reference path kuna installs as a symbol name (`Swift.String.count.getter`,
-//! `Toyota.Foo.init(x:y:)`, `<Toyota.Foo:Swift.Hashable>.hash(into:)`,
-//! `Toyota.Foo.type_metadata`). It never contains a space; types appear only
+//! `Sample.Foo.init(x:y:)`, `<Sample.Foo:Swift.Hashable>.hash(into:)`,
+//! `Sample.Foo.type_metadata`). It never contains a space; types appear only
 //! where the name is meaningless without them (conformances, specializations,
 //! thunks), in a compact spelling.
 
+use std::cell::Cell;
+use std::rc::Rc;
+
 use super::node::{Kind, Node, NodeRef};
+
+/// Upper bound on the total text any one demangling may produce. A crafted
+/// name can share subtrees through substitutions, so a composite type
+/// (tuples, generic arguments, `[K:V]`, function types) can render work that
+/// grows geometrically with its nesting; without a cap a ~180-byte symbol
+/// expands to gigabytes. The budget is shared across the nested printers and
+/// the temporary strings `type_name` returns, so a run stops once it has
+/// produced this much.
+const MAX_NAME_WORK: usize = 1 << 20;
 
 /// Render `node` as a name-only path, or `None` when a node kind has no
 /// name-only rendering.
 pub fn print_name(node: &NodeRef) -> Option<String> {
-    let mut p = NamePrinter {
-        out: String::new(),
-        depth: 0,
-    };
+    let mut p = NamePrinter::new(Rc::new(Cell::new(MAX_NAME_WORK)), 0);
     p.global(node)?;
     if p.out.is_empty() || p.out.contains(' ') {
         return None;
@@ -24,6 +33,8 @@ pub fn print_name(node: &NodeRef) -> Option<String> {
 struct NamePrinter {
     out: String,
     depth: usize,
+    /// Remaining text budget, shared by every printer in one demangling.
+    budget: Rc<Cell<usize>>,
 }
 
 fn tag(kind: Kind) -> Option<&'static str> {
@@ -177,7 +188,22 @@ fn attr_tag(kind: Kind) -> Option<&'static str> {
 }
 
 impl NamePrinter {
+    /// A printer sharing `budget` with its parent, starting at `depth`.
+    fn new(budget: Rc<Cell<usize>>, depth: usize) -> Self {
+        NamePrinter {
+            out: String::new(),
+            depth,
+            budget,
+        }
+    }
+
+    /// A child printer that shares this printer's budget and depth.
+    fn child(&self) -> Self {
+        NamePrinter::new(Rc::clone(&self.budget), self.depth)
+    }
+
     fn s(&mut self, t: &str) {
+        self.budget.set(self.budget.get().saturating_sub(t.len()));
         self.out.push_str(t);
     }
 
@@ -195,10 +221,7 @@ impl NamePrinter {
                 Kind::Suffix => suffix = Some(c.get_text().to_string()),
                 Kind::PartialApplyForwarder | Kind::PartialApplyObjCForwarder => {
                     let inner = Node::with(Kind::Global, c.children.clone());
-                    let mut p = NamePrinter {
-                        out: String::new(),
-                        depth: self.depth + 1,
-                    };
+                    let mut p = NamePrinter::new(Rc::clone(&self.budget), self.depth + 1);
                     p.global(&inner)?;
                     self.s(&p.out);
                     self.s(".");
@@ -388,7 +411,7 @@ impl NamePrinter {
     }
 
     fn node(&mut self, n: &NodeRef) -> Option<()> {
-        if self.depth > 256 {
+        if self.depth > 256 || self.budget.get() == 0 {
             return None;
         }
         self.depth += 1;
@@ -491,16 +514,10 @@ impl NamePrinter {
                 self.conformance(n.first()?)?;
                 let req = n.child(1)?.clone();
                 // The requirement entity, rendered without its own context.
-                let mut p = NamePrinter {
-                    out: String::new(),
-                    depth: self.depth,
-                };
+                let mut p = self.child();
                 p.node(&req)?;
                 let ctx_len = {
-                    let mut q = NamePrinter {
-                        out: String::new(),
-                        depth: self.depth,
-                    };
+                    let mut q = self.child();
                     q.requirement_context(&req)?;
                     q.out.len()
                 };
@@ -692,13 +709,20 @@ impl NamePrinter {
     }
 
     /// The compact, space-free spelling of a type.
+    ///
+    /// Each rendered temporary is charged against the shared budget here (the
+    /// strings never pass through [`Self::s`]); a geometric blowup then stops
+    /// after `MAX_NAME_WORK` bytes instead of running away.
     fn type_name(&mut self, n: &NodeRef) -> Option<String> {
-        if self.depth > 256 {
+        if self.depth > 256 || self.budget.get() == 0 {
             return None;
         }
         self.depth += 1;
         let r = self.type_name_inner(n);
         self.depth -= 1;
+        if let Some(s) = &r {
+            self.budget.set(self.budget.get().saturating_sub(s.len()));
+        }
         r
     }
 
@@ -707,10 +731,7 @@ impl NamePrinter {
         Some(match n.kind {
             Type => self.type_name(n.first()?)?,
             Class | Structure | Enum | Protocol | TypeAlias | OtherNominalType => {
-                let mut p = NamePrinter {
-                    out: String::new(),
-                    depth: self.depth,
-                };
+                let mut p = self.child();
                 p.entity(n, None, false)?;
                 p.out
             }
@@ -875,10 +896,7 @@ impl NamePrinter {
             SugaredParen => format!("({})", self.type_name(n.first()?)?),
             OpaqueReturnType => "some".to_string(),
             OpaqueType => {
-                let mut p = NamePrinter {
-                    out: String::new(),
-                    depth: self.depth,
-                };
+                let mut p = self.child();
                 p.node(n.first()?)?;
                 format!("{}.opaque#{}", p.out, n.child(1)?.get_index())
             }

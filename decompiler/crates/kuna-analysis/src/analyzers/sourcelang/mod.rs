@@ -673,7 +673,7 @@ pub fn swift_section_present<'a>(names: impl Iterator<Item = &'a str>) -> bool {
 /// `true` if `name` is a Swift-mangled symbol: the Swift 5 `$s`/`$S` scheme or
 /// the Swift 4 `_T0` scheme, each with an optional platform leading underscore
 /// (Mach-O spells them `_$s…`/`__T0…`), or an Objective-C runtime type name in
-/// the Swift 3 `_Tt` scheme (`_TtC6Toyota3Foo`, the form the ObjC metadata
+/// the Swift 3 `_Tt` scheme (`_TtC6Sample3Foo`, the form the ObjC metadata
 /// carries for Swift classes and protocols).
 ///
 /// The prefix is held to the scheme's own next token — an operator or
@@ -1040,9 +1040,9 @@ mod tests {
             "_T04main5helloyyF",
             "__T04main5helloyyF",
             // ObjC runtime type names (Swift 3 scheme).
-            "_TtC6Toyota3Foo",
-            "_TtCC6Toyota5Outer5Inner",
-            "_TtP6Toyota5Proto_",
+            "_TtC6Sample3Foo",
+            "_TtCC6Sample5Outer5Inner",
+            "_TtP6Sample5Proto_",
             "_TtGC7SwiftUI19UIHostingControllerVVS_7TabItem8RootView_",
             "_TtCs12_SwiftObject",
         ] {
