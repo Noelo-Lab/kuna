@@ -1179,6 +1179,15 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
+    "ppcapu" => {
+        let val = on_or_off(p1)?;
+        self.analysis_ppcapu = val;
+        crate::kuna_ppcapu::set_ppcapu_env(val);
+        Ok(format!(
+            "PowerPC APU-note language selection turned {}",
+            if val { "on" } else { "off" }
+        ))
+    },
     "ifuncfpret" => {
         let val = on_or_off(p1)?;
         self.analysis_ifuncfpret = val;

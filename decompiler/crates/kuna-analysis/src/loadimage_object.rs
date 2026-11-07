@@ -725,6 +725,13 @@ impl ObjectLoadImage {
             target,
         )?;
         if emit_diagnostics {
+            for note in crate::loader::kuna_ppcaputarget::notes(
+                &file, &String::from_utf8_lossy(&archtype), target.is_some(),
+            ) {
+                kuna_base::notes::say_once(filename, &format!("[kuna target] {filename}: {note}"));
+            }
+        }
+        if emit_diagnostics {
             for note in crate::loader::kuna_mipstarget::notes(
                 &file, &String::from_utf8_lossy(&archtype), target.is_some(),
             ) {
@@ -1767,6 +1774,9 @@ fn language_id_for(
     {
         return Ok(id.into_bytes());
     }
+    if let Some(id) = crate::loader::kuna_ppcaputarget::language_id(file) {
+        return Ok(id.into_bytes());
+    }
     if let Some(id) = crate::loader::kuna_mipstarget::language_id(file)? {
         return Ok(id.into_bytes());
     }
@@ -1831,6 +1841,9 @@ fn fallback_language_id(
     arch: Architecture,
     primary: &[u8],
 ) -> Option<Vec<u8>> {
+    if file.format() == object::BinaryFormat::Elf && arch == Architecture::PowerPc {
+        return None;
+    }
     if file.format() == object::BinaryFormat::Elf
         && matches!(arch, Architecture::Mips | Architecture::Mips64 | Architecture::Mips64_N32)
     {
@@ -2070,6 +2083,7 @@ pub fn elf_language_ids() -> Vec<String> {
             out.push(id);
         }
     }
+    out.extend(crate::loader::kuna_ppcaputarget::language_ids());
     out.extend(crate::loader::kuna_mipstarget::language_ids());
     out.extend(crate::loader::kuna_mipsocteon::language_ids());
     out.sort();

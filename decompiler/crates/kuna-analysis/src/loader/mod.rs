@@ -31,6 +31,9 @@
 //! defined-function reader lifted out of [`crate::loadimage_object`].
 
 pub mod arm_markers;
+pub(crate) mod kuna_ppcaputarget;
+#[cfg(test)]
+mod powerpc_apu_tests;
 pub(crate) mod kuna_mipstarget;
 #[cfg(test)]
 mod mips_target_tests;
