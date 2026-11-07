@@ -93,9 +93,10 @@ pub struct StringFact {
 /// A Mach-O Core Foundation constant string (`__cfstring` entry). The entry is a
 /// `CFString` struct (isa, flags, char pointer, length); `bytes` is the UTF-8 of
 /// the string its char pointer targets, already resolved through chained fixups
-/// and UTF-16-decoded when the flags say so. The commit seam types the entry a
-/// `char[N]` and pre-seeds the `StringManager` at `addr` with `bytes`, so a
-/// reference to the entry renders the string literal instead of `dat_<addr>`.
+/// and UTF-16-decoded when the flags say so. The commit seam types the entry an
+/// opaque `struct __CFString` (whose pointer is `CFStringRef`) and pre-seeds the
+/// `StringManager` at `addr` with `bytes`, so a reference to the entry renders the
+/// string literal instead of `dat_<addr>`.
 /// Produced by [`crate::analyzers::cfstring`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CFStringFact {
@@ -103,9 +104,9 @@ pub struct CFStringFact {
     pub addr: u64,
     /// The UTF-8 string bytes (no trailing NUL), the entry's char pointer resolved.
     pub bytes: Vec<u8>,
-    /// Byte span of the entry (four pointer words). The `char[N]` the commit
-    /// plants covers exactly this span: sized from the string, a long one would
-    /// overrun the next entry and hide it.
+    /// Byte span of the entry (four pointer words). The type the commit plants
+    /// covers exactly this span: sized from the string, a long one would overrun
+    /// the next entry and hide it.
     pub size: u32,
 }
 
@@ -420,8 +421,8 @@ pub struct AnalysisOutput {
     pub wide_strings32: Vec<StringFact>,
     /// (kuna `cfstrings`) Mach-O Core Foundation constant strings (`__cfstring`):
     /// one per entry whose char pointer resolved to a string. The commit seam
-    /// types each entry a `char[N]` and pre-seeds the `StringManager`, so a
-    /// reference renders the literal. Produced by [`crate::analyzers::cfstring`].
+    /// types each entry an opaque `struct __CFString` and pre-seeds the
+    /// `StringManager`, so a reference renders the literal. Produced by [`crate::analyzers::cfstring`].
     pub cfstrings: Vec<CFStringFact>,
     /// Library-function prototypes to seed onto matching FunctionSymbols (the kuna
     /// analog of Ghidra's `ApplyDataArchiveAnalyzer` / `.gdt` archives). Each is

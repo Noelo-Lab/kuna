@@ -305,7 +305,7 @@ impl StringManager {
     /// `__cfstring` struct's char pointer is resolved at load and the struct
     /// address seeded with the string it points at, so a reference to the struct
     /// renders the literal. `char_size` is the element width the printer queries
-    /// with (1 for the `char[N]` the commit plants at the entry).
+    /// with (1 for a `__cfstring` entry).
     pub fn register_string_at(&mut self, addr: &Address, bytes: &[uint1], char_size: int4) {
         self.string_map.insert(
             addr.clone(),

@@ -5360,8 +5360,12 @@ fn commit_analysis_output(
     //     entry address with the string its char pointer resolved to, so the
     //     printer renders the literal (`CFSTR("launch-report")`) instead of
     //     `dat_<addr>`, across the CFString struct indirection it cannot follow
-    //     on its own. The entry ranges were marked read-only by the pass (arm 1b),
-    //     which the route requires. Empty under `--option cfstrings off`.
+    //     on its own. The type spans the entry, never the string: a string-sized
+    //     type would overrun the next entry and hide it behind this one's symbol.
+    //     The seed goes in before the symbol, at char width 1, the width the
+    //     printer reads an entry's string with. The entry ranges were marked
+    //     read-only by the pass (arm 1b), which the route requires. Empty under
+    //     `--option cfstrings off`.
     let cfstring_record = match out.cfstrings.first() {
         Some(fact) => kuna_decomp::kuna_cfstr::declare_types(
             prog.arch().types(),
@@ -5389,9 +5393,6 @@ fn commit_analysis_output(
         if occupied {
             continue;
         }
-        // The type spans the entry struct, never the string: the printer renders
-        // from the seeded bytes, and a string-sized type would overrun the next
-        // entry and hide it behind this one's symbol.
         let ty = match &cfstring_record {
             Some(record) if record.get_size() == fact.size as i32 => Rc::clone(record),
             _ => {
@@ -5400,8 +5401,6 @@ fn commit_analysis_output(
             }
         };
         let name = format!("s_{:x}", fact.addr);
-        // Seed the StringManager BEFORE the symbol, at char width 1, the width
-        // the printer reads an entry's string with.
         prog.arch().string_manager.borrow_mut().base.register_string_at(&addr, &fact.bytes, 1);
         let arch = prog.arch_mut();
         arch.cfstring_entries.insert(fact.addr);
