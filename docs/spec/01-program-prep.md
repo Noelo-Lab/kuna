@@ -4321,7 +4321,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   whole when the field count disagrees with the descriptor, an offset
   overlaps, a type exceeds its slot, or the type's dotted path is one two
   descriptors share (private types of the same name), so nothing is ever
-  read through the wrong name. What then binds: the metadata records as typed
+  read through the wrong name. Layouts built inside other layouts (a nested
+  struct's, a superclass's) nest at most 32 deep, as a context's parent chain
+  does; a type reached deeper keeps its bytes untyped. What then binds: the metadata records as typed
   data (`….type_metadata` as `swift.type_metadata`, `….class_metadata`,
   `….value_witness_table`); the accessor prototypes
   (`swift.type_metadata *Module.Type.type_metadata_accessor(long request)`, so
@@ -4336,7 +4338,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   `Architecture::loader_param_locks` → the decompile drive's `mapped_params`),
   the rest of the signature recovered as usual — and a witness getter also
   names its two leading arguments, the `Self` metadata and the witness table.
-  On the Toyota iOS app the pass locates 12,809 static metadata records (4,790
+  On a large third-party iOS app the pass locates 12,809 static metadata records (4,790
   structs, 4,811 enums, 3,208 classes; the 859 classes and 351 structs whose
   accessors look up a runtime cache are skipped), lays out 4,585 structs and
   3,205 classes with 30,997 fields (22,794 typed), and pins the `self` of 5,739
