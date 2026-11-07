@@ -2156,10 +2156,11 @@ mod tests {
         // and kuna-bejoinpass / a big-endian pair a call hands back is one value (option bejoinpass)
         // and kuna-gottailcall / a one-destination jump through an extern's slot is a tail call
         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
+        // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
         // and kuna-copywaves / copy propagations seed rule-pool waves (option copywaves)
         // and kuna-armpltslot, -armcondskip / the ARM xref options parse and are
         // inert on the console path
-        assert_eq!(count, 704, "corpus file count drifted");
+        assert_eq!(count, 705, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

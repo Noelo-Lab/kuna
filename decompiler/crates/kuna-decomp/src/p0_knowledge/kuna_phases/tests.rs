@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_381() {
-    assert_eq!(kuna_num_settables(), 381);
-    assert_eq!(SETTABLE_TABLE.len(), 381);
+fn settable_count_is_382() {
+    assert_eq!(kuna_num_settables(), 382);
+    assert_eq!(SETTABLE_TABLE.len(), 382);
 }
 
 #[test]
-fn tier_counts_are_131_core_154_transform_96_analysis() {
+fn tier_counts_are_131_core_155_transform_96_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_131_core_154_transform_96_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (131, 154, 96));
+    assert_eq!((core, transform, analysis), (131, 155, 96));
 }
 
 #[test]
@@ -656,6 +656,9 @@ fn option_values_live_value_present_for_180() {
                             // (kuna) `persistcalls` takes `off|on|<n>`, a guard
                             // count; its live value is `Architecture::persist_calls`.
                             | "persistcalls"
+                            // (kuna) `deadcascade` takes `off|on|<n>`, a pass
+                            // count; its live value is `Architecture::dead_cascade`.
+                            | "deadcascade"
                             // (kuna) `retsplitlimit` takes `off|<n>`, an op count;
                             // its live value is `Architecture::ret_split_limit`.
                             | "retsplitlimit"
@@ -1171,8 +1174,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
     // +1 for `bejoinpass`; its P4 row sits after `bejoin`.
     // +1 for `persistcalls`; its P3 row sits after `readonlycalls`.
-    // +1 for `copywaves`, its P3 row after `deadwaves`; +2 for `armpltslot` and `armcondskip`, their P1 rows beside `armwalkmode`.
-    assert_eq!(json.matches("},\n").count(), 380);
+    // +1 for `copywaves`, its P3 row after `deadwaves`; +1 for `deadcascade`, its P3 row after `copywaves`;
+    // +2 for `armpltslot` and `armcondskip`, their P1 rows beside `armwalkmode`.
+    assert_eq!(json.matches("},\n").count(), 381);
 }
 
 #[test]
