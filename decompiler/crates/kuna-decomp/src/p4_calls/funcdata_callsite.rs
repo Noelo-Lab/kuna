@@ -208,15 +208,11 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
         } {
             data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();
         } else if {
-            // (kuna `swiftcall`) A `swiftself` value set for an earlier call is
-            // not an argument of a struct member that may not take it.
             let t = data.get_call_specs(idx).active_input().get_trial(i);
             crate::p4_calls::kuna_swiftcall::stale_self(data, idx, slot, t.get_address(), t.get_size())
         } {
             data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
         } else if let Some(dispatch) = {
-            // (kuna `swiftcall`) An indirect call passes `swiftself` exactly
-            // when it dispatches on the value the register holds.
             let t = data.get_call_specs(idx).active_input().get_trial(i);
             crate::p4_calls::kuna_swiftcall::indirect_self(data, idx, slot, t.get_address(), t.get_size())
         } {
@@ -229,7 +225,6 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                 trial.mark_no_use();
             }
         } else if {
-            // (kuna `swiftcall`) The caller's own `self`, handed on untouched.
             let t = data.get_call_specs(idx).active_input().get_trial(i);
             crate::p4_calls::kuna_swiftcall::passes_own_self(data, idx, slot, t.get_address(), t.get_size())
         } {

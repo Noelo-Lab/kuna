@@ -156,22 +156,7 @@ impl AnalysisPass for SwiftMetadataPass {
                     .filter(|s| s.kind() == object::SymbolKind::Text && s.is_definition())
                     .filter_map(|s| Some((s.address(), s.name().ok()?.to_string())))
                     .collect();
-                let stats = kuna_swiftcall::bind(&types, regs, &symbols, &mut out);
-                if let Ok(path) = std::env::var("KUNA_SWIFTCALL_DUMP") {
-                    let mut dump = format!("{stats:?}\n");
-                    let hinted: std::collections::HashMap<u64, String> = out
-                        .swift_types
-                        .input_hints
-                        .iter()
-                        .filter_map(|h| Some((h.func_addr, h.type_.as_ref()?.get_name().to_string())))
-                        .collect();
-                    for f in &out.swift_types.models {
-                        let maybe = if f.maybe_self { " maybe_self" } else { "" };
-                        let hint = hinted.get(&f.func_addr).map_or("", String::as_str);
-                        dump.push_str(&format!("{:#x} {}{maybe} {hint}\n", f.func_addr, f.model));
-                    }
-                    let _ = std::fs::write(path, dump);
-                }
+                kuna_swiftcall::bind(&types, regs, &symbols, &mut out);
             }
         }
         out
