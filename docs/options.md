@@ -940,6 +940,8 @@ Three tiers:
 | Go paired integer results become a byte array | [`gopairreturns`](#gopairreturns) |
 | Go callers lose a second integer result | [`gopairreturns`](#gopairreturns) |
 | Go multiple-result calls cannot compile | [`gopairreturns`](#gopairreturns) |
+| CVF routine names are missing | [`cvftrace`](#cvftrace) |
+| CVF source file and line comments are missing | [`cvftrace`](#cvftrace) |
 | comparison constant off by one versus upstream ghidra (x <= 9 vs x < 10) | [`compareform`](#compareform) |
 | need the analysis-canonical compare form to diff against upstream ghidra output | [`compareform`](#compareform) |
 | &base[index] rendering unwanted; consumer expects raw pointer arithmetic | [`arraynotation`](#arraynotation) |
@@ -3521,6 +3523,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Enable with godwarfsig when a Go function with two 64-bit integer results loses one result or renders a byte array. Requires complete compiler DWARF and the abi-internal model.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-angr-go-pair-results
 - **Example:** `option gopairreturns on`
+
+### `cvftrace` -- on | off, default `off`
+
+- **Symptoms:** CVF routine names are missing; CVF source file and line comments are missing.
+- **What it does:** Recover CVF PE32 .trace routine names and source file:line comments.
+- **When to flip:** Historical Compaq Visual Fortran x86 binaries retaining .trace. Declines malformed and incremental-link records; infers no types or extents.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-cvftrace
+- **Example:** `option cvftrace on`
 
 ## Core rendering defaults
 

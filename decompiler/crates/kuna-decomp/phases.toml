@@ -9353,3 +9353,22 @@ inspiration = "angr 6afa0c79a83d9f677a46b0275cdb63bf16c1979e CFGFast Rust stack-
 change_kind = "structure-recovery"
 tier = "transform"
 symptoms = "Rust large-frame functions retain __rust_probestack calls|live stack-probe R11 residual renders as an undefined local|stack-probe calls obscure a known constant frame allocation"
+
+[[settable]]
+option = "cvftrace"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P1"
+subphase = "external-refinement"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-cvftrace"
+summary = "Recover CVF PE32 .trace routine names and source file:line comments."
+use_when = "Historical Compaq Visual Fortran x86 binaries retaining .trace. Declines malformed and incremental-link records; infers no types or extents."
+example = "option cvftrace on"
+source_decompiler = "kuna"
+inspiration = "Compaq Visual Fortran runtime traceback metadata"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "CVF routine names are missing|CVF source file and line comments are missing"

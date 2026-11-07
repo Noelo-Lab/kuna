@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_388() {
-    assert_eq!(kuna_num_settables(), 388);
-    assert_eq!(SETTABLE_TABLE.len(), 388);
+fn settable_count_is_389() {
+    assert_eq!(kuna_num_settables(), 389);
+    assert_eq!(SETTABLE_TABLE.len(), 389);
 }
 
 #[test]
-fn tier_counts_are_135_core_155_transform_98_analysis() {
+fn tier_counts_are_135_core_155_transform_99_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_135_core_155_transform_98_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (135, 155, 98));
+    assert_eq!((core, transform, analysis), (135, 155, 99));
 }
 
 #[test]
@@ -371,6 +371,7 @@ fn option_values_live_value_present_for_186() {
         // around it. Default-ON (DIV-76).
         "datasyms",
         "dwarf_lines",
+        "cvftrace",
         "callfixup",
         "addrtable",
         "operand_refs",
@@ -1197,7 +1198,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `copywaves`, its P3 row after `deadwaves`; +1 for `deadcascade`, its P3 row after `copywaves`;
     // +2 for `armpltslot` and `armcondskip`, their P1 rows beside `armwalkmode`.
     // +1 for `armderef`, its P1 row after `armwalkmode`.
-    assert_eq!(json.matches("},\n").count(), 387);
+    assert_eq!(json.matches("},\n").count(), 388);
 }
 
 #[test]

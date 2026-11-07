@@ -496,6 +496,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // the frameless leaves `.pdata` has no record of. COMMIT gated by
         // `--option pdbinterior on` AND `pdb` (default-ON).
         passes.push(Box::new(crate::pdb::kuna_pdbinterior::PdbInteriorPass));
+        passes.push(Box::new(crate::kuna_cvftrace::CvfTracePass));
     }
 
     passes
@@ -1808,16 +1809,12 @@ mod tests {
         }
     }
 
-    /// The PE PDB pass (`pdb`) is registered ONLY on a PE image — never on a non-PE
-    /// one — so a non-PE pass set is byte-identical to before the pass existed (the
-    /// parity-safety contract). It is appended last (after the rtti pass).
+    /// Debug metadata passes stay PE-only; PDB names precede CVF names.
     #[test]
     fn pdb_pass_is_pe_gated() {
-        // PE: the pdb pass is appended last (after the rtti pass), followed only by
-        // `pdbinterior`, which reads the same `.pdb`.
         let pe = ids(&passes_for(Compiler::Clang, object::BinaryFormat::Pe));
         assert!(pe.contains(&"pdb"), "PE pass set must carry the pdb pass");
-        assert_eq!(pe[pe.len() - 2..], ["pdb", "pdbinterior"], "pdb, then pdbinterior, close a PE");
+        assert_eq!(pe[pe.len() - 3..], ["pdb", "pdbinterior", "cvftrace"], "PDB metadata precedes CVF metadata");
         // A PE carries BOTH the rtti and pdb metadata passes (rtti then pdb).
         let rtti_i = pe.iter().position(|&p| p == "rtti");
         let pdb_i = pe.iter().position(|&p| p == "pdb");
@@ -1828,6 +1825,7 @@ mod tests {
                 let set = ids(&passes_for(c, fmt));
                 assert!(!set.contains(&"pdb"), "{c:?}/{fmt:?} must not carry pdb");
                 assert!(!set.contains(&"pdbinterior"), "{c:?}/{fmt:?} must not carry pdbinterior");
+                assert!(!set.contains(&"cvftrace"), "{c:?}/{fmt:?} must not carry cvftrace");
             }
         }
     }

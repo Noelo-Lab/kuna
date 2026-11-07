@@ -211,7 +211,7 @@ pub struct TypedDataFact {
 /// The kuna analog of Ghidra's `DWARFLineInfoCommentScript.addSourceLineInfo`,
 /// which walks each compilation unit's `.debug_line` rows
 /// (`DWARFLine.getAllSourceFileAddrInfo`) and `appendComment(addr, EOL,
-/// "%s:%d".formatted(fileName, lineNum))`. Produced only by
+/// "%s:%d".formatted(fileName, lineNum))`. Produced by the CVF `.trace` pass and
 /// [`crate::dwarf::DwarfLinesPass`] (the `.debug_line` parse, gated on the
 /// `dwarf_lines` flag, default-off); empty otherwise.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -465,11 +465,11 @@ pub struct AnalysisOutput {
     /// Produced only by the DWARF pass (subtask 3); empty otherwise. See
     /// [`LocalFact`].
     pub locals: Vec<LocalFact>,
-    /// Source-line annotations recovered from DWARF `.debug_line`, each to be
+    /// Source-line annotations recovered from debug metadata, each to be
     /// installed as a `Comment::user2` so the decompiled output carries the
     /// `file:line` of the instruction. The commit boundary writes each into the
-    /// architecture's `commentdb`. Produced only by the DWARF lines pass
-    /// (`dwarf_lines`, default-off); empty otherwise. See [`CommentFact`].
+    /// architecture's `commentdb`. Produced by the DWARF lines and CVF trace passes
+    /// (`dwarf_lines` and `cvftrace`, both default-off); empty otherwise. See [`CommentFact`].
     pub comments: Vec<CommentFact>,
     /// Functions the FID matcher re-identified by full-hash fingerprint, by
     /// `(addr, name)`. The commit boundary **renames** each (resolved by ADDRESS) only

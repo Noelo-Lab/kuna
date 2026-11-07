@@ -2328,6 +2328,8 @@ pub struct Architecture {
     /// default **off** — it changes the decompiled output (adds `/* file:line */`
     /// comments). The kuna analog of Ghidra's `DWARFLineInfoCommentScript`.
     pub analysis_dwarf_lines: bool,
+    /// Decode embedded Compaq Visual Fortran source locations and routine names.
+    pub analysis_cvftrace: bool,
     /// (kuna) Gate the DWARF C++ prototype arm (`cppproto`); default **on**.
     /// Commits the DWARF facts recovered by resolving a subprogram definition
     /// through its `DW_AT_specification`/`DW_AT_abstract_origin` link, qualifying
@@ -3495,6 +3497,7 @@ impl Architecture {
             analysis_dwarf: false,
             analysis_datasyms: false,
             analysis_dwarf_lines: false,
+            analysis_cvftrace: false,
             analysis_cppproto: false,
             analysis_godwarfsig: false,
             analysis_gopairreturns: false,
@@ -3989,6 +3992,7 @@ impl Architecture {
         self.analysis_mips_isa = true;
         self.analysis_dwarf = true;
         self.analysis_datasyms = true; // (kuna) DIV-76 ELF data-symbol naming default-ON (the DIV-26 arm, now gated)
+        self.analysis_cvftrace = false;
         self.analysis_dwarf_lines = false; // (kuna) source-line comments default-OFF (output-changing, opt-in)
         self.analysis_typedepth = true; // (kuna) DIV: full-depth DWARF type resolution default-ON (the depth budget truncated ordinary C declarations to void; real-ELF DWARF path only, so every parity gate is byte-identical)
         self.analysis_dwarfstructs = true; // (kuna) DIV: DWARF aggregate-layout import default-ON (a zero-size aggregate is not conservative -- the ABI classifier acts on it; real-ELF DWARF path only, so every parity gate is byte-identical)

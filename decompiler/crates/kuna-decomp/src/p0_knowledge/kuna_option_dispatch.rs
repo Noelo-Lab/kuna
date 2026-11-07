@@ -1293,6 +1293,7 @@ kuna_options! { self, p1;
     "datasyms" => {
         on_off!(analysis_datasyms, "ELF data-symbol (STT_OBJECT) naming")
     },
+    "cvftrace" => on_off!(analysis_cvftrace, "CVF .trace source locations and routine names"),
     "dwarf_lines" => {
         on_off!(analysis_dwarf_lines, "DWARF .debug_line source-line comment pass")
     },

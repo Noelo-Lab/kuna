@@ -8800,3 +8800,5 @@ establish import arity: calls with and without that argument can have identical
 instructions. A declared prototype supplies that missing contract
 (`gotimportproto`, §4).
 
+`cvftrace` (off) reads CVF x86 PE32 `.trace` names and source-line comments.
+Malformed and incremental-link records are declined; no types or extents inferred.

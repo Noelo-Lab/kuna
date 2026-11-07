@@ -804,3 +804,6 @@ mod elf_unwind;
 
 #[path = "e500_arguments.rs"]
 mod e500_arguments;
+
+#[path = "cvf_trace.rs"]
+mod cvf_trace;
