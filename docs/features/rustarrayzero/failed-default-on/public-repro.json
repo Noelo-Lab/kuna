@@ -1,0 +1,48 @@
+{
+  "status": "PASS",
+  "complete_body_unmodified": true,
+  "records": [
+    {
+      "arm": "parent",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-rust-array-constant/public-repro",
+        "zero_array",
+        "--language",
+        "rust",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "a1bc22c5d2a4b10662a9338ed48d1a2f85144ef4a9178b30b19eec7a76305bda",
+      "compile_exit": 1,
+      "body_rewrites": false
+    },
+    {
+      "arm": "candidate",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-constant/decompiler/target/release/kuna",
+        "decompile",
+        "/tmp/kuna-rust-array-constant/public-repro",
+        "zero_array",
+        "--language",
+        "rust",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "cli_sha256": "0ee520ca82421441d662d5df1a6a4567fd540c615d9d555cf0e17116f0a0c1d7",
+      "compile_exit": 0,
+      "body_rewrites": false,
+      "execution_exit": 0,
+      "zero_bytes": 16
+    }
+  ]
+}

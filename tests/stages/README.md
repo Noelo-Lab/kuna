@@ -1,5 +1,28 @@
 # Stage-model issue testcases
 
+`ghangr-call-argument-extensions.xml` checks explicit and missing parameter
+contracts. The CLI companion executes complete emitted C, Go and Rust callers
+and callees, covering zero extension, sign extension, signedness and store canaries.
+
+`ghangr-rust-boolean-expressions.xml` checks bitwise expressions over merged
+Boolean locals. Its CLI companion executes complete emitted C and Rust functions
+against independent result formulas, callback traces and store canaries at O0/O2.
+
+`ghangr-scalar-call-results.xml` checks the no-record and explicit-prototype
+controls for narrowed scalar calls. The CLI probes exercise callee-first recovery;
+the native companion compiles and executes complete emitted C, Go and Rust callees
+and callers across signed, unsigned, Boolean and full-width results.
+
+`ghangr-rust-boolean-conversions.xml` checks byte-to-Boolean casts, masked values
+and narrowed callback results. Its CLI companion compiles complete C and Rust
+output under the same asserted prototypes and checks every byte value and call
+counts. The original fixture is only decompiled.
+
+`kuna-e500-call-slots.xml` compares disabled and automatic call-overlap guards
+for scalar arguments and results inside e500's wide registers, and decompiles a
+conditional tail-call wrapper with `exclusivecallret` off and on. The CLI tests
+cover both byte orders and execute the recovered wrappers.
+
 `kuna-callwide.xml` loads the committed sealed MIPS32-BE ELF and checks the
 four-byte OFF result against the proved eight-byte result and high-piece callers.
 Its CLI companion executes the original bytes and untouched emitted C/header
@@ -386,3 +409,14 @@ bare MH_FILESET with `kernelcache off` (one image, no symbols), its kext out of 
 IMG4(IM4P(LZFSE)) wrapper, and its kernel out of a bare IM4P(complzss). The
 fixtures and their generator live in
 `decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/`.
+
+`ghangr-go-pointer-arithmetic-32.xml` and `ghangr-go-pointer-arithmetic-64.xml`
+check live pointer bases through constant, negative and signed dynamic byte
+offsets in Go loads, stores and returns. Integer-address reconstruction remains
+a control. The CLI companion builds both authored assembly fixtures and runs
+the complete emitted functions with Go pointer checks and full-array canaries.
+
+`kuna-elf-unwind-pcread.xml` checks an authored PowerPC PC-relative literal read:
+with FDE ownership disabled it remains a call; with ownership enabled the
+complete body returns `a0 * 3 + 7`. The fixture generator is
+`decompiler/crates/kuna-cli/tests/fixtures/elf_unwind_fixture.rs`.

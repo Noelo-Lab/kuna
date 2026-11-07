@@ -1,0 +1,284 @@
+Pinned angr Rust-flavor capture of the authored C-source fixture, then complete Kuna parent/enabled output. These reference bodies are not claimed compilable or native-equivalent. The source C is the native oracle.
+
+FUNCTION zero_unsigned
+ANGR
+fn zero_unsigned(a0: &st_401120_0) -> double {
+    a0->field_0 = 0;
+    return 0;
+}
+
+KUNA PARENT
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_unsigned(mut p: *mut [u8; 16])
+{
+  *p = 0;
+}
+KUNA RUSTARRAYZERO ON
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_unsigned(mut p: *mut [u8; 16])
+{
+  *p = [0; 16];
+}
+
+FUNCTION zero_signed
+ANGR
+fn zero_signed(a0: &st_401130_0) -> double {
+    a0->field_0 = 0;
+    return 0;
+}
+
+KUNA PARENT
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_signed(mut p: *mut [u8; 16])
+{
+  *p = 0;
+}
+KUNA RUSTARRAYZERO ON
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_signed(mut p: *mut [u8; 16])
+{
+  *p = [0; 16];
+}
+
+FUNCTION zero_field
+ANGR
+fn zero_field(a0: &st_401140_0) -> double {
+    a0->field_10 = 0;
+    return 0;
+}
+
+KUNA PARENT
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_field(mut p: *mut WideFields)
+{
+  *(&raw mut (*p).value as *mut [u8; 16]) = 0;
+}
+KUNA RUSTARRAYZERO ON
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_field(mut p: *mut WideFields)
+{
+  *(&raw mut (*p).value as *mut [u8; 16]) = [0; 16];
+}
+
+FUNCTION zero_second
+ANGR
+fn zero_second(a0: &st_401150_0) -> double {
+    a0->field_10 = 0;
+    return 0;
+}
+
+KUNA PARENT
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_second(mut p: *mut [u8; 16])
+{
+  *p.wrapping_byte_offset(((1 as i64) as isize).wrapping_mul(16)) = 0;
+}
+KUNA RUSTARRAYZERO ON
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_second(mut p: *mut [u8; 16])
+{
+  *p.wrapping_byte_offset(((1 as i64) as isize).wrapping_mul(16)) = [0; 16];
+}
+
+FUNCTION zero_index
+ANGR
+fn zero_index(a0: u64, a1: u64) -> double {
+    *((a0 + a1 * 16) as &i128) = 0;
+    return 0;
+}
+
+KUNA PARENT
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_index(mut p: *mut [u8; 16], mut i: u64)
+{
+  *p.wrapping_byte_offset((i as isize).wrapping_mul(16)) = 0;
+}
+KUNA RUSTARRAYZERO ON
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_index(mut p: *mut [u8; 16], mut i: u64)
+{
+  *p.wrapping_byte_offset((i as isize).wrapping_mul(16)) = [0; 16];
+}
+
+FUNCTION zero_callback
+ANGR
+fn zero_callback() -> double {
+    *(counted_pointer() as &i128) = 0;
+    return 0;
+}
+
+KUNA PARENT
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_callback(mut p: *mut [u8; 16])
+{
+  *counted_pointer(p) = 0;
+}
+KUNA RUSTARRAYZERO ON
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_callback(mut p: *mut [u8; 16])
+{
+  *counted_pointer(p) = [0; 16];
+}
+
+FUNCTION zero_bytes
+ANGR
+fn zero_bytes(a0: &st_4011a0_0) -> double {
+    a0->field_0 = 0;
+    return 0;
+}
+
+KUNA PARENT
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_bytes(mut p: *mut Byte16)
+{
+  *(&raw mut (*p).bytes as *mut [u8; 16]) = 0;
+}
+KUNA RUSTARRAYZERO ON
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_bytes(mut p: *mut Byte16)
+{
+  *(&raw mut (*p).bytes as *mut [u8; 16]) = [0; 16];
+}
+
+FUNCTION one_unsigned
+ANGR
+fn one_unsigned(a0: &st_4011b0_0) -> u0 {
+    a0->field_0 = 1;
+    a0->field_8 = 0;
+    return;
+}
+
+KUNA PARENT
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn one_unsigned(mut p: *mut [u8; 16])
+{
+  *(&raw mut *p as *mut u64) = 1;
+  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64) = 0;
+}
+KUNA RUSTARRAYZERO ON
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn one_unsigned(mut p: *mut [u8; 16])
+{
+  *(&raw mut *p as *mut u64) = 1;
+  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64) = 0;
+}
+
+FUNCTION signed_input
+ANGR
+fn signed_input(a0: &st_4011d0_0, a1: i64) -> u0 {
+    a0->field_0 = a1;
+    a0->field_8 = a1 >> 63;
+    return;
+}
+
+KUNA PARENT
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn signed_input(mut p: *mut [u8; 16], mut x: i64)
+{
+  *(&raw mut *p as *mut i64) = x;
+  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut i64) = x >> 0x3f;
+}
+KUNA RUSTARRAYZERO ON
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn signed_input(mut p: *mut [u8; 16], mut x: i64)
+{
+  *(&raw mut *p as *mut i64) = x;
+  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut i64) = x >> 0x3f;
+}
+
+FUNCTION unsigned_input
+ANGR
+fn unsigned_input(a0: &st_4011e0_0, a1: u64) -> u0 {
+    a0->field_0 = a1;
+    a0->field_8 = 0;
+    return;
+}
+
+KUNA PARENT
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn unsigned_input(mut p: *mut [u8; 16], mut x: u64)
+{
+  *(&raw mut *p as *mut u64) = x;
+  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64) = 0;
+}
+KUNA RUSTARRAYZERO ON
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn unsigned_input(mut p: *mut [u8; 16], mut x: u64)
+{
+  *(&raw mut *p as *mut u64) = x;
+  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64) = 0;
+}
+
+FUNCTION two_halves
+ANGR
+fn two_halves(a0: &st_4011f0_0, a1: u64, a2: u64) -> u0 {
+    a0->field_0 = a1;
+    a0->field_8 = a2;
+    return;
+}
+
+KUNA PARENT
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn two_halves(mut p: *mut [u8; 16], mut lo: u64, mut hi: u64)
+{
+  *(&raw mut *p as *mut u64) = lo;
+  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64) = hi;
+}
+KUNA RUSTARRAYZERO ON
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn two_halves(mut p: *mut [u8; 16], mut lo: u64, mut hi: u64)
+{
+  *(&raw mut *p as *mut u64) = lo;
+  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64) = hi;
+}
+
+FUNCTION copy_wide
+ANGR
+fn copy_wide(a0: &st_401200_1, a1: &st_401200_0) -> double {
+    let v1: u128;  // xmm0
+
+    v1 = a1->field_0;
+    a0->field_0 = v1;
+    return v1 as u64;
+}
+
+KUNA PARENT
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn copy_wide(mut p: *mut [u8; 16], mut q: *mut [u8; 16])
+{
+  let mut v1: u64; // xmm0_qb
+  
+  v1 = *(((&raw mut *q).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64);
+  *(&raw mut *p as *mut u64) = *(&raw mut *q as *mut u64);
+  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64) = v1;
+}
+KUNA RUSTARRAYZERO ON
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn copy_wide(mut p: *mut [u8; 16], mut q: *mut [u8; 16])
+{
+  let mut v1: u64; // xmm0_qb
+  
+  v1 = *(((&raw mut *q).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64);
+  *(&raw mut *p as *mut u64) = *(&raw mut *q as *mut u64);
+  *(((&raw mut *p).wrapping_byte_offset(((8 as i64) as isize).wrapping_mul(1)) as *mut u8) as *mut u64) = v1;
+}
+
+FUNCTION zero_narrow
+ANGR
+fn zero_narrow(a0: &st_401210_0) -> u0 {
+    a0->field_0 = 0;
+    return;
+}
+
+KUNA PARENT
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_narrow(mut p: *mut u64)
+{
+  *p = 0;
+}
+KUNA RUSTARRAYZERO ON
+#[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+unsafe fn zero_narrow(mut p: *mut u64)
+{
+  *p = 0;
+}

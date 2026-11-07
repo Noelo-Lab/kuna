@@ -16,6 +16,8 @@ pub mod kuna_i386_pie_plt;
 pub mod kuna_ppc32picimports;
 // (kuna) x86-64 IFUNC (IRELATIVE) PLT-stub naming option gate (load-time, env-bridged).
 pub mod kuna_ifuncfpret;
+// (kuna) PowerPC APU-note language selection option gate (load-time, env-bridged).
+pub mod kuna_ppcapu;
 // (kuna) Relocatable-object analysis-fact rebase option gate (load-time, env-bridged).
 pub mod kuna_relocrebase;
 // (kuna) Linked-image dynamic-relocation application option gate (load-time, env-bridged).
