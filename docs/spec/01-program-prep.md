@@ -4461,12 +4461,12 @@ every other binary's pass list is byte-identical to before the pass existed):
   - **SDK signatures** (`objcsdk`, kuna, default off,
     `decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcsdk.rs (signatures)`):
     the stub prototypes above exist only for selectors the image declares, and
-    a framework setter never is, so on kcm 2,897 of 25,084 stub calls rendered
+    a framework setter never is, so on a 1.9 MB iOS app 2,897 of 25,084 stub calls rendered
     with no argument at all. The declarations exist in the SDK the app was built
     against, and Apple's headers may not be shipped with kuna, so the option
     names a directory to read **at load** (`KUNA_OBJCSDK`; nothing derived from
     it is written anywhere): an SDK root contributes the `Headers/` of every
-    framework the image links (`LC_LOAD_DYLIB`, 73 on Toyota; ~0.1 s), any
+    framework the image links (`LC_LOAD_DYLIB`, 73 on an 84 MB iOS app; ~0.1 s), any
     other directory every `.h` under it. The reader takes the declaration
     subset of the grammar — comments and preprocessor lines stripped,
     `@interface` / `@protocol` / category bodies with their ivar block skipped,
@@ -4489,7 +4489,7 @@ every other binary's pass list is byte-identical to before the pass existed):
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (struct_type)`,
     `CGRect {x, y, width, height}`) the model places in `d0..d3`, so
     `v = objc_msgSend$bounds(view); objc_msgSend$setFrame:(view, v.x, v.y, v.width, v.height)`.
-    kcm: 2,897 → 1,221 argument-less stub calls; Toyota sample: 32 → 4, 60 of
+    The 1.9 MB app: 2,897 → 1,221 argument-less stub calls; an 84 MB app sample: 32 → 4, 60 of
     265 stub calls change shape (`setTransitioningDelegate:(v3, delegate)`,
     `presentViewController:animated:completion:(vc, (UIViewController *)v10, 1, NULL)`).
 
