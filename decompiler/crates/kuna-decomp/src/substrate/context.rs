@@ -751,6 +751,10 @@ pub struct ArchContext {
     /// [`Funcdata::only_op_use`](crate::funcdata::Funcdata) through
     /// [`crate::p4_calls::kuna_exclusivearguse::access_cannot_reach_call`].
     pub exclusive_arg_use: bool,
+    /// (kuna) `option exclusivecallret`: whether a call and a return on mutually
+    /// exclusive paths keep each other's narrow scalar trial.  Read by
+    /// [`crate::p4_calls::kuna_exclusivecallret`].
+    pub exclusive_call_ret: bool,
     /// Retain register trials carrying proven stack addresses.
     pub stack_addr_arg_trial: bool,
     /// (kuna) `option callretpair`: whether the two-register CALL output arm of
@@ -1252,9 +1256,10 @@ pub struct ArchContext {
     /// `callee_arity_cut` is also set.
     pub callee_arity_scratch: bool,
     /// (kuna) completion level for the two upstream partial-range call-overlap
-    /// guards (`calloverlap`): `0` = both stay inert (what kuna shipped before the
-    /// option), `1` = `Heritage::guardCallOverlappingInput` only, `2` = that plus
-    /// `Heritage::tryOutputOverlapGuard`, i.e. upstream Ghidra.  Read by
+    /// guards (`calloverlap`): off (what kuna shipped before the option), auto
+    /// (the default: both guards for a narrow scalar slot in a wide register),
+    /// in (`Heritage::guardCallOverlappingInput` for every contained slot) or
+    /// full (that plus `Heritage::tryOutputOverlapGuard`, i.e. upstream Ghidra).  Read by
     /// [`Heritage::guard_calls`](crate::p3_dataflow::heritage::Heritage) at both
     /// `ContainedBy` arms; the level vocabulary lives in
     /// [`crate::p3_dataflow::kuna_calloverlap`].
@@ -1913,6 +1918,7 @@ impl ArchContext {
             // from the engine Architecture in `build_arch_handle`.
             zero_idiom_use: true,
             exclusive_arg_use: true,
+            exclusive_call_ret: true,
             stack_addr_arg_trial: false,
             // (kuna) `option callretpair` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
@@ -2087,7 +2093,7 @@ impl ArchContext {
             callee_arity_body: true,     // calleearitybody (default-on)
             callee_arity_cut: true,      // calleearitycut (default-on)
             callee_arity_scratch: true,  // calleearityscratch (default-on)
-            call_overlap: 0,             // calloverlap (0 = both overlap guards inert)
+            call_overlap: crate::kuna_calloverlap::LEVEL_AUTO, // calloverlap (default auto)
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             cond_exe_ret: true,          // condexeret (default-on)
             cond_exe_ret_use: true,      // condexeretuse (default-on)

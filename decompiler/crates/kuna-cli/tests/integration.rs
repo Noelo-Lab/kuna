@@ -801,3 +801,6 @@ mod powerpc_apu_selection;
 
 #[path = "elf_unwind.rs"]
 mod elf_unwind;
+
+#[path = "e500_arguments.rs"]
+mod e500_arguments;

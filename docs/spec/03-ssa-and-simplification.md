@@ -854,7 +854,21 @@ routine on x86-64: SLEIGH models `PXOR`, `POR`, `PAND`, `MOVDQA`, `MOVDQU`,
 `MOVQ`-to-xmm and `ORPD` as a single 128-bit write to the whole XMM register, so
 the range is never partitioned by refinement (whose gate is `size > 4 && maxw <
 size`) and the 8-byte parameter and return entries inside it are invisible.
-Under `option calloverlap` two dedicated guards recover them.
+Under `option calloverlap` two dedicated guards recover them. Its default
+`auto` mode applies both guards to a named eight-byte register containing the
+named low four-byte general ABI slot, only when the default data space is
+truncated to four-byte addresses. For e500, this retains scalar arguments
+produced by arithmetic as well as moves, and makes the call define its scalar
+result. Argument trials still pass through normal use scoring. The output
+guard kills the surrounding bytes independently; it does not preserve unknown
+upper bits across a call or narrow other uses of the physical register.
+Floating-point slots, ambiguous contained entries, unnamed ranges, other
+address widths and memory ranges are excluded. `off` disables the partial-range
+guards; `in` and `full` retain their broader opt-in behavior.
+
+Trial scoring for this shape has one companion rule, `exclusivecallret`
+(chapter 04, `ActionActiveParam`), which lets a call and a return on mutually
+exclusive arms keep each other's narrow scalar trial.
 
 With `option multiregargs on` (the default), a physical register range
 completely covered by two or more general ABI input slots receives separate
