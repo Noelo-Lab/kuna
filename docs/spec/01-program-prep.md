@@ -4266,11 +4266,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   function names use the FID-precedent placeholder gate. Every record's claim
   on a function is collected before any name is given, because the linker
   folds functions with identical bodies (identical code folding) and one
-  address is then the target of records of unrelated types — on the Toyota
-  app 2,350 of the 57,147 claimed functions, 2,037 of them claimed by more
-  than one type. Such a function is never named after one of its claimants:
-  when all claims come from one type it is named after the first member
-  (sorted) with the count of members it serves
+  address is then the target of records of unrelated types — on a large
+  third-party iOS app 2,350 of the 57,147 claimed functions, 2,037 of them
+  claimed by more than one type. Such a function is never named after one of
+  its claimants: when all claims come from one type it is named after the
+  first member (sorted) with the count of members it serves
   (`<T:P>.requirement#0.merged#2`); when they are witnesses of one protocol
   member from different types it is named after the member alone
   (`<*:Swift.RawRepresentable>.init(rawValue:)`); any other mix (different
@@ -4278,11 +4278,18 @@ every other binary's pass list is byte-identical to before the pass existed):
   name already given to another function (the same member's second folded
   body; a static and an instance requirement spelled alike; two Clang types
   of one name) gets `.2`, `.3`, … in address order, so every name resolves
-  to one function. On the Toyota iOS app
-  (314,038 functions, 304,309 of them `sub_<addr>`) the pass names 57,147
-  stripped functions — 14,615 metadata accessors, 15,204 vtable slots, 27,322
+  to one function. On that app (314,038 functions, 304,309 of them
+  `sub_<addr>`) the pass names 57,147 stripped functions — 14,615 metadata
+  accessors, 15,204 vtable slots, 27,322
   witnesses, 6 overrides — every one at an address function discovery already
-  found, in about 0.3 s and 135 MB over the baseline decompile. The pass is
+  found, in about 0.3 s and 135 MB over the baseline decompile. The work is
+  bounded by the image: a conformance descriptor several section entries name
+  is read once, every record row (a descriptor, a vtable, override,
+  requirement or witness row, a witness-table word) is charged against one row
+  per four bytes of the image, which a real image never exceeds since each row
+  occupies at least that much of it, and the names built (type paths included)
+  stop at 16 MiB plus the image's length, so repeated or overlapping records
+  in a crafted file cannot multiply into millions of names. The pass is
   registered only for `Compiler::Swift` (§1.3's detector) in Mach-O or ELF, so
   every other image's pass set is unchanged; the stage test
   `tests/stages/kuna-swiftmetadata.xml` runs the fully stripped swiftc-built
@@ -4329,7 +4336,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   whole when the field count disagrees with the descriptor, an offset
   overlaps, a type exceeds its slot, or the type's dotted path is one two
   descriptors share (private types of the same name), so nothing is ever
-  read through the wrong name. What then binds: the metadata records as typed
+  read through the wrong name. Layouts built inside other layouts (a nested
+  struct's, a superclass's) nest at most 32 deep, as a context's parent chain
+  does; a type reached deeper keeps its bytes untyped. What then binds: the metadata records as typed
   data (`….type_metadata` as `swift.type_metadata`, `….class_metadata`,
   `….value_witness_table`); the accessor prototypes
   (`swift.type_metadata *Module.Type.type_metadata_accessor(long request)`, so
@@ -4346,7 +4355,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   `Architecture::loader_param_locks` → the decompile drive's `mapped_params`),
   the rest of the signature recovered as usual — and a witness getter also
   names its two leading arguments, the `Self` metadata and the witness table.
-  On the Toyota iOS app the pass locates 12,809 static metadata records (4,790
+  On a large third-party iOS app the pass locates 12,809 static metadata records (4,790
   structs, 4,811 enums, 3,208 classes; the 859 classes and 351 structs whose
   accessors look up a runtime cache are skipped), lays out 4,585 structs and
   3,205 classes with 30,997 fields (22,794 typed), and pins the `self` of 5,739

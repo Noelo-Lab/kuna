@@ -9,8 +9,8 @@
     off an unnamed register and a metadata accessor returns a bare constant.
     The static type metadata the accessors return holds every fixed-layout
     struct's and class's size and field offsets, and the reflection field
-    descriptors hold the field names and types; on the Toyota iOS app they
-    lay out 4,585 structs and 3,205 classes (30,997 fields) and type the
+    descriptors hold the field names and types; on a large third-party iOS
+    app they lay out 4,585 structs and 3,205 classes (30,997 fields) and type the
     `self` of 8,560 getters.
 
     Stage / sub-stage: P1 external-refinement, the Swift metadata pass

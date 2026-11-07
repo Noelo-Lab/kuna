@@ -118,7 +118,7 @@ impl AnalysisPass for SwiftMetadataPass {
             img: &img,
             bind_slots: &bind_slots,
         };
-        let md = reader.read_all(ctx.file, names);
+        let md = reader.read_all(ctx.file, names, ctx.bytes.len());
         // Only a code address may be named as a function: a base-protocol
         // or associated-type witness row points at data.
         let code: Vec<(u64, u64)> = ctx
@@ -133,6 +133,7 @@ impl AnalysisPass for SwiftMetadataPass {
             memo: Default::default(),
             code,
             claims: Default::default(),
+            budget: std::cell::Cell::new(NAME_BYTES.saturating_add(ctx.bytes.len())),
         };
         namer.emit(&mut out);
         if ctx.arch.analysis_swifttypes {
@@ -215,6 +216,11 @@ fn member_after_protocol(name: &str) -> Option<String> {
     Some(member.to_string())
 }
 
+/// The bytes of names the pass builds beyond the image's own length. A
+/// real image's names come to a fraction of its size; the budget stops a
+/// crafted one whose long paths repeat across many records.
+const NAME_BYTES: usize = 16 << 20;
+
 /// One metadata record's claim on a function: the name it would give it,
 /// the owning type and, for a witness, the protocol member it implements.
 #[derive(Clone, Debug)]
@@ -232,6 +238,8 @@ pub struct Namer<'a> {
     code: Vec<(u64, u64)>,
     /// Every claim on each function address, in record order.
     claims: std::cell::RefCell<std::collections::BTreeMap<u64, Vec<Claim>>>,
+    /// Name bytes left to build ([`NAME_BYTES`] plus the image length).
+    budget: std::cell::Cell<usize>,
 }
 
 impl Namer<'_> {
@@ -245,7 +253,9 @@ impl Namer<'_> {
             return cached.clone();
         }
         let ctx = self.md.contexts.get(&addr);
-        let result = ctx.and_then(|c| self.path_of(c, depth));
+        let result = ctx
+            .and_then(|c| self.path_of(c, depth))
+            .filter(|p| self.spend(p));
         self.memo.borrow_mut().insert(addr, result.clone());
         result
     }
@@ -302,6 +312,21 @@ impl Namer<'_> {
         self.code.iter().any(|&(lo, hi)| addr >= lo && addr < hi)
     }
 
+    /// Charge `name` to the budget; `false` (and nothing more is named)
+    /// once it is spent.
+    fn spend(&self, name: &str) -> bool {
+        match self.budget.get().checked_sub(name.len()) {
+            Some(left) => {
+                self.budget.set(left);
+                true
+            }
+            None => {
+                self.budget.set(0);
+                false
+            }
+        }
+    }
+
     /// Record a metadata record's claim on the code at `addr`.
     fn claim(
         &self,
@@ -311,7 +336,13 @@ impl Namer<'_> {
         requirement: Option<(String, String)>,
         getter: bool,
     ) {
-        if !self.is_code(addr) {
+        if !self.is_code(addr)
+            || !self.spend(&name)
+            || !self.spend(owner)
+            || requirement
+                .as_ref()
+                .is_some_and(|(p, m)| !self.spend(p) || !self.spend(m))
+        {
             return;
         }
         self.claims
@@ -420,6 +451,9 @@ impl Namer<'_> {
                 continue;
             };
             let cn = format!("<{ty}:{proto}>");
+            if !self.spend(&cn) {
+                continue;
+            }
             data.push(SymFact {
                 addr: c.addr,
                 name: format!("{cn}.protocol_conformance_descriptor"),
@@ -447,7 +481,7 @@ impl Namer<'_> {
                             if !matches!(kind, 1..=6 | 8) {
                                 continue;
                             }
-                            let slot = w + self.md.ptr_size * (1 + k as u64);
+                            let slot = w.wrapping_add(self.md.ptr_size * (1 + k as u64));
                             if let Some(f) = self.md.words.get(&slot) {
                                 witness(
                                     *f,
@@ -495,7 +529,7 @@ impl Namer<'_> {
         // Dedup by address: the first (lowest-addressed descriptor) wins.
         let mut seen = std::collections::HashSet::new();
         for d in data {
-            if seen.insert(d.addr) {
+            if seen.insert(d.addr) && self.spend(&d.name) {
                 out.symbols.push(d);
             }
         }
