@@ -223,8 +223,9 @@ fn an_unreadable_a32_table_states_no_count() {
     }
 }
 
-/// `armframes off` restores the walk without A32 tables: the dispatch jumps to
-/// the `b default` after it and to no case, and no table is read.
+/// `armframes off` restores the walk without A32 tables: the dispatch reaches
+/// the `b default` after it through its condition skip, which files no row,
+/// and no case, and no table is read.
 #[test]
 fn armframes_off_reads_no_a32_table() {
     let idx = build(|arch| {
@@ -233,7 +234,9 @@ fn armframes_off_reads_no_a32_table() {
     for sw in [&ADD, &LDR] {
         let jumps: Vec<(u64, XrefKind)> =
             from(&idx, sw.dispatch).into_iter().filter(|&(_, kind)| kind == XrefKind::Jump).collect();
-        assert_eq!(jumps, vec![(sw.dispatch + 4, XrefKind::Jump)], "{:#x}", sw.dispatch);
+        assert!(jumps.is_empty(), "{:#x}: {jumps:?}", sw.dispatch);
+        assert!(idx.function_containing(sw.dispatch).is_some(), "{:#x}", sw.dispatch);
+        assert_eq!(idx.function_containing(sw.dispatch + 4), idx.function_containing(sw.dispatch), "{:#x}", sw.dispatch);
         assert!(idx.switch_tables().iter().all(|t| t.dispatch != sw.dispatch), "{:#x}", sw.dispatch);
         for c in &sw.cases {
             assert!(idx.refs_to(c.body).iter().all(|r| r.from != sw.dispatch), "{:#x}", c.body);

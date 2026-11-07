@@ -175,10 +175,16 @@ pub(super) fn emit(
     const_slots
 }
 
-/// The address of every pointer-sized slot of the named section.
+/// The address of every pointer-sized slot of the named section, bounded by the
+/// bytes the file actually backs it with (a header size alone is untrusted).
 fn section_slots(file: &object::File, name: &str, ps: u64) -> Vec<u64> {
     let Some(sec) = file.section_by_name(name) else { return Vec::new() };
-    (0..sec.size() / ps).map(|i| sec.address() + i * ps).collect()
+    let Ok(data) = sec.data() else { return Vec::new() };
+    let (base, n) = (sec.address(), (data.len() as u64).min(sec.size()) / ps);
+    if base.checked_add(n * ps).is_none() {
+        return Vec::new();
+    }
+    (0..n).map(|i| base + i * ps).collect()
 }
 
 /// Append the slot `[va, va + ps)`, merging with the previous range when adjacent.
@@ -289,7 +295,7 @@ fn stubs_arm64(base: u64, data: &[u8]) -> Vec<(u64, u64)> {
         if adrp & 0x9F00_001F != 0x9000_0001 || ldr & 0xFFC0_03FF != 0xF940_0021 {
             continue;
         }
-        let pc = base + 4 * i as u64;
+        let pc = base.wrapping_add(4 * i as u64);
         let immlo = (adrp >> 29) & 0x3;
         let immhi = (adrp >> 5) & 0x7FFFF;
         let imm = (((immhi << 2) | immlo) as i32) << 11 >> 11;
@@ -307,8 +313,8 @@ fn stubs_x86_64(base: u64, data: &[u8]) -> Vec<(u64, u64)> {
     while i + 8 <= data.len() {
         if data[i..i + 3] == [0x48, 0x8b, 0x35] && matches!(data[i + 7], 0xff | 0xe9) {
             let rel = i32::from_le_bytes([data[i + 3], data[i + 4], data[i + 5], data[i + 6]]);
-            let next_ip = base + i as u64 + 7;
-            out.push((base + i as u64, next_ip.wrapping_add(rel as i64 as u64)));
+            let pc = base.wrapping_add(i as u64);
+            out.push((pc, pc.wrapping_add(7).wrapping_add(rel as i64 as u64)));
             i += 7;
         } else {
             i += 1;
@@ -387,6 +393,52 @@ mod tests {
         assert!(img.chained());
         assert_eq!(img.rebase_ptr(0x100004000), None);
         assert_eq!(img.bind_name(0x100004000), Some("_ext"));
+    }
+
+    /// `bytes` with the `size` field of the 64-bit section `name` rewritten.
+    fn with_section_size(mut bytes: Vec<u8>, name: &str, size: u64) -> Vec<u8> {
+        let u32_at = |b: &[u8], o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap()) as usize;
+        let (mut off, mut hit) = (32, 0);
+        for _ in 0..u32_at(&bytes, 16) {
+            let (cmd, cmdsize) = (u32_at(&bytes, off), u32_at(&bytes, off + 4));
+            if cmd == 0x19 {
+                for j in 0..u32_at(&bytes, off + 64) {
+                    let s = off + 72 + 80 * j;
+                    if bytes[s..s + 16].split(|&b| b == 0).next() == Some(name.as_bytes()) {
+                        bytes[s + 40..s + 48].copy_from_slice(&size.to_le_bytes());
+                        hit += 1;
+                    }
+                }
+            }
+            off += cmdsize;
+        }
+        assert_eq!(hit, 1, "{name}");
+        bytes
+    }
+
+    /// A ref section whose header claims far more bytes than the file holds
+    /// yields no slots instead of one allocation per claimed slot.
+    #[test]
+    fn oversized_ref_section_header_is_bounded_by_file_data() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_objc_refs_arm64");
+        let bytes = std::fs::read(path).expect("read fixture");
+        for size in [0x0800_0000_0000_0000u64, 1 << 30, u64::MAX] {
+            let patched = with_section_size(bytes.clone(), SEC_SELREFS, size);
+            let file = object::File::parse(patched.as_slice()).expect("parse Mach-O");
+            assert!(section_slots(&file, SEC_SELREFS, 8).len() <= 6, "size {size:#x}");
+        }
+        let file = object::File::parse(bytes.as_slice()).expect("parse Mach-O");
+        assert_eq!(section_slots(&file, SEC_SELREFS, 8).len(), 6);
+    }
+
+    /// A stub section mapped at the top of the address space wraps instead of
+    /// overflowing.
+    #[test]
+    fn stub_scan_wraps_at_the_top_of_the_address_space() {
+        let arm: Vec<u8> = [0x9000_0041u32, 0xF941_0821].iter().flat_map(|w| w.to_le_bytes()).collect();
+        assert_eq!(stubs(object::Architecture::Aarch64, u64::MAX - 3, &[[0u8; 4].as_slice(), &arm].concat()).len(), 1);
+        let x86 = [0, 0x48, 0x8b, 0x35, 0x10, 0x00, 0x00, 0x00, 0xff, 0x25];
+        assert_eq!(stubs(object::Architecture::X86_64, u64::MAX, &x86), vec![(0, 0x17)]);
     }
 
     #[test]

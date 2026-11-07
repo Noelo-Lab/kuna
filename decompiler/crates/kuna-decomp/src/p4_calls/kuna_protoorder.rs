@@ -153,8 +153,8 @@ pub struct RecoveredTypes {
     /// a stated list ([`crate::p4_calls::kuna_passthrough`]); `false` otherwise.
     pub arity_sound: bool,
     /// The recovered return value -- storage, size and type -- when it is not
-    /// `void`.  Recorded only when `option passthrough` is on, whose tail-call
-    /// arm is its one reader; `None` otherwise.
+    /// `void`. Recorded when `option passthrough` is on for tail-call recovery
+    /// and narrow scalar call-result emission; `None` otherwise.
     pub output: Option<(Address, int4, Rc<Datatype>)>,
     /// Where the recovered return value lives, when it is not `void`, whether
     /// or not every return computes it: the registers a return can hand back to
