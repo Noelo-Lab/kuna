@@ -113,46 +113,56 @@ impl Rule for RuleEarlyRemoval {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        if !Self::removable(op, data) {
+            return 0;
+        }
+        // Get rid of unused op
+        data.note_dead_removal(op);
+        if data.dead_cascade_now() {
+            crate::p3_dataflow::kuna_deadcascade::remove(data, op, Self::removable);
+        } else {
+            data.op_destroy(op);
+        }
+        1
+    }
+}
+
+impl RuleEarlyRemoval {
+    /// Can `op` go: nothing reads its output and nothing else keeps it?
+    pub(crate) fn removable(op: OpId, data: &mut Funcdata) -> bool {
         // Functions automatically consumed
         if data.obank().get(op).expect("RuleEarlyRemoval: stale op").is_call() {
-            return 0;
+            return false;
         }
         if data.obank().get(op).expect("RuleEarlyRemoval: stale op").is_indirect_source() {
-            return 0;
+            return false;
         }
         let vn = match data.obank().get(op).expect("RuleEarlyRemoval: stale op").get_out() {
-            None => return 0,
+            None => return false,
             Some(v) => v,
         };
         if !data.vbank().get(vn).expect("RuleEarlyRemoval: stale vn").has_no_descend() {
-            return 0;
+            return false;
         }
         if data.vbank().get(vn).expect("RuleEarlyRemoval: stale vn").is_auto_live() {
-            return 0;
+            return false;
         }
         let spc = data.vbank().get(vn).expect("RuleEarlyRemoval: stale vn").get_space().clone();
         if spc.does_deadcode() {
             if !data.dead_removal_allowed_seen(&spc) {
-                return 0;
+                return false;
             }
         }
 
         let mut memo = kuna_volatileload::Memo::new();
-        if kuna_volatileload::is_volatile_with(data, op, &mut memo)
+        !(kuna_volatileload::is_volatile_with(data, op, &mut memo)
             && !kuna_volatileload::rereads(data, op, &mut memo, |data, load| {
                 data.obank()
                     .get(load)
                     .and_then(|o| o.get_out())
                     .and_then(|v| data.vbank().get(v))
                     .is_some_and(|v| !v.has_no_descend() || v.is_auto_live())
-            })
-        {
-            return 0;
-        }
-        // Get rid of unused op
-        data.note_dead_removal(op);
-        data.op_destroy(op);
-        1
+            }))
     }
 }
 

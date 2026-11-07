@@ -401,6 +401,23 @@ kuna_options! { self, p1;
     "haltloopguard" => on_off!(halt_loop_guard, "Global stores live in an exitless loop"),
     "truncptrflow" => on_off!(trunc_ptr_flow, "Truncated-space pointer flow"),
     "deadwaves" => on_off!(pool_dead_waves, "Rule-pool dead-removal waves"),
+    "deadcascade" => {
+        let field = p1.trim();
+        let (val, msg) = match field {
+            "off" => (None, "Dead-op removal takes one link of a dead chain per pass".to_string()),
+            "on" => (Some(0), "Dead-op removal takes a dead chain of joins and guards out at once".to_string()),
+            _ => {
+                let n = field
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|_| !field.is_empty() && field.bytes().all(|b| b.is_ascii_digit()))
+                    .ok_or_else(|| KunaError::parse("Must specify off, on or a decimal pass count"))?;
+                (Some(n), format!("Dead-op removal takes a dead chain of joins and guards out at once once a pool run has made {n} passes"))
+            }
+        };
+        self.dead_cascade = val;
+        Ok(msg)
+    },
     "copywaves" => on_off!(pool_copy_waves, "Rule-pool copy-propagation waves"),
     "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
     "loweredswitch" => {
