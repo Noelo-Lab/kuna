@@ -49,10 +49,20 @@ fn body<'a>(doc: &'a Value, address: u64) -> &'a str {
 }
 
 #[test]
+fn o32_octeon_flags_preserve_generic_loading_and_call_continuation() {
+    for image in manifest()["images"].as_array().unwrap() {
+        if image["source"] != "select.c" { continue; }
+        let doc = run(image, &[]);
+        let code = body(&doc, image["symbols"]["callit"]["address"].as_u64().unwrap());
+        assert!(code.contains("return ") && code.contains(",2,3)") && code.contains(" + "),
+            "{}: {code}", image["file"]);
+    }
+}
+
+#[test]
 fn returning_and_unknown_imports_preserve_following_effects() {
     for image in manifest()["images"].as_array().unwrap() {
-        let file = image["file"].as_str().unwrap();
-        if image["source"] != "flow.c" || file.starts_with("flow-octeon3-") || file.contains("-stripped") { continue; }
+        if image["source"] != "flow.c" { continue; }
         let doc = run(image, &[]);
         let code = body(&doc, image["symbols"]["duplicate"]["address"].as_u64().unwrap());
         assert!(code.contains("strlen(") && !code.contains("strlen()"),

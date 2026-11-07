@@ -109,6 +109,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "addcarrychain" => on_off!(add_carry_chain, "Carry-chain wide-add recovery"),
+    "aggregatefields" => on_off!(aggregate_fields, "Whole-aggregate field recovery"),
     "stubtailcall" => on_off!(stub_tail_call, "Loader-proven stub tail calls"),
     "gotimportproto" => on_off!(got_import_proto, "GOT import type-only prototypes"),
     "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),

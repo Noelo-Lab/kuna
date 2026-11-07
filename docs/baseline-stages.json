@@ -1,12 +1,19 @@
 {
   "data_footer": [
-    3874,
-    3874
+    3884,
+    3884
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
     "data:64-bit unsigned merge retains signed conversion",
     "data:ABI reloads preserve the returning import identity",
+    "data:AGGREGATEFIELDS off: a padded float-field record is rebuilt as a shifted integer",
+    "data:AGGREGATEFIELDS off: an unchanged single-field record returns its field",
+    "data:AGGREGATEFIELDS off: the nested member walk appends the inner field twice",
+    "data:AGGREGATEFIELDS: Go high pair stores each named result field",
+    "data:AGGREGATEFIELDS: a padded float-field record keeps both fields",
+    "data:AGGREGATEFIELDS: an unchanged single-field record returns whole",
+    "data:AGGREGATEFIELDS: the nested member names each field once",
     "data:ALIASOVERLAP #1: the 4-byte read at a0+7 is a local ahead of a store into it",
     "data:ALIASOVERLAP #2: the 8-byte indexed read is a local ahead of the element store",
     "data:ALIASOVERLAP #3: only the adjacent-byte stores keep the read folded",
@@ -1075,7 +1082,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 382 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 383 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -1401,6 +1408,9 @@
     "data:Merged Boolean OR assignment retains Boolean identity",
     "data:Merged Boolean XOR assignments retain Boolean identity",
     "data:Missing recorded consumer preserves ordinary narrow argument",
+    "data:N32 calls: declared aggregate order overrides inferred joins",
+    "data:N32 calls: declared full-width result reaches addition",
+    "data:N32 calls: inferred result replaces pre-call target",
     "data:N32 stack: float argument keeps high slot bytes",
     "data:N32 stack: inferred ten arguments reach addition",
     "data:N32 stack: integer argument keeps low slot bytes",

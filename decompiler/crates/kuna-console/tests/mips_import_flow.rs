@@ -12,7 +12,8 @@ fn only_concrete_got_import_declarations_supply_type_only_prototypes() {
     use std::rc::Rc;
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     for image in ["flow-mips32r2-be-local-ssp-stripped.so", "flow-mips32r2-le-local-ssp-stripped.so",
-        "flow-octeon-be-local-ssp-stripped.so", "flow-octeon-le-local-ssp-stripped.so"] {
+        "flow-octeon-be-local-ssp-stripped.so", "flow-octeon-le-local-ssp-stripped.so",
+        "flow-octeon3-n32.so", "flow-octeon3-64.so"] {
         let mut prog = bootstrap_from_object(
             root.join("tests/fixtures/mips-import-flow").join(image).to_str().unwrap(),
             "", &[root.join("specs").to_string_lossy().into_owned()],
@@ -60,7 +61,8 @@ fn only_concrete_got_import_declarations_supply_type_only_prototypes() {
 fn resolver_transfers_are_bounded_and_explicit_flow_takes_precedence() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     for image in ["flow-mips32r2-be-local-ssp-stripped.so", "flow-mips32r2-le-local-ssp-stripped.so",
-        "flow-octeon-be-local-ssp-stripped.so", "flow-octeon-le-local-ssp-stripped.so"] {
+        "flow-octeon-be-local-ssp-stripped.so", "flow-octeon-le-local-ssp-stripped.so",
+        "flow-octeon3-n32.so", "flow-octeon3-64.so"] {
         for explicit in [false, true] {
             let mut prog = bootstrap_from_object(
                 root.join("tests/fixtures/mips-import-flow").join(image).to_str().unwrap(),

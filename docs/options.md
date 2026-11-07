@@ -1336,6 +1336,11 @@ Three tiers:
 | free(*(void **)((long)v1 + (long)v2 * 8)) | [`castindex`](#castindex) |
 | an array walk through a void * base prints two casts per element | [`castindex`](#castindex) |
 | a pointer difference of two char * is cast to long on both sides | [`castindex`](#castindex) |
+| a function returning its unchanged single-field struct argument prints return x.d; | [`aggregatefields`](#aggregatefields) |
+| a nested single-field member prints twice, x.a.d.d | [`aggregatefields`](#aggregatefields) |
+| a whole-struct assignment writes the struct into its own field, v.field_0x8.__0 = (field_0x8)... | [`aggregatefields`](#aggregatefields) |
+| a returned record prints as a shifted integer cast to the struct type | [`aggregatefields`](#aggregatefields) |
+| a field of a split aggregate prints as an artificial partial such as _4_8_ instead of its member name | [`aggregatefields`](#aggregatefields) |
 | the JSON variables array is empty although the function plainly has a stack frame | [`framelayout`](#framelayout) |
 | fewer locals reported than the source declares | [`framelayout`](#framelayout) |
 | a stack slot the disassembly writes is missing from variables | [`framelayout`](#framelayout) |
@@ -4261,6 +4266,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default: an array walk through a `void *` or wrongly-typed base reads `((long *)v7)[v19]` (one cast) instead of `*(long *)((long)v7 + v19 * 8)` (two), an `int` index loses its `(long)` because C converts a subscript itself, and a byte-pointer difference reads `v24 - v14` (none) instead of `(long)v24 - (long)v14` (two). Turn it off to see upstream Ghidra's spelling, which keeps the byte arithmetic visible, or to ablate this cast class alone (`castarith` is independent: it handles a constant addend).
 - **Where / provenance:** P9/cast-policy · ida · presentation-default · kuna-castindex
 - **Example:** `option castindex off`
+
+### `aggregatefields` -- on | off, default `on`
+
+- **Symptoms:** a function returning its unchanged single-field struct argument prints return x.d;; a nested single-field member prints twice, x.a.d.d; a whole-struct assignment writes the struct into its own field, v.field_0x8.__0 = (field_0x8)...; a returned record prints as a shifted integer cast to the struct type; a field of a split aggregate prints as an artificial partial such as _4_8_ instead of its member name.
+- **What it does:** Keep a structured value whole until its fields can be named. Four places otherwise split or misname it. `RuleConcatZero` rewrites a concatenation whose low bytes are zero into a shifted integer even when the result is a struct or array, so `RulePieceStructure` never sees the field it builds and a returned record prints as `(S)((ulong)x << 32)`. Single-component resolution scores a COPY or RETURN of a declared container as its only field, so a function returning its unchanged `struct S` argument prints `return x.d;`. Cleanup splitting runs after the main simplification pool and leaves the nested truncations it creates, so a field extracted from an already truncated aggregate keeps an artificial partial instead of its member name, along with truncations nothing reads. The partial-symbol walk descends into a single-field struct even where the operation's resolved type is that whole struct, appending a member twice (`x.a.d.d`) or assigning a whole struct to its own field (`v2.field_0x8.__0 = (field_0x8)...`). On, a struct- or array-typed concatenation with a zero low piece stays a PIECE for structured-piece recovery; a RETURN of the function's locked output type, and both edges of each COPY on the chain feeding it, resolve to the whole container when the value is an equal-width COPY chain from a type-locked input of that container; each new cleanup-split SUBPIECE collapses through the double-subpiece rule and the truncations it orphaned are removed through the dead-code rule; and the walk stops at an operation whose resolved or facing type is the whole struct. Off restores upstream's behavior at all four places. ABI padding pieces of a join, which only `directfields` compiler-spec joins create, are always handled as logical constants: they have no storage, so this option does not govern them.
+- **When to flip:** On by default: 0/675 datatest assertions move and a whole-binary comparison over 861 public images changed one non-MIPS image, where a whole-struct Rust assignment lost an extra `.__0`; a Go pair result with a zero half also stores its named fields instead of a byte carrier. Flip off to compare with upstream Ghidra's field-first resolution, or when a struct return or a cleanup-split field prints differently from a reference decompiler.
+- **Where / provenance:** P5/aggregate-union · kuna · correctness-fix · #1394
+- **Example:** `option aggregatefields off`
 
 ### `framelayout` -- on | off, default `on`
 
