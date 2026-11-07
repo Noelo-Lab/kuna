@@ -137,10 +137,13 @@
 #-----
 @ifdef MIPS64
 
+@ifndef FREGSIZE
+@define FREGSIZE "8"    # Floating point register size (8 or 4)
+@endif
+
 @ifdef MIPS64_32ADDRS   # used for 64-bit mips restricted to 32-bit addresses
 
 @define REGSIZE "8"     # General purpose register size (8 or 4)
-@define FREGSIZE "8"    # Floating point register size (8 or 4)
 @define ADDRSIZE "4"    # Memory address size (8 or 4, virtual and physical)
 @define DREGSIZE "16"     # 2x REGSIZE used for accumulators
 @define SIZETO4  "4"   # In 32-bit mode, no truncation needed
@@ -150,15 +153,12 @@
 @else                # full 64 bit ptrs
 
 @define REGSIZE "8"     # General purpose register size (8 or 4)
-@define FREGSIZE "8"    # Floating point register size (8 or 4)
 @define ADDRSIZE "8"    # Memory address size (8 or 4, virtual and physical)
 @define DREGSIZE "16"     # 2x REGSIZE used for accumulators
 @define SIZETO4 "4"    # In 64-bit mode, use when need to do 32-bit operation
 @define ADDRCAST ""     # no need to down cast to pointer size
 
 @endif #MIPS64_32ADDRS
-
-
 @else # MIPS32
 
 @define REGSIZE "4"     # General purpose register size (8 or 4)

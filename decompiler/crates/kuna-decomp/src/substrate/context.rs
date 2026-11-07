@@ -1737,6 +1737,10 @@ pub struct ArchContext {
     /// pool pass removed when removal was its only change, shared from the
     /// real architecture. Read by `ActionPool::apply`.
     pub pool_dead_waves: bool,
+    /// (kuna `copywaves`) Copy propagations seed a wave too, and a wave offers
+    /// an op reached only for its opcode just the far-walking rules; shared
+    /// from the real architecture. Read by `ActionPool`.
+    pub pool_copy_waves: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -2188,6 +2192,7 @@ impl ArchContext {
             unrolled_guard: false, // (kuna) angr opt-in default off (upstream byte-identical)
             jumptable_share_partial: true, // (kuna) DIV: upstream stageJumpTable shape
             pool_dead_waves: true,
+            pool_copy_waves: true,
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.
