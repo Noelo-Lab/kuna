@@ -44,6 +44,7 @@ kuna_options! { self, p1;
     },
     "partialconcat" => on_off!(partial_concat, "Partial scalar concatenation rendering"),
     "armconstshift" => on_off!(arm_constant_shift, "ARM constant-shift C11 conversion"),
+    "rustarrayzero" => on_off!(rust_array_zero, "Rust byte-array zero values"),
     "arraynotation" => {
         let (val, msg) = crate::kuna_arraynotation::OptionArrayNotation.apply(p1)?;
         self.print_mut().options.set_array_notation(val);
@@ -108,6 +109,9 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "addcarrychain" => on_off!(add_carry_chain, "Carry-chain wide-add recovery"),
+    "aggregatefields" => on_off!(aggregate_fields, "Whole-aggregate field recovery"),
+    "stubtailcall" => on_off!(stub_tail_call, "Loader-proven stub tail calls"),
+    "gotimportproto" => on_off!(got_import_proto, "GOT import type-only prototypes"),
     "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
     "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
@@ -249,6 +253,7 @@ kuna_options! { self, p1;
     "noreturnretuse" => on_off!(noreturn_ret_use, "No-return call argument use in return trials"),
     "zeroidiomuse" => on_off!(zero_idiom_use, "Self-cancelling zeroing-idiom use in input trials"),
     "exclusivearguse" => on_off!(exclusive_arg_use, "Mutually-exclusive-path dereference in input trials"),
+    "exclusivecallret" => on_off!(exclusive_call_ret, "Mutually-exclusive call and return uses in narrow scalar trials"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
     "callretpair" => on_off!(call_ret_pair, "Two-register CALL output completion"),
     "multiregargs" => on_off!(multi_reg_args, "Complete ABI register argument partitions"),
@@ -398,6 +403,24 @@ kuna_options! { self, p1;
     "haltloopguard" => on_off!(halt_loop_guard, "Global stores live in an exitless loop"),
     "truncptrflow" => on_off!(trunc_ptr_flow, "Truncated-space pointer flow"),
     "deadwaves" => on_off!(pool_dead_waves, "Rule-pool dead-removal waves"),
+    "deadcascade" => {
+        let field = p1.trim();
+        let (val, msg) = match field {
+            "off" => (None, "Dead-op removal takes one link of a dead chain per pass".to_string()),
+            "on" => (Some(0), "Dead-op removal takes a dead chain of joins and guards out at once".to_string()),
+            _ => {
+                let n = field
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|_| !field.is_empty() && field.bytes().all(|b| b.is_ascii_digit()))
+                    .ok_or_else(|| KunaError::parse("Must specify off, on or a decimal pass count"))?;
+                (Some(n), format!("Dead-op removal takes a dead chain of joins and guards out at once once a pool run has made {n} passes"))
+            }
+        };
+        self.dead_cascade = val;
+        Ok(msg)
+    },
+    "copywaves" => on_off!(pool_copy_waves, "Rule-pool copy-propagation waves"),
     "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
     "loweredswitch" => {
         let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
@@ -923,7 +946,11 @@ kuna_options! { self, p1;
     "slotptr" => on_off!(slot_ptr, "frame-slot pointer typing"),
     "reglocals" => on_off!(reg_locals, "register-local reporting"),
     "slotreport" => on_off!(slot_report, "frame-slot local reporting"),
-    "callmechanisms" => on_off!(call_mechanism_effects, "compiler prototype call mechanisms"),
+    "callmechanisms" => {
+        let (mode, msg) = crate::kuna_callmechanisms::OptionCallMechanisms.apply(p1)?;
+        self.call_mechanism_mode = mode;
+        Ok(msg)
+    },
     "slotsplit" => on_off!(slot_split, "frame-row splitting at declarations"),
     "voidtailreturn" => on_off!(voidtailreturn, "void tail-return elision"),
     "castimplied" => on_off!(cast_implied, "C-implied cast elision"),
@@ -1138,6 +1165,9 @@ kuna_options! { self, p1;
     "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
     "armfuncmode" => on_off!(analysis_armfuncmode, "A32 mode at even ARM function symbols"),
     "armwalkmode" => on_off!(analysis_armwalkmode, "ARM decode mode carried along the Listing walk"),
+    "armpltslot" => on_off!(analysis_armpltslot, "ARM PLT stub slot reference"),
+    "armcondskip" => on_off!(analysis_armcondskip, "ARM condition skips filed as no jump"),
+    "armderef" => on_off!(analysis_armderef, "ARM accesses through a register holding a datum's address"),
     "entrythumbflow" => {
         on_off!(analysis_entrythumbflow, "Entry-reachable Thumb context walk")
     },
@@ -1155,6 +1185,15 @@ kuna_options! { self, p1;
         crate::kuna_i386_pie_plt::set_i386_pie_plt_env(val);
         Ok(format!(
             "i386-PIE PLT-stub decode turned {}",
+            if val { "on" } else { "off" }
+        ))
+    },
+    "ppcapu" => {
+        let val = on_or_off(p1)?;
+        self.analysis_ppcapu = val;
+        crate::kuna_ppcapu::set_ppcapu_env(val);
+        Ok(format!(
+            "PowerPC APU-note language selection turned {}",
             if val { "on" } else { "off" }
         ))
     },

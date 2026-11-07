@@ -2460,6 +2460,12 @@ impl Rule for RuleIgnoreNan {
         vec![OpCode::CPUI_FLOAT_NAN]
     }
 
+    /// (kuna `deadwaves`) The test follows the NaN result through three
+    /// levels of boolean readers to the comparisons it guards.
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
         if grouplist.contains("floatprecision") {
             Some(Box::new(RuleIgnoreNan))
