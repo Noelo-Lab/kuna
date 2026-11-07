@@ -25,4 +25,20 @@ fn only_o32_n32_and_n64_state_the_argument_rule() {
     assert!(!mips_documented("MIPS:LE:64:64-32addr:o64"));
     assert!(!mips_documented("MIPS:LE:32:default:eabi"));
     assert!(!mips_documented("MIPS:LE:32:default:windows"));
+    for variant in ["octeon", "octeonplus", "octeon2", "octeon3"] {
+        for suffix in ["", "-32addr"] {
+            for model in ["default", "hard"] {
+                assert!(mips_documented(&format!("MIPS:BE:64:{variant}{suffix}:{model}")));
+            }
+            assert!(!mips_documented(&format!("MIPS:BE:64:{variant}{suffix}:unknown")));
+            assert_eq!(
+                mips_documented(&format!("MIPS:BE:64:{variant}{suffix}:n32")),
+                suffix == "-32addr"
+            );
+            assert_eq!(
+                mips_documented(&format!("MIPS:BE:64:{variant}{suffix}:n64")),
+                suffix.is_empty()
+            );
+        }
+    }
 }

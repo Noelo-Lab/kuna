@@ -1800,7 +1800,7 @@ impl Heritage {
         self.persist_skips = None;
         let readonly = self.readonly_unguarded && (fl & varnode_flags::readonly) != 0 && write.is_empty();
         let mut pruned = false;
-        // (kuna) `option calloverlap off|in|full` — the two upstream partial-range
+        // (kuna) `option calloverlap off|auto|in|full` — the two upstream partial-range
         // overlap guards.  See [`crate::p3_dataflow::kuna_calloverlap`].
         let overlap_level = fd.get_arch().call_overlap;
         // Lift the call specs out so each trial-registering mutation can also take
@@ -2020,13 +2020,17 @@ impl Heritage {
                         effecttype = effect_type::KILLEDBYCALL;
                     }
                     if output_character == Containment::ContainedBy {
-                        // tryOutputOverlapGuard (heritage.cc:1249/1293): the heritaged
-                        // range properly contains the return storage, so the return
-                        // entry becomes an INDIRECT creation and the bytes around it
-                        // are PIECEd back on.  Gated by `option calloverlap full`.
-                        if overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_FULL
+                        // An explicit slot extension defines the surrounding bytes;
+                        // otherwise use the generic overlap guard (tryOutputOverlapGuard,
+                        // heritage.cc:1249/1293), gated by `option calloverlap full`, or
+                        // `auto` for a narrow scalar slot.
+                        if crate::p4_calls::kuna_registerslots::guard_output(
+                            fd, fc, addr, &trans_addr, size, write,
+                        ) || ((overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_FULL
+                            || (overlap_level == super::kuna_calloverlap::LEVEL_AUTO
+                                && super::kuna_calloverlap::auto_register(fd.get_arch().manage(), fc.proto(), &trans_addr, size, true)))
                             && self
-                                .try_output_overlap_guard(fd, fc, addr, &trans_addr, size, write)
+                                .try_output_overlap_guard(fd, fc, addr, &trans_addr, size, write))
                         {
                             // Range is handled, don't do additional guarding.
                             effecttype = effect_type::UNAFFECTED;
@@ -2224,6 +2228,15 @@ impl Heritage {
                 let _ = fd.op_insert_input(op, vn, nin);
             }
         } else if ic == Containment::ContainedBy {
+            // A declared slot extension makes the slot the argument the call reads.
+            if let Some((slot, slot_size)) =
+                crate::p4_calls::kuna_registerslots::input_slot(fc, addr, trans_addr, size)
+            {
+                if fc.get_active_input().which_trial(&slot, slot_size) < 0 {
+                    Self::truncated_input_trial(fd, fc, addr, size, &slot, slot_size);
+                }
+                return;
+            }
             let partition = fd.get_arch().multi_reg_args.then(|| {
                 super::kuna_multiregargs::input_partition(
                     fc.proto(), fd.get_arch().manage(), trans_addr, size,
@@ -2244,7 +2257,10 @@ impl Heritage {
                     return;
                 }
             }
-            if overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_IN {
+            if overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_IN
+                || (overlap_level == super::kuna_calloverlap::LEVEL_AUTO
+                    && super::kuna_calloverlap::auto_register(fd.get_arch().manage(), fc.proto(), trans_addr, size, false))
+            {
                 Self::guard_call_overlapping_input(fd, fc, addr, trans_addr, size);
             }
         }
@@ -2352,7 +2368,7 @@ impl Heritage {
     ///
     /// An associated function rather than a method so the caller can keep its
     /// `&mut Funcdata` and `&mut FuncCallSpecs` borrows alive across the call.
-    /// Gated by `option calloverlap in|full`.
+    /// Gated by `option calloverlap in|full`, or `auto` for a narrow scalar slot.
     fn guard_call_overlapping_input(
         fd: &mut crate::funcdata::Funcdata,
         fc: &mut crate::fspec::FuncCallSpecs,
@@ -2431,7 +2447,7 @@ impl Heritage {
     ///
     /// Returns `true` when the INDIRECTs were created, in which case the caller
     /// downgrades the range's effect to `unaffected`.  Gated by
-    /// `option calloverlap full`.
+    /// `option calloverlap full`, or `auto` for a narrow scalar slot.
     fn try_output_overlap_guard(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
@@ -4031,41 +4047,32 @@ impl Heritage {
                 let leastsize =
                     fd.vbank().get(leasthalf).expect("split_join_write: leasthalf").get_size();
 
-                // First SUBPIECE: mosthalf = curvn >> leastsize.
-                let opaddr = if is_input {
-                    bb_start.clone()
-                } else {
-                    let prevop = op.expect("split_join_write: non-input has a def op");
-                    fd.obank().get(prevop).expect("split_join_write: op").get_addr().clone()
-                };
-                let split = fd.new_op(2, opaddr);
-                fd.op_set_opcode(split, sub_typeop.clone());
-                fd.op_set_output(split, mosthalf).expect("split_join_write: set output most");
-                fd.op_set_input(split, curvn, 0).expect("split_join_write: set in0 most");
-                let c = fd.new_constant(4, leastsize as u64);
-                fd.op_set_input(split, c, 1).expect("split_join_write: set in1 most");
-                match op {
-                    None => fd.op_insert_begin(split, bb),
-                    Some(prevop) => fd.op_insert_after(split, prevop),
+                for (half, offset, high) in [(mosthalf, leastsize, true), (leasthalf, 0, false)] {
+                    if fd.vbank().get(half).is_some_and(|v| v.is_constant()) {
+                        continue;
+                    }
+                    let opaddr = if is_input {
+                        bb_start.clone()
+                    } else {
+                        let prevop = op.expect("split_join_write: non-input has a def op");
+                        fd.obank().get(prevop).expect("split_join_write: op").get_addr().clone()
+                    };
+                    let split = fd.new_op(2, opaddr);
+                    fd.op_set_opcode(split, sub_typeop.clone());
+                    fd.op_set_output(split, half).expect("split_join_write: set output");
+                    fd.op_set_input(split, curvn, 0).expect("split_join_write: set input");
+                    let constant = fd.new_constant(4, offset as u64);
+                    fd.op_set_input(split, constant, 1).expect("split_join_write: set offset");
+                    match op {
+                        None => fd.op_insert_begin(split, bb),
+                        Some(prevop) => fd.op_insert_after(split, prevop),
+                    }
+                    if is_primitive {
+                        let value = fd.vbank_mut().get_mut(half).expect("split_join_write: half");
+                        if high { value.set_precis_hi(); } else { value.set_precis_lo(); }
+                    }
+                    op = Some(split);
                 }
-                op = Some(split); // Keep -op- as the latest op in the split construction
-
-                // Second SUBPIECE: leasthalf = curvn(0).
-                let prevop = op.expect("split_join_write: op anchors second SUBPIECE");
-                let opaddr2 =
-                    fd.obank().get(prevop).expect("split_join_write: op").get_addr().clone();
-                let split2 = fd.new_op(2, opaddr2);
-                fd.op_set_opcode(split2, sub_typeop.clone());
-                fd.op_set_output(split2, leasthalf).expect("split_join_write: set output least");
-                fd.op_set_input(split2, curvn, 0).expect("split_join_write: set in0 least");
-                let c0 = fd.new_constant(4, 0);
-                fd.op_set_input(split2, c0, 1).expect("split_join_write: set in1 least");
-                fd.op_insert_after(split2, prevop);
-                if is_primitive {
-                    fd.vbank_mut().get_mut(mosthalf).expect("split_join_write: mosthalf").set_precis_hi();
-                    fd.vbank_mut().get_mut(leasthalf).expect("split_join_write: leasthalf").set_precis_lo();
-                }
-                op = Some(split2); // latest op in the split construction
             }
             lastcombo = nextlev.into_iter().flatten().collect();
         }
@@ -7681,6 +7688,54 @@ mod tests {
     // level pushes the Varnode unchanged plus a `None` filler and advances
     // recnum by one — the 2-1 mapping must stay aligned across a 3-piece record
     // whose middle position is consumed exactly.
+    #[test]
+    fn join_padding_is_a_constant_read_and_never_a_written_location() {
+        for write in [false, true] {
+            let mut fd = build_fd_with_join();
+            let blocks = build_cfg(&mut fd, 1, &[]);
+            let ram = ram(&fd);
+            let constant = fd.get_arch().manage().get_constant_space().unwrap().clone();
+            let pieces = [vstore(&ram, 0x40, 4), vstore(&constant, 0, 4), vstore(&ram, 0x50, 8)];
+            let join = fd.get_arch().manage().find_add_join(&pieces, 0).unwrap();
+            let unified = join.get_unified();
+            let address = Address::new(unified.space.clone().unwrap(), unified.offset);
+            let h = Heritage::new();
+            if write {
+                let (_, value) = make_marker(&mut fd, blocks[0], TOpCode::CPUI_COPY, &address, 16, 1);
+                h.split_join_write(&mut fd, value, &join);
+            } else {
+                let (op, _) = make_marker(&mut fd, blocks[0], TOpCode::CPUI_COPY, &Address::new(ram.clone(), 0x100), 16, 1);
+                let value = fd.new_varnode(16, &address, None);
+                fd.op_set_input(op, value, 0).unwrap();
+                h.split_join_read(&mut fd, value, &join);
+            }
+            let mut fields = Vec::new();
+            let mut padding_read = false;
+            for (_, id) in fd.obank().iter_all() {
+                let op = fd.obank().get(id).unwrap();
+                if let Some(out) = op.get_out() {
+                    let value = fd.vbank().get(out).unwrap();
+                    assert!(!value.is_constant());
+                    if write && matches!(value.get_addr().get_offset(), 0x40 | 0x50) {
+                        fields.push((value.get_addr().get_offset(), value.get_size()));
+                    }
+                }
+                if !write && op.code() == TOpCode::CPUI_PIECE {
+                    padding_read |= (0..op.num_input()).any(|slot| {
+                        fd.vbank().get(op.get_in(slot).unwrap()).is_some_and(|v|
+                            v.is_constant() && v.get_size() == 4 && v.get_offset() == 0)
+                    });
+                }
+            }
+            if write {
+                fields.sort_unstable();
+                assert_eq!(fields, vec![(0x40, 4), (0x50, 8)]);
+            } else {
+                assert!(padding_read);
+            }
+        }
+    }
+
     #[test]
     fn w10_proto_cluster_split_join_level_equal_piece_fast_path() {
         let mut fd = build_fd_with_join();

@@ -24,13 +24,16 @@
   <com>load function main.pair</com><com>decompile</com><com>print C</com>
   <com>load function main.zeroPair</com><com>decompile</com><com>print C</com>
   <com>load function main.highPair</com><com>decompile</com><com>print C</com>
+  <com>option aggregatefields off</com>
+  <com>load function main.highPair</com><com>decompile</com><com>print C</com>
 </script>
 <stringmatch name="Go pair option off retains the register byte carrier" min="1" max="1">func pair\(a0 int64, a1 int64\) \[16\]byte</stringmatch>
 <stringmatch name="Go paired signatures preserve both source integer results" min="2" max="2">func pair\(a int64, b int64\) \(int64, int64\)</stringmatch>
 <stringmatch name="Go unsigned pair retains both unsigned result types" min="1" max="1">func unsignedPair\(a uint64, b uint64\) \(uint64, uint64\)</stringmatch>
 <stringmatch name="Go paired callers assign both fields from one invocation" min="1" max="1">v1.result0,v1.result1 = pair\(a,b\)</stringmatch>
-<stringmatch name="Go paired returns project both fields" min="3" max="3">return v1.result0,v1.result1</stringmatch>
+<stringmatch name="Go paired returns project both fields" min="4" max="4">return v1.result0,v1.result1</stringmatch>
 <stringmatch name="Go paired nested call evaluates outside adapter parameter scope" min="1" max="1">\}\(pair\(a,b\)\).result0</stringmatch>
 <stringmatch name="Go pair zero carrier becomes two integer fields" min="1" max="1">struct \{ result0 uint64; result1 uint64 \}\{0x0,0\}</stringmatch>
 <stringmatch name="Go pair word shift reads its low word once" min="1" max="1">struct \{ result0 uint64; result1 uint64 \}\{0,\*\(\*uint64\)\(unsafe.Pointer\(&amp;v1\)\)\}</stringmatch>
+<stringmatch name="AGGREGATEFIELDS: Go high pair stores each named result field" min="1" max="1">  v1\.result1 = a$</stringmatch>
 </decompilertest>
