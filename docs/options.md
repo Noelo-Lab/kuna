@@ -746,6 +746,8 @@ Three tiers:
 | a glibc math/mem/str wrapper tail-jumps to `(*dat_...)(...)` with the callee dropped | [`ifuncfpret`](#ifuncfpret) |
 | an x86-64 IFUNC .plt.sec stub is not a discovered function | [`ifuncfpret`](#ifuncfpret) |
 | xmm0 read uninitialized after calling a void-typed ifunc-dispatching wrapper | [`ifuncfpret`](#ifuncfpret) |
+| SPE instructions in a PowerPC ELF decode as AltiVec vector operations | [`ppcapu`](#ppcapu) |
+| an e500 function that adds two 64-bit SPE registers renders vectorAddUnsignedByteSaturate on 16-byte locals | [`ppcapu`](#ppcapu) |
 | mips16/micromips function body misdecoded as mips32 garbage | [`mips_isa`](#mips_isa) |
 | odd-address mips functions decode in the wrong isa mode | [`mips_isa`](#mips_isa) |
 | a -g binary still shows default names and inferred types | [`dwarf`](#dwarf) |
@@ -3062,6 +3064,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** A glibc math/mem/str wrapper (e.g. sub_15620 / log) tail-jumps to an IFUNC stub and renders `(*dat_...)(...)` with the callee dropped; on names the stub `ifunc_<resolver>` and recovers the tail call. x86-64 only; default off (opt-in, synthetic stub names).
 - **Where / provenance:** P1/external-refinement · ida · correctness-fix · interp-bee-ifunc-fpret
 - **Example:** `option ifuncfpret on`
+
+### `ppcapu` -- on | off, default `off`
+
+- **Symptoms:** SPE instructions in a PowerPC ELF decode as AltiVec vector operations; an e500 function that adds two 64-bit SPE registers renders vectorAddUnsignedByteSaturate on 16-byte locals.
+- **What it does:** Select the e500 language for a 32-bit PowerPC ELF image whose .PPC.EMB.apuinfo note requires SPE or embedded scalar floating point. The other classified APUs (ISEL, PMR, RFMCI and cache locking) keep the generic decoder, including its AltiVec support. A malformed note, an unsupported APU version or an APU this reader cannot classify, such as VLE, also keeps the generic decoder and prints a [kuna target] note. An explicit --target always wins. Loader-tier: read via the kuna_ppcapu env var (the language is chosen at load file).
+- **When to flip:** Turn on when SPE instructions such as evaddw decode as AltiVec operations (vectorAddUnsignedByteSaturate) under the generic PowerPC decoder. Default off because the e500 model does not yet recover scalar call arguments held in its 64-bit registers: an image with one SPE instruction otherwise loses most call arguments. --target PowerPC:BE:32:e500:default selects the same language for one run.
+- **Where / provenance:** P1/external-refinement · kuna · correctness-fix · PowerPC APU language selection
+- **Example:** `option ppcapu on`
 
 ### `mips_isa` -- on | off, default `on`
 

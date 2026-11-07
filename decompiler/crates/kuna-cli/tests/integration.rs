@@ -795,3 +795,6 @@ mod mips_import_flow;
 
 #[path = "qualified_call.rs"]
 mod qualified_call;
+
+#[path = "powerpc_apu_selection.rs"]
+mod powerpc_apu_selection;

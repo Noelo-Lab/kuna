@@ -280,6 +280,25 @@ Octeon N32/N64 selection does not intercept ELF32 O32 images, including
 little-endian images carrying Octeon machine flags: they retain generic MIPS
 selection, and an explicit target still takes precedence.
 
+(kuna) PowerPC32 ELF APU requirements are read by
+`decompiler/crates/kuna-analysis/src/loader/kuna_ppcaputarget.rs` when the
+default-off `ppcapu` load-time option is on. SPE and embedded floating-point APUs
+then select the e500 decoder. The option stays off until the e500 model recovers
+scalar call arguments held in its 64-bit registers. Shared requirements such as
+ISEL do not identify a processor and retain the generic decoder, including its
+AltiVec support. `EF_PPC_EMB` alone likewise does not select a processor. Unknown
+APU versions and malformed or unsupported requirements keep the generic decoder
+and print a `[kuna target]` note. Explicit `--target` takes precedence. A
+selected language never falls back to a different ISA if its specification is
+missing. The explicit e500mc target uses the standard PowerPC32 FPR argument and
+return convention, while its 64-bit integer results keep the explicit `r3:r4`
+pair (`r4:r3` little-endian) with the high word first.
+The SPE compiler models join 64-bit integer arguments from aligned pairs of
+32-bit GPR slots, preserving byte order and spilling the whole argument when
+no aligned pair remains. Following arguments use the remaining register or
+stack slots, and struct/union arguments are passed indirectly.
+
+
 (kuna) **A Go image composes the `:golang` compiler field instead**
 (`decompiler/crates/kuna-analysis/src/loadimage_object.rs (language_id_for)`,
 option `goabi auto|off`, default auto, carried as the `KUNA_GOABI` loadtime
