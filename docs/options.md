@@ -714,6 +714,10 @@ Three tiers:
 | a function reached with bl after a blx call decodes in the wrong instruction set | [`armwalkmode`](#armwalkmode) |
 | --option listing off fixes the decompilation of an ARM function | [`armwalkmode`](#armwalkmode) |
 | --isa arm decompiles an ARM function correctly that the default run turns into garbage | [`armwalkmode`](#armwalkmode) |
+| kuna xrefs --to an arm global lists only the instruction that loads its address | [`armderef`](#armderef) |
+| an arm ldr or str through a register holding a global's address files no reference | [`armderef`](#armderef) |
+| xrefs misses the accesses to a struct field reached through a got slot | [`armderef`](#armderef) |
+| kuna finds fewer data references than ida or ghidra on arm code | [`armderef`](#armderef) |
 | kuna xrefs lists data references from every arm plt stub to the plt itself | [`armpltslot`](#armpltslot) |
 | an arm plt stub references an address in the middle of a data table | [`armpltslot`](#armpltslot) |
 | xrefs --to a global finds plt stubs that never use it | [`armpltslot`](#armpltslot) |
@@ -3005,6 +3009,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default): in a stripped ARM image that mixes A32 and Thumb, an A32 function reached with bl keeps A32 although a Thumb helper below it is reached with blx. Flip off to restore the walk that reads every address's mode from the database the blx writes fill: to compare a function that decompiles as halt_missing with a warning that flow starts two bytes into an A32 instruction, or when a function placed right after one that ends without a call (a store or a branch followed by __builtin_unreachable()) decodes in that function's mode instead of its own.
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-analysis-armwalkmode
 - **Example:** `--option armwalkmode off`
+
+### `armderef` -- on | off, default `on`
+
+- **Symptoms:** kuna xrefs --to an arm global lists only the instruction that loads its address; an arm ldr or str through a register holding a global's address files no reference; xrefs misses the accesses to a struct field reached through a got slot; kuna finds fewer data references than ida or ghidra on arm code.
+- **What it does:** On an ARM image, a load or store through a register that holds the address of a datum files a Read or Write of the address it accesses. The reference walk's picpool pass already reads where an ARM program builds such an address: the word a GOT slot holds once a PC-composed GOT base loads it (ldr r3,[r4,r2]), an address composed from the PC and a literal-pool displacement (add r6,pc,r6), a GOT base plus a pool word that lands outside the GOT, and a mapped, even literal-pool word outside the GOT (ldr r4,=g_cfg in code built without -fPIC, in an image with a GOT or a dynamic section). It filed the slot, the composed address or the pool word as a reference, and then nothing for what the program did with the register: str r0,[r3,#0x20] and ldr r0,[r4,#0xc] two instructions later named no datum, so kuna xrefs --to a global answered only the instruction that loaded its address, and IDA and Ghidra list every access. On, the walk tracks each such address as a pointer along every edge of the body, as it tracks a GOT base: across a call when its register is callee-saved, through a copy and the addition or subtraction of constants (add r3,r3,#0x10), until the register is written with anything else, and only where every predecessor of an instruction hands it the same pointer. A LOAD or STORE whose address is a pointer plus constants files a Read or Write of that address; an ldm or stm files each word it moves. A pool word is a pointer only if no PC fold in the body consumes it as a displacement. The rows are Read and Write rows, which the call graph does not read, so decompile-all is unchanged. Off restores the earlier rows: the address and nothing that accesses through it.
+- **When to flip:** On (default): kuna xrefs --to an ARM global lists every instruction that reads or writes it, or a field of it at a constant offset, through a register loaded from its GOT slot or literal-pool word, including after calls that preserve the register. Flip off to list only the instructions that form the address, for example to compare with an earlier kuna run.
+- **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-analysis-armderef
+- **Example:** `--option armderef off`
 
 ### `armpltslot` -- on | off, default `on`
 

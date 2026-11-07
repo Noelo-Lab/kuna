@@ -7616,6 +7616,31 @@ mapping symbol at or below it is `$t`; a `$d` or `$a` there leaves it at its own
 address. An image with no mapping symbols says nothing either way, and the
 Thumb pointer, by far the commoner of the two, is assumed.
 
+(kuna) **Accesses through a held address** (`armderef`, default on, ARM only):
+the slot's word, a PC-composed address and a GOTOFF address are each the address
+of a datum, and the program goes on to read and write it through the register
+(`ldr r3,[r4,r2]; str r0,[r3,#0x20]`), as code built without `-fPIC` does with a
+literal-pool word (`ldr r5,=g_cfg; ...; str r4,[r5,#0x14]`). Filing only the
+instruction that loads the address left `kuna xrefs --to` a global with none of
+its reads and writes, all of which IDA and Ghidra list. Each such address that
+lands in a register outside `.got` is therefore tracked as a **pointer** the way
+a GOT base is: along every edge, across a call when its register is callee-saved,
+through a copy and through the addition or subtraction of constants, until the
+register is written with anything else. The slot's word becomes one when it is a
+mapped, even, pointer-width word; a pool word becomes one when it is a mapped,
+even address outside `.got`, in an image with a GOT or a `.dynamic` section,
+whose pool words are already carried. A `LOAD` or `STORE` whose address is a
+pointer plus constants files a `Read` or `Write` of that address from the
+instruction, so an `ldm` or `stm` files each word it moves. A pointer plus a pool
+word, plus another register, or plus the PC names nothing. A pool word can be a
+displacement that happens to be a mapped address, so an access through it is
+filed only if no PC fold in the body consumes the word, the same test its pointer
+edge from the load passes. The rows are `Read` and `Write` rows, which the call
+graph does not read, so `decompile-all` is byte-identical with the option on and
+off; off files only the addresses, as before. Like a base, a pointer the
+function did not form itself (one a caller passes in, or one reloaded from the
+stack) is not tracked.
+
 Because the walk decodes each instruction once, breadth-first, it can decode a
 join before it has seen every edge into it, so what it carries is only a
 candidate. Each instruction that sees a tracked value is recorded with the

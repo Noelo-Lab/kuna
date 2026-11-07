@@ -1164,6 +1164,7 @@ kuna_options! { self, p1;
     "armwalkmode" => on_off!(analysis_armwalkmode, "ARM decode mode carried along the Listing walk"),
     "armpltslot" => on_off!(analysis_armpltslot, "ARM PLT stub slot reference"),
     "armcondskip" => on_off!(analysis_armcondskip, "ARM condition skips filed as no jump"),
+    "armderef" => on_off!(analysis_armderef, "ARM accesses through a register holding a datum's address"),
     "entrythumbflow" => {
         on_off!(analysis_entrythumbflow, "Entry-reachable Thumb context walk")
     },
