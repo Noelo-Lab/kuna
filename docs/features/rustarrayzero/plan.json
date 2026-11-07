@@ -1,0 +1,46 @@
+{
+  "at": "2026-11-03T05:03:01.716883+00:00",
+  "status": "Rebased default-off rustarrayzero implementation; all proof is being repeated against fresh main d5a1042b.",
+  "candidate_parent_cli_sha256": "089f142cc56ec317d3466473c586f54f9541032b08e645d6308f3262e7d59754",
+  "fixture_sha256": "d092a4e34ba7fd229f9183389de04b7a82edfaa145f746c4373e79d04c6c3074",
+  "complete_probe_bodies": 13,
+  "confirmed_prior_gap": "wide_zero assigns scalar0 to a recovered16-byte array; full6bodybundle stillfailsE0308.",
+  "questions": [
+    "Can exact-width scalar constants be rendered as byte-array values while preserving store width, signed bytes and endianness?",
+    "Preserve genuine array copies and retain scalar-width mismatch diagnostics; do not infer u128 across real aggregate types.",
+    "Byte16 objects may have alignment1 while u128 requires alignment16; test unaligned byte-array storage without adding alignment requirements.",
+    "Need native complete bodies, guard bytes and callback counts; pointer-to-integer or array-layout recovery is outside this next scope."
+  ],
+  "command": [
+    "/home/mahaloz/kwt/angr-array-zero-base-d5a/decompiler/target/release/kuna",
+    "decompile-all",
+    "/tmp/kuna-rust-array-zero-rebase/probe",
+    "--json",
+    "--language",
+    "rust",
+    "--functions",
+    "zero_unsigned,zero_signed,zero_field,zero_second,zero_index,zero_callback,zero_bytes,one_unsigned,signed_input,unsigned_input,two_halves,copy_wide,zero_narrow",
+    "--option",
+    "ctypes",
+    "off",
+    "--option",
+    "realtypes",
+    "off"
+  ],
+  "parity_complete": false,
+  "native_parent_probe": "parent-record.json",
+  "candidate_parent_will_require_publication": false,
+  "proposed_smallest_fix": "Rust STORE of an exact-width constant zero into a proven integer byte array can emit [0; N]. This writes identical bytes without converting alignment1 byte storage to an aligned u128 pointer. Other constants and scalar memory-width repair require independent evidence.",
+  "native_scope": {
+    "complete_bodies": 13,
+    "parent_errors_per_profile": 7,
+    "reference_comparisons_per_profile": 208,
+    "planned_candidate_comparisons": 416,
+    "byte_array_storage_deliberately_unaligned": true,
+    "full_memory_and_guard_bytes_compared": 128,
+    "callback_count_checked": true
+  },
+  "parent_commit": "d5a1042bbd5497d2be4fe3b2c0b02cd2ce3dcad3",
+  "parent_tree": "baedbc18898f839f128d56455109eee3537a840f",
+  "updated_at": "2026-11-03T06:40:52.217725+00:00"
+}

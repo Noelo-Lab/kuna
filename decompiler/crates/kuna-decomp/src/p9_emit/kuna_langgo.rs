@@ -1024,6 +1024,9 @@ impl PrintC {
         op: OpId,
         target: &Rc<Datatype>,
     ) {
+        if self.push_go_pointer_add(fd, arch, value, op, target) {
+            return;
+        }
         if self.rt_ctx.go_pair_types.is_some()
             && self.push_pair_carrier(fd, arch, value, op, target)
         {
@@ -1123,6 +1126,9 @@ impl PrintC {
             type_metatype::TYPE_PTR | type_metatype::TYPE_PTRREL
         );
         if pointer {
+            if self.push_go_pointer_operation(fd, arch, op, &target) {
+                return true;
+            }
             let Ok(word) = arch
                 .types()
                 .get_base(target.get_size(), type_metatype::TYPE_UINT)

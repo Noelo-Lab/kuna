@@ -226,6 +226,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "narrowext" => conf.narrow_ext.as_str(),
         // (kuna `syscallregs`) Three-valued, so it reports its own token.
         "syscallregs" => conf.syscall_regs.as_str(),
+        // (kuna `callmechanisms`) Three-valued, so it reports its own token.
+        "callmechanisms" => conf.call_mechanism_mode.as_str(),
         "retpushedhalf" => on_off(conf.ret_pushed_half),
         "inputparamgap" => on_off(conf.input_param_gap),
         // (kuna `rustabi`) Three-valued, so it reports its own token.
@@ -265,10 +267,11 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "switchsharedcase" => on_off(conf.switch_shared_case),
         "realtypes" => on_off(conf.realtypes),
         "litpoolconst" => on_off(conf.litpoolconst),
-        // (kuna `calloverlap`) Three-valued, so it reports its own token.
+        // (kuna `calloverlap`) Report the selected overlap policy.
         "calloverlap" => match conf.call_overlap {
-            0 => "off",
-            1 => "in",
+            kuna_decomp::kuna_calloverlap::LEVEL_OFF => "off",
+            kuna_decomp::kuna_calloverlap::LEVEL_AUTO => "auto",
+            kuna_decomp::kuna_calloverlap::LEVEL_IN => "in",
             _ => "full",
         },
         "entryretdispatch" => on_off(conf.entry_ret_dispatch),
@@ -301,6 +304,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "ppc32picimports" => conf.analysis_ppc32picimports.as_str(),
         "i386_pie_plt" => on_off(conf.analysis_i386_pie_plt),
         "ifuncfpret" => on_off(conf.analysis_ifuncfpret),
+        "ppcapu" => on_off(conf.analysis_ppcapu),
         "relocrebase" => on_off(conf.analysis_relocrebase),
         "dynrelocs" => on_off(conf.analysis_dynrelocs),
         "pdatachained" => on_off(conf.analysis_pdatachained),

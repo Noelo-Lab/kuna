@@ -1,0 +1,65 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue testcase: the partial sums a GNU ld A32 PLT stub builds its
+    slot's address from filed as data references in the cross-reference index
+    (`option armpltslot on|off`, default-ON).
+
+    Issue:      kuna-analysis-armpltslot - `kuna xrefs` to an address inside
+                a table placed between the PLT and the GOT answered the PLT
+                stubs (`add ip,ip,#N,20` adds that address as an immediate),
+                and every stub filed its PC value; the slot it jumps through
+                was filed by none.
+    Stage:      P1 code/data partition - the on-demand cross-reference query
+                (`listing/xrefs.rs`).
+    P0 assert:  `option armpltslot on|off`.
+
+    The Listing tier and the xref query are built only on the real-object
+    bootstrap path, never on the console decompile path (docs/spec/
+    01-program-prep.md section 1.6), and no console command prints an xref
+    row, so a stage test cannot assert the row itself. This case pins what
+    the console can show, as `kuna-picbase.xml` does for its option:
+
+      * `option armpltslot off` parses and round-trips (an unknown option
+        would make the console error and the next decompile would not run),
+      * flipping it changes nothing in the rendered C of `main`, which calls
+        `puts`, `printf` and `strlen` through the PLT stubs the option
+        concerns,
+      * the catalog documents it as a default-on P1 option.
+
+    The two-pass proof (option off = each stub's PC value and immediate filed
+    as Data and no slot, default = the slot as a Read and no partial sum)
+    lives in the cargo gate `decompiler/crates/kuna-console/tests/
+    verify_xreffp.rs` (`armpltslot_off_files_the_partial_sums` and the
+    default tests), over the `xreffp_arm_le32` fixture this case also loads.
+
+    The XML wrapper only supplies the harness architecture; the pass clears it
+    and loads the real linked ARM fixture (built from
+    decompiler/crates/kuna-analysis/tests/fixtures/xreffp_arm_le32.c).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/xreffp_arm_le32</com>
+  <com>read symbols</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option armpltslot off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option armpltslot on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>phase catalog armpltslot</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-ARMPLTSLOT #1: the option parses and round-trips in both directions, and is inert on the console path -- main's call through the puts stub renders identically in all three passes" min="3" max="3">^  puts\("hello"\);$</stringmatch>
+<stringmatch name="KUNA-ARMPLTSLOT #2: main's calls through the printf and strlen stubs render identically in all three passes" min="3" max="3">^  printf\("%d %zu\\n",v1,strlen\(v2\)\);$</stringmatch>
+<stringmatch name="KUNA-ARMPLTSLOT #3: the catalog documents it as a default-on option" min="1" max="1">"option": "armpltslot", "values": \["on", "off"\], "default": "on"</stringmatch>
+<stringmatch name="KUNA-ARMPLTSLOT #4: the catalog row places it in P1 code/data partition" min="1" max="1">"phase": "P1", "subphase": "code-data-partition", "strength": "HARD", "rewind": "P1", "issue": "kuna-analysis-armpltslot"</stringmatch>
+</decompilertest>

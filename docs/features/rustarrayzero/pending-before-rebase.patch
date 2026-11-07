@@ -1,0 +1,319 @@
+diff --git a/decompiler/crates/kuna-base/src/xml.rs b/decompiler/crates/kuna-base/src/xml.rs
+index 31cb0badd..41cfdb4ba 100644
+--- a/decompiler/crates/kuna-base/src/xml.rs
++++ b/decompiler/crates/kuna-base/src/xml.rs
+@@ -2156,7 +2156,7 @@ mod tests {
+         // and kuna-bejoinpass / a big-endian pair a call hands back is one value (option bejoinpass)
+         // and kuna-gottailcall / a one-destination jump through an extern's slot is a tail call
+         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
+-        assert_eq!(count, 691, "corpus file count drifted");
++        assert_eq!(count, 692, "corpus file count drifted");
+     }
+ 
+     /// ~20 representative SLEIGH spec files across varied processors
+diff --git a/decompiler/crates/kuna-cli/tests/integration.rs b/decompiler/crates/kuna-cli/tests/integration.rs
+index a92a0c1dc..f58fed06f 100644
+--- a/decompiler/crates/kuna-cli/tests/integration.rs
++++ b/decompiler/crates/kuna-cli/tests/integration.rs
+@@ -770,3 +770,6 @@ mod rust_array_address;
+ 
+ #[path = "rust_array_decay.rs"]
+ mod rust_array_decay;
++
++#[path = "rust_array_constant.rs"]
++mod rust_array_constant;
+diff --git a/decompiler/crates/kuna-decomp/phases.toml b/decompiler/crates/kuna-decomp/phases.toml
+index dc421b85b..68b30cfcd 100644
+--- a/decompiler/crates/kuna-decomp/phases.toml
++++ b/decompiler/crates/kuna-decomp/phases.toml
+@@ -1577,6 +1577,28 @@ change_kind = "presentation-default"
+ tier = "core"
+ symptoms = "the emitted C contains a member named like `._4_2_` or `._0_8_`|a variable is read as `v1._6_1_` and the text does not compile|a 16-byte register pair returns as `v1._0_16_`|a libc record such as `stat` is read as `v3._24_4_`"
+ 
++[[settable]]
++option = "rustarrayzero"
++values = "on|off"
++default = "off"
++destructive = false
++phase = "P9"
++subphase = "array-cover-width"
++strength = "HARD"
++rewind = "P9"
++issue = "rust-zero-byte-array-store"
++summary = "Emit [0; N] for a Rust STORE of constant zero into a nonempty integer byte array when the value width, destination width and element count match exactly. Elements must have size and alignment one and cannot be enums. Preserve the destination expression and evaluation count without introducing a more strongly aligned scalar pointer. Nonzero values, other element types and inconsistent widths keep their previous handling; diagnostic cast suppression remains effective. C and Go output are unchanged."
++use_when = "Off in every preset. Enable when a recovered byte-array destination receives scalar zero and Rust rejects the assignment with E0308. The initial default-on build exceeded the 5% speed budget on a small C control: +5.075% CPU median across 64 balanced pairs, with -0.119% wall median. That C path does not call this helper, so the measurement is retained without a causal performance claim. The correction is opt-in under the speed policy."
++example = "option rustarrayzero on"
++source_decompiler = "kuna"
++inspiration = "authored wide-store fixtures discovered while auditing Rust output against pinned angr language tests"
++change_kind = "correctness-fix"
++tier = "core"
++symptoms = "Rust assigns scalar zero to a recovered [u8; 16] destination|a wide zero store fails with Rust E0308|a byte-array field needs a contextually typed zero value"
++live_field = "rust_array_zero"
++live_true = "on"
++live_false = "off"
++
+ [[settable]]
+ option = "bytearrayc"
+ values = "on|off"
+diff --git a/decompiler/crates/kuna-decomp/src/infra/architecture.rs b/decompiler/crates/kuna-decomp/src/infra/architecture.rs
+index ce7587f49..c1c2aca4f 100644
+--- a/decompiler/crates/kuna-decomp/src/infra/architecture.rs
++++ b/decompiler/crates/kuna-decomp/src/infra/architecture.rs
+@@ -420,6 +420,7 @@ pub struct Architecture {
+     /// (kuna `armconstshift`) Convert a signed shiftee to unsigned before a
+     /// fixed ARM LSL so the emitted C shift is defined.
+     pub arm_constant_shift: bool,
++    pub rust_array_zero: bool,
+     /// (kuna `charbyte`) Keep `char` for a byte loaded through a `char *` when
+     /// the only unsigned vote on it is a zero-extension.  Implementation:
+     /// [`kuna_charbyte`](crate::p5_types::kuna_charbyte).
+@@ -3059,6 +3060,7 @@ impl Architecture {
+             float_bits: false, // (kuna) option floatbits; reset_defaults sets the shipped default
+             partial_concat: true,
+             arm_constant_shift: false,
++            rust_array_zero: false,
+             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
+             cast_arith: false, // (kuna) option castarith; reset_defaults sets the shipped default
+             cast_index: false, // (kuna) option castindex; reset_defaults sets the shipped default
+@@ -3774,6 +3776,7 @@ impl Architecture {
+         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
+         self.partial_concat = true;
+         self.arm_constant_shift = false;
++        self.rust_array_zero = false;
+         self.arm_float_args = false; // (kuna) option armfloatargs: default-OFF in the catalog; ON in the `aggressive` preset with armfloatreturn, which `auto` selects under 500 KiB; inert unless the ELF states the VFP procedure-call standard
+         self.narrow_ext = crate::kuna_narrowext::NarrowExtMode::Abi; // (kuna) option narrowext default `abi`: a narrow integer argument or return value is extended as the RISC-V and LoongArch procedure-call standards state
+         self.arm_float_return = false; // (kuna) option armfloatreturn: default-OFF in the catalog; ON in the `aggressive` preset, which `auto` selects under 500 KiB; inert unless the ELF states the VFP procedure-call standard
+diff --git a/decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_option_dispatch.rs b/decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_option_dispatch.rs
+index 5284ec1de..5ef1169f3 100644
+--- a/decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_option_dispatch.rs
++++ b/decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_option_dispatch.rs
+@@ -44,6 +44,7 @@ kuna_options! { self, p1;
+     },
+     "partialconcat" => on_off!(partial_concat, "Partial scalar concatenation rendering"),
+     "armconstshift" => on_off!(arm_constant_shift, "ARM constant-shift C11 conversion"),
++    "rustarrayzero" => on_off!(rust_array_zero, "Rust byte-array zero values"),
+     "arraynotation" => {
+         let (val, msg) = crate::kuna_arraynotation::OptionArrayNotation.apply(p1)?;
+         self.print_mut().options.set_array_notation(val);
+diff --git a/decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases/tests.rs b/decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases/tests.rs
+index 517b5816e..7cb71745f 100644
+--- a/decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases/tests.rs
++++ b/decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases/tests.rs
+@@ -38,13 +38,13 @@ fn surface_count_is_121() {
+ }
+ 
+ #[test]
+-fn settable_count_is_377() {
+-    assert_eq!(kuna_num_settables(), 377);
+-    assert_eq!(SETTABLE_TABLE.len(), 377);
++fn settable_count_is_378() {
++    assert_eq!(kuna_num_settables(), 378);
++    assert_eq!(SETTABLE_TABLE.len(), 378);
+ }
+ 
+ #[test]
+-fn tier_counts_are_130_core_153_transform_94_analysis() {
++fn tier_counts_are_131_core_153_transform_94_analysis() {
+     let mut core = 0;
+     let mut transform = 0;
+     let mut analysis = 0;
+@@ -56,7 +56,7 @@ fn tier_counts_are_130_core_153_transform_94_analysis() {
+             other => panic!("invalid tier {other:?} on {}", s.option),
+         }
+     }
+-    assert_eq!((core, transform, analysis), (130, 153, 94));
++    assert_eq!((core, transform, analysis), (131, 153, 94));
+ }
+ 
+ #[test]
+@@ -1170,7 +1170,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
+     // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
+     // +1 for `bejoinpass`; its P4 row sits after `bejoin`.
+     // +1 for `persistcalls`; its P3 row sits after `readonlycalls`.
+-    assert_eq!(json.matches("},\n").count(), 376);
++    assert_eq!(json.matches("},\n").count(), 377);
+ }
+ 
+ #[test]
+diff --git a/decompiler/crates/kuna-decomp/src/p9_emit/kuna_ruststorevalue.rs b/decompiler/crates/kuna-decomp/src/p9_emit/kuna_ruststorevalue.rs
+index c4911e044..d08dd65f0 100644
+--- a/decompiler/crates/kuna-decomp/src/p9_emit/kuna_ruststorevalue.rs
++++ b/decompiler/crates/kuna-decomp/src/p9_emit/kuna_ruststorevalue.rs
+@@ -20,7 +20,8 @@ impl PrintC {
+         };
+         let saved = self.context.mods();
+         self.context.set_mods(mods);
+-        let converted = self.push_rust_value_as(fd, arch, value, op, &target);
++        let converted = (arch.rust_array_zero && self.push_rust_array_zero(fd, value, &target))
++            || self.push_rust_value_as(fd, arch, value, op, &target);
+         self.context.set_mods(saved);
+         converted
+     }
+diff --git a/decompiler/crates/kuna-decomp/src/p9_emit/mod.rs b/decompiler/crates/kuna-decomp/src/p9_emit/mod.rs
+index 11605ed20..db0425c4a 100644
+--- a/decompiler/crates/kuna-decomp/src/p9_emit/mod.rs
++++ b/decompiler/crates/kuna-decomp/src/p9_emit/mod.rs
+@@ -23,6 +23,7 @@ pub(crate) mod kuna_rustptradd;
+ pub(crate) mod kuna_rustarrayindex;
+ pub(crate) mod kuna_rustarrayaddr;
+ pub(crate) mod kuna_rustarraydecay;
++pub(crate) mod kuna_rustarrayzero;
+ pub mod kuna_unsignedread; // (kuna) an unsigned read of an expression C evaluates as signed casts it
+ pub mod kuna_narrowselector; // (kuna) a switch on a narrow expression casts it to its own width
+ pub mod stringmanage;
+diff --git a/decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs b/decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs
+index b406b0445..cb89fe5ea 100644
+--- a/decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs
++++ b/decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs
+@@ -76,14 +76,14 @@ fn fixture_has_no_current_field() {
+ }
+ 
+ #[test]
+-fn fixture_has_all_377_settables() {
++fn fixture_has_all_378_settables() {
+     // One `"option":` per settable row; the authoritative per-option list is
+     // phases.toml settableTable (counts asserted in kuna_phases/tests.rs).
+-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 377);
++    assert_eq!(FIXTURE.matches("\"option\": ").count(), 378);
+     // Every row carries the tier field appended after change_kind.
+-    assert_eq!(FIXTURE.matches("\"tier\": ").count(), 377);
++    assert_eq!(FIXTURE.matches("\"tier\": ").count(), 378);
+     // ... and the symptoms array appended after tier (C3).
+-    assert_eq!(FIXTURE.matches("\"symptoms\": ").count(), 377);
++    assert_eq!(FIXTURE.matches("\"symptoms\": ").count(), 378);
+ }
+ 
+ #[test]
+diff --git a/decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json b/decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json
+index 953c50b70..e1dbf0ade 100644
+--- a/decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json
++++ b/decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json
+@@ -5,6 +5,7 @@
+   {"option": "braceelide", "values": ["on", "off"], "default": "on", "destructive_as_default": false, "phase": "P9", "subphase": "brace-form", "strength": "HARD", "rewind": "P9", "issue": "kuna-cnorm-fmt", "summary": "Render a single-statement if body braceless with the statement indented on the next line (on) vs always braced (off).", "use_when": "On by default (DIV-37): idiomatic C for one-statement then-bodies. Flip off to reproduce upstream Ghidra's braced form or to diff against Ghidra output. Only plain single-statement bodies elide: labels, comments, and multi-statement bodies keep their braces; the if (cond) goto L; one-liner and else-if collapse are unaffected.", "example": "option braceelide off", "source_decompiler": "kuna", "inspiration": "user-reported readability issue on the angr fmt corpus binary (if (expr) { single-statement; })", "change_kind": "presentation-default", "tier": "core", "symptoms": ["if (x) { stmt; } where braceless if (x) stmt; is wanted", "single-statement if body keeps braces", "braced one-liner bodies unwanted", "brace style needs to match upstream ghidra for diffing"]},
+   {"option": "arraycoverwidth", "values": ["on", "off"], "default": "on", "destructive_as_default": false, "phase": "P9", "subphase": "array-cover-width", "strength": "HARD", "rewind": "P9", "issue": "repipe-16-byte-vm-state", "summary": "Render an access that spans more than one element of a mapped array Symbol as the width-carrying `name._<off>_<size>_` field instead of an element-zero subscript. `PrintC::pushSymbolDetail` sends a symbol-mapped access into `pushPartialSymbol`, whose walk breaks out at the top on a whole-symbol cover and leaves the caller to render; kuna's caller has a dedicated whole-array `name[index]` branch computing `index = symboloff / elementAlignSize` that never consults the access size. So a sixteen-byte `movaps` transfer through a `char v30[16]` VM register bank printed `v30[0] = v32[0];` -- a one-byte lvalue for a sixteen-byte copy -- and the vector zero-init printed `v30[0] = 0;`. A PARTIAL multi-element access was already repaired, because it misses the break and reaches the walk's artificial `._<off>_<size>_` field, so `v30._0_4_` and `v30[0]` appeared side by side in one function for accesses four times apart in width. On, the top-of-walk break is suppressed for a TYPE_ARRAY whose element stride is smaller than the access, so the cover falls to that same artificial field and both spellings agree. An access that fits inside one element still renders its subscript (`g[3]`), and scalars, structs and unions keep the upstream break untouched.", "use_when": "On by default: the element-zero subscript is a false statement about the access width, and every changed line is a token-for-token substitution -- 0/675 datatest assertions move, and a whole-binary sweep over 40 images changed only the accesses whose width the subscript could not carry, with no statement added, deleted or re-anchored. Flip off to reproduce upstream Ghidra's bare whole-symbol name (and kuna's pre-existing element-zero form) when diffing against Ghidra, or when a consumer parses the subscript spelling.", "example": "option arraycoverwidth off", "source_decompiler": "kuna", "inspiration": "repipe round 4 (crackmes.one 605443e333c5d42c3d016f59, KataVM_L1): a VM interpreter's two four-word register banks are swapped with movdqa/movaps at 0x1410-0x1428 and the swap emitted as `v30[0] = v32[0];`", "change_kind": "correctness-fix", "tier": "core", "symptoms": ["a 16-byte movaps/movdqa transfer emits as v1[0] = v2[0]", "a vector zero store emits as arr[0] = 0", "an array-typed local is assigned at element zero for a whole-array copy", "the same variable shows both v1._0_4_ and v1[0] for accesses of different width", "declared char v[16] but every whole-bank access reads as one byte"]},
+   {"option": "partialaccess", "values": ["on", "off"], "default": "off", "destructive_as_default": false, "phase": "P9", "subphase": "pointer-notation", "strength": "HARD", "rewind": "P9", "issue": "kuna-partialaccess", "summary": "Print a partial access of a variable that no member names as C instead of Ghidra's artificial `name._<off>_<size>_` member. `PrintC::pushPartialSymbol` (printc.cc:2106-2117) spells the bytes of a variable no field covers as `v1._4_2_` for the two bytes at offset 4 -- not C, so the text does not compile and a reader has to know the convention. With the option on, an access of a width C has a scalar for prints the way kuna already prints those bytes reached through a pointer: `((T *)&v1)[k]` when the offset is a multiple of the width (`k` is the offset divided by the width, IDA's `WORDn`/`BYTEn` reading), `*(T *)&v1` at offset 0, `*(T *)((char *)&v1 + off)` for an unaligned offset, `*(T *)&buf[off]` (and `*(T *)buf` at offset 0) for bytes taken out of a byte array, whose subscripts already count bytes, and `((char *)&v1)[off]` where the caller takes the address of a position inside the variable. `T` is the accessed value's own type when that is a scalar of exactly the access width, else the unknown type of that width (the float of that width when the access carries a float, which an integer `T` would convert); a 16-byte access on a 64-bit target reads through `unsigned __int128`, the GCC and Clang 16-byte integer. A view of a volatile access keeps the qualifier on its pointee (`*(volatile unsigned int *)cursor`), so it stays one access of its width. A sixteen-byte temporary whose type is only an inferred array of unknown bytes, which nothing but truncations, copies, merges and bitwise operations read and no load or array copy defines, is declared `unsigned __int128` instead of `char[16]`, so a whole-width value can be assigned to it. A member path in front of the token is kept (`((unsigned int *)&v1.flagfield)[1]`). Every form is an lvalue, so a partial store prints the same way, and the offset is the byte offset into the variable's storage exactly as in the token it replaces, so the reading is the target's memory order on every architecture. C has no scalar of 3, 5, 6, 7 or 9 to 15 bytes: a plain store or copy of such a width, or of 16 bytes, prints as `memset`/`memcpy` of exactly its bytes (`memset(&v11,0,0x10)`, `memcpy((char *)&v1 + 0x10,(char *)&d + 0x10,0x38)`), a whole array variable taking a copy out of such bytes the same way; a read of 3, 5, 6 or 7 bytes out of a scalar prints as the `SUB<in><out>(v,k)` intrinsic the output already uses for a truncation (`k` counted from the value's low end); any other access of such a width keeps Ghidra's token, which no compiler accepts, rather than a spelling that would compile to another value. No form is an array-typed value. C output only; the Rust printer keeps its own spelling. The forms reinterpret a variable through another type, as IDA's macros do, so recompiling the text wants `-fno-strict-aliasing` like any decompiler output that does.", "use_when": "ON in the `aggressive` and `fast` presets, and `auto` turns it on at every input size, as it does `ctypes`: the emitted C should be C. The shipped default stays OFF because two XML datatest assertions pin Ghidra's `._<off>_<size>_` spelling (`Enum Reading #2`, `Stack Return #5`) and the parity harness applies no mode. Flip OFF to read Ghidra's notation, which is shorter and is what a Ghidra user expects.", "example": "option partialaccess on", "source_decompiler": "kuna", "inspiration": "a local record read through `read(fd,&hdr,8)` printed its byte and short fields as `v1._4_2_` and `v1._6_1_`, which is not C; over 36 stripped decbench binaries (O0 and O2) `--mode aggressive` printed 4,964 such tokens in 805 functions", "change_kind": "presentation-default", "tier": "core", "symptoms": ["the emitted C contains a member named like `._4_2_` or `._0_8_`", "a variable is read as `v1._6_1_` and the text does not compile", "a 16-byte register pair returns as `v1._0_16_`", "a libc record such as `stat` is read as `v3._24_4_`"]},
++  {"option": "rustarrayzero", "values": ["on", "off"], "default": "off", "destructive_as_default": false, "phase": "P9", "subphase": "array-cover-width", "strength": "HARD", "rewind": "P9", "issue": "rust-zero-byte-array-store", "summary": "Emit [0; N] for a Rust STORE of constant zero into a nonempty integer byte array when the value width, destination width and element count match exactly. Elements must have size and alignment one and cannot be enums. Preserve the destination expression and evaluation count without introducing a more strongly aligned scalar pointer. Nonzero values, other element types and inconsistent widths keep their previous handling; diagnostic cast suppression remains effective. C and Go output are unchanged.", "use_when": "Off in every preset. Enable when a recovered byte-array destination receives scalar zero and Rust rejects the assignment with E0308. The initial default-on build exceeded the 5% speed budget on a small C control: +5.075% CPU median across 64 balanced pairs, with -0.119% wall median. That C path does not call this helper, so the measurement is retained without a causal performance claim. The correction is opt-in under the speed policy.", "example": "option rustarrayzero on", "source_decompiler": "kuna", "inspiration": "authored wide-store fixtures discovered while auditing Rust output against pinned angr language tests", "change_kind": "correctness-fix", "tier": "core", "symptoms": ["Rust assigns scalar zero to a recovered [u8; 16] destination", "a wide zero store fails with Rust E0308", "a byte-array field needs a contextually typed zero value"]},
+   {"option": "bytearrayc", "values": ["on", "off"], "default": "off", "destructive_as_default": false, "phase": "P9", "subphase": "array-cover-width", "strength": "HARD", "rewind": "P9", "issue": "mapped-byte-array-c", "summary": "Emit standard C byte-transfer helpers for direct nonvolatile integer accesses of 2, 4 or 8 bytes within a mapped global byte array. Helpers preserve target endianness, unaligned offsets and overlapping copies without wider pointer casts. One-byte accesses retain their subscript; whole-array integer covers use the same helpers. Other types, wider values and volatile annotations retain their existing rendering. Requires C11 and fixed-width integer types.", "use_when": "Opt in when recompiling mapped byte-array accesses that otherwise use artificial ._offset_size_ members. Off keeps the existing width-carrying notation. This does not supply a C representation for volatile wide accesses or vector/aggregate values.", "example": "option bytearrayc on", "source_decompiler": "kuna", "inspiration": "authored ARM five-word copy into an unsigned char[20] mapping", "change_kind": "presentation-default", "tier": "core", "symptoms": ["mapped unsigned char array uses invalid ._offset_size_ members", "wide byte-array accesses need compilable C", "unaligned mapped integer transfer needs an alias-safe C representation"]},
+   {"option": "emptystrconst", "values": ["on", "off"], "default": "on", "destructive_as_default": false, "phase": "P9", "subphase": "empty-string-constant", "strength": "HARD", "rewind": "P9", "issue": "repipe-binary-maze-pointer-becomes", "summary": "Decline the quoted string literal for a constant pointer whose readonly target spells a ZERO-character string AND does not sit in string data, and print the address instead. `PrintC::pushConstant`'s pointer arm hands a character-printable pointer constant to `pushPtrCharConstant`, which replaces the address with the literal at it -- a good trade when the literal spells something. `StringManager::isString` answers yes for ANY readonly location whose first byte is a NUL, because `checkCharacters` walks only to the first terminator and therefore validates zero characters, so a pointer into a binary blob that opens with a zero row is accepted as a string and rendered `p = \"\"`. That token names no byte of the image and the address it displaced was the only thing in the statement a reader could follow -- a 585-byte packed maze at 0x403550 disappeared from the emitted C entirely, while the 0x403511 and 0x403799 constants around it survived. Not every empty literal is wrong, though: `setlocale(6,\"\")` is idiomatic C, and a linker that merges string constants stores the program's only `\"\"` as the tail NUL of another literal. The two separate on the bytes PAST the terminator, which is the evidence the emptiness test never looked at: sixteen bytes are read, the terminator run is skipped, and the next run is walked to its NUL -- if any byte in it is outside printable ASCII and tab/newline/return, this is not a string table and the literal is declined. It is a falsification test on purpose, so everything it cannot judge keeps the upstream literal: a window of nothing but NULs (section padding), a run still spelling text at the window's end, an unreadable neighbourhood, and any literal with a character of its own. Only the first run after the terminator is judged, so `du`'s `fts_alloc(sp,\"\",0)` -- whose `\"\"` opens the table `\"\" \".\" \"..\"` and is followed by relocation bytes four bytes later -- keeps its quotes.", "use_when": "On by default: an empty literal that is not backed by string data is strictly less informative than the address it replaces, and the rule reaches nothing else -- 0/675 datatest assertions move. Flip off to reproduce upstream Ghidra's (and kuna's pre-existing) `\"\"` spelling when diffing against Ghidra, or when a consumer relies on a pointer to a NUL byte printing as an empty string.", "example": "option emptystrconst off", "source_decompiler": "kuna", "inspiration": "repipe round 4 (crackmes.one 60be2ad433c5d410b8842c95, Sabloom Text 6.exe): sub_402020 walks a 585-byte packed maze at 0x403550 whose first row is all zeroes, and both pointers into it printed as empty string literals", "change_kind": "correctness-fix", "tier": "core", "symptoms": ["a pointer variable is initialised to an empty string literal and then indexed past its terminator", "a data address visible in the disassembly appears nowhere in the emitted C", "a blob or table pointer renders as = \"\" instead of its address", "two locals are both assigned \"\" and then walked as buffers"]},
+   {"option": "structdefs", "values": ["on", "off"], "default": "off", "destructive_as_default": false, "phase": "P9", "subphase": "type-definition-preamble", "strength": "HARD", "rewind": "P9", "issue": "kuna-structdefs", "summary": "Print the definitions of the composite, enum and typedef types a function's C names ABOVE the function. kuna recovers a layout and then does not show it: a body that reads `f->_flags` names `FILE` in its signature and nothing on the surface says what a `FILE` is, so the struct the decompiler recovered is invisible to the one surface an agent reads. The renderer has existed since `kuna decompile-project` -- `PrintC::doc_type_definitions` writes every user-defined type into the export's `.h` -- but nothing called it for a single function. When on, `kuna_structdefs::referenced_types` collects the function's semantic type surface (the prototype's return and parameter types, every Varnode data-type, every mapped Symbol type behind a HighVariable), descends through typedef bases and component types -- a pointer's pointee, an array's element, a struct's fields -- and pushes each definable type in postorder, so the list is definition-before-use over exactly the referenced subset rather than the whole factory. Those roots are a superset of the type names the printer can spell (a declaration is read off a high or its symbol, the signature off the prototype, a cast off the Varnode type it casts to), so the preamble cannot miss a definition the body refers to -- and it catches the struct behind `p->field_0x8`, whose tag name the C never prints at all. The text is the SAME `render_type_definitions` the `.h` type block is built with: the forward-declaration block, then bodies, an incomplete struct printing as `typedef struct FILE FILE; /* opaque */`, core types never. A `kuna decompile-project` export's bodies suppress the preamble, because they include the header that already carries it. `kuna decompile-all --json` carries the same set as an additive per-function `types` array (name, definition text, size) so a consumer reads the layout without parsing C.", "use_when": "Flip on when you are reading a function whose arguments are pointers to composites and want the layout in front of you -- `structsynth`'s synthesized `struct_N`, a DWARF struct on an unstripped binary, `libctypes`' opaque `FILE`/`DIR` shells -- instead of opening the `decompile-project` header to find it. Default OFF: it is a presentation default, and a preamble in front of every function is noise for a caller diffing bodies or feeding one function to a matcher. It changes nothing but the text above the function -- the body, its line contents and every recovered type are identical either way -- but it DOES move line numbers, so a consumer pinning a line number should read `line_mappings` rather than assume the first line is the signature. The preamble is documentation, not a compilable unit: a padding member spelled `undefined1` needs the export's recompile prelude to compile, which is one more reason the project surface keeps the definitions in the header.", "example": "option structdefs on", "source_decompiler": "angr", "inspiration": "angr's decompiler prints the typedefs a function references above it (`analyses/decompiler/structured_codegen/c.py`), which is a large part of why its output reads struct-aware; kuna had the same renderer and only a whole-project caller for it.", "change_kind": "presentation-default", "tier": "transform", "symptoms": ["the signature says FILE * or struct_0 * and nothing says what the fields are", "a field access like f->_flags with no layout anywhere in the output", "you have to run decompile-project just to read the .h for one function's struct", "a synthesized struct_N appears in a parameter type with no definition"]},
+diff --git a/docs/baseline-stages.json b/docs/baseline-stages.json
+index e3229aeb1..dbe5f6851 100644
+--- a/docs/baseline-stages.json
++++ b/docs/baseline-stages.json
+@@ -1,7 +1,7 @@
+ {
+   "data_footer": [
+-    3811,
+-    3811
++    3819,
++    3819
+   ],
+   "passing": [
+     "data:64-bit logical shift retains unsigned destination",
+@@ -1051,7 +1051,7 @@
+     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
+     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
+     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
+-    "data:KUNA-CATALOG #15: 377 registry rows plus six individual queries",
++    "data:KUNA-CATALOG #15: 378 registry rows plus six individual queries",
+     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
+     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
+     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
+@@ -1775,6 +1775,14 @@
+     "data:Rust unsigned short return preserves bits as signed",
+     "data:Rust unsigned short store converts signed arithmetic",
+     "data:Rust valid array address converts its index",
++    "data:Rust zero byte-array store off and cast suppression stay diagnostic",
++    "data:Rust zero byte-array store zero_bytes preserves its place",
++    "data:Rust zero byte-array store zero_callback preserves its place",
++    "data:Rust zero byte-array store zero_field preserves its place",
++    "data:Rust zero byte-array store zero_index preserves its place",
++    "data:Rust zero byte-array store zero_second preserves its place",
++    "data:Rust zero byte-array store zero_signed preserves its place",
++    "data:Rust zero byte-array store zero_unsigned preserves its place",
+     "data:SAVED-XMM-SYSV fixture #1: a volatile-register spill observed by a direct helper remains mapped",
+     "data:SAVED-XMM-WIN64 fixture #1: unaffected XMM6-9 lane spills are absent from the local frame",
+     "data:SAVED-XMM-WIN64 fixture #2: the disjoint caller-owned Rect still reaches its helper and return",
+diff --git a/docs/options.md b/docs/options.md
+index b54e2e7dc..b72ac5b72 100644
+--- a/docs/options.md
++++ b/docs/options.md
+@@ -938,6 +938,9 @@ Three tiers:
+ | a variable is read as `v1._6_1_` and the text does not compile | [`partialaccess`](#partialaccess) |
+ | a 16-byte register pair returns as `v1._0_16_` | [`partialaccess`](#partialaccess) |
+ | a libc record such as `stat` is read as `v3._24_4_` | [`partialaccess`](#partialaccess) |
++| Rust assigns scalar zero to a recovered [u8; 16] destination | [`rustarrayzero`](#rustarrayzero) |
++| a wide zero store fails with Rust E0308 | [`rustarrayzero`](#rustarrayzero) |
++| a byte-array field needs a contextually typed zero value | [`rustarrayzero`](#rustarrayzero) |
+ | mapped unsigned char array uses invalid ._offset_size_ members | [`bytearrayc`](#bytearrayc) |
+ | wide byte-array accesses need compilable C | [`bytearrayc`](#bytearrayc) |
+ | unaligned mapped integer transfer needs an alias-safe C representation | [`bytearrayc`](#bytearrayc) |
+@@ -3486,6 +3489,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
+ - **Where / provenance:** P9/pointer-notation · kuna · presentation-default · kuna-partialaccess
+ - **Example:** `option partialaccess on`
+ 
++### `rustarrayzero` -- on | off, default `off`
++
++- **Symptoms:** Rust assigns scalar zero to a recovered [u8; 16] destination; a wide zero store fails with Rust E0308; a byte-array field needs a contextually typed zero value.
++- **What it does:** Emit [0; N] for a Rust STORE of constant zero into a nonempty integer byte array when the value width, destination width and element count match exactly. Elements must have size and alignment one and cannot be enums. Preserve the destination expression and evaluation count without introducing a more strongly aligned scalar pointer. Nonzero values, other element types and inconsistent widths keep their previous handling; diagnostic cast suppression remains effective. C and Go output are unchanged.
++- **When to flip:** Off in every preset. Enable when a recovered byte-array destination receives scalar zero and Rust rejects the assignment with E0308. The initial default-on build exceeded the 5% speed budget on a small C control: +5.075% CPU median across 64 balanced pairs, with -0.119% wall median. That C path does not call this helper, so the measurement is retained without a causal performance claim. The correction is opt-in under the speed policy.
++- **Where / provenance:** P9/array-cover-width · kuna · correctness-fix · rust-zero-byte-array-store
++- **Example:** `option rustarrayzero on`
++
+ ### `bytearrayc` -- on | off, default `off`
+ 
+ - **Symptoms:** mapped unsigned char array uses invalid ._offset_size_ members; wide byte-array accesses need compilable C; unaligned mapped integer transfer needs an alias-safe C representation.
+diff --git a/docs/spec/09-emission.md b/docs/spec/09-emission.md
+index 11e1c5df0..3a495574f 100644
+--- a/docs/spec/09-emission.md
++++ b/docs/spec/09-emission.md
+@@ -4756,3 +4756,36 @@ pointer bits with C at both optimization levels. It covers twelve element types,
+ whole arrays and fields, explicit casts, pointer stores with guard words, calls
+ and callback order, and constant one-past addresses. Readable and protected
+ mappings verify these address computations do not load the array contents.
++
++
++### Rust zero values for byte-array stores
++
++With `rustarrayzero on`, `kuna_rustarrayzero.rs` renders a constant-zero STORE
++value as `[0; N]` when
++its recovered destination is exactly an N-byte integer array. The constant's
++varnode width must equal the array's storage size, and the positive element
++count must equal that size. Elements must have size and alignment one, be
++primitive signed, unsigned, or unknown integers, and not be enums. The array
++literal is contextually typed by the unchanged destination. Zero has the same
++all-zero byte representation for every accepted element type and endianness.
++
++The conversion changes only the value of the STORE. It preserves the original
++address expression, its evaluation count, the store width, and the destination's
++alignment; a byte array is not recast to a more strictly aligned integer pointer.
++Nonzero or nonconstant values, mismatched widths, noninteger elements, and other
++aggregates retain their previous paths. Cast suppression remains diagnostic.
++This corrects an invalid scalar-to-array assignment without changing wide type
++recovery or repairing unrelated scalar STORE-width mismatches.
++
++The native regression compares complete emitted bodies against C at both
++optimization levels. It checks all memory and guard bytes for wide zero stores,
++array fields, constant and variable offsets, and a counted pointer callback,
++including deliberately unaligned byte-array storage. Scalar, nonzero, and copy
++controls retain their output. The additional retained six-function wide-store
++bundle also checks carry boundaries and exact source/destination aliasing.
++
++`rustarrayzero` is off in every preset. Its initial default-on build measured a
++5.075% CPU median increase on a small C control over 64 balanced pairs, exceeding
++the 5% budget; wall median changed by -0.119%. The C path does not call this Rust
++helper, so this records the measured failure without attributing a cause. The
++original measurement is retained and the correction ships as an explicit opt-in.
+diff --git a/tests/stages/kuna-catalog.xml b/tests/stages/kuna-catalog.xml
+index ec2f88566..432ce29f9 100644
+--- a/tests/stages/kuna-catalog.xml
++++ b/tests/stages/kuna-catalog.xml
+@@ -53,7 +53,7 @@
+ <stringmatch name="KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in" min="1" max="1">"option": "armfloatargs", "values": \["on", "off"\], "default": "off", "current": "off"</stringmatch>
+ <stringmatch name="KUNA-CATALOG #13: validated A32 inventory frames are the default" min="2" max="2">"option": "armframes", "values": \["inventory", "on", "off"\], "default": "inventory", "current": "inventory"</stringmatch>
+ <stringmatch name="KUNA-CATALOG #14: full ARM frames are explicitly enabled" min="1" max="1">"option": "armframes", "values": \["inventory", "on", "off"\], "default": "inventory", "current": "on"</stringmatch>
+-<stringmatch name="KUNA-CATALOG #15: 377 registry rows plus six individual queries" min="383" max="383">"option": </stringmatch>
++<stringmatch name="KUNA-CATALOG #15: 378 registry rows plus six individual queries" min="384" max="384">"option": </stringmatch>
+ <stringmatch name="global array anchoring is default off" min="1" max="1">"option": "globalarrayanchor", "values": \["on", "off"\], "default": "off", "current": "off"</stringmatch>
+ <stringmatch name="KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in" min="2" max="2">"option": "bytearrayc", "values": \["on", "off"\], "default": "off", "current": "off"</stringmatch>
+ <stringmatch name="KUNA-CATALOG #17: standard C byte-array rendering exposes its live state" min="1" max="1">"option": "bytearrayc", "values": \["on", "off"\], "default": "off", "current": "on"</stringmatch>

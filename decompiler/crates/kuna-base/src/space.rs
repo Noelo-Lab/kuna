@@ -368,16 +368,21 @@ impl JoinRecord {
     /// index (`pos`), and the Address is returned (invalid when the offset
     /// falls outside the record, like the C++ default `Address()`).
     pub fn get_equivalent_address(&self, offset: u64, pos: &mut i32) -> Address {
+        self.equivalent_location(offset, pos)
+            .map(|(address, _)| address)
+            .unwrap_or_else(Address::new_invalid)
+    }
+
+    /// Keep the byte displacement separate from a zero padding piece's value.
+    fn equivalent_location(&self, offset: u64, pos: &mut i32) -> Option<(Address, i32)> {
         if offset < self.unified.offset {
-            return Address::new_invalid(); // offset comes before this range
+            return None;
         }
-        // int4 smallOff = (int4)(offset - unified.offset): truncating cast
         let mut small_off = offset.wsub(self.unified.offset) as i32;
-        // C++ indexes pieces[0] unconditionally: an empty record is UB
-        let big_endian = self.pieces[0]
+        let big_endian = self.unified
             .space
             .as_ref()
-            .expect("JoinRecord::get_equivalent_address: null piece space (C++ UB)")
+            .expect("JoinRecord::get_equivalent_address: null join space")
             .is_big_endian();
         let num = self.pieces.len() as i32; // cast: int4 loop bound
         if big_endian {
@@ -391,7 +396,7 @@ impl JoinRecord {
                 *pos += 1;
             }
             if *pos == num {
-                return Address::new_invalid(); // offset comes after this range
+                return None;
             }
         } else {
             *pos = num - 1;
@@ -404,20 +409,18 @@ impl JoinRecord {
                 *pos -= 1;
             }
             if *pos < 0 {
-                return Address::new_invalid(); // offset comes after this range
+                return None;
             }
         }
         let piece = &self.pieces[*pos as usize];
-        Address::new(
-            Rc::clone(
-                piece
-                    .space
-                    .as_ref()
-                    .expect("JoinRecord::get_equivalent_address: null piece space (C++ UB)"),
-            ),
-            // pieces[pos].offset + smallOff: uintb + int4 sign-extends
-            piece.offset.wadd(small_off as i64 as u64),
-        )
+        let space = piece.space.as_ref()
+            .expect("JoinRecord::get_equivalent_address: null piece space (C++ UB)");
+        let offset = if space.get_type() == spacetype::IPTR_CONSTANT && piece.offset == 0 {
+            0
+        } else {
+            piece.offset.wadd(small_off as i64 as u64)
+        };
+        Some((Address::new(Rc::clone(space), offset), small_off))
     }
 
     /// Merge any contiguous ranges in a sequence (C++ static
@@ -3188,28 +3191,21 @@ impl AddrSpaceManager {
             return Ok(()); // JoinRecord matches perfectly, no change necessary
         }
         let mut pos1: i32 = 0;
-        let addr1 = join_record.get_equivalent_address(addr.get_offset(), &mut pos1);
+        let (addr1, size_trunc1) = join_record.equivalent_location(addr.get_offset(), &mut pos1)
+            .ok_or_else(|| KunaError::lowlevel("Join address range not covered"))?;
         let mut pos2: i32 = 0;
         // addr.getOffset() + (size-1): int4 sign-extends to uintb
-        let addr2 = join_record
-            .get_equivalent_address(addr.get_offset().wadd((size - 1) as i64 as u64), &mut pos2);
-        if addr2.is_invalid() {
-            return Err(KunaError::lowlevel("Join address range not covered"));
-        }
+        let (_addr2, last_offset) = join_record
+            .equivalent_location(addr.get_offset().wadd((size - 1) as i64 as u64), &mut pos2)
+            .ok_or_else(|| KunaError::lowlevel("Join address range not covered"))?;
         if pos1 == pos2 {
             *addr = addr1;
             return Ok(());
         }
         let mut new_pieces: Vec<VarnodeStorage> = Vec::new();
-        // (int4)(addr1.getOffset() - pieces[pos1].offset): truncating cast
-        let size_trunc1 = addr1
-            .get_offset()
-            .wsub(join_record.pieces[pos1 as usize].offset) as i32;
-        // pieces[pos2].size - (int4)(...) - 1: the int4 converts back up to
-        // uint4 for the subtraction; the uint4 result is assigned to int4
         let size_trunc2 = join_record.pieces[pos2 as usize]
             .size
-            .wsub(addr2.get_offset().wsub(join_record.pieces[pos2 as usize].offset) as u32)
+            .wsub(last_offset as u32)
             .wsub(1) as i32;
 
         if pos2 < pos1 {
@@ -3652,6 +3648,51 @@ mod tests {
         assert!(rec(vec![vn(0, 4)], 8) < rec(vec![vn(0, 4), vn(8, 4)], 8));
         assert!(rec(vec![vn(0, 4), vn(8, 4)], 8) > rec(vec![vn(0, 4)], 8));
         assert_eq!(rec(vec![vn(0, 4), vn(8, 4)], 8), rec(vec![vn(0, 4), vn(8, 4)], 8));
+    }
+
+    #[test]
+    fn zero_padding_joins_keep_target_byte_order_and_every_slice() {
+        for big_endian in [false, true] {
+            for padding_slot in 0..3 {
+                let mut manager = AddrSpaceManager::new();
+                let constant = Rc::new(ConstantSpace::new());
+                let ram = Rc::new(AddrSpace::new(
+                    spacetype::IPTR_PROCESSOR, "ram", big_endian, 8, 1, 1, 0, 0, 0,
+                ));
+                manager.insert_space(constant.clone()).unwrap();
+                manager.insert_space(ram.clone()).unwrap();
+                manager.insert_space(Rc::new(JoinSpace::new(2, big_endian))).unwrap();
+                let mut pieces = vec![
+                    VarnodeStorage { space: Some(ram.clone()), offset: 0x40, size: 4 },
+                    VarnodeStorage { space: Some(ram.clone()), offset: 0x80, size: 8 },
+                ];
+                pieces.insert(padding_slot, VarnodeStorage { space: Some(constant.clone()), offset: 0, size: 4 });
+                let expected: Vec<_> = pieces.iter().flat_map(|piece| {
+                    let space = piece.space.clone().unwrap();
+                    (0..piece.size).map(move |offset| Address::new(space.clone(),
+                        if space.get_type() == spacetype::IPTR_CONSTANT { 0 }
+                        else { piece.offset + u64::from(offset) }))
+                }).collect();
+                if !big_endian { pieces.reverse(); }
+                let join = manager.find_add_join(&pieces, 0).unwrap();
+                let unified = join.get_unified();
+                for start in 0..16usize {
+                    for size in 1..=16 - start {
+                        let mut address = Address::new(unified.space.clone().unwrap(), unified.offset + start as u64);
+                        address.renormalize(size as i32, &manager).unwrap();
+                        let slice = if address.is_join() {
+                            let record = manager.find_join(address.get_offset()).unwrap();
+                            assert_eq!(record.get_unified().size, size as u32);
+                            (0..size).map(|offset| record.get_equivalent_address(address.get_offset() + offset as u64, &mut 0)).collect::<Vec<_>>()
+                        } else {
+                            (0..size).map(|offset| if address.is_constant() { address.clone() }
+                                else { &address + offset as i64 }).collect()
+                        };
+                        assert_eq!(slice, expected[start..start + size], "endian={big_endian} padding={padding_slot} start={start} size={size}");
+                    }
+                }
+            }
+        }
     }
 
     #[test]

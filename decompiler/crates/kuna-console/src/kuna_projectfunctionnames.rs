@@ -1,7 +1,7 @@
 //! Project C definitions use the existing global symbol spelling of their callers.
 use kuna_decomp::{architecture::Architecture, funcdata::Funcdata};
 
-fn identifier(name: &str) -> bool {
+pub(crate) fn identifier(name: &str) -> bool {
     let mut bytes = name.bytes();
     bytes
         .next()

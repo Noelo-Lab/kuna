@@ -44,9 +44,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use kuna_console::engine::{ConsoleProgram, EntrySelector, FunctionEntry};
 use kuna_console::project::{
-    build_header, collect_dat_addrs, decompile_pulled, render_c, render_readme,
+    build_header_with_names, collect_dat_addrs, decompile_pulled, render_c, render_readme,
     render_readme_streaming, deferred_callwide_header, validate_callwide_header, AsmPhase, BatchOutcome, DecompileOptions, FuncResult, ReadmeCounts,
-    ReadmeFacts, ReadmeLayout, StreamPhase, StreamProgress,
+    GlobalAliasNames, ReadmeFacts, ReadmeLayout, StreamPhase, StreamProgress,
 };
 use kuna_console::project_stream::{
     asm_labels_from_entries, render_data_tail, render_variables_section, AsmSweep,
@@ -616,6 +616,7 @@ struct ProjectWriter {
     /// One per finished target, with the code dropped — what the `.h`, the
     /// `.asm` variables section and the final README are built from.
     records: Vec<FuncResult>,
+    global_alias_names: GlobalAliasNames,
     callwide: bool,
     selected_entries: BTreeSet<u64>,
     pending: Vec<FuncResult>,
@@ -653,6 +654,7 @@ impl ProjectWriter {
             c_bytes,
             seq: 0,
             records: Vec::new(),
+            global_alias_names: GlobalAliasNames::default(),
             callwide: false,
             selected_entries,
             pending: Vec::new(),
@@ -730,6 +732,7 @@ impl ProjectWriter {
         }
         let failed = r.error.is_some();
         self.bodies += usize::from(r.code.is_some());
+        self.global_alias_names.observe(&r);
         r.code = None;
         r.line_mappings.clear();
         r.aliases.clear();
@@ -777,7 +780,7 @@ impl ProjectWriter {
     fn write_header(&self, types: Option<&str>) -> Result<(), String> {
         let types =
             types.unwrap_or("/* pending until the export completes */\n");
-        let text = build_header(&self.file_name, &self.prelude, types, &self.records)?;
+        let text = build_header_with_names(&self.file_name, &self.prelude, types, &self.records, &self.global_alias_names)?;
         write_atomic(&self.dir.join(format!("{}.h", self.file_name)), text.as_bytes())
     }
 }
@@ -1356,6 +1359,46 @@ mod tests {
             synth: None,
             pointerargs: None,
             detail: None,
+        }
+    }
+
+    #[test]
+    fn streamed_string_aliases_preserve_body_name_checks_in_either_order() {
+        let string = |name: &str, address, size| kuna_decomp::decompile_drive::GlobalInfo {
+            address, name: name.into(), declaration: format!("char {name}[{size}]"), size,
+            unknown: false, direct: true, aggregate: false, elem: false, integer: false,
+        };
+        for shadowed in [false, true] {
+            for reverse in [false, true] {
+                let dir = std::env::temp_dir().join(format!(
+                    "kuna_stream_string_aliases_{}_{shadowed}_{reverse}", std::process::id(),
+                ));
+                std::fs::create_dir_all(&dir).unwrap();
+                let layout = Layout {
+                    binary_path: dir.join("image"), path_label: "image".into(),
+                    file_name: "image".into(), out_dir: dir.clone(),
+                };
+                let mut caller = result(0x1000, Vec::new());
+                caller.globals = vec![string("whole", 0x5000, 16), string("part", 0x5004, 8)];
+                caller.code = Some("void sub_1000(void) { consume(whole, part); }".into());
+                let mut other = result(0x2000, Vec::new());
+                if shadowed {
+                    other.code = Some("void sub_2000(void) {\n  char whole[16]; // local\n  consume(whole);\n}".into());
+                }
+                let mut records = [caller, other];
+                if reverse { records.reverse(); }
+                let expected = kuna_console::project::build_header("image", "", "", &records).unwrap();
+                let run = StreamRun::new(dir.clone(), ReadmeLayout::Streamed, ReadmeFacts::default(), 1);
+                let mut writer = ProjectWriter::create(&layout, String::new(), BTreeSet::new()).unwrap();
+                for record in records { writer.append(record, &run).unwrap(); }
+                assert!(writer.records.iter().all(|r| r.code.is_none()));
+                writer.write_header(Some("")).unwrap();
+                let actual = std::fs::read_to_string(dir.join("image.h")).unwrap();
+                assert_eq!(actual, expected);
+                assert_eq!(actual.contains("#define part"), !shadowed, "{actual}");
+                drop(writer);
+                std::fs::remove_dir_all(dir).unwrap();
+            }
         }
     }
 

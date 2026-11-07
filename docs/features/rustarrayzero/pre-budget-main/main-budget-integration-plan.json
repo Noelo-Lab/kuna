@@ -1,0 +1,10 @@
+{
+  "at": "2026-11-03T06:37:58.759641+00:00",
+  "base_commit": "d5a1042bbd5497d2be4fe3b2c0b02cd2ce3dcad3",
+  "base_tree": "baedbc18898f839f128d56455109eee3537a840f",
+  "parent_root": "/home/mahaloz/kwt/angr-array-zero-base-d5a",
+  "prior_base_commit": "8ced8a2e051e26b89d21096699f690646924921b",
+  "reason": "Independent main PR1465 changes watchdog accounting and adds console test binary; incorporate before full validation and timing.",
+  "specs": 154,
+  "prior_timing_sampled": false
+}
