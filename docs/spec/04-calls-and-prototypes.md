@@ -1668,7 +1668,12 @@ classified:
   the value to be produced in a block that both uses follow through
   single-entry, single-exit chains, so it was prepared for the branch; this
   admits a split epilogue between the branch and the return. Co-executing uses
-  and loop-connected arms keep ordinary scoring. The rule is limited to the
+  and loop-connected arms keep ordinary scoring. The register alone cannot show
+  whether a call on the other arm reads the value. When the compiler sets the
+  returned value before the branch, a call that takes no arguments gains that
+  value as an argument, such as a stack-protector failure call after the result
+  is computed; the generic PowerPC decoder renders these calls the same way.
+  The rule is limited to the
   narrow scalar shape `calloverlap auto` recovers (chapter 03): a four-byte
   trial in the low word of a named eight-byte register on a truncated 32-bit
   address target, such as an e500 GPR. Whether a trial has that shape does not
