@@ -574,7 +574,13 @@ impl Funcdata {
         self.varnode_out(s, m, op, false)
     }
 
+    /// (kuna) Constant zero is where a slice of an ABI join's padding piece
+    /// renormalizes: it has no storage, so the output gets a temporary instead.
+    /// Any other constant address keeps upstream's "Assignment to constant".
     fn varnode_out(&mut self, s: int4, m: &Address, op: OpId, laned: bool) -> KunaResult<VarnodeId> {
+        if m.is_constant() && m.get_offset() == 0 {
+            return self.unique_out(s, op, laned);
+        }
         let ct = Self::type_base_unknown(s);
         // Split-borrow: the thunk (holds &mut obank) drops before later &mut self calls.
         let def = self.def_op_info_v(op);

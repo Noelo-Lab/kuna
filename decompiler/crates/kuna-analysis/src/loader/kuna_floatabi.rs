@@ -14,7 +14,7 @@ pub fn float_arg_registers(file: &object::File<'_>) -> Option<bool> {
     }
     match file.architecture() {
         A::Arm => super::kuna_armfloatabi::args_evidence(file),
-        A::Mips | A::Mips64 | A::Mips64_N32 => {
+        arch if super::kuna_mipsabi::is_mips(arch) => {
             let record = super::kuna_mipsabi::abi_flags(file).ok()?;
             let value = super::kuna_mipsabi::fp_abi(file, record).ok()??;
             match value {
@@ -43,12 +43,7 @@ pub fn float_arg_registers(file: &object::File<'_>) -> Option<bool> {
 /// The file-scope `Tag_GNU_*_ABI_FP` of every `.gnu.attributes` section:
 /// `Some(None)` when none states it, `None` when they conflict or are malformed.
 pub(super) fn gnu_fp_abi(file: &object::File<'_>) -> Option<Option<u32>> {
-    let mips = matches!(
-        file.architecture(),
-        object::Architecture::Mips
-            | object::Architecture::Mips64
-            | object::Architecture::Mips64_N32
-    );
+    let mips = super::kuna_mipsabi::is_mips(file.architecture());
     let mut answer = None;
     for section in file
         .sections()

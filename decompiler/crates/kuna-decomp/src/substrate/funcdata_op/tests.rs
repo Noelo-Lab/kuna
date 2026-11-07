@@ -1286,3 +1286,19 @@ fn isolated_local_type_lock_follows_its_definition_without_typing_register_reuse
         type_metatype::TYPE_UINT
     );
 }
+
+#[test]
+fn padding_slices_have_no_storage_to_write() {
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    let constant = Rc::clone(fd.get_arch().manage().get_constant_space().unwrap());
+    let op = fd.new_op(1, Address::new(ram, 0x100));
+    let out = fd.new_varnode_out(4, &Address::new(constant.clone(), 0), op).unwrap();
+    let written = fd.vbank().get(out).unwrap();
+    assert!(!written.is_constant(), "a padding slice output gets temporary storage");
+    assert!(written.get_space().get_type() == spacetype::IPTR_INTERNAL);
+    assert_eq!(fd.obank().get(op).unwrap().get_out(), Some(out));
+    let zero = fd.new_varnode(4, &Address::new(constant, 0), None);
+    assert!(fd.op_set_output(op, zero).is_err(), "a constant is never an op output");
+    assert_eq!(fd.obank().get(op).unwrap().get_out(), Some(out));
+}
