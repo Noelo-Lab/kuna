@@ -4266,11 +4266,18 @@ every other binary's pass list is byte-identical to before the pass existed):
   context demangles its extended type, a parent in another image is named
   through its module-descriptor import). Only a code address is ever named as a
   function (a base-protocol or associated-type witness row points at data), and
-  function names use the FID-precedent placeholder gate. On the Toyota iOS app
-  (314,038 functions, 304,309 of them `sub_<addr>`) the pass names 57,147
-  stripped functions — 14,615 metadata accessors, 15,204 vtable slots, 27,322
+  function names use the FID-precedent placeholder gate. On a large
+  third-party iOS app (314,038 functions, 304,309 of them `sub_<addr>`) the
+  pass names 57,147 stripped functions — 14,615 metadata accessors, 15,204 vtable slots, 27,322
   witnesses, 6 overrides — every one at an address function discovery already
-  found, in about 0.3 s and 135 MB over the baseline decompile. The pass is
+  found, in about 0.3 s and 135 MB over the baseline decompile. The work is
+  bounded by the image: a conformance descriptor several section entries name
+  is read once, every record row (a descriptor, a vtable, override,
+  requirement or witness row, a witness-table word) is charged against one row
+  per four bytes of the image, which a real image never exceeds since each row
+  occupies at least that much of it, and the names built (type paths included)
+  stop at 16 MiB plus the image's length, so repeated or overlapping records
+  in a crafted file cannot multiply into millions of names. The pass is
   registered only for `Compiler::Swift` (§1.3's detector) in Mach-O or ELF, so
   every other image's pass set is unchanged; the stage test
   `tests/stages/kuna-swiftmetadata.xml` runs the fully stripped swiftc-built
@@ -4318,7 +4325,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   whole when the field count disagrees with the descriptor, an offset
   overlaps, a type exceeds its slot, or the type's dotted path is one two
   descriptors share (private types of the same name), so nothing is ever
-  read through the wrong name. What then binds: the metadata records as typed
+  read through the wrong name. Layouts built inside other layouts (a nested
+  struct's, a superclass's) nest at most 32 deep, as a context's parent chain
+  does; a type reached deeper keeps its bytes untyped. What then binds: the metadata records as typed
   data (`….type_metadata` as `swift.type_metadata`, `….class_metadata`,
   `….value_witness_table`); the accessor prototypes
   (`swift.type_metadata *Module.Type.type_metadata_accessor(long request)`, so
@@ -4335,7 +4344,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   names its two leading arguments, the `Self` metadata and the witness table
   (its `self` is the address of the value: `T *` for a struct, `Class **` for
   a class). Every other member's `self` is the `swiftcall` arm's, below.
-  On the Toyota iOS app the pass locates 12,809 static metadata records (4,790
+  On a large third-party iOS app the pass locates 12,809 static metadata records (4,790
   structs, 4,811 enums, 3,208 classes; the 859 classes and 351 structs whose
   accessors look up a runtime cache are skipped), lays out 4,585 structs and
   3,205 classes with 30,997 fields (22,794 typed), and pins the `self` of 5,739

@@ -3,8 +3,8 @@
 <!--
     Swift runtime-metadata recovery (`option swiftmetadata on|off`).
 
-    Issue: a stripped Swift binary names nothing. On the Toyota iOS app
-    (84 MB arm64, 314,038 functions, 304,309 of them `sub_<addr>`) the
+    Issue: a stripped Swift binary names nothing. On a large third-party
+    iOS app (84 MB arm64, 314,038 functions, 304,309 of them `sub_<addr>`) the
     `__swift5_*` reflection sections still describe 14,677 types, 1,317
     protocols and 30,938 conformances, and point at 57,147 of the stripped
     functions: every type's metadata accessor, every class vtable slot's

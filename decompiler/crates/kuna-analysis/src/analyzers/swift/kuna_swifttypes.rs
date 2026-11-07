@@ -52,6 +52,9 @@ use crate::demangle::kuna_swift::{demangle_swift_tree, demangle_swift_type};
 use crate::objc::sections::MachoImage;
 use crate::pass::{AnalysisOutput, ParamLockFact, TypedDataFact};
 
+#[cfg(test)]
+mod tests;
+
 /// The `swiftself` register and the first two argument registers.
 pub struct Registers {
     pub self_reg: &'static str,
@@ -159,6 +162,11 @@ fn locate_x86_64(img: &MachoImage, accessor: u64) -> Option<u64> {
 const VWT_SIZE: u64 = 64;
 const VWT_FLAGS: u64 = 80;
 
+/// How deep layouts built inside other layouts (a stored property's struct,
+/// a superclass) nest, like a context's parent chain; a type deeper than
+/// that keeps its bytes untyped.
+const MAX_NESTING: usize = 32;
+
 /// The size of the value a builtin value witness table an import names
 /// describes (`$sBi64_WV`, `$sBoWV`, `$sytWV`).
 fn builtin_witness_size(import: &str) -> Option<u32> {
@@ -201,7 +209,7 @@ pub struct Types<'a> {
     ptr_size: i32,
 }
 
-/// What the pass did, for the dump and the report.
+/// What the pass did, for the report.
 #[derive(Default, Debug)]
 pub struct Stats {
     pub located: usize,
@@ -284,8 +292,11 @@ impl<'a> Types<'a> {
             };
 
             let descriptor_slot = match ctx.kind {
-                ContextKind::Class => meta + self.class_flags_offset() + 24,
-                _ => meta + self.md.ptr_size,
+                ContextKind::Class => meta.checked_add(self.class_flags_offset() + 24),
+                _ => meta.checked_add(self.md.ptr_size),
+            };
+            let Some(descriptor_slot) = descriptor_slot else {
+                continue;
             };
             let kind_ok = match ctx.kind {
                 ContextKind::Class => true,
@@ -310,20 +321,20 @@ impl<'a> Types<'a> {
 
     /// A struct's `(size, alignment)` from its value witness table.
     fn struct_extent(&self, meta: u64) -> Option<(u32, u32)> {
-        let slot = meta - self.md.ptr_size;
+        let slot = meta.checked_sub(self.md.ptr_size)?;
         if self.reader.bind_slots.contains(&slot) {
             let size = builtin_witness_size(self.imports.get(&slot)?)?;
             return Some((size, size.max(1)));
         }
         let vwt = self.word(slot)?;
-        let size = u32::try_from(self.word(vwt + VWT_SIZE)?).ok()?;
-        let flags = self.img().read_u32(vwt + VWT_FLAGS)?;
+        let size = u32::try_from(self.word(vwt.checked_add(VWT_SIZE)?)?).ok()?;
+        let flags = self.img().read_u32(vwt.checked_add(VWT_FLAGS)?)?;
         Some((size, (flags & 0xff) + 1))
     }
 
     /// The local value witness table of the struct or enum at `meta`.
     pub fn local_witness_table(&self, meta: u64) -> Option<u64> {
-        let slot = meta - self.md.ptr_size;
+        let slot = meta.checked_sub(self.md.ptr_size)?;
         if self.reader.bind_slots.contains(&slot) {
             return None;
         }
@@ -348,12 +359,14 @@ impl<'a> Types<'a> {
     }
 
     /// The kuna struct of the nominal type at `addr` (built on first use),
-    /// `None` when its layout is not static.
+    /// `None` when its layout is not static, or it is reached through
+    /// [`MAX_NESTING`] layouts still being built.
     pub fn struct_type(&self, addr: u64) -> Option<Rc<Datatype>> {
         if let Some(t) = self.built.borrow().get(&addr) {
             return t.clone();
         }
-        if !self.in_progress.borrow_mut().insert(addr) {
+        let depth = self.in_progress.borrow().len();
+        if depth >= MAX_NESTING || !self.in_progress.borrow_mut().insert(addr) {
             return None;
         }
         let t = self.build(addr);
@@ -385,10 +398,10 @@ impl<'a> Types<'a> {
             return None;
         }
         let records = self.records(ctx)?;
-        let vector = meta + ctx.field_offset_vector as u64 * self.md.ptr_size;
+        let vector = meta.checked_add(ctx.field_offset_vector as u64 * self.md.ptr_size)?;
         let mut offsets = Vec::new();
         for i in 0..records.len() {
-            offsets.push(self.img().read_u32(vector + 4 * i as u64)?);
+            offsets.push(self.img().read_u32(vector.checked_add(4 * i as u64)?)?);
         }
         let fields = self.fields(&records, &offsets, size)?;
         self.tf
@@ -404,17 +417,18 @@ impl<'a> Types<'a> {
     }
 
     fn build_class(&self, ctx: &Context, meta: u64, shell: &Rc<Datatype>) -> Option<Rc<Datatype>> {
-        let flags = meta + self.class_flags_offset();
-        let size = self.img().read_u32(flags + 8)?;
-        let align = (self.img().read_u32(flags + 12)? & 0xffff) + 1;
+        let flags = meta.checked_add(self.class_flags_offset())?;
+        let size = self.img().read_u32(flags.checked_add(8)?)?;
+        let align = (self.img().read_u32(flags.checked_add(12)?)? & 0xffff) + 1;
         if size == 0 || size > 1 << 20 {
             return None;
         }
         let records = self.records(ctx)?;
-        let vector = meta + ctx.field_offset_vector as u64 * self.md.ptr_size;
+        let vector = meta.checked_add(ctx.field_offset_vector as u64 * self.md.ptr_size)?;
         let mut offsets = Vec::new();
         for i in 0..records.len() {
-            offsets.push(u32::try_from(self.word(vector + self.md.ptr_size * i as u64)?).ok()?);
+            let at = vector.checked_add(self.md.ptr_size * i as u64)?;
+            offsets.push(u32::try_from(self.word(at)?).ok()?);
         }
         let mut fields = self.superclass_field(meta);
         let header_end = fields
@@ -441,7 +455,9 @@ impl<'a> Types<'a> {
     /// superclass, or the runtime's `SwiftObject`) the reference counts
     /// after it.
     fn superclass_field(&self, meta: u64) -> Vec<TypeField> {
-        let slot = meta + self.md.ptr_size;
+        let Some(slot) = meta.checked_add(self.md.ptr_size) else {
+            return Vec::new();
+        };
         let bound = self.reader.bind_slots.contains(&slot);
         let sup_meta = self.word(slot).filter(|&p| p != 0 && !bound);
         let local = sup_meta.and_then(|m| self.by_metadata.get(&m).copied());
@@ -521,7 +537,7 @@ impl<'a> Types<'a> {
 
     /// The node a symbolic reference in a mangled name at `base` stands for.
     fn resolve(&self, base: u64, kind: u8, at: usize, value: u64) -> Option<NodeRef> {
-        let here = base + at as u64;
+        let here = base.wrapping_add(at as u64);
         let offset = value as u32 as i32 as i64 as u64;
         match kind {
             0x01 => self.context_node(here.wrapping_add(offset), 0),
@@ -828,8 +844,6 @@ impl<'a> Types<'a> {
             located: self.metadata.len(),
             ..Stats::default()
         };
-        let dump_path = std::env::var("KUNA_SWIFTTYPES_DUMP").ok();
-        let mut dump = String::new();
         let mut addrs: Vec<u64> = self.metadata.keys().copied().collect();
         addrs.sort_unstable();
         let metadata_t = self.metadata_struct();
@@ -851,18 +865,7 @@ impl<'a> Types<'a> {
                     _ => {}
                 }
                 let mut i = 0;
-                if dump_path.is_some() {
-                    dump.push_str(&format!("{path} size={}:", t.get_size()));
-                }
                 while let Some(f) = t.get_field(i) {
-                    if dump_path.is_some() {
-                        dump.push_str(&format!(
-                            " {}@{}:{}",
-                            f.name,
-                            f.offset,
-                            f.field_type.get_name()
-                        ));
-                    }
                     if f.name != "super" && f.name != "isa" && f.name != "refcounts" {
                         stats.fields += 1;
                         if f.field_type.get_metatype() != type_metatype::TYPE_UNKNOWN
@@ -873,11 +876,6 @@ impl<'a> Types<'a> {
                     }
                     i += 1;
                 }
-                if dump_path.is_some() {
-                    dump.push('\n');
-                }
-            } else if dump_path.is_some() {
-                dump.push_str(&format!("{path}: no layout\n"));
             }
             let (record_t, name) = match ctx.kind {
                 ContextKind::Class => (class_metadata_t.clone(), "class_metadata"),
@@ -916,9 +914,6 @@ impl<'a> Types<'a> {
         }
         if let Some(regs) = regs {
             (stats.vtable_getters, stats.witness_getters) = self.lock_getters(regs, out);
-        }
-        if let Some(path) = dump_path {
-            let _ = std::fs::write(path, format!("{stats:?}\n{dump}"));
         }
         stats
     }
@@ -984,7 +979,7 @@ impl<'a> Types<'a> {
                 if flags & 0xf != 3 || flags & 0x10 == 0 {
                     continue;
                 }
-                let slot = w + self.md.ptr_size * (1 + k as u64);
+                let slot = w.wrapping_add(self.md.ptr_size * (1 + k as u64));
                 let Some(&f) = self.md.words.get(&slot) else {
                     continue;
                 };
