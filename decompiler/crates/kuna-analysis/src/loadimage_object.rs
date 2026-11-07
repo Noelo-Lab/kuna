@@ -127,13 +127,62 @@ fn demangle_funcsym_name(name: Vec<u8>, mode: NameChars) -> Vec<u8> {
 /// One loadable region of the image (the analog of a BFD `asection` for the
 /// purpose of [`SegmentBytes::find_section`]/`loadFill`): a vma, the bytes
 /// that live there, and BFD-style section flags.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+enum SegmentData {
+    Owned(Vec<u8>),
+    Shared { image: crate::image_bytes::ImageBytes, start: usize, end: usize },
+}
+
+impl SegmentData {
+    fn from_slice(data: &[u8], image: Option<&crate::image_bytes::ImageBytes>) -> Self {
+        if let Some(image) = image {
+            let start = (data.as_ptr() as usize).checked_sub(image.as_ptr() as usize);
+            if let Some(start) = start.filter(|&start| {
+                start <= image.len() && data.len() <= image.len() - start
+            }) {
+                return Self::Shared {
+                    image: image.clone(),
+                    start,
+                    end: start + data.len(),
+                };
+            }
+        }
+        Self::Owned(data.to_vec())
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Owned(data) => data,
+            Self::Shared { image, start, end } => &image[*start..*end],
+        }
+    }
+
+    fn make_owned(&mut self) -> &mut Vec<u8> {
+        if let Self::Shared { .. } = self {
+            *self = Self::Owned(self.as_slice().to_vec());
+        }
+        let Self::Owned(data) = self else { unreachable!() };
+        data
+    }
+
+    fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+}
+
+impl From<Vec<u8>> for SegmentData {
+    fn from(data: Vec<u8>) -> Self {
+        Self::Owned(data)
+    }
+}
+
+#[derive(Debug)]
 struct Segment {
     /// Virtual address the bytes map to (C++ `asection::vma`).
     vma: u64,
-    /// The bytes present at `vma` (a copy of the ELF segment's file data; the
-    /// C++ `secsize` is `data.len()`).
-    data: Vec<u8>,
+    /// The bytes present at `vma`, shared from the input image until a relocation
+    /// or assertion writes this segment (the C++ `secsize` is `data.len()`).
+    data: SegmentData,
     /// (kuna, `pe-zero-filled-data`) The segment's RAM footprint — ELF
     /// `p_memsz`, PE `VirtualSize`, Mach-O `vmsize` — which may exceed the file
     /// extent in [`Self::data`]. The excess is the `.bss`-style zero-filled
@@ -148,7 +197,7 @@ impl Segment {
     /// A segment whose file data is its whole RAM footprint.
     fn file_backed(vma: u64, data: Vec<u8>) -> Segment {
         let memsz = data.len() as u64; // cast: segment byte count
-        Segment { vma, data, memsz }
+        Segment { vma, data: data.into(), memsz }
     }
 
     /// The mapped extent at [`Self::vma`] — the file data plus any zero-filled
@@ -227,7 +276,7 @@ impl SegmentBytes {
     /// the segment's file data zero-fills the remainder (a `.bss`-style RAM tail
     /// whose bytes BFD would report as zero).
     fn copy_segment(&self, idx: usize, seg_off: u64, dst: &mut [u8]) {
-        let data = &self.segments[idx].data;
+        let data = self.segments[idx].data.as_slice();
         for (i, b) in dst.iter_mut().enumerate() {
             let pos = seg_off.wadd(i as u64); // cast: small loop index
             *b = data.get(pos as usize).copied().unwrap_or(0); // cast: pos within data here
@@ -619,15 +668,16 @@ fn patch_segments(segments: &mut [Segment], vma: u64, value: u64, width: usize, 
         let Some(end) = off.checked_add(width) else {
             continue;
         };
-        if end > seg.data.len() {
+        let data = seg.data.make_owned();
+        if end > data.len() {
             continue;
         }
         let raw = value.to_le_bytes();
         if le {
-            seg.data[off..end].copy_from_slice(&raw[..width]);
+            data[off..end].copy_from_slice(&raw[..width]);
         } else {
             for (i, b) in raw[..width].iter().rev().enumerate() {
-                seg.data[off + i] = *b;
+                data[off + i] = *b;
             }
         }
         return true;
@@ -657,7 +707,7 @@ impl ObjectLoadImage {
 
     /// Open from an in-memory image (the testable core of [`Self::open`]).
     pub fn from_bytes(filename: &str, bytes: &[u8]) -> KunaResult<ObjectLoadImage> {
-        Self::from_bytes_with_diagnostics(filename, bytes, true, None)
+        Self::from_bytes_with_diagnostics(filename, bytes, true, None, None)
     }
 
     /// Open an object while letting an explicit SLEIGH language select the
@@ -667,13 +717,13 @@ impl ObjectLoadImage {
         bytes: &[u8],
         target: &str,
     ) -> KunaResult<ObjectLoadImage> {
-        Self::from_bytes_with_diagnostics(filename, bytes, true, Some(target))
+        Self::from_bytes_with_diagnostics(filename, bytes, true, Some(target), None)
     }
 
     /// Reconstruct a load image for an internal analysis consumer without
     /// repeating diagnostics already emitted by the primary load.
     pub fn from_bytes_silent(filename: &str, bytes: &[u8]) -> KunaResult<ObjectLoadImage> {
-        Self::from_bytes_with_diagnostics(filename, bytes, false, None)
+        Self::from_bytes_with_diagnostics(filename, bytes, false, None, None)
     }
 
     /// Silent counterpart of [`Self::from_bytes_with_target`] for an internal
@@ -683,7 +733,29 @@ impl ObjectLoadImage {
         bytes: &[u8],
         target: &str,
     ) -> KunaResult<ObjectLoadImage> {
-        Self::from_bytes_with_diagnostics(filename, bytes, false, Some(target))
+        Self::from_bytes_with_diagnostics(filename, bytes, false, Some(target), None)
+    }
+
+    pub fn from_shared_bytes_with_target(
+        filename: &str,
+        bytes: Arc<[u8]>,
+        target: &str,
+    ) -> KunaResult<ObjectLoadImage> {
+        Self::from_image_bytes_with_target(filename, bytes.into(), target)
+    }
+
+    pub fn from_image_bytes_with_target(
+        filename: &str,
+        bytes: crate::image_bytes::ImageBytes,
+        target: &str,
+    ) -> KunaResult<ObjectLoadImage> {
+        Self::from_bytes_with_diagnostics(
+            filename,
+            &bytes,
+            true,
+            Some(target),
+            Some(bytes.clone()),
+        )
     }
 
     fn from_bytes_with_diagnostics(
@@ -691,6 +763,7 @@ impl ObjectLoadImage {
         bytes: &[u8],
         emit_diagnostics: bool,
         target: Option<&str>,
+        shared_image: Option<crate::image_bytes::ImageBytes>,
     ) -> KunaResult<ObjectLoadImage> {
         // Parse the object file.
         let file = parse_object(bytes).map_err(|e| {
@@ -761,7 +834,8 @@ impl ObjectLoadImage {
             );
         }
 
-        // Snapshot the loadable segments (PT_LOAD), copying their RAM bytes.
+        // Snapshot the loadable segments (PT_LOAD), sharing their file bytes when
+        // the caller owns the complete image and copying only on a later write.
         // `data()` returns only the file-backed bytes; a segment's `size()`
         // (its RAM footprint) may exceed that for `.bss`-style tails, so both
         // are kept: `data` is the file extent and `memsz` the mapped extent,
@@ -801,7 +875,11 @@ impl ObjectLoadImage {
             if data.is_empty() && memsz == 0 {
                 continue;
             }
-            segments.push(Segment { vma, data: data.to_vec(), memsz });
+            segments.push(Segment {
+                vma,
+                data: SegmentData::from_slice(data, shared_image.as_ref()),
+                memsz,
+            });
         }
         // (kuna, `pe-header-entry-mapped`) The header page a format maps ahead
         // of its first section. `file.segments()` enumerates sections, so a PE's
@@ -1507,10 +1585,11 @@ impl ObjectLoadImage {
         let seg = &mut bytes.segments[idx];
         let off = (vma - seg.vma) as usize; // cast: offset within a mapped segment
         let stop = off + data.len();
-        if stop > seg.data.len() {
-            seg.data.resize(stop, 0);
+        let segment = seg.data.make_owned();
+        if stop > segment.len() {
+            segment.resize(stop, 0);
         }
-        seg.data[off..stop].copy_from_slice(data);
+        segment[off..stop].copy_from_slice(data);
         // The 512-byte read window may straddle what just moved; drop it.
         *self.bufoffset.borrow_mut() = !0u64;
         Ok(())
@@ -2283,6 +2362,50 @@ mod tests {
             .overlay_span(0x1000, &[0xcc])
             .expect_err("published bytes must stay immutable");
         assert!(err.contains("shared decode view"));
+    }
+
+    #[test]
+    fn shared_input_segments_copy_only_when_written() {
+        let object: Arc<[u8]> = build_elf64(0x1000, &[0x90, 0xc3], None).into();
+        let original = object.to_vec();
+        let mut image = ObjectLoadImage::from_shared_bytes_with_target(
+            "synthetic",
+            Arc::clone(&object),
+            "",
+        )
+        .unwrap();
+        assert!(matches!(image.bytes.segments[0].data, SegmentData::Shared { .. }));
+        let ram = Rc::clone(manager().get_default_code_space().unwrap());
+        image.attach_to_space(Rc::clone(&ram));
+        image.overlay_span(0x1000, &[0xcc]).unwrap();
+        assert!(matches!(image.bytes.segments[0].data, SegmentData::Owned(_)));
+        let mut got = [0];
+        image.load_fill(&mut got, &Address::new(ram, 0x1000)).unwrap();
+        assert_eq!(got, [0xcc]);
+        assert_eq!(&*object, original, "copy-on-write changed the shared input");
+    }
+
+    #[test]
+    fn mapped_input_segments_copy_only_when_written() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/macho_imports_arm64");
+        let original = std::fs::read(&path).unwrap();
+        let input = crate::image_bytes::ImageBytes::map_thin_macho(path.to_str().unwrap())
+            .unwrap().unwrap();
+        assert!(matches!(input, crate::image_bytes::ImageBytes::Mapped(_)));
+        let file = parse_object(&input).unwrap();
+        let text = file.sections().find(|section| section.name() == Ok("__text")).unwrap();
+        let address = text.address();
+        let byte = text.data().unwrap()[0] ^ 0xff;
+        let mut image = ObjectLoadImage::from_image_bytes_with_target("mapped", input.clone(), "").unwrap();
+        let ram = Rc::clone(manager().get_default_code_space().unwrap());
+        image.attach_to_space(Rc::clone(&ram));
+        image.overlay_span(address, &[byte]).unwrap();
+        let mut got = [0];
+        image.load_fill(&mut got, &Address::new(ram, address)).unwrap();
+        assert_eq!(got, [byte]);
+        assert_eq!(&*input, original.as_slice());
+        assert_eq!(std::fs::read(path).unwrap(), original);
     }
 
     /// Build a minimal little-endian ELF64 x86-64 image with one PT_LOAD
@@ -3081,8 +3204,8 @@ mod tests {
     #[test]
     fn a_virtual_tail_stops_at_the_next_segment() {
         let mut segs = vec![
-            Segment { vma: 0x1000, data: vec![1, 2, 3, 4], memsz: 0x4000 },
-            Segment { vma: 0x2000, data: vec![9], memsz: 0x10 },
+            Segment { vma: 0x1000, data: vec![1, 2, 3, 4].into(), memsz: 0x4000 },
+            Segment { vma: 0x2000, data: vec![9].into(), memsz: 0x10 },
         ];
         clamp_virtual_tails(&mut segs);
         assert_eq!(segs[0].mapped_size(), 0x1000, "trimmed to where the next segment starts");

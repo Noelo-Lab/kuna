@@ -2440,6 +2440,9 @@ pub struct Architecture {
     /// (kuna `lazyfuncs`) Entry starts the commit installed as NAMES only, sorted, so
     /// flow reads a branch to one as a transfer, not code to follow into.
     pub lazy_entry_starts: Rc<Vec<u64>>,
+    /// String facts kept compact until a lifted function references them.
+    pub lazy_string_facts: Rc<crate::kuna_lazystrings::Facts>,
+    pub lazy_string_probe: Option<Rc<crate::kuna_lazystrings::Probe>>,
     /// (kuna) Gate recursive-descent function discovery on a headerless
     /// `--raw-image` load (`rawdiscover`); default **on**. A raw image has no
     /// `object::File`, so the whole object-backed discovery tier declines and the
@@ -3457,6 +3460,8 @@ impl Architecture {
             analysis_fast_funcdisc: false,
             analysis_lazyfuncs: false,
             lazy_entry_starts: Rc::default(),
+            lazy_string_facts: Rc::default(),
+            lazy_string_probe: None,
             analysis_rawdiscover: false,
             analysis_mzsweep: false,
             analysis_noreturn_disc: false,
@@ -3941,6 +3946,8 @@ impl Architecture {
         self.analysis_fast_funcdisc = false; // bounded whole-project discovery default-off
         self.analysis_lazyfuncs = false;
         self.lazy_entry_starts = Rc::default();
+        self.lazy_string_facts = Rc::default();
+        self.lazy_string_probe = None;
         self.analysis_rawdiscover = true; // (kuna) default-on: a raw image's only discovery. ADDS FUNCTIONS (direct-call targets reached from the --entry seeds). Raw-container only, so every parity gate is byte-identical; restore the seeds-only inventory with `option rawdiscover off`
         self.analysis_mzsweep = true; // (kuna #1288) default-on: REMOVES FUNCTIONS (an MS-DOS executable's sweep drops calls decoded from data: unrelocated far calls, calls after zero fill, targets that do not open with code). MZ loads only, so every parity gate is byte-identical; restore the whole-module sweep with `option mzsweep off`
         self.analysis_noreturn_disc = true; // (kuna) DIV-22 default-on: Ghidra's FindNoReturnFunctionsAnalyzer ≥3-evidence discovered-no-return (default-on in Ghidra). REMOVES CODE (marks a callee no-return from ≥3 dead-fall-through sites → drops post-call dead code at callers). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_disc off`
@@ -4025,6 +4032,17 @@ impl Architecture {
         starts.sort_unstable();
         starts.dedup();
         self.lazy_entry_starts = Rc::new(starts);
+    }
+
+    pub fn set_lazy_string_facts(&mut self, facts: Vec<crate::kuna_lazystrings::Fact>) {
+        self.lazy_string_facts = Rc::new(crate::kuna_lazystrings::Facts::new(facts));
+    }
+
+    pub fn is_lazy_string_start(&self, vma: u64) -> bool {
+        self.lazy_string_facts.starts_at(vma)
+            || self.lazy_string_probe.as_ref().is_some_and(|probe| {
+                probe(&[vma], self.analysis_widestrings).iter().any(|fact| fact.addr == vma)
+            })
     }
 
     pub fn reset_defaults(&mut self) {

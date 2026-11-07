@@ -92,12 +92,21 @@ re-seeded into each freshly-rebuilt `Funcdata`'s `ScopeLocal` at decompile time 
 `map addr`/`seed_mapped_symbols` path), and the `error(nonzero,…)` call-site list is
 stashed on the `Architecture` for the per-function flow override (§1.7).
 
+The console dispatcher in `decompiler/crates/kuna-console/src/engine.rs
+(bootstrap_from_file)` releases its format-probe buffer before entering the
+object loader, ending that allocation before loader initialization and analysis.
+
 The entry arm is where a single-function run pays for the whole inventory: a
 `createFunctionIfMissing` per discovered entry costs about a kilobyte, so an image
 whose `.eh_frame` enumerates every function (377,429 on a 51 MB Android `.so`)
 spends some 315 MB of a run that reads one of them. `lazyfuncs` (default **off**)
-splits the commit: the names install exactly as above, but the entry starts are
-parked on the `Architecture`
+splits the commit: anonymous `sub_<addr>` entries retain compact addresses and
+registration order instead of allocating names and name-index slots
+(`decompiler/crates/kuna-console/src/engine/lazy_inventory.rs (inventory_symbols)`).
+Names are generated when enumerated; address and anonymous-name selection use
+the compact entries without constructing the whole canonical inventory. Real
+names and entries carrying other commit facts keep their symbol records.
+The entry starts are parked on the `Architecture`
 (`decompiler/crates/kuna-decomp/src/infra/architecture.rs (set_lazy_entry_starts)`)
 and no `Function` is created. An entry some other fact of the same commit attaches
 to is not parked — a committed name (`_INIT_<i>`, the entry oracle's `main`), a
@@ -129,6 +138,39 @@ are materialized — never a constant that merely looks like an address, nor a
 p-code-relative `BRANCH` offset — so the lazy symbol table is always a subset of the
 eager one. The saving is a property of one function's run: a whole-binary surface
 materializes what it walks.
+
+The same option parks detected strings as compact address/length/width facts
+instead of creating a global type and symbol for every literal in the image.
+After a lift, the function's constants and direct memory reads (the first and
+last byte of each load-image varnode) select every fact whose range holds one of
+those addresses, however many shorter facts start inside it; only those strings
+materialize, and the drive repeats so type propagation sees the eager path's
+`char[N]` or wide-character symbol
+(`decompiler/crates/kuna-decomp/src/p1_partition/kuna_lazystrings.rs (materialize)`).
+For Mach-O CLI runs with `lazyfuncs on` and `listing off`, the string pass instead
+records a deferred probe. Referenced addresses use the same ASCII and UTF-16
+matching rules, including interior pointers, NUL extents and pointer-slot rejection
+(`decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_lazyprobe.rs`).
+The eager scan remains available when the commit does not use lazy functions.
+
+CLI loads gate `objc` and `strings` before their pass runs. This is earlier than
+the normal commit-time option filter: a disabled pass produces no discarded fact
+tree, while an enabled pass reaches the identical commit. The `functions`
+inventory suppresses `strings` because string data cannot change a function row.
+Object-backed loads share segment slices with the normalized input image and copy
+a segment only when relocation or an asserted-byte overlay writes it; deferred
+discovery uses the installed engine loader instead of constructing a second
+segment image.
+Thin Mach-O inputs use a private read-only file mapping shared by the loader and
+analysis views (`decompiler/crates/kuna-analysis/src/image_bytes.rs`). The console
+recognizes that mapped input before reading a complete format-probe buffer.
+The input must remain unchanged for the duration of analysis; private mapping
+does not provide a snapshot of external writes. In-process writes use owned
+segment overlays. `KUNA_LOAD_MMAP=off` selects the owned path for every loader
+and CLI probe. Non-regular files, failed mappings, other formats and fat-slice
+normalization retain the owned input path.
+CLI architecture, language and runtime-hint probes inspect the mapped view too,
+avoiding file-sized temporary buffers before the engine starts.
 
 Two timing consequences shape the tier. First, anything that must influence the
 **loader itself** runs before any `option` line exists, so load-time gates are

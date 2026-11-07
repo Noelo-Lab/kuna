@@ -18,6 +18,21 @@ use crate::loadimage_object::ObjectLoadImage;
 use crate::pass::{run_analyses, AnalysisCtx, AnalysisOutput, AnalysisPass};
 use crate::sourcelang::Compiler;
 
+pub const LOAD_OBJC_ENV: &str = "KUNA_LOAD_OBJC";
+pub const LOAD_STRINGS_ENV: &str = "KUNA_LOAD_STRINGS";
+pub const LOAD_DEMAND_STRINGS_ENV: &str = "KUNA_LOAD_DEMAND_STRINGS";
+
+fn load_pass_enabled(id: &str) -> bool {
+    let env = match id {
+        "objc" => LOAD_OBJC_ENV,
+        "strings" => LOAD_STRINGS_ENV,
+        _ => return true,
+    };
+    !std::env::var(env).is_ok_and(|value| {
+        matches!(value.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false")
+    })
+}
+
 /// The default program-prep passes, in stage order.
 ///
 /// These run at load time over the parsed ELF and produce an additive
@@ -572,6 +587,20 @@ pub fn run_deferred_entry_passes(
     arch: &Architecture,
     enabled: &dyn Fn(&str) -> bool,
 ) -> Vec<(&'static str, AnalysisOutput)> {
+    run_deferred_entry_passes_without_image(
+        bytes,
+        arch,
+        image_on_disk_path(image),
+        enabled,
+    )
+}
+
+pub fn run_deferred_entry_passes_without_image(
+    bytes: &[u8],
+    arch: &Architecture,
+    image_path: Option<&std::path::Path>,
+    enabled: &dyn Fn(&str) -> bool,
+) -> Vec<(&'static str, AnalysisOutput)> {
     let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
         return Vec::new();
     };
@@ -580,10 +609,10 @@ pub fn run_deferred_entry_passes(
     let ctx = AnalysisCtx {
         file: &file,
         bytes,
-        image,
+        image: None,
         arch,
         listing: None,
-        image_path: image_on_disk_path(image),
+        image_path,
     };
     let mut split: Vec<(&'static str, AnalysisOutput)> = deferred_entry_passes()
         .iter()
@@ -681,7 +710,24 @@ fn dispatch_if_enabled<T>(enabled: bool, run: impl FnOnce() -> T) -> Option<T> {
 #[allow(clippy::too_many_arguments)]
 pub fn run_listing_consumers(
     bytes: &[u8],
-    image: &ObjectLoadImage,
+    _image: &ObjectLoadImage,
+    arch: &Architecture,
+    translate: &dyn Translate,
+    noreturn_seeds: &[u64],
+    callfixup_seeds: &[u64],
+    committed_entries: &[u64],
+    cold_entries: &[u64],
+    plan: &crate::listing::WalkPlan,
+) -> Vec<(&'static str, AnalysisOutput)> {
+    run_listing_consumers_without_image(
+        bytes, arch, translate, noreturn_seeds, callfixup_seeds, committed_entries, cold_entries,
+        plan,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_listing_consumers_without_image(
+    bytes: &[u8],
     arch: &Architecture,
     translate: &dyn Translate,
     noreturn_seeds: &[u64],
@@ -691,7 +737,7 @@ pub fn run_listing_consumers(
     plan: &crate::listing::WalkPlan,
 ) -> Vec<(&'static str, AnalysisOutput)> {
     run_listing_consumers_replaying(
-        bytes, image, arch, translate, noreturn_seeds, callfixup_seeds, committed_entries, cold_entries,
+        bytes, arch, translate, noreturn_seeds, callfixup_seeds, committed_entries, cold_entries,
         plan, None,
     )
 }
@@ -702,7 +748,6 @@ pub fn run_listing_consumers(
 #[allow(clippy::too_many_arguments)]
 pub fn run_listing_consumers_replaying(
     bytes: &[u8],
-    image: &ObjectLoadImage,
     arch: &Architecture,
     translate: &dyn Translate,
     noreturn_seeds: &[u64],
@@ -815,9 +860,8 @@ pub fn run_listing_consumers_replaying(
         assembly: arch.analysis_listing,
         refs: arch.analysis_listing,
     };
-    let mut listing = crate::listing::Listing::build_with_meta_planned(
+    let mut listing = crate::listing::Listing::build_with_meta_planned_without_image(
         &file,
-        image,
         arch,
         translate,
         &seeds,
@@ -869,9 +913,8 @@ pub fn run_listing_consumers_replaying(
                 break;
             }
             callback_roots += added;
-            listing = crate::listing::Listing::build_with_meta_planned(
+            listing = crate::listing::Listing::build_with_meta_planned_without_image(
                 &file,
-                image,
                 arch,
                 translate,
                 &seeds,
@@ -955,8 +998,8 @@ pub fn run_listing_consumers_replaying(
                         &original,
                     );
                     if arch.input_arm_isa_override { modes.retain_decoded_modes(); }
-                    let listing = crate::listing::Listing::build_tracking_frames(
-                        &file, image, arch, translate, &seeds, &funcsym_seeds,
+                    let listing = crate::listing::Listing::build_tracking_frames_without_image(
+                        &file, arch, translate, &seeds, &funcsym_seeds,
                         &seed_names, detail, plan, Some(&mut modes), memo,
                     );
                     (seeds, listing, modes)
@@ -977,8 +1020,8 @@ pub fn run_listing_consumers_replaying(
                     let frame_cache = frame_cache.as_mut().unwrap();
                     let prior = crate::aif::kuna_frameretain::prior_inventory(
                         &file, &original, &seeds,
-                        |seeds| crate::listing::Listing::build_with_meta_planned(
-                            &file, image, arch, translate, seeds, &funcsym_seeds, &seed_names, detail, plan,
+                        |seeds| crate::listing::Listing::build_with_meta_planned_without_image(
+                            &file, arch, translate, seeds, &funcsym_seeds, &seed_names, detail, plan,
                         ),
                         arch, translate, code_space, bracket(original.exec_ranges()), &memo,
                     );
@@ -1083,8 +1126,8 @@ pub fn run_listing_consumers_replaying(
                 seeds.sort_unstable();
                 seeds.dedup();
                 if seeds.len() != before {
-                    listing = crate::listing::Listing::build_with_meta_planned(
-                        &file, image, arch, translate, &seeds, &funcsym_seeds,
+                    listing = crate::listing::Listing::build_with_meta_planned_without_image(
+                        &file, arch, translate, &seeds, &funcsym_seeds,
                         &seed_names, detail, plan,
                     );
                 }
@@ -1122,9 +1165,8 @@ pub fn run_listing_consumers_replaying(
                 seeds.sort_unstable();
                 seeds.dedup();
                 if seeds.len() != before {
-                    listing = crate::listing::Listing::build_with_meta_planned(
+                    listing = crate::listing::Listing::build_with_meta_planned_without_image(
                         &file,
-                        image,
                         arch,
                         translate,
                         &seeds,
@@ -1187,10 +1229,10 @@ pub fn run_listing_consumers_replaying(
     let ctx = AnalysisCtx {
         file: &file,
         bytes,
-        image,
+        image: None,
         arch,
         listing: Some(&listing),
-        image_path: image_on_disk_path(image),
+        image_path: None,
     };
     let mut out: Vec<(&'static str, AnalysisOutput)> = if arch.analysis_listing {
         listing_consumer_passes(arch)
@@ -1334,7 +1376,6 @@ pub fn run_listing_consumers_replaying(
 /// are structurally untouched.
 pub fn run_operand_refs(
     bytes: &[u8],
-    image: &ObjectLoadImage,
     arch: &Architecture,
 ) -> AnalysisOutput {
     let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
@@ -1349,10 +1390,10 @@ pub fn run_operand_refs(
     let ctx = AnalysisCtx {
         file: &file,
         bytes,
-        image,
+        image: None,
         arch,
         listing: None,
-        image_path: image_on_disk_path(image),
+        image_path: None,
     };
     let mut out = crate::operand_refs::OperandRefsPass.run(&ctx);
     if let Some(view) = &view {
@@ -1366,7 +1407,7 @@ pub fn run_operand_refs(
 /// `operand_refs` off: the same linear decode [`run_operand_refs`] does, for the
 /// operand targets and table uses the facts weigh, without that pass's own facts.
 /// Takes the same rebased view of a relocatable object.
-pub fn run_wide_strings32(bytes: &[u8], image: &ObjectLoadImage, arch: &Architecture) -> AnalysisOutput {
+pub fn run_wide_strings32(bytes: &[u8], arch: &Architecture) -> AnalysisOutput {
     let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
         return AnalysisOutput::default();
     };
@@ -1375,10 +1416,10 @@ pub fn run_wide_strings32(bytes: &[u8], image: &ObjectLoadImage, arch: &Architec
     let ctx = AnalysisCtx {
         file: &file,
         bytes,
-        image,
+        image: None,
         arch,
         listing: None,
-        image_path: image_on_disk_path(image),
+        image_path: None,
     };
     let mut out = crate::operand_refs::wide_strings32_alone(&ctx);
     if let Some(view) = &view {
@@ -1463,11 +1504,11 @@ pub fn run_default_analyses(
     let seeds = listing_seeds_for_language(&file, bytes, Some(arch.get_description()));
     let listing = arch
         .analysis_listing
-        .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
+        .then(|| crate::listing::Listing::build_without_image(&file, arch, translate, &seeds));
     let ctx = AnalysisCtx {
         file: &file,
         bytes,
-        image,
+        image: Some(image),
         arch,
         listing: listing.as_ref(),
         image_path: image_on_disk_path(image),
@@ -1514,11 +1555,11 @@ pub fn run_default_analyses_per_pass(
     let seeds = listing_seeds_for_language(&file, bytes, Some(arch.get_description()));
     let listing = arch
         .analysis_listing
-        .then(|| crate::listing::Listing::build(&file, image, arch, translate, &seeds));
+        .then(|| crate::listing::Listing::build_without_image(&file, arch, translate, &seeds));
     let ctx = AnalysisCtx {
         file: &file,
         bytes,
-        image,
+        image: Some(image),
         arch,
         listing: listing.as_ref(),
         image_path: image_on_disk_path(image),
@@ -1526,6 +1567,7 @@ pub fn run_default_analyses_per_pass(
     let format = file.format();
     let mut split: Vec<(&'static str, AnalysisOutput)> = passes_for(compiler, format)
         .iter()
+        .filter(|pass| load_pass_enabled(pass.id()))
         .map(|pass| {
             let mut out = pass.run(&ctx);
             if let Some(view) = &view {
