@@ -4317,7 +4317,13 @@ every other binary's pass list is byte-identical to before the pass existed):
   `dat_<addr>`. The pass reads each entry, resolves its `char *` through the
   chained-fixup overlay (§1.2) on an arm64(e) image or as a raw word on a classic
   `LC_DYLD_INFO` image, and decodes the string (8-bit when the `flags` unicode bit
-  `0x10` is clear, UTF-16 otherwise). The commit seam then types the entry an
+  `0x10` is clear, UTF-16 otherwise). The walk stops at the end of the file, not at
+  the section header's size, and the string bytes it reads over all entries are
+  capped at the file's length: an entry is 32 bytes, but every entry may name the
+  same 64 KiB run, and each fact owns a copy of its string (as does the
+  `StringManager` seed), so an uncapped crafted section would grow memory about
+  4096-fold. A real image's strings are distinct bytes of the file and never reach
+  the cap. The commit seam then types the entry an
   opaque `struct __CFString` spanning the entry's own four words (never the
   string's length, which would overrun the next entry and hide it) and seeds the `StringManager` at the
   entry address with the resolved bytes, so a reference renders the string
@@ -4351,8 +4357,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   also follows each `CFSTR` with `/* cfstring@0x<entry> */`, the address a
   disassembler or hex view shows for the entry, which the literal otherwise
   replaces. The pass is on by default: it runs only on a Mach-O and only on the
-  real-binary path, so the XML datatest corpus never reaches it, and on the 80 MB
-  Toyota arm64 app one decompile is within run-to-run noise of `off`. `off`
+  real-binary path, so the XML datatest corpus never reaches it, and on an 80 MB
+  third-party arm64 iOS app one decompile is within run-to-run noise of `off`. `off`
   renders each reference as the entry itself: its symbol (`&_kGreeting`) where the
   image names it, its address on a stripped image.
 - **PDB** (`pdb`, PE-only, default-on;
