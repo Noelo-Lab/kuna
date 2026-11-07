@@ -1148,11 +1148,14 @@ recipe, toolchain and SHA-256s in `macho_ptrslots_arm64.provenance`. Pinned by
 `__DATA_CONST,__got`, for the `importdata` option
 (`kuna-console/tests/verify_importdata.rs`). Source `macho_gotdata.c` declares
 `extern int imported_counter;` and `extern const char *imported_name;`; at `-O1`
-both readers inline into `_main`. It builds with the container's `zig cc`:
+both readers inline into `_main`. It was built with `zig cc` (the devcontainer
+does not ship zig, and its clang 14 has no Mach-O linker), then `llvm-strip -x`
+to drop the STABS debug map and local symbols, which named the build directories:
 
 ```
 zig cc -target aarch64-macos -O1 -Wl,-undefined,dynamic_lookup \
        -o macho_gotdata macho_gotdata.c
+llvm-strip -x macho_gotdata
 ```
 
 Each read is `adrp/ldr` of the `__got` slot (the slot holds the import's address)
