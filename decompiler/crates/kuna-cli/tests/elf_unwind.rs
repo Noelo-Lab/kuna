@@ -312,6 +312,41 @@ fn bcl_to_a_helper_without_a_literal_load_remains_a_call() {
     }
 }
 
+/// A helper that loads a skipped word but then resumes at the skipped words, by
+/// moving the register back into LR or returning before restoring LR, is a call;
+/// a D-form load based on r0 is absolute, not through r0.
+#[test]
+fn bcl_to_a_helper_that_returns_into_the_skipped_words_remains_a_call() {
+    let helpers: [&[u32]; 4] = [
+        &[0x7c88_02a6, 0x80a4_0000, 0x7c88_03a6, 0x4e80_0020], // mflr r4; lwz r5,0(r4); mtlr r4; blr
+        &[0x7c88_02a6, 0x80a4_0000, 0x4e80_0020], // mflr r4; lwz r5,0(r4); blr
+        &[0x7c88_02a6, 0x80a4_0000, 0x3884_0004, 0x7c88_03a6, 0x4e80_0020], // ...; addi r4,r4,4; mtlr r4; blr
+        &[0x7c08_02a6, 0x80a0_0000, 0x4e80_0020], // mflr r0; lwz r5,0(0); blr
+    ];
+    for helper in helpers {
+        let tail = 0x10 + 4 * helper.len() as u32;
+        let code = [
+            &[
+                0x7c08_02a6, // mflr r0
+                0x429f_000d, // bcl 20,31,0x1010
+                0x3863_0001, // addi r3,r3,1
+                0x4800_0000 | tail - 0x0c,
+            ][..],
+            helper,
+            &[0x7c08_03a6, 0x4e80_0020], // mtlr r0; blr
+        ]
+        .concat();
+        for little in [false, true] {
+            let path = common::scratch_file("elf-bcl-lr-resume", "elf");
+            std::fs::write(&path, fixture::image_with_code(little, &code)).unwrap();
+            let (out, err, status) = common::run_kuna(&["decompile", path.to_str().unwrap(), "bump", "--mode", "fast"]);
+            std::fs::remove_file(path).unwrap();
+            assert_eq!(status, 0, "{out}\n{err}");
+            assert!(out.contains("sub_1010(") && out.contains("+ 1"), "little={little} helper={helper:x?}: {out}");
+        }
+    }
+}
+
 /// The literal load may be scheduled after unrelated instructions.
 #[test]
 fn pc_read_literal_load_may_follow_other_instructions() {

@@ -5,8 +5,10 @@
 //! only when the code at `target` goes on to read LR (`mflr`) before returning
 //! through LR, overwriting it or calling, and then loads one of the skipped words
 //! through the register the `mflr` wrote before that register is overwritten or
-//! the path returns, calls or traps. A forward `bcl 20,31` to a helper that never
-//! loads those words keeps its call semantics.
+//! the path returns, calls or traps. The path must also never move that register
+//! back into LR or return through LR before restoring it, since either resumes at
+//! the skipped words. A forward `bcl 20,31` to a helper that never loads those
+//! words, or that returns into them, keeps its call semantics.
 use crate::{context::OpId, funcdata::Funcdata};
 use kuna_base::address::Address;
 
@@ -61,25 +63,38 @@ fn loads_literal(fd: &Funcdata, target: &Address, body: (u64, u64), skip: u64) -
     let mut path = FallThrough { fd, pc: Some(target.clone()), body };
     for word in path.by_ref().take(LR_READ_WINDOW) {
         if word & LR_MOVE_MASK == MFLR {
-            let reg = (word >> 21) & 31;
-            return path
-                .take(LITERAL_LOAD_WINDOW)
-                .find_map(|word| {
-                    if is_load_from(word, reg, skip) {
-                        Some(true)
-                    } else if writes_gpr(word, reg) || leaves_path(word) {
-                        Some(false)
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or(false);
+            return reads_skipped_word(path.take(LITERAL_LOAD_WINDOW), (word >> 21) & 31, skip);
         }
         if leaves_path(word) || word & LR_MOVE_MASK == MTLR {
             return false;
         }
     }
     false
+}
+
+/// After `mflr reg`: a load through `reg` reads a skipped word before `reg` may be
+/// overwritten or the path leaves, and LR is neither set from `reg` nor returned
+/// through before another register restores it.
+fn reads_skipped_word(path: impl Iterator<Item = u32>, reg: u32, skip: u64) -> bool {
+    let (mut loaded, mut restored) = (false, false);
+    for word in path {
+        if word & LR_MOVE_MASK == MTLR {
+            if (word >> 21) & 31 == reg {
+                return false;
+            }
+            restored = true;
+        } else if !loaded && is_load_from(word, reg, skip) {
+            loaded = true;
+        } else if leaves_path(word) {
+            return loaded && (restored || !(word >> 26 == 19 && (word >> 1) & 0x3ff == 16));
+        } else if !loaded && writes_gpr(word, reg) {
+            return false;
+        }
+        if loaded && restored {
+            return true;
+        }
+    }
+    loaded
 }
 
 /// A return, call, CTR/TAR jump, absolute branch, system call or trap.
@@ -95,6 +110,7 @@ fn leaves_path(word: u32) -> bool {
 /// A D-form load based on `reg` whose displacement lies within `skip` bytes.
 fn is_load_from(word: u32, reg: u32, skip: u64) -> bool {
     matches!(word >> 26, 32..=35 | 40..=43 | 48..=51)
+        && reg != 0
         && (word >> 16) & 31 == reg
         && u64::try_from(word as u16 as i16).is_ok_and(|disp| disp < skip)
 }
@@ -110,6 +126,7 @@ fn writes_gpr(word: u32, reg: u32) -> bool {
         46 => rt <= reg,
         31 if matches!(xo, 0 | 4 | 32 | 150 | 151 | 215 | 407 | 661..=663 | 725 | 727 | 918 | 983) => false,
         31 if matches!(xo, 183 | 247 | 439 | 695 | 759) => ra == reg,
+        31 if matches!(xo, 533 | 597) => true,
         _ => rt == reg || ra == reg,
     }
 }

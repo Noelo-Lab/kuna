@@ -36,9 +36,14 @@ any LR return, LR write, call, other unconditional transfer or trap. Within the
 next 32 instructions, a D-form load based on the register that `mflr` wrote
 must read one of the skipped words, with a displacement inside the skip, before
 any instruction that may overwrite that register and before any return, call,
-CTR jump, absolute branch or trap. A forward `bcl 20,31` to a helper that
-never loads those words, whether it returns through LR, restores LR first or
-tail-jumps away, is therefore still a call. All 20,573 forward `bcl 20,31`
+CTR jump, absolute branch or trap. A load based on r0 does not count, because
+a D-form base field of zero means address zero. In the same window the path must
+not move the `mflr` register back into LR, and must not return through LR
+before `mtlr` from another register restores it. Either of those resumes at the
+skipped words, so they were code returned to, not a literal. A forward
+`bcl 20,31` to a helper that never loads those words, whether it returns
+through LR, restores LR first or tail-jumps away, or to one that loads them and
+then returns into them, is therefore still a call. All 20,573 forward `bcl 20,31`
 sites inside FDE bodies of 135 compiler-built PPC32 images satisfy this rule;
 the 570 that skip literal words load one within 19 instructions of the `mflr`.
 Other calls retain their existing treatment. The rewrite is the same
