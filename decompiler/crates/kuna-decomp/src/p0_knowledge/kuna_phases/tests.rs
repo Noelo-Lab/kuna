@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_184() {
+fn option_values_live_value_present_for_183() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -715,6 +715,11 @@ fn option_values_live_value_present_for_184() {
                             // same reason.  Its live value is
                             // `Architecture::syscall_regs`.
                             | "syscallregs"
+                            // (kuna) `callmechanisms` takes a MODE
+                            // (`off|auto|on`) over an enum field, for the
+                            // same reason.  Its live value is
+                            // `Architecture::call_mechanism_mode`.
+                            | "callmechanisms"
                             // (kuna) `bejoin` takes a MODE (`off|evidence|on`)
                             // over an enum field, for the same reason.  Its live
                             // value is `Architecture::be_join`.
@@ -954,7 +959,8 @@ fn option_values_live_value_present_for_184() {
     // 180 -> 182: +2 for `stubtailcall` (stub_tail_call) and `gotimportproto` (got_import_proto).
     // 182 -> 183: +1 for `aggregatefields` (aggregate_fields).
     // 179 -> 180: +1 for `exclusivecallret` (exclusive_call_ret).
-    assert_eq!(with_live, 184);
+    // 179 -> 178: `callmechanisms` takes `off|auto|on` and has no live_field.
+    assert_eq!(with_live, 183);
 }
 
 #[test]

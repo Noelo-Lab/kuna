@@ -313,15 +313,36 @@ Straight-line installation retains operation order and memory effects. Each
 invocation reserves a fresh contiguous unique-space range, preserving overlaps
 and partial temporary references within the payload without sharing temporaries
 between calls.
-Installing them is option `callmechanisms` (`on|off`, default **off**); with it
-off, models still carry their payload identities but no effect is installed and
-late restrictions behave as before. It is off by default because a stock spec
-states one wrongly for most binaries that use it: `ppc_64_le.cspec`'s default
-model stores `r2Save` to `0x28(r1)` after every call, which is the TOC save
-slot only under ELFv1. Every little-endian PPC64 binary uses ELFv2, where the
-TOC is saved at `0x18(r1)` and `0x28(r1)` is ordinary frame storage, so the
-store replaced a local the function keeps there with the TOC pointer after each
-call. With it on,
+Installing them is option `callmechanisms` (`off|auto|on`, default **auto**);
+when it does not fire, models still carry their payload identities but no
+effect is installed and late restrictions behave as before. `on` installs the
+payloads on every image and `off` on none. `auto` acts only when `load file`
+found validated PowerPC64 ELFv1 function descriptors in a linked image's or a
+relocatable object's `.opd`, the same evidence that seeds each entry's TOC
+register; the XML bootstrap never records that fact. Even then it installs no
+entry payloads, and applies a return payload only at a call whose next
+instruction loads from a slot the payload stores: the same base register,
+constant offset and address space. Ops placed at the call's own address are
+skipped when finding that instruction. When the payload is that one store of a
+register as wide as the load, plus the temporaries naming its address, `auto`
+forwards it instead of installing it: the load becomes a COPY of the stored
+register, and no store is left in the frame. Any other payload is installed as
+written. The stock PPC64 default models store `r2Save` to
+`0x28(r1)` after every call. Under ELFv1 that is the TOC save doubleword in
+every frame's linkage area. A linker-generated call stub saves the caller's
+TOC there, and the caller reloads it with `ld r2,40(r1)` after the call.
+`r2Save` is assigned by `bl` and by the `std r2,40(r1)` that precedes an
+indirect call, so the reload reads back the TOC the caller held instead of a
+stack slot the function never wrote. TOC-relative addresses after the call
+then keep their constant value, including a jump table's base. A call with no
+reload, such as a same-module `bl` the linker left a `nop` after, is left
+alone, and a forwarded reload whose `r2` is never read is dead code: an unread
+store after each call would otherwise sit in each condition block and keep a
+short-circuit `a() && b()` from forming. `auto` treats every other image as
+`off` does. Every little-endian PPC64 binary, and some
+big-endian ones, use ELFv2, where the TOC is saved at `0x18(r1)` and
+`0x28(r1)` is ordinary frame storage, so the store would replace a local the
+function keeps there with the TOC pointer after each call. When it fires,
 `ActionDefaultParams` installs return-boundary effects after each modeled call;
 `ActionConstbase` installs entry-boundary effects before the entry block's first
 operation. A per-function ledger prevents duplicate insertion and is discarded

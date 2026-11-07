@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3900,
-    3900
+    3905,
+    3905
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1096,7 +1096,7 @@
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
     "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, noreturn_extern, noreturn_externmatch, earlyreturn, switchreturn, condfold, securitycheck, structsynth, protoorder, calleevote, rustprobestack)",
     "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, gottailcall, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, itecondlist, guardarm, loopcondhoist, orchain, endptrbound, loweredswitchheads, structsynth, structmerge, structheadless, devectorize, gomorestack, gowritebarrier, rustprobestack)",
-    "data:KUNA-CATALOG #8: the opt-in-tool change_kind counts explicitly opted transformations (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip, +outline, +spillargtrial, +securitycheck, +msvcstackguard, +nulterminator, +stackaddrargtrial, +jumptablemax, +globalarrayanchor, +stackviews, +callmechanisms)",
+    "data:KUNA-CATALOG #8: the opt-in-tool change_kind counts explicitly opted transformations (returnpair counted twice; +switchguardbound, +switchsharedcase, +switchmultipred, +unrolledguard, +branchflip, +outline, +spillargtrial, +securitycheck, +msvcstackguard, +nulterminator, +stackaddrargtrial, +jumptablemax, +globalarrayanchor, +stackviews)",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONDCALL #1: the instruction after a blgt is not a function",
     "data:KUNA-CONDCALL #2: the predicated callers are functions",
@@ -1635,6 +1635,11 @@
     "data:POINTERWALK-MEMO #1: buf is one array of sixteen bytes",
     "data:PPC lwarx #1: the reservation is set, not read uninitialized",
     "data:PPC lwarx #2: the conditional store runs once without a loop",
+    "data:PPC64 TOC reload #1: on recovers the switch over the table",
+    "data:PPC64 TOC reload #2: on labels the last case",
+    "data:PPC64 TOC reload #3: on keeps every case body",
+    "data:PPC64 TOC reload #4: the default on a byte chunk and off keep the jump-as-call",
+    "data:PPC64 TOC reload #5: the default on a byte chunk and off read r2 from the unwritten slot",
     "data:PPC64 ldarx #1: no bad instruction",
     "data:PPC64 ldarx #2: both doubleword loads reach the return",
     "data:PPC64 ldarx #3: the reservation is set, not read uninitialized",

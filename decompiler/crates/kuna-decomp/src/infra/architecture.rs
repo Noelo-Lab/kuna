@@ -2777,9 +2777,13 @@ pub struct Architecture {
     /// P-code injection manager (C++ `pcodeinjectlib`).  SLEIGH-backed.
     pub pcodeinjectlib: PcodeInjectLibrarySleigh,
     call_mechanisms: Rc<crate::kuna_callmechanisms::Mechanisms>,
-    /// (kuna) Apply compiler-spec prototype entry/return p-code (option
+    /// (kuna) When to apply compiler-spec prototype entry/return p-code (option
     /// `callmechanisms`).  See [`crate::kuna_callmechanisms`].
-    pub call_mechanism_effects: bool,
+    pub call_mechanism_mode: crate::kuna_callmechanisms::CallMechanismMode,
+    /// (kuna) Did the loader validate PPC64 ELFv1 function descriptors?  A FACT,
+    /// not an option: written once at `load file` and the thing `option
+    /// callmechanisms auto` tests.  The XML `<binaryimage>` bootstrap never sets it.
+    pub image_elfv1_toc: bool,
     /// Comments for this architecture (C++ `commentdb`).  // STUB(comment.cc)
     pub commentdb: CommentDatabase,
 
@@ -3539,7 +3543,8 @@ impl Architecture {
             )),
             pcodeinjectlib: PcodeInjectLibrarySleigh::new(inject_tempbase),
             call_mechanisms: Rc::default(),
-            call_mechanism_effects: false,
+            call_mechanism_mode: crate::kuna_callmechanisms::CallMechanismMode::Off, // (kuna) option callmechanisms; reset_defaults sets the shipped default
+            image_elfv1_toc: false, // (kuna) a load-time fact; set by the console's `load file`
             commentdb: CommentDatabase::new(),
             // C++ ctor leaves types/print/defaultfp null; init() fills them.
             types: Rc::new(TypeFactoryImpl::new()),
@@ -3697,7 +3702,7 @@ impl Architecture {
         self.cast_object = true; // (kuna) option castobject default-on: a stack local whose address only fills declared int * parameters, whose readers agree, is declared int; evidence in docs/features/castobject/default-on-evaluation.md
         self.end_ptr_bound = true; // (kuna) DIV-177 default-on: a pointer walk's end bound renders on its own buffer (0/675 ablation)
         self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
-        self.call_mechanism_effects = false; // (kuna) option callmechanisms default-off: ppc_64_le.cspec's uponreturn stores r2Save at the ELFv1 TOC slot 0x28(r1), an ordinary frame slot under ELFv2
+        self.call_mechanism_mode = crate::kuna_callmechanisms::CallMechanismMode::Auto; // (kuna) option callmechanisms default `auto`: the PPC64 cspecs' uponreturn stores r2Save at 0x28(r1), the TOC save slot only under ELFv1, so on an image whose ELFv1 function descriptors the loader validated (a linked image's or an object's .opd) a return payload is installed only at a call whose next instruction reloads the slot it stores. Gated on that loader fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `on` installs them on any image, `off` on none
         self.callee_proto_stack = true; // (kuna) default-on (0/675 ablation): a locked callee prototype states how much it pops and how much of the caller's stack it can reach
         self.callee_pop = true; // (kuna) default-on (0/675 ablation): an unknown extrapop is read off the caller's push run instead of guessed as "pops nothing" (0/675 ablation)
         self.callee_pop_slot = true; // (kuna) default-on (0/675 ablation): the calleepop guess follows a slot pushed in front of one call and popped by a later one
@@ -4407,7 +4412,9 @@ impl Architecture {
         if self.segmentize {
             ctx.segment_ops = self.segment_defs.clone();
         }
-        ctx.call_mechanism_effects = self.call_mechanism_effects; // callmechanisms
+        ctx.call_mechanism_effects = self.call_mechanism_mode.fires(self.image_elfv1_toc); // callmechanisms
+        ctx.call_mechanism_reload_only =
+            self.call_mechanism_mode == crate::kuna_callmechanisms::CallMechanismMode::Auto;
         ctx.min_laned_register_size = self.get_minimum_laned_register_size();
         // Carry the laned-register table so the per-function Funcdata reaches
         // `glb->getLanedRegister` (C++ `Architecture::lanerecords`); cheap clones
