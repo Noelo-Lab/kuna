@@ -2160,7 +2160,8 @@ mod tests {
         // and kuna-gotimportproto / a type-only declaration bound at a MIPS GOT import call
         // and kuna-aggregatefields / declared records kept whole until their fields are named
         // and kuna-copywaves / copy propagations seed rule-pool waves (option copywaves)
-        assert_eq!(count, 705, "corpus file count drifted");
+        // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
+        assert_eq!(count, 706, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

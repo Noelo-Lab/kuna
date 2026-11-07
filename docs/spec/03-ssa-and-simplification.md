@@ -1539,6 +1539,35 @@ changed anything, and the first pass of every pool run is a full sweep (a wave
 needs an earlier change in the same run), so the rule fires one stackstall
 iteration later. With `copywaves off`, `deadwaves` behaves as described above.
 
+(kuna `deadcascade`, default 32) A wave is cheaper than a sweep but still
+walks the whole function, and the far-walking rules still run on every op of
+their opcodes, so a chain of a thousand links still costs a thousand passes.
+Once one run of a pool has made N passes (`action.rs (ActionPool::apply)`
+counts the passes since the run began and sets
+`Funcdata::set_dead_cascade_now`), when
+`RuleEarlyRemoval` removes a join (`MULTIEQUAL`) or a guard (`INDIRECT`), it
+also removes the joins and guards behind the cursor that defined what that op
+read and that nothing reads any more, and theirs in turn
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_deadcascade.rs`). They go
+in the order the following passes would have removed them: one batch per
+pass, each batch in sequence order; a definition that dies behind the op
+removing it joins the next batch and one ahead of it the same batch. A
+definition at or ahead of the cursor is left to the running pass, which
+removes it when it gets there. Each removal is recorded for `deadwaves` like
+any other, and the checks are `RuleEarlyRemoval`'s own
+(`ruleaction_1.rs (RuleEarlyRemoval::removable)`). What changes is when a
+removal happens relative to the other rules' tests: a rule that counts a
+value's readers sees a dead reader gone passes earlier, and the Varnodes the
+removals free are reused in another order. Cascading from the first pass of
+every run (`deadcascade on`) changed the variable assignment of 346 of
+68,488 corpus functions, and, through every kind of dead op, folded the two
+paths' `v + 1` and `v + 100` of `cons` in the `rustabi` stage test into one
+add after the join. So the cascade is held to joins and guards, whose chains
+are the long ones (a guard per call, a join per merge point), and waits for a
+run that has gone N passes, which is nearly always taking such chains apart;
+the runs of ordinary functions end long before. With `deadcascade off` every
+chain dies one link per pass, as upstream's does.
+
 Three pools exist in the `decompile` tree
 (`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
 (universal_sched)`): **oppool1**, 141 registered rules, sits inside the

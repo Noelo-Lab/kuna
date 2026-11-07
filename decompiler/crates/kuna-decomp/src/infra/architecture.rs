@@ -897,6 +897,10 @@ pub struct Architecture {
     /// removal, the next pass revisits only the ops next to what it removed
     /// (`infra/action.rs (ActionPool::apply_wave)`).
     pub pool_dead_waves: bool,
+    /// (kuna `deadcascade`) After this many passes of one run of a rule pool
+    /// (`None` = never), dead-op removal also removes the dead chain of joins
+    /// and guards behind the removed op (`p3_dataflow/kuna_deadcascade.rs`).
+    pub dead_cascade: Option<u32>,
     /// (kuna `copywaves`) A pass whose only changes were dead-op removals and
     /// copy propagations is followed by a wave too, and a wave offers an op it
     /// reaches only for its opcode just the far-walking rules
@@ -3201,6 +3205,7 @@ impl Architecture {
             jumptable_share_partial: true,
             early_restart: true,
             pool_dead_waves: true,
+            dead_cascade: Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES),
             pool_copy_waves: true,
             noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
@@ -3657,6 +3662,7 @@ impl Architecture {
         self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
         self.early_restart = true;
         self.pool_dead_waves = true;
+        self.dead_cascade = Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES);
         self.pool_copy_waves = true;
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_views = false;
@@ -4805,6 +4811,7 @@ impl Architecture {
         // `Funcdata::stage_jump_table` reaches it.
         ctx.jumptable_share_partial = self.jumptable_share_partial;
         ctx.pool_dead_waves = self.pool_dead_waves;
+        ctx.dead_cascade = self.dead_cascade;
         ctx.pool_copy_waves = self.pool_copy_waves;
         ctx.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
