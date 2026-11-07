@@ -1489,6 +1489,9 @@ Three tiers:
 | a huge function exhausts memory in the heritage pass that first heritages its stack | [`loadguardreads`](#loadguardreads) |
 | millions of COPY ops are built and destroyed in one heritage pass | [`loadguardreads`](#loadguardreads) |
 | a function with many indexed stack array reads and many address-taken locals takes gigabytes to decompile | [`loadguardreads`](#loadguardreads) |
+| runtime-sized buffer accesses below a fixed local array | [`stackalloc`](#stackalloc) |
+| dynamic stack memory is overwritten by a generated call | [`stackalloc`](#stackalloc) |
+| undeclared Stack location after variable stack subtraction | [`stackalloc`](#stackalloc) |
 
 ## Toggleable transforms
 
@@ -4605,6 +4608,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default. Flip off to build upstream's LOAD guard COPYs, for example to compare heritage's intermediate IR with upstream.
 - **Where / provenance:** P3/load-guard · kuna · performance · gh-1034
 - **Example:** `option loadguardreads off`
+
+### `stackalloc` -- on | off, default `off`
+
+- **Symptoms:** runtime-sized buffer accesses below a fixed local array; dynamic stack memory is overwritten by a generated call; undeclared Stack location after variable stack subtraction.
+- **What it does:** Materialize runtime-sized 32- and 64-bit stack allocation as compiler-backed C storage across control flow. Follow stack adoption through copies and PHIs, recover the original size from paired pointer/counter probe loops, and bound outgoing stack accesses by SSA fixed-point analysis.
+- **When to flip:** Enable for known ordinary runtime stack-buffer lifetimes that decompile to accesses below a fixed local array or an undeclared Stack location. Handles conditional and repeated allocations, paired pointer/counter stack probes, and bases restored through memory. Loops that restore an earlier stack pointer, including scoped variable-length arrays, are declined because compiler alloca storage lasts until function return. Uses the selected ABI stack pointer; validated on x86, AMD64, ARM, AArch64, RISC-V32/64 and SPARC32/64. Bounds both sides of the allocation and preserves the selected SPARC V9 biased register-window ABI. Discovery follows subtractions feeding physical SP; unknown stack effects and unbounded outgoing-area cycles are declined. Saved-context switching is outside this allocation model.
+- **Where / provenance:** P3/stack-pointer-flow · kuna · correctness-fix · kuna-stackalloc
+- **Example:** `option stackalloc on`
 
 ## Programmatic use
 

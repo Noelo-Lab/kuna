@@ -225,6 +225,11 @@ jobs:
           workspaces: decompiler
           key: rust-test-line-tables
 
+      - name: Install cross-ISA round-trip tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld qemu-user binutils-sparc64-linux-gnu
+
       # Missing or unusable required processor specs fail the tests.
       - name: Compile the SLEIGH specs
         run: make specs
@@ -243,6 +248,12 @@ jobs:
         run: |
           df -h .
           make rust-test
+
+      - name: Cross-ISA stack allocation round trips
+        env:
+          KUNA_REQUIRE_STACKALLOC_ISA: "1"
+        run: |
+          cargo test --manifest-path decompiler/Cargo.toml -p kuna-cli --test integration stack_allocations_isa:: -- --nocapture
 
       - name: Workspace build disk usage
         if: always()
