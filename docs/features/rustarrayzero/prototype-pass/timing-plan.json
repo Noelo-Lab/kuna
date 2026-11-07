@@ -1,0 +1,193 @@
+{
+  "declared_at": "2026-11-03T05:13:35.200356+00:00",
+  "feature": "Exact-width Rust zero constants stored into integer byte arrays",
+  "status": "Research plan declared before implementation, checkout or timing. Bound to final parent publication and final source after validation.",
+  "root": "/home/mahaloz/kwt/angr-rust-array-constant",
+  "base": "/home/mahaloz/kwt/angr-rust-array-decay",
+  "seed": 202611072,
+  "samples_per_arm": 64,
+  "warmups_per_arm": 3,
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "cases": [
+    [
+      "c-zero",
+      "/home/mahaloz/kwt/angr-rust-array-constant/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_unsigned",
+      "c"
+    ],
+    [
+      "go-zero",
+      "/home/mahaloz/kwt/angr-rust-array-constant/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_unsigned",
+      "go"
+    ],
+    [
+      "rust-zero",
+      "/home/mahaloz/kwt/angr-rust-array-constant/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_unsigned",
+      "rust"
+    ],
+    [
+      "rust-field",
+      "/home/mahaloz/kwt/angr-rust-array-constant/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_field",
+      "rust"
+    ],
+    [
+      "rust-callback",
+      "/home/mahaloz/kwt/angr-rust-array-constant/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64",
+      "zero_callback",
+      "rust"
+    ],
+    [
+      "rust-large",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "rust-count",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x12810",
+      "rust"
+    ],
+    [
+      "rust-inflate",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x170bc",
+      "rust"
+    ]
+  ],
+  "case_options": {
+    "c-zero": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "go-zero": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "rust-zero": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "rust-field": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "rust-callback": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off",
+      "--option",
+      "ctypes",
+      "off",
+      "--option",
+      "realtypes",
+      "off"
+    ],
+    "rust-large": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "rust-count": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ],
+    "rust-inflate": [
+      "--option",
+      "godwarfsig",
+      "off",
+      "--option",
+      "gopairreturns",
+      "off"
+    ]
+  },
+  "required_cases": [
+    "c-zero",
+    "go-zero",
+    "rust-zero",
+    "rust-field",
+    "rust-callback",
+    "rust-large",
+    "rust-count",
+    "rust-inflate"
+  ],
+  "budget_pct": 5,
+  "acceptance": "Both CPU and wall median candidate/parent deltas must be at most5% for every case. One final analysis; no unchanged-code repeat after failure. This is the repository median speed criterion; confidence bounds are reported as uncertainty, not used as a hidden post-hoc gate.",
+  "confidence_reporting": "95% one-sided paired-block-bootstrap upper bounds on mean CPU/wall ratios,2000resamples per case; not simultaneous bounds. Report alongside medians and retain every sample.",
+  "bootstrap_resamples": 2000,
+  "upper_quantile": 0.95,
+  "parent_cli_sha256": "a1bc22c5d2a4b10662a9338ed48d1a2f85144ef4a9178b30b19eec7a76305bda",
+  "fixture_sha256": {
+    "/home/mahaloz/kwt/angr-rust-array-constant/decompiler/crates/kuna-analysis/tests/fixtures/array_constant_x86_64": "d092a4e34ba7fd229f9183389de04b7a82edfaa145f746c4373e79d04c6c3074",
+    "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb"
+  },
+  "lightwork_reservation_amendment": {
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "policy": "No concurrent owned builds/tests/decompilations or checkout/evidence finalization; only small static reads/writes pinned reserved CPUs."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "raw_sample_persistence": "Atomic checkpoint after every balanced block; declared before the first timing sample."
+}

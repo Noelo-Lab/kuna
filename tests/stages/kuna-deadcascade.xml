@@ -1,0 +1,37 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- GH-1034, P3 rule pools, option deadcascade. churn (the prunedssa
+     fixture) reads 256 read-only table words between 256 calls; its rule
+     pools remove dead INDIRECT and MULTIEQUAL chains whose links each sit
+     before the op reading them. Pass 1 removes one link per pool pass
+     (deadcascade off). Pass 2 cascades from the first pass of every pool run
+     (on): removing a link also removes the dead links behind it. Pass 3 is the
+     default, which cascades from pass 32 of a run. All three print the same
+     body, leave the same live IR and create the same ops.
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/prunedssa_x86_64</com>
+  <com>read symbols</com>
+  <com>option deadcascade off</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>option deadcascade on</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>option deadcascade 32</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+</script>
+<stringmatch name="deadcascade #1: every pass prints churn" min="3" max="3">^uint8 churn\(int8 a0,char \*a1\)$</stringmatch>
+<stringmatch name="deadcascade #2: every pass keeps churn's 256 calls" min="768" max="768">sink\(</stringmatch>
+<stringmatch name="deadcascade #3: every pass leaves the same live IR" min="3" max="3">Count - pcode = 8135</stringmatch>
+<stringmatch name="deadcascade #4: every pass creates the same ops" min="3" max="3">Count - created = 35936</stringmatch>
+</decompilertest>

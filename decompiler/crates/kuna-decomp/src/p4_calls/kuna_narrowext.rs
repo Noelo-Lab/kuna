@@ -113,11 +113,21 @@ pub fn rules(arch: &Architecture) -> Rules {
 /// The MIPS conventions whose documents state how arguments are extended: o32
 /// (the System V psABI) and n32/n64 (SGI's handbook), not EABI or o64.
 fn mips_documented(id: &str) -> bool {
+    if crate::kuna_octeonid::hard_float(id).is_some() {
+        return true;
+    }
     let mut parts = id.split(':').skip(3);
     let variant = parts.next().unwrap_or("");
-    match parts.next().unwrap_or("") {
+    let model = parts.next().unwrap_or("");
+    if variant.starts_with("octeon") {
+        return false;
+    }
+    match model {
         "o32" | "n32" => true,
-        "default" => !variant.contains("32addr") && !variant.contains("32R6addr"),
+        "default" => {
+            matches!(variant, "64-32addr-fp32" | "micro64-32addr-fp32")
+                || (!variant.contains("32addr") && !variant.contains("32R6addr"))
+        }
         _ => false,
     }
 }

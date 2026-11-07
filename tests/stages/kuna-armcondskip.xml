@@ -1,0 +1,62 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna issue testcase: a predicated ARM instruction's condition skip filed as
+    a jump to the next instruction in the cross-reference index
+    (`option armcondskip on|off`, default-ON).
+
+    Issue:      kuna-analysis-armcondskip - `kuna xrefs` from any
+                `movlt`/`ldrne`/`moveq` of an A32 or Thumb-2 image answered a
+                Jump to the next instruction, which no other tool files.
+    Stage:      P1 code/data partition - the on-demand cross-reference query
+                (`listing/xrefs.rs`).
+    P0 assert:  `option armcondskip on|off`.
+
+    The Listing tier and the xref query are built only on the real-object
+    bootstrap path, never on the console decompile path (docs/spec/
+    01-program-prep.md section 1.6), and no console command prints an xref
+    row, so a stage test cannot assert the row itself. This case pins what
+    the console can show, as `kuna-picbase.xml` does for its option:
+
+      * `option armcondskip off` parses and round-trips (an unknown option
+        would make the console error and the next decompile would not run),
+      * flipping it changes nothing in the rendered C of `clamp`, whose
+        `movlt`/`movge` pair is the instruction shape the option concerns,
+      * the catalog documents it as a default-on P1 option.
+
+    The two-pass proof (option off = a Jump from every predicated instruction
+    to the next one, default = none, real conditional branches keep theirs)
+    lives in the cargo gate `decompiler/crates/kuna-console/tests/
+    verify_xreffp.rs` (`armcondskip_off_files_every_skip` and the default
+    tests), over the `xreffp_arm_le32` fixture this case also loads.
+
+    The XML wrapper only supplies the harness architecture; the pass clears it
+    and loads the real linked ARM fixture (built from
+    decompiler/crates/kuna-analysis/tests/fixtures/xreffp_arm_le32.c).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/xreffp_arm_le32</com>
+  <com>read symbols</com>
+  <com>load function clamp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option armcondskip off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option armcondskip on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>phase catalog armcondskip</com>
+  <com>quit</com>
+</script>
+<stringmatch name="KUNA-ARMCONDSKIP #1: the option parses and round-trips in both directions, and is inert on the console path -- clamp's first predicated pair renders identically in all three passes" min="3" max="3">^  if \(a0 &lt; a1\)$</stringmatch>
+<stringmatch name="KUNA-ARMCONDSKIP #2: clamp's second predicated pair renders identically in all three passes" min="3" max="3">^    a0 = a2;$</stringmatch>
+<stringmatch name="KUNA-ARMCONDSKIP #3: the catalog documents it as a default-on option" min="1" max="1">"option": "armcondskip", "values": \["on", "off"\], "default": "on"</stringmatch>
+<stringmatch name="KUNA-ARMCONDSKIP #4: the catalog row places it in P1 code/data partition" min="1" max="1">"phase": "P1", "subphase": "code-data-partition", "strength": "HARD", "rewind": "P1", "issue": "kuna-analysis-armcondskip"</stringmatch>
+</decompilertest>

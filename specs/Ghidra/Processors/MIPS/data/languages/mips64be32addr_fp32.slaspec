@@ -1,0 +1,13 @@
+# MIPS64 with 32-bit addresses and 32-bit floating-point registers.
+
+@define ENDIAN "big"
+@define MIPS64 ""
+@define FREGSIZE "4"
+@define ISA_VARIANT ""
+
+@include "mips.sinc"
+@include "mips32Instructions.sinc"
+@include "mips16.sinc"
+@include "mipsmicro.sinc"
+@include "mips64Instructions.sinc"
+@include "mips_dsp.sinc"
