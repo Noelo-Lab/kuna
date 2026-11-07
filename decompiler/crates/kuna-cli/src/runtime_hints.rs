@@ -121,6 +121,37 @@ fn pyinstaller_version(b: &[u8], at: usize) -> Option<String> {
     (names_python || b.len() == at + 24).then(|| format!("{major}.{minor}"))
 }
 
+/// The ILC version in a `.comment` string such as
+/// `.NET: ilc 10.0.2-servicing.25612.105+hash`.
+fn ilc_version(b: &[u8]) -> Option<String> {
+    let at = b.windows(4).position(|w| w == b"ilc ")? + 4;
+    let rest = b.get(at..)?;
+    let end = rest
+        .iter()
+        .position(|c| !(c.is_ascii_digit() || *c == b'.'))
+        .unwrap_or(rest.len());
+    let version = std::str::from_utf8(&rest[..end]).ok()?;
+    version.contains('.').then(|| version.to_string())
+}
+
+/// Strong markers of a .NET NativeAOT image. On ELF, `__managedcode` and
+/// `.dotnet_eh_table` both live in `.shstrtab`; on a Windows PE, where the
+/// default link merges `.managedcode` into `.text`, the `.unbox` and `.modules`
+/// sections still survive. Requiring the pair keeps an arbitrary image that
+/// happens to spell one of them out from being labeled.
+fn nativeaot_version(b: &[u8], pe: Option<&PeView>) -> Option<Option<String>> {
+    let has = |needle: &[u8]| b.windows(needle.len()).any(|w| w == needle);
+    let elf = b.starts_with(b"\x7fELF")
+        && has(b"__managedcode")
+        && has(b".dotnet_eh_table");
+    let windows = pe.is_some_and(|p| {
+        !p.clr
+            && p.section_names.iter().any(|n| n.as_slice() == b".unbox")
+            && p.section_names.iter().any(|n| n.as_slice() == b".modules")
+    });
+    (elf || windows).then(|| ilc_version(b))
+}
+
 fn hint(id: &'static str, version: Option<String>, text: String, actionable: bool) -> RuntimeHint {
     RuntimeHint { id, version, hint: text, actionable }
 }
@@ -150,6 +181,21 @@ pub fn detect(bytes: &[u8], toolchain: bool) -> Vec<RuntimeHint> {
             None,
             "managed .NET assembly: native decompilation shows only the stub; use ilspycmd".into(),
             true,
+        ));
+    }
+    if let Some(version) = nativeaot_version(bytes, pe.as_ref()) {
+        let label = version
+            .as_deref()
+            .map(|v| format!("NativeAOT (ILC {v})"))
+            .unwrap_or_else(|| "NativeAOT".into());
+        out.push(hint(
+            "nativeaot",
+            version,
+            format!(
+                "{label} image: native code from C#; decompiles as native C, but method names \
+                 need the .dbg sidecar or a NativeAOT metadata tool"
+            ),
+            false,
         ));
     }
     if let Some(version) = last_cookie.and_then(|at| pyinstaller_version(bytes, at)) {
@@ -342,6 +388,45 @@ mod tests {
         assert!(hints[0].hint.contains("ilspycmd"));
         assert!(detect(&pe(0x20b, true, &[b".text"], &[]), false)[0].id == "dotnet");
         assert!(detect(&pe(0x10b, false, &[b".text"], &[]), false).is_empty());
+    }
+
+    #[test]
+    fn nativeaot_elf_is_named_with_its_ilc_version() {
+        let mut elf = b"\x7fELF".to_vec();
+        elf.resize(0x100, 0);
+        elf.extend_from_slice(b"__managedcode\0__unbox\0.dotnet_eh_table\0");
+        elf.extend_from_slice(b".comment\0.NET: ilc 10.0.2-servicing.25612.105+hash\0");
+        let hints = detect(&elf, false);
+        assert_eq!(ids(&hints), ["nativeaot"]);
+        assert_eq!(hints[0].version.as_deref(), Some("10.0.2"));
+        assert!(hints[0].hint.contains("NativeAOT (ILC 10.0.2)"));
+        assert!(!hints[0].actionable);
+    }
+
+    #[test]
+    fn nativeaot_windows_pe_is_named_by_unbox_and_modules() {
+        let image = pe(
+            0x20b,
+            false,
+            &[b".text", b".unbox", b".modules"],
+            b"\0.NET: ilc 10.0.2-servicing.25612.105+hash\0",
+        );
+        let hints = detect(&image, false);
+        assert_eq!(ids(&hints), ["nativeaot"]);
+        assert_eq!(hints[0].version.as_deref(), Some("10.0.2"));
+
+        let only_unbox = pe(0x20b, false, &[b".text", b".unbox"], &[]);
+        assert!(detect(&only_unbox, false).is_empty());
+    }
+
+    #[test]
+    fn nativeaot_needs_both_elf_markers_and_an_elf() {
+        let mut only_managed = b"\x7fELF".to_vec();
+        only_managed.extend_from_slice(b"__managedcode\0");
+        assert!(detect(&only_managed, false).is_empty());
+
+        let pe_image = pe(0x20b, false, &[b".text"], b"__managedcode\0.dotnet_eh_table\0");
+        assert!(detect(&pe_image, false).is_empty());
     }
 
     #[test]
