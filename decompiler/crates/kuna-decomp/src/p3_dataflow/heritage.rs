@@ -2020,15 +2020,17 @@ impl Heritage {
                         effecttype = effect_type::KILLEDBYCALL;
                     }
                     if output_character == Containment::ContainedBy {
-                        // tryOutputOverlapGuard (heritage.cc:1249/1293): the heritaged
-                        // range properly contains the return storage, so the return
-                        // entry becomes an INDIRECT creation and the bytes around it
-                        // are PIECEd back on.  Gated by `option calloverlap full`, or `auto` for a narrow scalar slot.
-                        if (overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_FULL
+                        // An explicit slot extension defines the surrounding bytes;
+                        // otherwise use the generic overlap guard (tryOutputOverlapGuard,
+                        // heritage.cc:1249/1293), gated by `option calloverlap full`, or
+                        // `auto` for a narrow scalar slot.
+                        if crate::p4_calls::kuna_registerslots::guard_output(
+                            fd, fc, addr, &trans_addr, size, write,
+                        ) || ((overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_FULL
                             || (overlap_level == super::kuna_calloverlap::LEVEL_AUTO
                                 && super::kuna_calloverlap::auto_register(fd.get_arch().manage(), fc.proto(), &trans_addr, size, true)))
                             && self
-                                .try_output_overlap_guard(fd, fc, addr, &trans_addr, size, write)
+                                .try_output_overlap_guard(fd, fc, addr, &trans_addr, size, write))
                         {
                             // Range is handled, don't do additional guarding.
                             effecttype = effect_type::UNAFFECTED;
@@ -2226,6 +2228,15 @@ impl Heritage {
                 let _ = fd.op_insert_input(op, vn, nin);
             }
         } else if ic == Containment::ContainedBy {
+            // A declared slot extension makes the slot the argument the call reads.
+            if let Some((slot, slot_size)) =
+                crate::p4_calls::kuna_registerslots::input_slot(fc, addr, trans_addr, size)
+            {
+                if fc.get_active_input().which_trial(&slot, slot_size) < 0 {
+                    Self::truncated_input_trial(fd, fc, addr, size, &slot, slot_size);
+                }
+                return;
+            }
             let partition = fd.get_arch().multi_reg_args.then(|| {
                 super::kuna_multiregargs::input_partition(
                     fc.proto(), fd.get_arch().manage(), trans_addr, size,
