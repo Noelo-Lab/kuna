@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-03T06:26:14.559771+00:00",
+  "new_base_commit": "8ced8a2e051e26b89d21096699f690646924921b",
+  "new_base_tree": "d5036439456222c6f82b8f92633e3974acbf73c5",
+  "previous_parent": "73e7173f1297093244328d9497b761a5887b366d",
+  "previous_candidate_root": "/home/mahaloz/kwt/angr-rust-array-constant",
+  "previous_candidate_cli_sha256": "3d9aacaffa89394270398ac84b7882df299453fd9ef3eb0cb48f4799f5786b1d",
+  "previous_evidence": "/tmp/kuna-rust-array-constant",
+  "reason": "Main merged independent P6 performance changes #1466 and #1468. Rebuild frozen parent, apply isolated pending P9 patch, fix live-value count and explicit preset exclusion; repeat all proof against new parent.",
+  "specs": 154,
+  "new_base_root": "/home/mahaloz/kwt/angr-array-zero-base-8ced",
+  "new_candidate_root": "/home/mahaloz/kwt/angr-rust-array-zero"
+}

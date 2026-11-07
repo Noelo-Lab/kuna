@@ -88,7 +88,7 @@ fn resolve_from_sections(file: &object::File) -> Vec<PltSym> {
     // by relocations.  It therefore runs its own resolver (`resolve_mips_imports`)
     // *before* the relocation-driven path below, which would otherwise early-return
     // on the empty `build_got_name_map`.  See [`resolve_mips_imports`].
-    if matches!(arch, Architecture::Mips | Architecture::Mips64) {
+    if super::kuna_mipsabi::is_mips(arch) {
         return resolve_mips_imports(file);
     }
 
@@ -210,13 +210,7 @@ fn resolve_from_sections(file: &object::File) -> Vec<PltSym> {
 /// this path cannot supply.
 fn resolve_from_dynamic_segment(file: &object::File, bytes: &[u8]) -> Vec<PltSym> {
     let arch = file.architecture();
-    if matches!(
-        arch,
-        Architecture::Mips
-            | Architecture::Mips64
-            | Architecture::PowerPc
-            | Architecture::PowerPc64
-    ) {
+    if super::kuna_mipsabi::is_mips(arch) || matches!(arch, Architecture::PowerPc | Architecture::PowerPc64) {
         return Vec::new();
     }
     let Some(imports) = super::elf_dynseg::dynamic_imports(bytes) else {
@@ -996,7 +990,7 @@ fn resolve_mips_imports(file: &object::File) -> Vec<PltSym> {
 /// address there at load time, so the 0 is not its value and the slot stays
 /// variable.
 pub(crate) fn mips_got_const_ranges(file: &object::File) -> Vec<(u64, u64)> {
-    if !matches!(file.architecture(), Architecture::Mips | Architecture::Mips64) {
+    if !super::kuna_mipsabi::is_mips(file.architecture()) {
         return Vec::new();
     }
     let ptr = if file.is_64() { 8u64 } else { 4u64 };
@@ -1010,6 +1004,7 @@ pub(crate) fn mips_got_const_ranges(file: &object::File) -> Vec<(u64, u64)> {
 /// One external-symbol GOT entry on MIPS: the dynsym name, the GOT slot address,
 /// and the slot's static contents (the `.MIPS.stubs` stub address it points at).
 struct MipsExtGot {
+    symbol_index: u64,
     name: Vec<u8>,
     slot_addr: u64,
     stub_addr: u64,
@@ -1056,10 +1051,11 @@ fn mips_external_got_entries(file: &object::File) -> Vec<MipsExtGot> {
             Ok(n) if !n.is_empty() => strip_version(n),
             _ => continue,
         };
-        let got_index = local_gotno + (idx as u64 - gotsym);
-        let slot_addr = got_base.wrapping_add(got_index * ptr as u64);
+        let Some(slot_addr) = local_gotno.checked_add(idx as u64 - gotsym)
+            .and_then(|index| index.checked_mul(ptr as u64))
+            .and_then(|offset| got_base.checked_add(offset)) else { continue };
         let stub_addr = read_word_at_vma(file, slot_addr, ptr, le).unwrap_or(0);
-        out.push(MipsExtGot { name, slot_addr, stub_addr });
+        out.push(MipsExtGot { name, slot_addr, stub_addr, symbol_index: idx as u64 });
     }
 
     out
@@ -1446,4 +1442,9 @@ mod tests {
         got.sort();
         assert_eq!(got, vec![(entry(1), b"printf".to_vec()), (entry(2), b"puts".to_vec())]);
     }
+}
+
+/// Dynamic-symbol identities for validating lazy-binding stub instructions.
+pub(super) fn mips_stub_identities(file: &object::File<'_>) -> Vec<(u64, u64)> {
+    mips_external_got_entries(file).into_iter().map(|entry| (entry.stub_addr, entry.symbol_index)).collect()
 }

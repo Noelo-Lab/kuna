@@ -52,3 +52,20 @@ License:
     DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
     OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
     USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+The Swift symbol demangler
+(decompiler/crates/kuna-analysis/src/analyzers/demangle/kuna_swift) follows
+the Swift project's reference demangler
+(https://github.com/apple/swift, swift/lib/Demangling/Demangler.cpp and
+NodePrinter.cpp, with the node vocabulary of DemangleNodes.def and the
+mangling grammar of docs/ABI/Mangling.rst). It is a fresh Rust
+implementation of that design, not a line-for-line translation. The Swift
+project is released under the Apache License, Version 2.0, with the Runtime
+Library Exception:
+
+    Copyright (c) 2014 - 2026 Apple Inc. and the Swift project authors
+    Licensed under Apache License v2.0 with Runtime Library Exception
+
+    See https://swift.org/LICENSE.txt for license information
+    See https://swift.org/CONTRIBUTORS.txt for the list of Swift project
+    authors

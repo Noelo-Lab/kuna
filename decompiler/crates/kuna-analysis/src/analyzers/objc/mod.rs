@@ -148,8 +148,8 @@ impl ObjcMetadataPass {
             name: format!("_OBJC_CLASS_$_{runtime_name}"),
             kind: SymKind::Data,
         });
-        // A Swift class reaches the runtime as `_TtC6Toyota3Foo`; the method
-        // and ivar labels use the demangled `Toyota.Foo` (`swiftdemangle`).
+        // A Swift class reaches the runtime as `_TtC6Sample3Foo`; the method
+        // and ivar labels use the demangled `Sample.Foo` (`swiftdemangle`).
         let name = display_class_name(&runtime_name);
         let name = name.as_str();
 
@@ -262,7 +262,7 @@ impl ObjcMetadataPass {
 }
 
 /// The class name the labels render: the Swift demangling of an ObjC runtime
-/// name (`_TtC6Toyota3Foo` → `Toyota.Foo`) when `swiftdemangle` is on and the
+/// name (`_TtC6Sample3Foo` → `Sample.Foo`) when `swiftdemangle` is on and the
 /// name is in the demangler's coverage, else the runtime spelling as is.
 fn display_class_name(runtime_name: &str) -> String {
     if runtime_name.starts_with("_Tt") && kuna_decomp::kuna_swiftdemangle::swiftdemangle_enabled() {
@@ -296,8 +296,8 @@ mod tests {
     #[test]
     fn swift_runtime_class_names_demangle_for_labels() {
         assert_eq!(display_class_name("Greeter"), "Greeter");
-        assert_eq!(display_class_name("_TtC6Toyota24AddMileageViewController"), "Toyota.AddMileageViewController");
-        assert_eq!(display_class_name("_TtCC6Toyota5Outer5Inner"), "Toyota.Outer.Inner");
+        assert_eq!(display_class_name("_TtC6Sample24MainScreenViewController"), "Sample.MainScreenViewController");
+        assert_eq!(display_class_name("_TtCC6Sample5Outer5Inner"), "Sample.Outer.Inner");
         // Outside the demangler's coverage the runtime spelling stays.
         assert_eq!(display_class_name("_TtC1"), "_TtC1");
     }

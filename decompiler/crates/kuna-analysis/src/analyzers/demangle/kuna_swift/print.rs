@@ -39,11 +39,19 @@ enum Sugar {
     Dictionary,
 }
 
+/// Ceiling on the rendered text of one demangling (the embedded-symbol
+/// re-entry shares it through `Printer::base`).
+const MAX_OUT: usize = 1 << 20;
+
 pub struct Printer {
     out: String,
     failed: bool,
     sugar: bool,
     depth: usize,
+    /// Text already produced by an enclosing printer; a re-entry started for
+    /// an embedded mangled symbol carries the caller's depth and byte count
+    /// so the depth cap and `MAX_OUT` budget are shared, not reset.
+    base: usize,
 }
 
 /// Render `node` in the `swift-demangle` format, or `None` when some node
@@ -53,11 +61,16 @@ pub fn print_full(node: &NodeRef) -> Option<String> {
 }
 
 fn print_with(node: &NodeRef, sugar: bool) -> Option<String> {
+    print_from(node, sugar, 0, 0)
+}
+
+fn print_from(node: &NodeRef, sugar: bool, depth: usize, base: usize) -> Option<String> {
     let mut p = Printer {
         out: String::new(),
         failed: false,
         sugar,
-        depth: 0,
+        depth,
+        base,
     };
     p.print(node, false);
     if p.failed { None } else { Some(p.out) }
@@ -710,7 +723,9 @@ impl Printer {
                     .map(|c| c.get_text().to_string())
                     .unwrap_or_default();
                 idx += 1;
-                match super::demangle_swift_tree(&text).and_then(|t| print_with(&t, false)) {
+                match super::demangle_swift_tree(&text)
+                    .and_then(|t| print_from(&t, false, self.depth, self.base + self.out.len()))
+                {
                     Some(d) => self.s(&d),
                     None => self.failed = true,
                 }
@@ -800,7 +815,7 @@ impl Printer {
     /// Render `n`; returns the context that could not be printed in prefix
     /// form (the caller prints it as ` in <context>`).
     pub fn print(&mut self, n: &NodeRef, as_prefix_context: bool) -> Option<NodeRef> {
-        if self.depth > 512 || self.out.len() > (1 << 20) {
+        if self.depth > 512 || self.base + self.out.len() > MAX_OUT {
             return self.fail();
         }
         self.depth += 1;

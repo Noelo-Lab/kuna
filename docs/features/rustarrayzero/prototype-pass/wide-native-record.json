@@ -1,0 +1,85 @@
+{
+  "status": "PASS",
+  "complete_bodies": 6,
+  "native_function_comparisons": 2304,
+  "body_rewrites": false,
+  "candidate_cli_sha256": "660260fb8dac7b462171e3039739fe533cb255dd79a226911726a39331614a0d",
+  "fixture_sha256": "a60bdfda07b977456830e17b56cda25f03818e456630c3997d47834209c6fdfb",
+  "changed_functions": [
+    "wide_zero"
+  ],
+  "unchanged_controls": [
+    "wide_copy",
+    "wide_unsigned",
+    "wide_signed",
+    "wide_halves",
+    "wide_add"
+  ],
+  "scope": "Complete original six-body automatically recovered128-bit-store bundle, C/Rust O0/O2;all128memory/guardbytes,64 low/high source patterns,two disjoint locations plus exact source/destination alias. No blanket STORE-width/type-recovery parity claim.",
+  "records": [
+    {
+      "optimization": "0",
+      "c_command": [
+        "cc",
+        "-O0",
+        "-fwrapv",
+        "-fno-inline",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/tmp/kuna-rust-array-constant/wide-native/harness.c",
+        "-o",
+        "/tmp/kuna-rust-array-constant/wide-native/reference-0"
+      ],
+      "rust_command": [
+        "rustc",
+        "--edition=2021",
+        "--crate-name",
+        "wide_store_native",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-constant/wide-native/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-array-constant/wide-native/candidate-0"
+      ],
+      "native_comparisons": 1152,
+      "stdout_sha256": "d0ad95bbf459998a5e8af261d0020e329392ac11424875d9d17beeb3dfb36bf1"
+    },
+    {
+      "optimization": "2",
+      "c_command": [
+        "cc",
+        "-O2",
+        "-fwrapv",
+        "-fno-inline",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/tmp/kuna-rust-array-constant/wide-native/harness.c",
+        "-o",
+        "/tmp/kuna-rust-array-constant/wide-native/reference-2"
+      ],
+      "rust_command": [
+        "rustc",
+        "--edition=2021",
+        "--crate-name",
+        "wide_store_native",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-constant/wide-native/candidate.rs",
+        "-o",
+        "/tmp/kuna-rust-array-constant/wide-native/candidate-2"
+      ],
+      "native_comparisons": 1152,
+      "stdout_sha256": "d0ad95bbf459998a5e8af261d0020e329392ac11424875d9d17beeb3dfb36bf1"
+    }
+  ]
+}

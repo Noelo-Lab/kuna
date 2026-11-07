@@ -121,6 +121,11 @@
         <register name="sp" />
         <register name="gp" />
       </unaffected>
+      <killedbycall>
+        <register name="at" />
+        <register name="v0" />
+        <register name="v1" />
+      </killedbycall>
     </prototype>
   </default_proto>
   <callotherfixup targetop="setISAMode">
