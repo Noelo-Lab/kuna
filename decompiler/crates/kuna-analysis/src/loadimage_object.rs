@@ -136,9 +136,10 @@ enum SegmentData {
 impl SegmentData {
     fn from_slice(data: &[u8], image: Option<&crate::image_bytes::ImageBytes>) -> Self {
         if let Some(image) = image {
-            let base = image.as_ptr() as usize;
-            let start = (data.as_ptr() as usize).saturating_sub(base);
-            if start <= image.len() && data.len() <= image.len() - start {
+            let start = (data.as_ptr() as usize).checked_sub(image.as_ptr() as usize);
+            if let Some(start) = start.filter(|&start| {
+                start <= image.len() && data.len() <= image.len() - start
+            }) {
                 return Self::Shared {
                     image: image.clone(),
                     start,

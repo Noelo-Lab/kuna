@@ -2436,7 +2436,7 @@ pub struct Architecture {
     /// flow reads a branch to one as a transfer, not code to follow into.
     pub lazy_entry_starts: Rc<Vec<u64>>,
     /// String facts kept compact until a lifted function references them.
-    pub lazy_string_facts: Rc<Vec<crate::kuna_lazystrings::Fact>>,
+    pub lazy_string_facts: Rc<crate::kuna_lazystrings::Facts>,
     pub lazy_string_probe: Option<Rc<crate::kuna_lazystrings::Probe>>,
     /// (kuna) Gate recursive-descent function discovery on a headerless
     /// `--raw-image` load (`rawdiscover`); default **on**. A raw image has no
@@ -4027,16 +4027,12 @@ impl Architecture {
         self.lazy_entry_starts = Rc::new(starts);
     }
 
-    pub fn set_lazy_string_facts(&mut self, mut facts: Vec<crate::kuna_lazystrings::Fact>) {
-        facts.sort_by_key(|fact| (fact.addr, fact.priority));
-        facts.dedup();
-        self.lazy_string_facts = Rc::new(facts);
+    pub fn set_lazy_string_facts(&mut self, facts: Vec<crate::kuna_lazystrings::Fact>) {
+        self.lazy_string_facts = Rc::new(crate::kuna_lazystrings::Facts::new(facts));
     }
 
     pub fn is_lazy_string_start(&self, vma: u64) -> bool {
-        self.lazy_string_facts
-            .binary_search_by_key(&vma, |fact| fact.addr)
-            .is_ok()
+        self.lazy_string_facts.starts_at(vma)
             || self.lazy_string_probe.as_ref().is_some_and(|probe| {
                 probe(&[vma], self.analysis_widestrings).iter().any(|fact| fact.addr == vma)
             })

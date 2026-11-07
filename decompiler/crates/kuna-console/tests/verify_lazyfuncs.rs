@@ -101,6 +101,13 @@ fn lazyfuncs_keeps_stripped_bodies_identical() {
     assert_identical("pe_imports_stripped.exe");
 }
 
+/// String facts stay compact until a body reads one, including a byte loaded from
+/// inside a literal rather than the literal's address taken as a constant.
+#[test]
+fn lazyfuncs_keeps_string_reads_identical() {
+    assert_identical("xrefpairs_macho_arm64");
+}
+
 #[test]
 fn lazyfuncs_commits_names_only() {
     let off = load("fauxware", false);

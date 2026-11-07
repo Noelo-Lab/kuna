@@ -141,8 +141,10 @@ materializes what it walks.
 
 The same option parks detected strings as compact address/length/width facts
 instead of creating a global type and symbol for every literal in the image.
-After a lift, constants landing in those ranges materialize only the strings the
-function read, and the drive repeats so type propagation sees the eager path's
+After a lift, the function's constants and direct memory reads (the first and
+last byte of each load-image varnode) select every fact whose range holds one of
+those addresses, however many shorter facts start inside it; only those strings
+materialize, and the drive repeats so type propagation sees the eager path's
 `char[N]` or wide-character symbol
 (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_lazystrings.rs (materialize)`).
 For Mach-O CLI runs with `lazyfuncs on` and `listing off`, the string pass instead
