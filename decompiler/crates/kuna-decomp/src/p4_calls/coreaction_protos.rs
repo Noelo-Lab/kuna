@@ -514,16 +514,17 @@ impl Action for ActionDefaultParams {
                         _ => None,
                     }
                 };
-                let (callee_pieces, callee_model) = if let Some(entry) = pieces_entry {
+                let (callee_pieces, callee_model, bound_model) = if let Some(entry) = pieces_entry {
                     // (kuna, Phase 3) A host-declared prototype model rides the
                     // locked pieces (ghidra-mode `<prototype model=…>`); `None`
                     // on the standalone path, keeping the default-model seed.
                     (
                         arch.callee_proto_pieces(&entry),
                         arch.callee_proto_model(&entry),
+                        arch.bound_proto_model(&entry),
                     )
                 } else {
-                    (None, None)
+                    (None, None, None)
                 };
                 // (kuna) An *output-only* callee pieces (no declared inputs / void
                 // outtype, but a custom locked output) is what the console
@@ -553,7 +554,6 @@ impl Action for ActionDefaultParams {
                             // present (Phase 3); a declaration that names none
                             // follows the image's float convention.
                             let seed_model = callee_model
-                                .clone()
                                 .or_else(|| {
                                     crate::kuna_armfloatreturn::declared_helper_model(&arch, &pieces.name).or_else(|| {
                                         crate::kuna_armfloatreturn::declared_helper_model(&arch, data.get_call_specs(i).get_name())
@@ -602,12 +602,12 @@ impl Action for ActionDefaultParams {
                         // No source-declared callee prototype (a symbol with no
                         // Funcdata): set the default-model internal proto.  The
                         // register-parameter datatests resolve here.  (kuna) A
-                        // throwing Swift call, or a callee bound to a model
-                        // without a signature, has its arguments recovered
-                        // under that model.
+                        // throwing Swift call, or a callee the analysis tier
+                        // bound to a model without a signature, has its
+                        // arguments recovered under that model.
                         let model = crate::kuna_armfloatreturn::helper_model(&arch, data.get_call_specs(i).get_name())
                             .or_else(|| crate::kuna_swiftcall::throwing_call(data, data.get_call_specs(i).get_op()))
-                            .or(callee_model)
+                            .or(bound_model)
                             .or_else(|| crate::kuna_swiftcall::indirect_call(data, data.get_call_specs(i).get_op()))
                             .unwrap_or_else(|| evalfp.clone());
                         data.get_call_specs_mut(i).proto_mut().set_internal(model, void_ty.clone());
