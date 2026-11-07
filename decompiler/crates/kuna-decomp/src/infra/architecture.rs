@@ -747,6 +747,10 @@ pub struct Architecture {
     /// `only_op_use` through
     /// [`crate::p4_calls::kuna_exclusivearguse::access_cannot_reach_call`].
     pub exclusive_arg_use: bool,
+    /// (kuna) `option exclusivecallret`: let a call and a return on mutually
+    /// exclusive paths keep each other's narrow scalar trial.  Read by
+    /// `only_op_use` through [`crate::p4_calls::kuna_exclusivecallret`].
+    pub exclusive_call_ret: bool,
     /// Opt-in stack-address evidence for call input trials.
     pub stack_addr_arg_trial: bool,
     /// (kuna) `option callretpair`: complete the two-register CALL output arm of
@@ -1152,8 +1156,9 @@ pub struct Architecture {
     /// (kuna) Completion level for the two upstream partial-range call-overlap
     /// guards `Heritage::guardCallOverlappingInput` and
     /// `Heritage::tryOutputOverlapGuard`, which kuna shipped as comment-only stubs
-    /// (option `calloverlap`).  `0` = off, `1` = input guard only, `2` = both
-    /// (upstream Ghidra's behavior).  See [`crate::p3_dataflow::kuna_calloverlap`].
+    /// (option `calloverlap`): off, auto (the default; narrow scalar slots in
+    /// wide registers only), in, or full (upstream Ghidra's behavior).  The
+    /// ordered levels are in [`crate::p3_dataflow::kuna_calloverlap`].
     pub call_overlap: int4,
     /// (kuna) Predicate strength for tolerating the caller's own caller-save
     /// spill among a trial Varnode's descendants in `Funcdata::onlyOpUse`
@@ -3172,6 +3177,7 @@ impl Architecture {
             zero_idiom_use: false, // (kuna) option zeroidiomuse; reset_defaults sets the shipped default
             stack_addr_arg_trial: false,
             exclusive_arg_use: false, // (kuna) option exclusivearguse; reset_defaults sets the shipped default
+            exclusive_call_ret: false, // (kuna) option exclusivecallret; reset_defaults sets the shipped default
             call_ret_pair: false, // (kuna) option callretpair; reset_defaults sets the shipped default
             multi_reg_args: false,
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
@@ -3280,7 +3286,7 @@ impl Architecture {
             callee_arity_body: true,
             callee_arity_cut: true,
             callee_arity_scratch: true,
-            call_overlap: 0,
+            call_overlap: crate::kuna_calloverlap::LEVEL_OFF, // (kuna) option calloverlap; reset_defaults sets the shipped default
             spill_arg_trial: 0,
             cond_exe_ret: false, // (kuna) option condexeret; reset_defaults sets the shipped default
             cond_exe_ret_use: false, // (kuna) option condexeretuse; reset_defaults sets the shipped default
@@ -3642,6 +3648,7 @@ impl Architecture {
         self.noreturn_ret_use = true; // (kuna) DIV-118 default-on: a status value handed to a no-return failure call at the end of its block cannot compete with the same value at the function's RETURN, so it no longer forces the prototype to void. 0/675 byte-identical on the datatest corpus and 0 changed lines across 23 linked binaries; restore the upstream blanket rejection with `option noreturnretuse off`
         self.zero_idiom_use = true; // (kuna) DIV-PENDING default-on: `INT_XOR(v,v)` is 0 whatever v is, so the x86 register-clearing idiom is not a competing use of the value it consumes and no longer sinks a call's input trials. An identity, one-directional (it can only decline a veto); 0/675 byte-identical on the datatest corpus. Restore the upstream walk with `option zeroidiomuse off`
         self.stack_addr_arg_trial = false;
+        self.exclusive_call_ret = true; // (kuna) option exclusivecallret default-on: a call and a return on arms no execution shares no longer veto each other's narrow scalar trial; limited to the calloverlap auto register shape. Restore the upstream rejection with `option exclusivecallret off`
         self.exclusive_arg_use = true; // (kuna) DIV-PENDING default-on: a LOAD/STORE on a path that provably cannot co-execute with a call is not a competing use of the value the call is passed, so it no longer sinks the call's input trial. 0/675 byte-identical on the datatest corpus. Restore the upstream rejection with `option exclusivearguse off`
         self.call_ret_pair = true; // (kuna) DIV-162 default-on: the multi-trial arm of `FuncCallSpecs::buildOutputFromTrials` (fspec.cc:5777) shipped as a stub, so a CALL whose cspec output rule asked for a register pair got NO output and both halves rendered as locals the function never assigns. Completing it is upstream behaviour and is not language-specific -- a 16-byte aggregate return in RAX:RDX is ordinary System V C. 0/675 byte-identical on the datatest corpus. Restore the stub with `option callretpair off`
         self.multi_reg_args = true;
@@ -3727,7 +3734,7 @@ impl Architecture {
         self.callee_arity_body = true; // (kuna) DIV-PENDING default-on: a call with no sibling recovers its argument list from the callee's own body (0/675 ablation)
         self.callee_arity_cut = true; // (kuna) DIV-PENDING default-on: a callee-body argument run that stops short of the last argument register is bounded by that register, so a body whose decode is cut at a nested call still speaks (0/675 ablation)
         self.callee_arity_scratch = true; // (kuna) DIV-PENDING default-on: a boundary register the caller's own trial scoring marked inactive is scratch, not a further argument, so a run that stops at one is still bounded (0/675 ablation)
-        self.call_overlap = 0; // (kuna) calloverlap: PLACEHOLDER default (set from measurement)
+        self.call_overlap = crate::kuna_calloverlap::LEVEL_AUTO;
         self.cond_exe_ret = true; // (kuna) option condexeret default-on: a return trial that failed only at the function's input through a merge block ActionConditionalExe can thread is re-checked once that block is gone; 0/675 datatest and 0 stage assertions moved, decompile-all unchanged on 5,422 fixture and 36,464 decbench functions, speed within noise
         self.cond_exe_ret_use = true; // (kuna) option condexeretuse default-on: a use of a returned value on the branch a merge block's re-test of the same condition rules out no longer rejects the output trial; 0/675 datatest assertions moved
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
@@ -4504,6 +4511,7 @@ impl Architecture {
         // (kuna) carry the mutually-exclusive-path dereference gate so `only_op_use`
         // reaches `option exclusivearguse` via `glb`.
         ctx.exclusive_arg_use = self.exclusive_arg_use;
+        ctx.exclusive_call_ret = self.exclusive_call_ret;
         ctx.stack_addr_arg_trial = self.stack_addr_arg_trial;
         // (kuna) carry the two-register CALL output gate so `kuna_callretpair`
         // reaches `option callretpair` via `glb`.

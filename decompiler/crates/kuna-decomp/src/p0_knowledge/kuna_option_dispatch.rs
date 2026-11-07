@@ -253,6 +253,7 @@ kuna_options! { self, p1;
     "noreturnretuse" => on_off!(noreturn_ret_use, "No-return call argument use in return trials"),
     "zeroidiomuse" => on_off!(zero_idiom_use, "Self-cancelling zeroing-idiom use in input trials"),
     "exclusivearguse" => on_off!(exclusive_arg_use, "Mutually-exclusive-path dereference in input trials"),
+    "exclusivecallret" => on_off!(exclusive_call_ret, "Mutually-exclusive call and return uses in narrow scalar trials"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
     "callretpair" => on_off!(call_ret_pair, "Two-register CALL output completion"),
     "multiregargs" => on_off!(multi_reg_args, "Complete ABI register argument partitions"),

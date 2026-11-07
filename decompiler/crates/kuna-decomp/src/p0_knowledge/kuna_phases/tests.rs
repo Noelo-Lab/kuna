@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_384() {
-    assert_eq!(kuna_num_settables(), 384);
-    assert_eq!(SETTABLE_TABLE.len(), 384);
+fn settable_count_is_385() {
+    assert_eq!(kuna_num_settables(), 385);
+    assert_eq!(SETTABLE_TABLE.len(), 385);
 }
 
 #[test]
-fn tier_counts_are_134_core_155_transform_95_analysis() {
+fn tier_counts_are_135_core_155_transform_95_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_134_core_155_transform_95_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (134, 155, 95));
+    assert_eq!((core, transform, analysis), (135, 155, 95));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_183() {
+fn option_values_live_value_present_for_184() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -953,7 +953,8 @@ fn option_values_live_value_present_for_183() {
     // 179 -> 180: +1 for `copywaves` (pool_copy_waves).
     // 180 -> 182: +2 for `stubtailcall` (stub_tail_call) and `gotimportproto` (got_import_proto).
     // 182 -> 183: +1 for `aggregatefields` (aggregate_fields).
-    assert_eq!(with_live, 183);
+    // 179 -> 180: +1 for `exclusivecallret` (exclusive_call_ret).
+    assert_eq!(with_live, 184);
 }
 
 #[test]
@@ -1184,7 +1185,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +2 for `stubtailcall` (after `mappedflowboundary`) and `gotimportproto` (after `pltlocal`).
     // +1 for `aggregatefields`; its P5 row sits after `fieldtype`.
     // +1 for `ppcapu`; its P1 row sits after `ifuncfpret`.
-    assert_eq!(json.matches("},\n").count(), 383);
+    // +1 for `exclusivecallret`; its P4 row sits after `exclusivearguse`.
+    assert_eq!(json.matches("},\n").count(), 384);
 }
 
 #[test]
