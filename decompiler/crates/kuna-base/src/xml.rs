@@ -2157,12 +2157,15 @@ mod tests {
         // and kuna-gottailcall / a one-destination jump through an extern's slot is a tail call
         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
         // and kuna-ppc64-toc-reload-switch / an ELFv1 TOC reload keeps a jump table's base (option callmechanisms)
+        // and kuna-elf-unwind-pcread / a PowerPC PC read keeps its FDE-owned body
         // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
         // and kuna-copywaves / copy propagations seed rule-pool waves (option copywaves)
         // and kuna-stubtailcall / a loader-proven lazy-binding stub flowed as a tail call
         // and kuna-gotimportproto / a type-only declaration bound at a MIPS GOT import call
         // and kuna-aggregatefields / declared records kept whole until their fields are named
-        assert_eq!(count, 707, "corpus file count drifted");
+        // and kuna-copywaves / copy propagations seed rule-pool waves (option copywaves)
+        // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
+        assert_eq!(count, 710, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

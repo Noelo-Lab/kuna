@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_383() {
-    assert_eq!(kuna_num_settables(), 383);
-    assert_eq!(SETTABLE_TABLE.len(), 383);
+fn settable_count_is_384() {
+    assert_eq!(kuna_num_settables(), 384);
+    assert_eq!(SETTABLE_TABLE.len(), 384);
 }
 
 #[test]
-fn tier_counts_are_134_core_155_transform_94_analysis() {
+fn tier_counts_are_134_core_155_transform_95_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_134_core_155_transform_94_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (134, 155, 94));
+    assert_eq!((core, transform, analysis), (134, 155, 95));
 }
 
 #[test]
@@ -515,6 +515,9 @@ fn option_values_live_value_present_for_182() {
         // (kuna) x86-64 IFUNC PLT-stub naming: a load-time gate read via the
         // `kuna_ifuncfpret` env var (no codegen live reader), like `i386_pie_plt`.
         "ifuncfpret",
+        // (kuna) PowerPC APU-note language selection: a load-time gate read via
+        // the `kuna_ppcapu` env var, like `ifuncfpret`.
+        "ppcapu",
         // (kuna) Relocatable-object analysis rebase (GH-289): a load-time gate read
         // via the `kuna_relocrebase` env var (the analyzer tier runs inside `load
         // file`), like `i386_pie_plt`. Default-ON (DIV-79).
@@ -1186,7 +1189,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `deadcascade`; its P3 row sits after `copywaves`.
     // +2 for `stubtailcall` (after `mappedflowboundary`) and `gotimportproto` (after `pltlocal`).
     // +1 for `aggregatefields`; its P5 row sits after `fieldtype`.
-    assert_eq!(json.matches("},\n").count(), 382);
+    // +1 for `ppcapu`; its P1 row sits after `ifuncfpret`.
+    assert_eq!(json.matches("},\n").count(), 383);
 }
 
 #[test]

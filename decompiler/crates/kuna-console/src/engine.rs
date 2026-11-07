@@ -3006,6 +3006,7 @@ impl ConsoleProgram {
             &mut merged.entries,
             &fde_bodies,
         );
+        self.arch_mut().kuna_function_bodies = fde_bodies;
         // (kuna, `coldentry`) The FDE-interior entries a multi-entry `.cold`
         // fragment is jumped into at, added past the suppression above.
         let cold_entries = std::mem::take(&mut merged.fde_interior_entries);

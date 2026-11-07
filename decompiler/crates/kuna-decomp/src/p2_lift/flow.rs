@@ -332,6 +332,9 @@ pub trait FlowEnvironment {
         Ok(None)
     }
 
+    /// A PC-capture transfer to an interior the loader assigned to this function.
+    fn is_ppc_pc_capture(&self, _fd: &Funcdata, _op: OpId) -> bool { false }
+
     /// (kuna) GH-8817: is `op` a V850 `jmp [reg]` CALLIND to reclassify as
     /// BRANCHIND? (C++ `kunaIsV850IndirectJmp`).
     ///
@@ -1307,6 +1310,25 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         Ok(())
     }
 
+    /// Follow a CALL whose return continuation is not code as a BRANCH to `dest`.
+    fn follow_call_as_branch(
+        &mut self,
+        curop: OpId,
+        dest: &Address,
+        maxtime: uintm,
+        cursor: &mut Option<OpId>,
+        startbasic: &mut bool,
+    ) -> KunaResult<()> {
+        self.data.op_set_opcode_code(curop, OpCode::CPUI_BRANCH);
+        self.new_address(curop, dest)?;
+        if self.data.obank().get(curop).expect("call-transfer: stale call op").get_time() >= maxtime {
+            self.delete_remaining_ops(*cursor)?;
+            *cursor = None;
+        }
+        *startbasic = true;
+        Ok(())
+    }
+
     /// Analyze control-flow within p-code for a single instruction (C++
     /// `xrefControlFlow`, `flow.cc:266`).
     ///
@@ -1446,7 +1468,9 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                     let destaddr = self.branch_in0_addr(curop);
                     let popret = !destaddr.is_constant()
                         && self.env.pops_return_address(&destaddr);
-                    if !destaddr.is_constant()
+                    if self.env.is_ppc_pc_capture(&self.data, curop) {
+                        self.follow_call_as_branch(curop, &destaddr, maxtime, &mut cursor, startbasic)?;
+                    } else if !destaddr.is_constant()
                         && (popret || self.env.is_return_discarding_trampoline(&destaddr))
                     {
                         // (kuna calltrampoline / callpopret) The callee throws
@@ -1461,7 +1485,6 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         // which claims it (the fragment is a known function
                         // entry precisely because it is a CALL target) and ends
                         // the caller at a synthetic tail call.
-                        self.data.op_set_opcode_code(curop, OpCode::CPUI_BRANCH);
                         let site = self
                             .data
                             .obank()
@@ -1479,12 +1502,7 @@ following this call as a branch"
                             ),
                             &site,
                         );
-                        self.new_address(curop, &destaddr)?;
-                        if self.data.obank().get(curop).expect("xref").get_time() >= maxtime {
-                            self.delete_remaining_ops(cursor)?;
-                            cursor = None;
-                        }
-                        *startbasic = true;
+                        self.follow_call_as_branch(curop, &destaddr, maxtime, &mut cursor, startbasic)?;
                     } else if self.setup_call_specs(curop)? {
                         // The C++ `--oiter` backs up to the op *after* the call —
                         // the noreturn halt `checkForFlowModification` just inserted
