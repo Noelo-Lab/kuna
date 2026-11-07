@@ -3,7 +3,7 @@
 <!--
     arm64e __auth_ptr call binding (`option authptrcall on|off`).
 
-    Issue: on iOS 16.4.1 trustd every call through an __auth_got slot was
+    Issue: on an arm64e iOS system daemon every call through an __auth_got slot was
     named, but the three calls clang routes through __auth_ptr
     (`adrp/ldr x16; blraaz x16`, ___chkstk_darwin) rendered
     `(*dat_1000716c0)(...)`. __auth_ptr is a plain S_REGULAR section with no

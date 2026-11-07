@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3941,
-    3941
+    3945,
+    3945
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1680,6 +1680,8 @@
     "data:PROTORANGES HOMESLOT #2: on, the home slot is declared as a local",
     "data:PROTORANGES HOMESLOT #3: on, worker_proc is stored into that local",
     "data:PROTORANGES HOMESLOT #4: on, the same local is passed to consume",
+    "data:PTRAUTHTRAP #10: an x0 bit test on arm64e is not the return-address check",
+    "data:PTRAUTHTRAP #11: the x0 bit test keeps its brk #0xc472 trap",
     "data:PTRAUTHTRAP #1: off keeps the bit test on the incoming return address",
     "data:PTRAUTHTRAP #2: off keeps the trap call",
     "data:PTRAUTHTRAP #3: the tail call survives in both passes",
@@ -1687,6 +1689,8 @@
     "data:PTRAUTHTRAP #5: the call to _helper survives in both passes",
     "data:PTRAUTHTRAP #6: the xpacd compare folds in both passes",
     "data:PTRAUTHTRAP #7: a guard whose both arms trap is left whole",
+    "data:PTRAUTHTRAP #8: a compare guarding brk #0xc470 keeps its check, plain AArch64 and arm64e",
+    "data:PTRAUTHTRAP #9: both brk #0xc470 traps stay",
     "data:PUSHIMMEDIATERET #1: both arms preserve the unpacker call",
     "data:PUSHIMMEDIATERET #2: only option on emits the complete tail-transfer statement",
     "data:PUSHPADREAD #1: off, the pad push reads as an argument the call passes on",

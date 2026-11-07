@@ -22,15 +22,19 @@
 //! authenticates, and the check is noise: the `xpac` form folds away on its own,
 //! but the bit test reads the incoming return address, which nothing can fold.
 //! Apple binaries carry one such check before nearly every tail call (205 in
-//! iOS 16's `trustd`, 1,017 in `AuthKit`).
+//! an iOS system daemon, 1,017 in a system framework).
 //!
 //! # Matching
 //!
 //! The trap block is the anchor: a basic block lifted entirely from one `brk`
 //! whose `SoftwareBreakpoint` `CALLOTHER` carries an immediate in
-//! `0xc470..=0xc473`. Every in-edge that is one arm of a `CBRANCH` is cut; the
-//! condition feeding it dies to dead-code elimination. A trap block entered any
-//! other way keeps that entry.
+//! `0xc470..=0xc473`. An in-edge that is one arm of a `CBRANCH` is cut only
+//! when the guard's condition is the bit-62-versus-61 test of `x30` itself
+//! (`((x30 ^ x30 << 1) >> 62) & 1`, followed through the guard block's own ops),
+//! and only on an arm64e image (`CPU_SUBTYPE_ARM64E`, recorded at load): the
+//! immediate alone is not evidence, since any AArch64 code can branch to a
+//! `brk #0xc470` on a condition of its own. The condition dies to dead-code
+//! elimination. A trap block entered any other way keeps that entry.
 //!
 //! # The edit, and the window
 //!
@@ -42,12 +46,14 @@
 //! `option ptrauthtrap on|off`, default **on**. Off keeps the checks for
 //! auditing. Destructive by declared intent: it deletes a real branch.
 
+use kuna_base::address::Address;
 use kuna_base::types::{int4, uint4};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::block::BlockKind;
 use crate::context::BlockId;
+use crate::database::TranslateAccess;
 use crate::funcdata::Funcdata;
 
 /// The SLEIGH user-op `brk` lowers to (`AARCH64base.sinc`, `:brk`).
@@ -88,9 +94,74 @@ fn is_trap_block(data: &Funcdata, bl: BlockId, userop: uint4) -> bool {
     trap
 }
 
+/// Does the `CBRANCH` ending `guard` test bit 62 against bit 61 of `lr`, the
+/// check clang emits after authenticating the return address (`eor x16, x30,
+/// x30, lsl #1; tbz x16, #62`)? Before SSA the reads are not linked to their
+/// writes, so each input is followed to the last op of the block that wrote its
+/// storage.
+fn is_pac_bit_test(data: &Funcdata, guard: BlockId) -> bool {
+    let mut ops = Vec::new();
+    let mut cur = data.bb_op_head(guard);
+    while let Some(id) = cur {
+        let Some(op) = data.obank().get(id) else { return false };
+        ops.push(op);
+        cur = data.bb_op_next(id);
+    }
+    let vn = |op: &crate::op::PcodeOp, slot| op.get_in(slot).and_then(|v| data.vbank().get(v));
+    let constant = |op: &crate::op::PcodeOp, slot| vn(op, slot).filter(|v| v.is_constant()).map(|v| v.get_offset());
+    let storage = |op: &crate::op::PcodeOp, slot| vn(op, slot).map(|v| (v.get_addr().clone(), v.get_size()));
+    let writer = |before: usize, at: &(Address, int4)| {
+        (0..before).rev().find(|&k| {
+            ops[k].get_out().and_then(|v| data.vbank().get(v)).is_some_and(|v| (v.get_addr(), v.get_size()) == (&at.0, at.1))
+        })
+    };
+    let is_lr = |at: &(Address, int4)| {
+        at.1 == 8
+            && at.0.get_space().is_some_and(|sp| data.get_arch().get_register_name(sp, at.0.get_offset(), at.1) == "x30")
+    };
+    let Some(tail) = ops.len().checked_sub(1) else { return false };
+    if ops[tail].code() != OpCode::CPUI_CBRANCH {
+        return false;
+    }
+    let (mut at, mut value) = (tail, storage(ops[tail], 1));
+    for _ in 0..8 {
+        let Some(k) = value.as_ref().and_then(|v| writer(at, v)) else { return false };
+        let op = ops[k];
+        match op.code() {
+            OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL if constant(op, 1).is_some_and(|c| c <= 1) => {
+                value = storage(op, 0);
+            }
+            OpCode::CPUI_BOOL_NEGATE | OpCode::CPUI_COPY => value = storage(op, 0),
+            OpCode::CPUI_INT_AND if constant(op, 1) == Some(1) => {
+                let shifted = storage(op, 0).and_then(|v| writer(k, &v)).map(|j| (j, ops[j]));
+                let Some((j, shr)) = shifted.filter(|(_, o)| o.code() == OpCode::CPUI_INT_RIGHT && constant(o, 1) == Some(62))
+                else {
+                    return false;
+                };
+                let Some(x) = storage(shr, 0).and_then(|v| writer(j, &v)).map(|i| (i, ops[i])) else { return false };
+                let (i, xor) = x;
+                if xor.code() != OpCode::CPUI_INT_XOR {
+                    return false;
+                }
+                let shl1_of_lr = |slot| -> Option<(Address, int4)> {
+                    let h = storage(xor, slot).and_then(|v| writer(i, &v))?;
+                    let src = storage(ops[h], 0).filter(|v| is_lr(v))?;
+                    let same_value = writer(i, &src) == writer(h, &src);
+                    (ops[h].code() == OpCode::CPUI_INT_LEFT && constant(ops[h], 1) == Some(1) && same_value).then_some(src)
+                };
+                let pair = |lr_slot, shl_slot| shl1_of_lr(shl_slot).is_some_and(|src| storage(xor, lr_slot) == Some(src));
+                return pair(0, 1) || pair(1, 0);
+            }
+            _ => return false,
+        }
+        at = k;
+    }
+    false
+}
+
 /// The `(guard block, out-edge)` pairs of every `CBRANCH` that branches into a
-/// pointer-auth trap block. A guard whose both arms trap keeps both: there is
-/// no surviving arm to fall through to.
+/// pointer-auth trap block on the return-address bit test. A guard whose both
+/// arms trap keeps both: there is no surviving arm to fall through to.
 fn trap_edges(data: &Funcdata, userop: uint4) -> Vec<(BlockId, int4)> {
     let blocks = data.bblocks_ref();
     let mut out = Vec::new();
@@ -109,7 +180,7 @@ fn trap_edges(data: &Funcdata, userop: uint4) -> Vec<(BlockId, int4)> {
                 .and_then(|t| data.obank().get(t))
                 .is_some_and(|t| t.code() == OpCode::CPUI_CBRANCH);
             let edges: Vec<int4> = (0..2).filter(|&j| blocks.block(guard).get_out(j) == trap).collect();
-            if is_cbranch && edges.len() == 1 {
+            if is_cbranch && edges.len() == 1 && is_pac_bit_test(data, guard) {
                 out.push((guard, edges[0]));
             }
         }
@@ -158,11 +229,14 @@ impl Action for ActionPtrAuthTrap {
             return 0;
         }
         for (guard, edge) in edges {
-            data.remove_branch(guard, edge).expect("ActionPtrAuthTrap: removeBranch");
+            if data.remove_branch(guard, edge).is_err() {
+                return 0;
+            }
             self.base.count += 1;
         }
-        data.remove_unreachable_blocks(false, true)
-            .expect("ActionPtrAuthTrap: removeUnreachableBlocks");
+        if data.remove_unreachable_blocks(false, true).is_err() {
+            return 0;
+        }
         1
     }
 }

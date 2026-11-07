@@ -3270,19 +3270,32 @@ those four immediates for this trap. There are two forms:
 The second form folds by itself, because the hidden `xpac` leaves the copy
 equal to the original. The first reads the incoming `x30`, which nothing can
 fold. It printed `if ((v1 ^ v1 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); return; }`
-before nearly every tail call of an Apple binary: 205 times in iOS 16's
-`trustd`, 1,017 times in `AuthKit`.
+before nearly every tail call of an Apple binary: 205 times in an iOS system
+daemon, 1,017 times in a system framework.
 
 **Matching.** The trap block is the anchor. It is a basic block whose ops
 all come from one instruction, and that instruction's `SoftwareBreakpoint`
-`CALLOTHER` carries an immediate in `0xc470..=0xc473`. Each in-edge that is
-one arm of a CBRANCH is removed. A trap block entered any other way keeps
-that entry, and so does a CBRANCH whose both arms trap: no arm would be left
-to fall through to.
+`CALLOTHER` carries an immediate in `0xc470..=0xc473`. The immediate alone is
+not evidence: any AArch64 code can branch to a `brk #0xc470` on a condition of
+its own, and cutting that edge would delete a real check. So an in-edge that is
+one arm of a CBRANCH is removed only when two things hold. The image is an
+arm64e Mach-O (`CPU_SUBTYPE_ARM64E`, recorded on the Architecture at `load
+file`; the XML `<binaryimage>` bootstrap and every other format leave the pass
+inert). And the guard's condition is the bit test of `x30` itself,
+`((x30 ^ x30 << 1) >> 62) & 1` compared with 0 or 1. Before SSA the reads are
+not linked to their writes, so the test is followed back through the guard
+block's own ops by storage: the CBRANCH condition to the `INT_AND` with 1, the
+`INT_RIGHT` by 62, the `INT_XOR` of `x30` with an `INT_LEFT` of `x30` by 1. On
+arm64e hardware a forged `x30` fails authentication, so that test only fires on
+a pointer-auth failure. A trap block entered any other way keeps that entry,
+and so does a CBRANCH whose both arms trap: no arm would be left to fall
+through to.
 
 **The edit and the window.** `remove_branch` plus `remove_unreachable_blocks`,
 pre-SSA, registered after `gowritebarrier` in the same window. The `eor` and
 the `x30` read lose their only reader and die to dead-code elimination.
 `off` keeps the checks, to audit where the compiler authenticates. Pinned by
 `tests/stages/kuna-ptrauthtrap.xml` (two passes over the `macho_arm64e_auth`
-fixture).
+fixture, one over `macho_arm64e_brk`, whose `brk #0xc470` and `brk #0xc472`
+traps sit behind a `w0` compare and an `x0` bit test and stay, and a
+plain-AArch64 bytechunk of the same compare).

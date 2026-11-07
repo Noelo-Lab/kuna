@@ -4663,6 +4663,7 @@ pub fn bootstrap_from_object_with_isa(
     // datatest corpus by construction.
     let compiler = kuna_analysis::sourcelang::effective_compiler_bytes(&bytes);
     sleigh.base_mut().unwrap().source_lang_detected = compiler.to_source_lang();
+    sleigh.base_mut().unwrap().image_arm64e = kuna_analysis::loader::format::macho::is_arm64e(&bytes);
     sleigh.base_mut().unwrap().rustc_stable_version =
         kuna_analysis::sourcelang::stable_rustc_version(&bytes);
     if let Some(layout) = kuna_analysis::sourcelang::fmt_pieces_layout(&bytes) {
