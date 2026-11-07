@@ -42,11 +42,9 @@
 //! `DW_AT_data_member_location` + `DW_AT_byte_size` + `DW_AT_bit_offset`
 //! (DWARF 2/3) — into the SMALLEST byte span that covers it, which is the
 //! geometry the compiler's own access agrees with (see [`group_bitfields`]). A
-//! member that occupies whole aligned bytes of a natural width is not a bitfield
-//! at all and is emitted as a plain field ([`byte_exact_bitfield`]) — exact in
-//! either byte order, and the containment for a `BitFieldPullTransform`
-//! divergence documented there. A member with `DW_AT_bit_size` that cannot be
-//! placed is skipped.
+//! union has no bitfield list, so a union bitfield that occupies whole aligned
+//! bytes of a natural width becomes a plain field ([`byte_exact_bitfield`]). A
+//! member with `DW_AT_bit_size` that cannot be placed is skipped.
 //!
 //! ## Two hazards this module exists to contain
 //!
@@ -354,13 +352,10 @@ fn collect_members(
     // its true bitfields are a documented LOSS; byte-exact ones land at offset 0.
     let mut true_bits: Vec<(i64, int4, String, Rc<Datatype>)> = Vec::new();
     for (start, num_bits, name, ty) in raw_bits {
-        match byte_exact_bitfield(start, num_bits, types, &ty) {
-            Some((off, plain)) => {
-                let off = if union { 0 } else { off };
-                fields.push(TypeField::new(off, off, name, plain));
-            }
-            None if union => {}
-            None => true_bits.push((start, num_bits, name, ty)),
+        if !union {
+            true_bits.push((start, num_bits, name, ty));
+        } else if let Some(plain) = byte_exact_bitfield(start, num_bits, types, &ty) {
+            fields.push(TypeField::new(0, 0, name, plain));
         }
     }
     if !union {
@@ -419,31 +414,27 @@ fn bitfield_bits(m: &DieSnap, type_size: int4, big_endian: bool) -> Option<(i64,
     (start >= 0 && end / 8 <= i64::from(int4::MAX)).then_some((start, num_bits as int4))
 }
 
-/// A bitfield covering whole aligned bytes of a natural width, as a plain field:
-/// `(struct byte offset, resized member type)`, exact in either byte order.
-/// `None` for a real bitfield. Such fields stay out of the bitfield list because
-/// `BitFieldPullTransform` (`p5_types/bitfield/pull.rs`) asserts in
-/// `op_destroy_recursive` when one is read through a load of exactly its bytes.
+/// The member type resized to a union bitfield that starts the union and covers
+/// whole bytes of a natural width, or `None` for any other bitfield.
 fn byte_exact_bitfield(
     start: i64,
     num_bits: int4,
     types: &dyn TypeFactory,
     ty: &Rc<Datatype>,
-) -> Option<(int4, Rc<Datatype>)> {
-    if start % 8 != 0 || num_bits % 8 != 0 {
+) -> Option<Rc<Datatype>> {
+    if start != 0 || num_bits % 8 != 0 {
         return None;
     }
     let bytes = num_bits / 8;
     if !matches!(bytes, 1 | 2 | 4 | 8) {
         return None;
     }
-    let off = int4::try_from(start / 8).ok()?;
     let plain = if ty.get_size() == bytes {
         Rc::clone(ty)
     } else {
         types.resize_integer(Rc::clone(ty), bytes).ok()?
     };
-    (plain.get_size() == bytes).then_some((off, plain))
+    (plain.get_size() == bytes).then_some(plain)
 }
 
 /// Fold the bitfields into kuna's container frame: each gets the SMALLEST byte
@@ -575,6 +566,10 @@ mod tests {
     /// The `(offset, size, name)` fields and `(name, byte offset, byte size, least
     /// significant bit)` bitfields of a 12-byte struct of `members`.
     fn layout(big_endian: bool, members: Vec<DieSnap>) -> Layout {
+        aggregate_layout(big_endian, false, members)
+    }
+
+    fn aggregate_layout(big_endian: bool, union: bool, members: Vec<DieSnap>) -> Layout {
         let types = TypeFactoryImpl::new();
         types.set_default_alignment_map();
         types.set_max_basetype_size(8);
@@ -593,7 +588,7 @@ mod tests {
             dies.insert(2 + i, m);
         }
         let (fields, bits) = collect_members(&record, &dies, &types, 8,
-            &mut TypeWalk::with_gate(false), false, false);
+            &mut TypeWalk::with_gate(false), false, union);
         (fields.iter().map(|f| (f.offset, f.field_type.get_size(), f.name.clone())).collect(),
          bits.iter()
             .map(|b| (b.name.clone(), b.byte_offset, b.byte_size, b.least_sig_bit))
@@ -605,10 +600,12 @@ mod tests {
         // struct { unsigned lo:3, hi:5, wide:16, top:8; unsigned a:4, b:12, c:16; }
         let declared = [("lo", 0, 3), ("hi", 3, 5), ("wide", 8, 16), ("top", 24, 8),
             ("a", 32, 4), ("b", 36, 12), ("c", 48, 16)];
-        let fields = vec![(1, 2, "wide".to_string()), (3, 1, "top".into()), (6, 2, "c".into())];
+        let fields = vec![];
         for (big_endian, bits) in [
-            (true, [("lo", 0, 1, 5), ("hi", 0, 1, 0), ("a", 4, 1, 4), ("b", 4, 2, 0)]),
-            (false, [("lo", 0, 1, 0), ("hi", 0, 1, 3), ("a", 4, 1, 0), ("b", 4, 2, 4)]),
+            (true, [("lo", 0, 1, 5), ("hi", 0, 1, 0), ("wide", 1, 2, 0), ("top", 3, 1, 0),
+                ("a", 4, 1, 4), ("b", 4, 2, 0), ("c", 6, 2, 0)]),
+            (false, [("lo", 0, 1, 0), ("hi", 0, 1, 3), ("wide", 1, 2, 0), ("top", 3, 1, 0),
+                ("a", 4, 1, 0), ("b", 4, 2, 4), ("c", 6, 2, 0)]),
         ] {
             let bits: Vec<_> = bits.iter().map(|&(n, o, s, l)| (n.to_string(), o, s, l)).collect();
             for dwarf5 in [false, true] {
@@ -650,5 +647,17 @@ mod tests {
         assert!(fields.is_empty(), "{fields:?}");
         assert_eq!(bits, vec![("packed".to_string(), 1, 4, 0), ("bare".into(), 8, 1, 0)]);
         assert_eq!(layout(true, vec![bare]).1, vec![("bare".to_string(), 8, 1, 4)]);
+    }
+
+    #[test]
+    fn a_union_keeps_only_whole_byte_bitfields_that_start_it() {
+        // union { unsigned byte:8; unsigned nibble:4; unsigned word; }
+        let mut word = die(gimli::DW_TAG_member, "word");
+        word.type_ref = Some(1);
+        let members =
+            vec![bitfield("byte", 0, 8, false, true), bitfield("nibble", 0, 4, false, true), word];
+        let (fields, bits) = aggregate_layout(false, true, members);
+        assert_eq!(fields, vec![(0, 4, "word".to_string()), (0, 1, "byte".into())]);
+        assert!(bits.is_empty(), "{bits:?}");
     }
 }

@@ -266,12 +266,10 @@ pub fn load_crosses_global_store(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(v) = data.vbank().get(vn) else {
         return false;
     };
-    let Some(load) = v.get_def().and_then(|d| data.obank().get(d)) else {
+    let Some(load) = v.get_def().and_then(|d| crate::bitfield::pull::printed_load(data, d))
+        .and_then(|d| data.obank().get(d)) else {
         return false;
     };
-    if load.code() != OpCode::CPUI_LOAD {
-        return false;
-    }
     let Some(cover) = v.cover() else {
         return false;
     };
@@ -282,7 +280,8 @@ pub fn load_crosses_global_store(data: &Funcdata, vn: VarnodeId) -> bool {
         .get_in(1)
         .and_then(|p| data.vbank().get(p))
         .filter(|p| p.is_constant())
-        .map(|p| (p.get_offset(), p.get_offset().wrapping_add(v.get_size() as u64)));
+        .map(|p| (p.get_offset(), p.get_offset().wrapping_add(load.get_out()
+            .and_then(|v| data.vbank().get(v)).map_or(1, |v| v.get_size()) as u64)));
     let global = |w: VarnodeId| {
         data.vbank().get(w).is_some_and(|w| {
             w.is_persist()

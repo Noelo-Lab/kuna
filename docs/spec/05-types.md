@@ -3682,7 +3682,23 @@ bit numbering is where big/little endian diverge, and getting it wrong scrambles
 adjacent fields. Failure mode: any trace step the transform cannot prove
 (e.g. a masked value escaping to an op outside the recognized web) declines
 before mutation, leaving the raw shift/mask expressions in the output; the
-type is never consulted speculatively, so untyped code is untouched.
+type is never consulted speculatively, so untyped code is untouched. A root
+that holds exactly one field, such as a load of exactly the field's bytes, is
+pulled once immediately after its definition, or at block entry for an input
+(`bitfield/pull.rs (apply_root_record)`). Every existing read, including
+MULTIEQUAL and INDIRECT inputs, takes the new scalar output. The original
+LOAD or mapped input remains the pull's source; it is never replaced by its
+own output. Upstream's complete-root path unsets the load's output and then
+destroys that same load, which caused a null-input assertion. Pulling at each
+use instead would move reads past stores and repeatedly transform a LOAD
+that still feeds a marker. Absorbed LOADs retain their memory-read identity
+when variable folding checks aliasing stores, calls and frame/global writes
+([06](06-variables-and-merge.md)); a saved value therefore stays ahead of a
+write that could change it, including for true non-byte-aligned bitfields.
+Every LOAD-derived pull is placed immediately after its source LOAD, even if
+the mask it replaces originally followed a store. Pull absorption cannot move
+that read across a store, call, memory-affecting user operation or block edge
+(`bitfield/absorb.rs (pull_move_is_order_safe)`).
 
 **Preferred splits**
 (`decompiler/crates/kuna-decomp/src/p5_types/prefersplit.rs

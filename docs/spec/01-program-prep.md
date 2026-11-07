@@ -3461,11 +3461,13 @@ moves.
   when `DW_AT_byte_size` is absent, and a bitfield with a location but no bit
   offset starts at that byte. Bitfields are listed in memory order, the order the
   bitfield lookup's binary search expects. A member with `DW_AT_bit_size` that
-  cannot be placed, or that ends past the aggregate, is skipped. A "bitfield"
-  occupying whole aligned bytes of a natural width is not one and goes in as a
-  plain field of that width, which is exact in either byte order and keeps a
-  known `BitFieldPullTransform` divergence (three bitfields sharing one
-  extraction chain, or one byte-aligned field read alone) out of reach. Offsets are installed through a raw
+  cannot be placed, or that ends past the aggregate, is skipped. A struct
+  bitfield that occupies whole aligned bytes stays a bitfield, so a store that
+  rewrites the word holding it and a narrower field names the field it changes
+  (upstream's wire decode turns such a field into a plain one; the pull
+  transform reads it either way, chapter 05). A union has no bitfield list, so a
+  union bitfield that starts the union and covers whole bytes of a natural width
+  goes in as a plain field. Offsets are installed through a raw
   field-setting entry point rather than the C packing rules, because the layout is
   the compiler's own answer for the target ABI and re-deriving it would silently
   disagree with the bytes the decompiler reads.

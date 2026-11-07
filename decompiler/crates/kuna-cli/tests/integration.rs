@@ -796,6 +796,9 @@ mod mips_import_flow;
 #[path = "qualified_call.rs"]
 mod qualified_call;
 
+#[path = "bitfield_byte_pull.rs"]
+mod bitfield_byte_pull;
+
 #[path = "powerpc_apu_selection.rs"]
 mod powerpc_apu_selection;
 
