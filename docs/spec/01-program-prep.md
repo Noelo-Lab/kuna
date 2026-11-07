@@ -741,8 +741,12 @@ keeps its `char[N]` typelock; the loader arm only fills addresses neither source
 reaches. That residue is the interesting one: a copy-relocated libc extern
 (`optind`, `stdin`, `stdout`, `optarg`) has a real `.bss` address and a `.dynsym`
 entry but no DIE in the program's own `.debug_info`, so nothing else could name
-it. Relocatable objects are excluded — `reloc_object` rebases only the function half
-of the symbol table, so a `.o` keeps its previous behavior.
+it. Relocatable files use the same stream after rebasing each defined data
+symbol through its allocated section's load VMA. COMMON symbols use their
+allocated storage binding, not the alignment encoded in their original value.
+Undefined symbols, absolute values and symbols in unallocated sections do not
+become data globals. The extent and name filters, precedence and `datasyms`
+gate are unchanged.
 
 With `symbolnamechars ident`, imported data basenames become collision-safe C
 identifiers before being mapped into the engine symbol table

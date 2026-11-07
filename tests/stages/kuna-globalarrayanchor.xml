@@ -24,8 +24,6 @@
 <symbol space="ram" offset="0x10600" name="read_slot"/>
 <bytechunk space="ram" offset="0x10700" readonly="true">0300100082106018912a20018200400881c3e008c0306002</bytechunk>
 <symbol space="ram" offset="0x10700" name="clear_positive"/>
-<bytechunk space="ram" offset="0x10800" readonly="true">0300100082106018912a20018200400881c3e008c0307ffa</bytechunk>
-<symbol space="ram" offset="0x10800" name="clear_far"/>
 <bytechunk space="ram" offset="0x10900" readonly="true">03001000821060188200400881c3e008c0307ffe</bytechunk>
 <symbol space="ram" offset="0x10900" name="clear_unscaled"/>
 <bytechunk space="ram" offset="0x10a00" readonly="true">0300100082106018912a20018200400882007ffe932a60018200400981c3e008c0304000</bytechunk>
@@ -50,7 +48,6 @@
 <com>parse line extern unsigned int calculate(unsigned int slot);</com>
 <com>parse line extern short read_slot(short slot);</com>
 <com>parse line extern void clear_positive(short slot);</com>
-<com>parse line extern void clear_far(short slot);</com>
 <com>parse line extern void clear_unscaled(short slot);</com>
 <com>parse line extern void clear_two_indices(short first, short second);</com>
 <com>map address 0x18 short low_flags[2]</com>
@@ -86,9 +83,6 @@
 <com>lo fu clear_positive</com>
 <com>decompile</com>
 <com>print C</com>
-<com>lo fu clear_far</com>
-<com>decompile</com>
-<com>print C</com>
 <com>lo fu clear_unscaled</com>
 <com>decompile</com>
 <com>print C</com>
@@ -116,7 +110,6 @@
 <stringmatch name="ordinary arithmetic still folds" min="1" max="1">return slot \* 2 \+ 0x400016;</stringmatch>
 <stringmatch name="load retains declared array" min="1" max="1">return flags\[slot \+ -1\];</stringmatch>
 <stringmatch name="positive displacement stays symbolic" min="1" max="1">flags\[slot \+ 1\] = 0;</stringmatch>
-<stringmatch name="oversized negative displacement is not anchored" min="1" max="1">slot \* 2 \+ 0x400012</stringmatch>
 <stringmatch name="unscaled short index is not anchored" min="1" max="1">\(slot \+ 0x400016\)</stringmatch>
 <stringmatch name="two indices retain the array anchor" min="1" max="1">flags\[.*first.*second.*\] = 0;</stringmatch>
 <stringmatch name="low address outside pointer inference range still folds" min="1" max="1">slot \* 2 \+ 0x16</stringmatch>

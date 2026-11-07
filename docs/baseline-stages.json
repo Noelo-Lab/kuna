@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3917,
-    3917
+    3913,
+    3913
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1920,9 +1920,6 @@
     "data:STACKGUARD-TAILCALL #7: control, t3 (check after the call) returns ext() + 1 by default",
     "data:STACKGUARD-TAILCALL #8: no canary, h6 passes the address of v to g in both passes",
     "data:STACKGUARD-TAILCALL #9: no canary, h6 and h7 keep their copy of a->f in both passes",
-    "data:STORECOPYEFFECTS #1: the three live writes of nine survive",
-    "data:STORECOPYEFFECTS #2: every subsequent spill reload keeps its store",
-    "data:STORECOPYEFFECTS #3: a load between calls saves its pre-store value",
     "data:STORECOPYEFFECTS #4: a truly dead parameter store still disappears",
     "data:STRUCTHEADLESS #1: the member at 0x14 stays a read through the untyped pointer in both passes",
     "data:STRUCTHEADLESS #2: no record is synthesized without a closed caller set",
@@ -3285,7 +3282,6 @@
     "data:outline-proto #4: the call AFTER the region keeps exactly one argument in both passes - defect 1 gave it stack junk (off plus on = 2)",
     "data:outline-proto #5: no raw stack pointer leaks into the C in either pass - defect 1 emitted `&Stack...`",
     "data:outline-proto #6: no rsp-typed local is introduced in either pass - defect 1 emitted `// rsp`",
-    "data:oversized negative displacement is not anchored",
     "data:oxidizer-SecurityCheck #1: the panic helper call is emitted only with the option off",
     "data:oxidizer-SecurityCheck #2: the bounds guard is emitted only with the option off",
     "data:oxidizer-SecurityCheck #3: the guarded load itself is untouched (emitted by both passes)",

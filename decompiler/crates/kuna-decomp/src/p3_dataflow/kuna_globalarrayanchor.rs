@@ -1,16 +1,18 @@
-//! Keep an explicitly mapped array base visible until constant-pointer recovery.
+//! Keep a mapped array or named opaque object visible until pointer recovery.
 use crate::{
     context::{OpId, VarnodeId},
     dtype::type_metatype,
     funcdata::Funcdata,
     ruleaction_1::RuleCollectTerms,
+    varnode::varnode_flags,
 };
 use kuna_base::{address::Address, types::uintb};
 use kuna_num::opcodes::OpCode;
 use smallvec::{smallvec, SmallVec};
 
-/// Defer folding a negative element displacement into an exact array base used
+/// Defer folding a negative element displacement into an exact mapped base used
 /// as a LOAD/STORE address. Other arithmetic and unmapped constants still fold.
+/// Inferred arrays retain their extent bound; declarations admit larger origins.
 pub(crate) fn preserve_array_base(data: &Funcdata, root: OpId) -> bool {
     if !data.get_arch().global_array_anchor
         || !data.get_arch().infer_pointers
@@ -118,17 +120,23 @@ pub(crate) fn preserve_array_base(data: &Funcdata, root: OpId) -> bool {
         if entry.entry_addr != address {
             continue;
         }
-        let Some(array) = entry
-            .symbol_type
-            .as_ref()
-            .filter(|t| t.get_metatype() == type_metatype::TYPE_ARRAY)
-        else {
+        let Some(object) = entry.symbol_type.as_ref() else {
             continue;
         };
-        let Some(element) = array.get_array_base() else {
-            continue;
+        let size = match object.get_metatype() {
+            type_metatype::TYPE_ARRAY => {
+                let Some(element) = object.get_array_base() else {
+                    continue;
+                };
+                element.get_size()
+            }
+            type_metatype::TYPE_UNKNOWN
+                if entry.all_flags & varnode_flags::namelock != 0 && object.get_size() > 0 =>
+            {
+                1
+            }
+            _ => continue,
         };
-        let size = element.get_size();
         if size <= 0 {
             continue;
         }
@@ -140,7 +148,11 @@ pub(crate) fn preserve_array_base(data: &Funcdata, root: OpId) -> bool {
         }
         let mask = kuna_base::address::calc_mask(value.get_size());
         let magnitude = displacement.wrapping_neg() & mask;
-        if magnitude == 0 || magnitude > array.get_size() as uintb || magnitude % size as uintb != 0
+        let sign_bit = (mask >> 1) + 1;
+        if displacement & sign_bit == 0
+            || magnitude % size as uintb != 0
+            || (magnitude > object.get_size() as uintb
+                && entry.all_flags & varnode_flags::namelock == 0)
         {
             continue;
         }
@@ -402,6 +414,23 @@ mod tests {
                 .unwrap()
                 .get_offset(),
             0x400016
+        );
+    }
+
+    #[test]
+    fn inferred_arrays_do_not_anchor_large_split_displacements() {
+        let (mut data, bias, _) = address_fixture();
+        let displacement = data.new_constant(8, 0u64.wrapping_sub(0x10000));
+        data.op_set_input(bias, displacement, 1).unwrap();
+        assert_eq!(RuleCollapseConstants.apply_op(bias, &mut data), 1);
+        let op = data.obank().get(bias).unwrap();
+        assert_eq!(op.code(), OpCode::CPUI_COPY);
+        assert_eq!(
+            data.vbank()
+                .get(op.get_in(0).unwrap())
+                .unwrap()
+                .get_offset(),
+            0x3f0018
         );
     }
 

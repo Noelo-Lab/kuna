@@ -3187,19 +3187,15 @@ fn a_float_register_parameter_round_trips() {
             assert!(stdout.contains(want), "{tag}: missing `{want}`:\n{stdout}");
         }
         let printed = printed_functions(&stdout, &["sink ", "negsink ", "iget3 ", "use ", "k3b "]);
-        let global = printed
-            .lines()
-            .find_map(|l| l.trim().strip_prefix("return ").and_then(|r| r.strip_suffix(';')).filter(|g| g.starts_with("dat_")))
-            .unwrap_or_else(|| panic!("{tag}: iget3 returns no global:\n{printed}"));
         let constants: String = printed
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-            .filter(|w| w.starts_with("dat_") && *w != global)
+            .filter(|w| w.starts_with("dat_"))
             .map(|w| format!("const float {w} = 2.0f;\n"))
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect();
         let src = format!(
-            "#include <stdio.h>\n#include <string.h>\n{BITS}unsigned int {global} = 0x40490fdbu;\n{constants}{printed}\n\
+            "#include <stdio.h>\n#include <string.h>\n{BITS}int gj = 0x40490fdb;\n{constants}{printed}\n\
              int main(void) {{\n  unsigned p[2] = {{0, 0x3fc00000u}};\n  float o[2] = {{0}}, q = 0;\n  int k = 0;\n  \
              negsink((void *)p, o);\n  k3b((void *)&k, &q);\n  \
              printf(\"%llx %llx %d %llx\\n\", BITS(o[0]), BITS(o[1]), k, BITS(q));\n  return 0;\n}}\n"

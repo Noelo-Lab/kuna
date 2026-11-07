@@ -3011,11 +3011,16 @@ upstream. Full option metadata: [docs/options.md](../options.md).
 (preserve_array_base)`.
 With `option globalarrayanchor on` (default off), constant collection defers
 combining an exact mapped array base with a negative whole-element displacement
-in an element-scaled LOAD/STORE address. This leaves the declared base available to
-constant-pointer recovery; the subsequent pointer rules can render the bias in
-the index. The displacement magnitude must not exceed the declared array size,
-and every variable coefficient must be an element-size multiple. No nearby-symbol
-search is performed. Ordinary arithmetic, unmapped addresses, unaligned byte
+in an element-scaled LOAD/STORE address. A named opaque (`TYPE_UNKNOWN`) object
+also qualifies, with byte-sized offsets rather than an inferred element type.
+This leaves the exact base available to constant-pointer recovery; subsequent
+pointer rules can render the bias in the index. A name-locked declaration may
+have an index origin larger than its extent: 23 bytes can be indexed by slots
+53..75 after subtracting 53. Inferred arrays retain the extent bound. In
+particular, a guessed string whose address matches the positive low half of a
+split negative offset is not evidence of a pointer base.
+Variable coefficients must be element-size multiples. No nearby-symbol search
+is performed. Ordinary arithmetic, unmapped addresses, unaligned byte
 offsets, shared address trees and non-byte-addressed access spaces retain normal
 folding. Pointer-typed variable terms also decline.
 
