@@ -365,23 +365,19 @@ fn dynamic_entry_mechanisms_without_a_body_do_not_fail_the_function() {
     }
 }
 
-/// The stock ELFv1 `r2Save` store to `0x28(r1)` lands on a live ELFv2 local.
+/// The stock ELFv1 `r2Save` store to `0x28(r1)` lands on a live ELFv2 local, so `auto` keeps it off.
 #[test]
-fn default_off_keeps_a_local_in_the_elfv1_toc_slot_of_an_elfv2_frame() {
+fn default_keeps_a_local_in_the_elfv1_toc_slot_of_an_elfv2_frame() {
     let binary = common::fixture("callmech_tocslot_ppc64le.o");
-    let returned = |value: &str| {
-        let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+    let returned = |value: Option<&str>| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        command
             .env("KUNA_SPECS", common::repo_root().join("specs"))
-            .args([
-                "decompile",
-                &binary,
-                "two_calls",
-                "--option",
-                "callmechanisms",
-                value,
-            ])
-            .output()
-            .unwrap();
+            .args(["decompile", &binary, "two_calls"]);
+        if let Some(value) = value {
+            command.args(["--option", "callmechanisms", value]);
+        }
+        let output = command.output().unwrap();
         assert!(
             output.status.success(),
             "{}",
@@ -398,8 +394,11 @@ fn default_off_keeps_a_local_in_the_elfv1_toc_slot_of_an_elfv2_frame() {
             .any(|line| line.trim().starts_with("return ") && line.contains(product.as_str()));
         (kept, code)
     };
-    let (kept, code) = returned("off");
-    assert!(kept && !code.contains("r2save"), "{code}");
-    let (kept, code) = returned("on");
+    let (kept, off) = returned(Some("off"));
+    assert!(kept && !off.contains("r2save"), "{off}");
+    let (kept, code) = returned(Some("on"));
     assert!(!kept && code.contains("r2save"), "{code}");
+    for value in [None, Some("auto")] {
+        assert_eq!(returned(value).1, off, "{value:?}");
+    }
 }

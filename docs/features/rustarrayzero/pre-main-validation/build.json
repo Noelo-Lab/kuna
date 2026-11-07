@@ -1,0 +1,34 @@
+{
+  "at": "2026-11-03T06:06:24.657846+00:00",
+  "parent_commit": "ad4c34699826e1cf8909d2771eb96cc4bd37324a",
+  "parent_worktree_head": "ad4c34699826e1cf8909d2771eb96cc4bd37324a",
+  "parent_tree": "ab5abb3722f910904563d237a1b4670fda30c1e0",
+  "parent_cli_sha256": "a1bc22c5d2a4b10662a9338ed48d1a2f85144ef4a9178b30b19eec7a76305bda",
+  "new_cli_sha256": "3d9aacaffa89394270398ac84b7882df299453fd9ef3eb0cb48f4799f5786b1d",
+  "catalog_count": 378,
+  "corpus_files": 692,
+  "stage_assertions": [
+    3819,
+    3819
+  ],
+  "stage_keys_added": [
+    "data:KUNA-CATALOG #15: 378 registry rows plus six individual queries",
+    "data:Rust zero byte-array store off and cast suppression stay diagnostic",
+    "data:Rust zero byte-array store zero_bytes preserves its place",
+    "data:Rust zero byte-array store zero_callback preserves its place",
+    "data:Rust zero byte-array store zero_field preserves its place",
+    "data:Rust zero byte-array store zero_index preserves its place",
+    "data:Rust zero byte-array store zero_second preserves its place",
+    "data:Rust zero byte-array store zero_signed preserves its place",
+    "data:Rust zero byte-array store zero_unsigned preserves its place"
+  ],
+  "existing_stage_updated": {
+    "removed": [
+      "data:KUNA-CATALOG #15: 377 registry rows plus six individual queries"
+    ],
+    "reason": "Catalog total updated from377 to378; underlying assertion retained."
+  },
+  "option": "rustarrayzero",
+  "default_on": false,
+  "speed_forced_off": true
+}

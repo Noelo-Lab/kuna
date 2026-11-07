@@ -1,5 +1,28 @@
 # Stage-model issue testcases
 
+`ghangr-call-argument-extensions.xml` checks explicit and missing parameter
+contracts. The CLI companion executes complete emitted C, Go and Rust callers
+and callees, covering zero extension, sign extension, signedness and store canaries.
+
+`ghangr-rust-boolean-expressions.xml` checks bitwise expressions over merged
+Boolean locals. Its CLI companion executes complete emitted C and Rust functions
+against independent result formulas, callback traces and store canaries at O0/O2.
+
+`ghangr-scalar-call-results.xml` checks the no-record and explicit-prototype
+controls for narrowed scalar calls. The CLI probes exercise callee-first recovery;
+the native companion compiles and executes complete emitted C, Go and Rust callees
+and callers across signed, unsigned, Boolean and full-width results.
+
+`ghangr-rust-boolean-conversions.xml` checks byte-to-Boolean casts, masked values
+and narrowed callback results. Its CLI companion compiles complete C and Rust
+output under the same asserted prototypes and checks every byte value and call
+counts. The original fixture is only decompiled.
+
+`kuna-e500-call-slots.xml` compares disabled and automatic call-overlap guards
+for scalar arguments and results inside e500's wide registers, and decompiles a
+conditional tail-call wrapper with `exclusivecallret` off and on. The CLI tests
+cover both byte orders and execute the recovered wrappers.
+
 `kuna-callwide.xml` loads the committed sealed MIPS32-BE ELF and checks the
 four-byte OFF result against the proved eight-byte result and high-piece callers.
 Its CLI companion executes the original bytes and untouched emitted C/header
@@ -240,7 +263,7 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 | `kuna-rodatastring.xml` | a string block-copied out of read-only memory into the frame renders as invalid C: `v1[0] = (char[8])msg._0_8_;` (there is no array cast) and the literal never appears (DIV-113) | `option rodatastring on\|off` (new kuna settable, P5 `constsequence`) |
 | `kuna-calleenamedlocals.xml` | kuna [#762](https://github.com/Noelo-Lab/kuna/issues/762): two distinct pointer locals passed to one `consume(Node *object)` both took the name `object`, `dedupvardecls` kept one declaration, and the store after the inner loop cleared the last member's flag instead of the representative's; the same defect through a struct-by-value argument (its fields stored into another struct, or into a same-named global), a user rename (`&v2` printed as the other slot's address), and a slot named like a global (its narrow views read the global), plus a global array a suffixed local must not capture | P6 local naming (a callee-parameter name is made unique against names already bound to other highs; struct roots share only among themselves) + P9 declaration emission (the identical-line collapse only merges lines of one Symbol, and every high printed through another declaration follows its final name); correctness fix, no option. Passes 2 and 3 pin `option dedupvardecls off` and `option namestyle ghidra` |
 | `kuna-stacksolver-unsolved.xml` | kuna [#1288](https://github.com/Noelo-Lab/kuna/issues/1288) (a PKLITE-packed DOS executable decompiled as a raw real-mode image grew memory without bound: `DEC SP` in its packed body solved a stack variable to 65535, the `StackSolver` sentinel for "unsolved", and two such variables re-pushed each other forever; where the solve did finish, the genuine 65535 still read as unsolved and the function kept a raw stack-pointer local) | P6 variables, `ActionStackPtrFlow` extra-pop solve | none (strict fix): the solve terminates and the loop around the call is emitted; `h` reads its return address at entry + 2 with no raw stack-pointer local |
-| `kuna-importdata.xml` | a data import read through its `__got` slot prints as a dereference of the anonymous slot (`*dat_100004000`; 921 such reads on the A13 trustd, `*dat_1041cc6c8` for the stack guard on Toyota) although the slot is named for the import and painted externref | P9 naming-policy (`PrintC::op_load` resolves a LOAD through an externref import slot as `ActionDeindirect` resolves a call through it) | `option importdata on\|off` (new kuna settable, default off; carried by `--mode aggressive`) |
+| `kuna-importdata.xml` | a data import read through its `__got` slot prints as a dereference of the anonymous slot (`*dat_100004000`; 921 such reads in an arm64e iOS system daemon, `*dat_1041cc6c8` for the stack guard in a large third-party iOS app) although the slot is named for the import and painted externref | P9 naming-policy (`PrintC::op_load` resolves a LOAD through an externref import slot as `ActionDeindirect` resolves a call through it) | `option importdata on\|off` (new kuna settable, default off; carried by `--mode aggressive`) |
 | `kuna-elfgotimports.xml` | an ELF `-fPIC` read of data another object defines (`stdout`, `environ`, a library global) loads a `GLOB_DAT` GOT slot and then loads through it, and printed as `*dat_<slot>`: PE/Mach-O import slots were painted externref but an ELF GOT slot never was | P1 environment-binding (`kuna_elfgotimports`: the undefined-symbol `GLOB_DAT` slots are import slots, named and painted externref) + P9 naming-policy (`importdata`) | `option importdata on\|off` (default off); x86-64 and AArch64 shared objects, with a defined-symbol control |
 
 `kuna-storecopyeffects.xml` pins the AArch64 address-spill store across calls,
@@ -383,3 +406,14 @@ callers against boundary values and check that each helper is called once.
 `ghangr-go-store-value.xml` checks Go integer destination conversions for fields,
 plain/indexed pointers and a side-effectful call, with all integer widths and
 complete native bodies covered by the CLI integration fixture.
+
+`ghangr-go-pointer-arithmetic-32.xml` and `ghangr-go-pointer-arithmetic-64.xml`
+check live pointer bases through constant, negative and signed dynamic byte
+offsets in Go loads, stores and returns. Integer-address reconstruction remains
+a control. The CLI companion builds both authored assembly fixtures and runs
+the complete emitted functions with Go pointer checks and full-array canaries.
+
+`kuna-elf-unwind-pcread.xml` checks an authored PowerPC PC-relative literal read:
+with FDE ownership disabled it remains a call; with ownership enabled the
+complete body returns `a0 * 3 + 7`. The fixture generator is
+`decompiler/crates/kuna-cli/tests/fixtures/elf_unwind_fixture.rs`.

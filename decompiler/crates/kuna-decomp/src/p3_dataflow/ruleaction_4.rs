@@ -1255,6 +1255,9 @@ impl Rule for RuleConcatZero {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        if crate::kuna_aggregatefields::keeps_structured_concat(data, op) {
+            return 0;
+        }
         let in1 = in_vn(data, op, 1);
         if !is_constant(data, in1) {
             return 0;
