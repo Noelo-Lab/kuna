@@ -1,0 +1,77 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:64:default">
+<!--
+    A 64-bit PowerPC ELFv1 caller reloads its TOC with `ld r2,40(r1)` after a
+    call that goes through a linker stub. The stub saved the TOC in that slot;
+    the caller never writes it. A relative jump table after the call is
+    addressed `addis/addi` from the reloaded r2, so with r2 unknown its base is
+    unknown and the dispatch is a jump-as-call.
+
+    Stage / sub-stage: P4 abi-trust.
+    P0 assertion:      option callmechanisms off|auto|on  (default auto).
+
+    Synthetic bytes (hand-assembled), with the entry's TOC 0x3000 tracked:
+
+        dispatch:  mflr r0; std r0,16(r1); stdu r1,-128(r1); addi r3,r1,112
+                   bl stub; ld r2,40(r1); lwz r9,112(r1); cmplwi r9,3
+                   bgt default; addis r10,r2,0; sldi r9,r9,2
+                   addi r10,r10,-0x1fc0; lwax r9,r10,r9; add r9,r9,r10
+                   mtctr r9; bctr
+                   .long 0x10,0x18,0x20,0x28      (table at 0x1040)
+                   cases li r3,11 / 22 / 33 / 44; default li r3,-1; epilogue
+        stub:      std r2,40(r1); addi r2,r2,1; b second
+        second:    lbz r3,0(r2); blr
+
+    Pass 1 is the shipped default, `auto`. It acts only on an image whose
+    ELFv1 function descriptors the loader validated, which a bare byte chunk
+    does not have, so it keeps the old model; the CLI test
+    `elfv1_toc_reload_after_a_call_keeps_the_jump_table_base` checks the
+    default on a linked ELFv1 image. Pass 2 (option callmechanisms on)
+    installs the PPC64 default model's `uponreturn` store of r2Save to
+    0x28(r1), so the reload reads back the TOC `bl` saved and the four-case
+    switch is recovered. It decompiles an identical copy at 0x2000 (TOC
+    0x4000), because the console keeps the first decompile's jump-as-call
+    for a function it decompiles again. Pass 3 (option callmechanisms off)
+    is the old model.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+7c0802a6f8010010f821ff813861007048000075e84100288121007028090003
+418100503d42000079291764394ae0407d2a4aaa7d2952147d2903a64e800420
+000000100000001800000020000000283860000b480000203860001648000018
+38600021480000103860002c480000083860ffff38210080e80100107c0803a6
+4e800020f84100283842000148000004886200004e800020
+</bytechunk>
+<bytechunk space="ram" offset="0x2000" readonly="true">
+7c0802a6f8010010f821ff813861007048000075e84100288121007028090003
+418100503d42000079291764394ae0407d2a4aaa7d2952147d2903a64e800420
+000000100000001800000020000000283860000b480000203860001648000018
+38600021480000103860002c480000083860ffff38210080e80100107c0803a6
+4e800020f84100283842000148000004886200004e800020
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="dispatch"/>
+<symbol space="ram" offset="0x1090" name="second"/>
+<symbol space="ram" offset="0x2000" name="dispatch_copy"/>
+<symbol space="ram" offset="0x2090" name="second_copy"/>
+</binaryimage>
+<script>
+  <com>set track r2 0x3000 0x1000 0x1001</com>
+  <com>set track r2 0x4000 0x2000 0x2001</com>
+  <com>lo fu dispatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callmechanisms on</com>
+  <com>lo fu dispatch_copy</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option callmechanisms off</com>
+  <com>lo fu dispatch</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PPC64 TOC reload #1: on recovers the switch over the table" min="1" max="1">switch\(</stringmatch>
+<stringmatch name="PPC64 TOC reload #2: on labels the last case" min="1" max="1">case 3:</stringmatch>
+<stringmatch name="PPC64 TOC reload #3: on keeps every case body" min="1" max="1">return 0x2c;</stringmatch>
+<stringmatch name="PPC64 TOC reload #4: the default on a byte chunk and off keep the jump-as-call" min="2" max="2">jump-as-call</stringmatch>
+<stringmatch name="PPC64 TOC reload #5: the default on a byte chunk and off read r2 from the unwritten slot" min="2" max="2">// r2 \| stack - 0x58</stringmatch>
+</decompilertest>

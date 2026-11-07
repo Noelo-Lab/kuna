@@ -570,9 +570,6 @@ mod tests {
         /// cost of a cast pair on every sign-bit test (`x << 0x18 < 0`), which
         /// firmware uses for nearly every register flag check.
         ///
-        /// `callmechanisms` installs every compiler-spec prototype boundary
-        /// payload, and the stock `ppc_64_le.cspec` one stores `r2Save` to the
-        /// ELFv1 TOC slot `0x28(r1)`, which is a live local in an ELFv2 frame.
         /// `x86listingswitch` reaches valid cases but ordinary tail jumps from
         /// them can hide independent function entries from the AIF gap walk;
         /// the i386 corpus lost seven true starts, so it remains explicit.
@@ -600,7 +597,7 @@ mod tests {
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "callmechanisms", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustfmtwrite", "rustfmtio", "rustprobestack", "highsliceguard", "rustarrayzero",
+              "armconstshift", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustfmtwrite", "rustfmtio", "rustprobestack", "highsliceguard", "rustarrayzero",
               // `lazyfuncs` changes no output, but its saving is a single-function
               // property: the whole-binary surfaces the presets drive (decompile-all,
               // the web front-end, the benchmark) materialize every target they walk
