@@ -3336,8 +3336,10 @@ moves.
   on a big-endian target both `DW_AT_data_bit_offset` and `DW_AT_bit_offset`
   count from the most significant bit of the first byte (of the aggregate and of
   the storage unit respectively), and a span's least significant bit lies in its
-  last byte. `DW_AT_bit_offset` is signed (GCC writes a negative one for a packed
-  field that extends past its unit), the unit defaults to the member type's size
+  last byte. `DW_AT_bit_offset` is signed: a packed field that extends past its
+  unit has a negative one, which GCC writes as `DW_FORM_sdata` and clang as the
+  two's complement in a `DW_FORM_data8`, so a fixed-size form is sign-extended
+  from its width. The unit defaults to the member type's size
   when `DW_AT_byte_size` is absent, and a bitfield with a location but no bit
   offset starts at that byte. Bitfields are listed in memory order, the order the
   bitfield lookup's binary search expects. A member with `DW_AT_bit_size` that
