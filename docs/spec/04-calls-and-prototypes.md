@@ -8601,8 +8601,19 @@ the declared model (or the undeclared default), as `ActionDefaultParams` already
 does for a direct call. Output-only pieces leave the inputs unlocked. The
 symbol's call-fixup injection is kept, and its no-return flag is carried under
 `peimportcall`, as on the other two paths. Pieces with no explicit storage
-(library, loader and DWARF prototypes) keep the code-type lookup unchanged. The
-construction lives in
+(library, loader and DWARF prototypes) keep the code-type lookup unchanged:
+incomplete debug-information pieces must not replace a result read by the
+caller with a locked void return. The sole type-only exception,
+`option gotimportproto` (default on,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_gotimportproto.rs (binds_type_only)`),
+is an entry identified by the MIPS ELF loader's external-symbol GOT: its
+concrete, non-void declaration supplies the imported call's argument and return
+storage, because a preserved incoming argument register cannot establish an
+import's arity. Unknown, missing or void return types, incomplete parameter
+types and variadic declarations, which fix no arity, decline that case, and off
+keeps the storage requirement for imports too.
+Ordinary MIPS definitions and other architectures retain the code-type
+behavior. The construction lives in
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_qualifiedcall.rs`.
 
 **(kuna) Go boolean-return narrowing** (`option gobool off|auto|always`,

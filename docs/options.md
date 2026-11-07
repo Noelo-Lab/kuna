@@ -989,6 +989,10 @@ Three tiers:
 | v850-style explicit flag compare collapsed to a clean signed less-than | [`ovlesssimplify`](#ovlesssimplify) |
 | want the raw CONCAT11(CARRY1(...)) intrinsics visible instead of one wide add | [`addcarrychain`](#addcarrychain) |
 | 8-bit adc carry-chain pair (6502 style) folded into a single 16-bit addition | [`addcarrychain`](#addcarrychain) |
+| a MIPS import stub decompiles with a funcboundflow fall-through warning | [`stubtailcall`](#stubtailcall) |
+| the last MIPS lazy-binding stub fails with Unable to load bytes | [`stubtailcall`](#stubtailcall) |
+| a MIPS lazy-binding stub ends in halt_baddata or runs into section padding | [`stubtailcall`](#stubtailcall) |
+| instructions after .MIPS.stubs are decoded as part of the last stub | [`stubtailcall`](#stubtailcall) |
 | a function that runs into undecodable, encrypted or packed bytes ends with a plain return; and no warning | [`decodehalt`](#decodehalt) |
 | a self-decrypting stub decompiles to case 0x<hex>: return; with error null in --json | [`decodehalt`](#decodehalt) |
 | nothing in the emitted C says the decompiled body is incomplete | [`decodehalt`](#decodehalt) |
@@ -1174,6 +1178,9 @@ Three tiers:
 | a wrapper in a .so gets no parameters while the function it forwards to takes several | [`pltlocal`](#pltlocal) |
 | an --assert prototype at the plt stub address restores the arguments decompile-all does not find | [`pltlocal`](#pltlocal) |
 | decompile-all --option protoorder cycles does not reach a callee called through its own plt stub | [`pltlocal`](#pltlocal) |
+| a MIPS call to strlen or memcpy through the GOT renders with no arguments | [`gotimportproto`](#gotimportproto) |
+| a libc import called from MIPS PIC code loses the argument it was passed | [`gotimportproto`](#gotimportproto) |
+| a declared import prototype is ignored at a jalr t9 call | [`gotimportproto`](#gotimportproto) |
 | a function that returns a value on one path and tail-calls a function on the other is printed void | [`mixedtailret`](#mixedtailret) |
 | if (6 <= *a0) return; getv(); // tail-call where the source returns *a0 on that path | [`mixedtailret`](#mixedtailret) |
 | a function returns xmm0 although its callee and its other path return an int in eax | [`mixedtailret`](#mixedtailret) |
@@ -3623,6 +3630,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P5/simplification-quiescence · ghidra-upstream · correctness-fix · GH-8913
 - **Example:** `option addcarrychain off`
 
+### `stubtailcall` -- on | off, default `on`
+
+- **Symptoms:** a MIPS import stub decompiles with a funcboundflow fall-through warning; the last MIPS lazy-binding stub fails with Unable to load bytes; a MIPS lazy-binding stub ends in halt_baddata or runs into section padding; instructions after .MIPS.stubs are decoded as part of the last stub.
+- **What it does:** Flow a loader-proven MIPS lazy-binding stub as a tail call. A `.MIPS.stubs` entry loads the lazy resolver from the GOT, saves the caller's return address in t7, calls the resolver with `jalr t9` and passes the dynamic-symbol index in the delay slot; the resolver binds the import and jumps to it with that return address restored, so control never returns to the stub. Decoded as an ordinary call, flow falls through into the next stub or past the end of `.MIPS.stubs`: a stub decompiles with a truncated-flow warning, the last stub runs into whatever follows the section and fails to decompile when nothing is mapped there, and the Listing decodes the bytes after the last stub as its continuation. The object loader validates each stub against its dynamic-symbol/GOT identity, executable section and complete instruction sequence. On, flow keeps the resolver call, including its delay slot and register writes, and ends the stub with a return after it, and the Listing ends the stub at the call. A stub's no-return status still comes from its import's name. An explicit per-function flow override always wins. Raw and XML images, and stubs the loader cannot validate, are never affected.
+- **When to flip:** On by default: it applies only to validated lazy-binding stubs, which raw and XML inputs never have (0/675 datatest assertions move). Flip off to see the resolver call fall through as upstream decodes it, or to compare stub bodies with a reference decompiler. The Listing and xrefs walks read it when they are built, so set it before `read symbols`, as `--option` does.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · #1394
+- **Example:** `option stubtailcall off`
+
 ### `decodehalt` -- on | off, default `on`
 
 - **Symptoms:** a function that runs into undecodable, encrypted or packed bytes ends with a plain return; and no warning; a self-decrypting stub decompiles to case 0x<hex>: return; with error null in --json; nothing in the emitted C says the decompiled body is incomplete; a branch that leaves a --define-function extent renders as an ordinary return; kuna disassemble reports .byte at an address the decompiled C returns from; PowerPC64 isel becomes halt_baddata with no target-selection advice.
@@ -3974,6 +3989,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On (default): a shared library's calls to its own exported functions get the arguments, types and return the same call gets in a -Bsymbolic or hidden-visibility build -- what Ghidra shows by making the stub a thunk of the definition. Flip off to reason about an interposed definition (LD_PRELOAD, a library that deliberately overrides one of these symbols), where the call may not reach the body this image carries.
 - **Where / provenance:** P4/prototype-source · ghidra · correctness-fix · GH-1342
 - **Example:** `option pltlocal off`
+
+### `gotimportproto` -- on | off, default `on`
+
+- **Symptoms:** a MIPS call to strlen or memcpy through the GOT renders with no arguments; a libc import called from MIPS PIC code loses the argument it was passed; a declared import prototype is ignored at a jalr t9 call.
+- **What it does:** Bind a declared prototype that states no storage to a call through a loader-proven MIPS external-symbol GOT entry. A declaration that names only types (a libc type database entry or a `parse line` prototype) is normally not forced on an indirect call: the call keeps the arguments its trials recover, because an incomplete declaration from a partial debug-info unit would otherwise erase a result the caller uses. A MIPS PIC call to an import loads its target from the import's external-symbol GOT slot and calls through `jalr t9`, so the loader proves the callee, and a preserved incoming argument register cannot establish the import's arity: a call that passes its own first argument through to `strlen` has the same instructions as a call that passes nothing. On, such a call takes the declared prototype when the loader proved the entry an import and every parameter and the return are concrete, non-void types. Missing, void and unknown types, variadic declarations (which fix no arity: binding `printf` would read the saved gp slot after its stack arguments as one more argument), and entries without import provenance keep the storage requirement.
+- **When to flip:** On by default: it applies only to loader-proven MIPS GOT imports, which raw and XML inputs never have (0/675 datatest assertions move). Flip off when a type database entry for an import is wrong for the binary, so the call keeps the arguments its trials recover.
+- **Where / provenance:** P4/prototype-source · kuna · correctness-fix · #1394
+- **Example:** `option gotimportproto off`
 
 ### `mixedtailret` -- on | off, default `off`
 

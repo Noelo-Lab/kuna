@@ -94,3 +94,4 @@ pub mod kuna_callmechanisms;
 pub(crate) mod kuna_registerslots;
 
 pub mod kuna_qualifiedcall;
+pub mod kuna_gotimportproto; // (kuna) a type-only declaration binds at a loader-proven MIPS GOT import call

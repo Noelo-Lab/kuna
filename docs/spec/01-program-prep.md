@@ -8378,7 +8378,8 @@ Known pass decides that by name at the stub address, and propagation draws
 nothing from the body. MIPS is where the body misleads. A `.MIPS.stubs` lazy
 stub is `lw $t9,-0x7ff0($gp); move $t7,$ra; jalr $t9; li $t8,<dynsym index>`;
 the resolver jumps to the import, which returns to the caller through `$t7`, so
-control never reaches the word after the stub. The Listing still models the
+control never reaches the word after the stub. Unless `stubtailcall` ends the
+walk at the resolver (see *MIPS lazy-binding imports*), the Listing models the
 `jalr` as a returning call whose fall-through is the next stub's entry, and the
 reachability rule below therefore concluded every stub laid out in front of a
 Known no-return stub (`exit`, `abort`, `__stack_chk_fail`) no-return, then the
@@ -8562,3 +8563,38 @@ The same symbol walk records integer formatting traits in
 LowerHex, UpperHex, Octal, Binary, LowerExp and UpperExp retain exact type and
 trait identity; the Display-only map is derived from these facts without another
 object parse. Unknown or conflicting aliases invalidate the shared address.
+
+### MIPS lazy-binding imports
+
+`decompiler/crates/kuna-analysis/src/loader/kuna_mipsstubs.rs` validates each
+MIPS lazy-binding stub against its dynamic-symbol/GOT identity, executable
+section and complete instruction sequence, in o32, n32 and n64 images. The
+object loader records the validated stubs once per image (`MipsLinkage`). For a
+MIPS language, bootstrap installs their resolver sites, and the GOT-proven
+imports from the ELF function provenance, in the architecture; every Listing
+walk, including a resumed one, and the reference walk behind `kuna xrefs`
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (descend)`) take only
+the sites bootstrap installed.
+With `option stubtailcall` on (the default) the Listing models each resolver
+transfer, including the delay slot, as an opaque computed jump. The walk applies
+this when it decodes the call
+(`decompiler/crates/kuna-analysis/src/listing/walk.rs (step)`), so it never
+follows the call's fall-through into the next stub, section padding or a
+following section, and files no reference along it. Both walks read the option
+when they are built. A stub's no-return status
+still comes from its import's name, as no-return propagation above describes;
+an unknown resolver destination supplies no terminal evidence. Ordinary
+functions and unrecognized instruction sequences retain their original flow.
+This applies to serial, parallel and resumed Listing construction. The same
+validated resolver sites are passed to the decompiler's flow recovery, so a
+stub decompiled alone ends with its tail call instead of falling through into
+the next stub or section padding.
+
+The real dynamic import name takes precedence over the linker-generated
+`_MIPS_STUBS_` label at the same address; the label remains an alias, so a
+call through the first stub names its import.
+Without a callee prototype, a preserved incoming argument register cannot
+establish import arity: calls with and without that argument can have identical
+instructions. A declared prototype supplies that missing contract
+(`gotimportproto`, §4).
+
