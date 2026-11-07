@@ -41,6 +41,33 @@ for a MIPS language bootstrap installs their resolver sites, and the Listing and
 Off, the resolver call is decoded as an ordinary call that falls through into
 the next stub, as upstream decodes it, and the Listing keeps that fall-through.
 
+With `fdeinterior` enabled, canonical PowerPC `bcl 20,31` PC reads into the
+current function's accepted single-function body follow the taken edge while
+preserving the LR write. The inline literal after the instruction is not a
+return continuation. This avoids dropping the remaining body when its interior
+entry is suppressed. The destination must be forward, skip at most three words,
+lie strictly inside that body and not be a known function. A `bcl` to the next
+instruction cannot be a call. When it skips literal words, the fall-through path
+from the target (following direct unconditional branches inside the body, and
+past conditional ones) must read LR with `mflr` within 32 instructions, before
+any LR return, LR write, call, other unconditional transfer or trap. Within the
+next 32 instructions, a D-form load based on the register that `mflr` wrote
+must read one of the skipped words, with a displacement inside the skip, before
+any instruction that may overwrite that register and before any return, call,
+CTR jump, absolute branch or trap. A load based on r0 does not count, because
+a D-form base field of zero means address zero. In the same window the path must
+not move the `mflr` register back into LR, and must not return through LR
+before `mtlr` from another register restores it. Either of those resumes at the
+skipped words, so they were code returned to, not a literal. A forward
+`bcl 20,31` to a helper that never loads those words, whether it returns
+through LR, restores LR first or tail-jumps away, or to one that loads them and
+then returns into them, is therefore still a call. All 20,573 forward `bcl 20,31`
+sites inside FDE bodies of 135 compiler-built PPC32 images satisfy this rule;
+the 570 that skip literal words load one within 19 instructions of the `mflr`.
+Other calls retain their existing treatment. The rewrite is the same
+CALL-to-BRANCH conversion the call-trampoline rule uses. The recognition
+lives in `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppcpcread.rs (is_pc_capture)`.
+
 The A32 single-register `POP {pc}` alias (`ldr pc,[sp],#4`) lifts as a return,
 including its conditional forms. Its address mode still advances SP by four
 bytes and its PC write preserves interworking. Other PC loads retain their

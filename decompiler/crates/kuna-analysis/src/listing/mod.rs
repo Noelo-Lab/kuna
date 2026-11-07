@@ -55,6 +55,7 @@ mod kuna_picpool;
 mod kuna_poolref;
 mod kuna_regcarry;
 mod kuna_ppclocalentry;
+mod kuna_pltstub;
 mod kuna_switchtable;
 mod kuna_thumbswitch;
 mod kuna_a32switch;

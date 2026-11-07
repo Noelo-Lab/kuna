@@ -313,15 +313,36 @@ Straight-line installation retains operation order and memory effects. Each
 invocation reserves a fresh contiguous unique-space range, preserving overlaps
 and partial temporary references within the payload without sharing temporaries
 between calls.
-Installing them is option `callmechanisms` (`on|off`, default **off**); with it
-off, models still carry their payload identities but no effect is installed and
-late restrictions behave as before. It is off by default because a stock spec
-states one wrongly for most binaries that use it: `ppc_64_le.cspec`'s default
-model stores `r2Save` to `0x28(r1)` after every call, which is the TOC save
-slot only under ELFv1. Every little-endian PPC64 binary uses ELFv2, where the
-TOC is saved at `0x18(r1)` and `0x28(r1)` is ordinary frame storage, so the
-store replaced a local the function keeps there with the TOC pointer after each
-call. With it on,
+Installing them is option `callmechanisms` (`off|auto|on`, default **auto**);
+when it does not fire, models still carry their payload identities but no
+effect is installed and late restrictions behave as before. `on` installs the
+payloads on every image and `off` on none. `auto` acts only when `load file`
+found validated PowerPC64 ELFv1 function descriptors in a linked image's or a
+relocatable object's `.opd`, the same evidence that seeds each entry's TOC
+register; the XML bootstrap never records that fact. Even then it installs no
+entry payloads, and applies a return payload only at a call whose next
+instruction loads from a slot the payload stores: the same base register,
+constant offset and address space. Ops placed at the call's own address are
+skipped when finding that instruction. When the payload is that one store of a
+register as wide as the load, plus the temporaries naming its address, `auto`
+forwards it instead of installing it: the load becomes a COPY of the stored
+register, and no store is left in the frame. Any other payload is installed as
+written. The stock PPC64 default models store `r2Save` to
+`0x28(r1)` after every call. Under ELFv1 that is the TOC save doubleword in
+every frame's linkage area. A linker-generated call stub saves the caller's
+TOC there, and the caller reloads it with `ld r2,40(r1)` after the call.
+`r2Save` is assigned by `bl` and by the `std r2,40(r1)` that precedes an
+indirect call, so the reload reads back the TOC the caller held instead of a
+stack slot the function never wrote. TOC-relative addresses after the call
+then keep their constant value, including a jump table's base. A call with no
+reload, such as a same-module `bl` the linker left a `nop` after, is left
+alone, and a forwarded reload whose `r2` is never read is dead code: an unread
+store after each call would otherwise sit in each condition block and keep a
+short-circuit `a() && b()` from forming. `auto` treats every other image as
+`off` does. Every little-endian PPC64 binary, and some
+big-endian ones, use ELFv2, where the TOC is saved at `0x18(r1)` and
+`0x28(r1)` is ordinary frame storage, so the store would replace a local the
+function keeps there with the TOC pointer after each call. When it fires,
 `ActionDefaultParams` installs return-boundary effects after each modeled call;
 `ActionConstbase` installs entry-boundary effects before the entry block's first
 operation. A per-function ledger prevents duplicate insertion and is discarded
@@ -1733,6 +1754,33 @@ classified:
   co-executes with the call, so relaxing that shape is the fabrication the
   family's own design notes warn against. `off` restores the upstream
   rejection, in which any LOAD or STORE of the value sinks the trial.
+
+  (kuna) `exclusivecallret` (default-on,
+  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_exclusivecallret.rs (applies, skips_use)`)
+  applies the same mutual-exclusion argument to a call and a return. GCC
+  compiles `return a(x) ? b(x) : x` with a tail call to `b`, so on e500 the same
+  scalar is the tail call's argument on one arm and the function's return on the
+  other. Each use vetoes the other's trial although no execution reaches both,
+  and the function was recovered `void`. The rule skips a `CALL`/`CALLIND`
+  descendant while scoring a `RETURN` trial, and a `RETURN` descendant while
+  scoring a call's input trial, when the two ops sit in distinct blocks, neither
+  reaches the other (the bounded walk above, which declines once its bound is
+  exceeded), the `RETURN` is a normal return and the use reads the value as data
+  rather than as a call target or return address. An input trial also requires
+  the value to be produced in a block that both uses follow through
+  single-entry, single-exit chains, so it was prepared for the branch; this
+  admits a split epilogue between the branch and the return. Co-executing uses
+  and loop-connected arms keep ordinary scoring. The register alone cannot show
+  whether a call on the other arm reads the value. When the compiler sets the
+  returned value before the branch, a call that takes no arguments gains that
+  value as an argument, such as a stack-protector failure call after the result
+  is computed; the generic PowerPC decoder renders these calls the same way.
+  The rule is limited to the
+  narrow scalar shape `calloverlap auto` recovers (chapter 03): a four-byte
+  trial in the low word of a named eight-byte register on a truncated 32-bit
+  address target, such as an e500 GPR. Whether a trial has that shape does not
+  depend on the use being scored, so it is decided once per walk. `off`
+  restores the upstream rejection.
 
   (kuna) `reloadarg` (default-on,
   `decompiler/crates/kuna-decomp/src/p4_calls/kuna_reloadarg.rs (note, recheck)`)
