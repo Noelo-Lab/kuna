@@ -729,6 +729,13 @@ impl ObjectLoadImage {
                 kuna_base::notes::say_once(filename, &format!("[kuna target] {filename}: {note}"));
             }
         }
+        if emit_diagnostics {
+            for note in crate::loader::kuna_mipstarget::notes(
+                &file, &String::from_utf8_lossy(&archtype), target.is_some(),
+            ) {
+                kuna_base::notes::say_once(filename, &format!("[kuna target] {filename}: {note}"));
+            }
+        }
         // (kuna §2.2) The default-model fallback id: the same arch/endian stem
         // with the model dropped to the per-arch default. If the format's chosen
         // model (e.g. PE's `:windows`) isn't vendored for this arch, the engine
@@ -1746,6 +1753,9 @@ fn language_id_for(
     if let Some(id) = crate::loader::kuna_ppcaputarget::language_id(file) {
         return Ok(id.into_bytes());
     }
+    if let Some(id) = crate::loader::kuna_mipstarget::language_id(file)? {
+        return Ok(id.into_bytes());
+    }
     let little = file.is_little_endian();
     let endian = if little { "LE" } else { "BE" };
     // (PR-8 §3.7) Pointer-auth arm64e spec selection, GATED + opt-in: an arm64e
@@ -1808,6 +1818,11 @@ fn fallback_language_id(
     primary: &[u8],
 ) -> Option<Vec<u8>> {
     if file.format() == object::BinaryFormat::Elf && arch == Architecture::PowerPc {
+        return None;
+    }
+    if file.format() == object::BinaryFormat::Elf
+        && matches!(arch, Architecture::Mips | Architecture::Mips64 | Architecture::Mips64_N32)
+    {
         return None;
     }
     let endian = if file.is_little_endian() { "LE" } else { "BE" };
@@ -2045,6 +2060,7 @@ pub fn elf_language_ids() -> Vec<String> {
         }
     }
     out.extend(crate::loader::kuna_ppcaputarget::language_ids());
+    out.extend(crate::loader::kuna_mipstarget::language_ids());
     out.sort();
     out.dedup();
     out
