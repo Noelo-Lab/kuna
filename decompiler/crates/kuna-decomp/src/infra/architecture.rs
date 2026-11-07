@@ -406,6 +406,9 @@ pub struct Architecture {
     /// (kuna `floatglobals`) What the whole-program scan reads; `None` on every
     /// path without a loaded image.
     pub kuna_float_scan: Option<Rc<crate::kuna_floatglobals::FloatScan>>,
+    /// Single-function bodies (FDEs, or Go `pclntab` extents) whose interiors the
+    /// loader suppressed as separate entries.
+    pub kuna_function_bodies: Vec<(u64, u64)>,
     /// (kuna `floatglobals`) The scan's answer, once a function asked for it.
     pub kuna_float_globals: Option<Rc<crate::kuna_floatglobals::FloatGlobals>>,
     /// (kuna `floatglobals`, `callerreads`) The run decompiles more than one
@@ -3087,6 +3090,7 @@ impl Architecture {
             call_target_type: false, // (kuna) option calltargettype; reset_defaults sets the shipped default
             float_globals: true, // (kuna) option floatglobals; reset_defaults sets the shipped default
             kuna_float_scan: None,
+            kuna_function_bodies: Vec::new(),
             kuna_float_globals: None,
             kuna_float_scan_batch: false,
             caller_reads: true, // (kuna) option callerreads; reset_defaults sets the shipped default

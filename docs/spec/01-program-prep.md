@@ -4985,6 +4985,24 @@ without `.eh_frame` FDEs, which covers essentially the whole bare-metal ARM
 population (they unwind through `.ARM.exidx`), so the ARM entry-recall options
 compose with it unchanged.
 
+Function starts, fixed-width FDE addresses/ranges and LSDA landing-pad fields
+use the same ELF byte order and native address width. A relative `pcBegin` applies its base; `pcRange` uses only the format,
+not the relative application. Truncated records cannot read into the next FDE.
+A shared linker FDE cannot suppress the callable stubs it covers: a range
+overlapping `.glink` is not used, nor is one starting at a complete PPC32
+secure-PLT stub (r30-relative short/long or absolute), which is how GNU's FDE
+for stubs merged into `.text` begins. A function that only contains a
+stub-shaped sequence starts at its own prologue and keeps its FDE. The stub
+recognizer the PIC import proofs use,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32piccalls.rs (stub)`, also
+serves this check and absolute-stub naming
+(`decompiler/crates/kuna-analysis/src/loader/kuna_ppc32_imports.rs (stubs)`);
+stub starts are sorted once and each FDE start is a binary search.
+The accepted single-function bodies (these FDEs, plus a Go `pclntab` extent
+where that pass contributes one) also reach flow recovery: suppressing an
+interior entry must leave its code reachable from the owning entry. PowerPC PC
+reads are handled there as described in the lift chapter.
+
 **(kuna) Except where a `.cold` fragment is entered more than once**
 (`coldentry`, default-**on**;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_coldentry.rs`). GCC's

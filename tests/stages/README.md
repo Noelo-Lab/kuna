@@ -405,3 +405,8 @@ check live pointer bases through constant, negative and signed dynamic byte
 offsets in Go loads, stores and returns. Integer-address reconstruction remains
 a control. The CLI companion builds both authored assembly fixtures and runs
 the complete emitted functions with Go pointer checks and full-array canaries.
+
+`kuna-elf-unwind-pcread.xml` checks an authored PowerPC PC-relative literal read:
+with FDE ownership disabled it remains a call; with ownership enabled the
+complete body returns `a0 * 3 + 7`. The fixture generator is
+`decompiler/crates/kuna-cli/tests/fixtures/elf_unwind_fixture.rs`.

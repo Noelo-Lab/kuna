@@ -798,3 +798,6 @@ mod qualified_call;
 
 #[path = "powerpc_apu_selection.rs"]
 mod powerpc_apu_selection;
+
+#[path = "elf_unwind.rs"]
+mod elf_unwind;

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3890,
-    3890
+    3893,
+    3893
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -513,6 +513,9 @@
     "data:ELFMAINNAMED #7: default, the call keeps the no-argument form the body has, not a phantom argc",
     "data:ELFMAINNAMED #8: default, a main that forwards argc and argv to its first call keeps both parameters",
     "data:ELFMAINNAMED #9: default, and the call still passes them",
+    "data:ELFUNWIND #1: off keeps the PC read as a call",
+    "data:ELFUNWIND #2: off stops before the real body",
+    "data:ELFUNWIND #3: default includes the owned body",
     "data:EMPTYSTRCONST #1: the blob pointer keeps its address instead of becoming an empty literal",
     "data:EMPTYSTRCONST #2: an ordinary short literal beside it is untouched, in both passes",
     "data:EMPTYSTRCONST #3: a GENUINE empty literal, one that sits inside a run of string data, keeps its quotes in both passes",
