@@ -56,12 +56,12 @@ use object::read::{Object, ObjectSection};
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 use super::{
-    decode_eh_pointer, encoded_size, existing_function_addrs, parse_cie_fde_encoding, read_u32,
+    decode_eh_pointer_ordered, encoded_size, existing_function_addrs, parse_cie_fde_encoding, read_u32,
     read_u64, DW_EH_PE_ABSPTR,
 };
 
 /// Section names whose contents are linker-generated stubs sharing one FDE.
-const STUB_SECTIONS: &[&str] = &[".plt", ".plt.sec", ".plt.got", ".iplt", ".MIPS.stubs"];
+pub(crate) const STUB_SECTIONS: &[&str] = &[".plt", ".plt.sec", ".plt.got", ".iplt", ".MIPS.stubs", ".glink"];
 
 /// (kuna) The FDE-interior entry-suppression pass (`fdeinterior`).
 ///
@@ -132,13 +132,15 @@ pub fn eligible_fde_bodies(file: &object::File, bytes: &[u8]) -> Vec<(u64, u64)>
     let named = existing_function_addrs(file, bytes);
     let starts: Vec<u64> = all.iter().map(|&(start, _)| start).collect();
     let stubs = stub_ranges(file);
+    let stub_starts = crate::loader::kuna_ppc32_imports::stub_starts(file);
     all.iter()
         .copied()
         .filter(|&(start, end)| {
             let contains_named = contains_strictly(&named, start, end);
             let contains_start = contains_strictly(&starts, start, end);
             let overlaps_stub = stubs.iter().any(|&(lo, hi)| start < hi && lo < end);
-            !contains_named && !contains_start && !overlaps_stub
+            let shared_stubs = stub_starts.binary_search(&start).is_ok();
+            !contains_named && !contains_start && !overlaps_stub && !shared_stubs
         })
         .collect()
 }
@@ -164,7 +166,7 @@ fn stub_ranges(file: &object::File) -> Vec<(u64, u64)> {
 /// `R` encoding, but is a LENGTH — so it is decoded with the encoding's format
 /// bits only, never its pc-relative application.
 pub fn scan_fde_bodies(file: &object::File) -> Vec<(u64, u64)> {
-    scan_fde_bodies_sized(file, 8)
+    scan_fde_bodies_sized(file, if file.is_64() { 8 } else { 4 })
 }
 
 fn scan_fde_bodies_sized(file: &object::File, ptr_size: usize) -> Vec<(u64, u64)> {
@@ -203,7 +205,7 @@ fn scan_fde_bodies_sized(file: &object::File, ptr_size: usize) -> Vec<(u64, u64)
             continue;
         }
         let next = o + 4 + length;
-        if next > data.len() || o + 8 > data.len() {
+        if next > data.len() || length < 4 {
             break;
         }
         let cie_id = read_u32(&data[o + 4..], le);
@@ -214,19 +216,39 @@ fn scan_fde_bodies_sized(file: &object::File, ptr_size: usize) -> Vec<(u64, u64)
             let cie_ptr_field = o + 4;
             if (cie_id as usize) <= cie_ptr_field {
                 let cie_off = cie_ptr_field - cie_id as usize;
-                if let Some(enc) = cie_enc.iter().find(|&&(co, _)| co == cie_off).map(|&(_, e)| e) {
+                if let Some(enc) = cie_enc
+                    .iter()
+                    .find(|&&(co, _)| co == cie_off)
+                    .map(|&(_, e)| e)
+                {
                     let pc_begin_off = o + 8;
                     let field_vma = sec_vma + pc_begin_off as u64;
-                    let pc_begin =
-                        decode_eh_pointer(enc, field_vma, sec_vma, data, pc_begin_off, ptr_size);
+                    let pc_begin = decode_eh_pointer_ordered(
+                        enc,
+                        field_vma,
+                        sec_vma,
+                        &data[..next],
+                        pc_begin_off,
+                        ptr_size,
+                        le,
+                    );
                     let range_off =
-                        pc_begin_off + encoded_size(enc, ptr_size, &data[pc_begin_off..]);
+                        pc_begin_off + encoded_size(enc, ptr_size, &data[pc_begin_off..next]);
                     // Length field: the CIE's format, absolute application.
-                    let pc_range =
-                        decode_eh_pointer(enc & 0x0f, 0, 0, data, range_off, ptr_size);
+                    let pc_range = decode_eh_pointer_ordered(
+                        enc & 0x0f,
+                        0,
+                        0,
+                        &data[..next],
+                        range_off,
+                        ptr_size,
+                        le,
+                    );
                     if let (Some(begin), Some(range)) = (pc_begin, pc_range) {
                         if range > 0 {
-                            out.push((begin, begin.wrapping_add(range)));
+                            if let Some(end) = begin.checked_add(range) {
+                                out.push((begin, end));
+                            }
                         }
                     }
                 }
@@ -248,6 +270,46 @@ fn scan_fde_bodies_sized(file: &object::File, ptr_size: usize) -> Vec<(u64, u64)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fixed_width_eh_pointers_follow_byte_order() {
+        for little in [false, true] {
+            for (format, width, signed) in [
+                (2, 2, false),
+                (3, 4, false),
+                (4, 8, false),
+                (10, 2, true),
+                (11, 4, true),
+                (12, 8, true),
+                (0, 4, false),
+                (0, 8, false),
+            ] {
+                let value = if signed { u64::MAX - 3 } else { 0x1234 };
+                let bytes = if little {
+                    value.to_le_bytes()[..width].to_vec()
+                } else {
+                    value.to_be_bytes()[8 - width..].to_vec()
+                };
+                let expected = 0x1000u64.wrapping_add(value);
+                assert_eq!(
+                    decode_eh_pointer_ordered(format | 0x10, 0x1000, 0, &bytes, 0, width, little),
+                    Some(expected)
+                );
+                assert_eq!(
+                    decode_eh_pointer_ordered(format, 0, 0, &bytes[..width - 1], 0, width, little),
+                    None
+                );
+            }
+            assert_eq!(
+                decode_eh_pointer_ordered(1, 0, 0, &[0x81, 1], 0, 4, little),
+                Some(129)
+            );
+            assert_eq!(
+                decode_eh_pointer_ordered(9, 0, 0, &[0x7c], 0, 4, little),
+                Some(u64::MAX - 3)
+            );
+        }
+    }
 
     #[test]
     fn interior_is_strict() {

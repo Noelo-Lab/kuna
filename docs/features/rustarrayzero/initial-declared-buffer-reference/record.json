@@ -1,0 +1,5 @@
+{
+  "at": "2026-11-03T05:09:44.250932+00:00",
+  "status": "SUPERSEDED_REFERENCE_HARNESS",
+  "reason": "Use malloc-backed destination storage and memcpy from a genuine128-bit source, avoiding effective-type ambiguity from casting a declared byte-array object. Native fixture binary and candidate-parent CLI are unchanged."
+}
