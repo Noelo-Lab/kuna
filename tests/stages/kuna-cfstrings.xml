@@ -7,7 +7,7 @@
     `__cfstring` (isa, flags, char pointer, length). Code references the
     struct, not the characters, so the constant-string route, which reads
     the bytes AT the referenced address, sees the struct and prints the
-    entry address. On the Toyota iOS app (84 MB arm64) kuna printed
+    entry address. In an 84 MB arm64 third-party iOS app kuna printed
     `NSLog(0x1044376b0)` for `NSLog(CFSTR("Reachability Flag Status: ..."))`.
 
     Stage / sub-stage: P1 external-refinement, the Mach-O `cfstrings`

@@ -2,7 +2,8 @@
 //! (`__cfstring`) as `CFSTR("...")` of the string it holds, instead of the entry.
 //!
 //! Fixture: `tests/fixtures/macho_cfstring` — a self-contained arm64 Mach-O built
-//! from `macho_cfstring.c` with `zig cc -target aarch64-macos -O0`. It hand-builds
+//! from `macho_cfstring.c` with `zig cc -target aarch64-macos -O0`, its STABS
+//! debug map stripped. It hand-builds
 //! three `__builtin_CFString` constants in `__DATA_CONST,__cfstring` (8-bit,
 //! `flags` 0x7c8) and a getter returning each one's address. The second string is
 //! longer than a 32-byte entry; the third entry sits right behind it. The char

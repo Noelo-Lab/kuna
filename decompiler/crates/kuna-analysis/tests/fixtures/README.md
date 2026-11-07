@@ -1150,17 +1150,21 @@ pass (`kuna-console/tests/verify_cfstring.rs`, `tests/stages/kuna-cfstrings.xml`
 Source `macho_cfstring.c` hand-builds each struct `{ ___CFConstantStringClassReference,
 0x7c8 (8-bit), "<text>", <length> }` and a getter returning its address. The second
 string (39 characters) is longer than one 32-byte entry and the third entry sits
-right behind it: the guard that a long string never hides its neighbour. It builds
-with the container's `zig cc` (a bundled `ld64.lld`), no macOS SDK:
+right behind it: the guard that a long string never hides its neighbour. It was
+built with `zig cc`, which bundles its own Mach-O linker and needs no macOS SDK
+(the devcontainer does not ship zig), then `llvm-strip -S` from LLVM 20 to drop
+the STABS debug map, which named the build directories (LLVM 14's `-S` leaves
+Mach-O STABS in place):
 
 ```
 zig cc -target aarch64-macos -O0 -Wl,-undefined,dynamic_lookup \
        -o macho_cfstring macho_cfstring.c
+llvm-strip -S macho_cfstring
 ```
 
 `zig cc` links a classic `LC_DYLD_INFO` image, so each entry's `char *` (into
-`__TEXT,__cstring`) is a raw word (the chained path is covered on Toyota and the
-a13 binaries). **Pinned VMAs:** `_get_greeting`@`0x100000538` → entry@`0x100004008`
+`__TEXT,__cstring`) is a raw word (the chained path has no fixture here; it was
+checked on arm64 and arm64e iOS binaries). **Pinned VMAs:** `_get_greeting`@`0x100000538` → entry@`0x100004008`
 ("cfstring hello"), `_get_long`@`0x100000544` → entry@`0x100004028` ("a constant
 string longer than one entry"), `_get_after`@`0x100000550` → entry@`0x100004048`
 ("after the long one"). With `--option cfstrings on` each getter returns

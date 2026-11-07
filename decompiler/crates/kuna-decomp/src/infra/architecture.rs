@@ -4052,7 +4052,7 @@ impl Architecture {
         self.analysis_gotypes = true; // Go runtime-type harvest default-on (Go-only pass)
         self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
-        self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on the 80 MB Toyota arm64 app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)
+        self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)
         self.cfstrings_annotate = false;
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
