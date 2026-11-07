@@ -14,6 +14,8 @@ mod verify_gobyteview;
 mod octeon_n64_arguments;
 #[path = "octeon_abi.rs"]
 mod octeon_abi;
+#[path = "mips_import_flow.rs"]
+mod mips_import_flow;
 #[path = "n32_stack.rs"]
 mod n32_stack;
 
@@ -34,6 +36,9 @@ mod verify_aifpoolslide;
 
 #[path = "verify_aifstrict.rs"]
 mod verify_aifstrict;
+
+#[path = "verify_armderef.rs"]
+mod verify_armderef;
 
 #[path = "verify_arm_context.rs"]
 mod verify_arm_context;
@@ -470,6 +475,9 @@ mod verify_w11_elf_plt_names;
 
 #[path = "verify_widestrings.rs"]
 mod verify_widestrings;
+
+#[path = "verify_xreffp.rs"]
+mod verify_xreffp;
 
 #[path = "wrapped_stack_encode.rs"]
 mod wrapped_stack_encode;

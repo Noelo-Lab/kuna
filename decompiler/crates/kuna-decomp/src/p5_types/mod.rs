@@ -39,3 +39,4 @@ pub mod kuna_fieldtype; // (kuna) a synthesized field some access holds as a poi
 pub mod kuna_structsynth; // (kuna) synthesize a struct type from a pointer parameter's constant-offset dereferences
 pub mod kuna_varargfloat; // (kuna) a variadic argument in a floating-point register is a double
 pub mod kuna_typequal; // (kuna) C type qualifiers on their own type layer
+pub mod kuna_aggregatefields; // (kuna) structured values kept whole until their fields can be named

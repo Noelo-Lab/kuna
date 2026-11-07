@@ -343,6 +343,15 @@ impl FlowEnvironment for ArchFlowEnv {
         Ok(Some(proto))
     }
 
+    fn is_ppc_pc_capture(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
+        let arch = self.arch();
+        if !arch.analysis_fdeinterior || !arch.archid.starts_with("PowerPC:") {
+            return false;
+        }
+        crate::p2_lift::kuna_ppcpcread::is_pc_capture(fd, op, &arch.kuna_function_bodies,
+            |dest| self.query_call(dest).is_some())
+    }
+
     fn is_v850_indirect_jmp(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
         // (kuna) GH-8817: wire the ported `kunaIsV850IndirectJmp` predicate.  The
         // gate is the architecture-owned `v850_indirect_branch` flag (`option

@@ -20,10 +20,8 @@ fn factory() -> TypeFactoryImpl {
     types
 }
 
-/// `(name, type)` of each field of `swift_types_elf`'s `typefix.Sprite`,
-/// built with `outer` layouts already in progress, or `None` when Sprite
-/// itself is out of reach.
-fn sprite_fields(outer: usize) -> Option<Vec<(String, String)>> {
+/// `f` over the type arm of `swift_types_elf`, its records located.
+fn with_types<R>(f: impl FnOnce(&Types) -> R) -> R {
     let bytes = std::fs::read(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/swift_types_elf"
@@ -73,15 +71,24 @@ fn sprite_fields(outer: usize) -> Option<Vec<(String, String)>> {
         false,
     );
     types.locate_all();
-    let sprite = *types.by_path.get("typefix.Sprite").unwrap();
-    types.in_progress.borrow_mut().extend(1..=outer as u64);
-    let sprite = types.struct_type(sprite)?;
-    Some(
-        (0..)
-            .map_while(|i| sprite.get_field(i))
-            .map(|f| (f.name.clone(), f.field_type.get_name().to_string()))
-            .collect(),
-    )
+    f(&types)
+}
+
+/// `(name, type)` of each field of `swift_types_elf`'s `typefix.Sprite`,
+/// built with `outer` layouts already in progress, or `None` when Sprite
+/// itself is out of reach.
+fn sprite_fields(outer: usize) -> Option<Vec<(String, String)>> {
+    with_types(|types| {
+        let sprite = *types.by_path.get("typefix.Sprite").unwrap();
+        types.in_progress.borrow_mut().extend(1..=outer as u64);
+        let sprite = types.struct_type(sprite)?;
+        Some(
+            (0..)
+                .map_while(|i| sprite.get_field(i))
+                .map(|f| (f.name.clone(), f.field_type.get_name().to_string()))
+                .collect(),
+        )
+    })
 }
 
 #[test]
@@ -104,4 +111,21 @@ fn nested_layouts_stop_at_the_nesting_bound() {
     let names = |f: &[(String, String)]| f.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>();
     assert_eq!(names(&cut), names(&top));
     assert!(sprite_fields(MAX_NESTING).is_none());
+}
+
+#[test]
+fn nested_optionals_stop_at_the_nesting_bound() {
+    with_types(|types| {
+        let optional = |n: usize| {
+            let mangled = [b"SS".as_slice(), &b"Sg".repeat(n)].concat();
+            let node = demangle_swift_type(&mangled, &|_, _, _| None).expect("parses");
+            types
+                .kuna_type(&node, 16, 0)
+                .map(|t| t.get_name().to_string())
+        };
+        assert_eq!(optional(1).as_deref(), Some("Swift.String"));
+        assert_eq!(optional(MAX_NESTING).as_deref(), Some("Swift.String"));
+        assert_eq!(optional(MAX_NESTING + 1), None);
+        assert_eq!(optional(1500), None);
+    })
 }

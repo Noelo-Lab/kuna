@@ -13,7 +13,31 @@
   <stackpointer register="r1" space="ram"/>
   <default_proto>
     <prototype name="__stdcall" extrapop="0" stackshift="0">
-      <input pointermax="4">
+      <input pointermax="8">
+        <pentry minsize="1" maxsize="8" metatype="float" extension="float">
+          <register name="f1"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8" metatype="float" extension="float">
+          <register name="f2"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8" metatype="float" extension="float">
+          <register name="f3"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8" metatype="float" extension="float">
+          <register name="f4"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8" metatype="float" extension="float">
+          <register name="f5"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8" metatype="float" extension="float">
+          <register name="f6"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8" metatype="float" extension="float">
+          <register name="f7"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8" metatype="float" extension="float">
+          <register name="f8"/>
+        </pentry>
         <pentry minsize="1" maxsize="4">
           <register name="r3"/>
         </pentry>
@@ -39,10 +63,33 @@
           <register name="r10"/>
         </pentry>
         <pentry minsize="1" maxsize="500" align="4">
-          <addr offset="4" space="stack"/>
+          <addr offset="8" space="stack"/>
         </pentry>
+        <rule>
+          <datatype name="float"/>
+          <consume storage="float"/>
+        </rule>
+        <rule>
+          <datatype name="float"/>
+          <goto_stack/>
+        </rule>
+        <rule>
+          <datatype name="struct"/>
+          <convert_to_ptr/>
+        </rule>
+        <rule>
+          <datatype name="union"/>
+          <convert_to_ptr/>
+        </rule>
+        <rule>
+          <datatype name="any"/>
+          <join align="true"/>
+        </rule>
       </input>
       <output>
+        <pentry minsize="1" maxsize="8" metatype="float" extension="float">
+          <register name="f1"/>
+        </pentry>
         <pentry minsize="1" maxsize="4" extension="inttype">
           <register name="r3"/>
         </pentry>
@@ -51,6 +98,9 @@
         </pentry>
       </output>
       <unaffected>
+        <register name="r1"/>  <!-- stack pointer -->
+        <register name="r2"/>  <!-- _SDA2_BASE_ -->
+      	<register name="r13"/> <!-- _SDA_BASE_  -->
         <register name="r14"/>
         <register name="r15"/>
         <register name="r16"/>
@@ -69,9 +119,33 @@
         <register name="r29"/>
         <register name="r30"/>
         <register name="r31"/>
-        <register name="r1"/>
+        <register name="f14"/>
+        <register name="f15"/>
+        <register name="f16"/>
+        <register name="f17"/>
+        <register name="f18"/>
+        <register name="f19"/>
+        <register name="f20"/>
+        <register name="f21"/>
+        <register name="f22"/>
+        <register name="f23"/>
+        <register name="f24"/>
+        <register name="f25"/>
+        <register name="f26"/>
+        <register name="f27"/>
+        <register name="f28"/>
+        <register name="f29"/>
+        <register name="f30"/>
+        <register name="f31"/>
+        <register name="cr2"/>
+        <register name="cr3"/>
         <register name="cr4"/>
       </unaffected>
+      <killedbycall>
+        <register name="r3"/>
+        <register name="r4"/>
+        <register name="f1"/>
+      </killedbycall>
     </prototype>
   </default_proto>
 

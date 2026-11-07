@@ -1,0 +1,10 @@
+{
+  "at": "2026-11-03T05:58:55.716956+00:00",
+  "status": "FAILED_SPEED_BUDGET",
+  "candidate_cli_sha256": "0ee520ca82421441d662d5df1a6a4567fd540c615d9d555cf0e17116f0a0c1d7",
+  "case": "c-zero",
+  "metric": "cpu_ms median",
+  "delta_pct": 5.07537051893614,
+  "budget_pct": 5,
+  "decision": "Demote correction to named default-off option, as required by repository speed policy. No unchanged-code retry or claim that the result was noise. Native and other validation passed; timings retained in full."
+}

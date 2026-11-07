@@ -2,19 +2,22 @@
 //! `$s` mangling and the Objective-C runtime's `_Tt` type names
 //! (`docs/multilang.md`, the Swift pack's first prerequisite).
 //!
-//! ## Why a port and not a crate
+//! ## Source and attribution
 //!
-//! Every Swift demangler on crates.io builds Apple's C++ demangler
-//! (`swift-demangler`, `symbolic-demangle`, `macho-demangle`, `razgad`,
-//! `swift-demangle`): a C++ toolchain at build time, which `kuna-wasm`
-//! cannot carry. There is no pure-Rust Swift demangler to depend on, so
-//! this is the repo's usual move (the MSVC signature recovery precedent):
-//! written from the public grammar (`swift/docs/ABI/Mangling.rst`) as the
-//! same postfix stack machine Apple's reference implementation uses, and
-//! verified against `swift-demangle` byte for byte on 131,000 symbols
-//! (the Swift 6.3 stdlib and Foundation, and the symbol tables and
-//! Objective-C class names of seven iOS apps). The remaining gap is the
-//! autodiff family (`TJ…`), which never appears in app binaries.
+//! This module follows the Swift project's reference demangler
+//! (`swift/lib/Demangling/`): the node vocabulary mirrors
+//! `DemangleNodes.def`, the parser is the same postfix stack machine as
+//! `Demangler.cpp`, and the renderers follow `NodePrinter.cpp`, all against
+//! the mangling grammar in `swift/docs/ABI/Mangling.rst`. It is a fresh
+//! Rust implementation (not a line-for-line translation), re-expressed so
+//! `kuna-wasm` stays std-only — every Swift demangler crate builds Apple's
+//! C++ demangler, which needs a C++ toolchain the WASM build cannot carry,
+//! and there is no pure-Rust demangler to depend on. The Swift project is
+//! licensed under the Apache License 2.0 with the Runtime Library Exception;
+//! see the repository `NOTICE`. The author reports verifying the output
+//! byte for byte against `swift-demangle` on the Swift 6.3 stdlib and
+//! Foundation and on several iOS app symbol tables; the remaining gap is the
+//! autodiff family (`TJ…`), which does not appear in app binaries.
 //!
 //! ## The contract: parse-or-passthrough
 //!
@@ -29,20 +32,20 @@
 //!   (`Swift.String.count.getter : Swift.Int`), for display.
 //! - [`demangle_swift_name`]: the name-only path kuna installs as the
 //!   symbol name — space-free, Swift reference syntax for members
-//!   (`Toyota.Foo.init(x:y:)`, `Toyota.Foo.bar(_:)`, `Toyota.Foo.baz()`),
-//!   dotted tags for runtime artifacts (`Toyota.Foo.type_metadata`,
+//!   (`Sample.Foo.init(x:y:)`, `Sample.Foo.bar(_:)`, `Sample.Foo.baz()`),
+//!   dotted tags for runtime artifacts (`Sample.Foo.type_metadata`,
 //!   `….dispatch_thunk`, `….merged`, `….closure#1`), and `<Type:Protocol>`
-//!   for conformances (`<Toyota.Foo:Swift.Hashable>.hash(into:)` is the
+//!   for conformances (`<Sample.Foo:Swift.Hashable>.hash(into:)` is the
 //!   protocol witness, `<…>.protocol_witness_table` the table). Private
 //!   discriminators, generic signatures and parameter types are dropped;
 //!   where a name is meaningless without types (conformances, generic
 //!   specializations, reabstraction thunks) a compact spelling appears
 //!   (`[Swift.String:Any]`, `(Swift.Int)->Swift.Bool`).
 //!
-//! The Objective-C runtime names (`_TtC6Toyota3Foo`, nested `_TtCC…`,
+//! The Objective-C runtime names (`_TtC6Sample3Foo`, nested `_TtCC…`,
 //! private `P33_<hash>`, generic `_TtGC…_`, protocol `_TtP…_`) parse into
-//! the same tree, so `demangle_swift_name("_TtC6Toyota3Foo")` is
-//! `Toyota.Foo`.
+//! the same tree, so `demangle_swift_name("_TtC6Sample3Foo")` is
+//! `Sample.Foo`.
 
 pub mod name;
 pub mod node;

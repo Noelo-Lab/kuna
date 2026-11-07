@@ -74,6 +74,7 @@ fn gcc_scalar_stack_slots_and_wide_values_remain_distinct() {
             ("signed_ninth", "return value;"),
             ("float_ninth", ".from = value"),
             ("upper_half", "return value >> 0x20;"),
+            ("indirect_frame", "return (*callee)(value) + value;"),
         ] {
             let entry = prog
                 .resolve_entry(&EntrySelector::Name(name.into()))
