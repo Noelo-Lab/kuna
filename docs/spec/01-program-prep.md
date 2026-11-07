@@ -7862,8 +7862,15 @@ and the SPARC `call`, and on those architectures each still files a `Jump` to it
 own fall-through. `--option armcondskip off` gives the earlier rule on ARM too:
 every skip files its `Jump`, except the predicated skip of an A32 table dispatch
 whose table `armframes` reads. As with `armpltslot`, the call graph reads these
-rows, and on the same images the `decompile-all` output is byte-identical with
-the option on and off.
+rows. Where literal-pool words decoded as a predicated instruction run into the
+next function's entry, the skip's row made that function look like a callee of
+the one before it; without it `decompile-all` visits the functions in their real
+callee-first order, which can change the types it infers (`status_caller` in the
+`et_rel_status_arm.o` fixture takes `int`, the parameter type of its callee
+`guarded_status`, instead of `unsigned int`; 2 of 3676 functions of an armhf
+glibc `libc.so.6` change the same way). On musl
+`libc.so` and its stripped copy the `decompile-all` output is byte-identical
+with the option on and off.
 
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.
