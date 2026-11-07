@@ -2246,7 +2246,11 @@ since deindirection consumes them first, and a read through anything that is not
 externref import slot keeps `*dat_<addr>`. It depends on the slot being painted, so
 it is a no-op when `peimportcall` is off and on any format whose import slots are
 not painted (ELF GOT data imports today); a pointer that reaches the LOAD through a
-phi rather than a COPY chain is left as the dereference.
+phi rather than a COPY chain is left as the dereference. A slot pointer the body
+holds in a named local (`v2 = stdout_ptr;`, then several reads through `v2`) names
+the import only while some other printed statement still reads that local: when
+every read of it is such a load, the loads keep `*v2`, so naming the import never
+leaves the local's assignment dead.
 
 (kuna) **The ghidra-mode third style (Phase 3, DIV-77).** The ghidra-mode
 process sets a separate `name_style_ghidra` flag alongside (not instead of)
