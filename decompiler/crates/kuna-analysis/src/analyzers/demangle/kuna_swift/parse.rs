@@ -13,6 +13,14 @@ use super::punycode;
 const MAX_REPEAT: u64 = 2048;
 const MAX_WORDS: usize = 26;
 const MAX_NODES: usize = 1 << 16;
+/// Ceiling on the combined text of all identifiers in one symbol. Word
+/// substitutions append a whole earlier identifier per reference, so an
+/// identifier's length is roughly quadratic in the symbol length; this bounds
+/// the total so a short symbol cannot build a multi-megabyte identifier.
+const MAX_IDENT_TEXT: usize = 1 << 20;
+/// Call-stack depth limit for the recursive context walk in
+/// [`Parser::bound_generic_args`], mirroring `oldparse`'s `MAX_DEPTH`.
+const MAX_DEPTH: usize = 1024;
 
 pub struct Parser<'a> {
     text: &'a [u8],
@@ -22,6 +30,8 @@ pub struct Parser<'a> {
     words: Vec<String>,
     old_fn_types: bool,
     budget: usize,
+    ident_budget: usize,
+    depth: usize,
     failed: bool,
 }
 
@@ -55,6 +65,8 @@ impl<'a> Parser<'a> {
             words: Vec::new(),
             old_fn_types,
             budget: MAX_NODES,
+            ident_budget: MAX_IDENT_TEXT,
+            depth: 0,
             failed: false,
         }
     }
@@ -196,6 +208,7 @@ impl<'a> Parser<'a> {
                 if idx >= self.words.len() {
                     return None;
                 }
+                self.ident_budget = self.ident_budget.checked_sub(self.words[idx].len())?;
                 ident.push_str(&self.words[idx]);
             }
             if self.next_if(b'0') {
@@ -214,6 +227,7 @@ impl<'a> Parser<'a> {
             let slice = &self.text[self.pos..self.pos + num];
             if is_punycoded {
                 let decoded = punycode::decode_swift(std::str::from_utf8(slice).ok()?)?;
+                self.ident_budget = self.ident_budget.checked_sub(decoded.len())?;
                 ident.push_str(&decoded);
             } else {
                 let s = std::str::from_utf8(slice).ok()?;
@@ -223,6 +237,7 @@ impl<'a> Parser<'a> {
                 {
                     return None;
                 }
+                self.ident_budget = self.ident_budget.checked_sub(s.len())?;
                 ident.push_str(s);
                 self.collect_words(s);
             }
@@ -777,9 +792,26 @@ impl<'a> Parser<'a> {
         &mut self,
         nominal: &NodeRef,
         lists: &[NodeRef],
+        idx: usize,
+    ) -> Option<NodeRef> {
+        // Recursion follows the context chain. The node budget bounds the
+        // total work, but a non-consuming context recurses without advancing
+        // `idx`, so an explicit depth cap keeps the call stack bounded.
+        if self.depth >= MAX_DEPTH {
+            return None;
+        }
+        self.depth += 1;
+        let r = self.bound_generic_args_inner(nominal, lists, idx);
+        self.depth -= 1;
+        r
+    }
+
+    fn bound_generic_args_inner(
+        &mut self,
+        nominal: &NodeRef,
+        lists: &[NodeRef],
         mut idx: usize,
     ) -> Option<NodeRef> {
-        // Recursion follows the context chain; the node budget bounds it.
         self.tick()?;
         let consumes = !matches!(
             nominal.kind,

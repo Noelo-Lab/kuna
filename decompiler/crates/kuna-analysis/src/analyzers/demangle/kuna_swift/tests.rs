@@ -288,9 +288,9 @@ const CORPUS: &[(&str, &str, &str)] = &[
         "Swift.AnyBidirectionalCollection.count.property_descriptor",
     ),
     (
-        "_TtC6Toyota24AddMileageViewController",
-        "Toyota.AddMileageViewController",
-        "Toyota.AddMileageViewController",
+        "_TtC6Sample24MainScreenViewController",
+        "Sample.MainScreenViewController",
+        "Sample.MainScreenViewController",
     ),
     (
         "_TtCC8DGCharts26HorizontalBarChartRendererP33_AAB8A416B07B7ABA6A1148A4C00D2BA76Buffer",
@@ -354,7 +354,7 @@ fn out_of_coverage_names_pass_through() {
         // a substitution that does not exist yet
         "$sAAyyF",
         // old mangling outside the runtime-name subset
-        "_TtCZFO6Toyota19PackageConfigurator24didFinishLaunchingPrefixFT_T_L_23AppFeatureContainerGate",
+        "_TtCZFO6Sample19PackageConfigurator24didFinishLaunchingPrefixFT_T_L_23AppFeatureContainerGate",
         "_TtGC7SwiftUI19UIHostingController",
         "_TtC1",
     ] {
@@ -520,6 +520,63 @@ fn hostile_counts_and_nesting_are_refused() {
     );
     assert_eq!(
         demangle_swift_full(&format!("$s4main3FooV{}N", "Sg".repeat(30_000))),
+        None
+    );
+}
+
+/// A crafted name whose substitutions share subtrees so a composite type
+/// renders work that doubles with each level. Before the shared name-only
+/// work budget, `demangle_swift_name` on this ~180-byte symbol expanded to
+/// hundreds of megabytes over many seconds; now it returns `None` with the
+/// work bounded. (Each level is `Dictionary<prev, prev>` referencing the
+/// previous substitution twice; a final tuple + type-mangling makes one root
+/// the name path actually renders.)
+#[test]
+fn shared_subtree_blowup_is_bounded() {
+    let mut sym = String::from("$sSDySiSiG_");
+    for k in 1..24 {
+        let idx = (k - 1) as u8;
+        sym.push_str(&format!(
+            "SDyA{}{}G",
+            (b'a' + idx) as char,
+            (b'A' + idx) as char
+        ));
+    }
+    sym.push_str("tD");
+    assert_eq!(demangle_swift_name(&sym), None);
+    assert_eq!(demangle_swift_full(&sym), None);
+}
+
+/// Word-substitution identifiers append a whole earlier identifier per
+/// reference, so an identifier's length is roughly quadratic in the symbol
+/// length. Before the identifier text cap a 12 KB symbol built a 36 MB
+/// identifier; now it is refused. A short word-substitution identifier still
+/// demangles.
+#[test]
+fn word_substitution_identifier_length_is_capped() {
+    let word = format!("A{}", "b".repeat(5_999)); // one 6000-char camel word
+    let hostile = format!("$s4main0{}{}{}0VD", word.len(), word, "b".repeat(6_000));
+    assert_eq!(demangle_swift_name(&hostile), None);
+    assert_eq!(demangle_swift_full(&hostile), None);
+    // A short word-substitution identifier (module word `main` reused) still
+    // demangles.
+    assert_eq!(
+        demangle_swift_name("$s4main010Abcdefghiaa0VD").as_deref(),
+        Some("main.Abcdefghiamain")
+    );
+}
+
+/// Deeply nested bound-generic arguments recurse through the context chain;
+/// an explicit depth cap keeps the parser's call stack bounded instead of
+/// relying on the node budget alone.
+#[test]
+fn deep_bound_generic_nesting_is_refused() {
+    assert_eq!(
+        demangle_swift_full(&format!("$s1a{}y{}GN", "1bV".repeat(20_000), "Si_".repeat(20_000))),
+        None
+    );
+    assert_eq!(
+        demangle_swift_name(&format!("$s4main3FooV{}N", "Sg".repeat(30_000))),
         None
     );
 }

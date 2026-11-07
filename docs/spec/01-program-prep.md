@@ -3762,7 +3762,7 @@ moves.
   pushes one node; substitutions `A…` and the stdlib shortcuts `S…` re-reference
   earlier nodes; word substitutions `0…` and punycode `00…` identifiers decode),
   plus the Swift 3 `_Tt` type mangling the Objective-C runtime still uses for
-  Swift class and protocol names (`_TtC6Toyota3Foo`, nested `_TtCC…`, private
+  Swift class and protocol names (`_TtC6Sample3Foo`, nested `_TtCC…`, private
   `P33_<hash>`, generic `_TtGC…_`, protocol `_TtP…_`). The parser covers
   entities (functions with labels, variables and every accessor, subscripts,
   constructors and destructors, closures, default arguments, initializers),
@@ -3788,13 +3788,13 @@ moves.
   `Foo.(in _HASH).init()` where `swift-demangle` prints its parameter type as
   the name. The name-only printer (`demangle_name`, what the loader installs)
   is a projection of the same tree: space-free Swift reference syntax for
-  members (`Toyota.Foo.init(x:y:)`, `Foo.bar(_:)`, `Foo.baz()`, `Foo.x.getter`,
+  members (`Sample.Foo.init(x:y:)`, `Foo.bar(_:)`, `Foo.baz()`, `Foo.x.getter`,
   `Foo.subscript(_:).getter`, `Foo.__allocating_init(x:)` on a class), dotted
   tags for runtime artifacts (`Foo.type_metadata`, `.nominal_type_descriptor`,
   `.dispatch_thunk`, `.method_descriptor`, `.merged`, `.objc`, `.closure#1`,
   `.outlined_copy`, `.generic_specialization<Swift.Int>`,
   `.function_signature_specialization`, `.partial_apply`), and `<Type:Protocol>`
-  for conformances (`<Toyota.Foo:Swift.Hashable>.hash(into:)` is the protocol
+  for conformances (`<Sample.Foo:Swift.Hashable>.hash(into:)` is the protocol
   witness, `<…>.protocol_witness_table` and `<…>.protocol_conformance_descriptor`
   the tables). Private discriminators, local-name counters, generic
   signatures, extension modules and parameter types are dropped from the name;
@@ -3806,13 +3806,12 @@ moves.
   the symbol keeps its mangled spelling — a wrong path is never printed. The
   Objective-C metadata pass (`analyzers/objc/mod.rs`) renders a class whose
   `class_ro_t.name` is a `_Tt` name through the same demangler, so a Swift
-  class's method labels read `-[Toyota.Foo viewDidLoad]` while the
+  class's method labels read `-[Sample.Foo viewDidLoad]` while the
   `_OBJC_CLASS_$_…` data symbol keeps the linker's spelling. The arm is
   shape-gated on `sourcelang::is_swift_mangled` — prefixes no other scheme
   owns — and option-gated by `swiftdemangle` (default on) through the
   `KUNA_SWIFTDEMANGLE` loadtime env bridge, the `rexthunk` pattern, because
-  names are demangled inside `load file` upstream of every option line. On the
-  Toyota iOS app (314,038 functions, 7,382 of them under Swift symbols) the
+  names are demangled inside `load file` upstream of every option line. On a large arm64 iOS app (314,038 functions, 7,382 of them under Swift symbols) the
   option takes every Swift symbol from mangled to demangled where the earlier
   name-only subset reached 26%, at no measurable cost (demangling the whole
   symbol table takes under 10 ms). The unit-test corpus is real symbols

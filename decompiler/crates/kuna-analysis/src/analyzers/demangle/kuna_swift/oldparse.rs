@@ -1,6 +1,6 @@
 //! (kuna `swiftdemangle`) The Swift 3 (`_Tt`) type mangling, which the
 //! Objective-C runtime still uses for Swift class and protocol names
-//! (`_TtC6Toyota24AddMileageViewController`). Only the type subset that
+//! (`_TtC6Sample24MainScreenViewController`). Only the type subset that
 //! can appear in a runtime name is read: nominal types with nested and
 //! private (`P33_<hash>`) contexts, protocol compositions, bound generics,
 //! the known stdlib types and back-reference substitutions. The result is
