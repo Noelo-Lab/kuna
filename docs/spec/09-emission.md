@@ -2230,7 +2230,9 @@ recognized as "generated" by `kuna_naming.rs (kuna_is_generated_name)` so
 cross-function name recommendation never propagates a default name.
 
 A data read through an import slot is the exception to `dat_<addr>` (`importdata`,
-`naming-policy`, default off). A data import — a Mach-O `__got`/`__auth_got`
+`naming-policy`). The option is off in the shipped catalog but on in the `aggressive`
+preset, which `auto` selects below 500 KiB, so on a small binary this is the default
+rendering. A data import — a Mach-O `__got`/`__auth_got`
 entry, a dyld-cache coalesced GOT slot, a PE IAT entry — is reached through a slot
 the dynamic loader fills with the import's address (`ldr x8,[slot]; ldr w8,[x8]`).
 The loader already names that slot for the import and paints it `externref`, which
