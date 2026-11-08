@@ -638,3 +638,153 @@ fn deep_bound_generic_nesting_is_refused() {
         None
     );
 }
+
+/// Every line is `swift-demangle --compact` output (Swift 6.3/6.4): function
+/// types of the Swift-4 `_T0` scheme keep labels off the parameter tuple,
+/// `sending` results print before the result list, conformance references name
+/// their module the way the reference printer does, and an attribute-only
+/// symbol with an unmangled suffix prints no dangling ` for `.
+#[test]
+fn reference_printer_edge_cases() {
+    for (raw, full) in [
+        (
+            "_T08mangling14varargsVsArrayySi3arrd_SS1ntF",
+            "mangling.varargsVsArray(arr: Swift.Int..., n: Swift.String) -> ()",
+        ),
+        (
+            "_T03foo3barC3basyAA3zimCAE_tFTo",
+            "@objc foo.bar.bas(zim: foo.zim) -> ()",
+        ),
+        ("_$sTA.123", "partial apply forwarder with unmangled suffix \".123\""),
+        (
+            "$s4main3fooyyFTA.123",
+            "partial apply forwarder for main.foo() -> () with unmangled suffix \".123\"",
+        ),
+        (
+            "$S3nix8MystructV1x1uACyxGx_qd__tclufc7MyaliasL_ayx_qd___GD",
+            "Myalias #1 in nix.Mystruct<A>.<A1>(x: A, u: A1) -> nix.Mystruct<A>",
+        ),
+        (
+            "$s4null16NonSendableKlassCIegHo_ACs5Error_pIegHTrzo_TR",
+            "reabstraction thunk helper from @escaping @callee_guaranteed @async () -> (@owned null.NonSendableKlass) to @escaping @callee_guaranteed @async () -> sending (@out null.NonSendableKlass, @error @owned Swift.Error)",
+        ),
+        (
+            "$s23variadic_generic_opaque2G2VyAA2S1V_AA2S2VQPGAA1PHPAeA1QHPyHC_AgaJHPyHCHX_HC",
+            "concrete protocol conformance variadic_generic_opaque.G2<Pack{variadic_generic_opaque.S1, variadic_generic_opaque.S2}> to protocol conformance ref (type's module) variadic_generic_opaque.P with conditional requirements: (pack protocol conformance (concrete protocol conformance variadic_generic_opaque.S1 to protocol conformance ref (type's module) variadic_generic_opaque.Q, concrete protocol conformance variadic_generic_opaque.S2 to protocol conformance ref (type's module) variadic_generic_opaque.Q))",
+        ),
+        (
+            "_T03foo6testityyyc_yyctF1a1bTf3pfpf_n",
+            "function signature specialization <Arg[0] = [Constant Propagated Function : a], Arg[1] = [Constant Propagated Function : b]> of foo.testit(() -> (), () -> ()) -> ()",
+        ),
+        (
+            "$s3foo5helloyyF14$s4main3fooyyFTf3psb_n",
+            "function signature specialization <Arg[0] = [Constant Propagated String : u8'$s4main3fooyyF']> of foo.hello() -> ()",
+        ),
+        (
+            "$s3foo5helloyyF14$s4main3fooyyFTf3pf_n",
+            "function signature specialization <Arg[0] = [Constant Propagated Function : main.foo() -> ()]> of foo.hello() -> ()",
+        ),
+        (
+            "$ss6SimpleHr",
+            "protocol descriptor runtime record for Swift.Simple",
+        ),
+        (
+            "$ss5OtherVs6SimplesHc",
+            "protocol conformance descriptor runtime record for Swift.Other : Swift.Simple in Swift",
+        ),
+        (
+            "$ss5OtherVHn",
+            "nominal type descriptor runtime record for Swift.Other",
+        ),
+        (
+            "$s18opaque_return_type3fooQryFQOHo",
+            "opaque type descriptor runtime record for <<opaque return type of opaque_return_type.foo() -> some>>",
+        ),
+        (
+            "$s4main6myFuncyyF1xL_SivpfF",
+            "property wrapped field init accessor of x #1 : Swift.Int in main.myFunc() -> ()",
+        ),
+        (
+            "$s3Bar3FooVAA5DrinkVyxGs5Error_pSeRzSERzlyShy4AbcdAHO6MemberVGALSeHPAKSeAAyHC_HCg_ALSEHPAKSEAAyHC_HCg0_Iseggozo_SgWOe",
+            "outlined consume of (@escaping @callee_guaranteed @substituted <A where A: Swift.Decodable, A: Swift.Encodable> (@guaranteed Bar.Foo) -> (@owned Bar.Drink<A>, @error @owned Swift.Error) for <Swift.Set<Abcd.Abcd.Member>>)?",
+        ),
+        (
+            "$sSRyxG15Synchronization19AtomicRepresentableABRi1_zrlMc",
+            "protocol conformance descriptor for < where A: ~Swift.<bit 2>> Swift.UnsafeBufferPointer<A> : Synchronization.AtomicRepresentable in Synchronization",
+        ),
+        (
+            "$sSiIetAYl_SiIetAYl_TR",
+            "reabstraction thunk helper from @escaping @convention(thin) @yield_once () -> (@yields @inout Swift.Int) to @escaping @convention(thin) @yield_once () -> (@yields @inout Swift.Int)",
+        ),
+        (
+            "$sIeg_BAIegHgL_TR",
+            "reabstraction thunk helper from @escaping @callee_guaranteed () -> () to @escaping @callee_guaranteed @async (@guaranteed sil_implicit_leading_param Builtin.ImplicitActor) -> ()",
+        ),
+        (
+            "$s10Foundation8UnitAreaC17squareCentimetersACvpZ1MV",
+            "static Foundation.UnitArea.squareCentimeters : Foundation.UnitArea.M",
+        ),
+        (
+            "$sBAIeNghHgIL_BAytIeNghHgILr_TR",
+            "reabstraction thunk helper from @escaping @caller_isolated @callee_guaranteed @Sendable @async (@guaranteed Builtin.ImplicitActor) -> () to @escaping @caller_isolated @callee_guaranteed @Sendable @async (@guaranteed Builtin.ImplicitActor) -> (@out ())",
+        ),
+        ("_TtGCC6Sample5Outer5Inner_Si_", "Sample.Outer.Inner<Swift.Int>"),
+        (
+            "_TtGCC6Sample5Outer5InnerSi_Si_",
+            "Sample.Outer<Swift.Int>.Inner<Swift.Int>",
+        ),
+    ] {
+        assert_eq!(demangle_swift_full(raw).as_deref(), Some(full), "{raw}");
+    }
+    assert_eq!(demangle_swift_full("_TtGCC6Sample5Outer5InnerSi_"), None);
+    for (raw, name) in [
+        (
+            "_T08mangling14varargsVsArrayySi3arrd_SS1ntF",
+            "mangling.varargsVsArray(arr:n:)",
+        ),
+        ("$s4main3fooyyFTA.123", "main.foo().partial_apply.123"),
+        ("$ss5OtherVHn", "Swift.Other.nominal_type_descriptor_record"),
+        (
+            "$s4main6myFuncyyF1xL_SivpfF",
+            "main.myFunc().x#1.property_wrapped_field_init_accessor",
+        ),
+    ] {
+        assert_eq!(demangle_swift_name(raw).as_deref(), Some(name), "{raw}");
+    }
+}
+
+/// A Swift symbol can embed another symbol as a constant-propagation payload.
+/// Each level re-enters the parser and printer, so without a shared depth and
+/// budget a long chain would recurse without bound; printing stops at the
+/// depth cap and leaves the deepest payload undemangled.
+#[test]
+fn embedded_symbol_chain_is_bounded() {
+    let mut sym = String::from("$s3foo5helloyyF");
+    for _ in 0..30_000 {
+        sym = format!("$s3foo5helloyyF{}{sym}Tf3pf_n", sym.len());
+        if sym.len() > (1 << 20) {
+            break;
+        }
+    }
+    let _ = demangle_swift_full(&sym);
+    let _ = demangle_swift_name(&sym);
+    // A chain of string-constant payloads never re-enters the parser.
+    let mut sym = String::from("$s3foo5helloyyF");
+    for _ in 0..30_000 {
+        sym = format!("$s3foo5helloyyF{}{sym}Tf3psb_n", sym.len());
+        if sym.len() > (1 << 20) {
+            break;
+        }
+    }
+    assert!(demangle_swift_full(&sym).is_some_and(|s| s.contains("Constant Propagated String")));
+    assert!(demangle_swift_name(&sym).is_some());
+}
+
+/// Punycode decoding is quadratic in the encoded length, so an absurdly long
+/// punycoded identifier is refused rather than decoded.
+#[test]
+fn oversized_punycode_is_refused() {
+    let n = (1 << 16) + 1;
+    let raw = format!("$s00{n}_{}", "a".repeat(n));
+    assert_eq!(demangle_swift_full(&raw), None);
+}
