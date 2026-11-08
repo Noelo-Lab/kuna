@@ -395,7 +395,8 @@ fn same_offset_records_chain_across_rel_and_rela_as_gnu_ld() {
 /// `$gp` where the loader does: composed N32 records, packed and spanning N64
 /// records, REL HI/LO pairs and same-offset chains, GP-relative and literal
 /// fields, a partial link's input `$gp`, and calls through composed expressions
-/// all match GNU ld.
+/// all match GNU ld. The gp objects define `_gp` themselves, far from the
+/// layout; the linker script's `_gp` overrides it, as the default script's does.
 #[test]
 fn relocated_text_matches_the_gnu_linked_originals() {
     let mut stems = vec!["implicit-32-be".to_string(), "gp-32-be".to_string()];
@@ -412,6 +413,15 @@ fn relocated_text_matches_the_gnu_linked_originals() {
         let linked = object::File::parse(&*linked_bytes).unwrap();
         let layout = layout(&object_bytes);
         assert!(layout.diagnostics.is_empty(), "{stem}: {:?}", layout.diagnostics.report_lines());
+        if stem.starts_with("gp-") {
+            let file = object::File::parse(&*object_bytes).unwrap();
+            let own = file.symbols().find(|s| s.name() == Ok("_gp")).unwrap();
+            assert!(!own.is_undefined(), "{stem}: the object defines _gp");
+            if !stem.starts_with("gp-partial") {
+                assert_eq!(own.address() as u32, 0x8000_8000, "{stem}: far from the layout");
+            }
+            assert_eq!(gnu_gp(&linked), layout.gp.unwrap(), "{stem}: the linker's _gp, not the object's");
+        }
         let text = linked.section_by_name(".text").unwrap();
         let (_, laid) = layout.segments.iter().find(|(a, _)| *a == text.address()).unwrap();
         assert_eq!(laid, text.data().unwrap(), "{stem}");
@@ -554,7 +564,8 @@ fn a_malformed_packed_record_leaves_the_expression_before_it_written() {
 }
 
 /// An N64 record's `r_ssym` names `0`, `$gp`, the input `$gp` or the place,
-/// not a symbol-table entry.
+/// not a symbol-table entry; `$gp` is the layout's, not the `_gp` the object
+/// defines.
 #[test]
 fn n64_special_symbols_are_linker_values() {
     for endian in [Endianness::Big, Endianness::Little] {
@@ -589,7 +600,9 @@ fn n64_special_symbols_are_linker_values() {
                 .unwrap();
             let layout = layout(&obj.write().unwrap());
             assert!(layout.diagnostics.is_empty(), "{:?}", layout.diagnostics.report_lines());
-            let special = [0u64, 0x60_0088, 0x70_00a0, 0x40_0008][ssym as usize];
+            let gp = layout.gp.unwrap();
+            assert_ne!(gp, 0x60_0088, "the object's own _gp is overridden");
+            let special = [0u64, gp, 0x70_00a0, 0x40_0008][ssym as usize];
             let data = &layout.segments[0].1;
             assert_eq!(&data[..8], &[0xa5; 8]);
             assert_eq!(read_at(data, 8, 8, endian == Endianness::Little), special.wrapping_sub(0x1234_8000), "{endian:?} r_ssym {ssym}");
@@ -598,7 +611,8 @@ fn n64_special_symbols_are_linker_values() {
 }
 
 /// Only expressions that read the input `$gp` fail when its record is
-/// malformed; the partial link's other fields still match GNU ld.
+/// malformed (a `.reginfo` of the wrong size, which still occupies its place
+/// in the layout); the partial link's other fields still match GNU ld.
 #[test]
 fn a_malformed_input_gp_fails_only_the_fields_that_use_it() {
     for abi in ["n32", "64"] {
@@ -607,7 +621,7 @@ fn a_malformed_input_gp_fails_only_the_fields_that_use_it() {
             let mut bytes = fixture(&format!("{stem}.o"));
             let linked_bytes = fixture(&format!("{stem}.elf"));
             let file = object::File::parse(&*bytes).unwrap();
-            assert_eq!(input_gp(&file), Ok(0x40_8000), "{stem}");
+            assert_eq!(input_gp(&file), Ok(if abi == "n32" { 0x40_8050 } else { 0x40_8060 }), "{stem}");
             let le = endian == "le";
             let text = file.section_by_name(".text").unwrap();
             let original = text.data().unwrap().to_vec();
@@ -630,7 +644,7 @@ fn a_malformed_input_gp_fails_only_the_fields_that_use_it() {
                 let table = read_at(&bytes, 32, 4, le) as usize;
                 let stride = read_at(&bytes, 46, 2, le) as usize;
                 let size = table + stride * section.index().0 + 20;
-                bytes[size..size + 4].fill(0);
+                write(&mut bytes[size..size + 4], le, 23);
             } else {
                 let (start, _) = section.file_range().unwrap();
                 bytes[start as usize + 1] = 0;

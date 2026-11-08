@@ -8,5 +8,8 @@ SECTIONS
   .MIPS.abiflags : { *(.MIPS.abiflags) }
   .data : { *(.data) }
   .bss : { *(.bss) }
-  _gp = 0x408000;
+  . = ALIGN(16);
+  _gp = . + 0x7ff0;
+  .got : { *(.got) }
+  .sdata : { *(.sdata) }
 }

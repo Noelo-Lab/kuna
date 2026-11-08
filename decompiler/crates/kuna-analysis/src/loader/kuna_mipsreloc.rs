@@ -27,10 +27,10 @@
 //! makes what it would: a GOT after the object's other sections, with one entry
 //! per symbol (and addend) a GOT relocation names and one per 64 KiB page a
 //! local `GOT16` or a `GOT_PAGE` reaches, then the small-data sections, and
-//! `_gp` 0x7ff0 past the GOT's start, unless the object defines `_gp` itself.
-//! `_gp_disp` is `_gp` less the place (a PIC
-//! prologue adds `$t9`, the function's entry, to it), and `__gnu_local_gp` is
-//! `_gp`. A GP-relative value against a local symbol, and every `GPREL32`,
+//! `_gp` 0x7ff0 past the GOT's start; an object's own definition of `_gp` is
+//! overridden, as the default linker script's assignment overrides it.
+//! `_gp_disp` is `_gp` less the place (a PIC prologue adds `$t9`, the
+//! function's entry, to it), and `__gnu_local_gp` is `_gp`. A GP-relative value against a local symbol, and every `GPREL32`,
 //! adds back the input `$gp` a partial link recorded in `.reginfo` or
 //! `.MIPS.options`. The GOT holds what the relocations put in it and nothing
 //! writes it, so the loader reports it foldable, and
@@ -244,31 +244,17 @@ fn word(data: &[u8], at: usize, little_endian: bool) -> Option<u32> {
 }
 
 /// The symbols the linker defines for `$gp`: `Some(None)` for `_gp_disp`
-/// (`_gp` less the place), `Some(Some(gp))` for an undefined `_gp` or
-/// `__gnu_local_gp`, `None` for any other.
+/// (`_gp` less the place), `Some(Some(gp))` for `_gp`, which the linker
+/// script's assignment defines over any definition the object has, and for an
+/// undefined `__gnu_local_gp`; `None` for any other.
 pub(super) fn special_symbol(file: &object::File, idx: object::SymbolIndex, gp: u64) -> Option<Option<u64>> {
     let sym = file.symbol_by_index(idx).ok()?;
     match sym.name().ok()? {
         "_gp_disp" => Some(None),
-        "_gp" | "__gnu_local_gp" if sym.is_undefined() => Some(Some(gp)),
+        "_gp" => Some(Some(gp)),
+        "__gnu_local_gp" if sym.is_undefined() => Some(Some(gp)),
         _ => None,
     }
-}
-
-/// The value an object gives `_gp` itself, at its laid-out address, when all
-/// of its definitions agree: the linker then uses it as `$gp` rather than
-/// placing one beside the GOT.
-pub(super) fn defined_gp(file: &object::File, vma_of: &std::collections::HashMap<SectionIndex, u64>) -> Option<u64> {
-    let mut values = file.symbols().filter(|s| !s.is_undefined() && s.name() == Ok("_gp")).map(|s| {
-        let address = match s.section() {
-            object::SymbolSection::Absolute => Some(s.address()),
-            object::SymbolSection::Section(index) => vma_of.get(&index).map(|base| base.wrapping_add(s.address())),
-            _ => None,
-        }?;
-        Some(if file.is_64() { address } else { address as u32 as i32 as i64 as u64 })
-    });
-    let first = values.next()??;
-    values.all(|v| v == Some(first)).then_some(first)
 }
 
 /// What a relocation's symbol resolves to.
@@ -288,29 +274,22 @@ pub(super) struct Gp {
     capacity: u64,
     entries: BTreeMap<u64, u64>,
     little_endian: bool,
-    /// The object's own `_gp`, which `$gp`-relative fields then use.
-    defined: Option<u64>,
 }
 
 impl Gp {
     /// A GOT of `entries` entries of `entry` bytes at `base`.
     pub(super) fn new(base: u64, entry: u64, entries: usize, little_endian: bool) -> Gp {
         let capacity = (entries as u64).min(GOT_WINDOW / entry);
-        Gp { base, entry, capacity, entries: BTreeMap::new(), little_endian, defined: None }
+        Gp { base, entry, capacity, entries: BTreeMap::new(), little_endian }
     }
 
     pub(super) fn gp(&self) -> u64 {
-        self.defined.unwrap_or(self.base.wrapping_add(GP_BIAS))
+        self.base.wrapping_add(GP_BIAS)
     }
 
     /// Where the GOT starts.
     pub(super) fn base(&self) -> u64 {
         self.base
-    }
-
-    /// Use the object's own definition of `_gp` ([`defined_gp`]) as `$gp`.
-    pub(super) fn set_gp(&mut self, gp: u64) {
-        self.defined = Some(gp);
     }
 
     /// How many bytes the GOT spans.

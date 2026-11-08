@@ -376,9 +376,6 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         cursor = align_up(cursor, 16).wrapping_add(g.size());
         gp = Some(g);
     }
-    if let (Some(g), Some(defined)) = (gp.as_mut(), kuna_mipsreloc::defined_gp(file, &vma_of)) {
-        g.set_gp(defined);
-    }
     let got_base = gp.as_ref().map(|g| g.base());
     let input_gp = if mips { kuna_mipsreloc::input_gp(file) } else { Ok(0) };
 

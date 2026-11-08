@@ -26,7 +26,10 @@ format. N32/N64 endian coverage comes from the four `expressions` image pairs.
 
 `gp.S` adds genuine `.cpsetup` N32/N64 and `.cpload` O32 prologues, GPREL16,
 GPREL32 and the linker-provided `__gnu_local_gp` symbol. The object defines
-`_gp` as 0x408000, and `gp.ld` gives GNU ld the same value. LITERAL fields cover
+`_gp` itself as 0x80008000, far from the layout; `gp.ld` assigns `_gp` 0x7ff0
+past the 16-byte-aligned end of the sections, as the default script does, and
+GNU ld lets that assignment override the object's definition, as the loader
+does. `local_target` is small data in `.sdata`, placed after the GOT. LITERAL fields cover
 global and local targets and a composed LITERAL/SUB/LO16 expression; literal
 sections are not merged. GNU partial links produce four more object/image pairs
 whose register metadata records a nonzero input gp and whose local GPREL32

@@ -32,8 +32,13 @@ _start:
 .dword 0xa5a5a5a5a5a5a5a5
 .endif
 .size _start, .-_start
+/* Small data, which the linker places beside the GOT so that $gp reaches it. */
+.section .sdata
+.balign 4
 local_target:
 .word 0x12345678
+/* The object's own _gp is overridden by the linker script's, as the default
+   script's assignment overrides any input definition. */
 .globl _gp, near
-.set _gp, 0x408000
+.set _gp, 0x80008000
 .set near, 0x407ff0
