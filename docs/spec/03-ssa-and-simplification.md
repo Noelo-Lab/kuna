@@ -2417,11 +2417,18 @@ folds as it does after an ordinary store, and only an address-tied range is
 forced: a guard on a local whose address never escapes collapses under
 `RuleIndirectCollapse`, so a spill stays a value. Cache-block zeroing is the
 exception: it can overwrite such a local through a neighboring stack address,
-so its guards survive even when that local's own address never escapes. No
-scalar-width or stack-alignment proof establishes disjoint cache blocks here;
-the guards conservatively cover all writable ranges. The guarded operations are
-found once per heritage pass. `ActionMarkImplied` also checks LOAD covers against
-the selected Octeon operations, keeping a pointer load in an explicit statement
+so its guards survive even when that local's own address never escapes, as
+long as its address may lie in the frame
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_octeoneffects.rs (keeps_unaliased_guard)`).
+That holds for an address built from the stack pointer, and conservatively for
+one loaded from memory or returned by a call, which an escaped frame address
+could have reached. An address built only from constants and incoming values
+was fixed before the function allocated its frame, so zeroing through it
+leaves spills values. No scalar-width or stack-alignment proof establishes
+disjoint cache blocks here; a kept guard covers every writable range. The
+guarded operations are found once per heritage pass. `ActionMarkImplied` also
+checks LOAD covers against the selected Octeon operations, found once per pass
+with the system-call ones, keeping a pointer load in an explicit statement
 before an operation it originally preceded. Heritage guards alone do not stop
 an unresolved LOAD expression from moving to a later use. `ordered` also guards
 across every ordering operation, so a store before a barrier is kept; this is conservative about
@@ -2436,6 +2443,13 @@ load; a plain store whose success is 1; `SYNC(n)`), registered under the
 operation's own name, and the flow's injection gate
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (is_injected_userop)`)
 applies it only under `off`. The Octeon-only atomics stay opaque under `off`.
+The fixups are applied while lifting, so the option rewinds to P2. A fixup
+cannot be compiled without a local `.sla` (ghidra mode); there `off` keeps the
+memory effects of a load-linked or store-conditional left without one rather
+than leave it opaque. A load-linked or store-conditional result for `$zero` is
+discarded rather than written to `zero`; the raw p-code differs from
+upstream's, the emitted C does not. The option governs decompilation only: raw
+p-code and the analysis tier see the user operations in every mode.
 Other targets and unrelated user operations keep their existing treatment.
 
 Truncation can leave hundreds of fresh SUBPIECEs of one stack or base

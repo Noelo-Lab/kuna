@@ -445,6 +445,31 @@ fn cache_block_zeroing_keeps_neighboring_unescaped_stack_aliases() {
 }
 
 #[test]
+fn cache_block_zeroing_through_an_incoming_pointer_leaves_stack_spills_values() {
+    for n32 in [false, true] {
+        for mode in [OcteonEffectsMode::Atomic, OcteonEffectsMode::Ordered] {
+            for operation in [0x7080071f, 0x7080075f] {
+                // nop or daddiu a0,a0,128 before
+                // daddiu sp,sp,-32; sd a1,8(sp); zcb[t] (a0); ld v0,8(sp);
+                // jr ra; daddiu sp,sp,32
+                for offset in [0x00000000, 0x64840080] {
+                    let code = decompile_mode(
+                        &[offset, 0x67bdffe0, 0xffa50008, operation,
+                          0xdfa20008, 0x03e00008, 0x67bd0020],
+                        n32,
+                        Some("unsigned long long probe(unsigned long long *block, unsigned long long value)"),
+                        false,
+                        mode,
+                    );
+                    assert!(code.contains("return value;"), "{mode:?}: {code}");
+                    assert!(code.contains("octeon_zero_cache_block"), "{mode:?}: {code}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn a_scalar_atomic_still_leaves_an_unescaped_neighbor_unchanged() {
     // As zero_neighbor, with saad a2,(a0) accessing only offset 16.
     for n32 in [false, true] {

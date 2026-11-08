@@ -20,6 +20,8 @@
                       jr ra; daddiu sp,sp,32
     ordered_snapshot (0x1700): ld v0,0(a0); syncw; jr ra; nop
     zero_neighbor_transient (0x1800): as zero_neighbor, but offset 24 and zcbt
+    zero_elsewhere (0x1900): daddiu sp,sp,-32; sd a1,8(sp); zcb (a0);
+                      ld v0,8(sp); jr ra; daddiu sp,sp,32
     Source/build provenance: tests/fixtures/octeon-atomics/memory.S,
     build.py and provenance.json (GNU as -EB -64 -march=octeon2).
 
@@ -40,6 +42,7 @@
     Assert #9: off retains opaque-operation load motion as a control.
     Assert #10: only off forwards a neighboring stack value past ZCB/ZCBT.
     Assert #11: full-block guards keep the neighboring stores before zeroing.
+    Assert #12: zeroing through an incoming pointer leaves the spill a value.
 -->
 <bytechunk space="ram" offset="0x1000" readonly="true">3404200064050007fc850000708504dfdc82000003e0000800000000</bytechunk>
 <bytechunk space="ram" offset="0x1100" readonly="true">3404200064050007fc8500000000010fdc82000003e0000800000000</bytechunk>
@@ -50,6 +53,7 @@
 <bytechunk space="ram" offset="0x1600" readonly="true">67bdffe0ffa5000867a400107080071fdfa2000803e0000867bd0020</bytechunk>
 <bytechunk space="ram" offset="0x1700" readonly="true">dc8200000000010f03e0000800000000</bytechunk>
 <bytechunk space="ram" offset="0x1800" readonly="true">67bdffe0ffa5001867a400107080075fdfa2001803e0000867bd0020</bytechunk>
+<bytechunk space="ram" offset="0x1900" readonly="true">67bdffe0ffa500087080071fdfa2000803e0000867bd0020</bytechunk>
 <bytechunk space="ram" offset="0x2000">0000000000000000</bytechunk>
 <symbol space="ram" offset="0x1000" name="update"/>
 <symbol space="ram" offset="0x1100" name="barrier"/>
@@ -60,6 +64,7 @@
 <symbol space="ram" offset="0x1600" name="zero_neighbor"/>
 <symbol space="ram" offset="0x1700" name="ordered_snapshot"/>
 <symbol space="ram" offset="0x1800" name="zero_neighbor_transient"/>
+<symbol space="ram" offset="0x1900" name="zero_elsewhere"/>
 </binaryimage>
 <script>
 <com>parse line extern unsigned long long update(void);</com>
@@ -71,6 +76,7 @@
 <com>parse line extern unsigned long long ordered_snapshot(unsigned long long *pointer);</com>
 <com>parse line extern unsigned long long zero_neighbor(unsigned long long unused,unsigned long long neighbor_value);</com>
 <com>parse line extern unsigned long long zero_neighbor_transient(unsigned long long unused,unsigned long long neighbor_value);</com>
+<com>parse line extern unsigned long long zero_elsewhere(unsigned long long *block,unsigned long long kept);</com>
 <com>option octeoneffects off</com>
 <com>lo fu update</com><com>decompile</com><com>print C</com>
 <com>lo fu barrier</com><com>decompile</com><com>print C</com>
@@ -87,12 +93,14 @@
 <com>lo fu zero_neighbor</com><com>decompile</com><com>print C</com>
 <com>lo fu zero_neighbor_transient</com><com>decompile</com><com>print C</com>
 <com>lo fu ordered_snapshot</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_elsewhere</com><com>decompile</com><com>print C</com>
 <com>option octeoneffects ordered</com>
 <com>lo fu barrier</com><com>decompile</com><com>print C</com>
 <com>lo fu snapshot</com><com>decompile</com><com>print C</com>
 <com>lo fu zero_neighbor</com><com>decompile</com><com>print C</com>
 <com>lo fu zero_neighbor_transient</com><com>decompile</com><com>print C</com>
 <com>lo fu ordered_snapshot</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_elsewhere</com><com>decompile</com><com>print C</com>
 <com>quit</com>
 </script>
 <stringmatch name="octeoneffects #1: off forwards past the atomic and barrier; atomic past a barrier only" min="3" max="3">return 7;</stringmatch>
@@ -109,4 +117,6 @@
 <stringmatch name="octeoneffects #10: only off forwards a neighboring stack value across zeroing" min="2" max="2">return neighbor_value;</stringmatch>
 <stringmatch name="octeoneffects #11: both zero operations retain neighboring stores in both guarded modes" min="4" max="4">= neighbor_value;
   octeon_zero_cache_block</stringmatch>
+<stringmatch name="octeoneffects #12: zeroing through an incoming pointer leaves a stack spill a value" min="2" max="2">octeon_zero_cache_block\(block\);
+  return kept;</stringmatch>
 </decompilertest>

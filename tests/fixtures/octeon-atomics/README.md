@@ -12,6 +12,8 @@ zero-neighbor functions read unescaped stack slots on either side of the ZCB
 operand. A cache-block operation may affect those slots even though their own
 addresses never escape. Their tests retain conservative guards without assuming
 a particular frame alignment or interpreting every guarded local as zero.
+`zero_elsewhere` zeroes through an incoming pointer, which cannot address the
+frame the function allocates afterwards, so its stack spill stays a value.
 The console companion also compiles and executes the unchanged recovered
 pointer-snapshot C with available native C compilers at O0/O2, checking old
 values and updated memory, including wrapping arithmetic and both branches.

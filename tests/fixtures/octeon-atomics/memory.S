@@ -108,3 +108,12 @@ function zero_neighbor_transient
     jr $31
     daddiu $29,$29,32
 endfunction zero_neighbor_transient
+
+function zero_elsewhere
+    daddiu $29,$29,-32
+    sd $5,8($29)
+    zcb ($4)
+    ld $2,8($29)
+    jr $31
+    daddiu $29,$29,32
+endfunction zero_elsewhere

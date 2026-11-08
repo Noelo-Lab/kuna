@@ -239,7 +239,9 @@ impl FlowEnvironment for ArchFlowEnv {
         // registered at architecture bootstrap, before any `option` line is
         // applied, so this — the only live per-CALLOTHER predicate that sees the
         // applied options — is where the flag gates it. Off, the CALLOTHER is left
-        // alone and prints through the ordinary user-op path.
+        // alone and prints through the ordinary user-op path. (kuna
+        // `octeoneffects`) Upstream's ll/sc/sync lifting, registered the same
+        // way, replaces its Octeon operation only under `off`.
         let arch = self.arch();
         let op = match arch.userops.get_op(userop_index as kuna_base::types::uint4) {
             Some(op) => op,
@@ -248,8 +250,6 @@ impl FlowEnvironment for ArchFlowEnv {
         if op.get_type() != crate::userop::userop_type::injected {
             return false;
         }
-        // (kuna `octeoneffects`) Upstream's ll/sc/sync lifting replaces the
-        // Octeon operation only under `off`.
         if let Some(id) = op.get_inject_id() {
             if arch.octeon_upstream_inject.contains(&(id as int4)) {
                 return arch.octeon_effects == crate::kuna_octeoneffects::OcteonEffectsMode::Off;
