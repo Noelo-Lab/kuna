@@ -4325,7 +4325,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   so no anchor exists and the output is empty. Independent code-pointer-run scanning
   — which would find such vtables heuristically — is deliberately **not** part of
   this pass.
-- **Objective-C** (`objc`, Mach-O-only, default-off;
+- **Objective-C** (`objc`, Mach-O-only, default-off in the catalog but on in the
+  `aggressive` preset, which `auto` selects for any binary under 500 KiB;
   `decompiler/crates/kuna-analysis/src/analyzers/objc/mod.rs`): walk
   `__objc_classlist` → `class_t` → `class_ro_t` → method lists (both absolute and
   small/relative forms), reading pointer slots through the chained-fixup overlay
@@ -4354,8 +4355,9 @@ every other binary's pass list is byte-identical to before the pass existed):
     `superRef_<Class>`: a rebase slot's class is read off the `class_t` it points
     at, a chained **bind** slot's from the import it names with `_OBJC_CLASS_$_`
     stripped (§1.2), so `classRef_UIView` is named although no address exists for
-    it. A classic `LC_DYLD_INFO` image stores a bind slot as zero and leaves it
-    unnamed (its bind opcodes are not parsed);
+    it. A classic `LC_DYLD_INFO` image stores a bind slot as zero; its name comes
+    from the replayed bind program (§1.2,
+    `decompiler/crates/kuna-analysis/src/loader/format/macho/dyldinfo.rs`);
   - each `__objc_stubs` entry is the function `objc_msgSend$<sel>`, the name the
     linker gives the symbol it synthesized the stub for. The entry is found by
     its own first two instructions (arm64 `adrp x1; ldr x1, [x1, #off]`, x86-64
@@ -4375,7 +4377,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   blocks read-only for that reason — but they live in writable `__DATA`, outside
   the `SG_READ_ONLY` warrant of `dynrelocs` (§1.3), so the claim is the
   metadata's, and it rides its own option, **`objcrefconst`** (kuna, default-on,
-  inert unless `objc` is on). The commit paints the ranges `Varnode::readonly`
+  inert unless `objc` is on, as `objc` is on any Mach-O image under 500 KiB). The commit paints the ranges `Varnode::readonly`
   and adds them to `dynreloc_const` **before** the slots' own symbols are mapped
   (a `SymbolEntry` copies the range property as it is created), so
   `ActionVarnodeProps` folds a load through a selref to the selector string and
@@ -4421,7 +4423,8 @@ every other binary's pass list is byte-identical to before the pass existed):
     class's own conformance list is not read: it names nothing the C would show.
   - **Instance layouts**
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcivars.rs (Structs::build)`,
-    option **`objcivars`**, kuna, default-on, inert unless `objc` is on):
+    option **`objcivars`**, kuna, default-on, inert unless `objc` is on, as `objc`
+    is on any Mach-O image under 500 KiB):
     `class_ro_t.ivars` names every ivar with its type encoding, its size and a
     pointer to its *offset variable* in `__objc_ivar` — the word a compiled method
     loads and adds to `self` (`ldrsw x8, [x8, #off]; ldr d0, [x19, x8]`), because

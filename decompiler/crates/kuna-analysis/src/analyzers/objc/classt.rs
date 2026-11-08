@@ -10,7 +10,7 @@
 //! protocols, ivars, properties) are skipped by offset, faithful to the minimal
 //! `ObjcTypeMetadataAnalyzer` walk (§3.2 of the design).
 
-use super::sections::MachoImage;
+use super::sections::{MachoImage, RECORD_WORK};
 
 /// The 64-bit `class_t.data` low-bit mask Ghidra/`objc4` calls `FAST_DATA_MASK`:
 /// the `data` word packs `RW`/realized flags in the low 3 bits, so `data & ~0x7`
@@ -191,6 +191,9 @@ pub fn walk_ivar_list(img: &MachoImage, list_va: u64) -> Vec<Ivar> {
     }
     let count = count.min(4096);
     for i in 0..count as u64 {
+        if !img.charge(RECORD_WORK) {
+            break;
+        }
         let rec = list_va
             .wrapping_add(ivar_list_t::FIRST)
             .wrapping_add(i.wrapping_mul(entsize));
