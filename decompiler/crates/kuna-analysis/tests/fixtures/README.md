@@ -1765,6 +1765,9 @@ swiftc -O -module-name typefix swift_types_elf.swift -o typefix
 llvm-strip --strip-all -o swift_types_elf typefix
 ```
 
+Its `DT_RUNPATH` was blanked after the build the same way (`$ORIGIN` padded with
+NULs in `.dynstr`).
+
 **Expected layouts** (the unstripped code's own offsets: `Pixel.area()` reads
 `0(%r13)`, `8(%r13)`, `0x19(%r13)`; `Sprite.count.getter` reads `0x60(%r13)`):
 `typefix.Point {x@0, y@8}` 16 bytes; `typefix.Pixel {at@0: Point, alpha@16:
