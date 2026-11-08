@@ -86,56 +86,6 @@ fn ops(r_type: u32) -> [u32; 3] {
     [r_type & 0xff, (r_type >> 8) & 0xff, (r_type >> 16) & 0xff]
 }
 
-/// The operations a chain may continue with: each takes the previous result
-/// as its addend.
-fn chains(op: u32) -> bool {
-    matches!(op, SUB | HI16 | LO16 | R64 | R32 | HIGHER | HIGHEST)
-}
-
-fn first(op: u32) -> bool {
-    matches!(
-        op,
-        R32 | R26
-            | HI16
-            | LO16
-            | GPREL16
-            | LITERAL
-            | GOT16
-            | PC16
-            | CALL16
-            | GPREL32
-            | R64
-            | GOT_DISP
-            | GOT_PAGE
-            | GOT_OFST
-            | GOT_HI16
-            | GOT_LO16
-            | SUB
-            | HIGHER
-            | HIGHEST
-            | CALL_HI16
-            | CALL_LO16
-            | PC32
-    )
-}
-
-/// The width of the field a MIPS relocation patches and whether its target is
-/// code; `Ok(None)` for one that patches nothing.
-pub(super) fn classify(r_type: u32) -> Result<Option<(usize, bool)>, RelocationFailure> {
-    let [t1, t2, t3] = ops(r_type);
-    if (t1 == JALR && t2 == NONE && t3 == NONE) || r_type == NONE {
-        return Ok(None);
-    }
-    if !first(t1) || (t2 != NONE && !chains(t2)) || (t3 != NONE && (t2 == NONE || !chains(t3))) {
-        return Err(RelocationFailure::Unsupported);
-    }
-    let last = [t1, t2, t3].into_iter().rfind(|&t| t != NONE).unwrap_or(t1);
-    if last == SUB {
-        return Err(RelocationFailure::Unsupported);
-    }
-    Ok(Some((if last == R64 { 8 } else { 4 }, targets_code(r_type))))
-}
-
 /// Does the relocation name a function: a jump, a branch, or a call's GOT
 /// entry?
 pub(super) fn targets_code(r_type: u32) -> bool {
@@ -323,35 +273,6 @@ impl Gp {
         let slot = self.base + next * self.entry;
         self.entries.insert(value, slot);
         Ok(slot as i128 - self.gp() as i128)
-    }
-
-    /// Apply one relocation of type `r_type` to its `field` at `place`.
-    #[cfg(test)]
-    pub(super) fn apply(
-        &mut self,
-        r_type: u32,
-        reloc: &Relocation,
-        field: &mut [u8],
-        target: Target,
-        place: u64,
-        lo_half: Option<i64>,
-    ) -> Result<(), RelocationFailure> {
-        let packed = r_type > 0xff;
-        let ops: Vec<Op> = (0..if packed { 3 } else { 1 })
-            .map(|i| Op { record: 0, op: if packed { ops(r_type)[i] } else { r_type }, special: special_of(i, r_type) })
-            .take_while(|op| op.op != NONE)
-            .collect();
-        let width = field_width(ops.last().map_or(NONE, |op| op.op))?;
-        if width != field.len() {
-            return Err(RelocationFailure::InvalidEncoding);
-        }
-        let mut resolve = |_: RelocationTarget| Some(target);
-        let relocs = [reloc];
-        let arch = if self.entry == 8 { object::Architecture::Mips64 } else { object::Architecture::Mips };
-        let input = Inputs { arch, base: place, input_gp: Ok(0) };
-        let (value, _) = self.evaluate(&input, field, 0, &relocs, &ops, lo_half, &mut resolve)?;
-        write(field, self.little_endian, value);
-        Ok(())
     }
 
     /// Apply a section's relocations to its bytes `data` laid at `base`: each

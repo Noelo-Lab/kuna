@@ -11,8 +11,7 @@
 //! store low-12 forms; PowerPC (32- and 64-bit) `REL24`/`PLTREL24`/`LOCAL24PC`
 //! and `ADDR24` branches, the 14-bit conditional-branch forms, the absolute,
 //! PC-relative (`REL16`) and TOC-relative 16-bit halves, TOC64, and the
-//! unaligned and PC-relative data words; MIPS, through
-//! [`super::kuna_mipsreloc`]; and SPARC
+//! unaligned and PC-relative data words; and SPARC
 //! `WDISP30`/`WPLT30` calls, the `HI22`/`LO10` and `PC22`/`PC10` `sethi`/`or`
 //! pairs, and `DISP32`. Generic
 //! absolute, relative, PLT-relative, and image-offset relocations support
@@ -67,7 +66,6 @@ enum Specific {
     Ppc64Toc16 { form: PpcHalf },
     Ppc64Toc64,
     Data { bytes: u8, pc: bool },
-    Mips { r_type: u32 },
     SparcWdisp30,
     SparcHi22 { pc: bool },
     SparcLo10 { pc: bool },
@@ -172,7 +170,6 @@ impl RelocationSpec {
                     | Specific::PpcBranch14 { .. }
                     | Specific::SparcWdisp30
             )
-            || matches!(self.specific, Specific::Mips { r_type } if super::kuna_mipsreloc::targets_code(r_type))
     }
 }
 
@@ -283,15 +280,6 @@ fn classify_info(
             Some((Specific::Data { bytes: 8, pc: true }, false))
         }
         (Architecture::PowerPc, Some(elf::R_PPC_NONE)) => return Ok(None),
-        (Architecture::Mips | Architecture::Mips64 | Architecture::Mips64_N32, Some(r_type)) => {
-            return super::kuna_mipsreloc::classify(r_type).map(|c| {
-                c.map(|(width, call)| RelocationSpec {
-                    specific: Specific::Mips { r_type },
-                    width,
-                    call,
-                })
-            });
-        }
         (Architecture::PowerPc64, Some(elf::R_PPC64_TOC16)) => Some((
             Specific::Ppc64Toc16 {
                 form: PpcHalf::Plain,
@@ -454,7 +442,6 @@ fn apply_info(
             ppc64_toc16(field, little_endian, reloc, symbol, toc, form)
         }
         Specific::Data { pc, .. } => data_word(field, little_endian, reloc, symbol, pc.then_some(place)),
-        Specific::Mips { .. } => Err(RelocationFailure::Unsupported),
         Specific::Ppc64Toc64 => ppc64_toc64(field, little_endian, reloc, toc),
         Specific::SparcWdisp30 => sparc_wdisp30(field, little_endian, reloc, symbol, place),
         Specific::SparcHi22 { pc } => {
