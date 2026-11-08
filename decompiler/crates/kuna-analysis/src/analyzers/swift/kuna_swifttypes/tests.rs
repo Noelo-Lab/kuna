@@ -128,3 +128,30 @@ fn nested_optionals_stop_at_the_nesting_bound() {
         assert_eq!(optional(1500), None);
     })
 }
+
+/// A protocol witness of a class gets the address of the reference, except
+/// under a class-bound protocol, which is passed the reference itself; a
+/// struct's witness always gets the address of the value.
+#[test]
+fn a_witness_self_follows_the_protocols_class_constraint() {
+    with_types(|types| {
+        let level = |t: Rc<Datatype>| {
+            let mut n = 0;
+            let mut cur = t;
+            while let Some(next) = cur.get_ptr_to() {
+                n += 1;
+                cur = next;
+            }
+            (n, cur.get_name().to_string())
+        };
+        let sprite = *types.by_path.get("typefix.Sprite").unwrap();
+        let point = *types.by_path.get("typefix.Point").unwrap();
+        let witness = |addr, path, bound| {
+            level(types.witness_self(addr, path, bound).unwrap())
+        };
+        assert_eq!(witness(sprite, "typefix.Sprite", false), (2, "typefix.Sprite".into()));
+        assert_eq!(witness(sprite, "typefix.Sprite", true), (1, "typefix.Sprite".into()));
+        assert_eq!(witness(point, "typefix.Point", false), (1, "typefix.Point".into()));
+        assert_eq!(witness(point, "typefix.Point", true), (1, "typefix.Point".into()));
+    });
+}

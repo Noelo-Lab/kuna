@@ -4355,7 +4355,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   (§1.2) on arm64, and rename each IMP `-[Class sel]`/`+[Class sel]` behind the
   placeholder label gate.
 - **Swift metadata** (`swiftmetadata`, Mach-O and ELF, Swift images only,
-  default-off; `decompiler/crates/kuna-analysis/src/analyzers/swift/mod.rs`, the
+  default-off but ON in the `aggressive` preset, which `auto` selects for any
+  binary under 500 KiB; `decompiler/crates/kuna-analysis/src/analyzers/swift/mod.rs`, the
   record layouts in `decompiler/crates/kuna-analysis/src/analyzers/swift/descriptors.rs`):
   a stripped Swift binary keeps its reflection sections, and they name much of
   its code. The pass reads `__swift5_types` / `swift5_type_metadata` (the nominal
@@ -4411,7 +4412,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   `tests/stages/kuna-swiftmetadata.xml` runs the fully stripped swiftc-built
   `swift_metadata_elf` off and on.
 - **Swift type layouts** (`swifttypes`, the type-layout arm of the pass above,
-  default-on and inert unless `swiftmetadata` is on;
+  default-on and inert unless `swiftmetadata` is on, which the `aggressive`
+  preset does and `auto` selects for any binary under 500 KiB;
   `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swifttypes.rs`): a
   non-generic type whose metadata needs no runtime initialization (the
   descriptor's `MetadataInitialization` is none: no resilient superclass, no
@@ -4462,7 +4464,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   (`swift.type_metadata *Module.Type.type_metadata_accessor(long request)`, so
   `return &Module.Type.type_metadata;`); and the `self` of every class vtable
   getter and of every local protocol's witness getter (the `IsInstance` flag
-  read, so a static property's metatype `self` is left alone). Swift passes
+  read, so a static property's metatype `self` is left alone; a class's witness
+  takes the address of the reference, `Class **`, except under a class-bound
+  protocol, which is passed the reference itself). Swift passes
   `self` in the `swiftself` register (x20 on arm64, r13 on x86-64), which a
   locked prototype cannot name without also fixing the arity; a getter's
   arity is known, so the pass pins

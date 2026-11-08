@@ -25,7 +25,8 @@
 //! `self` of a class's vtable getter (the `swiftself` register, x20 / r13,
 //! which no calling-convention model describes, so it is pinned on the
 //! function as a register-locked parameter) and the `self` of a local
-//! protocol's witness getter (self indirect in `swiftself`, the type
+//! protocol's witness getter (the address of the value in `swiftself`, or
+//! the class reference itself under a class-bound protocol, with the type
 //! metadata and witness table in the first two argument registers).
 
 use std::cell::RefCell;
@@ -972,7 +973,7 @@ impl<'a> Types<'a> {
             let Some(path) = self.unique_path(t) else {
                 continue;
             };
-            let Some(self_t) = self.witness_self(t, &path) else {
+            let Some(self_t) = self.witness_self(t, &path, proto.is_class_bound_protocol()) else {
                 continue;
             };
             if !c.witnesses.is_empty() || c.flags & (1 << 17) != 0 {
@@ -1030,11 +1031,12 @@ impl<'a> Types<'a> {
     }
 
     /// The `self` a protocol witness of the type at `addr` receives: the
-    /// address of the value, so a class instance arrives as `Class **`.
-    pub(super) fn witness_self(&self, addr: u64, path: &str) -> Option<Rc<Datatype>> {
+    /// address of the value (`T *` for a struct, `Class **` for a class),
+    /// or the class reference itself under a class-bound protocol.
+    pub(super) fn witness_self(&self, addr: u64, path: &str, class_bound: bool) -> Option<Rc<Datatype>> {
         let t = self.self_pointer(addr, path)?;
         match self.md.contexts.get(&addr)?.kind {
-            ContextKind::Class => self.pointer_to(t),
+            ContextKind::Class if !class_bound => self.pointer_to(t),
             _ => Some(t),
         }
     }
