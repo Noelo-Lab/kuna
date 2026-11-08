@@ -6,9 +6,10 @@
 //! (`HI16`/`LO16`), and, in the `-mabicalls` code compilers emit by default, a
 //! 16-bit offset from `$gp` to a GOT entry (`CALL16`, `GOT16`, `GOT_DISP`,
 //! `GOT_PAGE`/`GOT_OFST`) or to small data (`GPREL16`, `GPREL32`). An o32
-//! object (REL) keeps each addend in the field it patches, so a `HI16`, or a
+//! or N32 REL object keeps each addend in the field it patches, so a `HI16`, or a
 //! `GOT16` against a local symbol, takes the low half of its addend from the
-//! next `LO16` against the same symbol. An N32/N64 object (RELA) states its
+//! next `LO16` against the same symbol. Each REL record reads the field left
+//! by the previous record, even at the same offset. An N32/N64 RELA object states its
 //! addends, and one expression may chain several operations
 //! (`%hi(%neg(%gp_rel(f)))` is `GPREL16`, `SUB`, `HI16`), each result the
 //! addend of the next. GNU as writes an N32 chain as one record per operation
@@ -617,9 +618,10 @@ fn special_of(i: usize, r_type: u32) -> Option<u8> {
     }
 }
 
-/// The expressions of a section's relocation records, in order. An o32 record
-/// is one expression. Later N32 records at the same offset continue it, each
-/// taking the previous result as its addend, as do the up to three packed
+/// The expressions of a section's relocation records, in order. An o32 or N32
+/// REL record is one expression, rereading the field for its implicit addend.
+/// Later N32 RELA records at the same offset continue an explicit expression,
+/// each taking the previous result as its addend, as do the up to three packed
 /// operations of an N64 record and the next N64 record at that offset, until
 /// an `R_MIPS_NONE` ends it. A JALR alone is only a hint and is dropped.
 fn expressions(arch: object::Architecture, records: &[(u64, Relocation)]) -> Vec<Vec<Op>> {
@@ -633,7 +635,11 @@ fn expressions(arch: object::Architecture, records: &[(u64, Relocation)]) -> Vec
         for (i, &op) in kinds.iter().enumerate().take(if packed { 3 } else { 1 }) {
             let op = if malformed { if i == 0 { MALFORMED } else { break } } else { op };
             if !current.is_empty()
-                && (records[current[0].record].0 != *offset || op == NONE || arch == object::Architecture::Mips)
+                && (records[current[0].record].0 != *offset
+                    || op == NONE
+                    || arch == object::Architecture::Mips
+                    || arch == object::Architecture::Mips64_N32
+                        && (reloc.has_implicit_addend() || records[current[0].record].1.has_implicit_addend()))
             {
                 out.push(std::mem::take(&mut current));
             }

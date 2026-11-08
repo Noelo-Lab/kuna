@@ -22,6 +22,8 @@
     Assert #2: N32 PIC call_external calls external through the GOT.
     Assert #3: every composed N32 and N64 call names its callee.
     Assert #4: no call is left at a placeholder or bad instruction.
+    Assert #5: same-offset N32 REL words accumulate both symbols in BE/LE.
+    Assert #6: implicit addends are reread with 32-bit wrapping in BE/LE.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
@@ -66,10 +68,22 @@
   <com>lo fu relative_call</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-relocations/rel-chain-n32-be.o</com>
+  <com>read symbols</com>
+  <com>lo fu read_combined</com><com>decompile</com><com>print C</com>
+  <com>lo fu read_wrapped</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-relocations/rel-chain-n32-le.o</com>
+  <com>read symbols</com>
+  <com>lo fu read_combined</com><com>decompile</com><com>print C</com>
+  <com>lo fu read_wrapped</com><com>decompile</com><com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="mipsreloc-chains #1: N32 PIC read_global reads global_value" min="1" max="1">return x \+ global_value;</stringmatch>
 <stringmatch name="mipsreloc-chains #2: N32 PIC call_external calls external" min="1" max="1">return external\(</stringmatch>
 <stringmatch name="mipsreloc-chains #3: composed N32 and N64 calls name their callees" min="8" max="8">  (composed|scalar|cross|relative)_target\(7,0xb\);</stringmatch>
 <stringmatch name="mipsreloc-chains #4: no placeholder call or bad instruction" min="0" max="0">sub_[0-9a-f]+\(|halt_baddata|trap\(|dat_3f8</stringmatch>
+<stringmatch name="mipsreloc-chains #5: N32 REL same-offset sums match GNU in both byte orders" min="2" max="2">return 0x68ac0007;</stringmatch>
+<stringmatch name="mipsreloc-chains #6: N32 REL rereads wraparound addends in both byte orders" min="2" max="2">return 0x10;</stringmatch>
 </decompilertest>

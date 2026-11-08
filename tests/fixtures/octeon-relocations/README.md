@@ -45,6 +45,22 @@ relocated text matches GNU ld.
 
 The assembler manifest contains 23 object/image pairs.
 
+`rel-chain.S` adds N32 implicit-addend cases in both byte orders: two
+`R_MIPS_32` records at one offset accumulate `7 + 0x12340000 + 0x56780000`
+to `0x68ac0007`, and another pair wraps to `0x10`. `build-rel.py` assembles
+ordinary MIPS64r2/N32 code, converts its zero-addend RELA tables to REL while
+preserving field bits, symbols, offsets and record order, then links the REL
+objects with GNU ld. It rejects nonzero explicit addends rather than dropping
+them. `provenance-rel.json` records source/output hashes, the intermediate
+RELA hashes, conversions, commands and tool versions. The unit tests require
+implicit-addend metadata and exact GNU-linked data bytes; damaged copies
+check that one failed REL record leaves successful records intact. The stage
+test checks both recovered return values on BE and LE inputs.
+
+```sh
+python3 build-rel.py --assembler "$OCTEON_AS" --linker "$MULTIARCH_LD" --output "$OUTPUT"
+```
+
 `pic.c` and `external.c` provide four independently compiled PIC object/image
 pairs (GCC 4.7/7.3, BE N32/N64). They exercise global and table accesses, direct
 and local calls through the GOT, an optional weak call and address returns.

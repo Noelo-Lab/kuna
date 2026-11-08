@@ -813,12 +813,16 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   undefined `.TOC.` resolves to that base.
   MIPS relocations go through
   `decompiler/crates/kuna-analysis/src/loader/kuna_mipsreloc.rs (Gp)`. An o32
-  object (REL) keeps each addend in the field it patches, so a `HI16`, or a
+  or N32 REL object keeps each addend in the field it patches, so a `HI16`, or a
   `GOT16` against a local symbol, takes the low half of its addend from the next
-  `LO16` against the same target, as the GNU linker pairs them; an N32/N64 object
-  (RELA) states its addends and chains operations into one expression
+  `LO16` against the same target, as the GNU linker pairs them. Each N32 REL
+  record is applied separately, including consecutive records at one offset:
+  its implicit addend is reread from the field after earlier successful
+  records have written it. A failed REL record leaves those earlier writes
+  intact and does not suppress later records. N32 REL/RELA boundaries also end an
+  expression. N32/N64 RELA objects state their addends and chain operations into one expression
   (`%hi(%neg(%gp_rel(f)))` is `GPREL16`, `SUB`, `HI16`), each result the next
-  one's addend. An N32 object spells the chain as one record per operation at
+  one's addend. An N32 RELA object spells the chain as one record per operation at
   the same offset; an N64 record packs up to three operations, its second using
   the `r_ssym` special symbol (zero, `$gp`, the input `$gp` or the place), and
   its chain continues into the next record at that offset until an

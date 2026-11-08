@@ -1,0 +1,93 @@
+{
+  "commands": [
+    [
+      "${AS}",
+      "-march=mips64r2",
+      "-mabi=n32",
+      "-EB",
+      "-o",
+      "rel-chain-n32-be.o",
+      "rel-chain.S"
+    ],
+    [
+      "${LD}",
+      "-m",
+      "elf32btsmipn32",
+      "-z",
+      "max-page-size=0x1000",
+      "-Ttext=0x400000",
+      "-e",
+      "read_combined",
+      "--no-relax",
+      "-o",
+      "rel-chain-n32-be.elf",
+      "rel-chain-n32-be.o"
+    ],
+    [
+      "${AS}",
+      "-march=mips64r2",
+      "-mabi=n32",
+      "-EL",
+      "-o",
+      "rel-chain-n32-le.o",
+      "rel-chain.S"
+    ],
+    [
+      "${LD}",
+      "-m",
+      "elf32ltsmipn32",
+      "-z",
+      "max-page-size=0x1000",
+      "-Ttext=0x400000",
+      "-e",
+      "read_combined",
+      "--no-relax",
+      "-o",
+      "rel-chain-n32-le.elf",
+      "rel-chain-n32-le.o"
+    ]
+  ],
+  "conversion": "Zero explicit addends removed; field bits, offsets, symbols and record order preserved.",
+  "conversions": {
+    "rel-chain-n32-be": {
+      "rela_sha256": "f693083481c63be415255b4369e006b533f0670a72f5a684c73afd301cb535a2",
+      "sections": [
+        {
+          "section": ".rel.text",
+          "records": 4
+        },
+        {
+          "section": ".rel.rodata",
+          "records": 4
+        }
+      ]
+    },
+    "rel-chain-n32-le": {
+      "rela_sha256": "c926ec9001c618ba3a5782b8f238c36d15bb0a8850fd8987bfa6f3c3542c77a1",
+      "sections": [
+        {
+          "section": ".rel.text",
+          "records": 4
+        },
+        {
+          "section": ".rel.rodata",
+          "records": 4
+        }
+      ]
+    }
+  },
+  "tools": {
+    "assembler": "GNU assembler (GNU Binutils) 2.30",
+    "linker": "GNU ld (GNU Binutils) 2.47.20260726"
+  },
+  "sha256": {
+    "rel-chain-n32-be.elf": "05ad5a9f0f06194af0efe685ce9e4797823fea8ccb35b3428f646986d8e01bf6",
+    "rel-chain-n32-be.o": "0f6c98fc5e27d9c3c77223b8690d7f32bb67bdf8eca198d92d03c9a01420d0fd",
+    "rel-chain-n32-le.elf": "8c7daacfd88e2e1ba0f2dcd20cc67d4415c1da3698f0ac95d5a3d068ff03d560",
+    "rel-chain-n32-le.o": "48f32aace0584a4742222b26369ef00bce8c8841f58775df05d0cbd154bd64bb"
+  },
+  "source_sha256": {
+    "rel-chain.S": "d68b7ed670870c448c44ccbfac205c9ae4bcd56eb464d57ecb64797baf235ece",
+    "build-rel.py": "7c788c1c4fa5f39a02be20ca1414c83f9e5945df655aacd19ef721913e1c9e6a"
+  }
+}

@@ -205,6 +205,68 @@ fn read_at(data: &[u8], at: u64, width: usize, le: bool) -> u64 {
     read(&data[at as usize..at as usize + width], le)
 }
 
+#[test]
+fn n32_rel_same_offset_fields_match_gnu_in_both_byte_orders() {
+    for endian in ["be", "le"] {
+        let bytes = fixture(&format!("rel-chain-n32-{endian}.o"));
+        let linked_bytes = fixture(&format!("rel-chain-n32-{endian}.elf"));
+        let file = object::File::parse(&*bytes).unwrap();
+        let linked = object::File::parse(&*linked_bytes).unwrap();
+        assert_eq!(file.architecture(), Architecture::Mips64_N32);
+        let section = file.section_by_name(".rodata").unwrap();
+        let records: Vec<_> = section.relocations().collect();
+        assert_eq!(records.iter().map(|(at, _)| *at).collect::<Vec<_>>(), [0, 0, 4, 4]);
+        assert!(records.iter().all(|(_, r)| r.has_implicit_addend()));
+        assert_eq!(read_at(section.data().unwrap(), 0, 4, endian == "le"), 7);
+        assert_eq!(read_at(section.data().unwrap(), 4, 4, endian == "le"), 0xffff_fff0);
+        let expected = linked.section_by_name(".rodata").unwrap();
+        assert_eq!(read_at(expected.data().unwrap(), 0, 4, endian == "le"), 0x68ac_0007);
+        assert_eq!(read_at(expected.data().unwrap(), 4, 4, endian == "le"), 0x10);
+        let layout = layout(&bytes);
+        let address = layout.section_vma[&section.index()];
+        let (_, actual) = layout.segments.iter().find(|(base, _)| *base == address).unwrap();
+        assert_eq!(actual, expected.data().unwrap(), "{endian}");
+        assert!(layout.diagnostics.is_empty(), "{endian}: {:?}", layout.diagnostics.report_lines());
+    }
+}
+
+#[test]
+fn n32_rel_failures_preserve_other_records_at_the_same_offset() {
+    for endian in ["be", "le"] {
+        for (bad_record, expected) in [(0, 0x5678_0007), (1, 0x1234_0007)] {
+            let mut bytes = fixture(&format!("rel-chain-n32-{endian}.o"));
+            let file = object::File::parse(&*bytes).unwrap();
+            let table = file.section_by_name(".rel.rodata").unwrap().file_range().unwrap().0;
+            let at = table + bad_record * 8 + 4;
+            let info = read_at(&bytes, at, 4, endian == "le");
+            write(&mut bytes[at as usize..at as usize + 4], endian == "le", (info & !0xff) | 42);
+            let file = object::File::parse(&*bytes).unwrap();
+            let section = file.section_by_name(".rodata").unwrap();
+            let layout = layout(&bytes);
+            let address = layout.section_vma[&section.index()];
+            let (_, data) = layout.segments.iter().find(|(base, _)| *base == address).unwrap();
+            assert_eq!(read_at(data, 0, 4, endian == "le"), expected, "{endian} record {bad_record}");
+            assert_eq!(read_at(data, 4, 4, endian == "le"), 0x10);
+            assert_eq!(layout.diagnostics.total(), 1, "{endian} record {bad_record}");
+        }
+    }
+}
+
+#[test]
+fn n32_rel_and_rela_boundaries_keep_independent_addends() {
+    let records = [(0, relocation(R32, 0, true)), (0, relocation(R32, 11, false)), (0, relocation(R32, 0, true))];
+    for le in [false, true] {
+        let mut field = if le { 7u32.to_le_bytes() } else { 7u32.to_be_bytes() };
+        let mut gp = Gp::new(0x40_0000, 4, 0, le);
+        let applied = gp.apply_section(
+            Architecture::Mips64_N32, &mut field, 0x40_0000, &records, &[None; 3],
+            Ok(0), &mut |_| Some(target(0x100)),
+        );
+        assert_eq!(read(&field, le), 0x20b);
+        assert!(applied.failures.is_empty());
+    }
+}
+
 /// Original N32/N64 and o32 objects whose GNU-linked images put `.text` and
 /// `$gp` where the loader does: composed N32 records, packed and spanning N64
 /// records, REL HI/LO pairs, GP-relative and literal fields, a partial link's
