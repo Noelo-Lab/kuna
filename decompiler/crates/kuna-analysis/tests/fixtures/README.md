@@ -1809,8 +1809,12 @@ swiftc -O -module-name callfix swift_call_elf.swift -o swift_call_syms_elf
 llvm-strip --strip-all -o swift_call_elf swift_call_syms_elf
 ```
 
-SHA-256: `swift_call_elf` `57e8f77a34efb04af8d06f766b9cff43346e23a98d94fa84703ea365b68c8a96`,
-`swift_call_syms_elf` `9ac69a8fb9dd7edb96c0e80e021de8d8da20ce74aee3eb7b97e2365d13f6d06c`.
+Both blobs' `DT_RUNPATH` was blanked after the build the same way as
+`swift_metadata_elf`'s (`$ORIGIN` padded with NULs in `.dynstr`); the checksums
+are of the blanked files.
+
+SHA-256: `swift_call_elf` `7daa276007f3cd21a6d9a35c4557507f7efc6713f595240e94c9b6e8da72dc30`,
+`swift_call_syms_elf` `e7e52786c446aa427673fbcf192d71bd7111578421f556c4efa43ff27b848b1a`.
 
 **Pinned VMAs** (the symbol table of `swift_call_syms_elf`):
 `$s7callfix7AccountC7deposit_3feeS2i_SitF` (vtable slot 7)@`0x3830`,
@@ -1846,7 +1850,10 @@ setting r13 and the call, straight-line in `once` and in a loop in `loop`:
 swiftc -O -module-name helperfix swift_call_helper_elf.swift -o swift_call_helper_elf
 ```
 
-SHA-256: `75ac6939c3c6bf428c1ea95c799eb03b2cb781dbf36fc8c1affcda1550692aea`.
+Its `DT_RUNPATH` was blanked after the build the same way; the checksum is of the
+blanked file.
+
+SHA-256: `aac515b2332292701091ea7e55a4044ecb884eed10e0dd9819a862597bac942f`.
 
 **Pinned VMAs:** `$s9helperfix4onceySiAA7CounterVz_AA3BoxCtF`@`0x2440`,
 `$s9helperfix4loopySiAA7CounterVz_AA3BoxCSitF`@`0x2480`,
