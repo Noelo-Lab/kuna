@@ -4315,10 +4315,6 @@ impl Architecture {
         //     `decompile_drive::is_injected_userop` is the gate. See
         //     `p2_lift::kuna_cortexmpriv`.
         self.register_cortexmpriv_fixup()?;
-
-        // 2c. (kuna `octeoneffects`) Register upstream's lifting of the Octeon
-        //     reservation and ordering operations the same way;
-        //     `decompile_drive::is_injected_userop` applies it only under `off`.
         self.register_octeon_upstream_fixups()?;
 
         // 3. parseInject: compile every registered injection body (callfixup +
@@ -4414,7 +4410,9 @@ impl Architecture {
 
     /// (kuna `octeoneffects`) Register a callother fixup holding upstream's
     /// lifting for each Octeon reservation and ordering operation the language
-    /// declares unspecialized ([`crate::kuna_octeoneffects::UPSTREAM`]).
+    /// declares unspecialized ([`crate::kuna_octeoneffects::UPSTREAM`]), as
+    /// step 2b does for `cortexmpriv`; `decompile_drive::is_injected_userop`
+    /// applies them only under `option octeoneffects off`.
     fn register_octeon_upstream_fixups(&mut self) -> KunaResult<()> {
         self.octeon_upstream_inject.clear();
         for fixup in crate::kuna_octeoneffects::UPSTREAM {

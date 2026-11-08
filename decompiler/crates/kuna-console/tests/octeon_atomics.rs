@@ -444,28 +444,59 @@ fn cache_block_zeroing_keeps_neighboring_unescaped_stack_aliases() {
     }
 }
 
+/// A block zeroed through an incoming pointer starts less than 128 bytes below
+/// the entry stack pointer: a 256-byte frame keeps its top block's spills
+/// (slots at -8 and -128 from entry) and folds the deeper ones (-136, -248).
+/// The pointer is used directly (nop) or offset by 128 (daddiu a0,a0,128).
 #[test]
-fn cache_block_zeroing_through_an_incoming_pointer_leaves_stack_spills_values() {
+fn cache_block_zeroing_through_an_incoming_pointer_reaches_only_the_top_frame_block() {
     for n32 in [false, true] {
         for mode in [OcteonEffectsMode::Atomic, OcteonEffectsMode::Ordered] {
             for operation in [0x7080071f, 0x7080075f] {
-                // nop or daddiu a0,a0,128 before
-                // daddiu sp,sp,-32; sd a1,8(sp); zcb[t] (a0); ld v0,8(sp);
-                // jr ra; daddiu sp,sp,32
                 for offset in [0x00000000, 0x64840080] {
-                    let code = decompile_mode(
-                        &[offset, 0x67bdffe0, 0xffa50008, operation,
-                          0xdfa20008, 0x03e00008, 0x67bd0020],
-                        n32,
-                        Some("unsigned long long probe(unsigned long long *block, unsigned long long value)"),
-                        false,
-                        mode,
-                    );
-                    assert!(code.contains("return value;"), "{mode:?}: {code}");
-                    assert!(code.contains("octeon_zero_cache_block"), "{mode:?}: {code}");
+                    for (slot, kept) in [(248, true), (128, true), (120, false), (8, false)] {
+                        // daddiu sp,sp,-256; sd a1,slot(sp); zcb[t] (a0); ld v0,slot(sp);
+                        // jr ra; daddiu sp,sp,256
+                        let code = decompile_mode(
+                            &[offset, 0x67bdff00, 0xffa50000 | slot, operation,
+                              0xdfa20000 | slot, 0x03e00008, 0x67bd0100],
+                            n32,
+                            Some("unsigned long long probe(unsigned long long *block, unsigned long long value)"),
+                            false,
+                            mode,
+                        );
+                        assert_eq!(!code.contains("return value;"), kept, "{mode:?} slot {slot}: {code}");
+                        assert!(code.contains("octeon_zero_cache_block"), "{mode:?}: {code}");
+                    }
                 }
             }
         }
+    }
+}
+
+/// Every constructor sign-extends a word result, so it is `int` and needs no
+/// `(int4)` cast where the register is read whole; its address stays unsigned,
+/// so a declared `unsigned int *` needs no pointer cast. A doubleword stays
+/// unsigned.
+#[test]
+fn word_results_are_signed_like_the_registers_they_extend_into() {
+    for n32 in [false, true] {
+        // lai v0,(a0); jr ra; nop
+        let lai = decompile_config(&[0x7080109f, 0x03e00008, 0], n32, None, false);
+        assert!(lai.contains("return octeon_fetch_add32(") && !lai.contains("(int4)"), "{lai}");
+        // ll t0,0(a0); dsra v0,t0,4; jr ra; nop
+        let ll = decompile_config(&[0xc0880000, 0x0008113b, 0x03e00008, 0], n32, None, false);
+        assert!(ll.contains("octeon_load_linked32(") && !ll.contains("(int4)"), "{ll}");
+        // laad v0,(a0),a1; jr ra; nop
+        let laad = decompile_config(&[0x708514df, 0x03e00008, 0], n32, None, false);
+        assert!(laad.contains("uint8 probe(uint8 *"), "{laad}");
+        // ll t0,0(a0); addu t0,t0,a1; sc t0,0(a0); jr ra; or v0,t0,zero
+        let loop_body = decompile(
+            &[0xc0880000, 0x01054021, 0xe0880000, 0x03e00008, 0x01001025],
+            n32,
+            "unsigned long long probe(unsigned int *p, unsigned int v)",
+        );
+        assert!(!loop_body.contains("(int4 *)"), "{loop_body}");
     }
 }
 

@@ -688,22 +688,6 @@ pub fn memory_calls(data: &Funcdata) -> Vec<OpId> {
         .collect()
 }
 
-/// Guard writable memory across system calls using the same image policy as
-/// their register effects. Registers and unique temporaries remain unchanged.
-pub fn guard_memory(
-    data: &mut Funcdata,
-    flags: uint4,
-    addr: &Address,
-    size: int4,
-    write: &mut Vec<crate::context::VarnodeId>,
-) {
-    if !data.get_arch().syscall_regs || !crate::kuna_memoryguard::guarded(data, flags, addr) {
-        return;
-    }
-    let ops = memory_calls(data);
-    crate::kuna_memoryguard::guard(data, &ops, flags, addr, size, write);
-}
-
 /// Does the rewritten system call `op` read `vn` as one of its registers?
 ///
 /// `Funcdata::only_op_use` asks this while it follows a trial's value forward.

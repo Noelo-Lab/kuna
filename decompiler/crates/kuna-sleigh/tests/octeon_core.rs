@@ -123,10 +123,10 @@ impl kuna_sleigh::emulate::BreakCallBack for AtomicCapture {
     }
 }
 
+/// GNU Octeon II encoding fields; independent callback results probe the
+/// instruction boundary without implementing the atomic arithmetic again.
 #[test]
 fn atomic_operands_are_captured_before_aliased_outputs_and_word_results_sign_extend() {
-    // GNU Octeon II encoding fields; independent callback results probe the
-    // instruction boundary without implementing the atomic arithmetic again.
     for spec in ["octeon2be", "octeon3be"] {
         for (word, name, width, constant) in [
             (0x7000009fu32, "octeon_fetch_add32", 4, Some(1)),

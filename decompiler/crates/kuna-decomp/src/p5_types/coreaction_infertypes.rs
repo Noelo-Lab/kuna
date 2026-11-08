@@ -57,9 +57,6 @@ use crate::typeop::type_op_info;
 /// size-correct `TYPE_UNKNOWN` if the factory query fails (the C++ getBase never
 /// fails for a valid size).
 pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
-    if let Some(ty) = crate::userop::callother_output_local(data, op) {
-        return ty;
-    }
     let arch = Rc::clone(data.get_arch());
     let o = data.obank().get(op).expect("output_type_local: stale op");
     let out_size = o
@@ -73,6 +70,9 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
     // `BUILTIN_STRINGDATA` CALLOTHER reports its char-pointer output token and
     // `ActionSetCasts` inserts no spurious cast around the rendered string literal.
     if o.code() == OpCode::CPUI_CALLOTHER {
+        if let Some(ty) = crate::kuna_octeoneffects::output_type(data, op) {
+            return ty;
+        }
         let in0_off = o
             .get_in(0)
             .and_then(|v| data.vbank().get(v))
@@ -151,8 +151,10 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
         }
     }
 
-    if let Some(ty) = crate::userop::callother_input_local(data, op, slot) {
-        return ty;
+    if opcode == OpCode::CPUI_CALLOTHER {
+        if let Some(ty) = crate::kuna_octeoneffects::input_type(data, op, slot) {
+            return ty;
+        }
     }
 
     // (kuna strlenscan) `DatatypeUserOp::getInputLocal` for the `strlen` builtin:

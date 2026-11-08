@@ -3211,6 +3211,11 @@ Word results sign-extend to 64 bits. A zero destination discards the result whil
 retaining the operation; zero sources supply literal zero. Reserved fields and
 generation exclusions remain decoding failures. These operations require an
 execution model; replacing them with ordinary load/add/store is not equivalent.
+They decode on the generations that define them in every `octeoneffects` mode:
+upstream lifts them only through generic MIPS's SPECIAL2 catch-all, which
+Octeon excludes, so there is no upstream lifting for `off` to restore. Cavium's
+binutils moved SAA/SAAD to Octeon I in 2012, but Linux's Cavium-written feature
+check enables SAA only from CN58XX, so Octeon I still rejects them.
 
 Octeon LL/LLD establish reservation state through user operations. SC/SCD return
 a runtime success byte and conditionally update memory through the same state,
@@ -3219,10 +3224,13 @@ An executor must specify its memory mapping, interference and reservation rules.
 In particular, flat ordinary RAM execution does not model Octeon III's extended
 128-bit scratch/LMT operation, MMIO, cache state or TLB exceptions.
 
-SYNC, SYNCW, SYNCWS, SYNCS and SYNCIOBDMA retain distinct ordering operations.
-Repeated barriers remain observable. Legacy SYNCIO/SYNCIOALL encodings and
-other SYNC selectors retain separate opaque operations; decoding does not
-establish their execution semantics. A single-thread executor may record
+SYNC, SYNCW, SYNCWS, SYNCS and SYNCIOBDMA (selectors 0, 4, 5, 6 and 2, as the
+CN50XX hardware manual defines them) retain distinct ordering operations.
+Repeated barriers remain observable. Every other selector, including 1 and 3,
+which Cavium's assembler alone aliases as `syncio`/`syncioall` and its SDK
+deprecates as no-ops, disassembles as `sync 0xN`, as upstream GNU binutils
+prints it, and lifts as `octeon_sync_unknown(N)`; decoding does not establish
+its execution semantics. A single-thread executor may record
 barriers without proving device completion or inter-core ordering. The
 decompiler's memory guards and pointer roles are described in chapter 03.
 

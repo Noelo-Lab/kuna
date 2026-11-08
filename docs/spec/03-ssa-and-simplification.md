@@ -2408,8 +2408,8 @@ fetch-and-add, exchange, load-linked, store-conditional or cache-block zero
 accesses memory through its address operand, so under `atomic` heritage places
 a guard across each of them over writable RAM and stack ranges, including
 partial overlaps, through the shared helper in
-`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_memoryguard.rs (guard)` that
-the system-call guards also use. A guard retains preceding stores even when the
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_memoryguard.rs (guard_memory)`
+that the system-call guards also use. A guard retains preceding stores even when the
 instruction result has no scalar consumer, so a store that only a load-linked
 reads is kept, and a later read cannot reuse a value from before the update.
 Read-only image ranges are never guarded, so a GOT or `.rodata` read still
@@ -2417,32 +2417,45 @@ folds as it does after an ordinary store, and only an address-tied range is
 forced: a guard on a local whose address never escapes collapses under
 `RuleIndirectCollapse`, so a spill stays a value. Cache-block zeroing is the
 exception: it can overwrite such a local through a neighboring stack address,
-so its guards survive even when that local's own address never escapes, as
-long as its address may lie in the frame
+so its guards survive even when that local's own address never escapes
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_octeoneffects.rs (keeps_unaliased_guard)`).
-That holds for an address built from the stack pointer, and conservatively for
-one loaded from memory or returned by a call, which an escaped frame address
-could have reached. An address built only from constants and incoming values
-was fixed before the function allocated its frame, so zeroing through it
-leaves spills values. No scalar-width or stack-alignment proof establishes
-disjoint cache blocks here; a kept guard covers every writable range. The
-guarded operations are found once per heritage pass. `ActionMarkImplied` also
-checks LOAD covers against the selected Octeon operations, found once per pass
-with the system-call ones, keeping a pointer load in an explicit statement
-before an operation it originally preceded. Heritage guards alone do not stop
-an unresolved LOAD expression from moving to a later use. `ordered` also guards
+An address built from the stack pointer, loaded from memory or returned by a
+call (which an escaped frame address could have reached) may reach any local.
+An address built only from constants and incoming values was fixed before the
+function allocated its frame, so if it is in the stack at all it is at or above
+the entry stack pointer; the 128-byte block holding it starts less than one
+block lower. Its guards survive only on locals overlapping the top 128 bytes of
+the frame or the caller's area above it, so spills deeper in a large frame stay
+values. No scalar-width or stack-alignment proof establishes disjoint cache
+blocks here; a kept guard covers every writable range.
+
+The system calls of `syscallregs` and `x64syscall` and the selected Octeon
+operations form one list
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_memoryguard.rs (memory_ops)`),
+found once per heritage pass and once per `ActionMarkImplied` pass. Heritage
+guards each. Guards alone do not stop an unresolved LOAD expression from moving
+to a later use, so `ActionMarkImplied` also checks LOAD and call-result covers
+against each, keeping a pointer load in an explicit statement before an
+operation it originally preceded. `persistcalls` counts each as a STORE, so a
+sparse call guard is kept wherever an Octeon guard would otherwise read a
+global's value from before skipped calls.
+
+`ordered` also guards
 across every ordering operation, so a store before a barrier is kept; this is conservative about
 concurrent modification, not a claim that an ordering instruction writes
 memory, and the barrier itself stays a statement either way. Its guards grow
 with ordering operations times global ranges, so it stays opt-in; under
 `atomic` a store overwritten after a barrier is dropped, as upstream drops it.
-`off` lifts the instructions upstream's MIPS spec also decodes as upstream
-does: at architecture bootstrap each load-linked, store-conditional and
+`off` restores upstream's lifting of the instructions upstream's MIPS spec
+also decodes, and only those: at architecture bootstrap each load-linked, store-conditional and
 ordering operation gets a callother fixup holding upstream's p-code (a plain
 load; a plain store whose success is 1; `SYNC(n)`), registered under the
 operation's own name, and the flow's injection gate
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (is_injected_userop)`)
-applies it only under `off`. The Octeon-only atomics stay opaque under `off`.
+applies it only under `off`. The Octeon-only atomics (SAA/SAAD, the LA forms,
+ZCB/ZCBT) decode in every mode, where the base branch rejected them and upstream
+reaches them only through the SPECIAL2 catch-all Octeon excludes; under `off`
+they stay opaque, with no memory effects or types.
 The fixups are applied while lifting, so the option rewinds to P2. A fixup
 cannot be compiled without a local `.sla` (ghidra mode); there `off` keeps the
 memory effects of a load-linked or store-conditional left without one rather

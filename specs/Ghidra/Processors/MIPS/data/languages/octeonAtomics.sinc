@@ -1,5 +1,8 @@
 # Memory effects are indivisible user operations. The decompiler guards aliased
 # memory; execution requires a stateful implementation of these operations.
+# SYNC selectors 1 and 3 are not defined by the Octeon hardware manual; GNU
+# binutils prints them as sync 0x1/0x3 (Cavium's assembler aliases them as
+# syncio/syncioall), so they stay unnamed selectors of octeon_sync_unknown.
 define pcodeop octeon_fetch_add32;
 define pcodeop octeon_fetch_add64;
 define pcodeop octeon_exchange32;
@@ -11,8 +14,6 @@ define pcodeop octeon_store_conditional64;
 define pcodeop octeon_zero_cache_block;
 define pcodeop octeon_zero_cache_block_transient;
 define pcodeop octeon_sync;
-define pcodeop octeon_syncio;
-define pcodeop octeon_syncioall;
 define pcodeop octeon_synciobdma;
 define pcodeop octeon_syncw;
 define pcodeop octeon_syncws;
@@ -109,9 +110,7 @@ oct_atomic_addr: simmed(RSsrc) is simmed & RSsrc {
 @endif
 
 :sync is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype=0 { octeon_sync(); }
-:syncio is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype=1 { octeon_syncio(); }
 :synciobdma is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype=2 { octeon_synciobdma(); }
-:syncioall is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype=3 { octeon_syncioall(); }
 :syncw is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype=4 { octeon_syncw(); }
 :syncws is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype=5 { octeon_syncws(); }
 :syncs is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype=6 { octeon_syncs(); }

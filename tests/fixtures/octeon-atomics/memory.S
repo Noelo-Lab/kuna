@@ -117,3 +117,70 @@ function zero_elsewhere
     jr $31
     daddiu $29,$29,32
 endfunction zero_elsewhere
+
+function zero_deep
+    daddiu $29,$29,-256
+    sd $5,8($29)
+    zcb ($4)
+    ld $2,8($29)
+    jr $31
+    daddiu $29,$29,256
+endfunction zero_deep
+
+    .align 5
+persist_first:
+    ori $9,$0,0x2100
+    lw $3,0($9)
+    addiu $3,$3,1
+    jr $31
+    sw $3,0($9)
+
+    .align 5
+persist_second:
+    ori $9,$0,0x2108
+    lw $3,0($9)
+    addiu $3,$3,1
+    jr $31
+    sw $3,0($9)
+
+function persist_atomic
+    daddiu $29,$29,-32
+    sd $31,24($29)
+    sd $16,16($29)
+    sd $17,8($29)
+    move $17,$5
+    andi $8,$4,1
+    beqz $8,1f
+    nop
+    bal persist_first
+    nop
+    b 2f
+    nop
+1:  bal persist_second
+    nop
+2:  ori $9,$0,0x2100
+    lw $16,0($9)
+    lw $3,4($9)
+    slti $3,$3,18
+    bnez $3,3f
+    nop
+    bal persist_second
+    nop
+    saad $16,($17)
+    bal persist_first
+    nop
+    b 4f
+    nop
+3:  bal persist_first
+    nop
+    addiu $4,$16,8
+    ori $9,$0,0x2108
+    sw $4,0($9)
+    bal persist_first
+    move $4,$16
+4:  ld $31,24($29)
+    ld $16,16($29)
+    ld $17,8($29)
+    jr $31
+    daddiu $29,$29,32
+endfunction persist_atomic

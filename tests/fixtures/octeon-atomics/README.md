@@ -12,8 +12,14 @@ zero-neighbor functions read unescaped stack slots on either side of the ZCB
 operand. A cache-block operation may affect those slots even though their own
 addresses never escape. Their tests retain conservative guards without assuming
 a particular frame alignment or interpreting every guarded local as zero.
-`zero_elsewhere` zeroes through an incoming pointer, which cannot address the
-frame the function allocates afterwards, so its stack spill stays a value.
+`zero_elsewhere` and `zero_deep` zero through an incoming pointer. It points
+at or above the entry stack pointer if into the stack at all, but its 128-byte
+block can start below it, so `zero_elsewhere`'s spill in the top block of a
+32-byte frame keeps its guard while `zero_deep`'s, 248 bytes down a 256-byte
+frame, stays a value. `persist_atomic` runs `saad` between calls that write the
+globals at `0x2100` and `0x2108` (`persist_first` and `persist_second`, which
+are local labels so every call is a PC-relative `bal`); the stage test checks
+that sparse call guards keep the guard the atomic's own guard reads.
 The console companion also compiles and executes the unchanged recovered
 pointer-snapshot C with available native C compilers at O0/O2, checking old
 values and updated memory, including wrapping arithmetic and both branches.

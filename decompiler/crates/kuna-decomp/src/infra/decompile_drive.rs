@@ -232,6 +232,9 @@ impl FlowEnvironment for ArchFlowEnv {
         Ok(Some(fd))
     }
 
+    /// (kuna `octeoneffects`) Upstream's ll/sc/sync fixups, registered at
+    /// bootstrap like `cortexmpriv`'s, replace their Octeon operation only under
+    /// `off`.
     fn is_injected_userop(&self, userop_index: kuna_base::types::uintb) -> bool {
         // C++ `glb->userops.getOp(in0)->getType() == UserPcodeOp::injected`.
         //
@@ -239,9 +242,7 @@ impl FlowEnvironment for ArchFlowEnv {
         // registered at architecture bootstrap, before any `option` line is
         // applied, so this — the only live per-CALLOTHER predicate that sees the
         // applied options — is where the flag gates it. Off, the CALLOTHER is left
-        // alone and prints through the ordinary user-op path. (kuna
-        // `octeoneffects`) Upstream's ll/sc/sync lifting, registered the same
-        // way, replaces its Octeon operation only under `off`.
+        // alone and prints through the ordinary user-op path.
         let arch = self.arch();
         let op = match arch.userops.get_op(userop_index as kuna_base::types::uint4) {
             Some(op) => op,

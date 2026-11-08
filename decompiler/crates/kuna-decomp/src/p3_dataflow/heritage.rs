@@ -903,8 +903,9 @@ pub struct Heritage {
     /// it would have guarded, in guard order, those calls and the kept ones.
     #[allow(clippy::type_complexity)]
     persist_skips: Option<(usize, usize, Vec<BlockId>, Vec<crate::context::OpId>, crate::kuna_fasthash::FxHashSet<crate::context::OpId>)>,
-    /// (kuna `octeoneffects`) This pass's guarded Octeon operations, found at most once.
-    octeon_ops: Option<Vec<crate::context::OpId>>,
+    /// (kuna) This pass's user operations with memory effects
+    /// ([`super::kuna_memoryguard::memory_ops`]), found at most once.
+    memory_ops: Option<Vec<crate::context::OpId>>,
     /// (kuna `haltloopguard`) This pass's exitless loops, found at most once.
     halt_loops: Option<Vec<BlockId>>,
     /// (kuna `haltloopguard`) The ranges to keep alive at each exitless loop
@@ -983,7 +984,7 @@ impl Heritage {
             persist_memory: Default::default(),
             persist_pruned: Vec::new(),
             persist_skips: None,
-            octeon_ops: None,
+            memory_ops: None,
             halt_loops: None,
             halt_loop_marks: BTreeMap::new(),
             halt_loop_reach: Vec::new(),
@@ -1657,9 +1658,7 @@ impl Heritage {
             let sparse = (self.persist_sparse && !revisit && super::kuna_persistcalls::applies(fd, fl, addr))
                 .then_some((&*read, &full_write_ops[..], &partial_write_ops[..]));
             self.guard_calls(fd, fl, addr, size, write, live.as_ref(), sparse);
-            crate::kuna_syscallregs::guard_memory(fd, fl, addr, size, write);
-            crate::kuna_x64syscall::guard_memory(fd, fl, addr, size, write);
-            super::kuna_octeoneffects::guard_memory(fd, &mut self.octeon_ops, fl, addr, size, write);
+            super::kuna_memoryguard::guard_memory(fd, &mut self.memory_ops, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
             if (fl & varnode_flags::persist) != 0 {
                 let heads = self.halt_loops.get_or_insert_with(|| super::kuna_haltloopguard::exitless_loops(fd));
@@ -5078,7 +5077,7 @@ impl Heritage {
         self.readonly_unguarded = self.readonly_cross_product(fd);
         self.persist_sparse = self.persist_cross_product(fd);
         self.persist_memory.clear();
-        self.octeon_ops = None;
+        self.memory_ops = None;
         self.halt_loops = None;
         self.halt_loop_marks.clear();
         self.halt_loop_reach.clear();

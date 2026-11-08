@@ -1130,7 +1130,9 @@ pub struct ArchContext {
     /// (kuna `octeoneffects`) Which Octeon user operations guard memory.
     pub octeon_effects: crate::kuna_octeoneffects::OcteonEffectsMode,
     /// The Octeon atomic, reservation and ordering operations the language
-    /// declares, resolved under [`Self::octeon_effects`]; empty when off.
+    /// declares, resolved under [`Self::octeon_effects`]. Under `off` only a
+    /// load-linked or store-conditional left without its upstream fixup (ghidra
+    /// mode) remains; see `kuna_octeoneffects::userop_ids`.
     pub octeon_memory_userops: Vec<(u32, crate::kuna_octeoneffects::Effect)>,
     /// (kuna) The processor's segment operations by address-space index (C++
     /// `userops.segmentop`); empty when the spec declares none.

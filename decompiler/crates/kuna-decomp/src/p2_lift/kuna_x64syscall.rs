@@ -79,7 +79,7 @@
 
 use kuna_base::address::Address;
 use kuna_base::marshal::ElementId;
-use kuna_base::types::{int4, uint4};
+use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
@@ -354,21 +354,6 @@ pub fn memory_calls(data: &Funcdata) -> Vec<OpId> {
         .iter_code(OpCode::CPUI_CALLOTHER)
         .filter(|&op| is_marked_syscall(data, op))
         .collect()
-}
-
-/// Preserve writable memory observed or replaced by enabled system calls.
-pub fn guard_memory(
-    data: &mut Funcdata,
-    flags: uint4,
-    addr: &Address,
-    size: int4,
-    write: &mut Vec<crate::context::VarnodeId>,
-) {
-    if !data.get_arch().x64_syscall.rewrites() || !crate::kuna_memoryguard::guarded(data, flags, addr) {
-        return;
-    }
-    let ops = memory_calls(data);
-    crate::kuna_memoryguard::guard(data, &ops, flags, addr, size, write);
 }
 
 /// Give one matched `CALLOTHER` its ABI effects. Returns whether it changed.

@@ -12,12 +12,13 @@ use std::rc::Rc;
 use kuna_base::{
     address::Address,
     error::{KunaError, KunaResult},
+    space::spacetype,
     types::{int4, uint4},
 };
 use kuna_num::opcodes::OpCode;
 
 use crate::{
-    context::{OpId, VarnodeId},
+    context::OpId,
     dtype::{type_metatype, Datatype},
     funcdata::Funcdata,
     userop::UserOpManage,
@@ -113,8 +114,6 @@ const OPERATIONS: &[(&str, Effect)] = &[
     ("octeon_zero_cache_block", Effect::new(Kind::ZeroBlock, 0, false, 0)),
     ("octeon_zero_cache_block_transient", Effect::new(Kind::ZeroBlock, 0, false, 0)),
     ("octeon_sync", ORDER),
-    ("octeon_syncio", ORDER),
-    ("octeon_syncioall", ORDER),
     ("octeon_synciobdma", ORDER),
     ("octeon_syncw", ORDER),
     ("octeon_syncws", ORDER),
@@ -151,9 +150,7 @@ pub const UPSTREAM: &[Fixup] = &[
         body: b"*[ram]:8 addr = value;\nsuccess = 1:1;\n",
     },
     Fixup { name: b"octeon_sync", output: b"", inputs: &[], body: b"SYNC(0:1);\n" },
-    Fixup { name: b"octeon_syncio", output: b"", inputs: &[], body: b"SYNC(1:1);\n" },
     Fixup { name: b"octeon_synciobdma", output: b"", inputs: &[], body: b"SYNC(2:1);\n" },
-    Fixup { name: b"octeon_syncioall", output: b"", inputs: &[], body: b"SYNC(3:1);\n" },
     Fixup { name: b"octeon_syncw", output: b"", inputs: &[], body: b"SYNC(4:1);\n" },
     Fixup { name: b"octeon_syncws", output: b"", inputs: &[], body: b"SYNC(5:1);\n" },
     Fixup { name: b"octeon_syncs", output: b"", inputs: &[], body: b"SYNC(6:1);\n" },
@@ -214,17 +211,40 @@ pub fn memory_ops(data: &Funcdata) -> Vec<OpId> {
     data.obank().iter_code(OpCode::CPUI_CALLOTHER).filter(|&op| guards(data, op)).collect()
 }
 
-/// Must a guard of `op` on a stack local survive even though no alias of that
-/// local escapes? Only a cache-block zero whose address may lie in this frame:
-/// it clears the whole block, so it reaches a neighbor of the slot it names.
-pub fn keeps_unaliased_guard(data: &Funcdata, op: OpId) -> bool {
-    effect(data, op).is_some_and(|e| e.kind == Kind::ZeroBlock) && may_address_frame(data, op)
+/// The bytes a cache-block zero clears: the data-cache block of every Octeon
+/// generation.
+const CACHE_BLOCK: i64 = 128;
+
+/// Must the guard of `op` over the stack local `[addr, addr+size)` survive even
+/// though no alias of that local escapes? Only at a cache-block zero, which
+/// clears the whole aligned block holding its address and so reaches neighbors
+/// of the byte it names. An address formed in this frame may reach any local.
+/// One fixed at entry, a constant or an incoming value, points at or above the
+/// entry stack pointer if into the stack at all, and its block starts less than
+/// a block below that: only a local overlapping the top [`CACHE_BLOCK`] bytes
+/// of the frame, or the caller's area above it, is in reach.
+pub fn keeps_unaliased_guard(data: &Funcdata, op: OpId, addr: &Address, size: int4) -> bool {
+    if !effect(data, op).is_some_and(|e| e.kind == Kind::ZeroBlock) {
+        return false;
+    }
+    let Some(space) = addr.get_space().filter(|s| s.get_type() == spacetype::IPTR_SPACEBASE) else {
+        return true;
+    };
+    formed_in_frame(data, op) || near_entry(addr.get_offset(), size, space.get_addr_size())
 }
 
-/// Can the address operand of `op` point into this function's frame? Constants
-/// and values the function received were fixed before the frame existed; one
-/// built from the stack pointer, loaded, or returned by a call can.
-fn may_address_frame(data: &Funcdata, op: OpId) -> bool {
+/// Does the stack range at `offset` (from the entry stack pointer, in an
+/// `addr_size`-byte space) end less than [`CACHE_BLOCK`] bytes below that pointer?
+fn near_entry(offset: u64, size: int4, addr_size: uint4) -> bool {
+    let shift = 64 - 8 * addr_size.min(8);
+    let signed = ((offset << shift) as i64) >> shift;
+    signed.saturating_add(i64::from(size)) > -CACHE_BLOCK
+}
+
+/// Was the address operand of `op` possibly formed after this frame was
+/// allocated: built from the stack pointer, loaded, or returned by a call (an
+/// escaped frame address)? Constants and incoming values were not.
+fn formed_in_frame(data: &Funcdata, op: OpId) -> bool {
     let Some(address) = data.obank().get(op).and_then(|o| o.get_in(1)) else {
         return true;
     };
@@ -284,23 +304,6 @@ fn may_address_frame(data: &Funcdata, op: OpId) -> bool {
     false
 }
 
-/// Guard writable memory across the operations the mode selects. `ops` caches
-/// those operations for the heritage pass: guarding adds no CALLOTHER.
-pub fn guard_memory(
-    data: &mut Funcdata,
-    ops: &mut Option<Vec<OpId>>,
-    flags: uint4,
-    addr: &Address,
-    size: int4,
-    write: &mut Vec<VarnodeId>,
-) {
-    if data.get_arch().octeon_memory_userops.is_empty() || !crate::kuna_memoryguard::guarded(data, flags, addr) {
-        return;
-    }
-    let ops = ops.get_or_insert_with(|| memory_ops(data));
-    crate::kuna_memoryguard::guard(data, ops, flags, addr, size, write);
-}
-
 pub fn input_type(data: &Funcdata, op: OpId, slot: int4) -> Option<Rc<Datatype>> {
     let effect = effect(data, op)?;
     let input = data.vbank().get(data.obank().get(op)?.get_in(slot)?)?;
@@ -323,8 +326,19 @@ pub fn output_type(data: &Funcdata, op: OpId) -> Option<Rc<Datatype>> {
     let effect = effect(data, op)?;
     let output = data.vbank().get(data.obank().get(op)?.get_out()?)?;
     (output.get_size() == effect.result)
-        .then(|| data.get_arch().types()?.get_base(effect.result, type_metatype::TYPE_UINT).ok())
+        .then(|| data.get_arch().types()?.get_base(effect.result, result_metatype(effect.result)).ok())
         .flatten()
+}
+
+/// A word result is `int`, as every constructor sign-extends it into its 64-bit
+/// register; a doubleword result or a success byte is unsigned. Addresses and
+/// stored values stay unsigned, so an `unsigned int *` operand needs no cast.
+fn result_metatype(size: int4) -> type_metatype {
+    if size == 4 {
+        type_metatype::TYPE_INT
+    } else {
+        type_metatype::TYPE_UINT
+    }
 }
 
 #[cfg(test)]
@@ -344,7 +358,7 @@ mod tests {
     fn every_operation_but_an_ordering_one_is_addressed() {
         let ordering: Vec<&str> = OPERATIONS.iter().filter(|(_, e)| !e.addressed()).map(|(n, _)| *n).collect();
         assert!(ordering.iter().all(|n| n.starts_with("octeon_sync")));
-        assert_eq!(ordering.len(), 8);
+        assert_eq!(ordering.len(), 6);
         assert!(OPERATIONS.iter().filter(|(_, e)| e.kind == Kind::Order).all(|(_, e)| e.width == 0));
         assert!(OPERATIONS.iter().filter(|(_, e)| e.kind == Kind::ZeroBlock).all(|(_, e)| e.width == 0));
     }
@@ -370,12 +384,24 @@ mod tests {
     }
 
     #[test]
+    fn a_block_fixed_at_entry_reaches_only_the_top_cache_block_of_the_frame() {
+        let at = |offset: i64| offset as u64;
+        assert!(near_entry(at(-8), 8, 8));
+        assert!(near_entry(at(-128), 8, 8));
+        assert!(!near_entry(at(-136), 8, 8));
+        assert!(!near_entry(at(-248), 8, 8));
+        assert!(near_entry(at(16), 8, 8));
+        assert!(near_entry(at(-128) & 0xffff_ffff, 4, 4));
+        assert!(!near_entry(at(-132) & 0xffff_ffff, 4, 4));
+    }
+
+    #[test]
     fn upstream_fixups_cover_only_reservations_and_barriers() {
         for fixup in UPSTREAM {
             let name = std::str::from_utf8(fixup.name).unwrap();
             let (_, effect) = OPERATIONS.iter().find(|(n, _)| *n == name).expect("fixup names an operation");
             assert!(matches!(effect.kind, Kind::LoadLinked | Kind::StoreConditional | Kind::Order), "{name}");
         }
-        assert_eq!(UPSTREAM.len(), 12);
+        assert_eq!(UPSTREAM.len(), 10);
     }
 }
