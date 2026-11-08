@@ -1099,6 +1099,12 @@ slide page size above 64 KiB is refused. Image entries that share a header
 address (aliases) share one parsed layout. The load commands read across all
 headers, the segments copied into one rebuilt image, and the code scanned for
 cross-image references may each add up to no more than the cache files hold.
+Every count that multiplies work is bounded by what the bytes can honestly
+hold: a segment's sections come only from its own `cmdsize`, the mapping table
+is searched in address order, the image paths copied never exceed the main
+file, and the slide infos and symbol tables retained while building names draw
+on one allowance of twice the cache's total size (at least 256 MiB), past which
+they are refused.
 
 The rebuild (`kuna_dyldcache/extract.rs (DyldCache::extract)`) keeps every
 segment at its cache address and lays the segments out page-aligned, `__TEXT`
@@ -2143,7 +2149,7 @@ funcsym stream:
   stub walk reads it back as imports: a call target becomes an import stub, and
   a slot becomes an import slot, so `peimportcall` binds a call through it. A
   note cut short by `sizeofcmds`, or whose blob lies past the file, reads as no
-  note. The
+  note, and the names a note copies never exceed its name pool. The
   gate is read at that point, so `off` leaves the note unread and every island
   call `sub_<addr>(...)`. On the iOS 16.4.1 cache, CoreFoundation's note names
   699 of its call targets and 65 GOT slots; `libobjc`'s `class_copyMethodList`

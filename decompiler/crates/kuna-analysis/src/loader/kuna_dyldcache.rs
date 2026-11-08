@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 pub mod extract;
 pub mod slide;
@@ -88,15 +89,21 @@ struct CacheFile {
 }
 
 impl CacheFile {
-    /// The `len` bytes at `offset`; an error, before anything is allocated, for
-    /// a range the file does not hold.
-    fn read_at(&self, offset: u64, len: usize) -> Result<Vec<u8>, String> {
-        if offset.checked_add(len as u64).is_none_or(|end| end > self.len) {
+    /// An error for a `len`-byte range at `offset` the file does not hold.
+    fn check_range(&self, offset: u64, len: u64) -> Result<(), String> {
+        if offset.checked_add(len).is_none_or(|end| end > self.len) {
             return Err(format!(
                 "{}: {len} bytes at {offset:#x} lie past the end of the {}-byte file",
                 self.name, self.len
             ));
         }
+        Ok(())
+    }
+
+    /// The `len` bytes at `offset`; an error, before anything is allocated, for
+    /// a range the file does not hold.
+    fn read_at(&self, offset: u64, len: usize) -> Result<Vec<u8>, String> {
+        self.check_range(offset, len as u64)?;
         let mut buf = vec![0u8; len];
         let mut f = &self.file;
         f.seek(SeekFrom::Start(offset))
@@ -154,7 +161,7 @@ pub struct DyldCache {
     images: Vec<CacheImage>,
     base: u64,
     locals: Option<LocalSymbols>,
-    slides: RefCell<HashMap<usize, Option<slide::SlideInfo>>>,
+    slides: RefCell<HashMap<usize, Option<Rc<slide::SlideInfo>>>>,
     /// Image layouts by header address, so aliases of one image share one.
     layouts: RefCell<HashMap<u64, Option<std::rc::Rc<extract::ImageLayout>>>>,
     /// The bytes of every cache file: no image's segments or load commands
@@ -162,6 +169,9 @@ pub struct DyldCache {
     total_len: u64,
     /// The load-command bytes read into `layouts` so far, bounded by `total_len`.
     layout_bytes: Cell<u64>,
+    /// Bytes the slide infos and symbol tables built so far may still retain;
+    /// see [`DyldCache::charge`].
+    retained: Cell<u64>,
 }
 
 fn u32_at(b: &[u8], off: usize) -> u32 {
@@ -301,7 +311,9 @@ impl DyldCache {
         }
         let locals = Self::open_local_symbols(path, &h, &mut files, &open)?;
         let images = Self::read_images(&files[0], &h)?;
-        let total_len = files.iter().map(|f| f.len).sum();
+        let total_len: u64 = files.iter().map(|f| f.len).sum();
+        mappings.retain(|m| m.size != 0);
+        mappings.sort_by_key(|m| m.address);
         Ok(DyldCache {
             files,
             mappings,
@@ -312,6 +324,7 @@ impl DyldCache {
             layouts: RefCell::default(),
             total_len,
             layout_bytes: Cell::new(0),
+            retained: Cell::new(total_len.saturating_mul(2).max(MIN_RETAINED)),
         })
     }
 
@@ -348,7 +361,7 @@ impl DyldCache {
         let wide = symbol_uuid.is_some();
         let entry_size = if wide { 16 } else { 12 };
         let count = u32_at(&info, 20) as usize;
-        let table = files[file].read_at(sh_offset + u32_at(&info, 16) as u64, count * entry_size)?;
+        let table = files[file].read_at(sh_offset.saturating_add(u32_at(&info, 16) as u64), count * entry_size)?;
         let entries = table
             .chunks_exact(entry_size)
             .map(|e| {
@@ -361,8 +374,8 @@ impl DyldCache {
             .collect();
         Ok(Some(LocalSymbols {
             file,
-            nlist_offset: sh_offset + u32_at(&info, 0) as u64,
-            strings_offset: sh_offset + u32_at(&info, 8) as u64,
+            nlist_offset: sh_offset.saturating_add(u32_at(&info, 0) as u64),
+            strings_offset: sh_offset.saturating_add(u32_at(&info, 8) as u64),
             strings_size: u32_at(&info, 12) as u64,
             entries,
             keyed_by_vm_offset: wide,
@@ -377,12 +390,19 @@ impl DyldCache {
         let table = main.read_at(off as u64, count as usize * 32)?;
         let rows: Vec<(u64, u64)> =
             table.chunks_exact(32).map(|r| (u64_at(r, 0), u32_at(r, 24) as u64)).collect();
-        let pool = StringPool::read_at(&|o, len| main.read_at(o, len), main.len, rows.iter().map(|r| r.1))?;
+        let extended = Cell::new(0u64);
+        let charge = |n: u64| {
+            extended.set(extended.get() + n);
+            if extended.get() > main.len { Err("image paths run past the cache file".to_string()) } else { Ok(()) }
+        };
+        let pool = StringPool::read_at(&|o, len| main.read_at(o, len), main.len, rows.iter().map(|r| r.1), &charge)?;
+        let mut allowance = main.len as usize;
         Ok(rows
             .into_iter()
-            .map(|(address, name)| CacheImage {
-                address,
-                path: String::from_utf8_lossy(pool.get_at(name)).into_owned(),
+            .map(|(address, name)| {
+                let path = pool.get_at_max(name, allowance);
+                allowance -= path.len();
+                CacheImage { address, path: String::from_utf8_lossy(path).into_owned() }
             })
             .collect())
     }
@@ -412,8 +432,28 @@ impl DyldCache {
         select_image(&self.images, name)
     }
 
+    /// The mapping holding `[va, va + len)`; the mappings are sorted by address.
+    fn mapping_index(&self, va: u64, len: u64) -> Option<usize> {
+        let i = self.mappings.partition_point(|m| m.address <= va).checked_sub(1)?;
+        self.mappings[i].contains(va, len).then_some(i)
+    }
+
     fn mapping_of(&self, va: u64, len: u64) -> Option<&Mapping> {
-        self.mappings.iter().find(|m| m.contains(va, len))
+        self.mapping_index(va, len).map(|i| &self.mappings[i])
+    }
+
+    /// Charge `n` retained bytes against the cache's allowance: every slide info
+    /// and symbol table kept in memory counts, and an honest image needs a
+    /// fraction of twice the cache's size. An `Err` once it is spent stops the
+    /// work that would have retained them.
+    fn charge(&self, n: u64) -> Result<(), String> {
+        let left = self.retained.get();
+        if n > left {
+            self.retained.set(0);
+            return Err(format!("{}: slide info and symbol data exceed the cache's size", self.files[0].name));
+        }
+        self.retained.set(left - n);
+        Ok(())
     }
 
     /// The raw bytes at `[va, va + len)`, which must lie in one mapping.
@@ -431,11 +471,10 @@ impl DyldCache {
     /// The bytes at `[va, va + len)` with the slide info of their mapping applied
     /// at slide zero, so every rebased pointer reads as its unslid target.
     pub fn read_slid(&self, va: u64, len: usize) -> Result<Vec<u8>, String> {
-        let m = self
-            .mapping_of(va, len as u64)
-            .ok_or_else(|| format!("address range {va:#x}+{len:#x} is not mapped by the cache"))?
-            .clone();
-        let index = self.mappings.iter().position(|x| x.address == m.address).unwrap_or(0);
+        let index = self
+            .mapping_index(va, len as u64)
+            .ok_or_else(|| format!("address range {va:#x}+{len:#x} is not mapped by the cache"))?;
+        let m = self.mappings[index].clone();
         let Some(info) = self.slide_info(index)? else {
             return self.read_va(va, len);
         };
@@ -451,7 +490,7 @@ impl DyldCache {
         Ok(pages[start..start + len].to_vec())
     }
 
-    fn slide_info(&self, mapping: usize) -> Result<Option<slide::SlideInfo>, String> {
+    fn slide_info(&self, mapping: usize) -> Result<Option<Rc<slide::SlideInfo>>, String> {
         if let Some(cached) = self.slides.borrow().get(&mapping) {
             return Ok(cached.clone());
         }
@@ -459,8 +498,10 @@ impl DyldCache {
         let info = if m.slide_size == 0 {
             None
         } else {
+            self.files[m.file].check_range(m.slide_offset, m.slide_size)?;
+            self.charge(m.slide_size)?;
             let raw = self.files[m.file].read_at(m.slide_offset, m.slide_size as usize)?;
-            slide::SlideInfo::parse(&raw)?
+            slide::SlideInfo::parse(&raw)?.map(Rc::new)
         };
         self.slides.borrow_mut().insert(mapping, info.clone());
         Ok(info)
@@ -484,14 +525,16 @@ impl DyldCache {
         let Some(&(start, count)) = locals.entries.get(&key) else {
             return Ok(Vec::new());
         };
+        self.charge(count as u64 * NLIST_RETAINED)?;
         let file = &self.files[locals.file];
-        let raw = file.read_at(locals.nlist_offset + start as u64 * 16, count as usize * 16)?;
+        let raw = file.read_at(locals.nlist_offset.saturating_add(start as u64 * 16), count as usize * 16)?;
         let pool = StringPool::read(
-            &|off, len| file.read_at(locals.strings_offset + off, len),
+            &|off, len| file.read_at(locals.strings_offset.saturating_add(off), len),
             locals.strings_size,
             &raw,
+            &|n| self.charge(n),
         )?;
-        Ok(extract::Nlist::parse_all(&raw, &pool))
+        extract::Nlist::parse_all(&raw, &pool, &|n| self.charge(n))
     }
 }
 
@@ -542,6 +585,13 @@ fn select_image(images: &[CacheImage], name: Option<&str>) -> Result<usize, Stri
     })
 }
 
+/// The retained-byte allowance's floor (see [`DyldCache::charge`]), so a small
+/// cache is not limited by its own size.
+const MIN_RETAINED: u64 = 1 << 28;
+
+/// The retained size of one parsed [`extract::Nlist`], its name aside.
+const NLIST_RETAINED: u64 = std::mem::size_of::<extract::Nlist>() as u64;
+
 /// Bytes read past the last string of a group, extended until that string ends.
 const NAME_TAIL: u64 = 4096;
 
@@ -563,15 +613,19 @@ impl StringPool {
         read: &dyn Fn(u64, usize) -> Result<Vec<u8>, String>,
         size: u64,
         nlists: &[u8],
+        charge: &dyn Fn(u64) -> Result<(), String>,
     ) -> Result<StringPool, String> {
-        Self::read_at(read, size, nlists.chunks_exact(16).map(|n| u32_at(n, 0) as u64))
+        Self::read_at(read, size, nlists.chunks_exact(16).map(|n| u32_at(n, 0) as u64), charge)
     }
 
     /// Read the spans of a `size`-byte pool around the strings at `offsets`.
+    /// A string that runs past its group's tail is extended through `charge`, so
+    /// unterminated strings cannot multiply the pool across calls.
     pub(crate) fn read_at(
         read: &dyn Fn(u64, usize) -> Result<Vec<u8>, String>,
         size: u64,
         offsets: impl Iterator<Item = u64>,
+        charge: &dyn Fn(u64) -> Result<(), String>,
     ) -> Result<StringPool, String> {
         let mut strx: Vec<u64> = offsets.filter(|&s| s > 0 && s < size).collect();
         strx.sort_unstable();
@@ -591,6 +645,7 @@ impl StringPool {
             while end < size && !bytes[scanned..].contains(&0) {
                 scanned = bytes.len();
                 let more = (end + NAME_TAIL).min(size);
+                charge(more - end)?;
                 bytes.extend(read(end, (more - end) as usize)?);
                 end = more;
             }
@@ -600,6 +655,11 @@ impl StringPool {
     }
 
     pub(crate) fn get_at(&self, offset: u64) -> &[u8] {
+        self.get_at_max(offset, usize::MAX)
+    }
+
+    /// The string at `offset`, looking at most `max` bytes for its end.
+    pub(crate) fn get_at_max(&self, offset: u64, max: usize) -> &[u8] {
         let at = self.spans.partition_point(|(lo, _)| *lo <= offset);
         let Some((lo, bytes)) = at.checked_sub(1).map(|i| &self.spans[i]) else {
             return b"";
@@ -607,6 +667,7 @@ impl StringPool {
         let Some(s) = bytes.get((offset - lo) as usize..) else {
             return b"";
         };
+        let s = &s[..s.len().min(max)];
         &s[..s.iter().position(|&b| b == 0).unwrap_or(s.len())]
     }
 

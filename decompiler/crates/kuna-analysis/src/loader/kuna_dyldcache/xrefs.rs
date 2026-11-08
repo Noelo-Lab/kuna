@@ -61,7 +61,9 @@ pub fn encode(xrefs: &[Xref]) -> Vec<u8> {
     table
 }
 
-/// The inverse of [`encode`]; a malformed blob yields the entries before the fault.
+/// The inverse of [`encode`]; a malformed blob yields the entries before the
+/// fault. An honest note holds each name once, so the names copied never total
+/// more than the blob's name pool.
 pub fn decode(blob: &[u8]) -> Vec<Xref> {
     let Some(count) = blob.get(..4).map(|b| u32_at(b, 0) as usize) else {
         return Vec::new();
@@ -70,6 +72,7 @@ pub fn decode(blob: &[u8]) -> Vec<Xref> {
     let Some(names) = blob.get(names_at..) else {
         return Vec::new();
     };
+    let mut allowance = names.len();
     blob[4..names_at]
         .chunks_exact(16)
         .map_while(|e| {
@@ -80,6 +83,7 @@ pub fn decode(blob: &[u8]) -> Vec<Xref> {
             };
             let name = names.get(u32_at(e, 12) as usize..)?;
             let name = &name[..name.iter().position(|&b| b == 0)?];
+            allowance = allowance.checked_sub(name.len())?;
             Some(Xref { addr: u64_at(e, 0), kind, name: name.to_vec() })
         })
         .collect()
@@ -131,15 +135,17 @@ pub(super) fn collect<'v>(
     let mut targets = BTreeSet::new();
     let mut slots = Vec::new();
     let mut budget = cache.total_len;
+    let lookup = layout.segments.len() as u64;
     for seg in &layout.segments {
         for sec in &seg.sections {
-            if sec.size > budget {
+            let cost = sec.size.max(1).saturating_add(lookup);
+            if cost > budget {
                 continue;
             }
+            budget -= cost;
             let Some(bytes) = view(sec.addr, sec.size as usize) else {
                 continue;
             };
-            budget -= sec.size;
             if sec.is_code() {
                 if !a64 {
                     continue;
@@ -220,6 +226,11 @@ fn follow_stub(cache: &DyldCache, addr: u64) -> Option<u64> {
 /// The most stubs a call target is followed through before it is left unnamed.
 const MAX_STUB_HOPS: usize = 4;
 
+/// What one hop through a stub costs [`Names::call_target`]'s work allowance:
+/// a hop may read a slid page. A floor keeps a small cache's stubs reachable.
+const STUB_HOP_COST: u64 = 4096;
+const MIN_STUB_WORK: u64 = 1 << 26;
+
 /// One image's names: by address, and the symbol table and indirect-symbol
 /// table its stubs index.
 #[derive(Default)]
@@ -234,6 +245,10 @@ struct Names<'a> {
     cache: &'a DyldCache,
     ranges: Vec<(u64, u64, usize)>,
     images: RefCell<HashMap<usize, Rc<ImageNames>>>,
+    /// Section headers [`Names::stub_import`] may still visit and stub hops
+    /// [`Names::call_target`] may still read (a page each): bounded by the cache's
+    /// size, so a hostile image's targets cannot multiply them.
+    stub_work: std::cell::Cell<u64>,
 }
 
 impl<'a> Names<'a> {
@@ -254,7 +269,7 @@ impl<'a> Names<'a> {
             })
             .collect();
         ranges.sort_unstable();
-        Names { cache, ranges, images: RefCell::default() }
+        Names { cache, ranges, images: RefCell::default(), stub_work: std::cell::Cell::new(cache.total_len.max(MIN_STUB_WORK)) }
     }
 
     fn image_at(&self, addr: u64) -> Option<usize> {
@@ -296,6 +311,7 @@ impl<'a> Names<'a> {
             if let Some(name) = self.at(addr).or_else(|| self.stub_import(addr)) {
                 return Some(name);
             }
+            self.stub_work.set(self.stub_work.get().checked_sub(STUB_HOP_COST)?);
             addr = follow_stub(self.cache, addr)?;
         }
         None
@@ -307,6 +323,8 @@ impl<'a> Names<'a> {
         const S_SYMBOL_STUBS: u32 = 0x8;
         let index = self.image_at(addr)?;
         let layout = self.cache.image_layout(index).ok()?;
+        let cost = layout.segments.iter().map(|s| s.sections.len() as u64 + 1).sum::<u64>();
+        self.stub_work.set(self.stub_work.get().checked_sub(cost)?);
         let sec = layout
             .segments
             .iter()

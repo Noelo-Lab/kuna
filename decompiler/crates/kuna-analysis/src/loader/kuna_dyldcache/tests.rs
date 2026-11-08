@@ -208,9 +208,87 @@ fn a_string_pool_without_a_terminator_is_scanned_once() {
         Ok(vec![b'a'; len])
     };
     let start = std::time::Instant::now();
-    let pool = StringPool::read_at(&read, size, [1u64].into_iter()).unwrap();
+    let pool = StringPool::read_at(&read, size, [1u64].into_iter(), &|_| Ok(())).unwrap();
     let elapsed = start.elapsed();
     assert_eq!(pool.get_at(1).len() as u64, size - 1);
     assert_eq!(reads.get(), size - 1);
     assert!(elapsed < std::time::Duration::from_secs(5), "a 32 MiB pool took {elapsed:?}");
+}
+
+/// One 72-byte segment command claiming a million sections holds none: the
+/// section headers are read only as far as its own `cmdsize` goes.
+#[test]
+fn sections_stop_at_the_segment_command() {
+    let mut seg = 0x19u32.to_le_bytes().to_vec();
+    seg.extend(72u32.to_le_bytes());
+    seg.resize(72, 0);
+    put(&mut seg, 64, &1_000_000u32.to_le_bytes());
+    let mut cmds = seg;
+    cmds.resize(72 + 80 * 1000, 0xAA);
+    let layout = extract::tests_parse_layout(0x1000, vec![0; 32], cmds);
+    assert_eq!(layout.segments.len(), 1);
+    assert!(layout.segments[0].sections.is_empty());
+}
+
+/// Image entries that all name one long path copy it at most once per byte of
+/// the file, however many entries there are.
+#[test]
+fn image_paths_copy_at_most_the_file() {
+    let n = 1000u32;
+    let header_len = 0x200usize;
+    let pool_at = header_len + 32 * n as usize;
+    let mut bytes = vec![0u8; pool_at + 1 << 16];
+    bytes[..16].copy_from_slice(b"dyld_v1  arm64e\0");
+    put(&mut bytes, HDR_IMAGES_OFFSET, &(header_len as u32).to_le_bytes());
+    put(&mut bytes, HDR_IMAGES_OFFSET + 4, &n.to_le_bytes());
+    for i in 0..n as usize {
+        put(&mut bytes, header_len + i * 32, &(0x1000u64 + i as u64).to_le_bytes());
+        put(&mut bytes, header_len + i * 32 + 24, &((pool_at + 1) as u32).to_le_bytes());
+    }
+    bytes[pool_at + 1..pool_at + (1 << 16) - 1].fill(b'a');
+    let dir = std::env::temp_dir().join(format!("kuna-dyld-paths-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("cache");
+    std::fs::write(&path, &bytes).unwrap();
+    let file = CacheFile { file: File::open(&path).unwrap(), name: "cache".into(), len: bytes.len() as u64 };
+    let header = Header(bytes[..header_len].to_vec());
+    let images = DyldCache::read_images(&file, &header).unwrap();
+    let total: usize = images.iter().map(|i| i.path.len()).sum();
+    assert_eq!(images.len(), 1000);
+    assert!(total <= bytes.len(), "{total} bytes of paths copied from a {}-byte file", bytes.len());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// A note whose every entry names one long string copies it at most once per
+/// byte of the name pool.
+#[test]
+fn a_note_copies_at_most_its_name_pool() {
+    let n = 1000usize;
+    let mut blob = (n as u32).to_le_bytes().to_vec();
+    for _ in 0..n {
+        blob.extend(0u64.to_le_bytes());
+        blob.extend(0u32.to_le_bytes());
+        blob.extend(0u32.to_le_bytes());
+    }
+    blob.extend(std::iter::repeat_n(b'a', 1 << 16));
+    blob.push(0);
+    let names_len = blob.len() - (4 + n * 16);
+    let xrefs = xrefs::decode(&blob);
+    let copied: usize = xrefs.iter().map(|x| x.name.len()).sum();
+    assert!(copied <= names_len, "{copied} name bytes from a {names_len}-byte pool");
+    assert_eq!(xrefs.len(), 1, "the second entry would pass the allowance");
+}
+
+/// Once the retained-byte allowance is spent, slide info and symbol tables are
+/// refused before their blobs are read or copied.
+#[test]
+fn a_spent_retained_allowance_stops_slide_and_symbol_reads() {
+    let cache = DyldCache::open(&fixture()).unwrap();
+    assert!(cache.extract(0).is_ok());
+    let cache = DyldCache::open(&fixture()).unwrap();
+    cache.retained.set(0);
+    let err = cache.extract(0).unwrap_err();
+    assert!(err.contains("exceed the cache's size"), "{err}");
+    let pool = StringPool::read_at(&|_, len| Ok(vec![b'a'; len]), 8192, [1u64].into_iter(), &|_| Err("spent".into()));
+    assert_eq!(pool.err().as_deref(), Some("spent"));
 }

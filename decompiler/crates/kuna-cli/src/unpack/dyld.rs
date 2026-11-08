@@ -34,7 +34,10 @@ pub(super) fn run(binary: &str, output: Option<&str>, list: bool, json: bool) ->
             eprintln!("error: {binary}: {e}");
             return if e.contains("choose one with --image") || e.contains("image name") { 2 } else { 1 };
         }
-        None => unreachable!("run is only called for a dyld shared cache"),
+        None => {
+            eprintln!("error: {binary}: not a dyld shared cache");
+            return 1;
+        }
     };
     let name = std::env::var(kuna_decomp::kuna_dyldcache::DYLDIMAGE_ENV).unwrap_or_default();
     let base = name.trim().rsplit('/').next().unwrap_or("image").to_string();

@@ -159,9 +159,10 @@ fn parse_layout(address: u64, header: Vec<u8>, cmds: Vec<u8>) -> ImageLayout {
         match cmd {
             LC_SEGMENT_64 if c.len() >= 72 => {
                 let nsects = u32_at(c, 64) as usize;
+                let room = c.len().min(u32_at(c, 4) as usize);
                 let sections = (0..nsects)
                     .map(|i| 72 + i * 80)
-                    .take_while(|&s| s + 80 <= c.len())
+                    .take_while(|&s| s + 80 <= room)
                     .map(|s| Section {
                         sectname: fixed_name(&c[s..s + 16]),
                         addr: u64_at(c, s + 32),
@@ -190,6 +191,11 @@ fn parse_layout(address: u64, header: Vec<u8>, cmds: Vec<u8>) -> ImageLayout {
     layout
 }
 
+#[cfg(test)]
+pub(super) fn tests_parse_layout(address: u64, header: Vec<u8>, cmds: Vec<u8>) -> ImageLayout {
+    parse_layout(address, header, cmds)
+}
+
 fn fixed_name(raw: &[u8]) -> String {
     String::from_utf8_lossy(&raw[..raw.iter().position(|&b| b == 0).unwrap_or(raw.len())]).into_owned()
 }
@@ -205,14 +211,23 @@ pub struct Nlist {
 }
 
 impl Nlist {
-    pub(crate) fn parse_all(raw: &[u8], pool: &super::StringPool) -> Vec<Nlist> {
+    /// Parse the nlists in `raw`, charging each copied name through `charge`.
+    pub(crate) fn parse_all(
+        raw: &[u8],
+        pool: &super::StringPool,
+        charge: &dyn Fn(u64) -> Result<(), String>,
+    ) -> Result<Vec<Nlist>, String> {
         raw.chunks_exact(16)
-            .map(|n| Nlist {
-                n_type: n[4],
-                n_sect: n[5],
-                n_desc: u16::from_le_bytes([n[6], n[7]]),
-                n_value: u64_at(n, 8),
-                name: pool.get(u32_at(n, 0)).to_vec(),
+            .map(|n| {
+                let name = pool.get(u32_at(n, 0));
+                charge(name.len() as u64)?;
+                Ok(Nlist {
+                    n_type: n[4],
+                    n_sect: n[5],
+                    n_desc: u16::from_le_bytes([n[6], n[7]]),
+                    n_value: u64_at(n, 8),
+                    name: name.to_vec(),
+                })
             })
             .collect()
     }
@@ -271,6 +286,7 @@ impl DyldCache {
         if nsyms == 0 {
             return Ok(Vec::new());
         }
+        self.charge(nsyms as u64 * super::NLIST_RETAINED)?;
         let sym_va = layout.linkedit_va(symoff).ok_or("symbol table lies outside __LINKEDIT")?;
         let str_va = layout.linkedit_va(stroff).ok_or("string table lies outside __LINKEDIT")?;
         let raw = self.read_va(sym_va, nsyms * 16)?;
@@ -278,8 +294,9 @@ impl DyldCache {
             &|off, len| self.read_va(str_va.checked_add(off).ok_or("string table address overflows")?, len),
             strsize,
             &raw,
+            &|n| self.charge(n),
         )?;
-        Ok(Nlist::parse_all(&raw, &pool))
+        Nlist::parse_all(&raw, &pool, &|n| self.charge(n))
     }
 
     /// Image `index`'s indirect-symbol table, as read from the cache.
@@ -292,6 +309,7 @@ impl DyldCache {
         if count == 0 {
             return Ok(Vec::new());
         }
+        self.charge(count as u64 * 4)?;
         let va = layout
             .linkedit_va(layout.cmd_u32(at + 56))
             .ok_or("indirect-symbol table lies outside __LINKEDIT")?;
