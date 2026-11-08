@@ -17,6 +17,11 @@ nop
 .word 7
 .reloc ., R_MIPS_NONE, 0
 .reloc .-4, R_MIPS_32, value
+/* Consecutive records at one offset chain: the first result is the
+   second's addend and only the second writes. */
+.reloc ., R_MIPS_32, value
+.reloc ., R_MIPS_HI16, other
+.word 7
 .size _start, .-_start
 .globl value, other, dest
 .set value, 0x12348000

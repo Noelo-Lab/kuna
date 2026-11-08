@@ -17,8 +17,10 @@ same addresses. Tests compare the complete relocated `.text` bytes, including
 opcode bits and bytes outside relocated fields.
 
 `implicit.S` covers REL HI/LO pairing, two high halves sharing one low half,
-signed implicit addends, and separate same-offset REL expressions reading
-earlier writes. It is an O32 big-endian input for the shared relocation
+signed implicit addends, a same-offset pair separated by an `R_MIPS_NONE` whose
+second record rereads the first's result, and consecutive same-offset records
+(`R_MIPS_32` then `R_MIPS_HI16`) that chain as GNU ld chains them, writing only
+the last result. It is an O32 big-endian input for the shared relocation
 arithmetic; the pinned assembler does not support the O32 little-endian output
 format. N32/N64 endian coverage comes from the four `expressions` image pairs.
 
@@ -63,15 +65,20 @@ python3 build-pc32.py --assembler "$OCTEON_AS" --linker "$MULTIARCH_LD" --output
 
 `rel-chain.S` adds N32 implicit-addend cases in both byte orders: two
 `R_MIPS_32` records at one offset accumulate `7 + 0x12340000 + 0x56780000`
-to `0x68ac0007`, and another pair wraps to `0x10`. `build-rel.py` assembles
+to `0x68ac0007`, and another pair wraps to `0x10`. Mixed-type pairs show GNU
+ld's chaining, where only the last record writes: `R_MIPS_32` then `R_MIPS_HI16`
+gives `0x000068ac` (rereading the field would give `0x1234567f`), `R_MIPS_32`
+then `R_MIPS_LO16` keeps the field's high half, and `GPREL16`, `SUB`, `HI16`
+spell `%hi(%neg(%gp_rel(first)))` in REL form against the `_gp` that
+`rel-chain.ld` assigns 0x7ff0 past the sections. `build-rel.py` assembles
 ordinary MIPS64r2/N32 code, converts its zero-addend RELA tables to REL while
 preserving field bits, symbols, offsets and record order, then links the REL
 objects with GNU ld. It rejects nonzero explicit addends rather than dropping
 them. `provenance-rel.json` records source/output hashes, the intermediate
 RELA hashes, conversions, commands and tool versions. The unit tests require
 implicit-addend metadata and exact GNU-linked data bytes; damaged copies
-check that one failed REL record leaves successful records intact. The stage
-test checks both recovered return values on BE and LE inputs.
+check that a failed record fails only its own chain. The stage test checks
+the five recovered return values on BE and LE inputs.
 
 ```sh
 python3 build-rel.py --assembler "$OCTEON_AS" --linker "$MULTIARCH_LD" --output "$OUTPUT"

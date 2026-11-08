@@ -6,21 +6,22 @@
 //! (`HI16`/`LO16`), and, in the `-mabicalls` code compilers emit by default, a
 //! 16-bit offset from `$gp` to a GOT entry (`CALL16`, `GOT16`, `GOT_DISP`,
 //! `GOT_PAGE`/`GOT_OFST`) or to small data (`GPREL16`, `GPREL32`). An o32
-//! or N32 REL object keeps each addend in the field it patches, so a `HI16`, or a
-//! `GOT16` against a local symbol, takes the low half of its addend from the
-//! next `LO16` against the same symbol. Each REL record reads the field left
-//! by the previous record, even at the same offset. An N32/N64 RELA object states its
-//! addends, and one expression may chain several operations
-//! (`%hi(%neg(%gp_rel(f)))` is `GPREL16`, `SUB`, `HI16`), each result the
-//! addend of the next. GNU as writes an N32 chain as one record per operation
-//! at the same offset; an N64 record packs up to three, its second operation
-//! taking the `r_ssym` special symbol (`0`, `$gp`, the input `$gp` or the
-//! place), and the chain continues into the next record at that offset until
-//! an `R_MIPS_NONE` ends it. Each operation computes what GNU ld does,
-//! including a 32-bit result truncated before a 64-bit one; only the last must
-//! fit its field. An expression with an operation that cannot be applied
-//! writes nothing, and a packed record whose operations resume after a `NONE`
-//! is malformed.
+//! or N32 REL object keeps each addend in the field it patches, so a `HI16`, or
+//! a `GOT16` against a local symbol, takes the low half of its addend from the
+//! next `LO16` against the same symbol; an N32/N64 RELA object states its
+//! addends. Either way, consecutive records at one offset are one expression,
+//! as GNU ld chains them: each result is the next operation's addend, a REL
+//! record's field is read once for the first operation, and only the last
+//! writes. `%hi(%neg(%gp_rel(f)))` is `GPREL16`, `SUB`, `HI16`, which GNU as
+//! writes as one N32 record per operation at the same offset; an N64 record
+//! packs up to three, its second operation taking the `r_ssym` special symbol
+//! (`0`, `$gp`, the input `$gp` or the place), and the chain continues into
+//! the next record at that offset until an `R_MIPS_NONE` ends it. Each
+//! operation computes what GNU ld does, including a 32-bit result truncated
+//! before a 64-bit one; only the last must fit its field. An expression with
+//! an operation that cannot be applied writes nothing, and a packed record
+//! whose operations resume after a `NONE` is malformed: it writes nothing and
+//! neither continues nor starts a chain.
 //!
 //! The object has neither `$gp` nor a GOT; the linker makes both. The layout
 //! makes what it would: a GOT after the object's other sections, with one entry
@@ -438,13 +439,9 @@ impl Gp {
         let old = read(field, le);
         let place = input.base.wrapping_add(offset as u64);
         let first = relocs[expression[0].record];
+        let first_target = resolve(first.target()).ok_or(RelocationFailure::UnresolvedTarget)?;
         let mut value = if first.has_implicit_addend() {
-            if expression.len() > 1 {
-                return Err(RelocationFailure::InvalidEncoding);
-            }
-            let local = matches!(first.target(), RelocationTarget::Section(_))
-                || resolve(first.target()).is_some_and(|t| t.local);
-            self.implicit(expression[0].op, old, local, lo_half)? as u64
+            self.implicit(expression[0].op, old, first_target.local, lo_half)? as u64
         } else {
             first.addend() as u64
         };
@@ -452,9 +449,10 @@ impl Gp {
         let mut callee = None;
         for (index, op) in expression.iter().enumerate() {
             let reloc = relocs[op.record];
-            let (mut target, named) = match op.special {
-                None => (resolve(reloc.target()).ok_or(RelocationFailure::UnresolvedTarget)?, Some(reloc.target())),
-                Some(ssym) => (self.special(ssym, place, input)?, None),
+            let (mut target, named) = match (index, op.special) {
+                (0, _) => (first_target, Some(first.target())),
+                (_, None) => (resolve(reloc.target()).ok_or(RelocationFailure::UnresolvedTarget)?, Some(reloc.target())),
+                (_, Some(ssym)) => (self.special(ssym, place, input)?, None),
             };
             if input.arch != object::Architecture::Mips64 {
                 target.address = target.address as u32 as i32 as i64 as u64;
@@ -606,7 +604,8 @@ const RSS_UNDEF: u8 = 0;
 const RSS_GP: u8 = 1;
 const RSS_GP0: u8 = 2;
 const RSS_LOC: u8 = 3;
-/// An operation that cannot be applied: a packed record resuming after `NONE`.
+/// An operation that cannot be applied: a packed record resuming after `NONE`,
+/// or a record without an ELF type.
 const MALFORMED: u32 = u32::MAX;
 
 /// The symbol source of operation `i` of an N64 record: the record's own for
@@ -619,12 +618,14 @@ fn special_of(i: usize, r_type: u32) -> Option<u8> {
     }
 }
 
-/// The expressions of a section's relocation records, in order. An o32 or N32
-/// REL record is one expression, rereading the field for its implicit addend.
-/// Later N32 RELA records at the same offset continue an explicit expression,
-/// each taking the previous result as its addend, as do the up to three packed
-/// operations of an N64 record and the next N64 record at that offset, until
-/// an `R_MIPS_NONE` ends it. A JALR alone is only a hint and is dropped.
+/// The expressions of a section's relocation records, in order, as GNU ld
+/// chains them: consecutive records at one offset are one expression, each
+/// operation taking the previous result as its addend, until the offset changes
+/// or an `R_MIPS_NONE` ends it; an N64 record contributes its up to three
+/// packed operations in turn. A packed record whose operations resume after a
+/// `NONE`, or a record without an ELF type, is malformed: it ends the chain
+/// before it and is an expression of its own that cannot be applied and that
+/// nothing continues. A JALR alone is only a hint and is dropped.
 fn expressions(arch: object::Architecture, records: &[(u64, Relocation)]) -> Vec<Vec<Op>> {
     let packed = arch == object::Architecture::Mips64;
     let mut out: Vec<Vec<Op>> = Vec::new();
@@ -632,22 +633,20 @@ fn expressions(arch: object::Architecture, records: &[(u64, Relocation)]) -> Vec
     for (record, (offset, reloc)) in records.iter().enumerate() {
         let r_type = r_type_of(reloc).unwrap_or(MALFORMED);
         let kinds = if packed { ops(r_type) } else { [r_type, NONE, NONE] };
-        let malformed = packed && (kinds[0] == NONE && kinds[1..] != [NONE, NONE] || kinds[1] == NONE && kinds[2] != NONE);
+        let malformed = r_type == MALFORMED
+            || packed && (kinds[0] == NONE && kinds[1..] != [NONE, NONE] || kinds[1] == NONE && kinds[2] != NONE);
+        if malformed {
+            out.extend((!current.is_empty()).then(|| std::mem::take(&mut current)));
+            out.push(vec![Op { record, op: MALFORMED, special: None }]);
+            continue;
+        }
         for (i, &op) in kinds.iter().enumerate().take(if packed { 3 } else { 1 }) {
-            let op = if malformed { if i == 0 { MALFORMED } else { break } } else { op };
-            if !current.is_empty()
-                && (records[current[0].record].0 != *offset
-                    || op == NONE
-                    || arch == object::Architecture::Mips
-                    || arch == object::Architecture::Mips64_N32
-                        && (reloc.has_implicit_addend() || records[current[0].record].1.has_implicit_addend()))
-            {
-                out.push(std::mem::take(&mut current));
+            if op == NONE || current.first().is_some_and(|start| records[start.record].0 != *offset) {
+                out.extend((!current.is_empty()).then(|| std::mem::take(&mut current)));
             }
-            if op == NONE {
-                continue;
+            if op != NONE {
+                current.push(Op { record, op, special: if packed { special_of(i, r_type) } else { None } });
             }
-            current.push(Op { record, op, special: if packed { special_of(i, r_type) } else { None } });
         }
     }
     out.extend((!current.is_empty()).then_some(current));

@@ -26,6 +26,9 @@
     Assert #6: implicit addends are reread with 32-bit wrapping in BE/LE.
     Assert #7: composed PC32 wraps an unsigned R32 result in N32/N64 BE/LE.
     Assert #8: standalone PC32 wraps a displacement below the signed range.
+    Assert #9: same-offset N32 REL R_MIPS_32 then HI16 chain as GNU ld does.
+    Assert #10: same-offset N32 REL R_MIPS_32 then LO16 keep the field's other half.
+    Assert #11: REL GPREL16, SUB, HI16 at one offset compose %hi(%neg(%gp_rel(x))).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
@@ -75,11 +78,17 @@
   <com>read symbols</com>
   <com>lo fu read_combined</com><com>decompile</com><com>print C</com>
   <com>lo fu read_wrapped</com><com>decompile</com><com>print C</com>
+  <com>lo fu read_mixed</com><com>decompile</com><com>print C</com>
+  <com>lo fu read_mixed_lo</com><com>decompile</com><com>print C</com>
+  <com>lo fu read_chain</com><com>decompile</com><com>print C</com>
   <com>clear architecture</com>
   <com>load file tests/fixtures/octeon-relocations/rel-chain-n32-le.o</com>
   <com>read symbols</com>
   <com>lo fu read_combined</com><com>decompile</com><com>print C</com>
   <com>lo fu read_wrapped</com><com>decompile</com><com>print C</com>
+  <com>lo fu read_mixed</com><com>decompile</com><com>print C</com>
+  <com>lo fu read_mixed_lo</com><com>decompile</com><com>print C</com>
+  <com>lo fu read_chain</com><com>decompile</com><com>print C</com>
   <com>clear architecture</com>
   <com>load file tests/fixtures/octeon-relocations/pc32-n32-be.o</com>
   <com>read symbols</com>
@@ -110,4 +119,7 @@
 <stringmatch name="mipsreloc-chains #6: N32 REL rereads wraparound addends in both byte orders" min="2" max="2">return 0x10;</stringmatch>
 <stringmatch name="mipsreloc-chains #7: composed PC32 wraps in N32 and N64 in both byte orders" min="4" max="4">return 0xffffffffffbffffc;</stringmatch>
 <stringmatch name="mipsreloc-chains #8: standalone PC32 wraps below the signed range" min="4" max="4">return 0x7fbffffc;</stringmatch>
+<stringmatch name="mipsreloc-chains #9: N32 REL R32 then HI16 chain in both byte orders" min="2" max="2">return 0x68ac;</stringmatch>
+<stringmatch name="mipsreloc-chains #10: N32 REL R32 then LO16 keep the other half in both byte orders" min="2" max="2">return 0x5123b;</stringmatch>
+<stringmatch name="mipsreloc-chains #11: REL GPREL16, SUB, HI16 compose in both byte orders" min="2" max="2">return 0x3c01ee0d;</stringmatch>
 </decompilertest>

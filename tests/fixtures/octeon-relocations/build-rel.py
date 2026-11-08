@@ -72,7 +72,7 @@ def main():
         obj.write_bytes(rel)
         conversions[stem] = dict(rela_sha256=hashlib.sha256(rela).hexdigest(), sections=sections)
         link = [args.linker, "-m", f"elf32{order}tsmipn32", "-z", "max-page-size=0x1000",
-                "-Ttext=0x400000", "-e", "read_combined", "--no-relax",
+                "-T", "rel-chain.ld", "--no-relax",
                 "-o", str(output / (stem + ".elf")), str(obj)]
         subprocess.run(link, cwd=source, check=True)
         commands.extend((assemble, link))
@@ -88,7 +88,7 @@ def main():
         sha256={path.name: hashlib.sha256(path.read_bytes()).hexdigest()
                 for path in sorted(output.iterdir()) if path.suffix in (".o", ".elf")},
         source_sha256={name: hashlib.sha256((source / name).read_bytes()).hexdigest()
-                       for name in ("rel-chain.S", "build-rel.py")},
+                       for name in ("rel-chain.S", "rel-chain.ld", "build-rel.py")},
     )
     (output / "provenance-rel.json").write_text(json.dumps(report, indent=2) + "\n")
 

@@ -256,6 +256,8 @@ pub struct RelocLayout {
     /// Half-open extent of a MIPS object's synthetic GOT: its entries hold what
     /// the relocations put there and nothing else writes them.
     pub got_range: Option<(u64, u64)>,
+    /// A MIPS object's synthetic `$gp`.
+    pub gp: Option<u64>,
     /// A PowerPC64 ELFv1 object's function descriptors: `(descriptor, entry,
     /// TOC)`, sorted by descriptor address.
     pub opd: Vec<(u64, u64, Option<u64>)>,
@@ -746,6 +748,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         extern_range,
         common_range: common_allocator.range(),
         got_range,
+        gp: gp.as_ref().map(kuna_mipsreloc::Gp::gp),
         opd: {
             opd_descriptors.sort_unstable();
             opd_descriptors.dedup();
