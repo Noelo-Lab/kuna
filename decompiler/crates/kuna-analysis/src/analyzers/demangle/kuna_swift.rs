@@ -14,10 +14,14 @@
 //! C++ demangler, which needs a C++ toolchain the WASM build cannot carry,
 //! and there is no pure-Rust demangler to depend on. The Swift project is
 //! licensed under the Apache License 2.0 with the Runtime Library Exception;
-//! see the repository `NOTICE`. The author reports verifying the output
-//! byte for byte against `swift-demangle` on the Swift 6.3 stdlib and
-//! Foundation and on several iOS app symbol tables; the remaining gap is the
-//! autodiff family (`TJ…`), which does not appear in app binaries.
+//! see the repository `NOTICE`. The full form is checked byte for byte
+//! against `swift-demangle` from Swift 6.3: it agrees on every symbol of the
+//! reference's `manglings.txt` it covers, and the only difference from Swift
+//! 6.4 is the `read2`/`modify2` accessor spellings (`yielding_borrow` /
+//! `yielding_mutate` there). Out of coverage (the symbol stays mangled): the
+//! autodiff family (`TJ…`), bridged outlines (`Te`), macro entities
+//! (`fm`/`fM…`), Embedded Swift (`$e`), coroutine continuation prototypes
+//! (`TC`) and anonymous contexts (`XZ`).
 //!
 //! ## The contract: parse-or-passthrough
 //!
