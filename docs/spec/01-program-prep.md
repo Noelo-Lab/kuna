@@ -4355,8 +4355,9 @@ every other binary's pass list is byte-identical to before the pass existed):
     `superRef_<Class>`: a rebase slot's class is read off the `class_t` it points
     at, a chained **bind** slot's from the import it names with `_OBJC_CLASS_$_`
     stripped (§1.2), so `classRef_UIView` is named although no address exists for
-    it. A classic `LC_DYLD_INFO` image stores a bind slot as zero and leaves it
-    unnamed (its bind opcodes are not parsed);
+    it. A classic `LC_DYLD_INFO` image stores a bind slot as zero; its name comes
+    from the replayed bind program (§1.2,
+    `decompiler/crates/kuna-analysis/src/loader/format/macho/dyldinfo.rs`);
   - each `__objc_stubs` entry is the function `objc_msgSend$<sel>`, the name the
     linker gives the symbol it synthesized the stub for. The entry is found by
     its own first two instructions (arm64 `adrp x1; ldr x1, [x1, #off]`, x86-64
@@ -4422,7 +4423,8 @@ every other binary's pass list is byte-identical to before the pass existed):
     class's own conformance list is not read: it names nothing the C would show.
   - **Instance layouts**
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcivars.rs (Structs::build)`,
-    option **`objcivars`**, kuna, default-on, inert unless `objc` is on):
+    option **`objcivars`**, kuna, default-on, inert unless `objc` is on, as `objc`
+    is on any Mach-O image under 500 KiB):
     `class_ro_t.ivars` names every ivar with its type encoding, its size and a
     pointer to its *offset variable* in `__objc_ivar` — the word a compiled method
     loads and adds to `self` (`ldrsw x8, [x8, #off]; ldr d0, [x19, x8]`), because

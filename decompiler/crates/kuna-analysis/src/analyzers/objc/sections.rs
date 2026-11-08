@@ -15,6 +15,7 @@
 
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use object::read::{Object, ObjectSection};
 use object::{Endianness, SectionKind};
@@ -54,7 +55,7 @@ pub struct MachoImage<'a> {
     /// `slot_vma → import symbol` from a classic `LC_DYLD_INFO` bind program, the
     /// pre-chained-fixup twin of [`ChainedFixups::bind_name`]. Empty on a chained
     /// image.
-    binds: HashMap<u64, String>,
+    binds: HashMap<u64, Rc<str>>,
     /// Work left for the metadata walks; see [`Self::charge`].
     work: Cell<u64>,
 }
@@ -118,7 +119,7 @@ impl<'a> MachoImage<'a> {
 
     /// Attach the classic `LC_DYLD_INFO` bind slots (`slot_vma → import`), so
     /// [`Self::bind_name`] answers on an image without chained fixups.
-    pub fn with_binds(mut self, binds: HashMap<u64, String>) -> MachoImage<'a> {
+    pub fn with_binds(mut self, binds: HashMap<u64, Rc<str>>) -> MachoImage<'a> {
         self.binds = binds;
         self
     }
@@ -168,7 +169,7 @@ impl<'a> MachoImage<'a> {
     /// from the chained-fixup imports or the classic bind program; `None` for any
     /// other slot.
     pub fn bind_name(&self, va: u64) -> Option<&str> {
-        self.fixups.bind_name(va).or_else(|| self.binds.get(&va).map(String::as_str))
+        self.fixups.bind_name(va).or_else(|| self.binds.get(&va).map(Rc::as_ref))
     }
 
     /// Whether the image carries chained fixups (`LC_DYLD_CHAINED_FIXUPS`), a

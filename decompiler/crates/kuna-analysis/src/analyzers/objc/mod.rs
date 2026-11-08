@@ -271,13 +271,8 @@ fn emit_ivars(ivars: &[classt::Ivar], class: &str, objcivars: bool, out: &mut An
             name: format!("{class}::{}", iv.name),
             size: 4,
         });
-        if objcivars {
-            out.const_ranges.push(ConstRange {
-                first: iv.offset_va,
-                last_open: iv.offset_va.wrapping_add(4),
-                gate: ConstGate::ObjcIvars,
-            });
-        }
+        let Some(last_open) = iv.offset_va.checked_add(4).filter(|_| objcivars) else { continue };
+        out.const_ranges.push(ConstRange { first: iv.offset_va, last_open, gate: ConstGate::ObjcIvars });
     }
 }
 
@@ -293,6 +288,17 @@ fn sanitize_selector(sel: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An offset variable mapped at the very top of the address space keeps its
+    /// name but is not reported constant: its range would wrap.
+    #[test]
+    fn ivar_offset_variable_at_the_top_of_the_address_space_is_not_folded() {
+        let ivar = classt::Ivar { offset_va: u64::MAX - 1, name: "x".into(), types: None, offset: 8, size: 4 };
+        let mut out = AnalysisOutput::default();
+        emit_ivars(&[ivar], "C", true, &mut out);
+        assert_eq!(out.data_objects.len(), 1);
+        assert!(out.const_ranges.is_empty());
+    }
 
     #[test]
     fn pass_identity() {
