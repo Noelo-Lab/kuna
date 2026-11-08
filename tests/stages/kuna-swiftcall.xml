@@ -127,6 +127,19 @@ c3
   <com>load addr 0x2480</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_call_native_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x10dc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x10fe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0xe70</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="swiftcall off: the class method takes no self" min="1" max="1">vtable#7\.method\(int8 a0,int8 a1\)</stringmatch>
@@ -150,4 +163,9 @@ c3
 <stringmatch name="swiftcall on, symbols: and again after a call" min="1" max="1">return callfix\.Account\.fee\(for:\)\(self,v2\) \+ v1;</stringmatch>
 <stringmatch name="swiftcall off: the call after a runtime helper passes no self" min="2" max="2">helperfix\.Counter\.bump\(\)\(\);</stringmatch>
 <stringmatch name="swiftcall on: a runtime helper call leaves the self the caller set" min="2" max="2">helperfix\.Counter\.bump\(\)\(a0\);</stringmatch>
+<stringmatch name="swiftcall on: the zeroed r12 of a C function stays a constant across its call" min="1" max="1">return sub_10d2\(a0\) \+ 5;</stringmatch>
+<stringmatch name="swiftcall on: reading it after the call is not the callee's error" min="1" max="1">return 1;</stringmatch>
+<stringmatch name="swiftcall on: a class-bound protocol's class witness takes the reference" min="1" max="1">requirement#0\(swift\.type_metadata \*Self,void \*witness_table,nativefix\.Impl \*self\)</stringmatch>
+<stringmatch name="swiftcall on: and reads a field through it" min="1" max="1">return self-&gt;v;</stringmatch>
+<stringmatch name="swiftcall on: no class-bound witness is typed as a reference to a reference" min="0" max="0">nativefix\.Impl \*\*self</stringmatch>
 </decompilertest>

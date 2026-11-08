@@ -4486,7 +4486,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   stripped swiftc-built `swift_types_elf` with the arm off and on.
 - **Swift calling convention** (`swiftcall`, the calling-convention arm of the
   pass above, default-on and inert unless `swiftmetadata` and `swifttypes` are
-  on;
+  on, which the `aggressive` preset does and `auto` selects for any binary
+  under 500 KiB;
   `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swiftcall.rs`):
   Swift passes a method's `self` in the `swiftself` register (x20 on arm64, r13
   on x86-64) when it is one pointer — a class instance, the address of a
@@ -4514,8 +4515,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   *` for an instance member of a class, `swift.class_metadata *` for a class
   member or an allocating initializer, the address of the value for a witness
   (`T *` for a struct, `Class **` for a class, since a witness receives the
-  address of the reference), `swift.type_metadata *` for a static
-  requirement's witness. A struct member's `self` is typed `T *`, which is what
+  address of the reference), the reference itself for a witness of a
+  class-bound protocol, read off the descriptor's `ProtocolClassConstraint`
+  flag (an imported protocol is taken as not class-bound),
+  `swift.type_metadata *` for a static requirement's witness. A struct member's `self` is typed `T *`, which is what
   the register carries when the member reads it at all. A body two types' members share (identical code
   folding) keeps the name and drops the type, and a getter the layout arm has
   already pinned keeps that lock. A struct or enum member found by symbol is
@@ -4530,8 +4533,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   grow from 84 to 235. It adds no measurable load time and about 8 MB, and the
   42,240 decompiles take 2.5% longer. The
   stage test `tests/stages/kuna-swiftcall.xml` runs the stripped
-  `swift_call_elf` with the arm off and on, and its unstripped twin
-  `swift_call_syms_elf` on.
+  `swift_call_elf` with the arm off and on, its unstripped twin
+  `swift_call_syms_elf` on, and `swift_call_native_elf` on, where a C function
+  uses r12 as an ordinary variable and a class witness of a class-bound
+  protocol takes the reference.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

@@ -4019,10 +4019,17 @@ Two call-site rules read the image's Swift registers
 `ArchContext::swift_abi`, present only when the pass bound the convention).
 A call whose block writes zero to the whole error register as its last write
 before the call — a constant copy, the register `xor`ed with itself, or the
-zero extension of either — is a throwing Swift call, direct or indirect, and
+zero extension of either — and whose next read of the register compares it
+with zero is a throwing Swift call, direct or indirect, and
 `ActionDefaultParams` gives it `__swiftcall_throws` (`throwing_call`): the
 test after it reads the callee's error, so `try?`'s fallback and a `catch`
-block survive, and the call passes the `self` the caller set. And a struct or
+block survive, and the call passes the `self` the caller set. The test is
+what tells the error register from an ordinary callee-saved variable: the
+register is one in every Swift function that does not throw and in any C or
+C++ code linked in, and a zero written there before a call and read back as
+a value (a loop counter, a sum) is still that zero after the call
+(`tested_after` follows up to two copies and passes over a store of it to
+the stack, the `-Onone` shape). And a struct or
 enum member found by symbol may take `self` exploded into its trailing
 arguments rather than in `swiftself`, so a call to one keeps a `swiftself`
 argument only when the caller set the register for that call: a value that

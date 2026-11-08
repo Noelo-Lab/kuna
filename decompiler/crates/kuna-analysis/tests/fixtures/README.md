@@ -1846,3 +1846,23 @@ SHA-256: `75ac6939c3c6bf428c1ea95c799eb03b2cb781dbf36fc8c1affcda1550692aea`.
 `$s9helperfix7CounterV4bumpyyF`@`0x2640`. With `swiftmetadata on` both calls
 decompile as `helperfix.Counter.bump()(a0)`; with `swiftcall off` they pass
 nothing.
+
+### `swift_call_native_elf` — a Swift executable with C code using r12 and a class-bound protocol (`swiftcall`)
+
+`swift_call_native_elf` (x86-64 ELF, 12 KB, SHA-256
+`364ca3ac1ba7169e7f94cb680cb56d4cd8b5b3b73448a2c97560be7083f65b8a`) is built
+from `swift_call_native_elf.swift` and `swift_call_native_helper.c`:
+
+```bash
+gcc -c -O1 swift_call_native_helper.c -o helper.o
+swiftc -O -wmo -module-name nativefix -no-toolchain-stdlib-rpath \
+  swift_call_native_elf.swift helper.o -o nativefix
+llvm-objcopy --strip-all nativefix swift_call_native_elf
+```
+
+(swiftc 6.4.2, gcc 11.4.0.) `native_counter` (`0x10dc`) and `native_arm`
+(`0x10fe`) zero r12, make an unrelated call and read r12 back as a value,
+which no throwing call's caller does: `tests/stages/kuna-swiftcall.xml` pins
+that their `__swiftcall_throws` rule stays off, so the zero stays a zero.
+`<nativefix.Impl:nativefix.ClassOnly>.requirement#0` (`0xe70`) is the witness
+of a class-bound protocol on a class, whose `self` is the reference itself.
