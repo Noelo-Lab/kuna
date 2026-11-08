@@ -54,6 +54,60 @@ fn import_names_strip_their_descriptor_tag() {
     assert_eq!(import_name(&imports, 0x2000, "module_descriptor"), None);
 }
 
+/// Global-actor isolation (bit 19) and conformance-of-protocol (bit 18) add
+/// nothing before the witnesses; only the pack shape count in the top byte
+/// does.
+#[test]
+fn only_real_trailing_objects_move_the_witnesses() {
+    use descriptors::witnesses_offset;
+    assert_eq!(witnesses_offset(1 << 16), 16);
+    assert_eq!(witnesses_offset(1 << 16 | 1 << 19), 16);
+    assert_eq!(witnesses_offset(1 << 16 | 1 << 18), 16);
+    assert_eq!(witnesses_offset(1 << 6), 20);
+    assert_eq!(witnesses_offset(3 << 8), 16 + 36);
+    assert_eq!(witnesses_offset(2 << 24), 16 + 16);
+    assert_eq!(witnesses_offset(1 << 6 | 1 << 8 | 1 << 24), 16 + 4 + 12 + 8);
+}
+
+/// The fixture with `bits` set in every resilient conformance's flags.
+fn with_conformance_flags(bits: u32) -> Vec<u8> {
+    let original = fixture();
+    let file = object::File::parse(&*original).unwrap();
+    let conformances = read(&original, original.len()).conformances;
+    let mut bytes = original.clone();
+    for c in conformances.iter().filter(|c| !c.witnesses.is_empty()) {
+        let at = c.addr + 12;
+        let sec = file
+            .sections()
+            .find(|s| s.address() <= at && at < s.address() + s.size())
+            .unwrap();
+        let off = (at - sec.address() + sec.file_range().unwrap().0) as usize;
+        let flags = u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap());
+        bytes[off..off + 4].copy_from_slice(&(flags | bits).to_le_bytes());
+    }
+    bytes
+}
+
+/// An isolated conformance (`extension T: @MainActor P`) reads the same
+/// witnesses as a plain one.
+#[test]
+fn an_isolated_conformance_keeps_its_witnesses() {
+    let witnesses = |bytes: &[u8]| {
+        let mut v: Vec<(u64, usize)> = read(bytes, bytes.len())
+            .conformances
+            .iter()
+            .filter(|c| c.flags & (1 << 16) != 0)
+            .map(|c| (c.addr, c.witnesses.len()))
+            .collect();
+        v.sort_unstable();
+        v
+    };
+    let plain = witnesses(&fixture());
+    assert!(plain.iter().all(|(_, n)| *n > 0) && !plain.is_empty());
+    assert_eq!(witnesses(&with_conformance_flags(1 << 19)), plain);
+    assert_eq!(witnesses(&with_conformance_flags(1 << 18)), plain);
+}
+
 fn fixture() -> Vec<u8> {
     std::fs::read(concat!(
         env!("CARGO_MANIFEST_DIR"),

@@ -231,6 +231,17 @@ const MAX_VTABLE: u32 = 1 << 14;
 const MAX_REQUIREMENTS: u32 = 1 << 12;
 const MAX_FIELDS: u32 = 1 << 12;
 
+/// The offset of a conformance descriptor's resilient witnesses header,
+/// past the descriptor and its trailing objects: the retroactive context
+/// (`ConformanceFlags` bit 6), the 12-byte conditional requirements (bits
+/// 8-15) and the 8-byte conditional pack shapes (bits 24-31).
+pub(super) fn witnesses_offset(flags: u32) -> u64 {
+    let retroactive = if flags & (1 << 6) != 0 { 4 } else { 0 };
+    let conditional = ((flags >> 8) & 0xff) as u64 * 12;
+    let packs = (flags >> 24) as u64 * 8;
+    16 + retroactive + conditional + packs
+}
+
 pub struct Reader<'a> {
     pub img: &'a MachoImage<'a>,
     /// Pointer slots the loader binds to another image.
@@ -577,16 +588,7 @@ impl<'a> Reader<'a> {
             flags,
             witnesses: Vec::new(),
         };
-        // Trailing objects: retroactive context, conditional requirements,
-        // conditional pack descriptors, resilient witnesses header + rows.
-        let mut at = addr.wrapping_add(16);
-        if flags & (1 << 6) != 0 {
-            at = at.wrapping_add(4);
-        }
-        let num_cond = (flags >> 8) & 0xff;
-        at = at.wrapping_add(num_cond as u64 * 12);
-        let num_packs = (flags >> 18) & 3;
-        at = at.wrapping_add(num_packs as u64 * 4);
+        let mut at = addr.wrapping_add(witnesses_offset(flags));
         if flags & (1 << 16) != 0 {
             let count = self.img.read_u32(at)?;
             if count > MAX_REQUIREMENTS {
