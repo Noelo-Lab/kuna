@@ -4488,10 +4488,14 @@ every other binary's pass list is byte-identical to before the pass existed):
     doubles (`CGRect`, `UIEdgeInsets`) is spread over `d` registers as
     `arg_x, arg_y, arg_width, arg_height`, `NSRange` over two `x` registers, a
     larger one (`CGAffineTransform`) is the pointer the caller passes; a struct
-    return is the flat struct
+    return that spreads over registers is the flat struct
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (struct_type)`,
     `CGRect {x, y, width, height}`) the model places in `d0..d3`, so
     `v = objc_msgSend$bounds(view); objc_msgSend$setFrame:(view, v.x, v.y, v.width, v.height)`.
+    System V x86-64 has no such registers past two eightbytes (it passes a
+    larger struct on the stack), so a selector with such an argument or return
+    gets no prototype there
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcrefs.rs (struct_passing)`).
     The 1.9 MB app: 2,897 → 1,221 argument-less stub calls; an 84 MB app sample: 32 → 4, 60 of
     265 stub calls change shape (`setTransitioningDelegate:(v3, delegate)`,
     `presentViewController:animated:completion:(vc, (UIViewController *)v10, 1, NULL)`).
