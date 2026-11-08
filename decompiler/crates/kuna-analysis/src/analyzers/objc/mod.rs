@@ -148,8 +148,6 @@ impl ObjcMetadataPass {
             name: format!("_OBJC_CLASS_$_{runtime_name}"),
             kind: SymKind::Data,
         });
-        // A Swift class reaches the runtime as `_TtC6Sample3Foo`; the method
-        // and ivar labels use the demangled `Sample.Foo` (`swiftdemangle`).
         let name = display_class_name(&runtime_name);
         let name = name.as_str();
 
@@ -298,7 +296,6 @@ mod tests {
         assert_eq!(display_class_name("Greeter"), "Greeter");
         assert_eq!(display_class_name("_TtC6Sample24MainScreenViewController"), "Sample.MainScreenViewController");
         assert_eq!(display_class_name("_TtCC6Sample5Outer5Inner"), "Sample.Outer.Inner");
-        // Outside the demangler's coverage the runtime spelling stays.
         assert_eq!(display_class_name("_TtC1"), "_TtC1");
     }
 

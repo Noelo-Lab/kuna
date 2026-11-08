@@ -211,14 +211,16 @@ impl NamePrinter {
         if n.kind != Kind::Global {
             return None;
         }
-        // Attributes come first in the tree and wrap what follows; they
-        // render as trailing tags so the entity path stays in front.
         let mut tags: Vec<String> = Vec::new();
         let mut body: Vec<NodeRef> = Vec::new();
-        let mut suffix: Option<String> = None;
+        let suffix = n
+            .children
+            .iter()
+            .find(|c| c.kind == Kind::Suffix)
+            .map(|c| c.get_text().to_string());
         for c in &n.children {
             match c.kind {
-                Kind::Suffix => suffix = Some(c.get_text().to_string()),
+                Kind::Suffix => {}
                 Kind::PartialApplyForwarder | Kind::PartialApplyObjCForwarder => {
                     let inner = Node::with(Kind::Global, c.children.clone());
                     let mut p = NamePrinter::new(Rc::clone(&self.budget), self.depth + 1);
@@ -276,7 +278,6 @@ impl NamePrinter {
             return None;
         }
         self.node(&body[0])?;
-        // Tags were collected outermost-first; the innermost applies first.
         for t in tags.iter().rev() {
             self.s(".");
             self.s(t);
@@ -304,7 +305,6 @@ impl NamePrinter {
     fn decl_name(&mut self, n: &NodeRef) -> Option<()> {
         match n.kind {
             Kind::Identifier => {
-                // A punycoded C++ template name can carry spaces.
                 let t = n.get_text().replace(' ', "");
                 self.s(&t);
                 Some(())
@@ -496,6 +496,9 @@ impl NamePrinter {
             PropertyWrapperInitFromProjectedValue => {
                 self.entity(n, Some("property_wrapper_init_from_projected_value"), false)
             }
+            PropertyWrappedFieldInitAccessor => {
+                self.entity(n, Some("property_wrapped_field_init_accessor"), false)
+            }
             DefaultArgumentInitializer => {
                 let idx = n.child(1)?.get_index();
                 self.entity(n, Some(&format!("default_argument#{idx}")), false)
@@ -513,7 +516,6 @@ impl NamePrinter {
             ProtocolWitness => {
                 self.conformance(n.first()?)?;
                 let req = n.child(1)?.clone();
-                // The requirement entity, rendered without its own context.
                 let mut p = self.child();
                 p.node(&req)?;
                 let ctx_len = {
@@ -663,7 +665,6 @@ impl NamePrinter {
             }
             Identifier | PrivateDeclName | LocalDeclName => self.decl_name(n),
             _ => {
-                // The `<marker> for <subject>` family.
                 let t = tag(n.kind)?;
                 let subject = n.first()?.clone();
                 match subject.kind {
