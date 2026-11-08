@@ -4409,7 +4409,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   `tests/stages/kuna-swiftmetadata.xml` runs the fully stripped swiftc-built
   `swift_metadata_elf` off and on.
 - **Swift type layouts** (`swifttypes`, the type-layout arm of the pass above,
-  default-on and inert unless `swiftmetadata` is on;
+  default-on and inert unless `swiftmetadata` is on, which the `aggressive`
+  preset does and `auto` selects for any binary under 500 KiB;
   `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swifttypes.rs`): a
   non-generic type whose metadata needs no runtime initialization (the
   descriptor's `MetadataInitialization` is none: no resilient superclass, no
@@ -4459,7 +4460,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   (`swift.type_metadata *Module.Type.type_metadata_accessor(long request)`, so
   `return &Module.Type.type_metadata;`); and the `self` of every class vtable
   getter and of every local protocol's witness getter (the `IsInstance` flag
-  read, so a static property's metatype `self` is left alone). Swift passes
+  read, so a static property's metatype `self` is left alone; a class's witness
+  takes the address of the reference, `Class **`, except under a class-bound
+  protocol, which is passed the reference itself). Swift passes
   `self` in the `swiftself` register (x20 on arm64, r13 on x86-64), which no
   calling-convention model describes and which a locked prototype cannot name
   without also fixing the arity; a getter's arity is known, so the pass pins

@@ -150,6 +150,14 @@ pub struct Context {
     pub requirements: Vec<(u64, Option<u64>)>,
 }
 
+impl Context {
+    /// Whether this is a class-bound protocol (`ProtocolContextDescriptorFlags`
+    /// bit 0, clear when only classes conform).
+    pub fn is_class_bound_protocol(&self) -> bool {
+        self.kind == ContextKind::Protocol && self.flags & (1 << 16) == 0
+    }
+}
+
 /// One `__swift5_proto` conformance descriptor.
 #[derive(Clone, Debug)]
 pub struct Conformance {
