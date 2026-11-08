@@ -104,13 +104,11 @@ impl Selectors {
         self.by_class.insert((class.to_string(), selector.to_string()), types.to_string());
     }
 
-    /// The spelling an IMP of `class` is typed with: the class's own property's
-    /// when it has one, else [`Self::encoding`].
+    /// The spelling `class`'s own property gives `selector`, what its IMP is
+    /// typed with; `None` when the class has no such property, whose IMP then
+    /// keeps its method encoding rather than another class's spelling.
     pub fn encoding_for_class(&self, class: &str, selector: &str) -> Option<&str> {
-        match self.by_class.get(&(class.to_string(), selector.to_string())) {
-            Some(e) => Some(e.as_str()),
-            None => self.encoding(selector),
-        }
+        self.by_class.get(&(class.to_string(), selector.to_string())).map(String::as_str)
     }
 
     /// The one encoding known for `selector`: the image's own declarations
@@ -639,6 +637,7 @@ mod tests {
         sel.record_for_class("A", "view", "@\"UIView\"@:");
         sel.record_for_class("B", "view", "@\"NSView\"@:");
         assert_eq!(sel.encoding_for_class("B", "view"), Some("@\"NSView\"@:"), "each class keeps its own class");
-        assert_eq!(sel.encoding_for_class("C", "view"), Some("@\"UIView\"@:"), "a class with no property takes the agreed spelling");
+        assert_eq!(sel.encoding_for_class("C", "view"), None, "a class with no property takes no other class's spelling");
+        assert_eq!(sel.encoding("view"), Some("@\"UIView\"@:"), "a stub still takes the first spelling");
     }
 }

@@ -293,8 +293,8 @@ impl ObjcMetadataPass {
             // Best-effort — an unparseable / absent encoding leaves the IMP *named*
             // (above) but untyped, never a failure.
             // The spelling the class's own property gives the selector, else the
-            // agreed one (a property of another class naming the class), else the
-            // method's own.
+            // method's own: another class's property of the same selector says
+            // nothing about this class's return type.
             let owner = class.split('(').next().unwrap_or(class);
             let enc = selectors.encoding_for_class(owner, &m.selector).map(str::to_string).or_else(|| m.types.clone());
             if let Some(enc) = enc.as_deref() {

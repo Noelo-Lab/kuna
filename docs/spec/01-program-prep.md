@@ -4408,7 +4408,7 @@ every other binary's pass list is byte-identical to before the pass existed):
     same rename as a class's own: `-[UIView(Layout) setLeft:]`,
     `+[NSMutableDictionary(JSON) dictionaryWithJSON:]`. A category whose class
     slot resolves to nothing is labelled `-[(Category) sel]` rather than guessed.
-    Protocol and property lists are not read; nothing in the C would show them.
+    A category's protocol list is not read; nothing in the C would show it.
   - **Protocols**
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcprotos.rs (protocols)`):
     each `__objc_protolist` entry is a `protocol_t` named `_OBJC_PROTOCOL_$_<P>`,
@@ -4458,8 +4458,6 @@ every other binary's pass list is byte-identical to before the pass existed):
     denotes a complete struct (DWARF) is that struct. Class (`+`) methods keep
     `objc_object *self`. The number of classes given a layout is bounded
     (32,768): every type the factory interns costs a linear name scan.
-    Properties are not read: a property is a method pair plus an ivar, all
-    already named.
 
   - **Declarations typed by class**
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcprops.rs (declarations)`):
@@ -4474,9 +4472,11 @@ every other binary's pass list is byte-identical to before the pass existed):
     (`@16@0:8` and `@"Base"@:`), the one naming the class, so a synthesized
     getter is emitted as `Base * -[Holder inner](Holder *self, …)`, its setter
     takes `Base *arg1`, and the `objc_msgSend$inner` stub returns `Base *`. An
-    IMP is typed with its *own* class's property spelling first, so two
-    classes whose `view` return different classes each keep theirs; only a
-    stub, which belongs to no class, takes the first spelling seen. Every
+    IMP is typed with its *own* class's property spelling, and otherwise its
+    own method encoding, so two classes whose `view` return different classes
+    each keep theirs and a class that merely shares a selector takes no other
+    class's spelling; only a stub, which belongs to no class, takes the first
+    spelling seen. Every
     declaration — class, category and protocol — is recorded before any IMP is
     emitted. The
     decoder resolves `@"Base"` to the struct the layout built — a pointer built

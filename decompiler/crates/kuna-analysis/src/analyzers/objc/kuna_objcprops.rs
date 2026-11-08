@@ -9,7 +9,7 @@
 //! `<T>@:` and, unless `R` (readonly), its setter (`setName:`, or `S<sel>`)
 //! with `v@:<T>`; the type is the attribute's own encoding text.
 
-use super::sections::MachoImage;
+use super::sections::{MachoImage, RECORD_WORK};
 
 /// `property_list_t` header offsets: `entsizeAndFlags` (`u32`), `count` (`u32`),
 /// then `property_t { name, attributes }` records.
@@ -29,6 +29,9 @@ pub fn declarations(img: &MachoImage, list_va: u64) -> Vec<(String, String)> {
         return out;
     }
     for i in 0..count.min(4096) as u64 {
+        if !img.charge(RECORD_WORK) {
+            break;
+        }
         let rec = list_va.wrapping_add(property_list_t::FIRST).wrapping_add(i.wrapping_mul(entsize));
         let Some(name) = img.rebase_ptr(rec).and_then(|p| img.read_cstr(p)) else { continue };
         let Some(attrs) = rec.checked_add(img.ptr_size()).and_then(|a| img.rebase_ptr(a)).and_then(|p| img.read_cstr(p)) else {
