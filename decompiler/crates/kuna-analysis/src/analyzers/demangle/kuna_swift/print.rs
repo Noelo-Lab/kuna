@@ -227,7 +227,6 @@ impl Printer {
     /// `true` when `ctx` is printed at all as a qualifier.
     fn print_context(&self, ctx: &Node) -> bool {
         if ctx.kind == Kind::Module {
-            // The stdlib and the ObjC module are displayed (`Swift.Int`, `__C.NSObject`).
             return true;
         }
         true
@@ -617,6 +616,7 @@ impl Printer {
                     Kind::DefaultArgumentInitializer
                         | Kind::Initializer
                         | Kind::PropertyWrapperBackingInitializer
+                        | Kind::PropertyWrappedFieldInitAccessor
                         | Kind::PropertyWrapperInitFromProjectedValue
                 ) {
                     self.s(" of ");
@@ -668,6 +668,14 @@ impl Printer {
         self.s(prefix);
         self.print_child(n, 0);
         None
+    }
+
+    /// Demangles a symbol embedded in `text` under this printer's depth and
+    /// byte budget, without type sugar (as `demangleSymbolAsString` does);
+    /// `None` when `text` is not a symbol.
+    fn nested_symbol_text(&self, text: &str) -> Option<String> {
+        let tree = super::demangle_swift_tree(text)?;
+        print_from(&tree, false, self.depth, self.base + self.out.len())
     }
 
     fn print_spec_prefix(&mut self, n: &Node, description: &str, param_prefix: &str) {
@@ -723,11 +731,9 @@ impl Printer {
                     .map(|c| c.get_text().to_string())
                     .unwrap_or_default();
                 idx += 1;
-                match super::demangle_swift_tree(&text)
-                    .and_then(|t| print_from(&t, false, self.depth, self.base + self.out.len()))
-                {
+                match self.nested_symbol_text(&text) {
                     Some(d) => self.s(&d),
-                    None => self.failed = true,
+                    None => self.s(&text),
                 }
                 self.s("]");
             }
@@ -1116,6 +1122,15 @@ impl Printer {
                 None,
                 "",
             ),
+            PropertyWrappedFieldInitAccessor => self.print_entity(
+                n,
+                as_prefix_context,
+                TypePrinting::NoType,
+                false,
+                "property wrapped field init accessor",
+                None,
+                "",
+            ),
             DefaultArgumentInitializer => {
                 let idx = n.child(1).map(|c| c.get_index()).unwrap_or(0);
                 self.print_entity(
@@ -1163,7 +1178,8 @@ impl Printer {
             Static => {
                 self.s("static ");
                 let c = n.first()?.clone();
-                self.print(&c, as_prefix_context)
+                self.print(&c, false);
+                None
             }
             EnumCase => {
                 self.s("enum case for ");
@@ -1816,10 +1832,7 @@ impl Printer {
             }
             FunctionSignatureSpecializationParamPayload => {
                 let t = n.get_text().to_string();
-                match super::demangle_swift_full(&t) {
-                    Some(d) => self.s(&d),
-                    None => self.s(&t),
-                }
+                self.s(&t);
                 None
             }
             FunctionSignatureSpecializationParamKind => {
@@ -1902,23 +1915,39 @@ impl Printer {
                 self.print_impl_function_type(n);
                 None
             }
-            ImplParameter | ImplResult | ImplYield => {
-                let implicit_leading = n.child_of_kind(ImplParameterImplicitLeading).is_some();
-                let shown: Vec<NodeRef> = n
+            ImplParameter | ImplResult => {
+                self.print_child(n, 0);
+                self.s(" ");
+                let diff = n.child_of_kind(ImplParameterResultDifferentiability).cloned();
+                let attrs: Vec<NodeRef> = n
                     .children
                     .iter()
                     .filter(|c| {
-                        c.kind != ImplParameterImplicitLeading
-                            && (c.kind != ImplParameterIsolated || !implicit_leading)
+                        matches!(
+                            c.kind,
+                            ImplParameterSending
+                                | ImplParameterIsolated
+                                | ImplParameterImplicitLeading
+                        )
                     })
                     .cloned()
                     .collect();
-                for (i, c) in shown.iter().enumerate() {
-                    if i > 0 {
+                // The reference printer shows these only while a parameter
+                // carries at most one of the sending/isolated/implicit-leading
+                // annotations (its node has at most four children).
+                if attrs.len() <= 1 {
+                    for attr in diff.iter().chain(attrs.iter()) {
+                        self.print(attr, false);
                         self.s(" ");
                     }
-                    self.print(c, false);
                 }
+                let ty = n.last()?.clone();
+                self.print(&ty, false);
+                None
+            }
+            ImplYield => {
+                self.s("@yields ");
+                self.print_children(n, " ");
                 None
             }
             ImplErrorResult => {
@@ -1938,8 +1967,8 @@ impl Printer {
                 self.s("sending");
                 None
             }
-            ImplParameterImplicitLeading => None,
-            ImplParameterIsolated
+            ImplParameterImplicitLeading
+            | ImplParameterIsolated
             | ImplConvention
             | ImplFunctionAttribute
             | ImplParameterResultDifferentiability
@@ -2082,10 +2111,8 @@ impl Printer {
                 }
                 let list = n.first()?.first()?.clone();
                 self.print_child(n, 1);
-                if !list.is_empty() {
-                    self.s(" & ");
-                    self.print_children(&list, " & ");
-                }
+                self.s(" & ");
+                self.print_children(&list, " & ");
                 None
             }
             ProtocolListWithAnyObject => {
@@ -2396,12 +2423,12 @@ impl Printer {
             DependentGenericInverseConformanceRequirement => {
                 self.print_child(n, 0);
                 self.s(": ~");
-                let name = match n.child(1).map(|c| c.get_index()) {
-                    Some(0) => "Swift.Copyable",
-                    Some(1) => "Swift.Escapable",
-                    _ => return self.fail(),
-                };
-                self.s(name);
+                match n.child(1).map(|c| c.get_index()) {
+                    Some(0) => self.s("Swift.Copyable"),
+                    Some(1) => self.s("Swift.Escapable"),
+                    Some(bit) => self.s(&format!("Swift.<bit {bit}>")),
+                    None => return self.fail(),
+                }
                 None
             }
             DependentGenericLayoutRequirement => {
@@ -2472,7 +2499,6 @@ impl Printer {
             }
             ProtocolConformance => {
                 if n.len() == 4 {
-                    // Property behavior conformance.
                     self.s("property behavior storage of ");
                     self.print_child(n, 2);
                     self.s(" in ");
@@ -2491,19 +2517,18 @@ impl Printer {
                 None
             }
             ProtocolConformanceRefInTypeModule => {
-                self.print_child(n, 0);
-                self.s(" in type's module");
+                self.s("protocol conformance ref (type's module) ");
+                self.print_children(n, "");
                 None
             }
             ProtocolConformanceRefInProtocolModule => {
-                self.print_child(n, 0);
-                self.s(" in protocol's module");
+                self.s("protocol conformance ref (protocol's module) ");
+                self.print_children(n, "");
                 None
             }
             ProtocolConformanceRefInOtherModule => {
-                self.print_child(n, 0);
-                self.s(" in retroactive module ");
-                self.print_child(n, 1);
+                self.s("protocol conformance ref (retroactive) ");
+                self.print_children(n, "");
                 None
             }
             ConcreteProtocolConformance => {
@@ -2603,7 +2628,7 @@ impl Printer {
         let mut state = State::Attrs;
         let mut pattern: Option<NodeRef> = None;
         let mut invocation: Option<NodeRef> = None;
-        let mut sending = false;
+        let sending = n.child_of_kind(Kind::ImplSendingResult).is_some();
         for c in &n.children {
             match c.kind {
                 Kind::ImplParameter => {
@@ -2635,14 +2660,14 @@ impl Printer {
                         state = State::Inputs;
                     }
                     if state == State::Inputs {
-                        self.s(") -> (");
+                        self.begin_impl_results(sending);
                         state = State::Results;
                     }
                     self.print(c, false);
                 }
                 Kind::ImplPatternSubstitutions => pattern = Some(c.clone()),
                 Kind::ImplInvocationSubstitutions => invocation = Some(c.clone()),
-                Kind::ImplSendingResult => sending = true,
+                Kind::ImplSendingResult => {}
                 _ => {
                     self.print(c, false);
                     self.s(" ");
@@ -2659,10 +2684,7 @@ impl Printer {
             state = State::Inputs;
         }
         if state == State::Inputs {
-            self.s(") -> (");
-        }
-        if sending {
-            self.s("sending ");
+            self.begin_impl_results(sending);
         }
         self.s(")");
         if let Some(p) = &pattern {
@@ -2681,16 +2703,21 @@ impl Printer {
         }
     }
 
+    /// The `) -> ` between an impl function type's inputs and results, with
+    /// the result-level `sending` the reference printer places before the
+    /// opening parenthesis.
+    fn begin_impl_results(&mut self, sending: bool) {
+        self.s(") -> ");
+        if sending {
+            self.s("sending ");
+        }
+        self.s("(");
+    }
+
     fn print_outlined(&mut self, n: &Node, prefix: &str) -> Option<NodeRef> {
         self.s(prefix);
         self.print_child(n, 0);
-        if matches!(
-            n.kind,
-            Kind::OutlinedCopy
-                | Kind::OutlinedConsume
-                | Kind::OutlinedRetain
-                | Kind::OutlinedRelease
-        ) {
+        if matches!(n.kind, Kind::OutlinedCopy | Kind::OutlinedConsume) {
             if let Some(sig) = n.child(1) {
                 let sig = sig.clone();
                 self.print(&sig, false);

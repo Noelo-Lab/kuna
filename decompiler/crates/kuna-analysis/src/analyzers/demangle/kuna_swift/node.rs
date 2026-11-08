@@ -71,6 +71,7 @@ pub enum Kind {
     Initializer,
     PropertyWrapperBackingInitializer,
     PropertyWrapperInitFromProjectedValue,
+    PropertyWrappedFieldInitAccessor,
     DefaultArgumentInitializer,
     ExplicitClosure,
     ImplicitClosure,
@@ -558,6 +559,7 @@ impl Kind {
                 | Kind::OwningMutableAddressor
                 | Kind::PropertyWrapperBackingInitializer
                 | Kind::PropertyWrapperInitFromProjectedValue
+                | Kind::PropertyWrappedFieldInitAccessor
                 | Kind::Protocol
                 | Kind::ReadAccessor
                 | Kind::Read2Accessor

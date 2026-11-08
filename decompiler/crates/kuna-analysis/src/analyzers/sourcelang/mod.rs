@@ -684,17 +684,12 @@ pub fn swift_section_present<'a>(names: impl Iterator<Item = &'a str>) -> bool {
 pub fn is_swift_mangled(name: &str) -> bool {
     let bare = name.strip_prefix('_').unwrap_or(name);
     if let Some(rest) = bare.strip_prefix("$s").or_else(|| bare.strip_prefix("$S")) {
-        // Any operator may open the body (`$sx…` a generic parameter, `$sy…`
-        // the empty list); the demangler itself rejects what is not Swift.
         return rest.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_');
     }
     if let Some(rest) = bare.strip_prefix("_T0").or_else(|| name.strip_prefix("_T0")) {
         return rest.bytes().next().is_some_and(|b| b.is_ascii_digit() || b.is_ascii_uppercase());
     }
     if let Some(rest) = name.strip_prefix("_Tt") {
-        // A type kind (class, struct, enum, protocol, bound generic) followed by
-        // a context: an identifier length, a nested type kind, or a
-        // substitution / stdlib contraction.
         let mut b = rest.bytes();
         return matches!(b.next(), Some(b'C' | b'V' | b'O' | b'P' | b'G'))
             && b.next().is_some_and(|c| c.is_ascii_digit() || matches!(c, b'C' | b'V' | b'O' | b'P' | b'G' | b'S' | b's' | b'E'));
