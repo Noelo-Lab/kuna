@@ -2419,15 +2419,21 @@ forced: a guard on a local whose address never escapes collapses under
 exception: it can overwrite such a local through a neighboring stack address,
 so its guards survive even when that local's own address never escapes
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_octeoneffects.rs (keeps_unaliased_guard)`).
-An address built from the stack pointer, loaded from memory or returned by a
-call (which an escaped frame address could have reached) may reach any local.
-An address built only from constants and incoming values was fixed before the
-function allocated its frame, so if it is in the stack at all it is at or above
-the entry stack pointer; the 128-byte block holding it starts less than one
-block lower. Its guards survive only on locals overlapping the top 128 bytes of
-the frame or the caller's area above it, so spills deeper in a large frame stay
-values. No scalar-width or stack-alignment proof establishes disjoint cache
-blocks here; a kept guard covers every writable range.
+An address built from the stack pointer, loaded from memory, returned by a
+call or transformed by arithmetic may reach any local. Absence of a
+stack-pointer dependency does not prove disjointness: subtracting 256 from an
+incoming pointer can move it into a newly allocated frame. Masks, shifts,
+variable offsets, wrapping and unknown definitions also keep the guards.
+Only an unchanged entry address retains the existing entry-pointer bound:
+copies, same-width casts, extensions, low-part extraction or concatenation
+preserving every target address bit, and joins of such values, preserve that proof. Canonical
+N32 extraction of the low four bytes of a GPR is a representation change;
+discarding actual address bits is not. The traversal is bounded and uncertainty
+keeps the guard. For an unchanged entry address, guards survive on locals
+overlapping the top 128 bytes of the frame or the caller's area above it, so
+deeper spills beside a direct incoming pointer still stay values. No
+scalar-width or stack-alignment proof establishes disjoint cache blocks here;
+a kept guard covers every writable range.
 
 The system calls of `syscallregs` and `x64syscall` and the selected Octeon
 operations form one list

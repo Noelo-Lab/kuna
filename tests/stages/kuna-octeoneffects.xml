@@ -24,6 +24,9 @@
                       ld v0,8(sp); jr ra; daddiu sp,sp,32
     zero_deep (0x1a00): the same with a 256-byte frame, so the slot is 248
                       bytes below the entry stack pointer
+    zero_incoming_negative (0x1d00): zero_deep with a0 adjusted by -256;
+                      the pointer can now reach the previously private slot
+    zero_incoming_negative_transient (0x1e00): the same with zcbt
     persist_atomic (0x1b40): calls persist_first or persist_second, reads the
                       globals at 0x2100/0x2104, then either calls
                       persist_second, runs saad s0,(s1) and calls
@@ -59,6 +62,8 @@
                 guard of the call before it, as with every guard built.
     Assert #15: it once read the value from function entry, skipping three
                 calls.
+    Assert #16: only off forwards the deep value through transformed pointers.
+    Assert #17: both guarded modes retain the deep store at ZCB and ZCBT.
 -->
 <bytechunk space="ram" offset="0x1000" readonly="true">3404200064050007fc850000708504dfdc82000003e0000800000000</bytechunk>
 <bytechunk space="ram" offset="0x1100" readonly="true">3404200064050007fc8500000000010fdc82000003e0000800000000</bytechunk>
@@ -71,6 +76,8 @@
 <bytechunk space="ram" offset="0x1800" readonly="true">67bdffe0ffa5001867a400107080075fdfa2001803e0000867bd0020</bytechunk>
 <bytechunk space="ram" offset="0x1900" readonly="true">67bdffe0ffa500087080071fdfa2000803e0000867bd0020</bytechunk>
 <bytechunk space="ram" offset="0x1a00" readonly="true">67bdff00ffa500087080071fdfa2000803e0000867bd0100</bytechunk>
+<bytechunk space="ram" offset="0x1d00" readonly="true">67bdff00ffa500086484ff007080071fdfa2000803e0000867bd0100</bytechunk>
+<bytechunk space="ram" offset="0x1e00" readonly="true">67bdff00ffa500086484ff007080075fdfa2000803e0000867bd0100</bytechunk>
 <bytechunk space="ram" offset="0x1b00" readonly="true">340921008d2300002463000103e00008ad230000000000000000000000000000340921088d2300002463000103e00008ad23000000000000000000000000000067bdffe0ffbf0018ffb00010ffb1000800a088253088000111000005000000000411ffe70000000010000003000000000411ffeb00000000340921008d3000008d2300042863001214600008000000000411ffe300000000723000190411ffd80000000010000008000000000411ffd4000000002604000834092108ad2400000411ffcf02002025dfbf0018dfb00010dfb1000803e0000867bd0020</bytechunk>
 <bytechunk space="ram" offset="0x2100">00000000000000000000000000000000</bytechunk>
 <bytechunk space="ram" offset="0x2000">0000000000000000</bytechunk>
@@ -85,6 +92,8 @@
 <symbol space="ram" offset="0x1800" name="zero_neighbor_transient"/>
 <symbol space="ram" offset="0x1900" name="zero_elsewhere"/>
 <symbol space="ram" offset="0x1a00" name="zero_deep"/>
+<symbol space="ram" offset="0x1d00" name="zero_incoming_negative"/>
+<symbol space="ram" offset="0x1e00" name="zero_incoming_negative_transient"/>
 <symbol space="ram" offset="0x1b00" name="persist_first"/>
 <symbol space="ram" offset="0x1b20" name="persist_second"/>
 <symbol space="ram" offset="0x1b40" name="persist_atomic"/>
@@ -101,6 +110,8 @@
 <com>parse line extern unsigned long long zero_neighbor_transient(unsigned long long unused,unsigned long long neighbor_value);</com>
 <com>parse line extern unsigned long long zero_elsewhere(unsigned long long *block,unsigned long long kept);</com>
 <com>parse line extern unsigned long long zero_deep(unsigned long long *block,unsigned long long kept);</com>
+<com>parse line extern unsigned long long zero_incoming_negative(unsigned long long *block,unsigned long long moved);</com>
+<com>parse line extern unsigned long long zero_incoming_negative_transient(unsigned long long *block,unsigned long long moved);</com>
 <com>parse line extern void persist_first(void);</com>
 <com>parse line extern void persist_second(void);</com>
 <com>parse line extern void persist_atomic(unsigned long long flag,unsigned long long *counter);</com>
@@ -111,6 +122,8 @@
 <com>lo fu snapshot</com><com>decompile</com><com>print C</com>
 <com>lo fu zero_neighbor</com><com>decompile</com><com>print C</com>
 <com>lo fu zero_neighbor_transient</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_incoming_negative</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_incoming_negative_transient</com><com>decompile</com><com>print C</com>
 <com>option octeoneffects atomic</com>
 <com>lo fu update</com><com>decompile</com><com>print C</com>
 <com>lo fu barrier</com><com>decompile</com><com>print C</com>
@@ -122,6 +135,8 @@
 <com>lo fu ordered_snapshot</com><com>decompile</com><com>print C</com>
 <com>lo fu zero_elsewhere</com><com>decompile</com><com>print C</com>
 <com>lo fu zero_deep</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_incoming_negative</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_incoming_negative_transient</com><com>decompile</com><com>print C</com>
 <com>option octeoneffects ordered</com>
 <com>lo fu barrier</com><com>decompile</com><com>print C</com>
 <com>lo fu snapshot</com><com>decompile</com><com>print C</com>
@@ -130,6 +145,8 @@
 <com>lo fu ordered_snapshot</com><com>decompile</com><com>print C</com>
 <com>lo fu zero_elsewhere</com><com>decompile</com><com>print C</com>
 <com>lo fu zero_deep</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_incoming_negative</com><com>decompile</com><com>print C</com>
+<com>lo fu zero_incoming_negative_transient</com><com>decompile</com><com>print C</com>
 <com>option octeoneffects atomic</com>
 <com>option persistcalls off</com>
 <com>lo fu persist_atomic</com><com>decompile</com><com>print raw</com>
@@ -157,4 +174,7 @@
   return kept;</stringmatch>
 <stringmatch name="octeoneffects #14: sparse call guards keep the call guard an atomic's guard reads" min="2" max="2">^0x00001b98:[0-9a-f]+:\s+r0x00002108:4\(0x00001b98:[0-9a-f]+\) = r0x00002108:4\(0x00001b90:[0-9a-f]+\) \[\] i0x00001b98:</stringmatch>
 <stringmatch name="octeoneffects #15: no atomic guard reads a global's value from entry past calls" min="0" max="0">= r0x0000210[0-8]:4\(i\) \[\] i0x00001b98:</stringmatch>
+<stringmatch name="octeoneffects #16: only off forwards deep values through transformed zero addresses" min="2" max="2">return moved;</stringmatch>
+<stringmatch name="octeoneffects #17: transformed zero addresses retain deep stores in both guarded modes" min="4" max="4">= moved;
+  octeon_zero_cache_block</stringmatch>
 </decompilertest>

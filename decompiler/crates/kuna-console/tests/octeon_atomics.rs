@@ -447,27 +447,62 @@ fn cache_block_zeroing_keeps_neighboring_unescaped_stack_aliases() {
 /// A block zeroed through an incoming pointer starts less than 128 bytes below
 /// the entry stack pointer: a 256-byte frame keeps its top block's spills
 /// (slots at -8 and -128 from entry) and folds the deeper ones (-136, -248).
-/// The pointer is used directly (nop) or offset by 128 (daddiu a0,a0,128).
 #[test]
 fn cache_block_zeroing_through_an_incoming_pointer_reaches_only_the_top_frame_block() {
     for n32 in [false, true] {
         for mode in [OcteonEffectsMode::Atomic, OcteonEffectsMode::Ordered] {
             for operation in [0x7080071f, 0x7080075f] {
-                for offset in [0x00000000, 0x64840080] {
-                    for (slot, kept) in [(248, true), (128, true), (120, false), (8, false)] {
-                        // daddiu sp,sp,-256; sd a1,slot(sp); zcb[t] (a0); ld v0,slot(sp);
-                        // jr ra; daddiu sp,sp,256
-                        let code = decompile_mode(
-                            &[offset, 0x67bdff00, 0xffa50000 | slot, operation,
-                              0xdfa20000 | slot, 0x03e00008, 0x67bd0100],
-                            n32,
-                            Some("unsigned long long probe(unsigned long long *block, unsigned long long value)"),
-                            false,
-                            mode,
-                        );
-                        assert_eq!(!code.contains("return value;"), kept, "{mode:?} slot {slot}: {code}");
-                        assert!(code.contains("octeon_zero_cache_block"), "{mode:?}: {code}");
-                    }
+                for (slot, kept) in [(248, true), (128, true), (120, false), (8, false)] {
+                    // daddiu sp,sp,-256; sd a1,slot(sp); zcb[t] (a0); ld v0,slot(sp);
+                    // jr ra; daddiu sp,sp,256
+                    let code = decompile_mode(
+                        &[0x67bdff00, 0xffa50000 | slot, operation,
+                          0xdfa20000 | slot, 0x03e00008, 0x67bd0100],
+                        n32,
+                        Some("unsigned long long probe(unsigned long long *block, unsigned long long value)"),
+                        false,
+                        mode,
+                    );
+                    assert_eq!(!code.contains("return value;"), kept, "{mode:?} slot {slot}: {code}");
+                    assert!(code.contains("octeon_zero_cache_block"), "{mode:?}: {code}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn cache_block_zeroing_through_transformed_inputs_keeps_deep_stack_guards() {
+    let transforms = [
+        (0x6484ff00, "daddiu a0,a0,-256"),
+        (0x64840080, "daddiu a0,a0,128"),
+        (0x0086202d, "daddu a0,a0,a2"),
+        (0x0086202f, "dsubu a0,a0,a2"),
+        (0x00862024, "and a0,a0,a2"),
+        (0x00862025, "or a0,a0,a2"),
+        (0x00862026, "xor a0,a0,a2"),
+        (0x00042078, "dsll a0,a0,1"),
+        (0x0004203e, "dsrl32 a0,a0,0"),
+        (0x0004202f, "dsubu a0,zero,a0"),
+    ];
+    for n32 in [false, true] {
+        for mode in [OcteonEffectsMode::Atomic, OcteonEffectsMode::Ordered] {
+            for operation in [0x7080071f, 0x7080075f] {
+                for (transform, name) in transforms {
+                    // daddiu sp,sp,-256; sd a1,8(sp); TRANSFORM; zcb[t] (a0);
+                    // ld v0,8(sp); jr ra; daddiu sp,sp,256
+                    let code = decompile_mode(
+                        &[0x67bdff00, 0xffa50008, transform, operation,
+                          0xdfa20008, 0x03e00008, 0x67bd0100],
+                        n32,
+                        Some("unsigned long long probe(unsigned long long *block, unsigned long long value, unsigned long long mask)"),
+                        false,
+                        mode,
+                    );
+                    assert!(!code.contains("return value;"), "{name} {mode:?}: {code}");
+                    assert!(!code.contains("return 0;"), "block alignment is unknown: {code}");
+                    let store = code.find("= value;").unwrap_or_else(|| panic!("{name}: {code}"));
+                    assert!(store < code.find("octeon_zero_cache_block").unwrap(), "{name}: {code}");
                 }
             }
         }

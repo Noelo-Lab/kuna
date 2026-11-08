@@ -218,11 +218,9 @@ const CACHE_BLOCK: i64 = 128;
 /// Must the guard of `op` over the stack local `[addr, addr+size)` survive even
 /// though no alias of that local escapes? Only at a cache-block zero, which
 /// clears the whole aligned block holding its address and so reaches neighbors
-/// of the byte it names. An address formed in this frame may reach any local.
-/// One fixed at entry, a constant or an incoming value, points at or above the
-/// entry stack pointer if into the stack at all, and its block starts less than
-/// a block below that: only a local overlapping the top [`CACHE_BLOCK`] bytes
-/// of the frame, or the caller's area above it, is in reach.
+/// of the byte it names. A frame-derived or transformed address may reach any
+/// local. An unchanged entry address keeps the top-[`CACHE_BLOCK`]-byte bound;
+/// only operations preserving every target address bit can carry that proof.
 pub fn keeps_unaliased_guard(data: &Funcdata, op: OpId, addr: &Address, size: int4) -> bool {
     if !effect(data, op).is_some_and(|e| e.kind == Kind::ZeroBlock) {
         return false;
@@ -230,7 +228,7 @@ pub fn keeps_unaliased_guard(data: &Funcdata, op: OpId, addr: &Address, size: in
     let Some(space) = addr.get_space().filter(|s| s.get_type() == spacetype::IPTR_SPACEBASE) else {
         return true;
     };
-    formed_in_frame(data, op) || near_entry(addr.get_offset(), size, space.get_addr_size())
+    formed_in_frame(data, op, space.get_addr_size()) || near_entry(addr.get_offset(), size, space.get_addr_size())
 }
 
 /// Does the stack range at `offset` (from the entry stack pointer, in an
@@ -241,10 +239,11 @@ fn near_entry(offset: u64, size: int4, addr_size: uint4) -> bool {
     signed.saturating_add(i64::from(size)) > -CACHE_BLOCK
 }
 
-/// Was the address operand of `op` possibly formed after this frame was
-/// allocated: built from the stack pointer, loaded, or returned by a call (an
-/// escaped frame address)? Constants and incoming values were not.
-fn formed_in_frame(data: &Funcdata, op: OpId) -> bool {
+/// Could the address reach private frame storage? Arithmetic can move an entry
+/// address into the frame without reading the stack pointer. Only copies,
+/// representation changes preserving all address bits and their joins keep
+/// the entry bound. Unknown definitions and a traversal limit keep the guard.
+fn formed_in_frame(data: &Funcdata, op: OpId, addr_size: uint4) -> bool {
     let Some(address) = data.obank().get(op).and_then(|o| o.get_in(1)) else {
         return true;
     };
@@ -279,24 +278,23 @@ fn formed_in_frame(data: &Funcdata, op: OpId) -> bool {
         let Some(def) = vn.get_def().and_then(|d| data.obank().get(d)) else {
             return true;
         };
+        let input = |slot| def.get_in(slot).and_then(|id| data.vbank().get(id));
+        let address_size = addr_size as int4;
         let inputs = match def.code() {
-            OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => 1,
-            OpCode::CPUI_INT_ADD
-            | OpCode::CPUI_INT_SUB
-            | OpCode::CPUI_PTRADD
-            | OpCode::CPUI_PTRSUB
-            | OpCode::CPUI_MULTIEQUAL
-            | OpCode::CPUI_INT_AND
-            | OpCode::CPUI_INT_OR
-            | OpCode::CPUI_INT_XOR
-            | OpCode::CPUI_INT_MULT
-            | OpCode::CPUI_INT_LEFT
-            | OpCode::CPUI_INT_ZEXT
-            | OpCode::CPUI_INT_SEXT
-            | OpCode::CPUI_INT_2COMP
-            | OpCode::CPUI_INT_NEGATE
-            | OpCode::CPUI_SUBPIECE
-            | OpCode::CPUI_PIECE => def.num_input(),
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST
+                if input(0).is_some_and(|v| v.get_size() == vn.get_size()) => 1,
+            OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT
+                if input(0).is_some_and(|v| v.get_size() >= address_size) => 1,
+            OpCode::CPUI_SUBPIECE
+                if vn.get_size() >= address_size
+                    && input(1).is_some_and(|v| v.is_constant() && v.get_offset() == 0) => 1,
+            OpCode::CPUI_PIECE
+                if input(1).is_some_and(|v| v.get_size() >= address_size) =>
+            {
+                pending.push(def.get_in(1).expect("PIECE low input"));
+                continue;
+            }
+            OpCode::CPUI_MULTIEQUAL => def.num_input(),
             _ => return true,
         };
         pending.extend((0..inputs).filter_map(|slot| def.get_in(slot)));

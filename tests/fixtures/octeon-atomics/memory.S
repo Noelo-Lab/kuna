@@ -184,3 +184,43 @@ function persist_atomic
     jr $31
     daddiu $29,$29,32
 endfunction persist_atomic
+
+function zero_incoming_negative
+    daddiu $29,$29,-256
+    sd $5,8($29)
+    daddiu $4,$4,-256
+    zcb ($4)
+    ld $2,8($29)
+    jr $31
+    daddiu $29,$29,256
+endfunction zero_incoming_negative
+
+function zero_incoming_negative_transient
+    daddiu $29,$29,-256
+    sd $5,8($29)
+    daddiu $4,$4,-256
+    zcbt ($4)
+    ld $2,8($29)
+    jr $31
+    daddiu $29,$29,256
+endfunction zero_incoming_negative_transient
+
+function zero_incoming_variable
+    daddiu $29,$29,-256
+    sd $5,8($29)
+    daddu $4,$4,$6
+    zcb ($4)
+    ld $2,8($29)
+    jr $31
+    daddiu $29,$29,256
+endfunction zero_incoming_variable
+
+function zero_incoming_masked
+    daddiu $29,$29,-256
+    sd $5,8($29)
+    and $4,$4,$6
+    zcb ($4)
+    ld $2,8($29)
+    jr $31
+    daddiu $29,$29,256
+endfunction zero_incoming_masked

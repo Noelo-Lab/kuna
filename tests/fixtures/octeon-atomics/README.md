@@ -20,6 +20,14 @@ frame, stays a value. `persist_atomic` runs `saad` between calls that write the
 globals at `0x2100` and `0x2108` (`persist_first` and `persist_second`, which
 are local labels so every call is a PC-relative `bal`); the stage test checks
 that sparse call guards keep the guard the atomic's own guard reads.
+The `zero_incoming_negative` pair subtracts 256 from the incoming address,
+while `zero_incoming_variable` adds a register displacement and
+`zero_incoming_masked` clears selected address bits. These transformations can
+reach a deep private slot without reading the stack pointer, so their guards
+survive. Only representation changes preserving all target address bits keep
+the direct-entry bound. The console tests also cover positive offsets, bitwise
+operations, shifts and negation conservatively, alongside direct-pointer and
+canonical N32 controls.
 The console companion also compiles and executes the unchanged recovered
 pointer-snapshot C with available native C compilers at O0/O2, checking old
 values and updated memory, including wrapping arithmetic and both branches.
