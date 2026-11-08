@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3945,
-    3945
+    3947,
+    3947
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1680,8 +1680,10 @@
     "data:PROTORANGES HOMESLOT #2: on, the home slot is declared as a local",
     "data:PROTORANGES HOMESLOT #3: on, worker_proc is stored into that local",
     "data:PROTORANGES HOMESLOT #4: on, the same local is passed to consume",
-    "data:PTRAUTHTRAP #10: an x0 bit test on arm64e is not the return-address check",
+    "data:PTRAUTHTRAP #10: an x0 bit test (arm64e image and the x30 forgery, which reads a0) is not the return-address check",
     "data:PTRAUTHTRAP #11: the x0 bit test keeps its brk #0xc472 trap",
+    "data:PTRAUTHTRAP #12: the real check on plain AArch64 is cut",
+    "data:PTRAUTHTRAP #13: the bit test of a value moved into x30 keeps its trap",
     "data:PTRAUTHTRAP #1: off keeps the bit test on the incoming return address",
     "data:PTRAUTHTRAP #2: off keeps the trap call",
     "data:PTRAUTHTRAP #3: the tail call survives in both passes",

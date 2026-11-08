@@ -7,20 +7,29 @@
     without FEAT_FPAC does not trap on a failed aut*. Before a tail call it
     tests bits 62 and 61 of the authenticated x30 and traps with
     `brk #0xc471`. SLEIGH hides the autibsp, so the bit test reads the incoming
-    return address and every such function of an iOS binary (205 in trustd)
-    printed `if ((v1 ^ v1 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); }`
+    return address and every such function of an arm64e iOS system daemon
+    (205 of them) printed
+    `if ((v1 ^ v1 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); }`
     ahead of its tail call.
 
     Stage / sub-stage: P2 flow-classification. `p2_lift/kuna_ptrauthtrap.rs`
     anchors on the trap block (one brk whose SoftwareBreakpoint immediate is
-    0xc470..0xc473) and, on an arm64e image only, removes pre-SSA each CBRANCH
-    edge into it whose guard is the bit test of x30 itself.
+    0xc470..0xc473) and removes pre-SSA each CBRANCH edge into it whose guard
+    is the bit test of the return address (x30 reloaded from the frame or
+    unwritten in the block). The shape is the evidence; no image format is
+    consulted, so the bytechunks below exercise it through the XML path too.
 
     P0 assertion: `option ptrauthtrap on|off`.
 
     The XML wrapper only supplies the harness architecture; every pass loads
     the `macho_arm64e_auth` fixture (an arm64e PAC00 image, see the fixtures
     README) through the object bootstrap.
+
+    The bytechunk `x30check` is the real LLVM check on plain AArch64 code
+    (`ldp x29, x30, [sp], #0x10; autibsp; eor x16, x30, x30, lsl #1;
+    tbz x16, #62, 1f; brk #0xc471; 1: ret`): the check is cut. The bytechunk
+    `x30forged` is the same bit test on a value the code moved into x30
+    (`mov x30, x0`): that check stays.
 
     The bytechunk `both` is a guard whose two arms are both traps
     (`tbz x0, #62, 1f; brk #0xc471; 1: brk #0xc472`). No arm survives to fall
@@ -47,12 +56,26 @@
 1fa800716100005420008052c0035fd6008e38d4
 </bytechunk>
 <symbol space="ram" offset="0x100010" name="plain"/>
+<bytechunk space="ram" offset="0x100040" readonly="true">
+fd7bbfa9fd030091fd7bc1a8ff2303d5d0071eca5000f0b6208e38d4c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100040" name="x30check"/>
+<bytechunk space="ram" offset="0x100080" readonly="true">
+fe0300aad0071eca5000f0b6208e38d4c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100080" name="x30forged"/>
 </binaryimage>
 <script>
   <com>lo fu both</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu plain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu x30check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu x30forged</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
@@ -94,6 +117,8 @@
 <stringmatch name="PTRAUTHTRAP #7: a guard whose both arms trap is left whole" min="1" max="1">SoftwareBreakpoint\(0xc472,0x10000c</stringmatch>
 <stringmatch name="PTRAUTHTRAP #8: a compare guarding brk #0xc470 keeps its check, plain AArch64 and arm64e" min="2" max="2">if \(a0 == 0x2a\)</stringmatch>
 <stringmatch name="PTRAUTHTRAP #9: both brk #0xc470 traps stay" min="2" max="2">SoftwareBreakpoint\(0xc470,</stringmatch>
-<stringmatch name="PTRAUTHTRAP #10: an x0 bit test on arm64e is not the return-address check" min="1" max="1">if \(\(a0 \^ a0 &lt;&lt; 1\) &gt;&gt; 0x3e &amp; 1\)</stringmatch>
+<stringmatch name="PTRAUTHTRAP #10: an x0 bit test (arm64e image and the x30 forgery, which reads a0) is not the return-address check" min="2" max="2">if \(\(a0 \^ a0 &lt;&lt; 1\) &gt;&gt; 0x3e &amp; 1\)</stringmatch>
 <stringmatch name="PTRAUTHTRAP #11: the x0 bit test keeps its brk #0xc472 trap" min="1" max="1">SoftwareBreakpoint\(0xc472,0x1000002b0\)</stringmatch>
+<stringmatch name="PTRAUTHTRAP #12: the real check on plain AArch64 is cut" min="0" max="0">SoftwareBreakpoint\(0xc471,0x10005c\)</stringmatch>
+<stringmatch name="PTRAUTHTRAP #13: the bit test of a value moved into x30 keeps its trap" min="1" max="1">SoftwareBreakpoint\(0xc471,0x100090\)</stringmatch>
 </decompilertest>

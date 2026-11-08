@@ -29,12 +29,14 @@
 //! The trap block is the anchor: a basic block lifted entirely from one `brk`
 //! whose `SoftwareBreakpoint` `CALLOTHER` carries an immediate in
 //! `0xc470..=0xc473`. An in-edge that is one arm of a `CBRANCH` is cut only
-//! when the guard's condition is the bit-62-versus-61 test of `x30` itself
-//! (`((x30 ^ x30 << 1) >> 62) & 1`, followed through the guard block's own ops),
-//! and only on an arm64e image (`CPU_SUBTYPE_ARM64E`, recorded at load): the
-//! immediate alone is not evidence, since any AArch64 code can branch to a
-//! `brk #0xc470` on a condition of its own. The condition dies to dead-code
-//! elimination. A trap block entered any other way keeps that entry.
+//! when the guard's condition is the bit-62-versus-61 test of the return
+//! address (`((x30 ^ x30 << 1) >> 62) & 1`, followed through the guard block's
+//! own ops), where `x30` was reloaded from the frame or is unwritten in the
+//! block: the immediate alone is not evidence, since any AArch64 code can
+//! branch to a `brk #0xc470` on a condition of its own, and a check of a value
+//! the code itself moved into `x30` (`mov x30, x0`) is not this check either.
+//! The condition dies to dead-code elimination. A trap block entered any other
+//! way keeps that entry.
 //!
 //! # The edit, and the window
 //!
@@ -47,6 +49,7 @@
 //! auditing. Destructive by declared intent: it deletes a real branch.
 
 use kuna_base::address::Address;
+use kuna_base::space::spacetype;
 use kuna_base::types::{int4, uint4};
 use kuna_num::opcodes::OpCode;
 
@@ -98,7 +101,9 @@ fn is_trap_block(data: &Funcdata, bl: BlockId, userop: uint4) -> bool {
 /// check clang emits after authenticating the return address (`eor x16, x30,
 /// x30, lsl #1; tbz x16, #62`)? Before SSA the reads are not linked to their
 /// writes, so each input is followed to the last op of the block that wrote its
-/// storage.
+/// storage. The `x30` read must see the value the frame reloaded (a `LOAD`,
+/// directly or through one copy of a temporary) or the incoming register; a
+/// register moved into `x30` is some other value.
 fn is_pac_bit_test(data: &Funcdata, guard: BlockId) -> bool {
     let mut ops = Vec::new();
     let mut cur = data.bb_op_head(guard);
@@ -118,6 +123,16 @@ fn is_pac_bit_test(data: &Funcdata, guard: BlockId) -> bool {
     let is_lr = |at: &(Address, int4)| {
         at.1 == 8
             && at.0.get_space().is_some_and(|sp| data.get_arch().get_register_name(sp, at.0.get_offset(), at.1) == "x30")
+    };
+    let lr_is_authentic = |before: usize, at: &(Address, int4)| {
+        writer(before, at).is_none_or(|w| match ops[w].code() {
+            OpCode::CPUI_LOAD => true,
+            OpCode::CPUI_COPY => storage(ops[w], 0).is_some_and(|src| {
+                src.0.get_space().is_some_and(|sp| sp.get_type() == spacetype::IPTR_INTERNAL)
+                    && writer(w, &src).is_some_and(|d| ops[d].code() == OpCode::CPUI_LOAD)
+            }),
+            _ => false,
+        })
     };
     let Some(tail) = ops.len().checked_sub(1) else { return false };
     if ops[tail].code() != OpCode::CPUI_CBRANCH {
@@ -149,7 +164,9 @@ fn is_pac_bit_test(data: &Funcdata, guard: BlockId) -> bool {
                     let same_value = writer(i, &src) == writer(h, &src);
                     (ops[h].code() == OpCode::CPUI_INT_LEFT && constant(ops[h], 1) == Some(1) && same_value).then_some(src)
                 };
-                let pair = |lr_slot, shl_slot| shl1_of_lr(shl_slot).is_some_and(|src| storage(xor, lr_slot) == Some(src));
+                let pair = |lr_slot, shl_slot| {
+                    shl1_of_lr(shl_slot).is_some_and(|src| storage(xor, lr_slot).as_ref() == Some(&src) && lr_is_authentic(i, &src))
+                };
                 return pair(0, 1) || pair(1, 0);
             }
             _ => return false,

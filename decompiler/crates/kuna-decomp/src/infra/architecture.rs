@@ -789,10 +789,6 @@ pub struct Architecture {
     /// `option reloadarg` stands down on.  The XML `<binaryimage>` bootstrap
     /// never runs the analyzer tier, so it stays `Unknown` there.
     pub source_lang_detected: crate::kuna_sourcelang::SourceLang,
-    /// (kuna) Whether the loaded image is an arm64e Mach-O
-    /// (`CPU_SUBTYPE_ARM64E`), written at `load file`; `ptrauthtrap` acts only
-    /// on such an image. False on every other path.
-    pub image_arm64e: bool,
     /// Unambiguous stable rustc version from ELF compiler metadata.
     pub rustc_stable_version: Option<(u16, u16, u16)>,
     pub rustc_pieces_layout: bool,
@@ -825,8 +821,8 @@ pub struct Architecture {
     /// is Go).
     pub go_write_barrier: u8,
     /// (kuna) `option ptrauthtrap`: cut the branch into each arm64e
-    /// pointer-auth failure trap.  Default on; acts only when
-    /// [`Self::image_arm64e`].
+    /// pointer-auth failure trap whose guard is the return-address bit test.
+    /// Default on.
     pub ptrauth_trap: bool,
     /// (kuna GH-9203) Decline placing a const COPY in a loop block
     /// (C++ `condexe_block_placement`).
@@ -3230,7 +3226,6 @@ impl Architecture {
             rust_fmt_write_relro: None,
             rust_io_writer_profiles: std::collections::BTreeMap::new(),
             source_lang_detected: Default::default(), // (kuna) a load-time fact; set by the console's `load file`
-            image_arm64e: false, // (kuna) a load-time fact; set by the console's `load file`
             source_lang_forced: None, // (kuna) option sourcelang; reset_defaults restores auto
             fat_str: 0, // (kuna) option fatstr; reset_defaults sets the shipped default (auto)
             go_morestack: 0, // (kuna) option gomorestack; reset_defaults sets the shipped default (auto)
@@ -3705,7 +3700,7 @@ impl Architecture {
         self.rust_probestack = crate::kuna_rustprobestack::RustProbestackMode::Off;
         self.go_bool = crate::kuna_gobool::GoBoolMode::Auto.as_u8(); // (kuna) narrow Go boolean returns on Go images
         self.go_write_barrier = crate::kuna_gowritebarrier::GoWriteBarrierMode::Auto.as_u8(); // (kuna) fold the Go write barrier on Go images
-        self.ptrauth_trap = true; // (kuna) drop arm64e pointer-auth failure checks; inert unless an arm64e image's x30 bit test guards a SoftwareBreakpoint brk #0xc47x trap, 0/675 datatests
+        self.ptrauth_trap = true; // (kuna) drop arm64e pointer-auth failure checks; inert unless a brk #0xc47x trap's guard is the return-address bit test, 0/675 datatests
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
@@ -4580,7 +4575,8 @@ impl Architecture {
         ctx.rust_probestack = self.rust_probestack;
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
-        ctx.ptrauth_trap_userop = (self.ptrauth_trap && self.image_arm64e)
+        ctx.ptrauth_trap_userop = self
+            .ptrauth_trap
             .then(|| self.userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP))
             .flatten()
             .map(|u| u.get_index() as kuna_base::types::uint4);
