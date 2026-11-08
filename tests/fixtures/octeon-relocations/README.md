@@ -45,6 +45,22 @@ relocated text matches GNU ld.
 
 The assembler manifest contains 23 object/image pairs.
 
+`pc32.S` adds N32/N64 BE/LE objects and GNU-linked images for a masked R32
+result carried into PC32 and a standalone PC32 displacement below the signed
+32-bit range. N64 also checks an upper-bit symbol and PC32 followed by a
+64-bit write, which must retain the zero-extended 32-bit result. PC32 uses
+the low 32 bits of `symbol + addend - place`, without a signed overflow
+failure. The unit test compares every relocated text byte against GNU ld and
+asserts relocation metadata and the exact `0xffbffffc` result at 0x400000.
+GNU as materializes the PC32 addend into the initial field as well as the
+RELA record; `.word 0` therefore produces the initial `0xfffffffc` field.
+The stage assertions check both recovered return values for all four inputs.
+`provenance-pc32.json` records source/output hashes, commands and tool versions.
+
+```sh
+python3 build-pc32.py --assembler "$OCTEON_AS" --linker "$MULTIARCH_LD" --output "$OUTPUT"
+```
+
 `rel-chain.S` adds N32 implicit-addend cases in both byte orders: two
 `R_MIPS_32` records at one offset accumulate `7 + 0x12340000 + 0x56780000`
 to `0x68ac0007`, and another pair wraps to `0x10`. `build-rel.py` assembles

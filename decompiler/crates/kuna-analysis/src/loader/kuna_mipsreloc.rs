@@ -515,7 +515,8 @@ impl Gp {
 
     /// The result of operation `op` on symbol `t` and addend `a`, as the field
     /// bits it would write; a later operation of the expression takes it as its
-    /// addend. Only the last operation's result must fit its field.
+    /// addend. Range checks apply only to the last operation; PC32 always
+    /// keeps the low 32 bits of the displacement.
     fn operate(&mut self, op: u32, t: Target, a: u64, place: u64, input: &Inputs, last: bool) -> Result<u64, RelocationFailure> {
         let gp = self.gp();
         let s = t.address;
@@ -532,7 +533,7 @@ impl Gp {
             R32 => sum & 0xffff_ffff,
             R64 => sum,
             REL32 => a & 0xffff_ffff,
-            PC32 => checked(sum.wrapping_sub(place), 32)? & 0xffff_ffff,
+            PC32 => sum.wrapping_sub(place) & 0xffff_ffff,
             SUB => s.wrapping_sub(a),
             HI16 | LO16 => {
                 let v = if t.gp_disp {

@@ -827,8 +827,10 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   the `r_ssym` special symbol (zero, `$gp`, the input `$gp` or the place), and
   its chain continues into the next record at that offset until an
   `R_MIPS_NONE`. Each operation computes what the GNU linker does, including a
-  32-bit result truncated before a later 64-bit one, and only the final value
-  must fit its field; an expression with an operation that cannot be applied
+  32-bit result truncated before a later 64-bit one. PC32 always keeps the low
+  32 bits of `symbol + addend - place`, including when an earlier R32 result
+  was zero-extended; signed overflow does not reject that displacement. Range
+  checks on other operations apply only to the final value. An expression with an operation that cannot be applied
   writes nothing, and a packed record whose operations resume after a `NONE` is
   rejected. A GP-relative value against a local symbol, and every `GPREL32`,
   adds back the input `$gp` that a partial link recorded in `.reginfo` or an

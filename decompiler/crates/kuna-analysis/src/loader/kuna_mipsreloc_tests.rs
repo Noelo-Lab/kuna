@@ -206,6 +206,77 @@ fn read_at(data: &[u8], at: u64, width: usize, le: bool) -> u64 {
 }
 
 #[test]
+fn pc32_fields_and_composed_results_match_gnu_in_both_abis_and_byte_orders() {
+    for abi in ["n32", "64"] {
+        for endian in ["be", "le"] {
+            let stem = format!("pc32-{abi}-{endian}");
+            let bytes = fixture(&format!("{stem}.o"));
+            let linked_bytes = fixture(&format!("{stem}.elf"));
+            let file = object::File::parse(&*bytes).unwrap();
+            let linked = object::File::parse(&*linked_bytes).unwrap();
+            let arch = if abi == "n32" { Architecture::Mips64_N32 } else { Architecture::Mips64 };
+            assert_eq!(file.architecture(), arch);
+            let section = file.section_by_name(".text").unwrap();
+            let records: Vec<_> = section.relocations().collect();
+            assert!(records.iter().all(|(_, r)| !r.has_implicit_addend()));
+            assert_eq!(records[0].1.addend(), -4);
+            if abi == "n32" {
+                assert_eq!((records[0].0, records[1].0), (0, 0));
+                assert_eq!(records[1].1.addend(), -4);
+                assert_eq!(records[1].1.flags(), object::RelocationFlags::Elf { r_type: PC32 });
+            } else {
+                assert_eq!(records[0].1.flags(), object::RelocationFlags::Elf { r_type: R32 | PC32 << 8 });
+            }
+            let le = endian == "le";
+            assert_eq!(read_at(section.data().unwrap(), 0, 4, le), 0xffff_fffc);
+            let expected = linked.section_by_name(".text").unwrap();
+            assert_eq!(expected.address(), 0x40_0000);
+            assert_eq!(read_at(expected.data().unwrap(), 0, 4, le), 0xffbf_fffc);
+            assert_eq!(read_at(expected.data().unwrap(), 4, 4, le), 0x7fbf_fffc);
+            if abi == "64" {
+                assert_eq!(read_at(expected.data().unwrap(), 8, 8, le), 0xffbf_fff4);
+                assert_eq!(read_at(expected.data().unwrap(), 16, 4, le), 0x9a7c_dee0);
+            }
+            let layout = layout(&bytes);
+            let address = layout.section_vma[&section.index()];
+            assert_eq!(address, expected.address());
+            let (_, actual) = layout.segments.iter().find(|(base, _)| *base == address).unwrap();
+            assert_eq!(actual, expected.data().unwrap(), "{stem}");
+            assert!(layout.diagnostics.is_empty(), "{stem}: {:?}", layout.diagnostics.report_lines());
+        }
+    }
+}
+
+#[test]
+fn pc32_wraps_boundaries_without_relaxing_narrow_relocation_checks() {
+    for entry in [4, 8] {
+        for le in [false, true] {
+            let mut gp = Gp::new(0x40_1000, entry, 0, le);
+            for (symbol, addend, place, expected) in [
+                (0, -4, 0x40_0000, 0xffbf_fffc),
+                (0, 0, 0x8000_0004, 0x7fff_fffc),
+                (0x8000_0000, 0, 0, 0x8000_0000),
+                (0x1234_5678_9abc_def0, 0, 0x40_0000, 0x9a7c_def0),
+                (0, 0x1_0000_0007, 0x40_0000, 0xffc0_0007),
+            ] {
+                let mut field = [0xa5; 4];
+                gp.apply(PC32, &relocation(PC32, addend, false), &mut field, target(symbol), place, None).unwrap();
+                assert_eq!(read(&field, le), expected, "entry {entry}, le {le}, addend {addend}");
+            }
+            for (op, addend, reason) in [
+                (R16, -0x8001, RelocationFailure::OutOfRange),
+                (PC16, 0x4_0000, RelocationFailure::OutOfRange),
+                (PC16, 2, RelocationFailure::Misaligned),
+            ] {
+                let mut field = [0xa5; 4];
+                assert_eq!(gp.apply(op, &relocation(op, addend, false), &mut field, target(0), 0, None), Err(reason));
+                assert_eq!(field, [0xa5; 4]);
+            }
+        }
+    }
+}
+
+#[test]
 fn n32_rel_same_offset_fields_match_gnu_in_both_byte_orders() {
     for endian in ["be", "le"] {
         let bytes = fixture(&format!("rel-chain-n32-{endian}.o"));

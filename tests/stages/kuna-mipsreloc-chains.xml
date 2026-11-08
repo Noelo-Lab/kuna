@@ -24,6 +24,8 @@
     Assert #4: no call is left at a placeholder or bad instruction.
     Assert #5: same-offset N32 REL words accumulate both symbols in BE/LE.
     Assert #6: implicit addends are reread with 32-bit wrapping in BE/LE.
+    Assert #7: composed PC32 wraps an unsigned R32 result in N32/N64 BE/LE.
+    Assert #8: standalone PC32 wraps a displacement below the signed range.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
@@ -78,6 +80,26 @@
   <com>read symbols</com>
   <com>lo fu read_combined</com><com>decompile</com><com>print C</com>
   <com>lo fu read_wrapped</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-relocations/pc32-n32-be.o</com>
+  <com>read symbols</com>
+  <com>lo fu read_composed_pc32</com><com>decompile</com><com>print C</com>
+  <com>lo fu read_standalone_pc32</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-relocations/pc32-n32-le.o</com>
+  <com>read symbols</com>
+  <com>lo fu read_composed_pc32</com><com>decompile</com><com>print C</com>
+  <com>lo fu read_standalone_pc32</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-relocations/pc32-64-be.o</com>
+  <com>read symbols</com>
+  <com>lo fu read_composed_pc32</com><com>decompile</com><com>print C</com>
+  <com>lo fu read_standalone_pc32</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-relocations/pc32-64-le.o</com>
+  <com>read symbols</com>
+  <com>lo fu read_composed_pc32</com><com>decompile</com><com>print C</com>
+  <com>lo fu read_standalone_pc32</com><com>decompile</com><com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="mipsreloc-chains #1: N32 PIC read_global reads global_value" min="1" max="1">return x \+ global_value;</stringmatch>
@@ -86,4 +108,6 @@
 <stringmatch name="mipsreloc-chains #4: no placeholder call or bad instruction" min="0" max="0">sub_[0-9a-f]+\(|halt_baddata|trap\(|dat_3f8</stringmatch>
 <stringmatch name="mipsreloc-chains #5: N32 REL same-offset sums match GNU in both byte orders" min="2" max="2">return 0x68ac0007;</stringmatch>
 <stringmatch name="mipsreloc-chains #6: N32 REL rereads wraparound addends in both byte orders" min="2" max="2">return 0x10;</stringmatch>
+<stringmatch name="mipsreloc-chains #7: composed PC32 wraps in N32 and N64 in both byte orders" min="4" max="4">return 0xffffffffffbffffc;</stringmatch>
+<stringmatch name="mipsreloc-chains #8: standalone PC32 wraps below the signed range" min="4" max="4">return 0x7fbffffc;</stringmatch>
 </decompilertest>
