@@ -1185,6 +1185,10 @@ swiftc -O -module-name metafix swift_metadata_elf.swift -o metafix
 llvm-strip --strip-all -o swift_metadata_elf metafix
 ```
 
+The build records the toolchain's library directory as `DT_RUNPATH`. After the
+build that `.dynstr` string was overwritten in place with `$ORIGIN` padded with
+NULs, so no offset or section size moved.
+
 **Pinned VMAs** (the unstripped `metafix` symbol table, the oracle the tests
 hold the pass to): `$s7metafix5PointVMa` (Point's metadata accessor)@`0x30b0`,
 `$s7metafix6AnimalCMa`@`0x30d0`, `$s7metafix6AnimalC4legsSivg` (vtable slot 0,
