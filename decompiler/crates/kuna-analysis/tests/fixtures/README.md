@@ -1807,6 +1807,9 @@ swiftc -O -module-name icffix -use-ld=lld -Xfrontend -function-sections \
 llvm-strip --strip-all -o swift_icf_elf icffix
 ```
 
+Its `DT_RUNPATH` was blanked after the build the same way as
+`swift_metadata_elf`'s (`$ORIGIN` padded with NULs in `.dynstr`).
+
 **Pinned VMAs** (the unstripped `icffix` symbol table): the `Tagged.tag.getter`
 witnesses of `Alpha` and `Beta` both at `0x27f0`, `Delta`'s `tag.getter` and
 `describe()` witnesses both at `0x2ab0`, `Gamma`'s `Keyed.key.getter` witness
