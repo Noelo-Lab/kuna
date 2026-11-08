@@ -657,3 +657,34 @@ fn a_malformed_input_gp_fails_only_the_fields_that_use_it() {
         }
     }
 }
+
+/// An undefined `STT_NOTYPE` symbol a call or branch relocation names is a
+/// function even when that relocation cannot be applied, so the extern is
+/// still named at its slot.
+#[test]
+fn a_failed_call_relocation_still_names_its_extern() {
+    for arch in [Architecture::Mips64_N32, Architecture::Mips64] {
+        let mut obj = Writer::new(BinaryFormat::Elf, arch, Endianness::Big);
+        let text = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+        obj.append_section_data(text, &[0x0c, 0, 0, 0, 0, 0, 0, 0], 4);
+        let ext = obj.add_symbol(Symbol {
+            name: b"ext".to_vec(),
+            value: 0,
+            size: 0,
+            kind: SymbolKind::Unknown,
+            scope: SymbolScope::Linkage,
+            weak: false,
+            section: SymbolSection::Undefined,
+            flags: SymbolFlags::None,
+        });
+        // `jal ext + 2`: the target is not instruction-aligned.
+        obj.add_relocation(text, WriteRelocation { offset: 0, symbol: ext, addend: 2, flags: RelocationFlags::Elf { r_type: R26 } })
+            .unwrap();
+        let layout = layout(&obj.write().unwrap());
+        assert_eq!(layout.diagnostics.total(), 1, "{arch:?}");
+        assert_eq!(read_at(&layout.segments[0].1, 0, 4, false), 0x0c00_0000, "{arch:?}: nothing written");
+        let slot = layout.symbol_info.iter().find(|s| s.name == "ext").unwrap_or_else(|| panic!("{arch:?}: ext unnamed"));
+        assert!(slot.undefined);
+        assert!(layout.funcsyms.iter().any(|(at, n)| *at == slot.vma && n == b"ext"), "{arch:?}: ext is a function");
+    }
+}

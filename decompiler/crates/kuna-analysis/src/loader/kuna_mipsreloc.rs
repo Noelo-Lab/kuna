@@ -153,7 +153,7 @@ fn got_entry(r_type: u32, local: bool) -> Option<bool> {
     }
 }
 
-fn r_type_of(reloc: &Relocation) -> Option<u32> {
+pub(super) fn r_type_of(reloc: &Relocation) -> Option<u32> {
     match reloc.flags() {
         RelocationFlags::Elf { r_type } => Some(r_type),
         _ => None,

@@ -460,6 +460,13 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
                 };
                 Some(kuna_mipsreloc::Target { address, local, gp_disp: false })
             };
+            for (_, reloc) in &relocs {
+                if let (Some(r_type), RelocationTarget::Symbol(idx)) = (kuna_mipsreloc::r_type_of(reloc), reloc.target()) {
+                    if kuna_mipsreloc::targets_code(r_type) {
+                        code_externs.insert(idx);
+                    }
+                }
+            }
             let applied = g.apply_section(
                 architecture,
                 &mut laid[li].data,
@@ -471,11 +478,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
             );
             for (record, reason) in applied.failures {
                 let (offset, reloc) = &relocs[record];
-                let r_type = match reloc.flags() {
-                    RelocationFlags::Elf { r_type } => Some(r_type),
-                    _ => None,
-                };
-                diagnostics.record(architecture, r_type, reason, sec_vma, *offset);
+                diagnostics.record(architecture, kuna_mipsreloc::r_type_of(reloc), reason, sec_vma, *offset);
             }
             for callee in applied.callees {
                 if let RelocationTarget::Symbol(idx) = callee {
@@ -494,10 +497,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
             ));
         }
         for (offset, reloc) in relocs {
-            let r_type = match reloc.flags() {
-                RelocationFlags::Elf { r_type } => Some(r_type),
-                _ => None,
-            };
+            let r_type = kuna_mipsreloc::r_type_of(&reloc);
             let spec = match reloc_apply::classify(architecture, &reloc) {
                 Ok(Some(spec)) => spec,
                 Ok(None) => continue,
