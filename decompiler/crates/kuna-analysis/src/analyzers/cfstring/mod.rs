@@ -37,7 +37,9 @@
 //! bytes read over all entries are capped at the file's length. Entries are 32
 //! bytes but each may point at the same 64 KiB run, so without that cap a crafted
 //! section would make every entry an owned copy of the run (twice, once more in
-//! the `StringManager`), about 4096x the file.
+//! the `StringManager`), about 4096x the file. Each entry's reads scan the image's
+//! section spans, so the walk is entries x sections, both sized by the file; a
+//! budget of span checks ends it long before a real image would reach it.
 
 use object::read::{Object, ObjectSection};
 
@@ -54,6 +56,10 @@ const CFSTRING_UNICODE: u64 = 0x10;
 /// Upper bound on one constant string's byte length, so a corrupt `length` field
 /// cannot drive an unbounded read/allocation.
 const MAX_CFSTRING_BYTES: u64 = 1 << 16;
+
+/// Span checks the walk may spend: an entry makes four reads, and each read scans
+/// the image's section spans in turn.
+const MAX_SPAN_CHECKS: u64 = 1 << 30;
 
 /// The `__cfstring` constant-string recovery pass.
 pub struct CFStringPass;
@@ -77,20 +83,26 @@ impl AnalysisPass for CFStringPass {
 /// `read_ptr`'s fixup overlay misses and returns the raw word, while `data` is the
 /// rebase the overlay resolves on an arm64(e) chained image (a raw pointer on a
 /// classic `LC_DYLD_INFO` one). 8-bit data is kept only when it is UTF-8 (the
-/// printer would cut an invalid one short). Every string read is charged to a
-/// budget of the file's length. Each entry is marked read-only: a CFString constant
-/// is immutable, and the printer's constant-string route needs that on the
+/// printer would cut an invalid one short), and a string with a NUL before its
+/// end is skipped because a C literal stops there. Every string read is charged to
+/// a budget of the file's length. Each entry is marked read-only: a CFString
+/// constant is immutable, and the printer's constant-string route needs that on the
 /// historical writable `__DATA,__cfstring` layout.
 fn collect(file: &object::File, bytes: &[u8]) -> AnalysisOutput {
+    collect_bounded(file, bytes, MAX_SPAN_CHECKS)
+}
+
+/// [`collect`] with an explicit budget of section-span checks.
+fn collect_bounded(file: &object::File, bytes: &[u8], max_span_checks: u64) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     if file.format() != object::BinaryFormat::MachO {
         return out;
     }
-    let fixups = resolve_chained_fixups(file, bytes);
-    let img = MachoImage::with_fixups(file, fixups);
     let Some(sec) = file.section_by_name(SEC_CFSTRING) else {
         return out;
     };
+    let fixups = resolve_chained_fixups(file, bytes);
+    let img = MachoImage::with_fixups(file, fixups);
     let base = sec.address();
     let size = sec.size().min(bytes.len() as u64);
     let ps = img.ptr_size();
@@ -99,9 +111,12 @@ fn collect(file: &object::File, bytes: &[u8]) -> AnalysisOutput {
         return out;
     }
 
+    let max_entries = max_span_checks / (4 * file.sections().count().max(1) as u64);
     let mut budget = bytes.len() as u64;
     let mut off: u64 = 0;
-    while off.saturating_add(stride) <= size {
+    let mut walked: u64 = 0;
+    while off.saturating_add(stride) <= size && walked < max_entries {
+        walked += 1;
         let entry = base.wrapping_add(off);
         off += stride;
         let (Some(flags), Some(data), Some(length)) = (
@@ -136,10 +151,18 @@ fn collect(file: &object::File, bytes: &[u8]) -> AnalysisOutput {
                 Err(_) => continue,
             }
         };
+        if nul_inside(&text) {
+            continue;
+        }
         out.cfstrings.push(CFStringFact { addr: entry, bytes: text, size: stride as u32 });
         out.readonly.push((entry, entry.wrapping_add(stride)));
     }
     out
+}
+
+/// Does `text` have a NUL with more text after it?
+fn nul_inside(text: &[u8]) -> bool {
+    text.iter().position(|&b| b == 0).is_some_and(|at| text[at..].iter().any(|&b| b != 0))
 }
 
 /// Decode a UTF-16 char buffer to UTF-8 bytes. `None` on an odd length or an
@@ -255,6 +278,35 @@ mod tests {
         let total: usize = out.cfstrings.iter().map(|f| f.bytes.len()).sum();
         assert!(!out.cfstrings.is_empty());
         assert!(total <= bytes.len(), "{total} string bytes from a {}-byte file", bytes.len());
+    }
+
+    #[test]
+    fn the_walk_stops_at_its_budget_of_span_checks() {
+        let bytes = shared_run_image(64, 16);
+        let file = object::File::parse(&*bytes).unwrap();
+        assert_eq!(collect(&file, &bytes).cfstrings.len(), 64);
+        let budget = 4 * file.sections().count() as u64 * 10;
+        assert_eq!(collect_bounded(&file, &bytes, budget).cfstrings.len(), 10);
+    }
+
+    #[test]
+    fn a_string_holding_a_nul_is_skipped_not_cut_short() {
+        assert!(!nul_inside(b"plain"));
+        assert!(!nul_inside(b"trailing\0"));
+        assert!(nul_inside(b"a\0b"));
+        let mut bytes = fixture();
+        let at = bytes.windows(14).position(|w| w == b"cfstring hello").unwrap();
+        bytes[at + 8] = 0;
+        assert_eq!(texts(&bytes), ["a constant string longer than one entry", "after the long one"]);
+    }
+
+    #[test]
+    fn utf16_decodes_in_either_byte_order_and_refuses_a_lone_surrogate() {
+        let snowman_le = [0x03, 0x26, 0x20, 0x00];
+        let snowman_be = [0x26, 0x03, 0x00, 0x20];
+        assert_eq!(decode_utf16(&snowman_le, true).unwrap(), "\u{2603} ".as_bytes());
+        assert_eq!(decode_utf16(&snowman_be, false).unwrap(), "\u{2603} ".as_bytes());
+        assert_eq!(decode_utf16(&[0x00, 0xd8], true), None);
     }
 
     #[test]

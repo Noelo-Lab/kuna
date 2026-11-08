@@ -4323,7 +4323,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   same 64 KiB run, and each fact owns a copy of its string (as does the
   `StringManager` seed), so an uncapped crafted section would grow memory about
   4096-fold. A real image's strings are distinct bytes of the file and never reach
-  the cap. The commit seam then types the entry an
+  the cap. The walk also stops after a fixed budget of section-span checks, because
+  each read scans the image's section spans and a crafted file can size both the
+  entry count and the section count. An 8-bit string that is not UTF-8, invalid
+  UTF-16, and a string with a NUL before its end are skipped, since the C literal
+  would stop at that NUL and silently drop the rest. The commit seam then types the entry an
   opaque `struct __CFString` spanning the entry's own four words (never the
   string's length, which would overrun the next entry and hide it) and seeds the `StringManager` at the
   entry address with the resolved bytes, so a reference renders the string
