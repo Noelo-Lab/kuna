@@ -4355,7 +4355,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   (§1.2) on arm64, and rename each IMP `-[Class sel]`/`+[Class sel]` behind the
   placeholder label gate.
 - **Swift metadata** (`swiftmetadata`, Mach-O and ELF, Swift images only,
-  default-off; `decompiler/crates/kuna-analysis/src/analyzers/swift/mod.rs`, the
+  default-off but ON in the `aggressive` preset, which `auto` selects for any
+  binary under 500 KiB; `decompiler/crates/kuna-analysis/src/analyzers/swift/mod.rs`, the
   record layouts in `decompiler/crates/kuna-analysis/src/analyzers/swift/descriptors.rs`):
   a stripped Swift binary keeps its reflection sections, and they name much of
   its code. The pass reads `__swift5_types` / `swift5_type_metadata` (the nominal
