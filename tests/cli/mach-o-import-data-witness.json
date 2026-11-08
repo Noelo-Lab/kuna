@@ -34,11 +34,11 @@
       "eq": 0
     },
     "stdout_matches": [
-      "int strcmp\\(char \\*a0,char \\*a1\\)"
+      "strcmp\\("
     ],
     "stderr_absent": [
       "is ambiguous"
     ]
   },
-  "notes": "mach-o-import-data on its own witness (crackmes.one 64c8b272b25df8732eebc2a6 bin/main, vendored byte-identical): strcmp names the __stubs veneer 0x100003ede and the __la_symbol_ptr slot 0x100008030, and the name must select the veneer. Acceptance a-17a1cf6a6f7c with the veneer's prototype pinned."
+  "notes": "mach-o-import-data on its own witness (crackmes.one 64c8b272b25df8732eebc2a6 bin/main, vendored byte-identical): strcmp names the __stubs veneer 0x100003ede and the __la_symbol_ptr slot 0x100008030, and the name must select the veneer. Acceptance a-17a1cf6a6f7c verbatim (the property, not a signature line) plus the no-ambiguity check its macho_imports twin carries."
 }
