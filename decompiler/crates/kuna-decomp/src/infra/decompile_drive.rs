@@ -473,6 +473,20 @@ impl FlowEnvironment for ArchFlowEnv {
         })
     }
 
+    fn is_brk_trap(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
+        // (kuna `brktrap`) wire the AArch64 `brk` trap predicate.  The gate is the
+        // architecture-owned `brk_trap` flag (`option brktrap on|off`, default
+        // on); only the AArch64 specs define the `SoftwareBreakpoint` user-op the
+        // shape names, so no language gate is needed.
+        let arch = self.arch();
+        if !arch.brk_trap {
+            return false;
+        }
+        crate::kuna_brktrap::is_brk_trap_branchind(fd, op, |id| {
+            arch.userops.get_op(id).map(|uo| String::from_utf8_lossy(uo.get_name()).into_owned())
+        })
+    }
+
     fn is_tail_call_branch(
         &self,
         fd: &Funcdata,

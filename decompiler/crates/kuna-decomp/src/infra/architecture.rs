@@ -510,6 +510,12 @@ pub struct Architecture {
     /// names the pad, and `halt` additionally ends the flow at it.  See
     /// [`kuna_int3pad`](crate::kuna_int3pad).
     pub int3_pad: crate::kuna_int3pad::Int3PadMode,
+    /// (kuna `brktrap`) End the flow at an AArch64 `brk` whose immediate a
+    /// compiler emits for a trap (`#1`, `#1000`, `#0x5500`..`#0x55ff`).  SLEIGH
+    /// lifts `brk` to a jump through a `SoftwareBreakpoint` user-op, which flow
+    /// otherwise truncates to a call that returns.  Default on (`option
+    /// brktrap`).  See [`kuna_brktrap`](crate::kuna_brktrap).
+    pub brk_trap: bool,
     /// (kuna `x64syscall`) What register effects the x86-64 `SYSCALL` user-op
     /// carries.  `off` (the default) is the vendored SLEIGH model, a
     /// zero-input/zero-output CALLOTHER; `on` reads `RAX` plus every argument
@@ -3136,6 +3142,7 @@ impl Architecture {
             v850_indirect_branch: false,
             fastfail_noreturn: false, // (kuna) option fastfailnoreturn; reset_defaults sets the shipped default
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
+            brk_trap: false, // (kuna) option brktrap; reset_defaults sets the shipped default
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
             segmentize: false, // (kuna) option segmentize; reset_defaults sets the shipped default
             fpu_emu: 0, // (kuna) option fpuemu; reset_defaults sets the shipped default (auto)
@@ -3617,6 +3624,7 @@ impl Architecture {
         self.rodata_string = true; // (kuna) DIV-113 default-on: a read-only string block copy collapses to builtin_strncpy instead of the invalid-C partial-symbol slice assignments. Byte-identical (0/675) — the corpus carries no data symbols, so the covering-string-symbol guard never fires. Restore the slice assignments with `option rodatastring off`
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
         self.int3_pad = crate::kuna_int3pad::Int3PadMode::Warn; // (kuna) DIV-128 default `warn`: ADDS A COMMENT ONLY. Names the `int3` pad control ran into, which x86 SLEIGH lifts to `intloc = swi(3); call [intloc]` and the printer renders as an ordinary indirect call. Shape-gated on a `swi` CALLOTHER with the 1-byte constant vector 3, so it is structurally inert wherever no `int3` is decoded and byte-identical on the datatest corpus (0/675); `option int3pad halt` also ends the flow at the pad, `option int3pad off` restores the unannotated rendering
+        self.brk_trap = true; // (kuna) default-on: an AArch64 `brk` with a compiler trap immediate (`#1` llvm.trap, `#1000` GCC, `#0x5500`-`#0x55ff` llvm.ubsantrap) ends the flow instead of being truncated to a call that returns, so the trap path no longer voids the function's return value. Shape-gated on the AArch64-only `SoftwareBreakpoint` user-op feeding the BRANCHIND, so it is structurally inert on the datatest corpus (0/675, which holds no `brk`); `option brktrap off` restores the jump-as-call
         self.syscall_regs = crate::kuna_syscallregs::SyscallRegsMode::Auto; // (kuna) default `auto`: on an image the loader identified as an operating system's user-space program, the system call writes its result register and reads the number register and the leading argument registers the function writes on every path to it. Gated on that loader fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `option syscallregs on` acts on any image, `off` restores the zero-effect CALLOTHER
         self.x64_syscall = crate::kuna_x64syscall::X64SyscallMode::Off; // (kuna) default-OFF: with a RUNTIME syscall number nothing can say how many argument registers the callee reads, so both answers the option offers are modelling judgements rather than facts; ON in the `aggressive` preset, which `auto` selects under 500 KiB
         self.segmentize = true; // (kuna) default-ON, as upstream: a processor spec's `<segmentop>` segmentizes its CALLOTHERs and resolves constant pointers through it. Only x86 16-bit, Z80 and HCS12 declare one and no datatest uses them (0/675); `option segmentize off` keeps the bare `segment(...)` calls
