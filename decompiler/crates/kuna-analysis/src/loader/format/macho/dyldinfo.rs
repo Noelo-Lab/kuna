@@ -11,6 +11,7 @@
 //! The run-time address of a bind is unknown statically, so nothing is written.
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use object::read::macho::{LoadCommandVariant, MachHeader, Segment};
 use object::FileKind;
@@ -32,13 +33,16 @@ const BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED: u8 = 0xB0;
 const BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB: u8 = 0xC0;
 const BIND_OPCODE_THREADED: u8 = 0xD0;
 
-/// The most bind slots one image is followed for.
+/// The most bind operations one image is followed for, across its programs:
+/// a real image binds some tens of thousands of slots; a program that repeats
+/// past this is hostile. Counted per operation, not per slot, so a run that
+/// keeps rebinding one slot is cut off too.
 const MAX_BINDS: usize = 1 << 20;
 
 /// `slot_vma → import symbol name` for every non-lazy bind of a classic
 /// `LC_DYLD_INFO` Mach-O. Empty for a chained-fixup image (which has no bind
 /// opcodes), a non-Mach-O, or an unparsable program.
-pub fn resolve_dyld_info_binds(file: &object::File, bytes: &[u8]) -> HashMap<u64, String> {
+pub fn resolve_dyld_info_binds(file: &object::File, bytes: &[u8]) -> HashMap<u64, Rc<str>> {
     if file.format() != object::BinaryFormat::MachO {
         return HashMap::new();
     }
@@ -49,7 +53,7 @@ pub fn resolve_dyld_info_binds(file: &object::File, bytes: &[u8]) -> HashMap<u64
     }
 }
 
-fn collect<Mach>(bytes: &[u8], ptr_size: u64) -> HashMap<u64, String>
+fn collect<Mach>(bytes: &[u8], ptr_size: u64) -> HashMap<u64, Rc<str>>
 where
     Mach: MachHeader<Endian = object::Endianness>,
 {
@@ -67,86 +71,90 @@ where
             programs.push((info.weak_bind_off.get(endian), info.weak_bind_size.get(endian)));
         }
     }
+    let mut left = MAX_BINDS;
     for (off, size) in programs {
         if let Some(program) = bytes.get(off as usize..(off as usize).saturating_add(size as usize)) {
-            replay(program, &segments, ptr_size, &mut out);
+            replay(program, &segments, ptr_size, &mut out, &mut left);
         }
     }
     out
 }
 
 /// Replay one bind program, recording each `DO_BIND*` slot under the current
-/// symbol. Decoding stops at the first malformed byte (never guesses a slot).
-fn replay(program: &[u8], segments: &[u64], ptr_size: u64, out: &mut HashMap<u64, String>) {
+/// symbol. Decoding stops at the first malformed byte (never guesses a slot)
+/// or when `left` bind operations have been spent; the symbol text is shared
+/// so a program that binds one long name many times costs its text once.
+fn replay(
+    program: &[u8],
+    segments: &[u64],
+    ptr_size: u64,
+    out: &mut HashMap<u64, Rc<str>>,
+    left: &mut usize,
+) -> Option<()> {
     let mut p = 0usize;
     let mut addr: Option<u64> = None;
-    let mut symbol = String::new();
-    let bind = |addr: &mut Option<u64>, symbol: &str, out: &mut HashMap<u64, String>| {
+    let mut symbol: Rc<str> = Rc::from("");
+    let bind = |addr: &mut Option<u64>, symbol: &Rc<str>, out: &mut HashMap<u64, Rc<str>>, left: &mut usize| -> Option<()> {
+        *left = left.checked_sub(1)?;
         if let Some(a) = *addr {
             if !symbol.is_empty() {
-                out.insert(a, symbol.to_string());
+                out.insert(a, Rc::clone(symbol));
             }
             *addr = Some(a.wrapping_add(ptr_size));
         }
+        Some(())
     };
     while let Some(&byte) = program.get(p) {
-        // A real image binds some tens of thousands of slots; a program that
-        // repeats past this is hostile and is not followed further.
-        if out.len() >= MAX_BINDS {
-            return;
-        }
         p += 1;
         let imm = byte & IMMEDIATE_MASK;
         match byte & OPCODE_MASK {
             BIND_OPCODE_DONE => {}
             BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | BIND_OPCODE_SET_DYLIB_SPECIAL_IMM | BIND_OPCODE_SET_TYPE_IMM => {}
             BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB => {
-                let Some(_) = uleb(program, &mut p) else { return };
+                uleb(program, &mut p)?;
             }
             BIND_OPCODE_SET_ADDEND_SLEB => {
-                let Some(_) = sleb(program, &mut p) else { return };
+                sleb(program, &mut p)?;
             }
             BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM => {
-                let Some(end) = program[p..].iter().position(|&b| b == 0) else { return };
-                symbol = String::from_utf8_lossy(&program[p..p + end]).into_owned();
+                let end = program.get(p..)?.iter().position(|&b| b == 0)?;
+                symbol = Rc::from(String::from_utf8_lossy(&program[p..p + end]).as_ref());
                 p += end + 1;
             }
             BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB => {
-                let Some(offset) = uleb(program, &mut p) else { return };
-                let Some(&base) = segments.get(imm as usize) else { return };
+                let offset = uleb(program, &mut p)?;
+                let base = *segments.get(imm as usize)?;
                 addr = Some(base.wrapping_add(offset));
             }
             BIND_OPCODE_ADD_ADDR_ULEB => {
-                let Some(delta) = uleb(program, &mut p) else { return };
+                let delta = uleb(program, &mut p)?;
                 addr = addr.map(|a| a.wrapping_add(delta));
             }
-            BIND_OPCODE_DO_BIND => bind(&mut addr, &symbol, out),
+            BIND_OPCODE_DO_BIND => bind(&mut addr, &symbol, out, left)?,
             BIND_OPCODE_DO_BIND_ADD_ADDR_ULEB => {
-                bind(&mut addr, &symbol, out);
-                let Some(delta) = uleb(program, &mut p) else { return };
+                bind(&mut addr, &symbol, out, left)?;
+                let delta = uleb(program, &mut p)?;
                 addr = addr.map(|a| a.wrapping_add(delta));
             }
             BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED => {
-                bind(&mut addr, &symbol, out);
+                bind(&mut addr, &symbol, out, left)?;
                 addr = addr.map(|a| a.wrapping_add(imm as u64 * ptr_size));
             }
             BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB => {
-                let Some(count) = uleb(program, &mut p) else { return };
-                let Some(skip) = uleb(program, &mut p) else { return };
+                let count = uleb(program, &mut p)?;
+                let skip = uleb(program, &mut p)?;
                 for _ in 0..count.min(0x10000) {
-                    if out.len() >= MAX_BINDS {
-                        return;
-                    }
-                    bind(&mut addr, &symbol, out);
+                    bind(&mut addr, &symbol, out, left)?;
                     addr = addr.map(|a| a.wrapping_add(skip));
                 }
             }
             // arm64e threaded binds carry their ordinals in the slot words; out of
             // scope for the classic program, so the rest of it is not trusted.
-            BIND_OPCODE_THREADED => return,
-            _ => return,
+            BIND_OPCODE_THREADED => return None,
+            _ => return None,
         }
     }
+    Some(())
 }
 
 fn uleb(program: &[u8], p: &mut usize) -> Option<u64> {
@@ -207,10 +215,10 @@ mod tests {
             BIND_OPCODE_DONE,
         ];
         let mut out = HashMap::new();
-        replay(&program, &[0x1000, 0x2000], 8, &mut out);
-        assert_eq!(out.get(&0x2010).map(String::as_str), Some("_a"));
-        assert_eq!(out.get(&0x2020).map(String::as_str), Some("_a"));
-        assert_eq!(out.get(&0x20a8).map(String::as_str), Some("_b"));
+        replay(&program, &[0x1000, 0x2000], 8, &mut out, &mut MAX_BINDS.clone());
+        assert_eq!(out.get(&0x2010).map(Rc::as_ref), Some("_a"));
+        assert_eq!(out.get(&0x2020).map(Rc::as_ref), Some("_a"));
+        assert_eq!(out.get(&0x20a8).map(Rc::as_ref), Some("_b"));
         assert_eq!(out.len(), 3);
     }
 
@@ -225,7 +233,7 @@ mod tests {
             let binds = resolve_dyld_info_binds(&file, &bytes);
             assert_eq!(!binds.is_empty(), expect_some, "{name}");
             if expect_some {
-                assert!(binds.values().any(|n| n == "__objc_empty_cache"), "{name}: {binds:?}");
+                assert!(binds.values().any(|n| n.as_ref() == "__objc_empty_cache"), "{name}: {binds:?}");
             }
         }
     }
@@ -238,7 +246,47 @@ mod tests {
             program.extend_from_slice(&[BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB, 0xff, 0xff, 0x03, 0]);
         }
         let mut out = HashMap::new();
-        replay(&program, &[0x1000], 8, &mut out);
+        replay(&program, &[0x1000], 8, &mut out, &mut MAX_BINDS.clone());
         assert_eq!(out.len(), MAX_BINDS);
+    }
+
+    /// One long symbol bound many times shares its text, so the program's cost
+    /// is its own bytes rather than one copy of the symbol per slot.
+    #[test]
+    fn a_long_symbol_is_shared_between_its_slots() {
+        let mut program = vec![BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM];
+        program.extend(std::iter::repeat(b'A').take(100_000));
+        program.push(0);
+        program.extend_from_slice(&[BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB, 0]);
+        program.extend_from_slice(&[BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB, 0x80, 0x10, 0]);
+        let mut out = HashMap::new();
+        replay(&program, &[0x1000], 8, &mut out, &mut MAX_BINDS.clone());
+        assert_eq!(out.len(), 0x800);
+        assert!(out.values().all(|n| Rc::ptr_eq(n, out.values().next().unwrap())));
+    }
+
+    /// A program that rebinds one slot over and over spends the budget though
+    /// the map never grows.
+    #[test]
+    fn rebinding_one_slot_spends_the_budget() {
+        let skip = (2u128.pow(64) - 8) as u64;
+        let mut unit = vec![BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB, 0xff, 0xff, 0x03];
+        let mut v = skip;
+        loop {
+            let byte = (v & 0x7f) as u8;
+            v >>= 7;
+            unit.push(if v == 0 { byte } else { byte | 0x80 });
+            if v == 0 {
+                break;
+            }
+        }
+        let mut program = vec![BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM, b'_', b'a', 0, BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB, 0];
+        for _ in 0..40 {
+            program.extend_from_slice(&unit);
+        }
+        let mut out = HashMap::new();
+        let mut left = MAX_BINDS;
+        assert_eq!(replay(&program, &[0x1000], 8, &mut out, &mut left), None);
+        assert_eq!((left, out.len()), (0, 1));
     }
 }
