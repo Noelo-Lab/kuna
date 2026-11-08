@@ -63,6 +63,7 @@ pub(crate) mod kuna_bytearrayslice;
 pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled LSL
 mod kuna_armconstantshift;
 pub mod kuna_emptystrconst;
+pub mod kuna_swiftstrobj; // (kuna) a Swift string object is not a pointer to the bytes it lands on
 pub mod kuna_renderfault; // (kuna) test-only: panic one function's render partway through
 pub mod kuna_truncarg;
 pub mod kuna_pointerargs; // (kuna) a scalar's address passed to a character-pointer parameter
