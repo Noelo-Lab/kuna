@@ -1008,6 +1008,10 @@ impl ActionFuncLink {
         if data.obank().get(callop).and_then(|o| o.get_out()).is_some() {
             data.op_unset_output(callop);
         }
+        if let Err(error) = crate::p4_calls::kuna_registerslots::apply_return(data, idx) {
+            data.kuna_call_mechanisms.failure = Some(error.to_string());
+            return;
+        }
         if data.get_call_specs(idx).proto().is_output_locked() {
             // C++ coreaction.cc:1582-1613 — locked-output build.  Materialize the
             // typed output Varnode at the locked output address, and (when the

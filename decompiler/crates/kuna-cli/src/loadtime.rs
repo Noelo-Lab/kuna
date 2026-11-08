@@ -10,7 +10,7 @@ use std::process::Command;
 
 use kuna_decomp::{
     kuna_calltargettype, kuna_dwarfstructs, kuna_dwarfvariants, kuna_dynrelocs, kuna_i386_pie_plt,
-    kuna_ifuncfpret, kuna_libctypes, kuna_msvcfpconst, kuna_pdatachained, kuna_peordinal,
+    kuna_ifuncfpret, kuna_libctypes, kuna_ppcapu, kuna_msvcfpconst, kuna_pdatachained, kuna_peordinal,
     kuna_goabi, kuna_goreg, kuna_gotypes, kuna_relocrebase, kuna_rexthunk, kuna_sourcelang, kuna_swiftdemangle,
     kuna_symbolnamebound, kuna_symbolnamechars,
     kuna_variantnames,
@@ -37,6 +37,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "ppc32picimports" => (kuna_decomp::kuna_ppc32picimports::ENV, Ppc32Pic),
         "i386_pie_plt" => (kuna_i386_pie_plt::I386_PIE_PLT_ENV, DefaultOn),
         "ifuncfpret" => (kuna_ifuncfpret::IFUNCFPRET_ENV, DefaultOff),
+        "ppcapu" => (kuna_ppcapu::PPCAPU_ENV, DefaultOff),
         "relocrebase" => (kuna_relocrebase::RELOCREBASE_ENV, DefaultOn),
         "dynrelocs" => (kuna_dynrelocs::DYNRELOCS_ENV, DefaultOn),
         "pdatachained" => (kuna_pdatachained::PDATACHAINED_ENV, DefaultOn),

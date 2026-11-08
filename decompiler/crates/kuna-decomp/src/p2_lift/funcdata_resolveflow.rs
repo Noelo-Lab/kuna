@@ -159,6 +159,9 @@ impl Funcdata {
                 if is_lock && v.map(|v| Rc::ptr_eq(v.get_type(), parent)).unwrap_or(false) {
                     return Ok(-1); // COPY of the structure directly, use whole structure
                 }
+                if crate::kuna_aggregatefields::returns_whole_container(self, op, slot, parent) {
+                    return Ok(-1);
+                }
             }
         } else if (opc == OpCode::CPUI_LOAD && slot == -1)
             || (opc == OpCode::CPUI_STORE && slot == 2)
@@ -173,6 +176,10 @@ impl Funcdata {
                         return Ok(-1); // LOAD/STORE of the structure directly, use whole structure
                     }
                 }
+            }
+        } else if opc == OpCode::CPUI_RETURN && slot >= 1 {
+            if crate::kuna_aggregatefields::returns_whole_container(self, op, slot, parent) {
+                return Ok(-1);
             }
         } else if o.is_call() {
             if let Some(idx) = self.get_call_specs_index(op) {

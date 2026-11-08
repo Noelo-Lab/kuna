@@ -1,0 +1,243 @@
+{
+  "status": "PASS",
+  "complete_bodies": 13,
+  "native_function_comparisons": 416,
+  "function_comparisons_per_profile": 208,
+  "output_lines_per_profile": 208,
+  "body_rewrites": false,
+  "parent_cli_sha256": "a1bc22c5d2a4b10662a9338ed48d1a2f85144ef4a9178b30b19eec7a76305bda",
+  "candidate_cli_sha256": "660260fb8dac7b462171e3039739fe533cb255dd79a226911726a39331614a0d",
+  "changed_rust_functions": [
+    "zero_unsigned",
+    "zero_signed",
+    "zero_field",
+    "zero_second",
+    "zero_index",
+    "zero_callback",
+    "zero_bytes"
+  ],
+  "unchanged_rust_controls": [
+    "one_unsigned",
+    "signed_input",
+    "unsigned_input",
+    "two_halves",
+    "copy_wide",
+    "zero_narrow"
+  ],
+  "c_go_records_unchanged": true,
+  "scope": "Seven exact128-bit zero stores and six scalar/copy controls; full128bytes including guards, eight input/source patterns,two storage locations,callback count; aligned128-bit storage and deliberately unaligned byte-array storage. Complete C/Rust bodies O0/O2. No generic scalar STORE-width, other constants, other element types or multiarchitecture native parity claim.",
+  "records": [
+    {
+      "kind": "reference",
+      "optimization": "0",
+      "command": [
+        "cc",
+        "-O0",
+        "-fwrapv",
+        "-fno-inline",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/tmp/kuna-rust-array-constant/harness.c",
+        "/tmp/kuna-rust-array-constant/helpers.c",
+        "-o",
+        "/tmp/kuna-rust-array-constant/reference-0"
+      ],
+      "stdout_sha256": "e8e6d12789e2b35fee1f74e5a11bfb1d84beb68a0673d70d3dcc618dd1212388"
+    },
+    {
+      "kind": "reference",
+      "optimization": "2",
+      "command": [
+        "cc",
+        "-O2",
+        "-fwrapv",
+        "-fno-inline",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "/tmp/kuna-rust-array-constant/harness.c",
+        "/tmp/kuna-rust-array-constant/helpers.c",
+        "-o",
+        "/tmp/kuna-rust-array-constant/reference-2"
+      ],
+      "stdout_sha256": "e8e6d12789e2b35fee1f74e5a11bfb1d84beb68a0673d70d3dcc618dd1212388"
+    },
+    {
+      "kind": "capture",
+      "arm": "parent",
+      "language": "c",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-constant/probe",
+        "--json",
+        "--language",
+        "c",
+        "--functions",
+        "zero_unsigned,zero_signed,zero_field,zero_second,zero_index,zero_callback,zero_bytes,one_unsigned,signed_input,unsigned_input,two_halves,copy_wide,zero_narrow",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "sha256": "7d1719f5d556ac8bcc4fcd23265c456a37af1d93a468f83ccc779d925c3bbb39"
+    },
+    {
+      "kind": "capture",
+      "arm": "parent",
+      "language": "go",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-constant/probe",
+        "--json",
+        "--language",
+        "go",
+        "--functions",
+        "zero_unsigned,zero_signed,zero_field,zero_second,zero_index,zero_callback,zero_bytes,one_unsigned,signed_input,unsigned_input,two_halves,copy_wide,zero_narrow",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "sha256": "81d9623c82577d3196ccf61a16c9e964d4ba49a269c70f8c712015df42b4843a"
+    },
+    {
+      "kind": "capture",
+      "arm": "parent",
+      "language": "rust",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-decay/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-constant/probe",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "zero_unsigned,zero_signed,zero_field,zero_second,zero_index,zero_callback,zero_bytes,one_unsigned,signed_input,unsigned_input,two_halves,copy_wide,zero_narrow",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "sha256": "07022b5c0a66fed99f4ce9c7cfb322d60c1e0445a2bf6c0fa380465f2784421f"
+    },
+    {
+      "kind": "capture",
+      "arm": "candidate",
+      "language": "c",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-constant/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-constant/probe",
+        "--json",
+        "--language",
+        "c",
+        "--functions",
+        "zero_unsigned,zero_signed,zero_field,zero_second,zero_index,zero_callback,zero_bytes,one_unsigned,signed_input,unsigned_input,two_halves,copy_wide,zero_narrow",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "sha256": "7d1719f5d556ac8bcc4fcd23265c456a37af1d93a468f83ccc779d925c3bbb39"
+    },
+    {
+      "kind": "capture",
+      "arm": "candidate",
+      "language": "go",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-constant/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-constant/probe",
+        "--json",
+        "--language",
+        "go",
+        "--functions",
+        "zero_unsigned,zero_signed,zero_field,zero_second,zero_index,zero_callback,zero_bytes,one_unsigned,signed_input,unsigned_input,two_halves,copy_wide,zero_narrow",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "sha256": "81d9623c82577d3196ccf61a16c9e964d4ba49a269c70f8c712015df42b4843a"
+    },
+    {
+      "kind": "capture",
+      "arm": "candidate",
+      "language": "rust",
+      "command": [
+        "/home/mahaloz/kwt/angr-rust-array-constant/decompiler/target/release/kuna",
+        "decompile-all",
+        "/tmp/kuna-rust-array-constant/probe",
+        "--json",
+        "--language",
+        "rust",
+        "--functions",
+        "zero_unsigned,zero_signed,zero_field,zero_second,zero_index,zero_callback,zero_bytes,one_unsigned,signed_input,unsigned_input,two_halves,copy_wide,zero_narrow",
+        "--option",
+        "ctypes",
+        "off",
+        "--option",
+        "realtypes",
+        "off"
+      ],
+      "sha256": "6787356a019b0717aba80b0c4beaca640988c4a5a9f93c96c8111634aeec559b"
+    },
+    {
+      "kind": "native",
+      "optimization": "0",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--crate-name",
+        "array_zero_candidate",
+        "--error-format=json",
+        "-C",
+        "opt-level=0",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-constant/candidate-full.rs",
+        "-o",
+        "/tmp/kuna-rust-array-constant/candidate-0"
+      ],
+      "compile_exit": 0,
+      "execution_exit": 0,
+      "stdout_sha256": "e8e6d12789e2b35fee1f74e5a11bfb1d84beb68a0673d70d3dcc618dd1212388"
+    },
+    {
+      "kind": "native",
+      "optimization": "2",
+      "command": [
+        "rustc",
+        "--edition=2021",
+        "--crate-name",
+        "array_zero_candidate",
+        "--error-format=json",
+        "-C",
+        "opt-level=2",
+        "-C",
+        "overflow-checks=off",
+        "/tmp/kuna-rust-array-constant/candidate-full.rs",
+        "-o",
+        "/tmp/kuna-rust-array-constant/candidate-2"
+      ],
+      "compile_exit": 0,
+      "execution_exit": 0,
+      "stdout_sha256": "e8e6d12789e2b35fee1f74e5a11bfb1d84beb68a0673d70d3dcc618dd1212388"
+    }
+  ]
+}

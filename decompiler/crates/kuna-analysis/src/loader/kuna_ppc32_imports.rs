@@ -114,36 +114,17 @@ fn resolve_impl(file: &object::File<'_>, prove_pic: bool) -> Vec<PltSym> {
     if slots.is_empty() {
         return Vec::new();
     }
-    let mut out = Vec::new();
-    for section in file.sections() {
-        if !matches!(section.flags(), SectionFlags::Elf { sh_flags } if sh_flags & 6 == 6)
-            || section.address() & 3 != 0
-        {
-            continue;
-        }
-        let Ok(bytes) = section.data() else {
-            continue;
-        };
-        for off in (0..bytes.len()).step_by(4) {
-            let Some(code) = bytes.get(off..off.saturating_add(16)) else {
-                break;
-            };
-            if word(file, code) & 0xffff_0000 != 0x3d60_0000 {
-                continue;
-            }
-            let words: [u32; 4] = std::array::from_fn(|i| word(file, &code[4 * i..]));
-            let Some(Stub::Absolute(slot)) = stub(&words) else {
-                continue;
-            };
-            if let Some(name) = slots.get(&u64::from(slot)) {
-                out.push(PltSym {
-                    addr: section.address() + off as u64,
-                    name: name.clone(),
-                    slot: None,
-                });
-            }
-        }
-    }
+    let mut out: Vec<_> = stubs(file)
+        .into_iter()
+        .filter_map(|(addr, form)| match form {
+            Stub::Absolute(slot) => slots.get(&u64::from(slot)).map(|name| PltSym {
+                addr,
+                name: name.clone(),
+                slot: None,
+            }),
+            Stub::Pic(_) => None,
+        })
+        .collect();
     if prove_pic {
         out.extend(super::kuna_ppc32picimports::resolve(file, &slots, &out));
     }
@@ -157,6 +138,46 @@ pub(super) fn word(file: &object::File<'_>, bytes: &[u8]) -> u32 {
     } else {
         u32::from_be_bytes(bytes)
     }
+}
+
+/// Every complete stub in the word-aligned executable sections.
+fn stubs(file: &object::File<'_>) -> Vec<(u64, Stub)> {
+    let mut out = Vec::new();
+    if file.architecture() != Architecture::PowerPc {
+        return out;
+    }
+    for section in file.sections() {
+        if !matches!(section.flags(), SectionFlags::Elf { sh_flags } if sh_flags & 6 == 6)
+            || section.address() & 3 != 0
+        {
+            continue;
+        }
+        let Ok(bytes) = section.data() else {
+            continue;
+        };
+        for off in (0..bytes.len()).step_by(4) {
+            let Some(code) = bytes.get(off..off.saturating_add(16)) else {
+                break;
+            };
+            if !matches!(word(file, code) & 0xffff_0000, 0x817e_0000 | 0x3d7e_0000 | 0x3d60_0000) {
+                continue;
+            }
+            let words: [u32; 4] = std::array::from_fn(|i| word(file, &code[4 * i..]));
+            if let Some(form) = stub(&words) {
+                out.push((section.address() + off as u64, form));
+            }
+        }
+    }
+    out
+}
+
+/// Sorted addresses where a complete stub begins. A linker FDE shared by stubs
+/// starts at one; a function containing a stub-shaped sequence starts at its own
+/// prologue.
+pub(crate) fn stub_starts(file: &object::File<'_>) -> Vec<u64> {
+    let mut starts: Vec<u64> = stubs(file).into_iter().map(|(addr, _)| addr).collect();
+    starts.sort_unstable();
+    starts
 }
 
 /// Collect metadata even with recovery disabled, so console options remain live.

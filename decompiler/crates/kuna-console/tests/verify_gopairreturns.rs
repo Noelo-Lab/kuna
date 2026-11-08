@@ -287,7 +287,7 @@ func main() {
         std::fs::write(
             &file,
             format!(
-                "package main\nimport (\"fmt\";\"unsafe\")\nvar calls uint64\n{}\n{harness}",
+                "package main\nimport (\"fmt\";\"unsafe\")\nvar _ unsafe.Pointer\nvar calls uint64\n{}\n{harness}",
                 code.join("\n")
             ),
         )

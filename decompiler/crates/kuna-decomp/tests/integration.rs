@@ -487,3 +487,6 @@ mod forloop_hidden_copy;
 
 #[path = "signed_constant_width.rs"]
 mod signed_constant_width;
+
+#[path = "aggregate_padding.rs"]
+mod aggregate_padding;
