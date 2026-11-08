@@ -4338,7 +4338,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   so no anchor exists and the output is empty. Independent code-pointer-run scanning
   — which would find such vtables heuristically — is deliberately **not** part of
   this pass.
-- **Objective-C** (`objc`, Mach-O-only, default-off;
+- **Objective-C** (`objc`, Mach-O-only, default-off in the catalog but on in the
+  `aggressive` preset, which `auto` selects for any binary under 500 KiB;
   `decompiler/crates/kuna-analysis/src/analyzers/objc/mod.rs`): walk
   `__objc_classlist` → `class_t` → `class_ro_t` → method lists (both absolute and
   small/relative forms), reading pointer slots through the chained-fixup overlay
@@ -4388,7 +4389,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   blocks read-only for that reason — but they live in writable `__DATA`, outside
   the `SG_READ_ONLY` warrant of `dynrelocs` (§1.3), so the claim is the
   metadata's, and it rides its own option, **`objcrefconst`** (kuna, default-on,
-  inert unless `objc` is on). The commit paints the ranges `Varnode::readonly`
+  inert unless `objc` is on, as `objc` is on any Mach-O image under 500 KiB). The commit paints the ranges `Varnode::readonly`
   and adds them to `dynreloc_const` **before** the slots' own symbols are mapped
   (a `SymbolEntry` copies the range property as it is created), so
   `ActionVarnodeProps` folds a load through a selref to the selector string and
