@@ -16,6 +16,7 @@
 //! (`exported_value`, `&exported_value`); painting it `externref` would stop that
 //! fold. The relocation types are `dynrelocs`' (x86-64, AArch64, i386, ARM).
 
+use kuna_decomp::kuna_symbolnamechars::{sanitize_symbol_name_bytes, symbolnamechars_mode, NameChars};
 use object::read::{Object, ObjectSymbol};
 use object::{RelocationFlags, RelocationTarget};
 
@@ -68,6 +69,12 @@ pub(crate) fn slots(file: &object::File) -> Vec<(u64, u64)> {
     ranged(file).into_iter().map(|(range, _)| range).collect()
 }
 
+/// The name a slot is minted under: the import's bytes through the same
+/// `symbolnamechars` sanitizer every other name the loader mints goes through.
+fn minted_name(name: &[u8], mode: NameChars) -> String {
+    String::from_utf8_lossy(&sanitize_symbol_name_bytes(name, mode)).into_owned()
+}
+
 /// Names each undefined-symbol `GLOB_DAT` slot for its import (a symbol-table
 /// name, not a function-inventory entry) and paints it `externref`. Its output is
 /// committed only when `importdata` is on.
@@ -84,9 +91,10 @@ impl AnalysisPass for ElfGotImportPass {
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
+        let mode = symbolnamechars_mode();
         for ((slot, end), name) in ranged(ctx.file) {
             out.externref.push((slot, end));
-            out.import_slot_names.push((slot, String::from_utf8_lossy(&name).into_owned()));
+            out.import_slot_names.push((slot, minted_name(&name, mode)));
         }
         out
     }
@@ -96,10 +104,17 @@ impl AnalysisPass for ElfGotImportPass {
 mod tests {
     use object::read::{Object, ObjectSection};
 
-    use super::{ranged, resolve, slots};
+    use super::{minted_name, ranged, resolve, slots, NameChars};
 
     fn fixture() -> Vec<u8> {
         std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/elf_gotdata_x86_64.so")).unwrap()
+    }
+
+    #[test]
+    fn a_slot_name_is_sanitized_like_every_minted_name() {
+        assert_eq!(minted_name(b"stdout", NameChars::Safe), "stdout");
+        let hostile = minted_name(b"imported_c\nunter*/x", NameChars::Safe);
+        assert!(!hostile.contains('\n') && !hostile.contains("*/"), "{hostile:?}");
     }
 
     #[test]

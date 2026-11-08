@@ -1918,7 +1918,8 @@ funcsym stream:
   reports them, so a slot is a pointer word and never a function body. The pass
   names each one for its import (a symbol-table `FunctionSymbol`, as the format's
   own import names are, but not a function-inventory entry, since the slot is not a
-  function) and paints it `externref`, so `PrintC::op_load`
+  function; the name goes through the `symbolnamechars` sanitizer like every name
+  the loader mints) and paints it `externref`, so `PrintC::op_load`
   renders the read as the import (`importdata`, chapter [09](09-emission.md)):
   `return imported_counter;`, `return environ;`, `stdout`. Painting the slot also
   lets `ActionDeindirect` bind a call through it (`(*dat_e9f30)()` becomes
