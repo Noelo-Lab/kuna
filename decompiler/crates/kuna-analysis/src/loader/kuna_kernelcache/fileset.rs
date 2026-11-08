@@ -14,6 +14,8 @@ const LC_SYMTAB: u32 = 0x2;
 const LC_DYSYMTAB: u32 = 0xb;
 const HEADER_LEN: usize = 32;
 const NLIST_LEN: usize = 16;
+const SEGMENT_LEN: usize = 72;
+const SECTION_LEN: usize = 80;
 const N_EXT: u8 = 0x01;
 const N_ABS: u8 = 0x02;
 const S_ATTR_SOME_INSTRUCTIONS: u32 = 0x400;
@@ -82,7 +84,7 @@ pub(super) fn entries(bytes: &[u8]) -> Option<Vec<FilesetEntry>> {
         .map(|(_, p)| {
             let size = rd_u32(bytes, p + 4)? as usize;
             let name_off = rd_u32(bytes, p + 24)? as usize;
-            let name = bytes.get(p + name_off..p + size)?;
+            let name = bytes.get(p.checked_add(name_off)?..p.checked_add(size)?)?;
             let name = name.split(|&b| b == 0).next()?;
             let fileoff = rd_u64(bytes, p + 16)?;
             Some(FilesetEntry {
@@ -149,7 +151,7 @@ pub(super) fn extract(mut bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<
 
     let at = usize::try_from(entry.fileoff).map_err(|_| "fileset entry offset out of range")?;
     let sizeofcmds = rd_u32(&bytes, at + 20).ok_or("truncated fileset entry header")? as usize;
-    let header_len = HEADER_LEN + sizeofcmds;
+    let header_len = HEADER_LEN.checked_add(sizeofcmds).ok_or("fileset entry load commands overflow")?;
     if at.checked_add(header_len).is_none_or(|end| end > bytes.len()) {
         return Err(format!("the header of {} runs past the end of the collection", entry.id));
     }
@@ -179,8 +181,7 @@ struct Symbols {
     undef: std::ops::Range<usize>,
 }
 
-fn symbols(bytes: &[u8], at: usize) -> Option<Symbols> {
-    let cmds = load_commands(bytes, at)?;
+fn symbols(bytes: &[u8], cmds: &[(u32, usize)]) -> Option<Symbols> {
     let (_, st) = *cmds.iter().find(|&&(cmd, _)| cmd == LC_SYMTAB)?;
     let (_, dy) = *cmds.iter().find(|&&(cmd, _)| cmd == LC_DYSYMTAB)?;
     let symoff = rd_u32(bytes, st + 8)? as usize;
@@ -197,10 +198,23 @@ fn symbols(bytes: &[u8], at: usize) -> Option<Symbols> {
     })
 }
 
-fn nlist_name<'a>(bytes: &'a [u8], syms: &Symbols, index: usize) -> Option<&'a [u8]> {
-    let strx = rd_u32(bytes, syms.symoff + index * NLIST_LEN)? as usize;
+fn nlist_name<'a>(bytes: &'a [u8], syms: &Symbols, index: usize, work: &mut usize) -> Option<&'a [u8]> {
+    let strx = rd_u32(bytes, syms.symoff.checked_add(index.checked_mul(NLIST_LEN)?)?)? as usize;
     let tail = bytes.get(syms.stroff.checked_add(strx)?..)?;
-    tail.split(|&b| b == 0).next().filter(|n| !n.is_empty())
+    let window = &tail[..tail.len().min(*work)];
+    let Some(len) = window.iter().position(|&b| b == 0) else {
+        *work = work.saturating_sub(window.len());
+        return None;
+    };
+    *work = work.saturating_sub(len + 1);
+    (len > 0).then(|| &tail[..len])
+}
+
+/// The work [`bind_to_collection`] may spend, in commands, sections and symbol
+/// name bytes visited: an honest collection costs a fraction of its size, while
+/// entry headers sharing load commands or a name table would multiply it.
+fn bind_work(bytes: &[u8]) -> usize {
+    bytes.len().saturating_mul(4).max(1 << 20)
 }
 
 /// Bind a kext's undefined symbols the collection resolved at build time: a kext
@@ -208,27 +222,44 @@ fn nlist_name<'a>(bytes: &'a [u8], syms: &Symbols, index: usize) -> Option<&'a [
 /// record of the callee's name is the kext's undefined `nlist`. Each one that
 /// another entry exports as code is rewritten to `N_ABS | N_EXT` at that address
 /// (the kernel's definition wins over a kext's), which the Mach-O import walk
-/// reads as an external function. Each distinct entry header is read once, so
-/// entries aliasing one header cost no more than one. Returns how many were bound.
+/// reads as an external function. Each distinct entry header is read once, the
+/// names copied never exceed the file, and collecting and writing each stop at
+/// the [`bind_work`] budget. Returns how many were bound.
 fn bind_to_collection(bytes: &mut [u8], all: &[FilesetEntry], index: usize) -> usize {
-    let Some(own) = symbols(bytes, all[index].fileoff as usize) else { return 0 };
-    let mut wanted: std::collections::HashMap<Vec<u8>, Option<(u64, bool)>> = own
-        .undef
-        .clone()
-        .filter_map(|i| nlist_name(bytes, &own, i).map(|n| (n.to_vec(), None)))
-        .collect();
+    let mut work = bind_work(bytes);
+    let Some(own) = load_commands(bytes, all[index].fileoff as usize).and_then(|c| symbols(bytes, &c)) else {
+        return 0;
+    };
+    let mut wanted: std::collections::HashMap<Vec<u8>, Option<(u64, bool)>> = std::collections::HashMap::new();
+    let mut allowance = bytes.len();
+    for i in own.undef.clone() {
+        let Some(name) = nlist_name(bytes, &own, i, &mut work) else { continue };
+        if wanted.contains_key(name) || name.len() > allowance {
+            continue;
+        }
+        allowance -= name.len();
+        wanted.insert(name.to_vec(), None);
+    }
     let mut seen = std::collections::HashSet::from([all[index].fileoff]);
     for entry in all {
+        if work == 0 {
+            break;
+        }
         if !seen.insert(entry.fileoff) {
             continue;
         }
         let at = entry.fileoff as usize;
-        let (Some(syms), Some(code)) = (symbols(bytes, at), code_ranges(bytes, at)) else { continue };
+        let Some(cmds) = load_commands(bytes, at) else { continue };
+        work = work.saturating_sub(cmds.len());
+        let (Some(syms), Some(code)) = (symbols(bytes, &cmds), code_ranges(bytes, &cmds, &mut work)) else {
+            continue;
+        };
         let is_kernel = entry.filetype == MH_EXECUTE;
         for s in syms.extdef.clone() {
-            let Some(name) = nlist_name(bytes, &syms, s) else { continue };
+            let Some(name) = nlist_name(bytes, &syms, s, &mut work) else { continue };
             let Some(slot) = wanted.get_mut(name) else { continue };
             let Some(addr) = rd_u64(bytes, syms.symoff + s * NLIST_LEN + 8) else { continue };
+            work = work.saturating_sub(code.len());
             if !code.iter().any(|r| r.contains(&addr)) {
                 continue;
             }
@@ -240,8 +271,9 @@ fn bind_to_collection(bytes: &mut [u8], all: &[FilesetEntry], index: usize) -> u
         }
     }
     let mut bound = 0;
+    let mut work = bind_work(bytes);
     for i in own.undef.clone() {
-        let Some(name) = nlist_name(bytes, &own, i) else { continue };
+        let Some(name) = nlist_name(bytes, &own, i, &mut work) else { continue };
         let Some(&Some((addr, _))) = wanted.get(name) else { continue };
         if addr == 0 {
             continue;
@@ -256,15 +288,22 @@ fn bind_to_collection(bytes: &mut [u8], all: &[FilesetEntry], index: usize) -> u
     bound
 }
 
-/// The address ranges of an entry's instruction-bearing sections.
-fn code_ranges(bytes: &[u8], at: usize) -> Option<Vec<std::ops::Range<u64>>> {
+/// The address ranges of an entry's instruction-bearing sections. A segment's
+/// sections are read only as far as its own `cmdsize` holds them.
+fn code_ranges(bytes: &[u8], cmds: &[(u32, usize)], work: &mut usize) -> Option<Vec<std::ops::Range<u64>>> {
     let mut out = Vec::new();
-    for (cmd, p) in load_commands(bytes, at)? {
+    for &(cmd, p) in cmds {
         if cmd != LC_SEGMENT_64 {
             continue;
         }
-        for k in 0..rd_u32(bytes, p + 64)? as usize {
-            let s = p + 72 + k * 80;
+        let room = (rd_u32(bytes, p + 4)? as usize).saturating_sub(SEGMENT_LEN) / SECTION_LEN;
+        let nsects = (rd_u32(bytes, p + 64)? as usize).min(room);
+        for k in 0..nsects {
+            if *work == 0 {
+                return Some(out);
+            }
+            *work -= 1;
+            let s = p + SEGMENT_LEN + k * SECTION_LEN;
             if rd_u32(bytes, s + 64)? & S_ATTR_SOME_INSTRUCTIONS != 0 {
                 let addr = rd_u64(bytes, s + 32)?;
                 out.push(addr..addr.saturating_add(rd_u64(bytes, s + 40)?));
@@ -313,12 +352,28 @@ fn rd_u64(b: &[u8], off: usize) -> Option<u64> {
 mod tests {
     use super::*;
 
+    fn fixture() -> Vec<u8> {
+        std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/kernelcache/fileset.macho")).unwrap()
+    }
+
+    fn mach_header(filetype: u32, ncmds: u32, cmds: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for v in [MH_MAGIC_64, 0x0100_000c, 0, filetype, ncmds, cmds.len() as u32, 0, 0] {
+            out.extend_from_slice(&v.to_le_bytes());
+        }
+        out.extend_from_slice(cmds);
+        out
+    }
+
+    fn le_words(words: &[u32]) -> Vec<u8> {
+        words.iter().flat_map(|w| w.to_le_bytes()).collect()
+    }
+
     /// Entries aliasing one header are read against it once: ten thousand
     /// entries naming one 50,000-command header cost one parse, not 10,000.
     #[test]
     fn aliased_entries_are_read_once() {
-        let mut image = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/kernelcache/fileset.macho"))
-            .unwrap();
+        let mut image = fixture();
         let all = entries(&image).unwrap();
         let kext = all.iter().position(|e| e.filetype != MH_EXECUTE).unwrap();
         let expected = bind_to_collection(&mut image.clone(), &all, kext);
@@ -340,5 +395,87 @@ mod tests {
         let elapsed = start.elapsed();
         assert_eq!(bound, expected);
         assert!(elapsed < std::time::Duration::from_millis(500), "10k aliases took {elapsed:?}");
+    }
+
+    /// Distinct entry headers that skip into one shared tail of load commands
+    /// stop at the work budget instead of re-reading the tail per header, and
+    /// the real entries before them still bind.
+    #[test]
+    fn headers_sharing_commands_stop_at_the_work_budget() {
+        let mut image = fixture();
+        let all = entries(&image).unwrap();
+        let kext = all.iter().position(|e| e.filetype != MH_EXECUTE).unwrap();
+        let expected = bind_to_collection(&mut image.clone(), &all, kext);
+        let (headers, tail_cmds) = (2_000usize, 40_000usize);
+        let first_header = image.len().next_multiple_of(8);
+        image.resize(first_header, 0);
+        let tail_at = first_header + headers * 40;
+        let mut aliased = all.clone();
+        for i in 0..headers {
+            let at = first_header + i * 40;
+            let skip = (tail_at - (at + 32)) as u32;
+            let cmds = (tail_cmds as u32 + 1, skip + tail_cmds as u32 * 8);
+            let header = mach_header(MH_EXECUTE, cmds.0, &[]);
+            image.extend_from_slice(&header[..20]);
+            image.extend_from_slice(&cmds.1.to_le_bytes());
+            image.extend_from_slice(&header[24..]);
+            image.extend_from_slice(&le_words(&[0x7fff_ffff, skip]));
+            aliased.push(FilesetEntry { id: format!("h{i}"), fileoff: at as u64, filetype: MH_EXECUTE });
+        }
+        for _ in 0..tail_cmds {
+            image.extend_from_slice(&le_words(&[0x7fff_ffff, 8]));
+        }
+        let start = std::time::Instant::now();
+        let bound = bind_to_collection(&mut image, &aliased, kext);
+        let elapsed = start.elapsed();
+        assert_eq!(bound, expected);
+        assert!(elapsed < std::time::Duration::from_secs(5), "shared-tail headers took {elapsed:?}");
+    }
+
+    /// A segment's sections are read only as far as its own `cmdsize` holds
+    /// them, so one 72-byte command claiming a million sections adds none.
+    #[test]
+    fn sections_stop_at_the_segment_command() {
+        let mut image = vec![0u8; 0x1000];
+        let at = 0x100;
+        let mut seg = le_words(&[LC_SEGMENT_64, SEGMENT_LEN as u32]);
+        seg.resize(SEGMENT_LEN, 0);
+        seg[64..68].copy_from_slice(&1_000_000u32.to_le_bytes());
+        let header = mach_header(MH_EXECUTE, 1, &seg);
+        image[at..at + header.len()].copy_from_slice(&header);
+        for off in (at + 32 + SEGMENT_LEN..image.len()).step_by(4) {
+            image[off..off + 4].copy_from_slice(&S_ATTR_SOME_INSTRUCTIONS.to_le_bytes());
+        }
+        let cmds = load_commands(&image, at).unwrap();
+        let mut work = 1 << 20;
+        assert_eq!(code_ranges(&image, &cmds, &mut work), Some(Vec::new()));
+        assert_eq!(work, 1 << 20, "no section was visited");
+    }
+
+    /// Undefined symbols that all read one long unterminated name copy it at
+    /// most once per byte of the file; the loop ends promptly without a blow-up.
+    #[test]
+    fn undefined_names_copy_at_most_the_file() {
+        let count = 30_000u32;
+        let name_len = 1usize << 20;
+        let symoff = 0x4000usize;
+        let stroff = symoff + count as usize * NLIST_LEN;
+        let mut cmds = le_words(&[LC_SYMTAB, 24, symoff as u32, count, stroff as u32, name_len as u32 + 2]);
+        let mut dysym = le_words(&[LC_DYSYMTAB, 80, 0, 0, 0, 0, 0, count]);
+        dysym.resize(80, 0);
+        cmds.extend_from_slice(&dysym);
+        let header = mach_header(0xb, 2, &cmds);
+        let mut image = vec![0u8; stroff + name_len + 2];
+        image[0x1000..0x1000 + header.len()].copy_from_slice(&header);
+        for i in 0..count as usize {
+            let at = symoff + i * NLIST_LEN;
+            image[at..at + 4].copy_from_slice(&(1 + i as u32).to_le_bytes());
+        }
+        image[stroff + 1..stroff + 1 + name_len].fill(b'A');
+        let all = [FilesetEntry { id: "own".into(), fileoff: 0x1000, filetype: 0xb }];
+        let start = std::time::Instant::now();
+        assert_eq!(bind_to_collection(&mut image, &all, 0), 0);
+        let elapsed = start.elapsed();
+        assert!(elapsed < std::time::Duration::from_secs(5), "undefined-name bomb took {elapsed:?}");
     }
 }

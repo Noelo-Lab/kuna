@@ -23,17 +23,17 @@ mod tests;
 /// The largest payload the decompressors will produce.
 const DECODED_LIMIT: usize = 1 << 30;
 
-/// Without a declared size, a payload may decode to at most this many times its
-/// compressed length (real kernelcaches are a few times larger), and never less
-/// than [`MIN_LIMIT`].
+/// A payload may decode to at most this many times its compressed length (real
+/// kernelcaches are a few times larger), a declared size included, and never
+/// less than [`MIN_LIMIT`].
 const MAX_RATIO: usize = 64;
 const MIN_LIMIT: usize = 16 << 20;
 
-/// The decode limit for `input_len` compressed bytes: the declared size when
-/// there is one, else the ratio cap, never past [`DECODED_LIMIT`].
+/// The decode limit for `input_len` compressed bytes: the ratio cap, never past
+/// [`DECODED_LIMIT`], and the declared size when it is smaller.
 fn decode_limit(input_len: usize, declared: Option<usize>) -> usize {
     let cap = DECODED_LIMIT.min(input_len.saturating_mul(MAX_RATIO).max(MIN_LIMIT));
-    declared.map_or(cap, |d| d.min(DECODED_LIMIT))
+    declared.map_or(cap, |d| d.min(cap))
 }
 
 /// The loadable image after [`peel`], plus a one-line note on what was done.

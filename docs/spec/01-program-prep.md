@@ -1078,10 +1078,14 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   checked against the header's size and Adler-32). A decoded size different
   from the IM4P's record is an error, not a truncation. The record also bounds
   the decode: output stops, with an error, as soon as it would pass the
-  declared size. Without a record the bound is 64 times the payload (at least
-  16 MiB), and never past 1 GiB. An FSE bit stream may preload bytes from
+  declared size. Whatever the record says, output also stops at 64 times the
+  payload (at least 16 MiB) and never past 1 GiB, so a small payload cannot
+  claim a gigabyte. An FSE bit stream may preload bytes from
   before its payload, as the reference encoder's does, but consuming them is
-  a truncation error rather than a read of zeros. Then, for an
+  a truncation error rather than a read of zeros. Symbols a block claims beyond
+  its raw size (a valid block wastes at most 3 padding literals) are charged
+  to the input's length, so all-header blocks that decode to nothing stop
+  quickly. Then, for an
   `MH_FILESET`, every rebase of the collection's fixup table is written into
   its slot — the kernel formats `DYLD_CHAINED_PTR_64_KERNEL_CACHE`,
   `ARM64E_KERNEL`, `ARM64E_FIRMWARE` and `X86_64_KERNEL_CACHE` are decoded in the same
@@ -1115,7 +1119,11 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   instruction-bearing section is rewritten to `N_ABS | N_EXT` at that address,
   the kernel's definition winning over a kext's and an ambiguity between kexts
   left unbound. Each distinct entry header is read once, however many entries
-  name its offset
+  name its offset; a segment's sections are read only as far as its own
+  `cmdsize` holds them; and because every count and offset comes from the file,
+  the walk stops at a work budget proportional to the collection's size (4
+  units per byte of commands, sections and name bytes visited, at least one
+  million), and the undefined names copied never exceed the file
   (`decompiler/crates/kuna-analysis/src/loader/kuna_kernelcache/fileset.rs (bind_to_collection)`),
   and the Mach-O import walk names each such symbol of an `MH_KEXT_BUNDLE` as
   an external function

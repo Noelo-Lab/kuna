@@ -281,5 +281,26 @@ fn an_undeclared_size_is_capped_by_the_input() {
     assert_eq!(decode_limit(1 << 20, None), MAX_RATIO << 20);
     assert_eq!(decode_limit(usize::MAX, None), DECODED_LIMIT);
     assert_eq!(decode_limit(100, Some(4096)), 4096);
-    assert_eq!(decode_limit(100, Some(usize::MAX)), DECODED_LIMIT);
+    assert_eq!(decode_limit(100, Some(usize::MAX)), MIN_LIMIT);
+    assert_eq!(decode_limit(1 << 28, Some(usize::MAX)), DECODED_LIMIT);
+}
+
+/// A declared size is capped by the same ratio as an undeclared one: a small
+/// payload claiming far more output than it could hold is refused, even when
+/// the claim is honest about what the stream decodes to.
+#[test]
+fn a_declared_size_past_the_ratio_is_not_honored() {
+    assert_eq!(decode_limit(600_000, Some(1 << 30)), 600_000 * MAX_RATIO);
+    let matches = (18usize << 20) / 271;
+    let mut body = vec![0xe1, b'a', 0x38, 1];
+    for _ in 0..matches {
+        body.extend_from_slice(&[0xf0, 0xff]);
+    }
+    body.push(0x06);
+    let n_raw = 1 + 10 + matches * 271;
+    let stream =
+        [b"bvxn".as_slice(), &(n_raw as u32).to_le_bytes(), &(body.len() as u32).to_le_bytes(), &body, b"bvx$"].concat();
+    assert!(lzfse::decode(&stream, 0, usize::MAX).is_ok_and(|o| o.len() == n_raw));
+    let err = peel(im4p(&stream, &[declared(n_raw as u32)]), &KernelcacheChoice::Auto).err().unwrap();
+    assert!(err.contains("size limit"), "{err}");
 }
