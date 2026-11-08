@@ -72,8 +72,6 @@ pub fn decode_swift(input: &str) -> Option<String> {
         bias = adapt(i - old_i, len, old_i == 0);
         n = n.checked_add(i / len)?;
         i %= len;
-        // Non-identifier ASCII characters travel in the (otherwise invalid)
-        // surrogate range as `0xD800 + byte`.
         let c = match n {
             0xD800..=0xD87F => char::from_u32(n - 0xD800)?,
             _ => char::from_u32(n)?,

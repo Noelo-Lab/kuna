@@ -93,8 +93,6 @@ impl<'a> OldParser<'a> {
     }
 
     fn substitution(&mut self) -> Option<NodeRef> {
-        // After the `S`: `_` is index 0, `N_` is index N+1, a letter is a
-        // known module or type.
         if self.next_if(b'_') {
             return self.subs.first().cloned();
         }
@@ -219,8 +217,6 @@ impl<'a> OldParser<'a> {
     }
 
     fn ty(&mut self) -> Option<NodeRef> {
-        // `G`/`C` nest through `ty` and `context`; a crafted name must not
-        // recurse without bound.
         if self.depth >= MAX_DEPTH {
             return None;
         }
@@ -230,14 +226,55 @@ impl<'a> OldParser<'a> {
         r
     }
 
+    /// One `_`-terminated argument list per generic context level, the
+    /// outermost first; a level with no arguments stays unbound.
+    fn bound_generic_args(&mut self, nominal: NodeRef) -> Option<NodeRef> {
+        if self.depth >= MAX_DEPTH {
+            return None;
+        }
+        self.depth += 1;
+        let r = self.bound_generic_args_inner(nominal);
+        self.depth -= 1;
+        r
+    }
+
+    fn bound_generic_args_inner(&mut self, nominal: NodeRef) -> Option<NodeRef> {
+        let parent = nominal.first()?.clone();
+        let mut nominal = nominal;
+        if !matches!(parent.kind, Kind::Module | Kind::Function | Kind::Extension) {
+            let bound_parent = self.bound_generic_args(parent)?;
+            let mut children = vec![bound_parent];
+            children.extend(nominal.children.iter().skip(1).cloned());
+            nominal = Node::with(nominal.kind, children);
+        }
+        let mut args = Vec::new();
+        while !self.next_if(b'_') {
+            if self.peek() == 0 {
+                return None;
+            }
+            args.push(self.ty()?);
+        }
+        if args.is_empty() {
+            return Some(nominal);
+        }
+        let kind = match nominal.kind {
+            Kind::Class => Kind::BoundGenericClass,
+            Kind::Structure => Kind::BoundGenericStructure,
+            Kind::Enum => Kind::BoundGenericEnum,
+            _ => return None,
+        };
+        Some(Node::with(
+            kind,
+            vec![mk_type(nominal), Node::with(Kind::TypeList, args)],
+        ))
+    }
+
     fn ty_inner(&mut self) -> Option<NodeRef> {
         match self.next() {
             b'C' => self.nominal(Kind::Class),
             b'V' => self.nominal(Kind::Structure),
             b'O' => self.nominal(Kind::Enum),
             b'P' => {
-                // A protocol composition: `P` protocol* `_`; a single
-                // protocol prints as the bare protocol.
                 let mut protos = Vec::new();
                 while !self.next_if(b'_') {
                     if self.peek() == 0 {
@@ -255,24 +292,7 @@ impl<'a> OldParser<'a> {
             }
             b'G' => {
                 let base = self.ty()?;
-                let nominal = Rc::clone(base.first()?);
-                let mut args = Vec::new();
-                while !self.next_if(b'_') {
-                    if self.peek() == 0 {
-                        return None;
-                    }
-                    args.push(self.ty()?);
-                }
-                let kind = match nominal.kind {
-                    Kind::Class => Kind::BoundGenericClass,
-                    Kind::Structure => Kind::BoundGenericStructure,
-                    Kind::Enum => Kind::BoundGenericEnum,
-                    _ => return None,
-                };
-                Some(mk_type(Node::with(
-                    kind,
-                    vec![base, Node::with(Kind::TypeList, args)],
-                )))
+                Some(mk_type(self.bound_generic_args(Rc::clone(base.first()?))?))
             }
             b'S' => {
                 let s = self.substitution()?;

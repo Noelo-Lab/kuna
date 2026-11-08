@@ -3777,16 +3777,20 @@ moves.
   (dispatch thunks, method descriptors, merged functions, `@objc` thunks,
   partial-apply forwarders, outlined copies, async function pointers and
   resume functions, generic and function-signature specializations,
-  reabstraction thunks, key path thunks, once-functions). The autodiff
-  family (`TJ…`) is not read. The full-form printer (`demangle_raw`) renders
-  the tree the way `swift-demangle` does, and is verified byte for byte
-  against it on 131,000 symbols — the Swift 6.3 stdlib and Foundation plus
-  the symbol tables and ObjC class names of seven iOS apps — and on 550,000
-  randomly mutated symbols (where both demangle, they agree; where
-  `swift-demangle` refuses, so does kuna). The one deliberate difference: a
-  constructor carrying a file discriminator without a name prints
-  `Foo.(in _HASH).init()` where `swift-demangle` prints its parameter type as
-  the name. The name-only printer (`demangle_name`, what the loader installs)
+  reabstraction thunks, key path thunks, once-functions). Out of coverage
+  (the symbol stays mangled): the autodiff family (`TJ…`), bridged outlines
+  (`Te`), macro entities (`fm`/`fM…`), Embedded Swift symbols (`$e`),
+  coroutine continuation prototypes (`TC`) and anonymous contexts (`XZ`).
+  The full-form printer (`demangle_raw`) renders the tree the way
+  `swift-demangle` from Swift 6.3 does, and is verified byte for byte against
+  it on the reference's own `manglings.txt`, on the Swift stdlib, Foundation
+  and app symbol tables, and on randomly mutated symbols (where both demangle,
+  they agree; where `swift-demangle` refuses, so does kuna). Swift 6.4 renamed
+  the two experimental coroutine accessors to `yielding_borrow` and
+  `yielding_mutate`; this printer keeps the 6.3 spellings `read2` and
+  `modify2`. The one deliberate difference: a constructor carrying a file
+  discriminator without a name prints `Foo.(in _HASH).init()` where
+  `swift-demangle` prints its parameter type as the name. The name-only printer (`demangle_name`, what the loader installs)
   is a projection of the same tree: space-free Swift reference syntax for
   members (`Sample.Foo.init(x:y:)`, `Foo.bar(_:)`, `Foo.baz()`, `Foo.x.getter`,
   `Foo.subscript(_:).getter`, `Foo.__allocating_init(x:)` on a class), dotted
