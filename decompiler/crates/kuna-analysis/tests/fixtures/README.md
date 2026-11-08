@@ -1003,6 +1003,14 @@ adrnext_sh4.py`; no SuperH toolchain here). Recipe, toolchains and SHA-256s in
 `kuna-cli/tests/xrefs_cli.rs (an_address_of_the_next_instruction_is_a_data_reference,
 no_link_references_the_return_address_it_leaves)`.
 
+`chkstkdarwin_macho_arm64` (arm64, 33 KB) calls the Darwin stack probe
+`___chkstk_darwin` and reads argument registers after it: `_big_frame` (a
+20,000-byte frame) and `_vla_last` (a variable-length array) through its
+`__got` slot, as Apple clang emits them, and `_probe_stub` with `bl` through its
+`__stubs` entry. Source `chkstkdarwin.c`; recipe, toolchain and SHA-256 in
+`chkstkdarwin_macho_arm64.provenance` (Apple clang, which needs macOS). Pinned
+by `tests/stages/kuna-chkstkdarwin.xml`.
+
 ## Mach-O fat/universal + arm64e (PR-8)
 
 The fat/universal + arm64e gate (`kuna-console/tests/verify_macho_fat.rs`, design

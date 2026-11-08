@@ -1,0 +1,83 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A">
+<!--
+    Darwin AArch64 stack probe (`option chkstkdarwin on|off`, default on).
+
+    Apple clang calls ___chkstk_darwin, with the byte count in x9, before it
+    allocates a frame larger than a page or a variable-length array. The probe
+    writes no register but x9, x16/x17 and the flags, and the code after it
+    reads the argument registers. The AArch64 prototype model kills x0, x1 and
+    x8-x18 at every call, so those reads became the probe's return value or a
+    register nothing assigns, and the functions lost their parameters.
+
+    Stage / sub-stage: P2 flow classification. The action in
+    p2_lift/kuna_chkstkdarwin.rs removes the probe call from the raw p-code
+    before FuncLink and SSA.
+
+    The XML wrapper only supplies the harness architecture. Both passes clear it
+    and load chkstkdarwin_macho_arm64 (source chkstkdarwin.c, recipe in
+    chkstkdarwin_macho_arm64.provenance) through the object bootstrap:
+      _big_frame   20,000-byte frame, probe called through the GOT
+                   (adrp x16; ldr x16,[x16]; blr x16), k read from w0 after it
+      _vla_last    variable-length array, probe called through the GOT, the
+                   index read from w0 and the size from x1 after it
+      _probe_stub  the probe called with bl through its __stubs entry, x0 and x1
+                   read after it
+      0x100000520  that __stubs entry itself: its br x16 to the probe is a jump,
+                   with no code after it, so it is left alone in both passes
+
+    Pass 1 (`option chkstkdarwin off`) reproduces the bug: each function takes
+    no parameter and assigns the probe's "result".
+    Pass 2 is the shipped default: the probe calls are gone and every function
+    takes its parameters again.
+
+    Assertions span the combined output of both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/chkstkdarwin_macho_arm64</com>
+  <com>option chkstkdarwin off</com>
+  <com>read symbols</com>
+  <com>load function _big_frame</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _vla_last</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _probe_stub</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x100000520</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/chkstkdarwin_macho_arm64</com>
+  <com>read symbols</com>
+  <com>load function _big_frame</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _vla_last</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _probe_stub</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x100000520</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CHKSTKDARWIN #1: off, all three functions assign the probe's result; on, none calls it" min="3" max="3">= __chkstk_darwin\(\);</stringmatch>
+<stringmatch name="CHKSTKDARWIN #2: off, big_frame loses its parameter" min="1" max="1">int4 _big_frame\(void\)</stringmatch>
+<stringmatch name="CHKSTKDARWIN #3: off, vla_last sizes its array from an x1 nothing assigns" min="1" max="1">int8 v4; // x1</stringmatch>
+<stringmatch name="CHKSTKDARWIN #4: on, big_frame takes k and indexes the frame with it" min="1" max="1">int4 _big_frame\(int4 a0\)</stringmatch>
+<stringmatch name="CHKSTKDARWIN #5: on, vla_last takes the index and the size" min="1" max="1">_vla_last\(int4 a0,int8 a1\)</stringmatch>
+<stringmatch name="CHKSTKDARWIN #6: on, the array is sized from the size parameter" min="1" max="1">0xfffffffffffffff0 - \(a1 \+ 0xfU &amp; 0xfffffffffffffff0\)</stringmatch>
+<stringmatch name="CHKSTKDARWIN #7: on, the stub-called probe keeps x0 and x1" min="1" max="1">int8 _probe_stub\(int8 a0,int8 a1\)</stringmatch>
+<stringmatch name="CHKSTKDARWIN #8: off and on, the __stubs entry still jumps to the probe" min="2" max="2">__chkstk_darwin\(\); // jump-as-call</stringmatch>
+</decompilertest>

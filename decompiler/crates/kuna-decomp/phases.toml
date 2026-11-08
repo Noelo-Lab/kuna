@@ -2069,6 +2069,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "chkstkdarwin"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "kuna-chkstkdarwin"
+summary = "Remove AArch64 calls to the Darwin stack probe `___chkstk_darwin` from the raw p-code before SSA and call recovery. Apple clang calls it, with the byte count in x9, before it allocates a frame larger than a page or a variable-length array. It writes no register but x9, the x16/x17 call scratch and the flags, and the code after it keeps reading the argument registers. The AArch64 prototype model kills x0, x1 and x8-x18 at every call, so an argument register read after the probe became the probe's return value or a local nothing assigns, and the function lost its parameters (`int _big_frame(void)` with `v2 = __chkstk_darwin();`, a variable-length array sized from an unassigned `// x1`). A direct CALL matches by the callee's name: `__chkstk_darwin` as the Mach-O loader names the import, or `___chkstk_darwin` as an image that defines it does. A CALLIND matches when its target is loaded, earlier in the same block, from a constant address that holds a function symbol of that name, which is the `adrp x16; ldr x16,[x16,#off]; blr x16` GOT call clang emits. A call-fixup cannot reach that call, because it only becomes direct after ActionDeindirect and a restart. Calls with an inject, inline or no-return fact are left alone, and so is a jump the flow turned into a call (the probe's own `__stubs` entry), which has no code after it. AArch64 only: the x86-64 probe takes its size in RAX and its CALL pushes a return address. The probe's page touches are not modelled, as with Ghidra's Windows `__chkstk` call-fixup."
+use_when = "On by default. Keep it on for macOS and iOS arm64 binaries: a function with a large frame or a variable-length array otherwise prints `v = __chkstk_darwin();`, loses the parameters it reads after the probe, or sizes a stack allocation from a register nothing assigns. Flip OFF to see the probe calls again, for instance to find the functions that allocate more than a page of stack."
+example = "option chkstkdarwin off"
+source_decompiler = "kuna"
+inspiration = "Ghidra's `__chkstk` <callfixup> in AARCH64_win.cspec, which removes the Windows AArch64 probe; libsystem_pthread's `___chkstk_darwin` saves and restores x10/x11 and writes only x9 and the flags"
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "v = __chkstk_darwin(); assigns a value an arm64 macOS function then uses as its argument|an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list|a variable-length array is sized from a register nothing assigns after __chkstk_darwin()|__chkstk_darwin is called with arguments it does not take"
+live_field = "chkstk_darwin"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "cortexmpriv"
 values = "on|off"
 default = "off"

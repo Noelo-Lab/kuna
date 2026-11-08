@@ -3243,3 +3243,41 @@ The summary declines when `stackviews` or `stackalias` is enabled. Those policie
 retain transient physical stack writes, which can create an independent scalar
 in the tail of a later buffer. Their original call representation remains until
 that overlapping ownership can be represented without shrinking the buffer.
+
+## Darwin AArch64 stack probes
+
+Apple clang calls `___chkstk_darwin` before it allocates a frame larger than a
+page or a variable-length array, with the byte count in `x9`. The probe touches
+each page below the stack pointer and returns. It writes no register but `x9`,
+the `x16`/`x17` call scratch and the flags, and the code after it reads the
+argument registers it was entered with. The AArch64 prototype model kills `x0`,
+`x1` and `x8`-`x18` at every call, so such a read became the call's return value
+or a value nothing assigns: `int big_frame(int k)` printed as
+`int _big_frame(void)` with `v2 = __chkstk_darwin();`, and a variable-length
+array was sized from an unassigned `x1`.
+
+With `option chkstkdarwin` on (the default), the action in
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_chkstkdarwin.rs` removes those
+calls from the raw p-code. It runs right after `rustprobestack`, before
+ExtraPopSetup, FuncLink and SSA, and only on AArch64 languages. A direct `CALL`
+matches when its callee is named `__chkstk_darwin`, as the Mach-O loader names
+the import (one leading underscore stripped), or `___chkstk_darwin`, as an image
+that defines it does. A `CALLIND` matches when a backward walk of at most 32 raw
+operations in its block finds its target loaded from a constant address built
+only from `COPY` and `INT_ADD` of constants, as in
+`adrp x16; ldr x16,[x16,#off]; blr x16`, and a function symbol of either name
+starts at that address. The walk declines at a call, at a partial write of the
+storage it follows and at any other producer. A call whose prototype carries an
+inject id, the inline flag or the no-return flag is left alone, and so is a call
+followed by a `RETURN` at its own address: a jump the flow turned into a call,
+such as the `br x16` of the probe's own `__stubs` entry, has no code after it
+that could read what the probe preserves.
+
+The match is by name because the probe is an import: the image holds no body to
+check, and the dynamic linker binds the slot by that name. A call-fixup, which is
+how Ghidra removes the Windows `__chkstk`, is woven in when flow follows a direct
+call; this call stays indirect until ActionDeindirect resolves the slot, so a
+fixup would cost a restart of every function with a large frame. The probe's page
+touches, and the stack-overflow fault they turn into, are not modelled. On
+x86-64 the probe takes its size in `RAX` and its `CALL` pushes a return address,
+so that target is not served. `off` keeps the call.

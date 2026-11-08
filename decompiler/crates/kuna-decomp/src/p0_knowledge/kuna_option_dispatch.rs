@@ -218,6 +218,7 @@ kuna_options! { self, p1;
     },
     "decodehalt" => on_off!(decode_halt, "Decode-failure halt reporting"),
     "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
+    "chkstkdarwin" => on_off!(chkstk_darwin, "Darwin stack-probe call removal"),
     "tailcalljump" => {
         let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
         self.tail_call_jumps = jumps;

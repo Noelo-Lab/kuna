@@ -45,6 +45,10 @@ Three tiers:
 | __ftol() / __ftol2() called with no arguments | [`msvcftol`](#msvcftol) |
 | the float computation feeding a float-to-int conversion is missing from an MSVC x86-32 binary | [`msvcftol`](#msvcftol) |
 | a __thiscall method lost its `this` pointer and reads its fields off a stack argument instead | [`msvcftol`](#msvcftol) |
+| v = __chkstk_darwin(); assigns a value an arm64 macOS function then uses as its argument | [`chkstkdarwin`](#chkstkdarwin) |
+| an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list | [`chkstkdarwin`](#chkstkdarwin) |
+| a variable-length array is sized from a register nothing assigns after __chkstk_darwin() | [`chkstkdarwin`](#chkstkdarwin) |
+| __chkstk_darwin is called with arguments it does not take | [`chkstkdarwin`](#chkstkdarwin) |
 | an `if (isCurrentModePrivileged())` block wraps every interrupt-mask or special-register access in Cortex-M firmware | [`cortexmpriv`](#cortexmpriv) |
 | `isCurrentModePrivileged()` appears in the emitted C at all | [`cortexmpriv`](#cortexmpriv) |
 | a Cortex-M function has more basic blocks and branches than its source | [`cortexmpriv`](#cortexmpriv) |
@@ -1565,6 +1569,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** An x86-32 MSVC binary shows bare `__ftol()` / `__ftol2()` calls with no arguments and the floating-point computation that fed them is missing (often together with a lost `this` pointer). On by default; flip OFF to restore the un-fixed call rendering.
 - **Where / provenance:** P2/flow-classification · ida · correctness-fix · kuna-msvcftol
 - **Example:** `option msvcftol off`
+
+### `chkstkdarwin` -- on | off, default `on`
+
+- **Symptoms:** v = __chkstk_darwin(); assigns a value an arm64 macOS function then uses as its argument; an arm64 macOS function with a large frame or a variable-length array prints with a (void) parameter list; a variable-length array is sized from a register nothing assigns after __chkstk_darwin(); __chkstk_darwin is called with arguments it does not take.
+- **What it does:** Remove AArch64 calls to the Darwin stack probe `___chkstk_darwin` from the raw p-code before SSA and call recovery. Apple clang calls it, with the byte count in x9, before it allocates a frame larger than a page or a variable-length array. It writes no register but x9, the x16/x17 call scratch and the flags, and the code after it keeps reading the argument registers. The AArch64 prototype model kills x0, x1 and x8-x18 at every call, so an argument register read after the probe became the probe's return value or a local nothing assigns, and the function lost its parameters (`int _big_frame(void)` with `v2 = __chkstk_darwin();`, a variable-length array sized from an unassigned `// x1`). A direct CALL matches by the callee's name: `__chkstk_darwin` as the Mach-O loader names the import, or `___chkstk_darwin` as an image that defines it does. A CALLIND matches when its target is loaded, earlier in the same block, from a constant address that holds a function symbol of that name, which is the `adrp x16; ldr x16,[x16,#off]; blr x16` GOT call clang emits. A call-fixup cannot reach that call, because it only becomes direct after ActionDeindirect and a restart. Calls with an inject, inline or no-return fact are left alone, and so is a jump the flow turned into a call (the probe's own `__stubs` entry), which has no code after it. AArch64 only: the x86-64 probe takes its size in RAX and its CALL pushes a return address. The probe's page touches are not modelled, as with Ghidra's Windows `__chkstk` call-fixup.
+- **When to flip:** On by default. Keep it on for macOS and iOS arm64 binaries: a function with a large frame or a variable-length array otherwise prints `v = __chkstk_darwin();`, loses the parameters it reads after the probe, or sizes a stack allocation from a register nothing assigns. Flip OFF to see the probe calls again, for instance to find the functions that allocate more than a page of stack.
+- **Where / provenance:** P2/flow-classification · kuna · correctness-fix · kuna-chkstkdarwin
+- **Example:** `option chkstkdarwin off`
 
 ### `cortexmpriv` -- on | off, default `off`
 

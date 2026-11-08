@@ -59,6 +59,7 @@ pub mod kuna_jumptablefault; // (kuna) test-only: panic one function's jump-tabl
 pub mod kuna_gojumpchain;
 
 pub mod kuna_rustprobestack;
+pub mod kuna_chkstkdarwin; // (kuna) remove the Darwin AArch64 stack probe so the registers it preserves survive it
 
 pub(crate) mod kuna_highslice_guard;
 pub mod kuna_stubtailcall; // (kuna) a loader-proven lazy-binding stub flows as a tail call

@@ -766,6 +766,12 @@ pub fn universal_sched(
             // LOCKED prototype that ActionFuncLink must materialize.
             act!(crate::p2_lift::kuna_msvcstrappend::ActionMsvcStrAppend::boxed("protorecovery")),
             act!(crate::kuna_rustprobestack::ActionRustProbestack::boxed("protorecovery")),
+            // (kuna) chkstkdarwin (option `chkstkdarwin`, default on): remove the
+            // AArch64 calls to `___chkstk_darwin`.  Here for the reason
+            // rustprobestack is: the call is matched on the RAW p-code and must be
+            // gone before FuncLink gives it trials and heritage kills the argument
+            // registers at it.
+            act!(crate::kuna_chkstkdarwin::ActionChkstkDarwin::boxed("protorecovery")),
             act!(ActionNormalizeSetup::boxed("normalanalysis")),
             act!(ActionDefaultParams::boxed("base")),
             SchedNode::Action(Box::new(move || {

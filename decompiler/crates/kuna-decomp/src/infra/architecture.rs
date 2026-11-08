@@ -584,6 +584,10 @@ pub struct Architecture {
     /// Default on; read by the analysis-tier call-fixup installer, which drops
     /// this one fixup's targets from the install map when off.
     pub msvc_ftol: bool,
+    /// (kuna `chkstkdarwin`) Remove AArch64 calls to the Darwin stack probe
+    /// `___chkstk_darwin` before SSA (`p2_lift/kuna_chkstkdarwin.rs`), so the
+    /// argument registers it preserves keep their values across it. Default on.
+    pub chkstk_darwin: bool,
     /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump on|direct`).
@@ -3153,6 +3157,7 @@ impl Architecture {
             image_windows_user: false, // (kuna) a load-time fact; set by the console's `load file`
             decode_halt: false, // (kuna) option decodehalt; reset_defaults sets the shipped default
             msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
+            chkstk_darwin: false, // (kuna) option chkstkdarwin; reset_defaults sets the shipped default
             tail_call_jumps: false,
             tail_call_tables: false, // (kuna) option tailcalljump; reset_defaults sets the shipped default
             got_tail_call: false, // (kuna) option gottailcall; reset_defaults sets the shipped default
@@ -3631,6 +3636,7 @@ impl Architecture {
         self.decode_halt = true; // (kuna) DIV-151 default-on: a `CPUI_RETURN` kuna planted because it could NOT decode the bytes renders as upstream `PrintC::opReturn`'s `halt_baddata()`/`halt_unimplemented()`/`halt_missing()` pseudo-call rather than a bare `return;`, and carries the upstream truncation + header warnings. Reachable only through the three decode-failure halt types, which no datatest function produces, so it is byte-identical there (0/675); `option decodehalt off` restores the silent `return;`
         self.fastfail_noreturn = true; // (kuna) DIV-119 default-on: REMOVES CODE. Ends the flow at a Windows `int 0x29` (`__fastfail`), whose SLEIGH lifting is a call with no matching push and so gains 8 bytes of stack pointer from the cspec's `extrapop` at every site. Windows-cspec-gated and shape-gated on `swi(0x29:1)`, so it is structurally inert on the datatest corpus and byte-identical there (0/675); restore the unbalanced fall-through with `option fastfailnoreturn off`
         self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
+        self.chkstk_darwin = true; // (kuna) DIV-PENDING default-on: AArch64-only, and inert unless a call reaches `___chkstk_darwin`. Byte-identical (0/675) — no corpus function calls it. Restore the probe call with `option chkstkdarwin off`
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.tail_call_tables = true; // (kuna) GH-781 default `tailcalljump on`: a veneer whose one destination is another function's entry is a tail call when the destination is outside a declared extent, or the callee's prototype is stated and its return value (if any) reaches a stated output. 0/675 byte-identical on the datatest corpus; `option tailcalljump direct` restores the flow into the destination
         self.got_tail_call = true; // (kuna) GH-904 default-on: a one-destination computed jump to a function with no bytes, or to one a callee-first run filed as losing nothing to a call, is a tail call. 0/675 byte-identical on the datatest corpus; `option gottailcall off` restores tailcalljump's rule
@@ -4551,6 +4557,7 @@ impl Architecture {
         ctx.fat_str = self.fat_str;
         ctx.go_morestack = self.go_morestack;
         ctx.rust_probestack = self.rust_probestack;
+        ctx.chkstk_darwin = self.chkstk_darwin && crate::kuna_chkstkdarwin::applies_to(&self.archid);
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
         ctx.reload_arg = self.reload_arg;

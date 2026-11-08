@@ -122,17 +122,18 @@ fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
         "all universalAction passes are ported; UNPORTED_ALLOWLIST must be empty"
     );
     assert_eq!(
-        nonblank, 300,
+        nonblank, 301,
         "full kuna schedule registration count changed"
     );
 
     // These setup passes include groups absent from the decompile snapshot.
-    let head: Vec<&str> = lines.iter().take(16).map(|l| name_of(l)).collect();
+    let head: Vec<&str> = lines.iter().take(17).map(|l| name_of(l)).collect();
     assert_eq!(
         head,
         vec![
             "universal", "start", "constbase", "linuxsyscall", "x64syscall", "syscallregs",
-            "pebnames", "msvcstrappend", "rustprobestack", "normalizesetup", "defaultparams", "extrapopsetup",
+            "pebnames", "msvcstrappend", "rustprobestack", "chkstkdarwin", "normalizesetup", "defaultparams",
+            "extrapopsetup",
             "prototypetypes", "funclink", "funclink_outonly", "fullloop",
         ]
     );
