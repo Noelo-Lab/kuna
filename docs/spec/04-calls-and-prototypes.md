@@ -3991,9 +3991,10 @@ tier's `(addr, model)` facts land in `Architecture::loader_proto_models` and
 reach every function's handle as `ArchContext::bound_proto_models`
 (`decompiler/crates/kuna-decomp/src/substrate/context.rs
 (ArchContext::bound_proto_model)`). The function's own decompile, when no
-prototype and no parameter lock is declared for it, sets the model on its
-prototype and locks the model alone, so `ActionPrototypeTypes` keeps it and
-input recovery runs under it; `ArchContext::callee_proto_model` answers the
+prototype is declared for it, sets the model on its prototype and locks the
+model alone, so `ActionPrototypeTypes` keeps it and input recovery runs under
+it; a parameter lock (a class getter's pinned `self`) is applied on top and
+does not displace the model; `ArchContext::callee_proto_model` answers the
 bound model for a callee with no declared pieces, and `ActionDefaultParams`
 gives a call to it that model instead of the evaluation default, so the
 caller's argument recovery sees the callee's `swiftself`.

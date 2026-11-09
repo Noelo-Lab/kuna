@@ -1888,7 +1888,7 @@ fn decompile_func_full_with_objects_inner(
             fd.get_func_proto_mut().set_input_lock(false);
             fd.kuna_set_elfmain(Some(rt.fresh()));
         } else if let Some(model) =
-            fd.get_arch().bound_proto_model(&entry_addr).filter(|_| mapped_params.is_empty())
+            fd.get_arch().bound_proto_model(&entry_addr)
         {
             // (kuna) A convention bound without a signature: the parameters
             // are recovered under it, and the hinted ones named and typed.
