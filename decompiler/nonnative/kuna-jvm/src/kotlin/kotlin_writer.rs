@@ -3,6 +3,19 @@
 //! A [`Caught`] has no stack trace or cause: `collectErrorLines` is
 //! `ClassWriter::collect_error_lines` (its throw location is the only frame),
 //! so `ERROR_DUMP_STOP_POINTS` is never consulted.
+//!
+//! kuna fix `jvm_fix_kt_synthetic_anonymous_object` (`kuna_fixes`): an
+//! anonymous class without Class metadata that needs no constructor
+//! arguments is written as an `object` whose supertypes come from the class
+//! file, with no flags comment, where Vineflower throws; its methods keep
+//! their `return`s and failure comments
+//! (`kuna_fix_kt_synthetic_anonymous_object`).
+//!
+//! kuna fix `jvm_fix_kt_local_as_extension_receiver`: in `write_method`,
+//! only a method with a parameter can be an extension function, where
+//! Vineflower takes a `$this$` local in the first free slot of a
+//! parameterless method (a captured receiver's alias, an inlined lambda's
+//! receiver) for its receiver.
 
 use std::rc::Rc;
 
@@ -50,6 +63,8 @@ use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{ClassKind, Modality, Visibility};
+use crate::kuna_fix_kt_synthetic_anonymous_object;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::kuna_spans;
 use crate::link_constant::LinkConstant;
 use crate::metadata_name_resolver::MetadataNameResolver;
@@ -504,7 +519,12 @@ impl KotlinWriter {
             }
         }
 
+        let synthetic_object = !matches!(kt_data, Some(KElement::Class(_)))
+            && kuna_fixes::enabled(KunaFix::KtSyntheticAnonymousObject)
+            && kuna_fix_kt_synthetic_anonymous_object::is_writable(node);
+
         let kotlin_flags = match &kt_data {
+            None if synthetic_object => 0,
             None => {
                 KotlinWriter::append_comment(buffer, "Class flags could not be determined", indent);
                 0
@@ -836,8 +856,16 @@ impl KotlinWriter {
 
                     let mut method_buffer = TextBuffer::new();
                     let span = kuna_spans::open_method(&mut method_buffer, cl, mt, wrapper);
-                    let method_skipped =
-                        !self.write_method(node, mt, i as i32, &mut method_buffer, indent);
+                    let method_skipped = if synthetic_object {
+                        let method_wrapper = wrapper.get_method_wrapper_index(i as i32);
+                        let written = kuna_fix_kt_synthetic_anonymous_object::write_declaration(
+                            method_wrapper,
+                            || self.write_method(node, mt, i as i32, &mut method_buffer, indent),
+                        );
+                        !written && method_wrapper.with(|d| d.decompile_error.is_none())
+                    } else {
+                        !self.write_method(node, mt, i as i32, &mut method_buffer, indent)
+                    };
                     kuna_spans::close(&mut method_buffer, span);
                     if !method_skipped {
                         if has_content {
@@ -1270,6 +1298,12 @@ impl KotlinWriter {
         let node_type = node.with(|d| d.type_);
         if node_type == ClassNodeType::Anonymous {
             let Some(KElement::Class(cls)) = kt_data else {
+                if kuna_fixes::enabled(KunaFix::KtSyntheticAnonymousObject)
+                    && kuna_fix_kt_synthetic_anonymous_object::is_writable(node)
+                {
+                    kuna_fix_kt_synthetic_anonymous_object::write_object_header(node, buffer);
+                    return;
+                }
                 jthrow!(IllegalStateException; "Anonymous class does not have Class Kotlin metadata");
             };
 
@@ -1981,7 +2015,9 @@ impl KotlinWriter {
                 let varproc_name = varproc.get_var_name(VarVersionPair::new(index, 0));
                 let extension = varproc_name
                     .as_deref()
-                    .is_some_and(|n| n.starts_with("$this$"));
+                    .is_some_and(|n| n.starts_with("$this$"))
+                    && (md.params.len() > start
+                        || !kuna_fixes::enabled(KunaFix::KtLocalAsExtensionReceiver));
 
                 if extension {
                     let param_type = match &descriptor {

@@ -3131,6 +3131,12 @@ case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB	Kotlin Multifile 
 class	classes/kotlin/kt/pkg/TestMultifile__TestMultifileBKt.class
 expected	expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB.kt
 compare	TestMultifile__TestMultifileBKt.kt	TestMultifile__TestMultifileBKt.java
+case	kuna-fixes-compat/pkg/TestCapturedReceiverKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestCapturedReceiverKt.class
+class	kuna-fixes/classes/pkg/TestCapturedReceiverKt$iterator$1.class
+expected	kuna-fixes/expected-compat/pkg/TestCapturedReceiverKt.kt
+compare	TestCapturedReceiverKt.kt	TestCapturedReceiverKt.java
 case	kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Factory.class
@@ -3140,6 +3146,20 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected-compat/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes-compat/pkg/TestSamWrapperObjectKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSamWrapperObjectKt.class
+class	kuna-fixes/classes/pkg/TestSamWrapperObjectKt$byLength$1.class
+class	kuna-fixes/classes/pkg/TestSamWrapperObjectKt$nullsFirstBy$1.class
+class	kuna-fixes/classes/pkg/TestSamWrapperObjectKt$twice$1.class
+expected	kuna-fixes/expected-compat/pkg/TestSamWrapperObjectKt.kt
+compare	TestSamWrapperObjectKt.kt	TestSamWrapperObjectKt.java
+case	kuna-fixes/pkg/TestCapturedReceiverKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestCapturedReceiverKt.class
+class	kuna-fixes/classes/pkg/TestCapturedReceiverKt$iterator$1.class
+expected	kuna-fixes/expected/pkg/TestCapturedReceiverKt.kt
+compare	TestCapturedReceiverKt.kt	TestCapturedReceiverKt.java
 case	kuna-fixes/pkg/TestMethodRefWildcardReceiver	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Factory.class
@@ -3149,3 +3169,11 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes/pkg/TestSamWrapperObjectKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestSamWrapperObjectKt.class
+class	kuna-fixes/classes/pkg/TestSamWrapperObjectKt$byLength$1.class
+class	kuna-fixes/classes/pkg/TestSamWrapperObjectKt$nullsFirstBy$1.class
+class	kuna-fixes/classes/pkg/TestSamWrapperObjectKt$twice$1.class
+expected	kuna-fixes/expected/pkg/TestSamWrapperObjectKt.kt
+compare	TestSamWrapperObjectKt.kt	TestSamWrapperObjectKt.java

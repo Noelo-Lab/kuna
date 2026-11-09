@@ -1076,3 +1076,53 @@ added as before. spring-boot's `StructuredLoggingJsonProperties.customizers` is 
 showed it; with the fix it prints `this.customizer().stream().map(instantiator::instantiateType).toList()`,
 the source without its raw `(List)` cast, which javac does not record, exactly as Vineflower
 prints the same call on a receiver without a wildcard.
+
+**`jvm_fix_kt_synthetic_anonymous_object`.** The Kotlin writer prints an anonymous class
+where its `new` stands, as an `object` expression
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_new_exprent.rs` calls
+`KotlinWriter::write_class`), and takes the object's supertypes from its Kotlin Class
+metadata (`decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_writer.rs
+(KotlinWriter::write_class_definition)`); a class with Function metadata is written as a
+lambda instead. kotlinc 2.x gives a third kind of anonymous class only synthetic-class
+metadata (`k = 3`) with no data: a SAM conversion or function-type lambda it cannot compile
+to `invokedynamic` because it sits in an inline function and uses a `crossinline`
+parameter (kotlin-stdlib's `compareBy`, `thenBy`, `AutoCloseable { }`; the inline functions
+that call those, `sortedBy`, `sortBy`, create the same class), a suspend function's
+continuation, and a reference to a local function. For such a class `writeClassDefinition`
+throws `IllegalStateException: Anonymous class does not have Class Kotlin metadata` and the
+method that creates it fails (unchanged on `develop/1.13.0`). With the fix,
+`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_synthetic_anonymous_object.rs`
+writes the object from the class file: `object : ` and the supertypes other than `Object`,
+from the generic signature when there is one, as the writer prints the supertypes of a named
+class without metadata, and no "Class flags could not be determined" comment. Its methods
+have no metadata either and go through `write_method`, with two differences that put them
+where an object's functions stand: a `return` is printed (`write_method` installs the method
+as the current method wrapper, and `KExitExprent` drops the `return` of a lambda body, which
+it recognises by a current method wrapper; with the fix the method being written counts as
+none), and a method whose body fails keeps its failure comment (`write_method_body` hides
+such a method, which would print the object without it). An `object` expression has no
+superclass constructor call, takes no constructor arguments and refers to what it captures by
+name, so the fix writes only an object that needs none of that: its superclass is `Object`,
+every constructor parameter is a captured variable, and the `new` passes each one the variable
+of the name the object's body uses for it (`NestedClassProcessor` names the captures after the
+enclosing method's variables, which is right where the class is created in that method, and
+where an inline function that calls it passes a variable of the same name). A continuation, a
+function reference or a class created with other arguments still fails as in Vineflower.
+The 37 kotlin-stdlib methods of this failure now print `object : Comparator { fun compare(a: T,
+b: T): Int { return .. } }` (or `AutoCloseable`, `Function1<T, Integer>`).
+
+**`jvm_fix_kt_local_as_extension_receiver`.** For a method without metadata,
+`decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_writer.rs (KotlinWriter::write_method)`
+decides that it is an extension function when the variable in its first parameter slot is
+named `$this$..`, and then reads the first parameter's type. In a method without
+parameters that slot holds no parameter but can still hold such a name: `NestedClassProcessor`
+gives every method of an anonymous class a variable, in its first free slot, for each
+variable the class captures, named after it (`$this$iterator` when it captures the enclosing
+function's extension receiver), and kotlinc names the receiver of a lambda with receiver it
+inlines into the method `$this$..` too. So `operator fun <T> Enumeration<T>.iterator() =
+object : Iterator<T> { .. }` fails while the `remove()` kotlinc adds to an object implementing
+a read-only `Iterator` is written, and spring-framework's `BeanDefinitionDsl$bean$$inlined$bean$N`
+classes (a `Supplier` whose `get()` runs an inlined `BeanSupplierContext.() -> T`) fail whole,
+with `ArrayIndexOutOfBoundsException` (kuna: `index out of bounds`; unchanged on
+`develop/1.13.0`). With the fix only a method with a parameter can be an extension function;
+the others are written as plain methods.

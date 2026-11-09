@@ -1,4 +1,9 @@
 //! Port of `org/vineflower/kotlin/expr/KNewExprent.java`.
+//!
+//! kuna fix `jvm_fix_kt_synthetic_anonymous_object` (`kuna_fixes`): an
+//! anonymous class is written with its `new`'s constructor at hand, so the
+//! fix can tell whether the object's captured names mean what this `new`
+//! passes.
 
 use crate::class_writer::ClassWriter;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -19,6 +24,8 @@ use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
 use crate::kt_attrs::KtAttrs;
+use crate::kuna_fix_kt_synthetic_anonymous_object;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::new_exprent::NewExprent;
@@ -292,11 +299,16 @@ impl KNewExprent {
             }
         } else if self.is_anonymous() {
             buf.add_bytecode_mapping(self.get_bytecode().as_ref());
-            KotlinWriter::new().write_class(
-                node.unwrap_or_else(|| npe("KNewExprent anonymous node")),
-                &mut buf,
-                indent,
-            );
+            let node = node.unwrap_or_else(|| npe("KNewExprent anonymous node"));
+            if kuna_fixes::enabled(KunaFix::KtSyntheticAnonymousObject) {
+                kuna_fix_kt_synthetic_anonymous_object::write_at_site(
+                    node,
+                    self.get_constructor(),
+                    || KotlinWriter::new().write_class(node, &mut buf, indent),
+                );
+            } else {
+                KotlinWriter::new().write_class(node, &mut buf, indent);
+            }
             return buf;
         }
 

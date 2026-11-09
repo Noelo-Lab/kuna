@@ -1,4 +1,8 @@
 //! Port of `org/vineflower/kotlin/expr/KExitExprent.java`.
+//!
+//! kuna fix `jvm_fix_kt_synthetic_anonymous_object` (`kuna_fixes`): in a
+//! method of an object that fix writes, the current method wrapper is the
+//! method itself, not a lambda's, and a `return` is printed.
 
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::{ExitExprent, Type as ExitType};
@@ -7,6 +11,8 @@ use crate::jthrow;
 use crate::k_dispatch::KExprentExt;
 use crate::k_type::KType;
 use crate::kotlin_exprent;
+use crate::kuna_fix_kt_synthetic_anonymous_object;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -44,7 +50,10 @@ impl KExitExprent {
             return ExitExprent::to_java(self.0, indent);
         }
 
-        let outer_method = DecompilerContext::get_current_method_wrapper();
+        let outer_method = DecompilerContext::get_current_method_wrapper().filter(|m| {
+            !(kuna_fixes::enabled(KunaFix::KtSyntheticAnonymousObject)
+                && kuna_fix_kt_synthetic_anonymous_object::is_declaration(*m))
+        });
         if outer_method.is_some() {
             let mut buf = TextBuffer::new();
 

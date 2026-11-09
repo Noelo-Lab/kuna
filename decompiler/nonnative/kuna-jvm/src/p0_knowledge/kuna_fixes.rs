@@ -29,17 +29,31 @@ pub enum KunaFix {
     /// `jvm_fix_lambda_wildcard_return`: a method reference on a receiver
     /// whose type argument is `?` no longer fails type inference.
     LambdaWildcardReturn,
+    /// `jvm_fix_kt_synthetic_anonymous_object`: an anonymous class with only
+    /// synthetic-class Kotlin metadata is written as an `object` whose
+    /// supertypes come from the class file.
+    KtSyntheticAnonymousObject,
+    /// `jvm_fix_kt_local_as_extension_receiver`: a `$this$` local of a
+    /// method without parameters is not taken for an extension receiver.
+    KtLocalAsExtensionReceiver,
 }
 
 impl KunaFix {
     /// Every fix, in declaration order.
-    pub const ALL: &'static [KunaFix] = &[KunaFix::ReportToKuna, KunaFix::LambdaWildcardReturn];
+    pub const ALL: &'static [KunaFix] = &[
+        KunaFix::ReportToKuna,
+        KunaFix::LambdaWildcardReturn,
+        KunaFix::KtSyntheticAnonymousObject,
+        KunaFix::KtLocalAsExtensionReceiver,
+    ];
 
     /// The option row that turns this fix on or off.
     pub fn option(self) -> &'static str {
         match self {
             KunaFix::ReportToKuna => "jvm_fix_report_to_kuna",
             KunaFix::LambdaWildcardReturn => "jvm_fix_lambda_wildcard_return",
+            KunaFix::KtSyntheticAnonymousObject => "jvm_fix_kt_synthetic_anonymous_object",
+            KunaFix::KtLocalAsExtensionReceiver => "jvm_fix_kt_local_as_extension_receiver",
         }
     }
 
