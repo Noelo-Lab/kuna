@@ -287,13 +287,11 @@ impl SFormsConstructor {
             let parent = stat.get_parent()?;
 
             if parent.is_catch_all() || parent.is_catch() {
-                let first: Option<Statement> = parent.get_first().into();
-                if first == Some(stat) {
+                if parent.get_first() == Some(stat) {
                     return Some(parent);
                 }
             } else if let Some(sync) = parent.try_as_synchronized() {
-                let body: Option<Statement> = sync.get_body().into();
-                if body == Some(stat) {
+                if sync.get_body() == stat {
                     return Some(parent);
                 }
             }
