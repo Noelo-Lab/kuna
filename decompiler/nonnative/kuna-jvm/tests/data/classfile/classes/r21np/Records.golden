@@ -1,0 +1,191 @@
+class Records
+version 65.0
+flags 0x0031
+super java/lang/Record
+interfaces 1 java/lang/Comparable
+attrs BootstrapMethods,InnerClasses,Record,Signature
+bootstrap 0 6:java/lang/runtime/SwitchBootstraps.typeSwitch:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 1 6:java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args 1
+bootstrap 2 6:java/lang/runtime/ObjectMethods.bootstrap:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/TypeDescriptor;Ljava/lang/Class;Ljava/lang/String;[Ljava/lang/invoke/MethodHandle;)Ljava/lang/Object; args 6
+innerclass Records$Empty Records Empty 0x0018
+innerclass Records$Mark Records Mark 0x0008
+innerclass java/lang/invoke/MethodHandles$Lookup java/lang/invoke/MethodHandles Lookup 0x0019
+record name Ljava/lang/String; attrs RuntimeVisibleAnnotations
+record age I attrs 
+record value Ljava/lang/Comparable; attrs Signature
+record tags [Ljava/util/List; attrs Signature
+signature <T::Ljava/lang/Comparable<TT;>;>Ljava/lang/Record;Ljava/lang/Comparable<LRecords<TT;>;>;
+field name Ljava/lang/String;
+ flags 0x0012
+ attrs RuntimeVisibleAnnotations
+ anno RuntimeVisibleAnnotations #82()
+field age I
+ flags 0x0012
+ attrs 
+field value Ljava/lang/Comparable;
+ flags 0x0012
+ attrs Signature
+ signature TT;
+field tags [Ljava/util/List;
+ flags 0x0012
+ attrs Signature
+ signature [Ljava/util/List<Ljava/lang/String;>;
+method <init> (Ljava/lang/String;ILjava/lang/Comparable;[Ljava/util/List;)V
+ flags 0x0081
+ attrs MethodParameters,RuntimeVisibleParameterAnnotations,Signature
+ params name:0x8000 age:0x8000 value:0x8000 tags:0x8000
+ panno RuntimeVisibleParameterAnnotations 0 #82()
+ signature (Ljava/lang/String;ITT;[Ljava/util/List<Ljava/lang/String;>;)V
+ code locals=5
+  0: aload 0
+  1: invokespecial 1 | java/lang/Record.<init>:()V
+  4: iload 2
+  5: ifge 11 | -> 16
+  8: new 7 | java/lang/IllegalArgumentException
+  11: dup
+  12: invokespecial 9 | java/lang/IllegalArgumentException.<init>:()V
+  15: athrow
+  16: aload 0
+  17: aload 1
+  18: putfield 10 | Records.name:Ljava/lang/String;
+  21: aload 0
+  22: iload 2
+  23: putfield 16 | Records.age:I
+  26: aload 0
+  27: aload 3
+  28: putfield 20 | Records.value:Ljava/lang/Comparable;
+  31: aload 0
+  32: aload 4
+  34: putfield 24 | Records.tags:[Ljava/util/List;
+  37: return
+method compareTo (LRecords;)I
+ flags 0x0001
+ attrs MethodParameters,Signature
+ params o:0x0000
+ signature (LRecords<TT;>;)I
+ code locals=2
+  0: aload 0
+  1: getfield 20 | Records.value:Ljava/lang/Comparable;
+  4: aload 1
+  5: getfield 20 | Records.value:Ljava/lang/Comparable;
+  8: invokeinterface 28 2 | java/lang/Comparable.compareTo:(Ljava/lang/Object;)I
+  13: ireturn
+method describe (Ljava/lang/Object;)Ljava/lang/String;
+ flags 0x0008
+ attrs MethodParameters
+ params o:0x0000
+ code locals=6
+  0: aload 0
+  1: instanceof 11 | Records
+  4: ifeq 21 | -> 25
+  7: aload 0
+  8: checkcast 11 | Records
+  11: astore 1
+  12: aload 1
+  13: invokevirtual 34 | Records.age:()I
+  16: bipush 3
+  17: if_icmple 8 | -> 25
+  20: aload 1
+  21: invokevirtual 37 | Records.name:()Ljava/lang/String;
+  24: areturn
+  25: aload 0
+  26: dup
+  27: invokestatic 40 | java/util/Objects.requireNonNull:(Ljava/lang/Object;)Ljava/lang/Object;
+  30: pop
+  31: astore 1
+  32: bipush 0
+  33: istore 2
+  34: aload 1
+  35: iload 2
+  36: invokedynamic 46 | #0:typeSwitch:(Ljava/lang/Object;I)I
+  41: tableswitch 77 0 2 27 50 61 | -> 118 [0:68 1:91 2:102]
+  68: aload 1
+  69: checkcast 50 | java/lang/String
+  72: astore 3
+  73: aload 3
+  74: invokevirtual 52 | java/lang/String.length:()I
+  77: bipush 2
+  78: if_icmpgt 8 | -> 86
+  81: bipush 1
+  82: istore 2
+  83: goto -49 | -> 34
+  86: ldc 55
+  88: goto 35 | -> 123
+  91: aload 1
+  92: checkcast 50 | java/lang/String
+  95: astore 4
+  97: ldc 57
+  99: goto 24 | -> 123
+  102: aload 1
+  103: checkcast 59 | java/lang/Integer
+  106: astore 5
+  108: aload 5
+  110: invokedynamic 61 | #1:makeConcatWithConstants:(Ljava/lang/Integer;)Ljava/lang/String;
+  115: goto 8 | -> 123
+  118: ldc 65
+  120: goto 3 | -> 123
+  123: areturn
+method toString ()Ljava/lang/String;
+ flags 0x0011
+ attrs 
+ code locals=1
+  0: aload 0
+  1: invokedynamic 70 | #2:toString:(LRecords;)Ljava/lang/String;
+  6: areturn
+method hashCode ()I
+ flags 0x0011
+ attrs 
+ code locals=1
+  0: aload 0
+  1: invokedynamic 74 | #2:hashCode:(LRecords;)I
+  6: ireturn
+method equals (Ljava/lang/Object;)Z
+ flags 0x0011
+ attrs MethodParameters
+ params o:0x0000
+ code locals=2
+  0: aload 0
+  1: aload 1
+  2: invokedynamic 77 | #2:equals:(LRecords;Ljava/lang/Object;)Z
+  7: ireturn
+method name ()Ljava/lang/String;
+ flags 0x0001
+ attrs RuntimeVisibleAnnotations
+ anno RuntimeVisibleAnnotations #82()
+ code locals=1
+  0: aload 0
+  1: getfield 10 | Records.name:Ljava/lang/String;
+  4: areturn
+method age ()I
+ flags 0x0001
+ attrs 
+ code locals=1
+  0: aload 0
+  1: getfield 16 | Records.age:I
+  4: ireturn
+method value ()Ljava/lang/Comparable;
+ flags 0x0001
+ attrs Signature
+ signature ()TT;
+ code locals=1
+  0: aload 0
+  1: getfield 20 | Records.value:Ljava/lang/Comparable;
+  4: areturn
+method tags ()[Ljava/util/List;
+ flags 0x0001
+ attrs Signature
+ signature ()[Ljava/util/List<Ljava/lang/String;>;
+ code locals=1
+  0: aload 0
+  1: getfield 24 | Records.tags:[Ljava/util/List;
+  4: areturn
+method compareTo (Ljava/lang/Object;)I
+ flags 0x1041
+ attrs MethodParameters
+ params o:0x1000
+ code locals=2
+  0: aload 0
+  1: aload 1
+  2: checkcast 11 | Records
+  5: invokevirtual 67 | Records.compareTo:(LRecords;)I
+  8: ireturn

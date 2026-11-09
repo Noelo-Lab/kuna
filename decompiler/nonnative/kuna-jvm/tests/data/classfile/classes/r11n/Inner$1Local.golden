@@ -1,0 +1,36 @@
+class Inner$1Local
+version 55.0
+flags 0x0020
+super java/lang/Object
+interfaces 1 Inner$Callback
+attrs EnclosingMethod,InnerClasses,NestHost
+enclosing Inner local
+innerclass Inner$1Local - Local 0x0000
+innerclass Inner$Callback Inner Callback 0x0008
+nesthost Inner
+field this$0 LInner;
+ flags 0x1010
+ attrs 
+method <init> (LInner;)V
+ flags 0x0000
+ attrs MethodParameters
+ params -:0x8010
+ code locals=2
+  0: aload 0
+  1: aload 1
+  2: putfield 1 | Inner$1Local.this$0:LInner;
+  5: aload 0
+  6: invokespecial 7 | java/lang/Object.<init>:()V
+  9: return
+method call ()V
+ flags 0x0001
+ attrs 
+ code locals=1
+  0: aload 0
+  1: getfield 1 | Inner$1Local.this$0:LInner;
+  4: dup
+  5: getfield 13 | Inner.secret:I
+  8: bipush 1
+  9: iadd
+  10: putfield 13 | Inner.secret:I
+  13: return

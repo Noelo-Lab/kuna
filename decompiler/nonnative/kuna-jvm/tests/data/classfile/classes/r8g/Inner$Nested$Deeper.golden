@@ -1,0 +1,18 @@
+class Inner$Nested$Deeper
+version 52.0
+flags 0x0020
+super java/lang/Object
+interfaces 0
+attrs InnerClasses,SourceFile
+innerclass Inner$Nested Inner Nested 0x0008
+innerclass Inner$Nested$Deeper Inner$Nested Deeper 0x0008
+sourcefile Inner.java
+method <init> ()V
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: invokespecial 1 | java/lang/Object.<init>:()V
+  4: return
+  line 0 6
+  lvt 0 0 5 this LInner$Nested$Deeper;

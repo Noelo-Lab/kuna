@@ -1,0 +1,10 @@
+class Records$Mark
+version 65.0
+flags 0x2600
+super java/lang/Object
+interfaces 1 java/lang/annotation/Annotation
+attrs InnerClasses,NestHost,RuntimeVisibleAnnotations
+innerclass Records$Mark Records Mark 0x0008
+nesthost Records
+anno RuntimeVisibleAnnotations #8(#9=e#10.#11)
+anno RuntimeVisibleAnnotations #12(#9=[e#13.#14,e#13.#15,e#13.#16,e#13.#17])

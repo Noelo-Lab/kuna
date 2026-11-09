@@ -1,0 +1,32 @@
+class Enums$3
+version 61.0
+flags 0x4030
+super Enums
+interfaces 0
+attrs EnclosingMethod,InnerClasses,NestHost,SourceFile
+enclosing Enums -
+innerclass Enums$3 - - 0x0010
+nesthost Enums
+sourcefile Enums.java
+method <init> (Ljava/lang/String;ILjava/lang/String;)V
+ flags 0x0002
+ attrs LineNumberTable,LocalVariableTable,MethodParameters
+ params $enum$name:0x1000 $enum$ordinal:0x1000 tag:0x0000
+ code locals=4
+  0: aload 0
+  1: aload 1
+  2: iload 2
+  3: aload 3
+  4: invokespecial 1 | Enums.<init>:(Ljava/lang/String;ILjava/lang/String;)V
+  7: return
+  line 0 4
+  lvt 0 0 8 this LEnums$3;
+  lvt 3 0 8 tag Ljava/lang/String;
+method code ()I
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: bipush 3
+  1: ireturn
+  line 0 4
+  lvt 0 0 2 this LEnums$3;

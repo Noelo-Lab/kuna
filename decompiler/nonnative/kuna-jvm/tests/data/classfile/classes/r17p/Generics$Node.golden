@@ -1,0 +1,41 @@
+class Generics$Node
+version 61.0
+flags 0x0020
+super java/lang/Object
+interfaces 0
+attrs InnerClasses,NestHost,Signature,SourceFile
+innerclass Generics$Node Generics Node 0x0000
+nesthost Generics
+signature <N:Ljava/lang/Object;>Ljava/lang/Object;
+sourcefile Generics.java
+field value Ljava/lang/Object;
+ flags 0x0000
+ attrs Signature
+ signature TN;
+field this$0 LGenerics;
+ flags 0x1010
+ attrs 
+method <init> (LGenerics;)V
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable,LocalVariableTypeTable,MethodParameters
+ params this$0:0x8010
+ code locals=2
+  0: aload 0
+  1: aload 1
+  2: putfield 1 | Generics$Node.this$0:LGenerics;
+  5: aload 0
+  6: invokespecial 7 | java/lang/Object.<init>:()V
+  9: return
+  line 0 24
+  lvt 0 0 10 this LGenerics$Node; LGenerics<TK;TV;>.Node<TN;>;
+  lvt 1 0 10 this$0 LGenerics;
+method owner ()LGenerics;
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable,LocalVariableTypeTable,Signature
+ signature ()LGenerics<TK;TV;>;
+ code locals=1
+  0: aload 0
+  1: getfield 1 | Generics$Node.this$0:LGenerics;
+  4: areturn
+  line 0 24
+  lvt 0 0 5 this LGenerics$Node; LGenerics<TK;TV;>.Node<TN;>;

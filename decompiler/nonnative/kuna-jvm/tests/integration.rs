@@ -56,3 +56,7 @@ mod class_model;
 mod k5_vars;
 #[path = "k5_flow.rs"]
 mod k5_flow;
+#[path = "struct_classfile.rs"]
+mod struct_classfile;
+#[path = "struct_bytecode.rs"]
+mod struct_bytecode;

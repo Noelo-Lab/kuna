@@ -1,0 +1,67 @@
+class Sealed$C
+version 65.0
+flags 0x0031
+super java/lang/Record
+interfaces 1 Sealed
+attrs BootstrapMethods,InnerClasses,NestHost,Record,SourceFile
+bootstrap 0 6:java/lang/runtime/ObjectMethods.bootstrap:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/TypeDescriptor;Ljava/lang/Class;Ljava/lang/String;[Ljava/lang/invoke/MethodHandle;)Ljava/lang/Object; args 3
+innerclass Sealed$C Sealed C 0x0019
+innerclass java/lang/invoke/MethodHandles$Lookup java/lang/invoke/MethodHandles Lookup 0x0019
+nesthost Sealed
+record x I attrs 
+sourcefile Sealed.java
+field x I
+ flags 0x0012
+ attrs 
+method <init> (I)V
+ flags 0x0001
+ attrs LineNumberTable,LocalVariableTable,MethodParameters
+ params x:0x0000
+ code locals=2
+  0: aload 0
+  1: invokespecial 1 | java/lang/Record.<init>:()V
+  4: aload 0
+  5: iload 1
+  6: putfield 7 | Sealed$C.x:I
+  9: return
+  line 0 4
+  lvt 0 0 10 this LSealed$C;
+  lvt 1 0 10 x I
+method toString ()Ljava/lang/String;
+ flags 0x0011
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: invokedynamic 13 | #0:toString:(LSealed$C;)Ljava/lang/String;
+  6: areturn
+  line 0 4
+  lvt 0 0 7 this LSealed$C;
+method hashCode ()I
+ flags 0x0011
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: invokedynamic 17 | #0:hashCode:(LSealed$C;)I
+  6: ireturn
+  line 0 4
+  lvt 0 0 7 this LSealed$C;
+method equals (Ljava/lang/Object;)Z
+ flags 0x0011
+ attrs LineNumberTable,LocalVariableTable
+ code locals=2
+  0: aload 0
+  1: aload 1
+  2: invokedynamic 21 | #0:equals:(LSealed$C;Ljava/lang/Object;)Z
+  7: ireturn
+  line 0 4
+  lvt 0 0 8 this LSealed$C;
+  lvt 1 0 8 o Ljava/lang/Object;
+method x ()I
+ flags 0x0001
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: getfield 7 | Sealed$C.x:I
+  4: ireturn
+  line 0 4
+  lvt 0 0 5 this LSealed$C;

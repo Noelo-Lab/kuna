@@ -1,0 +1,22 @@
+class Inner$2
+version 55.0
+flags 0x0020
+super java/lang/Object
+interfaces 0
+attrs EnclosingMethod,InnerClasses,NestHost
+enclosing Inner staticAnon
+innerclass Inner$2 - - 0x0000
+nesthost Inner
+method <init> ()V
+ flags 0x0000
+ attrs 
+ code locals=1
+  0: aload 0
+  1: invokespecial 1 | java/lang/Object.<init>:()V
+  4: return
+method toString ()Ljava/lang/String;
+ flags 0x0001
+ attrs 
+ code locals=1
+  0: ldc 7
+  2: areturn

@@ -1,0 +1,38 @@
+class Inner$Member
+version 61.0
+flags 0x0020
+super java/lang/Object
+interfaces 0
+attrs InnerClasses,NestHost,SourceFile
+innerclass Inner$Member Inner Member 0x0000
+nesthost Inner
+sourcefile Inner.java
+field this$0 LInner;
+ flags 0x1010
+ attrs 
+method <init> (LInner;)V
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable,MethodParameters
+ params this$0:0x8010
+ code locals=2
+  0: aload 0
+  1: aload 1
+  2: putfield 1 | Inner$Member.this$0:LInner;
+  5: aload 0
+  6: invokespecial 7 | java/lang/Object.<init>:()V
+  9: return
+  line 0 5
+  lvt 0 0 10 this LInner$Member;
+  lvt 1 0 10 this$0 LInner;
+method peek ()I
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: getfield 1 | Inner$Member.this$0:LInner;
+  4: getfield 13 | Inner.secret:I
+  7: invokestatic 19 | Inner.sSecret:()I
+  10: iadd
+  11: ireturn
+  line 0 5
+  lvt 0 0 12 this LInner$Member;
