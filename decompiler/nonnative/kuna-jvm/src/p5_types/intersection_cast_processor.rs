@@ -1,16 +1,18 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/IntersectionCastProcessor.java`.
-#![allow(unused_variables, dead_code)]
 
 use crate::assignment_exprent::AssignmentExprent;
+use crate::code_constants::{ACC_ENUM, ACC_INTERFACE, INIT_NAME};
+use crate::code_type::CodeType;
+use crate::const_exprent::ConstExprent;
+use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::invocation_exprent::InvocationExprent;
 use crate::pair::Pair;
 use crate::root_statement::RootStatement;
-use crate::rt::{JavaEq, JavaHash};
+use crate::rt::{JHashSet, JavaEq, JavaHash, JavaListExt};
 use crate::statement::Statement;
 use crate::type_family::TypeFamily;
-use crate::unported;
 use crate::var_exprent::VarExprent;
 use crate::var_type::VarType;
 
@@ -108,16 +110,127 @@ impl IntersectionCastProcessor {
         result
     }
 
-    fn handle_invocation(exp: InvocationExprent, root: RootStatement) -> bool {
-        unported!("IntersectionCastProcessor.handleInvocation")
+    fn handle_invocation(exp: InvocationExprent, _root: RootStatement) -> bool {
+        let lst_parameters = exp.get_lst_parameters();
+        let mut result = false;
+        let mut i = 0;
+        while i < lst_parameters.len() {
+            let parameter = lst_parameters.get(i);
+            if let Some(cast) = parameter
+                .try_as_function()
+                .filter(|c| Self::is_valid_cast(*c))
+            {
+                let casts = Self::get_casts(cast.0);
+                let mut types = casts.a;
+                let inner = casts.b;
+                let ctx = DecompilerContext::get_struct_context();
+                let bounds: Vec<VarType> = Self::get_bounds(exp, i as i32)
+                    .into_iter()
+                    .filter(|bound| {
+                        !types.iter().any(|constant| {
+                            ctx.instance_of(constant.get_expr_type().value_str(), bound.value_str())
+                        })
+                    })
+                    .collect();
+
+                if !bounds.is_empty()
+                    && bounds.iter().all(|bound| {
+                        ctx.instance_of(inner.get_expr_type().value_str(), bound.value_str())
+                    })
+                {
+                    types.push(ConstExprent::new(inner.get_expr_type(), None, None).0);
+                }
+                result |= Self::replace_casts(cast, &mut types, inner);
+            }
+            i += 1;
+        }
+        result
     }
 
     fn handle_assignment(exp: AssignmentExprent, root: RootStatement) -> bool {
-        unported!("IntersectionCastProcessor.handleAssignment")
+        if let Some(var_exp) = exp.get_left().try_as_var() {
+            let assigned = exp.get_right();
+            if let Some(cast) = assigned
+                .try_as_function()
+                .filter(|c| Self::is_valid_cast(*c))
+            {
+                let casts = Self::get_casts(cast.0);
+                let mut types = casts.a;
+                let inner = casts.b;
+                let references = Self::find_references(var_exp, root);
+
+                let mut bounds: JHashSet<VarType> = JHashSet::new();
+                for position in &references {
+                    bounds.add_all(match position.position() {
+                        VariablePositionEnum::MethodParameter => {
+                            Self::get_bounds(position.exp().as_invocation(), position.index())
+                        }
+                        VariablePositionEnum::Casted => {
+                            let func = position.exp().as_function();
+                            if func.get_lst_operands().len() == 2 {
+                                vec![func.get_lst_operands().get(1).get_expr_type()]
+                            } else {
+                                Vec::new()
+                            }
+                        }
+                    });
+                }
+
+                let ctx = DecompilerContext::get_struct_context();
+                let mut filtered: JHashSet<VarType> = JHashSet::new();
+                for bound in bounds.iter() {
+                    if !types.iter().any(|constant| {
+                        ctx.instance_of(constant.get_expr_type().value_str(), bound.value_str())
+                    }) {
+                        filtered.add(bound.clone());
+                    }
+                }
+                let bounds = filtered;
+
+                if !bounds.is_empty()
+                    && bounds.iter().any(|bound| {
+                        ctx.instance_of(inner.get_expr_type().value_str(), bound.value_str())
+                    })
+                {
+                    types.push(ConstExprent::new(inner.get_expr_type(), None, None).0);
+                }
+                if Self::replace_casts(cast, &mut types, inner) {
+                    var_exp.set_intersection_type(true);
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     fn get_bounds(exp: InvocationExprent, parameter: i32) -> Vec<VarType> {
-        unported!("IntersectionCastProcessor.getBounds")
+        let method = exp.get_desc();
+        let gmd = method.and_then(|m| m.get_signature());
+        let start = if gmd.is_some()
+            && DecompilerContext::get_struct_context()
+                .get_class(&method.expect("method").get_class_qualified_name())
+                .expect("getClass(method.getClassQualifiedName())")
+                .has_modifier(ACC_ENUM)
+            && method.expect("method").get_name() == INIT_NAME
+        {
+            2
+        } else {
+            0
+        };
+        if let Some(gmd) = gmd {
+            let index = parameter - start;
+            let type_ = gmd.parameter_types()[index as usize].clone();
+            if type_.type_ == CodeType::Genvar {
+                let type_parameter_index = gmd
+                    .type_parameters()
+                    .iter()
+                    .position(|p| type_.value.as_deref() == Some(p.as_str()));
+                if let Some(type_parameter_index) = type_parameter_index {
+                    return gmd.type_parameter_bounds()[type_parameter_index].clone();
+                }
+            }
+        }
+        Vec::new()
     }
 
     /// Java: findReferences(VarExprent, RootStatement)
@@ -218,6 +331,32 @@ impl IntersectionCastProcessor {
     }
 
     fn replace_casts(cast: FunctionExprent, types: &mut Vec<Exprent>, inner: Exprent) -> bool {
-        unported!("IntersectionCastProcessor.replaceCasts")
+        if types.len() > 1 {
+            let mut non_interface: Option<Exprent> = None;
+            for type_ in types.iter() {
+                let clazz = DecompilerContext::get_struct_context()
+                    .get_class(type_.get_expr_type().value_str());
+                if let Some(clazz) = clazz {
+                    if !clazz.has_modifier(ACC_INTERFACE) {
+                        if non_interface.is_none() {
+                            non_interface = Some(*type_);
+                        } else {
+                            return false;
+                        }
+                    }
+                }
+            }
+            if let Some(non_interface) = non_interface {
+                let index = types.j_index_of(&non_interface);
+                types.remove(index as usize);
+                types.insert(0, non_interface);
+            }
+            let operands = cast.get_lst_operands();
+            operands.clear();
+            operands.add(inner);
+            operands.add_all(types.iter().copied());
+            return true;
+        }
+        false
     }
 }

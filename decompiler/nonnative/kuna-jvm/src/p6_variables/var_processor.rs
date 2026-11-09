@@ -4,7 +4,6 @@
 //! `Shared`: their getters hand out the collection and callers mutate it.
 //! Getters that return a key/value *view* (`getUsedVarVersions`,
 //! `getVarNames`, `clashingNames`) return a snapshot in iteration order.
-#![allow(dead_code, unused_variables)]
 
 use crate::method_descriptor::MethodDescriptor;
 use crate::pair::Pair;
@@ -12,7 +11,7 @@ use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JavaListExt, Shared};
 use crate::struct_local_variable_table_attribute::LocalVariable;
 use crate::struct_method::StructMethod;
-use crate::unported;
+use crate::text_util::TextUtil;
 use crate::var_definition_helper::VarDefinitionHelper;
 use crate::var_exprent::VarExprent;
 use crate::var_names_collector::VarNamesCollector;
@@ -93,7 +92,52 @@ impl VarProcessor {
         root: RootStatement,
         map_debug_var_names: &JHashMap<VarVersionPair, String>,
     ) {
-        unported!("VarProcessor.setDebugVarNames")
+        let Some(var_versions) = self.with(|d| d.var_versions) else {
+            return;
+        };
+
+        let map_original_var_indices = var_versions.get_map_original_var_indices();
+
+        let mut list_vars = self.with(|d| d.map_var_names.key_vec());
+        list_vars.sort_by_key(|o| o.var);
+
+        let mut map_names: JHashMap<String, i32> = JHashMap::new();
+
+        let method = self.with(|d| d.method);
+        for pair in list_vars {
+            let mut name = self
+                .with(|d| d.map_var_names.get_cloned(&pair))
+                .expect("mapVarNames.get(pair)");
+
+            let mut lvt_name = false;
+            let key = map_original_var_indices.borrow().get_cloned(&pair.var);
+            if let Some(key) = key {
+                if let Some(debug_name) = map_debug_var_names.get(&key) {
+                    if TextUtil::is_valid_identifier(
+                        debug_name,
+                        &method.get_bytecode_version(),
+                        root.mt(),
+                    ) {
+                        name = debug_name.clone();
+                        lvt_name = true;
+                    }
+                }
+            }
+
+            let counter = match map_names.get_cloned(&name) {
+                None => 0,
+                Some(counter) => counter + 1,
+            };
+            map_names.put(name.clone(), counter);
+
+            if counter > 0 && !lvt_name {
+                name.push_str(&counter.to_string());
+            }
+
+            self.with_mut(|d| d.map_var_names.put(pair, name));
+        }
+
+        self.rerun_clashing(root);
     }
 
     pub fn rerun_clashing(self, root: RootStatement) {
