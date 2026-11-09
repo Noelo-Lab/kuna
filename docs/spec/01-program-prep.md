@@ -4887,6 +4887,45 @@ every other binary's pass list is byte-identical to before the pass existed):
     Properties are not read: a property is a method pair plus an ivar, all
     already named.
 
+  - **SDK signatures** (`objcsdk`, kuna, default off,
+    `decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcsdk.rs (signatures)`):
+    the stub prototypes above exist only for selectors the image declares, and
+    a framework setter never is, so on a 1.9 MB iOS app 2,897 of 25,084 stub calls rendered
+    with no argument at all. The declarations exist in the SDK the app was built
+    against, and Apple's headers may not be shipped with kuna, so the option
+    names a directory to read **at load** (`KUNA_OBJCSDK`; nothing derived from
+    it is written anywhere): an SDK root contributes the `Headers/` of every
+    framework the image links (`LC_LOAD_DYLIB`, 73 on an 84 MB iOS app; ~0.1 s), any
+    other directory every `.h` under it. The reader takes the declaration
+    subset of the grammar — comments and preprocessor lines stripped,
+    `@interface` / `@protocol` / category bodies with their ivar block skipped,
+    `- (ret)sel:(T)a …;` methods, `@property (attrs) T name;` as a getter and
+    (unless `readonly`) a `setName:` setter with `getter=`/`setter=` honoured,
+    and `typedef`s anywhere so `NSInteger`, `CGFloat`, an `NS_ENUM` name or an
+    `NSString *`-backed typed enum resolve — and spells each declaration as the
+    type encoding the runtime metadata would carry (`v@:d` for
+    `setAlpha:(CGFloat)`), so it rides the one selector → prototype path; the
+    image's own declarations always win. A class-pointer argument keeps its
+    class (`@"UIView"`), a block is `@?`, an `id<P>` is `@`; a type the reader
+    cannot encode (an unknown struct, a function pointer) makes the selector
+    unusable rather than guessed, and a selector declared two ways across
+    classes is dropped (class names erased before comparing). By-value structs
+    follow AAPCS64 in the stub prototype: a homogeneous aggregate of up to four
+    doubles (`CGRect`, `UIEdgeInsets`) is spread over `d` registers as
+    `arg_x, arg_y, arg_width, arg_height`, `NSRange` over two `x` registers, a
+    larger one (`CGAffineTransform`) is the pointer the caller passes; a struct
+    return that spreads over registers is the flat struct
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (struct_type)`,
+    `CGRect {x, y, width, height}`) the model places in `d0..d3`, so
+    `v = objc_msgSend$bounds(view); objc_msgSend$setFrame:(view, v.x, v.y, v.width, v.height)`.
+    System V x86-64 has no such registers past two eightbytes (it passes a
+    larger struct on the stack), so a selector with such an argument or return
+    gets no prototype there
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcrefs.rs (struct_passing)`).
+    The 1.9 MB app: 2,897 → 1,221 argument-less stub calls; an 84 MB app sample: 32 → 4, 60 of
+    265 stub calls change shape (`setTransitioningDelegate:(v3, delegate)`,
+    `presentViewController:animated:completion:(vc, (UIViewController *)v10, 1, NULL)`).
+
   Decoding every method's encoding asks the type factory for `objc_object *`
   once per argument, and the factory finds a type by name with a linear scan of
   every type it holds; with thousands of class structs interned that scan is no

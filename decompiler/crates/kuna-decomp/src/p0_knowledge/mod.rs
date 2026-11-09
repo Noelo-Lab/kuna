@@ -38,6 +38,8 @@ pub mod kuna_sourcelang;
 pub mod kuna_swiftdemangle;
 // (kuna) The Objective-C instance-layout gate's load-time half (env-bridged).
 pub mod kuna_objcivars;
+// (kuna) The Objective-C SDK header directory (`objcsdk`, load-time, env-bridged).
+pub mod kuna_objcsdk;
 // (kuna) The Go runtime-type harvest gate (load-time, env-bridged).
 pub mod kuna_gotypes;
 // (kuna) golang cspec auto-selection + the .abi0 stack-ABI model binding

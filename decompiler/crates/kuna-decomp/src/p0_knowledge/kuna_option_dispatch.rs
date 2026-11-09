@@ -1453,6 +1453,14 @@ kuna_options! { self, p1;
         Ok(format!("Objective-C instance layouts turned {}", if val { "on" } else { "off" }))
     },
     "swiftcall" => on_off!(analysis_swiftcall, "Swift calling convention on methods and witnesses"),
+    "objcsdk" => {
+        let path = crate::kuna_objcsdk::parse_option_value(p1).map_err(KunaError::parse)?;
+        crate::kuna_objcsdk::set_objcsdk_env(path.as_deref().and_then(|p| p.to_str()));
+        Ok(match path {
+            Some(p) => format!("Objective-C signatures read from {}", p.display()),
+            None => "Objective-C SDK headers off".to_string(),
+        })
+    },
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
     "relocobjects" => {
         let val = on_or_off(p1)?;
