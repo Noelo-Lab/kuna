@@ -505,6 +505,23 @@
       "language": "kotlin"
     },
     {
+      "id": "pkg/TestSealedPrivatePermits",
+      "fix": "sealed_private_permits",
+      "class_files": [
+        "pkg/TestSealedPrivatePermits.class",
+        "pkg/TestSealedPrivatePermits$Circle.class",
+        "pkg/TestSealedPrivatePermits$Large.class",
+        "pkg/TestSealedPrivatePermits$Open$Inner.class",
+        "pkg/TestSealedPrivatePermits$Open.class",
+        "pkg/TestSealedPrivatePermits$Shape.class",
+        "pkg/TestSealedPrivatePermits$Small.class",
+        "pkg/TestSealedPrivatePermits$Square.class"
+      ],
+      "source": "src/pkg/TestSealedPrivatePermits.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "a top-level sealed class whose permitted subclasses are its private members is written without the permits clause javac rejects; a nested sealed class and one permitting public records keep theirs"
+    },
+    {
       "id": "pkg/TestSelfReferencingLambda",
       "fix": "self_referencing_lambda",
       "class_files": [

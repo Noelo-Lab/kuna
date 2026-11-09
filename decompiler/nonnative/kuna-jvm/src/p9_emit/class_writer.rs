@@ -17,6 +17,9 @@
 //! kuna fix `override_inaccessible_method` (`kuna_fixes`): `@Override` is
 //! written only for a supertype method the class can override
 //! (`kuna_fix_override_inaccessible_method`).
+//! kuna fix `sealed_private_permits`: a top-level sealed class whose permitted
+//! subclasses are its own members, one of them private, is written without its
+//! `permits` clause (`kuna_fix_sealed_private_permits`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -63,6 +66,7 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::p9_emit::kuna_fix_enum_body_separator::EnumBodySeparator;
 use crate::p9_emit::kuna_fix_override_inaccessible_method;
+use crate::p9_emit::kuna_fix_sealed_private_permits;
 use crate::pair::Pair;
 use crate::pass_context::PassContext;
 use crate::pool_interceptor::PoolInterceptor;
@@ -1306,7 +1310,9 @@ impl ClassWriter {
             }
         }
 
-        if !is_enum && is_sealed {
+        let omit_permits = kuna_fixes::enabled(KunaFix::SealedPrivatePermits)
+            && kuna_fix_sealed_private_permits::omit_permits(node, &permitted_sub_classes);
+        if !is_enum && is_sealed && !omit_permits {
             buffer.append_possible_newline_alt(" ");
             buffer.append("permits ");
             for (i, permitted) in permitted_sub_classes.iter().enumerate() {

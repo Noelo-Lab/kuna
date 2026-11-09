@@ -3400,6 +3400,17 @@ class	kuna-fixes/classes/pkg/TestSamWrapperObjectKt$nullsFirstBy$1.class
 class	kuna-fixes/classes/pkg/TestSamWrapperObjectKt$twice$1.class
 expected	kuna-fixes/expected-compat/pkg/TestSamWrapperObjectKt.kt
 compare	TestSamWrapperObjectKt.kt	TestSamWrapperObjectKt.java
+case	kuna-fixes-compat/pkg/TestSealedPrivatePermits	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits.class
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits$Circle.class
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits$Large.class
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits$Open$Inner.class
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits$Open.class
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits$Shape.class
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits$Small.class
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits$Square.class
+expected	kuna-fixes/expected-compat/pkg/TestSealedPrivatePermits.java
+compare	TestSealedPrivatePermits.java
 case	kuna-fixes-compat/pkg/TestSelfReferencingLambda	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSelfReferencingLambda.class
 class	kuna-fixes/classes/pkg/TestSelfReferencingLambda$Task.class
@@ -3782,6 +3793,17 @@ class	kuna-fixes/classes/pkg/TestSamWrapperObjectKt$nullsFirstBy$1.class
 class	kuna-fixes/classes/pkg/TestSamWrapperObjectKt$twice$1.class
 expected	kuna-fixes/expected/pkg/TestSamWrapperObjectKt.kt
 compare	TestSamWrapperObjectKt.kt	TestSamWrapperObjectKt.java
+case	kuna-fixes/pkg/TestSealedPrivatePermits	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits.class
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits$Circle.class
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits$Large.class
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits$Open$Inner.class
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits$Open.class
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits$Shape.class
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits$Small.class
+class	kuna-fixes/classes/pkg/TestSealedPrivatePermits$Square.class
+expected	kuna-fixes/expected/pkg/TestSealedPrivatePermits.java
+compare	TestSealedPrivatePermits.java
 case	kuna-fixes/pkg/TestSelfReferencingLambda	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSelfReferencingLambda.class
 class	kuna-fixes/classes/pkg/TestSelfReferencingLambda$Task.class

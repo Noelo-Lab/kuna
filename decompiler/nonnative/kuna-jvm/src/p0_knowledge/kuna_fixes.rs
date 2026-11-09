@@ -203,6 +203,9 @@ pub enum KunaFix {
     /// is the statement after an `if ($assertionsDisabled || cond)` whose
     /// body cannot complete normally is resugared.
     AssertThrowAfterIf,
+    /// `sealed_private_permits`: a top-level sealed class whose permitted
+    /// subclasses are its own members, one of them private, has no `permits`.
+    SealedPrivatePermits,
 }
 
 impl KunaFix {
@@ -264,6 +267,7 @@ impl KunaFix {
         KunaFix::TypeAnnotationQualifiedName,
         KunaFix::TypeAnnotationArgumentScope,
         KunaFix::AssertThrowAfterIf,
+        KunaFix::SealedPrivatePermits,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -325,6 +329,7 @@ impl KunaFix {
             KunaFix::TypeAnnotationQualifiedName => "type_annotation_qualified_name",
             KunaFix::TypeAnnotationArgumentScope => "type_annotation_argument_scope",
             KunaFix::AssertThrowAfterIf => "assert_throw_after_if",
+            KunaFix::SealedPrivatePermits => "sealed_private_permits",
         }
     }
 
