@@ -3028,7 +3028,6 @@ truncating the fall-through here"
                     }
                     if self.env.msvc_locked_entry(&entry) {
                         crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
-                            self.data.get_arch().callee_proto_stack,
                             fc.proto_mut(),
                         );
                     }

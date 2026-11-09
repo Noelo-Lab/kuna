@@ -3165,8 +3165,8 @@ moves.
   `api-ms-win-crt-*` forwarders, `vcruntime*`, `crtdll`), and the commit boundary
   (`decompiler/crates/kuna-console/src/engine.rs (commit_analysis_output)`)
   declares the prototypes parked under those names with the spec's `__cdecl`
-  model, whose stated `extrapop` of 4 leaves nothing for `calleeprotostack`
-  (chapter 04) to resolve. The DLL is the evidence, not the name: the BSD socket
+  model, whose stated `extrapop` of 4 leaves nothing for the declared-callee
+  stack contract (chapter 04) to resolve. The DLL is the evidence, not the name: the BSD socket
   spellings the libc tables carry are `__stdcall` WinSock exports and keep the
   default. Only where the default model's `extrapop` is unknown and the spec
   registers a `__cdecl` model of its own, so x86-64 and every ELF are untouched.
@@ -6288,16 +6288,15 @@ both hand-written assembly rather than compiler output: a pushed return address
 table in `.text` whose first byte is `0xc3` reads as an empty function. Off restores
 the previous discovery set exactly.
 
-(kuna) `callerreads` (default-on;
-`decompiler/crates/kuna-analysis/src/listing/kuna_callerreads.rs (call_returns)`)
-reads the completed walk for the decompiler rather than for the inventory: every
+(kuna) The caller-return filing
+(`decompiler/crates/kuna-analysis/src/listing/kuna_callerreads.rs (call_returns)`,
+always on) reads the completed walk for the decompiler rather than for the inventory: every
 Call cross-reference, paired with the address its calling instruction falls through
 to, as `(callee entry, return address)`, sorted and de-duplicated
 (`AnalysisOutput::call_returns`). The commit parks the list on the architecture,
 and a single-function decompile of a function recovered `void` decodes its callers
 from those addresses to see whether they read its return register (chapter
-[04](04-calls-and-prototypes.md)). It adds no entry and no decode to the walk; off,
-nothing is filed.
+[04](04-calls-and-prototypes.md)). It adds no entry and no decode to the walk.
 
 A context painter applies the ARM/MIPS decode-mode paints per address before each
 decode, so a Thumb or MIPS16 body disassembles in the right ISA. Each instruction

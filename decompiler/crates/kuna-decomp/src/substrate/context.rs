@@ -756,11 +756,6 @@ pub struct ArchContext {
     pub exclusive_call_ret: bool,
     /// Retain register trials carrying proven stack addresses.
     pub stack_addr_arg_trial: bool,
-    /// (kuna) `option callretpair`: whether the two-register CALL output arm of
-    /// `FuncCallSpecs::buildOutputFromTrials` runs on any image rather than only
-    /// a detected rustc one.  Read by
-    /// [`crate::p4_calls::kuna_callretpair::live`].
-    pub call_ret_pair: bool,
     /// Recover complete ABI argument slots within wider physical register ranges.
     pub multi_reg_args: bool,
     /// (kuna) `option bejoin`: when may a two-register value join with its
@@ -851,10 +846,6 @@ pub struct ArchContext {
     /// exports (`constspaceload`).  Read by
     /// [`RuleConstSpaceLoad`](crate::kuna_constspaceload::RuleConstSpaceLoad).
     pub const_space_load_fold: bool,
-    /// (kuna) Delete a call's own return-address push through an untracked
-    /// stack pointer (`callpush`).  Read by
-    /// [`RuleCallPush`](crate::kuna_callpush::RuleCallPush).
-    pub drop_call_push: bool,
     /// (kuna) CALLOTHER user-op ids the architecture registered under a byte
     /// shuffle name ([`SHUFFLE_USEROP_NAMES`](crate::kuna_simdlane::SHUFFLE_USEROP_NAMES)),
     /// resolved once per program in `Architecture::build_arch_handle` so
@@ -1020,10 +1011,6 @@ pub struct ArchContext {
     /// (kuna) `option loweredswitchheads`: try every cascade head, not only the
     /// first.  Read by [`crate::kuna_loweredswitch`]'s detect action.
     pub lowered_switch_every_head: bool,
-    /// (kuna) recover stack-passed call arguments (default-on; upstream-faithful).
-    /// Read by [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
-    /// through [`crate::p4_calls::kuna_callsitestackargs::outside_caller_local_range`].
-    pub callsite_stack_args: bool,
     /// (kuna) `protoranges`: read the prototype's spec stack ranges rather than
     /// the defaults (see [`crate::fspec::ProtoModel::local_range`]).
     pub proto_ranges: bool,
@@ -1062,9 +1049,6 @@ pub struct ArchContext {
     /// the popped bytes (`calleepopframe`).  Read by
     /// [`crate::p6_variables::kuna_calleepopframe::guess_extra_pop`].
     pub callee_pop_frame: bool,
-    /// (kuna) `calleeprotostack` — a declared callee's locked prototype states
-    /// its stack contract.  See [`crate::p4_calls::kuna_calleeprotostack`].
-    pub callee_proto_stack: bool,
     /// (kuna) `msvcbyval` — size an MSVC `__cdecl` import's by-value class
     /// argument at the call site.  See [`crate::p4_calls::kuna_msvcbyval`].
     pub msvc_byval: bool,
@@ -1126,19 +1110,10 @@ pub struct ArchContext {
     /// (kuna) how a narrow integer argument or return value fills its register
     /// (`narrowext`).  Read by [`crate::p4_calls::kuna_narrowext`].
     pub narrow_ext: crate::kuna_narrowext::Rules,
-    /// (kuna) let a bounded decode of the callee's own body veto a register
-    /// argument the callee provably never reads (`calleedeadarg`).  Read by
-    /// [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
-    /// through [`crate::p4_calls::kuna_calleedeadarg::trial_is_dead_in_callee`].
-    pub callee_dead_arg: bool,
     /// (kuna) veto a hidden-return register trial no callee could be returning
     /// through (`hiddenretarg`).  Read by
     /// [`crate::p4_calls::kuna_hiddenretarg::trial_is_not_hidden_return`].
     pub hidden_ret_arg: bool,
-    /// (kuna) give a call the register arguments `onlyOpUse` refused when the
-    /// callee's own body reads them (`calleereadarg`).  Read by
-    /// [`crate::p4_calls::kuna_calleereadarg::capture`].
-    pub callee_read_arg: bool,
     /// (kuna) do not take a register the callee only pushes for its next call
     /// as `calleereadarg` evidence (`pushpadread`).  Read by
     /// [`crate::p4_calls::kuna_calleereadarg::capture`].
@@ -1223,40 +1198,7 @@ pub struct ArchContext {
     /// argument (`varargsharedfloat`).  Read by
     /// [`crate::p4_calls::kuna_varargsharedfloat::feeds_earlier_argument`].
     pub vararg_shared_float: bool,
-    /// (kuna) reconcile a call's recovered argument list with a sibling call to
-    /// the same callee (`calleearity`).  Read by
-    /// [`build_input_from_trials`](crate::funcdata_callsite::build_input_from_trials)
-    /// through [`crate::p4_calls::kuna_calleearity::unify_with_sibling_call`].
-    pub callee_arity: bool,
-    /// (kuna) retry that reconciliation against sibling calls that finalize
-    /// LATER in the same `ActionActiveParam` pass (`calleearityfwd`).  Read by
-    /// [`crate::p4_calls::kuna_calleearityfwd::capture_empty_call`]; inert
-    /// unless `callee_arity` is also set.
-    pub callee_arity_fwd: bool,
-    /// (kuna) Extend a PARTIALLY recovered argument list to a sibling call's,
-    /// when the callee's own body proves the missing registers are the ones it
-    /// reads (`calleearitylive`).  Read by
-    /// [`crate::p4_calls::kuna_calleearitylive::capture_partial_call`]; inert
-    /// unless `callee_arity` is also set.
-    pub callee_arity_live: bool,
 
-    /// (kuna) Recover a lone call's argument list from the callee's own body
-    /// (`calleearitybody`).  Read by
-    /// [`crate::p4_calls::kuna_calleearitybody::capture_lone_call`]; inert
-    /// unless `callee_arity` is also set.
-    pub callee_arity_body: bool,
-
-    /// (kuna) Accept that callee-body run when it is bounded by a CUT decode
-    /// rather than by a provably dead register (`calleearitycut`).  Read by
-    /// [`crate::p4_calls::kuna_calleearitybody::recover_pending`]; inert unless
-    /// `callee_arity_body` is also set.
-    pub callee_arity_cut: bool,
-
-    /// (kuna) Let a boundary register the caller only used as scratch end that
-    /// cut run (`calleearityscratch`).  Read by
-    /// [`crate::p4_calls::kuna_calleearitybody::recover_pending`]; inert unless
-    /// `callee_arity_cut` is also set.
-    pub callee_arity_scratch: bool,
     /// (kuna) completion level for the two upstream partial-range call-overlap
     /// guards (`calloverlap`): off (what kuna shipped before the option), auto
     /// (the default: both guards for a narrow scalar slot in a wide register),
@@ -1920,9 +1862,6 @@ impl ArchContext {
             exclusive_arg_use: true,
             exclusive_call_ret: true,
             stack_addr_arg_trial: false,
-            // (kuna) `option callretpair` default-on; the real value is copied
-            // from the engine Architecture in `build_arch_handle`.
-            call_ret_pair: true,
             // (kuna) `option bejoin`; the real value is copied from the engine
             // Architecture in `build_arch_handle`.
             be_join: crate::kuna_bejoin::BeJoinMode::Off,
@@ -1971,7 +1910,6 @@ impl ArchContext {
             ret_split_limit: None,       // retsplitlimit (the ArchSeam carries the real default)
             simd_lane_fold: false,       // simdlane (the ArchSeam carries the real default)
             const_space_load_fold: false, // constspaceload (the ArchSeam carries the real default)
-            drop_call_push: false,        // callpush (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),
             x87_float_to_int_userops: Vec::new(),
             x87_integer_userops: Vec::new(),
@@ -2016,9 +1954,6 @@ impl ArchContext {
             lowered_switch_value_check: true, // loweredswitchvalue
             lowered_switch_exact: true, // loweredswitchexact
             lowered_switch_every_head: true, // loweredswitchheads
-            // callsitestackargs is a correctness fix, not an opt-in transform, so the
-            // hand-built-fixture seam carries the same default the real path does.
-            callsite_stack_args: true,
             // A hand-built model decodes no spec, so both range choices agree.
             proto_ranges: true,
             // cookiescramble only ever REMOVES a false escape site, so the
@@ -2039,7 +1974,6 @@ impl ArchContext {
             callee_pop: true,
             callee_pop_slot: true,
             callee_pop_frame: true,
-            callee_proto_stack: true,
             msvc_byval: true,
             msvc_byval_decls: Rc::new(Default::default()),
             msvc_builders: Rc::new(Default::default()),
@@ -2062,11 +1996,7 @@ impl ArchContext {
             narrow_ext: crate::kuna_narrowext::Rules::default(),
             pass_through: true, // (kuna) option passthrough (default on)
             mixed_tail_ret: false, // (kuna) option mixedtailret (default off)
-            // calleedeadarg only ever REMOVES an argument, and only against a
-            // decoded callee body; the fixture seam carries the real default.
-            callee_dead_arg: true,
             hidden_ret_arg: true,
-            callee_read_arg: true,       // calleereadarg (default-on)
             push_pad_read: true,         // pushpadread (default-on)
             zero_fill_return: true,
             zero_call_regs: true,
@@ -2088,12 +2018,6 @@ impl ArchContext {
             vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
             vararg_forward: true,        // varargforward (default-on)
             vararg_shared_float: false,  // varargsharedfloat (default-off)
-            callee_arity: true,          // calleearity (DIV-102 default-on)
-            callee_arity_fwd: true,      // calleearityfwd (default-on)
-            callee_arity_live: true,     // calleearitylive (default-on)
-            callee_arity_body: true,     // calleearitybody (default-on)
-            callee_arity_cut: true,      // calleearitycut (default-on)
-            callee_arity_scratch: true,  // calleearityscratch (default-on)
             call_overlap: crate::kuna_calloverlap::LEVEL_AUTO, // calloverlap (default auto)
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             cond_exe_ret: true,          // condexeret (default-on)

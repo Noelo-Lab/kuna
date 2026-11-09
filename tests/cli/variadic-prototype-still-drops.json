@@ -11,9 +11,6 @@
     "prototype fmt int fmt(char *f,...)",
     "--option",
     "varargstackargs",
-    "on",
-    "--option",
-    "calleearity",
     "on"
   ],
   "cwd": "{{WORK}}",

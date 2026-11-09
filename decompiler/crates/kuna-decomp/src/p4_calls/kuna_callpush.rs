@@ -1,4 +1,4 @@
-//! (kuna `callpush`) A call's own return-address push is part of the call.
+//! (kuna) A call's own return-address push is part of the call.
 //!
 //! An x86 `call` lifts as three p-code ops at one instruction address: the stack
 //! pointer steps down one word, the fall-through address is STOREd at the new
@@ -53,15 +53,13 @@ const MAX_INSN_LEN: u64 = 15;
 
 /// Delete a call's own return-address push (see the module docs).
 pub struct RuleCallPush {
-    enabled: bool,
     group: String,
 }
 
 impl RuleCallPush {
-    /// Build the rule for `group`; `enabled` forces it on independently of the
-    /// architecture flag (used by the unit tests).
-    pub fn with_group(enabled: bool, group: &str) -> RuleCallPush {
-        RuleCallPush { enabled, group: group.to_string() }
+    /// Build the rule for `group`.
+    pub fn with_group(group: &str) -> RuleCallPush {
+        RuleCallPush { group: group.to_string() }
     }
 }
 
@@ -74,13 +72,10 @@ impl Rule for RuleCallPush {
         if !grouplist.contains(&self.group) {
             return None;
         }
-        Some(Box::new(RuleCallPush { enabled: self.enabled, group: self.group.clone() }))
+        Some(Box::new(RuleCallPush { group: self.group.clone() }))
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        if !self.enabled && !data.get_arch().drop_call_push {
-            return 0;
-        }
         if !is_call_push(data, op) {
             return 0;
         }

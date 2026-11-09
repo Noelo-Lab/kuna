@@ -1,4 +1,4 @@
-//! Unit tests for the `calleearity` option surface and its promotion plan.
+//! Unit tests for the call-site argument-list reconciliation's promotion plan.
 
 use super::*;
 use kuna_base::space::AddrSpace;
@@ -25,19 +25,6 @@ fn live(off: u64) -> TrialView {
         unref: false,
         has_value: true,
     }
-}
-
-#[test]
-fn option_name_and_apply() {
-    assert_eq!(OptionCalleeArity::NAME, "calleearity");
-    let (on, msg) = OptionCalleeArity.apply("on").expect("on");
-    assert!(on);
-    assert!(msg.contains("turned on"), "{msg}");
-    let (off, msg) = OptionCalleeArity.apply("off").expect("off");
-    assert!(!off);
-    assert!(msg.contains("turned off"), "{msg}");
-    assert!(OptionCalleeArity.apply("").expect("empty").0);
-    assert!(OptionCalleeArity.apply("bogus").is_err());
 }
 
 /// The witness case: the sibling passes one register argument this call site

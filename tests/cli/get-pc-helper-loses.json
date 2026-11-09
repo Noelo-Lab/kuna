@@ -11,9 +11,6 @@
     "--assert",
     "prototype sub_8049f20 int4 sub_8049f20(char *path,void *buf);",
     "--option",
-    "calleearity",
-    "on",
-    "--option",
     "varargstackargs",
     "on"
   ],

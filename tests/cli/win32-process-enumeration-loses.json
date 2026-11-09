@@ -9,9 +9,6 @@
     "0x140001000",
     "--addr",
     "--option",
-    "calleearity",
-    "on",
-    "--option",
     "varargstackargs",
     "on"
   ],

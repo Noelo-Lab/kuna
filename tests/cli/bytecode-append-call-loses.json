@@ -7,9 +7,6 @@
     "{{BIN}}",
     "append",
     "--option",
-    "calleearity",
-    "on",
-    "--option",
     "varargstackargs",
     "on"
   ],

@@ -7,9 +7,6 @@
     "{{BIN}}",
     "printf",
     "--option",
-    "calleearity",
-    "on",
-    "--option",
     "varargstackargs",
     "on"
   ],

@@ -1,11 +1,10 @@
-//! Unit tests for the `calleereadarg` option surface, its decision over a callee
+//! Unit tests for the callee-read argument rule: its decision over a callee
 //! entry summary ([`reads_as_argument`]) and the list extension it plans
 //! ([`extension`]).  The end-to-end behaviour is `tests/stages/kuna-calleereadarg.xml`,
 //! `tests/stages/kuna-calleereadarg-arm.xml` and `tests/stages/kuna-pushpadread.xml`.
 
 use super::*;
 
-use crate::p0_knowledge::options::KUNA_OPTION_NAMES;
 use kuna_base::space::{spacetype, AddrSpace};
 use std::rc::Rc;
 
@@ -27,19 +26,6 @@ fn body(reads: &[u64], complete: bool) -> CalleeEntryDead {
         vec![Vec::new()],
         complete,
     )
-}
-
-#[test]
-fn option_parses_on_and_off() {
-    assert_eq!(OptionCalleeReadArg::NAME, "calleereadarg");
-    assert!(OptionCalleeReadArg.apply("on").unwrap().0);
-    assert!(!OptionCalleeReadArg.apply("off").unwrap().0);
-    assert!(OptionCalleeReadArg.apply("maybe").is_err());
-}
-
-#[test]
-fn option_is_registered() {
-    assert!(KUNA_OPTION_NAMES.contains(&OptionCalleeReadArg::NAME));
 }
 
 /// `getk(int a) { return g * a; }`: the callee reads the first argument

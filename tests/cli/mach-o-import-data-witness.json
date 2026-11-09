@@ -7,9 +7,6 @@
     "{{BIN}}",
     "strcmp",
     "--option",
-    "calleearity",
-    "on",
-    "--option",
     "varargstackargs",
     "on"
   ],

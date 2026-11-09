@@ -40,9 +40,8 @@
     body instead.
 
     Phase: P4 active input-trial scoring.  The self-cancelling-operand test is
-    always on; `calleereadarg` is off so that it cannot keep the arguments by
-    itself (watchdog reads rdi and esi on entry), which pins the recovered pair
-    to this rule alone.
+    always on, and so is the callee-read rule, which would keep the arguments
+    by itself too (watchdog reads rdi and esi on entry).
 -->
 <bytechunk space="ram" offset="0x401000">
 89f801f0c366662e0f1f840000000000554889fd31ff5389f351e83100000031d24889c139d37e16488b44d5004889ce48ffc2482b304883fe027ee8eb0231c05a5b5dc366662e0f1f84000000000090b8c9000000c3662e0f1f84000000000041545389fb4531e44439e37e2031f631ffe88affffffbe02000000bf0020400041ffc4e888ffffff4885c074db4489e05b415cc366662e0f1f84000000000090bf03000000e8b6ffffff89c7b83c0000000f05
@@ -57,7 +56,6 @@
 <symbol space="ram" offset="0x402000" name="timers"/>
 </binaryimage>
 <script>
-  <com>option calleereadarg off</com>
   <com>lo fu feed</com>
   <com>decompile</com>
   <com>print C</com>

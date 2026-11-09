@@ -498,8 +498,8 @@ pub fn universal_sched(
         rrow!("loadvarnode", "stackvars", crate::ruleaction_4::RuleLoadVarnode),
         rrow!("storevarnode", "stackvars", crate::ruleaction_4::RuleStoreVarnode),
         // (kuna) callpush: after storevarnode, so a push in a tracked frame is
-        // that rule's stack COPY first; gated by the live arch flag.
-        rrow!("callpush", "stackvars", crate::kuna_callpush::RuleCallPush::with_group(false, "stackvars")),
+        // that rule's stack COPY first.
+        rrow!("callpush", "stackvars", crate::kuna_callpush::RuleCallPush::with_group("stackvars")),
     ];
 
     // --- cleanup pool -----------------------------------------------------

@@ -135,26 +135,22 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                 let mut access = data.alias_gather_access();
                 aliascheck.has_local_alias(Some((vn_space.clone(), vn_offset)), &mut access)
             };
-            let trial_addr =
-                data.get_call_specs_mut(idx).get_active_input().get_trial(i).get_address().clone();
             // C++ keeps these two no-use conditions as separate branches
             // (fspec.cc:5616-5619): a stack alias, OR a stack location outside the
             // CALLER's local range, both mean "not a parameter".  The range test is
             // on the argument Varnode's caller-relative address, not the trial's
-            // callee-relative one — (kuna) `callsitestackargs` owns that choice.
+            // callee-relative one (kuna, [`crate::p4_calls::kuna_callsitestackargs`]).
             #[allow(clippy::if_same_then_else)]
             if has_alias {
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
             } else if crate::p4_calls::kuna_callsitestackargs::outside_caller_local_range(
-                data.get_arch().callsite_stack_args,
                 data.get_func_proto().local_range(data.get_arch().proto_ranges),
                 &vn_space,
                 vn_offset,
-                &trial_addr,
             ) {
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
             } else if callee_pop {
-                let off = trial_addr.get_offset();
+                let off = data.get_call_specs_mut(idx).get_active_input().get_trial(i).get_address().get_offset();
                 let sz = data.get_call_specs_mut(idx).get_active_input().get_trial(i).get_size();
                 if (off as i64 + (sz as i64 - 1)) < expop as i64 {
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_active();
@@ -383,8 +379,8 @@ pub fn build_input_from_trials(
         .unwrap_or(false);
     // (kuna) `calleearity`: before the argument list is written, reconcile it
     // with a sibling call to the same callee whose list is already final, so one
-    // callee does not render with two arities in one function.  Inert with the
-    // option off.  See [`crate::p4_calls::kuna_calleearity`].
+    // callee does not render with two arities in one function.  See
+    // [`crate::p4_calls::kuna_calleearity`].
     crate::p4_calls::kuna_calleearity::unify_with_sibling_call(fc, data);
     // (kuna) `argclobber`: and after it, the subtractive direction -- a trailing
     // register argument a previous call's clobber put there is dropped, unless a

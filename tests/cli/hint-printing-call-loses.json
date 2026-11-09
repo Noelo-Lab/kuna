@@ -8,9 +8,6 @@
     "{{BIN}}",
     "scratch_byte",
     "--option",
-    "calleearity",
-    "on",
-    "--option",
     "varargstackargs",
     "on"
   ],

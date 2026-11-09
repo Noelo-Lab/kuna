@@ -8,9 +8,6 @@
     "{{BIN}}",
     "0x401020",
     "--option",
-    "calleearity",
-    "on",
-    "--option",
     "varargstackargs",
     "on"
   ],

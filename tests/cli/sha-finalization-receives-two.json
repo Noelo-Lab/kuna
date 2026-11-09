@@ -7,9 +7,6 @@
     "{{BIN}}",
     "hash_final",
     "--option",
-    "calleearity",
-    "on",
-    "--option",
     "varargstackargs",
     "on"
   ],

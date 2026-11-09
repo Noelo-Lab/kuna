@@ -1699,7 +1699,6 @@ mod tests {
         // and ghdec-finalorder-entryfirst / BlockGraph::orderBlocks (the entry
         // component printed after an unconditional goto, i.e. as dead code)
         // and ghdec-callsitestackargs / stack-passed call argument recovery
-        // (option off truncates a call at the six SysV register arguments)
         // and ghdec-inputtile-overlap / renaming over guardInput's leftover
         // input pieces (gnulib rpl_fcntl at -O2 produced no body at all)
         // and ghdec-iteboolean / short-circuit 0/1 select re-rolling
@@ -1832,8 +1831,7 @@ mod tests {
         // the tail store with the fifteen bytes between them gone) (repipe r12)
         // and kuna-entrythumbflow / bounded Thumb context from a TE entry
         // and kuna-callretpair / a call whose cspec output rule asked for a
-        // register pair gets that pair (option off = a bare call statement and
-        // a tag local the function never assigns) (repipe r12)
+        // register pair gets that pair (repipe r12)
         // and kuna-msvcstackguard-return / an exact `/GS` checker restart keeps
         // both caller return definitions across a shared epilogue (repipe r6)
         // and kuna-short-utf16-window / caller data replaces an exact-address

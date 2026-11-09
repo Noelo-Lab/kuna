@@ -1,5 +1,5 @@
-//! (kuna) `calleearitylive` — extend a PARTIALLY recovered argument list with
-//! callee-body or matching-format evidence.
+//! (kuna) Extend a PARTIALLY recovered argument list with callee-body or
+//! matching-format evidence.
 //!
 //! # The gap
 //!
@@ -72,7 +72,6 @@
 //! that rule rather than adding a second one.
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
@@ -82,28 +81,10 @@ use kuna_num::opcodes::OpCode;
 use crate::context::{OpId, VarnodeId};
 use crate::fspec::{FuncCallSpecs, ParamEntry};
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 use crate::p4_calls::kuna_calleearity::best_witness_for;
 
 /// Marshaling element `<calleearitylive>` (kuna 4000+ range; 4145 = arraycoverwidth).
 pub const ELEM_CALLEEARITYLIVE: ElementId = ElementId::new("calleearitylive", 4146);
-
-/// (kuna) Extend a partially recovered argument list to a sibling call's, when
-/// the callee's own body agrees: `calleearitylive on|off`.
-pub struct OptionCalleeArityLive;
-
-impl OptionCalleeArityLive {
-    /// The option name.
-    pub const NAME: &'static str = "calleearitylive";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_arity_live`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Callee-body argument-list extension turned {prop}")))
-    }
-}
 
 /// A call site that finalized with a SHORT but non-empty argument list, held
 /// until every spec in the pass is final.
@@ -139,12 +120,11 @@ fn overlaps(a: &Address, asz: int4, b: &Address, bsz: int4) -> bool {
 ///
 /// Called from `build_input_from_trials` with the trials still intact and the
 /// CALL op's pre-rewrite inputs still attached. `None` whenever the extension
-/// could not apply anyway: option off, locked prototype, not a live direct CALL,
+/// could not apply anyway: locked prototype, not a live direct CALL,
 /// nothing recovered at all (that is `calleearityfwd`'s case), a stack argument
 /// among the recovered ones, or no promotable register trial left behind them.
 pub fn capture_partial_call(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingExtend> {
-    let arch = data.get_arch();
-    if !arch.callee_arity || !arch.callee_arity_live || fc.is_input_locked() {
+    if fc.is_input_locked() {
         return None;
     }
     let op = fc.get_op();

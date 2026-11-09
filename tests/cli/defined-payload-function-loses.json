@@ -8,13 +8,7 @@
     "{{BIN}}",
     "caller",
     "--option",
-    "calleearity",
-    "on",
-    "--option",
     "varargstackargs",
-    "on",
-    "--option",
-    "calleearityfwd",
     "on"
   ],
   "cwd": "{{WORK}}",

@@ -1,5 +1,5 @@
-//! (kuna) `calleereadarg` — keep a call argument the caller also tests when the
-//! callee's own body reads it.
+//! (kuna) Keep a call argument the caller also tests when the callee's own body
+//! reads it.
 //!
 //! # The symptom
 //!
@@ -99,7 +99,6 @@
 use std::collections::HashSet;
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
@@ -107,25 +106,7 @@ use crate::context::{OpId, VarnodeId};
 use crate::dtype::type_class;
 use crate::fspec::FuncCallSpecs;
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 use crate::p4_calls::kuna_calleedeadarg::CalleeEntryDead;
-
-/// (kuna) Keep a refused argument the callee's body reads:
-/// `calleereadarg on|off`.
-pub struct OptionCalleeReadArg;
-
-impl OptionCalleeReadArg {
-    /// The option name.
-    pub const NAME: &'static str = "calleereadarg";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_read_arg`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Callee-read argument reinstatement turned {prop}")))
-    }
-}
 
 /// How many entries in a row may stand between the list and the register the
 /// callee reads (upstream `fillinMap`'s `maxchain`).
@@ -199,9 +180,6 @@ pub(crate) fn reads_as_argument(
 /// Called at the end of `ActionFuncLink`, next to `passthrough`'s own record,
 /// which that option skips in a function that is variadic itself.
 pub fn record_variadic_setups(data: &mut Funcdata) {
-    if !data.get_arch().callee_read_arg {
-        return;
-    }
     let variadic = crate::p4_calls::kuna_passthrough::tests_the_vararg_count(data);
     let ops: Vec<OpId> = (0..data.num_calls())
         .filter(|&i| variadic || crate::p4_calls::kuna_passthrough::set_up_as_variadic(data, i))
@@ -215,16 +193,12 @@ pub fn record_variadic_setups(data: &mut Funcdata) {
 ///
 /// Called from `build_input_from_trials` while the trials and the CALL's
 /// pre-rewrite inputs are both intact. `None` whenever the rule cannot apply:
-/// option off, locked or variadic prototype, a call the caller set up as
+/// locked or variadic prototype, a call the caller set up as
 /// variadic or made from a function that is or may be variadic, not a live
 /// direct CALL to a known entry, no body summary, or no refused register the
 /// callee reads.
 pub fn capture(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingReadArg> {
-    if !data.get_arch().callee_read_arg
-        || fc.is_input_locked()
-        || fc.is_dotdotdot()
-        || !fc.proto().has_model()
-    {
+    if fc.is_input_locked() || fc.is_dotdotdot() || !fc.proto().has_model() {
         return None;
     }
     let op = fc.get_op();

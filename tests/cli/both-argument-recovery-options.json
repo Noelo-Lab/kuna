@@ -10,9 +10,6 @@
     "--define-function",
     "0x8049027=ptrace",
     "--option",
-    "calleearity",
-    "on",
-    "--option",
     "varargstackargs",
     "on"
   ],

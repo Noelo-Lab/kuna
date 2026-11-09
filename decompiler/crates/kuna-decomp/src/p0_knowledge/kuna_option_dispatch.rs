@@ -138,7 +138,6 @@ kuna_options! { self, p1;
         self.const_space_load_fold = val;
         Ok(msg)
     },
-    "callpush" => on_off!(drop_call_push, "Call return-address push removal"),
     "declhightype" => {
         let (val, msg) = crate::kuna_declhightype::OptionDeclHighType.apply(p1)?;
         self.decl_high_type = val;
@@ -255,7 +254,6 @@ kuna_options! { self, p1;
     "exclusivearguse" => on_off!(exclusive_arg_use, "Mutually-exclusive-path dereference in input trials"),
     "exclusivecallret" => on_off!(exclusive_call_ret, "Mutually-exclusive call and return uses in narrow scalar trials"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
-    "callretpair" => on_off!(call_ret_pair, "Two-register CALL output completion"),
     "multiregargs" => on_off!(multi_reg_args, "Complete ABI register argument partitions"),
     "mipsunaligned" => on_off!(mips_unaligned, "MIPS unaligned load/store pairs as one access"),
     "callwide" => {
@@ -436,12 +434,6 @@ kuna_options! { self, p1;
     "loweredswitchexact" => on_off!(lowered_switch_exact, "Exact lowered-switch recovery"),
     "loweredswitchheads" => on_off!(lowered_switch_every_head, "Lowered-switch detection from every cascade head"),
     "protoranges" => on_off!(proto_ranges, "Compiler-spec prototype stack ranges"),
-    "callsitestackargs" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
-        self.callsite_stack_args = val;
-        Ok(msg)
-    },
     "cookiescramble" => {
         let (val, msg) =
             crate::p6_variables::kuna_cookiescramble::OptionCookieScramble.apply(p1)?;
@@ -489,28 +481,10 @@ kuna_options! { self, p1;
         self.msvc_byval = val;
         Ok(msg)
     },
-    "calleeprotostack" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleeprotostack::OptionCalleeProtoStack.apply(p1)?;
-        self.callee_proto_stack = val;
-        Ok(msg)
-    },
-    "calleedeadarg" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleedeadarg::OptionCalleeDeadArg.apply(p1)?;
-        self.callee_dead_arg = val;
-        Ok(msg)
-    },
     "hiddenretarg" => {
         let (val, msg) =
             crate::p4_calls::kuna_hiddenretarg::OptionHiddenRetArg.apply(p1)?;
         self.hidden_ret_arg = val;
-        Ok(msg)
-    },
-    "calleereadarg" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleereadarg::OptionCalleeReadArg.apply(p1)?;
-        self.callee_read_arg = val;
         Ok(msg)
     },
     "pushpadread" => on_off!(push_pad_read, "push-only reads left out of callee-read argument evidence"),
@@ -632,42 +606,6 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "varargsharedfloat" => on_off!(vararg_shared_float, "variadic doubles that also feed an earlier argument"),
-    "calleearity" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleearity::OptionCalleeArity.apply(p1)?;
-        self.callee_arity = val;
-        Ok(msg)
-    },
-    "calleearityfwd" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleearityfwd::OptionCalleeArityFwd.apply(p1)?;
-        self.callee_arity_fwd = val;
-        Ok(msg)
-    },
-    "calleearitylive" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleearitylive::OptionCalleeArityLive.apply(p1)?;
-        self.callee_arity_live = val;
-        Ok(msg)
-    },
-    "calleearitybody" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleearitybody::OptionCalleeArityBody.apply(p1)?;
-        self.callee_arity_body = val;
-        return Ok(msg);
-    },
-    "calleearitycut" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleearitycut::OptionCalleeArityCut.apply(p1)?;
-        self.callee_arity_cut = val;
-        return Ok(msg);
-    },
-    "calleearityscratch" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleearityscratch::OptionCalleeArityScratch.apply(p1)?;
-        self.callee_arity_scratch = val;
-        return Ok(msg);
-    },
     "calloverlap" => {
         let (val, msg) =
             crate::p3_dataflow::kuna_calloverlap::OptionCallOverlap.apply(p1)?;
@@ -974,7 +912,6 @@ kuna_options! { self, p1;
     "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
     "calltargettype" => on_off!(call_target_type, "indirect-call target types"),
     "floatglobals" => on_off!(float_globals, "float typing of globals moved only through float registers"),
-    "callerreads" => on_off!(caller_reads, "return recovery from what the callers read"),
     "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
     "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),
     "floatbits" => on_off!(float_bits, "float typing of helpers that work on a float's bits"),

@@ -574,7 +574,6 @@ impl Action for ActionDefaultParams {
                                 // [`crate::p4_calls::kuna_calleeprotostack`].
                                 Ok(()) => {
                                     crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
-                                        arch.callee_proto_stack,
                                         &mut fp,
                                     );
                                     Some(Rc::new(fp))
@@ -621,7 +620,6 @@ impl Action for ActionDefaultParams {
                 }
             } else if arch.callee_proto_model(data.get_call_specs(i).get_entry_address()).is_some() {
                 crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
-                    arch.callee_proto_stack,
                     data.get_call_specs_mut(i).proto_mut(),
                 );
             }

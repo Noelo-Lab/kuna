@@ -415,9 +415,6 @@ pub struct Architecture {
     /// function, so the whole-program scan is paid for whatever the image's
     /// size, and the callers a batch decompiles answer for their callees.
     pub kuna_float_scan_batch: bool,
-    /// (kuna `callerreads`) Let a function decompiled alone return what a
-    /// direct caller reads after the call (`kuna_callerreads`).
-    pub caller_reads: bool,
     /// (kuna `callerreads`) Every direct call the Listing walked, as `(callee
     /// entry, address the call returns to)`, sorted. Empty without the Listing.
     pub kuna_call_returns: Vec<(u64, u64)>,
@@ -708,10 +705,6 @@ pub struct Architecture {
     /// to the value of `p` (option `constspaceload`).  See
     /// [`crate::p3_dataflow::kuna_constspaceload`].
     pub const_space_load_fold: bool,
-    /// (kuna) Delete a call's own return-address push through a stack pointer
-    /// the frame cannot track (option `callpush`).  See
-    /// [`crate::p4_calls::kuna_callpush`].
-    pub drop_call_push: bool,
     /// (kuna GH-9218) Absorb overlapping input Varnodes above a justified
     /// container (C++ `input_varnode_adjust`).
     pub input_varnode_adjust: bool,
@@ -749,11 +742,6 @@ pub struct Architecture {
     pub exclusive_call_ret: bool,
     /// Opt-in stack-address evidence for call input trials.
     pub stack_addr_arg_trial: bool,
-    /// (kuna) `option callretpair`: complete the two-register CALL output arm of
-    /// `FuncCallSpecs::buildOutputFromTrials` on any image, not only a detected
-    /// rustc one.  Read by [`crate::p4_calls::kuna_callretpair`] through the
-    /// `ArchContext` handle.
-    pub call_ret_pair: bool,
     /// Recover complete ABI argument slots within wider physical register ranges.
     pub multi_reg_args: bool,
     /// (kuna) `option bejoin`: when a two-register value joins with its high
@@ -950,9 +938,6 @@ pub struct Architecture {
     /// (kuna `loweredswitchheads`) Try a lowered-switch cascade behind every head on
     /// the switch variable, not only the first.
     pub lowered_switch_every_head: bool,
-    /// (kuna) Recover stack-passed call arguments at call sites with an unlocked
-    /// callee prototype (default-on; restores upstream `fspec.cc:5618`).
-    pub callsite_stack_args: bool,
     /// (kuna) Take each prototype model's stack local/parameter ranges from the
     /// compiler spec (default-on; upstream `ProtoModel::decode`).
     pub proto_ranges: bool,
@@ -986,9 +971,6 @@ pub struct Architecture {
     /// the popped bytes (option `calleepopframe`).  See
     /// [`crate::p6_variables::kuna_calleepopframe`].
     pub callee_pop_frame: bool,
-    /// (kuna) Read a declared callee's stack contract off its locked prototype
-    /// (`calleeprotostack`).  See [`crate::p4_calls::kuna_calleeprotostack`].
-    pub callee_proto_stack: bool,
     /// (kuna) Size an MSVC `__cdecl` import's by-value class argument at the
     /// call site (option `msvcbyval`).  See [`crate::p4_calls::kuna_msvcbyval`].
     pub msvc_byval: bool,
@@ -1035,16 +1017,9 @@ pub struct Architecture {
     /// (kuna) Extend a narrow integer argument or return value as the ABI states
     /// (option `narrowext`).  See [`crate::p4_calls::kuna_narrowext`].
     pub narrow_ext: crate::kuna_narrowext::NarrowExtMode,
-    /// (kuna) Let a bounded decode of the callee's own body veto a register
-    /// argument the callee provably never reads (option `calleedeadarg`).
-    pub callee_dead_arg: bool,
     /// (kuna) Veto a hidden-return register trial no callee could be returning
     /// through (option `hiddenretarg`).
     pub hidden_ret_arg: bool,
-    /// (kuna) Keep a register argument `onlyOpUse` refused when the callee's
-    /// own body reads it (option `calleereadarg`).  See
-    /// [`crate::p4_calls::kuna_calleereadarg`].
-    pub callee_read_arg: bool,
     /// (kuna) Do not take a register the callee only pushes for its next call,
     /// with nothing reading the slot back, as `calleereadarg` evidence (option
     /// `pushpadread`).  See [`crate::p4_calls::kuna_calleedeadarg`].
@@ -1126,33 +1101,7 @@ pub struct Architecture {
     /// earlier argument of the same call (option `varargsharedfloat`).  See
     /// [`crate::p4_calls::kuna_varargsharedfloat`].
     pub vararg_shared_float: bool,
-    /// (kuna) Reconcile a call's recovered argument list with a sibling call to
-    /// the same callee in the same function (option `calleearity`).  See
-    /// [`crate::p4_calls::kuna_calleearity`].
-    pub callee_arity: bool,
-    /// (kuna) retry that reconciliation against sibling calls that finalize LATER
-    /// in the same `ActionActiveParam` pass (option `calleearityfwd`).  See
-    /// [`crate::p4_calls::kuna_calleearityfwd`].
-    pub callee_arity_fwd: bool,
-    /// (kuna) Extend a partially recovered argument list to a sibling call's
-    /// when the callee's own body agrees (option `calleearitylive`).  See
-    /// [`crate::p4_calls::kuna_calleearitylive`].
-    pub callee_arity_live: bool,
 
-    /// (kuna) Recover the argument list of a call with NO sibling from the
-    /// callee's own body (option `calleearitybody`).  See
-    /// [`crate::p4_calls::kuna_calleearitybody`].
-    pub callee_arity_body: bool,
-
-    /// (kuna) Accept a `calleearitybody` argument run bounded by a CUT decode
-    /// rather than by a provably dead register (option `calleearitycut`).  See
-    /// [`crate::p4_calls::kuna_calleearitycut`].
-    pub callee_arity_cut: bool,
-
-    /// (kuna) Let a boundary register the caller only used as scratch end that
-    /// cut run (option `calleearityscratch`).  See
-    /// [`crate::p4_calls::kuna_calleearityscratch`].
-    pub callee_arity_scratch: bool,
     /// (kuna) Completion level for the two upstream partial-range call-overlap
     /// guards `Heritage::guardCallOverlappingInput` and
     /// `Heritage::tryOutputOverlapGuard`, which kuna shipped as comment-only stubs
@@ -3149,7 +3098,6 @@ impl Architecture {
             kuna_function_bodies: Vec::new(),
             kuna_float_globals: None,
             kuna_float_scan_batch: false,
-            caller_reads: true, // (kuna) option callerreads; reset_defaults sets the shipped default
             kuna_call_returns: Vec::new(),
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             float_bits: false, // (kuna) option floatbits; reset_defaults sets the shipped default
@@ -3216,7 +3164,6 @@ impl Architecture {
             cancel_byte_arithmetic: false,
             simd_lane_fold: false,
             const_space_load_fold: false,
-            drop_call_push: false,
             ret_split_global: false,
             ret_split_limit: None,
             input_varnode_adjust: false,
@@ -3228,7 +3175,6 @@ impl Architecture {
             stack_addr_arg_trial: false,
             exclusive_arg_use: false, // (kuna) option exclusivearguse; reset_defaults sets the shipped default
             exclusive_call_ret: false, // (kuna) option exclusivecallret; reset_defaults sets the shipped default
-            call_ret_pair: false, // (kuna) option callretpair; reset_defaults sets the shipped default
             multi_reg_args: false,
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
             be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode::Off, // (kuna) option bejoinpass; reset_defaults sets the shipped default
@@ -3283,7 +3229,6 @@ impl Architecture {
             lowered_switch_value_check: false,
             lowered_switch_exact: false,
             lowered_switch_every_head: false,
-            callsite_stack_args: true,
             proto_ranges: true,
             cookie_scramble: true,
             nul_terminator: false,
@@ -3293,7 +3238,6 @@ impl Architecture {
             callee_pop: true,
             callee_pop_slot: true,
             callee_pop_frame: true,
-            callee_proto_stack: true,
             msvc_byval: true,
             msvc_byval_decls: Rc::new(Default::default()),
             msvc_builders: Rc::new(Default::default()),
@@ -3306,9 +3250,7 @@ impl Architecture {
             pass_through: true, // (kuna) option passthrough; reset_defaults sets the shipped default
             plt_local_calls: true, // (kuna) option pltlocal; reset_defaults sets the shipped default
             mixed_tail_ret: false, // (kuna) option mixedtailret; reset_defaults sets the shipped default
-            callee_dead_arg: true,
             hidden_ret_arg: true,
-            callee_read_arg: true,
             push_pad_read: true,
             zero_fill_return: true,
             zero_call_regs: true,
@@ -3331,12 +3273,6 @@ impl Architecture {
             vararg_stack_args: true,
             vararg_forward: true,
             vararg_shared_float: false,
-            callee_arity: true,
-            callee_arity_fwd: true,
-            callee_arity_live: true,
-            callee_arity_body: true,
-            callee_arity_cut: true,
-            callee_arity_scratch: true,
             call_overlap: crate::kuna_calloverlap::LEVEL_OFF, // (kuna) option calloverlap; reset_defaults sets the shipped default
             spill_arg_trial: 0,
             cond_exe_ret: false, // (kuna) option condexeret; reset_defaults sets the shipped default
@@ -3702,7 +3638,6 @@ impl Architecture {
         self.ret_split_limit = Some(crate::p8_structure::kuna_retsplitlimit::DEFAULT_LIMIT); // (kuna) GH-1034 default-on: a return block whose split would clone more than 2^20 ops keeps its gotos
         self.simd_lane_fold = true; // (kuna) DIV-PENDING default-on: an exact identity (pshufb with a constant mask IS a byte permutation), so a lane read resolves to the source lane instead of an opaque CALLOTHER temporary. Byte-identical (0/675) on the datatest corpus; restore the opaque rendering with `option simdlane off`
         self.const_space_load_fold = true; // (kuna) DIV-PENDING default-on: a LOAD from the CONSTANT space is the address-is-value identity `RuleLoadVarnode` already applies to a constant pointer, and it does not stop holding for a temporary, so a SLEIGH dynamic const export is no longer left as a pointer-shaped LOAD for `ActionLaneDivide` to slice into near-null lane reads. Byte-identical (0/675) on the datatest corpus; restore the upstream rendering with `option constspaceload off`
-        self.drop_call_push = true; // (kuna) callpush default-on: a call's own return-address push through an untracked stack pointer (an alloca frame) is deleted; the tracked case was already a dead stack store. Restore the upstream statement with `option callpush off`
         self.input_varnode_adjust = true; // (kuna) DIV-3 default-on (GH-9218)
         self.ret_input_half = true; // (kuna) DIV-85 default-on: a returned register half whose value is an input parameter the function MOVED into the return register is a real return, not leftover; keeping it also keeps the parameter it came from in the recovered signature. 0/675 byte-identical; an untouched return register is still dropped (the GH-6990 SPARC pass-through), restore the strict rule with `option retinputhalf off`
         self.ret_pushed_half = true; // (kuna) DIV-156 default-on: a register the function only ever PUSHED is stack maintenance, not a value it placed in a return register, so the alignment `push %r8` / `pop %rdx` idiom no longer invents a fifth argument and a 128-bit return. Narrows `retinputhalf` only; 0/675 byte-identical on the datatest corpus. Restore the address-only placement test with `option retpushedhalf off`
@@ -3712,7 +3647,6 @@ impl Architecture {
         self.stack_addr_arg_trial = false;
         self.exclusive_call_ret = true; // (kuna) option exclusivecallret default-on: a call and a return on arms no execution shares no longer veto each other's narrow scalar trial; limited to the calloverlap auto register shape. Restore the upstream rejection with `option exclusivecallret off`
         self.exclusive_arg_use = true; // (kuna) DIV-PENDING default-on: a LOAD/STORE on a path that provably cannot co-execute with a call is not a competing use of the value the call is passed, so it no longer sinks the call's input trial. 0/675 byte-identical on the datatest corpus. Restore the upstream rejection with `option exclusivearguse off`
-        self.call_ret_pair = true; // (kuna) DIV-162 default-on: the multi-trial arm of `FuncCallSpecs::buildOutputFromTrials` (fspec.cc:5777) shipped as a stub, so a CALL whose cspec output rule asked for a register pair got NO output and both halves rendered as locals the function never assigns. Completing it is upstream behaviour and is not language-specific -- a 16-byte aggregate return in RAX:RDX is ordinary System V C. 0/675 byte-identical on the datatest corpus. Restore the stub with `option callretpair off`
         self.multi_reg_args = true;
         self.mips_unaligned = true;
         self.be_join = crate::kuna_bejoin::BeJoinMode::Callers; // (kuna) option bejoin default `callers` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart, two adjacent loads, a proven callee's pair) or a caller reads the second register after the call; `evidence` drops the callers, `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
@@ -3754,21 +3688,17 @@ impl Architecture {
         self.lowered_switch_value_check = true; // (kuna) DIV-181 default-on correctness fix: a re-rolled lowered switch reads what its head compare reads and is withdrawn unless its BRANCHIND input is the value the cascade compared
         self.lowered_switch_every_head = true; // (kuna) DIV-184 default-on: a compare on the switch variable in front of an inlined switch no longer hides the cascade behind it; a cascade behind a later head must match its compare tree exactly
         self.lowered_switch_exact = true; // (kuna) DIV-183 default-on correctness fix: a re-rolled lowered switch labels every case value and is kept only when it routes every value and keeps every statement as its compare tree does
-        self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
         self.proto_ranges = true; // (kuna) protoranges default-on: the cspec's <localrange>/<input> stack ranges, as upstream ProtoModel::decode reads them (0/675 moved)
         self.mul_blob = true; // (kuna) mulblob default-on: an unsigned wide-multiply operand prints as the value it is, matching the signed form kuna already renders
         self.cast_object = true; // (kuna) option castobject default-on: a stack local whose address only fills declared int * parameters, whose readers agree, is declared int; evidence in docs/features/castobject/default-on-evaluation.md
         self.end_ptr_bound = true; // (kuna) DIV-177 default-on: a pointer walk's end bound renders on its own buffer (0/675 ablation)
         self.cookie_scramble = true; // (kuna) DIV-126 default-on: an `xor rax,rsp` cookie mix no longer collapses the local-alias boundary to the bottom of the frame (0/675 ablation)
         self.call_mechanism_mode = crate::kuna_callmechanisms::CallMechanismMode::Auto; // (kuna) option callmechanisms default `auto`: the PPC64 cspecs' uponreturn stores r2Save at 0x28(r1), the TOC save slot only under ELFv1, so on an image whose ELFv1 function descriptors the loader validated (a linked image's or an object's .opd) a return payload is installed only at a call whose next instruction reloads the slot it stores. Gated on that loader fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `on` installs them on any image, `off` on none
-        self.callee_proto_stack = true; // (kuna) default-on (0/675 ablation): a locked callee prototype states how much it pops and how much of the caller's stack it can reach
         self.callee_pop = true; // (kuna) default-on (0/675 ablation): an unknown extrapop is read off the caller's push run instead of guessed as "pops nothing" (0/675 ablation)
         self.callee_pop_slot = true; // (kuna) default-on (0/675 ablation): the calleepop guess follows a slot pushed in front of one call and popped by a later one
         self.callee_pop_frame = true; // (kuna) default-on (0/675 ablation): a fixed-frame caller's `sub esp,n` after an imported call reads as the callee popping n
         self.msvc_byval = true; // (kuna) default-on (0/675 ablation): an MSVC __cdecl import's by-value class is sized from the caller's cleanup
-        self.callee_dead_arg = true; // (kuna) default-on (DIV-KUNA_DEADARG_DIV): 0/675 datatests, subtractive only
         self.hidden_ret_arg = true; // (kuna) default-on (0/675 ablation): a hidden-return register trial the callee never takes, or a null-page constant, is no argument
-        self.callee_read_arg = true; // (kuna) default-on: a register argument the caller also tests is kept when the callee's own body reads it (0/675 ablation)
         self.push_pad_read = true; // (kuna) default-on: a register a callee only pushes for its next call, with nothing reading the slot back, is no calleereadarg evidence
         self.zero_fill_return = true; // (kuna) default-on (0/675 ablation): the zero a narrow write leaves in a returned q register's upper half is no part of the value
         self.zero_call_regs = true; // (kuna) default-on (0/675 ablation): a register a -fzero-call-used-regs epilogue clears before the return is no part of the value
@@ -3791,12 +3721,6 @@ impl Architecture {
         self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
         self.vararg_forward = true; // (kuna) default-on: a declared parameter forwarded unchanged in its own register to a variadic call's variable part is an argument (0/675 ablation)
         self.vararg_shared_float = false; // (kuna) default-off: the register-choice reading holds only for -O0 code (post-RA scheduling defeats it at -O1+)
-        self.callee_arity = true; // (kuna) DIV-102 default-on: one callee, one argument list across its call sites (0/675 ablation)
-        self.callee_arity_fwd = true; // (kuna) DIV-PENDING default-on: retry that reconciliation against the siblings that finalize later (0/675 ablation)
-        self.callee_arity_live = true; // (kuna) DIV-PENDING default-on: extend a partial argument list when the callee body agrees (0/675 ablation)
-        self.callee_arity_body = true; // (kuna) DIV-PENDING default-on: a call with no sibling recovers its argument list from the callee's own body (0/675 ablation)
-        self.callee_arity_cut = true; // (kuna) DIV-PENDING default-on: a callee-body argument run that stops short of the last argument register is bounded by that register, so a body whose decode is cut at a nested call still speaks (0/675 ablation)
-        self.callee_arity_scratch = true; // (kuna) DIV-PENDING default-on: a boundary register the caller's own trial scoring marked inactive is scratch, not a further argument, so a run that stops at one is still bounded (0/675 ablation)
         self.call_overlap = crate::kuna_calloverlap::LEVEL_AUTO;
         self.cond_exe_ret = true; // (kuna) option condexeret default-on: a return trial that failed only at the function's input through a merge block ActionConditionalExe can thread is re-checked once that block is gone; 0/675 datatest and 0 stage assertions moved, decompile-all unchanged on 5,422 fixture and 36,464 decbench functions, speed within noise
         self.cond_exe_ret_use = true; // (kuna) option condexeretuse default-on: a use of a returned value on the branch a merge block's re-test of the same condition rules out no longer rejects the output trial; 0/675 datatest assertions moved
@@ -3887,7 +3811,6 @@ impl Architecture {
         self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
         self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
         self.float_globals = true; // (kuna) option floatglobals default-on
-        self.caller_reads = true; // (kuna) option callerreads default-on: inert without the Listing, so 0/675 datatest assertions move
         self.call_target_type = false; // (kuna) option calltargettype: default-OFF in the catalog because the XML datatest corpus pins the upstream `code *` spellings and applies no mode; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for every real binary
         self.ptrdepthcap = false; // (kuna) DIV-108: default-OFF in the catalog because it changes INFERRED types and the datatest corpus pins the upstream spellings; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so the cap is the default rendering for every real binary
         self.float_bits = true; // (kuna) option floatbits default-on: a float helper that only bit-ops its float-register input into its float-register return types float on both sides
@@ -4587,9 +4510,6 @@ impl Architecture {
         ctx.exclusive_arg_use = self.exclusive_arg_use;
         ctx.exclusive_call_ret = self.exclusive_call_ret;
         ctx.stack_addr_arg_trial = self.stack_addr_arg_trial;
-        // (kuna) carry the two-register CALL output gate so `kuna_callretpair`
-        // reaches `option callretpair` via `glb`.
-        ctx.call_ret_pair = self.call_ret_pair;
         // (kuna) carry the big-endian pair-order gate so `kuna_bejoin` reaches
         // `option bejoin` via `glb`.
         ctx.be_join = self.be_join;
@@ -4636,7 +4556,6 @@ impl Architecture {
         ctx.cancel_byte_arithmetic = self.cancel_byte_arithmetic; // cancelbytearithmetic
         ctx.simd_lane_fold = self.simd_lane_fold; // simdlane
         ctx.const_space_load_fold = self.const_space_load_fold; // constspaceload
-        ctx.drop_call_push = self.drop_call_push; // callpush
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
         ctx.ret_split_limit = self.ret_split_limit; // retsplitlimit
         // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the
@@ -4698,7 +4617,6 @@ impl Architecture {
         ctx.lowered_switch_value_check = self.lowered_switch_value_check; // loweredswitchvalue
         ctx.lowered_switch_exact = self.lowered_switch_exact; // loweredswitchexact
         ctx.lowered_switch_every_head = self.lowered_switch_every_head; // loweredswitchheads
-        ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.proto_ranges = self.proto_ranges; // protoranges
         ctx.cookie_scramble = self.cookie_scramble; // cookiescramble
         ctx.nul_terminator = self.nul_terminator; // nulterminator
@@ -4708,16 +4626,13 @@ impl Architecture {
         ctx.callee_pop = self.callee_pop; // calleepop
         ctx.callee_pop_slot = self.callee_pop_slot; // calleepopslot
         ctx.callee_pop_frame = self.callee_pop_frame; // calleepopframe
-        ctx.callee_proto_stack = self.callee_proto_stack; // calleeprotostack
         ctx.msvc_byval = self.msvc_byval; // msvcbyval
         ctx.msvc_byval_decls = Rc::clone(&self.msvc_byval_decls);
         ctx.msvc_builders = Rc::clone(&self.msvc_builders);
         ctx.arg_clobber = self.arg_clobber; // argclobber
         ctx.pass_through = self.pass_through; // passthrough
         ctx.mixed_tail_ret = self.mixed_tail_ret; // mixedtailret
-        ctx.callee_dead_arg = self.callee_dead_arg; // calleedeadarg
         ctx.hidden_ret_arg = self.hidden_ret_arg; // hiddenretarg
-        ctx.callee_read_arg = self.callee_read_arg; // calleereadarg
         ctx.push_pad_read = self.push_pad_read; // pushpadread
         ctx.zero_fill_return = self.zero_fill_return; // zerofillreturn
         ctx.zero_call_regs = self.zero_call_regs; // zerocallregs
@@ -4739,12 +4654,6 @@ impl Architecture {
         ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
         ctx.vararg_forward = self.vararg_forward; // varargforward
         ctx.vararg_shared_float = self.vararg_shared_float; // varargsharedfloat
-        ctx.callee_arity = self.callee_arity; // calleearity
-        ctx.callee_arity_fwd = self.callee_arity_fwd; // calleearityfwd
-        ctx.callee_arity_live = self.callee_arity_live; // calleearitylive
-        ctx.callee_arity_body = self.callee_arity_body; // calleearitybody
-        ctx.callee_arity_cut = self.callee_arity_cut; // calleearitycut
-        ctx.callee_arity_scratch = self.callee_arity_scratch; // calleearityscratch
         ctx.call_overlap = self.call_overlap; // calloverlap
         ctx.spill_arg_trial = self.spill_arg_trial; // spillargtrial
         ctx.cond_exe_ret = self.cond_exe_ret; // condexeret

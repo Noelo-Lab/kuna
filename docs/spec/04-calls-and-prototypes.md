@@ -879,8 +879,9 @@ Whatever is still `used` becomes the CALL op's input list, in prototype order
 range is marked unmapped, and the trials are dropped. What is written are the
 argument *values*: after constant propagation a size argument is a constant
 Varnode, not the register the ABI passes it in — so the storage each argument
-occupied survives only if something records it. (kuna) `calleearity`
-(default-on, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearity.rs`)
+occupied survives only if something records it. (kuna) The call-site
+argument-list reconciliation
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearity.rs`, always on)
 records exactly that, on the call spec, and uses it for one thing: when the same
 callee is called more than once in the function, a call whose list is not yet
 written is reconciled against a sibling whose list already is.
@@ -908,9 +909,9 @@ argument, while the small arm passes the register live-in
 (`test rcx,rcx; jz; call`) and loses it to the very `only_op_use` rejection
 above. Flow order reaches the small arm's call spec first, so at the moment it
 finalizes its witness is still `input_active` and has recovered nothing yet.
-(kuna) `calleearityfwd` (default-on,
-`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearityfwd.rs`) closes that
-direction. Reordering the finalization would be the obvious way and is the wrong
+(kuna) The forward retry
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearityfwd.rs`, always on)
+closes that direction. Reordering the finalization would be the obvious way and is the wrong
 one: `check_call_double_use` asks whether *another* call spec is still
 `input_active` while scoring a trial, so deferring a spec past its neighbours'
 `check_input_trial_use` changes argument recovery on every binary and not just
@@ -919,14 +920,13 @@ argument list is set aside — together with the Varnodes its still-promotable
 trials point at, read before `op_set_all_input` drops them, which is the only
 moment they are reachable — and retried once at the end of the same
 `ActionActiveParam::apply`, when every spec in the pass is final. The witness
-search and every refusal are `calleearity`'s, unchanged, so the retry adds no new
+search and every refusal are the reconciliation's, unchanged, so the retry adds no new
 way to promote a trial: it only lets the existing one see the sites that come
 after. Two limits are its own. A captured Varnode wider than its trial is
 declined rather than truncated, because the `SUBPIECE` the normal path would
 insert needs the trials the retry no longer has; and nothing crosses an `apply`,
 because the slot numbering the captured Varnodes came from does not survive
-`delete_unused_trials`. It is inert unless `calleearity` is also on, so one
-option still turns all sibling reconciliation off.
+`delete_unused_trials`.
 
 Both of those refuse a call that recovered *any* argument, and that refusal is
 measured rather than cautious: without it the rule reads "same callee, same
@@ -942,9 +942,9 @@ last recovered trial on a competing use elsewhere in the function — a `CBRANCH
 a `LOAD`, a `STORE` — and `fillin_map` then drops that argument and every
 argument behind it.
 
-(kuna) `calleearitylive` (default-on,
-`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearitylive.rs`) extends a
-partial list, and pays for the relaxation with evidence the sibling does not
+(kuna) The partial-list extension
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearitylive.rs`, always on)
+extends a partial list, and pays for the relaxation with evidence the sibling does not
 carry. Its usual evidence is the **callee's own body**. It reuses the bounded entry decode
 `calleedeadarg` takes for the subtractive direction
 (`kuna_calleedeadarg.rs (probe_callee_entry_dead)`), which already records which
@@ -970,16 +970,15 @@ strings, different pointers, and mismatched arities decline. This recovers the
 case where argument values are also stored to program state immediately before
 the call and `only_op_use` rejects their trials for those stores.
 
-Two limits are this rule's own, on top of `calleearity`'s. The site's own
+Two limits are this rule's own, on top of the reconciliation's. The site's own
 recovered list must be exactly the **leading run** of the witness's, because
 parameters are positional and a site whose arguments disagree with the witness
 *in place* is a different call rather than a shorter one. And it is always
 deferred, never in-order: on the witness the four short sites are the first four
 and the first five-argument site is the fifth, so an in-order rule has no witness
-at any of them. Like `calleearityfwd` it captures its candidate Varnodes in
+at any of them. Like the forward retry it captures its candidate Varnodes in
 `build_input_from_trials` and replays them at the end of the same
-`ActionActiveParam::apply`, rather than moving when a spec finalizes. It is inert
-unless `calleearity` is also on.
+`ActionActiveParam::apply`, rather than moving when a spec finalizes.
 
 All three of those rules are *sibling* reconciliation: each needs another call to
 the same entry address in the same function. That leaves the callee called
@@ -993,11 +992,11 @@ only other mention of the callee in that function is an address-taken `lea` for 
 `CreateThread` argument, and an address-taken `lea` is not a call site, so the
 witness search has nothing to find.
 
-(kuna) `calleearitybody` (default-on,
-`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearitybody.rs`) lets the
-callee-body evidence stand **alone** as the witness in that quadrant, rather than
+(kuna) The callee-body recovery
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearitybody.rs`, always on)
+lets the callee-body evidence stand **alone** as the witness in that quadrant, rather than
 only extending a sibling's list. It takes the same summary
-`calleearitylive` reads (`kuna_calleedeadarg.rs (probe_callee_entry_dead)`) and
+the partial-list extension reads (`kuna_calleedeadarg.rs (probe_callee_entry_dead)`) and
 walks the call's trials in prototype order: the recovered list is the leading run
 of argument registers the callee is proven to **read before writing**, and that
 run must end at a register the callee is proven to **overwrite before ever
@@ -1010,19 +1009,19 @@ register there is, so no dead one follows the run and the rule declines rather
 than inventing an argument per register. An import, a thunk, and a body past the
 decode budget answer neither and decline the same way.
 
-Everything else is `calleearity`'s, unchanged: register storage only, real
+Everything else is the reconciliation's, unchanged: register storage only, real
 Varnodes only, all-or-nothing, never subtractive, and only a call that recovered
-**nothing at all** — a site with a partial list is `calleearitylive`'s. It
+**nothing at all** — a site with a partial list is the extension's. It
 captures its candidate Varnodes in `build_input_from_trials` like the other two
 deferred rules and replays them at the end of the same `ActionActiveParam::apply`,
 after both of them, so a site any sibling can speak for is already non-empty and
-is left alone. It is inert unless `calleearity` is also on. Because its whole
+is left alone. Because its whole
 subject is the callee called once, it is also the one reader for which
 `seed_callee_entry_dead` probes a function with fewer than two calls.
 
-(kuna) `calleearitycut` (default-on,
-`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearitycut.rs`) widens that
-dead-boundary test, because the boundary is unavailable far more often than the
+(kuna) The cut-boundary rule
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearitycut.rs`, always on)
+widens that dead-boundary test, because the boundary is unavailable far more often than the
 run is. `probe_callee_entry_dead` ends **every** path at the callee's first
 nested call, so a register the callee clobbers past that call is invisible to it,
 and an entirely ordinary body proves a read run and no boundary at all. On an ELF
@@ -1050,12 +1049,12 @@ unclaimed; a run that consumes every argument register has no boundary and is
 refused, which is the variadic register-save prologue again. And the boundary
 must be **quiet** — the caller must not have placed a value in that register,
 neither a computed one nor a constant, since a caller that does is passing a
-further argument whatever the callee decode can see. All of `calleearitybody`'s
-own guards still answer first, and the rule is inert unless it is on.
+further argument whatever the callee decode can see. All of the callee-body
+recovery's own guards still answer first.
 
-(kuna) `calleearityscratch` (default-on,
-`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearityscratch.rs`) widens
-the last of those three, the **quiet** boundary, because "the caller wrote it"
+(kuna) The caller-scratch boundary
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleearityscratch.rs`, always
+on) widens the last of those three, the **quiet** boundary, because "the caller wrote it"
 and "the caller is passing it" are not the same claim and a register allocator
 does not respect the difference. An ELF x86-64 crackme decodes a string with an
 unrolled XOR loop and hands the buffer to its hint printer: `lea rdi,[rbp-0x30]`
@@ -1072,14 +1071,14 @@ by the time the rule runs. `check_input_trial_use` puts every trial through
 `ancestor_op_use` and marks it **active** only when the answer is yes, so the XOR
 gives `rsi`'s trial an *inactive* score. An inactive boundary is scratch and is
 quiet enough to end the run; an active one is upstream saying the value reaches
-the call and nothing else, which is exactly the further argument `calleearitycut`
-refuses to hide, and it stays refused. So does a **constant**, however the trial
+the call and nothing else, which is exactly the further argument the cut-boundary
+rule refuses to hide, and it stays refused. So does a **constant**, however the trial
 scored: materializing a constant into the next argument register right before a
 `CALL` is argument setup in its most literal form. The other two conditions are
 untouched, so the reachable error is still a *missing trailing* argument and
 never a misplaced one — and the site the rule fires on rendered no arguments at
 all, so it trades an empty list for a prefix the callee's own body proves it
-reads. Inert unless `calleearitycut` is also on.
+reads.
 
 Every rule above is additive: each one can only put an argument back. The
 opposite error is just as real, and its evidence is already on the trial.
@@ -1548,8 +1547,8 @@ classified:
   budget, and because a definitely-unused trial has its CALL input replaced by
   constant 0 (below), dead-code elimination then reaps whatever computed the
   argument. That is visible as deleted basic blocks, not merely as a shorter
-  argument list. (kuna) `callsitestackargs` (default-on) selects which address
-  is probed; `off` restores the truncating behavior for bisection.
+  argument list. (kuna) The caller-relative Varnode address is the one probed
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callsitestackargs.rs`, always on).
 - **Jump-target register** (kuna, `tailcalljump on`): a tail call that flow
   recovered from a veneer's computed jump (chapter 02) records the register the
   jump read its target from (`fspec.rs (FuncCallSpecs::carries_jump_target)`).
@@ -1827,7 +1826,7 @@ classified:
   declares `int f(void);` calls `f(v3);`. That does not recompile, and it leaves
   the reader unable to tell whether the callee consumes the value.
 
-  `calleedeadarg` (default-on) supplies the one piece of evidence the caller
+  The callee-body probe (always on) supplies the one piece of evidence the caller
   does not have: the callee's own body. Before the ancestor analysis runs, a
   bounded decode starting at the callee's entry answers, per register range,
   whether the callee **overwrites** those bytes on every path before ever
@@ -1966,7 +1965,7 @@ classified:
   `ext`, so `if (x) return ext(x) + 1;` printed `ext() + 1`; its `int fwd(int
   *p) { int x = *p; if (x > 5) return x; return getk(x); }` loads `x` into
   `edi`, compares it, returns it on one path and tail-calls `getk` on the
-  other, and printed `getk()`. `calleereadarg` (default-on) keeps such an
+  other, and printed `getk()`. The callee-read rule (always on) keeps such an
   argument when the callee's body is seen consuming the register: the walk
   shows some path reading the register's low byte before writing it, for a
   value that can reach something.
@@ -3873,9 +3872,9 @@ architecture, a relocatable object, and the single-function `kuna decompile`
 are unaffected. Tests: `tests/cli/arm-parameter-every-caller-extends-is-narrow.json`
 and its `narrowargs on` twin, on the fixture `callerargs_thumb`.
 
-### (kuna) `calleeprotostack` — the declared callee's stack contract
+### (kuna) The declared callee's stack contract (`kuna_calleeprotostack.rs`)
 
-A locked prototype says two things about the stack, and until this option
+A locked prototype says two things about the stack, and until this rule
 existed the pipeline acted on neither.
 
 **How much the callee pops.** `FuncProto::resolve_extra_pop` turns a locked
@@ -3888,7 +3887,7 @@ it, so a locked prototype still reached the stack solver as extrapop-unknown and
 That run is not always the callee's: an image that stages one API's arguments,
 calls a second argument-less API in the middle of the run, and pushes the rest
 afterwards has its staged pushes credited to the wrong callee, and the solver
-latches a stack pointer too high into every later reference. The option asks
+latches a stack pointer too high into every later reference. The rule asks
 `resolve_extra_pop` for the answer whenever the prototype is input-locked and
 the model states no extrapop of its own; a model that states one already has the
 exact value and is left alone, so `__cdecl`, x86-64 and every RISC spec are
@@ -4069,7 +4068,7 @@ reserve it, which is what the machine code passes.
 Inert without `msvcsig`, and a class passed by value to a callee-pops convention
 is still refused there (its pop would depend on the missing size).
 
-### (kuna) `callpush` — a call's own return-address push
+### (kuna) A call's own return-address push (`kuna_callpush.rs`)
 
 An x86 `call` lifts as three p-code ops at one instruction address: the stack
 pointer steps down one word, the fall-through address is STOREd at the new
@@ -4085,9 +4084,9 @@ in 75 functions; on the functions kuna and IDA both emit they carried 856 of
 the 1,252 `(unsigned long *)&v` casts kuna printed, and IDA prints no statement
 for them.
 
-With `callpush on` (the default), `RuleCallPush`
-(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callpush.rs (RuleCallPush)`)
-deletes such a STORE. It runs in `oppool2` directly after `RuleStoreVarnode`, so
+`RuleCallPush`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callpush.rs (RuleCallPush)`,
+always on) deletes such a STORE. It runs in `oppool2` directly after `RuleStoreVarnode`, so
 a push in a tracked frame is that rule's COPY before this one sees it, and it
 matches only when every one of these holds
 (`kuna_callpush.rs (is_call_push)`): the stored value is a constant one
@@ -4114,8 +4113,7 @@ the push kept large is duplicated into its predecessors instead of reached by
 `goto`; and a stack array whose lowest slot was the push is declared from its
 next slot, with every reference shifted by the same amount. Stores of
 stack-passed arguments through the same pointer, and a stack probe's
-`*p = *p` touch, are not the call's push and stay. `callpush off` restores the
-upstream statement.
+`*p = *p` touch, are not the call's push and stay.
 
 ### (kuna) `returnpair` — the register-pair return split
 
@@ -5103,7 +5101,7 @@ connected to its producer. Spelling that value as a Rust enum is a chapter
 [05](05-types.md) decision that cannot be made until the value survives to be
 spelled.
 
-#### The two-register CALL output on any image (`callretpair`)
+#### The two-register CALL output on any image (`kuna_callretpair.rs`)
 
 **(kuna)** The consumer half above is not about Rust and neither is the gap it
 closes. A sixteen-byte aggregate return in `RAX:RDX` is ordinary System V C — a
@@ -5115,13 +5113,14 @@ it answers `undefined16 sub_875e0(int8,char *,int8,uint4)`; ask it about the
 caller and the same call has no output, with both halves rendered as locals the
 function never assigns.
 
-`option callretpair on|off`
-(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callretpair.rs`) opens the same
-arm with the language test dropped, and nothing else: the classification is
-`classify_call_output_pair` unchanged, the callee-body veto is the same one, and
-`build_call_output_pair` is the same code — the two options simply both reach it.
-`rustabi` keeps the producer-side pair (`holds_scalar_pair`, which `callretpair`
-does not touch), so a rustc image behaves identically whichever is set.
+The language-agnostic arm
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callretpair.rs`, always on)
+opens the same arm with the language test dropped, and nothing else: the
+classification is `classify_call_output_pair` unchanged, the callee-body veto is
+the same one, and `build_call_output_pair` is the same code — `rustabi` simply
+also reaches it. `rustabi` keeps the producer-side pair (`holds_scalar_pair`,
+which the call-side arm does not touch), so a rustc image behaves identically
+whichever is set.
 
 Both classifiers reason about registers, not significance: the callee veto asks
 about the *second* register, and the producer's tag test about the *first*,
@@ -8608,7 +8607,7 @@ because `void f(int a) { gi = a * 3; }` compiles to the same three
 instructions. Its callers can, and the machine code after each call says what
 they do with the register.
 
-With `option callerreads on` (the default), the Listing files, for every direct
+The Listing files (`kuna_callerreads.rs`, always on), for every direct
 call it walked, the callee's entry and the address the call returns to
 (`decompiler/crates/kuna-analysis/src/listing/kuna_callerreads.rs
 (call_returns)`), and the commit parks the sorted pairs on the architecture
