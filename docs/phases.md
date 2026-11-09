@@ -70,7 +70,7 @@ The one today is `kuna-jvm` (JVM class files and jars to Java, a port of Vineflo
 `docs/jvm.md`). It **shares the taxonomy, not the schedule**: its source folders carry
 the same phase names, so a stage is found by its phase, but the order its passes run in
 is its own (`infra/method_processor.rs` per method, `p0_knowledge/context_unit.rs` per
-class; `docs/spec/10-jvm.md` §10.1), and none of the Band B, feedback-edge or registry
+class; `docs/spec/10-jvm.md` section 10.1), and none of the Band B, feedback-edge or registry
 machinery above applies to it. Its decision points are the `jvm_*` options of
 `docs/options-jvm.md`.
 

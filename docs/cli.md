@@ -4177,7 +4177,7 @@ a JVM input when:
 | class file | `CA FE BA BE` and a class-file major version (45-255) at bytes 6-7 | decompiled |
 | jar, war, ear, zip | a zip local or empty-archive header (`PK\x03\x04`, `PK\x05\x06`), or a `.jar`/`.war`/`.ear`/`.zip` name with a zip end record in its last KiB (an executable jar behind a launcher script) | decompiled; classes are placed by their class name whatever the entry prefix (`BOOT-INF/classes/`, `WEB-INF/classes/`), multi-release variants under `META-INF/versions/` are skipped, nested jars are not opened |
 | directory | any directory (no native command takes one) | every class file and archive under it; `no .class files under DIR` (exit `1`) when there is none |
-| `.jmod`, jimage | `JM 01 00`, `DA DA FE CA` | `error: PATH: jmod inputs are not supported yet` (and `jimage`), exit `1` |
+| `.jmod`, jimage | `JM 01 00`, `DA DA FE CA` | `error: PATH: jmod inputs are not supported yet` (`jimage` likewise), exit `1` |
 | DEX, APK | `dex\n`, or a zip without `.class` entries | `error: PATH: no JVM classes (DEX bytecode is not JVM bytecode)`, exit `1` |
 | fat Mach-O | `CA FE BA BE` whose bytes 6-7 (the low half of its architecture count) are below 45, or `CA FE BA BF` | native, as before (`--slice` below) |
 
@@ -4190,7 +4190,7 @@ a JVM input when:
 |---|---|
 | `decompile` | a class: its whole compilation unit (package, imports, the class and everything nested in it); a nested class: its part of that unit; a method: just the method, with the common indentation removed. A single `.class` input may omit the target. |
 | `decompile-all` | every class, or the `--functions` selection. Text: one compilation unit per root class, each under a `// Class: com.ex.Main  (com/ex/Main.java)` header. `--json`: one record per method (below). Triage flags as on native inputs: `--functions`, `--filter`, `--min-size`/`--max-size` (bytecode length), `--sort addr\|size\|name` (`addr` is class-file order), `--limit`; plus `--jobs`, `--omit line_mappings,classes` |
-| `decompile-project` | a javac-ready source tree: `DIR/<package path>/<Class>.java` for each root class, nested classes inside their outer class's file, nothing else in the folder; default `DIR` is `<input>.kuna/` |
+| `decompile-project` | a javac-ready source tree: `DIR/<package path>/<Class>.java` for each root class, nested classes inside their outer class's file, nothing else in the folder; default `DIR` is `<input>.kuna/` next to the input |
 | `functions` | the class and method inventory, read from the class files without decompiling |
 | `strings`, `xrefs`, `disassemble`, `read`, `decompile-graph`, `crypto` | not available yet: an error naming the commands that are, exit `1` |
 | `raw-pcode`, `unpack`, `fid` | not applicable to bytecode: an error, exit `1` |
@@ -4222,8 +4222,8 @@ its body (`docs/jvm.md`), and counts as failed.
 
 | Form | Means |
 |---|---|
-| `com.ex.Main`, `com/ex/Main`, `Main.class` | the class `com.ex.Main` |
-| `Main` | the only class with that simple name |
+| `com.ex.Main`, `com/ex/Main`, `com/ex/Main.class` | the class `com.ex.Main` |
+| `Main`, `Main.class` | the only class with that simple name |
 | `com.ex.Main$Inner`, `com.ex.Main.Inner` | a nested class; the dotted form resolves when `Main$Inner` exists |
 | `com.ex.Main.check`, `com.ex.Main#check` | every method `check` of the class, each overload printed, with a note on stderr when there are several |
 | `com.ex.Main.check(Ljava/lang/String;)Z` | one overload, by its JVM descriptor |

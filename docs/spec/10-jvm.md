@@ -92,13 +92,16 @@ list exactly what Vineflower's `JarContextSource`, `DirectoryContextSource` and
 file, `jvm_siblings` also loads the `Name$*.class` files next to it, each as its own
 source after the class, as Vineflower's test fixture and IDE integration do; without them
 a class's nested, local and anonymous classes are missing. Archive entries keep their
-names (`BOOT-INF/classes/a/B.class`, `META-INF/versions/<n>/...`); the engine places a
-class by its own name, not its entry path.
+names: the multi-release variants under `META-INF/versions/<n>/` are skipped, and a
+prefixed entry such as `BOOT-INF/classes/a/B.class` is placed by its class name, not its
+path.
 
 **Sources and libraries.** `decompiler/nonnative/kuna-jvm/src/p0_knowledge/struct_context.rs
 (StructContext)` holds the session's units: *own* units (what is decompiled) and library
-units (read for context only: the user's libraries and the JDK class library). A class is
-read from the first unit that has it; lookups are cached, failed ones included. The class
+units (read for context only: the user's libraries and the JDK class library). A class
+name is looked up in the unit that lists it, and lookups are cached, failed ones
+included; a class found under an entry path that does not match its name is re-keyed by
+its real name. The class
 reader is `decompiler/nonnative/kuna-jvm/src/p0_knowledge/context_source.rs`, with
 `decompiler/nonnative/kuna-jvm/src/substrate/zip_reader.rs (ZipReader)`, which follows JDK
 21's `java.util.zip.ZipFile` (end-record search, central-directory order, prefix stubs
@@ -145,8 +148,8 @@ outer name, `$`, and its simple name. Then, from each root, a breadth-first walk
 nested classes to their enclosing class: an anonymous class loses `static` and records
 the supertype it instantiates, a local class keeps only the modifiers a local declaration
 can carry, and `jvm_verify_anonymous_classes` first checks that a supposedly anonymous
-class has one supertype and is created exactly once by its enclosing class (never cast to,
-tested, or read statically); a class that fails is written as a local class instead.
+class has one supertype and is created at most once by its enclosing class (never cast
+to, tested, or read statically); a class that fails is written as a local class instead.
 With `jvm_decompile_inner` off, no class is nested and every class file is written as its
 own top-level class. Lambdas get nodes too, but later (section 10.11).
 
@@ -188,7 +191,7 @@ variable the decompiler invents is numbered after the method's own locals.
 
 **Blocks.** `decompiler/nonnative/kuna-jvm/src/p2_lift/control_flow_graph.rs (ControlFlowGraph::new)`
 splits the sequence at leaders (jump and switch targets, the instruction after a jump,
-return, throw or switch, handler starts and the bounds of every protected range), links
+a return or a switch, handler starts and the bounds of every protected range), links
 the blocks by their regular successors, gives each block of a protected range an
 exception edge to its handler, and links `jsr` subroutines. The first pass then removes
 every block not reachable from the entry over regular or exception edges
@@ -230,8 +233,8 @@ and `DeadCodeHelper`:
    exception ranges that protect all of its predecessors and taken out of ranges that
    protect none of them, so `return x;` stays inside the `try` or `catch` it belongs to
    instead of being hoisted after the `try` through a temporary.
-6. `insert_empty_exception_handler_blocks` - every handler gets an empty block in front
-   of it, the place the caught-exception variable is later stored.
+6. `insert_empty_exception_handler_blocks` - every handler gets an empty block of its
+   own in front of it.
 7. `DeadCodeHelper::merge_basic_blocks` - straight-line chains of blocks are merged.
 8. If a range has several entry blocks (`has_obfuscated_exceptions`; javac never emits
    one), `handle_multiple_entry_exception_ranges` splits off, entry by entry, the blocks
@@ -309,9 +312,9 @@ is stored, where the rethrow is, whether it ends in a return of a saved value). 
 `jvm_decompile_finally`, it then verifies that every exit of the protected region is
 followed by an exact copy of the handler body, comparing the blocks instruction by
 instruction (`FinallyProcessor::verify_finally_ex`, `compare_subgraphs_ex`), where
-local-variable operands may differ when an SSA analysis shows they hold the same value;
-when every copy matches,
-the copies are deleted and the catch-all becomes a `finally`. When they do not match, or
+local-variable operands may differ when an SSA analysis shows they hold the same value.
+When every copy matches, the copies are deleted and the catch-all becomes a `finally`.
+When they do not match, or
 the option is off, the engine keeps the code correct instead of pretty: it adds a
 synthetic *semaphore* variable, set on entry to the `try` and cleared on every edge that
 leaves it normally, and the `finally` body runs only while the semaphore is set
@@ -438,8 +441,9 @@ and most changes restart the loop from the top, so the order below is a priority
    `decompiler/nonnative/kuna-jvm/src/p8_structure/try_helper.rs (TryHelper::enhance_try_stats)`
    rebuilds try-with-resources
    (`decompiler/nonnative/kuna-jvm/src/p8_structure/try_with_resources_processor.rs`; the
-   Java 11+ shape from a plain `try`/`catch`, the older one from a `finally`) and merges
-   adjacent `try` statements that protect the same code.
+   Java 11+ shape from a plain `try`/`catch`, the older one from a `finally`), then folds
+   a try-with-resources that is the whole body of another one into that statement's
+   resource list (`try (A a = ..; B b = ..)`).
 9. `decompiler/nonnative/kuna-jvm/src/p8_structure/inline_single_block_helper.rs` moves a
    block reached only by a labeled `break` to where the break is, which removes most of
    the labels the initial recovery left.
@@ -484,8 +488,8 @@ When a full pass of the loop changes nothing, the tail runs once, in this order:
 Two more passes run when the class is written, before any text is produced
 (`decompiler/nonnative/kuna-jvm/src/p9_emit/class_writer.rs (ClassWriter::invoke_processors)`):
 switch simplification once more (`FinalSimplifySwitches`) and, with `jvm_prettify_ifs`,
-the removal of an
-`else` after a branch that always returns or throws (`IfHelper::prettify_ifs`).
+the removal of an `else` after a branch that always returns or throws
+(`IfHelper::prettify_ifs`).
 
 ## 10.10 Variables, types, declarations and names
 
@@ -511,9 +515,9 @@ integer-constant type becomes `byte`, `short` or `char`, and the null type `Obje
 statement that contains all its uses, folded into its first assignment where that
 assignment comes first there; variables of the same slot whose lives do not overlap are
 merged into one where the merge cannot change what a read sees; and local types from the
-`LocalVariableTypeTable` are applied. `jvm_verify_merges` and `jvm_verify_pre_post_merges` are experimental
-stricter merge checks: the second computes, with an extra SSA pass, which assignments
-each read can see, and refuses any merge that would change it.
+`LocalVariableTypeTable` are applied. `jvm_verify_merges` and `jvm_verify_pre_post_merges`
+are experimental, stricter merge checks: the second computes, with an extra SSA pass,
+which assignments each read can see, and refuses any merge that would change it.
 
 **Names.** After each method is processed
 (`decompiler/nonnative/kuna-jvm/src/p1_classfile/class_wrapper.rs (ClassWrapper::init)`),
@@ -526,9 +530,9 @@ parameters. A method without code still gets parameter names. Names that clash w
 scope - two variables, a variable and a captured variable, a variable and a field it
 shadows - are renamed apart (`VarDefinitionHelper::remap_clashing_names`), once at
 processing time and again at writing time (`VarProcessor::rerun_clashing`), when nested
-classes and lambdas have been processed. A parameter or lambda
-argument whose type stays undetermined prints as `Object` under `jvm_undefined_as_object`
-and as `<undefinedtype>` without it.
+classes and lambdas have been processed. A parameter or lambda argument whose type stays
+undetermined prints as `Object` under `jvm_undefined_as_object` and as `<undefinedtype>`
+without it.
 
 ## 10.11 Class-level processing
 
@@ -594,16 +598,17 @@ writes a root class and everything nested in it into a text buffer, and
 the imports `decompiler/nonnative/kuna-jvm/src/p9_emit/import_collector.rs (ImportCollector)`
 collected while the body was written. The collector decides, per class name, whether
 the short name can be used in this file without ambiguity, and lists the imports that
-requires; `jvm_remove_imports` writes no import statements. A
-`package-info` class and a `module-info` class have writers of their own.
+requires; `jvm_remove_imports` writes no import statements. A `package-info` class and a
+`module-info` class have writers of their own.
 
 **What is written.** For each class: annotations, modifiers, type parameters, `extends`,
 `implements` and `permits`, and for a record its components; then the enum constants,
-the other fields with their initializers, the methods and the nested classes. Members are left out by
-policy: synthetic members (`jvm_remove_synthetic`), bridge methods (`jvm_remove_bridge`),
-a lone default constructor (`jvm_hide_default_constructor`), and whatever the class-level
-rewrites hid. `jvm_override_annotation` adds `@Override` where an instance method of a Java 5+ class
-file overrides or implements a method of a supertype the engine can see;
+the other fields with their initializers, the methods and the nested classes. Members are
+left out by policy: synthetic members (`jvm_remove_synthetic`), bridge methods
+(`jvm_remove_bridge`), a lone default constructor (`jvm_hide_default_constructor`), and
+whatever the class-level rewrites hid. `jvm_override_annotation` adds `@Override` where an
+instance method of a Java 5+ class file overrides or implements a method of a supertype
+the engine can see;
 `jvm_mark_corresponding_synthetics` names the synthetic method behind each lambda and the
 class behind each anonymous class in a comment; `jvm_sourcefile_comments` writes the
 `SourceFile` name above each class; `jvm_decompiler_comments` controls every `$VF:` note

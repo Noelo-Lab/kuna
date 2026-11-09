@@ -42,7 +42,7 @@ input, and lowering it to p-code would throw away most of what makes Java recove
   not facts to infer.
 
 The native pipeline has no model for classes, objects, exception ranges, generics or
-lambdas, and its output language is C. The vendored SLEIGH `JVM` processor
+lambdas, and it writes C (or Rust), not Java. The vendored SLEIGH `JVM` processor
 (`specs/Ghidra/Processors/JVM`) does decode bytecode to p-code, but it is Ghidra's: its
 field accesses and invocations are `CALLOTHER` placeholders that Ghidra's Java side fills
 in from the constant pool by dynamic p-code injection, and what comes out is pseudocode
@@ -195,8 +195,8 @@ objects by creation in the arena; see the fidelity contract below.
 
 **The test oracle is Vineflower's text.** On the same class files and options, kuna-jvm
 prints exactly what Vineflower 1.12.0 prints. Every case of the vendored corpus (530, all
-listed in `tests/jvm/baseline.txt`) matches, and so do the 68 cases that need a JDK class
-library and are run from the external oracle corpus (598 in all). Whole jars (log4j,
+listed in `tests/jvm/baseline.txt`) matches, and so do the 68 cases that need a particular
+JDK on the machine and are run from the external oracle corpus (598 in all). Whole jars (log4j,
 pdfbox, fontbox, commons-logging, gettext, the Vineflower jar itself, Vineflower's
 obfuscated test jars) and 1,755 classes of JDK 21 come out identical apart from the
 differences below, and the parallel driver's output on Guava and spring-boot is identical
@@ -223,8 +223,8 @@ it is a named kuna option that is off by default.
    ```
 
    With `jvm_dump_exception_on_error off` neither decompiler writes the exception. Run
-   with the CLI's default options, 11 of the 598 corpus cases differ from Vineflower, and
-   only in this.
+   with the command-line defaults of both decompilers, 11 of the 598 corpus cases differ
+   only in this, and one more because of a plugin (item 5).
 2. **Directory order.** Vineflower visits a directory input in `File.listFiles()` order,
    which Java leaves unspecified; kuna visits each directory's entries sorted by name, so
    its output does not depend on the file system. The order is visible only where it
@@ -337,13 +337,17 @@ JDK-dependent cases run only from that external corpus
 **When a case differs.** The diff shows the symptom, rarely the pass. The trace differ
 (`decompiler/nonnative/kuna-jvm/tools/vftrace/`) runs both engines on the same classes and
 options, dumps every method's statement tree after every pass in one canonical format, and
-reports per method the first pass whose trees differ:
+reports per method the first pass whose trees differ. From `decompiler/nonnative/kuna-jvm`:
 
 ```bash
-tools/vftrace/build.sh                                       # once (needs a JDK 17 and the Vineflower 1.12.0 jar and sources)
+tools/vftrace/build.sh                                       # once: needs a JDK 17 javac, the Vineflower 1.12.0 jar and sources
 tools/vftrace/trace-diff.sh Foo.class 'Foo$1.class' --fixture --opt ternary-in-if=1
 KUNA_JVM_TRACE=kuna.vft <any run>                            # the kuna side alone
 ```
+
+The build also compiles the oracle corpus's Vineflower driver; the environment variables
+that locate each input (`VF_JAR`, `VF_SRC`, `JAVAC`, `CORPUS`, `BUILD`) are at the top of
+`build.sh`.
 
 Use it whenever an output difference is not obviously in the writer. It sees only the
 statement tree (not the CFG, SSA state or variable names), and a method that throws
