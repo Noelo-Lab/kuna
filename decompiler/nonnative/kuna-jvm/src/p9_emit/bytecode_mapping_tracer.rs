@@ -35,6 +35,11 @@ impl BytecodeMappingTracer {
         })
     }
 
+    /// The shared sink if one has been created in this run, without creating it.
+    pub(crate) fn existing_dummy() -> Option<BytecodeMappingTracer> {
+        DUMMY.with(Cell::get).filter(|tracer| tracer.is_live())
+    }
+
     /// Java: BytecodeMappingTracer()
     pub fn new() -> BytecodeMappingTracer {
         BytecodeMappingTracer::new_line(0)

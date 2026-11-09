@@ -23,9 +23,11 @@ use crate::array_exprent::ArrayExprentData;
 use crate::assert_exprent::AssertExprentData;
 use crate::assignment_exprent::AssignmentExprentData;
 use crate::basic_block_statement::BasicBlockStatementData;
+use crate::bytecode_mapping_tracer::BytecodeMappingTracer;
 use crate::catch_all_statement::CatchAllStatementData;
 use crate::catch_statement::CatchStatementData;
 use crate::const_exprent::ConstExprentData;
+use crate::decompile_record::DecompileRecord;
 use crate::direct_graph::DirectGraph;
 use crate::do_statement::DoStatementData;
 use crate::dummy_exit_statement::DummyExitStatementData;
@@ -50,11 +52,42 @@ use crate::switch_exprent::SwitchExprentData;
 use crate::switch_head_exprent::SwitchHeadExprentData;
 use crate::switch_statement::SwitchStatementData;
 use crate::synchronized_statement::SynchronizedStatementData;
+use crate::var_definition_helper::VarDefinitionHelper;
 use crate::var_exprent::VarExprentData;
 use crate::var_processor::VarProcessor;
 use crate::var_type_processor::VarTypeProcessor;
 use crate::var_versions_processor::VarVersionsProcessor;
 use crate::yield_exprent::YieldExprentData;
+
+/// Arena positions at the start of a root class's processing or writing.
+/// Decompile records, variable-definition helpers and bytecode-mapping
+/// tracers are only ever held by the pass that made them (a tracer's
+/// mapping is copied into the class's source mapper), so everything of those
+/// kinds the class allocated is garbage once it is done; only the shared
+/// `BytecodeMappingTracer::DUMMY` sink is kept.
+#[derive(Clone, Copy)]
+pub(crate) struct ClassWindow {
+    decompile_record: u32,
+    var_definition_helper: u32,
+    tracer: u32,
+}
+
+impl ClassWindow {
+    pub(crate) fn open() -> ClassWindow {
+        ClassWindow {
+            decompile_record: DecompileRecord::arena_len(),
+            var_definition_helper: VarDefinitionHelper::arena_len(),
+            tracer: BytecodeMappingTracer::arena_len(),
+        }
+    }
+
+    pub(crate) fn close(self) {
+        DecompileRecord::release_since(self.decompile_record, |_| false);
+        VarDefinitionHelper::release_since(self.var_definition_helper, |_| false);
+        let dummy = BytecodeMappingTracer::existing_dummy().map(|t| t.index());
+        BytecodeMappingTracer::release_since(self.tracer, |i| Some(i) == dummy);
+    }
+}
 
 /// Arena positions at the start of a method's schedule.
 #[derive(Clone, Copy)]
