@@ -194,7 +194,7 @@ impl IdentifierConverter {
 
         for i in 0..methods.size() {
             let mt = methods.get(i);
-            let key = methods.get_key(i);
+            let key = methods.get_key(i).expect("methods.getKey(i)");
 
             let is_private = mt.has_modifier(ACC_PRIVATE);
 

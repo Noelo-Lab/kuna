@@ -384,7 +384,11 @@ impl StructContext {
         }
 
         for iface in cl.get_interfaces() {
-            let name = cl.get_pool().get_primitive_constant(iface).get_string();
+            let name = cl
+                .get_pool()
+                .get_primitive_constant(iface)
+                .expect("getPrimitiveConstant(iface)")
+                .get_string();
             if self.instance_of(&name, refclass) {
                 return true;
             }
@@ -416,7 +420,11 @@ impl StructContext {
         }
 
         for iface in a.get_interfaces() {
-            let name = a.get_pool().get_primitive_constant(iface).get_string();
+            let name = a
+                .get_pool()
+                .get_primitive_constant(iface)
+                .expect("getPrimitiveConstant(iface)")
+                .get_string();
             let cl = self.find_common_ancestor(&name, class_b);
             if let Some(cl) = cl {
                 if qualified_name_of(cl) != "java/lang/Object" {
@@ -489,18 +497,21 @@ impl StructContext {
     }
 }
 
-fn param_stack_size(desc: &GenericMethodDescriptor, x: usize) -> i32 {
-    desc.parameter_types[x].stack_size
+fn param_stack_size(desc: &Option<GenericMethodDescriptor>, x: usize) -> i32 {
+    desc.as_ref()
+        .expect("parseMethodSignature")
+        .parameter_types()[x]
+        .stack_size
 }
 
 /// `cl.qualifiedName`.
 pub(crate) fn qualified_name_of(cl: StructClass) -> String {
-    cl.with(|d| d.qualified_name.clone())
+    cl.qualified_name()
 }
 
 /// `cl.superClass == null ? null : cl.superClass.getString()`.
 pub(crate) fn super_class_name_of(cl: StructClass) -> Option<String> {
-    cl.with(|d| d.super_class.clone()).map(|s| s.get_string())
+    cl.super_class().map(|s| s.get_string().to_string())
 }
 
 const IO_EXCEPTIONS: &[&str] = &[

@@ -134,7 +134,10 @@ impl ContextUnit {
     pub fn try_load_class(self, class_name: &str) -> Option<StructClass> {
         let data = self.get_class_bytes(class_name)?;
 
-        Some(StructClass::create(ByteCursor::new(data), self.is_own()))
+        Some(StructClass::create(
+            &mut ByteCursor::new(data),
+            self.is_own(),
+        ))
     }
 
     pub fn get_directory_names(self) -> Vec<String> {
@@ -240,7 +243,7 @@ impl ContextUnit {
             if let Some(pending_error) = &class_ctx.pending_error {
                 let mut buf = TextBuffer::new();
                 ClassWriter::write_exception(&mut buf, pending_error);
-                class_ctx.class_content = buf.convert_to_string_and_allow_data_discard();
+                class_ctx.class_content = Some(buf.convert_to_string_and_allow_data_discard());
                 continue;
             }
 
