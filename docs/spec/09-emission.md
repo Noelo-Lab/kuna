@@ -575,8 +575,8 @@ ordered of the two operand types (an integer `==`/`!=` with a float operand
 excepted, below), LESS-class compares and div/rem/shift gate on promotion, PIECE/SUBPIECE/INSERT never cast, and everything else falls to
 the default `cast_standard(input-type-local, read-facing-high-type)`. A `None`
 answer means no cast — only the constant-suffix marking runs; the STORE's value
-slot returns `None` for a `code` pointee under `codescalar` (chapter 05), which
-is the printing half of that option. Otherwise the
+slot returns `None` for a `code` pointee (`kuna_codescalar.rs`, chapter 05), which
+is the printing half of that rule. Otherwise the
 machinery avoids stacking tokens: a value already produced by a CAST is
 retyped or bypassed rather than double-cast; a constant is simply retyped;
 and a pointer-to-struct being read as pointer-to-its-first-field inserts a
@@ -1150,7 +1150,7 @@ beside a pointer, or holds a float statement's result as a float or raw bytes
 (`kuna_callrettype.rs (refused_token)`, chapter 04): the listing declares that
 return, so the caller prints the conversion (`v1 = (long)sub_eecc(a0,v3)`)
 instead of an assignment C rejects or pointer arithmetic it would scale, and
-stores a float through a `float *`. (kuna `floatbits`) Before any of that, a
+stores a float through a `float *`. (kuna `kuna_floatbits.rs`) Before any of that, a
 call to a callee whose float return is the bits of its float-register input
 (chapter 05), whose output the caller holds as an integer of the float's width
 in another register than the callee returns in (what the call left there),
@@ -1393,8 +1393,8 @@ the computation is unchanged, and the upstream console knob
 `option nocastprinting` suppresses every cast token at print time without
 touching the inserted ops.
 
-Indirect ABI parameters retain their source value type in C (option
-`indirectargs`, default on). A parameter marked as indirect storage — one the
+Indirect ABI parameters retain their source value type in C
+(`kuna_indirectargs.rs`, always on). A parameter marked as indirect storage — one the
 locked prototype declares by value but a cspec `convert_to_ptr` or `pointermax`
 rule passes through a hidden pointer — represents a value carried by a
 pointer, unlike an ordinary pointer parameter. Direct and indirect calls render
@@ -1412,8 +1412,8 @@ passes aliased storage is still shown passing a copy, so callee writes through
 that ABI pointer are not reflected in the caller's C. Ordinary pointer
 parameters retain aliasing. Array parameter types keep their ABI pointer view;
 C adjusts array parameters to pointers, so they do not denote by-value objects.
-`option indirectargs off` prints the ABI pointer everywhere (parameter `T *v`,
-argument `&local`, function pointer `(T *)`), as upstream Ghidra does.
+Upstream Ghidra prints the ABI pointer everywhere (parameter `T *v`, argument
+`&local`, function pointer `(T *)`).
 
 ## 9.2 PrintC
 
@@ -1669,8 +1669,7 @@ walk that renders `name.field`, `name[index]`, a `(int4)name` truncation cast,
 or the artificial `name._8_4_` member when a Varnode covers only part of its
 mapped symbol (`printc.rs (PrintC::push_partial_symbol_ir)`).
 
-With `option aggregatefields` on (the default; §5 describes the option),
-a single-field struct covering the whole access consults the operation's
+A single-field struct covering the whole access consults the operation's
 cached type resolution before descending into that field. A resolution to the
 whole struct stops the walk; a field resolution still emits the member. This
 keeps aggregate copies and returns whole and prevents an implied field access
@@ -1722,7 +1721,7 @@ kuna's caller then took its own whole-array `name[index]` branch, and a
 sixteen-byte `movaps` transfer through a `char v30[16]` VM register bank
 printed `v30[0] = v32[0];` — one byte named on each side of a sixteen-byte
 copy — while the four-byte accesses to the same bank a few lines away printed
-`v30._0_4_`. **(kuna) arraycoverwidth** (default **on**,
+`v30._0_4_`. **(kuna) arraycoverwidth** (always on,
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_arraycoverwidth.rs
 (spans_multiple_elements)`) suppresses that break for a TYPE_ARRAY whose
 element stride is smaller than the access, so a full-width cover falls to the
@@ -1730,8 +1729,7 @@ same artificial `._<off>_<size>_` member a partial one gets and the two
 spellings agree: `v30._0_16_ = v32._0_16_;`. The predicate is deliberately
 narrow — a scalar, a struct, a union, and any access that fits inside one
 element are all left with the upstream break, so `g[3]` and the bare
-whole-symbol name for a non-array are unchanged. Turning the option off
-restores the upstream break and with it the element-zero subscript.
+whole-symbol name for a non-array are unchanged.
 
 This is what makes the 16-byte register-pair return legible. P5's type factory
 has no integer primitive wider than `max_basetype_size`, so a
@@ -1739,8 +1737,8 @@ has no integer primitive wider than `max_basetype_size`, so a
 §5), and P6 merges the two halves the callee writes into that one local. The
 halves are then eight-byte writes into a byte array — exactly the access the
 subscript cannot describe — and they render `v1._0_8_` / `v1._8_8_`. The
-whole-container operand reads `return v1._0_16_ << 0x40;` under
-`arraycoverwidth`, which states the width but is still not compilable C: it
+whole-container operand reads `return v1._0_16_ << 0x40;` with the array-cover
+width, which states the width but is still not compilable C: it
 shifts a member of an array. What this does **not** fix is that container type
 itself. Recovering it needs either a scalar wide-integer type or a mid-end fold
 of the `CONCAT88(0,x) << 64` idiom; neither is done here.
@@ -2331,8 +2329,8 @@ an obfuscated x86-64 dispatch loop that merges one RAX across the whole
 function: a `char *`-returning call feeds `MOVSX EAX,byte ptr [RAX]`, the cast
 machinery sees a one-byte pointee and leaves the dereference uncast, and the
 declaration says `unsigned long long *` — so the same `*v9` reads eight bytes
-past the object and drops the sign extension. The option `declhightype`
-(default on) declares the type representative's type, which is the
+past the object and drops the sign extension. kuna declares the type
+representative's type (always on), which is the
 `sym->getType()` upstream would have written
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_declhightype.rs
 (type_representative)`). It is presentation only: no cast, no statement and no
@@ -2354,8 +2352,7 @@ type-locked to exactly that type and none is an input, persistent, global or
 `&symbol` reference view; a recovered type with no locked member never imposes
 a declaration. The declaration
 representative still supplies the array adornment and the
-composite mapped-symbol override, all of which outrank this. `option
-declhightype off` restores the declaration representative's type.
+composite mapped-symbol override, all of which outrank this.
 
 **(kuna) signedness — an integer local is declared at the signedness its
 operations ask for.** The declaration also states a *signedness*, and the type
@@ -2676,7 +2673,7 @@ This preserves the incoming value without declaring an uninitialized local
 under a suffixed parameter name. A high linked to the backing has a distinct
 symbol and keeps its body declaration.
 
-The option `paramrefdecl` (default on since DIV-143) supplies the missing half
+`kuna_paramrefdecl.rs` (always on) supplies the missing half
 of the same predicate, on symbol identity rather than storage: a high whose
 bound symbol — the identity `linkSpacebaseSymbol` already recorded, kuna's
 `HighVariable::kuna_ref_symbol` for upstream `Varnode::setSymbolReference` — has
@@ -2695,8 +2692,8 @@ and so reported an address-taken parameter as unused while the emitted C showed
 the reference; the reference is attributed to the parameter only when no
 storage-backed or name-backed evidence was found
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_paramrefdecl.rs
-(parameter_reference_varrefs)`). `option paramrefdecl off` restores the distinct
-body object, but the function-scope uniqueness invariant gives it a suffix
+(parameter_reference_varrefs)`). Without the identity test the distinct body
+object survives, and the function-scope uniqueness invariant gives it a suffix
 instead of re-declaring the parameter's identifier.
 
 *(kuna perf)* Whether a high is a reference, piece or strict partial whose
@@ -2939,7 +2936,7 @@ bytes *past* the terminator. A genuine `""` is followed by the next literal in
 the table (`00 00 00 65 72 72 6f 72 20 69 6e 20 72 65 67 75`, the `""` `nl`
 hands `setlocale`); a blob pointer is followed by bytes no C string holds
 (`00 00 00 00 00 00 00 00 00 77 df 77 ff fd ff 7f`). **(kuna) emptystrconst**
-(default **on**, `decompiler/crates/kuna-decomp/src/p9_emit/kuna_emptystrconst.rs
+(always on, `decompiler/crates/kuna-decomp/src/p9_emit/kuna_emptystrconst.rs
 (declines_literal, reads_as_string_data)`) reads sixteen bytes at the constant
 and declines the literal only when the escape walk emitted no characters *and*
 those bytes positively contradict string data: skip the terminator run, walk the
@@ -3871,8 +3868,8 @@ once when its document starts, and records three facts:
 
 - the constant values the function reads *as numbers* — a non-pointer constant
   read by an ordering compare, a multiply, a divide, a remainder or a shift
-  (`kuna_inferfuncentry.rs (reads_as_integer)`, the question `inferfuncentry`
-  asks of a constant that lands on a function entry: coreutils `tail`'s
+  (`kuna_inferfuncentry.rs (reads_as_integer)`, the question the function-entry
+  escape asks of a constant that lands on a function entry: coreutils `tail`'s
   `BUFSIZ` is `0x2000`, which is that image's `_DT_INIT`);
 - every direct access to the default data space — the `dat_<addr>` the body
   reads or writes — by start, width and type;
@@ -4203,7 +4200,7 @@ The Varnode-only accessors cannot resolve union edges. Numeric int-to-float
 conversion targets the float member, never the shared backing union. Storage
 bitcasts also prefer that selected member over a whole-object declaration type.
 
-**Preserved scalar prefixes (`partialconcat`).** A partial-register update can
+**Preserved scalar prefixes.** A partial-register update can
 leave `PIECE(SUBPIECE(source, low_size), low)` in the finished expression graph.
 For a two-, four-, or eight-byte integer with a one-, two-, or four-byte
 replacement, P9 renders this as
@@ -4285,7 +4282,7 @@ has format-derived arguments, project declarations restore its parked formal
 variadic signature. Call-only type roots are gathered only for project headers;
 ordinary per-function type inventories retain their original scope.
 
-Automatically admitted `localstackviews` backings use the same physical-version,
+Automatically admitted bounded-local-view backings use the same physical-version,
 byte-projection and mutable-read timing checks as explicit `stackviews`.
 Native write preservation is established before mapping; emission does not
 resurrect hidden arithmetic or mark reconstructed COPYs as physical stores.

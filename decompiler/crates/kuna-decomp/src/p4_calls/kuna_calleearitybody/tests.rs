@@ -1,4 +1,4 @@
-//! Unit tests for the `calleearitybody` option surface and the one decision the
+//! Unit tests for the callee-body argument recovery and the one decision the
 //! module owns: which of a call's trials the callee's body claims as arguments
 //! ([`plan_from_body`]), and the two guards that bound the claim.  Every case
 //! here passes `cut = false`, so it is this rule alone that answers;
@@ -79,19 +79,6 @@ fn args(reg: &Rc<AddrSpace>) -> Vec<(Address, int4)> {
     vec![loc(reg, 0x8), loc(reg, 0x10), loc(reg, 0x80), loc(reg, 0x88)]
 }
 
-#[test]
-fn option_name_and_apply() {
-    assert_eq!(OptionCalleeArityBody::NAME, "calleearitybody");
-    let (on, msg) = OptionCalleeArityBody.apply("on").expect("on");
-    assert!(on);
-    assert!(msg.contains("turned on"), "{msg}");
-    let (off, msg) = OptionCalleeArityBody.apply("off").expect("off");
-    assert!(!off);
-    assert!(msg.contains("turned off"), "{msg}");
-    assert!(OptionCalleeArityBody.apply("").expect("empty").0);
-    assert!(OptionCalleeArityBody.apply("bogus").is_err());
-}
-
 /// The witness shape: the callee reads the first argument register and
 /// overwrites the second before ever reading it, so the argument list is exactly
 /// one long.
@@ -100,7 +87,7 @@ fn a_read_run_bounded_by_a_dead_register_is_the_argument_list() {
     let reg = reg_space();
     let trials = vec![trial(&reg, 0x8, 1), trial(&reg, 0x10, 2), trial(&reg, 0x80, 3)];
     let live = body(&[0x8], &[0x10, 0x80], true);
-    assert_eq!(plan_from_body(&trials, &args(&reg), &live, false, false), Some(vec![0]));
+    assert_eq!(plan_from_body(&trials, &args(&reg), &live), Some(vec![0]));
 }
 
 /// Two read registers extend the list; the dead third still ends it.
@@ -109,18 +96,7 @@ fn the_run_is_as_long_as_the_reads_are() {
     let reg = reg_space();
     let trials = vec![trial(&reg, 0x8, 1), trial(&reg, 0x10, 2), trial(&reg, 0x80, 3)];
     let live = body(&[0x8, 0x10], &[0x80], true);
-    assert_eq!(plan_from_body(&trials, &args(&reg), &live, false, false), Some(vec![0, 1]));
-}
-
-/// A body that proves a read and nothing else has not said where the argument
-/// list ends — a forwarder cut at its own nested call looks exactly like this.
-/// (`calleearitycut` is what admits this shape; here it is off.)
-#[test]
-fn a_read_with_no_dead_register_anywhere_is_refused() {
-    let reg = reg_space();
-    let trials = vec![trial(&reg, 0x8, 1), trial(&reg, 0x10, 2)];
-    let live = body(&[0x8], &[], true);
-    assert_eq!(plan_from_body(&trials, &args(&reg), &live, false, false), None);
+    assert_eq!(plan_from_body(&trials, &args(&reg), &live), Some(vec![0, 1]));
 }
 
 /// The variadic register-save prologue: the callee reads EVERY argument
@@ -131,7 +107,7 @@ fn a_callee_that_reads_every_argument_register_is_refused() {
     let reg = reg_space();
     let trials = vec![trial(&reg, 0x8, 1), trial(&reg, 0x10, 2)];
     let live = body(&[0x8, 0x10, 0x80, 0x88], &[], true);
-    assert_eq!(plan_from_body(&trials, &args(&reg), &live, false, false), None);
+    assert_eq!(plan_from_body(&trials, &args(&reg), &live), None);
 }
 
 /// An argument register the callee reads but this site has no trial for means
@@ -141,7 +117,7 @@ fn a_read_argument_register_outside_the_run_is_refused() {
     let reg = reg_space();
     let trials = vec![trial(&reg, 0x8, 1)];
     let live = body(&[0x8, 0x80], &[0x10], true);
-    assert_eq!(plan_from_body(&trials, &args(&reg), &live, false, false), None);
+    assert_eq!(plan_from_body(&trials, &args(&reg), &live), None);
 }
 
 /// Nothing read at all is nothing to say — an empty run is never promoted, even
@@ -151,7 +127,7 @@ fn an_empty_run_is_not_an_argument_list() {
     let reg = reg_space();
     let trials = vec![trial(&reg, 0x8, 1), trial(&reg, 0x10, 2)];
     let live = body(&[], &[0x8, 0x10], true);
-    assert_eq!(plan_from_body(&trials, &args(&reg), &live, false, false), None);
+    assert_eq!(plan_from_body(&trials, &args(&reg), &live), None);
 }
 
 /// All or nothing: a claimed register with no promotable Varnode at this site
@@ -161,7 +137,7 @@ fn a_claimed_register_with_no_varnode_aborts() {
     let reg = reg_space();
     let trials = vec![trial(&reg, 0x8, 1), barren(&reg, 0x10), trial(&reg, 0x80, 3)];
     let live = body(&[0x8, 0x10], &[0x80], true);
-    assert_eq!(plan_from_body(&trials, &args(&reg), &live, false, false), None);
+    assert_eq!(plan_from_body(&trials, &args(&reg), &live), None);
 }
 
 /// A register the callee does not consume is skipped when there is nothing
@@ -173,7 +149,7 @@ fn an_empty_register_the_callee_ignores_is_skipped() {
     let trials = vec![barren(&reg, 0x1200), trial(&reg, 0x8, 1)];
     let entries = vec![loc(&reg, 0x1200), loc(&reg, 0x8), loc(&reg, 0x10)];
     let live = body(&[0x8], &[0x10], true);
-    assert_eq!(plan_from_body(&trials, &entries, &live, false, false), Some(vec![1]));
+    assert_eq!(plan_from_body(&trials, &entries, &live), Some(vec![1]));
 }
 
 /// ...but a register the caller DID write, sitting in FRONT of the run, is
@@ -185,12 +161,12 @@ fn a_live_register_in_front_of_the_run_is_refused() {
     let trials = vec![trial(&reg, 0x38, 9), trial(&reg, 0x30, 1)];
     let entries = vec![loc(&reg, 0x38), loc(&reg, 0x30), loc(&reg, 0x10)];
     let live = body(&[0x30], &[0x10], true);
-    assert_eq!(plan_from_body(&trials, &entries, &live, false, false), None);
+    assert_eq!(plan_from_body(&trials, &entries, &live), None);
     // Behind the run the same register is just an argument register the callee
     // ignores, and the witness has three of them.
     let trials = vec![trial(&reg, 0x30, 1), trial(&reg, 0x38, 9)];
     let entries = vec![loc(&reg, 0x30), loc(&reg, 0x38), loc(&reg, 0x10)];
-    assert_eq!(plan_from_body(&trials, &entries, &live, false, false), Some(vec![0]));
+    assert_eq!(plan_from_body(&trials, &entries, &live), Some(vec![0]));
 }
 
 /// The register section ends at the stack: a caller-relative slot is not
@@ -201,10 +177,10 @@ fn the_stack_section_ends_the_walk() {
     let stk = stack_space();
     let mut trials = vec![trial(&reg, 0x8, 1), trial(&stk, 0x28, 2)];
     let live = body(&[0x8], &[0x10], true);
-    assert_eq!(plan_from_body(&trials, &args(&reg), &live, false, false), Some(vec![0]));
+    assert_eq!(plan_from_body(&trials, &args(&reg), &live), Some(vec![0]));
     // ...and a stack trial is never itself claimed, whatever the body says.
     trials.push(trial(&reg, 0x10, 3));
-    assert_eq!(plan_from_body(&trials, &args(&reg), &live, false, false), Some(vec![0]));
+    assert_eq!(plan_from_body(&trials, &args(&reg), &live), Some(vec![0]));
 }
 
 /// An import, a thunk or a body past the decode budget leaves the walk
@@ -214,7 +190,7 @@ fn an_incomplete_walk_proves_nothing() {
     let reg = reg_space();
     let trials = vec![trial(&reg, 0x8, 1), trial(&reg, 0x10, 2)];
     let live = body(&[0x8], &[0x10], false);
-    assert_eq!(plan_from_body(&trials, &args(&reg), &live, false, false), None);
+    assert_eq!(plan_from_body(&trials, &args(&reg), &live), None);
 }
 
 /// No prototype model means no argument locations to bound the claim with.
@@ -223,5 +199,5 @@ fn no_model_entries_is_refused() {
     let reg = reg_space();
     let trials = vec![trial(&reg, 0x8, 1)];
     let live = body(&[0x8], &[0x10], true);
-    assert_eq!(plan_from_body(&trials, &[], &live, false, false), None);
+    assert_eq!(plan_from_body(&trials, &[], &live), None);
 }

@@ -23,41 +23,14 @@
 //! 7f`).  So the literal is declined only where those bytes positively
 //! contradict string data.
 //!
-//! Following the kuna-option idiom ([`crate::kuna_arraycoverwidth::OptionArrayCoverWidth`]),
-//! this module owns the option struct that flips
-//! [`crate::printc::PrintCOptions::empty_str_const`] plus the predicate the printer
-//! consults; the caller (`Architecture::set_kuna_option`) writes the live flag.
+//! This module owns the predicate the printer consults.
 
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::types::{int4, uint1};
-
-use crate::options::on_or_off;
 
 /// Marshaling element `<emptystrconst>` (kuna 4000+ range; 4147 = the previous
 /// highest kuna id).
 pub const ELEM_EMPTYSTRCONST: ElementId = ElementId::new("emptystrconst", 4148);
-
-/// (kuna) Toggle the zero-character string-literal render of a constant pointer:
-/// `emptystrconst on|off`.
-///
-/// "off" keeps the upstream literal (`p = ""`); "on" (the kuna default) declines
-/// the literal so the pointer constant prints as its address.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct OptionEmptyStrConst;
-
-impl OptionEmptyStrConst {
-    /// The option name.
-    pub const NAME: &'static str = "emptystrconst";
-
-    /// Parse + validate the `on`/`off` value; the caller performs the printer
-    /// write ([`crate::printc::PrintCOptions::set_empty_str_const`]).
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Empty string-constant suppression turned {prop}")))
-    }
-}
 
 /// How many bytes at the constant's address are inspected for string evidence.
 ///
@@ -95,14 +68,14 @@ pub fn reads_as_string_data(buf: &[uint1]) -> bool {
 
 /// Should the string-literal render of a constant pointer be declined?
 ///
-/// Declined only when the option is on, the literal the printer just escaped
-/// holds no characters at all, AND the bytes at the address do not read as
+/// Declined only when the literal the printer just escaped holds no
+/// characters at all AND the bytes at the address do not read as
 /// string data - so every non-empty literal, however short, and every empty one
 /// sitting inside a run of real strings keep their upstream rendering.  `window`
 /// is `None` when the neighbourhood could not be read, which is not evidence
 /// against the literal and therefore keeps it.
-pub fn declines_literal(enabled: bool, chars_emitted: int4, window: Option<&[uint1]>) -> bool {
-    if !enabled || chars_emitted != 0 {
+pub fn declines_literal(chars_emitted: int4, window: Option<&[uint1]>) -> bool {
+    if chars_emitted != 0 {
         return false;
     }
     match window {

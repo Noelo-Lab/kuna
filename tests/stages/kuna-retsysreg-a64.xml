@@ -7,7 +7,7 @@
 
     Stage / sub-stage: P4 return recovery, the output trials of the
     function's own RETURN (ActionReturnRecovery, p4_calls/kuna_retsysreg.rs).
-    P0 assertion: option retsysreg on|off (default on).
+    The rule is always on.
 
     Source (clang -target aarch64-linux-gnu -O2 at 0x100000, bytes verbatim):
 
@@ -29,8 +29,7 @@
     system register's operand.  The fix returns the 64-bit value from pmr,
     fpcr and daif.  two, i128, cvau, civac, tlbi and ic keep the pair: a
     prefetch, cache or TLB op takes an address, which the high word can be,
-    and sets no processor state.  The last pass sets option retsysreg off
-    and prints pmr and fpcr with the pair again.
+    and sets no processor state.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 0004008b011e8052014618d5c0035fd60004008b0160a05201441bd5c0035fd6
@@ -77,16 +76,9 @@
   <com>lo fu ic</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option retsysreg off</com>
-  <com>lo fu pmr</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu fpcr</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="RETSYSREG A64 #1: a system register write keeps the 64-bit return" min="3" max="3">(int8|long) (pmr|fpcr|daif)\((int8|long) a0\)</stringmatch>
 <stringmatch name="RETSYSREG A64 #2: a prefetch, cache or TLB op on the high word keeps the pair" min="6" max="6">undefined16 (two|i128|cvau|civac|tlbi|ic)\(</stringmatch>
-<stringmatch name="RETSYSREG A64 #3: with retsysreg off pmr and fpcr return the pair again" min="2" max="2">undefined16 (pmr|fpcr)\(</stringmatch>
+<stringmatch name="RETSYSREG A64 #3: pmr and fpcr never return the pair" min="0" max="0">undefined16 (pmr|fpcr)\(</stringmatch>
 </decompilertest>

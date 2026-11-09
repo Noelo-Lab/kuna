@@ -30,10 +30,9 @@
     settles the question is the OTHER call site, which passes rcx as an argument
     to the same callee.
 
-    Stage / sub-stage: P4 "trial-finalization".  The P0 assertion
-    `option calleearity on|off` decides whether buildInputFromTrials reconciles
-    a call's argument list with an already-final sibling call to the same entry
-    address.
+    Stage / sub-stage: P4 "trial-finalization".  buildInputFromTrials
+    reconciles a call's argument list with an already-final sibling call to the
+    same entry address (kuna_calleearity.rs, always on).
 
     The fixture is the same construct on SysV x86-64 (rdi rather than rcx),
     assembled from:
@@ -52,13 +51,9 @@
     copies into the guarded expression is rejected at BOTH sites and there is no
     witness left to reconcile against.
 
-    Pass 1 (`option calleearity off`) reproduces the BUG: site B renders as
-    `callee()` while site A keeps its argument.
-    Pass 2 (`option calleearity on`) is the FIX: both sites pass an argument.
-
-    `calleereadarg` is off in pass 1: the callee reads rdi on entry, so that
-    rule keeps site B's argument by itself and would hide the bug.  Pass 2 is
-    the shipped default, with both rules on.
+    Site B renders `callee()` without the reconciliation; at the shipped
+    default both sites pass an argument.  (The callee reads rdi on entry, so the
+    callee-read rule keeps site B's argument too.)
 -->
 <bytechunk space="ram" offset="0x100000">
 4889f84883c001c30f1f84000000000053bf28000000e8e5ffffff4889c3488d
@@ -68,17 +63,11 @@
 <symbol space="ram" offset="0x100010" name="caller"/>
 </binaryimage>
 <script>
-  <com>option calleereadarg off</com>
-  <com>option calleearity off</com>
   <com>lo fu caller</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option calleereadarg on</com>
-  <com>option calleearity on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="calleearity #1: option off drops the argument at the call site whose guard branches on it (bug reproduced)" min="1" max="1">callee\(\);</stringmatch>
-<stringmatch name="calleearity #2: option on gives both call sites of one callee the same arity" min="1" max="1">callee\(v[0-9]+ \+ 0x27\)</stringmatch>
+<stringmatch name="calleearity #1: the call site whose guard branches on its argument never renders with an empty list" min="0" max="0">callee\(\);</stringmatch>
+<stringmatch name="calleearity #2: both call sites of one callee get the same arity" min="1" max="1">callee\(v[0-9]+ \+ 0x27\)</stringmatch>
 </decompilertest>

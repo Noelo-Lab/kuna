@@ -60,7 +60,7 @@
 //!
 //! An unwritten Varnode that is a **formal input parameter** is the one exception
 //! — the function was handed that value, so handing it back is a real return.
-//! That carve-out is `option retinputhalf` and lives in
+//! That carve-out lives in
 //! [`crate::kuna_retinputhalf`]; without it a returned pair whose high half is a
 //! passthrough argument loses the half *and* the argument.
 //!

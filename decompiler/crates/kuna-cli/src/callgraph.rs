@@ -108,11 +108,7 @@ impl CallGraph {
             }
         }
         entries.sort_unstable();
-        let plt_local = if prog.arch().plt_local_calls {
-            prog.arch().plt_local.to_vec()
-        } else {
-            Vec::new()
-        };
+        let plt_local = prog.arch().plt_local.to_vec();
         CallGraph { index, entries, plt_local }
     }
 

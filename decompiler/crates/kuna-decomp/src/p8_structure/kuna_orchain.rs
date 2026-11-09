@@ -22,14 +22,13 @@
 //! essentially all of `returndup`'s harm at `-O0` (-665 GED-perfect) and almost none
 //! of its benefit at the optimized levels (+15 / +20 of +832).
 //!
-//! # What this option does
+//! # What this does
 //!
-//! With `option orchain on` (DIV-69, the default),
 //! [`Funcdata::returndup_apply`](crate::funcdata::Funcdata) first asks
 //! [`shortcircuit_shared_targets`] which blocks are the *shared out-target* of a fold
 //! `rule_block_or` would perform, and declines the whole function's splits when one of
-//! its own candidates is in that set.  It is one-directional -- it can only make
-//! `returndup` fire less -- and inert with `option returndup off`.
+//! its own candidates is in that set (DIV-69).  It is one-directional -- it can only
+//! make `returndup` fire less -- and inert with `option returndup off`.
 //!
 //! # The predicate
 //!
@@ -64,13 +63,11 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::types::int4;
 
 use crate::context::BlockId;
 use crate::funcdata::Funcdata;
-use crate::options::on_or_off;
 
 /// Marshaling element `<orchain>` (kuna).  ElementIds live in the 4000+ range
 /// (Originally 4122, which collided: funcboundflow claimed the same id a day earlier from
@@ -199,24 +196,4 @@ pub(crate) fn shortcircuit_shared_targets(data: &Funcdata) -> BTreeSet<BlockId> 
 fn preds_of(data: &Funcdata, b: BlockId) -> Vec<BlockId> {
     let blk = data.bblocks_ref().block(b);
     (0..blk.size_in()).map(|i| blk.get_in(i)).collect()
-}
-
-//===========================================================================
-// Option parse (`orchain on|off`).
-//===========================================================================
-
-/// The `orchain on|off` ArchOption (decline a `returndup` split that would break a
-/// short-circuit operand chain).
-pub struct OptionOrChain;
-
-impl OptionOrChain {
-    /// The option name.
-    pub const NAME: &'static str = "orchain";
-
-    /// Parse `on`/`off`, returning the bool value + a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Short-circuit operand-chain protection for returndup turned {prop}")))
-    }
 }

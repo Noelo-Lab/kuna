@@ -1,5 +1,4 @@
-//! (kuna) `varargstackargs` — the stack resource is its own section at a
-//! variadic call site.
+//! (kuna) The stack resource is its own section at a variadic call site.
 //!
 //! # The gap
 //!
@@ -50,7 +49,7 @@
 //! Nothing else about trial scoring changes.  A stack trial still has to be
 //! ACTIVE on its own evidence to survive — `checkInputTrialUse`'s local-alias
 //! and caller-local-range tests and `ancestorOpUse` all run first, unchanged —
-//! so the option can only ever keep an argument the recovery had already
+//! so the rule can only ever keep an argument the recovery had already
 //! believed in, never invent one from an untouched slot.
 //!
 //! The variadic requirement is what keeps the divergence honest: for a call
@@ -78,35 +77,16 @@
 //!
 //! That leaves ARM32 AAPCS (stack pentry at 0, but variadic arguments do fill
 //! `r0`-`r3` first) as the residual over-recovery risk; it did not fire anywhere
-//! in the sweep, and it is why the option is opt-in rather than a default.
+//! in the sweep.
 
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
 
 use crate::fspec::ParamActive;
-use crate::p0_knowledge::options::on_or_off;
 
 /// Marshaling element `<varargstackargs>` (kuna 4000+ range; 4131 = cleanupcode).
 pub const ELEM_VARARGSTACKARGS: ElementId = ElementId::new("varargstackargs", 4132);
-
-/// (kuna) Score a variadic call's stack arguments as their own resource
-/// section: `varargstackargs on|off`.
-pub struct OptionVarargStackArgs;
-
-impl OptionVarargStackArgs {
-    /// The option name.
-    pub const NAME: &'static str = "varargstackargs";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::vararg_stack_args`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Variadic stack-argument sectioning turned {prop}")))
-    }
-}
 
 /// Where a `fillinMap` resource section should be cut in two, or `None` to
 /// score it whole.

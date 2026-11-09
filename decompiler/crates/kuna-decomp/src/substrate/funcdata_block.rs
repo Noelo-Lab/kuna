@@ -3254,15 +3254,13 @@ impl Funcdata {
             }
         }
 
-        // (kuna, `option orchain`) A shared return that is the out-target two guards
-        // must keep in common is the operand chain of a short-circuit expression:
-        // splitting it blocks `rule_block_or` permanently, and the source's
+        // (kuna) A shared return that is the out-target two guards must keep in
+        // common is the operand chain of a short-circuit expression: splitting it
+        // blocks `rule_block_or` permanently, and the source's
         // `return a || (b && c);` becomes a cascade of constant-return guards.
-        if self.get_arch().returndup_orchain {
-            let shared = crate::p8_structure::kuna_orchain::shortcircuit_shared_targets(self);
-            if parents.iter().any(|p| shared.contains(p)) {
-                return 0;
-            }
+        let shared = crate::p8_structure::kuna_orchain::shortcircuit_shared_targets(self);
+        if parents.iter().any(|p| shared.contains(p)) {
+            return 0;
         }
 
         // For each candidate, split every in-edge but the first (leave edge 0 on the
@@ -4275,9 +4273,7 @@ impl CloneBlockOps {
             ops.push(o);
             cur = data.obank().get(o).expect("cloneBlock: stale op").basic_neighbours().1;
         }
-        if data.get_arch().clone_phi_order {
-            crate::p8_structure::kuna_clonephiorder::order_global_phis(data, &mut ops);
-        }
+        crate::p8_structure::kuna_clonephiorder::order_global_phis(data, &mut ops);
         for orig_op in ops {
             let clone_op = match self.build_op_clone(data, orig_op)? {
                 Some(c) => c,

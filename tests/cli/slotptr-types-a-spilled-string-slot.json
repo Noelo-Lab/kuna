@@ -7,10 +7,7 @@
     "decompile",
     "{{BIN}}",
     "authenticate",
-    "--json",
-    "--option",
-    "slotptr",
-    "on"
+    "--json"
   ],
   "cwd": "{{WORK}}",
   "env": {
@@ -73,5 +70,5 @@
     "selector": "authenticate",
     "selector_kind": "name"
   },
-  "notes": "slotptr on. -O0 authenticate spills its two char * arguments to stack slots the dataflow then folds away; framelayout reports those slots, and slotptr types them from the value stored there, the char * parameters. local_30 only ever holds call return addresses (constants), so it keeps undefined8. The C text is unchanged."
+  "notes": "slotptr (always on). -O0 authenticate spills its two char * arguments to stack slots the dataflow then folds away; framelayout reports those slots, and slotptr types them from the value stored there, the char * parameters. local_30 only ever holds call return addresses (constants), so it keeps undefined8. The C text is unchanged."
 }

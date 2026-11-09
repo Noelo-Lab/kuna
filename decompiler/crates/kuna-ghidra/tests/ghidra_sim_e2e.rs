@@ -587,7 +587,7 @@ const PIN_FAILLOG_VARDECL_UNRESOLVED: [usize; 3] = [0, 0, 0];
 // call or return), cached per callee entry for the whole run, and skipped
 // entirely for a function with fewer than two calls — so +243 DISTINCT decoded
 // instructions is the union of the probed prologues in this session, not
-// per-decompile growth.  Flipping `option calleedeadarg off` restores 1314/801.
+// per-decompile growth.
 // (kuna `calleepreserves`, DIV-124) RAISED the total 1613 -> 1862 and left the
 // DISTINCT count at 1044, unmoved.  That pairing is the whole justification: the
 // call-guard seam takes the same bounded body walk, but without
@@ -612,12 +612,11 @@ const PIN_FAILLOG_VARDECL_UNRESOLVED: [usize; 3] = [0, 0, 0];
 // circuits before any decode, so `calltrampoline off` is the 1862 this pin held
 // before the option existed.
 // (kuna `calleereadarg`) RAISED the total 2121 -> 2142 and left the DISTINCT
-// count at 1044, unmoved, with every rendered pin above it unchanged. The option
+// count at 1044, unmoved, with every rendered pin above it unchanged. The rule
 // asks the bounded entry walk of each function's OWN body (one with a call to
 // extend), to tell a variadic caller by its register-save prologue, and the
 // walk is a cache miss for an entry no earlier caller probed. No new
-// instruction address is read. Measured both arms on this tree: the option off
-// by default gives 2121.
+// instruction address is read.
 const PIN_FAILLOG_GETPCODE_TOTAL: u64 = 2142;
 const PIN_FAILLOG_DECODED_INSTS: usize = 1044;
 // Whole-session getMappedSymbols traffic: Phase 2 pinned this at 0 (the

@@ -1,5 +1,5 @@
-//! (kuna) `calleedeadarg` — drop a recovered call argument the callee's own body
-//! proves it never reads.
+//! (kuna) Drop a recovered call argument the callee's own body proves it never
+//! reads.
 //!
 //! # The symptom
 //!
@@ -119,7 +119,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::space::spacetype;
 use kuna_base::types::{int4, uint4};
@@ -128,27 +127,10 @@ use kuna_num::pcoderaw::VarnodeData;
 
 use crate::context::VarnodeId;
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 
 /// Marshaling element `<calleedeadarg>` (kuna 4000+ range; 4139 was the previous
 /// high-water mark).
 pub const ELEM_CALLEEDEADARG: ElementId = ElementId::new("calleedeadarg", 4140);
-
-/// (kuna) Drop a provably-unread call argument: `calleedeadarg on|off`.
-pub struct OptionCalleeDeadArg;
-
-impl OptionCalleeDeadArg {
-    /// The option name.
-    pub const NAME: &'static str = "calleedeadarg";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_dead_arg`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Callee-body dead-argument veto turned {prop}")))
-    }
-}
 
 /// How many machine instructions one callee probe decodes before abandoning the
 /// summary. Every path normally ends at the callee's first call or return, so
@@ -1718,7 +1700,7 @@ fn skip_input(opc: OpCode, i: usize) -> bool {
 /// `ArchContext` the pipeline runs against carries the load image but no
 /// translator, so the probe cannot be taken lazily at the seam. Results are
 /// cached on the `Architecture`, so each distinct callee body is decoded once per
-/// run. A no-op with the option off.
+/// run.
 pub fn seed_callee_entry_dead(
     arch: &mut crate::architecture::Architecture,
     data: &mut Funcdata,
@@ -1731,7 +1713,6 @@ pub fn seed_callee_entry_dead(
             data.kuna_set_own_entry_dead(d);
         }
     }
-    let body_arity = arch.callee_arity && arch.callee_arity_body;
     // `argclobber` reads this probe only as a veto on a drop its recovered-
     // prototype clause already admitted, so with nothing parked it can never
     // consult it and the decode is pure cost.
@@ -1740,32 +1721,6 @@ pub fn seed_callee_entry_dead(
     let reg_idx =
         arch.manage().get_space_by_name("register").map(|s| s.get_index()).unwrap_or(-1);
     if reg_idx < 0 {
-        return;
-    }
-    let hidden_ret = arch.hidden_ret_arg && {
-        let proto = data.get_func_proto();
-        proto.has_model()
-            && crate::p4_calls::kuna_hiddenretarg::has_register_hidden_return(proto.model(), reg_idx)
-    };
-    let read_arg = arch.callee_read_arg;
-    if !arch.callee_dead_arg
-        && !clobber_veto
-        && !(arch.callee_arity && arch.callee_arity_live)
-        && !body_arity
-        && !pass_through
-        && !hidden_ret
-        && !read_arg
-    {
-        return;
-    }
-    // The veto needs an EARLIER call to have left the value in the register, so
-    // a function with fewer than two calls can never produce one — and probing
-    // its callees would be pure cost.  This matters most in ghidra mode, where a
-    // decode is a round trip to the host.  `calleearitybody` is the exception:
-    // its whole subject is the callee that is called ONCE, and so is a model
-    // with a hidden-return register, whose veto needs no earlier call.  So is
-    // `calleereadarg`, which reads the probe at any one call.
-    if data.num_calls() < 2 && !body_arity && !pass_through && !hidden_ret && !read_arg {
         return;
     }
     let mut through_memo = ThroughMemo::new();
@@ -1777,7 +1732,7 @@ pub fn seed_callee_entry_dead(
     // `calleereadarg` asks it too, of a function with a call to extend: one
     // that reads its last argument register on entry may be variadic, and is
     // left alone.
-    if (pass_through || (read_arg && data.num_calls() > 0)) && !data.get_address().is_invalid() {
+    if (pass_through || data.num_calls() > 0) && !data.get_address().is_invalid() {
         entries.push(data.get_address().clone());
     }
     for i in 0..data.num_calls() {
@@ -1876,7 +1831,7 @@ pub(crate) fn is_leftover_call_result(data: &Funcdata, vn: VarnodeId, depth: u32
 ///    ever reading it ([`CalleeEntryDead::proves_dead`]; for a VFP register
 ///    with `armfloatargs` on, by instructions that always run).
 ///
-/// Answers `false` with the option off, for a non-register trial, for an
+/// Answers `false` for a non-register trial, for an
 /// indirect call, and for every callee the probe could not fully cover.
 pub fn trial_is_dead_in_callee(
     data: &Funcdata,
@@ -1885,9 +1840,6 @@ pub fn trial_is_dead_in_callee(
     trial_addr: &Address,
     trial_size: int4,
 ) -> bool {
-    if !data.get_arch().callee_dead_arg {
-        return false;
-    }
     let entry = data.get_call_specs(call_idx).get_entry_address();
     if entry.is_invalid() {
         return false;

@@ -14,43 +14,16 @@
 //! whole-array cover, which `PrintC::pushPartialSymbol`'s top-of-walk
 //! whole-symbol break (printc.cc:2033) exits before the array arm can see.
 //!
-//! Following the kuna-option idiom ([`crate::kuna_arraynotation::OptionArrayNotation`]),
-//! this module owns the option struct that flips
-//! [`crate::printc::PrintCOptions::array_cover_width`] plus the width predicate
-//! the printer consults; the caller (`Architecture::set_kuna_option`) writes the
-//! live flag.
+//! This module owns the width predicate the printer consults.
 
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 
 use crate::dtype::{type_metatype, Datatype};
-use crate::options::on_or_off;
 use kuna_base::types::int4;
 
 /// Marshaling element `<arraycoverwidth>` (kuna 4000+ range; 4144 = the previous
 /// highest kuna id).
 pub const ELEM_ARRAYCOVERWIDTH: ElementId = ElementId::new("arraycoverwidth", 4145);
-
-/// (kuna) Toggle the width-carrying render of a multi-element array access:
-/// `arraycoverwidth on|off`.
-///
-/// "off" keeps the upstream whole-symbol break (a bare name, or the caller's
-/// `name[0]` subscript); "on" (the kuna default) renders `name._<off>_<size>_`.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct OptionArrayCoverWidth;
-
-impl OptionArrayCoverWidth {
-    /// The option name.
-    pub const NAME: &'static str = "arraycoverwidth";
-
-    /// Parse + validate the `on`/`off` value; the caller performs the printer
-    /// write ([`crate::printc::PrintCOptions::set_array_cover_width`]).
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Array-cover width rendering turned {prop}")))
-    }
-}
 
 /// Does an `sz`-byte access of `ct` span more than one array element?
 ///

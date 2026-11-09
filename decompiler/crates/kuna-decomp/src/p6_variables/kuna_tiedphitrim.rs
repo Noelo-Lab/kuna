@@ -1,4 +1,4 @@
-//! Loop-head address-tied MULTIEQUAL input trim — the `tiedphitrim` decision point.
+//! Loop-head address-tied MULTIEQUAL input trim.
 //!
 //! `Merge::mergeOp` (`merge.cc:719`) forces a MULTIEQUAL's output and every
 //! input it has not trimmed into one HighVariable.  When one input is an
@@ -43,7 +43,7 @@ use crate::merge::MergeContext;
 /// The input slots of MULTIEQUAL `op` to trim before its forced merge, with
 /// the storage they are tied to, or `None` when the merge is left to upstream.
 pub fn tied_slots(ctx: &mut dyn MergeContext, op: OpId) -> Option<(Vec<int4>, Address)> {
-    if !ctx.kuna_tied_phi_trim() || ctx.op_code(op) != OpCode::CPUI_MULTIEQUAL {
+    if ctx.op_code(op) != OpCode::CPUI_MULTIEQUAL {
         return None;
     }
     let out = ctx.op_out(op)?;

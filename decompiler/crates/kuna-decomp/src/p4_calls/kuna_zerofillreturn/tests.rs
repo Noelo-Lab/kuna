@@ -1,4 +1,4 @@
-//! Unit tests for the `zerofillreturn` lane boundary and option.
+//! Unit tests for the zero-fill lane boundary.
 
 use super::*;
 
@@ -56,9 +56,3 @@ fn no_low_lane_means_no_fill() {
     assert_eq!(lane_end(&[]), None);
 }
 
-#[test]
-fn option_parses_on_and_off() {
-    assert!(OptionZeroFillReturn.apply("on").unwrap().0);
-    assert!(!OptionZeroFillReturn.apply("off").unwrap().0);
-    assert!(OptionZeroFillReturn.apply("maybe").is_err());
-}

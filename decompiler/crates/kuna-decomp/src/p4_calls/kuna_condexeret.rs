@@ -1,4 +1,4 @@
-//! (kuna) `condexeret` -- a return register that fails recovery only on paths
+//! (kuna) A return register that fails recovery only on paths
 //! `ActionConditionalExe` removes gets one more look after it.
 //!
 //! `ActionReturnRecovery` (coreaction.cc:1954) walks each output trial with
@@ -115,11 +115,10 @@ fn ends_in_cbranch(fd: &Funcdata, bl: BlockId) -> bool {
         == Some(OpCode::CPUI_CBRANCH)
 }
 
-/// Is this pass the one that remembers failures: the option is on, no retry
-/// is scheduled yet, and it is the last normal pass?
-pub fn remembering(active: &ParamActive, enabled: bool) -> bool {
-    enabled
-        && *active.cond_exe_retry() == CondExeRetry::Idle
+/// Is this pass the one that remembers failures: no retry is scheduled yet,
+/// and it is the last normal pass?
+pub fn remembering(active: &ParamActive) -> bool {
+    *active.cond_exe_retry() == CondExeRetry::Idle
         && active.get_num_passes() == active.get_max_pass()
 }
 
@@ -182,10 +181,10 @@ fn check_with(active: &ParamActive, i: int4, ret: OpId, gone: impl Fn(BlockId) -
 /// End-of-pass bookkeeping, before `ParamActive::finishPass`.  After the last
 /// normal pass, schedule the retry if a remembered trial is still unchecked;
 /// after the retry pass, close it.
-pub fn end_pass(active: &mut ParamActive, enabled: bool, mut remembered: Vec<Remembered>) {
+pub fn end_pass(active: &mut ParamActive, mut remembered: Vec<Remembered>) {
     match active.cond_exe_retry() {
         CondExeRetry::Pending(_) => active.set_cond_exe_retry(CondExeRetry::Done),
-        CondExeRetry::Idle if remembering(active, enabled) => {
+        CondExeRetry::Idle if remembering(active) => {
             remembered.retain(|r| !active.get_trial(r.trial).is_checked());
             if remembered.is_empty() {
                 return;

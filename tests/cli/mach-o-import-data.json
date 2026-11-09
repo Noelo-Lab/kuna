@@ -5,13 +5,7 @@
     "{{KUNA}}",
     "decompile",
     "{{BIN}}",
-    "printf",
-    "--option",
-    "calleearity",
-    "on",
-    "--option",
-    "varargstackargs",
-    "on"
+    "printf"
   ],
   "cwd": "{{WORK}}",
   "env": {
