@@ -399,12 +399,12 @@ impl TextBuffer {
             if type_.array_dim > 0 {
                 let cut = cast_name.jlen() - (type_.array_dim * 2) as usize;
                 let name = cast_name.jsubstring(0, cut);
-                self.append_all_classes(&name, &type_.value);
+                self.append_all_classes(&name, type_.value.as_deref());
                 let at = self.length() - name.jlen() as i32;
                 self.add_generic_type_tokens(at, &name, type_);
                 self.append(&cast_name.jsubstring_from(cut));
             } else {
-                self.append_all_classes(cast_name, &type_.value);
+                self.append_all_classes(cast_name, type_.value.as_deref());
                 let at = self.length() - cast_name.jlen() as i32;
                 self.add_generic_type_tokens(at, cast_name, type_);
             }
@@ -422,7 +422,7 @@ impl TextBuffer {
     /// Java: `appendTypeName(String name, VarType)`.
     pub fn append_type_name_str(&mut self, name: &str, type_: &VarType) -> &mut Self {
         if type_.type_ == CodeType::Object {
-            self.append_all_classes(name, &type_.value);
+            self.append_all_classes(name, type_.value.as_deref());
             let at = self.length() - name.jlen() as i32;
             self.add_generic_type_tokens(at, name, type_);
             return self;
@@ -433,13 +433,13 @@ impl TextBuffer {
     pub fn add_type_name_token(&mut self, type_: &VarType, index: i32) -> &mut Self {
         if type_.type_ == CodeType::Object {
             let name = ExprProcessor::get_type_name(type_);
-            self.add_all_class_tokens(index, &name, &type_.value);
+            self.add_all_class_tokens(index, &name, type_.value.as_deref());
             self.add_generic_type_tokens(index, &name, type_);
         }
         self
     }
 
-    pub fn append_all_classes(&mut self, text: &str, qualified_name: &str) -> &mut Self {
+    pub fn append_all_classes(&mut self, text: &str, qualified_name: Option<&str>) -> &mut Self {
         let at = self.length();
         self.add_all_class_tokens(at, text, qualified_name);
         self.append(text)
@@ -449,7 +449,7 @@ impl TextBuffer {
         &mut self,
         index: i32,
         text: &str,
-        qualified_name: &str,
+        qualified_name: Option<&str>,
     ) -> &mut Self {
         let mut index = index;
         let mut text = text;
@@ -457,7 +457,11 @@ impl TextBuffer {
             text = &text[..lt];
         }
         let mut pos = 0usize;
-        while text.contains('.') && qualified_name[pos..].contains('$') {
+        while text.contains('.') {
+            let qualified_name = qualified_name.expect("NullPointerException");
+            if !qualified_name[pos..].contains('$') {
+                break;
+            }
             let dot = text.find('.').expect("contains '.'");
             let length = text[..dot].jlen() as i32;
             let dollar = pos + qualified_name[pos..].find('$').expect("contains '$'");
@@ -467,7 +471,7 @@ impl TextBuffer {
             index += length + 1;
         }
         if !is_blank(text) {
-            self.add_class_token(index, text.jlen() as i32, qualified_name);
+            self.add_class_token(index, text.jlen() as i32, qualified_name.unwrap_or("null"));
         }
         self
     }
@@ -498,7 +502,7 @@ impl TextBuffer {
                     }
                     let name = GenericMain::get_generic_cast_type_name(&gt);
                     if gt.type_ == CodeType::Object {
-                        self.add_all_class_tokens(index + offset, &name, &gt.value);
+                        self.add_all_class_tokens(index + offset, &name, gt.value.as_deref());
                     }
                     self.add_generic_type_tokens(index + offset, &name, &gt);
                     offset += name.jlen() as i32;

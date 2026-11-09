@@ -70,13 +70,12 @@ impl TextUtil {
     pub fn write_qualified_super(buf: &mut TextBuffer, qualifier: &str) {
         let class_node = DecompilerContext::get_current_class_node()
             .expect("TextUtil.writeQualifiedSuper: no current class node");
-        let qualified_name = class_node
-            .with(|d| d.class_struct)
-            .with(|d| d.qualified_name.clone());
+        let qualified_name = class_node.with(|d| d.class_struct).qualified_name();
         if qualifier != qualified_name {
             let short_name = DecompilerContext::get_import_collector()
-                .get_short_name(&ExprProcessor::build_java_class_name(qualifier));
-            buf.append_all_classes(&short_name, qualifier)
+                .get_short_name(&ExprProcessor::build_java_class_name(qualifier))
+                .expect("NullPointerException");
+            buf.append_all_classes(&short_name, Some(qualifier))
                 .append_char('.');
         }
         buf.append("super");

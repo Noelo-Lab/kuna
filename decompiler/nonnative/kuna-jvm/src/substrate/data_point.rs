@@ -59,7 +59,7 @@ impl DataPoint {
 
         let mut k: i32 = 0;
         if !mt.has_modifier(ACC_STATIC) {
-            let name = cl.with(|d| d.qualified_name.clone());
+            let name = cl.qualified_name();
             point.set_variable(k, VarType::new_value(CodeType::Object, 0, name));
             k += 1;
         }

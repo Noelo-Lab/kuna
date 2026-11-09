@@ -429,9 +429,9 @@ impl GenericType {
     pub fn get_cast_name(&self) -> String {
         let value = self.value_str();
         let cls_name = match self.get_parent() {
-            None => {
-                DecompilerContext::get_import_collector().get_short_name(&value.replace('/', "."))
-            }
+            None => DecompilerContext::get_import_collector()
+                .get_short_name(&value.replace('/', "."))
+                .unwrap_or_else(|| "null".to_string()),
             Some(parent) if parent.is_generic() => {
                 let parent_len = parent.value_str().jlen();
                 format!(
@@ -448,7 +448,9 @@ impl GenericType {
                 format!(
                     "{}.{}",
                     DecompilerContext::get_import_collector()
-                        .get_short_name(&parent.value_str().replace('/', ".")),
+                        .get_short_name(&parent.value_str().replace('/', "."))
+                        .as_deref()
+                        .unwrap_or("null"),
                     tail
                 )
             }
@@ -881,7 +883,7 @@ impl GenericType {
 
         if let (Some(dcls), Some(scls)) = (dcls, scls) {
             let hierarchy = dcls.get_all_generics();
-            let scls_name = scls.with(|d| d.qualified_name.clone());
+            let scls_name = scls.qualified_name();
 
             if hierarchy.contains_key(&scls_name) {
                 if let Some(scls_sig) = scls.get_signature() {
@@ -918,7 +920,7 @@ impl GenericType {
                     }
                     return scls_sig
                         .generic_type()
-                        .remap(hierarchy.get(&scls_name).unwrap())
+                        .remap(&**hierarchy.get(&scls_name).unwrap())
                         .expect("NullPointerException")
                         .remap(&temp_map);
                 }

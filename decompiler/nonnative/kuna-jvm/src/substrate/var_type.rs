@@ -918,7 +918,7 @@ impl VarType {
                         _ => None,
                     };
                     if let Some(cl) = cl {
-                        let name = cl.with(|d| d.qualified_name.clone());
+                        let name = cl.qualified_name();
                         return Some(VarType::new_signature_cl(&name, true));
                     }
 
