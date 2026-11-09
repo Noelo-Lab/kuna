@@ -639,6 +639,19 @@ fn vendored() -> Vec<Case> {
     load_cases(&path).expect("tests/jvm/cases.tsv loads")
 }
 
+/// A kuna-fixes case in Kotlin: it runs with the plugins and compares `<Stem>.kt` (or `.java`).
+fn kotlin_fix_case(case: &Case) -> bool {
+    let kotlin = is_kuna_fix(case) && case.expected.extension().is_some_and(|e| e == "kt");
+    if kotlin {
+        let class = case.class_files[0].file_stem().unwrap().to_string_lossy();
+        assert_eq!(
+            case.compare,
+            [format!("{class}.kt"), format!("{class}.java")]
+        );
+    }
+    kotlin
+}
+
 fn is_kuna_fix(case: &Case) -> bool {
     case.set_slug == "kuna-fixes" || case.set_slug == "kuna-fixes-compat"
 }
@@ -711,7 +724,7 @@ fn vendored_corpus_is_complete() {
                 | "plugin-defaults"
                 | "kotlin-entire-classpath"
                 | "kotlin-multifile-facade"
-        );
+        ) || kotlin_fix_case(case);
         assert_eq!(
             case.options
                 .iter()
