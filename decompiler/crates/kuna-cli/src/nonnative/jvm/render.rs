@@ -299,6 +299,13 @@ fn within_class(unit: &DecompiledClass, class: &str, span: &MethodSpan) -> bool 
 
 fn hidden_method(target: &Target) -> String {
     match target {
+        Target::Methods { class, name, .. } if name == "<init>" => format!(
+            "{}.<init> is not in the decompiled source of {} (the engine leaves out default \
+             constructors, and always an anonymous class's; --option jvm_hide_default_constructor off \
+             prints the default ones)",
+            java_name(class),
+            java_name(class)
+        ),
         Target::Methods { class, name, .. } => format!(
             "{}.{name} is not in the decompiled source of {} (the engine folds synthetic and bridge \
              methods into their users; --option jvm_remove_synthetic off and jvm_remove_bridge off \
