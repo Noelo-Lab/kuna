@@ -73,7 +73,7 @@ pub use p0_knowledge::{
     class_wrapper_node, context_source, context_unit, converter_helper, counter_container,
     decompiler_context, fernflower, i_decompiled_data, i_fernflower_logger,
     i_fernflower_preferences, i_identifier_renamer, i_variable_name_provider,
-    i_variable_naming_factory, identifier_converter, identity_renamer_factory, jdk_runtime, kuna_input, kuna_inventory, kuna_options,
+    i_variable_naming_factory, identifier_converter, identity_renamer_factory, jdk_runtime, kuna_fixes, kuna_input, kuna_inventory, kuna_options,
     pool_interceptor, struct_context,
 };
 pub use p1_classfile::{

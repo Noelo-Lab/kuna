@@ -16,6 +16,7 @@ pub mod i_variable_naming_factory;
 pub mod identifier_converter;
 pub mod identity_renamer_factory;
 pub mod jdk_runtime;
+pub mod kuna_fixes;
 pub mod kuna_input;
 pub mod kuna_inventory;
 pub mod kuna_options;

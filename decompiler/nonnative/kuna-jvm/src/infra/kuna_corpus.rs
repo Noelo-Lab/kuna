@@ -3,7 +3,9 @@
 //!
 //! A case is run the way Vineflower's `SingleClassesTest` fixture runs it: the option pairs go to
 //! [`Fernflower::new`] (which overlays them on the defaults) with no plugin loaded (`jvm_plugins`
-//! off unless the case sets it, see [`engine_options`]), every class file is added as a source
+//! off unless the case sets it) and in Vineflower-compatible mode (`jvm_vineflower_compat` on
+//! unless the case sets it, as the kuna-fixes cases' default pass does; see [`engine_options`]),
+//! every class file is added as a source
 //! in manifest order, the context is decompiled and then cleared. The fixture's saver writes every
 //! class of a class-file source flat into one directory, so the compared text is the *last*
 //! delivered unit whose file name is the case's `compare` name; it is compared with the expected
@@ -21,6 +23,7 @@ use crate::decompiler_context::DecompilerContext;
 use crate::fernflower::{DecompiledClass, Fernflower};
 use crate::i_fernflower_logger::{IFernflowerLogger, Severity};
 use crate::jdk_runtime::JdkRuntime;
+use crate::kuna_fixes::VINEFLOWER_COMPAT;
 use crate::kuna_plugins::JVM_PLUGINS;
 use crate::rt::{self, try_catch, Caught};
 use crate::struct_class::StructClass;
@@ -115,9 +118,13 @@ struct RawCase {
 }
 
 /// The option pairs the engine runs `case` with: the fixture registers no plugin, so
-/// `jvm_plugins` is off unless the case sets it.
+/// `jvm_plugins` is off unless the case sets it, and the oracle is Vineflower's text, so
+/// `jvm_vineflower_compat` is on unless the case sets it.
 pub fn engine_options(case: &Case) -> Vec<(String, String)> {
-    let mut options = vec![(JVM_PLUGINS.to_string(), "0".to_string())];
+    let mut options = vec![
+        (JVM_PLUGINS.to_string(), "0".to_string()),
+        (VINEFLOWER_COMPAT.to_string(), "1".to_string()),
+    ];
     for (key, value) in &case.options {
         overlay_option(&mut options, key, value);
     }

@@ -1,4 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/NewExprent.java`.
+//!
+//! kuna fix `jvm_fix_lambda_wildcard_return` (`kuna_fixes`): in
+//! `get_inferred_expr_type`, a method reference whose return type is the
+//! receiver's `?` type argument keeps the generic mapping already inferred,
+//! where Vineflower dereferences the missing return type.
 
 use std::collections::VecDeque;
 
@@ -19,6 +24,7 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
 use crate::java_subclass;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
 use crate::method_descriptor::MethodDescriptor;
 use crate::rt::{BitSet, JHashMap, JHashSet, JList, JavaEq, JavaHash};
@@ -403,7 +409,15 @@ impl NewExprent {
                                     let prior = generics_map.get(&key).cloned().flatten();
                                     let mut add_to_map = true;
                                     if let Some(prior) = prior {
-                                        if prior.is_generic()
+                                        if return_type.is_none()
+                                            && kuna_fixes::enabled(KunaFix::LambdaWildcardReturn)
+                                        {
+                                            if prior.is_generic()
+                                                && !prior.as_generic().is_type_unfinished()
+                                            {
+                                                add_to_map = false;
+                                            }
+                                        } else if prior.is_generic()
                                             && !prior.as_generic().is_type_unfinished()
                                             && DecompilerContext::get_struct_context().instance_of(
                                                 return_type
