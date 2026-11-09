@@ -738,17 +738,6 @@ impl<'a> Emulator<'a> {
     }
 }
 
-/// `Ite` tree over `atoms` selecting `vals[index]` where bit `i` of the index
-/// is atom `i`'s value.
-fn ite_tree(arena: &mut ExprArena, atoms: &[ExprId], vals: &[ExprId], i: usize, prefix: usize) -> ExprId {
-    if i == atoms.len() {
-        return vals[prefix];
-    }
-    let f = ite_tree(arena, atoms, vals, i + 1, prefix);
-    let t = ite_tree(arena, atoms, vals, i + 1, prefix | (1 << i));
-    arena.mk_ite(atoms[i], t, f)
-}
-
 /// The conjunction of the literals of a case-split assignment.
 pub fn assignment_cond(arena: &mut ExprArena, assign: &[(ExprId, bool)]) -> ExprId {
     let mut acc = arena.cst(1, 1);
