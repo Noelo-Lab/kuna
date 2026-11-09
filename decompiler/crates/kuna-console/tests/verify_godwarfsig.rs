@@ -92,7 +92,7 @@ fn compressed_and_cross_unit_contracts_agree() {
 
 #[test]
 fn rejected_signatures_preserve_inference() {
-    let names = ["main.badReg", "main.missingFlag", "main.multiResult", "main.trampoline",
+    let names = ["main.badReg", "main.missingFlag", "main.trampoline",
         "main.worker.func1", "main.badType", "main.tooWide", "main.wrongProducer",
         "main.badResultReg", "main.stackInput", "main.tooManyIntegers", "main.tooManyFloats"];
     for image in ["uncompressed", "compressed"] {

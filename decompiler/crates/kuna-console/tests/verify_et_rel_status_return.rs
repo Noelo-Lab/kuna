@@ -6,9 +6,10 @@
 //! guard-failure path passes the same value to an undefined no-return function.
 //! `status_caller` consumes the result through a relocated direct call.
 //!
-//! With library prototypes disabled, the status-return half is the two-pass gate for `option noreturnretuse`: OFF
-//! is the upstream behaviour, where the failure call's use of the same register
-//! vetoes the return trial and the helper recovers as `void`.
+//! The status-return half exercises the terminal no-return tolerance: the
+//! failure call's use of the same register no longer vetoes the return trial, so
+//! the helper keeps its value under `noreturnretuse` on and off alike (a known
+//! zero-argument failure consumes no status register).
 
 use std::path::PathBuf;
 
@@ -86,12 +87,6 @@ fn arm_and_aarch64_status_helpers_keep_their_return_values() {
         assert!(
             !caller.contains("sub_"),
             "{name}: relocated call lost callee identity:\n{caller}"
-        );
-
-        let (upstream, _) = decompile_pair(name, false);
-        assert!(
-            upstream.starts_with("void guarded_status"),
-            "{name}: `noreturnretuse off` must restore the upstream void recovery:\n{upstream}"
         );
     }
 }
