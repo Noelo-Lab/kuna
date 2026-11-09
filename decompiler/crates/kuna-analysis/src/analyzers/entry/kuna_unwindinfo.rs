@@ -104,7 +104,8 @@ fn collect_thin(bytes: &[u8], out: &mut Vec<u64>) {
 }
 
 /// Walk a thin Mach-O's load commands, find the `__TEXT` base and the
-/// `__TEXT,__unwind_info` section bytes, and parse the second-level pages.
+/// `__TEXT,__unwind_info` section bytes, and parse the second-level pages. A
+/// section of that name in any other segment is not the unwinder's table.
 /// Generic over the header width so 64- and 32-bit share one body.
 fn walk<Mach>(bytes: &[u8], out: &mut Vec<u64>)
 where
@@ -129,14 +130,15 @@ where
         let Ok(Some((segment, section_data))) = Mach::Segment::from_command(command) else {
             continue;
         };
-        if trim(segment.name()) == b"__TEXT" {
-            text_base = Some(segment.vmaddr(endian).into());
+        if trim(segment.name()) != b"__TEXT" {
+            continue;
         }
+        text_base = Some(segment.vmaddr(endian).into());
         let Ok(secs) = segment.sections(endian, section_data) else {
             continue;
         };
         for sec in secs {
-            if trim(sec.name()) == b"__unwind_info" {
+            if trim(sec.name()) == b"__unwind_info" && trim(sec.segment_name()) == b"__TEXT" {
                 if let Some((off, size)) = sec.file_range(endian) {
                     unwind = Some((off, size));
                 }
@@ -168,10 +170,17 @@ const COMPRESSED_ENTRY_FUNC_OFFSET: u32 = 0x00FF_FFFF;
 // section size when index entries point at the same or overlapping pages.
 const MIN_ENTRY_SIZE: usize = 4;
 
+/// The one `__unwind_info` layout ld64 writes (`UNWIND_SECTION_VERSION`).
+const UNWIND_SECTION_VERSION: u32 = 1;
+
 /// Parse a `__unwind_info` blob, pushing `base + functionOffset` for every entry
 /// in every second-level page. Total and linear in `buf.len()`: a short or
-/// malformed blob yields fewer starts, never a panic or a runaway loop.
+/// malformed blob yields fewer starts, never a panic or a runaway loop, and a
+/// header of any other version yields none.
 fn parse_unwind_info(buf: &[u8], base: u64, out: &mut Vec<u64>) {
+    if read_u32(buf, 0) != Some(UNWIND_SECTION_VERSION) {
+        return;
+    }
     // unwind_info_section_header: version, then three (offset, count) pairs; the
     // index array is the last pair.
     let (Some(index_off), Some(index_count)) = (read_u32(buf, 20), read_u32(buf, 24)) else {
@@ -403,5 +412,37 @@ mod tests {
         parse_unwind_info(&buf, 0, &mut out);
         assert!(!out.is_empty());
         assert!(out.len() <= buf.len() / MIN_ENTRY_SIZE, "{} starts from {} bytes", out.len(), buf.len());
+    }
+
+    /// Only `__TEXT,__unwind_info` is the unwinder's table: the same bytes
+    /// under a section that names another segment give no starts.
+    #[test]
+    fn unwind_info_outside_text_is_ignored() {
+        let mut bytes = fixture("macho_unwind_only_arm64");
+        let at = bytes
+            .windows(32)
+            .position(|w| w == b"__unwind_info\0\0\0__TEXT\0\0\0\0\0\0\0\0\0\0")
+            .expect("the __unwind_info section header");
+        bytes[at + 16..at + 22].copy_from_slice(b"__DATA");
+        let file = object::File::parse(bytes.as_slice()).expect("parse patched fixture");
+        assert!(unwind_info_starts(&file, &bytes).is_empty());
+    }
+
+    /// A header of any version other than 1 is not a layout this reader knows.
+    #[test]
+    fn only_version_1_is_read() {
+        let mut buf = header(28, 2);
+        for v in [0x1000u32, 64, 0, 0x2000, 0, 0] {
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
+        buf.resize(64, 0);
+        buf.extend_from_slice(&compressed_page(4, 64));
+        let mut out = Vec::new();
+        parse_unwind_info(&buf, 0, &mut out);
+        assert_eq!(out.len(), 4);
+        buf[0] = 2;
+        out.clear();
+        parse_unwind_info(&buf, 0, &mut out);
+        assert!(out.is_empty());
     }
 }
