@@ -9,6 +9,7 @@ pub mod java_pass_registrar;
 pub mod kuna_corpus;
 pub mod kuna_driver;
 pub mod kuna_partition;
+pub mod kuna_reclaim;
 pub mod kuna_spans;
 pub mod kuna_trace;
 pub mod looping_pass_builder;

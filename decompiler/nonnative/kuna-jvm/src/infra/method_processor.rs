@@ -7,6 +7,7 @@
 //! the limit is 0 or in unit-test mode.
 
 use std::cell::Cell;
+use std::panic::{self, AssertUnwindSafe};
 
 use crate::assert_processor::AssertProcessor;
 use crate::cancelation_manager::CancelationManager;
@@ -31,6 +32,7 @@ use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_helper::IfHelper;
 use crate::if_pattern_match_processor::IfPatternMatchProcessor;
+use crate::infra::kuna_reclaim::ReclaimScope;
 use crate::inline_single_block_helper::InlineSingleBlockHelper;
 use crate::intersection_cast_processor::IntersectionCastProcessor;
 use crate::java_pass_location::JavaPassLocation;
@@ -181,12 +183,38 @@ impl MethodProcessor {
     }
 
     /// The per-method pass schedule: bytecode to a structured statement tree.
+    /// Statements, expressions and edges the schedule allocates and drops are
+    /// released when it returns or throws (see `kuna_reclaim`).
     pub fn code_to_java(
         cl: StructClass,
         mt: StructMethod,
         md: &MethodDescriptor,
         var_proc: VarProcessor,
         spec: Option<&LanguageSpec>,
+    ) -> RootStatement {
+        let mut reclaim = ReclaimScope::open();
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+            Self::code_to_java_schedule(cl, mt, md, var_proc, spec, &mut reclaim)
+        }));
+        match result {
+            Ok(root) => {
+                reclaim.window().collect(&[root.0], var_proc);
+                root
+            }
+            Err(payload) => {
+                reclaim.window().collect(&[], var_proc);
+                panic::resume_unwind(payload)
+            }
+        }
+    }
+
+    fn code_to_java_schedule(
+        cl: StructClass,
+        mt: StructMethod,
+        md: &MethodDescriptor,
+        var_proc: VarProcessor,
+        spec: Option<&LanguageSpec>,
+        reclaim: &mut ReclaimScope,
     ) -> RootStatement {
         let mut scratch = ScratchScope::open();
         CancelationManager::check_canceled();
@@ -293,6 +321,7 @@ impl MethodProcessor {
             root.add_comments(old_root);
 
             decompile_record.add(&format!("ProcessFinally_{finally_processed}"), Some(root));
+            reclaim.checkpoint(&[root.0], var_proc);
 
             Self::set_debug_current_cfg(Some(graph));
             Self::set_debug_currently_decompiling(Some(root));
@@ -330,6 +359,7 @@ impl MethodProcessor {
             CancelationManager::check_canceled();
             stack_vars_processed += 1;
             scratch.checkpoint();
+            reclaim.checkpoint(&[root.0], var_proc);
 
             StackVarsProcessor::simplify_stack_vars(root, mt, cl);
             decompile_record.add(
@@ -371,6 +401,7 @@ impl MethodProcessor {
             CancelationManager::check_canceled();
             decompile_record.increment_main_loop();
             scratch.checkpoint();
+            reclaim.checkpoint(&[root.0], var_proc);
             decompile_record.add("Start", Some(root));
 
             LabelHelper::clean_up_edges(root);
@@ -381,6 +412,7 @@ impl MethodProcessor {
                     CancelationManager::check_canceled();
                     decompile_record.increment_merge_loop();
                     scratch.checkpoint();
+                    reclaim.checkpoint(&[root.0], var_proc);
                     decompile_record.add("MergeLoopStart", Some(root));
 
                     if EliminateLoopsHelper::eliminate_loops(root.0, cl) {
