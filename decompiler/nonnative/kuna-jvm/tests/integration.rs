@@ -120,3 +120,7 @@ mod b19_classes;
 mod b20_nested;
 #[path = "kuna_corpus.rs"]
 mod kuna_corpus;
+#[path = "trace_vectors.rs"]
+mod trace_vectors;
+#[path = "trace_file.rs"]
+mod trace_file;

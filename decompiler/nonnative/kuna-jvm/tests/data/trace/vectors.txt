@@ -1,0 +1,250 @@
+### blocks
+s0 Root id=8 errcomment
+  labels s2.1
+  def (var 7.0 t=I)
+  comment "first"
+  comment "err \"q\" \\ \u00e9\u000a"
+ s1 Seq id=6 first=s3 post=s5
+   cont [s2 s4]
+   labels *s5Rs2 s2.2 s4.0
+  s2 Block id=1 lbt=IF
+    > B s3
+    > R s4 c=s0
+    > B x c=s1 unlabeled
+    < *o5Rs4!dst=s4 s4.0
+    >B [2 0]
+    insn [0:21 1:153]
+  s3 Block id=2
+    cont ~
+    < s2.0
+    insn [4:25 5:194]
+  s4 Block id=3 athrow monexit copied
+    > C s2 c=s1 implicit noinline phantomcont
+    > R o5
+    < *s3Es4 s2.1
+    insn [6:195 7:191]
+  s5 Block id=4 parent=s0 phantom
+    > F x
+    > R s4 src=o5
+    < *s3Es5 o5.0
+    exprents 1
+    - (assign@3-5,9 (var 1.0 t=I) (const X 2))
+x Exit id=7 bc=3-5,9,11-12
+  < s2.2 s5.0
+o5 orphan Block
+### control
+s0 Root id=37 flags=TLS
+ s1 Seq id=35
+  s2 Seq id=33
+   s3 If id=4 iftype=1 ifstat=s5 elsestat=s6 ifedge=s4.0 elseedge=s4.1 negated patmatched ppmm
+     head (if@2 (func@2 NE (const X 0) (const Z 0 boolok)))
+    s4 Block id=1
+      > R s5
+      > R s6
+      insn []
+    s5 Block id=2
+      < s4.0
+      insn []
+    s6 Block id=3
+      < s4.1
+      insn []
+   s7 Do id=6 loop=INFINITE
+     labels s8.0
+     < s8.0
+    s8 Block id=5
+      > C s7 c=s7
+      insn []
+   s9 Do id=8 loop=DO_WHILE
+     labels s10.0
+     < s10.0
+    s10 Block id=7
+      > C s9 c=s9
+      insn []
+   s11 Do id=10 loop=WHILE
+     labels s12.0
+     < s12.0
+    s12 Block id=9
+      > C s11 c=s11
+      insn []
+   s13 Do id=12 loop=FOR
+     labels s14.0
+     < s14.0
+     init (assign (var 2.0 t=I) (const X 0))
+     cond (func LT (var 2.0 t=I) (const X 10))
+     inc (func PPI (var 2.0 t=I))
+    s14 Block id=11
+      > C s13 c=s13
+      insn []
+   s15 Do id=14 loop=FOR_EACH
+     labels s16.0
+     < s16.0
+    s16 Block id=13
+      > C s15 c=s15
+      insn []
+   s17 Switch id=18 cases=[s19 s20] default=s18.1 scoped=[s19 s20]
+     head (switchhead@8 (var 3.0 t=I) [(&0 const X 1) (&1 const X 2)] [default])
+     caseedges 0 [s18.0]
+     caseedges 1 [s18.1 s18.1]
+     casevalues 0 [^0 ^1]
+     casevalues 1 [default]
+     guard 0 ~
+     guard 1 (func GT (var 3.0 t=I) (const X 5))
+    s18 Block id=15
+      > R s19
+      > R s20
+      insn []
+    s19 Block id=16
+      < s18.0
+      insn []
+    s20 Block id=17
+      < s18.1
+      insn []
+   s21 Sync id=22 body=s23
+     head (monitor ENTER (var 4.0 t=I))
+    s22 Block id=19
+      insn []
+    s23 Block id=20
+      insn []
+    s24 Block id=21
+      insn []
+   s25 Try id=26
+     catch 0 [java/lang/Exception]
+     catch 1 [a/B c/D]
+     catchvar 0 (var 5.0 t=Ljava/lang/Exception;)
+     catchvar 1 (var 6.0 t=La/B;)
+     resource (assign (var 8.0 t=I) (const Ljava/lang/String; "r"))
+    s26 Block id=23
+      > E s27 exc=[java/lang/Exception]
+      insn []
+    s27 Block id=24
+      < s26.0
+      insn []
+    s28 Block id=25
+      insn []
+   s29 CatchAll id=29 handler=s31 finally
+     monitor (var 9.0 t=Ljava/lang/Object;)
+     catchvar (var 10.0 t=Ljava/lang/Throwable;)
+    s30 Block id=27
+      insn []
+    s31 Block id=28
+      insn []
+   s32 General id=32 placeholder
+    s33 Block id=30
+      insn []
+    s34 Block id=31
+      insn []
+  s35 Block id=34
+    exprents 2
+    - (switch s17 I fallthrough standalone)
+    - (yield I (const X 4))
+x Exit id=36
+### exprents
+s0 Root id=3
+ s1 Block id=1
+   exprents 105
+   - (annotation a/Ann x=(const X 1) y=(const Ljava/lang/String; "v"))
+   - (array@2 I (var 1.0 t=I) (const X 0))
+   - (assert ~ (const Ljava/lang/String; "msg"))
+   - (assign@4-5 op=ADD (var 2.0 t=I) (const X 3))
+   - (const Z 1 boolok)
+   - (const J -5L)
+   - (const F f:7fc00001)
+   - (const D d:8000000000000000)
+   - (const C 65)
+   - (const Ljava/lang/String; "a\"b\\c\u000a\u00e9\ud83d\ude00~" condy)
+   - (const null null)
+   - (exit@6 RETURN rt=I (var 3.0 t=I))
+   - (exit RETURN rt=V ~)
+   - (field a/B.S [Ljava/lang/String; static forcequal condy ~)
+   - (field@1 a/B.f J qualifier (var 0.0 t=I))
+   - (func ADD (var 1.0 t=I) (const X 2))
+   - (func SUB (var 1.0 t=I) (const X 2))
+   - (func MUL (var 1.0 t=I) (const X 2))
+   - (func DIV (var 1.0 t=I) (const X 2))
+   - (func AND (var 1.0 t=I) (const X 2))
+   - (func OR (var 1.0 t=I) (const X 2))
+   - (func XOR (var 1.0 t=I) (const X 2))
+   - (func REM (var 1.0 t=I) (const X 2))
+   - (func SHL (var 1.0 t=I) (const X 2))
+   - (func SHR (var 1.0 t=I) (const X 2))
+   - (func USHR (var 1.0 t=I) (const X 2))
+   - (func BIT_NOT (var 1.0 t=I) (const X 2))
+   - (func BOOL_NOT (var 1.0 t=I) (const X 2))
+   - (func NEG (var 1.0 t=I) (const X 2))
+   - (func I2L (var 1.0 t=I) (const X 2))
+   - (func I2F (var 1.0 t=I) (const X 2))
+   - (func I2D (var 1.0 t=I) (const X 2))
+   - (func L2I (var 1.0 t=I) (const X 2))
+   - (func L2F (var 1.0 t=I) (const X 2))
+   - (func L2D (var 1.0 t=I) (const X 2))
+   - (func F2I (var 1.0 t=I) (const X 2))
+   - (func F2L (var 1.0 t=I) (const X 2))
+   - (func F2D (var 1.0 t=I) (const X 2))
+   - (func D2I (var 1.0 t=I) (const X 2))
+   - (func D2L (var 1.0 t=I) (const X 2))
+   - (func D2F (var 1.0 t=I) (const X 2))
+   - (func I2B (var 1.0 t=I) (const X 2))
+   - (func I2C (var 1.0 t=I) (const X 2))
+   - (func I2S (var 1.0 t=I) (const X 2))
+   - (func CAST (var 1.0 t=I) (const X 2))
+   - (func INSTANCEOF (var 1.0 t=I) (const X 2))
+   - (func ARRAY_LENGTH (var 1.0 t=I) (const X 2))
+   - (func IMM (var 1.0 t=I) (const X 2))
+   - (func MMI (var 1.0 t=I) (const X 2))
+   - (func IPP (var 1.0 t=I) (const X 2))
+   - (func PPI (var 1.0 t=I) (const X 2))
+   - (func TERNARY (var 1.0 t=I) (const X 2))
+   - (func LCMP (var 1.0 t=I) (const X 2))
+   - (func FCMPL (var 1.0 t=I) (const X 2))
+   - (func FCMPG (var 1.0 t=I) (const X 2))
+   - (func DCMPL (var 1.0 t=I) (const X 2))
+   - (func DCMPG (var 1.0 t=I) (const X 2))
+   - (func EQ (var 1.0 t=I) (const X 2))
+   - (func NE (var 1.0 t=I) (const X 2))
+   - (func LT (var 1.0 t=I) (const X 2))
+   - (func GE (var 1.0 t=I) (const X 2))
+   - (func GT (var 1.0 t=I) (const X 2))
+   - (func LE (var 1.0 t=I) (const X 2))
+   - (func BOOLEAN_AND (var 1.0 t=I) (const X 2))
+   - (func BOOLEAN_OR (var 1.0 t=I) (const X 2))
+   - (func STR_CONCAT (var 1.0 t=I) (const X 2))
+   - (func CAST it=J nocast nonewline (var 1.0 t=I) (const La/B; null))
+   - (if (func EQ (var 1.0 t=I) (const null null)))
+   - (invoke VIRTUAL GENERAL a/B.m(I)V static ~ (const X 1))
+   - (invoke DYNAMIC GENERAL a/B.apply(Ljava/lang/Object;)La/F; noignorebox sfx=##Lambda_1_2 target=K2Shapes.straight(II)I bsm=15:java/lang/invoke/LambdaMetafactory.metafactory()V bsa=[3:7 8:"s" ~ 10:a/B.c()V] ga=[Ljava/lang/String; I] rit=La/R; forcegeneric gm={TT;<>=La/X; TU;<>=~} invinstance qualifier forcebox forceunbox nullcheck lazycondy (var 0.0 t=I) (var 1.0 t=I))
+   - (invoke SPECIAL INIT a/B.<init>()V (var 0.0 t=I))
+   - (monitor@9 EXIT remove (var 4.0 t=I))
+   - (new La/B; anon lambda methodref enumconst ga=[Ljava/util/List;<?>] ilt=La/F; (invoke VIRTUAL GENERAL a/B.<init>(I)V static ~ (const X 3)) (dims) (elems))
+   - (new@10 [[I ~ (dims (const X 3) (var 1.0 t=I)) (elems))
+   - (new [I directinit vararg ~ (dims) (elems (const X 1) (const X 2)))
+   - (pattern La/Out; record=K1Rec bt=[I ~] (var 12.0 t=I) (pattern La/In; record=K1Rec bt=[~] (var 11.0 t=I)))
+   - (var 13.2 t=~ noproc)
+   - (var@0-2 14.0 t=La/B; def classdef stack lvt=loc:Ljava/util/List;@3-13<Ljava/util/List<Ljava/lang/String;>;>/14.0 backing=12:58 efffinal writingpattern bound=+Ljava/lang/Number;<> intersection catchtemp)
+   - (yield Z (var 1.0 t=I))
+   - (var 20.0 t=B noproc)
+   - (var 21.0 t=C noproc)
+   - (var 22.0 t=D noproc)
+   - (var 23.0 t=F noproc)
+   - (var 24.0 t=I noproc)
+   - (var 25.0 t=J noproc)
+   - (var 26.0 t=S noproc)
+   - (var 27.0 t=Z noproc)
+   - (var 28.0 t=V noproc)
+   - (var 29.0 t=X noproc)
+   - (var 30.0 t=Y noproc)
+   - (var 31.0 t=U noproc)
+   - (var 32.0 t=null noproc)
+   - (var 33.0 t=G noproc)
+   - (var 34.0 t=N noproc)
+   - (var 35.0 t=A noproc)
+   - (var 36.0 t=[[[La/B; noproc)
+   - (var 37.0 t=I!f=OBJECT noproc)
+   - (var 38.0 t=INT:Q noproc)
+   - (var 39.0 t=LTT;; noproc)
+   - (var 40.0 t=Ljava/util/Map;<TK;<>,+Ljava/lang/Number;<>> noproc)
+   - (var 41.0 t=Ljava/util/List;<-La/B;<>> noproc)
+   - (var 42.0 t=[Ljava/util/List;<?> noproc)
+   - (var 43.0 t=La/Outer$Inner;<TU;<>>{La/Outer;<TT;<>>} noproc)
+   - (func ADD (&0 const X 42) ^0)
+   - ^0
+x Exit id=2
