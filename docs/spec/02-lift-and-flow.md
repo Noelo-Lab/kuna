@@ -3286,11 +3286,16 @@ kept, so the pass runs the same under every front-end (object loader, XML
 writes, so the test is followed back through the guard block's own ops by
 storage: the CBRANCH condition to the `INT_AND` with 1, the `INT_RIGHT` by 62,
 the `INT_XOR` of `x30` with an `INT_LEFT` of `x30` by 1. The `x30` read must
-see the return address, either unwritten in the block or reloaded from the
-frame (a `LOAD`, directly or through one copy of a temporary, as `ldp x29,
-x30` lifts): a value the code itself moved into `x30` (`mov x30, x0`) is some
-other value. On arm64e hardware a forged `x30` fails authentication, so that
-test only fires on a pointer-auth failure. A trap block entered any other way
+see the return address, either unwritten anywhere in the function or reloaded
+from the frame (a `LOAD` whose address is `sp` or `x29` plus constants, directly
+or through one copy of a temporary, as `ldp x29, x30` lifts): a value the code
+itself put in `x30` (`mov x30, x0` in that block or an earlier one,
+`ldr x30, [x0]`) is some other value. The edge cut must be the arm taken when
+the two bits disagree, the failed check; the polarity is followed through the
+`INT_EQUAL`/`INT_NOTEQUAL`/`BOOL_NEGATE` chain and the CBRANCH's boolean flip,
+so a guard that traps when the bits agree, which on any authentic return
+address always traps, keeps its trap. On arm64e hardware a forged `x30` fails
+authentication, so that test only fires on a pointer-auth failure. A trap block entered any other way
 keeps that entry, and so does a CBRANCH whose both arms trap: no arm would be
 left to fall through to.
 
@@ -3301,4 +3306,6 @@ the `x30` read lose their only reader and die to dead-code elimination.
 `tests/stages/kuna-ptrauthtrap.xml` (two passes over the `macho_arm64e_auth`
 fixture, one over `macho_arm64e_brk`, whose `brk #0xc470` and `brk #0xc472`
 traps sit behind a `w0` compare and an `x0` bit test and stay, and plain-AArch64
-bytechunks of the real check, the same compare, and a `mov x30, x0` forgery).
+bytechunks of the real check, the same compare, a `mov x30` forgery in the
+guard block and in an earlier block, an `x30` load from a non-frame address, and
+a guard that traps when the bits agree).

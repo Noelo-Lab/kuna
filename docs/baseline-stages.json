@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3947,
-    3947
+    3950,
+    3950
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1684,6 +1684,9 @@
     "data:PTRAUTHTRAP #11: the x0 bit test keeps its brk #0xc472 trap",
     "data:PTRAUTHTRAP #12: the real check on plain AArch64 is cut",
     "data:PTRAUTHTRAP #13: the bit test of a value moved into x30 keeps its trap",
+    "data:PTRAUTHTRAP #14: a guard that traps when the bits agree keeps its trap",
+    "data:PTRAUTHTRAP #15: a value moved into x30 in an earlier block keeps its trap",
+    "data:PTRAUTHTRAP #16: x30 loaded from a non-frame address keeps its trap",
     "data:PTRAUTHTRAP #1: off keeps the bit test on the incoming return address",
     "data:PTRAUTHTRAP #2: off keeps the trap call",
     "data:PTRAUTHTRAP #3: the tail call survives in both passes",

@@ -31,12 +31,13 @@
 //! `0xc470..=0xc473`. An in-edge that is one arm of a `CBRANCH` is cut only
 //! when the guard's condition is the bit-62-versus-61 test of the return
 //! address (`((x30 ^ x30 << 1) >> 62) & 1`, followed through the guard block's
-//! own ops), where `x30` was reloaded from the frame or is unwritten in the
-//! block: the immediate alone is not evidence, since any AArch64 code can
-//! branch to a `brk #0xc470` on a condition of its own, and a check of a value
-//! the code itself moved into `x30` (`mov x30, x0`) is not this check either.
-//! The condition dies to dead-code elimination. A trap block entered any other
-//! way keeps that entry.
+//! own ops), the arm cut is the one taken when the two bits disagree, and
+//! `x30` was reloaded from the frame (an `sp`- or `x29`-based `LOAD`) or is
+//! unwritten anywhere in the function: the immediate alone is not evidence,
+//! since any AArch64 code can branch to a `brk #0xc470` on a condition of its
+//! own, and a check of a value the code itself put in `x30` (`mov x30, x0`,
+//! `ldr x30, [x0]`) is not this check either. The condition dies to dead-code
+//! elimination. A trap block entered any other way keeps that entry.
 //!
 //! # The edit, and the window
 //!
@@ -101,62 +102,107 @@ fn is_trap_block(data: &Funcdata, bl: BlockId, userop: uint4) -> bool {
 /// check clang emits after authenticating the return address (`eor x16, x30,
 /// x30, lsl #1; tbz x16, #62`)? Before SSA the reads are not linked to their
 /// writes, so each input is followed to the last op of the block that wrote its
-/// storage. The `x30` read must see the value the frame reloaded (a `LOAD`,
-/// directly or through one copy of a temporary) or the incoming register; a
-/// register moved into `x30` is some other value.
-fn is_pac_bit_test(data: &Funcdata, guard: BlockId) -> bool {
+/// storage. The `x30` read must see the value the frame reloaded (a `LOAD` from
+/// an `sp`- or `x29`-based address, directly or through one copy of a
+/// temporary) or the incoming register, unwritten anywhere in the function; a
+/// register moved into `x30` is some other value. Returns whether the branch
+/// condition is the bit itself (`true`) or its negation.
+fn is_pac_bit_test(data: &Funcdata, guard: BlockId) -> Option<bool> {
     let mut ops = Vec::new();
     let mut cur = data.bb_op_head(guard);
     while let Some(id) = cur {
-        let Some(op) = data.obank().get(id) else { return false };
-        ops.push(op);
+        ops.push(data.obank().get(id)?);
         cur = data.bb_op_next(id);
     }
     let vn = |op: &crate::op::PcodeOp, slot| op.get_in(slot).and_then(|v| data.vbank().get(v));
     let constant = |op: &crate::op::PcodeOp, slot| vn(op, slot).filter(|v| v.is_constant()).map(|v| v.get_offset());
     let storage = |op: &crate::op::PcodeOp, slot| vn(op, slot).map(|v| (v.get_addr().clone(), v.get_size()));
-    let writer = |before: usize, at: &(Address, int4)| {
-        (0..before).rev().find(|&k| {
-            ops[k].get_out().and_then(|v| data.vbank().get(v)).is_some_and(|v| (v.get_addr(), v.get_size()) == (&at.0, at.1))
+    let writes = |op: &crate::op::PcodeOp, at: &(Address, int4)| {
+        op.get_out().and_then(|v| data.vbank().get(v)).is_some_and(|v| (v.get_addr(), v.get_size()) == (&at.0, at.1))
+    };
+    let writer = |before: usize, at: &(Address, int4)| (0..before).rev().find(|&k| writes(ops[k], at));
+    let reg_named = |at: &(Address, int4), names: &[&str]| {
+        at.1 == 8
+            && at.0.get_space().is_some_and(|sp| {
+                names.contains(&data.get_arch().get_register_name(sp, at.0.get_offset(), at.1).as_str())
+            })
+    };
+    let is_lr = |at: &(Address, int4)| reg_named(at, &["x30"]);
+    let frame_load = |w: usize| {
+        if ops[w].code() != OpCode::CPUI_LOAD {
+            return false;
+        }
+        let (mut at, mut addr) = (w, storage(ops[w], 1));
+        for _ in 0..4 {
+            let Some(a) = addr else { return false };
+            if reg_named(&a, &["sp", "x29"]) {
+                return true;
+            }
+            let Some(d) = writer(at, &a) else { return false };
+            let step = match ops[d].code() {
+                OpCode::CPUI_COPY => true,
+                OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => constant(ops[d], 1).is_some(),
+                _ => false,
+            };
+            if !step {
+                return false;
+            }
+            (at, addr) = (d, storage(ops[d], 0));
+        }
+        false
+    };
+    let written_anywhere = |at: &(Address, int4)| {
+        let blocks = data.bblocks_ref();
+        blocks.root.is_some_and(|root| {
+            blocks.block(root).get_list().iter().any(|&bl| {
+                let mut cur = data.bb_op_head(bl);
+                while let Some(id) = cur {
+                    if data.obank().get(id).is_some_and(|op| writes(op, at)) {
+                        return true;
+                    }
+                    cur = data.bb_op_next(id);
+                }
+                false
+            })
         })
     };
-    let is_lr = |at: &(Address, int4)| {
-        at.1 == 8
-            && at.0.get_space().is_some_and(|sp| data.get_arch().get_register_name(sp, at.0.get_offset(), at.1) == "x30")
-    };
-    let lr_is_authentic = |before: usize, at: &(Address, int4)| {
-        writer(before, at).is_none_or(|w| match ops[w].code() {
-            OpCode::CPUI_LOAD => true,
+    let lr_is_authentic = |before: usize, at: &(Address, int4)| match writer(before, at) {
+        None => !written_anywhere(at),
+        Some(w) => match ops[w].code() {
+            OpCode::CPUI_LOAD => frame_load(w),
             OpCode::CPUI_COPY => storage(ops[w], 0).is_some_and(|src| {
                 src.0.get_space().is_some_and(|sp| sp.get_type() == spacetype::IPTR_INTERNAL)
-                    && writer(w, &src).is_some_and(|d| ops[d].code() == OpCode::CPUI_LOAD)
+                    && writer(w, &src).is_some_and(|d| frame_load(d))
             }),
             _ => false,
-        })
+        },
     };
-    let Some(tail) = ops.len().checked_sub(1) else { return false };
+    let tail = ops.len().checked_sub(1)?;
     if ops[tail].code() != OpCode::CPUI_CBRANCH {
-        return false;
+        return None;
     }
-    let (mut at, mut value) = (tail, storage(ops[tail], 1));
+    let (mut at, mut value, mut negated) = (tail, storage(ops[tail], 1), false);
     for _ in 0..8 {
-        let Some(k) = value.as_ref().and_then(|v| writer(at, v)) else { return false };
+        let k = value.as_ref().and_then(|v| writer(at, v))?;
         let op = ops[k];
         match op.code() {
             OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL if constant(op, 1).is_some_and(|c| c <= 1) => {
+                negated ^= (op.code() == OpCode::CPUI_INT_EQUAL) == (constant(op, 1) == Some(0));
                 value = storage(op, 0);
             }
-            OpCode::CPUI_BOOL_NEGATE | OpCode::CPUI_COPY => value = storage(op, 0),
+            OpCode::CPUI_BOOL_NEGATE => {
+                negated = !negated;
+                value = storage(op, 0);
+            }
+            OpCode::CPUI_COPY => value = storage(op, 0),
             OpCode::CPUI_INT_AND if constant(op, 1) == Some(1) => {
-                let shifted = storage(op, 0).and_then(|v| writer(k, &v)).map(|j| (j, ops[j]));
-                let Some((j, shr)) = shifted.filter(|(_, o)| o.code() == OpCode::CPUI_INT_RIGHT && constant(o, 1) == Some(62))
-                else {
-                    return false;
-                };
-                let Some(x) = storage(shr, 0).and_then(|v| writer(j, &v)).map(|i| (i, ops[i])) else { return false };
-                let (i, xor) = x;
+                let (j, shr) = storage(op, 0).and_then(|v| writer(k, &v)).map(|j| (j, ops[j]))?;
+                if shr.code() != OpCode::CPUI_INT_RIGHT || constant(shr, 1) != Some(62) {
+                    return None;
+                }
+                let (i, xor) = storage(shr, 0).and_then(|v| writer(j, &v)).map(|i| (i, ops[i]))?;
                 if xor.code() != OpCode::CPUI_INT_XOR {
-                    return false;
+                    return None;
                 }
                 let shl1_of_lr = |slot| -> Option<(Address, int4)> {
                     let h = storage(xor, slot).and_then(|v| writer(i, &v))?;
@@ -167,17 +213,18 @@ fn is_pac_bit_test(data: &Funcdata, guard: BlockId) -> bool {
                 let pair = |lr_slot, shl_slot| {
                     shl1_of_lr(shl_slot).is_some_and(|src| storage(xor, lr_slot).as_ref() == Some(&src) && lr_is_authentic(i, &src))
                 };
-                return pair(0, 1) || pair(1, 0);
+                return (pair(0, 1) || pair(1, 0)).then_some(!negated);
             }
-            _ => return false,
+            _ => return None,
         }
         at = k;
     }
-    false
+    None
 }
 
 /// The `(guard block, out-edge)` pairs of every `CBRANCH` that branches into a
-/// pointer-auth trap block on the return-address bit test. A guard whose both
+/// pointer-auth trap block on the return-address bit test, on the arm taken
+/// when bits 62 and 61 disagree (a failed authentication). A guard whose both
 /// arms trap keeps both: there is no surviving arm to fall through to.
 fn trap_edges(data: &Funcdata, userop: uint4) -> Vec<(BlockId, int4)> {
     let blocks = data.bblocks_ref();
@@ -192,21 +239,22 @@ fn trap_edges(data: &Funcdata, userop: uint4) -> Vec<(BlockId, int4)> {
             if blocks.block(guard).size_out() != 2 {
                 continue;
             }
-            let is_cbranch = data
-                .bb_op_tail(guard)
-                .and_then(|t| data.obank().get(t))
-                .is_some_and(|t| t.code() == OpCode::CPUI_CBRANCH);
+            let Some(tail) = data.bb_op_tail(guard).and_then(|t| data.obank().get(t)) else { continue };
+            if tail.code() != OpCode::CPUI_CBRANCH {
+                continue;
+            }
             let edges: Vec<int4> = (0..2).filter(|&j| blocks.block(guard).get_out(j) == trap).collect();
-            if is_cbranch && edges.len() == 1 && is_pac_bit_test(data, guard) {
-                out.push((guard, edges[0]));
+            let [edge] = edges[..] else { continue };
+            if is_trap_block(data, blocks.block(guard).get_out(1 - edge), userop) {
+                continue;
+            }
+            let Some(cond_is_bit) = is_pac_bit_test(data, guard) else { continue };
+            let true_edge = if tail.is_boolean_flip() { 0 } else { 1 };
+            if edge == if cond_is_bit { true_edge } else { 1 - true_edge } {
+                out.push((guard, edge));
             }
         }
     }
-    let mut per_guard: std::collections::HashMap<BlockId, usize> = std::collections::HashMap::new();
-    for &(g, _) in &out {
-        *per_guard.entry(g).or_default() += 1;
-    }
-    out.retain(|(g, _)| per_guard[g] == 1);
     out
 }
 

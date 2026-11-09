@@ -16,8 +16,9 @@
     anchors on the trap block (one brk whose SoftwareBreakpoint immediate is
     0xc470..0xc473) and removes pre-SSA each CBRANCH edge into it whose guard
     is the bit test of the return address (x30 reloaded from the frame or
-    unwritten in the block). The shape is the evidence; no image format is
-    consulted, so the bytechunks below exercise it through the XML path too.
+    unwritten in the function) and that is taken when the bits disagree. The
+    shape is the evidence; no image format is consulted, so the bytechunks
+    below exercise it through the XML path too.
 
     P0 assertion: `option ptrauthtrap on|off`.
 
@@ -29,7 +30,11 @@
     (`ldp x29, x30, [sp], #0x10; autibsp; eor x16, x30, x30, lsl #1;
     tbz x16, #62, 1f; brk #0xc471; 1: ret`): the check is cut. The bytechunk
     `x30forged` is the same bit test on a value the code moved into x30
-    (`mov x30, x0`): that check stays.
+    (`mov x30, x0`): that check stays. So do `x30forgedearlier` (the
+    `mov x30, x1` sits in the block before the test), `x30loaded`
+    (`ldr x30, [x0]`, not a frame reload) and `x30inverted` (the real
+    reload and test, but `tbz` branches to the trap when the bits agree, so
+    every authentic return address traps).
 
     The bytechunk `both` is a guard whose two arms are both traps
     (`tbz x0, #62, 1f; brk #0xc471; 1: brk #0xc472`). No arm survives to fall
@@ -64,6 +69,18 @@ fd7bbfa9fd030091fd7bc1a8ff2303d5d0071eca5000f0b6208e38d4c0035fd6
 fe0300aad0071eca5000f0b6208e38d4c0035fd6
 </bytechunk>
 <symbol space="ram" offset="0x100080" name="x30forged"/>
+<bytechunk space="ram" offset="0x1000c0" readonly="true">
+fd7bc1a8d0071eca7000f0b6e0008052c0035fd6208e38d4
+</bytechunk>
+<symbol space="ram" offset="0x1000c0" name="x30inverted"/>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+fe0301aa400000b4220080d2d0071eca5000f0b6208e38d4e00302aac0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100100" name="x30forgedearlier"/>
+<bytechunk space="ram" offset="0x100140" readonly="true">
+1e0040f9d0071eca5000f0b6208e38d4c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100140" name="x30loaded"/>
 </binaryimage>
 <script>
   <com>lo fu both</com>
@@ -76,6 +93,15 @@ fe0300aad0071eca5000f0b6208e38d4c0035fd6
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu x30forged</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu x30inverted</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu x30forgedearlier</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu x30loaded</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
@@ -121,4 +147,7 @@ fe0300aad0071eca5000f0b6208e38d4c0035fd6
 <stringmatch name="PTRAUTHTRAP #11: the x0 bit test keeps its brk #0xc472 trap" min="1" max="1">SoftwareBreakpoint\(0xc472,0x1000002b0\)</stringmatch>
 <stringmatch name="PTRAUTHTRAP #12: the real check on plain AArch64 is cut" min="0" max="0">SoftwareBreakpoint\(0xc471,0x10005c\)</stringmatch>
 <stringmatch name="PTRAUTHTRAP #13: the bit test of a value moved into x30 keeps its trap" min="1" max="1">SoftwareBreakpoint\(0xc471,0x100090\)</stringmatch>
+<stringmatch name="PTRAUTHTRAP #14: a guard that traps when the bits agree keeps its trap" min="1" max="1">SoftwareBreakpoint\(0xc471,0x1000d8\)</stringmatch>
+<stringmatch name="PTRAUTHTRAP #15: a value moved into x30 in an earlier block keeps its trap" min="1" max="1">SoftwareBreakpoint\(0xc471,0x100118\)</stringmatch>
+<stringmatch name="PTRAUTHTRAP #16: x30 loaded from a non-frame address keeps its trap" min="1" max="1">SoftwareBreakpoint\(0xc471,0x100150\)</stringmatch>
 </decompilertest>
