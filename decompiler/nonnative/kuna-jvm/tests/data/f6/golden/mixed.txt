@@ -1,0 +1,23 @@
+UNIT archive $DATA/mixed.jar
+R true false
+C -1 pkg/Hello
+C -1 pkg/Hello$1
+C -1 pkg/util/Util
+D META-INF
+D META-INF/
+D pkg
+D pkg/
+D pkg/util
+D res
+D res/deep
+D res/deep/er
+D ünïcödé
+D libs
+O -1 META-INF/MANIFEST.MF
+O -1 res/data.txt
+O -1 res/empty.bin
+O -1 res/deep/er/x.properties
+O -1 ünïcödé/naïve.txt
+O -1 libs/inner.jar
+O -1 top.class.txt
+K 0

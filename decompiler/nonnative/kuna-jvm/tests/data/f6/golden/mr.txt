@@ -1,0 +1,32 @@
+UNIT archive $DATA/mr.jar
+R true false
+C -1 pkg/util/Util
+C 11 /pkg/util/Util
+C 10 /pkg/Plus
+C -1 /pkg/Neg
+C -1 META-INF/versions/x/pkg/Odd
+C 9 /pkg/Arabic
+C -1 META-INF/versions/2147483648/pkg/Big
+D META-INF
+D pkg
+D pkg/util
+D META-INF/versions
+D META-INF/versions/
+D META-INF/versions/11
+D META-INF/versions/11/pkg
+D META-INF/versions/11/pkg/util
+D META-INF/versions/+10
+D META-INF/versions/+10/pkg
+D META-INF/versions/-1
+D META-INF/versions/-1/pkg
+D META-INF/versions/x
+D META-INF/versions/x/pkg
+D META-INF/versions/٩
+D META-INF/versions/٩/pkg
+D META-INF/versions/2147483648
+D META-INF/versions/2147483648/pkg
+D META-INF/versions/17
+O -1 META-INF/MANIFEST.MF
+O 17 /res.txt
+O -1 META-INF/versions/11
+K 0
