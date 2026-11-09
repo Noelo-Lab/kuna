@@ -108,3 +108,5 @@ mod b12_loops;
 mod b13_structure_helpers;
 #[path = "b14_structure.rs"]
 mod b14_structure;
+#[path = "b15_switch.rs"]
+mod b15_switch;
