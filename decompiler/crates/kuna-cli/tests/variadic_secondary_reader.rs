@@ -309,7 +309,7 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
     .map(|name| function(&on, name))
     .collect();
     printed.push_str(function(&imported_on, "caller_imported_integer"));
-    printed.push_str(function(&floating_on, "caller_imported_float"));
+    printed.push_str(function(&floating, "caller_imported_float"));
     let src = common::scratch_file("variadic-secondary-emitted", "c");
     let exe = common::scratch_file("variadic-secondary-emitted", "exe");
     std::fs::write(&src, format!(r#"

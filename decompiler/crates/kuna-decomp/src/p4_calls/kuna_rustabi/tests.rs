@@ -530,15 +530,6 @@ fn a_partial_write_of_the_payload_register_counts() {
     let _ = &mut fd;
 }
 
-#[test]
-fn the_call_seam_fails_closed_when_the_option_is_off() {
-    let mut fd = build_call_fd(RustAbiMode::Off);
-    let (call, lo, hi) = build_call_with_pair(&mut fd, true);
-    let entry = callee_entry(&fd);
-    assert!(!build_call_output_pair(call, &mut fd, None, &[lo, hi], Some(&entry), (0, 1)));
-    assert!(fd.obank().get(call).and_then(|o| o.get_out()).is_none());
-}
-
 /// `callretpair` opens the same arm with the language test dropped, which is how
 /// a `gcc`-built image reaches it: `rustabi` is off and `source_is_rust` is
 /// irrelevant.

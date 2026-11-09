@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-c0f7d6583a6b",
+  "probe_id": "a-5726a8d16b61",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
