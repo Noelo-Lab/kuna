@@ -4,6 +4,9 @@
 //! `search_for_class`, creating an anonymous class whose supertype is the
 //! local class counts as a use of it (`kuna_fix_local_class_anonymous_subclass`).
 //!
+//! kuna fix `lambda_catch_var_rename`: the clash rename of a lambda body's
+//! locals reaches its catch variables too (`kuna_fix_lambda_catch_var_rename`).
+//!
 //! Java lets a variable name be `null` (an unnamed enclosing variable); the
 //! name maps here carry `Option<String>`, and a `None` name is not written
 //! into a `VarProcessor` or name set, which cannot hold one.
@@ -15,6 +18,7 @@ use std::fmt;
 
 use crate::kuna_fixes::{self, KunaFix};
 use crate::p8_structure::kuna_fix_local_class_anonymous_subclass;
+use crate::p8_structure::kuna_fix_lambda_catch_var_rename;
 use crate::class_wrapper::ClassWrapper;
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::{
@@ -371,6 +375,13 @@ impl NestedClassProcessor {
                 }
                 0
             });
+        if kuna_fixes::enabled(KunaFix::LambdaCatchVarRename) {
+            if let Some(root) = method.with(|d| d.root) {
+                kuna_fix_lambda_catch_var_rename::rename_catch_vars(*root, &lvts, &|pair| {
+                    map_new_names.contains_key(&pair)
+                });
+            }
+        }
         var_proc.set_nested_processed(true);
     }
 

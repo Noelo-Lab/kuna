@@ -694,6 +694,104 @@
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
       "summary": "the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestAssertThrowAfterIf",
+      "fix": "assert_throw_after_if",
+      "class_files": [
+        "pkg/TestAssertThrowAfterIf.class",
+        "pkg/TestAssertThrowAfterIf$Ctx.class"
+      ],
+      "source": "src/pkg/TestAssertThrowAfterIf.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "asserts at the end of a loop body and before a return, which the structurer wrote as if ($assertionsDisabled || cond) { rest } throw new AssertionError(), are resugared; no $assertionsDisabled reference is left"
+    },
+    {
+      "id": "pkg/TestLambdaCatchVarRename",
+      "fix": "lambda_catch_var_rename",
+      "class_files": [
+        "pkg/TestLambdaCatchVarRename.class",
+        "pkg/TestLambdaCatchVarRename$Each.class",
+        "pkg/TestLambdaCatchVarRename$Task.class"
+      ],
+      "source": "src/pkg/TestLambdaCatchVarRename.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "catch variables of lambda bodies renamed for a clash with the enclosing method (e -> ex, ex -> exx/exxx) are declared under the name their uses read"
+    },
+    {
+      "id": "pkg/TestNestedParamRename",
+      "fix": "nested_param_rename",
+      "class_files": [
+        "pkg/TestNestedParamRename.class",
+        "pkg/TestNestedParamRename$1.class",
+        "pkg/TestNestedParamRename$Handler.class"
+      ],
+      "source": "src/pkg/TestNestedParamRename.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "an anonymous class's method parameter e, whose uses are written e, is declared e instead of ex (the name the rename for a captured variable whose slot the enclosing catch variable e reuses gave it)"
+    },
+    {
+      "id": "pkg/TestSealedPrivatePermits",
+      "fix": "sealed_private_permits",
+      "class_files": [
+        "pkg/TestSealedPrivatePermits.class",
+        "pkg/TestSealedPrivatePermits$Circle.class",
+        "pkg/TestSealedPrivatePermits$Large.class",
+        "pkg/TestSealedPrivatePermits$Open$Inner.class",
+        "pkg/TestSealedPrivatePermits$Open.class",
+        "pkg/TestSealedPrivatePermits$Shape.class",
+        "pkg/TestSealedPrivatePermits$Small.class",
+        "pkg/TestSealedPrivatePermits$Square.class"
+      ],
+      "source": "src/pkg/TestSealedPrivatePermits.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "a top-level sealed class whose permitted subclasses are its private members is written without the permits clause javac rejects; a nested sealed class and one permitting public records keep theirs"
+    },
+    {
+      "id": "pkg/TestSwitchAssignNotYield",
+      "fix": "switch_expression_assignments",
+      "class_files": [
+        "pkg/TestSwitchAssignNotYield.class",
+        "pkg/TestSwitchAssignNotYield$Time.class"
+      ],
+      "source": "src/pkg/TestSwitchAssignNotYield.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "switch statements that assign a local more than once in a case, leave a case through an if without else or a loop exit, or have an empty case stay switch statements instead of switch expressions with unreachable or missing yields"
+    },
+    {
+      "id": "pkg/TestSwitchExpressionArmClash",
+      "fix": "switch_expression_arm_scope",
+      "class_files": [
+        "pkg/TestSwitchExpressionArmClash.class"
+      ],
+      "source": "src/pkg/TestSwitchExpressionArmClash.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "a switch-expression arm declaring internalName inside a case of a switch statement whose earlier case declares internalName gets that case in braces instead of a duplicate declaration"
+    },
+    {
+      "id": "pkg/TestTypeAnnotationArgumentScope",
+      "fix": "type_annotation_argument_scope",
+      "class_files": [
+        "pkg/TestTypeAnnotationArgumentScope.class",
+        "pkg/TestTypeAnnotationArgumentScope$A.class",
+        "pkg/TestTypeAnnotationArgumentScope$Fn.class",
+        "pkg/TestTypeAnnotationArgumentScope$Pair.class"
+      ],
+      "source": "src/pkg/TestTypeAnnotationArgumentScope.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "type annotations on a later generic argument (Fn<Pair<String, @A Object>, @A Pair<String, @A Object>>) are written in that argument, not repeated in an earlier one"
+    },
+    {
+      "id": "pkg/TestTypeAnnotationQualifiedName",
+      "fix": "type_annotation_qualified_name",
+      "class_files": [
+        "pkg/TestTypeAnnotationQualifiedName.class",
+        "pkg/TestTypeAnnotationQualifiedName$A.class",
+        "pkg/TestTypeAnnotationQualifiedName$Entry.class"
+      ],
+      "source": "src/pkg/TestTypeAnnotationQualifiedName.java",
+      "compiler": "javac 17.0.20.1 (`-g`, against a `lib.AnnotatedHolder` that is not in the input)",
+      "summary": "type-annotated uses of lib.AnnotatedHolder.Entry, which the class's own nested Entry shadows, keep their qualifier (lib.AnnotatedHolder.@A Entry) instead of naming the nested class"
     }
   ]
 }

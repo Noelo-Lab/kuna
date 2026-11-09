@@ -17,6 +17,11 @@
 //! kuna fix `override_inaccessible_method` (`kuna_fixes`): `@Override` is
 //! written only for a supertype method the class can override
 //! (`kuna_fix_override_inaccessible_method`).
+//! kuna fix `sealed_private_permits`: a top-level sealed class whose permitted
+//! subclasses are its own members, one of them private, is written without its
+//! `permits` clause (`kuna_fix_sealed_private_permits`).
+//! kuna fix `nested_param_rename`: a parameter whose uses are written by its
+//! local-variable-table name is declared under it (`kuna_fix_nested_param_rename`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -63,6 +68,8 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::p9_emit::kuna_fix_enum_body_separator::EnumBodySeparator;
 use crate::p9_emit::kuna_fix_override_inaccessible_method;
+use crate::p9_emit::kuna_fix_sealed_private_permits;
+use crate::p9_emit::kuna_fix_nested_param_rename;
 use crate::pair::Pair;
 use crate::pass_context::PassContext;
 use crate::pool_interceptor::PoolInterceptor;
@@ -1306,7 +1313,9 @@ impl ClassWriter {
             }
         }
 
-        if !is_enum && is_sealed {
+        let omit_permits = kuna_fixes::enabled(KunaFix::SealedPrivatePermits)
+            && kuna_fix_sealed_private_permits::omit_permits(node, &permitted_sub_classes);
+        if !is_enum && is_sealed && !omit_permits {
             buffer.append_possible_newline_alt(" ");
             buffer.append("permits ");
             for (i, permitted) in permitted_sub_classes.iter().enumerate() {
@@ -2318,7 +2327,17 @@ impl ClassWriter {
                 {
                     Some(name)
                 } else {
-                    varproc.get_var_name(VarVersionPair::new(index, 0))
+                    let name = varproc.get_var_name(VarVersionPair::new(index, 0));
+                    let table_name = kuna_fixes::enabled(KunaFix::NestedParamRename)
+                        .then(|| {
+                            kuna_fix_nested_param_rename::table_name(
+                                varproc,
+                                VarVersionPair::new(index, 0),
+                                name.as_deref(),
+                            )
+                        })
+                        .flatten();
+                    table_name.or(name)
                 };
 
                 let mut new_parameter_name = method_struct.get_variable_namer().rename_parameter(
