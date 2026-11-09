@@ -2,7 +2,7 @@
 
 **Generated** by `kuna catalog --markdown --engine jvm` from `decompiler/nonnative/kuna-jvm/options.toml` -- do not edit by hand; edit the table row and regenerate.
 
-These options steer the JVM engine (`kuna-jvm`, a port of Vineflower 1.12.0), which decompiles class files, jars and directories of classes. They apply to those inputs only, as the options of `docs/options.md` apply to native inputs only. Set any of them per run on `decompile`, `decompile-all`, `decompile-project` and `functions`: `kuna decompile app.jar com.ex.Main --option <name> <value>` (repeatable). Every option also answers to Vineflower's long and three-letter names. Booleans take `on|off` (also `1|0|true|false`). Defaults are Vineflower 1.12.0's.
+These options steer the JVM engine (`kuna-jvm`, a port of Vineflower 1.12.0), which decompiles class files, jars and directories of classes. They apply to those inputs only, as the options of `docs/options.md` apply to native inputs only. Set any of them per run on `decompile`, `decompile-all`, `decompile-project` and `functions`: `kuna decompile app.jar com.ex.Main --option <name> <value>` (repeatable). Every Vineflower option also answers to Vineflower's long and three-letter names (its `aliases`). Booleans take `on|off` (also `1|0|true|false`). Defaults are Vineflower 1.12.0's.
 
 Vineflower keys kuna sets itself, so they are not options:
 

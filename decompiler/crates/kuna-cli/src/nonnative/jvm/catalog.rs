@@ -86,9 +86,9 @@ pub(crate) fn markdown() -> String {
          those inputs only, as the options of `docs/options.md` apply to native inputs \
          only. Set any of them per run on `decompile`, `decompile-all`, \
          `decompile-project` and `functions`: `kuna decompile app.jar com.ex.Main \
-         --option <name> <value>` (repeatable). Every option also answers to \
-         Vineflower's long and three-letter names. Booleans take `on|off` (also \
-         `1|0|true|false`). Defaults are Vineflower 1.12.0's.\n\n",
+         --option <name> <value>` (repeatable). Every Vineflower option also answers \
+         to Vineflower's long and three-letter names (its `aliases`). Booleans take \
+         `on|off` (also `1|0|true|false`). Defaults are Vineflower 1.12.0's.\n\n",
     );
     preamble.push_str("Vineflower keys kuna sets itself, so they are not options:\n\n");
     for owned in kuna_options::driver_owned() {
