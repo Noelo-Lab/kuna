@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use crate::i_fernflower_preferences::PreferenceOption;
 use crate::idea_not_null_plugin::IdeaNotNullPlugin;
+use crate::kotlin_plugin::KotlinPlugin;
 use crate::plugin::Plugin;
 use crate::plugin_source::PluginSource;
 use crate::variable_renaming_plugin::VariableRenamingPlugin;
@@ -21,6 +22,7 @@ pub const JVM_PLUGINS: &str = "jvm_plugins";
 /// them (`--list-plugins`): VariableRenaming, Kotlin, IdeaNotNull.
 const BUNDLED: &[fn() -> Rc<dyn Plugin>] = &[
     || Rc::new(VariableRenamingPlugin::new()),
+    || Rc::new(KotlinPlugin::new()),
     || Rc::new(IdeaNotNullPlugin::new()),
 ];
 

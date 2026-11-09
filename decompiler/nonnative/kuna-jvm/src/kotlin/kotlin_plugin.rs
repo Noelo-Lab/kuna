@@ -1,5 +1,4 @@
-//! Port of `org/vineflower/kotlin/KotlinPlugin.java`. Not in
-//! `kuna_plugins::BUNDLED` until the plugin's bodies are ported.
+//! Port of `org/vineflower/kotlin/KotlinPlugin.java`.
 
 use std::rc::Rc;
 

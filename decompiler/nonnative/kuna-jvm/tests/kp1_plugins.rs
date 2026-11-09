@@ -390,12 +390,10 @@ fn plugin_variants_match_vineflower() {
 fn bundled_plugins_register_in_oracle_order_with_their_options() {
     let plugins = kuna_jvm::kuna_plugins::bundled_plugins();
     let ids: Vec<String> = plugins.iter().map(|p| p.id()).collect();
-    assert_eq!(ids.first().map(String::as_str), Some("VariableRenaming"));
-    assert_eq!(ids.last().map(String::as_str), Some("IdeaNotNull"));
+    assert_eq!(ids, ["VariableRenaming", "Kotlin", "IdeaNotNull"]);
     let options: Vec<(String, &str, Option<String>)> =
         kuna_jvm::kuna_plugins::bundled_plugin_options()
             .into_iter()
-            .filter(|o| o.plugin != "Kotlin")
             .map(|o| (o.plugin, o.option.key, o.default))
             .collect();
     assert_eq!(
@@ -415,6 +413,24 @@ fn bundled_plugins_register_in_oracle_order_with_their_options() {
             (
                 "VariableRenaming".to_string(),
                 "jad-style-parameter-naming",
+                Some("0".to_string())
+            ),
+            ("Kotlin".to_string(), "kt-show-public", Some("1".to_string())),
+            ("Kotlin".to_string(), "kt-enable", Some("1".to_string())),
+            (
+                "Kotlin".to_string(),
+                "kt-unknown-defaults",
+                Some("...".to_string())
+            ),
+            (
+                "Kotlin".to_string(),
+                "kt-collapse-string-concat",
+                Some("1".to_string())
+            ),
+            ("Kotlin".to_string(), "kt-export-metadata", Some("0".to_string())),
+            (
+                "Kotlin".to_string(),
+                "kt-decompile-facades",
                 Some("0".to_string())
             ),
             (
