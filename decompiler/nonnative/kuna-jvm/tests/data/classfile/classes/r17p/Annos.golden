@@ -1,0 +1,136 @@
+class Annos
+version 61.0
+flags 0x0021
+super java/lang/Object
+interfaces 1 java/lang/Runnable
+attrs BootstrapMethods,InnerClasses,RuntimeInvisibleAnnotations,RuntimeVisibleAnnotations,RuntimeVisibleTypeAnnotations,Signature,SourceFile
+bootstrap 0 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+innerclass Annos$Old Annos Old 0x0008
+innerclass java/util/Map$Entry java/util/Map Entry 0x0009
+innerclass java/lang/invoke/MethodHandles$Lookup java/lang/invoke/MethodHandles Lookup 0x0019
+anno RuntimeInvisibleAnnotations #95(#40=s#93)
+anno RuntimeVisibleAnnotations #36(#114=I#115,#116=s#117,#118=[],#119=e#120.#121)
+tanno RuntimeVisibleTypeAnnotations 1000ffff [] #39(#40=I#122)
+tanno RuntimeVisibleTypeAnnotations 10000000 [] #39(#40=I#123)
+tanno RuntimeVisibleTypeAnnotations 00000000 [] #39(#40=I#124)
+tanno RuntimeVisibleTypeAnnotations 11000001 [] #39(#40=I#125)
+signature <T::Ljava/lang/Comparable<TT;>;>Ljava/lang/Object;Ljava/lang/Runnable;
+sourcefile Annos.java
+field field Ljava/lang/String;
+ flags 0x0001
+ attrs Deprecated,RuntimeVisibleAnnotations,RuntimeVisibleTypeAnnotations
+ anno RuntimeVisibleAnnotations #36()
+ anno RuntimeVisibleAnnotations #37()
+ tanno RuntimeVisibleTypeAnnotations 13000000 [] #39(#40=I#41)
+field nested Ljava/util/List;
+ flags 0x0000
+ attrs RuntimeVisibleTypeAnnotations,Signature
+ tanno RuntimeVisibleTypeAnnotations 13000000 [3:0] #39(#40=I#46)
+ tanno RuntimeVisibleTypeAnnotations 13000000 [3:0 0:0] #39(#40=I#47)
+ tanno RuntimeVisibleTypeAnnotations 13000000 [] #39(#40=I#48)
+ signature Ljava/util/List<[Ljava/lang/String;>;
+field wild Ljava/util/Map;
+ flags 0x0000
+ attrs RuntimeInvisibleTypeAnnotations,RuntimeVisibleTypeAnnotations,Signature
+ tanno RuntimeInvisibleTypeAnnotations 13000000 [3:1] #54()
+ tanno RuntimeVisibleTypeAnnotations 13000000 [3:0 2:0] #39(#40=I#52)
+ tanno RuntimeVisibleTypeAnnotations 13000000 [3:1 2:0] #39()
+ signature Ljava/util/Map<+Ljava/lang/Number;-Ljava/lang/Integer;>;
+field qualified Ljava/util/Map$Entry;
+ flags 0x0000
+ attrs RuntimeVisibleTypeAnnotations,Signature
+ tanno RuntimeVisibleTypeAnnotations 13000000 [] #39(#40=I#58)
+ signature Ljava/util/Map$Entry<Ljava/lang/String;Ljava/lang/String;>;
+method <init> ()V
+ flags 0x0001
+ attrs LineNumberTable,LocalVariableTable,LocalVariableTypeTable
+ code locals=1
+  0: aload 0
+  1: invokespecial 1 | java/lang/Object.<init>:()V
+  4: return
+  line 0 39
+  lvt 0 0 5 this LAnnos; LAnnos<TT;>;
+method method (ILjava/lang/String;Ljava/lang/Object;)I
+ flags 0x0001
+ attrs Exceptions,LineNumberTable,LocalVariableTable,LocalVariableTypeTable,MethodParameters,RuntimeInvisibleAnnotations,RuntimeInvisibleParameterAnnotations,RuntimeVisibleAnnotations,RuntimeVisibleParameterAnnotations,RuntimeVisibleTypeAnnotations
+ exceptions java/lang/RuntimeException
+ params a:0x0000 b:0x0000 c:0x0010
+ anno RuntimeInvisibleAnnotations #95(#40=s#96)
+ panno RuntimeInvisibleParameterAnnotations 0 #95(#40=s#102)
+ anno RuntimeVisibleAnnotations #36(#93=c#63)
+ panno RuntimeVisibleParameterAnnotations 0 #36()
+ panno RuntimeVisibleParameterAnnotations 2 #37()
+ tanno RuntimeVisibleTypeAnnotations 43000005 [] #39(#40=I#82)
+ tanno RuntimeVisibleTypeAnnotations 4400000e [] #39(#40=I#83)
+ tanno RuntimeVisibleTypeAnnotations 4400000e [3:0] #39(#40=I#84)
+ tanno RuntimeVisibleTypeAnnotations 47000000 [] #39(#40=I#85)
+ tanno RuntimeVisibleTypeAnnotations 45000029 [] #39(#40=I#86)
+ tanno RuntimeVisibleTypeAnnotations 40000000 [] #39(#40=I#87)
+ tanno RuntimeVisibleTypeAnnotations 42000000 [] #39(#40=I#88)
+ code locals=8
+  0: aload 2
+  1: astore 4
+  3: aload 4
+  5: instanceof 7 | java/lang/String
+  8: ifeq 6 | -> 14
+  11: iinc 1 1
+  14: new 9 | java/util/ArrayList
+  17: dup
+  18: invokespecial 11 | java/util/ArrayList.<init>:()V
+  21: astore 5
+  23: aload 4
+  25: checkcast 7 | java/lang/String
+  28: astore 6
+  30: iinc 1 1
+  33: goto 8 | -> 41
+  36: astore 7
+  38: iinc 1 -1
+  41: invokedynamic 14 | #0:get:()Ljava/util/function/Supplier;
+  46: astore 7
+  48: iload 1
+  49: aload 6
+  51: invokevirtual 18 | java/lang/String.length:()I
+  54: iadd
+  55: aload 5
+  57: invokevirtual 22 | java/lang/Object.hashCode:()I
+  60: iadd
+  61: aload 7
+  63: invokeinterface 25 1 | java/util/function/Supplier.hashCode:()I
+  68: iadd
+  69: ireturn
+  handler 30 33 36 java/lang/IllegalStateException
+  line 0 47
+  line 3 48
+  line 14 49
+  line 23 50
+  line 30 51
+  line 41 52
+  line 48 53
+  lvt 0 0 70 this LAnnos; LAnnos<TT;>;
+  lvt 1 0 70 a I
+  lvt 2 0 70 b Ljava/lang/String;
+  lvt 3 0 70 c Ljava/lang/Object;
+  lvt 4 3 67 local Ljava/lang/Object;
+  lvt 5 23 47 n Ljava/lang/Object;
+  lvt 6 30 40 cast Ljava/lang/String;
+  lvt 7 38 3 e Ljava/lang/IllegalStateException;
+  lvt 7 48 22 sup Ljava/util/function/Supplier; Ljava/util/function/Supplier<Ljava/util/List<Ljava/lang/String;>;>;
+method generic (Ljava/lang/Number;)V
+ flags 0x0001
+ attrs LineNumberTable,LocalVariableTable,LocalVariableTypeTable,MethodParameters,RuntimeVisibleTypeAnnotations,Signature
+ params m:0x0000
+ tanno RuntimeVisibleTypeAnnotations 01000000 [] #39(#40=I#108)
+ tanno RuntimeVisibleTypeAnnotations 12000000 [] #39(#40=I#109)
+ signature <M:Ljava/lang/Number;>(TM;)V
+ code locals=2
+  0: return
+  line 0 56
+  lvt 0 0 1 this LAnnos; LAnnos<TT;>;
+  lvt 1 0 1 m Ljava/lang/Number; TM;
+method run ()V
+ flags 0x0001
+ attrs LineNumberTable,LocalVariableTable,LocalVariableTypeTable
+ code locals=1
+  0: return
+  line 0 58
+  lvt 0 0 1 this LAnnos; LAnnos<TT;>;

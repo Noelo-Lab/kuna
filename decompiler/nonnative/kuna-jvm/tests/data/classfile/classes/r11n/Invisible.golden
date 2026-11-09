@@ -1,0 +1,10 @@
+class Invisible
+version 55.0
+flags 0x2600
+super java/lang/Object
+interfaces 1 java/lang/annotation/Annotation
+attrs RuntimeVisibleAnnotations
+anno RuntimeVisibleAnnotations #10(#7=e#11.#12)
+method value ()Ljava/lang/String;
+ flags 0x0401
+ attrs 

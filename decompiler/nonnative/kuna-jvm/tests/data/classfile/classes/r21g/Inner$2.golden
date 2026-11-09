@@ -1,0 +1,27 @@
+class Inner$2
+version 65.0
+flags 0x0020
+super java/lang/Object
+interfaces 0
+attrs EnclosingMethod,InnerClasses,NestHost,SourceFile
+enclosing Inner staticAnon
+innerclass Inner$2 - - 0x0000
+nesthost Inner
+sourcefile Inner.java
+method <init> ()V
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: invokespecial 1 | java/lang/Object.<init>:()V
+  4: return
+  line 0 22
+  lvt 0 0 5 this LInner$2;
+method toString ()Ljava/lang/String;
+ flags 0x0001
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: ldc 7
+  2: areturn
+  line 0 22
+  lvt 0 0 3 this LInner$2;

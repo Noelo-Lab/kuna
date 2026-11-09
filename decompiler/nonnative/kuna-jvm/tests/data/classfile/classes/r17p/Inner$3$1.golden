@@ -1,0 +1,28 @@
+class Inner$3$1
+version 61.0
+flags 0x0020
+super java/lang/Object
+interfaces 0
+attrs EnclosingMethod,InnerClasses,NestHost,SourceFile
+enclosing Inner$3 call
+innerclass Inner$3 - - 0x0000
+innerclass Inner$3$1 - - 0x0000
+nesthost Inner
+sourcefile Inner.java
+field this$1 LInner$3;
+ flags 0x1010
+ attrs 
+method <init> (LInner$3;)V
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable,MethodParameters
+ params this$1:0x8010
+ code locals=2
+  0: aload 0
+  1: aload 1
+  2: putfield 1 | Inner$3$1.this$1:LInner$3;
+  5: aload 0
+  6: invokespecial 7 | java/lang/Object.<init>:()V
+  9: return
+  line 0 28
+  lvt 0 0 10 this LInner$3$1;
+  lvt 1 0 10 this$1 LInner$3;

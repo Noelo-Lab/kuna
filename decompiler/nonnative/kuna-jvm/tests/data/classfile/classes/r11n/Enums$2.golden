@@ -1,0 +1,26 @@
+class Enums$2
+version 55.0
+flags 0x4030
+super Enums
+interfaces 0
+attrs EnclosingMethod,InnerClasses,NestHost
+enclosing Enums -
+innerclass Enums$2 - - 0x0010
+nesthost Enums
+method <init> (Ljava/lang/String;ILjava/lang/String;)V
+ flags 0x0002
+ attrs MethodParameters
+ params -:0x1000 -:0x1000 -:0x0000
+ code locals=4
+  0: aload 0
+  1: aload 1
+  2: iload 2
+  3: aload 3
+  4: invokespecial 1 | Enums.<init>:(Ljava/lang/String;ILjava/lang/String;)V
+  7: return
+method code ()I
+ flags 0x0000
+ attrs 
+ code locals=1
+  0: bipush 2
+  1: ireturn

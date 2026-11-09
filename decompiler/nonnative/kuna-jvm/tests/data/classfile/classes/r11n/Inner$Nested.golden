@@ -1,0 +1,16 @@
+class Inner$Nested
+version 55.0
+flags 0x0020
+super java/lang/Object
+interfaces 0
+attrs InnerClasses,NestHost
+innerclass Inner$Nested Inner Nested 0x0008
+innerclass Inner$Nested$Deeper Inner$Nested Deeper 0x0008
+nesthost Inner
+method <init> ()V
+ flags 0x0000
+ attrs 
+ code locals=1
+  0: aload 0
+  1: invokespecial 1 | java/lang/Object.<init>:()V
+  4: return

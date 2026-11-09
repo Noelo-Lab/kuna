@@ -1,0 +1,82 @@
+class Sealed
+version 65.0
+flags 0x0601
+super java/lang/Object
+interfaces 0
+attrs BootstrapMethods,InnerClasses,PermittedSubclasses
+bootstrap 0 6:java/lang/runtime/SwitchBootstraps.typeSwitch:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 1 6:java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args 1
+bootstrap 2 6:java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args 1
+innerclass Sealed$A Sealed A 0x0019
+innerclass Sealed$B Sealed B 0x0009
+innerclass Sealed$C Sealed C 0x0019
+innerclass java/lang/invoke/MethodHandles$Lookup java/lang/invoke/MethodHandles Lookup 0x0019
+permitted Sealed$A Sealed$B Sealed$C
+method which (LSealed;)I
+ flags 0x0009
+ attrs MethodParameters
+ params s:0x0000
+ code locals=6
+  0: aload 0
+  1: dup
+  2: invokestatic 1 | java/util/Objects.requireNonNull:(Ljava/lang/Object;)Ljava/lang/Object;
+  5: pop
+  6: astore 1
+  7: bipush 0
+  8: istore 2
+  9: aload 1
+  10: iload 2
+  11: invokedynamic 7 | #0:typeSwitch:(Ljava/lang/Object;I)I
+  16: tableswitch 28 0 2 38 47 57 | -> 44 [0:54 1:63 2:73]
+  44: new 11 | java/lang/MatchException
+  47: dup
+  48: aconst_null
+  49: aconst_null
+  50: invokespecial 13 | java/lang/MatchException.<init>:(Ljava/lang/String;Ljava/lang/Throwable;)V
+  53: athrow
+  54: aload 1
+  55: checkcast 17 | Sealed$A
+  58: astore 3
+  59: bipush 1
+  60: goto 24 | -> 84
+  63: aload 1
+  64: checkcast 19 | Sealed$B
+  67: astore 4
+  69: bipush 2
+  70: goto 14 | -> 84
+  73: aload 1
+  74: checkcast 21 | Sealed$C
+  77: astore 5
+  79: aload 5
+  81: invokevirtual 23 | Sealed$C.x:()I
+  84: ireturn
+method text (I)Ljava/lang/String;
+ flags 0x0009
+ attrs MethodParameters
+ params day:0x0000
+ code locals=3
+  0: iload 0
+  1: tableswitch 60 1 7 43 48 48 48 48 48 43 | -> 61 [1:44 2:49 3:49 4:49 5:49 6:49 7:44]
+  44: ldc 27
+  46: goto 29 | -> 75
+  49: ldc 29
+  51: astore 2
+  52: aload 2
+  53: invokedynamic 31 | #1:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+  58: goto 17 | -> 75
+  61: new 35 | java/lang/IllegalArgumentException
+  64: dup
+  65: iload 0
+  66: invokedynamic 37 | #2:makeConcatWithConstants:(I)Ljava/lang/String;
+  71: invokespecial 40 | java/lang/IllegalArgumentException.<init>:(Ljava/lang/String;)V
+  74: athrow
+  75: astore 1
+  76: ldc 43
+  78: bipush 1
+  79: anewarray 45 | java/lang/Object
+  82: dup
+  83: bipush 0
+  84: aload 1
+  85: aastore
+  86: invokevirtual 47 | java/lang/String.formatted:([Ljava/lang/Object;)Ljava/lang/String;
+  89: areturn

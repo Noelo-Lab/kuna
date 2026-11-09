@@ -1,0 +1,39 @@
+class Natives
+version 55.0
+flags 0x0421
+super java/lang/Object
+interfaces 0
+attrs 
+method <init> ()V
+ flags 0x0001
+ attrs 
+ code locals=1
+  0: aload 0
+  1: invokespecial 1 | java/lang/Object.<init>:()V
+  4: return
+method nat (J)I
+ flags 0x0101
+ attrs 
+method abs ()V
+ flags 0x0404
+ attrs Exceptions
+ exceptions java/io/IOException java/lang/InterruptedException
+method fp (D)D
+ flags 0x0801
+ attrs 
+ code locals=3
+  0: dload 1
+  1: ldc2_w 7
+  4: dmul
+  5: dreturn
+method legacy ()V
+ flags 0x0031
+ attrs Deprecated,RuntimeVisibleAnnotations
+ anno RuntimeVisibleAnnotations #25()
+ code locals=1
+  0: return
+method main ([Ljava/lang/String;)V
+ flags 0x0089
+ attrs 
+ code locals=1
+  0: return

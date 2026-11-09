@@ -1,0 +1,18 @@
+class module-info
+version 55.0
+flags 0x8000
+super -
+interfaces 0
+attrs Module,RuntimeVisibleAnnotations
+module kuna.sample 0x0000 -
+ requires java.base 0x8000 -
+ requires java.logging 0x0000 -
+ requires java.sql 0x0020 -
+ requires java.compiler 0x0040 -
+ exports p 0x0000
+ exports q 0x0000 java.base java.logging
+ opens p 0x0000
+ opens q 0x0000 java.sql
+ uses java/lang/Runnable
+ provides java/lang/Runnable with p/Impl q/Other
+anno RuntimeVisibleAnnotations #4()

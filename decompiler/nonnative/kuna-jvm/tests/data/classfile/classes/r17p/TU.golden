@@ -1,0 +1,13 @@
+class TU
+version 61.0
+flags 0x2600
+super java/lang/Object
+interfaces 1 java/lang/annotation/Annotation
+attrs RuntimeVisibleAnnotations,SourceFile
+anno RuntimeVisibleAnnotations #14(#7=e#15.#16)
+anno RuntimeVisibleAnnotations #17(#7=[e#18.#19,e#18.#20])
+sourcefile Annos.java
+method value ()I
+ flags 0x0401
+ attrs AnnotationDefault
+ default I#10

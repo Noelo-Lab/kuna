@@ -1,0 +1,128 @@
+class Generics
+version 65.0
+flags 0x0021
+super java/util/AbstractMap
+interfaces 1 java/lang/Cloneable
+attrs InnerClasses,Signature,SourceFile
+innerclass Generics$Node Generics Node 0x0000
+innerclass Generics$Pair Generics Pair 0x0008
+innerclass java/util/Map$Entry java/util/Map Entry 0x0009
+signature <K::Ljava/lang/Comparable<-TK;>;V:Ljava/lang/Object;>Ljava/util/AbstractMap<TK;TV;>;Ljava/lang/Cloneable;
+sourcefile Generics.java
+field map Ljava/util/Map;
+ flags 0x0012
+ attrs Signature
+ signature Ljava/util/Map<TK;Ljava/util/List<+TV;>;>;
+field wild [Ljava/util/List;
+ flags 0x0001
+ attrs Signature
+ signature [Ljava/util/List<-Ljava/lang/Integer;>;
+field entry Ljava/util/Map$Entry;
+ flags 0x0000
+ attrs Signature
+ signature Ljava/util/Map$Entry<TK;TV;>;
+method <init> ()V
+ flags 0x0001
+ attrs LineNumberTable,LocalVariableTable,LocalVariableTypeTable
+ code locals=1
+  0: aload 0
+  1: invokespecial 1 | java/util/AbstractMap.<init>:()V
+  4: aload 0
+  5: new 7 | java/util/HashMap
+  8: dup
+  9: invokespecial 9 | java/util/HashMap.<init>:()V
+  12: putfield 10 | Generics.map:Ljava/util/Map;
+  15: return
+  line 0 4
+  line 4 5
+  lvt 0 0 16 this LGenerics; LGenerics<TK;TV;>;
+method entrySet ()Ljava/util/Set;
+ flags 0x0001
+ attrs LineNumberTable,LocalVariableTable,LocalVariableTypeTable,Signature
+ signature ()Ljava/util/Set<Ljava/util/Map$Entry<TK;TV;>;>;
+ code locals=1
+  0: invokestatic 16 | java/util/Collections.emptySet:()Ljava/util/Set;
+  3: areturn
+  line 0 9
+  lvt 0 0 4 this LGenerics; LGenerics<TK;TV;>;
+method max (Ljava/util/List;)Ljava/lang/Number;
+ flags 0x0009
+ attrs Exceptions,LineNumberTable,LocalVariableTable,LocalVariableTypeTable,Signature
+ exceptions java/lang/IllegalStateException
+ signature <T:Ljava/lang/Number;:Ljava/lang/Comparable<TT;>;>(Ljava/util/List<+TT;>;)TT;
+ code locals=4
+  0: aconst_null
+  1: astore 1
+  2: aload 0
+  3: invokeinterface 22 1 | java/util/List.iterator:()Ljava/util/Iterator;
+  8: astore 2
+  9: aload 2
+  10: invokeinterface 28 1 | java/util/Iterator.hasNext:()Z
+  15: ifeq 35 | -> 50
+  18: aload 2
+  19: invokeinterface 34 1 | java/util/Iterator.next:()Ljava/lang/Object;
+  24: checkcast 38 | java/lang/Number
+  27: astore 3
+  28: aload 1
+  29: ifnull 16 | -> 45
+  32: aload 3
+  33: checkcast 40 | java/lang/Comparable
+  36: aload 1
+  37: invokeinterface 42 2 | java/lang/Comparable.compareTo:(Ljava/lang/Object;)I
+  42: ifle 5 | -> 47
+  45: aload 3
+  46: astore 1
+  47: goto -38 | -> 9
+  50: aload 1
+  51: ifnonnull 11 | -> 62
+  54: new 46 | java/lang/IllegalStateException
+  57: dup
+  58: invokespecial 48 | java/lang/IllegalStateException.<init>:()V
+  61: athrow
+  62: aload 1
+  63: areturn
+  line 0 12
+  line 2 13
+  line 50 14
+  line 62 15
+  lvt 0 0 64 xs Ljava/util/List; Ljava/util/List<+TT;>;
+  lvt 1 2 62 best Ljava/lang/Number; TT;
+  lvt 3 28 19 x Ljava/lang/Number; TT;
+method apply (Ljava/util/function/Function;Ljava/lang/Comparable;)Ljava/lang/Object;
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable,LocalVariableTypeTable,Signature
+ signature <R:Ljava/lang/Object;>(Ljava/util/function/Function<-TK;+TR;>;TK;)TR;
+ code locals=4
+  0: new 49 | java/util/ArrayList
+  3: dup
+  4: invokespecial 51 | java/util/ArrayList.<init>:()V
+  7: astore 3
+  8: aload 3
+  9: aload 1
+  10: aload 2
+  11: invokeinterface 52 2 | java/util/function/Function.apply:(Ljava/lang/Object;)Ljava/lang/Object;
+  16: invokeinterface 58 2 | java/util/List.add:(Ljava/lang/Object;)Z
+  21: pop
+  22: aload 3
+  23: bipush 0
+  24: invokeinterface 62 2 | java/util/List.get:(I)Ljava/lang/Object;
+  29: areturn
+  line 0 19
+  line 8 20
+  line 22 21
+  lvt 0 0 30 this LGenerics; LGenerics<TK;TV;>;
+  lvt 1 0 30 f Ljava/util/function/Function; Ljava/util/function/Function<-TK;+TR;>;
+  lvt 2 0 30 k Ljava/lang/Comparable; TK;
+  lvt 3 8 22 out Ljava/util/List; Ljava/util/List<TR;>;
+method node ()LGenerics$Node;
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable,LocalVariableTypeTable,Signature
+ signature ()LGenerics<TK;TV;>.Node<Ljava/lang/String;>;
+ code locals=1
+  0: new 66 | Generics$Node
+  3: dup
+  4: aload 0
+  5: invokespecial 68 | Generics$Node.<init>:(LGenerics;)V
+  8: areturn
+  line 0 28
+  lvt 0 0 9 this LGenerics; LGenerics<TK;TV;>;

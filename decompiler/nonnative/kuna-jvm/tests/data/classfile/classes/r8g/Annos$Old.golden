@@ -1,0 +1,18 @@
+class Annos$Old
+version 52.0
+flags 0x0020
+super java/lang/Object
+interfaces 0
+attrs Deprecated,InnerClasses,RuntimeVisibleAnnotations,SourceFile
+innerclass Annos$Old Annos Old 0x0008
+anno RuntimeVisibleAnnotations #18()
+sourcefile Annos.java
+method <init> ()V
+ flags 0x0000
+ attrs LineNumberTable,LocalVariableTable
+ code locals=1
+  0: aload 0
+  1: invokespecial 1 | java/lang/Object.<init>:()V
+  4: return
+  line 0 61
+  lvt 0 0 5 this LAnnos$Old;

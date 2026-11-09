@@ -1,0 +1,12 @@
+class TU
+version 55.0
+flags 0x2600
+super java/lang/Object
+interfaces 1 java/lang/annotation/Annotation
+attrs RuntimeVisibleAnnotations
+anno RuntimeVisibleAnnotations #12(#7=e#13.#14)
+anno RuntimeVisibleAnnotations #15(#7=[e#16.#17,e#16.#18])
+method value ()I
+ flags 0x0401
+ attrs AnnotationDefault
+ default I#10

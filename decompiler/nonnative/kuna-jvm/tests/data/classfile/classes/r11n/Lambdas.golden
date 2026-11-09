@@ -1,0 +1,237 @@
+class Lambdas
+version 55.0
+flags 0x0021
+super java/lang/Object
+interfaces 0
+attrs BootstrapMethods,InnerClasses
+bootstrap 0 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 1 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 2 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 3 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 4 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 5 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 6 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 7 6:java/lang/invoke/LambdaMetafactory.altMetafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args 5
+bootstrap 8 6:java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args 1
+bootstrap 9 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 10 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+bootstrap 11 6:java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite; args 3
+innerclass java/lang/invoke/MethodHandles$Lookup java/lang/invoke/MethodHandles Lookup 0x0019
+field base I
+ flags 0x0000
+ attrs 
+method <init> ()V
+ flags 0x0001
+ attrs 
+ code locals=1
+  0: aload 0
+  1: invokespecial 1 | java/lang/Object.<init>:()V
+  4: aload 0
+  5: bipush 3
+  6: putfield 7 | Lambdas.base:I
+  9: return
+method simple ()Ljava/lang/Runnable;
+ flags 0x0000
+ attrs 
+ code locals=1
+  0: invokedynamic 13 | #0:run:()Ljava/lang/Runnable;
+  5: areturn
+method capture (I)Ljava/util/function/IntUnaryOperator;
+ flags 0x0000
+ attrs 
+ code locals=2
+  0: aload 0
+  1: iload 1
+  2: invokedynamic 17 | #1:applyAsInt:(LLambdas;I)Ljava/util/function/IntUnaryOperator;
+  7: areturn
+method ref ()Ljava/util/function/Function;
+ flags 0x0000
+ attrs Signature
+ signature ()Ljava/util/function/Function<Ljava/lang/String;Ljava/lang/Integer;>;
+ code locals=1
+  0: invokedynamic 21 | #2:apply:()Ljava/util/function/Function;
+  5: areturn
+method ctor ()Ljava/util/function/Supplier;
+ flags 0x0000
+ attrs Signature
+ signature ()Ljava/util/function/Supplier<Ljava/util/List<Ljava/lang/String;>;>;
+ code locals=1
+  0: invokedynamic 25 | #3:get:()Ljava/util/function/Supplier;
+  5: areturn
+method arrayCtor ()Ljava/util/function/IntFunction;
+ flags 0x0000
+ attrs Signature
+ signature ()Ljava/util/function/IntFunction<[I>;
+ code locals=1
+  0: invokedynamic 29 | #4:apply:()Ljava/util/function/IntFunction;
+  5: areturn
+method bound (Ljava/lang/String;)Ljava/util/function/Function;
+ flags 0x0000
+ attrs Signature
+ signature (Ljava/lang/String;)Ljava/util/function/Function<Ljava/lang/Integer;Ljava/lang/String;>;
+ code locals=2
+  0: aload 1
+  1: dup
+  2: invokestatic 32 | java/util/Objects.requireNonNull:(Ljava/lang/Object;)Ljava/lang/Object;
+  5: pop
+  6: invokedynamic 38 | #5:apply:(Ljava/lang/String;)Ljava/util/function/Function;
+  11: areturn
+method unbound ()Ljava/util/function/BiFunction;
+ flags 0x0000
+ attrs Signature
+ signature ()Ljava/util/function/BiFunction<Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;>;
+ code locals=1
+  0: invokedynamic 41 | #6:apply:()Ljava/util/function/BiFunction;
+  5: areturn
+method serial ()Ljava/lang/Runnable;
+ flags 0x0000
+ attrs 
+ code locals=1
+  0: aload 0
+  1: invokedynamic 44 | #7:run:(LLambdas;)Ljava/lang/Runnable;
+  6: checkcast 47 | java/io/Serializable
+  9: checkcast 49 | java/lang/Runnable
+  12: areturn
+method concat (Ljava/lang/String;IJLjava/lang/Object;)Ljava/lang/String;
+ flags 0x0000
+ attrs 
+ code locals=6
+  0: aload 1
+  1: iload 2
+  2: lload 3
+  3: aload 5
+  5: invokestatic 51 | java/lang/String.valueOf:(Ljava/lang/Object;)Ljava/lang/String;
+  8: invokedynamic 57 | #8:makeConcatWithConstants:(Ljava/lang/String;IJLjava/lang/String;)Ljava/lang/String;
+  13: areturn
+method cmp (Ljava/util/function/Function;)Ljava/util/Comparator;
+ flags 0x0008
+ attrs Signature
+ signature <T:Ljava/lang/Object;>(Ljava/util/function/Function<TT;Ljava/lang/String;>;)Ljava/util/Comparator<TT;>;
+ code locals=1
+  0: aload 0
+  1: invokestatic 61 | java/util/Comparator.comparing:(Ljava/util/function/Function;)Ljava/util/Comparator;
+  4: invokedynamic 67 | #9:apply:()Ljava/util/function/Function;
+  9: invokeinterface 68 2 | java/util/Comparator.thenComparing:(Ljava/util/function/Function;)Ljava/util/Comparator;
+  14: areturn
+method nested ()Ljava/lang/Object;
+ flags 0x0000
+ attrs 
+ code locals=1
+  0: aload 0
+  1: invokedynamic 71 | #10:get:(LLambdas;)Ljava/util/function/Supplier;
+  6: areturn
+method $deserializeLambda$ (Ljava/lang/invoke/SerializedLambda;)Ljava/lang/Object;
+ flags 0x100a
+ attrs 
+ code locals=3
+  0: aload 0
+  1: invokevirtual 74 | java/lang/invoke/SerializedLambda.getImplMethodName:()Ljava/lang/String;
+  4: astore 1
+  5: bipush -1
+  6: istore 2
+  7: aload 1
+  8: invokevirtual 80 | java/lang/String.hashCode:()I
+  11: lookupswitch 28 1 838184216 17 | -> 39 [838184216:28]
+  28: aload 1
+  29: ldc 84
+  31: invokevirtual 86 | java/lang/String.equals:(Ljava/lang/Object;)Z
+  34: ifeq 5 | -> 39
+  37: bipush 0
+  38: istore 2
+  39: iload 2
+  40: lookupswitch 103 1 0 20 | -> 143 [0:60]
+  60: aload 0
+  61: invokevirtual 90 | java/lang/invoke/SerializedLambda.getImplMethodKind:()I
+  64: bipush 7
+  66: if_icmpne 77 | -> 143
+  69: aload 0
+  70: invokevirtual 93 | java/lang/invoke/SerializedLambda.getFunctionalInterfaceClass:()Ljava/lang/String;
+  73: ldc 96
+  75: invokevirtual 97 | java/lang/Object.equals:(Ljava/lang/Object;)Z
+  78: ifeq 65 | -> 143
+  81: aload 0
+  82: invokevirtual 98 | java/lang/invoke/SerializedLambda.getFunctionalInterfaceMethodName:()Ljava/lang/String;
+  85: ldc 101
+  87: invokevirtual 97 | java/lang/Object.equals:(Ljava/lang/Object;)Z
+  90: ifeq 53 | -> 143
+  93: aload 0
+  94: invokevirtual 102 | java/lang/invoke/SerializedLambda.getFunctionalInterfaceMethodSignature:()Ljava/lang/String;
+  97: ldc 105
+  99: invokevirtual 97 | java/lang/Object.equals:(Ljava/lang/Object;)Z
+  102: ifeq 41 | -> 143
+  105: aload 0
+  106: invokevirtual 106 | java/lang/invoke/SerializedLambda.getImplClass:()Ljava/lang/String;
+  109: ldc 109
+  111: invokevirtual 97 | java/lang/Object.equals:(Ljava/lang/Object;)Z
+  114: ifeq 29 | -> 143
+  117: aload 0
+  118: invokevirtual 110 | java/lang/invoke/SerializedLambda.getImplMethodSignature:()Ljava/lang/String;
+  121: ldc 105
+  123: invokevirtual 97 | java/lang/Object.equals:(Ljava/lang/Object;)Z
+  126: ifeq 17 | -> 143
+  129: aload 0
+  130: bipush 0
+  131: invokevirtual 113 | java/lang/invoke/SerializedLambda.getCapturedArg:(I)Ljava/lang/Object;
+  134: checkcast 8 | Lambdas
+  137: invokedynamic 44 | #7:run:(LLambdas;)Ljava/lang/Runnable;
+  142: areturn
+  143: new 117 | java/lang/IllegalArgumentException
+  146: dup
+  147: ldc 119
+  149: invokespecial 121 | java/lang/IllegalArgumentException.<init>:(Ljava/lang/String;)V
+  152: athrow
+method lambda$nested$4 ()Ljava/lang/Runnable;
+ flags 0x1002
+ attrs 
+ code locals=1
+  0: aload 0
+  1: invokedynamic 124 | #11:run:(LLambdas;)Ljava/lang/Runnable;
+  6: areturn
+method lambda$nested$3 ()V
+ flags 0x1002
+ attrs 
+ code locals=1
+  0: aload 0
+  1: dup
+  2: getfield 7 | Lambdas.base:I
+  5: bipush 1
+  6: isub
+  7: putfield 7 | Lambdas.base:I
+  10: return
+method lambda$serial$d8cce9d4$1 ()V
+ flags 0x1002
+ attrs 
+ code locals=1
+  0: aload 0
+  1: dup
+  2: getfield 7 | Lambdas.base:I
+  5: bipush 1
+  6: iadd
+  7: putfield 7 | Lambdas.base:I
+  10: return
+method lambda$arrayCtor$2 (I)[I
+ flags 0x100a
+ attrs 
+ code locals=1
+  0: iload 0
+  1: newarray 10
+  3: areturn
+method lambda$capture$1 (II)I
+ flags 0x1002
+ attrs 
+ code locals=3
+  0: iload 2
+  1: iload 1
+  2: imul
+  3: aload 0
+  4: getfield 7 | Lambdas.base:I
+  7: iadd
+  8: ireturn
+method lambda$simple$0 ()V
+ flags 0x100a
+ attrs 
+ code locals=0
+  0: getstatic 125 | java/lang/System.out:Ljava/io/PrintStream;
+  3: ldc 131
+  5: invokevirtual 133 | java/io/PrintStream.println:(Ljava/lang/String;)V
+  8: return

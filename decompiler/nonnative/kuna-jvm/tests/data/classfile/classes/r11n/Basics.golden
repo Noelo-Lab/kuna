@@ -1,0 +1,864 @@
+class Basics
+version 55.0
+flags 0x0021
+super java/lang/Object
+interfaces 2 java/io/Serializable java/lang/Comparable
+attrs Signature
+signature Ljava/lang/Object;Ljava/io/Serializable;Ljava/lang/Comparable<LBasics;>;
+field I I
+ flags 0x0019
+ attrs ConstantValue
+field L J
+ flags 0x0019
+ attrs ConstantValue
+field F F
+ flags 0x0019
+ attrs ConstantValue
+field D D
+ flags 0x0019
+ attrs ConstantValue
+field S Ljava/lang/String;
+ flags 0x0019
+ attrs ConstantValue
+field C C
+ flags 0x0019
+ attrs ConstantValue
+field Z Z
+ flags 0x0019
+ attrs ConstantValue
+field B B
+ flags 0x0019
+ attrs ConstantValue
+field SH S
+ flags 0x0019
+ attrs ConstantValue
+field t I
+ flags 0x0084
+ attrs 
+field v J
+ flags 0x0042
+ attrs 
+field ints [I
+ flags 0x0000
+ attrs 
+field o Ljava/lang/Object;
+ flags 0x0000
+ attrs 
+method <init> ()V
+ flags 0x0001
+ attrs 
+ code locals=1
+  0: aload 0
+  1: invokespecial 1 | java/lang/Object.<init>:()V
+  4: aload 0
+  5: bipush 3
+  6: newarray 10
+  8: putfield 7 | Basics.ints:[I
+  11: return
+method compareTo (LBasics;)I
+ flags 0x0001
+ attrs 
+ code locals=2
+  0: aload 0
+  1: getfield 13 | Basics.t:I
+  4: aload 1
+  5: getfield 13 | Basics.t:I
+  8: invokestatic 17 | java/lang/Integer.compare:(II)I
+  11: ireturn
+method consts (I)I
+ flags 0x0008
+ attrs 
+ code locals=7
+  0: bipush 14
+  2: iload 0
+  3: iadd
+  4: istore 1
+  5: lconst_1
+  6: iload 0
+  7: i2l
+  8: ladd
+  9: lstore 2
+  10: ldc 23
+  12: iload 0
+  13: i2f
+  14: fadd
+  15: fstore 4
+  17: dconst_1
+  18: iload 0
+  19: i2d
+  20: dadd
+  21: dstore 5
+  23: iinc 1 100
+  26: iinc wide 1 1000
+  32: iload 1
+  33: ldc 24
+  35: iadd
+  36: istore 1
+  37: iload 1
+  38: lload 2
+  39: l2i
+  40: iadd
+  41: fload 4
+  43: f2i
+  44: iadd
+  45: dload 5
+  47: d2i
+  48: iadd
+  49: ireturn
+method conversions (IJFD)J
+ flags 0x0008
+ attrs 
+ code locals=15
+  0: iload 0
+  1: i2b
+  2: istore 6
+  4: iload 0
+  5: i2c
+  6: istore 7
+  8: iload 0
+  9: i2s
+  10: istore 8
+  12: iload 0
+  13: i2l
+  14: fload 3
+  15: f2l
+  16: ladd
+  17: dload 4
+  19: d2l
+  20: ladd
+  21: lstore 9
+  23: iload 0
+  24: i2f
+  25: lload 1
+  26: l2f
+  27: fadd
+  28: dload 4
+  30: d2f
+  31: fadd
+  32: fstore 11
+  34: iload 0
+  35: i2d
+  36: lload 1
+  37: l2d
+  38: dadd
+  39: fload 3
+  40: f2d
+  41: dadd
+  42: dstore 12
+  44: lload 1
+  45: l2i
+  46: fload 3
+  47: f2i
+  48: iadd
+  49: dload 4
+  51: d2i
+  52: iadd
+  53: istore 14
+  55: lload 9
+  57: fload 11
+  59: f2l
+  60: ladd
+  61: dload 12
+  63: d2l
+  64: ladd
+  65: iload 14
+  67: i2l
+  68: ladd
+  69: iload 6
+  71: i2l
+  72: ladd
+  73: iload 7
+  75: i2l
+  76: ladd
+  77: iload 8
+  79: i2l
+  80: ladd
+  81: lreturn
+method compares (JJFFDDLjava/lang/Object;Ljava/lang/Object;)I
+ flags 0x0008
+ attrs 
+ code locals=13
+  0: bipush 0
+  1: istore 12
+  3: lload 0
+  4: lload 2
+  5: lcmp
+  6: ifge 6 | -> 12
+  9: iinc 12 1
+  12: fload 4
+  14: fload 5
+  16: fcmpg
+  17: ifge 6 | -> 23
+  20: iinc 12 1
+  23: fload 4
+  25: fload 5
+  27: fcmpl
+  28: ifle 6 | -> 34
+  31: iinc 12 1
+  34: dload 6
+  36: dload 8
+  38: dcmpg
+  39: ifge 6 | -> 45
+  42: iinc 12 1
+  45: dload 6
+  47: dload 8
+  49: dcmpl
+  50: ifle 6 | -> 56
+  53: iinc 12 1
+  56: aload 10
+  58: aload 11
+  60: if_acmpne 6 | -> 66
+  63: iinc 12 1
+  66: aload 10
+  68: aload 11
+  70: if_acmpeq 6 | -> 76
+  73: iinc 12 1
+  76: aload 10
+  78: ifnonnull 6 | -> 84
+  81: iinc 12 1
+  84: aload 11
+  86: ifnull 6 | -> 92
+  89: iinc 12 1
+  92: iload 12
+  94: bipush 1
+  95: if_icmpne 6 | -> 101
+  98: iinc 12 1
+  101: iload 12
+  103: bipush 2
+  104: if_icmpeq 6 | -> 110
+  107: iinc 12 1
+  110: iload 12
+  112: bipush 3
+  113: if_icmpge 6 | -> 119
+  116: iinc 12 1
+  119: iload 12
+  121: bipush 4
+  122: if_icmplt 6 | -> 128
+  125: iinc 12 1
+  128: iload 12
+  130: bipush 5
+  131: if_icmple 6 | -> 137
+  134: iinc 12 1
+  137: iload 12
+  139: bipush 6
+  141: if_icmpgt 6 | -> 147
+  144: iinc 12 1
+  147: iload 12
+  149: ifne 6 | -> 155
+  152: iinc 12 -1
+  155: iload 12
+  157: ifeq 6 | -> 163
+  160: iinc 12 -1
+  163: iload 12
+  165: ifge 6 | -> 171
+  168: iinc 12 -1
+  171: iload 12
+  173: iflt 6 | -> 179
+  176: iinc 12 -1
+  179: iload 12
+  181: ifle 6 | -> 187
+  184: iinc 12 -1
+  187: iload 12
+  189: ifgt 6 | -> 195
+  192: iinc 12 -1
+  195: iload 12
+  197: ireturn
+method bits (IIJJ)J
+ flags 0x0008
+ attrs 
+ code locals=9
+  0: iload 0
+  1: iload 1
+  2: ishl
+  3: iload 0
+  4: iload 1
+  5: ishr
+  6: iload 0
+  7: iload 1
+  8: iushr
+  9: iload 0
+  10: bipush -1
+  11: ixor
+  12: iand
+  13: ixor
+  14: ior
+  15: istore 6
+  17: lload 2
+  18: iload 0
+  19: lshl
+  20: lload 2
+  21: iload 0
+  22: lshr
+  23: lload 2
+  24: iload 0
+  25: lushr
+  26: lload 2
+  27: ldc2_w 25
+  30: lxor
+  31: land
+  32: lload 4
+  34: land
+  35: lxor
+  36: lor
+  37: lstore 7
+  39: iload 6
+  41: i2l
+  42: lload 7
+  44: ladd
+  45: iload 0
+  46: iload 1
+  47: irem
+  48: i2l
+  49: ladd
+  50: lload 2
+  51: lload 4
+  53: lrem
+  54: ladd
+  55: iload 0
+  56: iload 1
+  57: idiv
+  58: i2l
+  59: ladd
+  60: lload 2
+  61: lload 4
+  63: ldiv
+  64: ladd
+  65: iload 0
+  66: iload 1
+  67: imul
+  68: i2l
+  69: lsub
+  70: lload 2
+  71: lload 4
+  73: lmul
+  74: lsub
+  75: iload 0
+  76: ineg
+  77: i2l
+  78: ladd
+  79: lload 2
+  80: lneg
+  81: ladd
+  82: lreturn
+method arrays (I)Ljava/lang/Object;
+ flags 0x0008
+ attrs 
+ code locals=12
+  0: iload 0
+  1: newarray 4
+  3: astore 1
+  4: iload 0
+  5: newarray 5
+  7: astore 2
+  8: iload 0
+  9: newarray 6
+  11: astore 3
+  12: iload 0
+  13: newarray 7
+  15: astore 4
+  17: iload 0
+  18: newarray 8
+  20: astore 5
+  22: iload 0
+  23: newarray 9
+  25: astore 6
+  27: iload 0
+  28: newarray 10
+  30: astore 7
+  32: iload 0
+  33: newarray 11
+  35: astore 8
+  37: iload 0
+  38: anewarray 27 | java/lang/String
+  41: astore 9
+  43: iload 0
+  44: iload 0
+  45: multianewarray 29 2 | [[I
+  49: astore 10
+  51: iload 0
+  52: bipush 2
+  53: multianewarray 31 2 | [[[Ljava/lang/String;
+  57: astore 11
+  59: aload 1
+  60: bipush 0
+  61: bipush 1
+  62: bastore
+  63: aload 2
+  64: bipush 0
+  65: bipush 97
+  67: castore
+  68: aload 3
+  69: bipush 0
+  70: fconst_1
+  71: fastore
+  72: aload 4
+  74: bipush 0
+  75: ldc2_w 33
+  78: dastore
+  79: aload 5
+  81: bipush 0
+  82: bipush 3
+  83: bastore
+  84: aload 6
+  86: bipush 0
+  87: bipush 4
+  88: sastore
+  89: aload 7
+  91: bipush 0
+  92: bipush 5
+  93: iastore
+  94: aload 8
+  96: bipush 0
+  97: ldc2_w 35
+  100: lastore
+  101: aload 9
+  103: bipush 0
+  104: ldc 37
+  106: aastore
+  107: aload 10
+  109: bipush 0
+  110: aaload
+  111: bipush 0
+  112: aload 7
+  114: bipush 0
+  115: iaload
+  116: aload 5
+  118: bipush 0
+  119: baload
+  120: iadd
+  121: aload 6
+  123: bipush 0
+  124: saload
+  125: iadd
+  126: aload 2
+  127: bipush 0
+  128: caload
+  129: iadd
+  130: aload 1
+  131: bipush 0
+  132: baload
+  133: ifeq 7 | -> 140
+  136: bipush 1
+  137: goto 4 | -> 141
+  140: bipush 0
+  141: iadd
+  142: aload 3
+  143: bipush 0
+  144: faload
+  145: f2i
+  146: iadd
+  147: aload 4
+  149: bipush 0
+  150: daload
+  151: d2i
+  152: iadd
+  153: aload 8
+  155: bipush 0
+  156: laload
+  157: l2i
+  158: iadd
+  159: aload 9
+  161: arraylength
+  162: iadd
+  163: iastore
+  164: aload 7
+  166: bipush 1
+  167: aload 7
+  169: bipush 0
+  170: bipush 7
+  172: dup_x2
+  173: iastore
+  174: iastore
+  175: aload 8
+  177: bipush 1
+  178: aload 8
+  180: bipush 0
+  181: ldc2_w 39
+  184: dup2_x2
+  185: lastore
+  186: lastore
+  187: aload 11
+  189: bipush 0
+  190: aaload
+  191: bipush 0
+  192: aload 9
+  194: aastore
+  195: aload 11
+  197: areturn
+method strings (Ljava/lang/String;)I
+ flags 0x0008
+ attrs 
+ code locals=3
+  0: aload 0
+  1: astore 1
+  2: bipush -1
+  3: istore 2
+  4: aload 1
+  5: invokevirtual 41 | java/lang/String.hashCode:()I
+  8: lookupswitch 89 3 2112 64 3020272 50 92909918 36 | -> 97 [2112:72 3020272:58 92909918:44]
+  44: aload 1
+  45: ldc 45
+  47: invokevirtual 47 | java/lang/String.equals:(Ljava/lang/Object;)Z
+  50: ifeq 47 | -> 97
+  53: bipush 0
+  54: istore 2
+  55: goto 42 | -> 97
+  58: aload 1
+  59: ldc 51
+  61: invokevirtual 47 | java/lang/String.equals:(Ljava/lang/Object;)Z
+  64: ifeq 33 | -> 97
+  67: bipush 1
+  68: istore 2
+  69: goto 28 | -> 97
+  72: aload 1
+  73: ldc 53
+  75: invokevirtual 47 | java/lang/String.equals:(Ljava/lang/Object;)Z
+  78: ifeq 8 | -> 86
+  81: bipush 3
+  82: istore 2
+  83: goto 14 | -> 97
+  86: aload 1
+  87: ldc 55
+  89: invokevirtual 47 | java/lang/String.equals:(Ljava/lang/Object;)Z
+  92: ifeq 5 | -> 97
+  95: bipush 2
+  96: istore 2
+  97: iload 2
+  98: tableswitch 38 0 3 30 32 34 36 | -> 136 [0:128 1:130 2:132 3:134]
+  128: bipush 1
+  129: ireturn
+  130: bipush 2
+  131: ireturn
+  132: bipush 3
+  133: ireturn
+  134: bipush 4
+  135: ireturn
+  136: bipush 0
+  137: ireturn
+method table (I)I
+ flags 0x0008
+ attrs 
+ code locals=1
+  0: iload 0
+  1: tableswitch 61 0 6 43 46 49 52 61 55 58 | -> 62 [0:44 1:47 2:50 3:53 4:62 5:56 6:59]
+  44: bipush 10
+  46: ireturn
+  47: bipush 11
+  49: ireturn
+  50: bipush 12
+  52: ireturn
+  53: bipush 13
+  55: ireturn
+  56: bipush 15
+  58: ireturn
+  59: bipush 16
+  61: ireturn
+  62: bipush -1
+  63: ireturn
+method lookup (I)I
+ flags 0x0008
+ attrs 
+ code locals=1
+  0: iload 0
+  1: lookupswitch 61 5 -2147483648 59 -1000000 51 7 53 1048576 55 2147483647 57 | -> 62 [-2147483648:60 -1000000:52 7:54 1048576:56 2147483647:58]
+  52: bipush 1
+  53: ireturn
+  54: bipush 2
+  55: ireturn
+  56: bipush 3
+  57: ireturn
+  58: bipush 4
+  59: ireturn
+  60: bipush 5
+  61: ireturn
+  62: bipush 0
+  63: ireturn
+method sync ()V
+ flags 0x0020
+ attrs 
+ code locals=1
+  0: aload 0
+  1: dup
+  2: getfield 13 | Basics.t:I
+  5: bipush 1
+  6: iadd
+  7: putfield 13 | Basics.t:I
+  10: return
+method block ()V
+ flags 0x0000
+ attrs 
+ code locals=4
+  0: aload 0
+  1: dup
+  2: astore 1
+  3: monitorenter
+  4: aload 0
+  5: dup
+  6: getfield 13 | Basics.t:I
+  9: bipush 1
+  10: iadd
+  11: putfield 13 | Basics.t:I
+  14: aload 1
+  15: monitorexit
+  16: goto 8 | -> 24
+  19: astore 2
+  20: aload 1
+  21: monitorexit
+  22: aload 2
+  23: athrow
+  24: ldc 8
+  26: dup
+  27: astore 1
+  28: monitorenter
+  29: aload 0
+  30: dup
+  31: getfield 57 | Basics.v:J
+  34: lconst_1
+  35: ladd
+  36: putfield 57 | Basics.v:J
+  39: aload 1
+  40: monitorexit
+  41: goto 8 | -> 49
+  44: astore 3
+  45: aload 1
+  46: monitorexit
+  47: aload 3
+  48: athrow
+  49: return
+  handler 4 16 19 any
+  handler 19 22 19 any
+  handler 29 41 44 any
+  handler 44 47 44 any
+method tryCatch (Ljava/io/InputStream;)I
+ flags 0x0000
+ attrs Exceptions
+ exceptions java/io/IOException
+ code locals=5
+  0: aload 1
+  1: invokevirtual 61 | java/io/InputStream.read:()I
+  4: istore 2
+  5: aload 0
+  6: dup
+  7: getfield 13 | Basics.t:I
+  10: bipush 1
+  11: iadd
+  12: putfield 13 | Basics.t:I
+  15: iload 2
+  16: ireturn
+  17: astore 2
+  18: bipush -1
+  19: istore 3
+  20: aload 0
+  21: dup
+  22: getfield 13 | Basics.t:I
+  25: bipush 1
+  26: iadd
+  27: putfield 13 | Basics.t:I
+  30: iload 3
+  31: ireturn
+  32: astore 2
+  33: new 72 | java/io/IOException
+  36: dup
+  37: aload 2
+  38: invokespecial 74 | java/io/IOException.<init>:(Ljava/lang/Throwable;)V
+  41: athrow
+  42: astore 4
+  44: aload 0
+  45: dup
+  46: getfield 13 | Basics.t:I
+  49: bipush 1
+  50: iadd
+  51: putfield 13 | Basics.t:I
+  54: aload 4
+  56: athrow
+  handler 0 5 17 java/io/FileNotFoundException
+  handler 0 5 17 java/io/EOFException
+  handler 0 5 32 java/lang/RuntimeException
+  handler 0 5 42 any
+  handler 17 20 42 any
+  handler 32 44 42 any
+method resources ()V
+ flags 0x0000
+ attrs Exceptions
+ exceptions java/lang/Exception
+ code locals=5
+  0: new 77 | java/io/ByteArrayInputStream
+  3: dup
+  4: bipush 1
+  5: newarray 8
+  7: invokespecial 79 | java/io/ByteArrayInputStream.<init>:([B)V
+  10: astore 1
+  11: new 77 | java/io/ByteArrayInputStream
+  14: dup
+  15: bipush 2
+  16: newarray 8
+  18: invokespecial 79 | java/io/ByteArrayInputStream.<init>:([B)V
+  21: astore 2
+  22: aload 1
+  23: invokevirtual 61 | java/io/InputStream.read:()I
+  26: pop
+  27: aload 2
+  28: invokevirtual 61 | java/io/InputStream.read:()I
+  31: pop
+  32: aload 2
+  33: invokevirtual 82 | java/io/InputStream.close:()V
+  36: goto 21 | -> 57
+  39: astore 3
+  40: aload 2
+  41: invokevirtual 82 | java/io/InputStream.close:()V
+  44: goto 11 | -> 55
+  47: astore 4
+  49: aload 3
+  50: aload 4
+  52: invokevirtual 87 | java/lang/Throwable.addSuppressed:(Ljava/lang/Throwable;)V
+  55: aload 3
+  56: athrow
+  57: aload 1
+  58: invokevirtual 82 | java/io/InputStream.close:()V
+  61: goto 19 | -> 80
+  64: astore 2
+  65: aload 1
+  66: invokevirtual 82 | java/io/InputStream.close:()V
+  69: goto 9 | -> 78
+  72: astore 3
+  73: aload 2
+  74: aload 3
+  75: invokevirtual 87 | java/lang/Throwable.addSuppressed:(Ljava/lang/Throwable;)V
+  78: aload 2
+  79: athrow
+  80: return
+  handler 22 32 39 java/lang/Throwable
+  handler 40 44 47 java/lang/Throwable
+  handler 11 57 64 java/lang/Throwable
+  handler 65 69 72 java/lang/Throwable
+method varargs (Ljava/lang/String;[Ljava/lang/Object;)I
+ flags 0x0088
+ attrs 
+ code locals=2
+  0: aload 1
+  1: arraylength
+  2: aload 0
+  3: invokevirtual 90 | java/lang/String.length:()I
+  6: iadd
+  7: ireturn
+method pops ()J
+ flags 0x0000
+ attrs 
+ code locals=1
+  0: aload 0
+  1: getfield 57 | Basics.v:J
+  4: invokestatic 93 | java/lang/Long.hashCode:(J)I
+  7: pop
+  8: invokestatic 98 | java/lang/System.nanoTime:()J
+  11: pop2
+  12: bipush 2
+  13: anewarray 2 | java/lang/Object
+  16: dup
+  17: bipush 0
+  18: bipush 1
+  19: invokestatic 104 | java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+  22: aastore
+  23: dup
+  24: bipush 1
+  25: bipush 2
+  26: invokestatic 104 | java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+  29: aastore
+  30: invokestatic 108 | java/util/Objects.hash:([Ljava/lang/Object;)I
+  33: pop
+  34: aload 0
+  35: getfield 57 | Basics.v:J
+  38: lreturn
+method loops ([I)I
+ flags 0x0000
+ attrs 
+ code locals=7
+  0: bipush 0
+  1: istore 2
+  2: aload 1
+  3: astore 3
+  4: aload 3
+  5: arraylength
+  6: istore 4
+  8: bipush 0
+  9: istore 5
+  11: iload 5
+  13: iload 4
+  15: if_icmpge 38 | -> 53
+  18: aload 3
+  19: iload 5
+  21: iaload
+  22: istore 6
+  24: iload 6
+  26: ifge 6 | -> 32
+  29: goto 18 | -> 47
+  32: iload 6
+  34: bipush 100
+  36: if_icmple 6 | -> 42
+  39: goto 14 | -> 53
+  42: iload 2
+  43: iload 6
+  45: iadd
+  46: istore 2
+  47: iinc 5 1
+  50: goto -39 | -> 11
+  53: bipush 0
+  54: istore 3
+  55: iinc 3 1
+  58: iload 3
+  59: bipush 10
+  61: if_icmplt -6 | -> 55
+  64: iload 2
+  65: sipush 1000
+  68: if_icmple 10 | -> 78
+  71: iload 2
+  72: bipush 2
+  73: idiv
+  74: istore 2
+  75: goto -11 | -> 64
+  78: iload 2
+  79: iload 3
+  80: iadd
+  81: ireturn
+method types (Ljava/lang/Object;)Z
+ flags 0x0008
+ attrs 
+ code locals=1
+  0: aload 0
+  1: instanceof 27 | java/lang/String
+  4: ifeq 11 | -> 15
+  7: aload 0
+  8: checkcast 27 | java/lang/String
+  11: invokevirtual 114 | java/lang/String.isEmpty:()Z
+  14: ireturn
+  15: aload 0
+  16: instanceof 118 | [I
+  19: ifeq 17 | -> 36
+  22: aload 0
+  23: checkcast 118 | [I
+  26: arraylength
+  27: ifne 7 | -> 34
+  30: bipush 1
+  31: goto 4 | -> 35
+  34: bipush 0
+  35: ireturn
+  36: aload 0
+  37: instanceof 119 | [[Ljava/lang/Runnable;
+  40: ireturn
+method compareTo (Ljava/lang/Object;)I
+ flags 0x1041
+ attrs MethodParameters
+ params -:0x1000
+ code locals=2
+  0: aload 0
+  1: aload 1
+  2: checkcast 8 | Basics
+  5: invokevirtual 121 | Basics.compareTo:(LBasics;)I
+  8: ireturn
+method <clinit> ()V
+ flags 0x0008
+ attrs 
+ code locals=0
+  0: getstatic 125 | java/lang/System.out:Ljava/io/PrintStream;
+  3: ldc 129
+  5: invokevirtual 131 | java/io/PrintStream.println:(Ljava/lang/String;)V
+  8: return
