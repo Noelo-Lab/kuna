@@ -2488,7 +2488,7 @@ stack pointer gets a `PTRSUB(sp, #0)` spliced in so the type system renders
 `&local` instead of the bare register (`funcdata_spacebase.rs
 (Funcdata::annotate_raw_stack_ptr)`).
 
-**What counts as a pointer escaping (kuna `cookiescramble`, default on).**
+**What counts as a pointer escaping (kuna `kuna_cookiescramble.rs`, always on).**
 The escape sites `gather_additive_base` records are the *non-additive* uses of
 a stack-pointer-derived Varnode: the walk follows `COPY`/`INT_ADD`/`PTRADD`/
 `PTRSUB`/`INT_SUB` chains and treats every other use as "this address left our
@@ -2503,8 +2503,7 @@ whose slot is locally aliased is scored *no-use*, its CALL input is replaced
 with a constant `0`, and the argument's computation is dead-code eliminated.
 The result is that every stack-passed argument at every call site in a `/GS`
 function is dropped — visibly, the variable tail of a `...` prototype never
-appears. With `cookiescramble` on, an `INT_XOR` no longer records an escape
-site, and the boundary is decided by the genuine address-forming uses. The
+appears. An `INT_XOR` no longer records an escape site, and the boundary is decided by the genuine address-forming uses. The
 exemption applies **only** to the checker the call-site recovery builds
 (`Funcdata::build_alias_checker_deferred` / `Funcdata::alias_gather_access`);
 the local-layout gather (`gather_open`, which drives the `RangeHint` open
@@ -2513,7 +2512,7 @@ either way. The rule is not conditioned on the XOR's second operand — whether
 the cookie is loaded or has been folded to an immediate is a property of the
 optimizer, not of the aliasing — and its cost is a deliberately masked pointer
 (`p ^ mask`, dereferenced after a second `^ mask`), whose base stops counting
-as escaped; `option cookiescramble off` restores upstream's answer.
+as escaped.
 
 **Name recommendations.** A namelocked-but-NOT-typelocked local never
 survives restructure — `clearUnlockedCategory(-1)` removes every non-typelocked
@@ -2549,8 +2548,8 @@ recommended name AND a dynamic Symbol carrying the same hash — so the
 re-encoded `<localdb>` hands Java a `<mapsym type="dynamic">` it resolves to
 the very variable the user renamed.  The hash is computed with the upstream
 budget of 8 because Java hardcodes the same (`DynamicHash.java:440`) and a hash
-the two sides disagree on cannot round-trip — deliberately NOT kuna's
-`dynamichashmax` option, whose value only has to satisfy kuna's own analysis.
+the two sides disagree on cannot round-trip — deliberately NOT kuna's own
+budget of 16, which only has to satisfy kuna's own analysis.
 
 PLACEMENT is a real divergence.  Upstream runs the `dynRecommend` loop AFTER
 `linkSymbols`, so every high already carries `getSymbol()` and the loop merely
@@ -2632,17 +2631,17 @@ consumer errors: `decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
 (Funcdata::build_dynamic_symbol)` aborts the request with "Unable to find
 unique hash for varnode".
 
-*(kuna, Ghidra issue GH-8467)* **`option dynamichashmax`** — upstream
+*(kuna, Ghidra issue GH-8467)* **The wide collision budget** — upstream
 hard-codes the collision budget at 8, which dense unrolled AArch64/Go NEON
-loops overflow, turning the whole decompilation into that abort. The option
+loops overflow, turning the whole decompilation into that abort. kuna's own
+analysis uses 16
 (`decompiler/crates/kuna-decomp/src/p6_variables/kuna_dynamichashmax.rs
-(DynamicHashMaxOption)`) raises the budget to 16: collision lists of up to 8 still encode exactly in
+(MAX_DUPLICATES)`, always on): collision lists of up to 8 still encode exactly in
 the 3-bit position/total fields, and a 9–16-entry champion escapes the
 "Unable to find unique hash" abort — its overflowing position/total then makes
-re-binding fail dormant rather than mis-bind. Default **on** (DIV-3); `off` restores the
-upstream budget and the abort. The live gate is
-`Architecture::dynamic_hash_maxdup_high`, resolved to 8/16 at the call sites
-(e.g. `decompiler/crates/kuna-console/src/ifacedecomp.rs` for the console
+re-binding fail dormant rather than mis-bind. The budget is passed to
+`unique_hash` at the call sites (e.g.
+`decompiler/crates/kuna-console/src/ifacedecomp.rs` for the console
 `force varnode` path).
 
 **Addressing across re-decompilations.** A dynamic Symbol persists as
@@ -3224,7 +3223,7 @@ takes. That is the pointer case above (`kuna_pointeevalue.rs`, issue #767): it
 refuses the join for a value used as an address, independently of this test, so
 either refusal keeps the value apart.
 
-**(kuna) `option dynamichashmax`** — §6.3.
+**(kuna) The wide DynamicHash collision budget** — §6.3.
 
 ## 6.5 Cleanup
 
@@ -3318,7 +3317,7 @@ M16C/60 `PUSH.B` lowers the stack pointer by one, so a byte push at a
 function's entry is ordinary compiled code, and with a loop after it upstream
 never finished.
 
-The guessed equation is where kuna diverges (option `calleepop`, default on).
+The guessed equation is where kuna diverges (`kuna_calleepop.rs`, always on).
 Upstream's constant `extrapop = 4` states that the callee pops none of its
 arguments, and under a compiler spec whose `<default_proto>` carries
 `extrapop="unknown"` — `x86win.cspec`'s `__stdcall` is the one that matters —
@@ -3327,13 +3326,13 @@ that is wrong for most calls, cumulatively: the solve latches its answer into
 every stack slot after it. A slot whose address is taken before a call and read
 after it then splits into two variables, the read half acquires no reaching
 definition, and the emitted C computes over a constant where the callee's bytes
-should be. With the option on the guess is raised for the one family whose
+should be. The guess is raised for the one family whose
 convention the platform fixes — an **imported** callee, which is `__stdcall` by
 the Win32 ABI and which kuna can already identify because `peimportcall` paints
 `Varnode::externref` over the Import Address Table. An internal callee keeps
 upstream's guess. For an import the argument bytes are counted off the caller's
 own push run
-(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_calleepop.rs
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_calleepopslot.rs
 (guess_extra_pop)`): back from the return-address slot in pointer-sized steps,
 stopping at the first push that stores a register's own input Varnode (a
 prologue callee-save) or at a step that is no push at all (a bare `sub esp,n`).
@@ -3348,7 +3347,7 @@ outgoing-argument slot that lands inside the caller's `localrange` once the
 frame is the right size is scored no-use by `checkInputTrialUse` (§4.4) and the
 argument is dropped, which is visible on deep-frame MSVC CRT helpers.
 
-Under the same option the constant itself is measured rather than assumed:
+The constant itself is measured rather than assumed:
 upstream's `4` is the x86-32 return-address size, and the guess's base is now
 the bytes the call instruction itself stores
 (`decompiler/crates/kuna-decomp/src/p6_variables/kuna_calleepop.rs
@@ -3787,8 +3786,7 @@ casts; byte-family and native-use validation remain mandatory. A name collision
 with an existing local gains a numeric suffix.
 
 The push run is read wrong when a slot outlives the call it was pushed in
-front of (option `calleepopslot`, default on, consulted only under
-`calleepop`). MSVC builds a class returned by value directly in the stack slot
+front of. MSVC builds a class returned by value directly in the stack slot
 that is then the by-value argument of the next call: `push ecx` reserves the
 slot, a `__cdecl` callee writes it through a hidden pointer, the caller's
 `add esp,8` removes only that callee's two arguments, and a later `__thiscall`
@@ -3829,9 +3827,8 @@ still ends the run, so a slot reserved with `push ecx` before a function's
 first call is still not counted for the call that pops it.
 
 A caller with no push run at all says how much its callee popped in a
-different way (option `calleepopframe`, default on, consulted only under
-`calleepop`, for any call whose extrapop the equations leave free, and ahead of
-both readings above). GCC and Clang on i386 Windows
+different way (consulted for any call whose extrapop the equations leave free,
+ahead of both readings above). GCC and Clang on i386 Windows
 reserve the outgoing-argument area once in the prologue and write each call's
 arguments with `mov [esp+k]`; after a `__stdcall` callee pops them the caller
 lowers the stack pointer by the same amount to keep its frame fixed

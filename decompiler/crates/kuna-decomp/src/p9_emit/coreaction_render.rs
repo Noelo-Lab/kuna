@@ -1214,10 +1214,6 @@ fn kuna_const_is_function_entry(
     op_addr: &Address,
 ) -> bool {
     let glb = data.get_arch();
-    let gate = glb.infer_funcentry();
-    if !gate {
-        return false;
-    }
     let mut full_encoding: uintb = 0;
     let rampoint = match glb.resolve_constant(spc, vn_offset, vn_size, op_addr, &mut full_encoding) {
         Ok(r) => r,
@@ -1239,7 +1235,7 @@ fn kuna_const_is_function_entry(
             None
         }
     });
-    crate::kuna_inferfuncentry::kuna_is_function_entry(gate, Some(&rampoint), function_entry.as_ref())
+    crate::kuna_inferfuncentry::kuna_is_function_entry(Some(&rampoint), function_entry.as_ref())
 }
 
 // =============================================================================

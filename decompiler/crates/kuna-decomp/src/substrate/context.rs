@@ -876,15 +876,6 @@ pub struct ArchContext {
     /// [`RuleBoolSignLess`](crate::kuna_flagcompare::RuleBoolSignLess) /
     /// [`RuleSborrowGe`](crate::kuna_flagcompare::RuleSborrowGe).
     pub fold_flag_compare: bool,
-    /// (kuna) GH-8913: fuse 8-bit carry-chain 16-bit adds into one wide add (C++
-    /// `add_carry_chain`, DIV-2 default-on).  Read by
-    /// [`RuleAddCarryChain`](crate::kuna_addcarrychain::RuleAddCarryChain).
-    pub add_carry_chain: bool,
-    /// (kuna) `aggregatefields`, default-on: keep a structured concatenation
-    /// with low zero bytes for field recovery, resolve an unchanged declared
-    /// container returned whole, collapse cleanup-split truncations, and stop a
-    /// partial-symbol walk at a whole-struct edge. Off restores upstream.
-    pub aggregate_fields: bool,
     /// (kuna) `stubtailcall`, default-on: flow loader-proven lazy-binding stubs as
     /// tail calls ([`crate::kuna_stubtailcall`]).
     pub stub_tail_call: bool,
@@ -932,20 +923,11 @@ pub struct ArchContext {
     pub float_globals_pending: bool,
     /// (kuna `floatglobals`) A vote asked while the scan was pending.
     pub float_globals_wanted: std::cell::Cell<bool>,
-    /// (kuna `codescalar`) Refuse a `code` pointee as the data-type of a
-    /// dereferenced value; mirrors
-    /// [`Architecture::codescalar`](crate::architecture::Architecture).
-    pub codescalar: bool,
     /// (kuna `boolbyte`) Offer `bool` as a `getLocalType` candidate for a byte
     /// whose every read is a truth test.  Mirror of
     /// [`Architecture::bool_byte`](crate::architecture::Architecture); the walk
     /// lives in [`kuna_boolbyte`](crate::p5_types::kuna_boolbyte).
     pub bool_byte: bool,
-    /// (kuna `floatbits`) A function whose float-register input is only
-    /// bit-opped into its float-register return keeps the float on both.
-    /// Mirror of [`Architecture::float_bits`](crate::architecture::Architecture);
-    /// the walk lives in [`kuna_floatbits`](crate::p5_types::kuna_floatbits).
-    pub float_bits: bool,
     /// (kuna) The printer spells a residual one-byte TYPE_UNKNOWN as C `char`
     /// (`realtypes` on, C output), so its promotion sign-extends.  Read by
     /// [`kuna_truncarg`](crate::p9_emit::kuna_truncarg).
@@ -1031,11 +1013,6 @@ pub struct ArchContext {
     /// (kuna) `protoranges`: read the prototype's spec stack ranges rather than
     /// the defaults (see [`crate::fspec::ProtoModel::local_range`]).
     pub proto_ranges: bool,
-    /// (kuna) a stack-pointer scramble against a live value -- MSVC's `/GS`
-    /// cookie -- does not open a local-alias escape site (`cookiescramble`).
-    /// Read by [`Funcdata::gather_additive_base`](crate::funcdata_spacebase)
-    /// through [`crate::p6_variables::kuna_cookiescramble::is_escape_site`].
-    pub cookie_scramble: bool,
     /// (kuna) an unread zero element right after an open stack character array
     /// is its terminator (`nulterminator`).  Read by
     /// [`Funcdata::gather_varnodes`](crate::funcdata_spacebase) for
@@ -1053,19 +1030,6 @@ pub struct ArchContext {
     /// structured into an aggregate (`mulblob`).  Read by
     /// [`crate::p3_dataflow::kuna_mulblob::declines_zext`].
     pub mul_blob: bool,
-    /// (kuna) read the caller's own stack discipline for the argument bytes a
-    /// callee pops (`calleepop`).  Read by
-    /// [`StackSolver::build`](crate::coreaction_stackptr) through
-    /// [`crate::p6_variables::kuna_calleepop::guess_extra_pop`].
-    pub callee_pop: bool,
-    /// (kuna) keep the `calleepop` guess right for a slot pushed in front of one
-    /// call and popped by a later one (`calleepopslot`).  Read by
-    /// [`crate::p6_variables::kuna_calleepopslot::guess_extra_pop`].
-    pub callee_pop_slot: bool,
-    /// (kuna) read a callee's pop off a fixed-frame caller that re-reserves
-    /// the popped bytes (`calleepopframe`).  Read by
-    /// [`crate::p6_variables::kuna_calleepopframe::guess_extra_pop`].
-    pub callee_pop_frame: bool,
     /// (kuna) `calleeprotostack` — a declared callee's locked prototype states
     /// its stack contract.  See [`crate::p4_calls::kuna_calleeprotostack`].
     pub callee_proto_stack: bool,
@@ -1677,12 +1641,6 @@ pub struct ArchContext {
     /// artificial halt instead of falling through into the next function.  `false`
     /// for hand-built fixtures.
     pub peimportcall: bool,
-    /// (kuna GH-8471) Keep a mode-bit-encoded (Thumb) function pointer symbolic
-    /// (`PTRSUB(fn) + 1`) instead of letting `RulePtrsubUndo` collapse it back to
-    /// raw hex (C++ `Architecture::preserve_thumb_funcptr`), shared from the real
-    /// architecture.  Read by [`RulePtrsubUndo`](crate::ruleaction_6::RulePtrsubUndo)'s
-    /// thumb-funcptr guard.  Default-on (DIV-2); `false` for hand-built fixtures.
-    pub preserve_thumb_funcptr: bool,
     /// (kuna) Bound a LOAD-table jumptable by a modulo/and-mask on its index when
     /// the basic model fails to bound it (C++ `Architecture::switch_modulo_bound`,
     /// flipped by `option switchmodbound`, GH-9191), shared from the real
@@ -1823,12 +1781,6 @@ pub struct ArchContext {
     /// the various pointer-inference arms.  Default-on (C++ `resetDefaults`); `false`
     /// for hand-built fixtures (no constant-pointer recovery exercised).
     pub infer_pointers: bool,
-    /// (kuna GH-6930) Infer single-bit constants matching an exact function entry
-    /// as pointers (C++ `glb->infer_funcentry`), shared from the real architecture.
-    /// Read by `ActionConstantPtr::isPointer`'s `bit_transitions < 3` guard
-    /// (coreaction.cc:1158-1159) via [`kuna_is_function_entry`](crate::kuna_inferfuncentry::kuna_is_function_entry).  Default-on (DIV-2); `false`
-    /// for hand-built fixtures.
-    pub infer_funcentry: bool,
     /// Ordered list of address spaces in which a constant pointer can be inferred
     /// (C++ `Architecture::inferPtrSpaces`, built by `cacheAddrSpaceProperties` +
     /// the cspec `<global>` push), shared from the real architecture through
@@ -1970,7 +1922,7 @@ impl ArchContext {
             // (kuna) the real arch overwrites each of these in `build_arch_handle`;
             // hand-built fixtures (no `build_arch_handle`) get `false`, so a rule
             // registered `enabled=false` is inert there — matching the gate-off
-            // unit tests (and the `infer_funcentry` stub-default convention).
+            // unit tests.
             fold_boolean_mask: false,    // GH-1282 booleanmask
             global_array_anchor: false,
             cancel_byte_arithmetic: false, // cancelbytearithmetic (the ArchSeam carries the real default)
@@ -1983,8 +1935,6 @@ impl ArchContext {
             x87_float_to_int_userops: Vec::new(),
             x87_integer_userops: Vec::new(),
             fold_flag_compare: false,    // GH-1276/8777 flagcompare
-            add_carry_chain: false,      // GH-8913 addcarrychain
-            aggregate_fields: false,     // aggregatefields
             stub_tail_call: false,       // stubtailcall
             got_import_proto: false,     // gotimportproto
             ov_less_simplify: false,     // GH-7190 ovlesssimplify
@@ -2002,9 +1952,7 @@ impl ArchContext {
             struct_merge: crate::p5_types::kuna_structmerge::StructMergeMode::Off, // (kuna) option structmerge, default `off`; the real value is copied from the engine Architecture in `build_arch_handle`
             struct_headless: crate::p5_types::kuna_structheadless::StructHeadlessMode::Off, // (kuna) option structheadless, default `off`; the real value is copied from the engine Architecture in `build_arch_handle`
             field_type: false, // (kuna) option fieldtype, copied from Architecture
-            codescalar: false,           // (kuna) option codescalar
             bool_byte: true, // (kuna) option boolbyte (default on)
-            float_bits: true, // (kuna) option floatbits (default on)
             unknown_byte_is_char: false, // (kuna) realtypes + C output
             unknown_is_integer: false, // (kuna) realtypes, or not C output
             int_promotion: true,         // (kuna) LangCaps::integer_promotion (C)
@@ -2028,9 +1976,6 @@ impl ArchContext {
             callsite_stack_args: true,
             // A hand-built model decodes no spec, so both range choices agree.
             proto_ranges: true,
-            // cookiescramble only ever REMOVES a false escape site, so the
-            // hand-built-fixture seam carries the same default the real path does.
-            cookie_scramble: true,
             nul_terminator: false,
             // endptrbound only re-expresses an address the walk already compares
             // against, so the fixture seam carries the real default.
@@ -2041,11 +1986,6 @@ impl ArchContext {
             // mulblob only declines a rewrite, so the fixture seam carries the
             // shipped default.
             mul_blob: true,
-            // calleepop only refines a guess the solver already had to make, so
-            // the hand-built-fixture seam carries the same default.
-            callee_pop: true,
-            callee_pop_slot: true,
-            callee_pop_frame: true,
             callee_proto_stack: true,
             msvc_byval: true,
             msvc_byval_decls: Rc::new(Default::default()),
@@ -2194,10 +2134,6 @@ impl ArchContext {
             alias_block_level: 2, // Architecture default: block structs and arrays
             funcptr_align: 0,
             peimportcall: false, // (kuna) the real arch overwrites this in build_arch_handle
-            // (kuna GH-8471) DIV-2 default-on; the real arch overwrites this in
-            // build_arch_handle.  A hand-built fixture has funcptr_align == 0, so
-            // the thumb guard never fires regardless of this flag.
-            preserve_thumb_funcptr: true,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
             switch_run_on: false, // switchrunon (the ArchSeam carries the real default)
             switch_run_on_guard: false, // switchrunonguard (the ArchSeam carries the real default)
@@ -2236,8 +2172,6 @@ impl ArchContext {
             // a hand-built fixture never exercises constant-pointer recovery, but
             // the real lift+analyze path overwrites this from the real arch.
             infer_pointers: false,
-            // (kuna) DIV-2 default-on (GH-6930): the real arch overwrites this.
-            infer_funcentry: false,
             // No inferable spaces until cacheAddrSpaceProperties runs on the real
             // arch and build_arch_handle shares the result.
             infer_ptr_spaces: Vec::new(),
@@ -2618,12 +2552,6 @@ impl ArchContext {
         self.infer_pointers
     }
 
-    /// (kuna GH-6930) Infer single-bit constants matching an exact function entry
-    /// as pointers (C++ `glb->infer_funcentry`).  Read by `ActionConstantPtr::
-    /// isPointer`'s `bit_transitions < 3` guard.
-    pub fn infer_funcentry(&self) -> bool {
-        self.infer_funcentry
-    }
 
     /// The ordered inferable-pointer spaces (C++ `glb->inferPtrSpaces`), iterated
     /// by `ActionConstantPtr::selectInferSpace`.

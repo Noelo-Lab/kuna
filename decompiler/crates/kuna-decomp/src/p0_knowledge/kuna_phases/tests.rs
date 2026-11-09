@@ -998,8 +998,8 @@ fn live_from_arch_matches_cpp_ternaries() {
     assert_eq!(OptionValues::live_from_arch("returnpair", on), Some("single"));
     assert_eq!(OptionValues::live_from_arch("returnpair", off), Some("pair"));
     // a plain on/off option
-    assert_eq!(OptionValues::live_from_arch("thumbfuncptr", on), Some("on"));
-    assert_eq!(OptionValues::live_from_arch("thumbfuncptr", off), Some("off"));
+    assert_eq!(OptionValues::live_from_arch("memsetrecover", on), Some("on"));
+    assert_eq!(OptionValues::live_from_arch("memsetrecover", off), Some("off"));
     // no live reader -> None even with a value-producing closure
     assert_eq!(OptionValues::live_from_arch("namestyle", on), None);
     assert_eq!(OptionValues::live_from_arch("stackguard", on), None);

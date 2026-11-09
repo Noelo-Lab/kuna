@@ -2239,13 +2239,7 @@ mod w10_printc_cast_render {
     }
 
     fn build_fd() -> Funcdata {
-        build_fd_with_aggregate_fields(false)
-    }
-
-    fn build_fd_with_aggregate_fields(enabled: bool) -> Funcdata {
-        let mut arch = ContextArch::new(build_manager());
-        arch.aggregate_fields = enabled;
-        let glb = Rc::new(arch);
+        let glb = Rc::new(ContextArch::new(build_manager()));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x1000_0000, 0x40).unwrap()
@@ -2826,8 +2820,8 @@ mod w10_printc_cast_render {
             bitfield: vec![],
         };
         let record = Rc::new(record);
-        for (whole, enabled) in [(true, true), (false, true), (true, false), (false, false)] {
-            let mut fd = build_fd_with_aggregate_fields(enabled);
+        for whole in [true, false] {
+            let mut fd = build_fd();
             let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_COPY);
             let input = fd.new_varnode(8, &Address::new(ram(&fd), 0x400), Some(record.clone()));
             fd.op_set_input(op, input, 0).unwrap();
@@ -2842,8 +2836,8 @@ mod w10_printc_cast_render {
             let emitted = printer.push_partial_symbol_ir(
                 &fd, &bare_arch(), "x", record.clone(), 0, 8, input, op, 0, true,
             );
-            let field = !whole || !enabled;
-            assert_eq!(emitted, field, "whole={whole} aggregatefields={enabled}");
+            let field = !whole;
+            assert_eq!(emitted, field, "whole={whole}");
             assert_eq!(printer.emit_mut().output_str(), if field { "x.d" } else { "" });
         }
     }
@@ -2868,20 +2862,18 @@ mod w10_printc_cast_render {
             field: vec![TypeField::new(0, 0, "a", Rc::new(inner))], bitfield: vec![],
         };
         let outer = Rc::new(outer);
-        for enabled in [true, false] {
-            let mut fd = build_fd_with_aggregate_fields(enabled);
-            let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_COPY);
-            let input = fd.new_varnode(8, &Address::new(ram(&fd), 0x400), Some(outer.clone()));
-            fd.op_set_input(op, input, 0).unwrap();
-            let resolution = crate::unionresolve::ResolvedUnion::new_field(outer.clone(), 0, &types).unwrap();
-            fd.set_union_field(&outer, op, 0, resolution);
-            let mut printer = PrintC::new();
-            printer.set_output_stream();
-            assert!(printer.push_partial_symbol_ir(
-                &fd, &bare_arch(), "x", outer.clone(), 0, 8, input, op, 0, true,
-            ));
-            assert_eq!(printer.emit_mut().output_str(), if enabled { "x.a" } else { "x.a.d" });
-        }
+        let mut fd = build_fd();
+        let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_COPY);
+        let input = fd.new_varnode(8, &Address::new(ram(&fd), 0x400), Some(outer.clone()));
+        fd.op_set_input(op, input, 0).unwrap();
+        let resolution = crate::unionresolve::ResolvedUnion::new_field(outer.clone(), 0, &types).unwrap();
+        fd.set_union_field(&outer, op, 0, resolution);
+        let mut printer = PrintC::new();
+        printer.set_output_stream();
+        assert!(printer.push_partial_symbol_ir(
+            &fd, &bare_arch(), "x", outer.clone(), 0, 8, input, op, 0, true,
+        ));
+        assert_eq!(printer.emit_mut().output_str(), "x.a");
     }
 
     #[test]

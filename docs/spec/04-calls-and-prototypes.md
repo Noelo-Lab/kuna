@@ -3886,7 +3886,7 @@ removes, and it is the only answer available for a model whose
 `<prototype extrapop="unknown">` declines to state one — which on x86 Windows is
 every call, because `x86win.cspec`'s default proto is `__stdcall`. Nothing called
 it, so a locked prototype still reached the stack solver as extrapop-unknown and
-`calleepop` (§6) guessed the cleanup from the push run in front of the call.
+the push-run guess (§6) read the cleanup off the push run in front of the call.
 That run is not always the callee's: an image that stages one API's arguments,
 calls a second argument-less API in the middle of the run, and pushes the rest
 afterwards has its staged pushes credited to the wrong callee, and the solver
@@ -8105,7 +8105,7 @@ function that calls `half` last and leaves `d0` alone, or an `int` stored as
 well as returned, looks like one returning `half`'s double. After the output trials are scored, a single used trial in
 `s0` or `d0` gives the returned value a float or double type before constant
 folding can drop its storage. That lock states the convention's type, not a
-declaration, so `floatbits` (chapter 05) still follows the bit operations that
+declaration, so the float-bits rule (chapter 05) still follows the bit operations that
 build such a value (`kuna_armfloatreturn.rs (float_locked_return)`): a
 `copysignf` written on the bits of its two inputs keeps two float parameters
 instead of two `unsigned int` ones. A returned constant no float literal spells,
@@ -8467,7 +8467,7 @@ its own float arithmetic is not withdrawn: its float is the type the machine
 computes, and a reader holding it as an integer prints what it did without the
 vote.
 
-(kuna `floatbits`, chapter 05.) A float return made of the bits of the
+(kuna `kuna_floatbits.rs`, chapter 05.) A float return made of the bits of the
 function's float-register input is filed apart (`Ledger::float_bits`, and
 `Funcdata::kuna_callee_float_bits` in each caller's `seed`). A reader that
 holds the result of one in another register than the helper returns in holds

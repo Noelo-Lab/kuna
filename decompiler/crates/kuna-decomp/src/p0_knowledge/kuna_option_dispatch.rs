@@ -101,15 +101,11 @@ kuna_options! { self, p1;
         self.print_mut().options.set_global_ref(val);
         Ok(msg)
     },
-    "thumbfuncptr" => on_off!(preserve_thumb_funcptr, "Thumb function-pointer preservation"),
-    "inferfuncentry" => on_off!(infer_funcentry, "Function-entry constant inference"),
     "returnpair" => {
         let (form, msg) = crate::kuna_returnpair::parse_return_pair_form(p1)?;
         self.return_single = form.return_single();
         Ok(msg)
     },
-    "addcarrychain" => on_off!(add_carry_chain, "Carry-chain wide-add recovery"),
-    "aggregatefields" => on_off!(aggregate_fields, "Whole-aggregate field recovery"),
     "stubtailcall" => on_off!(stub_tail_call, "Loader-proven stub tail calls"),
     "gotimportproto" => on_off!(got_import_proto, "GOT import type-only prototypes"),
     "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
@@ -374,7 +370,6 @@ kuna_options! { self, p1;
         self.stack_views = value;
         Ok(message)
     },
-    "dynamichashmax" => on_off!(dynamic_hash_maxdup_high, "DynamicHash collision budget"),
     "stackprobeloop" => {
         let (form, msg) = crate::kuna_stackprobeloop::parse_stack_probe_loop_form(p1)?;
         self.model_stack_probe_loop = form.model_stack_probe_loop();
@@ -443,12 +438,6 @@ kuna_options! { self, p1;
         self.callsite_stack_args = val;
         Ok(msg)
     },
-    "cookiescramble" => {
-        let (val, msg) =
-            crate::p6_variables::kuna_cookiescramble::OptionCookieScramble.apply(p1)?;
-        self.cookie_scramble = val;
-        Ok(msg)
-    },
     "nulterminator" => {
         let (val, msg) =
             crate::p6_variables::kuna_nulterminator::OptionNulTerminator.apply(p1)?;
@@ -465,24 +454,6 @@ kuna_options! { self, p1;
         let (val, msg) =
             crate::p6_variables::kuna_castobject::OptionCastObject.apply(p1)?;
         self.cast_object = val;
-        Ok(msg)
-    },
-    "calleepop" => {
-        let (val, msg) =
-            crate::p6_variables::kuna_calleepop::OptionCalleePop.apply(p1)?;
-        self.callee_pop = val;
-        Ok(msg)
-    },
-    "calleepopslot" => {
-        let (val, msg) =
-            crate::p6_variables::kuna_calleepopslot::OptionCalleePopSlot.apply(p1)?;
-        self.callee_pop_slot = val;
-        Ok(msg)
-    },
-    "calleepopframe" => {
-        let (val, msg) =
-            crate::p6_variables::kuna_calleepopframe::OptionCalleePopFrame.apply(p1)?;
-        self.callee_pop_frame = val;
         Ok(msg)
     },
     "msvcbyval" => {
@@ -976,9 +947,7 @@ kuna_options! { self, p1;
     "calltargettype" => on_off!(call_target_type, "indirect-call target types"),
     "floatglobals" => on_off!(float_globals, "float typing of globals moved only through float registers"),
     "callerreads" => on_off!(caller_reads, "return recovery from what the callers read"),
-    "codescalar" => on_off!(codescalar, "code-pointee scalar-value guard"),
     "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),
-    "floatbits" => on_off!(float_bits, "float typing of helpers that work on a float's bits"),
     "charbyte" => on_off!(char_byte, "char-pointer byte typing"),
     "castarith" => on_off!(cast_arith, "pointer arithmetic in pointer terms"),
     "castindex" => on_off!(cast_index, "variable indexes and pointer differences in pointer terms"),

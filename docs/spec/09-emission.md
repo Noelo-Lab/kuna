@@ -576,8 +576,8 @@ ordered of the two operand types (an integer `==`/`!=` with a float operand
 excepted, below), LESS-class compares and div/rem/shift gate on promotion, PIECE/SUBPIECE/INSERT never cast, and everything else falls to
 the default `cast_standard(input-type-local, read-facing-high-type)`. A `None`
 answer means no cast — only the constant-suffix marking runs; the STORE's value
-slot returns `None` for a `code` pointee under `codescalar` (chapter 05), which
-is the printing half of that option. Otherwise the
+slot returns `None` for a `code` pointee (`kuna_codescalar.rs`, chapter 05), which
+is the printing half of that rule. Otherwise the
 machinery avoids stacking tokens: a value already produced by a CAST is
 retyped or bypassed rather than double-cast; a constant is simply retyped;
 and a pointer-to-struct being read as pointer-to-its-first-field inserts a
@@ -1151,7 +1151,7 @@ beside a pointer, or holds a float statement's result as a float or raw bytes
 (`kuna_callrettype.rs (refused_token)`, chapter 04): the listing declares that
 return, so the caller prints the conversion (`v1 = (long)sub_eecc(a0,v3)`)
 instead of an assignment C rejects or pointer arithmetic it would scale, and
-stores a float through a `float *`. (kuna `floatbits`) Before any of that, a
+stores a float through a `float *`. (kuna `kuna_floatbits.rs`) Before any of that, a
 call to a callee whose float return is the bits of its float-register input
 (chapter 05), whose output the caller holds as an integer of the float's width
 in another register than the callee returns in (what the call left there),
@@ -1670,8 +1670,7 @@ walk that renders `name.field`, `name[index]`, a `(int4)name` truncation cast,
 or the artificial `name._8_4_` member when a Varnode covers only part of its
 mapped symbol (`printc.rs (PrintC::push_partial_symbol_ir)`).
 
-With `option aggregatefields` on (the default; §5 describes the option),
-a single-field struct covering the whole access consults the operation's
+A single-field struct covering the whole access consults the operation's
 cached type resolution before descending into that field. A resolution to the
 whole struct stops the walk; a field resolution still emits the member. This
 keeps aggregate copies and returns whole and prevents an implied field access
@@ -3871,8 +3870,8 @@ once when its document starts, and records three facts:
 
 - the constant values the function reads *as numbers* — a non-pointer constant
   read by an ordering compare, a multiply, a divide, a remainder or a shift
-  (`kuna_inferfuncentry.rs (reads_as_integer)`, the question `inferfuncentry`
-  asks of a constant that lands on a function entry: coreutils `tail`'s
+  (`kuna_inferfuncentry.rs (reads_as_integer)`, the question the function-entry
+  escape asks of a constant that lands on a function entry: coreutils `tail`'s
   `BUFSIZ` is `0x2000`, which is that image's `_DT_INIT`);
 - every direct access to the default data space — the `dat_<addr>` the body
   reads or writes — by start, width and type;

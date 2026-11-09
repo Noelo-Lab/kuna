@@ -1518,9 +1518,9 @@ fn proto_boundaries(
 /// def/use graph (C++ `AliasChecker`'s Varnode walks, `varmap.cc:736-858`).
 pub(crate) struct FuncdataAliasAccess<'a> {
     fd: &'a Funcdata,
-    /// (kuna) `cookiescramble`: exempt an `INT_XOR` of the stack pointer from
-    /// the escape-site scan.  Set only for the call-site input-trial checker;
-    /// the local-layout gather (`gather_open`) always answers upstream.
+    /// (kuna) Exempt an `INT_XOR` of the stack pointer from the escape-site
+    /// scan.  Set only for the call-site input-trial checker; the local-layout
+    /// gather (`gather_open`) always answers upstream.
     exempt_scramble: bool,
 }
 
@@ -1552,7 +1552,7 @@ impl Funcdata {
     /// `gatherAdditiveBase`/`gatherOffset`).  Used by the call-site input recovery
     /// (`checkInputTrialUse`'s spacebase branch).
     pub(crate) fn alias_gather_access(&self) -> FuncdataAliasAccess<'_> {
-        FuncdataAliasAccess { fd: self, exempt_scramble: self.get_arch().cookie_scramble }
+        FuncdataAliasAccess { fd: self, exempt_scramble: true }
     }
 
     /// Build the deferred local-alias checker the call-site input recovery uses
@@ -1681,9 +1681,9 @@ impl Funcdata {
                         }
                     }
                     _ => {
-                        // (kuna) `cookiescramble`: a stack-pointer scramble
-                        // against a live value (MSVC's `/GS` cookie) is not an
-                        // address, so it does not open an escape site here.
+                        // (kuna) A stack-pointer scramble against a live value
+                        // (MSVC's `/GS` cookie) is not an address, so it does
+                        // not open an escape site for the call-site checker.
                         nonadduse |= crate::p6_variables::kuna_cookiescramble::is_escape_site(
                             exempt_scramble,
                             code,

@@ -59,7 +59,6 @@
 </binaryimage>
 <script>
   <com>option segmentize off</com>
-  <com>option calleepop off</com>
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>
@@ -67,7 +66,6 @@
   <com>decompile</com>
   <com>print C</com>
   <com>option segmentize on</com>
-  <com>option calleepop on</com>
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>

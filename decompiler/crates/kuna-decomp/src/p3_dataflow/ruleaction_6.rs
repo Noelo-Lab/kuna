@@ -537,11 +537,8 @@ impl RulePtrsubUndo {
         use crate::kuna_thumbfuncptr::{
             kuna_preserve_thumb_funcptr, ThumbPtrTypeFacts, ThumbSubTypeFact,
         };
-        let arch = data.get_arch();
-        let funcptr_align = arch.funcptr_align;
-        // Mirror the C++ short-circuit: `!preserve_thumb_funcptr || funcptr_align
-        // == 0` -> false, before any type query.
-        if !arch.preserve_thumb_funcptr || funcptr_align == 0 {
+        let funcptr_align = data.get_arch().funcptr_align;
+        if funcptr_align == 0 {
             return false;
         }
         // Require TYPE_PTR -> TYPE_SPACEBASE.
@@ -578,7 +575,6 @@ impl RulePtrsubUndo {
             sub,
         };
         kuna_preserve_thumb_funcptr(
-            arch.preserve_thumb_funcptr,
             funcptr_align,
             val,
             extra,
@@ -617,9 +613,9 @@ impl Rule for RulePtrsubUndo {
         }
         //   return 0;  -- (kuna) GH-8471
         // A pointer to a Thumb function carries the mode bit in its LSB
-        // (`value = fn|1`).  When `option thumbfuncptr on` and the architecture
-        // has aligned function pointers (`funcptr_align != 0`), keep the
-        // `PTRSUB(fn) + 1` symbolic rather than collapsing it back to raw hex.
+        // (`value = fn|1`).  When the architecture has aligned function
+        // pointers (`funcptr_align != 0`), keep the `PTRSUB(fn) + 1` symbolic
+        // rather than collapsing it back to raw hex.
         // The predicate (`kuna_preserve_thumb_funcptr`) needs the resolved
         // TypeSpacebase::getSubType walk, which `is_ptrsub_matching_scope` already
         // routes through the function's scope; the global-symbol arm of

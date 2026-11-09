@@ -1,5 +1,4 @@
-//! (kuna `aggregatefields`) Keep a structured value whole until its fields can
-//! be named.
+//! Keep a structured value whole until its fields can be named.
 //!
 //! Upstream splits or misnames such a value at four places: `RuleConcatZero`
 //! rewrites a struct-typed concatenation with zero low bytes into a shifted
@@ -8,9 +7,9 @@
 //! cleanup splitting runs after the main simplification pool and leaves the
 //! nested and unused truncations it creates; and the partial-symbol walk
 //! descends into a single-field struct even where the operation's resolved type
-//! is the whole struct. Each place asks one predicate here, which answers as
-//! upstream when the option is off. ABI padding pieces of a join are outside
-//! this option: they have no storage, so they are always logical constants.
+//! is the whole struct. Each place asks one predicate here. ABI padding pieces
+//! of a join are outside this module: they have no storage, so they are always
+//! logical constants.
 
 use std::rc::Rc;
 
@@ -27,10 +26,9 @@ const MAX_COPY_CHAIN: usize = 16;
 /// Whether `RuleConcatZero` leaves `op` a PIECE: its output is a structured
 /// value whose fields `RulePieceStructure` recovers.
 pub fn keeps_structured_concat(data: &Funcdata, op: OpId) -> bool {
-    data.get_arch().aggregate_fields
-        && data.obank().get(op).and_then(|o| o.get_out())
-            .and_then(|out| data.vbank().get(out))
-            .is_some_and(|out| out.get_type().is_piece_structured())
+    data.obank().get(op).and_then(|o| o.get_out())
+        .and_then(|out| data.vbank().get(out))
+        .is_some_and(|out| out.get_type().is_piece_structured())
 }
 
 /// Whether single-component scoring resolves edge `slot` of `op` to the whole
@@ -39,7 +37,7 @@ pub fn keeps_structured_concat(data: &Funcdata, op: OpId) -> bool {
 /// type-locked input of that container.
 pub fn returns_whole_container(fd: &Funcdata, op: OpId, slot: i32, parent: &Rc<Datatype>) -> bool {
     let proto = fd.get_func_proto();
-    if !fd.get_arch().aggregate_fields || !proto.is_output_locked()
+    if !proto.is_output_locked()
         || !proto.get_output_type().is_some_and(|ty| Rc::ptr_eq(ty, parent))
     {
         return false;
@@ -95,17 +93,12 @@ fn whole_container_copy(fd: &Funcdata, mut value: VarnodeId, parent: &Rc<Datatyp
 /// existing double-subpiece rule: the main simplification pool has already
 /// finished when cleanup splitting runs.
 pub fn collapse_split_truncation(data: &mut Funcdata, subpiece: OpId) {
-    if data.get_arch().aggregate_fields {
-        while crate::ruleaction_2::RuleDoubleSub.apply_op(subpiece, data) != 0 {}
-    }
+    while crate::ruleaction_2::RuleDoubleSub.apply_op(subpiece, data) != 0 {}
 }
 
 /// Remove the truncations cleanup splitting left unread, from `value` back
 /// through its SUBPIECE sources, using the normal dead-code rule.
 pub fn discard_unused_truncations(data: &mut Funcdata, mut value: VarnodeId) {
-    if !data.get_arch().aggregate_fields {
-        return;
-    }
     while let Some(op) = data.vbank().get(value).and_then(|vn| vn.get_def()) {
         let Some(def) = data.obank().get(op) else { break };
         if def.code() != OpCode::CPUI_SUBPIECE {
@@ -120,11 +113,9 @@ pub fn discard_unused_truncations(data: &mut Funcdata, mut value: VarnodeId) {
 }
 
 /// The type of `vn` on the edge the partial-symbol walk renders (read by `op`
-/// at `slot`, or as written), or `None` when the option is off.
+/// at `slot`, or as written), or `None` for an unwritten definition edge.
 pub fn edge_type(fd: &Funcdata, vn: VarnodeId, op: OpId, slot: i32) -> Option<Rc<Datatype>> {
-    if !fd.get_arch().aggregate_fields {
-        None
-    } else if slot >= 0 {
+    if slot >= 0 {
         Some(fd.vn_type_read_facing(vn, op))
     } else if fd.vbank().get(vn).is_some_and(|v| v.is_written()) {
         Some(fd.vn_type_def_facing(vn))
@@ -136,6 +127,6 @@ pub fn edge_type(fd: &Funcdata, vn: VarnodeId, op: OpId, slot: i32) -> Option<Rc
 /// Whether the walk stops at single-field struct `cur` because the operation's
 /// cached resolution of the `size`-byte access is the whole struct.
 pub fn resolves_whole_struct(fd: &Funcdata, cur: &Rc<Datatype>, size: i32, op: OpId, slot: i32) -> bool {
-    fd.get_arch().aggregate_fields && cur.needs_resolution() && cur.get_size() == size
+    cur.needs_resolution() && cur.get_size() == size
         && Rc::ptr_eq(cur, &fd.find_resolve_facing(cur, op, slot))
 }
