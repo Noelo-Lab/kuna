@@ -783,6 +783,14 @@ impl AliasChecker {
         }
     }
 
+    /// (kuna pushan) Answer as if no pointer into the space had been gathered.
+    pub fn assume_no_pointers(&mut self) {
+        self.calculated = true;
+        self.add_base.clear();
+        self.alias.clear();
+        self.alias_boundary = self.local_extreme;
+    }
+
     /// Return `true` if it looks like the given Varnode is aliased by a pointer
     /// (C++ `hasLocalAlias`, `varmap.cc:711-724`).
     pub fn has_local_alias(

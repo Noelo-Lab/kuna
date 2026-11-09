@@ -460,6 +460,9 @@ pub struct Funcdata {
     kuna_call_kills: Vec<(uintb, int4)>,
     /// (kuna pushan) Register ranges every external call preserves.
     kuna_call_preserves: Vec<(uintb, int4)>,
+    /// (kuna pushan) The body is a devirtualized program, whose stack argument
+    /// trials are judged without the local-alias test and join half slots.
+    kuna_devirtualized: bool,
     /// The numbering the naming pass handed out, by instance identity; see
     /// `kuna_stablenames::snapshot`.
     kuna_name_snapshot: Vec<(String, crate::kuna_stablenames::Keys)>,
@@ -847,6 +850,7 @@ impl Funcdata {
             kuna_record_names: false,
             kuna_call_kills: Vec::new(),
             kuna_call_preserves: Vec::new(),
+            kuna_devirtualized: false,
             kuna_name_snapshot: Vec::new(),
             kuna_directive_targets: std::collections::BTreeMap::new(),
             kuna_library_aliases: Vec::new(),
@@ -1138,6 +1142,13 @@ impl Funcdata {
     }
     pub fn kuna_set_call_preserves(&mut self, keep: Vec<(uintb, int4)>) {
         self.kuna_call_preserves = keep;
+    }
+    /// (kuna pushan) Whether the body is a devirtualized program.
+    pub fn kuna_devirtualized(&self) -> bool {
+        self.kuna_devirtualized
+    }
+    pub fn kuna_set_devirtualized(&mut self, on: bool) {
+        self.kuna_devirtualized = on;
     }
 
     /// The numbering the naming pass recorded (empty unless asked to).

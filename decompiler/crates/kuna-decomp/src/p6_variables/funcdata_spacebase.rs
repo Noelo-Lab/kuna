@@ -1560,6 +1560,8 @@ impl Funcdata {
     ///
     /// The boundaries are derived from this function's prototype; the gather is
     /// deferred (the Varnode walk runs lazily on the first `hasLocalAlias`).
+    /// (kuna pushan) A devirtualized function has no local-alias boundary; see
+    /// [`crate::kuna_pushan::adopt`].
     /// Returns `None` if there is no stack space (no possible local alias).
     pub(crate) fn build_alias_checker_deferred(&self) -> Option<crate::varmap::AliasChecker> {
         let stackspc = self.get_arch().manage().get_stack_space().map(Rc::clone)?;
@@ -1567,6 +1569,9 @@ impl Funcdata {
         let mut checker = crate::varmap::AliasChecker::new();
         let mut access = self.alias_gather_access();
         checker.gather(stackspc, bounds.as_ref(), true, &mut access);
+        if self.kuna_devirtualized() {
+            checker.assume_no_pointers();
+        }
         Some(checker)
     }
 

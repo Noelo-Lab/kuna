@@ -2090,6 +2090,7 @@ impl Heritage {
             if fc.is_input_active()
                 && tryregister
                 && !self.guard_counted_float_input(fd, fc, addr, size)
+                && !self.guard_joined_stack_input(fd, fc, addr, &trans_addr, size)
             {
                 Self::guard_call_input(fd, fc, addr, &trans_addr, size, overlap_level);
             }
@@ -2300,7 +2301,6 @@ impl Heritage {
         addr: &Address,
         size: int4,
     ) -> bool {
-        use kuna_num::opcodes::OpCode;
         let Some(entry) = crate::kuna_varargretreg::counted_float_entry(fd, fc, addr, size) else {
             return false;
         };
@@ -2316,6 +2316,61 @@ impl Heritage {
         if start != estart {
             return false;
         }
+        self.tiled_input_trial(fd, fc, addr, size, &entry, 8)
+    }
+
+    /// (kuna pushan) In a devirtualized body, a stack range that is only the
+    /// low piece of an argument slot passes the PIECE of the ranges of this
+    /// pass that tile the whole slot.  The interpreter reads and writes its
+    /// stack in halves, so heritage refines the slots the program's arguments
+    /// later occupy, and the ordinary guard would hand the call only the low
+    /// half of each.  Returns false when the range is not such a piece.
+    fn guard_joined_stack_input(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        fc: &mut crate::fspec::FuncCallSpecs,
+        addr: &Address,
+        trans_addr: &Address,
+        size: int4,
+    ) -> bool {
+        use crate::fspec::Containment;
+        use kuna_base::space::spacetype;
+        if !fd.kuna_devirtualized() {
+            return false;
+        }
+        let Some(spc) = addr.get_space() else { return false };
+        let slot = spc.get_addr_size() as int4;
+        if spc.get_type() != spacetype::IPTR_SPACEBASE
+            || spc.is_big_endian()
+            || size >= slot
+            || trans_addr.get_offset() % slot as u64 != 0
+        {
+            return false;
+        }
+        if fc.proto().characterize_as_input_param(trans_addr, slot) != Containment::ContainsJustified
+            || fc.get_active_input().which_trial(trans_addr, slot) >= 0
+        {
+            return false;
+        }
+        self.tiled_input_trial(fd, fc, addr, size, trans_addr, slot)
+    }
+
+    /// Register the `width`-byte input trial at `entry` (callee perspective)
+    /// whose first piece is the heritaged range `[addr, size)`: the argument is
+    /// the PIECE of that range and the ranges of this pass that follow it up to
+    /// `width` bytes, the last truncated to fit.  False when they leave a gap.
+    fn tiled_input_trial(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        fc: &mut crate::fspec::FuncCallSpecs,
+        addr: &Address,
+        size: int4,
+        entry: &Address,
+        width: int4,
+    ) -> bool {
+        use kuna_num::opcodes::OpCode;
+        let start = addr.get_offset();
+        let eend = start + width as u64;
         let Some(pos) = (0..self.disjoint.len())
             .find(|&i| self.disjoint.get(i).addr == *addr && self.disjoint.get(i).size == size)
         else {
@@ -2341,12 +2396,12 @@ impl Heritage {
             return false;
         }
         let op = fc.get_op();
-        let call_addr = fd.obank().get(op).expect("guardCountedFloatInput: stale call").get_addr().clone();
+        let call_addr = fd.obank().get(op).expect("tiledInputTrial: stale call").get_addr().clone();
         let big = addr.is_big_endian();
         let mut parts = Vec::with_capacity(tiles.len());
         for (taddr, tsize) in tiles {
             let read = fd.new_varnode(tsize, &taddr, None);
-            fd.vbank_mut().get_mut(read).expect("guardCountedFloatInput: read").set_active_heritage();
+            fd.vbank_mut().get_mut(read).expect("tiledInputTrial: read").set_active_heritage();
             let keep = tsize.min((eend - taddr.get_offset()) as int4);
             if keep == tsize {
                 parts.push(read);
@@ -2357,7 +2412,7 @@ impl Heritage {
             let _ = fd.op_set_input(sub, read, 0);
             let c = fd.new_constant(4, if big { (tsize - keep) as u64 } else { 0 });
             let _ = fd.op_set_input(sub, c, 1);
-            let out = fd.new_unique_out(keep, sub).expect("guardCountedFloatInput: subpiece out");
+            let out = fd.new_unique_out(keep, sub).expect("tiledInputTrial: subpiece out");
             fd.op_insert_before(sub, op);
             parts.push(out);
         }
@@ -2366,16 +2421,16 @@ impl Heritage {
         }
         let mut acc = parts[0];
         for &low in &parts[1..] {
-            let width = fd.vbank().get(acc).map(|v| v.get_size()).unwrap_or(0)
+            let joined = fd.vbank().get(acc).map(|v| v.get_size()).unwrap_or(0)
                 + fd.vbank().get(low).map(|v| v.get_size()).unwrap_or(0);
             let piece = fd.new_op(2, call_addr.clone());
             fd.op_set_opcode(piece, typeop_skeleton(OpCode::CPUI_PIECE));
             let _ = fd.op_set_input(piece, acc, 0);
             let _ = fd.op_set_input(piece, low, 1);
-            acc = fd.new_unique_out(width, piece).expect("guardCountedFloatInput: piece out");
+            acc = fd.new_unique_out(joined, piece).expect("tiledInputTrial: piece out");
             fd.op_insert_before(piece, op);
         }
-        fc.get_active_input().register_trial(&entry, 8);
+        fc.get_active_input().register_trial(entry, width);
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         let _ = fd.op_insert_input(op, acc, nin);
         true

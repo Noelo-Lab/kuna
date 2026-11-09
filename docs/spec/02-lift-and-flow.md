@@ -3601,6 +3601,25 @@ register as an incidental copy, so the parameter analysis walks through it to
 the placeholder itself, an input nothing wrote, instead of taking it as a real
 movement into the argument register.
 
+Stack arguments (every argument of a 32-bit call) need two more allowances,
+both keyed on the `Funcdata` flag `adopt` sets (`kuna_devirtualized`).
+First, the local-alias test of the input trials is off: the deferred alias
+checker `ActionActiveParam` builds
+(`decompiler/crates/kuna-decomp/src/p6_variables/funcdata_spacebase.rs (build_alias_checker_deferred)`)
+answers as if no pointer into the stack had been gathered. The gather takes
+every non-additive use of a stack address as a pointer escaping to all locals
+above it, and the interpreter makes such uses of addresses deep in the frame
+throughout: its virtual stack pointer compared against the native one, its
+context copied down the frame, the flags of that arithmetic pushed. The
+boundary would fall below every call's outgoing arguments and reject each stack
+trial as aliased, so the trials are judged by their data flow alone. Second,
+the interpreter reads and writes its stack in halves, so heritage refines the
+slots the program's arguments later occupy into 2-byte pieces, and the ordinary
+guard would pass a call only the justified low piece of each slot (a pointer
+argument truncated to its low 16 bits). `Heritage::guard_joined_stack_input`
+registers a slot-sized trial instead, whose argument is the PIECE of the
+heritaged ranges of the pass that tile the slot.
+
 Pinned by `tests/stages/kuna-pushan.xml`. It runs two passes over the
 synthetic `pushan_vm_x86_64` fixture, a push/ret-dispatched stack-machine
 interpreter in a 64 KiB `.vmp0` whose bytecode computes `arg0 == 0 ? 7 :

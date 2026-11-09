@@ -706,10 +706,22 @@ pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<Pus
 /// right after each call, reading registers the callee just clobbered, and
 /// the prototype model's "unknown effect" on those would make that garbage
 /// read look like a live use of the argument the caller had placed there.
+///
+/// The local-alias test is turned off for the call argument trials. It takes
+/// every non-additive use of a stack address as a pointer escaping to the
+/// locals above it, and the interpreter makes such uses of addresses deep in
+/// the frame throughout (its virtual stack pointer compared against the native
+/// one, its context copied down the frame, the flags of that arithmetic pushed),
+/// so the boundary falls below every call's outgoing arguments and each stack
+/// argument is rejected as aliased. The trials are judged by their data flow
+/// alone, as angr's call-site maker reads the slots above the return address,
+/// and a slot heritage split into halves is passed whole
+/// (`Heritage::guard_joined_stack_input`).
 fn adopt(p: &PushanProgram, fd: &mut Funcdata) {
     fd.kuna_set_size(0);
     fd.kuna_set_call_kills(p.call_kills.iter().map(|&(o, s)| (o, s as int4)).collect());
     fd.kuna_set_call_preserves(p.call_preserves.iter().map(|&(o, s)| (o, s as int4)).collect());
+    fd.kuna_set_devirtualized(true);
 }
 
 /// Mark every COPY out of a placeholder register as incidental, once the flow
