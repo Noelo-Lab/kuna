@@ -56,11 +56,13 @@ pub enum NodeExit {
     /// enumeration ran over a symbolized location's recorded constants.
     Select { atoms: Vec<ExprId>, targets: Vec<(Vec<Vec<(ExprId, bool)>>, NodeId)>, by_atoms: bool },
     /// A call that leaves the interpreter; emulation continued at the return address.
-    Call { target: Option<u64>, ret: NodeId },
+    Call { target: Option<u64>, ret: NodeId, slot: Option<u64> },
     /// The protected function returns to its caller.
     Return,
     /// A jump to another function's entry.
     TailCall(u64),
+    /// A jump through an import or GOT slot.
+    TailCallSlot(u64),
     /// A target the emulation could not enumerate; the original op is kept.
     Unresolved(String),
     Halt(String),
@@ -127,6 +129,8 @@ pub struct Abi {
     pub big_endian: bool,
     /// Direction flag register, held clear at entry (string ops).
     pub df: Option<u64>,
+    /// Stack slots above the return address an external call may read as arguments.
+    pub stack_args: u8,
     /// The program counter register (written by call/return emulation only).
     pub pc: Option<(u64, u8)>,
     /// System flags with their normal user-mode values at entry (TF=0, IF=1,
@@ -145,6 +149,8 @@ pub struct FlatCfg {
     pub nodes: Vec<Node>,
     pub index: BTreeMap<NodeKey, NodeId>,
     pub entry: NodeId,
+    /// Entry-stack offsets whose address was handed to an external call.
+    pub escapes: Vec<i128>,
 }
 
 pub struct Explorer<'a> {
@@ -159,6 +165,10 @@ pub struct Explorer<'a> {
     sym_values: BTreeMap<u32, BTreeSet<u128>>,
     /// Bits every value seen at a symbolized location agreed on.
     sym_known: BTreeMap<(NodeKey, SymLoc), (u128, u128)>,
+    /// Pointer values the emulator read from image slots (value -> slot).
+    image_ptrs: BTreeMap<u64, u64>,
+    /// Entry-stack offsets passed to external calls, over every round.
+    escapes: BTreeSet<i128>,
     /// Locations recorded by the last select built, for its node.
     pending_locs: Option<(Vec<(VarId, Loc)>, Option<i128>)>,
     pub stats: Stats,
@@ -189,6 +199,8 @@ impl<'a> Explorer<'a> {
             to_symbolize: BTreeMap::new(),
             sym_values: BTreeMap::new(),
             sym_known: BTreeMap::new(),
+            image_ptrs: BTreeMap::new(),
+            escapes: BTreeSet::new(),
             pending_locs: None,
             stats: Stats::default(),
             log: Vec::new(),
@@ -234,7 +246,7 @@ impl<'a> Explorer<'a> {
 
     /// Run exploration rounds to the symbolization fixpoint.
     pub fn run(&mut self) -> FlatCfg {
-        let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0 };
+        let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0, escapes: Vec::new() };
         let mut prev_nodes = usize::MAX;
         for round in 0..self.config.max_rounds {
             self.stats.rounds = round + 1;
@@ -243,6 +255,7 @@ impl<'a> Explorer<'a> {
                 break;
             }
             cfg = self.explore_round();
+            cfg.escapes = self.escapes.iter().copied().collect();
             let n = cfg.nodes.len();
             self.log.push(format!(
                 "round {}: {} nodes, {} new symbolized locations, {} unresolved, {} halts",
@@ -270,7 +283,7 @@ impl<'a> Explorer<'a> {
     fn explore_round(&mut self) -> FlatCfg {
         self.stats.unresolved = 0;
         self.stats.halts = 0;
-        let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0 };
+        let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0, escapes: Vec::new() };
         let mut worklist: VecDeque<NodeId> = VecDeque::new();
         let init = self.initial_state();
         let key = NodeKey { addr: self.entry_addr, ctx: None };
@@ -474,10 +487,10 @@ impl<'a> Explorer<'a> {
                 for u in &trace.userops {
                     let _ = writeln!(t.borrow_mut(), "        userop: {u}");
                 }
-                if std::env::var("KUNA_PUSHAN_TRACE_OPS").is_ok() {
+                if let Ok(mode) = std::env::var("KUNA_PUSHAN_TRACE_OPS") {
                     for (i, op) in insn.ops.iter().enumerate() {
                         if let Some(Some(v)) = trace.op_out.get(i) {
-                            if self.arena.is_const(*v).is_none() {
+                            if mode == "all" || self.arena.is_const(*v).is_none() {
                                 let _ = writeln!(
                                     t.borrow_mut(),
                                     "        op{} {:?} -> {}",
@@ -515,6 +528,7 @@ impl<'a> Explorer<'a> {
                 _ => break,
             }
         }
+        self.image_ptrs.append(&mut emu.image_loads);
         let next_ctx = self.successor_ctx(&mut state, &traces, ctx);
         let node_exit = match self.fork_on_vpc(cfg, worklist, id, &exit, &mut state, next_ctx) {
             Some(e) => e,
@@ -832,7 +846,7 @@ impl<'a> Explorer<'a> {
                 self.apply_call_summary(&mut state, insns.last().map(|i| i.addr).unwrap_or(0));
                 let key = NodeKey { addr: fallthrough, ctx: ctx.ctx };
                 let ret = self.reach(cfg, worklist, key, state, ctx, Some(id));
-                NodeExit::Call { target: tc, ret }
+                NodeExit::Call { target: tc, ret, slot: None }
             }
         }
     }
@@ -1001,6 +1015,22 @@ impl<'a> Explorer<'a> {
     }
 
     fn jump_to(&mut self, cfg: &mut FlatCfg, worklist: &mut VecDeque<NodeId>, id: NodeId, c: u64, mut state: State, ctx: VmCtx) -> NodeExit {
+        // A target read from a data slot of the image that is not code
+        // itself is an unbound import or GOT entry: a call through the slot.
+        if self.classify_target(c).is_err() {
+            if let Some(&slot) = self.image_ptrs.get(&c) {
+                if !self.target.is_executable(slot) {
+                    if let Some(ret) = self.pushed_return_address(&mut state) {
+                        let site = cfg.nodes[id as usize].key.addr;
+                        self.apply_call_summary(&mut state, site);
+                        let key = NodeKey { addr: ret, ctx: ctx.ctx };
+                        let ret_node = self.reach(cfg, worklist, key, state, ctx, Some(id));
+                        return NodeExit::Call { target: None, ret: ret_node, slot: Some(slot) };
+                    }
+                    return NodeExit::TailCallSlot(slot);
+                }
+            }
+        }
         if let Err(m) = self.classify_target(c) {
             self.stats.halts += 1;
             return NodeExit::Halt(m);
@@ -1015,7 +1045,7 @@ impl<'a> Explorer<'a> {
                     self.apply_call_summary(&mut state, site);
                     let key = NodeKey { addr: ret, ctx: ctx.ctx };
                     let ret_node = self.reach(cfg, worklist, key, state, ctx, Some(id));
-                    return NodeExit::Call { target: Some(c), ret: ret_node };
+                    return NodeExit::Call { target: Some(c), ret: ret_node, slot: None };
                 }
             }
             if self.target_is_function(c) {
@@ -1061,13 +1091,23 @@ impl<'a> Explorer<'a> {
     fn apply_call_summary(&mut self, state: &mut State, site: u64) {
         let ps = self.abi.ptr_size;
         let args: Vec<(u64, u8)> = self.abi.args.iter().copied().filter(|(o, _)| *o != self.abi.sp).collect();
-        for (off, size) in args {
-            let v = state.read_reg(&mut self.arena, off, size);
+        let mut values: Vec<ExprId> = args.iter().map(|&(off, size)| state.read_reg(&mut self.arena, off, size)).collect();
+        // Stack-passed arguments sit above the return address.
+        let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
+        if let Some((sb, so)) = self.arena.affine_probe(sp) {
+            for k in 1..=self.abi.stack_args as i128 {
+                values.push(state.read_mem(&mut self.arena, self.target, sb, so + k * ps as i128, ps));
+            }
+        }
+        for v in values {
             if self.config.trace.is_some() {
-                self.log.push(format!("call at {site:#x}: arg reg{off:x} = {} affine={:?}", self.arena.fmt(v), self.arena.affine(v)));
+                self.log.push(format!("call at {site:#x}: arg {} affine={:?}", self.arena.fmt(v), self.arena.affine(v)));
             }
             match self.arena.affine_probe(v) {
                 Some((Some(base), o)) => {
+                    if Some(base) == self.sp0 {
+                        self.escapes.insert(o);
+                    }
                     for k in 0..(CALL_POINTEE_BYTES / ps as i128) {
                         let u = self.arena.unknown(ps);
                         state.write_mem(Some(base), o + k * ps as i128, u, ps);
@@ -1118,9 +1158,10 @@ pub fn exit_brief(e: &NodeExit) -> String {
         NodeExit::Branch(s) => format!("branch->{s}"),
         NodeExit::CondBranch { arms, fall } => format!("cbranch->{:?}/{fall}", arms.iter().map(|(_, t)| *t).collect::<Vec<_>>()),
         NodeExit::Select { targets, .. } => format!("select->{:?}", targets.iter().map(|(_, s)| *s).collect::<Vec<_>>()),
-        NodeExit::Call { target, ret } => format!("call({:?})->{ret}", target.map(|t| format!("{t:#x}"))),
+        NodeExit::Call { target, ret, .. } => format!("call({:?})->{ret}", target.map(|t| format!("{t:#x}"))),
         NodeExit::Return => "return".into(),
         NodeExit::TailCall(c) => format!("tailcall {c:#x}"),
+        NodeExit::TailCallSlot(c) => format!("tailcall [{c:#x}]"),
         NodeExit::Unresolved(m) => format!("unresolved: {}", m.chars().take(120).collect::<String>()),
         NodeExit::Halt(m) => format!("halt: {}", m.chars().take(120).collect::<String>()),
     }

@@ -374,6 +374,7 @@ fn abi_for(arch: &Architecture, target: &ArchTarget<'_>) -> Option<Abi> {
         big_endian: false,
         df: reg("DF").map(|r| r.0),
         pc: reg(if x64 { "RIP" } else { "EIP" }),
+        stack_args: if x64 { 0 } else { 8 },
         fixed_flags: [("TF", 0u8), ("IF", 1), ("NT", 0), ("RF", 0), ("VM", 0), ("AC", 0), ("VIF", 0), ("VIP", 0), ("ID", 0), ("IOPL", 0)]
             .iter()
             .filter_map(|(n, v)| reg(n).map(|r| (r.0, *v)))
@@ -491,6 +492,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         call_args,
         callee_saved,
         return_reg,
+        call_arg_bytes: if ptr == 8 { 0x60 } else { 0x28 },
         eliminate_dead: std::env::var("KUNA_PUSHAN_NO_DCE").is_err(),
         slot_base: {
             let mut regs = std::collections::BTreeMap::new();
@@ -631,9 +633,13 @@ fn describe_exit(e: &NodeExit) -> String {
         NodeExit::Select { targets, by_atoms, .. } => {
             format!("select{} -> {:?}", if *by_atoms { "" } else { "(symbol)" }, targets.iter().map(|(_, s)| *s).collect::<Vec<_>>())
         }
-        NodeExit::Call { target, ret } => format!("call {:?} -> {ret}", target.map(|t| format!("{t:#x}"))),
+        NodeExit::Call { target, ret, slot } => match slot {
+            Some(s) => format!("call [{s:#x}] -> {ret}"),
+            None => format!("call {:?} -> {ret}", target.map(|t| format!("{t:#x}"))),
+        },
         NodeExit::Return => "return".into(),
         NodeExit::TailCall(c) => format!("tailcall {c:#x}"),
+        NodeExit::TailCallSlot(c) => format!("tailcall [{c:#x}]"),
         NodeExit::Unresolved(m) => format!("unresolved: {}", m.chars().take(400).collect::<String>()),
         NodeExit::Halt(m) => format!("halt: {m}"),
     }

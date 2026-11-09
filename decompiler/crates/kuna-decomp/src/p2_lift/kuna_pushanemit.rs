@@ -50,6 +50,8 @@ pub struct EmitConfig {
     /// Registers a call preserves (plus the stack pointer).
     pub callee_saved: Vec<(u64, u8)>,
     pub return_reg: u64,
+    /// Bytes from the stack pointer at a call the callee may read as arguments.
+    pub call_arg_bytes: u32,
     pub eliminate_dead: bool,
     /// User-op indices with no effect beyond their outputs (rdtsc, pause, fences).
     pub pure_userops: Vec<u64>,
@@ -306,6 +308,24 @@ fn mark_dead(
         }
         m
     };
+    // An external call reads its outgoing argument area and whatever lies
+    // above the lowest stack address the function ever handed out.
+    let escape_floor = cfg.escapes.iter().copied().min();
+    let call_mem = |off: Option<i128>| {
+        let Some(k) = off else { return full_mem.clone() };
+        let mut m = RegSet::new(MEM_BYTES);
+        let lo = k.max(WIN_LO);
+        let hi = (k + conf.call_arg_bytes as i128).min(WIN_HI);
+        if lo < hi {
+            m.add_range((lo - WIN_LO) as u64, (hi - lo) as u32);
+        }
+        if let Some(f) = escape_floor {
+            m.union_with(&mem_from(Some(f.max(WIN_LO))));
+        } else {
+            m.union_with(&mem_from(Some(0)));
+        }
+        m
+    };
     let mut total_dead = 0usize;
     let mut total_dead_ops = 0usize;
     loop {
@@ -378,7 +398,7 @@ fn mark_dead(
                     NodeExit::Call { ret, .. } => {
                         out.union_with(&live_in[*ret as usize]);
                         out.regs.union_with(&call_args);
-                        out.mem.union_with(&mem_from(exits[i].sp_off));
+                        out.mem.union_with(&call_mem(exits[i].sp_off));
                     }
                     NodeExit::Return => {
                         out.regs = match &exits[i].regs {
@@ -387,7 +407,7 @@ fn mark_dead(
                         };
                         out.mem = mem_from(exits[i].sp_off.or(Some(0)));
                     }
-                    NodeExit::TailCall(_) => {
+                    NodeExit::TailCall(_) | NodeExit::TailCallSlot(_) => {
                         out.regs = full_regs.clone();
                         out.mem = mem_from(exits[i].sp_off);
                     }
@@ -721,6 +741,12 @@ impl<'a> Emitter<'a> {
                     continue;
                 }
                 match &node.exit {
+                    NodeExit::Call { slot: Some(slot), .. } => {
+                        self.undefined_arguments(node, &mut out);
+                        let t = self.slot_target(*slot, &mut out);
+                        out.push(OverlayOp { opc: CPUI_CALLIND, out: None, ins: vec![t] });
+                        kept_flow = true;
+                    }
                     NodeExit::Call { target: Some(t), .. } => {
                         self.undefined_arguments(node, &mut out);
                         out.push(OverlayOp { opc: CPUI_CALL, out: None, ins: vec![self.code(*t)] });
@@ -899,7 +925,7 @@ impl<'a> Emitter<'a> {
     fn exit_info(&mut self, node: &super::kuna_pushanflow::Node) -> ExitInfo {
         let ptr = self.conf.ptr_size;
         let mut info = ExitInfo::default();
-        if !matches!(node.exit, NodeExit::Call { .. } | NodeExit::Return | NodeExit::TailCall(_)) {
+        if !matches!(node.exit, NodeExit::Call { .. } | NodeExit::Return | NodeExit::TailCall(_) | NodeExit::TailCallSlot(_)) {
             return info;
         }
         if let Some(sp) = self.exit_value(node, self.conf.sp_reg, ptr) {
@@ -1008,9 +1034,13 @@ impl<'a> Emitter<'a> {
                     });
                 }
             }
-            NodeExit::Call { target, ret } => {
+            NodeExit::Call { target, ret, slot } => {
                 if !kept_flow {
-                    if let Some(t) = target {
+                    if let Some(sl) = slot {
+                        self.undefined_arguments(node, out);
+                        let t = self.slot_target(*sl, out);
+                        out.push(OverlayOp { opc: CPUI_CALLIND, out: None, ins: vec![t] });
+                    } else if let Some(t) = target {
                         self.undefined_arguments(node, out);
                         out.push(OverlayOp { opc: CPUI_CALL, out: None, ins: vec![self.code(*t)] });
                     }
@@ -1023,9 +1053,16 @@ impl<'a> Emitter<'a> {
                     self.dead_end(out);
                 }
             }
-            NodeExit::TailCall(c) => {
+            NodeExit::TailCall(_) | NodeExit::TailCallSlot(_) => {
                 let ptr = self.conf.ptr_size as u32;
-                out.push(OverlayOp { opc: CPUI_CALL, out: None, ins: vec![self.code(*c)] });
+                match &node.exit {
+                    NodeExit::TailCallSlot(sl) => {
+                        let t = self.slot_target(*sl, out);
+                        out.push(OverlayOp { opc: CPUI_CALLIND, out: None, ins: vec![t] });
+                    }
+                    NodeExit::TailCall(c) => out.push(OverlayOp { opc: CPUI_CALL, out: None, ins: vec![self.code(*c)] }),
+                    _ => {}
+                }
                 let ra = self.scratch(1, ptr);
                 let sp_vn = self.sp_varnode();
                 out.push(OverlayOp {
@@ -1177,6 +1214,18 @@ impl<'a> Emitter<'a> {
         };
         memo.insert(e, r.clone());
         Some(r)
+    }
+
+    /// `scratch = *slot`, the target of a call through an import slot.
+    fn slot_target(&mut self, slot: u64, out: &mut Vec<OverlayOp>) -> VarnodeData {
+        let ptr = self.conf.ptr_size as u32;
+        let t = self.scratch(3, ptr);
+        out.push(OverlayOp {
+            opc: CPUI_LOAD,
+            out: Some(t.clone()),
+            ins: vec![self.cst(self.conf.ram.get_index() as u64, ptr), self.cst(slot, ptr)],
+        });
+        t
     }
 
     fn sp_varnode(&self) -> VarnodeData {

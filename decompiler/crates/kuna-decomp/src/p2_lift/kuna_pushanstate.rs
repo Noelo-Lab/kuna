@@ -463,6 +463,11 @@ impl State {
         }
     }
 
+    /// Whether any of `[off, off + size)` was written in the region of `base`.
+    pub fn mem_written(&self, base: Option<VarId>, off: i128, size: u8) -> bool {
+        self.mem.get(&base).is_some_and(|r| (off..off + size as i128).any(|o| r.bytes.contains_key(&o)))
+    }
+
     /// The offsets with a stored byte in the region of `base`.
     pub fn mem_offsets(&self, base: Option<VarId>) -> Vec<i128> {
         self.mem.get(&base).map(|r| r.offsets().copied().collect()).unwrap_or_default()

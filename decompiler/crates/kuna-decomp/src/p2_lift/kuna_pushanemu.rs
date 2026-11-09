@@ -158,6 +158,9 @@ pub struct Emulator<'a> {
     prov: BTreeMap<u64, (u64, i128)>,
     /// Stack pointer register (offset, size) to snapshot before every op.
     pub track_sp: Option<(u64, u8)>,
+    /// Pointer-sized values read straight from the image, by value: the slot
+    /// each was read from (an import table entry, a GOT slot).
+    pub image_loads: BTreeMap<u64, u64>,
     /// Diagnostics: report accesses to this base variable within +-0x40.
     pub watch_base: Option<u32>,
     notes: Vec<String>,
@@ -165,7 +168,7 @@ pub struct Emulator<'a> {
 
 impl<'a> Emulator<'a> {
     pub fn new(target: &'a dyn PushanTarget) -> Self {
-        Emulator { target, prov: BTreeMap::new(), track_sp: None, watch_base: None, notes: Vec::new() }
+        Emulator { target, prov: BTreeMap::new(), track_sp: None, watch_base: None, notes: Vec::new(), image_loads: BTreeMap::new() }
     }
 
     fn vn_space(&self, vn: &VarnodeData) -> Space {
@@ -307,7 +310,13 @@ impl<'a> Emulator<'a> {
             }
         }
         if let Some((base, off)) = arena.affine_probe(addr) {
+            let from_image = base.is_none() && !state.mem_written(None, off, size);
             let v = state.read_mem(arena, self.target, base, off, size);
+            if from_image && size == self.target.ptr_size() {
+                if let Some(c) = arena.is_const(v) {
+                    self.image_loads.insert(c as u64, off as u64);
+                }
+            }
             if base.is_some() && base == self.watch_base && (-0x40..0x40).contains(&off) {
                 self.note(format!("watch load [{off:#x}] size {size} = {}", arena.fmt(v)));
             }
