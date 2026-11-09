@@ -153,6 +153,7 @@ impl SFormsConstructor {
         _iteration: i32,
     ) {
         for node in dgraph.nodes() {
+            CancelationManager::check_canceled();
             let node_id = node.id_key();
             updated.remove(&node_id);
             self.merge_in_var_maps(node, dgraph);

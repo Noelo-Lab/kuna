@@ -3,6 +3,7 @@
 use std::collections::VecDeque;
 
 use crate::basic_block::BasicBlock;
+use crate::cancelation_manager::CancelationManager;
 use crate::code_constants::{
     GROUP_SWITCH, OPC_ACONST_NULL, OPC_ALOAD, OPC_ATHROW, OPC_BIPUSH, OPC_DCONST_0, OPC_DCONST_1,
     OPC_DLOAD, OPC_FCONST_0, OPC_FCONST_1, OPC_FCONST_2, OPC_FLOAD, OPC_GOTO, OPC_ILOAD,
@@ -607,6 +608,7 @@ impl DeadCodeHelper {
             let origin_blocks_count = graph.get_blocks().borrow().len();
 
             for block in block_list(graph) {
+                CancelationManager::check_canceled();
                 let seq = block.get_seq();
 
                 if block.get_succs().len() == 1 {

@@ -4,6 +4,7 @@ use crate::array_exprent::ArrayExprent;
 use crate::assert_processor::AssertProcessor;
 use crate::assignment_exprent::AssignmentExprent;
 use crate::basic_block_statement::BasicBlockStatement;
+use crate::cancelation_manager::CancelationManager;
 use crate::code_constants::*;
 use crate::code_type::CodeType;
 use crate::condy_helper::CondyHelper;
@@ -237,6 +238,7 @@ impl ExprProcessor {
         map_data.put(first, PrimitiveExprsList::new());
 
         while !stack.is_empty() {
+            CancelationManager::check_canceled();
             let node = stack.pop();
 
             let mut catch_data = map_catch
