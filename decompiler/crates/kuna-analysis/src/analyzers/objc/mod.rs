@@ -30,6 +30,9 @@
 //!   as a Function symbol (so the function exists for the rename to bind to even
 //!   when it is reachable *only* through the metadata, not a call edge or
 //!   `LC_FUNCTION_STARTS`) + a selector Data symbol per distinct selector.
+//! - **`out.data_objects`** / **`out.const_ranges`** — the `selRef_`/`classRef_`/
+//!   `superRef_` reference slots and the `objc_msgSend$<sel>` stubs
+//!   (`kuna_objcrefs.rs`), with the rebase slots reported constant.
 //!
 //! # Gating
 //!
@@ -50,6 +53,7 @@
 
 pub mod classt;
 pub mod encoding;
+pub mod kuna_objcrefs;
 pub mod methods;
 pub mod sections;
 
@@ -66,6 +70,7 @@ use sections::MachoImage;
 /// Threaded from `ctx.arch` into the method walk so the ObjC type-encoding
 /// decoder can map `i20@0:8i16` → `int (id, SEL, int)` (design §5 PR-O2).
 struct TypeCtx<'a> {
+    arch: &'a kuna_decomp::architecture::Architecture,
     types: &'a dyn TypeFactory,
     ptr_size: i32,
     word_size: u32,
@@ -100,25 +105,31 @@ impl AnalysisPass for ObjcMetadataPass {
         // reads raw section words exactly as the x86-64 PR-O1 path did.
         let fixups = crate::loader::format::macho::resolve_chained_fixups(ctx.file, ctx.bytes);
         let img = MachoImage::with_fixups(ctx.file, fixups);
-        let Some((cl_addr, cl_data)) = img.classlist(ctx.file) else {
-            return out;
-        };
 
         // The type-mapping context for IMP/ivar prototypes (PR-O2).
         let (ptr_size, word_size) = ctx.arch.data_org();
-        let tctx = TypeCtx { types: ctx.arch.types(), ptr_size, word_size };
+        let tctx = TypeCtx { arch: ctx.arch, types: ctx.arch.types(), ptr_size, word_size };
+        let mut selectors = kuna_objcrefs::Selectors::default();
 
         let ps = img.ptr_size() as usize;
         // Walk `__objc_classlist`: an array of `class_t*` (stride = ptr size).
-        for (i, _) in cl_data.chunks_exact(ps).enumerate() {
-            let entry_va = cl_addr.wrapping_add((i * ps) as u64);
-            let Some(class_ptr) = img.read_ptr(entry_va) else {
-                continue;
-            };
-            if class_ptr == 0 {
-                continue;
+        if let Some((cl_addr, cl_data)) = img.classlist(ctx.file) {
+            for (i, _) in cl_data.chunks_exact(ps).enumerate() {
+                let entry_va = cl_addr.wrapping_add((i * ps) as u64);
+                let Some(class_ptr) = img.read_ptr(entry_va) else {
+                    continue;
+                };
+                if class_ptr == 0 {
+                    continue;
+                }
+                self.walk_class(&img, &tctx, ctx.file.architecture(), class_ptr, &mut selectors, &mut out);
             }
-            self.walk_class(&img, &tctx, ctx.file.architecture(), class_ptr, &mut out);
+        }
+        let const_ranges = kuna_objcrefs::emit(&img, ctx.file, &tctx, &mut selectors, &mut out);
+        // A chained slot holds its packed fixup word until `dynrelocs` unpacks it
+        // at load; with that gate off the slot is named but never folded.
+        if !img.chained() || kuna_decomp::kuna_dynrelocs::dynrelocs_enabled() {
+            out.const_ranges = const_ranges;
         }
         out
     }
@@ -132,30 +143,34 @@ impl ObjcMetadataPass {
         tctx: &TypeCtx,
         architecture: object::Architecture,
         class_ptr: u64,
+        selectors: &mut kuna_objcrefs::Selectors,
         out: &mut AnalysisOutput,
     ) {
         let Some(class) = classt::read_class_t(img, class_ptr) else {
             return;
         };
-        let Some(name) = classt::class_name(img, class.ro) else {
+        let Some(runtime_name) = classt::class_name(img, class.ro) else {
             return;
         };
 
-        // The class symbol (`_OBJC_CLASS_$_Greeter`), a Data fact at the class_t.
+        // The class symbol (`_OBJC_CLASS_$_Greeter`), a Data fact at the class_t,
+        // under the runtime's own spelling.
         out.symbols.push(SymFact {
             addr: class.addr,
-            name: format!("_OBJC_CLASS_$_{name}"),
+            name: format!("_OBJC_CLASS_$_{runtime_name}"),
             kind: SymKind::Data,
         });
+        let name = display_class_name(&runtime_name);
+        let name = name.as_str();
 
         // Instance (`-`) methods: class_ro_t.baseMethods.
         if let Some(list) = classt::base_methods(img, class.ro) {
-            self.emit_methods(img, tctx, architecture, &name, '-', list, out);
+            self.emit_methods(img, tctx, architecture, &name, '-', list, selectors, out);
         }
         // Class (`+`) methods: metaclass (isa) class_ro_t.baseMethods.
         if let Some(meta_ro) = classt::metaclass_ro(img, class.isa) {
             if let Some(list) = classt::base_methods(img, meta_ro) {
-                self.emit_methods(img, tctx, architecture, &name, '+', list, out);
+                self.emit_methods(img, tctx, architecture, &name, '+', list, selectors, out);
             }
         }
         // Instance variables: `<Class>::ivar` Data labels (PR-O2).
@@ -174,9 +189,11 @@ impl ObjcMetadataPass {
         class: &str,
         kind: char,
         list_va: u64,
+        selectors: &mut kuna_objcrefs::Selectors,
         out: &mut AnalysisOutput,
     ) {
         for m in methods::walk_method_list(img, list_va, architecture) {
+            selectors.record(&m.selector, m.types.as_deref());
             // `-[Greeter greet:]` / `+[Greeter classMethod]` — the ObjC method name
             // the printer renders. Selectors are ASCII, so no demangling.
             let label = format!("{kind}[{class} {sel}]", sel = m.selector);
@@ -214,11 +231,7 @@ impl ObjcMetadataPass {
             // named in the listing (`sel_greet_` etc.). Best-effort: only when the
             // selector VMA is separately recoverable.
             if m.selector_va != 0 {
-                out.symbols.push(SymFact {
-                    addr: m.selector_va,
-                    name: format!("sel_{}", sanitize_selector(&m.selector)),
-                    kind: SymKind::Data,
-                });
+                selectors.name(out, m.selector_va, &m.selector);
             }
         }
     }
@@ -256,6 +269,18 @@ impl ObjcMetadataPass {
     }
 }
 
+/// The class name the labels render: the Swift demangling of an ObjC runtime
+/// name (`_TtC6Sample3Foo` → `Sample.Foo`) when `swiftdemangle` is on and the
+/// name is in the demangler's coverage, else the runtime spelling as is.
+fn display_class_name(runtime_name: &str) -> String {
+    if runtime_name.starts_with("_Tt") && kuna_decomp::kuna_swiftdemangle::swiftdemangle_enabled() {
+        if let Some(d) = crate::demangle::kuna_swift::demangle_swift_name(runtime_name) {
+            return d;
+        }
+    }
+    runtime_name.to_string()
+}
+
 /// Turn a selector (`greet:`, `setFoo:bar:`) into a symbol-name-safe token for a
 /// `sel_<...>` Data symbol: colons → underscores, every other non-alphanumeric →
 /// underscore. The selector text itself is preserved in the IMP rename label.
@@ -274,6 +299,14 @@ mod tests {
         let p = ObjcMetadataPass;
         assert_eq!(p.id(), "objc");
         assert_eq!(p.phase(), Phase::P1);
+    }
+
+    #[test]
+    fn swift_runtime_class_names_demangle_for_labels() {
+        assert_eq!(display_class_name("Greeter"), "Greeter");
+        assert_eq!(display_class_name("_TtC6Sample24MainScreenViewController"), "Sample.MainScreenViewController");
+        assert_eq!(display_class_name("_TtCC6Sample5Outer5Inner"), "Sample.Outer.Inner");
+        assert_eq!(display_class_name("_TtC1"), "_TtC1");
     }
 
     #[test]

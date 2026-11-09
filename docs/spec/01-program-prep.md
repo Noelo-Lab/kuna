@@ -1063,6 +1063,18 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   holds once each, are read from at most the pool's own length in total
   (`chained.rs (read_imports)`): a table whose names all run on to the pool's end
   would otherwise copy the pool once per import.
+  A bind's ordinal also names the symbol it binds
+  (`decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (bind_name)`),
+  which is what lets a `__objc_classrefs` slot bound to `_OBJC_CLASS_$_UIView`
+  be named without an address. The bind also keeps its addend: the import
+  record's (`DYLD_CHAINED_IMPORT_ADDEND*`) plus the entry's own (eight bits in
+  `PTR_64`, a signed 19 bits in a plain arm64e bind; an authenticated bind spends
+  those bits on its signing context and has none). A C++ RTTI record points at
+  `vtable for __si_class_type_info + 16` this way, so a slot whose addend is not
+  zero holds an address inside the import, not the import itself. The resolver also records which segments the
+  linker flagged `SG_READ_ONLY`, the Mach-O statement that dyld maps the segment
+  read-only once its fixups are in (`__DATA_CONST`); `dynrelocs` (§1.3) reads
+  it as the `PT_GNU_RELRO` of a Mach-O.
 
 An explicit target changes only language selection: the parsed container still
 owns section mapping, image base, symbols, and imports. Container header class is
@@ -1828,9 +1840,14 @@ funcsym stream:
   `chained.rs (resolve_chained_fixups)` and writes each rebase's resolved target
   and a zero for each bind, the word every other format's loader leaves in an
   import slot. A bind names an import, whose address is in another image, so
-  nothing better is knowable. No Mach-O slot is reported constant: the read-only
-  `__DATA_CONST` segment is the RELRO analog, but no Mach-O section is read-only
-  to the engine today, so there is nothing for the warrant to narrow. A classic
+  nothing better is knowable. The constancy warrant is the segment flag
+  `SG_READ_ONLY`, which the linker sets on `__DATA_CONST` to tell dyld to remap
+  the segment read-only once the fixups are applied, the same promise
+  `PT_GNU_RELRO` makes, so the rebased slots of such a segment join
+  `dynreloc_const` and fold, while a rebase in writable `__DATA` is written but
+  not declared constant. The Objective-C reference slots live in `__DATA`,
+  outside this warrant; their constancy comes from the metadata instead (§1.4,
+  `objc`). A classic
   image (`LC_DYLD_INFO` rebase and bind opcodes) needs no write: its rebased words
   are already the unslid pointers, and its bound slots are already zero or a
   stub-helper address. `dynrelocs off` leaves the chain words as the linker wrote
@@ -1848,9 +1865,14 @@ funcsym stream:
   `chained.rs (resolve_chained_fixups)` and writes each rebase's resolved target
   and a zero for each bind, the word every other format's loader leaves in an
   import slot. A bind names an import, whose address is in another image, so
-  nothing better is knowable. No Mach-O slot is reported constant: the read-only
-  `__DATA_CONST` segment is the RELRO analog, but no Mach-O section is read-only
-  to the engine today, so there is nothing for the warrant to narrow. A classic
+  nothing better is knowable. The constancy warrant is the segment flag
+  `SG_READ_ONLY`, which the linker sets on `__DATA_CONST` to tell dyld to remap
+  the segment read-only once the fixups are applied, the same promise
+  `PT_GNU_RELRO` makes, so the rebased slots of such a segment join
+  `dynreloc_const` and fold, while a rebase in writable `__DATA` is written but
+  not declared constant. The Objective-C reference slots live in `__DATA`,
+  outside this warrant; their constancy comes from the metadata instead (§1.4,
+  `objc`). A classic
   image (`LC_DYLD_INFO` rebase and bind opcodes) needs no write: its rebased words
   are already the unslid pointers, and its bound slots are already zero or a
   stub-helper address. `dynrelocs off` leaves the chain words as the linker wrote
@@ -2174,6 +2196,20 @@ unaffected either way.
 The `externref` mark also protects the slot until that resolution: P3 read-only
 folding cannot replace it with an on-disk thunk/name RVA, even if a hostile or
 single-section PE mapped the IAT executable and non-writable.
+
+An arm64e Mach-O has one import table the indirect-symbol walk cannot see.
+`__auth_got` backs the `__auth_stubs` and is an indirect-symbol section like
+`__got`, so `peimportcall` covers it. `__auth_ptr` holds the signed pointers
+code loads itself, for instance clang's `adrp; ldr x16; blraaz x16` call of
+`___chkstk_darwin`. It is a plain `S_REGULAR` section with no indirect-symbol
+entries; only its `LC_DYLD_CHAINED_FIXUPS` bind says which import a slot
+holds. `decompiler/crates/kuna-analysis/src/loader/kuna_authptrcall.rs (AuthPtrCallPass)`
+(`authptrcall`, Mach-O only, default on) gives each `__auth_ptr` bind slot a
+`FunctionSymbol` named after its import, with one leading `_` stripped as the
+indirect-symbol walk does, and reports the slot as an `externref` range. The
+commit and `ActionDeindirect` then treat the slot exactly like a `__got` slot.
+A bind with a nonzero addend points inside the import rather than at it, so it
+is skipped. Off, such a call renders `(*dat_<slot>)(...)` as before.
 
 Two arch-marker passes paint **decode context** rather than names, because a wrong
 decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/loader/arm_markers.rs
@@ -3748,33 +3784,83 @@ moves.
   member is brought to `msvc_demangler`'s (`dtor` is `destructor`) so a member
   reads the same whichever crate demangled it.
 
-  **(kuna, docs/multilang.md) Swift names demangle through a ported, bounded
-  name-only subset** (`decompiler/crates/kuna-analysis/src/analyzers/demangle/kuna_swift.rs
-  (demangle_swift_name)`), because no crate exists at the maturity of the three
-  above: the Vector35 `swift-demangler` builds the real C++ demangler through
-  cmake (a native-toolchain dependency this workspace does not carry, floor
-  rustc above this repo's), and the pure-Rust alternatives are unvetted 0.x
-  crates — for symbol RENAMING a wrong answer is strictly worse than none. The
-  subset parses context chains (`module.Type.member`, `V`/`C`/`O` nominal
-  kinds, the stdlib `s` contraction), functions with argument labels rendered
-  Swift-style (`Swift.print(_:separator:terminator:)`), property accessors
-  (`.getter`/`.setter`), `init`/`deinit`, and the common global markers
-  (`type metadata`, nominal descriptor, metadata accessor, full metadata,
-  metaclass, value witness table) as dotted suffixes; everything else —
-  punycode identifiers, witnesses/thunks, specializations, generic machinery —
-  **passes through unchanged** (parse-or-passthrough: the label-less function
-  arm additionally refuses any signature carrying digits, since a digit there
-  could open an un-labeled custom parameter type whose path components are
-  indistinguishable from labels). The arm is shape-gated on
-  `sourcelang::is_swift_mangled` — prefixes no other scheme owns — and
-  option-gated by `swiftdemangle` (default on) through the `KUNA_SWIFTDEMANGLE`
-  loadtime env bridge, the `rexthunk` pattern, because names are demangled
-  inside `load file` upstream of every option line. The test corpus is
-  hand-derived from the mangling grammar (each case cites its production), so
-  no third-party fixture text is vendored; the end-to-end gate synthesizes an
-  ELF whose symbol table carries the mangled names, since no Swift toolchain
-  exists on this host or CI — a real-swiftc fixture is the Swift pack's own
-  follow-up.
+  **(kuna, docs/multilang.md) Swift names demangle through a pure-Rust
+  demangler written for kuna** (`decompiler/crates/kuna-analysis/src/analyzers/demangle/kuna_swift.rs
+  (demangle_swift_name)`, with the parser in `kuna_swift/parse.rs`, the
+  `_Tt` runtime-name parser in `kuna_swift/oldparse.rs`, the full-form
+  printer in `kuna_swift/print.rs` and the name-only printer in
+  `kuna_swift/name.rs`). Every Swift demangler crate (`swift-demangler`,
+  `symbolic-demangle`, `macho-demangle`, `razgad`, `swift-demangle`) builds
+  Apple's C++ demangler, a build-time C++ toolchain `kuna-wasm` cannot carry,
+  so kuna owns the port: the stable `$s`/`$S` grammar of
+  `swift/docs/ABI/Mangling.rst` as the postfix stack machine Apple's reference
+  implementation uses (each operator pops its operands from a node stack and
+  pushes one node; substitutions `A…` and the stdlib shortcuts `S…` re-reference
+  earlier nodes; word substitutions `0…` and punycode `00…` identifiers decode),
+  plus the Swift 3 `_Tt` type mangling the Objective-C runtime still uses for
+  Swift class and protocol names (`_TtC6Sample3Foo`, nested `_TtCC…`, private
+  `P33_<hash>`, generic `_TtGC…_`, protocol `_TtP…_`). The parser covers
+  entities (functions with labels, variables and every accessor, subscripts,
+  constructors and destructors, closures, default arguments, initializers),
+  contexts (modules, nominal types, extensions, private and local names), the
+  type grammar (bound generics with sugar, tuples, function types with their
+  effects, metatypes, existentials, generic parameters and dependent members,
+  generic signatures with requirements, builtins, SIL impl function types),
+  the runtime artifacts (type metadata and its accessors and caches, nominal
+  and protocol descriptors, conformance descriptors, witness tables and
+  witnesses, value witnesses, field offsets, enum cases, opaque type
+  descriptors, reflection descriptors), and the function attributes
+  (dispatch thunks, method descriptors, merged functions, `@objc` thunks,
+  partial-apply forwarders, outlined copies, async function pointers and
+  resume functions, generic and function-signature specializations,
+  reabstraction thunks, key path thunks, once-functions). Out of coverage
+  (the symbol stays mangled): the autodiff family (`TJ…`), bridged outlines
+  (`Te`), macro entities (`fm`/`fM…`), Embedded Swift symbols (`$e`),
+  coroutine continuation prototypes (`TC`) and anonymous contexts (`XZ`).
+  The full-form printer (`demangle_raw`) renders the tree the way
+  `swift-demangle` from Swift 6.3 does, and is verified byte for byte against
+  it on the reference's own `manglings.txt`, on the Swift stdlib, Foundation
+  and app symbol tables, and on randomly mutated symbols (where both demangle,
+  they agree; where `swift-demangle` refuses, so does kuna). Swift 6.4 renamed
+  the two experimental coroutine accessors to `yielding_borrow` and
+  `yielding_mutate`; this printer keeps the 6.3 spellings `read2` and
+  `modify2`. The one deliberate difference: a constructor carrying a file
+  discriminator without a name prints `Foo.(in _HASH).init()` where
+  `swift-demangle` prints its parameter type as the name. The name-only printer (`demangle_name`, what the loader installs)
+  is a projection of the same tree: space-free Swift reference syntax for
+  members (`Sample.Foo.init(x:y:)`, `Foo.bar(_:)`, `Foo.baz()`, `Foo.x.getter`,
+  `Foo.subscript(_:).getter`, `Foo.__allocating_init(x:)` on a class), dotted
+  tags for runtime artifacts (`Foo.type_metadata`, `.nominal_type_descriptor`,
+  `.dispatch_thunk`, `.method_descriptor`, `.merged`, `.objc`, `.closure#1`,
+  `.outlined_copy`, `.generic_specialization<Swift.Int>`,
+  `.function_signature_specialization`, `.partial_apply`), and `<Type:Protocol>`
+  for conformances (`<Sample.Foo:Swift.Hashable>.hash(into:)` is the protocol
+  witness, `<…>.protocol_witness_table` and `<…>.protocol_conformance_descriptor`
+  the tables). Private discriminators, local-name counters, generic
+  signatures, extension modules and parameter types are dropped from the name;
+  where a name is meaningless without types (conformances, specializations,
+  reabstraction thunks, key path helpers) a compact spelling appears
+  (`[Swift.String:Any]`, `(Swift.Int)->Swift.Bool`, `A?`). The contract is
+  parse-or-passthrough: an unknown operator, a malformed count, a stack that
+  does not reduce, or a node kind without a rendering fails the whole name and
+  the symbol keeps its mangled spelling — a wrong path is never printed. The
+  Objective-C metadata pass (`analyzers/objc/mod.rs`) renders a class whose
+  `class_ro_t.name` is a `_Tt` name through the same demangler, so a Swift
+  class's method labels read `-[Sample.Foo viewDidLoad]` while the
+  `_OBJC_CLASS_$_…` data symbol keeps the linker's spelling. The arm is
+  shape-gated on `sourcelang::is_swift_mangled` — prefixes no other scheme
+  owns — and option-gated by `swiftdemangle` (default on) through the
+  `KUNA_SWIFTDEMANGLE` loadtime env bridge, the `rexthunk` pattern, because
+  names are demangled inside `load file` upstream of every option line. On a large arm64 iOS app (314,038 functions, 7,382 of them under Swift symbols) the
+  option takes every Swift symbol from mangled to demangled where the earlier
+  name-only subset reached 26%, at no measurable cost (demangling the whole
+  symbol table takes under 10 ms). The unit-test corpus is real symbols
+  pinned with the `swift-demangle` output; the stage test
+  `tests/stages/kuna-swiftdemangle.xml` loads `macho_swift_names_arm64`, a
+  clang-built arm64 Mach-O whose root class carries the runtime name
+  `_TtC4main7Greeter` through `objc_runtime_name` and whose exported function
+  carries the symbol `_$s4main10countWords2ofS2i_tF` through an `asm` label,
+  and proves both spellings off and on.
 
   **(kuna, DIV-83) Which crate is asked first is decided by a marker, not by
   which one answers.** Rust's *legacy* scheme reuses the Itanium `_ZN…E`
@@ -4302,12 +4388,72 @@ every other binary's pass list is byte-identical to before the pass existed):
   so no anchor exists and the output is empty. Independent code-pointer-run scanning
   — which would find such vtables heuristically — is deliberately **not** part of
   this pass.
-- **Objective-C** (`objc`, Mach-O-only, default-off;
+- **Objective-C** (`objc`, Mach-O-only, default-off in the catalog but on in the
+  `aggressive` preset, which `auto` selects for any binary under 500 KiB;
   `decompiler/crates/kuna-analysis/src/analyzers/objc/mod.rs`): walk
   `__objc_classlist` → `class_t` → `class_ro_t` → method lists (both absolute and
   small/relative forms), reading pointer slots through the chained-fixup overlay
   (§1.2) on arm64, and rename each IMP `-[Class sel]`/`+[Class sel]` behind the
   placeholder label gate.
+
+  Code never touches a selector string or a `class_t` directly, so naming those
+  alone leaves every send unreadable: `objc_msgSend(obj, sel)` loads `sel` from a
+  `__objc_selrefs` slot, a class-method receiver comes from a `__objc_classrefs`
+  slot, `[super init]` fills `objc_super.class` from a `__objc_superrefs` slot,
+  and a modern link (`-objc_stubs_fast`, the default since Xcode 14) routes most
+  sends through a `__objc_stubs` entry — `adrp/ldr x1` of the selref, then a
+  jump to `objc_msgSend` through `__got` — so the send is a call to an anonymous
+  32-byte function. On an 84 MB arm64 iOS app, 274 of the 1,622 calls in a
+  500-function sample were such `sub_<addr>(obj)` calls and every direct send
+  read `objc_msgSendSuper2(&super, dat_1045b76f0)`.
+  `decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcrefs.rs (emit)`
+  names all four (kuna; the names follow IDA's `selRef_`/`classRef_` convention,
+  Ghidra labels the same slots by their pointer type only):
+
+  - each `__objc_selrefs` slot is the pointer-sized data object `selRef_<sel>`,
+    colons sanitized to underscores as in the `sel_<sel>` symbol the method walk
+    already puts on the selector string (a sent-only selector such as `alloc`
+    gets its `sel_` symbol here, since no local method names it);
+  - each `__objc_classrefs` / `__objc_superrefs` slot is `classRef_<Class>` /
+    `superRef_<Class>`: a rebase slot's class is read off the `class_t` it points
+    at, a chained **bind** slot's from the import it names with `_OBJC_CLASS_$_`
+    stripped (§1.2), so `classRef_UIView` is named although no address exists for
+    it. A classic `LC_DYLD_INFO` image stores a bind slot as zero and leaves it
+    unnamed (its bind opcodes are not parsed);
+  - each `__objc_stubs` entry is the function `objc_msgSend$<sel>`, the name the
+    linker gives the symbol it synthesized the stub for. The entry is found by
+    its own first two instructions (arm64 `adrp x1; ldr x1, [x1, #off]`, x86-64
+    `mov rsi, [rip+off]`) at every 4-byte offset, so the 32-byte fast and the
+    12-byte small layouts need no stride. When this image's own methods agree on
+    one type encoding for the selector, the stub gets that method's prototype
+    with `_cmd` removed and every remaining parameter pinned to the register the
+    full `(self, _cmd, …)` call places it in (`x0`, then `x2`…, floats in
+    `d0`…), which is what keeps a caller from printing the dead `x1` it never
+    wrote as an argument: `objc_msgSend$greet:(obj, 5)`. A selector no local
+    method defines, or whose arguments would need the stack, keeps the untyped
+    call-site inference.
+
+  The rebase slots of the three ref sections are also reported constant
+  (`AnalysisOutput::const_ranges`). dyld fills them once before any code runs
+  and nothing rewrites them — Ghidra's `ObjectiveC2_ClassAnalyzer` marks the same
+  blocks read-only for that reason — but they live in writable `__DATA`, outside
+  the `SG_READ_ONLY` warrant of `dynrelocs` (§1.3), so the claim is the
+  metadata's, and it rides its own option, **`objcrefconst`** (kuna, default-on,
+  inert unless `objc` is on, as `objc` is on any Mach-O image under 500 KiB). The commit paints the ranges `Varnode::readonly`
+  and adds them to `dynreloc_const` **before** the slots' own symbols are mapped
+  (a `SymbolEntry` copies the range property as it is created), so
+  `ActionVarnodeProps` folds a load through a selref to the selector string and
+  through a classref to the class: `objc_msgSend(obj, sel_init)`,
+  `objc_msgSendSuper2(&super, sel_init)` with `super.class = _OBJC_CLASS_$_Derived`,
+  `objc_msgSend$tag(_OBJC_CLASS_$_Derived)`. A bind slot has no static value and
+  is never folded, so `objc_msgSend(classRef_Remote, sel_tag)` keeps the name.
+  Off, every load through a slot stays a load of the named global
+  (`objc_msgSend(obj, selRef_init)`), the shape to read when the slot itself is
+  the question. The fold is what the chained-fixup unpacking in §1.3 exists for
+  here: a chained slot holds its packed chain word until `dynrelocs` unpacks it,
+  so on a chained image the pass reports no constant slot while `dynrelocs` is
+  off (the names stay). Like every analysis gate, `objcrefconst` is read at the
+  `read symbols` commit; flipping it afterwards does not re-paint.
 - **Core Foundation constant strings** (`cfstrings`, Mach-O-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/cfstring/mod.rs`): a `CFSTR("x")`
   compiles to a four-word `CFString` struct in `__cfstring` (`isa`, `flags`, a
@@ -4721,6 +4867,8 @@ signature. PE and Mach-O dispatch to their own oracles (`.pdata`/TLS/entry;
 `LC_FUNCTION_STARTS`/`LC_MAIN`/`__mod_init_func`). Failure mode: discovery-only —
 a wrong entry is a garbage `sub_<addr>`; a missed one is invisible until a caller
 overruns into it (§1.7).
+
+(kuna) **`__unwind_info` is a stripping-proof function-start source for Mach-O** (`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_unwindinfo.rs (UnwindInfoStartsPass)`, option `unwindstarts`, default-off). The linker folds each object's `__compact_unwind` records into one `__TEXT,__unwind_info` section whose second-level pages — regular `(functionOffset, encoding)` pairs, or compressed `u32`s whose low 24 bits are the offset from the page's first function — list, in ascending order, the start of every function the unwinder can describe (one per `.cfi_startproc`). Because the section lives in the mapped `__TEXT` segment it survives the `strip` that removes `LC_FUNCTION_STARTS` from `__LINKEDIT`, which is the whole of its value: on an App-Store app whose function starts were stripped, `LC_MAIN`, the exports, `__mod_init_func` and the thin symbol stream seed only a handful of entries, and arm64 has no always-on prologue sweep (oracle 5 is x86-64-only), so the gap between the few seeds is the entire text and nothing starts a function inside it. Measured on a 249 MB arm64 third-party iOS app with no `LC_FUNCTION_STARTS`, the default inventory is 59,222 — of which only 23 are real `__text` functions, the rest `__got` slots and `__stubs` — while `__unwind_info` records 204,800 real starts; with the option on all 204,800 are recovered and each decodes to a normal function body. On an image that still carries `LC_FUNCTION_STARTS` the oracle is a strict no-op: every unwind start is already a function-starts entry — the linker folds runs of adjacent same-encoding functions into one page entry, so the set is in fact a *subset* (on an 84 MB third-party iOS app, 185,937 unwind entries against 296,775 function starts, discovery unchanged at 314,038). Only the function **starts** are read; the compact encodings (frame size, saved-register set, frameless stack size) are deliberately ignored, because kuna's S5/S7 frame analysis recovers the stack frame from the code — the same reason the `.eh_frame` oracle inherits CFI rather than rebuilding it. Output-changing (it adds entries), so default-off: a default run is byte-identical to before.
 
 (kuna) **The x86-64 half of oracle 4 reads two encodings, because "PC-relative" is
 a link model and not part of the idiom.** `main` reaches `rdi` as a `lea

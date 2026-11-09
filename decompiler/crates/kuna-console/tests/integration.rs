@@ -280,6 +280,9 @@ mod verify_macho_imports;
 #[path = "verify_machomain.rs"]
 mod verify_machomain;
 
+#[path = "verify_unwindstarts.rs"]
+mod verify_unwindstarts;
+
 #[path = "verify_mappedflowboundary.rs"]
 mod verify_mappedflowboundary;
 
@@ -324,6 +327,9 @@ mod verify_noreturn_propagate;
 
 #[path = "verify_objc.rs"]
 mod verify_objc;
+
+#[path = "verify_importdata.rs"]
+mod verify_importdata;
 
 #[path = "verify_cfstring.rs"]
 mod verify_cfstring;

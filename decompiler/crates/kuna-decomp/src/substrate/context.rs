@@ -798,6 +798,9 @@ pub struct ArchContext {
     /// [`crate::p2_lift::kuna_gowritebarrier`].  Copied from the engine
     /// `Architecture` in `build_arch_handle`.
     pub go_write_barrier: u8,
+    /// (kuna) The `SoftwareBreakpoint` user-op id when `option ptrauthtrap`
+    /// is on; read by [`crate::p2_lift::kuna_ptrauthtrap`].
+    pub ptrauth_trap_userop: Option<kuna_base::types::uint4>,
     /// (kuna) `option reloadarg`; read by [`crate::p4_calls::kuna_reloadarg`].
     pub reload_arg: bool,
     /// (kuna) angr-style default naming: an unknown callee / global prints as
@@ -1949,6 +1952,7 @@ impl ArchContext {
             // (kuna) `option gowritebarrier` default auto; the real value is
             // copied from the engine Architecture in `build_arch_handle`.
             go_write_barrier: 1,
+            ptrauth_trap_userop: None,
             // (kuna) `option reloadarg` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             reload_arg: true,
