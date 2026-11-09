@@ -147,6 +147,11 @@ fn class_file(
     out
 }
 
+/// `StructClass.create` over the bytes.
+fn create(bytes: Vec<u8>, own: bool) -> StructClass {
+    crate::struct_classfile::create(bytes, own)
+}
+
 /// One static method `m()V` with this code; returns the parsed method, expanded.
 fn single_method(
     major: u16,
@@ -166,10 +171,7 @@ fn single_method(
         },
     );
     let m = member(&mut pool, 0x8, "m", "()V", &[code]);
-    let cl = StructClass::create(
-        &mut ByteCursor::new(class_file(major, minor, pool, &[], &[m], &[])),
-        true,
-    );
+    let cl = create(class_file(major, minor, pool, &[], &[m], &[]), true);
     let mt = cl.get_method("m", "()V").unwrap();
     mt.expand_data(cl);
     (cl, mt)
@@ -410,10 +412,7 @@ fn exception_table_ranges_and_catch_all() {
         },
     );
     let m = member(&mut pool, 0x8, "m", "()V", &[code]);
-    let cl = StructClass::create(
-        &mut ByteCursor::new(class_file(52, 0, pool, &[], &[m], &[])),
-        true,
-    );
+    let cl = create(class_file(52, 0, pool, &[], &[m], &[]), true);
     let mt = cl.get_method("m", "()V").unwrap();
     mt.expand_data(cl);
     let handlers = mt
@@ -480,10 +479,7 @@ fn method_with_code_attributes(
         },
     );
     let m = member(&mut pool, 0x8, "m", "(II)V", &[code]);
-    let cl = StructClass::create(
-        &mut ByteCursor::new(class_file(52, 0, pool, &[], &[m], &[])),
-        true,
-    );
+    let cl = create(class_file(52, 0, pool, &[], &[m], &[]), true);
     let mt = cl.get_method("m", "(II)V").unwrap();
     (cl, mt)
 }
@@ -583,10 +579,7 @@ fn unknown_attributes_are_skipped_and_bad_lengths_fail() {
     let f = member(&mut pool, 0x2, "f", "I", &[foo.clone(), syn]);
     let src = pool.utf8("T.java");
     let source = attribute(&mut pool, "SourceFile", &u2(src));
-    let cl = StructClass::create(
-        &mut ByteCursor::new(class_file(52, 0, pool, &[f], &[], &[foo, source])),
-        true,
-    );
+    let cl = create(class_file(52, 0, pool, &[f], &[], &[foo, source]), true);
     let fd = cl.get_field("f", "I").unwrap();
     assert!(fd.is_synthetic());
     assert!(!fd.has_modifier(ACC_SYNTHETIC));
@@ -608,7 +601,7 @@ fn unknown_attributes_are_skipped_and_bad_lengths_fail() {
     let bad = attribute_raw_length(&mut pool, "Foo", 0xFFFF_FFFF, &[]);
     let f = member(&mut pool, 0x2, "f", "I", &[bad]);
     let bytes = class_file(52, 0, pool, &[f], &[], &[]);
-    let caught = try_catch(|| StructClass::create(&mut ByteCursor::new(bytes), true)).unwrap_err();
+    let caught = try_catch(|| create(bytes, true)).unwrap_err();
     assert!(caught.is("IOException"), "{}", caught.message);
 }
 
@@ -625,16 +618,15 @@ fn every_truncation_fails_with_io_exception() {
     let bytes = corpus_class("r21g", "Iface");
     for cut in (0..bytes.len()).step_by(3) {
         let prefix = bytes[..cut].to_vec();
-        let caught =
-            try_catch(|| StructClass::create(&mut ByteCursor::new(prefix), true)).unwrap_err();
+        let caught = try_catch(|| create(prefix, true)).unwrap_err();
         assert!(caught.is("IOException"), "cut {}: {}", cut, caught.message);
     }
-    assert!(try_catch(|| StructClass::create(&mut ByteCursor::new(bytes), true)).is_ok());
+    assert!(try_catch(|| create(bytes, true)).is_ok());
 }
 
 #[test]
 fn foreign_classes_drop_method_bodies() {
-    let cl = StructClass::create(&mut ByteCursor::new(corpus_class("r17p", "Basics")), false);
+    let cl = create(corpus_class("r17p", "Basics"), false);
     assert!(!cl.is_own());
     for mt in cl.get_methods().iter() {
         assert!(!mt.contains_code());
@@ -651,7 +643,7 @@ fn foreign_classes_drop_method_bodies() {
 
 #[test]
 fn expand_data_rebuilds_a_stale_sequence() {
-    let cl = StructClass::create(&mut ByteCursor::new(corpus_class("r21g", "Basics")), true);
+    let cl = create(corpus_class("r21g", "Basics"), true);
     let mt = cl.get_method("table", "(I)I").unwrap();
     mt.expand_data(cl);
     let first = mt.get_instruction_sequence().unwrap();
@@ -672,7 +664,7 @@ fn expand_data_rebuilds_a_stale_sequence() {
 
 #[test]
 fn members_share_the_base_api() {
-    let cl = StructClass::create(&mut ByteCursor::new(corpus_class("r21g", "Records")), true);
+    let cl = create(corpus_class("r21g", "Records"), true);
     let components = cl.get_record_components().unwrap();
     assert_eq!(
         components.iter().map(|c| c.get_name()).collect::<Vec<_>>(),
@@ -717,12 +709,11 @@ fn members_share_the_base_api() {
         .find(|m| m.get_name() == "describe")
         .unwrap();
     assert!(!lambda.is_synthetic());
-    let synthetic =
-        StructClass::create(&mut ByteCursor::new(corpus_class("r21g", "Lambdas")), true)
-            .get_methods()
-            .iter()
-            .filter(|m| m.is_synthetic())
-            .count();
+    let synthetic = create(corpus_class("r21g", "Lambdas"), true)
+        .get_methods()
+        .iter()
+        .filter(|m| m.is_synthetic())
+        .count();
     assert!(synthetic >= 5);
     assert_eq!(
         cl.get_method_recursive("compareTo", "(LRecords;)I"),
@@ -732,7 +723,7 @@ fn members_share_the_base_api() {
 
 #[test]
 fn annotations_become_exprents_per_class_scope() {
-    let cl = StructClass::create(&mut ByteCursor::new(corpus_class("r21g", "Annos")), true);
+    let cl = create(corpus_class("r21g", "Annos"), true);
     let attr = cl
         .get_attribute(StructGeneralAttribute::ATTRIBUTE_RUNTIME_VISIBLE_ANNOTATIONS)
         .unwrap();
@@ -769,10 +760,7 @@ fn annotations_become_exprents_per_class_scope() {
         .all(|t| t.get_annotation().get_class_name() == "TU"));
     assert!(types.iter().any(|t| t.get_target_type() == 0x40));
 
-    let everything = StructClass::create(
-        &mut ByteCursor::new(corpus_class("r21g", "Everything")),
-        true,
-    );
+    let everything = create(corpus_class("r21g", "Everything"), true);
     let ints = everything.get_method("ints", "()[I").unwrap();
     let default = ints
         .get_attribute(StructGeneralAttribute::ATTRIBUTE_ANNOTATION_DEFAULT)
@@ -831,10 +819,7 @@ fn instruction_impact_tracks_stack_types() {
         },
     );
     let m = member(&mut pool, 0x8, "m", "()V", &[code]);
-    let cl = StructClass::create(
-        &mut ByteCursor::new(class_file(52, 0, pool, &[], &[m], &[])),
-        true,
-    );
+    let cl = create(class_file(52, 0, pool, &[], &[m], &[]), true);
     let mt = cl.get_method("m", "()V").unwrap();
     mt.expand_data(cl);
     let mut data = DataPoint::new();

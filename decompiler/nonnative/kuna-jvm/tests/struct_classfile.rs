@@ -641,8 +641,14 @@ pub fn render_class(cl: StructClass) -> String {
     out
 }
 
+/// `StructClass.create` as the tests call it; the one place a decompilation
+/// context would be installed for class reading.
+pub fn create(bytes: Vec<u8>, own: bool) -> StructClass {
+    StructClass::create(&mut ByteCursor::new(bytes), own)
+}
+
 pub fn parse(bytes: Vec<u8>) -> StructClass {
-    StructClass::create(&mut ByteCursor::new(bytes), true)
+    create(bytes, true)
 }
 
 /// Compare golden and rendered text; a `?` golden token matches any token.
