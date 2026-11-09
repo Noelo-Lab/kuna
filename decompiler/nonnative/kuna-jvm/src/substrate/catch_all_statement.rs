@@ -121,8 +121,8 @@ impl CatchAllStatement {
                 .get_counter_and_increment(CounterContainer::VAR_COUNTER);
             let monitor = VarExprent::new(
                 index,
-                VarType::VARTYPE_INT(),
-                DecompilerContext::get_var_processor(),
+                Some(VarType::VARTYPE_INT()),
+                Some(DecompilerContext::get_var_processor()),
             );
             cas.d_mut(|d| d.monitor = Some(monitor));
         }

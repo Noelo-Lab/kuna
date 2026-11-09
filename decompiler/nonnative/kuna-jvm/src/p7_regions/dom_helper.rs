@@ -170,7 +170,7 @@ impl DomHelper {
                 .get_with_key(&block.get_id())
                 .expect("block statement");
 
-            for succ in block.get_succs() {
+            for succ in block.get_succs().to_vec() {
                 let mut stsucc = stats.get_with_key(&succ.get_id()).expect("successor");
 
                 let type_;
@@ -195,10 +195,12 @@ impl DomHelper {
                 stat.add_successor(StatEdge::new_closure(type_, stat, stsucc, closure));
             }
 
-            for succex in block.get_succ_exceptions() {
+            for succex in block.get_succ_exceptions().to_vec() {
                 let stsuccex = stats.get_with_key(&succex.get_id()).expect("handler");
 
-                let range = graph.get_exception_range(succex, block);
+                let range = graph
+                    .get_exception_range(succex, block)
+                    .expect("exception range");
                 if !range.is_circular() {
                     stat.add_successor(StatEdge::new_exceptions(
                         stat,

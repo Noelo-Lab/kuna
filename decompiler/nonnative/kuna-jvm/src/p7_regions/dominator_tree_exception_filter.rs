@@ -66,7 +66,7 @@ impl DominatorTreeExceptionFilter {
 
         let lst_keys = ordered_idoms.get_lst_keys().to_vec();
         for index in (0..lst_keys.len()).rev() {
-            let key = lst_keys[index];
+            let key = lst_keys[index].expect("keyed idom");
             let idom = ordered_idoms.get(index).expect("idom");
             self.map_tree_branches
                 .compute_if_absent(idom, JLinkedHashSet::new)

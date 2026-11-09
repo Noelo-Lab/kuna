@@ -25,8 +25,12 @@ java_subclass!(pub CatchStatement: Statement, StatementKind::Catch(CatchStatemen
 pub(crate) fn new_object_var(type_name: &str) -> VarExprent {
     let index = DecompilerContext::get_counter_container()
         .get_counter_and_increment(CounterContainer::VAR_COUNTER);
-    let var_type = VarType::new(CodeType::Object, 0, Some(type_name));
-    VarExprent::new(index, var_type, DecompilerContext::get_var_processor())
+    let var_type = VarType::new_value(CodeType::Object, 0, type_name);
+    VarExprent::new(
+        index,
+        Some(var_type),
+        Some(DecompilerContext::get_var_processor()),
+    )
 }
 
 impl CatchStatement {
@@ -178,7 +182,7 @@ impl CatchStatement {
         self.0.get_offset_base(values);
 
         for exp in self.get_resources().iter() {
-            exp.get_bytecode_range(values);
+            exp.get_bytecode_range(Some(&mut *values));
         }
     }
 

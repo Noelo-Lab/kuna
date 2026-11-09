@@ -162,10 +162,7 @@ fn is_single_type(type_: i32) -> bool {
 
 /// `((Pattern) exprent).getPatternVars()` for the two `Pattern` implementors.
 pub(crate) fn pattern_vars_of(pattern: Exprent) -> Vec<VarExprent> {
-    if let Some(var) = pattern.try_as_var() {
-        return Pattern::get_pattern_vars(var);
-    }
-    Pattern::get_pattern_vars(pattern.as_pattern())
+    Pattern::cast(pattern).get_pattern_vars()
 }
 
 /// The instanceof-pattern variables declared by the exprents in `list`.
@@ -1231,7 +1228,7 @@ impl Statement {
         }
         if let Some(exprents) = self.get_exprents() {
             for e in exprents.iter() {
-                e.get_bytecode_range(values);
+                e.get_bytecode_range(Some(&mut *values));
             }
         } else {
             let stats = self.get_stats().borrow().to_vec();
@@ -1240,7 +1237,7 @@ impl Statement {
             }
 
             for e in self.get_stat_exprents() {
-                e.get_bytecode_range(values);
+                e.get_bytecode_range(Some(&mut *values));
             }
         }
     }

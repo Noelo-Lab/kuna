@@ -59,8 +59,8 @@ impl StatEdge {
             can_inline: true,
             phantom_continue: false,
         });
-        ValidationHelper::not_null(Some(source));
-        ValidationHelper::not_null(Some(destination));
+        ValidationHelper::not_null(Some(&source));
+        ValidationHelper::not_null(Some(&destination));
         edge
     }
 

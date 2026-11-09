@@ -69,7 +69,10 @@ impl DominatorEngine {
         self.col_ordered_idoms
             .put_with_key(Some(first_id), first_id);
 
-        let lst_ids: Vec<i32> = self.col_ordered_idoms.get_lst_keys()[1..].to_vec();
+        let lst_ids: Vec<i32> = self.col_ordered_idoms.get_lst_keys()[1..]
+            .iter()
+            .map(|k| k.expect("keyed idom"))
+            .collect();
 
         loop {
             let mut changed = false;
@@ -149,6 +152,7 @@ impl DominatorEngine {
             ret.add(id);
 
             for key in self.col_ordered_idoms.get_lst_keys().to_vec() {
+                let key = key.expect("keyed idom");
                 let ndid = self
                     .col_ordered_idoms
                     .get_with_key(&key)
