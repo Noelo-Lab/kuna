@@ -337,6 +337,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kuna-jvm"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+]
+
+[[package]]
 name = "kuna-lift-diff"
 version = "0.1.0"
 dependencies = [

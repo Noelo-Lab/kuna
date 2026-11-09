@@ -2,7 +2,7 @@
 
 [workspace]
 resolver = "2"
-members = ["crates/*"]
+members = ["crates/*", "nonnative/*"]
 
 [workspace.package]
 version = "0.1.0"
