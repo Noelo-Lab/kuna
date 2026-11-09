@@ -1419,6 +1419,28 @@ tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with IllegalStateException: Could not find destination nodes for stat id|code after an if with a try/finally or try/catch inside is skipped (break label; past the following statements)|a method's last return is missing after decompiling"
 
 [[option]]
+option = "jvm_fix_switch_yield_const_retype"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "substrate"
+subphase = "switch_exprent, kuna_fix_switch_yield_const_retype"
+strength = "HARD"
+rewind = "substrate"
+issue = ""
+summary = "Decompile a switch expression whose arms yield unrelated reference types with a literal among them (case 1 -> \"one\"; default -> (char) c, or a String next to a Class literal): the literal keeps its own type, which the expression's context widens to the switch's type, where Vineflower gives it that common supertype (Object, Serializable) and fails the method with RuntimeException: invalid constant type."
+use_when = "Leave on; turn off only to reproduce Vineflower's failure on such a method."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_switch_yield_const_retype off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 SwitchExprent.toJava: a ConstExprent yielded by a single-expression arm is setConstType'd to the switch's type, a join of the arms' types that ConstExprent.toJava cannot write (VarDefinitionHelper.canConstTypeMerge guards the same retype since aea5fd12); still present on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "// $VF: Couldn't be decompiled with RuntimeException: invalid constant type: Ljava/io/Serializable;|invalid constant type: Ljava/lang/Object; with value|a switch expression mixing a string literal with chars, numbers or booleans fails to decompile"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""

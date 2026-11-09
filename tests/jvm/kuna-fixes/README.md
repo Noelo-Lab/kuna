@@ -20,6 +20,7 @@ source they were compiled from.
 |---|---|---|---|
 | `pkg/TestIfDenestFallthrough` | `jvm_fix_if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestMethodRefWildcardReceiver` | `jvm_fix_lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
+| `pkg/TestSwitchExprConstLub` | `jvm_fix_switch_yield_const_retype` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestTryCatchNotFlag` | `jvm_fix_twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 
 ## Diffs (compat -> default)
@@ -186,6 +187,187 @@ source they were compiled from.
     }
  
     TestMethodRefWildcardReceiver.Pipe<Object> objectsOf(TestMethodRefWildcardReceiver.Factory<String> factory) {
+```
+
+### `pkg/TestSwitchExprConstLub`
+
+```diff
+--- expected-compat/pkg/TestSwitchExprConstLub.java
++++ expected/pkg/TestSwitchExprConstLub.java
+@@ -13,137 +13,65 @@
+    }
+ 
+    public void stringOrChar(int c) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: iload 1
+-      // 01: lookupswitch 37 2 34 27 92 32
+-      // 1c: ldc "\\\""
+-      // 1e: goto 2b
+-      // 21: ldc "\\\\"
+-      // 23: goto 2b
+-      // 26: iload 1
+-      // 27: i2c
+-      // 28: invokestatic java/lang/Character.valueOf (C)Ljava/lang/Character;
+-      // 2b: invokestatic pkg/TestSwitchExprConstLub.use (Ljava/lang/Object;)V
+-      // 2e: return
++      use(switch (c) {
++         case 34 -> "\\\"";
++         case 92 -> "\\\\";
++         default -> (char)c;
++      });
+    }
+ 
+    public void inLambda() {
+       each(c -> {
+-         // $VF: Couldn't be decompiled
+-         // Bytecode:
+-         // 00: iload 0
+-         // 01: lookupswitch 24 1 34 19
+-         // 14: ldc "\\\""
+-         // 16: goto 1e
+-         // 19: iload 0
+-         // 1a: i2c
+-         // 1b: invokestatic java/lang/Character.valueOf (C)Ljava/lang/Character;
+-         // 1e: invokestatic pkg/TestSwitchExprConstLub.use (Ljava/lang/Object;)V
+-         // 21: return
++         use(switch (c) {
++            case 34 -> "\\\"";
++            default -> (char)c;
++         });
+       });
+    }
+ 
+    public Object stringOrInt(int x) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: iload 1
+-      // 01: lookupswitch 39 2 1 27 2 32
+-      // 1c: ldc "one"
+-      // 1e: goto 2c
+-      // 21: bipush 2
+-      // 22: invokestatic java/lang/Integer.valueOf (I)Ljava/lang/Integer;
+-      // 25: goto 2c
+-      // 28: iload 1
+-      // 29: invokestatic java/lang/Integer.valueOf (I)Ljava/lang/Integer;
+-      // 2c: areturn
++      return switch (x) {
++         case 1 -> "one";
++         case 2 -> 2;
++         default -> x;
++      };
+    }
+ 
+    public Object boolOrString(int x) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: iload 1
+-      // 01: lookupswitch 26 1 1 19
+-      // 14: bipush 1
+-      // 15: invokestatic java/lang/Boolean.valueOf (Z)Ljava/lang/Boolean;
+-      // 18: goto 1d
+-      // 1b: ldc "no"
+-      // 1d: astore 2
+-      // 1e: aload 2
+-      // 1f: invokestatic pkg/TestSwitchExprConstLub.use (Ljava/lang/Object;)V
+-      // 22: aload 2
+-      // 23: areturn
++      Object o = switch (x) {
++         case 1 -> true;
++         default -> "no";
++      };
++      use(o);
++      return o;
+    }
+ 
+    public Object classOrString(int x) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: iload 1
+-      // 01: lookupswitch 24 1 1 19
+-      // 14: ldc java/lang/String
+-      // 16: goto 1b
+-      // 19: ldc "s"
+-      // 1b: areturn
++      return switch (x) {
++         case 1 -> String.class;
++         default -> "s";
++      };
+    }
+ 
+    public Object stringOrBuilder(int x) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: iload 1
+-      // 01: lookupswitch 24 1 1 19
+-      // 14: ldc "s"
+-      // 16: goto 22
+-      // 19: new java/lang/StringBuilder
+-      // 1c: dup
+-      // 1d: ldc "b"
+-      // 1f: invokespecial java/lang/StringBuilder.<init> (Ljava/lang/String;)V
+-      // 22: areturn
++      return switch (x) {
++         case 1 -> "s";
++         default -> new StringBuilder("b");
++      };
+    }
+ 
+    public Object stringSelector(String s) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 1
+-      // 01: astore 2
+-      // 02: bipush -1
+-      // 03: istore 3
+-      // 04: aload 2
+-      // 05: invokevirtual java/lang/String.hashCode ()I
+-      // 08: lookupswitch 31 1 97 20
+-      // 1c: aload 2
+-      // 1d: ldc "a"
+-      // 1f: invokevirtual java/lang/String.equals (Ljava/lang/Object;)Z
+-      // 22: ifeq 27
+-      // 25: bipush 0
+-      // 26: istore 3
+-      // 27: iload 3
+-      // 28: lookupswitch 25 1 0 20
+-      // 3c: ldc "A"
+-      // 3e: goto 48
+-      // 41: aload 1
+-      // 42: invokevirtual java/lang/String.length ()I
+-      // 45: invokestatic java/lang/Integer.valueOf (I)Ljava/lang/Integer;
+-      // 48: invokestatic pkg/TestSwitchExprConstLub.id (Ljava/lang/Object;)Ljava/lang/Object;
+-      // 4b: areturn
++      return id(switch (s) {
++         case "a" -> "A";
++         default -> s.length();
++      });
+    }
+ 
+    public void blockArm(int c) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: iload 1
+-      // 01: lookupswitch 24 1 10 19
+-      // 14: ldc "\\n"
+-      // 16: goto 29
+-      // 19: iload 1
+-      // 1a: bipush 32
+-      // 1c: if_icmpge 24
+-      // 1f: ldc "ctl"
+-      // 21: goto 29
+-      // 24: iload 1
+-      // 25: i2c
+-      // 26: invokestatic java/lang/Character.valueOf (C)Ljava/lang/Character;
+-      // 29: invokestatic pkg/TestSwitchExprConstLub.use (Ljava/lang/Object;)V
+-      // 2c: return
++      use(switch (c) {
++         case 10 -> "\\n";
++         default -> c < 32 ? "ctl" : (char)c;
++      });
+    }
+ 
+    public Object charOrInt(int x) {
 ```
 
 ### `pkg/TestTryCatchNotFlag`

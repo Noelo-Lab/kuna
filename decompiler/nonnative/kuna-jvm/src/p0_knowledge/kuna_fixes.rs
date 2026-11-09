@@ -36,6 +36,9 @@ pub enum KunaFix {
     /// moves the code after an if into its then-branch while the if's body
     /// still reaches that code.
     IfDenestFallthrough,
+    /// `jvm_fix_switch_yield_const_retype`: a constant a switch expression
+    /// yields keeps its own type when the switch's type is one no constant has.
+    SwitchYieldConstRetype,
 }
 
 impl KunaFix {
@@ -45,6 +48,7 @@ impl KunaFix {
         KunaFix::LambdaWildcardReturn,
         KunaFix::TwrUnaryCondition,
         KunaFix::IfDenestFallthrough,
+        KunaFix::SwitchYieldConstRetype,
     ];
 
     /// The option row that turns this fix on or off.
@@ -54,6 +58,7 @@ impl KunaFix {
             KunaFix::LambdaWildcardReturn => "jvm_fix_lambda_wildcard_return",
             KunaFix::TwrUnaryCondition => "jvm_fix_twr_unary_condition",
             KunaFix::IfDenestFallthrough => "jvm_fix_if_denest_fallthrough",
+            KunaFix::SwitchYieldConstRetype => "jvm_fix_switch_yield_const_retype",
         }
     }
 

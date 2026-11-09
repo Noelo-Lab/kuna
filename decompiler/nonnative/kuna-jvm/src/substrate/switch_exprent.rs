@@ -1,4 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/SwitchExprent.java`.
+//!
+//! kuna fix `jvm_fix_switch_yield_const_retype` (`kuna_fixes`): in `to_java`,
+//! a constant yielded by a single-expression arm takes the switch's type only
+//! when a constant can have that type, where Vineflower retypes it to any
+//! common supertype of the arms and fails to write it.
 
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::code_constants::ACC_ENUM;
@@ -7,6 +12,7 @@ use crate::exit_exprent::Type as ExitType;
 use crate::exprent::{Exprent, ExprentKind};
 use crate::field_exprent::FieldExprent;
 use crate::function_exprent::FunctionType;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::pattern::Pattern;
 use crate::rt::{BitSet, JHashSet, JavaEq, JavaHash};
 use crate::stat_edge::StatEdge;
@@ -188,7 +194,13 @@ impl SwitchExprent {
                     if content.is_const()
                         && !content.get_expr_type().equals(&VarType::VARTYPE_NULL())
                     {
-                        content.as_const().set_const_type(type_.clone());
+                        if kuna_fixes::enabled(KunaFix::SwitchYieldConstRetype) {
+                            if content.as_const().can_be_written_as(&type_) {
+                                content.as_const().set_const_type(type_.clone());
+                            }
+                        } else {
+                            content.as_const().set_const_type(type_.clone());
+                        }
                     }
 
                     buf.append_buffer(content.to_java(indent + 1).append(";"));

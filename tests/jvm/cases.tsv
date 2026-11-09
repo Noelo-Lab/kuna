@@ -3144,6 +3144,11 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected-compat/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes-compat/pkg/TestSwitchExprConstLub	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSwitchExprConstLub.class
+class	kuna-fixes/classes/pkg/TestSwitchExprConstLub$IntSink.class
+expected	kuna-fixes/expected-compat/pkg/TestSwitchExprConstLub.java
+compare	TestSwitchExprConstLub.java
 case	kuna-fixes-compat/pkg/TestTryCatchNotFlag	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class
@@ -3162,6 +3167,11 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes/pkg/TestSwitchExprConstLub	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSwitchExprConstLub.class
+class	kuna-fixes/classes/pkg/TestSwitchExprConstLub$IntSink.class
+expected	kuna-fixes/expected/pkg/TestSwitchExprConstLub.java
+compare	TestSwitchExprConstLub.java
 case	kuna-fixes/pkg/TestTryCatchNotFlag	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class

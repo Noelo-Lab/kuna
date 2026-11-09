@@ -1119,3 +1119,31 @@ sequence, and the method keeps its source shape. On the benchmark inputs it deco
 Elasticsearch's `InternalEngine.closeNoLock` and changes two methods that Vineflower prints
 correctly through the healed path (Ghidra's `DataTypeManagerDB.resolveBuiltIn`, Spring's
 `AnnotationTypeFilter.hasAnnotation`); all three recompile to the original bytecode.
+**`jvm_fix_switch_yield_const_retype`.** A switch expression replaces a switch statement
+whose arms all store one stack variable, and takes that variable's type, which type
+inference computes as the join of the values stored in it: for two unrelated classes their
+nearest common ancestor (`Serializable` for `String` and `Character`), or `Object` when the
+class universe does not know one. When
+`decompiler/nonnative/kuna-jvm/src/substrate/switch_exprent.rs (SwitchExprent::to_java)`
+writes an arm that is a single `yield` of a constant, it first gives the constant the
+switch's type, so that a `char` or `boolean` switch writes its arms' integer constants as
+`'a'` or `true`. A literal can only have a primitive type, a box, `String`, `Class` or
+`MethodType`, so when a constant arm sits next to an arm of an unrelated reference type
+(`use(switch (c) { case 34 -> "\\\""; default -> (char) c; })`, a `String` and a boxed
+`char`; a `String` and a `Class` literal, a `Boolean`, a `StringBuilder`) the constant
+gets the join, which `ConstExprent::to_java` cannot write, and Vineflower fails the method
+with `RuntimeException: invalid constant type: Ljava/io/Serializable; with value ...`.
+Vineflower guards the same retyping where variables are merged (`canConstTypeMerge`,
+upstream commit `aea5fd12`) but not here, and `develop/1.13.0` still has it. With the fix
+the constant takes the switch's type only when
+`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_switch_yield_const_retype.rs (ConstExprent::can_be_written_as)`
+accepts it, which is exactly when `to_java` can write it; otherwise the constant keeps its
+own type. That type is a subtype of the switch's, because the join is an upper bound of
+every arm, and the assignment or invocation context the switch expression sits in widens
+it the way javac did when it compiled the arm. A switch whose type a literal can have is
+written as before, so only methods Vineflower fails change. spring-framework's
+`BasicJsonWriter.escape` is the case that showed it: its lambda now prints
+`builder.append(switch (c) { case 8 -> "\\b"; ... default -> c <= 31 ? String.format("\\u%04x", c) : (char)c; })`.
+Case labels, which `to_java` gives the selector's type, are left alone: the one failure
+seen there (Vineflower's own `TestUnnamedVar1.patternSwitch3`) is a pattern switch whose
+labels were never turned into patterns, and writing them would print wrong code.

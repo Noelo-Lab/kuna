@@ -164,3 +164,5 @@ mod kp1_plugins;
 mod kt5_exprents;
 #[path = "kt8_kotlin_runs.rs"]
 mod kt8_kotlin_runs;
+#[path = "kuna_fix_switch_yield_const_retype.rs"]
+mod kuna_fix_switch_yield_const_retype;
