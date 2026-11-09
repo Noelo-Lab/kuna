@@ -4,3 +4,5 @@
 mod rt_jhash;
 #[path = "rt_kernel.rs"]
 mod rt_kernel;
+#[path = "class_model.rs"]
+mod class_model;
