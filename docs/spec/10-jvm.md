@@ -1147,3 +1147,30 @@ written as before, so only methods Vineflower fails change. spring-framework's
 Case labels, which `to_java` gives the selector's type, are left alone: the one failure
 seen there (Vineflower's own `TestUnnamedVar1.patternSwitch3`) is a pattern switch whose
 labels were never turned into patterns, and writing them would print wrong code.
+**`jvm_fix_catch_loop_back_successor`.** `CatchStatement::is_head`
+(`decompiler/nonnative/kuna-jvm/src/substrate/catch_statement.rs (CatchStatement::is_head)`)
+turns a node and the handlers only it reaches into a `try`/`catch` (section 10.5) and
+chooses the statement that follows it, `next`: the node's own regular successor, else the
+first handler's; a handler with another regular successor is left out, and the statement
+is built only when the number of members that reach `next` is not one (the try block
+counts two). In a `while (true)` loop whose body is a `try` that leaves the loop only by
+`return` or `throw`, with two or more `catch` blocks that all go back to the top of the
+loop, every handler's successor is the try block itself, so `next` is the try block. When
+code precedes the loop, the loop's header is not the first statement of its region, so
+those back edges are still regular edges (an edge back to the first block would already be
+a `CONTINUE`), and the `try`/`catch` is built at the level of the region with `next` among
+its own members: `collapseNodesToStatement` turns the back edges into `CONTINUE`s and then
+adds a regular edge from the new statement to `next`, its own child. Nothing that leaves
+the region reaches that statement backwards any more, the post-reverse-post-order of the
+region leaves it out, and `DomHelper::find_simple_statements` fails the method with
+`computing post reverse post order failed!` (Vineflower 1.12.0, and `develop/1.13.0`).
+With a single `catch` block the count is one, the statement is not built at that level,
+`DomHelper::find_general_statement` isolates the loop first, inside it the back edges are
+`CONTINUE`s and the `try`/`catch` has no successor, and the loop becomes a `do` statement
+around it. With the fix, `is_head` builds no `try`/`catch` whose `next` is one of its own
+members (the try block or a kept handler), so the multi-catch loop takes the single-catch
+path. On the benchmark's five inputs, okio, okhttp and kotlin-stdlib, `next` is a member in
+13 methods: in 11 (one `catch` block, as in Guava's `Uninterruptibles`) Vineflower already
+declines to build the statement, and the other two are Elasticsearch's
+`RetryingInputStream.read()` and `read(byte[], int, int)`, retry loops of this shape, which
+Vineflower fails and which now print their source.

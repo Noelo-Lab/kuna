@@ -39,6 +39,9 @@ pub enum KunaFix {
     /// `jvm_fix_switch_yield_const_retype`: a constant a switch expression
     /// yields keeps its own type when the switch's type is one no constant has.
     SwitchYieldConstRetype,
+    /// `jvm_fix_catch_loop_back_successor`: a try/catch is not built at a
+    /// level where its successor would be its own try block.
+    CatchLoopBackSuccessor,
 }
 
 impl KunaFix {
@@ -49,6 +52,7 @@ impl KunaFix {
         KunaFix::TwrUnaryCondition,
         KunaFix::IfDenestFallthrough,
         KunaFix::SwitchYieldConstRetype,
+        KunaFix::CatchLoopBackSuccessor,
     ];
 
     /// The option row that turns this fix on or off.
@@ -59,6 +63,7 @@ impl KunaFix {
             KunaFix::TwrUnaryCondition => "jvm_fix_twr_unary_condition",
             KunaFix::IfDenestFallthrough => "jvm_fix_if_denest_fallthrough",
             KunaFix::SwitchYieldConstRetype => "jvm_fix_switch_yield_const_retype",
+            KunaFix::CatchLoopBackSuccessor => "jvm_fix_catch_loop_back_successor",
         }
     }
 

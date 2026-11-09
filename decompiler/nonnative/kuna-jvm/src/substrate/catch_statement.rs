@@ -1,4 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/stats/CatchStatement.java`.
+//!
+//! kuna fix `jvm_fix_catch_loop_back_successor` (`kuna_fixes`): `is_head`
+//! builds no try/catch whose successor would be one of its own members (the
+//! try block, when the handlers jump back to it as a loop's continue); the
+//! loop is then isolated first, as Vineflower already does for one handler.
 
 use crate::code_constants::OPC_ASTORE;
 use crate::code_type::CodeType;
@@ -8,6 +13,7 @@ use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::java_subclass;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{BitSet, JHashSet, JList};
 use crate::stat_edge::StatEdge;
 use crate::statement::{LastBasicType, Statement, StatementKind, StatementType};
@@ -131,6 +137,12 @@ impl CatchStatement {
                 if !handlerok {
                     set_handlers.remove(&stat);
                 }
+            }
+
+            if kuna_fixes::enabled(KunaFix::CatchLoopBackSuccessor)
+                && next.is_some_and(|n| n == head || set_handlers.contains(&n))
+            {
+                return None;
             }
 
             if hnextcount != 1 && !set_handlers.is_empty() {

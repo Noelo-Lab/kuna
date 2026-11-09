@@ -3131,6 +3131,14 @@ case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB	Kotlin Multifile 
 class	classes/kotlin/kt/pkg/TestMultifile__TestMultifileBKt.class
 expected	expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB.kt
 compare	TestMultifile__TestMultifileBKt.kt	TestMultifile__TestMultifileBKt.java
+case	kuna-fixes-compat/pkg/TestCatchLoopBack	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestCatchLoopBack.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$IoError.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$OtherError.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$Source.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$StateError.class
+expected	kuna-fixes/expected-compat/pkg/TestCatchLoopBack.java
+compare	TestCatchLoopBack.java
 case	kuna-fixes-compat/pkg/TestIfDenestFallthrough	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected-compat/pkg/TestIfDenestFallthrough.java
@@ -3154,6 +3162,14 @@ class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class
 expected	kuna-fixes/expected-compat/pkg/TestTryCatchNotFlag.java
 compare	TestTryCatchNotFlag.java
+case	kuna-fixes/pkg/TestCatchLoopBack	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestCatchLoopBack.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$IoError.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$OtherError.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$Source.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$StateError.class
+expected	kuna-fixes/expected/pkg/TestCatchLoopBack.java
+compare	TestCatchLoopBack.java
 case	kuna-fixes/pkg/TestIfDenestFallthrough	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected/pkg/TestIfDenestFallthrough.java
