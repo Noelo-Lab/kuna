@@ -168,6 +168,11 @@ impl VarProcessor {
         }
     }
 
+    /// The method this processor's variables belong to (kuna).
+    pub fn get_method(self) -> StructMethod {
+        self.with(|d| d.method)
+    }
+
     pub fn get_var_original_index(self, index: i32) -> Option<i32> {
         let var_versions = self.with(|d| d.var_versions)?;
         let pair = var_versions

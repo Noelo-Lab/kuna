@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/FunctionExprent.java`.
+//!
+//! kuna fix `boxed_type_variable_cast`: a cast to a type variable keeps the
+//! boxing call of its operand.
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -7,6 +10,7 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::{Exprent, ExprentKind, ExprentType};
 use crate::i_matchable::MatchProperties;
 use crate::int_helper::IntHelper;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
@@ -949,6 +953,12 @@ impl FunctionExprent {
                     buf.append_buffer(&lst_operands.get(i).to_java(indent));
                 }
                 buf.enclose_with_parens();
+                if kuna_fixes::enabled(KunaFix::BoxedTypeVariableCast) {
+                    keep_boxing_under_cast(
+                        lst_operands.get(0),
+                        &lst_operands.get(1).get_expr_type(),
+                    );
+                }
                 let operand = self.wrap_operand_string(lst_operands.get(0), true, indent);
                 buf.append_buffer(&operand);
                 return buf;
@@ -1402,5 +1412,20 @@ impl FunctionExprent {
             Some(_) => jthrow!(ClassCastException; "match value is not a FunctionType"),
         };
         type_.is_none() || Some(self.get_func_type()) == type_
+    }
+}
+
+/// kuna fix `boxed_type_variable_cast`: Java casts a primitive to a reference
+/// type only by boxing it and widening the box (JLS 5.5), so `(T) 0` does not
+/// compile for a type variable `T`. A boxing call cast to a type variable,
+/// `(T) Integer.valueOf(0)` in the bytecode, keeps its call.
+pub fn keep_boxing_under_cast(operand: Exprent, target: &VarType) {
+    if target.type_ != CodeType::Genvar || operand.is_kotlin() {
+        return;
+    }
+    if let Some(inv) = operand.try_as_invocation() {
+        if inv.is_boxing_call() {
+            inv.force_boxing(true);
+        }
     }
 }

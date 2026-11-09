@@ -1,4 +1,11 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/ExprProcessor.java`.
+//!
+//! kuna fix `boxed_type_variable_cast`: `get_casted_exprent` keeps the
+//! boxing call of a value it casts to a type variable.
+//!
+//! kuna fix `unchecked_generic_cast`: `get_casted_exprent` writes the
+//! unchecked cast a declared value's generic type needs to be assigned or
+//! returned (`kuna_fix_unchecked_generic_cast`).
 
 use crate::array_exprent::ArrayExprent;
 use crate::assert_processor::AssertProcessor;
@@ -16,11 +23,13 @@ use crate::exit_exprent::{ExitExprent, Type as ExitType};
 use crate::exprent::Exprent;
 use crate::field_exprent::FieldExprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
-use crate::function_exprent::{FunctionExprent, FunctionType};
+use crate::function_exprent::{self, FunctionExprent, FunctionType};
 use crate::generic_type::GenericType;
 use crate::if_exprent::{IfExprent, Type as IfType};
 use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
+use crate::kuna_fix_unchecked_generic_cast;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
 use crate::method_descriptor::MethodDescriptor;
 use crate::monitor_exprent::{MonitorExprent, Type as MonitorType};
@@ -1355,6 +1364,17 @@ impl ExprProcessor {
             cast = cast_always;
         }
 
+        let mut unchecked_cast = None;
+        if !cast && !unbox && !cast_narrowing && kuna_fixes::enabled(KunaFix::UncheckedGenericCast)
+        {
+            unchecked_cast = kuna_fix_unchecked_generic_cast::cast_for(exprent, &left_type);
+            cast = unchecked_cast.is_some();
+        }
+
+        if cast && kuna_fixes::enabled(KunaFix::BoxedTypeVariableCast) {
+            function_exprent::keep_boxing_under_cast(exprent, &left_type);
+        }
+
         let cast_lambda = !cast
             && exprent.is_new()
             && !left_type.equals(&right_type)
@@ -1373,7 +1393,7 @@ impl ExprProcessor {
         if cast {
             buffer
                 .append_char('(')
-                .append_cast_type_name(&left_type)
+                .append_cast_type_name(unchecked_cast.as_ref().unwrap_or(&left_type))
                 .append_char(')');
         }
 

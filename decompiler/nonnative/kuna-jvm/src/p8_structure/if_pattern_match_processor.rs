@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/IfPatternMatchProcessor.java`.
+//!
+//! A type pattern is not made when the cast it replaces is unchecked
+//! (`unchecked_type_pattern`).
 
 use std::collections::VecDeque;
 
@@ -10,6 +13,8 @@ use crate::exprent::{Exprent, ExprentType};
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::if_helper::IfHelper;
 use crate::if_statement::IfStatement;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p8_structure::kuna_fix_unchecked_type_pattern;
 use crate::pattern_exprent::PatternExprent;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JList, JavaEq, JavaHash};
@@ -146,8 +151,15 @@ impl IfPatternMatchProcessor {
         let left = sides[0];
         let right = sides[1];
 
-        let mut result =
-            Self::find_pattern_matching_instanceof(left, right, source, target, branch, iof, head);
+        let unchecked = kuna_fixes::enabled(KunaFix::UncheckedTypePattern)
+            && !kuna_fix_unchecked_type_pattern::is_checked_cast(
+                &kuna_fix_unchecked_type_pattern::operand_type(source, statement),
+                &left.get_inferred_expr_type(None),
+            );
+        let mut result = !unchecked
+            && Self::find_pattern_matching_instanceof(
+                left, right, source, target, branch, iof, head,
+            );
 
         if let Some(exprents) = head.get_exprents() {
             if !exprents.is_empty() {

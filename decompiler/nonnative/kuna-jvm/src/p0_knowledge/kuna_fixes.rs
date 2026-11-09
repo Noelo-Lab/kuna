@@ -95,6 +95,29 @@ pub enum KunaFix {
     /// by its own index constant, so labels after the first of a case and
     /// labels whose index equals an integer label's value are resolved.
     TypeSwitchLabelLookup,
+    /// `unchecked_type_pattern`: an `instanceof` and the unchecked cast
+    /// after it are not made a type pattern, which Java rejects.
+    UncheckedTypePattern,
+    /// `inner_method_argument_shift`: the arguments of a call to an inner
+    /// class's method are matched to its generic parameters without the
+    /// one-place shift meant for the outer instance of its constructors.
+    InnerMethodArgumentShift,
+    /// `raw_receiver_erasure`: a call on a raw-typed receiver has the
+    /// erased result type, and a for-each over a raw iterable is cast to
+    /// its parameterized class.
+    RawReceiverErasure,
+    /// `boxed_type_variable_cast`: a cast to a type variable keeps the
+    /// boxing call of its primitive operand.
+    BoxedTypeVariableCast,
+    /// `lambda_argument_overload`: a lambda argument that another overload's
+    /// functional interface also accepts is cast to its interface.
+    LambdaArgumentOverload,
+    /// `static_type_variable_scope`: a class's type variables are not in
+    /// scope in its static methods.
+    StaticTypeVariableScope,
+    /// `unchecked_generic_cast`: a declared value whose generic type the
+    /// target's type arguments do not accept keeps its unchecked cast.
+    UncheckedGenericCast,
 }
 
 impl KunaFix {
@@ -123,6 +146,13 @@ impl KunaFix {
         KunaFix::TypeSwitchEnumLabel,
         KunaFix::TypeSwitchPatternType,
         KunaFix::TypeSwitchLabelLookup,
+        KunaFix::UncheckedTypePattern,
+        KunaFix::InnerMethodArgumentShift,
+        KunaFix::RawReceiverErasure,
+        KunaFix::BoxedTypeVariableCast,
+        KunaFix::LambdaArgumentOverload,
+        KunaFix::StaticTypeVariableScope,
+        KunaFix::UncheckedGenericCast,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -151,6 +181,13 @@ impl KunaFix {
             KunaFix::TypeSwitchEnumLabel => "type_switch_enum_label",
             KunaFix::TypeSwitchPatternType => "type_switch_pattern_type",
             KunaFix::TypeSwitchLabelLookup => "type_switch_label_lookup",
+            KunaFix::UncheckedTypePattern => "unchecked_type_pattern",
+            KunaFix::InnerMethodArgumentShift => "inner_method_argument_shift",
+            KunaFix::RawReceiverErasure => "raw_receiver_erasure",
+            KunaFix::BoxedTypeVariableCast => "boxed_type_variable_cast",
+            KunaFix::LambdaArgumentOverload => "lambda_argument_overload",
+            KunaFix::StaticTypeVariableScope => "static_type_variable_scope",
+            KunaFix::UncheckedGenericCast => "unchecked_generic_cast",
         }
     }
 
