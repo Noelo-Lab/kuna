@@ -35,6 +35,7 @@ c3
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/xreffp_arm_le32</com>
+  <com>option libcnames off</com>
   <com>read symbols</com>
   <com>load function main</com>
   <com>decompile</com>

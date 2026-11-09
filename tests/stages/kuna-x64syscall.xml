@@ -56,6 +56,7 @@ f30f1efa4989f8448b0f31c0bf110000004c89c6ba040000000f05438d0489410300c3
 <symbol space="ram" offset="0x100100" name="pointer_before"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>option x64syscall off</com>
   <com>lo fu kernel_call</com>
   <com>decompile</com>

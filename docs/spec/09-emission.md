@@ -425,9 +425,11 @@ warning attached to whatever decoded before it. A `noreturn` halt keeps whatever
 the elision already did with it.
 
 **Void tail-return elision (P9/`brace-form`, `option voidtailreturn`, default
-OFF).** kuna prints the function's final `CPUI_RETURN` unconditionally, so a void
-function ends `... }` / `return;` / `}` — a statement the C source it was compiled
-from does not have, because the source simply falls off the end of the body.
+ON, DIV-98).** The printer otherwise emits the function's final `CPUI_RETURN`
+unconditionally, so a void function ends `... }` / `return;` / `}` — a statement
+the C source it was compiled from does not have, because the source simply falls
+off the end of the body. `option voidtailreturn off` restores that upstream
+rendering, and the datatest and stage scripts that pin it set the option off.
 `printc.rs (PrintC::emit_function_body)` computes at most one elidable op per
 function via `printc.rs (elidable_void_tail_return)` and
 `printc.rs (PrintC::emit_basic_block_ops)` skips exactly that op. Four conditions
@@ -1798,10 +1800,10 @@ bodies at `-O0` and `-O2` with strict aliasing and UBSan, including unaligned
 transfers, overlapping stores, signed reads, const sources, both ARM endian
 variants and an unchanged named-struct control.
 
-**Partial accesses as C (kuna `partialaccess`, default `off`, on in
-`aggressive`, `fast` and at every `auto` size).** Everywhere else the walk ends
-on the artificial member, which is Ghidra's notation and not C: `v1._4_2_ ==
-2`. With the option on, `printc.rs (PrintC::push_partial_walk)` takes the
+**Partial accesses as C (kuna `partialaccess`, default `on`).** Everywhere
+else the walk ends on the artificial member, which is Ghidra's notation and not
+C: `v1._4_2_ == 2`. `option partialaccess off` keeps that notation, and the
+datatest scripts that pin it set the option off. With the option on, `printc.rs (PrintC::push_partial_walk)` takes the
 trailing `._<off>_<size>_` entry off the member stack and prints what it
 describes (`printc.rs (PrintC::push_piece_open)`, `kuna_partialaccess.rs
 (Piece::plan)`). An access of a width C has a scalar for is the pointer access
@@ -2227,9 +2229,8 @@ recognized as "generated" by `kuna_naming.rs (kuna_is_generated_name)` so
 cross-function name recommendation never propagates a default name.
 
 A data read through an import slot is the exception to `dat_<addr>` (`importdata`,
-`naming-policy`). The option is off in the shipped catalog but on in the `aggressive`
-preset, which `auto` selects below 500 KiB, so on a small binary this is the default
-rendering. A data import — a Mach-O `__got`/`__auth_got`
+`naming-policy`). The option is on by default; `option importdata off` keeps the
+slot dereference `*dat_<slot>`. A data import — a Mach-O `__got`/`__auth_got`
 entry, a dyld-cache coalesced GOT slot, a PE IAT entry — is reached through a slot
 the dynamic loader fills with the import's address (`ldr x8,[slot]; ldr w8,[x8]`).
 The loader already names that slot for the import and paints it `externref`, which
