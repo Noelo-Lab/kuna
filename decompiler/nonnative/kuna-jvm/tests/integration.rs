@@ -124,3 +124,5 @@ mod kuna_corpus;
 mod trace_vectors;
 #[path = "trace_file.rs"]
 mod trace_file;
+#[path = "s3_parity.rs"]
+mod s3_parity;

@@ -140,9 +140,7 @@ impl VarDefinitionHelper {
                             params[param_index].my_name.as_deref(),
                             &mut null_name_used,
                         );
-                        if let Some(name) = name {
-                            varproc.set_var_name(vpp, name);
-                        }
+                        varproc.set_var_name_nullable(vpp, name);
                         param_index += 1;
                     }
                     _ => {

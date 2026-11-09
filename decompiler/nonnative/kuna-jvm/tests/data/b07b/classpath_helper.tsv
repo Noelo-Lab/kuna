@@ -45,3 +45,14 @@ java/util/stream/IntStream	boxed	()Ljava/util/stream/Stream;	public abstract jav
 java/sql/DriverManager	getConnection	(Ljava/lang/String;)Ljava/sql/Connection;	null	-
 java/lang/Missing	foo	()Ljava/lang/Object;	null	-
 com/example/Foo	bar	(Ljava/lang/String;)Ljava/lang/String;	null	-
+java/rmi/server/LogStream	printf	(Ljava/lang/String;[Ljava/lang/Object;)Ljava/io/PrintStream;	null	-
+java/io/PrintStream	format	(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/io/PrintStream;	public java.io.PrintStream java.io.PrintStream.format(java.util.Locale,java.lang.String,java.lang.Object[])	true
+java/util/Objects	hash	([Ljava/lang/Object;)I	null	-
+java/util/Collections	addAll	(Ljava/util/Collection;[Ljava/lang/Object;)Z	null	-
+java/net/http/HttpRequest$Builder	headers	([Ljava/lang/String;)Ljava/net/http/HttpRequest$Builder;	null	-
+java/util/EnumSet	of	(Ljava/lang/Enum;[Ljava/lang/Enum;)Ljava/util/EnumSet;	public static java.util.EnumSet java.util.EnumSet.of(java.lang.Enum,java.lang.Enum[])	true
+java/lang/String	formatted	([Ljava/lang/Object;)Ljava/lang/String;	public java.lang.String java.lang.String.formatted(java.lang.Object[])	true
+java/lang/reflect/Method	invoke	(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;	public java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object,java.lang.Object[]) throws java.lang.IllegalAccessException,java.lang.reflect.InvocationTargetException	true
+java/lang/invoke/MethodHandles	dropArguments	(Ljava/lang/invoke/MethodHandle;I[Ljava/lang/Class;)Ljava/lang/invoke/MethodHandle;	null	-
+java/text/MessageFormat	format	(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;	public static java.lang.String java.text.MessageFormat.format(java.lang.String,java.lang.Object[])	true
+java/util/Map$Entry	comparingByKey	()Ljava/util/Comparator;	public static java.util.Comparator java.util.Map$Entry.comparingByKey()	false

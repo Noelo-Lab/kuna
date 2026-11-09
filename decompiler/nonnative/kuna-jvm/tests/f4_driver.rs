@@ -170,9 +170,7 @@ fn a_failing_engine_leaves_the_root_context_usable() {
 
     let mut delivered = Vec::new();
     let result = try_catch(|| fernflower.decompile_context(&mut |c| delivered.push(c)));
-    if let Err(caught) = &result {
-        assert!(caught.is("UnportedError"), "{}", caught.message);
-    }
+    assert!(result.is_ok(), "{:?}", result.err().map(|c| c.message));
 
     assert!(DecompilerContext::get_current_context()
         .unwrap()
@@ -353,7 +351,6 @@ fn unit_save_dumps_the_pre_processing_exception() {
 }
 
 #[test]
-#[ignore = "needs the method pipeline and writer of other slices (SequenceHelper, NestedClassProcessor, ClassWriter)"]
 fn delivers_each_root_class_in_entry_order() {
     let logger = Rc::new(CollectingLogger::new());
     let mut fernflower = Fernflower::new(
@@ -394,7 +391,6 @@ fn delivers_each_root_class_in_entry_order() {
 }
 
 #[test]
-#[ignore = "needs the method pipeline and writer of other slices (SequenceHelper, NestedClassProcessor, ClassWriter)"]
 fn line_mapping_follows_the_option() {
     let mut fernflower = Fernflower::new(
         &options(&[

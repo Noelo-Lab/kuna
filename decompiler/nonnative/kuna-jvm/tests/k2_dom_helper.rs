@@ -2,8 +2,6 @@
 //! `tests/data/k2_graph_oracle/DomOracle.java`, and `DomHelper::parse_graph` on
 //! the methods of real class files.
 
-use std::collections::BTreeMap;
-
 use kuna_jvm::basic_block_statement::BasicBlockStatement;
 use kuna_jvm::byte_cursor::ByteCursor;
 use kuna_jvm::control_flow_graph::ControlFlowGraph;
@@ -333,13 +331,8 @@ fn code_to_statement(cl: StructClass, mt: StructMethod) -> Result<RootStatement,
     })
     .map_err(|e| format!("cfg: {}", e.message))?;
 
-    try_catch(|| DomHelper::parse_graph(graph, mt, 0)).map_err(|e| {
-        if e.is("UnportedError") {
-            format!("unported: {}", e.message)
-        } else {
-            format!("parse_graph: {}", e.message)
-        }
-    })
+    try_catch(|| DomHelper::parse_graph(graph, mt, 0))
+        .map_err(|e| format!("parse_graph: {}", e.message))
 }
 
 /// The methods of these classes that Vineflower 1.12.0 itself cannot
@@ -378,7 +371,6 @@ fn parse_graph_runs_on_real_methods() {
     let mut finished = 0;
     let mut decomposed = 0;
     let mut cfg_failures = Vec::new();
-    let mut blocked: BTreeMap<String, usize> = BTreeMap::new();
     let mut failures = Vec::new();
     for path in &files {
         let cl = read_class(path);
@@ -401,7 +393,6 @@ fn parse_graph_runs_on_real_methods() {
             match result {
                 Ok(_) => finished += 1,
                 Err(e) if e.starts_with("cfg: ") => cfg_failures.push(format!("{name}: {e}")),
-                Err(e) if e.starts_with("unported: ") => *blocked.entry(e).or_default() += 1,
                 Err(e) => failures.push((name, e)),
             }
         }
@@ -411,7 +402,7 @@ fn parse_graph_runs_on_real_methods() {
 
     eprintln!(
         "parse_graph on {methods} methods of {} classes: {finished} finished, \
-         {decomposed} through processStatement, {} stopped in the CFG layer, blocked by {blocked:?}",
+         {decomposed} through processStatement, {} stopped in the CFG layer",
         files.len(),
         cfg_failures.len()
     );
@@ -427,5 +418,5 @@ fn parse_graph_runs_on_real_methods() {
     );
     assert_eq!(methods, 182);
     assert_eq!(decomposed + failures.len(), methods);
-    assert_eq!(finished + failures.len(), methods, "blocked by {blocked:?}");
+    assert_eq!(finished + failures.len(), methods);
 }

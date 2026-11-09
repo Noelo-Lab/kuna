@@ -142,7 +142,7 @@ fn manifest_sets_cases_and_overlays() {
         ]
     );
     assert_eq!(cases[1].javadoc.as_deref(), Some("plain"));
-    assert!(unsupported_reason(&cases[1]).unwrap().contains("javadoc"));
+    assert_eq!(unsupported_reason(&cases[1]), None);
     assert_eq!(
         cases[2].jdks,
         vec![JdkNeed {

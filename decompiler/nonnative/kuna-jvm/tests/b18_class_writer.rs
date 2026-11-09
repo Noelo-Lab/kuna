@@ -159,7 +159,6 @@ fn failed_methods_dump_their_bytecode_like_vineflower() {
 }
 
 #[test]
-#[ignore = "needs ExprProcessor.getTypeName (another stage-2 slice)"]
 fn typed_method_headers_match_vineflower() {
     let (_guard, node, methods) = failed_class(&[
         (IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR, "0"),

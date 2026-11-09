@@ -12,7 +12,7 @@ use kuna_jvm::if_statement::IfStatement;
 use kuna_jvm::list_stack::ListStack;
 use kuna_jvm::p_pand_mm_helper::PPandMMHelper;
 use kuna_jvm::root_statement::RootStatement;
-use kuna_jvm::rt::{try_catch, JList};
+use kuna_jvm::rt::JList;
 use kuna_jvm::stack_vars_processor::StackVarsProcessor;
 use kuna_jvm::statement::Statement;
 use kuna_jvm::struct_method::StructMethod;
@@ -65,20 +65,8 @@ fn ppi(index: i32) -> FunctionExprent {
     FunctionExprent::new_single(FunctionType::Ppi, var(index, 0).0, None)
 }
 
-/// `inlinePPIandMMIIf` ends in `SequenceHelper.condenseSequences`, which may
-/// not be ported yet; the transformation itself happens before it.
-fn run_inline(root: RootStatement) -> Option<bool> {
-    match try_catch(|| PPandMMHelper::inline_pp_iand_mmi_if(root)) {
-        Ok(res) => Some(res),
-        Err(caught) => {
-            assert!(
-                caught.message.contains("SequenceHelper"),
-                "unexpected failure: {}",
-                caught.message
-            );
-            None
-        }
-    }
+fn run_inline(root: RootStatement) -> bool {
+    PPandMMHelper::inline_pp_iand_mmi_if(root)
 }
 
 #[test]
@@ -106,9 +94,7 @@ fn inline_ppi_moves_increment_into_if_condition() {
     let condition = gt_zero(use_.0);
     let (root, ifstat, bb) = if_tree(vec![inc.0], condition);
 
-    if let Some(res) = run_inline(root) {
-        assert!(res);
-    }
+    assert!(run_inline(root));
 
     let operands = condition.as_function().get_lst_operands().to_vec();
     assert_eq!(operands[0], inc.0);
@@ -132,7 +118,7 @@ fn inline_ppi_refuses_nested_short_circuit_conditions() {
     );
     let (root, ifstat, bb) = if_tree(vec![inc.0], either.0);
 
-    assert_eq!(run_inline(root), Some(false));
+    assert!(!run_inline(root));
     assert_eq!(
         bb.get_exprents().expect("block exprents").to_vec(),
         vec![inc.0]
@@ -154,9 +140,7 @@ fn inline_ppi_does_not_see_a_top_level_short_circuit() {
     );
     let (root, ifstat, bb) = if_tree(vec![inc.0], both.0);
 
-    if let Some(res) = run_inline(root) {
-        assert!(res);
-    }
+    assert!(run_inline(root));
 
     assert_eq!(left.as_function().get_lst_operands().get(0), inc.0);
     assert!(bb.get_exprents().expect("block exprents").is_empty());
@@ -170,7 +154,7 @@ fn inline_ppi_refuses_a_variable_used_twice() {
     let sum = FunctionExprent::new(FunctionType::Add, vec![var(1, 0).0, var(1, 0).0], None);
     let (root, _ifstat, bb) = if_tree(vec![inc.0], gt_zero(sum.0));
 
-    assert_eq!(run_inline(root), Some(false));
+    assert!(!run_inline(root));
     assert_eq!(bb.get_exprents().expect("block exprents").len(), 1);
 }
 
@@ -180,6 +164,6 @@ fn inline_ppi_ignores_other_last_exprents() {
     let assign = AssignmentExprent::new(var(1, 0).0, var(2, 0).0, None);
     let (root, _ifstat, bb) = if_tree(vec![assign.0], gt_zero(var(1, 0).0));
 
-    assert_eq!(run_inline(root), Some(false));
+    assert!(!run_inline(root));
     assert_eq!(bb.get_exprents().expect("block exprents").len(), 1);
 }

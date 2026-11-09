@@ -2,9 +2,6 @@
 //! and member tokens, TextUtil identifiers/indent/qualified super, GenericType
 //! cast names) against Vineflower 1.12.0 run in the same kind of context
 //! (`data/GenTracersGolden.java`, `data/GenTextContextGolden.java`).
-//!
-//! A row whose Rust side reaches a body other slices have not ported yet
-//! (`UnportedError`) is counted as blocked, not failed.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -102,16 +99,11 @@ fn tracers_and_token_dump_match_vineflower() {
 
 struct Rows {
     checked: usize,
-    blocked: usize,
     failures: Vec<String>,
 }
 
 impl Rows {
     fn check(&mut self, what: String, java: &str, rust: String) {
-        if rust.starts_with("EXC:UnportedError:") {
-            self.blocked += 1;
-            return;
-        }
         self.checked += 1;
         if java != rust {
             self.failures
@@ -140,7 +132,6 @@ fn context_text_paths_match_vineflower() {
 
     let mut rows = Rows {
         checked: 0,
-        blocked: 0,
         failures: Vec::new(),
     };
     let mut kinds: BTreeMap<&str, usize> = BTreeMap::new();
@@ -281,11 +272,10 @@ fn context_text_paths_match_vineflower() {
         }
     }
     eprintln!(
-        "context text paths: {} rows {:?}, {} values checked, {} blocked on unported bodies",
+        "context text paths: {} rows {:?}, {} values checked",
         kinds.values().sum::<usize>(),
         kinds,
-        rows.checked,
-        rows.blocked
+        rows.checked
     );
     assert!(
         rows.failures.is_empty(),

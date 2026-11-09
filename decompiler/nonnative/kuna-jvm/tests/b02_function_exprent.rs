@@ -11,9 +11,6 @@
 //! Java keeps a match node's rules in a `HashMap` keyed by an enum, whose
 //! iteration order (and so which variables a failing match has bound) is
 //! arbitrary; variables are compared for successful matches only.
-//!
-//! A column whose Rust side reaches a body other slices have not ported yet
-//! (`UnportedError`) is counted as blocked, not failed.
 
 use std::path::Path;
 
@@ -243,16 +240,11 @@ fn type_text(t: Option<VarType>) -> String {
 
 struct Rows {
     checked: usize,
-    blocked: usize,
     failures: Vec<String>,
 }
 
 impl Rows {
     fn check(&mut self, what: &str, column: &str, java: &str, rust: &str) {
-        if rust.starts_with("EXC:UnportedError:") {
-            self.blocked += 1;
-            return;
-        }
         self.checked += 1;
         if !same(java, rust) {
             self.failures.push(format!(
@@ -300,7 +292,6 @@ fn function_exprent_matches_vineflower() {
 
     let mut rows = Rows {
         checked: 0,
-        blocked: 0,
         failures: Vec::new(),
     };
     for line in GOLDEN.lines() {
@@ -354,10 +345,7 @@ fn function_exprent_matches_vineflower() {
         rows.check(&what, "reformatted", f[8], &reformatted);
     }
 
-    eprintln!(
-        "FunctionExprent columns: {} checked, {} blocked on unported bodies",
-        rows.checked, rows.blocked
-    );
+    eprintln!("FunctionExprent columns: {} checked", rows.checked);
     assert!(
         rows.checked > 5_000,
         "only {} columns checked",

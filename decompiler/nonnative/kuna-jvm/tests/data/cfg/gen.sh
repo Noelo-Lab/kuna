@@ -17,7 +17,7 @@ mkdir -p "$BUILD/driver" "$HERE/classes/r8" "$HERE/classes/r21" "$HERE/classes/j
 
 javac -nowarn -d "$BUILD/driver" -cp "$VF_JAR" \
   "$HERE/patch/org/jetbrains/java/decompiler/code/cfg/BasicBlock.java" "$HERE/CfgDump.java" \
-  "$HERE/IrreducibleDump.java" "$HERE/PropsDump.java"
+  "$HERE/IrreducibleDump.java" "$HERE/PropsDump.java" "$HERE/FinallyDump.java"
 
 javac -nowarn --release 8 -g -d "$HERE/classes/r8" "$HERE/inputs/CfgCases.java"
 javac -nowarn --release 21 -g -d "$HERE/classes/r21" "$HERE/inputs/CfgCases.java" "$HERE/inputs/CfgCases21.java"
@@ -31,6 +31,8 @@ done
 CP="$BUILD/driver:$VF_JAR"
 java -cp "$CP" CfgDump "$HERE/golden/cases.cfg" "$HERE/classes/r8" "$HERE/classes/r21" "$HERE/classes/jasm" "$HERE/classes/legacy"
 java -cp "$CP" PropsDump "$HERE/golden/props.txt" "$HERE/classes/props8" "$HERE/classes/props21" \
+  "$HERE/classes/r8" "$HERE/classes/r21" "$HERE/classes/jasm" "$HERE/classes/legacy"
+java -cp "$CP" FinallyDump "$HERE/golden/finally.txt" "$HERE/../k2_graph_oracle/classes/K2Shapes.class" \
   "$HERE/classes/r8" "$HERE/classes/r21" "$HERE/classes/jasm" "$HERE/classes/legacy"
 java -cp "$CP" IrreducibleDump "$BUILD/irreducible.txt"
 gzip -9 -n -c "$BUILD/irreducible.txt" > "$HERE/golden/irreducible.txt.gz"

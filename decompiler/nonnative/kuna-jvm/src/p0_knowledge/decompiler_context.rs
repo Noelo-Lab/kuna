@@ -11,6 +11,7 @@ use std::rc::Rc;
 
 use crate::bytecode_source_mapper::BytecodeSourceMapper;
 use crate::class_wrapper::ClassWrapper;
+use crate::class_writer::IFabricJavadocProvider;
 use crate::classes_processor::{ClassNode, ClassesProcessor};
 use crate::counter_container::CounterContainer;
 use crate::i_fernflower_logger::IFernflowerLogger;
@@ -43,6 +44,8 @@ pub struct DecompilerContextData {
     pub class_processor: ClassesProcessor,
     pub pool_interceptor: Option<PoolInterceptor>,
     pub renamer_factory: Option<Rc<dyn IVariableNamingFactory>>,
+    /// The `IFabricJavadocProvider.PROPERTY_NAME` property, an object string properties cannot hold.
+    pub javadoc_provider: Option<Rc<dyn IFabricJavadocProvider>>,
     import_collector: Option<ImportCollector>,
     var_processor: Option<VarProcessor>,
     counter_container: CounterContainer,
@@ -73,6 +76,7 @@ impl DecompilerContext {
             class_processor,
             pool_interceptor: interceptor,
             renamer_factory: None,
+            javadoc_provider: None,
             import_collector: None,
             var_processor: None,
             counter_container: CounterContainer::new(),
@@ -206,6 +210,16 @@ impl DecompilerContext {
 
     pub fn get_naming_factory() -> Rc<dyn IVariableNamingFactory> {
         Self::current(|d| d.renamer_factory.clone()).expect("getNamingFactory()")
+    }
+
+    /// Java: getProperty(IFabricJavadocProvider.PROPERTY_NAME)
+    pub fn get_javadoc_provider() -> Option<Rc<dyn IFabricJavadocProvider>> {
+        Self::current(|d| d.javadoc_provider.clone())
+    }
+
+    /// Java: setProperty(IFabricJavadocProvider.PROPERTY_NAME, provider)
+    pub fn set_javadoc_provider(provider: Option<Rc<dyn IFabricJavadocProvider>>) {
+        Self::current_mut(|d| d.javadoc_provider = provider)
     }
 
     pub fn get_import_collector() -> ImportCollector {

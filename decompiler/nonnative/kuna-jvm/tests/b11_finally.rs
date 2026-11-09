@@ -83,6 +83,9 @@ fn has_fresh_catch_all(stat: Statement) -> bool {
     stats.into_iter().any(has_fresh_catch_all)
 }
 
+/// `FinallyDump.java` (see `data/cfg/gen.sh`): Vineflower's `iterateGraph` result per method.
+const GOLDEN: &str = include_str!("data/cfg/golden/finally.txt");
+
 #[test]
 fn iterate_graph_walks_real_methods() {
     let _context = common::install_default_context();
@@ -102,6 +105,7 @@ fn iterate_graph_walks_real_methods() {
         files.extend(set_files);
     }
 
+    let mut golden = GOLDEN.lines().filter(|l| !l.starts_with('#'));
     let (mut parsed, mut without, mut with) = (0, 0, 0);
     let mut mismatches = Vec::new();
     for path in &files {
@@ -117,7 +121,13 @@ fn iterate_graph_walks_real_methods() {
             MethodProcessor::set_debug_currently_decompiling(None);
             start_method(mt);
             let name = format!("{class}.{}{}", mt.get_name(), mt.get_descriptor());
+            let (golden_name, expected) = golden
+                .next()
+                .and_then(|l| l.split_once('\t'))
+                .expect("golden row");
+            assert_eq!(golden_name, name);
             let Some((graph, root)) = parse(cl, mt) else {
+                assert_eq!(expected, "unparsed", "{name}");
                 continue;
             };
             parsed += 1;
@@ -125,39 +135,30 @@ fn iterate_graph_walks_real_methods() {
 
             let var_proc = DecompilerContext::get_var_processor();
             let mut proc = FinallyProcessor::new(mt, &mt.method_descriptor(), var_proc);
-            let result = try_catch(|| proc.iterate_graph(cl, mt, root, graph));
-            let reached_finally = match &result {
-                Ok(false) => false,
-                Err(e)
-                    if e.is("UnportedError")
-                        && e.message.contains("ExprProcessor.processStatement") =>
-                {
-                    true
-                }
-                other => {
-                    mismatches.push(format!(
-                        "{name}: {:?}",
-                        other.as_ref().map_err(|e| &e.message)
-                    ));
-                    continue;
-                }
+            let actual = match try_catch(|| proc.iterate_graph(cl, mt, root, graph)) {
+                Ok(result) => result.to_string(),
+                Err(e) => format!("throws {}", e.message),
             };
-            if reached_finally {
+            if actual != expected {
+                mismatches.push(format!("{name}: {actual}, Vineflower {expected}"));
+            }
+            if expect_finally {
                 with += 1;
             } else {
                 without += 1;
             }
-            if reached_finally != expect_finally {
+            if (actual == "true") != expect_finally {
                 mismatches.push(format!(
-                    "{name}: catch-all in tree {expect_finally}, reached getFinallyInformation {reached_finally}"
+                    "{name}: catch-all in tree {expect_finally}, {actual}"
                 ));
             }
         }
         DecompilerContext::set_current_class(None);
     }
     reset_class_scope();
+    assert!(golden.next().is_none(), "golden rows left over");
 
-    eprintln!("iterateGraph on {parsed} parsed methods: {with} reach getFinallyInformation, {without} return false");
+    eprintln!("iterateGraph on {parsed} parsed methods: {with} with a finally, {without} without");
     assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
     assert_eq!(parsed, 180);
     assert!(with > 0, "no method with a finally in the corpus");

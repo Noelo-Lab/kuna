@@ -295,6 +295,7 @@ impl ContextUnit {
                 class_processor,
                 pool_interceptor,
                 renamer_factory,
+                javadoc_provider,
             ) = root_context.with(|d| {
                 (
                     d.properties.clone(),
@@ -303,6 +304,7 @@ impl ContextUnit {
                     d.class_processor,
                     d.pool_interceptor,
                     d.renamer_factory.clone(),
+                    d.javadoc_provider.clone(),
                 )
             });
             let current = DecompilerContext::new(
@@ -312,7 +314,10 @@ impl ContextUnit {
                 class_processor,
                 pool_interceptor,
             );
-            current.with_mut(|d| d.renamer_factory = renamer_factory);
+            current.with_mut(|d| {
+                d.renamer_factory = renamer_factory;
+                d.javadoc_provider = javadoc_provider;
+            });
             DecompilerContext::set_current_context(Some(current));
         }
     }

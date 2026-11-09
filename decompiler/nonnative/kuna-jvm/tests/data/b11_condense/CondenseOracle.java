@@ -1,8 +1,8 @@
 // Oracle for tests/b11_condense.rs: runs the real Vineflower 1.12.0
 // DomHelper.processStatement on hand-built statement graphs, then
-// SequenceHelper.condenseSequences, EliminateLoopsHelper's loop elimination
-// (eliminateLoopsRec + condenseSequences, the part of eliminateLoops before
-// SimplifyExprentsHelper) and SequenceHelper.destroyAndFlattenStatement.
+// SequenceHelper.condenseSequences, EliminateLoopsHelper.eliminateLoops (in two
+// steps: eliminateLoopsRec + condenseSequences, then the SimplifyExprentsHelper
+// loop) and SequenceHelper.destroyAndFlattenStatement.
 //
 //   ./gen.sh   (JDK 21 javac/java on PATH, VF_JAR = the Vineflower 1.12.0 jar)
 package org.jetbrains.java.decompiler.modules.decompiler.decompose;
@@ -12,6 +12,7 @@ import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.collectors.CounterContainer;
 import org.jetbrains.java.decompiler.modules.decompiler.EliminateLoopsHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.SequenceHelper;
+import org.jetbrains.java.decompiler.modules.decompiler.SimplifyExprentsHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.StatEdge;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.ConstExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
@@ -171,6 +172,17 @@ public class CondenseOracle {
     if (ret) {
       SequenceHelper.condenseSequences(root);
       dump(key, root, "");
+      try {
+        Set<Integer> setReorderedIfs = new HashSet<>();
+        while (SimplifyExprentsHelper.simplifyStackVarsStatement(root, setReorderedIfs, null, null, false)) {
+          SequenceHelper.condenseSequences(root);
+        }
+      } catch (Throwable t) {
+        p(key + ".simplified", t.getClass().getSimpleName());
+        return;
+      }
+      p(key + ".simplified", true);
+      dump(key + ".simplified", root, "");
     }
   }
 
