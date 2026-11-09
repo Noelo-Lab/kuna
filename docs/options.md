@@ -945,6 +945,10 @@ Three tiers:
 | a COFF .obj lists only its first function (the rest collide at address 0) | [`relocobjects`](#relocobjects) |
 | arm64e mach-o decoded with the generic v8A spec so pointer-auth ops are unmodeled | [`macho-arm64e`](#macho-arm64e) |
 | pac instructions in an apple-silicon binary not modeled by the loaded spec | [`macho-arm64e`](#macho-arm64e) |
+| an iOS kernelcache (IMG4/IM4P) is rejected as an unrecognized input format | [`kernelcache`](#kernelcache) |
+| kuna functions on a decompressed MH_FILESET kernelcache finds no functions | [`kernelcache`](#kernelcache) |
+| a kext cannot be selected out of a kernel collection | [`kernelcache`](#kernelcache) |
+| pointers in a kernelcache read as packed chained-fixup words instead of addresses | [`kernelcache`](#kernelcache) |
 | a pe function stops early with the funcboundflow fall-through-reached-the-next-function-entry warning | [`pdatachained`](#pdatachained) |
 | kuna decompile of an msvc function emits `} while ;` or an empty if body where ghidra emits the whole function | [`pdatachained`](#pdatachained) |
 | kuna functions reports an msvc function far smaller than its .pdata extent | [`pdatachained`](#pdatachained) |
@@ -3564,6 +3568,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off (default; an arm64e Mach-O loads with the generic v8A spec, exactly as any arm64). Flip on to decompile an arm64e (Apple-Silicon, pointer-auth) Mach-O with the AppleSilicon spec that models its extensions.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-multiformat-macho-arm64e
 - **Example:** `--option macho-arm64e on`
+
+### `kernelcache` -- auto | off | <bundle-id>, default `auto`
+
+- **Symptoms:** an iOS kernelcache (IMG4/IM4P) is rejected as an unrecognized input format; kuna functions on a decompressed MH_FILESET kernelcache finds no functions; a kext cannot be selected out of a kernel collection; pointers in a kernelcache read as packed chained-fixup words instead of addresses.
+- **What it does:** Load an Apple kernelcache straight from its firmware container. An IMG4 or bare IM4P file is parsed as DER, its payload is decoded (LZFSE bvx2/bvxn/bvx- blocks or a complzss LZSS container, checked against the declared size and Adler-32; decoding stops at the IM4P's declared size or at 64 times the payload, whichever is smaller, 16 MiB at least and never past 1 GiB), and an encrypted payload (one carrying a KBAG) is refused with a message instead of being misread. The decoded image is usually an MH_FILESET kernel collection: one Mach-O header per LC_FILESET_ENTRY (the kernel and every kext) sharing one file and one LC_DYLD_CHAINED_FIXUPS table. kuna applies every rebase of that table to its pointer slot (DYLD_CHAINED_PTR_64_KERNEL_CACHE, ARM64E_KERNEL, ARM64E_FIRMWARE and X86_64_KERNEL_CACHE, pointer-authentication bits stripped) and then loads ONE entry as a thin Mach-O: `auto` takes the kernel (the MH_EXECUTE entry), a bundle id takes that entry, matched exactly or by a unique dotted suffix (`IOSurface` finds com.apple.iokit.IOSurface). Loader-tier: read through the KUNA_KERNELCACHE env var, because the image is chosen inside load file.
+- **When to flip:** Auto (default): `kuna functions kernelcache` lists the kernel's functions with their symbol names; `--option kernelcache com.apple.iokit.IOSurface` loads that kext instead, its direct calls into the kernel named after the kernel functions they reach; `--option kernelcache list` stops with the list of every entry id. Flip off to pass the bytes through untouched: an IMG4 is then an unrecognized format and a bare MH_FILESET loads as one image with no code sections.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-kernelcache
+- **Example:** `--option kernelcache com.apple.iokit.IOSurface`
 
 ### `pdatachained` -- on | off, default `on`
 

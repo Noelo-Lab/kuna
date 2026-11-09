@@ -4417,6 +4417,15 @@ pub fn bootstrap_from_object_with_isa(
     // object::File view (the analyzers need a parsed object the loader drops).
     let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to open image file: {path}: {e}")))?;
+    // (kuna `kernelcache`) IMG4 / IM4P / LZFSE / complzss unwrapping and MH_FILESET
+    // entry selection, ahead of every other normalization.
+    let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
+    let peeled = kuna_analysis::loader::kuna_kernelcache::peel(bytes, &choice)
+        .map_err(KunaError::lowlevel)?;
+    if let Some(note) = &peeled.note {
+        kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
+    }
+    let bytes = peeled.bytes;
     // (PR-8) Mach-O fat / universal (`0xcafebabe`) peel: `object::File::parse`
     // is a thin, single-arch view and cannot parse a fat header, so a universal
     // binary is reduced to ONE arch slice's bytes here — the single, canonical
@@ -5965,6 +5974,13 @@ fn select_macho_slice(bytes: Vec<u8>, target: &str) -> Vec<u8> {
     peel_fat_image(bytes, slice_pref(None, Some(target)))
 }
 
+/// An IMG4 / IM4P / compressed kernelcache, admitted while `kernelcache` is not off.
+fn is_apple_container(bytes: &[u8]) -> bool {
+    kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env()
+        != kuna_decomp::kuna_kernelcache::KernelcacheChoice::Off
+        && kuna_analysis::loader::kuna_kernelcache::is_container(bytes)
+}
+
 const RAW_IMAGE_INPUT_HINT: &str =
     "unrecognized input format; for a headerless image use --raw-image --target <SLEIGH-language-id> --base <address> and at least one --entry/--addr <address>";
 
@@ -6009,7 +6025,7 @@ pub fn bootstrap_from_file(
             .flatten();
         return bootstrap_from_te_bytes(path, &bytes, target, spec_roots, isa);
     }
-    if is_object_binary(&bytes) {
+    if is_object_binary(&bytes) || is_apple_container(&bytes) {
         // Real object-format binary (ELF / PE / Mach-O / COFF): drive the
         // object-crate loader.
         return bootstrap_from_object(path, target, spec_roots);

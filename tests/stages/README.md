@@ -413,6 +413,11 @@ callers against boundary values and check that each helper is called once.
 `ghangr-go-store-value.xml` checks Go integer destination conversions for fields,
 plain/indexed pointers and a side-effectful call, with all integer widths and
 complete native bodies covered by the CLI integration fixture.
+`kuna-kernelcache.xml` loads a synthetic arm64 kernel collection three ways: the
+bare MH_FILESET with `kernelcache off` (one image, no symbols), its kext out of an
+IMG4(IM4P(LZFSE)) wrapper, and its kernel out of a bare IM4P(complzss). The
+fixtures and their generator live in
+`decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/`.
 
 `ghangr-go-pointer-arithmetic-32.xml` and `ghangr-go-pointer-arithmetic-64.xml`
 check live pointer bases through constant, negative and signed dynamic byte
