@@ -164,11 +164,27 @@ pub struct Emulator<'a> {
     /// Diagnostics: report accesses to this base variable within +-0x40.
     pub watch_base: Option<u32>,
     notes: Vec<String>,
+    /// The constants each symbolized location was seen to hold (shared with the explorer).
+    pub sym_values: SymValues,
 }
+
+/// Symbol -> the constants its location held where paths met.
+pub type SymValues = Rc<std::cell::RefCell<BTreeMap<VarId, std::collections::BTreeSet<u128>>>>;
+
+/// Most recorded values a symbol-indexed load is split over.
+const MAX_INDEXED_VALUES: usize = 16;
 
 impl<'a> Emulator<'a> {
     pub fn new(target: &'a dyn PushanTarget) -> Self {
-        Emulator { target, prov: BTreeMap::new(), track_sp: None, watch_base: None, notes: Vec::new(), image_loads: BTreeMap::new() }
+        Emulator {
+            target,
+            prov: BTreeMap::new(),
+            track_sp: None,
+            watch_base: None,
+            notes: Vec::new(),
+            image_loads: BTreeMap::new(),
+            sym_values: Default::default(),
+        }
     }
 
     fn vn_space(&self, vn: &VarnodeData) -> Space {
@@ -299,6 +315,47 @@ impl<'a> Emulator<'a> {
     }
 
     /// Load `size` bytes at a symbolic address in `space`.
+    /// A load whose address depends on one symbolized location (a handler
+    /// table indexed by an opcode the merge turned into a symbol): one read
+    /// per constant the location was seen to hold, selected by comparing the
+    /// symbol against it.
+    fn indexed_load(&mut self, state: &mut State, arena: &mut ExprArena, addr: ExprId, size: u8) -> Option<ExprId> {
+        let (var, values) = {
+            let known = self.sym_values.borrow();
+            let mut hit = None;
+            for v in arena.free_vars(addr) {
+                if let Some(vals) = known.get(&v) {
+                    if hit.is_some() {
+                        return None;
+                    }
+                    hit = Some((v, vals.iter().copied().collect::<Vec<u128>>()));
+                }
+            }
+            hit?
+        };
+        if values.is_empty() || values.len() > MAX_INDEXED_VALUES {
+            return None;
+        }
+        let ve = arena.var_expr(var)?;
+        let vsize = arena.size(ve);
+        let mut arms: Vec<(ExprId, ExprId)> = Vec::with_capacity(values.len());
+        for c in values {
+            let k = arena.cst(vsize, c);
+            let mut map = BTreeMap::new();
+            map.insert(ve, k);
+            let a = arena.substitute(addr, &map);
+            let (base, off) = arena.affine_probe(a)?;
+            let val = state.read_mem(arena, self.target, base, off, size);
+            arms.push((k, val));
+        }
+        let mut result = arms[arms.len() - 1].1;
+        for (k, val) in arms[..arms.len() - 1].iter().rev() {
+            let cond = arena.mk_bin(CPUI_INT_EQUAL, ve, *k, 1);
+            result = arena.mk_ite(cond, *val, result);
+        }
+        Some(result)
+    }
+
     pub fn load(&mut self, state: &mut State, arena: &mut ExprArena, space: Space, addr: ExprId, size: u8) -> ExprId {
         match space {
             Space::Register => {
@@ -345,7 +402,7 @@ impl<'a> Emulator<'a> {
                 }
             }
             if ok && groups.len() <= MAX_SPLIT_CASES {
-                let mut vals = Vec::with_capacity(groups.len());
+                let mut vals: Vec<ExprId> = Vec::with_capacity(groups.len());
                 for ((base, off), _) in &groups {
                     vals.push(state.read_mem(arena, self.target, *base, *off, size));
                 }
@@ -359,6 +416,9 @@ impl<'a> Emulator<'a> {
                 }
                 return result;
             }
+        }
+        if let Some(v) = self.indexed_load(state, arena, addr, size) {
+            return v;
         }
         state.unknown_loads += 1;
         let atoms = arena.bool_atoms(addr).len();

@@ -24,7 +24,7 @@ use std::rc::Rc;
 
 use kuna_num::opcodes::OpCode;
 
-use super::kuna_pushanemu::{merge_ite, Emulator, Exit, InsnTrace, LiftedInsn, PushanTarget};
+use super::kuna_pushanemu::{merge_ite, Emulator, Exit, InsnTrace, LiftedInsn, PushanTarget, SymValues};
 use super::kuna_pushanexpr::{ExprArena, ExprId, VarId, VarKind};
 use super::kuna_pushanstate::{Loc, State, SymLoc};
 
@@ -165,7 +165,7 @@ pub struct Explorer<'a> {
     /// Locations symbolized at a node, with every constant seen there.
     pub to_symbolize: BTreeMap<NodeKey, BTreeMap<SymLoc, BTreeSet<u128>>>,
     /// The constants recorded for each symbol created by [`State::symbolize`].
-    sym_values: BTreeMap<u32, BTreeSet<u128>>,
+    sym_values: SymValues,
     /// Bits every value seen at a symbolized location agreed on.
     sym_known: BTreeMap<(NodeKey, SymLoc), (u128, u128)>,
     /// Pointer values the emulator read from image slots (value -> slot).
@@ -202,7 +202,7 @@ impl<'a> Explorer<'a> {
             arena: ExprArena::new(),
             entry_addr,
             to_symbolize: BTreeMap::new(),
-            sym_values: BTreeMap::new(),
+            sym_values: Default::default(),
             sym_known: BTreeMap::new(),
             image_ptrs: BTreeMap::new(),
             escapes: BTreeSet::new(),
@@ -295,6 +295,7 @@ impl<'a> Explorer<'a> {
         let entry = self.reach(&mut cfg, &mut worklist, key, init, VmCtx::default(), None);
         cfg.entry = entry;
         let mut emu = Emulator::new(self.target);
+        emu.sym_values = Rc::clone(&self.sym_values);
         emu.track_sp = Some((self.abi.sp, self.abi.ptr_size));
         emu.watch_base = if self.config.trace.is_some() { self.sp0 } else { None };
         while let Some(id) = worklist.pop_front() {
@@ -439,7 +440,7 @@ impl<'a> Explorer<'a> {
             let made = state.symbolize_known(&mut self.arena, tag, &with_known);
             for (l, e) in made {
                 if let (Some(v), Some(vals)) = (self.arena.as_var(e), locs.get(&l)) {
-                    self.sym_values.insert(v, vals.clone());
+                    self.sym_values.borrow_mut().insert(v, vals.clone());
                 }
             }
         }
@@ -996,7 +997,7 @@ impl<'a> Explorer<'a> {
             let _ = writeln!(tr.borrow_mut(), "          free vars: {:?}", vars.iter().map(|v| format!("{:?}", self.arena.var_info(*v).kind)).collect::<Vec<_>>());
         }
         let vars_before = self.arena.num_vars() as u32;
-        let Some(cases) = self.arena.case_split(t).or_else(|| self.enumerate_symbol_target(t)) else {
+        let Some(cases) = self.enumerate_symbol_target(t).or_else(|| self.arena.case_split(t)) else {
             self.stats.unresolved += 1;
             return NodeExit::Unresolved(format!(
                 "{} target not enumerable: {}",
@@ -1039,7 +1040,9 @@ impl<'a> Explorer<'a> {
             }
         }
         // A symbol enumeration encodes (symbol, constant) pairs instead of atoms.
-        let symbol_pins = atoms.len() == 2 && self.arena.as_var(atoms[0]).is_some_and(|v| self.sym_values.contains_key(&v));
+        let symbol_pins = cases.iter().all(|(a, _)| {
+            a.len() == 2 && self.arena.as_var(a[0].0).is_some_and(|v| self.sym_values.borrow().contains_key(&v)) && self.arena.is_const(a[1].0).is_some()
+        });
         let mut targets = Vec::new();
         for (c, assigns) in by_target {
             let mut st = state.clone();
@@ -1095,22 +1098,35 @@ impl<'a> Explorer<'a> {
         NodeExit::Select { atoms, targets, by_atoms: !symbol_pins }
     }
 
-    /// A target `sym + k` over one symbolized location: one case per constant
-    /// the location was seen to hold, pinning the symbol to it.
+    /// A target over one symbolized location (`sym + k`, or a table entry
+    /// indexed by it) that is constant for every constant the location was
+    /// seen to hold: one case per constant, pinning the symbol to it.
     fn enumerate_symbol_target(&mut self, t: ExprId) -> Option<Vec<(Vec<(ExprId, bool)>, ExprId)>> {
-        let (Some(var), k) = self.arena.affine(t)? else { return None };
-        let values = self.sym_values.get(&var)?.clone();
+        let (var, values) = {
+            let known = self.sym_values.borrow();
+            let mut hit = None;
+            for v in self.arena.free_vars(t) {
+                if let Some(vals) = known.get(&v) {
+                    if hit.is_some() {
+                        return None;
+                    }
+                    hit = Some((v, vals.clone()));
+                }
+            }
+            hit?
+        };
         if values.is_empty() {
             return None;
         }
-        let size = self.arena.size(t);
-        let var_expr = self.arena.var_of(self.arena.var_info(var).kind, self.arena.var_info(var).size, false);
+        let var_expr = self.arena.var_expr(var)?;
         let mut out = Vec::new();
         for v in values {
             let kc = self.arena.cst(self.arena.size(var_expr), v);
-            let target = self.arena.cst(size, (v as i128).wrapping_add(k) as u128);
-            // Encode the pin as a pseudo-atom: the symbol itself, resolved by
-            // the caller through `pin_symbol`.
+            let mut map = BTreeMap::new();
+            map.insert(var_expr, kc);
+            let target = self.arena.substitute(t, &map);
+            self.arena.is_const(target)?;
+            // Encode the pin as a pseudo-atom pair: the symbol and its constant.
             out.push((vec![(var_expr, true), (kc, true)], target));
         }
         Some(out)

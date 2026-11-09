@@ -79,15 +79,13 @@ pub struct EmitStats {
     pub privatized: usize,
     /// The register range standing for the interpreter's memory, which calls preserve.
     pub private_regs: Option<(u64, u32)>,
+    /// The register holding the entry stack pointer, which calls preserve.
+    pub frame_reg: Option<(u64, u32)>,
 }
 
 /// Register-space offset, past the witness slots, of the placeholder registers
 /// that stand for "never defined by the program".
 pub const UNDEF_BASE: u64 = 0x10000;
-
-/// Register-space offset, past the witness slots, of the registers standing
-/// for the interpreter's own memory.
-const PRIVATE_BASE: u64 = 0x1000;
 
 /// The placeholder register standing in for an undefined `reg`.
 pub fn undef_register(conf: &EmitConfig, reg: u64) -> u64 {
@@ -532,6 +530,8 @@ struct Emitter<'a> {
     private: BTreeMap<u64, u64>,
     /// The distinct private accesses, loaded into their registers at entry.
     private_accesses: BTreeSet<(u64, u32)>,
+    /// The register, past the witness slots, holding the entry stack pointer.
+    frame_reg: u64,
 }
 
 /// How many times the emitted path executes op `i` of `insn`.
@@ -563,11 +563,15 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
         last_addr_scratch: None,
         private: BTreeMap::new(),
         private_accesses: BTreeSet::new(),
+        frame_reg: 0,
     };
     em.assign_slots();
+    em.frame_reg = conf.slot_base + 8 * em.slots.len() as u64;
+    em.stats.frame_reg = Some((em.frame_reg, conf.ptr_size as u32));
     em.plan_private();
     let mut overlay = PcodeOverlay::new(conf.ram.get_index());
-    let mut entry_ops = em.private_entry_loads();
+    let mut entry_ops = vec![OverlayOp { opc: CPUI_COPY, out: Some(em.frame_vn()), ins: vec![em.sp_varnode()] }];
+    entry_ops.extend(em.private_entry_loads());
     entry_ops.push(em.branch_op(syn_addr(conf, cfg.entry)));
     overlay.insns.insert(
         entry_addr,
@@ -759,7 +763,24 @@ impl<'a> Emitter<'a> {
     }
 
     fn private_base(&self) -> u64 {
-        self.conf.slot_base + PRIVATE_BASE.max((8 * self.slots.len() as u64 + 0xff) & !0xff)
+        (self.frame_reg + self.conf.ptr_size as u64 + 0xf) & !0xf
+    }
+
+    fn frame_vn(&self) -> VarnodeData {
+        self.vn(&self.conf.register, self.frame_reg, self.conf.ptr_size as u32)
+    }
+
+    /// `out = frame + k`: the entry stack pointer plus `k`.  Stack values are
+    /// rebuilt from the saved entry pointer, not from the current one, so a
+    /// merge or a callee's stack adjustment never leaves the decompiler
+    /// unsure where the stack pointer is.
+    fn frame_op(&self, out: VarnodeData, k: i128) -> OverlayOp {
+        let ptr = self.conf.ptr_size as u32;
+        if k == 0 {
+            return OverlayOp { opc: CPUI_COPY, out: Some(out), ins: vec![self.frame_vn()] };
+        }
+        let mask = if ptr >= 8 { u64::MAX as u128 } else { (1u128 << (8 * ptr)) - 1 };
+        OverlayOp { opc: CPUI_INT_ADD, out: Some(out), ins: vec![self.frame_vn(), self.cst((k as u128 & mask) as u64, ptr)] }
     }
 
     /// The register standing for the private access of op `i`, if it is one.
@@ -1298,10 +1319,10 @@ impl<'a> Emitter<'a> {
                 Loc::Reg { off } => self.vn(&self.conf.register, *off, size),
                 Loc::Mem { off, .. } => {
                     let ptr = self.conf.ptr_size as u32;
-                    let delta = (*off - sp_off?) as i64 as u64;
+                    sp_off?;
                     let addr = fresh(self);
                     let addr = VarnodeData { size: ptr, ..addr };
-                    ops.push(OverlayOp { opc: CPUI_INT_ADD, out: Some(addr.clone()), ins: vec![self.sp_varnode(), self.cst(delta, ptr)] });
+                    ops.push(self.frame_op(addr.clone(), *off));
                     let t = fresh(self);
                     ops.push(OverlayOp { opc: CPUI_LOAD, out: Some(t.clone()), ins: vec![self.cst(self.conf.ram.get_index() as u64, ptr), addr] });
                     t
@@ -1366,7 +1387,7 @@ impl<'a> Emitter<'a> {
         out.push(OverlayOp { opc: CPUI_RETURN, out: None, ins: vec![out_vn] });
     }
 
-    /// `scratch = sp + k` for a memory access whose address is stack-relative.
+    /// `scratch = frame + k` for a memory access whose address is stack-relative.
     fn stack_address(&mut self, op: &RawOp, i: usize, trace: Option<&super::kuna_pushanemu::InsnTrace>) -> Option<OverlayOp> {
         if !self.conf.remat_sp {
             return None;
@@ -1377,25 +1398,14 @@ impl<'a> Emitter<'a> {
         if Some(base) != self.conf.sp0 {
             return None;
         }
-        let spb = (*trace.sp_before.get(i)?)?;
-        let (Some(b2), k1) = self.arena.affine_probe(spb)? else { return None };
-        if b2 != base {
-            return None;
-        }
         let ptr = self.conf.ptr_size as u32;
         if op.ins[1].size != ptr {
             return None;
         }
-        let delta = k.wrapping_sub(k1);
         let scratch = self.scratch(32 + (i as u64 % 8), ptr);
-        let sp_vn = self.sp_varnode();
         self.last_addr_scratch = Some(scratch.clone());
         self.stats.remat += 1;
-        if delta == 0 {
-            return Some(OverlayOp { opc: CPUI_COPY, out: Some(scratch), ins: vec![sp_vn] });
-        }
-        let mask = if ptr >= 8 { u64::MAX as u128 } else { (1u128 << (8 * ptr)) - 1 };
-        Some(OverlayOp { opc: CPUI_INT_ADD, out: Some(scratch), ins: vec![sp_vn, self.cst((delta as u128 & mask) as u64, ptr)] })
+        Some(self.frame_op(scratch, k))
     }
 
     /// Fold a data op to its emulated constant or stack-relative form.
@@ -1435,32 +1445,8 @@ impl<'a> Emitter<'a> {
         if self.conf.remat_sp && out_vn.size == self.conf.ptr_size as u32 {
             if let (Some(sp0), Some((Some(base), k))) = (self.conf.sp0, self.arena.affine_probe(v)) {
                 if base == sp0 {
-                    if let Some(Some(spb)) = trace.sp_before.get(i).copied() {
-                        if let Some((Some(b2), k1)) = self.arena.affine_probe(spb) {
-                            if b2 == sp0 {
-                                let delta = k.wrapping_sub(k1);
-                                let already = matches!(op.opc, CPUI_INT_ADD | CPUI_INT_SUB | CPUI_COPY)
-                                    && op.ins[0].space.as_ref().map(classify_space) == Some(Space::Register)
-                                    && op.ins[0].offset == self.conf.sp_reg
-                                    && op.ins.get(1).map_or(true, |b| b.space.as_ref().map(classify_space) == Some(Space::Const));
-                                if already {
-                                    return Self::raw(op);
-                                }
-                                self.stats.remat += 1;
-                                let sp_vn = self.sp_varnode();
-                                if delta == 0 {
-                                    return OverlayOp { opc: CPUI_COPY, out: Some(out_vn.clone()), ins: vec![sp_vn] };
-                                }
-                                let ptr = self.conf.ptr_size as u32;
-                                let mask = if ptr >= 8 { u64::MAX as u128 } else { (1u128 << (8 * ptr)) - 1 };
-                                return OverlayOp {
-                                    opc: CPUI_INT_ADD,
-                                    out: Some(out_vn.clone()),
-                                    ins: vec![sp_vn, self.cst((delta as u128 & mask) as u64, ptr)],
-                                };
-                            }
-                        }
-                    }
+                    self.stats.remat += 1;
+                    return self.frame_op(out_vn.clone(), k);
                 }
             }
         }
