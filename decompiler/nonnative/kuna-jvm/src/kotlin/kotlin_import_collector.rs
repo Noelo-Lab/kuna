@@ -38,7 +38,6 @@ impl KotlinImportCollector {
         "text",
     ];
 
-    /// Java: KotlinImportCollector(ImportCollector)
     /// Java: KotlinImportCollector(ImportCollector). The JDK iterates the
     /// `KTypes` tables in a per-run order; the order cannot reach the output:
     /// every simple name in them is distinct, so the map ends up the same, and
