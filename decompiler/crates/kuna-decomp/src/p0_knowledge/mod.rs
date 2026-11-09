@@ -43,7 +43,6 @@ pub mod kuna_dyldcache;
 pub mod kuna_goabi;
 // (kuna) Discriminant-value naming for recovered variant parts (load-time,
 // env-bridged; the first VariantLayout consumer).
-pub mod kuna_variantnames;
 pub mod kuna_gotypes;
 // (kuna) Language facets: what a C-shaped type means in the source language
 // (the VariantLayout-style side table on the type factory).
@@ -51,7 +50,6 @@ pub mod kuna_langfacet;
 // (kuna) PE import-by-ordinal naming from built-in export tables (load-time,
 // env-bridged).
 // (kuna) DWARF aggregate-layout import option gate (load-time, env-bridged).
-pub mod kuna_dwarfstructs;
 // (kuna) Named libc/POSIX aggregate types in the prototype tables option gate
 // (load-time, env-bridged).
 pub mod kuna_libctypes;

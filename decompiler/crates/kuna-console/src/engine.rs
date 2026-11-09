@@ -3119,6 +3119,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
     match pass_id {
         "armframes" => arch.analysis_listing && arch.analysis_funcstart_patterns && arch.analysis_armframes,
         "noreturn_known" => arch.analysis_noreturn_known,
+        "gonoreturn" => arch.analysis_noreturn_known,
         // (kuna) PE/Mach-O import-slot call binding — typed-slot `externref`
         // paint plus PE-only Win32 no-return names, committed only when enabled.
         // Metadata alone has no output effect; the live flow option gates its use.
@@ -3228,7 +3229,6 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // own — it shapes which callees `noreturn_disc` concludes, which the arm
         // above already gates. Registered here so the fail-open `_ => true` never
         // silently re-enables a pass id that does not exist.
-        "noreturn_discstrict" => arch.analysis_noreturn_discstrict,
         "noreturn_propagate" => arch.analysis_noreturn_propagate,
         "callerreads" => arch.caller_reads,
         "fid" => arch.analysis_fid,
@@ -3260,10 +3260,8 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // has no fact stream of its own, shaping the `aif` accept list inside
         // `run_aif`. Registered here so the fail-open `_ => true` never silently
         // re-enables a pass id that does not exist.
-        "aifbracket" => arch.analysis_aifbracket,
         // (kuna, GH-299) The AIF filler reject, shaping the `aif` accept list the
         // same way; registered for the same fail-open reason.
-        "aifnoppad" => arch.analysis_aifnoppad,
         // (kuna, GH-299) The AIF literal-pool slide, shaping the `aif` accept list
         // the same way; registered for the same fail-open reason.
         "aifpoolslide" => arch.analysis_aifpoolslide,
@@ -3271,7 +3269,6 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // functions, so it changes emitted C by construction). Listing consumer;
         // the live gate is the pre-invocation check in `run_listing_consumers`.
         "tailcallentry" => arch.analysis_tailcallentry,
-        "gonoreturn" => arch.analysis_gonoreturn,
         // (kuna) Mach-O Objective-C metadata recovery — default-OFF (output-changing:
         // renames IMP functions + adds class/selector symbols). Registered here so it
         // is gated by `analysis_objc` rather than running by the fail-open default.
@@ -4911,7 +4908,7 @@ fn commit_analysis_output(
     prog.libctypes_glibc = out.libctypes_glibc;
     prog.libctypes_refused = out.libctypes_refused;
 
-    // 0c. (kuna `objcrefconst`) The Objective-C reference slots the `objc` pass
+    // 0c. (kuna `objc`) The Objective-C reference slots the `objc` pass
     //     reported constant: painted `Varnode::readonly` like 1b below AND added to
     //     the `dynrelocs` foldable set, so `ActionVarnodeProps` folds a load through
     //     a selref/classref/superref without the program-wide `option readonly`.
@@ -4919,9 +4916,9 @@ fn commit_analysis_output(
     //     1a: `Scope::addMap` copies the range property into the SymbolEntry, and
     //     the per-function snapshot reads the symbol's flags.
     //     `objcivars` gates the ivar offset variables the same way.
-    let (refs_on, ivars_on) = (prog.arch().analysis_objcrefconst, prog.arch().analysis_objcivars);
+    let ivars_on = prog.arch().analysis_objcivars;
     let const_on = |gate: kuna_analysis::pass::ConstGate| match gate {
-        kuna_analysis::pass::ConstGate::ObjcRefs => refs_on,
+        kuna_analysis::pass::ConstGate::ObjcRefs => true,
         kuna_analysis::pass::ConstGate::ObjcIvars => ivars_on,
     };
     if out.const_ranges.iter().any(|r| const_on(r.gate)) {

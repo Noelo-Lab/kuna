@@ -1852,8 +1852,7 @@ pub struct Architecture {
     /// (kuna) Gate the named libc/POSIX aggregate types in the prototype tables
     /// (`libctypes`); default on (`opaque`). Catalog-visible twin of the load-time
     /// [`crate::kuna_libctypes`] **env var** (the named shells are interned at
-    /// `load file`, upstream of every `option` command), exactly as
-    /// `analysis_dwarfstructs` is for its own gate.
+    /// `load file`, upstream of every `option` command).
     pub analysis_libctypes: bool,
     /// (kuna `libctypes glibc`) Whether the named shells additionally carry the
     /// published glibc x86-64 FIELD layouts. Catalog-visible twin of the same
@@ -2024,34 +2023,6 @@ pub struct Architecture {
     pub analysis_dwarf_lines: bool,
     /// Recover verified Go scalar/pointer register-ABI signatures from DWARF.
     pub analysis_godwarfsig: bool,
-    /// Recover verified amd64 Go pairs of full-width integer results.
-    pub analysis_gopairreturns: bool,
-    /// (kuna) Gate DWARF aggregate-LAYOUT import (`dwarfstructs`); default
-    /// **on**. A `DW_TAG_structure_type`/`union_type`/`class_type` carries its
-    /// `DW_AT_byte_size` and its `DW_TAG_member` children (offsets verbatim,
-    /// bitfields included) onto the interned type instead of becoming a named,
-    /// EMPTY, zero-size shell — so a by-value struct parameter keeps its type, an
-    /// 8-byte struct return stops being misclassified as a hidden-return-buffer
-    /// call, and a field access renders as `n->inner.a` instead of
-    /// `*(int *)((long)n + 4)`. NOTE: the mapper reads this through the
-    /// [`crate::kuna_dwarfstructs`] **env var** (the types are baked at
-    /// `load file`, upstream of `option`); this bool exists only for catalog
-    /// visibility and the `phase catalog` live `current` field.
-    pub analysis_dwarfstructs: bool,
-    /// (kuna) Gate DWARF variant-part import (`dwarfvariants`); default **on**.
-    /// A `DW_TAG_structure_type` carrying a `DW_TAG_variant_part` (a Rust
-    /// tagged enum) recovers its discriminant member, its per-variant
-    /// `DW_AT_discr_value` and each variant's named payload, instead of the
-    /// field-less shell `dwarfstructs` leaves behind (a Rust enum has no
-    /// `DW_TAG_member` of its own). NOTE: the mapper reads this through the
-    /// [`crate::kuna_dwarfvariants`] **env var** (the types are baked at
-    /// `load file`, upstream of `option`); this bool exists only for catalog
-    /// visibility and the `phase catalog` live `current` field.
-    pub analysis_dwarfvariants: bool,
-    /// (kuna) `option variantnames`: name a recovered variant part's
-    /// discriminant VALUES by synthesizing an enum for its tag member.
-    /// Catalog visibility for the `KUNA_VARIANTNAMES` load-time gate.
-    pub analysis_variantnames: bool,
     /// (kuna) Gate the demangled-C++-signature arm (`cppsig`); default
     /// [`CppSigMode::Proven`]. Commits the prototypes read off a MANGLED SYMBOL —
     /// the class type for `this` plus the declared parameter types — which is the
@@ -2159,17 +2130,6 @@ pub struct Architecture {
     /// the Listing (`--option listing on` builds it); a no-op when the Listing is
     /// absent. Default-off ⇒ every parity gate is byte-identical.
     pub analysis_noreturn_disc: bool,
-    /// (kuna, GH-312) Narrow `noreturn_disc`'s no-fall-through predicate to the
-    /// arms that observe the program; default **on** (DIV-92). The legacy tally
-    /// counts "the byte after the call is not a decoded instruction start" as a
-    /// vote for the callee being no-return, but the Listing walk always attempts a
-    /// call's successor, so that arm fires exactly when kuna's decoder failed —
-    /// three spec gaps forge the verdict and DELETE live code at every caller.
-    /// When on, only the terminal arm (no fall-through at all) and the two
-    /// positive arms (the successor is data / another function's entry) count.
-    /// Reads the Listing (`--option listing on` builds it); a no-op when the
-    /// Listing is absent, so every parity gate is byte-identical.
-    pub analysis_noreturn_discstrict: bool,
     /// (kuna) Gate the structural no-return **propagation** consumer
     /// (`noreturn_propagate`), the second Listing/xref consumer; default **off**.
     /// The kuna analog of angr's CFGFast call-graph no-return propagation: seed
@@ -2302,21 +2262,6 @@ pub struct Architecture {
     /// two u-boot A32 images DIV-20 exists for. Inert without `aif`, so every parity
     /// gate is byte-identical.
     pub analysis_aifcorroborate: bool,
-    /// (kuna, GH-299) Gate the AIF bracketed-candidate reject (`aifbracket`);
-    /// default **on**. A gap candidate whose speculative body falls through or
-    /// jumps into a decoded non-entry instruction of the function enclosing it is
-    /// a fragment of that function, and is refused unless an inbound reference,
-    /// a terminal-opened hole start, alignment padding, or a return or jump just
-    /// before it says a function starts there. Zero true function starts lost over
-    /// 98 ARM ELFs and 43 i386 PEs while removing 1,291 to 2,874 mid-body entries
-    /// per corpus. Inert without `aif`, so every parity gate is byte-identical.
-    pub analysis_aifbracket: bool,
-    /// (kuna, GH-299) Gate the AIF filler reject (`aifnoppad`); default **on**. A
-    /// gap candidate that opens with zero fill, or with alignment padding in front
-    /// of a known function entry, is not probed, and an accept that opens with
-    /// padding is planted after it. Inert without `aif`, so every parity gate is
-    /// byte-identical.
-    pub analysis_aifnoppad: bool,
     /// (kuna, GH-299) Gate the AIF literal-pool slide (`aifpoolslide`); default
     /// **on**. A gap candidate on a word some instruction loads PC-relatively is
     /// pool data: its accept is planted on the first address after the pool when
@@ -2336,12 +2281,6 @@ pub struct Architecture {
     /// (`--option listing on` builds it); a no-op when the Listing is absent, so
     /// every parity gate is byte-identical.
     pub analysis_tailcallentry: bool,
-    /// (kuna) Gate the Go pclntab no-return pass (`gonoreturn`): apply the
-    /// vendored Go no-return list to the pclntab-recovered function list, so a
-    /// stripped Go binary (no symbol table for `noreturn_known`) still gets its
-    /// `runtime.panic*`/`throw`/`goexit` facts. Go-only pass ⇒ structural no-op
-    /// elsewhere; the XML datatest oracle never runs the analyzer tier.
-    pub analysis_gonoreturn: bool,
     /// (kuna) Gate the Mach-O Objective-C metadata recovery pass (`objc`); default
     /// **off**. The kuna analog of Ghidra's `ObjcTypeMetadataAnalyzer`
     /// (name-recovery half): when the binary is a Mach-O, walk the `__objc_*`
@@ -2355,15 +2294,6 @@ pub struct Architecture {
     /// byte-identical. x86-64, no-chained-fixups path (the arm64 +
     /// LC_DYLD_CHAINED_FIXUPS resolver is a deferred follow-on).
     pub analysis_objc: bool,
-    /// (kuna `objcrefconst`) Fold a load through an Objective-C reference slot
-    /// (`__objc_selrefs` / `__objc_classrefs` / `__objc_superrefs`) to the
-    /// selector or class it refers to; default **on**. dyld fills those slots
-    /// once before any code runs and nothing rewrites them, which is why
-    /// Ghidra's `ObjectiveC2_ClassAnalyzer` marks the three blocks read-only.
-    /// Only the rebase slots the `objc` pass reported are painted, so a
-    /// bind slot (an imported class) keeps its `classRef_<Class>` name instead.
-    /// Inert unless `objc` is on.
-    pub analysis_objcrefconst: bool,
     /// (kuna) `option swiftmetadata` — the Swift runtime-metadata recovery pass
     /// (`kuna-analysis::analyzers::swift`): names metadata accessors, vtable and
     /// override implementations, protocol witnesses and descriptor records from
@@ -3157,10 +3087,6 @@ impl Architecture {
             analysis_dwarf: false,
             analysis_dwarf_lines: false,
             analysis_godwarfsig: false,
-            analysis_gopairreturns: false,
-            analysis_dwarfstructs: false,
-            analysis_dwarfvariants: false,
-            analysis_variantnames: false,
             analysis_cppsig: crate::kuna_cppsig::CppSigMode::Off,
             msvcsig_import_slots: std::collections::BTreeSet::new(),
             analysis_addrtable: false,
@@ -3176,7 +3102,6 @@ impl Architecture {
             analysis_lazyfuncs: false,
             lazy_entry_starts: Rc::default(),
             analysis_noreturn_disc: false,
-            analysis_noreturn_discstrict: false,
             analysis_noreturn_propagate: false,
             analysis_noreturn_error: false,
             analysis_noreturn_reach: false,
@@ -3187,13 +3112,9 @@ impl Architecture {
             analysis_aif: false,
             analysis_aifstrict: false,
             analysis_aifcorroborate: false,
-            analysis_aifbracket: true,
-            analysis_aifnoppad: true,
             analysis_aifpoolslide: true,
             analysis_tailcallentry: false,
-            analysis_gonoreturn: false,
             analysis_objc: false,
-            analysis_objcrefconst: true,
             analysis_swiftmetadata: false,
             analysis_cfstrings: false,
             cfstrings_annotate: false,
@@ -3619,11 +3540,7 @@ impl Architecture {
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
         self.analysis_dwarf = true;
         self.analysis_dwarf_lines = false; // (kuna) source-line comments default-OFF (output-changing, opt-in)
-        self.analysis_dwarfstructs = true; // (kuna) DIV: DWARF aggregate-layout import default-ON (a zero-size aggregate is not conservative -- the ABI classifier acts on it; real-ELF DWARF path only, so every parity gate is byte-identical)
-        self.analysis_dwarfvariants = true; // (kuna) DIV-87: DWARF variant-part import default-ON (the compiler states the discriminant; real-ELF DWARF path only, so every parity gate is byte-identical)
-        self.analysis_variantnames = true; // (kuna) discriminant-value naming default-ON (acts only where a variant part was imported, so the parity gates cannot see it)
         self.analysis_godwarfsig = false;
-        self.analysis_gopairreturns = false;
         // (kuna) DIV: demangled C++ signatures default to the PROVEN tier — only
         // the prototypes the mangling entails (ctor/dtor/cv-qualified member/
         // unqualified global), measured at precision 1.0000 on google/leveldb.
@@ -3637,7 +3554,6 @@ impl Architecture {
         self.analysis_lazyfuncs = false;
         self.lazy_entry_starts = Rc::default();
         self.analysis_noreturn_disc = true; // (kuna) DIV-22 default-on: Ghidra's FindNoReturnFunctionsAnalyzer ≥3-evidence discovered-no-return (default-on in Ghidra). REMOVES CODE (marks a callee no-return from ≥3 dead-fall-through sites → drops post-call dead code at callers). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_disc off`
-        self.analysis_noreturn_discstrict = true; // (kuna, GH-312) DIV-92 default-on: drop noreturn_disc's decode-failure evidence arm, keeping the terminal arm + the two positive arms. RESTORES CODE (a forged no-return verdict no longer deletes the caller's tail). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore the legacy three-arm tally with `option noreturn_discstrict off`
         self.analysis_noreturn_propagate = true; // (kuna) DIV-14 default-on: REMOVES CODE (call-graph no-return propagation drops post-call dead code). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_propagate off`
         self.analysis_noreturn_error = true; // (kuna) DIV-16 default-on: REMOVES CODE (conclude error(nonzero,...) wrappers no-return, dropping the dead fall-through at every caller). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_error off`
         self.analysis_noreturn_reach = true; // (kuna) DIV-19 default-on: REMOVES CODE (CFG-reachability no-return, Ghidra's FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn — mid-body no-return calls, dead returns, switch-of-no-return). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_reach off`
@@ -3652,15 +3568,11 @@ impl Architecture {
         // carried by the `aggressive` preset.
         self.analysis_aifcorroborate = false;
         // (kuna, GH-299) AIF bracketed-candidate reject -- default-ON; inert without `aif`.
-        self.analysis_aifbracket = true;
         // (kuna, GH-299) AIF filler reject -- default-ON; inert without `aif`.
-        self.analysis_aifnoppad = true;
         // (kuna, GH-299) AIF literal-pool slide -- default-ON; inert without `aif`.
         self.analysis_aifpoolslide = true;
         self.analysis_tailcallentry = false; // tail-call function-entry recovery default-off
-        self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
-        self.analysis_objcrefconst = true; // (kuna) ObjC reference slots fold to their selector/class; inert unless objc is on
         self.analysis_swiftmetadata = false; // Swift runtime-metadata recovery default-off (inert without swift5_* sections)
         self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)
         self.cfstrings_annotate = false;

@@ -57,7 +57,7 @@ fn call_fields(cx: &SpellCtx, fd: &Funcdata, op: OpId) -> Option<[Rc<Datatype>; 
 }
 
 pub(crate) fn call_projection(fd: &Funcdata, arch: &Architecture, op: OpId) -> Option<usize> {
-    if !arch.analysis_godwarfsig || !arch.analysis_gopairreturns {
+    if !arch.analysis_godwarfsig {
         return None;
     }
     let value = fd.vbank().get(fd.obank().get(op)?.get_out()?)?;

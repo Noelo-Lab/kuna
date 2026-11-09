@@ -281,7 +281,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         // None), so the no-program catalog byte-compat fixture is untouched.
         "noreturn_known" => on_off(conf.analysis_noreturn_known),
         "godwarfsig" => on_off(conf.analysis_godwarfsig),
-        "gopairreturns" => on_off(conf.analysis_gopairreturns),
         "libgccsigs" => on_off(conf.analysis_libgccsigs),
         // (kuna `libctypes`) Valued `off|opaque|glibc`, so the live token is the
         // value, not an on/off word.
@@ -313,9 +312,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "dwarf" => on_off(conf.analysis_dwarf),
         // (kuna) ELF data-symbol naming (DIV-76): committed at `read symbols`
         // like the analysis-pass gates, so the live flag is authoritative.
-        "dwarfstructs" => on_off(conf.analysis_dwarfstructs),
-        "dwarfvariants" => on_off(conf.analysis_dwarfvariants),
-        "variantnames" => on_off(conf.analysis_variantnames),
         // (kuna `cppsig`) Three-valued, so it reports its own token rather than
         // on/off.
         "cppsig" => conf.analysis_cppsig.as_str(),
@@ -333,9 +329,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         },
         "elfmain" => on_off(conf.analysis_elfmain),
         "fast_funcdisc" => on_off(conf.analysis_fast_funcdisc),
-        "gonoreturn" => on_off(conf.analysis_gonoreturn),
-        "aifbracket" => on_off(conf.analysis_aifbracket),
-        "aifnoppad" => on_off(conf.analysis_aifnoppad),
         "aifpoolslide" => on_off(conf.analysis_aifpoolslide),
         "armconstshift" => on_off(conf.arm_constant_shift),
         // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested

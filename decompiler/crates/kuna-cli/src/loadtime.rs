@@ -9,11 +9,10 @@ use std::ffi::OsString;
 use std::process::Command;
 
 use kuna_decomp::{
-    kuna_calltargettype, kuna_dwarfstructs, kuna_dyldcache, kuna_dwarfvariants,
+    kuna_calltargettype, kuna_dyldcache,
     kuna_ifuncfpret, kuna_kernelcache, kuna_libctypes, kuna_ppcapu,
     kuna_goabi, kuna_objcivars, kuna_objcsdk, kuna_sourcelang,
     kuna_symbolnamechars,
-    kuna_variantnames,
 };
 
 #[derive(Clone, Copy)]
@@ -39,9 +38,6 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "goabi" => (kuna_goabi::GOABI_ENV, DefaultOn),
         "symbolnamechars" => (kuna_symbolnamechars::SYMBOLNAMECHARS_ENV, SymbolNameChars),
         "libctypes" => (kuna_libctypes::LIBCTYPES_ENV, LibcTypes),
-        "dwarfstructs" => (kuna_dwarfstructs::DWARFSTRUCTS_ENV, DefaultOn),
-        "dwarfvariants" => (kuna_dwarfvariants::DWARFVARIANTS_ENV, DefaultOn),
-        "variantnames" => (kuna_variantnames::VARIANTNAMES_ENV, DefaultOn),
         "calltargettype" => (kuna_calltargettype::CALLTARGETTYPE_ENV, DefaultOff),
         "macho-arm64e" => ("KUNA_MACHO_ARM64E", Arm64e),
         "sourcelang" => (kuna_sourcelang::SOURCELANG_ENV, SourceLang),
@@ -274,7 +270,7 @@ mod tests {
             ("objcivars".into(), "on".into()),
             ("objcivars".into(), "off".into()),
             ("macho-arm64e".into(), "off".into()),
-            ("dwarfvariants".into(), "off".into()),
+            ("dyldcrossrefs".into(), "off".into()),
             ("unrelated".into(), "on".into()),
         ];
         let mut cmd = Command::new("unused");
@@ -289,7 +285,7 @@ mod tests {
                 ("KUNA_OBJCIVARS", Some("off")),
                 ("KUNA_MACHO_ARM64E", None),
                 ("KUNA_MACHO_SLICE", Some("arm64")),
-                ("KUNA_DWARFVARIANTS", Some("off")),
+                ("KUNA_DYLDCROSSREFS", Some("off")),
             ])
         );
         assert!(settings(&[], Some("  "), 1).is_empty());

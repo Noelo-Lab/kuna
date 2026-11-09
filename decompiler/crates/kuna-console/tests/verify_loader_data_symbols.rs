@@ -115,7 +115,7 @@ fn dwarf_named_globals_survive_the_loader_arm() {
 /// longer render raw.
 #[test]
 fn faillog_stderr_renders_by_name_by_default() {
-    let code = decompile_bin(&faillog(), "load addr 0x3320", false);
+    let code = decompile_bin(&faillog(), "load addr 0x3320");
 
     assert!(
         code.contains("stderr"),

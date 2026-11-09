@@ -525,15 +525,14 @@ mod tests {
         b
     }
 
-    fn thunk_addrs(code: &[(u64, &[u8])], is_64: bool, reject_rex: bool, map: &HashMap<u64, Vec<u8>>) -> Vec<u64> {
+    fn thunk_addrs(code: &[(u64, &[u8])], is_64: bool, map: &HashMap<u64, Vec<u8>>) -> Vec<u64> {
         let mut out: Vec<ImportSym> = Vec::new();
-        decode_thunks(code, code, &[], is_64, reject_rex, map, &mut out);
+        decode_thunks(code, code, &[], is_64, map, &mut out);
         out.iter().map(|s| s.addr).collect()
     }
 
     /// A REX.W tail jump `48 FF 25` (`lea rcx,[list]; jmp [slot]`) next to a bare
-    /// linker thunk through the same slot: only the bare thunk is named. With the
-    /// rejection off the entry one byte into the tail jump comes back.
+    /// linker thunk through the same slot: only the bare thunk is named.
     #[test]
     fn rex_tail_jump_is_not_a_thunk() {
         let vma = 0x140001000u64;
@@ -548,8 +547,7 @@ mod tests {
         let map = HashMap::from([(slot, b"InitializeSListHead".to_vec())]);
 
         let code = [(vma, &data[..])];
-        assert_eq!(thunk_addrs(&code, true, true, &map), vec![vma + thunk as u64]);
-        assert_eq!(thunk_addrs(&code, true, false, &map), vec![vma + tail as u64, vma + thunk as u64]);
+        assert_eq!(thunk_addrs(&code, true, &map), vec![vma + thunk as u64]);
     }
 
     /// A genuine thunk right after a function ending in `jmp qword ptr [rax+0x48]`
@@ -569,11 +567,11 @@ mod tests {
         for op in [&[0xE8u8][..], &[0xE9], &[0x0F, 0x85], &[0x48, 0x8D, 0x0D]] {
             let caller = rel32(op, caller_at, thunk);
             let code = [(vma, &text[..]), (caller_at, &caller[..])];
-            assert_eq!(thunk_addrs(&code, true, true, &map), vec![thunk], "referenced by {op:x?}");
+            assert_eq!(thunk_addrs(&code, true, &map), vec![thunk], "referenced by {op:x?}");
         }
         let unrelated = rel32(&[0xE8], caller_at, thunk + 1);
         let code = [(vma, &text[..]), (caller_at, &unrelated[..])];
-        assert!(thunk_addrs(&code, true, true, &map).is_empty());
+        assert!(thunk_addrs(&code, true, &map).is_empty());
     }
 
     /// PE32 never rejects: `40`-`4F` are `inc`/`dec` in 32-bit code.
@@ -584,7 +582,7 @@ mod tests {
         let mut data = vec![0x48u8, 0xFF, 0x25];
         data.extend_from_slice(&(slot as u32).to_le_bytes());
         let map = HashMap::from([(slot, b"printf".to_vec())]);
-        assert_eq!(thunk_addrs(&[(vma, &data[..])], false, true, &map), vec![vma + 1]);
+        assert_eq!(thunk_addrs(&[(vma, &data[..])], false, &map), vec![vma + 1]);
     }
 
     /// Ordinal-name synthesis drops the DLL extension: `ws2_32.dll` + 115 →

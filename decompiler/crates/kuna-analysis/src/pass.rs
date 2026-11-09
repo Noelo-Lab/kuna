@@ -377,7 +377,7 @@ pub struct FidMatch {
 /// Which option decides whether a [`ConstRange`] is committed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConstGate {
-    /// `objcrefconst`: the ObjC selector/class/super/protocol reference slots.
+    /// `objc`: the ObjC selector/class/super/protocol reference slots.
     ObjcRefs,
     /// `objcivars`: the ObjC ivar offset variables in `__objc_ivar`.
     ObjcIvars,

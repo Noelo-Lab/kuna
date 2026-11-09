@@ -73,8 +73,7 @@
 //! - **Aggregate layout is now imported** (`dwarfstructs`, [`kuna_dwarfstructs`]):
 //!   a `DW_TAG_structure_type`/`union_type`/`class_type` carries its
 //!   `DW_AT_byte_size` and its `DW_TAG_member` children (offsets verbatim,
-//!   bitfields included) onto the interned type. With the gate OFF it maps to a
-//!   *named opaque* struct (enough to render `struct foo *`) exactly as before.
+//!   bitfields included) onto the interned type.
 //! - **Discriminated unions are now imported too** (`dwarfvariants`,
 //!   [`kuna_dwarfvariants`]): a `DW_TAG_structure_type` carrying a
 //!   `DW_TAG_variant_part` — a Rust tagged enum, which has no `DW_TAG_member` of
@@ -84,9 +83,8 @@
 //!   discriminant, so a variant NAME is installed only where exactly one variant
 //!   claims those bytes (`Option`'s `Some`); where two do — every `Result` — the
 //!   payload is spelled `field_0x<offset>`, the same rendering the gate off
-//!   gives. The arm EXTENDS
-//!   `dwarfstructs` and is gated on it as well as on its own flag; with either
-//!   off a Rust enum recovers its width and no fields. Needs FULL debug info
+//!   gives. The arm EXTENDS the member walk; where it refuses, a Rust enum
+//!   recovers its width and no fields. Needs FULL debug info
 //!   (`-C debuginfo=2`): a binary whose DWARF carries no type DIEs gains nothing.
 //!
 //! ## PIE / load-bias limitation
@@ -739,10 +737,10 @@ fn build_datatype_at(
 }
 
 /// Intern the aggregate for `die`: its `DW_AT_byte_size` + `DW_TAG_member`
-/// layout under `--option dwarfstructs on` ([`kuna_dwarfstructs`]), else the
-/// pre-`dwarfstructs` NAMED OPAQUE below — interned under [`aggregate_name`] and
-/// falling back to the anonymous `fallback` name when the BORROWED typedef name
-/// is not a name the type factory can hold an aggregate under.
+/// layout ([`kuna_dwarfstructs`]), after the variant-part arm
+/// ([`kuna_dwarfvariants`]) has had its turn. The name falls back to the
+/// anonymous `fallback` when the BORROWED typedef name is not a name the type
+/// factory can hold an aggregate under.
 ///
 /// The alias is a name from another namespace, and it can already be taken: kuna
 /// registers a core type called `code`, and zlib's `inftrees.h` typedefs an
@@ -767,36 +765,18 @@ fn intern_aggregate(
     // (kuna `dwarfvariants`) A `DW_TAG_variant_part` child means the aggregate is
     // a discriminated union, whose layout the member walk below cannot see (there
     // are no `DW_TAG_member` children to walk). `None` here means the arm REFUSED
-    // this DIE -- it fell short of one of its guards -- and the ordinary paths
-    // still get their turn. It is an EXTENSION of `dwarfstructs` and requires it:
-    // with the aggregate-layout gate off, `dwarfstructs off` stays exactly the
-    // pre-DIV-86 name-only mapping, which is what its own catalog row promises.
-    if !union && kuna_dwarfstructs::enabled() && kuna_dwarfvariants::enabled() {
+    // this DIE -- it fell short of one of its guards -- and the member walk
+    // still gets its turn.
+    if !union {
         if let Some(t) = kuna_dwarfvariants::intern_variant_aggregate(
             types, die, dies, alias, fallback, walk, word_size, cpp,
         ) {
             return Some(t);
         }
     }
-    if kuna_dwarfstructs::enabled() {
-        return kuna_dwarfstructs::intern_aggregate(
-            types, die, dies, alias, fallback, walk, word_size, cpp, union,
-        );
-    }
-    let want =
-        if union { type_metatype::TYPE_UNION } else { type_metatype::TYPE_STRUCT };
-    let intern = |n: &str| {
-        let built = if union { types.get_type_union(n) } else { types.get_type_struct(n) };
-        built.ok().filter(|t| t.get_metatype() == want)
-    };
-    let name = aggregate_name(die, alias, fallback);
-    if let Some(t) = intern(name) {
-        return Some(t);
-    }
-    if walk.collapse_qualifiers() && die.name.is_empty() && name != fallback {
-        return intern(fallback);
-    }
-    None
+    kuna_dwarfstructs::intern_aggregate(
+        types, die, dies, alias, fallback, walk, word_size, cpp, union,
+    )
 }
 
 /// (kuna `cppproto`) Follow the transparent qualifier chain
@@ -839,16 +819,6 @@ fn strip_qualifiers<'a>(
 
 /// Bound on the [`strip_qualifiers`] walk (a real qualifier chain is 1-3 hops).
 const MAX_QUALIFIER_HOPS: u32 = 16;
-
-/// The interned name for an aggregate DIE: its own `DW_AT_name`, else the typedef
-/// it was reached through ([`strip_qualifiers`]), else `fallback`.
-fn aggregate_name<'a>(die: &'a DieSnap, alias: Option<&'a str>, fallback: &'a str) -> &'a str {
-    if !die.name.is_empty() {
-        &die.name
-    } else {
-        alias.unwrap_or(fallback)
-    }
-}
 
 /// A DWARF character base type. `signed char` and `unsigned char` are distinct C
 /// types whose sign is stated, so they become character types of that sign

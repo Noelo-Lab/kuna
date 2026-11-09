@@ -3295,10 +3295,10 @@ is consumed by Ghidra's C token model and Rust text in C token slots is a GUI
 regression. `kuna decompile-project` errors, because its `.c`/`.h`/`.asm` export
 is C-shaped end to end.
 
-**Verified Go pairs (`gopairreturns`).** `p9_emit/kuna_gopairreturns.rs` renders
-the pair-result metadata imported by `godwarfsig` when both options are on.
-With either option off, call emission bypasses the pair adapter and projection
-dispatch before inspecting any call contract.
+**Verified Go pairs.** `p9_emit/kuna_gopairreturns.rs` renders the pair-result
+metadata imported by `godwarfsig` when that option is on (formerly also gated by
+the `gopairreturns` option). With it off, call emission bypasses the pair adapter
+and projection dispatch before inspecting any call contract.
 Every consumer verifies the full two-field, 16-byte, eight-aligned integer
 layout against its language facet; a name prefix or an ordinary two-field
 record is insufficient. `SpellCtx` shares the enabled architecture's type

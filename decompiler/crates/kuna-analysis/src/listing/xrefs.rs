@@ -1101,9 +1101,7 @@ fn descend(
                         &exec,
                         fingerprint_contexts.as_ref(),
                         frame_partition.as_ref(),
-                        arch.analysis_aifbracket
-                            .then(|| crate::aif::kuna_aifbracket::BracketEvidence::from_object(file, &exec))
-                            .as_ref(),
+                        Some(&crate::aif::kuna_aifbracket::BracketEvidence::from_object(file, &exec)),
                     );
                     pending_focus.extend(found.into_iter().rev());
                     continue;
@@ -1601,13 +1599,13 @@ fn gap_entries(
     if let Some(prior) = frame {
         crate::aif::run_aif_after_frames(
             &listing, prior, translate, Rc::clone(code_space),
-            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket, arch.analysis_aifnoppad,
+            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket,
             poolslide, None, None,
         )
     } else {
         crate::aif::run_aif(
             &listing, translate, Rc::clone(code_space), listing.exec_ranges(),
-            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket, arch.analysis_aifnoppad,
+            arch.analysis_aifstrict, arch.analysis_aifcorroborate, bracket,
             poolslide,
         )
     }

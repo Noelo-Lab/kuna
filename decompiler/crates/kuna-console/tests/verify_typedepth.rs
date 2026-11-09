@@ -15,15 +15,10 @@
 //! guarding against.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
-use kuna_decomp::kuna_dwarfstructs::DWARFSTRUCTS_ENV;
-
-/// Serializes the env-var flip + bootstrap across the concurrently-run tests.
-static GATE: Mutex<()> = Mutex::new(());
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -31,7 +26,6 @@ fn repo_root() -> PathBuf {
 
 /// Bootstrap the fixture, decompile each of `funcs` and return the concatenated C.
 fn decompile(funcs: &[&str]) -> String {
-    let _guard = GATE.lock().unwrap_or_else(|e| e.into_inner());
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
@@ -40,17 +34,8 @@ fn decompile(funcs: &[&str]) -> String {
         .to_str().expect("UTF-8 fixture path")
         .to_string();
 
-    // Pin the sibling `dwarfstructs` gate OFF so this file keeps measuring the
-    // one axis it is about. That arm renames the anonymous fallback after the
-    // shape it describes (`anon_struct_8_2`) and interns a name-colliding
-    // aggregate under a size-suffixed name with its fields (`code_4 *base`, whose
-    // members then resolve) instead of the shared anonymous fallback asserted
-    // below — both strict improvements on what these assertions pin, and both
-    // covered by `verify_dwarfstructs.rs`.
-    std::env::set_var(DWARFSTRUCTS_ENV, "off");
-    let prog = bootstrap_from_object(&path, "", &spec_roots);
-    std::env::remove_var(DWARFSTRUCTS_ENV);
-    let mut prog = prog.expect("bootstrap fixture with built processor specs");
+    let mut prog = bootstrap_from_object(&path, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let mut cmds: Vec<String> = Vec::new();
@@ -108,8 +93,8 @@ fn anonymous_aggregate_takes_its_typedef_name() {
 
 /// ...unless that typedef name is already a kuna core type (`code`, which zlib's
 /// `inftrees.h` really does typedef an anonymous struct to). The factory refuses
-/// the redefinition, and the aggregate must fall back to the anonymous name
-/// instead of letting the pointer degrade to `void *`.
+/// the redefinition, and the aggregate is interned under a size-suffixed name
+/// with its fields instead of letting the pointer degrade to `void *`.
 #[test]
 fn colliding_typedef_name_falls_back_not_to_void() {
     let on = decompile(&["walk_codes"]);
@@ -117,7 +102,7 @@ fn colliding_typedef_name_falls_back_not_to_void() {
         !on.contains("void *base"),
         "a name collision must not degrade the pointer to void, got:\n{on}"
     );
-    assert!(on.contains("anon_struct *base"), "expected the anonymous fallback, got:\n{on}");
+    assert!(on.contains("code_4 *base"), "expected the size-suffixed aggregate, got:\n{on}");
 }
 
 /// A global whose element type is four DIEs deep was marked one byte wide, so it

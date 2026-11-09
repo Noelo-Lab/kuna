@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_402() {
-    assert_eq!(kuna_num_settables(), 402);
-    assert_eq!(SETTABLE_TABLE.len(), 402);
+fn settable_count_is_342() {
+    assert_eq!(kuna_num_settables(), 342);
+    assert_eq!(SETTABLE_TABLE.len(), 342);
 }
 
 #[test]
-fn tier_counts_are_136_core_159_transform_107_analysis() {
+fn tier_counts_are_136_core_154_transform_52_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_136_core_159_transform_107_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (136, 159, 107));
+    assert_eq!((core, transform, analysis), (136, 154, 52));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_189() {
+fn option_values_live_value_present_for_181() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -264,11 +264,6 @@ fn option_values_live_value_present_for_189() {
     // byte-pattern function-start pass).
     const PASS_GATES: &[&str] = &[
         "noreturn_known",
-        // (kuna) Discriminant-value naming -- a load-time env bridge
-        // (`KUNA_VARIANTNAMES`, the dwarfstructs/dwarfvariants pattern) whose
-        // live state is read console-side via `kuna_live_value`, so it has no
-        // codegen live reader.
-        "variantnames",
         // (kuna) The source-language override — a loadtime env bridge
         // (`KUNA_SOURCELANG`) whose live
         // state is read console-side via `kuna_live_value` (it reports the
@@ -284,10 +279,6 @@ fn option_values_live_value_present_for_189() {
         // console-side via `kuna_live_value` (auto|off token), so it has no
         // codegen live reader.
         "goabi",
-        // (kuna) The Go pclntab no-return pass gate - an analysis-pass gate
-        // with no codegen live reader (read console-side via kuna_live_value),
-        // same as `gopclntab`. Default-ON (Go-only pass).
-        "gonoreturn",
         // (kuna) The length-carried literal rule — three-valued, read
         // console-side via `kuna_live_value` (its token), no codegen live
         // reader.
@@ -338,10 +329,6 @@ fn option_values_live_value_present_for_189() {
         "listing",
         "fast_funcdisc",
         "noreturn_disc",
-        // (kuna, GH-312) The positive-evidence-only tally for `noreturn_disc` -- a
-        // sub-rule gate with no codegen live reader (read console-side via
-        // kuna_live_value), like the analysis gates around it. Default-ON (DIV-92).
-        "noreturn_discstrict",
         "noreturn_propagate",
         // (kuna, decbench F2) The error(nonzero,…)-conditional recognizer — a
         // sub-rule gate of noreturn_propagate with no codegen live reader (read
@@ -382,12 +369,6 @@ fn option_values_live_value_present_for_189() {
         // with no codegen live reader (read console-side via kuna_live_value), like
         // `aifstrict` above. Default-OFF, carried by the `aggressive` preset.
         "aifcorroborate",
-        // (kuna, GH-299) The AIF bracketed-candidate reject — an analysis-tier gate
-        // with no codegen live reader (read console-side via kuna_live_value), like
-        // `aifcorroborate` above. Default-ON, inert without `aif`.
-        "aifbracket",
-        // (kuna, GH-299) The AIF filler reject, read console-side like `aifbracket`.
-        "aifnoppad",
         // (kuna, GH-299) The AIF literal-pool slide, read console-side like `aifnoppad`.
         "aifpoolslide",
         // (kuna) Tail-call function-entry recovery — an analysis-pass gate with no
@@ -402,10 +383,6 @@ fn option_values_live_value_present_for_189() {
         // no codegen live reader (read console-side via kuna_live_value), like the
         // gates around it. Default-off, Mach-O-only.
         "objc",
-        // (kuna) Objective-C reference-slot folding — committed console-side with
-        // the `objc` facts (read via kuna_live_value), like `objc` above.
-        // Default-on, inert unless `objc` is on.
-        "objcrefconst",
         // (kuna) The Swift runtime-metadata pass gate, the objc precedent.
         "swiftmetadata",
         // (kuna) Mach-O __cfstring constant-string recovery — an analysis-pass gate
@@ -414,7 +391,7 @@ fn option_values_live_value_present_for_189() {
         "cfstrings",
         // (kuna) The Swift type-layout arm's gate, read inside that pass.
         "swifttypes",
-        // (kuna) Objective-C instance layouts — same commit-side gate as `objcrefconst`.
+        // (kuna) Objective-C instance layouts — same commit-side gate as `objc`.
         "objcivars",
         // (kuna) The Swift calling-convention arm's gate, read inside that pass.
         "swiftcall",
@@ -440,7 +417,6 @@ fn option_values_live_value_present_for_189() {
         // from the `KUNA_MACHO_ARM64E` env var, so it too has no codegen live_value.
         "macho-arm64e",
         "godwarfsig",
-        "gopairreturns",
         // (kuna) Demangled C++ signature application — an analysis-tier gate read
         // at the analysis COMMIT boundary (console-side via kuna_live_value), like
         // `cppproto` above. Three-valued, default `proven`.
@@ -449,16 +425,6 @@ fn option_values_live_value_present_for_189() {
         // read at the analysis COMMIT boundary (console-side via kuna_live_value),
         // like the analysis-pass gates above. Default-off, ELF-only.
         "itaniumrtti",
-        // (kuna) DWARF aggregate-layout import — a LOAD-time gate read from the
-        // `KUNA_DWARFSTRUCTS` env var (the layout is installed on the interned type
-        // inside `load file`), so like `typedepth` above it has no codegen
-        // live_value. Default-on.
-        "dwarfstructs",
-        // (kuna) DWARF variant-part import -- a LOAD-time gate read from the
-        // `KUNA_DWARFVARIANTS` env var (the overlay is installed on the interned
-        // type inside `load file`), the same seam as `dwarfstructs` above.
-        // Default-on.
-        "dwarfvariants",
         // (kuna `lazyfuncs`) The deferred entry commit -- read console-side at
         // `read symbols` (the commit either creates a Function per entry or parks
         // the starts), so it has no codegen live reader. Default-off.
@@ -846,7 +812,7 @@ fn option_values_live_value_present_for_189() {
     // 179 -> 181: +1 for `copywaves` (pool_copy_waves), +1 for `armderef` (analysis_armderef).
     // 178 -> 179: +1 for `ptrauthtrap` (live_field = ptrauth_trap).
     // 179 -> 180: +1 for `authptrcall` (live_field = analysis_authptrcall).
-    assert_eq!(with_live, 189);
+    assert_eq!(with_live, 181);
 }
 
 #[test]
@@ -1092,7 +1058,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftcall`, beside that.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
-    assert_eq!(json.matches("},\n").count(), 401);
+    assert_eq!(json.matches("},\n").count(), 341);
 }
 
 #[test]

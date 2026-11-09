@@ -1153,38 +1153,10 @@ kuna_options! { self, p1;
         on_off!(analysis_dwarf_lines, "DWARF .debug_line source-line comment pass")
     },
     "godwarfsig" => on_off!(analysis_godwarfsig, "Go DWARF scalar and pointer signatures"),
-    "gopairreturns" => on_off!(analysis_gopairreturns, "Go DWARF paired integer results"),
     "cppsig" => {
         let (mode, msg) = crate::kuna_cppsig::parse_cppsig_mode(p1)?;
         self.analysis_cppsig = mode;
         Ok(msg)
-    },
-    "dwarfstructs" => {
-        let val = on_or_off(p1)?;
-        self.analysis_dwarfstructs = val;
-        crate::kuna_dwarfstructs::set_dwarfstructs_env(val);
-        Ok(format!(
-            "DWARF aggregate-layout import turned {}",
-            if val { "on" } else { "off" }
-        ))
-    },
-    "variantnames" => {
-        let val = on_or_off(p1)?;
-        self.analysis_variantnames = val;
-        crate::kuna_variantnames::set_variantnames_env(val);
-        Ok(format!(
-            "Variant discriminant-value naming turned {}",
-            if val { "on" } else { "off" }
-        ))
-    },
-    "dwarfvariants" => {
-        let val = on_or_off(p1)?;
-        self.analysis_dwarfvariants = val;
-        crate::kuna_dwarfvariants::set_dwarfvariants_env(val);
-        Ok(format!(
-            "DWARF variant-part import turned {}",
-            if val { "on" } else { "off" }
-        ))
     },
     "addrtable" => on_off!(analysis_addrtable, "Address-table analysis pass"),
     "operand_refs" => on_off!(analysis_operand_refs, "Scalar/operand reference-markup pass"),
@@ -1203,12 +1175,6 @@ kuna_options! { self, p1;
     ),
     "noreturn_disc" => {
         on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")
-    },
-    "noreturn_discstrict" => {
-        on_off!(
-            analysis_noreturn_discstrict,
-            "Discovered-no-return positive-evidence-only tally"
-        )
     },
     "noreturn_propagate" => {
         on_off!(analysis_noreturn_propagate, "No-return propagation Listing consumer")
@@ -1233,23 +1199,13 @@ kuna_options! { self, p1;
     "aifcorroborate" => {
         on_off!(analysis_aifcorroborate, "AIF accept corroboration test (GH-313)")
     },
-    "aifbracket" => {
-        on_off!(analysis_aifbracket, "AIF bracketed-candidate reject (GH-299)")
-    },
-    "aifnoppad" => {
-        on_off!(analysis_aifnoppad, "AIF padding/zero-fill candidate reject (GH-299)")
-    },
     "aifpoolslide" => {
         on_off!(analysis_aifpoolslide, "AIF literal-pool candidate slide (GH-299)")
     },
     "tailcallentry" => {
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")
     },
-    "gonoreturn" => {
-        on_off!(analysis_gonoreturn, "Go pclntab no-return list pass")
-    },
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
-    "objcrefconst" => on_off!(analysis_objcrefconst, "Objective-C reference-slot folding"),
     "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),
     "cfstrings" => {
         let (pass, annotate) = match p1 {

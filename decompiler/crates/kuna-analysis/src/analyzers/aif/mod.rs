@@ -856,8 +856,8 @@ fn follow_subroutine(
 /// an aligned address or a hole's first byte. `aifcorroborate` (GH-313) restores
 /// upstream's second fingerprint test in [`kuna_aifcorroborate`]: an accept must
 /// either add information or match a prologue 50 discovered functions share.
-/// `aifnoppad` (GH-299) keeps every entry off padding and zero fill in [`kuna_aifnoppad`],
-/// and `aifpoolslide` (GH-299) keeps it off literal-pool words in [`kuna_aifpoolslide`].
+/// [`kuna_aifnoppad`] (GH-299) keeps every entry off padding and zero fill, and
+/// `aifpoolslide` (GH-299) keeps it off literal-pool words in [`kuna_aifpoolslide`].
 #[allow(clippy::too_many_arguments)]
 pub fn run_aif(
     listing: &Listing,
@@ -867,11 +867,10 @@ pub fn run_aif(
     aifstrict: bool,
     aifcorroborate: bool,
     aifbracket: Option<&kuna_aifbracket::BracketEvidence>,
-    aifnoppad: bool,
     aifpoolslide: Option<&kuna_decomp::architecture::Architecture>,
 ) -> Vec<u64> {
     run_aif_sharing(listing, translate, code_space, exec_ranges, aifstrict, aifcorroborate, aifbracket,
-        aifnoppad, aifpoolslide, None)
+        aifpoolslide, None)
 }
 
 /// [`run_aif`] over decodes shared through `memo`.
@@ -884,7 +883,6 @@ pub(crate) fn run_aif_sharing(
     aifstrict: bool,
     aifcorroborate: bool,
     aifbracket: Option<&kuna_aifbracket::BracketEvidence>,
-    aifnoppad: bool,
     aifpoolslide: Option<&kuna_decomp::architecture::Architecture>,
     memo: Option<&Rc<crate::listing::kuna_decodememo::DecodeMemo>>,
 ) -> Vec<u64> {
@@ -893,7 +891,7 @@ pub(crate) fn run_aif_sharing(
     let mut decoder = GapDecoder::new(translate, code_space, exec_ranges);
     decoder.share(memo);
     let policy = GapWalk {
-        strict: aifstrict, corroborate: aifcorroborate, bracket: aifbracket, noppad: aifnoppad,
+        strict: aifstrict, corroborate: aifcorroborate, bracket: aifbracket, noppad: true,
         poolslide,
     };
     aif_candidates(listing, listing, &mut decoder, policy, &BTreeMap::new(), None, None)
@@ -909,7 +907,6 @@ pub(crate) fn run_aif_after_frames(
     aifstrict: bool,
     aifcorroborate: bool,
     aifbracket: Option<&kuna_aifbracket::BracketEvidence>,
-    aifnoppad: bool,
     aifpoolslide: Option<&kuna_decomp::architecture::Architecture>,
     mut straight_line: Option<&mut BTreeSet<u64>>,
     memo: Option<&Rc<crate::listing::kuna_decodememo::DecodeMemo>>,
@@ -921,7 +918,7 @@ pub(crate) fn run_aif_after_frames(
     decoder.prior_partition = Some(prior);
     decoder.straight_line = straight_line.is_some().then(BTreeSet::new);
     let policy = GapWalk {
-        strict: aifstrict, corroborate: aifcorroborate, bracket: aifbracket, noppad: aifnoppad,
+        strict: aifstrict, corroborate: aifcorroborate, bracket: aifbracket, noppad: true,
         poolslide,
     };
     let entries = aif_candidates(listing, listing, &mut decoder, policy, &BTreeMap::new(), None, None);
@@ -947,10 +944,9 @@ fn run_aif_with_decoder(
     aifstrict: bool,
     aifcorroborate: bool,
     aifbracket: Option<&kuna_aifbracket::BracketEvidence>,
-    aifnoppad: bool,
 ) -> Vec<u64> {
     let gap_walk = GapWalk {
-        strict: aifstrict, corroborate: aifcorroborate, bracket: aifbracket, noppad: aifnoppad,
+        strict: aifstrict, corroborate: aifcorroborate, bracket: aifbracket, noppad: false,
         poolslide: None,
     };
     aif_candidates(listing, listing, decoder, gap_walk, &BTreeMap::new(), None, None)

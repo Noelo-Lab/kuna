@@ -771,9 +771,9 @@ pub fn run_listing_consumers_replaying(
         seeds.retain(|seed| go.binary_search(seed).is_err());
     }
     let bracket_evidence = std::cell::OnceCell::new();
-    let bracket = |exec: &[(u64, u64)]| arch.analysis_aifbracket.then(|| {
-        bracket_evidence.get_or_init(|| crate::aif::kuna_aifbracket::BracketEvidence::from_object(&file, exec))
-    });
+    let bracket = |exec: &[(u64, u64)]| {
+        Some(bracket_evidence.get_or_init(|| crate::aif::kuna_aifbracket::BracketEvidence::from_object(&file, exec)))
+    };
     // (kuna, recursive-descent discovery) When the prologue-pattern pass is active
     // (`funcstart_patterns`, default-ON for non-x86-64 on `decompile-all`, DIV-20),
     // seed the recursive-descent walk with its `<patternpairs>` function starts too — not
