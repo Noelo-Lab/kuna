@@ -32,19 +32,19 @@ fn subphase_count_is_48() {
 }
 
 #[test]
-fn surface_count_is_113() {
-    assert_eq!(kuna_num_surfaces(), 113);
-    assert_eq!(SURFACE_TABLE.len(), 113);
+fn surface_count_is_106() {
+    assert_eq!(kuna_num_surfaces(), 106);
+    assert_eq!(SURFACE_TABLE.len(), 106);
 }
 
 #[test]
-fn settable_count_is_333() {
-    assert_eq!(kuna_num_settables(), 333);
-    assert_eq!(SETTABLE_TABLE.len(), 333);
+fn settable_count_is_310() {
+    assert_eq!(kuna_num_settables(), 310);
+    assert_eq!(SETTABLE_TABLE.len(), 310);
 }
 
 #[test]
-fn tier_counts_are_76_core_150_transform_107_analysis() {
+fn tier_counts_are_69_core_134_transform_107_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_76_core_150_transform_107_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (76, 150, 107));
+    assert_eq!((core, transform, analysis), (69, 134, 107));
 }
 
 #[test]
@@ -1233,7 +1233,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftcall`, beside that.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
-    assert_eq!(json.matches("},\n").count(), 332);
+    assert_eq!(json.matches("},\n").count(), 309);
 }
 
 #[test]
