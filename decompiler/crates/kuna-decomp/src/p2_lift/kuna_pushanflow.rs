@@ -998,6 +998,18 @@ impl<'a> Explorer<'a> {
         }
         let vars_before = self.arena.num_vars() as u32;
         let Some(cases) = self.enumerate_symbol_target(t).or_else(|| self.arena.case_split(t)) else {
+            // `push ret; push target; ret` over a target the program computed
+            // (a function pointer it loaded): an indirect call.
+            let mut st = state;
+            if let Some(ret) = self.pushed_return_address(&mut st) {
+                if self.target.is_foreign_code(ret) {
+                    let site = cfg.nodes[id as usize].key.addr;
+                    self.apply_call_summary(&mut st, site);
+                    let key = NodeKey { addr: ret, ctx: ctx.ctx };
+                    let ret_node = self.reach(cfg, worklist, key, st, ctx, Some(id));
+                    return NodeExit::Call { target: None, ret: ret_node, slot: None };
+                }
+            }
             self.stats.unresolved += 1;
             return NodeExit::Unresolved(format!(
                 "{} target not enumerable: {}",
