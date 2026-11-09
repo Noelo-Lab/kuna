@@ -24,6 +24,7 @@ b83c00000031ff0f05c3
 <symbol space="ram" offset="0x100020" name="native_call"/>
 </binaryimage>
 <script>
+  <com>option x64syscall off</com>
   <com>lo fu compat_exit</com>
   <com>decompile</com>
   <com>print C</com>

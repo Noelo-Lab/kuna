@@ -2138,9 +2138,9 @@ impl ArchContext {
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
             outline_spec: String::new(), // outline (opt-in default-off; empty = off)
             remove_cleanup_code: true,   // cleanupcode (DIV-81 default-on; inert on a non-Rust binary)
-            linux_syscall: false,        // linuxsyscall (opt-in default-off)
+            linux_syscall: false,        // linuxsyscall (the mode resolves against the Linux-ELF fact in build_arch_handle)
             msvc_str_append: false,      // msvcstrappend (opt-in default-off)
-            x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (opt-in default-off)
+            x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (Architecture::reset_defaults sets the shipped default: on)
             x64_syscall_memory_target: false,
             x64_syscall_userops: Vec::new(),
             segment_ops: Vec::new(),
@@ -2174,7 +2174,7 @@ impl ArchContext {
             mark_indirect_only: false, // indirectonly (opt-in default-off)
             hide_shadow: false,       // hideshadow (Architecture::reset_defaults sets the shipped default: on)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
-            strip_msvc_stack_guard: false, // msvcstackguard (fixture default-off; the live gate rides build_arch_handle)
+            strip_msvc_stack_guard: true, // msvcstackguard (the live gate rides build_arch_handle)
             go_bounds: true,
             go_jump_chain: true,
             strip_security_check: false, // securitycheck (fixture default-off; the live gate rides build_arch_handle)

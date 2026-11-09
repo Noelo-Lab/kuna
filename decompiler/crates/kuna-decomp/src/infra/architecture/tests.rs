@@ -149,10 +149,10 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.noreturn_extern_calls); // noreturn_extern (REMOVES CODE)
     assert!(arch.analysis_noreturn_propagate); // noreturn_propagate (REMOVES CODE, Listing-gated)
     assert!(arch.switch_shared_case); // switchsharedcase
+    assert!(arch.sparc_struct_return); // sparcstructret (SPARC-gated)
     // default-off (upstream byte-identical).
     assert!(!arch.return_single);
     assert!(!arch.v850_indirect_branch);
-    assert!(!arch.sparc_struct_return);
     assert!(!arch.switch_modulo_bound);
     assert!(!arch.unrolled_guard);
     assert!(!arch.stack_alias_deadstore);
@@ -180,7 +180,6 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850_or_dwarf_lines() {
     assert!(!arch.analysis_aif);
     assert!(!arch.analysis_fast_funcdisc);
     assert!(!arch.switch_guard_bound);
-    assert!(!arch.sparc_struct_return);
     assert!(!arch.v850_indirect_branch);
     assert!(!arch.analysis_dwarf_lines);
 

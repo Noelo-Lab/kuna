@@ -75,10 +75,10 @@ fn decompile(bin: &str, func: &str, options: &[&str]) -> String {
     status.optr.clone()
 }
 
-/// The bug, pinned: at the default the producer collapses to its discriminant.
+/// The bug, pinned: with the option off the producer collapses to its discriminant.
 #[test]
-fn by_default_the_producer_loses_its_payload_register() {
-    let code = decompile("rust_scalarpair_x86_64", "prod", &[]);
+fn with_rustabi_off_the_producer_loses_its_payload_register() {
+    let code = decompile("rust_scalarpair_x86_64", "prod", &["option rustabi off"]);
     assert!(
         code.contains("bool prod"),
         "the pre-fix rendering is the one-bit discriminant alone; got:\n{code}",
@@ -105,11 +105,15 @@ fn the_producer_keeps_the_whole_pair() {
 /// The bug on the consumer side: the payload register is a local with no
 /// definition anywhere in the function.
 #[test]
-fn by_default_the_consumer_reads_an_unassigned_payload() {
+fn with_rustabi_off_the_consumer_reads_an_unassigned_payload() {
     // `option callretpair` (DIV-162) reaches the same call-output arm with the
     // language test dropped and ships ON, so the pre-fix rendering this test
     // describes is only visible with it held off.
-    let code = decompile("rust_scalarpair_x86_64", "cons", &["option callretpair off"]);
+    let code = decompile(
+        "rust_scalarpair_x86_64",
+        "cons",
+        &["option callretpair off", "option rustabi off"],
+    );
     assert!(
         code.contains("// edx"),
         "the payload register must show up as a bare register-commented local; got:\n{code}",

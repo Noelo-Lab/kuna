@@ -3398,7 +3398,7 @@ impl Architecture {
             mark_indirect_only: false,
             hide_shadow: false, // (kuna) option hideshadow; reset_defaults sets the shipped default (on)
             strip_stack_guard: false,
-            strip_msvc_stack_guard: false,
+            strip_msvc_stack_guard: true, // (kuna) option msvcstackguard; shape-gated on the MSVC /GS cookie
             go_bounds: true,
             go_jump_chain: true,
             rust_fmt_literal: true,
@@ -3668,7 +3668,7 @@ impl Architecture {
         self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
         self.int3_pad = crate::kuna_int3pad::Int3PadMode::Warn; // (kuna) DIV-128 default `warn`: ADDS A COMMENT ONLY. Names the `int3` pad control ran into, which x86 SLEIGH lifts to `intloc = swi(3); call [intloc]` and the printer renders as an ordinary indirect call. Shape-gated on a `swi` CALLOTHER with the 1-byte constant vector 3, so it is structurally inert wherever no `int3` is decoded and byte-identical on the datatest corpus (0/675); `option int3pad halt` also ends the flow at the pad, `option int3pad off` restores the unannotated rendering
         self.syscall_regs = crate::kuna_syscallregs::SyscallRegsMode::Auto; // (kuna) default `auto`: on an image the loader identified as an operating system's user-space program, the system call writes its result register and reads the number register and the leading argument registers the function writes on every path to it. Gated on that loader fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `option syscallregs on` acts on any image, `off` restores the zero-effect CALLOTHER
-        self.x64_syscall = crate::kuna_x64syscall::X64SyscallMode::Off; // (kuna) default-OFF: with a RUNTIME syscall number nothing can say how many argument registers the callee reads, so both answers the option offers are modelling judgements rather than facts; ON in the `aggressive` preset, which `auto` selects under 500 KiB
+        self.x64_syscall = crate::kuna_x64syscall::X64SyscallMode::On; // (kuna) default `on`: x86-64-gated; the bounded backward walk reads only the argument registers the block provably sets up, `abi` reads all six
         self.segmentize = true; // (kuna) default-ON, as upstream: a processor spec's `<segmentop>` segmentizes its CALLOTHERs and resolves constant pointers through it. Only x86 16-bit, Z80 and HCS12 declare one and no datatest uses them (0/675); `option segmentize off` keeps the bare `segment(...)` calls
         self.apply_segmentize();
         self.fpu_emu = crate::kuna_fpuemu::FpuEmuMode::Auto.as_u8(); // (kuna #1288) decode the 8087 emulator's INT 34h-3Dh as x87 where the loader found emulator code (MS-DOS executables); only x86-16.sla has the fpuEmu context bit, so every other input and every datatest is unchanged; `option fpuemu off` keeps the interrupts
@@ -3698,7 +3698,7 @@ impl Architecture {
         self.msvc_str_append = false; // (kuna) option msvcstrappend, default-off: it deletes the inlined fast path's stores and renames the grow call, and no MSVC C++ corpus in the tree can measure it
         self.linux_syscall = false; // (kuna) option linuxsyscall, default-off this round: it renames a call and locks a prototype, which is a judgement about the target OS that the vector alone does not prove
         self.noreturn_extern_calls = true; // (kuna) DIV-14 default-on: REMOVES CODE (drops the post-call fall-through after a matched extern no-return). Byte-identical (0/675) — no datatest call resolves to a known no-return name; overlaps `noreturn_known`'s name match for defined/imported symbols, restore upstream with `option noreturn_extern off`
-        self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
+        self.sparc_struct_return = true; // (kuna) GH-6882: gated on the SPARC-only IllegalInstructionTrap user-op, so inert on every other language
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
         self.fold_boolean_mask = true; // (kuna) DIV-2 default-on (GH-1282)
         self.cancel_byte_arithmetic = true; // (kuna) DIV-174 default-on: exact low-byte modular cancellation; corpus evidence is recorded with the feature
@@ -3724,7 +3724,7 @@ impl Architecture {
         self.be_join_pass = crate::kuna_bejoinpass::BeJoinPassMode::Whole; // (kuna) option bejoinpass default `whole` (#904): a pair a call hands back untouched joins in the order of its proven side, and an unproven function handing back a proven callee's pair returns the callee's whole value
         self.call_wide = false;
         self.kuna_callwide.clear();
-        self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round
+        self.rust_abi = crate::kuna_rustabi::RustAbiMode::Auto.as_u8(); // (kuna) option rustabi default `auto`: acts only on an image the loader detected as rustc-produced
         self.source_lang_forced = None; // (kuna) option sourcelang default auto; the detected fact survives resets
         self.fat_str = crate::kuna_fatstr::FatStrMode::Auto.as_u8(); // (kuna) bounded (ptr,len) literals on Rust/Go images
         self.go_morestack = crate::kuna_gomorestack::GoMorestackMode::Auto.as_u8(); // (kuna) fold the Go entry guard on Go images
@@ -3890,7 +3890,7 @@ impl Architecture {
         self.cast_narrow = true; // (kuna) option castnarrow default-on: leaves out only an integer truncation or sign change that an assignment, store, trusted argument or return of exactly the cast's type performs itself
         self.decl_order = crate::kuna_declorder::DeclOrder::Natural; // (kuna) option declorder default `natural`: locals declare v1, v2, ..., v10; only the order of declaration lines moves, 0/675 datatest assertions
         self.strlen_scan = true; // (kuna) option strlenscan default-on: an inline repnz scasb length prints as strlen; byte-identical on gcc 11 decbench output, 0/675 datatest assertions
-        self.cortexmpriv = false; // (kuna) DIV-99: default-OFF -- "the core is privileged" is a modelling judgement, not a proof (Cortex-M Thread mode can run unprivileged); ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for real firmware
+        self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
         self.float_globals = true; // (kuna) option floatglobals default-on
         self.caller_reads = true; // (kuna) option callerreads default-on: inert without the Listing, so 0/675 datatest assertions move
         self.call_target_type = false; // (kuna) option calltargettype: default-OFF in the catalog because the XML datatest corpus pins the upstream `code *` spellings and applies no mode; ON in the `aggressive` preset, which `auto` selects under 500 KiB, so it is the default rendering for every real binary
@@ -3900,9 +3900,9 @@ impl Architecture {
         self.partial_concat = true;
         self.arm_constant_shift = false;
         self.rust_array_zero = false;
-        self.arm_float_args = false; // (kuna) option armfloatargs: default-OFF in the catalog; ON in the `aggressive` preset with armfloatreturn, which `auto` selects under 500 KiB; inert unless the ELF states the VFP procedure-call standard
+        self.arm_float_args = true; // (kuna) option armfloatargs: default-ON with armfloatreturn; inert unless the ELF states the VFP procedure-call standard
         self.narrow_ext = crate::kuna_narrowext::NarrowExtMode::Abi; // (kuna) option narrowext default `abi`: a narrow integer argument or return value is extended as the RISC-V and LoongArch procedure-call standards state
-        self.arm_float_return = false; // (kuna) option armfloatreturn: default-OFF in the catalog; ON in the `aggressive` preset, which `auto` selects under 500 KiB; inert unless the ELF states the VFP procedure-call standard
+        self.arm_float_return = true; // (kuna) option armfloatreturn: default-ON; inert unless the ELF states the VFP procedure-call standard
         self.pass_through = true; // (kuna) option passthrough default-on: over 574 slices in 25 projects (the 444-slice decbench corpus plus 130 slices of 17 disjoint projects) 4,107 of 4,346 gained parameters are DWARF-confirmed, NONE contradicted, 239 thunks DWARF does not describe, 0 parameters and 0 call arguments lost; the return arm is 5,458 of 5,615 confirmed, its 157 misses all the undecidable `void` tail-call wrapper; docs/features/passthrough/dwarf-confirmation.md
         self.plt_local_calls = true; // (kuna) option pltlocal default-on
         self.mixed_tail_ret = false; // (kuna) option mixedtailret default-off: a void guard that leaves the value it tested in the return register beside a tail call compiles to the same bytes; see the phases.toml row

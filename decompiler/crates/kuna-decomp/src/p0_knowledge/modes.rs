@@ -187,13 +187,10 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("voidtailreturn", "on"),
     ("importdata", "on"),
     // (kuna, DIV-99) Fold the Cortex-M `isCurrentModePrivileged()` guard the
-    // vendored ARM SLEIGH wraps around every VERSION_7M MRS/MSR. Shipped default
-    // OFF because "the core is privileged" is a modelling judgement rather than a
-    // proof; preset membership is the delivery route, since the guard is only ever
-    // reached by ARM Cortex-M firmware, which is small enough that `auto` always
-    // picks `aggressive` for it. Structurally inert everywhere else -- the fixup
-    // is registered only on a language that declares the user-op, and only 12
-    // Thumb-2 constructors emit it.
+    // vendored ARM SLEIGH wraps around every VERSION_7M MRS/MSR. A shipped
+    // default, kept so the preset owns it. Structurally inert everywhere else --
+    // the fixup is registered only on a language that declares the user-op, and
+    // only 12 Thumb-2 constructors emit it.
     ("cortexmpriv", "on"),
     ("x64syscall", "on"),
     // (kuna, DIV-108) Cap the pointer nesting `ActionInferTypes` will adopt. A
@@ -224,8 +221,8 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("libcnames", "on"),
     // (kuna) ARM hard-float scalar VFP contracts: a double returned whole in d0
     // and float/double parameters in their s/d registers on both sides of a
-    // call. Shipped default OFF in the catalog; inert unless the ELF container
-    // states the VFP procedure-call standard, so soft-float, softfp and raw
+    // call. Shipped defaults, kept so the preset owns them; inert unless the ELF
+    // container states the VFP procedure-call standard, so soft-float, softfp and raw
     // images print byte-identically. `armfloatargs` needs `armfloatreturn`.
     // Measured over a 42-binary gcc/clang ABI corpus (hard, softfp and soft
     // float; -O0/-O2/-Os) and 84 hard-float decbench firmware slices; see the
@@ -644,14 +641,6 @@ mod tests {
             // hold back -- preset membership is a DIV-recorded default change,
             // and the DIV registry is not this change's to write.
             "switchselector",
-            // `msvcstackguard` strips the MSVC `/GS` frame cookie, and every
-            // corpus this repo can sweep is ELF or a hand-built PE -- none carries
-            // a real `/GS` cookie, so the ON-shape effect cannot be measured here
-            // at all. The OFF-shape evidence exists (0/675 datatests, 561
-            // functions across two glibc `-fstack-protector` binaries unchanged),
-            // but preset membership is a DIV-recorded default change and the
-            // measurement that would justify it needs a `/GS` corpus first.
-            "msvcstackguard",
             // (kuna `charptr`) Commit a pointer the program only ever uses on
             // characters to `char *`. The sweep says no: once a constant PTRADD
             // index counts as a field offset (as a literal INT_ADD always did), 444

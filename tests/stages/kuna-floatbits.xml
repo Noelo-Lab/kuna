@@ -46,6 +46,8 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatbitshelper_armhf.o</com>
   <com>read symbols</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
   <com>option floatbits off</com>
   <com>load function fb_fabsf</com>
   <com>decompile</com>
@@ -127,6 +129,8 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatbitshelper_armhf.o</com>
   <com>read symbols</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
   <com>option floatbits on</com>
   <com>load function fb_fabsf</com>
   <com>decompile</com>
@@ -208,6 +212,8 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatbitsrefuse_armhf.o</com>
   <com>read symbols</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
   <com>load function fr_isqnan0</com>
   <com>decompile</com>
   <com>print C</com>
