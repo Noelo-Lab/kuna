@@ -1901,6 +1901,11 @@ pub struct Architecture {
     /// `.gcc_except_table` markup); default **off** (output-changing: adds the
     /// discovered exception-handler landing pads as function entries).
     pub analysis_eh_frame_full: bool,
+    /// (kuna) Gate the Mach-O `__unwind_info` function-start discovery pass
+    /// (`unwindstarts`); default **off** (output-changing: adds the function
+    /// starts the linker recorded in `__TEXT,__unwind_info`, which matter only on
+    /// an image whose `LC_FUNCTION_STARTS` was stripped).
+    pub analysis_unwindstarts: bool,
     /// (kuna) Refuse a function entry at a direct CALL target the Listing walk's
     /// own out-of-bounds gate forbids it to decode (`unmappedentry`); default
     /// **on**. The recursive-descent walk gates every instruction address on the
@@ -2714,6 +2719,15 @@ pub struct Architecture {
     /// byte-identical. x86-64, no-chained-fixups path (the arm64 +
     /// LC_DYLD_CHAINED_FIXUPS resolver is a deferred follow-on).
     pub analysis_objc: bool,
+    /// (kuna `objcrefconst`) Fold a load through an Objective-C reference slot
+    /// (`__objc_selrefs` / `__objc_classrefs` / `__objc_superrefs`) to the
+    /// selector or class it refers to; default **on**. dyld fills those slots
+    /// once before any code runs and nothing rewrites them, which is why
+    /// Ghidra's `ObjectiveC2_ClassAnalyzer` marks the three blocks read-only.
+    /// Only the rebase slots the `objc` pass reported are painted, so a
+    /// bind slot (an imported class) keeps its `classRef_<Class>` name instead.
+    /// Inert unless `objc` is on.
+    pub analysis_objcrefconst: bool,
     /// (kuna) `option swiftmetadata` — the Swift runtime-metadata recovery pass
     /// (`kuna-analysis::analyzers::swift`): names metadata accessors, vtable and
     /// override implementations, protocol witnesses and descriptor records from
@@ -3462,6 +3476,7 @@ impl Architecture {
             analysis_widestrings32: false,
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
+            analysis_unwindstarts: false,
             analysis_fdeinterior: false,
             analysis_coldentry: false,
             analysis_pdatainterior: false,
@@ -3546,6 +3561,7 @@ impl Architecture {
             analysis_gotypes: false,
             analysis_gonoreturn: false,
             analysis_objc: false,
+            analysis_objcrefconst: true,
             analysis_swiftmetadata: false,
             analysis_pdb: true,
             macho_arm64e: false,
@@ -3958,6 +3974,9 @@ impl Architecture {
         // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
         // output-changing: adds the discovered exception landing pads as entries).
         self.analysis_eh_frame_full = false;
+        // (kuna) Mach-O `__unwind_info` function-start discovery — default-OFF
+        // (opt-in, output-changing: adds the unwind-recorded function starts).
+        self.analysis_unwindstarts = false;
         // (kuna) DIV-61 `.eh_frame` FDE-interior entry suppression — default-ON.
         self.analysis_fdeinterior = true;
         self.analysis_coldentry = true;
@@ -4046,6 +4065,7 @@ impl Architecture {
         self.analysis_gotypes = true; // Go runtime-type harvest default-on (Go-only pass)
         self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
+        self.analysis_objcrefconst = true; // (kuna) ObjC reference slots fold to their selector/class; inert unless objc is on
         self.analysis_swiftmetadata = false; // Swift runtime-metadata recovery default-off (inert without swift5_* sections)
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)

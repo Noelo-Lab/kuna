@@ -347,3 +347,34 @@ fn relr_entries_decode_to_their_slots() {
     assert_eq!(relr_decode(&[0x2000, 0x8000_0001, 0x3], 4), vec![0x2000, 0x2004 + 30 * 4, 0x2004 + 31 * 4]);
     assert!(relr_decode(&[], 8).is_empty());
 }
+
+fn macho_fixture(name: &str) -> Vec<u8> {
+    std::fs::read(format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"))).expect("read fixture")
+}
+
+/// The arm64 chained-fixup fixture: every rebase becomes a write holding the
+/// unpacked pointer, and only the `__DATA_CONST` (`SG_READ_ONLY`) slots are
+/// constant: `__objc_classlist[0]` is, the `__DATA` `class_t.isa` slot is not.
+#[test]
+fn macho_chained_rebases_are_written_and_data_const_is_constant() {
+    let bytes = macho_fixture("macho_objc_arm64");
+    let file = object::File::parse(bytes.as_slice()).expect("parse");
+    let r = macho_chained(&file, &bytes);
+    let classlist = r.writes.iter().find(|w| w.vma == 0x100004000).expect("classlist slot");
+    assert_eq!((classlist.value, classlist.width), (0x100008000, 8));
+    let isa = r.writes.iter().find(|w| w.vma == 0x100008000).expect("class_t.isa slot");
+    assert_eq!(isa.value, 0x100008028);
+    assert!(r.const_ranges.contains(&(0x100004000, 0x100004007)));
+    assert!(!r.const_ranges.iter().any(|&(lo, _)| lo == 0x100008000));
+}
+
+/// A classic `LC_DYLD_INFO` Mach-O yields nothing.
+#[test]
+fn macho_chained_inert_without_chained_fixups() {
+    for name in ["macho_objc", "macho_imports"] {
+        let bytes = macho_fixture(name);
+        let file = object::File::parse(bytes.as_slice()).expect("parse");
+        let r = macho_chained(&file, &bytes);
+        assert!(r.writes.is_empty() && r.const_ranges.is_empty(), "{name}");
+    }
+}

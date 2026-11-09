@@ -1121,6 +1121,9 @@ kuna_options! { self, p1;
     "eh_frame_full" => {
         on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
     },
+    "unwindstarts" => {
+        on_off!(analysis_unwindstarts, "Mach-O __unwind_info function-start discovery")
+    },
     "coldentry" => {
         on_off!(analysis_coldentry, "Multi-entry .cold fragment entry discovery")
     },
@@ -1422,6 +1425,7 @@ kuna_options! { self, p1;
         on_off!(analysis_gonoreturn, "Go pclntab no-return list pass")
     },
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
+    "objcrefconst" => on_off!(analysis_objcrefconst, "Objective-C reference-slot folding"),
     "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
     "relocobjects" => {

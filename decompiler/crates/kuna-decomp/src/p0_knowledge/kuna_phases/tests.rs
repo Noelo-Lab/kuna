@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_389() {
-    assert_eq!(kuna_num_settables(), 389);
-    assert_eq!(SETTABLE_TABLE.len(), 389);
+fn settable_count_is_391() {
+    assert_eq!(kuna_num_settables(), 391);
+    assert_eq!(SETTABLE_TABLE.len(), 391);
 }
 
 #[test]
-fn tier_counts_are_135_core_155_transform_99_analysis() {
+fn tier_counts_are_135_core_156_transform_100_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_135_core_155_transform_99_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (135, 155, 99));
+    assert_eq!((core, transform, analysis), (135, 156, 100));
 }
 
 #[test]
@@ -333,6 +333,10 @@ fn option_values_live_value_present_for_186() {
         // (kuna) `.eh_frame` LSDA landing-pad discovery sub-feature of entry_disc
         // (GccExceptionAnalyzer), default-off; analysis-tier, no codegen live reader.
         "eh_frame_full",
+        // (kuna) Mach-O `__unwind_info` function-start discovery — an analysis-pass
+        // gate with no codegen live reader (read console-side via kuna_live_value),
+        // same as `eh_frame_full` above. Default-off.
+        "unwindstarts",
         // (kuna) `.eh_frame` FDE-interior entry suppression — an analysis-pass gate
         // with no codegen live reader (read console-side via kuna_live_value), same
         // as the gates around it. Default-ON (DIV-61).
@@ -504,8 +508,11 @@ fn option_values_live_value_present_for_186() {
         // no codegen live reader (read console-side via kuna_live_value), like the
         // gates around it. Default-off, Mach-O-only.
         "objc",
+        // (kuna) Objective-C reference-slot folding — committed console-side with
+        // the `objc` facts (read via kuna_live_value), like `objc` above.
+        // Default-on, inert unless `objc` is on.
         // (kuna) The Swift runtime-metadata pass gate, the objc precedent.
-        "swiftmetadata",
+        "objcrefconst",
         // (kuna) PE PDB metadata recovery — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), like the gates around
         // it. Default-on (DIV-129), PE-only, `.pdb`-sidecar-gated.
@@ -1199,8 +1206,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `copywaves`, its P3 row after `deadwaves`; +1 for `deadcascade`, its P3 row after `copywaves`;
     // +2 for `armpltslot` and `armcondskip`, their P1 rows beside `armwalkmode`.
     // +1 for `armderef`, its P1 row after `armwalkmode`.
+    // +1 for `unwindstarts`; its P1 row sits beside `eh_frame_full`.
+    // +1 for `objcrefconst`; its P1 row sits beside `objc`.
     // +1 for `swiftmetadata`; its P1 row sits beside `objc`.
-    assert_eq!(json.matches("},\n").count(), 388);
+    assert_eq!(json.matches("},\n").count(), 390);
 }
 
 #[test]

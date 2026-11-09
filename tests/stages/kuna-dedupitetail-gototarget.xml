@@ -1,0 +1,50 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    dedupitetail must keep every goto target alive.  Source:
+    fixtures/dedupitetail-gototarget.s.
+
+      do { if (pre() == 1) goto T; } while (pre() == 2);
+      if (x) { T: if (cond_a()) body_a(); shared(y); }
+      else   {    if (cond_b()) body_b(); shared(y); }
+      post(y);
+
+    The loop exit into the true arm is an unstructured goto whose target is the
+    true clause list [if (cond_a()) body_a(); shared(y);].  dedupitetail hoists
+    the shared(y) suffix after the if, leaving each clause with one component, and
+    unwraps the clause.  The freed clause used to stay the goto's target, so the
+    printer panicked with "invalid SlotMap key used" while naming the label.
+
+    Pass 1 (dedupitetail off): shared( printed in both arms.
+    Pass 2 (dedupitetail on, the default): shared( printed once after the if, and
+    the goto still names the label on the cond_a() test.
+-->
+<bytechunk space="ram" offset="0x100000">
+534154415589f34189fce85900000083f801740fe84f00000083f80274ec4585e47417e83400000085c07405e83100000089dfe82c000000eb15e82000000085c07405e81b00000089dfe81500000089dfe80f000000415d415c5bc331c0c331c0c3c3c3c331c0c331c0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="g"/>
+<symbol space="ram" offset="0x10005c" name="cond_a"/>
+<symbol space="ram" offset="0x10005f" name="cond_b"/>
+<symbol space="ram" offset="0x100062" name="body_a"/>
+<symbol space="ram" offset="0x100063" name="body_b"/>
+<symbol space="ram" offset="0x100064" name="shared"/>
+<symbol space="ram" offset="0x100065" name="post"/>
+<symbol space="ram" offset="0x100068" name="pre"/>
+</binaryimage>
+<script>
+  <com>lo fu g</com>
+  <com>option dedupitetail off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dedupitetail on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="DEDUPGOTO #1: shared() twice with dedupitetail off, once with it on" min="3" max="3">shared\(</stringmatch>
+<stringmatch name="DEDUPGOTO #2: the on pass merges the if/else tail" min="1" max="1">// ite-dedupe</stringmatch>
+<stringmatch name="DEDUPGOTO #3: each pass prints the goto into the true arm" min="2" max="2">if \(pre\(\) == 1\) goto label_100023;</stringmatch>
+<stringmatch name="DEDUPGOTO #4: each pass prints the label the goto names" min="2" max="2">^label_100023:$
+^\s*if \(cond_a\(\)\)$</stringmatch>
+<stringmatch name="DEDUPGOTO #5: post() once per pass" min="2" max="2">post\(</stringmatch>
+</decompilertest>
