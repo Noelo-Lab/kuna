@@ -53,6 +53,13 @@ pub enum KunaFix {
     /// `kt_default_arg_compound_branch`: a default value computed by
     /// more than one statement is left unrecovered instead of failing the class.
     KtDefaultArgCompoundBranch,
+    /// `generic_parent_without_signature`: mapping a generic type's
+    /// enclosing type through a class without a `Signature` attribute no
+    /// longer fails.
+    GenericParentWithoutSignature,
+    /// `self_referencing_lambda`: a lambda whose implementation method
+    /// instantiates it again is written as a method reference.
+    SelfReferencingLambda,
 }
 
 impl KunaFix {
@@ -68,6 +75,8 @@ impl KunaFix {
         KunaFix::KtLocalAsExtensionReceiver,
         KunaFix::KtDefaultArgsSuperCall,
         KunaFix::KtDefaultArgCompoundBranch,
+        KunaFix::GenericParentWithoutSignature,
+        KunaFix::SelfReferencingLambda,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -83,6 +92,8 @@ impl KunaFix {
             KunaFix::KtLocalAsExtensionReceiver => "kt_local_as_extension_receiver",
             KunaFix::KtDefaultArgsSuperCall => "kt_default_args_super_call",
             KunaFix::KtDefaultArgCompoundBranch => "kt_default_arg_compound_branch",
+            KunaFix::GenericParentWithoutSignature => "generic_parent_without_signature",
+            KunaFix::SelfReferencingLambda => "self_referencing_lambda",
         }
     }
 

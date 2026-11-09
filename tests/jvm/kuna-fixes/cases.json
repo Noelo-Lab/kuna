@@ -126,6 +126,31 @@
       "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
       "summary": "`twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestInnerOfGenericOuter",
+      "fix": "generic_parent_without_signature",
+      "class_files": [
+        "pkg/TestInnerOfGenericOuter.class",
+        "pkg/TestInnerOfGenericOuter$Itr.class",
+        "pkg/TestInnerOfGenericOuter$Itrs$Node.class",
+        "pkg/TestInnerOfGenericOuter$Itrs.class",
+        "pkg/TestInnerOfGenericOuter$Ref.class"
+      ],
+      "source": "src/pkg/TestInnerOfGenericOuter.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone"
+    },
+    {
+      "id": "pkg/TestSelfReferencingLambda",
+      "fix": "self_referencing_lambda",
+      "class_files": [
+        "pkg/TestSelfReferencingLambda.class",
+        "pkg/TestSelfReferencingLambda$Task.class"
+      ],
+      "source": "src/pkg/TestSelfReferencingLambda.jasm",
+      "compiler": "asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1",
+      "summary": "the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place"
     }
   ]
 }

@@ -8,6 +8,7 @@ use kuna_jvm::const_exprent::ConstExprent;
 use kuna_jvm::decompiler_context::DecompilerContext;
 use kuna_jvm::dummy_exit_statement::DummyExitStatement;
 use kuna_jvm::fernflower::{Fernflower, KUNA_ERROR_MESSAGE};
+use kuna_jvm::generic_type::GenericType;
 use kuna_jvm::i_fernflower_logger::IFernflowerLogger;
 use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
 use kuna_jvm::if_exprent::{IfExprent, Type as IfType};
@@ -26,6 +27,7 @@ use kuna_jvm::stat_edge::StatEdge;
 use kuna_jvm::statement::Statement;
 
 use crate::k2_dom_helper::{fixture_method, oracle_context, start_method};
+use kuna_jvm::rt::{try_catch, JHashMap};
 
 fn pairs(list: &[(&'static str, &'static str)]) -> Vec<(String, String)> {
     list.iter()
@@ -404,4 +406,45 @@ mod catch_loop_back_successor {
         }
         kuna_fixes::activate(KunaFixes::DEFAULT);
     }
+}
+#[test]
+fn an_enclosing_class_without_a_signature_maps_as_its_empty_generic_type() {
+    let classes =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/jvm/kuna-fixes/classes/pkg");
+    with_engine_stack(move || {
+        let guard = crate::common::install_default_context();
+        for name in [
+            "TestInnerOfGenericOuter",
+            "TestInnerOfGenericOuter$Itrs",
+            "TestInnerOfGenericOuter$Itrs$Node",
+        ] {
+            guard
+                .struct_context()
+                .add_space_file(&classes.join(format!("{name}.class")), true);
+        }
+        let itrs = guard
+            .struct_context()
+            .get_class("pkg/TestInnerOfGenericOuter$Itrs");
+        assert!(itrs.unwrap().get_signature().is_none());
+        let node = guard
+            .struct_context()
+            .get_class("pkg/TestInnerOfGenericOuter$Itrs$Node");
+        let decl = node.unwrap().get_signature().unwrap().generic_type();
+        let use_ =
+            GenericType::parse("Lpkg/TestInnerOfGenericOuter<Ljava/lang/String;>.Itrs.Node;");
+
+        let mut map = JHashMap::new();
+        decl.map_gen_vars_to(&use_.as_generic(), &mut map);
+        let mapped: Vec<(String, String)> = map
+            .entry_vec()
+            .iter()
+            .map(|(k, v)| (k.to_string_base(), v.as_ref().unwrap().to_string_base()))
+            .collect();
+        assert_eq!(mapped, [("E".to_string(), "Ljava/lang/String;".to_string())]);
+
+        kuna_fixes::activate(KunaFixes::COMPAT);
+        let compat = try_catch(|| decl.map_gen_vars_to(&use_.as_generic(), &mut JHashMap::new()));
+        kuna_fixes::activate(KunaFixes::DEFAULT);
+        assert!(compat.unwrap_err().message.contains("NullPointerException"));
+    });
 }

@@ -25,8 +25,10 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestDefaultArgCompoundBranch` | `kt_default_arg_compound_branch` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7` |
 | `pkg/TestDefaultArgsSuperCall` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
+| `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestSamWrapperObjectKt` | `kt_synthetic_anonymous_object` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone |
+| `pkg/TestSelfReferencingLambda` | `self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
 | `pkg/TestSwitchExprConstLub` | `switch_yield_const_retype` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestTryCatchNotFlag` | `twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 
@@ -540,6 +542,100 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     private void run() {
 ```
 
+### `pkg/TestInnerOfGenericOuter`
+
+```diff
+--- expected-compat/pkg/TestInnerOfGenericOuter.java
++++ expected/pkg/TestInnerOfGenericOuter.java
+@@ -4,39 +4,16 @@
+    E value;
+ 
+    static String firstOf(TestInnerOfGenericOuter<String>.Itrs itrs) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 0
+-      // 01: getfield pkg/TestInnerOfGenericOuter$Itrs.head Lpkg/TestInnerOfGenericOuter$Itrs$Node;
+-      // 04: invokevirtual pkg/TestInnerOfGenericOuter$Itrs$Node.get ()Ljava/lang/Object;
+-      // 07: checkcast pkg/TestInnerOfGenericOuter$Itr
+-      // 0a: getfield pkg/TestInnerOfGenericOuter$Itr.last Ljava/lang/Object;
+-      // 0d: checkcast java/lang/String
+-      // 10: areturn
++      return (String)itrs.head.get().last;
+    }
+ 
+    static int itemLength(TestInnerOfGenericOuter<String>.Itrs.Node node) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: aload 0
+-      // 1: invokevirtual pkg/TestInnerOfGenericOuter$Itrs$Node.item ()Ljava/lang/Object;
+-      // 4: checkcast java/lang/String
+-      // 7: invokevirtual java/lang/String.length ()I
+-      // a: ireturn
++      return node.item().length();
+    }
+ 
+    static int lengthOf(TestInnerOfGenericOuter<String>.Itrs.Node node) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 0
+-      // 01: invokevirtual pkg/TestInnerOfGenericOuter$Itrs$Node.get ()Ljava/lang/Object;
+-      // 04: checkcast pkg/TestInnerOfGenericOuter$Itr
+-      // 07: astore 1
+-      // 08: aload 1
+-      // 09: getfield pkg/TestInnerOfGenericOuter$Itr.last Ljava/lang/Object;
+-      // 0c: checkcast java/lang/String
+-      // 0f: invokevirtual java/lang/String.length ()I
+-      // 12: ireturn
++      TestInnerOfGenericOuter<String>.Itr it = node.get();
++      return ((String)it.last).length();
+    }
+ 
+    class Itr {
+@@ -51,36 +28,15 @@
+       TestInnerOfGenericOuter<E>.Itrs.Node head;
+ 
+       void sweep() {
+-         // $VF: Couldn't be decompiled
+-         // Bytecode:
+-         // 00: aload 0
+-         // 01: getfield pkg/TestInnerOfGenericOuter$Itrs.head Lpkg/TestInnerOfGenericOuter$Itrs$Node;
+-         // 04: astore 1
+-         // 05: aload 1
+-         // 06: invokevirtual pkg/TestInnerOfGenericOuter$Itrs$Node.get ()Ljava/lang/Object;
+-         // 09: checkcast pkg/TestInnerOfGenericOuter$Itr
+-         // 0c: astore 2
+-         // 0d: aload 2
+-         // 0e: ifnull 18
+-         // 11: aload 2
+-         // 12: invokevirtual pkg/TestInnerOfGenericOuter$Itr.isDetached ()Z
+-         // 15: ifeq 20
+-         // 18: aload 0
+-         // 19: aload 1
+-         // 1a: getfield pkg/TestInnerOfGenericOuter$Itrs$Node.next Lpkg/TestInnerOfGenericOuter$Itrs$Node;
+-         // 1d: putfield pkg/TestInnerOfGenericOuter$Itrs.head Lpkg/TestInnerOfGenericOuter$Itrs$Node;
+-         // 20: return
++         TestInnerOfGenericOuter<E>.Itrs.Node p = this.head;
++         TestInnerOfGenericOuter<E>.Itr it = p.get();
++         if (it == null || it.isDetached()) {
++            this.head = p.next;
++         }
+       }
+ 
+       E lastOfHead() {
+-         // $VF: Couldn't be decompiled
+-         // Bytecode:
+-         // 0: aload 0
+-         // 1: getfield pkg/TestInnerOfGenericOuter$Itrs.head Lpkg/TestInnerOfGenericOuter$Itrs$Node;
+-         // 4: invokevirtual pkg/TestInnerOfGenericOuter$Itrs$Node.get ()Ljava/lang/Object;
+-         // 7: checkcast pkg/TestInnerOfGenericOuter$Itr
+-         // a: getfield pkg/TestInnerOfGenericOuter$Itr.last Ljava/lang/Object;
+-         // d: areturn
++         return this.head.get().last;
+       }
+ 
+       class Node extends TestInnerOfGenericOuter.Ref<TestInnerOfGenericOuter<E>.Itr> {
+```
+
 ### `pkg/TestMethodRefWildcardReceiver`
 
 ```diff
@@ -684,6 +780,28 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      }
 +   }
  }
+```
+
+### `pkg/TestSelfReferencingLambda`
+
+```diff
+--- expected-compat/pkg/TestSelfReferencingLambda.java
++++ expected/pkg/TestSelfReferencingLambda.java
+@@ -1 +1,13 @@
+-// $VF: Couldn't be decompiled
++package pkg;
++
++public class TestSelfReferencingLambda {
++   TestSelfReferencingLambda.Task task = this::body;
++
++   public void plain() {
++      this.task = () -> this.task = this::body;
++   }
++
++   interface Task {
++      void run();
++   }
++}
 ```
 
 ### `pkg/TestSwitchExprConstLub`
