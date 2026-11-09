@@ -486,6 +486,11 @@ pub fn universal_sched(
         // carried on the ArchContext and read in apply_op; registered `false` so the flag
         // (default-on, DIV-3) drives both the default and the `stackprobeloop off` toggle.
         rrow!("stackprobeloop", "analysis", crate::kuna_stackprobeloop::RuleStackProbeLoop::new(false, "analysis")),
+        // (kuna pushan) inert outside a devirtualized body.
+        rrow!("pushanlogic", "analysis", crate::kuna_pushanrules::RulePushanLogic::new("analysis")),
+        rrow!("pushanarith", "analysis", crate::kuna_pushanrules::RulePushanArith::new("analysis")),
+        rrow!("pushanpiece", "analysis", crate::kuna_pushanrules::RulePushanPiece::new("analysis")),
+        rrow!("pushancarry", "analysis", crate::kuna_pushanrules::RulePushanCarry::new("analysis")),
     ];
     oppool1_rules.extend(extra_pool_rules);
 
