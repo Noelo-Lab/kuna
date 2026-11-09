@@ -571,6 +571,11 @@ pub struct Architecture {
     /// FACT, not an option: written once at `load file` and the thing `option
     /// syscallregs auto` tests.  The XML `<binaryimage>` bootstrap never sets it.
     pub image_os_userland: bool,
+    /// (kuna) Did the loader identify the image as an ELF built for Linux (an
+    /// `EI_OSABI` of System V or GNU with no other system's ABI-tag note)?  A
+    /// FACT, not an option: written once at `load file` and the thing `option
+    /// linuxsyscall auto` tests.  The XML `<binaryimage>` bootstrap never sets it.
+    pub image_linux_elf: bool,
     /// (kuna `decodehalt`) Does an artificial halt planted because the DECODE
     /// failed report itself?  On (the default) renders the three decode-failure
     /// halt types as upstream's `halt_baddata()` / `halt_unimplemented()` /
@@ -639,10 +644,12 @@ pub struct Architecture {
     /// (kuna `linuxsyscall`) Rewrite a 32-bit Linux `int 0x80` from the indirect
     /// call through the `swi` userop that x86 SLEIGH lowers it to into a named
     /// call on the syscall the constant in `EAX` selects, with the ABI argument
-    /// registers as its arguments (`option linuxsyscall`).  x86-32 only, and
-    /// declined whenever the number is not a locally-resolvable constant with a
-    /// vetted table entry.  See [`crate::p2_lift::kuna_linuxsyscall`].
-    pub linux_syscall: bool,
+    /// registers as its arguments (`option linuxsyscall off|auto|on`).  x86 only;
+    /// `auto` also requires the loaded image to be a Linux ELF
+    /// ([`image_linux_elf`](Self::image_linux_elf)), and every mode declines a
+    /// number that is not a locally-resolvable constant with a vetted table
+    /// entry.  See [`crate::p2_lift::kuna_linuxsyscall`].
+    pub linux_syscall: crate::kuna_linuxsyscall::LinuxSyscallMode,
     /// (kuna `msvcstrappend`) Collapse each inlined MSVC x64 `std::string`
     /// `push_back` / literal `append` capacity diamond into one call on a locked
     /// `std::string::push_back` / `std::string::append` prototype (`option
@@ -3185,6 +3192,7 @@ impl Architecture {
             segment_saved: None,
             syscall_regs: crate::kuna_syscallregs::SyscallRegsMode::Off, // (kuna) option syscallregs; reset_defaults sets the shipped default
             image_os_userland: false, // (kuna) a load-time fact; set by the console's `load file`
+            image_linux_elf: false, // (kuna) a load-time fact; set by the console's `load file`
             peb_names: crate::kuna_pebnames::PebNamesMode::Off, // (kuna) option pebnames; reset_defaults sets the shipped default
             struct_synth: crate::kuna_structsynth::StructSynthMode::Off, // (kuna) option structsynth; reset_defaults sets the shipped default
             struct_synth_shard: None,
@@ -3208,7 +3216,7 @@ impl Architecture {
             mapped_flow_boundary_image: false,
             overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
             remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
-            linux_syscall: false, // (kuna) option linuxsyscall; reset_defaults sets the shipped default
+            linux_syscall: crate::kuna_linuxsyscall::LinuxSyscallMode::Off, // (kuna) option linuxsyscall; reset_defaults sets the shipped default
             msvc_str_append: false, // (kuna) option msvcstrappend; reset_defaults sets the shipped default
             switch_selector_guard: false, // (kuna) option switchselector; reset_defaults sets the shipped default
             noreturn_extern_calls: false, // (kuna) option noreturn_extern, default off
@@ -3665,7 +3673,7 @@ impl Architecture {
         self.return_single = false; // (kuna) default: upstream (join register pairs)
         self.memset_recover = true; // (kuna) DIV-2 default-on (GH-9230/1537)
         self.rodata_string = true; // (kuna) DIV-113 default-on: a read-only string block copy collapses to builtin_strncpy instead of the invalid-C partial-symbol slice assignments. Byte-identical (0/675) — the corpus carries no data symbols, so the covering-string-symbol guard never fires. Restore the slice assignments with `option rodatastring off`
-        self.v850_indirect_branch = false; // (kuna) default: upstream (GH-8817)
+        self.v850_indirect_branch = true; // (kuna) GH-8817: V850-gated in kuna_v850indbranch::applies, so inert on every other language
         self.int3_pad = crate::kuna_int3pad::Int3PadMode::Warn; // (kuna) DIV-128 default `warn`: ADDS A COMMENT ONLY. Names the `int3` pad control ran into, which x86 SLEIGH lifts to `intloc = swi(3); call [intloc]` and the printer renders as an ordinary indirect call. Shape-gated on a `swi` CALLOTHER with the 1-byte constant vector 3, so it is structurally inert wherever no `int3` is decoded and byte-identical on the datatest corpus (0/675); `option int3pad halt` also ends the flow at the pad, `option int3pad off` restores the unannotated rendering
         self.syscall_regs = crate::kuna_syscallregs::SyscallRegsMode::Auto; // (kuna) default `auto`: on an image the loader identified as an operating system's user-space program, the system call writes its result register and reads the number register and the leading argument registers the function writes on every path to it. Gated on that loader fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `option syscallregs on` acts on any image, `off` restores the zero-effect CALLOTHER
         self.x64_syscall = crate::kuna_x64syscall::X64SyscallMode::On; // (kuna) default `on`: x86-64-gated; the bounded backward walk reads only the argument registers the block provably sets up, `abi` reads all six
@@ -3696,7 +3704,7 @@ impl Architecture {
         self.remove_cleanup_code = true; // (kuna) DIV-81 default-on: REMOVES CODE. Deletes the Rust drop/deallocate call sites (`core::ptr::drop_in_place`, `Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) and the argument setup that only feeds them. Structurally inert outside a Rust binary (no C ELF resolves a call to one of those names), so byte-identical (0/675) on the datatest corpus; keep the drop glue with `option cleanupcode off`
         self.switch_selector_guard = false; // (kuna) option switchselector, default-off: re-rolling a parameter-dispatch cascade into a switch is the better default; ON narrows `loweredswitch` to cascades whose selector the function itself computes
         self.msvc_str_append = false; // (kuna) option msvcstrappend, default-off: it deletes the inlined fast path's stores and renames the grow call, and no MSVC C++ corpus in the tree can measure it
-        self.linux_syscall = false; // (kuna) option linuxsyscall, default-off this round: it renames a call and locks a prototype, which is a judgement about the target OS that the vector alone does not prove
+        self.linux_syscall = crate::kuna_linuxsyscall::LinuxSyscallMode::Auto; // (kuna) default `auto`: name an x86 `int 0x80` only on an image the loader identified as a Linux ELF; `on` acts on any x86 image, `off` keeps the swi() call
         self.noreturn_extern_calls = true; // (kuna) DIV-14 default-on: REMOVES CODE (drops the post-call fall-through after a matched extern no-return). Byte-identical (0/675) — no datatest call resolves to a known no-return name; overlaps `noreturn_known`'s name match for defined/imported symbols, restore upstream with `option noreturn_extern off`
         self.sparc_struct_return = true; // (kuna) GH-6882: gated on the SPARC-only IllegalInstructionTrap user-op, so inert on every other language
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
@@ -4790,7 +4798,7 @@ impl Architecture {
         ctx.region_edge_order = self.region_edge_order; // regionedgeorder
         ctx.outline_spec = self.outline_spec.clone(); // outline
         ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
-        ctx.linux_syscall = self.linux_syscall; // linuxsyscall
+        ctx.linux_syscall = self.linux_syscall.fires(self.image_linux_elf); // (kuna) linuxsyscall
         ctx.msvc_str_append = self.msvc_str_append; // msvcstrappend
         ctx.x64_syscall = self.x64_syscall; // (kuna) x64syscall
         ctx.x64_syscall_memory_target = self.archid == "x86:LE:64:default:gcc";

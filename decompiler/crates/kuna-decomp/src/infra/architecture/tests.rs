@@ -150,9 +150,9 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.analysis_noreturn_propagate); // noreturn_propagate (REMOVES CODE, Listing-gated)
     assert!(arch.switch_shared_case); // switchsharedcase
     assert!(arch.sparc_struct_return); // sparcstructret (SPARC-gated)
+    assert!(arch.v850_indirect_branch); // v850indirectbranch (V850-gated)
     // default-off (upstream byte-identical).
     assert!(!arch.return_single);
-    assert!(!arch.v850_indirect_branch);
     assert!(!arch.switch_modulo_bound);
     assert!(!arch.unrolled_guard);
     assert!(!arch.stack_alias_deadstore);
@@ -173,14 +173,13 @@ fn reset_defaults_is_idempotent_after_mutation() {
 }
 
 #[test]
-fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850_or_dwarf_lines() {
+fn apply_mode_aggressive_flips_offdefault_flags_but_not_dwarf_lines() {
     let mut arch = Architecture::new("test:LE:32", bare_sleigh());
     // Off-by-default under the shipped defaults.
     assert!(!arch.analysis_listing);
     assert!(!arch.analysis_aif);
     assert!(!arch.analysis_fast_funcdisc);
     assert!(!arch.switch_guard_bound);
-    assert!(!arch.v850_indirect_branch);
     assert!(!arch.analysis_dwarf_lines);
 
     arch.apply_mode("aggressive").expect("aggressive mode applies");
@@ -194,9 +193,8 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850_or_dwarf_lines() {
     // preset re-enables it after an earlier `--option returndup off`.
     assert!(arch.duplicate_shared_returns);
     assert!(arch.sparc_struct_return); // SPARC-idiom-gated, safe to enable
-    // Exclusion 1: reclassifies register-indirect calls on non-V850 targets.
-    assert!(!arch.v850_indirect_branch);
-    // Exclusion 2: annotates every statement of a `-g` binary with a
+    assert!(arch.v850_indirect_branch); // V850-gated, listed so the preset owns it
+    // The exclusion: annotates every statement of a `-g` binary with a
     // `/* src.c:NNN */` comment — noise, not recovery.
     assert!(!arch.analysis_dwarf_lines);
 }

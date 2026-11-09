@@ -242,7 +242,11 @@ kuna_options! { self, p1;
     "mappedflowboundary" => on_off!(mapped_flow_boundary, "Mapped ELF x86 flow boundaries"),
     "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
     "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
-    "linuxsyscall" => on_off!(linux_syscall, "Linux int 0x80 syscall naming"),
+    "linuxsyscall" => {
+        let (mode, msg) = crate::kuna_linuxsyscall::OptionLinuxSyscall.apply(p1)?;
+        self.linux_syscall = mode;
+        Ok(msg)
+    },
     "msvcstrappend" => on_off!(msvc_str_append, "MSVC std::string inlined append collapsing"),
     "switchselector" => on_off!(switch_selector_guard, "Lowered-switch in-function-selector restriction"),
     "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),

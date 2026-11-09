@@ -99,29 +99,24 @@ pub const MODE_TABLE: &[Mode] = &[
 const RELIABLE_OVERRIDES: &[(&str, &str)] = &[];
 
 /// `aggressive` = every off-by-default option flipped ON, **except**
-/// `v850indirectbranch` and `dwarf_lines`. `returndup` and `pdb` are listed even
-/// though DIV-54 and DIV-129 made them shipped defaults: the preset owns the
-/// option outright, so a user `--option returndup off` earlier on the command
-/// line is re-enabled by the preset and the contract survives any later default
-/// drift.
+/// `dwarf_lines`. The options that became shipped defaults stay listed
+/// (`returndup` since DIV-54, `pdb` since DIV-129, and the target-gated passes
+/// -- `rtti`=PE, `itaniumrtti`=ELF-with-RTTI, `objc`/`macho-arm64e`=Mach-O,
+/// `sparcstructret`=SPARC, `v850indirectbranch`=V850, the ARM entry and
+/// hard-float passes -- all inert off their target): the preset owns the option
+/// outright, so a user `--option returndup off` earlier on the command line is
+/// re-enabled by the preset and the contract survives any later default drift.
 ///
-/// The default-off options are safe to blanket-enable except those two. Unlike
-/// the format-gated no-ops (`rtti`=PE, `itaniumrtti`=ELF-with-RTTI,
-/// `objc`/`macho-arm64e`=Mach-O, `sparcstructret`=SPARC `unimp`-trap idiom -- all
-/// inert off their target):
+/// The default-off options are safe to blanket-enable except that one:
 ///
-///   - `v850indirectbranch`'s predicate matches *any* register-indirect `CALLIND`
-///     (`kuna_is_v850_indirect_jmp`, `p2_lift/kuna_v850indbranch.rs`), so on
-///     x86-64 / ARM it would reclassify every `call reg` into an indirect branch
-///     -- corruption, not recovery.
 ///   - `dwarf_lines` recovers nothing. It annotates every instruction with its
 ///     `.debug_line` `file:line` and those comments survive into the C body, so
 ///     on any binary built with `-g` it buries the code under interleaved
 ///     `/* src.c:NNN */` lines (`auto` picks `aggressive` under 500 KiB, which
 ///     made that the *default* rendering for small debug binaries).
 ///
-/// Both stay manual per-run opt-ins (`--option v850indirectbranch on`,
-/// `--option dwarf_lines on`) even under `--mode aggressive`.
+/// It stays a manual per-run opt-in (`--option dwarf_lines on`) even under
+/// `--mode aggressive`.
 ///
 /// `formatstring` used to be a third exclusion, for cost: its
 /// decompile->override->re-decompile loop paid a **second full decompile** of
@@ -147,6 +142,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("unrolledguard", "on"),    // speed-expensive
     ("globalarrayanchor", "on"),
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
+    ("v850indirectbranch", "on"), // V850-gated (kuna_v850indbranch::applies); no-op off-V850
     ("regionedgeorder", "on"),
     ("returndup", "on"), // default-ON since DIV-54; kept so the preset owns it
     ("orchain", "on"),   // the returndup gate DIV-69 measured; must follow returndup
@@ -424,14 +420,10 @@ mod tests {
     }
 
     #[test]
-    fn aggressive_excludes_v850_and_dwarf_lines_but_includes_the_rest() {
+    fn aggressive_excludes_dwarf_lines_but_includes_the_rest() {
         let agg = mode_overrides("aggressive").unwrap();
-        // The two intentional exclusions: corruption off-V850, and source-line
-        // comment noise over every statement of a `-g` binary.
-        assert!(
-            !agg.iter().any(|(o, _)| *o == "v850indirectbranch"),
-            "aggressive must NOT enable v850indirectbranch (reclassifies x86-64 call reg)"
-        );
+        // The one intentional exclusion: source-line comment noise over every
+        // statement of a `-g` binary.
         assert!(
             !agg.iter().any(|(o, _)| *o == "dwarf_lines"),
             "aggressive must NOT enable dwarf_lines (buries `-g` output in /* src.c:N */)"
@@ -443,6 +435,7 @@ mod tests {
             "switchguardbound",
             "returndup",
             "sparcstructret",
+            "v850indirectbranch",
             "globalarrayanchor",
         ] {
             assert!(
@@ -469,9 +462,8 @@ mod tests {
         use crate::kuna_phases::{kuna_num_settables, kuna_settable_by_index};
 
         /// The DELIBERATE exclusions, each with its reason recorded on
-        /// `AGGRESSIVE_OVERRIDES`: `v850indirectbranch` corrupts non-V850 targets,
-        /// `dwarf_lines` buries a `-g` binary's C under per-instruction
-        /// `/* src.c:N */` comments, and `formatstring` costs a second full
+        /// `AGGRESSIVE_OVERRIDES`: `dwarf_lines` buries a `-g` binary's C under
+        /// per-instruction `/* src.c:N */` comments, and `formatstring` costs a second full
         /// decompile of every caller that yields a varargs override -- measured
         /// +43.7% to +77.5% on whole-binary `decompile-all`, far over the 5% speed
         /// budget, so standing requirement 4 holds it to an opt-in (DIV-66).
@@ -481,17 +473,6 @@ mod tests {
         /// mid-body entries 6,728 -> 4,653 but costs 850 of 44,957 recovered
         /// functions, raises recall on zero of the 110 images, and takes 84 / 141 real
         /// functions off the two u-boot A32 images DIV-20 exists for.
-        /// `linuxsyscall` names an x86-32 `int 0x80` after the Linux syscall the
-        /// constant in `EAX` selects. The vector alone does not prove the target OS
-        /// -- on the original IBM PC the 0x80..0xF0 range was reserved for BASIC --
-        /// and the engine has no OS/ABI channel it could consult, so naming the call
-        /// is a statement about the platform that the operator makes, not one the
-        /// preset should make for every x86-32 image it meets. Measured (the sweep
-        /// in the option's catalog row): on the eleven x86-32 ELF images of the
-        /// crackmes corpus it changes two lines in two binaries, both a `swi(0x80)`
-        /// indirect call becoming the named syscall, and is byte-identical on the
-        /// other nine and on the 675-assertion datatest corpus. It is excluded for
-        /// the platform-assertion reason, not a measured one.
         /// `nulterminator` folds a lone unread zero after an open stack `char`
         /// array into the array, and the same frame shape is the struct-first-member
         /// idiom (`strncpy(u.name, s, N); u.active = 0; f(&u);`): measured on gcc and
@@ -588,8 +569,8 @@ mod tests {
         /// `ppcapu` selects the e500 model, whose scalar call arguments are not
         /// yet recovered, so it requires an explicit option.
         const EXCLUDED_ON_PURPOSE: &[&str] =
-            &["v850indirectbranch", "dwarf_lines",
-              "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
+            &["dwarf_lines",
+              "aifcorroborate", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
               "armconstshift", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustfmtwrite", "rustfmtio", "rustprobestack", "highsliceguard", "rustarrayzero",

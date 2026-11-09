@@ -354,15 +354,12 @@ impl FlowEnvironment for ArchFlowEnv {
 
     fn is_v850_indirect_jmp(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
         // (kuna) GH-8817: wire the ported `kunaIsV850IndirectJmp` predicate.  The
-        // gate is the architecture-owned `v850_indirect_branch` flag (`option
-        // v850indirectbranch on|off`, default off / upstream byte-identical); the
-        // register name is `glb->translate->getRegisterName(spc, off, size)` of
-        // op's input-0 varnode (None == the C++ empty string, "not a named
-        // register").
+        // gate is `kuna_v850indbranch::applies` (the `v850indirectbranch` flag on
+        // a V850 language); the register name is
+        // `glb->translate->getRegisterName(spc, off, size)` of op's input-0
+        // varnode (None == the C++ empty string, "not a named register").
         let arch = self.arch();
-        if !arch.v850_indirect_branch {
-            // Fast-path the default-off gate without touching the IR (matches the
-            // predicate's leading `if (!gate) return false`).
+        if !crate::kuna_v850indbranch::applies(arch) {
             return false;
         }
         // Resolve the input-0 register name for the predicate (the predicate
@@ -382,18 +379,13 @@ impl FlowEnvironment for ArchFlowEnv {
                 Some(name)
             }
         })();
-        crate::kuna_v850indbranch::kuna_is_v850_indirect_jmp(
-            fd,
-            op,
-            arch.v850_indirect_branch,
-            regname.as_deref(),
-        )
+        crate::kuna_v850indbranch::kuna_is_v850_indirect_jmp(fd, op, true, regname.as_deref())
     }
 
     fn sparc_struct_ret_trap_producer(&self, fd: &Funcdata, op: crate::context::OpId) -> Option<crate::context::OpId> {
         // (kuna) GH-6882: wire the ported `kunaIsSparcStructRetTrap` predicate.
         // The gate is the architecture-owned `sparc_struct_return` flag (`option
-        // sparcstructret on|off`, default off / upstream byte-identical); the
+        // sparcstructret on|off`, default on; the user-op exists only on SPARC); the
         // user-op name resolution is `glb->userops.getOp(id)->getName()` (None ==
         // the C++ null `UserPcodeOp *`).
         let arch = self.arch();

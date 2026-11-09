@@ -13,8 +13,8 @@
       - the array opens (well-formed JSON the catalog parser balances);
       - representative settables are present with their post-DIV-2 shipped defaults
         (compareform=original, arraynotation=on) and phase/sub-phase address;
-      - the two destructive options are flagged opt-in (default + destructive marker)
-        so an agent does not enable them globally;
+      - the destructive option is flagged (default + destructive marker) so an
+        agent judges it before changing it, and a target-gated default is on;
       - the live `current` value is joined in when a program is loaded.
 
     Reuses the GH-558 bytes as a loadable program for the `current` field.
@@ -42,7 +42,7 @@
 <stringmatch name="KUNA-CATALOG #1: compareform documented with its post-DIV-2 default and P3 address" min="1" max="1">"option": "compareform", "values": \["canonical", "original"\], "default": "original", "current": "original", "destructive_as_default": false, "phase": "P3"</stringmatch>
 <stringmatch name="KUNA-CATALOG #2: arraynotation documented as default-on, P9 pointer-notation" min="1" max="1">"option": "arraynotation", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "phase": "P9"</stringmatch>
 <stringmatch name="KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in" min="2" max="2">"option": "returnpair", "values": \["pair", "single"\], "default": "pair", "current": "pair", "destructive_as_default": true</stringmatch>
-<stringmatch name="KUNA-CATALOG #4: v850indirectbranch is the other opt-in (off, destructive global)" min="1" max="1">"option": "v850indirectbranch", "values": \["on", "off"\], "default": "off", "current": "off", "destructive_as_default": true</stringmatch>
+<stringmatch name="KUNA-CATALOG #4: v850indirectbranch is a V850-gated default (on, not destructive as a global default)" min="1" max="1">"option": "v850indirectbranch", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false</stringmatch>
 <stringmatch name="KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator" min="10" max="800">"use_when": </stringmatch>
 <stringmatch name="KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, relocobjects, i386_pie_plt, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, noreturn_extern, noreturn_externmatch, earlyreturn, switchreturn, condfold, securitycheck, structsynth, protoorder, calleevote, rustprobestack)" min="52" max="52">"source_decompiler": "angr"</stringmatch>
 <stringmatch name="KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, relocobjects, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, gottailcall, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, itecondlist, guardarm, loopcondhoist, orchain, endptrbound, loweredswitchheads, structsynth, structmerge, structheadless, devectorize, gomorestack, gowritebarrier, ptrauthtrap, rustprobestack)" min="42" max="42">"change_kind": "structure-recovery"</stringmatch>

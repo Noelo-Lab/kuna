@@ -729,6 +729,10 @@ fn option_values_live_value_present_for_189() {
                             // same reason.  Its live value is
                             // `Architecture::syscall_regs`.
                             | "syscallregs"
+                            // (kuna) `linuxsyscall` takes the same MODE
+                            // (`off|auto|on`) over an enum field; its live
+                            // value is `Architecture::linux_syscall`.
+                            | "linuxsyscall"
                             // (kuna) `callmechanisms` takes a MODE
                             // (`off|auto|on`) over an enum field, for the
                             // same reason.  Its live value is
@@ -978,7 +982,8 @@ fn option_values_live_value_present_for_189() {
     // 179 -> 181: +1 for `copywaves` (pool_copy_waves), +1 for `armderef` (analysis_armderef).
     // 178 -> 179: +1 for `ptrauthtrap` (live_field = ptrauth_trap).
     // 179 -> 180: +1 for `authptrcall` (live_field = analysis_authptrcall).
-    assert_eq!(with_live, 189);
+    // 189 -> 188: `linuxsyscall` takes `off|auto|on` and has no live_field.
+    assert_eq!(with_live, 188);
 }
 
 #[test]
