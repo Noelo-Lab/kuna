@@ -6,10 +6,7 @@
     "{{KUNA}}",
     "decompile",
     "{{BIN}}",
-    "scratch_byte",
-    "--option",
-    "varargstackargs",
-    "on"
+    "scratch_byte"
   ],
   "cwd": "{{WORK}}",
   "env": {

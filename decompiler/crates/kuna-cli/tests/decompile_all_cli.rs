@@ -10200,9 +10200,6 @@ fn an_aarch64_double_return_leaves_out_the_zero_fill() {
     let sp = specs();
     let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/zerofillreturn_a64.o");
     let fixture = fixture.to_str().unwrap();
-    let (off, stderr, ok) = run_kuna(&["decompile-all", fixture, "--sleighpath", &sp, "--option", "zerofillreturn", "off"]);
-    assert!(ok, "kuna decompile-all failed: {stderr}");
-    assert!(off.contains("undefined16 scale("), "the fill no longer joins the return with the option off:\n{off}");
     let (stdout, stderr, ok) = run_kuna(&["decompile-all", fixture, "--sleighpath", &sp]);
     assert!(ok, "kuna decompile-all failed: {stderr}");
     for want in ["double scale(int a0,double *a1)", "double recip(int a0)", "double tail(int a0,double *a1)", "return 0.0;"] {
@@ -10235,20 +10232,16 @@ fn an_aarch64_double_return_leaves_out_the_zero_fill() {
 /// `cboth` path, which the float-return check counted as a conversion: `pick`
 /// was decompiled again without its return and printed `void`, beside
 /// `(double)pick(a0)` in `user`. A value left in a floating register is not an
-/// integer converted to a float, with the zero-fill option off or on.
+/// integer converted to a float.
 #[test]
 fn a_tail_call_wrapper_keeps_the_float_its_readers_read() {
     let sp = specs();
     let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/voidret_complexpick_a64.o");
     let fixture = fixture.to_str().unwrap();
-    for extra in [&[][..], &["--option", "zerofillreturn", "off"][..]] {
-        let mut args = vec!["decompile-all", fixture, "--sleighpath", sp.as_str()];
-        args.extend_from_slice(extra);
-        let (stdout, stderr, ok) = run_kuna(&args);
-        assert!(ok, "kuna decompile-all failed: {stderr}");
-        for want in ["double pick(double a0)", "return cpart(a0); // tail-call", "v1 = pick(a0);"] {
-            assert!(stdout.contains(want), "{extra:?}: missing `{want}`:\n{stdout}");
-        }
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", fixture, "--sleighpath", sp.as_str()]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    for want in ["double pick(double a0)", "return cpart(a0); // tail-call", "v1 = pick(a0);"] {
+        assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
     }
 }
 

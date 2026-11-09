@@ -5,10 +5,7 @@
     "{{KUNA}}",
     "decompile",
     "{{BIN}}",
-    "hash_final",
-    "--option",
-    "varargstackargs",
-    "on"
+    "hash_final"
   ],
   "cwd": "{{WORK}}",
   "env": {

@@ -1761,7 +1761,7 @@ mod tests {
         // argument constants come back)
         // and kuna-retinputhalf / a returned register half that is an input
         // parameter the function moved there is kept, so the parameter stays in
-        // the signature (option off = the half AND the argument are dropped)
+        // the signature
         // and kuna-symbolnamerepair / C++ anonymous namespaces survive the
         // name-only demangling (the load used to fail outright)
         // and kuna-noreturn-discstrict / the discovered-no-return tally counts

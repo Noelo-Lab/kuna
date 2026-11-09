@@ -245,9 +245,6 @@ kuna_options! { self, p1;
     "switchselector" => on_off!(switch_selector_guard, "Lowered-switch in-function-selector restriction"),
     "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),
     "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
-    "retinputhalf" => on_off!(ret_input_half, "Returned input-parameter half retention"),
-    "retpushedhalf" => on_off!(ret_pushed_half, "Push-only register placement rejection"),
-    "retsysreg" => on_off!(ret_sys_reg, "System-register operand high-word rejection"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
     "multiregargs" => on_off!(multi_reg_args, "Complete ABI register argument partitions"),
     "mipsunaligned" => on_off!(mips_unaligned, "MIPS unaligned load/store pairs as one access"),
@@ -471,18 +468,6 @@ kuna_options! { self, p1;
         self.callee_pop_frame = val;
         Ok(msg)
     },
-    "zerocallregs" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_zerocallregs::OptionZeroCallRegs.apply(p1)?;
-        self.zero_call_regs = val;
-        Ok(msg)
-    },
-    "zerofillreturn" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_zerofillreturn::OptionZeroFillReturn.apply(p1)?;
-        self.zero_fill_return = val;
-        Ok(msg)
-    },
     "argclobber" => {
         let (val, msg) = crate::p4_calls::kuna_argclobber::OptionArgClobber.apply(p1)?;
         self.arg_clobber = val;
@@ -557,24 +542,6 @@ kuna_options! { self, p1;
         let (val, msg) =
             crate::p3_dataflow::kuna_indirectanchor::OptionIndirectAnchor.apply(p1)?;
         self.indirect_anchor = val;
-        Ok(msg)
-    },
-    "stackarggap" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_stackarggap::OptionStackArgGap.apply(p1)?;
-        self.stack_arg_gap = val;
-        Ok(msg)
-    },
-    "varargstackargs" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_varargstackargs::OptionVarargStackArgs.apply(p1)?;
-        self.vararg_stack_args = val;
-        Ok(msg)
-    },
-    "varargforward" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_varargforward::OptionVarargForward.apply(p1)?;
-        self.vararg_forward = val;
         Ok(msg)
     },
     "varargsharedfloat" => on_off!(vararg_shared_float, "variadic doubles that also feed an earlier argument"),

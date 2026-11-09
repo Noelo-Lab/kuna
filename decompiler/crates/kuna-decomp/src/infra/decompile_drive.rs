@@ -1232,7 +1232,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // input-trial scoring seam consults.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
         // (kuna `zerofillreturn`) And the zero fills, read off the fresh p-code.
-        crate::p4_calls::kuna_zerofillreturn::seed(arch, fd);
+        crate::p4_calls::kuna_zerofillreturn::seed(fd);
         // (kuna `protoorder types`) And for the parameter types earlier callees stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, fd);
         crate::p4_calls::kuna_callrettype::seed(arch, fd);
@@ -1914,7 +1914,7 @@ fn decompile_func_full_with_objects_inner(
         // (kuna `zerofillreturn`) Mark the zero fills of narrow vector-register
         // writes while the p-code is still as lifted; heritage splits a 128-bit
         // write into the same lanes.
-        crate::p4_calls::kuna_zerofillreturn::seed(arch, &mut fd);
+        crate::p4_calls::kuna_zerofillreturn::seed(&mut fd);
         // (kuna `protoorder` single-function drive) A `kuna decompile` of one
         // function has no callee-first run behind it, so it may state the
         // prototypes of the direct callees its own call sites pass preferred-split

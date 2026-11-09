@@ -754,11 +754,7 @@ fn option_values_live_value_present_for_189() {
                             // `PrintC::options.global_ref`.
                             | "globalref"
                             | "protoranges"
-                            | "varargstackargs"
-                            | "varargforward"
                             | "mixedtailret"
-                            | "zerofillreturn"
-                            | "zerocallregs"
                             | "calleepreserves"
                             | "calleeretpreserves"
                             | "calleescratchbody"

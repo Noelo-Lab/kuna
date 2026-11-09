@@ -722,18 +722,6 @@ pub struct ArchContext {
     /// also absorb an overlapping input that extends ABOVE the container's end
     /// (forward scan in `ActionUnjustifiedParams`).  C++ `input_varnode_adjust`.
     pub input_varnode_adjust: bool,
-    /// (kuna) Keep a returned register half whose value is a formal input
-    /// parameter, instead of dropping it as uncomputed leftover
-    /// (`option retinputhalf`); read by [`crate::kuna_retinputhalf`].
-    pub ret_input_half: bool,
-    /// (kuna) A register the function only ever pushed is not a placement source
-    /// for a returned half (`option retpushedhalf`); read by
-    /// [`crate::kuna_retpushedhalf`].
-    pub ret_pushed_half: bool,
-    /// (kuna) A register the function sets for a system register is not the
-    /// high word of its return (`option retsysreg`); read by
-    /// [`crate::kuna_retsysreg`].
-    pub ret_sys_reg: bool,
     /// (kuna) CALLOTHER user-op ids named in
     /// [`STATE_USEROP_NAMES`](crate::kuna_retsysreg::STATE_USEROP_NAMES), and
     /// those named in [`COP_USEROP_NAMES`](crate::kuna_retsysreg::COP_USEROP_NAMES),
@@ -1088,14 +1076,6 @@ pub struct ArchContext {
     /// (kuna) how a narrow integer argument or return value fills its register
     /// (`narrowext`).  Read by [`crate::p4_calls::kuna_narrowext`].
     pub narrow_ext: crate::kuna_narrowext::Rules,
-    /// (kuna) drop the zero fill a narrow write leaves in the upper half of a
-    /// returned vector register (`zerofillreturn`).  Read by
-    /// [`crate::p4_calls::kuna_zerofillreturn::drop_zero_fill`].
-    pub zero_fill_return: bool,
-    /// (kuna) drop the registers a `-fzero-call-used-regs` epilogue clears
-    /// from the return value (`zerocallregs`).  Read by
-    /// [`crate::p4_calls::kuna_zerocallregs::drop_epilogue_zeros`].
-    pub zero_call_regs: bool,
     /// (kuna) narrow a call's `killedbycall` set to the registers a bounded
     /// decode of the callee's own body proves it writes (`calleepreserves`).
     /// Read by `Heritage::guard_calls` through
@@ -1138,24 +1118,6 @@ pub struct ArchContext {
     /// (kuna) also narrow a register-local web of sign extensions
     /// (`regsigned`). Read by [`crate::kuna_regnarrow`].
     pub narrow_signed: bool,
-    /// (kuna) at a CALL SITE, let an unreferenced argument register whose next
-    /// slot is on the stack end the argument list (`stackarggap`).  Read by
-    /// `ActionActiveParam`, which stamps it onto the
-    /// [`ParamActive`](crate::fspec::ParamActive) that
-    /// [`ParamListStandard::fillin_map`](crate::fspec::ParamListStandard) then
-    /// consults through
-    /// [`crate::p4_calls::kuna_stackarggap::ends_argument_list`].
-    pub stack_arg_gap: bool,
-    /// (kuna) score a variadic call's stack arguments as their own `fillinMap`
-    /// resource section (`varargstackargs`).  Read by
-    /// [`ParamListStandard::fillin_map`](crate::fspec::ParamListStandard) through
-    /// [`crate::p4_calls::kuna_varargstackargs::stack_section_split`], via the
-    /// flag `ActionActiveParam` writes onto the call's `ParamActive`.
-    pub vararg_stack_args: bool,
-    /// (kuna) keep a declared parameter forwarded unchanged to a variadic call's
-    /// variable part (`varargforward`).  Read by
-    /// [`crate::p4_calls::kuna_varargforward::forwards_declared_parameter`].
-    pub vararg_forward: bool,
     /// (kuna) keep a counted variadic double that also feeds an earlier
     /// argument (`varargsharedfloat`).  Read by
     /// [`crate::p4_calls::kuna_varargsharedfloat::feeds_earlier_argument`].
@@ -1796,15 +1758,6 @@ impl ArchContext {
             // (kuna) GH-9218 DIV-3 default-on; the real value is copied from the
             // engine Architecture in `build_arch_handle`.
             input_varnode_adjust: true,
-            // (kuna) `option retinputhalf` default-on; the real value is copied
-            // from the engine Architecture in `build_arch_handle`.
-            ret_input_half: true,
-            // (kuna) `option retpushedhalf` default-on; the real value is copied
-            // from the engine Architecture in `build_arch_handle`.
-            ret_pushed_half: true,
-            // (kuna) `option retsysreg` default-on; the real value is copied
-            // from the engine Architecture in `build_arch_handle`.
-            ret_sys_reg: true,
             retsysreg_userops: Vec::new(),
             retsysreg_cop_userops: Vec::new(),
             stack_addr_arg_trial: false,
@@ -1937,8 +1890,6 @@ impl ArchContext {
             narrow_ext: crate::kuna_narrowext::Rules::default(),
             pass_through: true, // (kuna) option passthrough (default on)
             mixed_tail_ret: false, // (kuna) option mixedtailret (default off)
-            zero_fill_return: true,
-            zero_call_regs: true,
             callee_preserves: true,
             global_call_ranges: true,
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
@@ -1952,9 +1903,6 @@ impl ArchContext {
             narrow_locals: true,
             narrow_ret: true,
             narrow_signed: false,
-            stack_arg_gap: true,         // stackarggap (DIV-140 default-on)
-            vararg_stack_args: true,     // varargstackargs (DIV-101 default-on)
-            vararg_forward: true,        // varargforward (default-on)
             vararg_shared_float: false,  // varargsharedfloat (default-off)
             call_overlap: crate::kuna_calloverlap::LEVEL_AUTO, // calloverlap (default auto)
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)

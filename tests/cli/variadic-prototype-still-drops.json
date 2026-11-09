@@ -8,10 +8,7 @@
     "{{BIN}}",
     "report",
     "--assert",
-    "prototype fmt int fmt(char *f,...)",
-    "--option",
-    "varargstackargs",
-    "on"
+    "prototype fmt int fmt(char *f,...)"
   ],
   "cwd": "{{WORK}}",
   "env": {

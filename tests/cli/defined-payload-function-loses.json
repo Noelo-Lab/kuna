@@ -6,10 +6,7 @@
     "{{KUNA}}",
     "decompile",
     "{{BIN}}",
-    "caller",
-    "--option",
-    "varargstackargs",
-    "on"
+    "caller"
   ],
   "cwd": "{{WORK}}",
   "env": {

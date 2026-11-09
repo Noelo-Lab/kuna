@@ -5,10 +5,7 @@
     "{{KUNA}}",
     "decompile",
     "{{BIN}}",
-    "strcmp",
-    "--option",
-    "varargstackargs",
-    "on"
+    "strcmp"
   ],
   "cwd": "{{WORK}}",
   "env": {

@@ -6,10 +6,7 @@
     "{{KUNA}}",
     "decompile",
     "{{BIN}}",
-    "0x401020",
-    "--option",
-    "varargstackargs",
-    "on"
+    "0x401020"
   ],
   "expect": {
     "exit_code": {

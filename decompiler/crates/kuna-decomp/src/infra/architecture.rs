@@ -705,19 +705,6 @@ pub struct Architecture {
     /// (kuna GH-9218) Absorb overlapping input Varnodes above a justified
     /// container (C++ `input_varnode_adjust`).
     pub input_varnode_adjust: bool,
-    /// (kuna) `option retinputhalf`: keep a returned register half whose value is
-    /// a formal input parameter, instead of discarding it as uncomputed leftover.
-    /// Read by [`crate::kuna_retinputhalf`] through the `ArchContext` handle.
-    pub ret_input_half: bool,
-    /// (kuna) `option retpushedhalf`: a register the function only ever PUSHED is
-    /// not a placement source for a returned half.  Gathered during the flow
-    /// build and read by [`crate::kuna_retpushedhalf`] through the `ArchContext`
-    /// handle.
-    pub ret_pushed_half: bool,
-    /// (kuna) `option retsysreg`: a register the function sets for a system
-    /// register is not the high word of its return.  Read by
-    /// [`crate::kuna_retsysreg`] through the `ArchContext` handle.
-    pub ret_sys_reg: bool,
     /// Opt-in stack-address evidence for call input trials.
     pub stack_addr_arg_trial: bool,
     /// Recover complete ABI argument slots within wider physical register ranges.
@@ -988,13 +975,6 @@ pub struct Architecture {
     /// (kuna) Extend a narrow integer argument or return value as the ABI states
     /// (option `narrowext`).  See [`crate::p4_calls::kuna_narrowext`].
     pub narrow_ext: crate::kuna_narrowext::NarrowExtMode,
-    /// (kuna) Drop the zero fill a narrow write leaves in the upper half of a
-    /// returned vector register (option `zerofillreturn`).
-    pub zero_fill_return: bool,
-    /// (kuna) Drop the registers a `-fzero-call-used-regs` epilogue clears from
-    /// the return value (option `zerocallregs`).  See
-    /// [`crate::p4_calls::kuna_zerocallregs`].
-    pub zero_call_regs: bool,
     /// (kuna) Narrow a call's `killedbycall` set to the registers a bounded
     /// decode of the callee's own body proves it writes (option
     /// `calleepreserves`).  See [`crate::p4_calls::kuna_calleepreserves`].
@@ -1043,20 +1023,6 @@ pub struct Architecture {
     /// extensions of a narrower part (option `regsigned`).  See
     /// [`crate::p3_dataflow::kuna_regnarrow`].
     pub narrow_signed: bool,
-    /// (kuna) At a CALL SITE, let an UNREFERENCED argument register whose next
-    /// slot is on the stack end the argument list, instead of being filled in on
-    /// the way to a stack trial (option `stackarggap`).  See
-    /// [`crate::p4_calls::kuna_stackarggap`].
-    pub stack_arg_gap: bool,
-    /// (kuna) Score a variadic call's stack arguments as their own `fillinMap`
-    /// resource section, so the empty register slots the ABI leaves between the
-    /// fixed parameters and the varargs stop deactivating them (option
-    /// `varargstackargs`).  See [`crate::p4_calls::kuna_varargstackargs`].
-    pub vararg_stack_args: bool,
-    /// (kuna) Keep a declared parameter the function forwards unchanged, in its
-    /// own register, to a variadic call's variable part (option
-    /// `varargforward`).  See [`crate::p4_calls::kuna_varargforward`].
-    pub vararg_forward: bool,
     /// (kuna) Keep a counted variadic double whose register also feeds an
     /// earlier argument of the same call (option `varargsharedfloat`).  See
     /// [`crate::p4_calls::kuna_varargsharedfloat`].
@@ -3109,9 +3075,6 @@ impl Architecture {
             ret_split_global: false,
             ret_split_limit: None,
             input_varnode_adjust: false,
-            ret_input_half: false, // (kuna) option retinputhalf; reset_defaults sets the shipped default
-            ret_pushed_half: false, // (kuna) option retpushedhalf; reset_defaults sets the shipped default
-            ret_sys_reg: false, // (kuna) option retsysreg; reset_defaults sets the shipped default
             stack_addr_arg_trial: false,
             multi_reg_args: false,
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
@@ -3186,8 +3149,6 @@ impl Architecture {
             narrow_ext: crate::kuna_narrowext::NarrowExtMode::Off, // (kuna) option narrowext; reset_defaults sets the shipped default
             pass_through: true, // (kuna) option passthrough; reset_defaults sets the shipped default
             mixed_tail_ret: false, // (kuna) option mixedtailret; reset_defaults sets the shipped default
-            zero_fill_return: true,
-            zero_call_regs: true,
             callee_preserves: true,
             global_call_ranges: true,
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
@@ -3202,9 +3163,6 @@ impl Architecture {
             narrow_locals: true,
             narrow_ret: true,
             narrow_signed: false,
-            stack_arg_gap: true,
-            vararg_stack_args: true,
-            vararg_forward: true,
             vararg_shared_float: false,
             call_overlap: crate::kuna_calloverlap::LEVEL_OFF, // (kuna) option calloverlap; reset_defaults sets the shipped default
             spill_arg_trial: 0,
@@ -3568,9 +3526,6 @@ impl Architecture {
         self.simd_lane_fold = true; // (kuna) DIV-PENDING default-on: an exact identity (pshufb with a constant mask IS a byte permutation), so a lane read resolves to the source lane instead of an opaque CALLOTHER temporary. Byte-identical (0/675) on the datatest corpus; restore the opaque rendering with `option simdlane off`
         self.const_space_load_fold = true; // (kuna) DIV-PENDING default-on: a LOAD from the CONSTANT space is the address-is-value identity `RuleLoadVarnode` already applies to a constant pointer, and it does not stop holding for a temporary, so a SLEIGH dynamic const export is no longer left as a pointer-shaped LOAD for `ActionLaneDivide` to slice into near-null lane reads. Byte-identical (0/675) on the datatest corpus; restore the upstream rendering with `option constspaceload off`
         self.input_varnode_adjust = true; // (kuna) DIV-3 default-on (GH-9218)
-        self.ret_input_half = true; // (kuna) DIV-85 default-on: a returned register half whose value is an input parameter the function MOVED into the return register is a real return, not leftover; keeping it also keeps the parameter it came from in the recovered signature. 0/675 byte-identical; an untouched return register is still dropped (the GH-6990 SPARC pass-through), restore the strict rule with `option retinputhalf off`
-        self.ret_pushed_half = true; // (kuna) DIV-156 default-on: a register the function only ever PUSHED is stack maintenance, not a value it placed in a return register, so the alignment `push %r8` / `pop %rdx` idiom no longer invents a fifth argument and a 128-bit return. Narrows `retinputhalf` only; 0/675 byte-identical on the datatest corpus. Restore the address-only placement test with `option retpushedhalf off`
-        self.ret_sys_reg = true; // (kuna) GH-885 default-on: the second register of a returned pair whose value only goes to a system register (vmsr fpscr, msr basepri, mtc0) is that write's operand, not a high word. 0/675 byte-identical on the datatest corpus; restore the pair with `option retsysreg off`
         self.stack_addr_arg_trial = false;
         self.multi_reg_args = true;
         self.mips_unaligned = true;
@@ -3622,8 +3577,6 @@ impl Architecture {
         self.callee_pop = true; // (kuna) default-on (0/675 ablation): an unknown extrapop is read off the caller's push run instead of guessed as "pops nothing" (0/675 ablation)
         self.callee_pop_slot = true; // (kuna) default-on (0/675 ablation): the calleepop guess follows a slot pushed in front of one call and popped by a later one
         self.callee_pop_frame = true; // (kuna) default-on (0/675 ablation): a fixed-frame caller's `sub esp,n` after an imported call reads as the callee popping n
-        self.zero_fill_return = true; // (kuna) default-on (0/675 ablation): the zero a narrow write leaves in a returned q register's upper half is no part of the value
-        self.zero_call_regs = true; // (kuna) default-on (0/675 ablation): a register a -fzero-call-used-regs epilogue clears before the return is no part of the value
         self.global_call_ranges = true;
         self.readonly_calls = Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT);
         self.persist_calls = Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT);
@@ -3633,14 +3586,11 @@ impl Architecture {
         self.callee_ret_preserves = true; // (kuna) DIV-PENDING default-on: a fully decoded callee body that never writes the call's return register also answers for that register, so an MSVC /GS `main` returns the zero it set instead of the cookie check's invented result (0/675 ablation)
         self.callee_scratch_body = true; // (kuna) DIV-149 default-on: a decoded callee that clobbers only SCRATCH registers still counts as a body for calleepreserves, so the value a caller sets before MSVC's out-of-line stack probe survives it (0/675 ablation)
         self.indirect_anchor = true; // (kuna) DIV-PENDING default-on: an op inserted after a call's guard INDIRECT anchors to the CALL as upstream opInsertAfter does, instead of landing inside the guard run where it hides the return-value trial (0/675 ablation)
-        self.stack_arg_gap = true; // (kuna) DIV-140 default-on: at a call site an argument register the caller never wrote ends the argument list when the next slot is on the stack, so a body-less import stops acquiring the caller's own untouched parameter plus a stack leftover as arguments (0/675 ablation)
         self.narrow_args_callers = true; // (kuna) option narrowargs default `callers`: also narrow a 32-bit ARM parameter every caller of a closed function passes narrow, one of them extending it itself
         self.narrow_args = true; // (kuna) option narrowargs default-on: a register parameter whose uses read only its low 1, 2 or 4 bytes is declared that wide, and a callee's stated narrow parameter caps how much of the argument its callers consume (0/675 datatests)
         self.narrow_signed = false; // (kuna) option regsigned default-off: rebuilding a sign-extended register-local web at its low 1, 2 or 4 bytes moves decbench type_match by +0 to +4 perfect functions and adds casts elsewhere
         self.narrow_locals = true; // (kuna) option regnarrow default-on: a register-local web whose values the nonzero-bit analysis proves fit a low 1, 2 or 4 bytes, entered only through zero extensions, masks, constants and copies, is rebuilt at that width
         self.narrow_ret = true; // (kuna) option narrowret default-on: a call to a callee that returns a narrow value zero-extended reads that value
-        self.vararg_stack_args = true; // (kuna) DIV-101 default-on: a variadic call's stack tail is its own fillinMap section (0/675 ablation)
-        self.vararg_forward = true; // (kuna) default-on: a declared parameter forwarded unchanged in its own register to a variadic call's variable part is an argument (0/675 ablation)
         self.vararg_shared_float = false; // (kuna) default-off: the register-choice reading holds only for -O0 code (post-RA scheduling defeats it at -O1+)
         self.call_overlap = crate::kuna_calloverlap::LEVEL_AUTO;
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
@@ -4401,11 +4351,6 @@ impl Architecture {
         // (kuna GH-9218) carry the unjustified-input forward-absorb gate so
         // `ActionUnjustifiedParams` reaches it via `glb`.
         ctx.input_varnode_adjust = self.input_varnode_adjust;
-        // (kuna) carry the returned-input-half gate so `kuna_returnuncomputed`
-        // reaches `option retinputhalf` via `glb`.
-        ctx.ret_input_half = self.ret_input_half;
-        ctx.ret_pushed_half = self.ret_pushed_half;
-        ctx.ret_sys_reg = self.ret_sys_reg;
         let ids = |names: &[&[u8]]| -> Vec<kuna_base::types::uint4> {
             names
                 .iter()
@@ -4535,8 +4480,6 @@ impl Architecture {
         ctx.arg_clobber = self.arg_clobber; // argclobber
         ctx.pass_through = self.pass_through; // passthrough
         ctx.mixed_tail_ret = self.mixed_tail_ret; // mixedtailret
-        ctx.zero_fill_return = self.zero_fill_return; // zerofillreturn
-        ctx.zero_call_regs = self.zero_call_regs; // zerocallregs
         ctx.global_call_ranges = self.global_call_ranges;
         ctx.readonly_calls = self.readonly_calls;
         ctx.persist_calls = self.persist_calls;
@@ -4550,9 +4493,6 @@ impl Architecture {
         ctx.narrow_locals = self.narrow_locals; // regnarrow
         ctx.narrow_ret = self.narrow_ret; // narrowret
         ctx.narrow_signed = self.narrow_signed; // regsigned
-        ctx.stack_arg_gap = self.stack_arg_gap; // stackarggap
-        ctx.vararg_stack_args = self.vararg_stack_args; // varargstackargs
-        ctx.vararg_forward = self.vararg_forward; // varargforward
         ctx.vararg_shared_float = self.vararg_shared_float; // varargsharedfloat
         ctx.call_overlap = self.call_overlap; // calloverlap
         ctx.spill_arg_trial = self.spill_arg_trial; // spillargtrial

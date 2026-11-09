@@ -9,9 +9,6 @@
     "--option",
     "linuxsyscall",
     "on",
-    "--option",
-    "varargstackargs",
-    "on",
     "--assert",
     "prototype 0x100000 long kernel_call(long number, long address, long length)"
   ],

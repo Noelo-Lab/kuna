@@ -5,10 +5,7 @@
     "{{KUNA}}",
     "decompile",
     "{{BIN}}",
-    "append",
-    "--option",
-    "varargstackargs",
-    "on"
+    "append"
   ],
   "timeout_s": 60,
   "repeat": 1,

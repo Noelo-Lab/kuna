@@ -748,7 +748,7 @@ parameter list. For the standard input list the decision sequence is:
    surviving active trial is promoted — interior holes are filled, because
    the list must be contiguous. (kuna) The own-input gap tolerance exempts an *active
    register* trial from that demotion when the trials are the function's
-   **own** inputs rather than a call's, and (kuna) `stackarggap` ends a call
+   **own** inputs rather than a call's, and (kuna) the call-site gap veto ends a call
    site's chain at an *unreferenced register* slot whose next credible slot is
    on the stack — both below.
 5. Whatever is still active is marked **used**.
@@ -764,8 +764,8 @@ registers and the outgoing stack area in **one** section, a stack trial
 `check_input_trial_use` had already scored active is deactivated again here, and
 the argument is dropped; whatever computed it then dies to dead-code
 elimination, so the destination of a `scanf` is not merely unprinted but
-unwritten. (kuna) `varargstackargs` (default-off,
-`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargstackargs.rs`) cuts such a
+unwritten. (kuna) The variadic stack-section split
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargstackargs.rs`, always on) cuts such a
 section in two at its first stack trial, so the register prefix and the stack
 tail are scored independently and the ABI's hole stops being evidence about the
 stack argument. The cut also keeps step 4's hole-filling promotion inside the
@@ -850,8 +850,8 @@ bookkeeping; the stack trial scores active, step 4 promotes the unreferenced
 that trial never had by reading `r9` at the call — which resolves to the
 *caller's* untouched incoming `r9`. kuna emitted
 `EVP_DigestFinal_ex(v3,v9,v7,a3,1)`: five arguments, of which the fourth is the
-reader's own parameter and therefore looks load-bearing. (kuna) `stackarggap`
-(default-on, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_stackarggap.rs`)
+reader's own parameter and therefore looks load-bearing. (kuna) The call-site
+gap veto (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_stackarggap.rs`, always on)
 sets `seenchain` at such a slot, so the chain ends there, the stack trial behind
 it is deactivated with everything else past the cut, and the hole is never
 filled. This is the same conclusion step 4 already draws one slot to the right,
@@ -869,7 +869,7 @@ next non-eliminated trial in the section is a stack slot, so a hole in the middl
 of the register file with a written register behind it keeps the upstream fill.
 And it only stops a trial from being marked active, never marks one — an argument
 list can lose an invented tail, never gain a member. A variadic call site reaches
-none of it, because `varargstackargs` has already cut its stack tail into its own
+none of it, because the variadic split has already cut its stack tail into its own
 section and the register prefix is never scored against it.
 
 ### `build_input_from_trials` — writing the argument list
@@ -1515,7 +1515,7 @@ gets its 8-byte trial from the guard in chapter 03
 one), the ancestor checks still decide: a discarded call result or a parameter
 the caller reads again after the call stays out, and so does a call result the
 call really takes, which the instructions cannot tell apart. Only a declared
-prototype settles that case: see `varargforward` in §4.4.
+prototype settles that case: see the forwarded-value rule (`kuna_varargforward.rs`) in §4.4.
 
 ### `ActionActiveParam` — does this argument exist?
 
@@ -3414,8 +3414,8 @@ inactive stored integer available for later format evidence; resolving an
 imported target must not erase its unfinalized variadic trials. Ordinary trial
 scoring still controls which preserved values become arguments. This also keeps
 an already recovered promoted double copied from an XMM register to its variadic
-GP slot; it needs no integer-format fallback and survives with `varargforward`
-off as well. The format evidence parser remains restricted to promoted integers.
+GP slot; it needs no integer-format fallback and does not depend on the
+forwarded-value rule. The format evidence parser remains restricted to promoted integers.
 Failure sets the restart-pending
 flag — the P4 → Band B feedback edge of 00 §0.7, bounded and executed by the
 drive — (kuna) recording `ProtoDeindirect` in the restart log
@@ -4399,7 +4399,7 @@ per decompiled function and only when that option is on, as a worklist over the
 reachable move-only closure -- the recursive "every input" form revisits the same
 Varnodes exponentially on a phi-rich -O0 body.
 
-#### (kuna) The half that is an input parameter (`retinputhalf`)
+#### (kuna) The half that is an input parameter (`kuna_retinputhalf.rs`)
 
 The "unwritten means uncomputed" terminal is too coarse in one direction: a
 **formal input parameter is unwritten by definition**. A returned pair whose high
@@ -4410,7 +4410,7 @@ whether the second returned half is `x` or `x*3+7` came out with different
 arities: `unsigned long wide(long a0)` against `undefined16 w2(long a0,long a1)`,
 for the same two-argument source (`tests/stages/kuna-retinputhalf.xml`).
 
-`option retinputhalf` (default on, DIV-85) supplies the missing exception, on
+kuna (DIV-85, always on) supplies the missing exception, on
 storage evidence the prototype model already holds. An unwritten terminal is a
 real return value when both of the following hold:
 
@@ -4607,8 +4607,8 @@ inline `svc` lifts to a CALLOTHER that does not show which registers it reads, s
 `bl g; mov r1,#5; mov r7,#4; svc #0; bx lr` would otherwise return
 `CONCAT44(5,g())`, and the same holds for a call whose recovered arity is short.
 So no call, CALLIND or CALLOTHER may be able to run between the producing
-instruction and the RETURN, by the block-level reachability the `retinputhalf`
-moved-back test uses. And the zero `-fzero-call-used-regs` leaves in every
+instruction and the RETURN, by the block-level reachability the
+`kuna_retinputhalf.rs` moved-back test uses. And the zero `-fzero-call-used-regs` leaves in every
 call-used register a function does not return in, seen through the `PIECE` and
 `SUBPIECE` heritage splits a 32-bit `xor` into before copy propagation runs:
 x86-64 `long f(long a) { return g(a); }` built that way by gcc at `-O0` would
@@ -4749,8 +4749,8 @@ return, every value it merges is the function's own argument in that register,
 a constant, a call's result, or the output of an operation other than a CALLOTHER
 or a clobber. And at one RETURN at least there must be a sign the pair belongs
 together: the first register is a call's untouched result (the rule above), the
-function's own argument in place (`kuna_retcallhalf.rs (is_own_input)`, gated with
-`retinputhalf`), or a value that, followed forward, is read only by the RETURN in
+function's own argument in place (`kuna_retcallhalf.rs (is_own_input)`, sharing
+`kuna_retinputhalf.rs`'s test), or a value that, followed forward, is read only by the RETURN in
 its own slot and by operations that turn it into the second register's value
 there (`kuna_retcallhalf.rs (feeds_second)`): no branch, call, load, store or other
 RETURN, nothing written to global memory. That walk starts at the merged value
@@ -4818,7 +4818,7 @@ copies of a `tbb` jump table decoded as code in betaflight. Lua 5.4 built for AR
 Thumb, i386, MIPS and RISC-V 32 by clang and gcc at O0 and O2 (12,503 functions)
 changes none.
 
-#### (kuna) A register set for a system register is not a high word (`retsysreg`)
+#### (kuna) A register set for a system register is not a high word (`kuna_retsysreg.rs`)
 
 `int f(void) { int r = g(); __asm volatile("vmsr fpscr, %0" :: "r"(0x3000000));
 return r; }` is, on 32-bit ARM, `bl g; mov r1,#0x3000000; vmsr fpscr,r1; pop
@@ -4900,12 +4900,11 @@ nowhere either, so a write of the second return register to one of them that
 nothing reads afterwards drops it the same way. Compiled code does not leave
 such a dead write.
 
-The rule is option `retsysreg`, on by default. Bytes cannot settle it: `add
+The rule is always on. Bytes cannot settle it: `add
 r1,r1,r0; add r0,r0,r0,lsl #1; vmsr fpscr,r1; bx lr` is an `int` function that
 used `r1` as the scratch for the write, and also a 64-bit function that writes
 its own high word to `fpscr`. The first is what clang emits whenever `r0` holds
-the result, so the default reads it that way; `option retsysreg off` gives the
-pair back. Over 46 stripped decbench binaries (ARM firmware at O0, O2 and
+the result, so kuna reads it that way. Over 46 stripped decbench binaries (ARM firmware at O0, O2 and
 O2-noinline, x86-64, i386 and PE) and 204 Lua, zlib and SQLite objects built for
 ARM, Thumb, Cortex-M4, AArch64, MIPS, PowerPC, PowerPC64 and i386 (59,478
 functions) one function changes, ChibiOS's `chEvtGetAndClearEvents` (`movs
@@ -4924,7 +4923,7 @@ ICC_PMR_EL1`, `msr fpcr` and `msr daif` against `prfm`, `dc cvau`, `dc civac`,
 `synci` and `mtc2` controls. `kuna-cli/tests/sysreg_return_halves.rs`
 decompiles the ARM and Thumb issue shape whole-binary.
 
-#### (kuna) The register that was only ever pushed (`retpushedhalf`)
+#### (kuna) The register that was only ever pushed (`kuna_retpushedhalf.rs`)
 
 The placement test asks whether the terminal arrived from a *different* address
 than the half it reaches, and reads a different address as "the function executed
@@ -4944,8 +4943,8 @@ before `ActionOutputPrototype` runs, and what is left — `RDX = COPY(R8)` at th
 RETURN — is byte-for-byte what the deliberate move leaves behind. So it is
 gathered during the flow build instead, while the instructions are still being
 lifted: a register is **push-only** when some stack-adjusting instruction stores
-it to memory and no instruction in the function ever writes it. `option
-retpushedhalf` (default on, DIV-156) makes a push-only register fail the
+it to memory and no instruction in the function ever writes it. A push-only
+register (DIV-156, always on) fails the
 input-parameter terminal test, so the half is uncomputed and the pair collapses
 to the register that carries a value.
 
@@ -6603,11 +6602,11 @@ other path stay `void`. The default run prints them all as before: `void`, and
 the scrubbed build's `xmm0`. An AArch64 object built in the test covers `keep`,
 `fwd` and a `cmp w0,#7; b.eq` return there.
 
-### (kuna) `varargforward` — a declared value forwarded in its own register to a variadic call
+### (kuna) A declared value forwarded in its own register to a variadic call (`kuna_varargforward.rs`)
 
-(kuna) `varargforward` (default on,
-`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargforward.rs
-(forwards_declared_value)`) keeps a variadic argument that the caller does not
+(kuna) The forwarded-value rule
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_varargforward.rs
+(forwards_declared_value)`, always on) keeps a variadic argument that the caller does not
 move at all. `int d2(const char *f, int a) { return pr(f, a); }` with
 `pr(const char *, ...)` compiles to `xor %eax,%eax; jmp pr` on x86-64: `a`
 arrives in `esi`, the first variadic integer register, and stays there. On
@@ -6715,8 +6714,7 @@ This prevents parameter hole filling from inventing an uninitialized earlier
 argument. No register past the format's argument list is supplied; an undeclared
 live-in or call clobber is not supplied either. Computed and loaded values do not need
 a declared caller prototype on this path. A dynamic, writable or unsupported
-format leaves the exclusive-reader rule unchanged. With
-`varargforward off`, upstream's scoring applies to both paths.
+format leaves the exclusive-reader rule unchanged.
 
 The upper half of a register the caller never received is a separate case,
 issue 876. `int d4(const char *f, int a) { pr(f, a); return pr(f, a); }` keeps
@@ -6752,7 +6750,7 @@ declines floating-point registers, callers with a parameter in join storage, and
 callees without `...`. A declared `long` or pointer, or any value whose upper
 bytes are computed, keeps its full width. A `char` or `short` that clang
 forwards without extending it is not narrowed either, because bytes inside the
-int are undeclared too. With `varargforward off` the trial keeps its 8 bytes.
+int are undeclared too.
 
 What remains ambiguous is a declared parameter nothing uses that sits in a
 variadic register, with no constant format to bound the call: `int d6(const
@@ -7841,7 +7839,7 @@ beside a `uint8_t` return), and such a local now declares the narrow type. A
 caller that computes with the result at register width prints the widening
 (`(unsigned int)v1 * 3`), where it printed none before.
 
-### (kuna) `zerofillreturn` — the zero fill above a returned vector lane
+### (kuna) The zero fill above a returned vector lane (`kuna_zerofillreturn.rs`)
 
 AAPCS64 returns a `float` in `s0` and a `double` in `d0`, the low bytes of the
 16-byte vector register `q0`, and the AArch64 compiler specs (`AARCH64.cspec`,
@@ -7859,8 +7857,8 @@ fill, so in `scvtf d0,w0; ..; fmadd d0,..` the returned zero is `scvtf`'s.
 A `float` in `s0` was already narrowed by the dead-code trim of a zero-extended
 return, but its masks are 64 bits wide and cannot narrow 16 bytes to 8.
 
-`zerofillreturn` (default on;
-`decompiler/crates/kuna-decomp/src/p4_calls/kuna_zerofillreturn.rs`) works in
+The rule (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_zerofillreturn.rs`,
+always on) works in
 two steps. Right after flow, before heritage, the driver
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs`) calls `seed`,
 which marks the COPYs of zero into the upper doubleword of a floating output
@@ -7929,12 +7927,11 @@ vdup_n_u32(0))` with `ldr d0,[x0]`. In the other direction, a `d1` the function
 computes and only hands to the RETURN is joined even where the source returns a
 single `double` and leaves that value unused (an asm-forced evaluation, as in
 `k(x, y) { math_force_eval(y * y); return x * 3; }`). No other compiler spec has
-a floating output entry that a narrow write fills, so the option changes nothing
+a floating output entry that a narrow write fills, so the rule changes nothing
 elsewhere. The stage test
-`tests/stages/gh873-zerofillreturn-a64.xml` runs clang and gcc AArch64 code
-with the option off and on.
+`tests/stages/gh873-zerofillreturn-a64.xml` runs clang and gcc AArch64 code.
 
-### (kuna) `zerocallregs` — the registers a zeroing epilogue clears
+### (kuna) The registers a zeroing epilogue clears (`kuna_zerocallregs.rs`)
 
 gcc's `-fzero-call-used-regs` (openssh-portable's hardened builds use `=all`,
 the Linux kernel `=used-gpr`) ends every function by clearing the call-used
@@ -7955,8 +7952,8 @@ printed `unsigned long f(void) { return 0; }` from the cleared `rax` and lost
 its parameter to dead code, a `long` printed `undefined16` whose upper half was
 the cleared `rdx`, and a `void` function printed `return 0`.
 
-`zerocallregs` (default on;
-`decompiler/crates/kuna-decomp/src/p4_calls/kuna_zerocallregs.rs`) runs in
+The rule (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_zerocallregs.rs`,
+always on) runs in
 `ActionReturnRecovery` once the trials are fully checked, first among the
 passes that retire trials before the output fill-in, while the p-code is still
 heritage's lift. For each live RETURN whose return instruction makes no call,
@@ -7998,8 +7995,7 @@ reads the same as the run's own first clear, so such a function returns `void`
 unless a caller reads its result. Under `=all` the x87 block separates the two,
 and a `void` function's `rax` is cleared after it. The stage test
 `tests/stages/gh847-zerocallregs.xml` decompiles gcc 11 `-O2
--fzero-call-used-regs=all` code, two of its functions cleared `=all-gpr`, with
-the option off and on.
+-fzero-call-used-regs=all` code, two of its functions cleared `=all-gpr`.
 
 ### ARM scalar VFP contracts
 
@@ -8437,7 +8433,7 @@ whole after a call that returns a `double` in `d0`, is the caller keeping the
 register. Each of these filed a function whose redo printed the same float
 again. On AArch64 glibc libm, 19 such redos, one of them the 1-second
 `__kernel_standard`, made `decompile-all` 10 to 17% slower once doubles stopped
-returning `q0` (`zerofillreturn`).
+returning `q0` (`kuna_zerofillreturn.rs`).
 
 The function is then
 decompiled once more without the float-register vote on its return

@@ -44,7 +44,7 @@ fn function<'a>(text: &'a str, name: &str) -> &'a str {
         .1
 }
 
-fn decompile(binary: &std::path::Path, enabled: bool) -> String {
+fn decompile(binary: &std::path::Path) -> String {
     let mut cmd = Command::new(
         std::env::var_os("KUNA_TEST_BIN").unwrap_or_else(|| env!("CARGO_BIN_EXE_kuna").into()),
     );
@@ -58,9 +58,6 @@ fn decompile(binary: &std::path::Path, enabled: bool) -> String {
         "on",
         "--functions",
         &NAMES.join(","),
-        "--option",
-        "varargforward",
-        if enabled { "on" } else { "off" },
         "--assert",
         "prototype render_value unsigned long long MSABI render_value(const char *format,...)",
     ]);
@@ -119,11 +116,11 @@ fn decompile(binary: &std::path::Path, enabled: bool) -> String {
     String::from_utf8(output.stdout).unwrap()
 }
 
-fn decompile_imported(binary: &std::path::Path, enabled: bool) -> String {
-    decompile_imported_kind(binary, enabled, false)
+fn decompile_imported(binary: &std::path::Path) -> String {
+    decompile_imported_kind(binary, false)
 }
 
-fn decompile_imported_kind(binary: &std::path::Path, enabled: bool, floating: bool) -> String {
+fn decompile_imported_kind(binary: &std::path::Path, floating: bool) -> String {
     let (name, end, params, format_width) = if floating {
         (
             "caller_imported_float",
@@ -149,9 +146,6 @@ fn decompile_imported_kind(binary: &std::path::Path, enabled: bool, floating: bo
         "--option",
         "realtypes",
         "on",
-        "--option",
-        "varargforward",
-        if enabled { "on" } else { "off" },
         "--assert",
         &format!("function 0x140001000-{end}={name}"),
         "--assert",
@@ -184,8 +178,8 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
     let object = common::scratch_file("variadic-secondary-selected", "o");
     let compiled = Command::new("gcc")
         // Pin the baseline ISA: GCC 15 (Ubuntu 26.04) defaults to a higher
-        // -march and vectorizes the clamp with AVX pminsd/pmaxsd, which leaks
-        // the stored argument into the varargforward-off reading. Baseline
+        // -march and vectorizes the clamp with AVX pminsd/pmaxsd, which changes
+        // the clamp's shape. Baseline
         // x86-64 keeps the clamp scalar, as on the GCC the fixture was authored.
         .args(["-O2", "-fno-optimize-sibling-calls", "-march=x86-64", "-c"])
         .arg(fixture.join("selected.c"))
@@ -213,19 +207,7 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(Command::new(&binary).status().unwrap().success());
-    let off = decompile(&binary, false);
-    let on = decompile(&binary, true);
-    for name in [
-        "caller_stored_integer",
-        "caller_clamped_integer",
-        "caller_clamped_call",
-        "caller_stored_comparison",
-    ] {
-        assert!(
-            function(&off, name).contains("render_value(\"%i\")"),
-            "{name}:\n{off}"
-        );
-    }
+    let on = decompile(&binary);
     for name in [
         "caller_integer",
         "caller_stored_integer",
@@ -245,33 +227,6 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
         function(&on, "caller_stored_two").contains("render_two(\"%i %i\","),
         "{on}"
     );
-    for name in ["caller_integer", "caller_computed_integer"] {
-        assert_eq!(function(&on, name), function(&off, name), "{name}");
-    }
-    for name in [
-        "caller_stored_unused",
-        "caller_stored_malformed",
-        "caller_stored_float_format",
-        "caller_stored_writable",
-        "caller_stored_dynamic",
-        "caller_undeclared_stored",
-        "caller_clobbered",
-        "caller_narrow_stored",
-        "caller_scanf_control",
-        "caller_partial_unknown",
-        "caller_moved_narrow",
-        "caller_gap",
-        "caller_gap_clobbered",
-        "caller_unknown_comparison",
-        "caller_unknown_phi",
-        "caller_unknown_upper_shift",
-    ] {
-        assert_eq!(
-            function(&on, name),
-            function(&off, name),
-            "{name}:\n{on}\n{off}"
-        );
-    }
     let extra = function(&on, "caller_stored_extra");
     let args = extra
         .split("render_value(")
@@ -293,12 +248,7 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
         "{}",
         String::from_utf8_lossy(&generated.stderr)
     );
-    let imported_off = decompile_imported(&imported, false);
-    let imported_on = decompile_imported(&imported, true);
-    assert!(
-        imported_off.contains("render_value(\"%i\")"),
-        "{imported_off}"
-    );
+    let imported_on = decompile_imported(&imported);
     assert!(
         imported_on.contains("render_value(\"%i\","),
         "{imported_on}"
@@ -307,33 +257,26 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
     let mut writable = image.clone();
     writable[0x1b0 + 36..0x1b0 + 40].copy_from_slice(&0xc0000040u32.to_le_bytes());
     std::fs::write(&imported, writable).unwrap();
-    assert_eq!(
-        decompile_imported(&imported, false),
-        decompile_imported(&imported, true)
-    );
+    let writable = decompile_imported(&imported);
+    assert!(!writable.contains("render_value(\"%i\","), "{writable}");
     let mut unsupported = image.clone();
     unsupported[0x4a1] = b'f';
     std::fs::write(&imported, unsupported).unwrap();
-    assert_eq!(
-        decompile_imported(&imported, false),
-        decompile_imported(&imported, true)
-    );
+    let unsupported = decompile_imported(&imported);
+    assert!(!unsupported.contains("render_value(\"%i\","), "{unsupported}");
     let mut unknown = image.clone();
     unknown[0x200 + 4..0x200 + 9].fill(0x90);
     std::fs::write(&imported, unknown).unwrap();
-    assert_eq!(
-        decompile_imported(&imported, false),
-        decompile_imported(&imported, true)
-    );
+    let unknown = decompile_imported(&imported);
+    assert!(!unknown.contains("render_value(\"%i\","), "{unknown}");
     let mut healthy = image;
     healthy[0x200 + 9..0x200 + 11].copy_from_slice(&[0x90, 0x90]);
     std::fs::write(&imported, healthy).unwrap();
-    let healthy_off = decompile_imported(&imported, false);
+    let healthy = decompile_imported(&imported);
     assert!(
-        healthy_off.contains("render_value(\"%i\","),
-        "{healthy_off}"
+        healthy.contains("render_value(\"%i\","),
+        "{healthy}"
     );
-    assert_eq!(healthy_off, decompile_imported(&imported, true));
     let generated = Command::new("python3")
         .arg(fixture.join("imported.py"))
         .arg(&imported)
@@ -345,13 +288,11 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
         "{}",
         String::from_utf8_lossy(&generated.stderr)
     );
-    let floating_off = decompile_imported_kind(&imported, false, true);
-    let floating_on = decompile_imported_kind(&imported, true, true);
+    let floating = decompile_imported_kind(&imported, true);
     assert!(
-        floating_off.contains("render_value(\"%.02f\",(float8)value)"),
-        "{floating_off}"
+        floating.contains("render_value(\"%.02f\",(float8)value)"),
+        "{floating}"
     );
-    assert_eq!(floating_off, floating_on);
 
     let mut printed: String = [
         "caller_integer",

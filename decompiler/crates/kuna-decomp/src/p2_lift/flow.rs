@@ -1927,13 +1927,11 @@ truncating the fall-through here"
             // (kuna retpushedhalf) The push/pop stack-maintenance shape is only
             // visible here: copy propagation later collapses the store and the
             // load into a bare register-to-register COPY.
-            if self.data.get_arch().ret_pushed_half {
-                let mut insn_ops = vec![firstop];
-                while let Some(next) = self.dead_next(*insn_ops.last().expect("non-empty")) {
-                    insn_ops.push(next);
-                }
-                crate::kuna_retpushedhalf::observe_instruction(&mut self.data, &insn_ops);
+            let mut insn_ops = vec![firstop];
+            while let Some(next) = self.dead_next(*insn_ops.last().expect("non-empty")) {
+                insn_ops.push(next);
             }
+            crate::kuna_retpushedhalf::observe_instruction(&mut self.data, &insn_ops);
             let seq = self.data.obank().get(firstop).expect("process: stale firstop").get_seq_num().clone();
             if let Some(stat) = self.visited.get_mut(curaddr) {
                 stat.seqnum = seq;

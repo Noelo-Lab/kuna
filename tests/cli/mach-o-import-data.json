@@ -5,10 +5,7 @@
     "{{KUNA}}",
     "decompile",
     "{{BIN}}",
-    "printf",
-    "--option",
-    "varargstackargs",
-    "on"
+    "printf"
   ],
   "cwd": "{{WORK}}",
   "env": {
