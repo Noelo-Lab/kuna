@@ -359,18 +359,20 @@ impl KunaFix {
         KunaFix::ALL.iter().copied().find(|f| f.id() == id)
     }
 
-    const fn bit(self) -> u64 {
+    const fn bit(self) -> u128 {
         1 << (self as u32)
     }
 }
 
 /// A set of active fixes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct KunaFixes(u64);
+pub struct KunaFixes(u128);
+
+const _: () = assert!(KunaFix::ALL.len() <= u128::BITS as usize);
 
 impl KunaFixes {
     /// Every fix active: the engine's default.
-    pub const DEFAULT: KunaFixes = KunaFixes(u64::MAX);
+    pub const DEFAULT: KunaFixes = KunaFixes(u128::MAX);
     /// No fix active: Vineflower's behaviour.
     pub const COMPAT: KunaFixes = KunaFixes(0);
 
