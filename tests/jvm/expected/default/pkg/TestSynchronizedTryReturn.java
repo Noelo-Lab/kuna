@@ -1,0 +1,61 @@
+package pkg;
+
+public class TestSynchronizedTryReturn {
+   public int test(String s) {
+      synchronized (this) {// 5
+         int var10000;
+         try {
+            var10000 = Integer.parseInt(s);// 7
+         } catch (Exception e) {// 8
+            throw new RuntimeException(e);// 9
+         }
+
+         return var10000;
+      }
+   }
+
+   public int test1(String s) {
+      try {
+         return Integer.parseInt(s);// 16
+      } catch (Exception e) {// 17
+         throw new RuntimeException(e);// 18
+      }
+   }
+}
+
+class 'pkg/TestSynchronizedTryReturn' {
+   method 'test (Ljava/lang/String;)I' {
+      0      4
+      3      4
+      4      7
+      5      7
+      6      7
+      7      7
+      a      12
+      b      8
+      10      9
+      14      9
+   }
+
+   method 'test1 (Ljava/lang/String;)I' {
+      0      18
+      1      18
+      2      18
+      3      18
+      4      18
+      5      19
+      a      20
+      e      20
+   }
+}
+
+Lines mapping:
+5 <-> 5
+7 <-> 8
+8 <-> 9
+9 <-> 10
+16 <-> 19
+17 <-> 20
+18 <-> 21
+Not mapped:
+11

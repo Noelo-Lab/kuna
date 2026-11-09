@@ -1,0 +1,422 @@
+package pkg;
+
+public class TestSwitchPatternMatching21 {
+   public void test1(String it) {
+      switch (it) {// 5
+         case "":
+            System.out.println("nothing");// 6
+            break;
+         case "hi":
+            System.out.println("hello");// 7
+            break;
+         case String s when Math.random() > 0.0:// 8
+            System.out.println(s + "!");// 9
+            break;
+         case String s when Math.random() > 0.0:// 10
+            System.out.println(s + "!!");// 11
+            break;
+         case String s when s.startsWith("?"):// 12
+            System.out.println(s + "?");// 13
+            break;
+         default:
+            System.out.println("Default");// 14
+      }
+   }// 16
+
+   public void test2(String it) {
+      switch (it) {// 19
+         case "":
+            System.out.println("nothing");// 20
+            break;
+         case "hi":
+            System.out.println("hello");// 21
+            break;
+         case String s when Math.random() > 0.0:// 22
+            System.out.println(s + "!");// 23
+            break;
+         case String s when Math.random() > 0.0:// 24
+            System.out.println(s + "!!");// 25
+            break;
+         case String s:// 26
+            System.out.println(s + "?");// 27
+      }
+   }// 29
+
+   public void test3(String it) {
+      switch (it) {// 32
+         case "":
+         case null:
+            System.out.println("nothing");// 33
+            break;
+         case "hi":
+            System.out.println("hello");// 34
+            break;
+         case String s when Math.random() > 0.0:// 35
+            System.out.println(s + "!");// 36
+            break;
+         default:
+            System.out.println("Default");// 37
+      }
+   }// 39
+}
+
+class 'pkg/TestSwitchPatternMatching21' {
+   method 'test1 (Ljava/lang/String;)V' {
+      0      4
+      10      4
+      11      4
+      12      4
+      13      4
+      14      4
+      15      4
+      16      4
+      17      4
+      18      4
+      19      4
+      1a      4
+      1b      4
+      1c      4
+      1d      4
+      1e      4
+      1f      4
+      20      4
+      21      4
+      22      4
+      23      4
+      24      4
+      25      4
+      26      4
+      27      4
+      28      4
+      29      4
+      2a      4
+      2b      4
+      2c      4
+      2d      4
+      2e      4
+      2f      4
+      30      4
+      31      4
+      32      4
+      33      4
+      34      6
+      35      6
+      36      6
+      37      6
+      38      6
+      39      6
+      3a      6
+      3b      6
+      3c      7
+      3f      9
+      40      9
+      41      9
+      42      9
+      43      9
+      44      9
+      45      9
+      46      9
+      47      10
+      4b      11
+      4c      11
+      4d      11
+      4e      11
+      4f      11
+      50      11
+      51      11
+      5a      12
+      5b      12
+      5c      12
+      5d      12
+      5e      12
+      5f      12
+      60      12
+      61      12
+      62      12
+      63      12
+      64      12
+      65      12
+      66      12
+      67      13
+      6b      14
+      6c      14
+      6d      14
+      6e      14
+      6f      14
+      70      14
+      71      14
+      7a      15
+      7b      15
+      7c      15
+      7d      15
+      7e      15
+      7f      15
+      80      15
+      81      15
+      82      15
+      83      15
+      84      15
+      85      15
+      86      15
+      87      16
+      8b      17
+      8c      17
+      8d      17
+      8e      17
+      8f      17
+      90      17
+      91      17
+      92      17
+      93      17
+      9c      18
+      9d      18
+      9e      18
+      9f      18
+      a0      18
+      a1      18
+      a2      18
+      a3      18
+      a4      18
+      a5      18
+      a6      18
+      a7      18
+      a8      18
+      a9      19
+      ac      21
+      ad      21
+      ae      21
+      af      21
+      b0      21
+      b1      21
+      b2      21
+      b3      21
+      b7      23
+   }
+
+   method 'test2 (Ljava/lang/String;)V' {
+      0      26
+      b      26
+      c      26
+      d      26
+      e      26
+      f      26
+      10      26
+      11      26
+      12      26
+      13      26
+      14      26
+      15      26
+      16      26
+      17      26
+      18      26
+      19      26
+      1a      26
+      1b      26
+      1c      26
+      1d      26
+      1e      26
+      1f      26
+      20      26
+      21      26
+      22      26
+      23      26
+      24      26
+      25      26
+      26      26
+      27      26
+      28      26
+      29      26
+      2a      26
+      2b      26
+      2c      28
+      2d      28
+      2e      28
+      2f      28
+      30      28
+      31      28
+      32      28
+      33      28
+      34      29
+      37      31
+      38      31
+      39      31
+      3a      31
+      3b      31
+      3c      31
+      3d      31
+      3e      31
+      3f      32
+      43      33
+      44      33
+      45      33
+      46      33
+      47      33
+      48      33
+      49      33
+      52      34
+      53      34
+      54      34
+      55      34
+      56      34
+      57      34
+      58      34
+      59      34
+      5a      34
+      5b      34
+      5c      34
+      5d      34
+      5e      34
+      5f      35
+      63      36
+      64      36
+      65      36
+      66      36
+      67      36
+      68      36
+      69      36
+      6a      36
+      6b      36
+      6c      36
+      72      37
+      73      37
+      74      37
+      75      37
+      76      37
+      77      37
+      78      37
+      79      37
+      7a      37
+      7b      37
+      7c      37
+      7d      37
+      7e      37
+      7f      38
+      83      39
+      84      39
+      85      40
+      86      40
+      87      40
+      88      40
+      89      40
+      8a      40
+      8b      40
+      8c      40
+      8d      40
+      8e      40
+      8f      40
+      90      40
+      91      40
+      95      42
+   }
+
+   method 'test3 (Ljava/lang/String;)V' {
+      0      45
+      b      45
+      c      45
+      d      45
+      e      45
+      f      45
+      10      45
+      11      45
+      12      45
+      13      45
+      14      45
+      15      45
+      16      45
+      17      45
+      18      45
+      19      45
+      1a      45
+      1b      45
+      1c      45
+      1d      45
+      1e      45
+      1f      45
+      20      45
+      21      45
+      22      45
+      23      45
+      24      45
+      25      45
+      26      45
+      27      45
+      28      48
+      29      48
+      2a      48
+      2b      48
+      2c      48
+      2d      48
+      2e      48
+      2f      48
+      30      49
+      33      51
+      34      51
+      35      51
+      36      51
+      37      51
+      38      51
+      39      51
+      3a      51
+      3b      52
+      3f      53
+      40      53
+      41      53
+      42      53
+      43      53
+      44      53
+      45      53
+      4e      54
+      4f      54
+      50      54
+      51      54
+      52      54
+      53      54
+      54      54
+      55      54
+      56      54
+      57      54
+      58      54
+      59      54
+      5a      54
+      5b      55
+      5e      57
+      5f      57
+      60      57
+      61      57
+      62      57
+      63      57
+      64      57
+      65      57
+      69      59
+   }
+}
+
+Lines mapping:
+5 <-> 5
+6 <-> 7
+7 <-> 10
+8 <-> 12
+9 <-> 13
+10 <-> 15
+11 <-> 16
+12 <-> 18
+13 <-> 19
+14 <-> 22
+16 <-> 24
+19 <-> 27
+20 <-> 29
+21 <-> 32
+22 <-> 34
+23 <-> 35
+24 <-> 37
+25 <-> 38
+26 <-> 40
+27 <-> 41
+29 <-> 43
+32 <-> 46
+33 <-> 49
+34 <-> 52
+35 <-> 54
+36 <-> 55
+37 <-> 58
+39 <-> 60

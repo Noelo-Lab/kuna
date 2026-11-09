@@ -1,0 +1,140 @@
+package pkg;
+
+public class TestFinallyThrow {
+   public void test(boolean b) {
+      while (true) {
+         try {
+            System.out.println(1);// 7
+         } finally {
+            label97: {
+               try {
+                  if (!b) {// 10
+                     break label97;
+                  }
+               } catch (Exception e) {// 13
+                  throw e;// 14
+               } finally {
+                  System.out.println(2);// 16
+               }
+
+               return;// 11
+            }
+         }
+      }
+   }
+
+   public void test1(RuntimeException t) {
+      try {
+         System.out.println(1);// 24
+         throw t;
+      } catch (Throwable e) {// 25
+         e.printStackTrace();// 26
+      } finally {
+         ;
+      }
+
+      throw t;// 28
+   }
+
+   public void test2(RuntimeException t) {
+      try {
+         System.out.println(1);// 35
+         throw t;// 36
+      } catch (Throwable e) {// 37
+         e.printStackTrace();// 38
+      } finally {
+         ;
+      }
+
+      throw t;// 43
+   }
+}
+
+class 'pkg/TestFinallyThrow' {
+   method 'test (Z)V' {
+      0      6
+      1      6
+      2      6
+      3      6
+      4      6
+      5      6
+      6      6
+      2f      10
+      30      10
+      31      10
+      32      10
+      3a      19
+      45      13
+      47      14
+      48      14
+      49      14
+      4c      16
+      4d      16
+      4e      16
+      4f      16
+      50      16
+      51      16
+      52      16
+   }
+
+   method 'test1 (Ljava/lang/RuntimeException;)V' {
+      0      27
+      1      27
+      2      27
+      3      27
+      4      27
+      5      27
+      6      27
+      7      28
+      8      28
+      9      29
+      a      30
+      b      30
+      c      30
+      d      30
+      e      35
+      f      35
+   }
+
+   method 'test2 (Ljava/lang/RuntimeException;)V' {
+      0      40
+      1      40
+      2      40
+      3      40
+      4      40
+      5      40
+      6      40
+      7      41
+      8      41
+      9      42
+      a      43
+      b      43
+      c      43
+      d      43
+      14      48
+      15      48
+   }
+}
+
+Lines mapping:
+7 <-> 7
+10 <-> 11
+11 <-> 20
+13 <-> 14
+14 <-> 15
+16 <-> 17
+24 <-> 28
+25 <-> 30
+26 <-> 31
+28 <-> 36
+35 <-> 41
+36 <-> 42
+37 <-> 43
+38 <-> 44
+43 <-> 49
+Not mapped:
+9
+17
+18
+39
+41

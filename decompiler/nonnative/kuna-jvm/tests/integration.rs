@@ -118,3 +118,5 @@ mod b18_class_writer;
 mod b19_classes;
 #[path = "b20_nested.rs"]
 mod b20_nested;
+#[path = "kuna_corpus.rs"]
+mod kuna_corpus;

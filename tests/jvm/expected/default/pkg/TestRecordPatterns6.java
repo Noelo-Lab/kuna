@@ -1,0 +1,136 @@
+package pkg;
+
+public class TestRecordPatterns6 {
+   public Object test1(TestRecordPatterns6.I in) {
+      return switch (in) {// 11
+         case TestRecordPatterns6.I.R1(Object o) -> o;// 12
+         case TestRecordPatterns6.I.R2(int i) -> i;// 13
+         case TestRecordPatterns6.I.R3(String s) -> s;// 14
+         default -> throw new MatchException(null, null);
+      };
+   }
+
+   public String test2(TestRecordPatterns6.I in) {
+      return (String)(switch (in) {// 19
+         case TestRecordPatterns6.I.R1(String s) -> s;// 20
+         case TestRecordPatterns6.I.R3(String s) -> s;// 21
+         default -> throw new IllegalStateException();// 22
+      });
+   }
+
+   sealed interface I permits TestRecordPatterns6.I.R1, TestRecordPatterns6.I.R2, TestRecordPatterns6.I.R3 {
+      record R1(Object o) implements TestRecordPatterns6.I {
+      }
+
+      record R2(int i) implements TestRecordPatterns6.I {
+      }
+
+      record R3(String s) implements TestRecordPatterns6.I {
+      }
+   }
+}
+
+class 'pkg/TestRecordPatterns6' {
+   method 'test1 (Lpkg/TestRecordPatterns6$I;)Ljava/lang/Object;' {
+      0      4
+      10      4
+      11      4
+      12      4
+      13      4
+      14      4
+      15      4
+      16      4
+      17      4
+      18      4
+      19      4
+      1a      4
+      1b      4
+      1c      4
+      1d      4
+      1e      4
+      1f      4
+      20      4
+      21      4
+      22      4
+      23      4
+      24      4
+      25      4
+      26      4
+      27      4
+      28      4
+      29      4
+      2a      4
+      2b      4
+      30      8
+      31      8
+      35      8
+      45      5
+      46      5
+      47      5
+      48      5
+      5b      6
+      5c      6
+      5d      6
+      5e      6
+      5f      6
+      60      6
+      61      6
+      74      7
+      75      7
+      76      7
+      77      7
+      78      4
+   }
+
+   method 'test2 (Lpkg/TestRecordPatterns6$I;)Ljava/lang/String;' {
+      0      13
+      10      13
+      11      13
+      12      13
+      13      13
+      14      13
+      15      13
+      16      13
+      17      13
+      18      13
+      19      13
+      1a      13
+      1b      13
+      1c      13
+      1d      13
+      1e      13
+      1f      13
+      20      13
+      21      13
+      22      13
+      23      13
+      24      13
+      25      13
+      26      13
+      27      13
+      28      13
+      29      13
+      2a      13
+      2b      13
+      46      14
+      47      14
+      48      14
+      49      14
+      64      15
+      65      15
+      66      15
+      67      15
+      72      16
+      73      13
+   }
+}
+
+Lines mapping:
+11 <-> 5
+12 <-> 6
+13 <-> 7
+14 <-> 8
+19 <-> 14
+20 <-> 15
+21 <-> 16
+22 <-> 17
