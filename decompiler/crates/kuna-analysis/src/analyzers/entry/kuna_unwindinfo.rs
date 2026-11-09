@@ -2,10 +2,11 @@
 //!
 //! The linker folds each object file's `__compact_unwind` entries into one
 //! `__TEXT,__unwind_info` section: a two-level lookup whose leaf (second-level)
-//! pages list, in ascending order, the start offset of every function the
-//! unwinder can describe. Those offsets are function starts by construction —
-//! one per `.cfi_startproc` the compiler emitted — and the section lives in the
-//! mapped `__TEXT` segment, so it survives the `strip` that removes
+//! pages list, in ascending order, the start offset of each entry the unwinder
+//! looks up. Those offsets are function starts by construction, though not one
+//! per function: a run of adjacent functions sharing one compact encoding is
+//! folded into the entry of its first. The section lives in the mapped
+//! `__TEXT` segment, so it survives the `strip` that removes
 //! `LC_FUNCTION_STARTS` from `__LINKEDIT`.
 //!
 //! On an image that still carries `LC_FUNCTION_STARTS` this oracle adds nothing:
