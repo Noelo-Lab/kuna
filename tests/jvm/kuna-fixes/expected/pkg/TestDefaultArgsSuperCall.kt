@@ -15,8 +15,7 @@ public open class TestDefaultArgsSuperCall(a: Int, b: String = "b", c: Long = 3L
       return object {
          public final val sub: pkg.TestDefaultArgsSuperCall.twoDefaults.1.Sub = Sub()
 
-         // $VF: local visibility outside of methodSupplier
-internal inner class Sub : TestDefaultArgsSuperCall(x)
+         /* $VF: local visibility outside of method */ internal inner class Sub : TestDefaultArgsSuperCall(x)
       }
    }
 
@@ -24,8 +23,7 @@ internal inner class Sub : TestDefaultArgsSuperCall(x)
       return object {
          public final val sub: pkg.TestDefaultArgsSuperCall.oneDefault.1.Sub = Sub()
 
-         // $VF: local visibility outside of methodSupplier
-internal inner class Sub : TestDefaultArgsSuperCall(x, y)
+         /* $VF: local visibility outside of method */ internal inner class Sub : TestDefaultArgsSuperCall(x, y)
       }
    }
 
@@ -33,19 +31,16 @@ internal inner class Sub : TestDefaultArgsSuperCall(x, y)
       return object {
          public final val sub: pkg.TestDefaultArgsSuperCall.noDefault.1.Sub = Sub()
 
-         // $VF: local visibility outside of methodSupplier
-internal inner class Sub : TestDefaultArgsSuperCall(x, "x", 1L)
+         /* $VF: local visibility outside of method */ internal inner class Sub : TestDefaultArgsSuperCall(x, "x", 1L)
       }
    }
 
    public fun otherConstructor(x: Int): Any {
-      // $VF: Couldn't be decompiled
-      // Bytecode:
-      // 0: new pkg/TestDefaultArgsSuperCall$otherConstructor$1
-      // 3: dup
-      // 4: iload 1
-      // 5: invokespecial pkg/TestDefaultArgsSuperCall$otherConstructor$1.<init> (I)V
-      // 8: areturn
+      return object {
+         public final val sub: pkg.TestDefaultArgsSuperCall.otherConstructor.1.Sub = Sub()
+
+         /* $VF: local visibility outside of method */ internal inner class Sub : TestDefaultArgsSuperCall.Overloaded(a = x)
+      }
    }
 
    public open class Overloaded(a: Int, b: String = "b") {

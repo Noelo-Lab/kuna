@@ -124,7 +124,7 @@
       ],
       "source": "src/pkg/TestDefaultArgsSuperCall.kt",
       "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
-      "summary": "`twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call",
+      "summary": "`twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` decompiles with `Overloaded(a = x)`, named because `Overloaded(x)` would call the one-argument secondary constructor",
       "language": "kotlin"
     },
     {
@@ -293,6 +293,88 @@
       "source": "src/pkg/TestTypeSwitchPatternType.java",
       "compiler": "javac 21.0.12.1 (no -g)",
       "summary": "case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type"
+    },
+    {
+      "id": "pkg/TestVarargFromMetadata",
+      "fix": "kt_vararg_from_metadata",
+      "class_files": [
+        "pkg/TestVarargFromMetadata.class"
+      ],
+      "source": "src/pkg/TestVarargFromMetadata.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "the primary constructor's `Array<String>` parameter is no longer written `vararg names: Any`, and the `vararg` primitive parameters of a constructor and a function keep `vararg` with their element type (`vararg rest: Int`, not `rest: IntArray`)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDefaultArgAssignedParam",
+      "fix": "kt_default_arg_assigned_param",
+      "class_files": [
+        "pkg/TestDefaultArgAssignedParam.class"
+      ],
+      "source": "src/pkg/TestDefaultArgAssignedParam.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "`chain` and `twice`, whose defaults are computed through locals, print the unknown default `= ...` instead of the first local's initializer `this.measure(s)`; `plain` keeps `b: Int = this.measure(a) + 1`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestConstructorDiamond",
+      "fix": "kt_constructor_diamond",
+      "class_files": [
+        "pkg/TestConstructorDiamond.class",
+        "pkg/TestConstructorDiamond$Bag.class",
+        "pkg/TestConstructorDiamond$Pair.class"
+      ],
+      "source": "src/pkg/TestConstructorDiamond.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "the constructor calls whose type arguments Kotlin infers (`return Bag(0)`, `Pair(a, b)`) are written without the Java diamond `<>`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestLocalVisibilityComment",
+      "fix": "kt_local_visibility_comment",
+      "class_files": [
+        "pkg/TestLocalVisibilityComment.class",
+        "pkg/TestLocalVisibilityComment$make$1$Sub.class",
+        "pkg/TestLocalVisibilityComment$make$1.class"
+      ],
+      "source": "src/pkg/TestLocalVisibilityComment.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDefaultArgsCtorDescriptor",
+      "fix": "kt_default_args_ctor_descriptor",
+      "class_files": [
+        "pkg/TestDefaultArgsCtorDescriptor.class",
+        "pkg/TestDefaultArgsCtorDescriptor$Nested.class",
+        "pkg/TestDefaultArgsCtorDescriptor$Sink.class"
+      ],
+      "source": "src/pkg/TestDefaultArgsCtorDescriptor.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "the inner class `Sink` declares its defaults (`finished: Boolean = false, limit: Long = 16L`) instead of the unknown `= ...`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDefaultArgsSuperNamed",
+      "fix": "kt_default_args_super_call",
+      "class_files": [
+        "pkg/TestDefaultArgsSuperNamed.class",
+        "pkg/TestDefaultArgsSuperNamed$Inner.class",
+        "pkg/TestDefaultArgsSuperNamed$Overloaded.class",
+        "pkg/TestDefaultArgsSuperNamed$innerSuper$1$Sub.class",
+        "pkg/TestDefaultArgsSuperNamed$innerSuper$1.class",
+        "pkg/TestDefaultArgsSuperNamed$picksPrimary$1$Sub.class",
+        "pkg/TestDefaultArgsSuperNamed$picksPrimary$1.class",
+        "pkg/TestDefaultArgsSuperNamed$picksSecondary$1$Sub.class",
+        "pkg/TestDefaultArgsSuperNamed$picksSecondary$1.class",
+        "pkg/TestDefaultArgsSuperNamed$skipsMiddle$1$Sub.class",
+        "pkg/TestDefaultArgsSuperNamed$skipsMiddle$1.class"
+      ],
+      "source": "src/pkg/TestDefaultArgsSuperNamed.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "`skipsMiddle` (`TestDefaultArgsSuperNamed(a = x, c = 9L)`), `innerSuper` (an inner superclass, `Inner(z)`) and `picksPrimary` (`Overloaded(a = x)`, named because `Overloaded(x)` would select the secondary constructor) decompile; `picksSecondary` keeps `Overloaded(x)`",
+      "language": "kotlin"
     }
   ]
 }

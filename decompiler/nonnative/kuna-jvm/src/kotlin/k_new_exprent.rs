@@ -4,6 +4,11 @@
 //! anonymous class is written with its `new`'s constructor at hand, so the
 //! fix can tell whether the object's captured names mean what this `new`
 //! passes.
+//!
+//! kuna fix `kt_constructor_diamond`: a constructor call whose type arguments
+//! are left to inference (Java's diamond, a single `GenericType::DUMMY_VAR`)
+//! is written without type arguments, which is how Kotlin leaves them to
+//! inference; Vineflower writes `<>`, which is not Kotlin.
 
 use crate::class_writer::ClassWriter;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -11,6 +16,7 @@ use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::Type as ExitType;
 use crate::exprent::{Exprent, ExprentType};
+use crate::generic_type::GenericType;
 use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
@@ -344,9 +350,12 @@ impl KNewExprent {
 
             if let Some(constructor) = constructor {
                 if !self.is_enum_const() || constructor.get_lst_parameters().len() > 2 {
-                    self.0
-                         .0
-                        .append_parameters(&mut buf, &constructor.get_generic_args());
+                    let generic_args = constructor.get_generic_args();
+                    if !(kuna_fixes::enabled(KunaFix::KtConstructorDiamond)
+                        && is_diamond(&generic_args))
+                    {
+                        self.0 .0.append_parameters(&mut buf, &generic_args);
+                    }
                     buf.append("(")
                         .append_buffer(&constructor.append_param_list(indent))
                         .append_char(')');
@@ -454,4 +463,10 @@ impl KNewExprent {
     pub fn set_in_annotation(self, in_annotation: bool) {
         self.kd_mut(|d| d.in_annotation = in_annotation)
     }
+}
+
+/// Java's diamond: the one placeholder argument `InvocationExprent` records
+/// when the arguments are left to inference.
+fn is_diamond(generic_args: &[VarType]) -> bool {
+    matches!(generic_args, [arg] if GenericType::DUMMY_VAR().equals(arg))
 }

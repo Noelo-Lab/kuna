@@ -638,6 +638,7 @@ impl Marker {
                     boxing: _,
                     is_synthetic_null_check: _,
                     was_lazy_condy: _,
+                    kuna_arg_names: _,
                 } = &**invocation;
                 self.exprent_opt(*instance);
                 self.exprent_list(lst_parameters);

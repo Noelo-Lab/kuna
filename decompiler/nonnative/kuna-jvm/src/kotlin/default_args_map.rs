@@ -5,6 +5,10 @@
 //! computed by several statements) recovers no default, as any other branch
 //! that is not a simple assignment; Vineflower reads the branch's expression
 //! list, which only a basic block has, and fails the class.
+//!
+//! kuna fix `kt_default_arg_assigned_param`: in `from`, the default is what
+//! the branch assigns to the parameter (`kuna_fix_kt_default_arg_assigned_param`),
+//! where Vineflower takes the branch's first assignment, whatever it assigns.
 
 use std::rc::Rc;
 
@@ -17,10 +21,11 @@ use crate::k_constructor::KConstructor;
 use crate::k_element::KElement;
 use crate::k_parameter::KParameter;
 use crate::k_utils::KUtils;
+use crate::kotlin::kuna_fix_kt_default_arg_assigned_param;
 use crate::kotlin_options::KotlinOptions;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::method_wrapper::MethodWrapper;
 use crate::rt::JHashMap;
 use crate::struct_ann_default_attribute::StructAnnDefaultAttribute;
@@ -112,9 +117,9 @@ impl DefaultArgsMap {
                 }
             }
 
-            let expr = if kuna_fixes::enabled(KunaFix::KtDefaultArgCompoundBranch) {
+            let exprents = if kuna_fixes::enabled(KunaFix::KtDefaultArgCompoundBranch) {
                 match if_statement.get_ifstat().and_then(|s| s.get_exprents()) {
-                    Some(exprents) if !exprents.is_empty() => exprents.get(0),
+                    Some(exprents) if !exprents.is_empty() => exprents,
                     _ => continue,
                 }
             } else {
@@ -123,10 +128,19 @@ impl DefaultArgsMap {
                     .expect("NullPointerException: ifstat")
                     .get_exprents()
                     .expect("NullPointerException: exprents")
-                    .get(0)
             };
-            if let Some(assignment) = expr.try_as_assignment() {
-                let right = assignment.get_right().copy();
+            let expr = exprents.get(0);
+            let default = if kuna_fixes::enabled(KunaFix::KtDefaultArgAssignedParam) {
+                kuna_fix_kt_default_arg_assigned_param::default_value(
+                    &exprents.to_vec(),
+                    start_of_bitmasks,
+                )
+            } else {
+                expr.try_as_assignment()
+                    .map(|assignment| assignment.get_right())
+            };
+            if let Some(default) = default {
+                let right = default.copy();
                 DefaultArgsMap::update_exprent(right, calling);
                 if mask_index < 0 || mask_index as usize >= params.len() {
                     jthrow!(ArrayIndexOutOfBoundsException; "Index {} out of bounds for length {}", mask_index, params.len());

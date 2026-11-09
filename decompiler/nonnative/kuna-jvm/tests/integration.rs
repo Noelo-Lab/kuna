@@ -136,6 +136,8 @@ mod kuna_options;
 mod kuna_fixes;
 #[path = "kuna_fix_kt_writer.rs"]
 mod kuna_fix_kt_writer;
+#[path = "kuna_fix_kt_ctors.rs"]
+mod kuna_fix_kt_ctors;
 #[path = "kuna_fix_handler_copies.rs"]
 mod kuna_fix_handler_copies;
 #[path = "kuna_fix_type_switch.rs"]
