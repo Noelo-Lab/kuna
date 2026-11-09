@@ -32,6 +32,15 @@ pub enum KunaFix {
     /// `jvm_fix_twr_unary_condition`: a `catch (Throwable)` handler that starts
     /// with `if (!flag)` is not taken for a try-with-resources null check.
     TwrUnaryCondition,
+    /// `jvm_fix_enum_body_separator`: an enum body with members but no
+    /// constants starts with the `;` Java requires before its members.
+    EnumBodySeparator,
+    /// `jvm_fix_anonymous_static_qualifier`: a static member of an anonymous
+    /// class used inside it is written unqualified, not as `<unrepresentable>.m`.
+    AnonymousStaticQualifier,
+    /// `jvm_fix_assert_dead_throw`: the `throw new AssertionError` an assert
+    /// consumed through a break is removed, not left behind as dead code.
+    AssertDeadThrow,
 }
 
 impl KunaFix {
@@ -40,6 +49,9 @@ impl KunaFix {
         KunaFix::ReportToKuna,
         KunaFix::LambdaWildcardReturn,
         KunaFix::TwrUnaryCondition,
+        KunaFix::EnumBodySeparator,
+        KunaFix::AnonymousStaticQualifier,
+        KunaFix::AssertDeadThrow,
     ];
 
     /// The option row that turns this fix on or off.
@@ -48,6 +60,9 @@ impl KunaFix {
             KunaFix::ReportToKuna => "jvm_fix_report_to_kuna",
             KunaFix::LambdaWildcardReturn => "jvm_fix_lambda_wildcard_return",
             KunaFix::TwrUnaryCondition => "jvm_fix_twr_unary_condition",
+            KunaFix::EnumBodySeparator => "jvm_fix_enum_body_separator",
+            KunaFix::AnonymousStaticQualifier => "jvm_fix_anonymous_static_qualifier",
+            KunaFix::AssertDeadThrow => "jvm_fix_assert_dead_throw",
         }
     }
 

@@ -1,4 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/InvocationExprent.java`.
+//!
+//! kuna fix `anonymous_static_qualifier` (`kuna_fixes`): in `to_java`,
+//! a static call of an anonymous class's method from a class nested in it is
+//! written unqualified instead of as `<unrepresentable>.m(...)`
+//! (`kuna_fix_anonymous_static_qualifier`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -31,6 +36,7 @@ use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
 use crate::struct_class::{GenericMap, StructClass};
 use crate::struct_method::StructMethod;
+use crate::substrate::kuna_fix_anonymous_static_qualifier;
 use crate::text_buffer::TextBuffer;
 use crate::text_util::TextUtil;
 use crate::type_family::TypeFamily;
@@ -1157,7 +1163,13 @@ impl InvocationExprent {
                     .get_short_name_in_class_context(&ExprProcessor::build_java_class_name(
                         &classname,
                     ));
-                buf.append_all_classes(&short_name, Some(&classname));
+                if !kuna_fix_anonymous_static_qualifier::drop_qualifier(
+                    &classname,
+                    &self.get_name(),
+                    &short_name,
+                ) {
+                    buf.append_all_classes(&short_name, Some(&classname));
+                }
             }
         } else {
             if let Some(inst_var) = instance.and_then(|i| i.try_as_var()) {

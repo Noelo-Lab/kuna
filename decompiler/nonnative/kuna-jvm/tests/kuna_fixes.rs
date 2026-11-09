@@ -201,7 +201,10 @@ fn every_kuna_fixes_case_matches_in_both_modes() {
         let (_, compat) = results.iter().find(|(i, _)| *i == compat_id).unwrap();
         let fixed = count_failed_methods(result.actual.as_deref().unwrap());
         let failed = count_failed_methods(compat.actual.as_deref().unwrap());
-        assert!(failed > 0, "{compat_id}: Vineflower's text has no failure comment");
+        if failed == 0 {
+            assert_ne!(result.actual, compat.actual, "{id}: the wrong-output fix changes nothing");
+            continue;
+        }
         assert!(fixed < failed, "{id}: the fix decompiles no method Vineflower fails on");
     }
 }

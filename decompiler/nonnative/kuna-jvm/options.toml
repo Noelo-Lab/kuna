@@ -1397,6 +1397,72 @@ tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with index out of bounds: the len is 1 but the index is 1 (IndexOutOfBoundsException: Index 1 out of bounds for length 1 in Vineflower)|a try/catch (Throwable) whose handler starts with if (!flag) fails to decompile"
 
 [[option]]
+option = "jvm_fix_enum_body_separator"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p9_emit"
+subphase = "class_writer, kuna_fix_enum_body_separator"
+strength = "HARD"
+rewind = "p9_emit"
+issue = ""
+summary = "Write the ; that Java requires before the members of an enum that has no constants (public enum Util { ; public static ... }). The default output differs from Vineflower's here, which Vineflower prints wrongly: it writes the ; only after the last constant, so such an enum does not compile (javac: enum constant expected)."
+use_when = "Leave on: it corrects output Vineflower prints wrongly; jvm_vineflower_compat on gives Vineflower's text."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_enum_body_separator on"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 ClassWriter.writeClass: the enum-constant loop appends ';' only when it wrote a constant; still so on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "public enum X { public static ...|javac: enum constant expected here (compiler.err.enum.constant.expected)"
+
+[[option]]
+option = "jvm_fix_anonymous_static_qualifier"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "substrate"
+subphase = "invocation_exprent, kuna_fix_anonymous_static_qualifier"
+strength = "HARD"
+rewind = "substrate"
+issue = ""
+summary = "Write a call of an anonymous class's static method (Java 16+) from a class nested in it unqualified, as Java requires, when no class in between has a method of that name. The default output differs from Vineflower's here, which Vineflower prints wrongly: it qualifies the call with the anonymous class's missing name, <unrepresentable>.m(...), which does not parse."
+use_when = "Leave on: it corrects output Vineflower prints wrongly; jvm_vineflower_compat on gives Vineflower's text."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_anonymous_static_qualifier on"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 InvocationExprent.toJava: a static call whose owner is not the current class is qualified with ImportCollector.getShortNameInClassContext, which is <unrepresentable> for an anonymous class; still so on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "<unrepresentable>.m(...)|javac: illegal start of expression"
+
+[[option]]
+option = "jvm_fix_assert_dead_throw"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p8_structure"
+subphase = "assert_processor, kuna_fix_assert_dead_throw"
+strength = "HARD"
+rewind = "p8_structure"
+issue = ""
+summary = "Remove the throw new AssertionError(...) that an assert was built from when the assert's if reached it through a break: nothing else reaches it, and Vineflower leaves it after the loop or block the break left. The default output differs from Vineflower's here, which Vineflower prints wrongly: the dead throw does not compile (unreachable statement), and the variables of its message stay declared outside their loop, so a for-each over them is written for (key : keys)."
+use_when = "Leave on: it corrects output Vineflower prints wrongly; jvm_vineflower_compat on gives Vineflower's text."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_assert_dead_throw on"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 AssertProcessor.replaceAssertion (rework d00eec94): when the if body is a break to the throw, the assert is built from the break's destination, the throw's edges are removed, and the throw statement stays in the tree; still so on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "throw new AssertionError(...) after return;|javac: unreachable statement|for (key : keys) with the loop variable declared before the loop"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""

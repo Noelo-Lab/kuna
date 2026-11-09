@@ -1,4 +1,8 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/AssertProcessor.java`.
+//!
+//! kuna fix `assert_dead_throw` (`kuna_fixes`): in `replace_assertion`,
+//! a `throw new AssertionError` the `if` reached by a break is removed once
+//! the assert has consumed it (`kuna_fix_assert_dead_throw`).
 
 use crate::assert_exprent::AssertExprent;
 use crate::basic_block_statement::BasicBlockStatement;
@@ -15,6 +19,8 @@ use crate::if_statement::IfStatement;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p8_structure::kuna_fix_assert_dead_throw;
 use crate::root_statement::RootStatement;
 use crate::rt::JList;
 use crate::sequence_helper::SequenceHelper;
@@ -179,8 +185,10 @@ impl AssertProcessor {
         let mut parent = parent;
         let mut throw_in_if = true;
         let mut ifstat = stat.get_ifstat();
+        let mut broken_to: Option<(Statement, StatEdge)> = None;
         if ifstat.is_none() && stat.get_if_edge().unwrap().get_type() == StatEdge::TYPE_BREAK {
             ifstat = Some(stat.get_if_edge().unwrap().get_destination());
+            broken_to = ifstat.zip(stat.get_if_edge());
         }
         let mut throw_error = Self::is_assertion_error(ifstat);
 
@@ -193,6 +201,7 @@ impl AssertProcessor {
             } else {
                 throw_in_if = false;
                 ifstat = elsestat;
+                broken_to = None;
             }
         }
         let throw_error = throw_error.unwrap();
@@ -341,6 +350,15 @@ impl AssertProcessor {
                 parent.set_parent(p_parent);
             }
             parent.get_parent().unwrap().replace_with(parent);
+        }
+
+        if let Some((throw_stat, if_edge)) = broken_to {
+            if kuna_fixes::enabled(KunaFix::AssertDeadThrow)
+                && !res.assignment
+                && !res.replace_parent
+            {
+                kuna_fix_assert_dead_throw::remove_consumed_throw(throw_stat, if_edge);
+            }
         }
 
         true

@@ -9,6 +9,7 @@ pub mod if_node;
 pub mod if_pattern_match_processor;
 pub mod initializer_processor;
 pub mod inline_single_block_helper;
+pub mod kuna_fix_assert_dead_throw;
 pub mod label_helper;
 pub mod loop_extract_helper;
 pub mod low_break_helper;

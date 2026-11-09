@@ -1092,3 +1092,56 @@ that a negation does not have and fails the method with an index out of bounds (
 `develop/1.13.0`). With the fix, a condition with fewer than two operands is not a null
 check: the handler is not a try-with-resources, and the matcher leaves the statement alone,
 as it does when the operand is not a variable; the `try`/`catch` is written as it is.
+
+The next three fixes correct code that Vineflower prints without a failure comment but that is
+not valid Java; the default output differs from Vineflower's text on exactly those classes.
+
+**The fix `enum_body_separator`** (fix id `jvm_fix_enum_body_separator`). Java's enum body is `{ [constants] [; members] }`: the `;` is
+required before the members even when there are no constants. `ClassWriter.writeClass`
+(`decompiler/nonnative/kuna-jvm/src/p9_emit/class_writer.rs (ClassWriter::write_class)`) writes
+the `;` only after the last constant it wrote, so an enum used as a namespace of static
+members (`public enum Util { ; public static ... }`) is printed `public enum Util { public
+static ...`, which javac rejects (`enum constant expected`; still so on `develop/1.13.0`). With
+the fix, a class declared with the `enum` keyword (the test of `write_class_definition`; not an
+enum constant's body) whose first written member has no constant before it gets the `;` on a
+line of its own first, followed by the blank line that separates constants from members
+(`decompiler/nonnative/kuna-jvm/src/p9_emit/kuna_fix_enum_body_separator.rs`). An enum with
+neither constants nor members stays `enum E {}`.
+
+**The fix `anonymous_static_qualifier`** (fix id `jvm_fix_anonymous_static_qualifier`). Since Java 16 an anonymous class may declare static
+methods. A class nested in it (another anonymous class, a local class) calls one by its simple
+name, which finds it through the enclosing classes (JLS 15.12.1), and javac compiles the call
+as `invokestatic` of the anonymous class (JLS 13.1). `InvocationExprent.toJava`
+(`decompiler/nonnative/kuna-jvm/src/substrate/invocation_exprent.rs (InvocationExprent::to_java)`)
+qualifies every static call whose owner is not the class being written with the owner's short
+name, which `ImportCollector.getShortName` gives as `<unrepresentable>` for an anonymous class,
+so the call is printed `<unrepresentable>.m(...)` and the file does not parse (Elasticsearch's
+`AbstractTSDBDocValuesProducer`; still so on `develop/1.13.0`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_anonymous_static_qualifier.rs`), such a
+call is written unqualified when the anonymous owner lexically encloses the class being
+written and no class on the way out (the writer's class and its enclosing classes, with their
+supertypes in the class context) has a method of that name, which would capture the simple
+name; otherwise Vineflower's text stays, since Java has no other way to name the method. A
+static field of an anonymous class read from a nested class has the same qualifier and is not
+changed: a simple field name can also be shadowed by the locals of every enclosing method.
+
+**The fix `assert_dead_throw`** (fix id `jvm_fix_assert_dead_throw`). `AssertProcessor` runs before the bodies of the `if`s are
+inlined, so the `throw new AssertionError(...)` of an assert is often not the `if`'s body but
+a statement the `if` breaks to, placed after the loop or labeled block the break leaves.
+`AssertProcessor.replaceAssertion`
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/assert_processor.rs (AssertProcessor::replace_assertion)`;
+the 1.12 assert rework, upstream `d00eec94`, unchanged on `develop/1.13.0`) builds the `assert`
+from that statement, removes the `if`'s edge to it and its own exit edge, and leaves it in the
+tree. It is then dead code after a statement that cannot complete normally (javac:
+`unreachable statement`, or `return outside method` when the `return;` printed before it sits
+in a static initializer), and it keeps the variables of its message alive outside their loop,
+so they are declared before the loop: a for-each over such a variable is written
+`for (key : keys)`, which does not parse, and a later local sharing its slot is merged into it.
+With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_assert_dead_throw.rs`), when the
+throw was reached through the `if`'s break, it is removed from its sequence once the assert is
+built, provided every other edge into it is the structural edge from the statement before it,
+a sequence or an infinite loop (all loops are still infinite at this point), whose normal
+completion would show as a break edge into the throw, and none is left. The assignment-assert
+and switch-expression shapes, whose conversion replaces more than the `if`, keep Vineflower's
+behaviour.

@@ -18,10 +18,90 @@ source they were compiled from.
 
 | Case | Fix | Compiled with | With the fix |
 |---|---|---|---|
+| `pkg/TestAnonymousStaticCall` | `jvm_fix_anonymous_static_qualifier` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner anonymous class's call of its enclosing anonymous class's static `twice` is written `twice(value)`, not `<unrepresentable>.twice(value)`; the call of a named class's static method keeps its qualifier |
+| `pkg/TestAssertDeadThrow` | `jvm_fix_assert_dead_throw` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the dead `throw new AssertionError(...)` statements after `return` in `spans` and `widths` are gone, and `widths` declares its for-each variable in the header (`for (int[] row : rows)`, was `for (row : rows)`) |
+| `pkg/TestEnumNoConstants` | `jvm_fix_enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
 | `pkg/TestMethodRefWildcardReceiver` | `jvm_fix_lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestTryCatchNotFlag` | `jvm_fix_twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 
 ## Diffs (compat -> default)
+
+### `pkg/TestAnonymousStaticCall`
+
+```diff
+--- expected-compat/pkg/TestAnonymousStaticCall.java
++++ expected/pkg/TestAnonymousStaticCall.java
+@@ -10,7 +10,7 @@
+             TestAnonymousStaticCall.Counter inner = new TestAnonymousStaticCall.Counter() {
+                @Override
+                public int next() {
+-                  return <unrepresentable>.twice(value) + TestAnonymousStaticCall.Counter2.offset();
++                  return twice(value) + TestAnonymousStaticCall.Counter2.offset();
+                }
+             };
+             this.value = inner.next();
+```
+
+### `pkg/TestAssertDeadThrow`
+
+```diff
+--- expected-compat/pkg/TestAssertDeadThrow.java
++++ expected/pkg/TestAssertDeadThrow.java
+@@ -27,17 +27,13 @@
+       }
+ 
+       return out;
+-
+-      throw new AssertionError();
+    }
+ 
+    public int widths(int[][] rows, int limit) {
+       int sum = 0;
+ 
+-      int[] row;
+-      int pos;
+-      for (row : rows) {
+-         pos = 0;
++      for (int[] row : rows) {
++         int pos = 0;
+ 
+          for (int i = 0; i < row.length; i++) {
+             int width = row[i];
+@@ -57,8 +53,6 @@
+       }
+ 
+       return sum;
+-
+-      throw new AssertionError("row " + row + " at " + pos);
+    }
+ 
+    private static int max(int a, int b) {
+```
+
+### `pkg/TestEnumNoConstants`
+
+```diff
+--- expected-compat/pkg/TestEnumNoConstants.java
++++ expected/pkg/TestEnumNoConstants.java
+@@ -1,6 +1,8 @@
+ package pkg;
+ 
+ public enum TestEnumNoConstants {
++   ;
++
+    private static int counter;
+ 
+    public static int next() {
+@@ -15,6 +17,8 @@
+    }
+ 
+    enum Only {
++      ;
++
+       static int twice(int x) {
+          return x * 2;
+       }
+```
 
 ### `pkg/TestMethodRefWildcardReceiver`
 
