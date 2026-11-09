@@ -465,6 +465,8 @@ Three tiers:
 | a Mach-O objc_msgSend import renders as (*dat_100004038)() through __got | [`peimportcall`](#peimportcall) |
 | a PE function runs past ExitProcess or ExitThread and absorbs the next function's body | [`peimportcall`](#peimportcall) |
 | no Win32 API names anywhere in a decompiled PE | [`peimportcall`](#peimportcall) |
+| an arm64e call renders as (*dat_<addr>)(...) through an __auth_ptr slot | [`authptrcall`](#authptrcall) |
+| ___chkstk_darwin call unnamed in an arm64e function with a large frame | [`authptrcall`](#authptrcall) |
 | heavily-called custom die()/fatal() wrapper still treated as returning | [`noreturn_disc`](#noreturn_disc) |
 | dead code after a stripped sub_ wrapper that never falls through at 3+ call sites | [`noreturn_disc`](#noreturn_disc) |
 | caller swallows the next function after a wrapper call | [`noreturn_disc`](#noreturn_disc) |
@@ -492,6 +494,10 @@ Three tiers:
 | every pointer store in a go function wrapped in if (writeBarrier flag) with a gcWriteBarrier call | [`gowritebarrier`](#gowritebarrier) |
 | stores through an undefined local after a gcWriteBarrier call because the thunk's buffer register is not modeled | [`gowritebarrier`](#gowritebarrier) |
 | go output doubled in size by GC bookkeeping diamonds | [`gowritebarrier`](#gowritebarrier) |
+| if ((v ^ v << 1) >> 0x3e & 1) before a tail call in an arm64e function | [`ptrauthtrap`](#ptrauthtrap) |
+| (*SoftwareBreakpoint(0xc471,..))() // jump-as-call | [`ptrauthtrap`](#ptrauthtrap) |
+| a stack - 0x8  | [`ptrauthtrap`](#ptrauthtrap) |
+|  x30 variable declared only for a pointer-auth check | [`ptrauthtrap`](#ptrauthtrap) |
 | go function returning bool prints v = CONCAT71((undefined7)(v >> 8), a == b) instead of returning the comparison | [`gobool`](#gobool) |
 | return value masked with 0xffffffff around a boolean | [`gobool`](#gobool) |
 | undefined7 casts feeding a concatenation at every boolean return | [`gobool`](#gobool) |
@@ -2491,6 +2497,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P1/external-refinement · kuna · correctness-fix · decbench-O0-mydoom-mmsender_th
 - **Example:** `option peimportcall on`
 
+### `authptrcall` -- on | off, default `on`
+
+- **Symptoms:** an arm64e call renders as (*dat_<addr>)(...) through an __auth_ptr slot; ___chkstk_darwin call unnamed in an arm64e function with a large frame.
+- **What it does:** Bind a call through an arm64e __auth_ptr slot to the import its chained bind names. An arm64e link keeps two tables of pointers to imported functions: __auth_got backs the __auth_stubs a direct bl reaches and is listed in the LC_DYSYMTAB indirect-symbol table, so peimportcall already binds a call through it; __auth_ptr holds the signed pointers code loads itself (clang's adrp/ldr/blraaz call of ___chkstk_darwin) and is a plain S_REGULAR section with no indirect-symbol entries, so its slots are named only by their LC_DYLD_CHAINED_FIXUPS bind and such a call rendered (*dat_1000716c0)(...). On: every addend-free bind slot of __auth_ptr gets a FunctionSymbol named after its import (one leading _ stripped) and the slot is painted Varnode::externref, so ActionDeindirect resolves the call as it does through __auth_got. A bind with an addend points inside the import and is skipped.
+- **When to flip:** On by default: an arm64e call through __auth_ptr renders by name (___chkstk_darwin(...)) instead of (*dat_<addr>)(...). Flip off to restore the anonymous slot call. Inert on any image without an __auth_ptr bind.
+- **Where / provenance:** P1/external-refinement · kuna · correctness-fix · kuna-apple-authptrcall
+- **Example:** `option authptrcall off`
+
 ### `noreturn_disc` -- on | off, default `on`
 
 - **Symptoms:** heavily-called custom die()/fatal() wrapper still treated as returning; dead code after a stripped sub_ wrapper that never falls through at 3+ call sites; caller swallows the next function after a wrapper call.
@@ -2554,6 +2568,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave auto: on a Go binary every guarded pointer store sheds its if (runtime_writeBarrier) { gcWriteBarrierN(); buffer writes } wrapper and renders as the plain store; off only to audit the GC's barrier placement. Use always on a Go function carved into a bytechunk where detection has no buildinfo section to find.
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-multilang-gowritebarrier
 - **Example:** `option gowritebarrier off`
+
+### `ptrauthtrap` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** if ((v ^ v << 1) >> 0x3e & 1) before a tail call in an arm64e function; (*SoftwareBreakpoint(0xc471,..))() // jump-as-call; a stack - 0x8 ;  x30 variable declared only for a pointer-auth check.
+- **What it does:** Drop the pointer-authentication failure checks an arm64e compiler plants after an aut* instruction. Without FEAT_FPAC a failed aut* does not trap; it leaves an error code in the pointer's top bits, so Apple's clang checks the result inline and branches to brk #0xc470+key when it is bad: before a tail call it tests that bits 62 and 61 of the authenticated x30 agree (eor x16, x30, x30, lsl #1; tbz x16, #62), after a data aut* it compares the result with its xpac-stripped copy. SLEIGH hides the aut* itself (ShowPAC is off), so statically every pointer authenticates and the check is noise; the xpac form folds away on its own, but the bit test reads the incoming return address and renders as if ((x30 ^ x30 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); return; } before nearly every tail call of an Apple binary. The trap block is the anchor: a block lifted entirely from one brk whose SoftwareBreakpoint immediate is 0xc470-0xc473, the codes LLVM reserves for this trap. A CBRANCH edge into it is removed pre-SSA (the gomorestack window) only when the guard's condition is that bit test of the return address, ((x30 ^ x30 << 1) >> 62) & 1, the edge is the arm taken when the two bits disagree, and x30 was reloaded from the frame (an sp- or x29-based load) or is unwritten anywhere in the function: the brk immediate alone is not evidence, since any AArch64 code can branch to a brk #0xc470 on a condition of its own, and a value the code put in x30 (mov x30, x0; ldr x30, [x0]) is not the authenticated return address. The condition then dies to dead-code elimination.
+- **When to flip:** Leave on: an arm64e function's tail call reads as the call alone. Flip off to audit where the compiler checks an authenticated pointer. Inert on any guard other than the return-address bit test before a brk #0xc470-0xc473 trap, whatever the image format.
+- **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-apple-ptrauthtrap
+- **Example:** `option ptrauthtrap off`
 
 ### `gobool` -- off | auto | always, default `auto` (destructive opt-in)
 
