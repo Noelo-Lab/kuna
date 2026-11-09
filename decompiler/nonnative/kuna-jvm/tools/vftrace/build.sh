@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build the Vineflower pass tracer against the released 1.12.0 jar.
-#   $BUILD/classes  tracer + shadow DecompileRecord + the corpus driver (VfDriver)
+#   $BUILD/classes  tracer + shadow DecompileRecord and VarProcessor + the corpus driver (VfDriver)
 #   $BUILD/shadow   hash-pinnable copies of the identity-hashed classes (gen_shadow.py)
 # Env: BUILD (default ~/kwt/jvm/scratch/s2-trace/vftrace-build), VF_JAR, VF_SRC (Vineflower 1.12.0
 # checkout, read-only), CORPUS (for driver/src/corpus/VfDriver.java), JAVAC (default JDK 17 javac).
@@ -21,8 +21,10 @@ done
 "$JAVAC" -nowarn --release 17 -encoding UTF-8 -d "$BUILD/classes" -cp "$VF_JAR:$BUILD/annotations" \
   "$CORPUS/driver/src/corpus/VfDriver.java" \
   "$HERE/src/org/jetbrains/java/decompiler/main/rels/DecompileRecord.java" \
+  "$HERE/src/org/jetbrains/java/decompiler/modules/decompiler/vars/VarProcessor.java" \
   "$HERE"/src/kuna/vftrace/*.java
 python3 -I "$HERE/gen_shadow.py" "$VF_SRC" "$BUILD/shadow-src"
 "$JAVAC" -nowarn --release 17 -encoding UTF-8 -d "$BUILD/shadow" -cp "$BUILD/classes:$VF_JAR:$BUILD/annotations" \
   $(find "$BUILD/shadow-src" -name '*.java' | sort)
+touch "$BUILD/built.stamp"
 echo "built $BUILD"

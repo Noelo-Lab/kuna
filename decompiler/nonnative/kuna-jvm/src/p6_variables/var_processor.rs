@@ -5,6 +5,7 @@
 //! Getters that return a key/value *view* (`getUsedVarVersions`,
 //! `getVarNames`, `clashingNames`) return a snapshot in iteration order.
 
+use crate::kuna_trace;
 use crate::method_descriptor::MethodDescriptor;
 use crate::pair::Pair;
 use crate::root_statement::RootStatement;
@@ -150,6 +151,10 @@ impl VarProcessor {
             if !self.with(|d| d.params.j_contains(&key)) {
                 self.with_mut(|d| d.clashing_names.put(key, value));
             }
+        }
+
+        if kuna_trace::enabled() {
+            kuna_trace::step_vars(method, "RerunClashing", root, self);
         }
     }
 

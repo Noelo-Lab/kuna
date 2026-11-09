@@ -249,3 +249,12 @@ s0 Root id=3
    - (func ADD (&0 const X 42) ^0)
    - ^0
 x Exit id=2
+### vars
+vars nested
+  v 0.0 ~ t=~ FINAL this="a.B"
+  v 1.0 "a" t=~ FINAL param lvt="a":I@4-14
+  v 3.2 "\u00e9\"q" t=~ FINAL clash="q2" src="lambda$0":2.0
+  v 5.1 ~ t=~ FINAL ext
+  v 7.0 "inh" t=~ FINAL inh="inh"
+  clashing "b" "q2"
+  semaphores [2, 4]

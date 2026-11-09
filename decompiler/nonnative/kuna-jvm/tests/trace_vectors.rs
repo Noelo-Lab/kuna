@@ -56,6 +56,7 @@ use kuna_jvm::synchronized_statement::SynchronizedStatement;
 use kuna_jvm::var_exprent::VarExprent;
 use kuna_jvm::var_processor::VarProcessor;
 use kuna_jvm::var_type::VarType;
+use kuna_jvm::var_version_pair::VarVersionPair;
 use kuna_jvm::yield_exprent::YieldExprent;
 
 use crate::common;
@@ -684,4 +685,37 @@ fn trace_dump_every_exprent_kind() {
     let exit = DummyExitStatement::new();
     let root = RootStatement::new(b, exit, c.mt);
     check("exprents", root);
+}
+
+#[test]
+fn trace_dump_var_table() {
+    let _ctx = common::install_default_context();
+    let c = start();
+    let vp = c.vp;
+    vp.set_var_name(VarVersionPair::new(3, 2), "\u{e9}\"q");
+    vp.set_var_name(VarVersionPair::new(1, 0), "a");
+    vp.mark_param(VarVersionPair::new(1, 0));
+    vp.get_this_vars()
+        .borrow_mut()
+        .put(VarVersionPair::new(0, 0), "a.B".to_string());
+    vp.get_external_vars()
+        .borrow_mut()
+        .add(VarVersionPair::new(5, 1));
+    vp.set_inherited_name(VarVersionPair::new(7, 0), "inh");
+    vp.set_clashing_name(VarVersionPair::new(3, 2), "q2");
+    vp.set_clashing_name(VarVersionPair::new(9, 0), "b");
+    vp.set_var_source(
+        VarVersionPair::new(3, 2),
+        "lambda$0",
+        VarVersionPair::new(2, 0),
+    );
+    vp.set_var_lvt(
+        VarVersionPair::new(1, 0),
+        LocalVariable::new(4, 10, "a".to_string(), "I".to_string(), 1),
+    );
+    vp.get_synthetic_semaphores().borrow_mut().add(4);
+    vp.get_synthetic_semaphores().borrow_mut().add(2);
+    vp.set_nested_processed(true);
+    let actual = kuna_trace::vars(vp);
+    assert_eq!(actual, expected("vars"));
 }

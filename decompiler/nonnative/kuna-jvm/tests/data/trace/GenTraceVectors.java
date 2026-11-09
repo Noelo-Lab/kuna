@@ -20,6 +20,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement.EdgeDire
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarProcessor;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructMethod;
+import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.struct.attr.StructLocalVariableTableAttribute.LocalVariable;
 import org.jetbrains.java.decompiler.struct.consts.LinkConstant;
 import org.jetbrains.java.decompiler.struct.consts.PooledConstant;
@@ -491,6 +492,25 @@ public class GenTraceVectors {
     kuna.vftrace.Trace.finish();
   }
 
+  static void vars() throws Exception {
+    start();
+    VarProcessor vp = VP;
+    vp.setVarName(new VarVersionPair(3, 2), "\u00e9\"q");
+    vp.setVarName(new VarVersionPair(1, 0), "a");
+    vp.markParam(new VarVersionPair(1, 0));
+    vp.getThisVars().put(new VarVersionPair(0, 0), "a.B");
+    vp.getExternalVars().add(new VarVersionPair(5, 1));
+    vp.setInheritedName(new VarVersionPair(7, 0), "inh");
+    vp.setClashingName(new VarVersionPair(3, 2), "q2");
+    vp.setClashingName(new VarVersionPair(9, 0), "b");
+    vp.setVarSource(new VarVersionPair(3, 2), "lambda$0", new VarVersionPair(2, 0));
+    vp.setVarLVT(new VarVersionPair(1, 0), new LocalVariable(4, 10, "a", "I", 1));
+    vp.getSyntheticSemaphores().add(4);
+    vp.getSyntheticSemaphores().add(2);
+    vp.nestedProcessed = true;
+    OUT.append("### vars\n").append(Dumper.vars(vp));
+  }
+
   static StructMethod MT2;
 
   public static void main(String[] args) throws Exception {
@@ -502,6 +522,7 @@ public class GenTraceVectors {
     blocks();
     control();
     exprents();
+    vars();
     Files.writeString(Paths.get(args[2]), OUT.toString());
     record(args[3]);
   }
