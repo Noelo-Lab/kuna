@@ -86,3 +86,5 @@ mod b02_expr_util;
 mod b03_exprents;
 #[path = "b04_render.rs"]
 mod b04_render;
+#[path = "b06_sforms.rs"]
+mod b06_sforms;

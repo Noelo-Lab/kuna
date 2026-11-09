@@ -2,7 +2,7 @@
 //!
 //! A newtype over `SFormsConstructor` (see there); the overriding bodies take
 //! the base as `this` so the base's dispatchers can reach them.
-#![allow(dead_code, unused_variables)]
+#![allow(unused_variables)]
 
 use std::ops::{Deref, DerefMut};
 
@@ -11,7 +11,6 @@ use crate::rt::{JHashMap, Shared};
 use crate::s_forms_constructor::{SFormsConstructor, SFormsConstructorKind};
 use crate::s_forms_fast_map_direct::{SFormsFastMapDirect, VersionSet};
 use crate::statement::Statement;
-use crate::unported;
 use crate::var_exprent::VarExprent;
 use crate::var_version_pair::VarVersionPair;
 
@@ -102,7 +101,26 @@ impl SSAConstructorSparseEx {
         var_map: &Shared<SFormsFastMapDirect>,
         versions: VersionSet,
     ) {
-        unported!("SSAConstructorSparseEx.varReadMultipleVersions")
+        let var_index = var_exprent.get_index();
+        let current_version = var_exprent.get_version();
+        let var_version = var_exprent.get_var_version_pair();
+        let existing = if current_version != 0 {
+            Self::d(this).phi.get_cloned(&var_version)
+        } else {
+            None
+        };
+        if let Some(phi_set) = existing {
+            union_sets(&phi_set, &versions);
+        } else {
+            let next_ver = this.get_next_free_version(var_index, Some(stat));
+            var_exprent.set_version(next_ver);
+
+            Self::d_mut(this)
+                .phi
+                .put(var_exprent.get_var_version_pair(), versions);
+        }
+
+        var_map.borrow_mut().set_current_var_exprent(var_exprent);
     }
 
     pub fn get_phi(&self) -> &JHashMap<VarVersionPair, VersionSet> {
@@ -110,7 +128,55 @@ impl SSAConstructorSparseEx {
     }
 
     pub fn get_simple_reverse_phi_lookup(&self) -> JHashMap<VarVersionPair, i32> {
-        unported!("SSAConstructorSparseEx.getSimpleReversePhiLookup")
+        let phi = &Self::d(&self.0).phi;
+        let mut ret: JHashMap<VarVersionPair, i32> = JHashMap::new();
+        for (key, value) in phi.iter() {
+            let index = key.var;
+            let mut left = *key;
+
+            while let Some(&version) = ret.get(&left) {
+                if version == left.version {
+                    break;
+                }
+                left = VarVersionPair::new(index, version);
+            }
+
+            let vers: Vec<i32> = value.borrow().iter().collect();
+            for ver in vers {
+                let mut right = VarVersionPair::new(index, ver);
+
+                while let Some(&version) = ret.get(&right) {
+                    if version == right.version {
+                        break;
+                    }
+                    right = VarVersionPair::new(index, version);
+                }
+
+                if left.version != right.version {
+                    if right.version < left.version {
+                        ret.put(left, right.version);
+                        left = right;
+                    } else {
+                        ret.put(right, left.version);
+                    }
+                }
+            }
+        }
+
+        for key in phi.keys() {
+            let mut pair = *key;
+
+            while let Some(&version) = ret.get(&pair) {
+                if version == pair.version {
+                    break;
+                }
+                pair = VarVersionPair::new(pair.var, version);
+            }
+
+            ret.put(*key, pair.version);
+        }
+
+        ret
     }
 
     pub fn init_version(this: &mut SFormsConstructor, var_exprent: VarExprent, stat: Statement) {
@@ -131,5 +197,15 @@ impl SSAConstructorSparseEx {
         let version = this.get_next_free_version(var_index, root);
 
         var_map.borrow_mut().set_current_var(var_index, version);
+    }
+}
+
+/// `a.union(b)` on two shared version sets, which may be the same set.
+fn union_sets(a: &VersionSet, b: &VersionSet) {
+    if a.ptr_eq(b) {
+        let snapshot = b.borrow().get_copy();
+        a.borrow_mut().union(&snapshot);
+    } else {
+        a.borrow_mut().union(&b.borrow());
     }
 }

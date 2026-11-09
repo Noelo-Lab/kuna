@@ -4,9 +4,9 @@
 use std::collections::VecDeque;
 
 use crate::generic_dominator_engine::GenericDominatorEngine;
-use crate::rt::JHashSet;
+use crate::i_graph::IGraph;
+use crate::rt::{JHashMap, JHashSet};
 use crate::struct_local_variable_table_attribute::LocalVariable;
-use crate::unported;
 use crate::validation_helper::ValidationHelper;
 use crate::var_version_node::VarVersionNode;
 use crate::var_version_pair::VarVersionPair;
@@ -100,7 +100,55 @@ impl VarVersionsGraph {
     }
 
     pub fn init_dominators(self) {
-        unported!("VarVersionsGraph.initDominators")
+        let mut roots: JHashSet<VarVersionNode> = JHashSet::new();
+
+        for node in self.nodes() {
+            if node.with(|d| d.predecessors.is_empty()) {
+                roots.add(node);
+            }
+        }
+
+        if ValidationHelper::VALIDATE() {
+            let reached = Self::root_reachability(&roots);
+            let node_count = self.with(|d| d.nodes.size());
+            ValidationHelper::validate_true(node_count == reached.len(), "Cyclic roots detected");
+            if node_count != reached.len() {
+                let mut intersection: JHashSet<VarVersionNode> =
+                    JHashSet::from_collection(self.nodes());
+                intersection.remove_all(&reached);
+
+                let mut var_map: JHashMap<i32, Vec<i32>> = JHashMap::new();
+
+                let mut visited: JHashSet<VarVersionNode> = JHashSet::new();
+                for node in intersection.to_vec() {
+                    if visited.contains(&node) {
+                        continue;
+                    }
+
+                    let found = self.find_reachable_nodes(node);
+                    visited.add_all(found.to_vec());
+
+                    for found_node in found.to_vec() {
+                        let (var, version) = found_node.with(|d| (d.var, d.version));
+                        var_map.compute_if_absent(var, Vec::new).push(version);
+                    }
+                }
+
+                for var in var_map.key_vec() {
+                    let versions = var_map.get_mut(&var).expect("varMap.get(var)");
+                    versions.sort();
+
+                    let pair = VarVersionPair::new(var, versions[0]);
+
+                    let root = self.get_node_with_key(pair).expect("NullPointerException");
+                    roots.add(root);
+                }
+            }
+        }
+
+        let mut engine = GenericDominatorEngine::new(Box::new(RootsGraph { roots }));
+        engine.initialize();
+        self.with_mut(|d| d.engine = Some(engine));
     }
 
     fn find_reachable_nodes(self, start: VarVersionNode) -> JHashSet<VarVersionNode> {
@@ -236,5 +284,20 @@ impl VarVersionsGraph {
                 stack_node.pop_back();
             }
         }
+    }
+}
+
+/// The anonymous `IGraph` of `initDominators`: the version graph seen from `roots`.
+struct RootsGraph {
+    roots: JHashSet<VarVersionNode>,
+}
+
+impl IGraph<VarVersionNode> for RootsGraph {
+    fn get_reverse_post_order_list(&self) -> Vec<VarVersionNode> {
+        VarVersionsGraph::get_reversed_post_order(&self.roots.to_vec())
+    }
+
+    fn get_roots(&self) -> JHashSet<VarVersionNode> {
+        self.roots.java_clone()
     }
 }

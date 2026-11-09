@@ -9,12 +9,11 @@ use std::ops::{Deref, DerefMut};
 
 use crate::field_exprent::FieldExprent;
 use crate::root_statement::RootStatement;
-use crate::rt::{JHashMap, Shared};
+use crate::rt::{JHashMap, JHashSet, Shared};
 use crate::s_forms_constructor::{SFormsConstructor, SFormsConstructorKind};
 use crate::s_forms_fast_map_direct::{SFormsFastMapDirect, VersionSet};
 use crate::statement::Statement;
 use crate::struct_method::StructMethod;
-use crate::unported;
 use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
 use crate::var_version_node::{State, VarVersionNode};
@@ -84,7 +83,18 @@ impl SSAUConstructorSparseEx {
     }
 
     pub fn split_variables(this: &mut SFormsConstructor, root: RootStatement, mt: StructMethod) {
-        unported!("SSAUConstructorSparseEx.splitVariables")
+        this.split_variables_base(root, mt);
+
+        let dgraph = this.dgraph.expect("SFormsConstructor.dgraph");
+        this.ssa_statements(dgraph, &mut JHashSet::new(), true, mt, 999_999);
+
+        Self::ssu_versions_of(this).init_dominators();
+
+        ValidationHelper::validate_var_versions_graph(
+            Self::ssu_versions_of(this),
+            root,
+            &Self::d(this).var_assignment_map,
+        );
     }
 
     /// Java: getNode(VarExprent)
@@ -207,7 +217,63 @@ impl SSAUConstructorSparseEx {
         vers: &VersionSet,
         stat: Statement,
     ) {
-        unported!("SSAUConstructorSparseEx.createOrUpdatePhiNode")
+        let mut old_nodes: JHashSet<i32> = JHashSet::new();
+
+        let phi_node = Self::ssu_versions_of(this)
+            .get_node_with_key(phivar)
+            .expect("NullPointerException");
+        ValidationHelper::validate_true(
+            phi_node.phantom_parent_node().is_none(),
+            "phi node can't be a phantom node",
+        );
+        let pred_count = phi_node.with(|d| d.predecessors.len());
+        if pred_count == 0 {
+            ValidationHelper::validate_true(
+                phi_node.state() == Some(State::Phi),
+                "Phi node has the wrong state?",
+            );
+        } else if pred_count == 1 {
+            ValidationHelper::validate_true(
+                phi_node.state() == Some(State::Read),
+                "Trying to convert a non read node into a phi node",
+            );
+            phi_node.set_state(Some(State::Phi));
+            phi_node.get_single_predecessor().remove_successor(phi_node);
+            phi_node.with_mut(|d| d.predecessors.clear());
+        } else {
+            ValidationHelper::validate_true(
+                phi_node.state() == Some(State::Phi),
+                "Phi node has the wrong state?",
+            );
+            for source in phi_node.predecessors() {
+                ValidationHelper::validate_true(
+                    source.state() == Some(State::Read),
+                    "Phi node is reading from a non READ node",
+                );
+
+                let verssrc = source.get_single_predecessor().version();
+                if !vers.borrow().contains(&verssrc) {
+                    source.remove_successor(phi_node);
+                    phi_node.remove_predecessor(source);
+                    source.set_state(Some(State::DeadRead));
+                } else {
+                    old_nodes.add(verssrc);
+                }
+            }
+        }
+
+        let vers_list: Vec<i32> = vers.borrow().iter().collect();
+        for ver in vers_list {
+            if old_nodes.contains(&ver) {
+                continue;
+            }
+
+            let pre_node = Self::ssu_versions_of(this)
+                .get_node_with_key(VarVersionPair::new(phivar.var, ver))
+                .expect("NullPointerException");
+            let temp_node = Self::create_read(this, pre_node, stat);
+            SFormsConstructor::make_read_edge(phi_node, temp_node);
+        }
     }
 
     fn create_read(
