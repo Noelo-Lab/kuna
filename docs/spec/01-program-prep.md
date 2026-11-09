@@ -4481,9 +4481,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   descriptor is an import (`…Tq`), the real member name; `Module.Sub.vtable#3.init`
   for an override of a local base; `<Module.Type:Swift.Hashable>.hash(into:)`
   for a resilient witness whose requirement descriptor is an import,
-  `<T:P>.requirement#2` for a local protocol's witness (the witness-table words
-  on a chained-fixup Mach-O; an ELF carries them as relocation addends, so they
-  are not named there), `Module.P.requirement#2.default` for a default
+  `<T:P>.requirement#2` for a local protocol's witness (the witness-table words,
+  read through the chained-fixup overlay on a Mach-O and the `R_*_RELATIVE`
+  addends on an ELF), `Module.P.requirement#2.default` for a default
   implementation; and the records: `….nominal_type_descriptor`,
   `….protocol_descriptor`, `….module_descriptor`,
   `<T:P>.protocol_conformance_descriptor`, `<T:P>.protocol_witness_table`,
@@ -4565,6 +4565,76 @@ every other binary's pass list is byte-identical to before the pass existed):
   third-party arm64 iOS app one decompile is within run-to-run noise of `off`. `off`
   renders each reference as the entry itself: its symbol (`&_kGreeting`) where the
   image names it, its address on a stripped image.
+- **Swift type layouts** (`swifttypes`, the type-layout arm of the pass above,
+  default-on and inert unless `swiftmetadata` is on, which the `aggressive`
+  preset does and `auto` selects for any binary under 500 KiB;
+  `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swifttypes.rs`): a
+  non-generic type whose metadata needs no runtime initialization (the
+  descriptor's `MetadataInitialization` is none: no resilient superclass, no
+  foreign or singleton initialization) has that metadata laid out statically,
+  and its accessor is the one-line function that returns the address — `adrp
+  x0, …; add x0, x0, …; mov x1, #0; ret` on arm64, `lea rax, [rip + …]; xor
+  edx, edx; ret` on x86-64, a class with Objective-C heritage tail-calling the
+  runtime with the same address — which the pass decodes and checks: the
+  metadata's descriptor word must point back at the descriptor (through the
+  chained-fixup overlay on a Mach-O; through the `R_*_RELATIVE` addends on an
+  ELF, which the pass now also feeds the reader, so an ELF's local witness
+  tables are named too). From a struct's metadata: its size and alignment (the
+  value witness table before the address point, or the builtin table an import
+  names — `$sBi64_WV` is 8 bytes, `$sytWV` empty) and its field offset vector
+  (32-bit entries at the descriptor's offset); from a class's: the instance
+  size and alignment and the pointer-sized field offset vector (an
+  Objective-C-heritage class's static offsets are the compile-time layout, the
+  same values its `__objc_ivar` offset variables hold). From the reflection
+  field descriptor, which the first arm already parsed: each stored property's
+  name and mangled type, whose symbolic references (`\x01` a direct, `\x02` an
+  indirect context descriptor reference, with a 4-byte payload) the demangler
+  resolves through a hook (`demangle_swift_type`, §1.3) that the pass answers
+  from its descriptor table or the import an indirect slot binds. The result
+  is one kuna struct per type under its dotted name — `metafix.Point { long x;
+  long y; }`, a class as its object layout with a local superclass embedded as
+  `super` at 0 and otherwise the `isa` word (and a Swift-native root's
+  reference counts) — with field types mapped from the Swift type: the sized
+  integers, `Double`/`Float`/`Bool`, `Swift.String` as its two words, a class
+  reference as a pointer to that class's struct (a shell for one without a
+  static layout, so the name is still right), a nested struct inline, a
+  collection as its storage word under the instantiation's name, a closure as
+  its two words; an optional keeps its payload's type when nil is the zero
+  word (a reference, a string, a collection, a closure). Any other type — an
+  enum, an imported value type (`Foundation.Date`), a generic instantiation
+  without a known layout, a tuple, an existential — is `undefined<n>` over the
+  bytes up to the next field, so the layout is always right and the names are
+  always real; only the field's own type is withheld. A layout is refused
+  whole when the field count disagrees with the descriptor, an offset
+  overlaps, a type exceeds its slot, or the type's dotted path is one two
+  descriptors share (private types of the same name), so nothing is ever
+  read through the wrong name. Layouts built inside other layouts (a nested
+  struct's, a superclass's) nest at most 32 deep, as a context's parent chain
+  does, and so do the optionals around a field's type; a type reached deeper
+  keeps its bytes untyped. What then binds: the metadata records as typed
+  data (`….type_metadata` as `swift.type_metadata`, `….class_metadata`,
+  `….value_witness_table`); the accessor prototypes
+  (`swift.type_metadata *Module.Type.type_metadata_accessor(long request)`, so
+  `return &Module.Type.type_metadata;`); and the `self` of every class vtable
+  getter and of every local protocol's witness getter (the `IsInstance` flag
+  read, so a static property's metatype `self` is left alone; a class's witness
+  takes the address of the reference, `Class **`, except under a class-bound
+  protocol, which is passed the reference itself). Swift passes
+  `self` in the `swiftself` register (x20 on arm64, r13 on x86-64), which no
+  calling-convention model describes and which a locked prototype cannot name
+  without also fixing the arity; a getter's arity is known, so the pass pins
+  the parameter on the function — the analysis-tier form of the console's
+  `map param` (`AnalysisOutput::swift_types.param_locks` →
+  `Architecture::loader_param_locks` → the decompile drive's `mapped_params`),
+  the rest of the signature recovered as usual — and a witness getter also
+  names its two leading arguments, the `Self` metadata and the witness table.
+  On a large third-party iOS app the pass locates 12,809 static metadata records (4,790
+  structs, 4,811 enums, 3,208 classes; the 859 classes and 351 structs whose
+  accessors look up a runtime cache are skipped), lays out 4,585 structs and
+  3,205 classes with 30,997 fields (22,794 typed), and pins the `self` of 5,739
+  vtable getters and 2,821 witness getters, for about 0.1 s and 3 MB over the
+  naming arm. The stage test `tests/stages/kuna-swifttypes.xml` runs the
+  stripped swiftc-built `swift_types_elf` with the arm off and on.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

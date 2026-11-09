@@ -2756,6 +2756,16 @@ pub struct Architecture {
     /// (kuna `cfstrings`) The `__cfstring` entry addresses the commit seeded, so
     /// the printer renders a literal at one of them as `CFSTR("...")`.
     pub cfstring_entries: std::collections::BTreeSet<u64>,
+    /// (kuna) Gate the Swift type-layout arm of the metadata pass
+    /// (`swifttypes`): struct and class layouts from static type metadata,
+    /// typed metadata records, accessor prototypes and the register-pinned
+    /// `self` of getters. Default-on; inert unless `swiftmetadata` is on.
+    pub analysis_swifttypes: bool,
+    /// (kuna `swifttypes`) Register-pinned parameters the analysis tier
+    /// declared, by function entry: `(slot, name, storage + type)`, the
+    /// shape of a console `map param`. The decompile drive seeds a
+    /// function's own decompile with them ahead of the console's.
+    pub loader_param_locks: std::collections::BTreeMap<Address, Vec<(int4, String, crate::fspec::ParameterPieces)>>,
     /// (kuna) Gate the PE PDB metadata recovery pass (`pdb`); default **off**. The
     /// kuna analog of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer;
     /// the MS-DIA `PdbAnalyzer` is Windows-native and out of scope) — the
@@ -3591,6 +3601,8 @@ impl Architecture {
             analysis_cfstrings: false,
             cfstrings_annotate: false,
             cfstring_entries: std::collections::BTreeSet::new(),
+            analysis_swifttypes: true,
+            loader_param_locks: std::collections::BTreeMap::new(),
             analysis_pdb: true,
             macho_arm64e: false,
 
@@ -4100,6 +4112,7 @@ impl Architecture {
         self.analysis_swiftmetadata = false; // Swift runtime-metadata recovery default-off (inert without swift5_* sections)
         self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)
         self.cfstrings_annotate = false;
+        self.analysis_swifttypes = true; // Swift type layouts default-on, inert unless swiftmetadata is on
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }

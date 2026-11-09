@@ -4867,6 +4867,18 @@ fn commit_analysis_output(
     out.symbols.extend(go_prototypes.iter().map(|(addr, pieces)| kuna_analysis::pass::SymFact {
         addr: *addr, name: pieces.name.clone(), kind: SymKind::Function,
     }));
+    // 0b. (kuna `swifttypes`) The Swift type-layout arm's facts, the same
+    //     deferred shape: on, the typed metadata records and the accessor
+    //     prototypes fold into their streams (the register-pinned parameters
+    //     are parked at step 7b); off, all three are dropped.
+    if prog.arch().analysis_swifttypes {
+        let swift = std::mem::take(&mut out.swift_types);
+        out.typed_data.extend(swift.typed_data);
+        out.prototypes.extend(swift.prototypes);
+        out.swift_types.param_locks = swift.param_locks;
+    } else {
+        out.swift_types = Default::default();
+    }
     // 0a. (kuna `cppsig`) The demangled-signature arm's prototypes. Same deferred
     //     shape as `cppproto` above, but the gate is three-valued, so the mode
     //     selects WHICH certainty tiers survive: `proven` only the prototypes the
@@ -5768,6 +5780,30 @@ fn commit_analysis_output(
             *track = def;
             track.push(kuna_sleigh::globalcontext::TrackedContext { loc, val });
         });
+    }
+
+    // 7b. (kuna `swifttypes`) Register-pinned parameters: each resolved through
+    //     the language's register table and parked on the function's entry in
+    //     the shape of a console `map param`, which the decompile drive seeds
+    //     the function's own decompile with. A register the language does not
+    //     define is a silent no-op, as for the tracked registers above.
+    if prog.arch().analysis_swifttypes {
+        for fact in &out.swift_types.param_locks {
+            let Ok(loc) = prog.arch().get_register_varnode(fact.reg.as_bytes()) else {
+                continue;
+            };
+            let Some(space) = loc.space.clone() else { continue };
+            let piece = kuna_decomp::fspec::ParameterPieces {
+                addr: Address::new(space, loc.offset),
+                type_: Some(Rc::clone(&fact.type_)),
+                flags: kuna_decomp::fspec::parameter_pieces_flags::TYPELOCK
+                    | kuna_decomp::fspec::parameter_pieces_flags::NAMELOCK,
+            };
+            let entry = Address::new(Rc::clone(code_space), fact.func_addr);
+            let locks = prog.arch_mut().loader_param_locks.entry(entry).or_default();
+            locks.retain(|(i, _, _)| *i != fact.index);
+            locks.push((fact.index, fact.name.clone(), piece));
+        }
     }
 
     // 8. Call-fixups (the kuna analog of CallFixupAnalyzer's install loop): for

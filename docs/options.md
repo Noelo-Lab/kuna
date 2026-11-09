@@ -933,6 +933,9 @@ Three tiers:
 | protocol witnesses and class methods of a stripped swift app have no names | [`swiftmetadata`](#swiftmetadata) |
 | core-foundation / objc string constants render as dat_<addr> instead of their text | [`cfstrings`](#cfstrings) |
 | a CFSTR(...) argument shows an address in a mach-o | [`cfstrings`](#cfstrings) |
+| swift struct and class fields render as raw offsets off self | [`swifttypes`](#swifttypes) |
+| swift getters named by swiftmetadata take no self parameter | [`swifttypes`](#swifttypes) |
+| type metadata accessors return undefined16 | [`swifttypes`](#swifttypes) |
 | stripped windows pe functions stay FUN_<addr> although a matching .pdb exists | [`pdb`](#pdb) |
 | pdb symbol names not applied to a pe | [`pdb`](#pdb) |
 | a .pdb beside the exe is ignored | [`pdb`](#pdb) |
@@ -3529,6 +3532,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default): a Mach-O (Core Foundation / Objective-C / Swift) binary renders its CFString constants -- a call that passed dat_<addr> renders CFSTR("cfstring hello"). Flip off to see each reference as the __cfstring entry itself (its symbol, or its address on a stripped image). Use annotate when cross-checking against a disassembler or hex view: the entry address stays in the output as a comment.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-cfstrings
 - **Example:** `option cfstrings annotate`
+
+### `swifttypes` -- on | off, default `on`
+
+- **Symptoms:** swift struct and class fields render as raw offsets off self; swift getters named by swiftmetadata take no self parameter; type metadata accessors return undefined16.
+- **What it does:** The type-layout arm of the Swift metadata pass (inert unless swiftmetadata is on): a non-generic type whose metadata needs no runtime initialization has it laid out statically, and its accessor is the one-line function that returns the address (adrp/add on arm64, lea on x86-64; a class with Objective-C heritage tail-calls the runtime with the same address). From that metadata the pass reads a struct's size and alignment (its value witness table, or the builtin table an import names) and its 32-bit field offset vector, a class's instance size and pointer-sized field offset vector; from the reflection field descriptor each stored property's name and mangled type, whose symbolic references the descriptor table resolves. The result is one kuna struct per type under its dotted name (Module.Point { long x; long y; }; a class as its object layout, a local superclass embedded as super, an imported one leaving the isa word) with field types mapped from the Swift type (Int/UInt/Double/Float/Bool and their sized forms, Swift.String as its two words, a class reference as a pointer to that class's struct, a nested struct inline, a collection as its storage word, a closure as its two words) and undefined<n> for any other (an enum, an imported value type, a generic instantiation) over the bytes up to the next field. Also typed: the metadata records (….type_metadata / ….class_metadata, ….value_witness_table), the accessors (swift.type_metadata *Module.Type.type_metadata_accessor(long request)), and the self of every class vtable getter and local-protocol witness getter (Class ** for a class witness, Class * under a class-bound protocol), which Swift passes in the swiftself register (x20 / r13) that no calling-convention model describes - pinned on the function as a register-locked parameter, the rest of the signature recovered as usual. A type whose dotted path two descriptors share, whose field count disagrees with its descriptor, or whose offsets overlap is given no layout. Default-ON because it is inert unless swiftmetadata is on (default-off, but ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB, so this arm runs with no flags on small Swift binaries) and adds about 0.1 s and 3 MB on an 84 MB app.
+- **When to flip:** Off only to see a swiftmetadata-named binary without layouts: fields render as raw offsets, getters take no self, the accessors return undefined16. On (default) when swiftmetadata is on: self->field through the recovered struct, typed metadata records.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-swifttypes
+- **Example:** `option swifttypes off`
 
 ### `pdb` -- on | off, default `on`
 

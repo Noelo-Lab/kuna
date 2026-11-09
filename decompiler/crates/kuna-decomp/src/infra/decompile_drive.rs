@@ -1780,6 +1780,19 @@ fn decompile_func_full_with_objects_inner(
         }
         _ => None,
     };
+    // (kuna `swifttypes`) The register-pinned parameters the analysis tier
+    // declared for this function, behind the console's own `map param`s.
+    let mapped_params: Vec<(int4, String, crate::fspec::ParameterPieces)> =
+        match arch.loader_param_locks.get(&funcaddr) {
+            Some(locks) if pending_proto.is_none() => locks
+                .iter()
+                .filter(|(i, _, _)| !mapped_params.iter().any(|(j, _, _)| j == i))
+                .cloned()
+                .chain(mapped_params.iter().cloned())
+                .collect(),
+            _ => mapped_params.to_vec(),
+        };
+    let mapped_params = mapped_params.as_slice();
     let mut attempt = |prefollowed: Option<Funcdata>,
                        unguarded: bool,
                        condstmts_seed: &std::collections::BTreeSet<Address>,

@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_395() {
-    assert_eq!(kuna_num_settables(), 395);
-    assert_eq!(SETTABLE_TABLE.len(), 395);
+fn settable_count_is_396() {
+    assert_eq!(kuna_num_settables(), 396);
+    assert_eq!(SETTABLE_TABLE.len(), 396);
 }
 
 #[test]
-fn tier_counts_are_136_core_158_transform_101_analysis() {
+fn tier_counts_are_136_core_158_transform_102_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_136_core_158_transform_101_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (136, 158, 101));
+    assert_eq!((core, transform, analysis), (136, 158, 102));
 }
 
 #[test]
@@ -518,6 +518,8 @@ fn option_values_live_value_present_for_189() {
         // with no codegen live reader (read console-side via kuna_live_value), like
         // the gates around it. Default-on, Mach-O-only.
         "cfstrings",
+        // (kuna) The Swift type-layout arm's gate, read inside that pass.
+        "swifttypes",
         // (kuna) PE PDB metadata recovery — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), like the gates around
         // it. Default-on (DIV-129), PE-only, `.pdb`-sidecar-gated.
@@ -1218,7 +1220,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `ptrauthtrap`; its P2 row sits beside `gowritebarrier`.
     // +1 for `authptrcall`; its P1 row sits beside `peimportcall`.
     // +1 for `swiftmetadata`; its P1 row sits beside `objc`.
-    assert_eq!(json.matches("},\n").count(), 394);
+    // +1 for `swifttypes`, beside it.
+    assert_eq!(json.matches("},\n").count(), 395);
 }
 
 #[test]

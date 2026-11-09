@@ -28,6 +28,7 @@
 //! produces nothing, so every other binary is byte-identical.
 
 pub mod descriptors;
+pub mod kuna_swifttypes;
 
 #[cfg(test)]
 mod tests;
@@ -76,14 +77,20 @@ impl AnalysisPass for SwiftMetadataPass {
         {
             return out;
         }
-        let fixups = crate::loader::format::macho::resolve_chained_fixups(ctx.file, ctx.bytes);
+        let mut fixups = crate::loader::format::macho::resolve_chained_fixups(ctx.file, ctx.bytes);
+        if ctx.file.format() == object::BinaryFormat::Elf {
+            fixups = crate::loader::format::macho::ChainedFixups::from_rebases(
+                elf_relative_relocs(ctx.file),
+            );
+        }
         let mut imports: HashMap<u64, String> =
             crate::loader::format::resolve_imports(ctx.file, ctx.bytes)
                 .into_iter()
                 .filter_map(|s| String::from_utf8(s.name).ok().map(|n| (s.addr, n)))
                 .collect();
         // A chained-fixup Mach-O binds other images' descriptors into `__const`
-        // slots the indirect-symbol table does not list.
+        // slots the indirect-symbol table does not list; an ELF binds them
+        // through GOT slots whose dynamic relocations name the symbol.
         for (slot, bind) in fixups.binds() {
             if bind.name.is_empty() {
                 continue;
@@ -92,16 +99,8 @@ impl AnalysisPass for SwiftMetadataPass {
                 imports.entry(slot).or_insert_with(|| name.to_string());
             }
         }
-        let bind_slots: std::collections::HashSet<u64> =
+        let mut bind_slots: std::collections::HashSet<u64> =
             fixups.binds().map(|(slot, _)| slot).collect();
-        let img = MachoImage::with_fixups(ctx.file, fixups.clone());
-        let reader = Reader {
-            img: &img,
-            bind_slots: &bind_slots,
-        };
-        let md = reader.read_all(ctx.file, names, ctx.bytes.len());
-        // An ELF image binds a descriptor of another image through a GOT slot
-        // whose dynamic relocation names the symbol.
         for (addr, reloc) in ctx.file.dynamic_relocations().into_iter().flatten() {
             if let object::RelocationTarget::Symbol(idx) = reloc.target() {
                 let sym = ctx
@@ -110,9 +109,16 @@ impl AnalysisPass for SwiftMetadataPass {
                     .and_then(|t| t.symbol_by_index(idx).ok());
                 if let Some(name) = sym.and_then(|s| s.name().ok()) {
                     imports.entry(addr).or_insert_with(|| name.to_string());
+                    bind_slots.insert(addr);
                 }
             }
         }
+        let img = MachoImage::with_fixups(ctx.file, fixups.clone());
+        let reader = Reader {
+            img: &img,
+            bind_slots: &bind_slots,
+        };
+        let md = reader.read_all(ctx.file, names, ctx.bytes.len());
         // Only a code address may be named as a function: a base-protocol
         // or associated-type witness row points at data.
         let code: Vec<(u64, u64)> = ctx
@@ -129,8 +135,42 @@ impl AnalysisPass for SwiftMetadataPass {
             budget: std::cell::Cell::new(NAME_BYTES.saturating_add(ctx.bytes.len())),
         };
         namer.emit(&mut out);
+        if ctx.arch.analysis_swifttypes {
+            let mut types = kuna_swifttypes::Types::new(
+                &md,
+                &reader,
+                &imports,
+                &namer,
+                ctx.arch.types(),
+                ctx.file.architecture(),
+                ctx.file.format() == object::BinaryFormat::MachO,
+            );
+            types.locate_all();
+            let regs = kuna_swifttypes::Registers::for_arch(ctx.file.architecture());
+            types.emit(regs.as_ref(), &mut out);
+        }
         out
     }
+}
+
+/// An ELF's relocated pointer slots (`R_*_RELATIVE`, the addend the loader
+/// stores), so the reader resolves a pointer word the same way it does a
+/// Mach-O chained rebase.
+fn elf_relative_relocs(file: &object::File) -> HashMap<u64, u64> {
+    let relative = match file.architecture() {
+        object::Architecture::X86_64 => object::elf::R_X86_64_RELATIVE,
+        object::Architecture::Aarch64 => object::elf::R_AARCH64_RELATIVE,
+        _ => return HashMap::new(),
+    };
+    let mut out = HashMap::new();
+    for (addr, reloc) in file.dynamic_relocations().into_iter().flatten() {
+        if let object::RelocationFlags::Elf { r_type } = reloc.flags() {
+            if r_type == relative && !reloc.has_implicit_addend() {
+                out.insert(addr, reloc.addend() as u64);
+            }
+        }
+    }
+    out
 }
 
 /// The name-only rendering of an import slot's symbol, with the trailing
@@ -180,7 +220,7 @@ fn member_after_protocol(name: &str) -> Option<String> {
 /// crafted one whose long paths repeat across many records.
 const NAME_BYTES: usize = 16 << 20;
 
-struct Namer<'a> {
+pub struct Namer<'a> {
     md: &'a Metadata,
     imports: &'a HashMap<u64, String>,
     memo: std::cell::RefCell<HashMap<u64, Option<String>>>,
@@ -192,7 +232,7 @@ struct Namer<'a> {
 impl Namer<'_> {
     /// The dotted path of the context at `addr` (`Module.Outer.Inner`), or
     /// `None` when a link of the chain cannot be named.
-    fn path(&self, addr: u64, depth: usize) -> Option<String> {
+    pub fn path(&self, addr: u64, depth: usize) -> Option<String> {
         if depth > 32 {
             return None;
         }
@@ -254,7 +294,7 @@ impl Namer<'_> {
         Some(format!("<{ty}:{proto}>"))
     }
 
-    fn is_code(&self, addr: u64) -> bool {
+    pub fn is_code(&self, addr: u64) -> bool {
         self.code.iter().any(|&(lo, hi)| addr >= lo && addr < hi)
     }
 
