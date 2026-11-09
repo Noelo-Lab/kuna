@@ -25,7 +25,8 @@ use kuna_sleigh::kuna_pcodeoverlay::{OverlayInsn, OverlayOp, PcodeOverlay};
 use OpCode::*;
 
 use super::kuna_pushanemu::{classify_space, LiftedInsn, PushanTarget, RawOp, Space};
-use super::kuna_pushanexpr::{ExprArena, ExprId};
+use super::kuna_pushanexpr::{ExprArena, ExprId, ExprKind};
+use super::kuna_pushanstate::Loc;
 use super::kuna_pushanflow::{FlatCfg, NodeExit, NodeId};
 
 pub struct EmitConfig {
@@ -66,6 +67,8 @@ pub struct EmitStats {
     pub dead: usize,
     /// Individual ops dropped inside live instructions (dead stack stores, their address arithmetic).
     pub dead_ops: usize,
+    /// Select conditions rebuilt from the deciding atoms.
+    pub remat_conditions: usize,
     /// Argument and return registers rewritten as undefined at a call or return.
     pub undefined: usize,
 }
@@ -505,6 +508,9 @@ fn order_count(trace: Option<&super::kuna_pushanemu::InsnTrace>, insn: &LiftedIn
     }
 }
 
+/// First emitter scratch slot used by rebuilt conditions.
+const REMAT_SCRATCH: u64 = 4096;
+
 pub fn syn_addr(conf: &EmitConfig, node: NodeId) -> u64 {
     conf.syn_base + node as u64 * conf.stride
 }
@@ -922,6 +928,17 @@ impl<'a> Emitter<'a> {
             NodeExit::Branch(s) => out.push(self.branch_op(syn_addr(self.conf, *s))),
             NodeExit::CondBranch { fall, .. } => out.push(self.branch_op(syn_addr(self.conf, *fall))),
             NodeExit::Select { targets, atoms, by_atoms } => {
+                // Branch on the deciding atoms rebuilt from where their
+                // variables live: the simplified comparison, not the
+                // interpreter's flag arithmetic that happened to compute it.
+                let total: usize = targets.iter().map(|(a, _)| a.len()).sum();
+                if *by_atoms && total <= 16 {
+                    if let Some(lits) = self.rematerialize(node, atoms, out) {
+                        self.emit_select(targets, |_, a| lits[a].clone(), out);
+                        self.stats.remat_conditions += 1;
+                        return;
+                    }
+                }
                 // Branch on the witnessed booleans when every deciding atom
                 // was computed by some emitted op; otherwise compare the
                 // computed target against each destination's native address.
@@ -1024,6 +1041,142 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+    }
+
+    /// One CBRANCH per assignment of every target but the last, then a
+    /// branch to the last; `lit` gives an atom's value as a varnode.
+    fn emit_select(
+        &mut self,
+        targets: &[(Vec<Vec<(ExprId, bool)>>, NodeId)],
+        lit: impl Fn(&mut Self, &ExprId) -> VarnodeData,
+        out: &mut Vec<OverlayOp>,
+    ) {
+        let n = targets.len();
+        let mut scratch = REMAT_SCRATCH + 512;
+        for (i, (assigns, succ)) in targets.iter().enumerate() {
+            if i + 1 == n {
+                out.push(self.branch_op(syn_addr(self.conf, *succ)));
+                break;
+            }
+            for assign in assigns {
+                let mut acc: Option<VarnodeData> = None;
+                for (atom, v) in assign {
+                    let sv = lit(self, atom);
+                    let l = if *v {
+                        sv
+                    } else {
+                        let t = self.scratch(scratch, 1);
+                        scratch += 1;
+                        out.push(OverlayOp { opc: CPUI_BOOL_NEGATE, out: Some(t.clone()), ins: vec![sv] });
+                        t
+                    };
+                    acc = Some(match acc {
+                        None => l,
+                        Some(prev) => {
+                            let t = self.scratch(scratch, 1);
+                            scratch += 1;
+                            out.push(OverlayOp { opc: CPUI_BOOL_AND, out: Some(t.clone()), ins: vec![prev, l] });
+                            t
+                        }
+                    });
+                }
+                match acc {
+                    Some(c) => out.push(OverlayOp { opc: CPUI_CBRANCH, out: None, ins: vec![self.code(syn_addr(self.conf, *succ)), c] }),
+                    None => out.push(self.branch_op(syn_addr(self.conf, *succ))),
+                }
+            }
+        }
+    }
+
+    /// Compile every atom from the node's recorded variable homes; None when
+    /// one reads a variable with no home or uses a form p-code cannot state.
+    fn rematerialize(&mut self, node: &super::kuna_pushanflow::Node, atoms: &[ExprId], out: &mut Vec<OverlayOp>) -> Option<BTreeMap<ExprId, VarnodeData>> {
+        let (locs, sp_off) = node.exit_locs.as_ref()?;
+        let homes: BTreeMap<u32, Loc> = locs.iter().map(|(v, l)| (*v, *l)).collect();
+        let mut ops = Vec::new();
+        let mut memo: BTreeMap<ExprId, VarnodeData> = BTreeMap::new();
+        let mut next = REMAT_SCRATCH;
+        let mut lits = BTreeMap::new();
+        for a in atoms {
+            let v = self.compile(*a, &homes, *sp_off, &mut memo, &mut next, &mut ops, 0)?;
+            lits.insert(*a, v);
+        }
+        out.extend(ops);
+        Some(lits)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn compile(
+        &mut self,
+        e: ExprId,
+        homes: &BTreeMap<u32, Loc>,
+        sp_off: Option<i128>,
+        memo: &mut BTreeMap<ExprId, VarnodeData>,
+        next: &mut u64,
+        ops: &mut Vec<OverlayOp>,
+        depth: u32,
+    ) -> Option<VarnodeData> {
+        if let Some(v) = memo.get(&e) {
+            return Some(v.clone());
+        }
+        if depth > 64 || *next > REMAT_SCRATCH + 400 {
+            return None;
+        }
+        let size = self.arena.size(e) as u32;
+        let mut fresh = |this: &mut Self| {
+            let t = this.scratch(*next, size);
+            *next += 1;
+            t
+        };
+        let r = match self.arena.kind(e).clone() {
+            ExprKind::Const(c) => self.cst(c as u64, size),
+            ExprKind::Var(v) => match homes.get(&v)? {
+                Loc::Reg { off } => self.vn(&self.conf.register, *off, size),
+                Loc::Mem { off, .. } => {
+                    let ptr = self.conf.ptr_size as u32;
+                    let delta = (*off - sp_off?) as i64 as u64;
+                    let addr = fresh(self);
+                    let addr = VarnodeData { size: ptr, ..addr };
+                    ops.push(OverlayOp { opc: CPUI_INT_ADD, out: Some(addr.clone()), ins: vec![self.sp_varnode(), self.cst(delta, ptr)] });
+                    let t = fresh(self);
+                    ops.push(OverlayOp { opc: CPUI_LOAD, out: Some(t.clone()), ins: vec![self.cst(self.conf.ram.get_index() as u64, ptr), addr] });
+                    t
+                }
+            },
+            ExprKind::Un(opc, a) => {
+                let x = self.compile(a, homes, sp_off, memo, next, ops, depth + 1)?;
+                let t = self.scratch(*next, size);
+                *next += 1;
+                ops.push(OverlayOp { opc, out: Some(t.clone()), ins: vec![x] });
+                t
+            }
+            ExprKind::Bin(opc, a, b) => {
+                let x = self.compile(a, homes, sp_off, memo, next, ops, depth + 1)?;
+                let y = self.compile(b, homes, sp_off, memo, next, ops, depth + 1)?;
+                let t = self.scratch(*next, size);
+                *next += 1;
+                ops.push(OverlayOp { opc, out: Some(t.clone()), ins: vec![x, y] });
+                t
+            }
+            ExprKind::SubPiece(a, off) => {
+                let x = self.compile(a, homes, sp_off, memo, next, ops, depth + 1)?;
+                let t = self.scratch(*next, size);
+                *next += 1;
+                ops.push(OverlayOp { opc: CPUI_SUBPIECE, out: Some(t.clone()), ins: vec![x, self.cst(off as u64, 4)] });
+                t
+            }
+            ExprKind::Piece(a, b) => {
+                let x = self.compile(a, homes, sp_off, memo, next, ops, depth + 1)?;
+                let y = self.compile(b, homes, sp_off, memo, next, ops, depth + 1)?;
+                let t = self.scratch(*next, size);
+                *next += 1;
+                ops.push(OverlayOp { opc: CPUI_PIECE, out: Some(t.clone()), ins: vec![x, y] });
+                t
+            }
+            ExprKind::Ite(..) => return None,
+        };
+        memo.insert(e, r.clone());
+        Some(r)
     }
 
     fn sp_varnode(&self) -> VarnodeData {

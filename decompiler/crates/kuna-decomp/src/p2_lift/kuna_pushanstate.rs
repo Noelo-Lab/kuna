@@ -463,6 +463,11 @@ impl State {
         }
     }
 
+    /// The offsets with a stored byte in the region of `base`.
+    pub fn mem_offsets(&self, base: Option<VarId>) -> Vec<i128> {
+        self.mem.get(&base).map(|r| r.offsets().copied().collect()).unwrap_or_default()
+    }
+
     pub fn mem_bytes(&self) -> usize {
         self.mem.values().map(|r| r.len()).sum()
     }

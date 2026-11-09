@@ -25,7 +25,7 @@ use std::rc::Rc;
 use kuna_num::opcodes::OpCode;
 
 use super::kuna_pushanemu::{merge_ite, Emulator, Exit, InsnTrace, LiftedInsn, PushanTarget};
-use super::kuna_pushanexpr::{ExprArena, ExprId, VarKind};
+use super::kuna_pushanexpr::{ExprArena, ExprId, VarId, VarKind};
 use super::kuna_pushanstate::{Loc, State, SymLoc};
 
 pub type NodeId = u32;
@@ -68,6 +68,9 @@ pub enum NodeExit {
 
 #[derive(Clone, Debug)]
 pub struct Node {
+    /// Where each variable of a select's deciding atoms lives when the node
+    /// exits, with the stack pointer's offset from its entry value there.
+    pub exit_locs: Option<(Vec<(VarId, Loc)>, Option<i128>)>,
     pub key: NodeKey,
     pub entry: State,
     pub entry_ctx: VmCtx,
@@ -156,6 +159,8 @@ pub struct Explorer<'a> {
     sym_values: BTreeMap<u32, BTreeSet<u128>>,
     /// Bits every value seen at a symbolized location agreed on.
     sym_known: BTreeMap<(NodeKey, SymLoc), (u128, u128)>,
+    /// Locations recorded by the last select built, for its node.
+    pending_locs: Option<(Vec<(VarId, Loc)>, Option<i128>)>,
     pub stats: Stats,
     pub log: Vec<String>,
     retaddr: Option<ExprId>,
@@ -184,6 +189,7 @@ impl<'a> Explorer<'a> {
             to_symbolize: BTreeMap::new(),
             sym_values: BTreeMap::new(),
             sym_known: BTreeMap::new(),
+            pending_locs: None,
             stats: Stats::default(),
             log: Vec::new(),
             retaddr: None,
@@ -414,6 +420,7 @@ impl<'a> Explorer<'a> {
         }
         let id = cfg.nodes.len() as NodeId;
         cfg.nodes.push(Node {
+            exit_locs: None,
             key,
             entry: state,
             entry_ctx: ctx,
@@ -513,10 +520,57 @@ impl<'a> Explorer<'a> {
             Some(e) => e,
             None => self.resolve_exit(cfg, worklist, id, exit, state, next_ctx, &insns),
         };
+        let exit_locs = if matches!(node_exit, NodeExit::Select { .. }) { self.pending_locs.take() } else { None };
+        self.pending_locs = None;
         let node = &mut cfg.nodes[id as usize];
         node.insns = insns;
         node.traces = traces;
         node.exit = node_exit;
+        node.exit_locs = exit_locs;
+    }
+
+    /// A register or entry-stack slot holding each variable the atoms read,
+    /// in `state`; None when one has no home (it was only ever in flight).
+    fn locate_vars(&mut self, state: &mut State, atoms: &[ExprId]) -> Option<(Vec<(VarId, Loc)>, Option<i128>)> {
+        let mut vars = BTreeSet::new();
+        for a in atoms {
+            vars.extend(self.arena.free_vars(*a));
+        }
+        let ps = self.abi.ptr_size;
+        let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
+        let sp_off = match self.arena.affine(sp) {
+            Some((Some(b), k)) if Some(b) == self.sp0 => Some(k),
+            _ => None,
+        };
+        let mut out = Vec::with_capacity(vars.len());
+        for v in vars {
+            let info = *self.arena.var_info(v);
+            let size = info.size;
+            let target = self.arena.var_expr(v)?;
+            let mut found = None;
+            let mut regs: Vec<u64> = self.abi.gprs.clone();
+            regs.extend(self.abi.callee_saved.iter().map(|(o, _)| *o));
+            for r in regs {
+                if r == self.abi.sp {
+                    continue;
+                }
+                if state.read_reg(&mut self.arena, r, size) == target {
+                    found = Some(Loc::Reg { off: r });
+                    break;
+                }
+            }
+            if found.is_none() && sp_off.is_some() {
+                let offs: Vec<i128> = state.mem_offsets(self.sp0).into_iter().filter(|o| o.rem_euclid(size as i128) == 0).collect();
+                for o in offs {
+                    if state.read_mem(&mut self.arena, self.target, self.sp0, o, size) == target {
+                        found = Some(Loc::Mem { base: self.sp0, off: o });
+                        break;
+                    }
+                }
+            }
+            out.push((v, found?));
+        }
+        Some((out, sp_off))
     }
 
     /// A virtual PC decided by boolean atoms (the interpreter's conditional
@@ -611,6 +665,9 @@ impl<'a> Explorer<'a> {
             };
             targets.push((assigns, succ));
         }
+        let mut atoms = atoms;
+        fuse_signed_compares(&mut self.arena, &mut atoms, &mut targets);
+        self.pending_locs = self.locate_vars(state, &atoms);
         Some(NodeExit::Select { atoms, targets, by_atoms: true })
     }
 
@@ -905,6 +962,13 @@ impl<'a> Explorer<'a> {
         if targets.len() == 1 {
             return NodeExit::Branch(targets[0].1);
         }
+        let mut atoms = atoms;
+        let mut targets = targets;
+        if !symbol_pins {
+            fuse_signed_compares(&mut self.arena, &mut atoms, &mut targets);
+            let mut st = state;
+            self.pending_locs = self.locate_vars(&mut st, &atoms);
+        }
         NodeExit::Select { atoms, targets, by_atoms: !symbol_pins }
     }
 
@@ -968,6 +1032,7 @@ impl<'a> Explorer<'a> {
         let id = cfg.nodes.len() as NodeId;
         let tag = 0x7f00_0000_0000_0000u64 ^ (from as u64).rotate_left(32) ^ addr;
         cfg.nodes.push(Node {
+            exit_locs: None,
             key: NodeKey { addr, ctx: Some(tag) },
             entry: State::new(self.abi.big_endian, self.abi.flag_regs),
             entry_ctx: VmCtx::default(),
@@ -1066,6 +1131,92 @@ pub fn pin(arena: &mut ExprArena, state: &mut State, atom: ExprId, value: ExprId
     let mut map = BTreeMap::new();
     map.insert(atom, value);
     state.map_values(arena, &mut |a, e| a.substitute(e, &map));
+}
+
+/// Replace each pair of atoms `SLESS(a + b, 0)` / `SCARRY(a, b)` (the sign
+/// and overflow flags of one addition) that the assignments only consult
+/// through their exclusive or by the single atom `a < -b`, which is what that
+/// exclusive or states when `b` is a constant other than the minimum.  This is
+/// the signed comparison a `jl`/`jge`/`jg`/`jle` pair of flags encodes.
+pub fn fuse_signed_compares(arena: &mut ExprArena, atoms: &mut Vec<ExprId>, targets: &mut [(Vec<Vec<(ExprId, bool)>>, NodeId)]) {
+    use super::kuna_pushanexpr::ExprKind;
+    use OpCode::*;
+    let mut pairs = Vec::new();
+    for &o in atoms.iter() {
+        let ExprKind::Bin(CPUI_INT_SCARRY, p, q) = arena.kind(o).clone() else { continue };
+        let (a, b) = if arena.is_const(q).is_some() { (p, q) } else { (q, p) };
+        let size = arena.size(a);
+        let Some(bc) = arena.is_const(b) else { continue };
+        if bc == 1u128 << (8 * size as u32 - 1) {
+            continue;
+        }
+        let sum = arena.mk_bin(CPUI_INT_ADD, a, b, size);
+        let zero = arena.cst(size, 0);
+        let sf_expr = arena.mk_bin(CPUI_INT_SLESS, sum, zero, 1);
+        // The sign test may be stored as the negation of an atom.
+        let not_sum = arena.mk_un(CPUI_INT_NEGATE, sum, size);
+        let sf_not = arena.mk_bin(CPUI_INT_SLESS, not_sum, zero, 1);
+        let (sf, flip) = if atoms.contains(&sf_expr) {
+            (sf_expr, false)
+        } else if atoms.contains(&sf_not) {
+            // ~x < 0 exactly when x >= 0.
+            (sf_not, true)
+        } else if let ExprKind::Bin(CPUI_INT_XOR, inner, k) = arena.kind(sf_expr).clone() {
+            if arena.is_const(k) == Some(1) && atoms.contains(&inner) {
+                (inner, true)
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        };
+        let x = if let ExprKind::Un(CPUI_INT_NEGATE, y) = arena.kind(a).clone() {
+            // ~y < -b  is  b - 1 < y.
+            let one = arena.cst(size, 1);
+            let lo = arena.mk_bin(CPUI_INT_SUB, b, one, size);
+            arena.mk_bin(CPUI_INT_SLESS, lo, y, 1)
+        } else {
+            let nb = arena.mk_un(CPUI_INT_2COMP, b, size);
+            arena.mk_bin(CPUI_INT_SLESS, a, nb, 1)
+        };
+        pairs.push((sf, o, x, flip));
+    }
+    for (sf, of, x, flip) in pairs {
+        let mut rewritten: Vec<(Vec<Vec<(ExprId, bool)>>, NodeId)> = Vec::with_capacity(targets.len());
+        let mut seen: Vec<(Vec<(ExprId, bool)>, NodeId)> = Vec::new();
+        let mut ok = true;
+        'outer: for (assigns, succ) in targets.iter() {
+            let mut out = Vec::new();
+            for assign in assigns {
+                let s = assign.iter().find(|(a, _)| *a == sf).map(|(_, v)| *v);
+                let o = assign.iter().find(|(a, _)| *a == of).map(|(_, v)| *v);
+                let (Some(s), Some(o)) = (s, o) else {
+                    ok = false;
+                    break 'outer;
+                };
+                let mut lits: Vec<(ExprId, bool)> = assign.iter().filter(|(a, _)| *a != sf && *a != of).copied().collect();
+                lits.push((x, s ^ o ^ flip));
+                if let Some((_, t)) = seen.iter().find(|(l, _)| *l == lits) {
+                    if t != succ {
+                        ok = false;
+                        break 'outer;
+                    }
+                    continue;
+                }
+                seen.push((lits.clone(), *succ));
+                out.push(lits);
+            }
+            rewritten.push((out, *succ));
+        }
+        if !ok {
+            continue;
+        }
+        for (t, r) in targets.iter_mut().zip(rewritten) {
+            *t = r;
+        }
+        atoms.retain(|a| *a != sf && *a != of);
+        atoms.push(x);
+    }
 }
 
 /// Does `outer` contain every byte of `inner`?

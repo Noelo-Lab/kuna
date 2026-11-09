@@ -200,6 +200,12 @@ impl ExprArena {
             _ => None,
         }
     }
+    /// The expression that is exactly variable `v`.
+    pub fn var_expr(&self, v: VarId) -> Option<ExprId> {
+        let size = self.vars.get(v as usize)?.size;
+        self.intern.get(&(ExprKind::Var(v), size)).copied()
+    }
+
     /// The origin of a bare symbolic variable.
     pub fn var_kind(&self, e: ExprId) -> Option<VarKind> {
         self.as_var(e).map(|v| self.vars[v as usize].kind)

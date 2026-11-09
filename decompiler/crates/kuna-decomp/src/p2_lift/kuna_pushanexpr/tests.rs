@@ -394,3 +394,17 @@ fn known_bits_decide_a_flag_word_compare() {
     let eq = a.mk_bin(CPUI_INT_EQUAL, o, all, 1);
     assert_eq!(a.is_const(eq), Some(0), "{}", a.fmt(eq));
 }
+
+#[test]
+fn sign_of_not_plus_const() {
+    use kuna_num::opcodes::OpCode::*;
+    let mut a = ExprArena::new();
+    let s = a.var(VarInfo::new(VarKind::InitReg { offset: 0x10 }, 4, false));
+    let n = a.mk_un(CPUI_INT_NEGATE, s, 4);
+    let k = a.cst(4, 5);
+    let sum = a.mk_bin(CPUI_INT_ADD, n, k, 4);
+    let z = a.cst(4, 0);
+    let sf = a.mk_bin(CPUI_INT_SLESS, sum, z, 1);
+    let of = a.mk_bin(CPUI_INT_SCARRY, k, n, 1);
+    eprintln!("sum={} sf={} of={}", a.fmt(sum), a.fmt(sf), a.fmt(of));
+}
