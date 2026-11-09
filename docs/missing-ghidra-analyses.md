@@ -49,7 +49,7 @@ Every fact a pass emits is keyed by an address in the **loaded image's** address
 space. That is not free on a relocatable object (an ELF `ET_REL` `.o`, a COFF
 `.obj`): the loader lays such a file out synthetically above `RELOC_BASE`
 (`relocobjects`), while a pass re-parsing it through `object::File` sees the
-pre-link, section-relative addresses. `relocrebase` (default-on, GH-289) holds the
+pre-link, section-relative addresses. `relocrebase` (always on, GH-289) holds the
 contract up by rebasing the tier's **input** — `loader/kuna_relocrebase.rs`
 re-presents the object with each laid-out section's relocated bytes and load VMA,
 each unlaid `.debug_*` section's relocations applied, and each ELF symbol shifted
@@ -163,8 +163,8 @@ what names a copy-relocated (`R_X86_64_COPY`) libc extern — `stderr`, `stdout`
 a `.dynsym` entry but no DIE in the program's own `.debug_info`, and a
 stripped/DWARF-less binary's own statics. The Ghidra analog is the ELF symbol
 importer's data-symbol path (`ElfSymbolTable` → data address markup), which
-names data objects independently of debug info. Gated by `--option datasyms
-on|off`, default ON (DIV-26/DIV-76); the commit is in
+names data objects independently of debug info. Always on (DIV-26/DIV-76); the
+commit is in
 `kuna-console/src/engine.rs::commit_analysis_output`.
 
 ## 3. DWARF debug-info recovery — ⛔ Gap

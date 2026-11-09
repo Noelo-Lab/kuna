@@ -69,7 +69,7 @@ use super::{executable_sections, existing_function_addrs};
 /// The longest FDE body this pass will linearly decode.
 const MAX_BODY: u64 = 0x4000;
 
-/// (kuna) The multi-entry cold-fragment pass (`coldentry`), gated at the commit.
+/// (kuna) The multi-entry cold-fragment pass (`coldentry`).
 pub struct ColdEntryPass;
 
 impl AnalysisPass for ColdEntryPass {

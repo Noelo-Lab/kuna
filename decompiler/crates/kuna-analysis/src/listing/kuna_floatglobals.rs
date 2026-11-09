@@ -493,8 +493,7 @@ fn switch_targets(
         &ctx.image.exec,
         &super::kuna_switchtable::Reach {
             max_entries,
-            preserved: if ctx.arch.analysis_switchreach { &ctx.preserved } else { &[] },
-            far: ctx.arch.analysis_switchreach,
+            preserved: &ctx.preserved,
         },
     )
     .cases

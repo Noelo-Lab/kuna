@@ -59,9 +59,8 @@
 //! pointed to), and they come back as the `uint4 *` / `uint1 *` they are, taking
 //! `*(uint4 *)((int4)a0 + 0x20)` back to `a0[8]`.
 //!
-//! Default-**on** (`--option unmappedentry off` restores the previous, phantom-
-//! producing set exactly). It only ever removes entries the walk itself refused
-//! to decode, so it can never remove a function that had a body.
+//! It only ever removes entries the walk itself refused to decode, so it can
+//! never remove a function that had a body.
 
 use super::walk::in_exec;
 
@@ -69,17 +68,7 @@ use super::walk::in_exec;
 ///
 /// The predicate is deliberately the SAME one the instruction worklist applies
 /// before it decodes ([`in_exec`]): the walk may only claim a function where it
-/// is willing to disassemble. With the gate off this is unconditionally `true`,
-/// which is the pre-fix behaviour byte for byte.
-///
-/// `unmappedentry` is the option bit as a plain `bool` rather than an
-/// `&Architecture` read, so a walk that captured the decision before it started
-/// (an `Architecture` cannot cross a thread) evaluates the same predicate. The
-/// single place that read is made is [`super::walk::WalkPolicy::from_arch`].
-pub(super) fn admits_call_entry(
-    unmappedentry: bool,
-    exec_ranges: &[(u64, u64)],
-    target: u64,
-) -> bool {
-    !unmappedentry || in_exec(exec_ranges, target)
+/// is willing to disassemble.
+pub(super) fn admits_call_entry(exec_ranges: &[(u64, u64)], target: u64) -> bool {
+    in_exec(exec_ranges, target)
 }

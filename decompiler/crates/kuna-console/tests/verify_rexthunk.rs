@@ -1,4 +1,4 @@
-//! End-to-end gate for `rexthunk`: on an x86-64 PE, the `FF 25` one byte into a
+//! End-to-end gate for the REX-tail rule: on an x86-64 PE, the `FF 25` one byte into a
 //! REX-prefixed `48 FF 25` jump through an import slot is not an import thunk,
 //! while a real thunk after a byte in the same range keeps its name.
 //!
@@ -15,22 +15,14 @@
 //! `pe_rexthunk_reach_x86_64.exe` puts each real thunk directly after a function
 //! ending in `48 FF 60 48` and reaches it only through a pointer, an `imm64`, a
 //! function table, a `.pdata` record, an export or an `E9` stub.
-//!
-//! The gate is a process-global env var (import names are resolved inside `load
-//! file`, upstream of every per-function `option`), so each test holds one mutex
-//! for its whole run.
 
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
 
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
-use kuna_decomp::kuna_rexthunk::REXTHUNK_ENV;
-
-static GATE: Mutex<()> = Mutex::new(());
 
 const ENTRY: u64 = 0x140001000;
 const WRAPPER: u64 = 0x140001030;
@@ -43,32 +35,20 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Take the gate for the whole test, so no other test flips the env var while this
-/// one loads or decompiles.
-fn lock() -> MutexGuard<'static, ()> {
-    GATE.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-/// Load a fixture with the gate forced on/off, or left unset (`None`) for the shipped
-/// default. Call under [`lock`].
-fn boot_fixture(name: &str, gate: Option<bool>) -> ConsoleProgram {
+/// Load a fixture and commit its analysis.
+fn boot_fixture(name: &str) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let path = root.join("decompiler/crates/kuna-analysis/tests/fixtures").join(name);
     assert!(path.exists(), "missing fixture {path:?}");
-
-    match gate {
-        Some(on) => std::env::set_var(REXTHUNK_ENV, if on { "on" } else { "off" }),
-        None => std::env::remove_var(REXTHUNK_ENV),
-    }
     let mut prog = bootstrap_from_object(path.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
 }
 
-fn boot(gate: Option<bool>) -> ConsoleProgram {
-    boot_fixture("pe_rexthunk_x86_64.exe", gate)
+fn boot() -> ConsoleProgram {
+    boot_fixture("pe_rexthunk_x86_64.exe")
 }
 
 fn decompile_at(prog: ConsoleProgram, vma: u64) -> String {
@@ -97,13 +77,12 @@ fn name_at(prog: &ConsoleProgram, vma: u64) -> String {
     prog.find_entry_at(vma).unwrap_or_else(|| panic!("no entry at {vma:#x}")).name.clone()
 }
 
-/// The shipped default: no entry one byte into the wrapper's tail jump, while both
+/// No entry one byte into the wrapper's tail jump, while both
 /// real thunks and the slot keep their import names. The wrapper itself is a call
 /// target, which the console bootstrap leaves to the CLI's discovery walk.
 #[test]
 fn rex_tail_is_not_a_thunk_and_real_thunks_keep_their_names() {
-    let _gate = lock();
-    let prog = boot(None);
+    let prog = boot();
     assert_eq!(executable_entries(&prog), vec![ENTRY, THUNK, EXIT_THUNK]);
     assert!(prog.find_entry_at(MID_INSTRUCTION).is_none());
     assert_eq!(name_at(&prog, THUNK), "InitializeSListHead");
@@ -114,8 +93,7 @@ fn rex_tail_is_not_a_thunk_and_real_thunks_keep_their_names() {
 /// The wrapper's tail jump still names the import through the slot.
 #[test]
 fn wrapper_tail_jump_still_names_the_import() {
-    let _gate = lock();
-    let prog = boot(None);
+    let prog = boot();
     let out = decompile_at(prog, WRAPPER);
     assert!(out.contains("InitializeSListHead(0x140002100);"), "got:\n{out}");
 }
@@ -125,8 +103,7 @@ fn wrapper_tail_jump_still_names_the_import() {
 /// its no-return fact intact.
 #[test]
 fn caller_names_both_thunks_and_keeps_the_wrapper() {
-    let _gate = lock();
-    let prog = boot(None);
+    let prog = boot();
     let out = decompile_at(prog, ENTRY);
     assert!(out.contains("sub_140001030();"), "got:\n{out}");
     // `globalref` (default on) names the list head `&dat_140002100`; either
@@ -139,31 +116,12 @@ fn caller_names_both_thunks_and_keeps_the_wrapper() {
     assert!(out.contains("ExitProcess(0); // no-return"), "got:\n{out}");
 }
 
-/// Gate off restores the previous inventory, mid-instruction entry included.
-#[test]
-fn gate_off_restores_the_mid_instruction_thunk() {
-    let _gate = lock();
-    let prog = boot(Some(false));
-    assert_eq!(executable_entries(&prog), vec![ENTRY, MID_INSTRUCTION, THUNK, EXIT_THUNK]);
-    assert_eq!(name_at(&prog, MID_INSTRUCTION), "InitializeSListHead");
-    assert_eq!(name_at(&prog, EXIT_THUNK), "ExitProcess");
-}
-
-/// Gate on explicitly matches the unset default.
-#[test]
-fn gate_on_matches_the_default() {
-    let _gate = lock();
-    let prog = boot(Some(true));
-    assert_eq!(executable_entries(&prog), vec![ENTRY, THUNK, EXIT_THUNK]);
-}
-
 /// Every thunk of a far contiguous table keeps its name although the byte before
 /// each later one is `40` and nothing calls them: the six bytes before it are the
 /// previous thunk.
 #[test]
 fn far_contiguous_table_keeps_every_thunk() {
-    let _gate = lock();
-    let prog = boot_fixture("pe_rexthunk_far_x86_64.exe", None);
+    let prog = boot_fixture("pe_rexthunk_far_x86_64.exe");
     assert_eq!(name_at(&prog, 0x140001020), "GetTickCount");
     assert_eq!(name_at(&prog, 0x140001026), "Sleep");
     assert_eq!(name_at(&prog, 0x14000102c), "ExitProcess");
@@ -174,8 +132,7 @@ fn far_contiguous_table_keeps_every_thunk() {
 /// `E9` stub, as does the control thunk after `CC`.
 #[test]
 fn thunks_reached_without_rel32_keep_their_names() {
-    let _gate = lock();
-    let prog = boot_fixture("pe_rexthunk_reach_x86_64.exe", None);
+    let prog = boot_fixture("pe_rexthunk_reach_x86_64.exe");
     for (vma, name) in [
         (0x140001207, "ExitProcess"),
         (0x140001217, "ExitThread"),
@@ -196,9 +153,8 @@ fn thunks_reached_without_rel32_keep_their_names() {
 /// instruction stays a call of `ExitProcess`, and the next function's body stays out.
 #[test]
 fn noreturn_calls_through_pointers_keep_the_import() {
-    let _gate = lock();
     for (vma, next_body) in [(0x140001170u64, "return 7;"), (0x140001150, "0x140002100")] {
-        let prog = boot_fixture("pe_rexthunk_reach_x86_64.exe", None);
+        let prog = boot_fixture("pe_rexthunk_reach_x86_64.exe");
         let out = decompile_at(prog, vma);
         assert!(out.contains("ExitProcess(0); // no-return"), "{vma:#x} got:\n{out}");
         assert!(!out.contains(next_body), "{vma:#x} absorbed the next function:\n{out}");

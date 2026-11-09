@@ -4,7 +4,7 @@
 //!
 //! Loading happens before any per-function `option` command, so the live gate is
 //! the [`KERNELCACHE_ENV`] environment variable, exported by the `kuna` CLI and
-//! bridged from the console `option` command, the same shape as `relocrebase`.
+//! bridged from the console `option` command.
 
 use kuna_base::error::{KunaError, KunaResult};
 

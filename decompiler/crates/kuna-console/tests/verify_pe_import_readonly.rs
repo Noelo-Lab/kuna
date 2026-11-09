@@ -13,7 +13,6 @@ use kuna_console::ifaceterm::ConsoleCommands;
 const FIXTURE: &str = "pe_iatincode_readonly_i386.exe";
 const ENTRY: u64 = 0x401010;
 const NAMED_CALL: &str = "VirtualAlloc(0x40,GetModuleHandleA(0));";
-const RAW_CALL: &str = "(*(code *)0x10a0)(0x40,(*(code *)0x10b0)(0));";
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -72,42 +71,26 @@ fn body(prog: ConsoleProgram) -> String {
 }
 
 #[test]
-fn peimportcall_off_keeps_the_raw_hint_name_rvas() {
-    let prog = load(&[("peimportcall", "off")]);
+fn the_nested_calls_are_named() {
+    let prog = load(&[]);
     let c = body(prog);
     assert!(
-        c.contains(RAW_CALL),
-        "the off arm must preserve the raw call exactly; got:\n{c}"
+        c.contains(NAMED_CALL),
+        "both import calls and their arguments must survive; got:\n{c}"
     );
     assert!(
-        !c.contains("VirtualAlloc("),
-        "the disabled analysis must not name imports; got:\n{c}"
+        !c.contains("0x10a0"),
+        "the IAT's on-disk RVA is not a run-time target; got:\n{c}"
     );
-}
-
-#[test]
-fn default_and_explicit_on_keep_the_nested_calls_named() {
-    for options in [&[][..], &[("peimportcall", "on")][..]] {
-        let prog = load(options);
-        let c = body(prog);
-        assert!(
-            c.contains(NAMED_CALL),
-            "both import calls and their arguments must survive; got:\n{c}"
-        );
-        assert!(
-            !c.contains("0x10a0"),
-            "the IAT's on-disk RVA is not a run-time target; got:\n{c}"
-        );
-        assert!(
-            !c.contains("0x10b0"),
-            "the IAT's on-disk RVA is not a run-time target; got:\n{c}"
-        );
-    }
+    assert!(
+        !c.contains("0x10b0"),
+        "the IAT's on-disk RVA is not a run-time target; got:\n{c}"
+    );
 }
 
 #[test]
 fn readonly_on_still_preserves_external_reference_identity() {
-    let prog = load(&[("peimportcall", "on"), ("readonly", "on")]);
+    let prog = load(&[("readonly", "on")]);
     let c = body(prog);
     assert!(
         c.contains(NAMED_CALL),

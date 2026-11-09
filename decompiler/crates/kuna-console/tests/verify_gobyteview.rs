@@ -82,7 +82,28 @@ fn run(command: &mut Command) {
 
 fn execute_body(body: &str, name: &str) {
     let source = common::scratch_file("gobyteview", "go");
-    let check = r#"
+    let header = body.lines().find(|l| l.starts_with("func ")).unwrap_or_default();
+    let imports = |mut packages: Vec<&str>| {
+        if body.contains("unsafe.") {
+            packages.push("unsafe");
+        }
+        packages.iter().map(|p| format!("import \"{p}\"\n")).collect::<String>()
+    };
+    let program = if header.contains(") (") {
+        // A recovered multi-result signature: both words come back as results.
+        let check = r#"
+func check[P ~int64 | ~uint64, R ~int64 | ~uint64](f func(P) (R, R)) {
+  for _, x := range []int64{0,1,-1,-17,0x7fffffffffffffff,-0x8000000000000000} {
+    a, b := f(P(x))
+    if uint64(a) != uint64(x) || uint64(b) != uint64(x)+1 { panic("result words") }
+  }
+}
+func main() { check(recovered) }
+"#;
+        format!("package main\n{}{body}\nvar recovered = {name}\n{check}", imports(vec![]))
+    } else {
+        // The byte-view carrier: both words live in one 16-byte result.
+        let check = r#"
 func main() {
   for _, x := range []int64{0,1,-1,-17,0x7fffffffffffffff,-0x8000000000000000} {
     result := recovered(x)
@@ -91,7 +112,9 @@ func main() {
   }
 }
 "#;
-    std::fs::write(&source, format!("package main\nimport (\"encoding/binary\"; \"unsafe\")\n{body}\nvar recovered = {name}\n{check}")).unwrap();
+        format!("package main\n{}{body}\nvar recovered = {name}\n{check}", imports(vec!["encoding/binary"]))
+    };
+    std::fs::write(&source, program).unwrap();
     run(Command::new("go").arg("run").arg(source));
 }
 

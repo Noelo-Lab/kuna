@@ -67,7 +67,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use kuna_decomp::architecture::Architecture;
 use object::read::{Object, ObjectSymbol};
 use object::{SymbolFlags, SymbolKind};
 
@@ -120,19 +119,8 @@ pub(super) fn declared_local_entries(file: &object::File) -> BTreeMap<u64, u64> 
 
 /// The local-entry fold the walk consults: `local entry VMA -> global entry VMA`,
 /// restricted to the folds whose global entry is a seed with no other seed in
-/// between (guard 4). Empty whenever `--option ppclocalentry off`, which restores
-/// the previous, husk-producing discovery set exactly.
-pub(super) fn fold_map(
-    arch: &Architecture,
-    file: &object::File,
-    seeds: &[u64],
-) -> BTreeMap<u64, u64> {
-    if !arch.analysis_ppclocalentry {
-        return BTreeMap::new();
-    }
-    // Architecture-gated and cheap in that order: `declared_local_entries` answers
-    // empty on the first check for every non-PPC64 image, so no seed set is ever
-    // built there and this costs nothing on the arches that cannot need it.
+/// between (guard 4).
+pub(super) fn fold_map(file: &object::File, seeds: &[u64]) -> BTreeMap<u64, u64> {
     let declared = declared_local_entries(file);
     if declared.is_empty() {
         return declared;
