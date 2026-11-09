@@ -1,4 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/TryWithResourcesProcessor.java`.
+//!
+//! kuna fix `jvm_fix_twr_unary_condition` (`kuna_fixes`): in
+//! `make_try_with_resource_j11`, a handler whose first `if` tests a unary
+//! condition (`!flag`) is not a resource's null check, where Vineflower reads
+//! the condition's missing second operand.
 use crate::assignment_exprent::AssignmentExprent;
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::catch_all_statement::CatchAllStatement;
@@ -7,6 +12,7 @@ use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent;
 use crate::exprent::Exprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
+use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{JHashMap, JHashSet, JLinkedHashSet};
 use crate::sequence_helper::SequenceHelper;
 use crate::stat_edge::StatEdge;
@@ -176,6 +182,12 @@ impl TryWithResourcesProcessor {
                     let Some(check) = check.try_as_var() else {
                         return false;
                     };
+
+                    if func.get_lst_operands().len() < 2
+                        && kuna_fixes::enabled(KunaFix::TwrUnaryCondition)
+                    {
+                        return false;
+                    }
 
                     if func
                         .get_lst_operands()

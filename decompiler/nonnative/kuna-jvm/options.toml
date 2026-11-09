@@ -1375,6 +1375,28 @@ tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with NullPointerException: returnType|a method using ::method on a Foo<?> receiver fails to decompile"
 
 [[option]]
+option = "jvm_fix_twr_unary_condition"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p8_structure"
+subphase = "try_with_resources_processor"
+strength = "HARD"
+rewind = "p8_structure"
+issue = ""
+summary = "Decompile a method whose catch (Throwable) handler starts with if (!flag) on a boolean local (catch (Throwable ex) { if (!fallback) throw ...; ... }) in a Java 11+ class: the try-with-resources matcher takes only a binary comparison for the resource's null check and leaves the try/catch as it is, where Vineflower reads the unary condition's missing second operand and fails the method with an index out of bounds."
+use_when = "Leave on; turn off only to reproduce Vineflower's failure on such a method."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_twr_unary_condition off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 TryWithResourcesProcessor.makeTryWithResourceJ11: the nullable-resource check reads getLstOperands().get(1) of the handler's first if condition after unwrapNegations, which a !var condition (BOOL_NOT, one operand) does not have; still present on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "// $VF: Couldn't be decompiled with index out of bounds: the len is 1 but the index is 1 (IndexOutOfBoundsException: Index 1 out of bounds for length 1 in Vineflower)|a try/catch (Throwable) whose handler starts with if (!flag) fails to decompile"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""

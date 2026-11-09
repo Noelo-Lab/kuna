@@ -1076,3 +1076,19 @@ added as before. spring-boot's `StructuredLoggingJsonProperties.customizers` is 
 showed it; with the fix it prints `this.customizer().stream().map(instantiator::instantiateType).toList()`,
 the source without its raw `(List)` cast, which javac does not record, exactly as Vineflower
 prints the same call on a receiver without a wildcard.
+
+**`jvm_fix_twr_unary_condition`.** In a Java 11+ class, javac compiles a try-with-resources
+to a plain `try` with a `catch (Throwable t)` handler that closes the resource and rethrows,
+and the close sits inside `if (r != null)` when the resource may be null.
+`decompiler/nonnative/kuna-jvm/src/p8_structure/try_with_resources_processor.rs (TryWithResourcesProcessor::make_try_with_resource_j11)`
+recognizes that shape from the handler: when the handler is a sequence that starts with an
+`if`, it strips the negations off the `if`'s condition and takes the result for the null
+check, reading its first operand (which must be a variable) and its second (which must be
+`null`). A handler written by hand that starts with `if (!flag)` on a boolean local
+(spring-framework's `ConfigurationClassEnhancer.createClass`:
+`catch (Throwable ex) { if (!fallback) throw ...; ... }`) leaves a one-operand negation
+after the stripping, whose operand is a variable, so Vineflower reads the second operand
+that a negation does not have and fails the method with an index out of bounds (still so on
+`develop/1.13.0`). With the fix, a condition with fewer than two operands is not a null
+check: the handler is not a try-with-resources, and the matcher leaves the statement alone,
+as it does when the operand is not a variable; the `try`/`catch` is written as it is.

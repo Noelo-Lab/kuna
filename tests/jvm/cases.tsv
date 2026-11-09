@@ -3140,6 +3140,11 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected-compat/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes-compat/pkg/TestTryCatchNotFlag	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
+class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class
+expected	kuna-fixes/expected-compat/pkg/TestTryCatchNotFlag.java
+compare	TestTryCatchNotFlag.java
 case	kuna-fixes/pkg/TestMethodRefWildcardReceiver	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Factory.class
@@ -3149,3 +3154,8 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes/pkg/TestTryCatchNotFlag	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
+class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class
+expected	kuna-fixes/expected/pkg/TestTryCatchNotFlag.java
+compare	TestTryCatchNotFlag.java

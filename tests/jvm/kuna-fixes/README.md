@@ -19,6 +19,7 @@ source they were compiled from.
 | Case | Fix | Compiled with | With the fix |
 |---|---|---|---|
 | `pkg/TestMethodRefWildcardReceiver` | `jvm_fix_lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
+| `pkg/TestTryCatchNotFlag` | `jvm_fix_twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 
 ## Diffs (compat -> default)
 
@@ -61,4 +62,82 @@ source they were compiled from.
     }
  
     TestMethodRefWildcardReceiver.Pipe<Object> objectsOf(TestMethodRefWildcardReceiver.Factory<String> factory) {
+```
+
+### `pkg/TestTryCatchNotFlag`
+
+```diff
+--- expected-compat/pkg/TestTryCatchNotFlag.java
++++ expected/pkg/TestTryCatchNotFlag.java
+@@ -11,47 +11,31 @@
+       return name.isEmpty() ? null : new TestTryCatchNotFlag.Res();
+    }
+ 
+-   Object create(boolean param1) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: invokestatic pkg/TestTryCatchNotFlag.make ()Ljava/lang/Object;
+-      // 03: astore 2
+-      // 04: goto 17
+-      // 07: astore 3
+-      // 08: iload 1
+-      // 09: ifne 15
+-      // 0c: new java/lang/IllegalStateException
+-      // 0f: dup
+-      // 10: aload 3
+-      // 11: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/Throwable;)V
+-      // 14: athrow
+-      // 15: aconst_null
+-      // 16: astore 2
+-      // 17: aload 2
+-      // 18: areturn
+-      // try (0 -> 2): 3 java/lang/Throwable
++   Object create(boolean fallback) {
++      Object r;
++      try {
++         r = make();
++      } catch (Throwable ex) {
++         if (!fallback) {
++            throw new IllegalStateException(ex);
++         }
++
++         r = null;
++      }
++
++      return r;
+    }
+ 
+-   void attempt(boolean param1) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: invokestatic pkg/TestTryCatchNotFlag.make ()Ljava/lang/Object;
+-      // 03: pop
+-      // 04: goto 1b
+-      // 07: astore 2
+-      // 08: iload 1
+-      // 09: ifne 11
+-      // 0c: aload 0
+-      // 0d: aload 2
+-      // 0e: invokevirtual pkg/TestTryCatchNotFlag.report (Ljava/lang/Throwable;)V
+-      // 11: aload 0
+-      // 12: dup
+-      // 13: getfield pkg/TestTryCatchNotFlag.failures I
+-      // 16: bipush 1
+-      // 17: iadd
+-      // 18: putfield pkg/TestTryCatchNotFlag.failures I
+-      // 1b: return
+-      // try (0 -> 2): 3 java/lang/Throwable
++   void attempt(boolean quiet) {
++      try {
++         make();
++      } catch (Throwable ex) {
++         if (!quiet) {
++            this.report(ex);
++         }
++
++         this.failures++;
++      }
+    }
+ 
+    int read(String name) throws Exception {
 ```
