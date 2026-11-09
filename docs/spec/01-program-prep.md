@@ -4972,7 +4972,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   name and mangled type, whose symbolic references (`\x01` a direct, `\x02` an
   indirect context descriptor reference, with a 4-byte payload) the demangler
   resolves through a hook (`demangle_swift_type`, §1.3) that the pass answers
-  from its descriptor table or the import an indirect slot binds. The result
+  from its descriptor table or the import an indirect slot binds; a type
+  nested in an extension takes the extended type as its parent, which the
+  extension context names by its mangled name (`extension Int { struct Pair }`
+  is `Swift.Int.Pair`). The result
   is one kuna struct per type under its dotted name — `metafix.Point { long x;
   long y; }`, a class as its object layout with a local superclass embedded as
   `super` at 0 and otherwise the `isa` word (and a Swift-native root's

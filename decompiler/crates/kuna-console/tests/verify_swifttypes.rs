@@ -237,3 +237,23 @@ fn an_accessor_at_the_end_of_its_section_is_located() {
     let holder = prog.arch().types().find_by_name("extfix.Holder").unwrap().expect("extfix.Holder is interned");
     assert_eq!(holder.get_size(), 24);
 }
+
+/// `swift_ext_types_elf`: `extension Int { struct Pair }` gives `Pair` an
+/// extension context as its parent; `Holder.pair`'s symbolic reference to it
+/// resolves through that context to the laid-out `Swift.Int.Pair`.
+#[test]
+fn a_type_nested_in_an_extension_is_a_field_type() {
+    let prog = load_fixture("swift_ext_types_elf", true);
+    let types = prog.arch().types();
+    let fields = |name: &str| {
+        let t = types.find_by_name(name).unwrap().unwrap_or_else(|| panic!("{name} is interned"));
+        let mut got = Vec::new();
+        while let Some(f) = t.get_field(got.len() as i32) {
+            got.push((f.name.clone(), f.offset, f.field_type.get_name().to_string()));
+        }
+        got
+    };
+    let row = |n: &str, o: i32, t: &str| (n.to_string(), o, t.to_string());
+    assert_eq!(fields("Swift.Int.Pair"), vec![row("lo", 0, "int8"), row("hi", 8, "int8")]);
+    assert_eq!(fields("extfix.Holder"), vec![row("pair", 0, "Swift.Int.Pair"), row("count", 16, "int8")]);
+}

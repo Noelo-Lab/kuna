@@ -570,6 +570,7 @@ impl<'a> Types<'a> {
         match ctx.kind {
             ContextKind::Module => Some(Node::text(Kind::Module, ctx.name.clone()?)),
             ContextKind::Anonymous => parent(self),
+            ContextKind::Extension => demangle_swift_type(ctx.name.as_ref()?.as_bytes(), &|_, _, _| None),
             ContextKind::Class
             | ContextKind::Struct
             | ContextKind::Enum
