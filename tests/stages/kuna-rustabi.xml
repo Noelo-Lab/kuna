@@ -30,16 +30,15 @@
     The bug (pass 1, the default): the discriminant is materialized as
     `xor %eax,%eax; setb %al`, so RAX is a ONE-BIT logical value. Subvariable flow
     truncates the RETURN to that width, deleting the other register with it, and
-    `prod` recovers as `bool prod(uint4)` with no payload at all. At the call site
-    the second half of the recovered pair falls into the un-ported multi-trial
-    branch of buildOutputFromTrials, so the CALL gets NO output and both registers
-    render as locals nothing ever assigns - `v3 // edx` read twice, never written.
+    `prod` recovers as `bool prod(uint4)` with no payload at all. The call site
+    is whole in both passes: the two-register CALL output arm of
+    buildOutputFromTrials is open on every image (kuna_callretpair.rs), so the
+    call carries the join-space output and both halves are SUBPIECEs of it.
 
     The fix (pass 2, option rustabi always): the concatenation is recognized as a
-    discriminant/payload pair from the observed writes and kept, and the call
-    gains the join-space output the model asked for, with each half a SUBPIECE of
-    it. `always` rather than `auto` because a bytechunk carries no `.comment`
-    record for the source-language detection to read.
+    discriminant/payload pair from the observed writes and kept. `always` rather
+    than `auto` because a bytechunk carries no `.comment` record for the
+    source-language detection to read.
 
     The NEGATIVE half (scalar_callee / pair_shaped_reader, hand-written asm from
     tests fixture rust_clobber_pair_x86_64, verbatim below):
@@ -70,7 +69,6 @@
 <symbol space="ram" offset="0x201250" name="pair_shaped_reader"/>
 </binaryimage>
 <script>
-  <com>option callretpair off</com>
   <com>option rustabi off</com>
   <com>lo fu prod</com>
   <com>decompile</com>
@@ -94,8 +92,8 @@
   <com>quit</com>
 </script>
 <stringmatch name="RUSTABI #1: with rustabi off the producer collapses to the one-bit discriminant and the EDX payload is deleted" min="1" max="1">bool prod\(uint4 a0\)</stringmatch>
-<stringmatch name="RUSTABI #2: with rustabi off the consumer reads the payload register as a local nothing assigns" min="1" max="1">int4 v3; // edx</stringmatch>
-<stringmatch name="RUSTABI #3: with rustabi off the call to prod has no output at all" min="1" max="1">^  prod\(\);$</stringmatch>
+<stringmatch name="RUSTABI #2: the consumer never reads the payload register as a local nothing assigns" min="0" max="0">int4 v3; // edx</stringmatch>
+<stringmatch name="RUSTABI #3: the call to prod never lacks an output" min="0" max="0">^  prod\(\);$</stringmatch>
 <stringmatch name="RUSTABI #4: with the option on the producer returns the whole pair" min="1" max="1">undefined16 prod\(uint4 a0\)</stringmatch>
 <!-- #5 pin re-recorded for the arraysubfield fix: the 4-byte EDX payload write
      into the `undefined1[16]` container renders as the sized sub-field `v2._8_4_`.  The
@@ -103,9 +101,9 @@
      in-element access, which is exactly the discrimination the fix makes (#11). -->
 <stringmatch name="RUSTABI #5: with the option on the payload half is written at the second register's offset" min="1" max="1">v2\._8_4_ = v1;</stringmatch>
 <stringmatch name="RUSTABI #11: the one-byte discriminant write is a genuine element access and keeps its subscript" min="1" max="1">v2\[0\] = a0 &lt; 0xb;</stringmatch>
-<stringmatch name="RUSTABI #6: with the option on the call has an output and the payload is connected to it" min="1" max="1">v2 = prod\(\);</stringmatch>
-<stringmatch name="RUSTABI #7: with the option on the consumer reads the payload out of the call's result, not out of thin air" min="2" max="2">SUB124\(v2,8\)</stringmatch>
-<stringmatch name="RUSTABI #8: with the option on the discriminant guard reads the same call result" min="1" max="1">SUB128\(v2,0\) &amp; 1</stringmatch>
+<stringmatch name="RUSTABI #6: in both passes the call has an output and the payload is connected to it" min="2" max="2">v2 = prod\(\);</stringmatch>
+<stringmatch name="RUSTABI #7: in both passes the consumer reads the payload out of the call's result, not out of thin air" min="4" max="4">SUB124\(v2,8\)</stringmatch>
+<stringmatch name="RUSTABI #8: in both passes the discriminant guard reads the same call result" min="2" max="2">SUB128\(v2,0\) &amp; 1</stringmatch>
 <stringmatch name="RUSTABI #9: a callee proven never to write the second return register is not paired -- the reader is unchanged in BOTH passes" min="2" max="2">int8 v3; // rdx</stringmatch>
 <stringmatch name="RUSTABI #10: and its call keeps no output in either pass" min="2" max="2">^  scalar_callee\(\);$</stringmatch>
 </decompilertest>

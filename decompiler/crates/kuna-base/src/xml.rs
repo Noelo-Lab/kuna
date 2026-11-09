@@ -1699,7 +1699,6 @@ mod tests {
         // and ghdec-finalorder-entryfirst / BlockGraph::orderBlocks (the entry
         // component printed after an unconditional goto, i.e. as dead code)
         // and ghdec-callsitestackargs / stack-passed call argument recovery
-        // (option off truncates a call at the six SysV register arguments)
         // and ghdec-inputtile-overlap / renaming over guardInput's leftover
         // input pieces (gnulib rpl_fcntl at -O2 produced no body at all)
         // and ghdec-iteboolean / short-circuit 0/1 select re-rolling
@@ -1715,8 +1714,8 @@ mod tests {
         // and ghdec-returncopysplit / the read-only output gate on a datatype
         // copy split (a cloned heritage return-copy printed per-element stores
         // into a .rodata string literal)
-        // and ghdec-itecondlist / the ITE condition-list tolerance (option off
-        // re-rolls only ceil(N/2) of a run of N identical assignment diamonds)
+        // and ghdec-itecondlist / the ITE condition-list tolerance (a run of N
+        // identical assignment diamonds re-rolls N, not ceil(N/2))
         // and ghdec-peimportcall / PE import-call binding (option off leaves a
         // `call [IAT slot]` as an unnamed `(*dat_...)()` with no no-return effect)
         // and ghdec-undefname / no `$$undef` placeholder survives the naming pass
@@ -1734,7 +1733,7 @@ mod tests {
         // and ghdec-calloverlap / the two partial-range call-overlap guards
         // (a whole-width PXOR write hides the SysV entry inside the XMM0 range)
         // and ghdec-orchain / returndup must not split the operand chain of a
-        // short-circuit (option off = the guard cascade, on = the folded condition)
+        // short-circuit (the folded condition, not the guard cascade)
         // and kuna-evalcurrentproto / the compiler spec's <eval_current_prototype>
         // model recovers a __fastcall function's ECX/EDX arguments
         // and kuna-msvcftol / the MSVC __ftol call-fixup recovers the x87 (ST0)
@@ -1762,7 +1761,7 @@ mod tests {
         // argument constants come back)
         // and kuna-retinputhalf / a returned register half that is an input
         // parameter the function moved there is kept, so the parameter stays in
-        // the signature (option off = the half AND the argument are dropped)
+        // the signature
         // and kuna-symbolnamerepair / C++ anonymous namespaces survive the
         // name-only demangling (the load used to fail outright)
         // and kuna-noreturn-discstrict / the discovered-no-return tally counts
@@ -1822,8 +1821,7 @@ mod tests {
         // address is flowed through instead of decoding a junk fall-through at the
         // unreachable return address (repipe r11)
         // and ghdec-zeroidiomuse / the x86 register-clearing idiom no longer
-        // vetoes a looped call's input trials (option off = watchdog() with an
-        // empty argument list) (repipe r12)
+        // vetoes a looped call's input trials (repipe r12)
         // and kuna-x64syscall / the x86-64 SYSCALL user-op carries the Linux ABI's
         // register effects instead of reading and writing nothing (option off =
         // syscall() with empty parens and a wrapper returning its own syscall
@@ -1833,8 +1831,7 @@ mod tests {
         // the tail store with the fifteen bytes between them gone) (repipe r12)
         // and kuna-entrythumbflow / bounded Thumb context from a TE entry
         // and kuna-callretpair / a call whose cspec output rule asked for a
-        // register pair gets that pair (option off = a bare call statement and
-        // a tag local the function never assigns) (repipe r12)
+        // register pair gets that pair (repipe r12)
         // and kuna-msvcstackguard-return / an exact `/GS` checker restart keeps
         // both caller return definitions across a shared epilogue (repipe r6)
         // and kuna-short-utf16-window / caller data replaces an exact-address
@@ -2121,7 +2118,7 @@ mod tests {
         // and kuna-lanedivide-terminator / a terminating SUBPIECE of an upper-lane piece
         // and kuna-x86-16-real-rel16 + kuna-x86-16-protected-rel16 / 16-bit near branches keep their segment
         // and kuna-segmentize / x86 real-mode accesses go through the segment op (option segmentize)
-        // and kuna-calleepop-x86-16 / a near call is credited the two bytes it stores (option calleepop)
+        // and kuna-calleepop-x86-16 / a near call is credited the two bytes it stores
         // and kuna-returnglobal-sparc / a global in %o1 is not joined into an int's return
         // and kuna-segmentize-z80 / a Z80 table with a row outside the image is still followed
         // and kuna-loadguardreads / LOAD guards read while renaming (option loadguardreads)
@@ -2133,7 +2130,7 @@ mod tests {
         // and kuna-deadwaves / a pass after a removal-only pass visits only what it touched (option deadwaves)
         // and kuna-earlyrestart / a pass stops at a dead-code delay bump and restarts at once (option earlyrestart)
         // and kuna-duplabels / two copies of one block print distinct labels
-        // and kuna-pltlocal / a call through a bound PLT stub takes the definition's prototype (option pltlocal)
+        // and kuna-pltlocal / a call through a bound PLT stub takes the definition's prototype
         // and kuna-floatstore / a float stored into unknown bytes is a float store
         // and kuna-haltloopguard / a store before a loop the function never leaves is kept (option haltloopguard)
         // and kuna-lanedivide-freefanout / a lane split giving a free varnode two readers is refused, not fatal
@@ -2156,16 +2153,23 @@ mod tests {
         // and kuna-bejoinpass / a big-endian pair a call hands back is one value (option bejoinpass)
         // and kuna-gottailcall / a one-destination jump through an extern's slot is a tail call
         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
+        // and kuna-dyldcrossrefs / a dyld shared cache image names its calls into other images
         // and kuna-cfstrings / a Mach-O __cfstring reference renders its string literal
         // and kuna-dedupitetail-gototarget / a goto into an unwrapped if clause keeps its target
         // and kuna-dedupitetail-switchgoto / a switch case goto into an unwrapped if clause keeps its target
         // and kuna-unwindstarts / a stripped Mach-O's __unwind_info starts join the inventory
         // and kuna-objcrefs / ObjC selector, class and super reference slots and `__objc_stubs` named and folded
+        // and kuna-objcmeta / ObjC categories, protocols and ivar structs (option objcivars)
+        // and kuna-objcsdk / ObjC method signatures read from SDK headers (option objcsdk)
+        // and kuna-objctypes / ObjC getters, setters and ivars typed by the class their property names
         // and kuna-swiftdemangle / Swift symbols and ObjC runtime class names demangle
         // and kuna-importdata / a data read through an import slot renders as the import
+        // and kuna-elfgotimports / an ELF GOT data import renders as the import
         // and kuna-ptrauthtrap / arm64e pointer-auth failure checks dropped
         // and kuna-authptrcall / arm64e calls through __auth_ptr named
         // and kuna-swiftmetadata / stripped Swift functions named from the swift5_* metadata
+        // and kuna-swiftcall / Swift methods take self and throwing calls keep their error
+        // and kuna-kernelcache / IMG4 + MH_FILESET kernelcache loading
         // and kuna-ppc64-toc-reload-switch / an ELFv1 TOC reload keeps a jump table's base (option callmechanisms)
         // and kuna-elf-unwind-pcread / a PowerPC PC read keeps its FDE-owned body
         // and kuna-e500-call-slots / e500 scalar call slots inside 64-bit registers (option calloverlap)
@@ -2179,7 +2183,7 @@ mod tests {
         // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
         // and kuna-armpltslot, -armcondskip / the ARM xref options parse and are
         // inert on the console path
-        assert_eq!(count, 724, "corpus file count drifted");
+        assert_eq!(count, 733, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

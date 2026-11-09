@@ -145,7 +145,6 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("v850indirectbranch", "on"), // V850-gated (kuna_v850indbranch::applies); no-op off-V850
     ("regionedgeorder", "on"),
     ("returndup", "on"), // default-ON since DIV-54; kept so the preset owns it
-    ("orchain", "on"),   // the returndup gate DIV-69 measured; must follow returndup
     // (kuna) Decline the returndup split at the join of a one-block `if`, so
     // `if (c) f(); return 0;` is not printed as `if (!c) return 0; f(); return 0;`.
     // Shipped OFF because the decbench O2 sample moved aggregate GED by +60 (it is

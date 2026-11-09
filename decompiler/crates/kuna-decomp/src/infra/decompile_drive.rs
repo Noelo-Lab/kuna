@@ -1224,7 +1224,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // input-trial scoring seam consults.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
         // (kuna `zerofillreturn`) And the zero fills, read off the fresh p-code.
-        crate::p4_calls::kuna_zerofillreturn::seed(arch, fd);
+        crate::p4_calls::kuna_zerofillreturn::seed(fd);
         // (kuna `protoorder types`) And for the parameter types earlier callees stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, fd);
         crate::p4_calls::kuna_callrettype::seed(arch, fd);
@@ -1772,6 +1772,20 @@ fn decompile_func_full_with_objects_inner(
         }
         _ => None,
     };
+    // (kuna `swifttypes`) The register-pinned parameters the analysis tier
+    // declared for this function, behind the console's own `map param`s.
+    let mapped_params: Vec<(int4, String, crate::fspec::ParameterPieces)> =
+        match arch.loader_param_locks.get(&funcaddr) {
+            Some(locks) if pending_proto.is_none() => locks
+                .iter()
+                .filter(|(i, _, _)| !mapped_params.iter().any(|(j, _, _)| j == i))
+                .cloned()
+                .chain(mapped_params.iter().cloned())
+                .collect(),
+            _ => mapped_params.to_vec(),
+        };
+    let mapped_params = mapped_params.as_slice();
+    let input_hints = arch.loader_input_hints.get(&funcaddr).cloned();
     let mut attempt = |prefollowed: Option<Funcdata>,
                        unguarded: bool,
                        condstmts_seed: &std::collections::BTreeSet<Address>,
@@ -1865,6 +1879,15 @@ fn decompile_func_full_with_objects_inner(
             fd.apply_locked_prototype_with_model(&rt.output, None)?;
             fd.get_func_proto_mut().set_input_lock(false);
             fd.kuna_set_elfmain(Some(rt.fresh()));
+        } else if let Some(model) =
+            fd.get_arch().bound_proto_model(&entry_addr).filter(|_| mapped_params.is_empty())
+        {
+            // (kuna) A convention bound without a signature: the parameters
+            // are recovered under it, and the hinted ones named and typed.
+            let proto = fd.get_func_proto_mut();
+            proto.set_model(Some(model));
+            proto.set_model_lock(true);
+            fd.kuna_set_input_hints(input_hints.clone());
         }
         // Re-seed any console `map param <i> <addr> <typedecl>` storage locks (lost
         // when the IR is rebuilt, like `pending_proto`/`mapped_symbols`).  This makes
@@ -1901,12 +1924,12 @@ fn decompile_func_full_with_objects_inner(
         crate::p4_calls::kuna_callwide::seed(arch, &mut fd);
         // (kuna `calleedeadarg`) Take the callee entry-liveness probe the
         // input-trial scoring seam consults, for the same reason and at the same
-        // point; inert unless `option calleedeadarg` is live.
+        // point.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, &mut fd);
         // (kuna `zerofillreturn`) Mark the zero fills of narrow vector-register
         // writes while the p-code is still as lifted; heritage splits a 128-bit
         // write into the same lanes.
-        crate::p4_calls::kuna_zerofillreturn::seed(arch, &mut fd);
+        crate::p4_calls::kuna_zerofillreturn::seed(&mut fd);
         // (kuna `protoorder` single-function drive) A `kuna decompile` of one
         // function has no callee-first run behind it, so it may state the
         // prototypes of the direct callees its own call sites pass preferred-split
@@ -2830,12 +2853,12 @@ fn variable_storage_varrefs(fd: &Funcdata, variable: &VarInfo) -> BTreeSet<u64> 
     select_storage_varrefs(fd, &matches, &variable.name)
 }
 
-/// The `&parameter` references of a reported parameter (`option paramrefdecl`):
+/// The `&parameter` references of a reported parameter:
 /// the varrefs of every high bound to the `function_parameter` Symbol that owns
 /// the parameter's storage.  Empty for a local, and for a parameter whose storage
 /// no Symbol claims.
 fn parameter_reference_varrefs(fd: &Funcdata, variable: &VarInfo) -> BTreeSet<u64> {
-    if !variable.is_param || !fd.get_arch().param_ref_decl {
+    if !variable.is_param {
         return BTreeSet::new();
     }
     let Some(arg_index) = variable.arg_index else { return BTreeSet::new() };
@@ -3054,7 +3077,7 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
     }
 
     let declared_slots = crate::kuna_slotreport::DeclaredSlots::of(arch, fd);
-    let typed_slots = declared_slots.as_ref().filter(|_| arch.slot_report);
+    let typed_slots = declared_slots.as_ref();
     // 2) Stack locals, off the ScopeLocal (NO_CATEGORY symbols only).
     if let Some(sl) = fd.get_scope_local() {
         let space = sl.get_space_id();
@@ -3115,72 +3138,66 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
     crate::printc::type_to_c_string(arch, dt)
 }
 
-    // 3) (kuna `framelayout`) The frame slots an EARLIER restructure pass recovered
+    // 3) (kuna framelayout) The frame slots an EARLIER restructure pass recovered
     // and the final one no longer has, because the dataflow folded the spill away.
     // The emitted C is right to drop them; the recovered frame still contains them,
     // and `variables` reports the frame. Only offsets no parameter or surviving
     // local already covers are added, so this can never contradict section 1 or 2.
-    if arch.framelayout {
-        let covered: std::collections::BTreeSet<i64> =
-            out.iter().filter_map(|v| v.stack_offset).collect();
-        let first_slot = out.len();
-        let mut declared = Vec::new();
-        let mut width_only = Vec::new();
-        for (off, slot) in fd.frame_slots() {
-            if covered.contains(&off) {
-                continue;
-            }
-            // `$$undefNNNNNNNN` is Ghidra's internal placeholder for an unnamed
-            // symbol and must not surface on a public interface; name the slot the
-            // way Ghidra's stack view does.
-            let name = if crate::kuna_undefname::is_undefined_name(&slot.name) {
-                if off < 0 {
-                    format!("local_{:x}", -off)
-                } else {
-                    format!("stack_{off:x}")
-                }
+    let covered: std::collections::BTreeSet<i64> =
+        out.iter().filter_map(|v| v.stack_offset).collect();
+    let first_slot = out.len();
+    let mut declared = Vec::new();
+    let mut width_only = Vec::new();
+    for (off, slot) in fd.frame_slots() {
+        if covered.contains(&off) {
+            continue;
+        }
+        // `$$undefNNNNNNNN` is Ghidra's internal placeholder for an unnamed
+        // symbol and must not surface on a public interface; name the slot the
+        // way Ghidra's stack view does.
+        let name = if crate::kuna_undefname::is_undefined_name(&slot.name) {
+            if off < 0 {
+                format!("local_{:x}", -off)
             } else {
-                slot.name
-            };
-            let type_name = match typed_slots.and_then(|slots| slots.covering_type(off, slot.size as i64)) {
-                Some(declared_type) => {
-                    declared.push(out.len());
-                    declared_type
+                format!("stack_{off:x}")
+            }
+        } else {
+            slot.name
+        };
+        let type_name = match typed_slots.and_then(|slots| slots.covering_type(off, slot.size as i64)) {
+            Some(declared_type) => {
+                declared.push(out.len());
+                declared_type
+            }
+            None => {
+                if crate::kuna_slotreport::uncommitted(&slot.dtype) {
+                    width_only.push(out.len());
                 }
-                None => {
-                    if crate::kuna_slotreport::uncommitted(&slot.dtype) {
-                        width_only.push(out.len());
-                    }
-                    frame_slot_type_name(arch, &slot.dtype)
-                }
-            };
-            out.push(VarInfo {
-                name,
-                type_name,
-                stack_offset: Some(off),
-                size: slot.size as i64,
-                is_param: false,
-                arg_index: None,
-                line_numbers: Vec::new(),
-                addresses: Vec::new(),
-                split_piece: false,
-            });
-        }
-        if arch.slot_ptr {
-            let typed = type_filler_slots_from_stores(arch, fd, &mut out, first_slot, &declared);
-            width_only.retain(|i| !typed.contains(i));
-        }
-        if let Some(slots) = declared_slots.as_ref().filter(|_| arch.slot_split) {
-            crate::kuna_slotsplit::split_rows(slots, &mut out, &width_only);
-        }
+                frame_slot_type_name(arch, &slot.dtype)
+            }
+        };
+        out.push(VarInfo {
+            name,
+            type_name,
+            stack_offset: Some(off),
+            size: slot.size as i64,
+            is_param: false,
+            arg_index: None,
+            line_numbers: Vec::new(),
+            addresses: Vec::new(),
+            split_piece: false,
+        });
+    }
+    let typed = type_filler_slots_from_stores(arch, fd, &mut out, first_slot, &declared);
+    width_only.retain(|i| !typed.contains(i));
+    if let Some(slots) = declared_slots.as_ref() {
+        crate::kuna_slotsplit::split_rows(slots, &mut out, &width_only);
     }
 
-    // 4) (kuna `reglocals`) The locals the C declares outside the frame, read off
+    // 4) (kuna reglocals) The locals the C declares outside the frame, read off
     // the printer, which has just printed `fd`.
-    if arch.reg_locals {
-        let locals = crate::kuna_reglocals::register_locals(arch, fd, &out);
-        out.extend(locals);
-    }
+    let locals = crate::kuna_reglocals::register_locals(arch, fd, &out);
+    out.extend(locals);
     out
 }
 

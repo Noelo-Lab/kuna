@@ -222,6 +222,65 @@ pub struct TypedDataFact {
     pub type_: std::rc::Rc<kuna_decomp::dtype::Datatype>,
 }
 
+/// (kuna `swifttypes`) One register-pinned parameter of the function at
+/// `func_addr`: slot `index` is `name`, of `type_`, in register `reg`. The
+/// commit resolves the register through the language and seeds the
+/// function's decompile with it as a `map param` would, so the function is
+/// decompiled with that parameter locked and the rest recovered. For a
+/// convention no model describes (Swift's `self` in `x20` / `r13`).
+#[derive(Clone, Debug)]
+pub struct ParamLockFact {
+    pub func_addr: u64,
+    pub index: i32,
+    pub name: String,
+    pub reg: &'static str,
+    pub type_: std::rc::Rc<kuna_decomp::dtype::Datatype>,
+}
+
+/// (kuna `swifttypes`) The facts the Swift type-layout arm produces, kept
+/// apart so the commit can drop them whole under `option swifttypes off`:
+/// the typed metadata records, the accessor prototypes and the
+/// register-pinned `self` parameters. (The layouts themselves are interned
+/// in the type factory as the pass builds them; unreferenced, they change
+/// nothing.)
+#[derive(Default, Clone, Debug)]
+pub struct SwiftTypeFacts {
+    pub typed_data: Vec<TypedDataFact>,
+    pub prototypes: Vec<kuna_decomp::fspec::PrototypePieces>,
+    pub param_locks: Vec<ParamLockFact>,
+    /// (kuna `swiftcall`) The calling convention of each method, initializer
+    /// and accessor, and the name and type of its `self`.
+    pub models: Vec<ModelFact>,
+    pub input_hints: Vec<InputHintFact>,
+    /// The `swiftself` and `swifterror` registers, once a convention is bound.
+    pub regs: Option<(&'static str, &'static str)>,
+}
+
+/// The function at `func_addr` follows the cspec prototype model `model`,
+/// its signature otherwise unknown: its parameters, and the arguments of
+/// every direct call to it, are recovered under that model.
+#[derive(Clone, Debug)]
+pub struct ModelFact {
+    pub func_addr: u64,
+    pub model: &'static str,
+    /// The convention's implicit context register may or may not be a
+    /// parameter (a Swift struct member's `self`): a call passes it only
+    /// when the caller set it for that call.
+    pub maybe_self: bool,
+}
+
+/// The input of the function at `func_addr` in register `reg` is `name`, of
+/// `type_` when that is known, when the function's own analysis finds it
+/// reads that register
+/// (an unlocked hint, see `kuna_decomp::kuna_inputhints`).
+#[derive(Clone, Debug)]
+pub struct InputHintFact {
+    pub func_addr: u64,
+    pub reg: &'static str,
+    pub name: String,
+    pub type_: Option<std::rc::Rc<kuna_decomp::dtype::Datatype>>,
+}
+
 /// A source-line annotation to attach to a decompiled instruction: at `addr`,
 /// the instruction came from source location `text` (e.g. `debug_symbol.c:122`).
 /// The commit boundary (`engine.rs::commit_analysis_output`) installs each into the
@@ -315,6 +374,23 @@ pub struct FidMatch {
     pub name: String,
 }
 
+/// Which option decides whether a [`ConstRange`] is committed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConstGate {
+    /// `objcrefconst`: the ObjC selector/class/super/protocol reference slots.
+    ObjcRefs,
+    /// `objcivars`: the ObjC ivar offset variables in `__objc_ivar`.
+    ObjcIvars,
+}
+
+/// A `[first, last_open)` byte range whose contents the engine may fold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConstRange {
+    pub first: u64,
+    pub last_open: u64,
+    pub gate: ConstGate,
+}
+
 /// The facts one analysis contributes. Every field is additive and may be empty;
 /// merging two outputs is concatenation (the driver dedups by address).
 #[derive(Default, Debug)]
@@ -390,12 +466,15 @@ pub struct AnalysisOutput {
     pub call_returns: Vec<(u64, u64)>,
     /// Extra read-only address ranges (e.g. `.got` after relocation).
     pub readonly: Vec<(u64, u64)>,
-    /// (kuna `objcrefconst`) `[first, last_open)` ranges whose loaded contents
-    /// are constant by construction — the Objective-C reference slots dyld
-    /// fills once before any code runs. Committed like the `dynrelocs`
+    /// (kuna) Ranges whose loaded contents are constant by construction, each
+    /// behind the option its [`ConstGate`] names. Committed like the `dynrelocs`
     /// RELRO slots: painted read-only *and* foldable without the program-wide
     /// `option readonly`. Produced only by the `objc` pass; empty otherwise.
-    pub const_ranges: Vec<(u64, u64)>,
+    pub const_ranges: Vec<ConstRange>,
+    /// (kuna `objcivars`) `(method label, Class *)`: the typed `self` of an
+    /// Objective-C method whose class got an instance struct. Applied to the
+    /// matching entry of [`Self::prototypes`] at the commit when the gate is on.
+    pub objc_self_types: Vec<(String, std::rc::Rc<kuna_decomp::dtype::Datatype>)>,
     /// (kuna) Address ranges holding an **external reference** — an import slot
     /// whose contents the dynamic loader fills in with the address of a function
     /// living in another image (a PE IAT entry or a typed Mach-O lazy/non-lazy
@@ -406,6 +485,12 @@ pub struct AnalysisOutput {
     /// `peimportcall` pass; empty for formats without such typed slots. See
     /// [`crate::loader::kuna_peimportcall`].
     pub externref: Vec<(u64, u64)>,
+    /// (kuna `elfgotimports`) The import each loader import slot holds, as
+    /// `(slot VMA, import name)`. Committed as a `FunctionSymbol` in the symbol
+    /// table, so `query_function` resolves a read or a call through the slot to
+    /// the import, but never registered in the function inventory: the slot is a
+    /// pointer word, not a function.
+    pub import_slot_names: Vec<(u64, String)>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
     pub strings: Vec<StringFact>,
     /// (kuna `fatstr`) Length-BOUNDED string literals recovered from static
@@ -528,6 +613,8 @@ pub struct AnalysisOutput {
     /// (kuna `libctypes`) Data symbols the analysis tier types outright — the
     /// stdio stream slots. See [`TypedDataFact`].
     pub typed_data: Vec<TypedDataFact>,
+    /// (kuna `swifttypes`) The Swift type-layout facts. See [`SwiftTypeFacts`].
+    pub swift_types: SwiftTypeFacts,
     /// (kuna `formatstring static`) Per-call-site prototype overrides the
     /// LOAD-TIME format-string resolver recovered — a printf/scanf-family call
     /// whose format constant the image itself answers for. Committed onto
@@ -689,6 +776,12 @@ impl AnalysisOutput {
         self.symbols.extend(other.symbols);
         self.data_objects.extend(other.data_objects);
         self.typed_data.extend(other.typed_data);
+        self.swift_types.typed_data.extend(other.swift_types.typed_data);
+        self.swift_types.prototypes.extend(other.swift_types.prototypes);
+        self.swift_types.param_locks.extend(other.swift_types.param_locks);
+        self.swift_types.models.extend(other.swift_types.models);
+        self.swift_types.input_hints.extend(other.swift_types.input_hints);
+        self.swift_types.regs = self.swift_types.regs.or(other.swift_types.regs);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
         self.fde_interior_entries.extend(other.fde_interior_entries);
@@ -700,7 +793,9 @@ impl AnalysisOutput {
         self.call_returns.extend(other.call_returns);
         self.readonly.extend(other.readonly);
         self.const_ranges.extend(other.const_ranges);
+        self.objc_self_types.extend(other.objc_self_types);
         self.externref.extend(other.externref);
+        self.import_slot_names.extend(other.import_slot_names);
         self.strings.extend(other.strings);
         self.bounded_strings.extend(other.bounded_strings);
         self.wide_strings.extend(other.wide_strings);

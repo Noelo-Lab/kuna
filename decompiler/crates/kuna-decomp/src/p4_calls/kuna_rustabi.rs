@@ -997,17 +997,6 @@ pub fn seed_callee_return_writes(
     arch: &mut crate::architecture::Architecture,
     data: &mut Funcdata,
 ) {
-    let mode = RustAbiMode::from_u8(arch.rust_abi);
-    let on = match mode {
-        RustAbiMode::Off => false,
-        RustAbiMode::Auto => arch.source_lang().is_rust(),
-        RustAbiMode::Always => true,
-    };
-    // `option callretpair` reaches the same call-output arm and needs the same
-    // callee evidence to veto a pair with, so it seeds the probe too.
-    if !on && !crate::p4_calls::kuna_callretpair::live_arch(arch) {
-        return;
-    }
     seed_callee_write_probe(arch, data);
 }
 
@@ -1085,14 +1074,13 @@ fn fastfail_swi_userop(arch: &crate::architecture::Architecture) -> Option<u32> 
 /// the low half. The verdict comes from [`classify_call_output_pair`]. On
 /// `ScalarPair` the CALL gains a `join`-space output covering both registers,
 /// each half becomes a SUBPIECE of it inserted after the CALL, and the INDIRECT
-/// creations are destroyed. Returns `false` (changing nothing) when the gate is
-/// off, the classification declines, or the join address cannot be constructed.
+/// creations are destroyed. Returns `false` (changing nothing) when the
+/// classification declines or the join address cannot be constructed.
 ///
 /// [`ParamActive::join_pair_order`]: crate::fspec::ParamActive::join_pair_order
 ///
-/// Two options reach this arm: `option rustabi auto|always`, which also governs
-/// the producer-side pair, and the language-agnostic
-/// [`crate::p4_calls::kuna_callretpair`], which is the shipped default.
+/// The arm is open on every image ([`crate::p4_calls::kuna_callretpair`]);
+/// `option rustabi auto|always` also governs the producer-side pair.
 pub fn build_call_output_pair(
     callop: OpId,
     data: &mut Funcdata,
@@ -1101,9 +1089,6 @@ pub fn build_call_output_pair(
     callee_entry: Option<&Address>,
     order: (int4, int4),
 ) -> bool {
-    if !live(data) && !crate::p4_calls::kuna_callretpair::live(data) {
-        return false;
-    }
     if classify_call_output_pair(data, model, finalvn, callee_entry) != CallPairRepr::ScalarPair {
         return false;
     }

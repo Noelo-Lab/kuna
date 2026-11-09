@@ -1,4 +1,4 @@
-//! (kuna) `evalcurrentproto` — evaluate a function's **own** unknown prototype
+//! (kuna) Evaluate a function's **own** unknown prototype
 //! with the model the compiler spec nominates, so register-passed parameters are
 //! recovered instead of surfacing as reads of an undefined local.
 //!
@@ -41,45 +41,25 @@
 //! ever written, which is not a thing a C function can do. Ghidra and IDA both
 //! report this function as taking two arguments.
 //!
-//! # What the option does
+//! # What the rule does
 //!
-//! On (the default), the spec's `<eval_current_prototype>` model is decoded at
+//! The spec's `<eval_current_prototype>` model is decoded at
 //! `<default_proto>` time and handed to each function as the model its unlocked
 //! input recovery is evaluated with; the merged model then *resolves* per
 //! function against the trials that are actually active, so a function that
-//! touches neither `ECX` nor `EDX` still comes out `__stdcall`. Off restores the
-//! `<default_proto>`-only evaluation (byte-identical to before this option
-//! existed). An explicit `option protoeval <model>` still wins over both — it is
-//! the same `evalfp_current` slot, set by hand.
+//! touches neither `ECX` nor `EDX` still comes out `__stdcall`. An explicit
+//! `option protoeval <model>` still wins — it is the same `evalfp_current` slot,
+//! set by hand.
 //!
 //! Six vendored specs nominate a model: `x86win` (`__fastcall/__thiscall/
 //! __stdcall`), `x86borland` (`__stdcall/__fastcall`), `x86gcc`
 //! (`__cdecl/__regparm`), `CR16` (`__ptrcall/__ptrcall2/__stdcall`) and
 //! `HCS12`/`HCS12X` (`__asmA_longcall/__asmA`). Every other language has no such
-//! element and is untouched whichever way the option is set.
+//! element and is untouched.
 //!
 //! `<eval_called_prototype>` — the sibling element that nominates the model for
 //! *callees* — is deliberately not decoded here: no vendored spec declares one,
 //! so the code would be unreachable and unmeasurable.
-
-use kuna_base::error::KunaResult;
-
-use crate::options::on_or_off;
-
-/// The `evalcurrentproto` option.
-pub struct OptionEvalCurrentProto;
-
-impl OptionEvalCurrentProto {
-    /// The option name.
-    pub const NAME: &'static str = "evalcurrentproto";
-
-    /// Parse `on`/`off`, returning the bool value + a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Compiler-spec current-function prototype evaluation turned {prop}")))
-    }
-}
 
 /// The model name a compiler spec's `<eval_current_prototype name="..."/>`
 /// nominates for evaluating the current function's prototype (C++
@@ -124,13 +104,5 @@ mod tests {
 
         let empty = parse(r#"<compiler_spec><eval_current_prototype name=""/></compiler_spec>"#);
         assert_eq!(eval_current_model_name(&empty), None, "an empty name nominates nothing");
-    }
-
-    /// `on`/`off` parse to the flag plus a confirmation line.
-    #[test]
-    fn option_parses_on_off() {
-        assert!(OptionEvalCurrentProto.apply("on").unwrap().0);
-        assert!(!OptionEvalCurrentProto.apply("off").unwrap().0);
-        assert!(OptionEvalCurrentProto.apply("banana").is_err());
     }
 }

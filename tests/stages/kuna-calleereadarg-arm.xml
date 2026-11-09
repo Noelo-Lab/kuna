@@ -12,24 +12,23 @@
     Funcdata::onlyOpUse refuses the r0 trial because the value also feeds the
     compare and the other path's RETURN.
 
-    Stage / sub-stage: P4 active input-trial scoring, option calleereadarg
-    off|on.  ext reads r0 on entry, so pass 2 keeps the argument.
+    Stage / sub-stage: P4 active input-trial scoring.  ext reads r0 on entry,
+    so the callee-read rule keeps the argument.
 
     Two controls with a tested value left in an argument register:
       neg      tests r0 and calls g, which reads no argument register: g().
       negpush  tests r2 and calls bar, whose clang -Oz prologue pushes the dead
                r2 and r3 to reserve stack (push {r2, r3, r4, lr}).  That reads
                r3, the last argument register, which is what a register-save
-               prologue does too, so it is no evidence: bar() in both passes.
+               prologue does too, so it is no evidence: bar().
       pick     leaves its tested z in r1 and tail-calls show(11).  show is
                gcc -Os: push {r0, r1, r4, lr} reserves stack with the dead r1
                beside its one parameter, which it also reads with mov r4, r0.
                A register stored only by an instruction that stores several is
-               no evidence: show(0xb) in both passes.
+               no evidence: show(0xb).
 
-    Pass 1 (`option calleereadarg off`) reproduces the BUG: ext() in fwd.
-    Pass 2 (`option calleereadarg on`, the default) is the FIX: ext(*a0), and
-    the controls are unchanged.
+    Without the rule fwd renders ext(); at the default it is ext(*a0), and the
+    controls are unchanged.
 -->
 <bytechunk space="ram" offset="0x10000">
 000180e0010080e21eff2fe100f020e30c109fe5002091e5012082e2002081e5
@@ -54,20 +53,6 @@ eaffffcb0400a0e30088bde800f020e313402de90040a0e10d00a0e1dbffffeb
 <symbol space="ram" offset="0x10100" name="gv"/>
 </binaryimage>
 <script>
-  <com>option calleereadarg off</com>
-  <com>lo fu fwd</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu neg</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu negpush</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu pick</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option calleereadarg on</com>
   <com>lo fu fwd</com>
   <com>decompile</com>
   <com>print C</com>
@@ -82,9 +67,9 @@ eaffffcb0400a0e30088bde800f020e313402de90040a0e10d00a0e1dbffffeb
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="calleereadarg-arm #1: off, fwd's tail call loses the argument it also compares and returns (bug reproduced)" min="1" max="1">  ext\(\); // tail-call</stringmatch>
-<stringmatch name="calleereadarg-arm #2: on, fwd tail-calls ext with the value it compares" min="1" max="1">  ext\(\*a0\); // tail-call</stringmatch>
-<stringmatch name="calleereadarg-arm #3: a callee that reads no argument register gets no argument in BOTH passes" min="2" max="2">  g\(\);</stringmatch>
-<stringmatch name="calleereadarg-arm #4: a push of the dead r2/r3 that reaches the last argument register is no evidence, so bar gets no argument in BOTH passes" min="2" max="2">  bar\(\);</stringmatch>
-<stringmatch name="calleereadarg-arm #5: a dead register gcc pushes beside a parameter to reserve stack is no evidence, so show keeps one argument in BOTH passes" min="2" max="2">return show\(0xb\); // tail-call</stringmatch>
+<stringmatch name="calleereadarg-arm #1: fwd's tail call never loses the argument it also compares and returns" min="0" max="0">  ext\(\); // tail-call</stringmatch>
+<stringmatch name="calleereadarg-arm #2: fwd tail-calls ext with the value it compares" min="1" max="1">  ext\(\*a0\); // tail-call</stringmatch>
+<stringmatch name="calleereadarg-arm #3: a callee that reads no argument register gets no argument" min="1" max="1">  g\(\);</stringmatch>
+<stringmatch name="calleereadarg-arm #4: a push of the dead r2/r3 that reaches the last argument register is no evidence, so bar gets no argument" min="1" max="1">  bar\(\);</stringmatch>
+<stringmatch name="calleereadarg-arm #5: a dead register gcc pushes beside a parameter to reserve stack is no evidence, so show keeps one argument" min="1" max="1">return show\(0xb\); // tail-call</stringmatch>
 </decompilertest>

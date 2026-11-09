@@ -12,9 +12,8 @@
     RulePtrsubUndo refactor; cf. upstream PR #8990).
 
     Stage model: S5 "const-pointer" sub-stage.  The symptom surfaces at S9 but
-    the symbolic data is already destroyed in Band B; the fix must gate the
-    S5 rule.  P0 assertion: `option thumbfuncptr on|off` (default off =
-    upstream byte-identical).
+    the symbolic data is already destroyed in Band B; kuna_thumbfuncptr.rs
+    (always on) guards the S5 rule.
 
     Layout (reduced from the reporter's short_reproducer.so):
        0x10174  call_function:  bx lr
@@ -23,8 +22,7 @@
                   ldr r0,[0x10194]; add r0,pc; b call_function (tail call)
        0x10194  literal = 0xfffffff7 (so r0 = pc-9 = 0x10189)
 
-    Pass 1 (default): assertion #1 proves the bug (raw hex).
-    Pass 2 (option thumbfuncptr on): assertion #2 proves the symbolic form.
+    Assertion #2 proves the symbolic form; #1 proves the raw hex never appears.
 -->
 <bytechunk space="ram" offset="0x10174" readonly="true">
 70470000000000000000000000000000
@@ -43,11 +41,8 @@ f7ffffff
   <com>lo fu call_fn_through_reference</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option thumbfuncptr off</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH8471 #1: thumbfuncptr off restores the raw-hex form (old behavior, opt-in)" min="1" max="1">call_function\(\(void \*\)0x10189\)</stringmatch>
-<stringmatch name="GH8471 #2: default pipeline preserves the symbolic form, &amp;fn[1] via DIV-2 arraynotation (fix is DIV-2 default)" min="1" max="1">call_function\(&amp;fn\[1\]\)</stringmatch>
+<stringmatch name="GH8471 #1: the raw-hex form never appears" min="0" max="0">call_function\(\(void \*\)0x10189\)</stringmatch>
+<stringmatch name="GH8471 #2: the symbolic form is preserved, &amp;fn[1] via DIV-2 arraynotation" min="1" max="1">call_function\(&amp;fn\[1\]\)</stringmatch>
 </decompilertest>

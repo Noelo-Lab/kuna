@@ -1,4 +1,4 @@
-//! (kuna `gotimportproto`) Bind a declared prototype that states no storage to
+//! (kuna) Bind a declared prototype that states no storage to
 //! a call through a MIPS external-symbol GOT entry.
 //!
 //! A declaration that names only types (a libc type database entry, a
@@ -8,7 +8,7 @@
 //! the caller uses. A MIPS PIC call to an import loads its target from the
 //! import's external-symbol GOT slot and calls through `jalr t9`, so the callee
 //! is proven by the loader, and a preserved incoming argument register cannot
-//! establish the import's arity. With the option on (the default), such a call
+//! establish the import's arity. Such a call
 //! takes the declared prototype when the loader proved the entry an import and
 //! every parameter and the return are concrete, non-void types. Missing, void
 //! and unknown types, variadic declarations, which fix no arity, and entries
@@ -26,8 +26,7 @@ fn concrete(ty: &Datatype) -> bool {
 
 /// Whether the type-only declaration `pieces` binds at a call to `entry`.
 pub fn binds_type_only(arch: &ArchContext, entry: &Address, pieces: &PrototypePieces) -> bool {
-    arch.got_import_proto
-        && arch.loader_mips_imports.contains(entry)
+    arch.loader_mips_imports.contains(entry)
         && pieces.first_var_arg_slot < 0
         && pieces.outtype.as_ref().is_some_and(|ty| concrete(ty))
         && pieces.intypes.iter().all(|ty| concrete(ty))

@@ -4,10 +4,10 @@
 //! A pointer to a Thumb function carries the mode bit in its LSB
 //! (`value = fn|1`).  `ActionConstantPtr` recovers `PTRSUB(fn) + 1`, but
 //! `RulePtrsubUndo` then destroys it (the `+1` does not match the bounds of
-//! `fn`'s code type), collapsing the constant back to a raw hex literal.  When
-//! `option thumbfuncptr on`, `RulePtrsubUndo` preserves a PTRSUB whose base
-//! resolves to a code-typed symbol when the leftover offset fits inside the
-//! architecture's function-pointer alignment-encoding bits (`funcptr_align`).
+//! `fn`'s code type), collapsing the constant back to a raw hex literal.
+//! `RulePtrsubUndo` instead preserves a PTRSUB whose base resolves to a
+//! code-typed symbol when the leftover offset fits inside the architecture's
+//! function-pointer alignment-encoding bits (`funcptr_align`).
 //!
 //! ## What this module ports
 //!
@@ -17,61 +17,20 @@
 //! (preserving the PTRSUB when this returns `true`) is W5 (`ruleaction`); this
 //! module owns only the *decision*.
 //!
-//! ## STUB(W4)/STUB(W6): Rule + ArchOption + type-system wrappers
+//! ## STUB(W4)/STUB(W6): Rule + type-system wrappers
 //!
 //! The C++ predicate threads through the W6 `Datatype`/`TypePointer` subsystem
-//! (`getTypeReadFacing`, `getPtrTo`, `getWordSize`, `getSubType`) and two W4
-//! `Architecture` fields (`preserve_thumb_funcptr`, `funcptr_align`).  The W3
-//! `Datatype` skeleton (`dtype.rs`) carries only `getMetatype`/`getSize`, so the
-//! type-system resolution is taken here as an already-resolved fact struct
-//! [`ThumbPtrTypeFacts`] (each field `// STUB(W6)`), and the two arch fields are
-//! taken as resolved inputs (the gate via [`ThumbFuncPtrOption`], `funcptr_align`
-//! as a parameter).  W6 fills the type walk; W4 wires the arch fields.
+//! (`getTypeReadFacing`, `getPtrTo`, `getWordSize`, `getSubType`) and the W4
+//! `Architecture` field `funcptr_align`.  The W3 `Datatype` skeleton
+//! (`dtype.rs`) carries only `getMetatype`/`getSize`, so the type-system
+//! resolution is taken here as an already-resolved fact struct
+//! [`ThumbPtrTypeFacts`] (each field `// STUB(W6)`), and `funcptr_align` is
+//! taken as a parameter.  W6 fills the type walk; W4 wires the arch field.
 
 use kuna_base::space::AddrSpace;
 use kuna_base::types::int8;
 
 use crate::dtype::type_metatype;
-
-/// (kuna) Toggle preservation of mode-bit-encoded (Thumb) function pointers
-/// (C++ `OptionThumbFuncPtr`, GH-8471).
-///
-/// STUB(W4): the C++ `OptionThumbFuncPtr::apply` flips
-/// `glb->preserve_thumb_funcptr`; here the flag is carried as a plain `bool`
-/// whose [`Default`] is the *shipped* default (`option thumbfuncptr on`, i.e.
-/// \b true — DIV-2 default-on; `architecture.cc:1451`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ThumbFuncPtrOption {
-    /// True if mode-bit-encoded (Thumb) function pointers are kept symbolic
-    /// (C++ `Architecture::preserve_thumb_funcptr`).
-    pub enabled: bool,
-}
-
-impl Default for ThumbFuncPtrOption {
-    /// Shipped default: `option thumbfuncptr on` (DIV-2 default-on;
-    /// `architecture.cc:1451` sets `preserve_thumb_funcptr = true`).
-    fn default() -> Self {
-        ThumbFuncPtrOption { enabled: true }
-    }
-}
-
-impl ThumbFuncPtrOption {
-    /// (kuna) Set the gate (C++ `OptionThumbFuncPtr::apply`: `bool val =
-    /// onOrOff(p1); glb->preserve_thumb_funcptr = val;`).
-    pub fn apply(&mut self, val: bool) -> &'static str {
-        self.enabled = val;
-        if val {
-            "Thumb function-pointer preservation turned on"
-        } else {
-            "Thumb function-pointer preservation turned off"
-        }
-    }
-
-    /// Read the gate (C++ `glb->preserve_thumb_funcptr`).
-    pub fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-}
 
 /// Resolved W6 type-system facts about `basevn->getTypeReadFacing(op)` for
 /// [`kuna_preserve_thumb_funcptr`].
@@ -116,20 +75,17 @@ pub struct ThumbSubTypeFact {
 ///
 /// C++ `kuna_thumbfuncptr.cc:12-36`.
 ///
-/// `gate` is the resolved `glb->preserve_thumb_funcptr` (see
-/// [`ThumbFuncPtrOption`]); `funcptr_align` is `glb->funcptr_align`.  `facts`
-/// carries the resolved W6 type-system queries (see [`ThumbPtrTypeFacts`]).
+/// `funcptr_align` is `glb->funcptr_align`.  `facts` carries the resolved W6 type-system queries (see [`ThumbPtrTypeFacts`]).
 /// `val`, `extra`, `multiplier` are the PTRSUB constant decomposition exactly
 /// as the C++ takes them.
 pub fn kuna_preserve_thumb_funcptr(
-    gate: bool,
     funcptr_align: i32,
     val: int8,
     extra: int8,
     multiplier: int8,
     facts: &ThumbPtrTypeFacts,
 ) -> bool {
-    if !gate || funcptr_align == 0 {
+    if funcptr_align == 0 {
         return false;
     }
     // Multiplier 1 = byte-grain PTRADD form of the same constant offset.

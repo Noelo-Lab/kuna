@@ -41,17 +41,15 @@ fn above_callee_frame_keeps_the_return_address_and_parameter_area() {
 fn declared_caller_frame_floor_declines_without_evidence() {
     let mut fp = void_store_proto();
     // Unlocked, no model: no claim.
-    assert_eq!(declared_caller_frame_floor(true, &fp), None);
+    assert_eq!(declared_caller_frame_floor(&fp), None);
     fp.set_extra_pop(20);
     // Still unlocked.
-    assert_eq!(declared_caller_frame_floor(true, &fp), None);
+    assert_eq!(declared_caller_frame_floor(&fp), None);
     fp.set_input_lock(true);
-    assert_eq!(declared_caller_frame_floor(true, &fp), Some(20));
-    // The option is the outermost gate.
-    assert_eq!(declared_caller_frame_floor(false, &fp), None);
+    assert_eq!(declared_caller_frame_floor(&fp), Some(20));
     // A variadic callee reads above its declared parameters.
     fp.set_dotdotdot(true);
-    assert_eq!(declared_caller_frame_floor(true, &fp), None);
+    assert_eq!(declared_caller_frame_floor(&fp), None);
 }
 
 #[test]
@@ -59,7 +57,7 @@ fn resolve_declared_extra_pop_leaves_a_model_that_states_its_own() {
     let mut fp = void_store_proto();
     fp.set_input_lock(true);
     fp.set_extra_pop(4); // as a __cdecl model would
-    resolve_declared_extra_pop(true, &mut fp);
+    resolve_declared_extra_pop(&mut fp);
     assert_eq!(fp.get_extra_pop(), 4);
 }
 
@@ -67,7 +65,7 @@ fn resolve_declared_extra_pop_leaves_a_model_that_states_its_own() {
 fn resolve_declared_extra_pop_needs_the_lock() {
     let mut fp = FuncProto::new();
     fp.set_extra_pop(EXTRAPOP_UNKNOWN);
-    resolve_declared_extra_pop(true, &mut fp);
+    resolve_declared_extra_pop(&mut fp);
     assert_eq!(fp.get_extra_pop(), EXTRAPOP_UNKNOWN);
 }
 
@@ -80,7 +78,7 @@ fn store_less_prototype_declines() {
     let mut fp = FuncProto::new();
     assert!(!fp.has_store());
     fp.set_extra_pop(20);
-    assert_eq!(declared_caller_frame_floor(true, &fp), None);
-    resolve_declared_extra_pop(true, &mut fp);
+    assert_eq!(declared_caller_frame_floor(&fp), None);
+    resolve_declared_extra_pop(&mut fp);
     assert_eq!(fp.get_extra_pop(), 20);
 }

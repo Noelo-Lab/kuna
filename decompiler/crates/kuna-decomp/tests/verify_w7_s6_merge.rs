@@ -227,9 +227,6 @@ macro_rules! unused_mut {
 
 impl MergeContext for Mock {
     // --- reached by the tests -------------------------------------------------
-    fn kuna_tied_phi_trim(&self) -> bool {
-        false
-    }
     fn high_get_type(&mut self, h: HighVariableId) -> Rc<Datatype> {
         self.hs(h).type_.clone().expect("mock: high has no type")
     }

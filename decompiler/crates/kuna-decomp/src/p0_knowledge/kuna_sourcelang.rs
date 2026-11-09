@@ -9,7 +9,7 @@
 //! file`, and the engine records it as [`SourceLang`] on the `Architecture`
 //! ([`crate::Architecture::source_lang`]), copied onto every per-function
 //! `ArchContext`. Per-function rules gate on it (`option rustabi auto` acts
-//! only on a Rust image; `option reloadarg` stands down on a Go one). The XML
+//! only on a Rust image; the frame-reload rule stands down on a Go one). The XML
 //! `<binaryimage>` bootstrap never runs the analyzer tier, so the fact stays
 //! [`SourceLang::Unknown`] on the datatest corpus by construction.
 //!

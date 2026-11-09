@@ -1,5 +1,4 @@
-//! Unit tests for the `varargstackargs` option surface and its section-split
-//! predicate.
+//! Unit tests for the variadic stack-section split predicate.
 
 use super::*;
 use kuna_base::address::Address;
@@ -35,24 +34,10 @@ fn aarch64_section(variadic: bool) -> ParamActive {
     active
 }
 
+/// The whole feature: a variadic section is cut at the first stack trial; a
+/// non-variadic one is scored whole (upstream).
 #[test]
-fn option_name_and_apply() {
-    assert_eq!(OptionVarargStackArgs::NAME, "varargstackargs");
-    let (on, msg) = OptionVarargStackArgs.apply("on").expect("on");
-    assert!(on);
-    assert!(msg.contains("turned on"), "{msg}");
-    let (off, msg) = OptionVarargStackArgs.apply("off").expect("off");
-    assert!(!off);
-    assert!(msg.contains("turned off"), "{msg}");
-    // Empty defaults to on, as every other on/off option does.
-    assert!(OptionVarargStackArgs.apply("").expect("empty").0);
-    assert!(OptionVarargStackArgs.apply("bogus").is_err());
-}
-
-/// The whole feature: with the flag set the section is cut at the first stack
-/// trial, and with it clear the section is scored whole (upstream).
-#[test]
-fn the_cut_is_the_first_stack_trial_and_only_when_enabled() {
+fn the_cut_is_the_first_stack_trial_of_a_variadic_section() {
     let mut on = aarch64_section(true);
     assert_eq!(stack_section_split(&on, 0, 12), Some(8));
     // The stack tail itself has no register prefix, so it is never cut again --
