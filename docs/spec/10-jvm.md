@@ -1091,14 +1091,7 @@ the fix, `decompiler/nonnative/kuna-jvm/src/p7_regions/finally_processor.rs
 `compareBasicBlocksEx` already has for the same lists. Upstream fixed the defect at its source in
 5c360738 (Partial offsets fix, #597) by copying the offsets into the copy; kuna does not port
 that, because the offsets then also name the catch variables of methods Vineflower decompiles
-(`catch (Throwable e)` instead of `var7`), which would change their text. A copy is also only the
-handler's first block: the copies share the rest of the handler, and once the finally processing
-can edit the copies it strips the shared exit block once per copy (a conditional finally body such
-as `if (n.decrementAndGet() == 0) close()` then prints with `throw var3_2` on an undeclared
-variable). So with the fix each copy of a catch-any handler also gets its own copy of the blocks
-after the handler block that only the handler and its copies run
-(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_nested_handler_copies.rs
-(NestedHandlerCopies::separate_handler_bodies)`), which is exact.
+(`catch (Throwable e)` instead of `var7`), which would change their text.
 
 **Fix `nested_handler_copies`** (`jvm_fix_nested_handler_copies`). The same duplication puts each copy into every range that
 protects the original handler, under that range's handler. When the handler is itself protected,
@@ -1117,8 +1110,7 @@ suspension point. kuna restores the nesting right after the duplication
 (NestedHandlerCopies::nest)`), for each outer handler whose copies break it: when that handler's
 ranges together have a single entry, its copies were not needed and their ranges go back to the
 handler itself, which gives the source's single `try`; otherwise each catch, with the blocks only
-it runs, moves to the copy of the outer handler that protects its try body. When a repair was needed,
-every live copy then gets its own copy of its handler's further blocks, as above. All these changes are
+it runs, moves to the copy of the outer handler that protects its try body. Both changes are
 exact, since the copies of a handler have its code, successors and protection. Not fixed on
 develop/1.13.0.
 

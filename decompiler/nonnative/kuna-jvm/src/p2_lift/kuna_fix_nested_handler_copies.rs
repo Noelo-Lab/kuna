@@ -11,11 +11,9 @@
 //! `parsing failure!`. [`NestedHandlerCopies::nest`] restores the nesting. An
 //! outer handler whose ranges together have a single entry did not need its
 //! copies, so its ranges go back to the handler itself; otherwise each catch
-//! moves to the copy of the outer handler that protects its try body, and every
-//! copy gets its own copy of the handler's further blocks, which the copies
-//! otherwise share and the finally processing would edit once per copy. Copies
-//! run the same code with the same successors, so none of this alters what the
-//! method does.
+//! moves to the copy of the outer handler that protects its try body. Copies of
+//! a handler run the same code with the same successors, so neither change
+//! alters what the method does.
 
 use crate::basic_block::BasicBlock;
 use crate::control_flow_graph::ControlFlowGraph;
@@ -36,8 +34,7 @@ struct Mismatch {
 
 impl NestedHandlerCopies {
     /// `copies` maps each handler copy made by the pass to the handler it copies.
-    /// Whether a nesting needed repair.
-    pub fn nest(graph: ControlFlowGraph, copies: &JHashMap<BasicBlock, BasicBlock>) -> bool {
+    pub fn nest(graph: ControlFlowGraph, copies: &JHashMap<BasicBlock, BasicBlock>) {
         let original = |block: BasicBlock| copies.get_cloned(&block).unwrap_or(block);
 
         let mut families: Vec<BasicBlock> = Vec::new();
@@ -48,7 +45,7 @@ impl NestedHandlerCopies {
             }
         }
         if families.is_empty() {
-            return false;
+            return;
         }
 
         for family in families {
@@ -89,7 +86,6 @@ impl NestedHandlerCopies {
             }
         }
         DeadCodeHelper::remove_dead_blocks(graph);
-        true
     }
 
     fn mismatches(
@@ -204,105 +200,6 @@ impl NestedHandlerCopies {
             }
             range.set_handler(family);
         }
-    }
-
-    /// Gives every live copy of a handler its own copy of the blocks after the
-    /// handler block that only the handler and its copies run, so that no two
-    /// copies share code the finally processing edits per handler.
-    pub fn separate_handler_bodies(
-        graph: ControlFlowGraph,
-        copies: &JHashMap<BasicBlock, BasicBlock>,
-    ) {
-        let mut handlers: Vec<BasicBlock> = Vec::new();
-        for (_, handler) in copies.entry_vec() {
-            if !handlers.contains(&handler) {
-                handlers.push(handler);
-            }
-        }
-
-        for handler in handlers {
-            let live: Vec<BasicBlock> = copies
-                .entry_vec()
-                .into_iter()
-                .filter(|(copy, h)| *h == handler && !copy.get_pred_exceptions().is_empty())
-                .map(|(copy, _)| copy)
-                .collect();
-            if live.is_empty() {
-                continue;
-            }
-            let mut entries = live.clone();
-            entries.push(handler);
-            let body = Self::shared_body(graph, handler, &entries);
-            if body.len() == 1 {
-                continue;
-            }
-
-            for copy in live {
-                let mut map: Vec<(BasicBlock, BasicBlock)> = vec![(handler, copy)];
-                for &block in &body[1..] {
-                    let id = graph.with_mut(|d| {
-                        d.last_id += 1;
-                        d.last_id
-                    });
-                    let clone = block.clone_block(id);
-                    graph.get_blocks().borrow_mut().add_with_key(clone, id);
-                    map.push((block, clone));
-                }
-                let mapped =
-                    |b: BasicBlock| map.iter().find(|(from, _)| *from == b).map(|(_, to)| *to);
-
-                for succ in copy.get_succs().to_vec() {
-                    if let Some(to) = mapped(succ) {
-                        copy.replace_successor(succ, to);
-                    }
-                }
-                for &(block, clone) in &map[1..] {
-                    for succ in block.get_succs().to_vec() {
-                        clone.add_successor(mapped(succ).unwrap_or(succ));
-                    }
-                    for hd in block.get_succ_exceptions().to_vec() {
-                        clone.add_successor_exception(hd);
-                        if let Some(range) = graph.get_exception_range(hd, block) {
-                            range.get_protected_range().add(clone);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// `handler` and the blocks after it that only the blocks of `entries`
-    /// and of the body itself lead to.
-    fn shared_body(
-        graph: ControlFlowGraph,
-        handler: BasicBlock,
-        entries: &[BasicBlock],
-    ) -> Vec<BasicBlock> {
-        let last = graph.get_last();
-        let mut body = vec![handler];
-        loop {
-            let mut grown = false;
-            for i in 0..body.len() {
-                for succ in body[i].get_succs().to_vec() {
-                    if succ == last
-                        || body.contains(&succ)
-                        || !succ.get_pred_exceptions().is_empty()
-                        || !succ
-                            .get_preds()
-                            .iter()
-                            .all(|p| body.contains(&p) || entries.contains(&p))
-                    {
-                        continue;
-                    }
-                    body.push(succ);
-                    grown = true;
-                }
-            }
-            if !grown {
-                break;
-            }
-        }
-        body
     }
 
     /// The blocks of `outer_range` the handler's code runs through, when no

@@ -21,7 +21,7 @@ source they were compiled from.
 | `pkg/TestMethodRefWildcardReceiver` | `jvm_fix_lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestRecordPatternInTry` | `jvm_fix_nested_handler_copies` | javac 21.0.12.1 (`--release 21 -g`) | `describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's |
 | `pkg/TestSuspendLoopFinally` | `jvm_fix_copied_finally` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies) |
-| `pkg/TestSuspendTryFinally` | `jvm_fix_handler_copy_offsets` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `runThenDone` and `runThenMaybeDone`, suspend functions whose try/finally spans the suspension point, decompile: each copy of the finally handler, with its own copy of a conditional finally body, becomes a finally guarded by its semaphore variable |
+| `pkg/TestSuspendTryFinally` | `jvm_fix_handler_copy_offsets` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `runThenDone`, a suspend function whose try/finally spans its suspension point, decompiles: each copy of the finally handler becomes a finally guarded by its semaphore variable |
 
 ## Diffs (compat -> default)
 
@@ -638,19 +638,18 @@ source they were compiled from.
 ```diff
 --- expected-compat/pkg/TestSuspendTryFinally.java
 +++ expected/pkg/TestSuspendTryFinally.java
-@@ -1,8 +1,11 @@
+@@ -1,7 +1,10 @@
  package pkg;
  
  import kotlin.Metadata;
 +import kotlin.ResultKt;
- import kotlin.Unit;
  import kotlin.coroutines.Continuation;
 +import kotlin.coroutines.intrinsics.IntrinsicsKt;
 +import kotlin.coroutines.jvm.internal.ContinuationImpl;
  import org.jetbrains.annotations.NotNull;
  import org.jetbrains.annotations.Nullable;
  
-@@ -27,175 +30,168 @@
+@@ -24,85 +27,82 @@
     }
  )
  public final class TestSuspendTryFinally {
@@ -736,8 +735,6 @@ source they were compiled from.
 -      // try (34 -> 44): 62 null
 -      // try (53 -> 58): 62 null
 -      // try (62 -> 63): 62 null
--   }
--
 +   public final Object runThenDone(@NotNull TestSuspendTryFinally.Step step, @NotNull Continuation<? super Integer> $completion) {
 +      Continuation $continuation;
 +      label95: {
@@ -810,179 +807,6 @@ source they were compiled from.
 +      } finally {
 +         step.done();
 +      }
-+   }
-+
-+   // $VF: Handled exception range with multiple entry points by splitting it
-+   // $VF: Duplicated exception handlers to handle obfuscated exceptions
-+   // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
-    @Nullable
--   public final Object runThenMaybeDone(@NotNull TestSuspendTryFinally.Step param1, @NotNull Continuation<? super Unit> param2) {
--      // $VF: Couldn't be decompiled
--      // Bytecode:
--      // 00: aload 2
--      // 01: instanceof pkg/TestSuspendTryFinally$runThenMaybeDone$1
--      // 04: ifeq 27
--      // 07: aload 2
--      // 08: checkcast pkg/TestSuspendTryFinally$runThenMaybeDone$1
--      // 0b: astore 5
--      // 0d: aload 5
--      // 0f: getfield pkg/TestSuspendTryFinally$runThenMaybeDone$1.label I
--      // 12: ldc -2147483648
--      // 14: iand
--      // 15: ifeq 27
--      // 18: aload 5
--      // 1a: dup
--      // 1b: getfield pkg/TestSuspendTryFinally$runThenMaybeDone$1.label I
--      // 1e: ldc -2147483648
--      // 20: isub
--      // 21: putfield pkg/TestSuspendTryFinally$runThenMaybeDone$1.label I
--      // 24: goto 32
--      // 27: new pkg/TestSuspendTryFinally$runThenMaybeDone$1
--      // 2a: dup
--      // 2b: aload 0
--      // 2c: aload 2
--      // 2d: invokespecial pkg/TestSuspendTryFinally$runThenMaybeDone$1.<init> (Lpkg/TestSuspendTryFinally;Lkotlin/coroutines/Continuation;)V
--      // 30: astore 5
--      // 32: aload 5
--      // 34: getfield pkg/TestSuspendTryFinally$runThenMaybeDone$1.result Ljava/lang/Object;
--      // 37: astore 4
--      // 39: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
--      // 3c: astore 6
--      // 3e: aload 5
--      // 40: getfield pkg/TestSuspendTryFinally$runThenMaybeDone$1.label I
--      // 43: tableswitch 120 0 1 21 56
--      // 58: aload 4
--      // 5a: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
--      // 5d: nop
--      // 5e: aload 1
--      // 5f: aload 5
--      // 61: aload 5
--      // 63: aload 1
--      // 64: putfield pkg/TestSuspendTryFinally$runThenMaybeDone$1.L$0 Ljava/lang/Object;
--      // 67: aload 5
--      // 69: bipush 1
--      // 6a: putfield pkg/TestSuspendTryFinally$runThenMaybeDone$1.label I
--      // 6d: invokeinterface pkg/TestSuspendTryFinally$Step.run (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
--      // 72: dup
--      // 73: aload 6
--      // 75: if_acmpne 8c
--      // 78: aload 6
--      // 7a: areturn
--      // 7b: aload 5
--      // 7d: getfield pkg/TestSuspendTryFinally$runThenMaybeDone$1.L$0 Ljava/lang/Object;
--      // 80: checkcast pkg/TestSuspendTryFinally$Step
--      // 83: astore 1
--      // 84: nop
--      // 85: aload 4
--      // 87: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
--      // 8a: aload 4
--      // 8c: checkcast java/lang/Number
--      // 8f: invokevirtual java/lang/Number.intValue ()I
--      // 92: pop
--      // 93: aload 1
--      // 94: invokeinterface pkg/TestSuspendTryFinally$Step.last ()Z 1
--      // 99: ifeq a2
--      // 9c: aload 1
--      // 9d: invokeinterface pkg/TestSuspendTryFinally$Step.done ()V 1
--      // a2: goto b7
--      // a5: astore 3
--      // a6: aload 1
--      // a7: invokeinterface pkg/TestSuspendTryFinally$Step.last ()Z 1
--      // ac: ifeq b5
--      // af: aload 1
--      // b0: invokeinterface pkg/TestSuspendTryFinally$Step.done ()V 1
--      // b5: aload 3
--      // b6: athrow
--      // b7: getstatic kotlin/Unit.INSTANCE Lkotlin/Unit;
--      // ba: areturn
--      // bb: new java/lang/IllegalStateException
--      // be: dup
--      // bf: ldc "call to 'resume' before 'invoke' with coroutine"
--      // c1: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
--      // c4: athrow
--      // try (34 -> 44): 66 null
--      // try (53 -> 60): 66 null
--      // try (66 -> 67): 66 null
-+   public final Object runThenMaybeDone(@NotNull TestSuspendTryFinally.Step step, @NotNull Continuation<? super Unit> $completion) {
-+      Continuation $continuation;
-+      label157: {
-+         if ($completion instanceof <unrepresentable>) {
-+            $continuation = (<unrepresentable>)$completion;
-+            if (($continuation.label & -2147483648) != 0) {
-+               $continuation.label -= -2147483648;
-+               break label157;
-+            }
-+         }
-+
-+         $continuation = new ContinuationImpl($completion) {
-+            Object L$0;
-+            int label;
-+
-+            @Nullable
-+            public final Object invokeSuspend(@NotNull Object $result) {
-+               this.result = $result;
-+               this.label |= -2147483648;
-+               return TestSuspendTryFinally.this.runThenMaybeDone(null, (Continuation<? super Unit>)this);
-+            }
-+         };
-+      }
-+
-+      Object $result = $continuation.result;
-+      Object var6 = IntrinsicsKt.getCOROUTINE_SUSPENDED();
-+      Object var10000;
-+      switch ($continuation.label) {
-+         case 0:
-+            ResultKt.throwOnFailure($result);
-+            boolean var13 = false /* VF: Semaphore variable */;
-+
-+            try {
-+               var13 = true;
-+               $continuation.L$0 = step;
-+               $continuation.label = 1;
-+               var10000 = step.run($continuation);
-+               var13 = false;
-+            } finally {
-+               if (var13) {
-+                  if (step.last()) {
-+                     step.done();
-+                  }
-+               }
-+            }
-+
-+            if (var10000 == var6) {
-+               return var6;
-+            }
-+            break;
-+         case 1:
-+            step = (TestSuspendTryFinally.Step)$continuation.L$0;
-+            boolean var17 = false /* VF: Semaphore variable */;
-+
-+            try {
-+               var17 = true;
-+               ResultKt.throwOnFailure($result);
-+               var10000 = $result;
-+               var17 = false;
-+               break;
-+            } finally {
-+               if (var17) {
-+                  if (step.last()) {
-+                     step.done();
-+                  }
-+               }
-+            }
-+         default:
-+            throw new IllegalStateException("call to 'resume' before 'invoke' with coroutine");
-+      }
-+
-+      try {
-+         ((Number)var10000).intValue();
-+      } finally {
-+         if (step.last()) {
-+            step.done();
-+         }
-+      }
-+
-+      return Unit.INSTANCE;
     }
  
     @Metadata(

@@ -423,9 +423,7 @@ impl ExceptionDeobfuscator {
         }
 
         let nest_copies = kuna_fixes::enabled(KunaFix::NestedHandlerCopies);
-        let separate_finally = kuna_fixes::enabled(KunaFix::HandlerCopyOffsets);
         let mut copies: JHashMap<BasicBlock, BasicBlock> = JHashMap::new();
-        let mut finally_copies: JHashMap<BasicBlock, BasicBlock> = JHashMap::new();
 
         for (handler, ranges) in map_ranges.entry_vec() {
             if ranges.len() == 1 {
@@ -442,9 +440,6 @@ impl ExceptionDeobfuscator {
                     new_block.set_seq(handler.get_seq().java_clone());
                     if nest_copies {
                         copies.put(new_block, handler);
-                    }
-                    if separate_finally && range.get_exception_types().is_none() {
-                        finally_copies.put(new_block, handler);
                     }
 
                     graph
@@ -546,10 +541,8 @@ impl ExceptionDeobfuscator {
             }
         }
 
-        if nest_copies && !copies.is_empty() && NestedHandlerCopies::nest(graph, &copies) {
-            NestedHandlerCopies::separate_handler_bodies(graph, &copies);
-        } else if !finally_copies.is_empty() {
-            NestedHandlerCopies::separate_handler_bodies(graph, &finally_copies);
+        if nest_copies && !copies.is_empty() {
+            NestedHandlerCopies::nest(graph, &copies);
         }
     }
 
