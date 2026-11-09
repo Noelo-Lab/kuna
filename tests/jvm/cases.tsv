@@ -199,6 +199,57 @@ opt	ternary-in-if	1
 opt	force-jsr-inline	1
 opt	preferred-line-length	120
 opt	verify-pre-post-merges	1
+set	With Idea Not Null	with-idea-not-null
+opt	log-level	warn
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	__unit_test_mode__	1
+opt	new-line-separator	1
+opt	error-message	
+opt	include-runtime	
+opt	jvm_plugins	1
+opt	bytecode-source-mapping	1
+opt	__dump_original_lines__	1
+opt	dump-exception-on-error	0
+opt	ignore-invalid-bytecode	1
+opt	verify-anonymous-classes	1
+opt	include-classpath	0
+opt	ternary-in-if	1
+opt	force-jsr-inline	1
+set	JAD Naming	jad-naming
+opt	log-level	warn
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	__unit_test_mode__	1
+opt	new-line-separator	1
+opt	error-message	
+opt	include-runtime	
+opt	jvm_plugins	1
+opt	bytecode-source-mapping	1
+opt	__dump_original_lines__	1
+opt	dump-exception-on-error	0
+opt	variable-renaming	jad
+set	Tiny Naming	tiny-naming
+opt	log-level	warn
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	__unit_test_mode__	1
+opt	new-line-separator	1
+opt	error-message	
+opt	include-runtime	
+opt	jvm_plugins	1
+opt	bytecode-source-mapping	1
+opt	__dump_original_lines__	1
+opt	dump-exception-on-error	0
+opt	variable-renaming	tiny
+set	Plugin Defaults	plugin-defaults
+opt	jvm_plugins	1
 case	complex-condys/pkg/TestComplexCondy	Complex Condys
 class	classes/jasm/pkg/TestComplexCondy.class
 expected	expected/complex-condys/pkg/TestComplexCondy.java
@@ -2660,3 +2711,31 @@ class	classes/java21/pkg/TestTypeAnnotationsTokens$InnerStatic$Inner2Static.clas
 class	classes/java21/pkg/TestTypeAnnotationsTokens$InnerStatic.class
 expected	expected/text-tokens/pkg/TestTypeAnnotationsTokens.java
 compare	TestTypeAnnotationsTokens.java
+case	jad-naming/TestJadLvtCollision	JAD Naming
+class	classes/plugins/variable-renaming/custom/TestJadLvtCollision.class
+expected	expected/jad-naming/TestJadLvtCollision.java
+compare	TestJadLvtCollision.java
+case	jad-naming/pkg/TestJADLocalClasses	JAD Naming
+class	classes/plugins/variable-renaming/java8/pkg/TestJADLocalClasses.class
+class	classes/plugins/variable-renaming/java8/pkg/TestJADLocalClasses$1Test.class
+expected	expected/jad-naming/pkg/TestJADLocalClasses.java
+compare	TestJADLocalClasses.java
+case	jad-naming/pkg/TestJADNaming	JAD Naming
+class	classes/plugins/variable-renaming/java8/pkg/TestJADNaming.class
+expected	expected/jad-naming/pkg/TestJADNaming.java
+compare	TestJADNaming.java
+case	plugin-defaults/TestIdeaNotNull	Plugin Defaults
+class	classes/custom/TestIdeaNotNull.class
+expected	expected/plugin-defaults/TestIdeaNotNull.java
+compare	TestIdeaNotNull.java
+case	tiny-naming/pkg/TestTinyNaming	Tiny Naming
+class	classes/plugins/variable-renaming/java8/pkg/TestTinyNaming.class
+class	classes/plugins/variable-renaming/java8/pkg/TestTinyNaming$PascalCase.class
+class	classes/plugins/variable-renaming/java8/pkg/TestTinyNaming$camelCase.class
+class	classes/plugins/variable-renaming/java8/pkg/TestTinyNaming$clas.class
+expected	expected/tiny-naming/pkg/TestTinyNaming.java
+compare	TestTinyNaming.java
+case	with-idea-not-null/TestIdeaNotNull	With Idea Not Null
+class	classes/custom/TestIdeaNotNull.class
+expected	expected/with-idea-not-null/TestIdeaNotNull.java
+compare	TestIdeaNotNull.java

@@ -8,8 +8,10 @@
 use std::rc::Rc;
 
 use crate::i_fernflower_preferences::PreferenceOption;
+use crate::idea_not_null_plugin::IdeaNotNullPlugin;
 use crate::plugin::Plugin;
 use crate::plugin_source::PluginSource;
+use crate::variable_renaming_plugin::VariableRenamingPlugin;
 
 /// The custom property that selects the bundled plugins (`1`/`on`, the
 /// default, or `0`/`off`). `Fernflower::new` takes it off the property list.
@@ -17,7 +19,10 @@ pub const JVM_PLUGINS: &str = "jvm_plugins";
 
 /// The bundled plugins, in the order `java -jar vineflower.jar` registers
 /// them (`--list-plugins`): VariableRenaming, Kotlin, IdeaNotNull.
-const BUNDLED: &[fn() -> Rc<dyn Plugin>] = &[];
+const BUNDLED: &[fn() -> Rc<dyn Plugin>] = &[
+    || Rc::new(VariableRenamingPlugin::new()),
+    || Rc::new(IdeaNotNullPlugin::new()),
+];
 
 /// A fresh instance of every bundled plugin, in registration order.
 pub fn bundled_plugins() -> Vec<Rc<dyn Plugin>> {

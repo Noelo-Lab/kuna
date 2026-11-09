@@ -642,7 +642,7 @@ fn vendored() -> Vec<Case> {
 #[test]
 fn vendored_corpus_is_complete() {
     let cases = vendored();
-    assert_eq!(cases.len(), 530);
+    assert_eq!(cases.len(), 536);
     let ids: BTreeSet<&str> = cases.iter().map(|c| c.id.as_str()).collect();
     assert_eq!(ids.len(), cases.len());
     let base = [
@@ -666,6 +666,22 @@ fn vendored_corpus_is_complete() {
         assert!(case.expected.is_file(), "{}", case.expected.display());
         for class in &case.class_files {
             assert!(class.is_file(), "{}", class.display());
+        }
+        let plugin_set = matches!(
+            case.set_slug.as_str(),
+            "with-idea-not-null" | "jad-naming" | "tiny-naming" | "plugin-defaults"
+        );
+        assert_eq!(
+            case.options
+                .iter()
+                .any(|(k, v)| k == "jvm_plugins" && v == "1"),
+            plugin_set,
+            "{}",
+            case.id
+        );
+        if case.set_slug == "plugin-defaults" {
+            assert_eq!(case.options, [("jvm_plugins".to_string(), "1".to_string())]);
+            continue;
         }
         let keys: Vec<&str> = case
             .options
@@ -738,7 +754,7 @@ fn vendored_expected_texts_match_themselves() {
         );
         matched += 1;
     }
-    assert_eq!(matched, 530);
+    assert_eq!(matched, 536);
 }
 
 #[test]
