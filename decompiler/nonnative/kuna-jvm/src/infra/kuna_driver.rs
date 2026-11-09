@@ -57,9 +57,10 @@ pub enum Jobs {
 /// How root classes are grouped into batches.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Strategy {
-    /// Contiguous runs of roots (in run order) of similar size; each batch
-    /// also pre-processes the roots it depends on, so a root may be
-    /// processed by several instances.
+    /// Roots joined with the roots they depend on while the unit stays
+    /// within the first batch's size, units packed in run order into batches
+    /// that shrink as the plan goes; each batch also pre-processes the roots
+    /// it depends on outside it, so a root may be processed by several instances.
     Closure,
     /// Roots joined with everything they depend on (connected components),
     /// packed into batches; no root is processed twice, but one large
@@ -867,6 +868,53 @@ fn plan(fernflower: &mut Fernflower, input: &InputSet) -> Plan {
     }
 }
 
+fn find(parent: &mut [usize], x: usize) -> usize {
+    let mut r = x;
+    while parent[r] != r {
+        r = parent[r];
+    }
+    let mut y = x;
+    while parent[y] != r {
+        let next = parent[y];
+        parent[y] = r;
+        y = next;
+    }
+    r
+}
+
+/// `selected` gathered into units in run order of their first root: a root
+/// joins a selected root it depends on (the costliest dependencies first)
+/// unless the unit would outgrow `cap`, so that few batches pre-process a
+/// root another batch writes.
+fn dependency_units(plan: &Plan, selected: &[usize], cap: u64) -> Vec<Vec<usize>> {
+    let chosen: BTreeSet<usize> = selected.iter().copied().collect();
+    let mut parent: Vec<usize> = (0..plan.roots.len()).collect();
+    let mut size: Vec<u64> = plan.cost.iter().map(|&c| c.max(1)).collect();
+    let mut edges: Vec<(u64, usize, usize)> = selected
+        .iter()
+        .flat_map(|&i| {
+            plan.deps[i]
+                .iter()
+                .filter(|d| chosen.contains(d))
+                .map(move |&d| (plan.cost[d].max(1), i, d))
+        })
+        .collect();
+    edges.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+    for (_, i, d) in edges {
+        let (a, b) = (find(&mut parent, i), find(&mut parent, d));
+        if a != b && size[a] + size[b] <= cap {
+            let (low, high) = (a.min(b), a.max(b));
+            parent[high] = low;
+            size[low] += size[high];
+        }
+    }
+    let mut units: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for &i in selected {
+        units.entry(find(&mut parent, i)).or_default().push(i);
+    }
+    units.into_values().collect()
+}
+
 fn make_batches(plan: &Plan, selected: &[usize], workers: usize, strategy: Strategy) -> Vec<Batch> {
     if selected.is_empty() {
         return Vec::new();
@@ -876,14 +924,21 @@ fn make_batches(plan: &Plan, selected: &[usize], workers: usize, strategy: Strat
         Strategy::Closure => {
             let total: u64 = selected.iter().map(|&i| plan.cost[i].max(1)).sum();
             let floor = total.div_ceil((workers * 8) as u64).max(1);
+            let share = |remaining: u64| remaining.div_ceil((workers * 2) as u64).max(floor);
             let mut remaining = total;
             let mut groups = Vec::new();
             let mut current = BTreeSet::new();
             let mut weight = 0u64;
-            for &i in selected {
-                current.insert(i);
-                weight += plan.cost[i].max(1);
-                if weight >= remaining.div_ceil((workers * 2) as u64).max(floor) {
+            for unit in dependency_units(plan, selected, share(total)) {
+                let unit_weight: u64 = unit.iter().map(|&i| plan.cost[i].max(1)).sum();
+                if weight > 0 && weight + unit_weight > share(remaining) {
+                    groups.push(std::mem::take(&mut current));
+                    remaining -= weight;
+                    weight = 0;
+                }
+                current.extend(unit);
+                weight += unit_weight;
+                if weight >= share(remaining) {
                     groups.push(std::mem::take(&mut current));
                     remaining -= weight;
                     weight = 0;
@@ -896,19 +951,6 @@ fn make_batches(plan: &Plan, selected: &[usize], workers: usize, strategy: Strat
         }
         Strategy::Components => {
             let mut parent: Vec<usize> = (0..plan.roots.len()).collect();
-            fn find(parent: &mut [usize], x: usize) -> usize {
-                let mut r = x;
-                while parent[r] != r {
-                    r = parent[r];
-                }
-                let mut y = x;
-                while parent[y] != r {
-                    let next = parent[y];
-                    parent[y] = r;
-                    y = next;
-                }
-                r
-            }
             for (root, deps) in plan.deps.iter().enumerate() {
                 for &dep in deps {
                     let (a, b) = (find(&mut parent, root), find(&mut parent, dep));

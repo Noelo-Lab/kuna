@@ -730,10 +730,13 @@ reading another root class's processing results while it is written (most visibl
 constructor masks of that root's nested classes, read when `new Outer.Inner(..)` or
 `super(..)` is written), so `decompiler/nonnative/kuna-jvm/src/infra/kuna_partition.rs`
 reads from the class files whose nested-class constructors each root calls. Roots
-are grouped into batches that also *process* (without writing) the roots they depend on,
-contiguous in root order and shrinking as the grouping goes (each about the cost not yet
-grouped over twice the worker count, down to the total over eight times the worker
-count), so the last batches are short. Worker threads take batches from a shared queue,
+are grouped into batches that also *process* (without writing) the roots they depend on.
+A root is first joined with the roots it depends on, costliest first, while the joined
+unit stays within the first batch's size, so that few batches process a root another
+batch writes; units are packed in root order into batches that shrink as the grouping goes
+(each about the cost not yet grouped over twice the worker count, down to the total over
+eight times the worker count, and closed before a unit would overfill it), so the last
+batches are short. Worker threads take batches from a shared queue,
 largest first, preferring among the next few one their engine can run without reloading
 (it processes no root this engine already processed), and each runs its batch with
 `Fernflower::decompile_selected`, in the single run's order. A detector watches every
