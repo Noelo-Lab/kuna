@@ -8,3 +8,5 @@ mod rt_kernel;
 mod rt_jchar;
 #[path = "rt_jnum.rs"]
 mod rt_jnum;
+#[path = "collections.rs"]
+mod collections;

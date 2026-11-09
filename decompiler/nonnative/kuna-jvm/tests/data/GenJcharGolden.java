@@ -16,8 +16,8 @@ public class GenJcharGolden {
       for (int c = 0; c <= 0xFFFF; c++) {
         int t = Character.getType((char) c);
         if (t != prev) {
-          row.append(String.format("0x%04X_%02X, ", c, t));
-          if (++n % 8 == 0) {
+          row.append(String.format("(0x%04X, %d), ", c, t));
+          if (++n % 7 == 0) {
             System.out.println("    " + row.toString().trim());
             row.setLength(0);
           }
