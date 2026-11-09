@@ -42,6 +42,13 @@ pub enum KunaFix {
     /// `jvm_fix_catch_loop_back_successor`: a try/catch is not built at a
     /// level where its successor would be its own try block.
     CatchLoopBackSuccessor,
+    /// `jvm_fix_kt_synthetic_anonymous_object`: an anonymous class with only
+    /// synthetic-class Kotlin metadata is written as an `object` whose
+    /// supertypes come from the class file.
+    KtSyntheticAnonymousObject,
+    /// `jvm_fix_kt_local_as_extension_receiver`: a `$this$` local of a
+    /// method without parameters is not taken for an extension receiver.
+    KtLocalAsExtensionReceiver,
 }
 
 impl KunaFix {
@@ -53,6 +60,8 @@ impl KunaFix {
         KunaFix::IfDenestFallthrough,
         KunaFix::SwitchYieldConstRetype,
         KunaFix::CatchLoopBackSuccessor,
+        KunaFix::KtSyntheticAnonymousObject,
+        KunaFix::KtLocalAsExtensionReceiver,
     ];
 
     /// The option row that turns this fix on or off.
@@ -64,6 +73,8 @@ impl KunaFix {
             KunaFix::IfDenestFallthrough => "jvm_fix_if_denest_fallthrough",
             KunaFix::SwitchYieldConstRetype => "jvm_fix_switch_yield_const_retype",
             KunaFix::CatchLoopBackSuccessor => "jvm_fix_catch_loop_back_successor",
+            KunaFix::KtSyntheticAnonymousObject => "jvm_fix_kt_synthetic_anonymous_object",
+            KunaFix::KtLocalAsExtensionReceiver => "jvm_fix_kt_local_as_extension_receiver",
         }
     }
 

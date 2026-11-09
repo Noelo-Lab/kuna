@@ -13,18 +13,61 @@ Each case is a small class that Vineflower 1.12.0 fails on, and runs twice in th
   output, reviewed by the diff below.
 
 Both run with the fixture's base option map plus `dump-exception-on-error=0`: Vineflower's stack trace in a failure
-comment is not kuna's, so no exception text is printed. `classes/` holds the class files, `src/` the
-source they were compiled from.
+comment is not kuna's, so no exception text is printed. A Kotlin case (`"language": "kotlin"` in
+`cases.json`) also runs with `jvm_plugins=1`, its oracle with Vineflower's bundled plugins loaded
+(`vf-decompile --plugins`), and its expected texts are `<id>.kt`. `classes/` holds the class files,
+`src/` the source they were compiled from.
 
 | Case | Fix | Compiled with | With the fix |
 |---|---|---|---|
+| `pkg/TestCapturedReceiverKt` | `jvm_fix_kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
 | `pkg/TestCatchLoopBack` | `jvm_fix_catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
 | `pkg/TestIfDenestFallthrough` | `jvm_fix_if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestMethodRefWildcardReceiver` | `jvm_fix_lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
+| `pkg/TestSamWrapperObjectKt` | `jvm_fix_kt_synthetic_anonymous_object` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone |
 | `pkg/TestSwitchExprConstLub` | `jvm_fix_switch_yield_const_retype` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestTryCatchNotFlag` | `jvm_fix_twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 
 ## Diffs (compat -> default)
+
+### `pkg/TestCapturedReceiverKt`
+
+```diff
+--- expected-compat/pkg/TestCapturedReceiverKt.kt
++++ expected/pkg/TestCapturedReceiverKt.kt
+@@ -1,15 +1,20 @@
+ package pkg
+ 
+ public operator fun Array<String>.iterator(): Iterator<String> {
+-   // $VF: Couldn't be decompiled
+-   // Bytecode:
+-   // 00: aload 0
+-   // 01: ldc "<this>"
+-   // 03: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-   // 06: new pkg/TestCapturedReceiverKt$iterator$1
+-   // 09: dup
+-   // 0a: aload 0
+-   // 0b: invokespecial pkg/TestCapturedReceiverKt$iterator$1.<init> ([Ljava/lang/String;)V
+-   // 0e: checkcast java/util/Iterator
+-   // 11: areturn
++   return object : Iterator<String> {
++      public final var i: Int
++         internal set
++
++      public open operator fun hasNext(): Boolean {
++         return this.i < $this$iterator.length
++      }
++
++      public open operator fun next(): String {
++         return $this$iterator[this.i++]
++      }
++
++      fun remove() {
++         throw UnsupportedOperationException("Operation is not supported for read-only collection")
++      }
++   }
+ }
+```
 
 ### `pkg/TestCatchLoopBack`
 
@@ -442,6 +485,111 @@ source they were compiled from.
     }
  
     TestMethodRefWildcardReceiver.Pipe<Object> objectsOf(TestMethodRefWildcardReceiver.Factory<String> factory) {
+```
+
+### `pkg/TestSamWrapperObjectKt`
+
+```diff
+--- expected-compat/pkg/TestSamWrapperObjectKt.kt
++++ expected/pkg/TestSamWrapperObjectKt.kt
+@@ -3,70 +3,43 @@
+ package pkg
+ 
+ import java.util.Comparator
++import kotlin.jvm.functions.Function1
+ import kotlin.jvm.internal.SourceDebugExtension
+ 
+ public inline fun <T> byLength(crossinline f: (T) -> String): Comparator<T> {
+-   // $VF: Couldn't be decompiled
+-   // Bytecode:
+-   // 00: aload 0
+-   // 01: ldc "f"
+-   // 03: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-   // 06: bipush 0
+-   // 07: istore 1
+-   // 08: new pkg/TestSamWrapperObjectKt$byLength$1
+-   // 0b: dup
+-   // 0c: aload 0
+-   // 0d: invokespecial pkg/TestSamWrapperObjectKt$byLength$1.<init> (Lkotlin/jvm/functions/Function1;)V
+-   // 10: checkcast java/util/Comparator
+-   // 13: areturn
++   return object : Comparator {
++      fun compare(a: T, b: T): Int {
++         return (f(a) as java.lang.String).length() - (f(b) as java.lang.String).length()
++      }
++   }
+ }
+ 
+ public inline fun <T> byLengthOf(crossinline f: (T) -> String): Comparator<T> {
+-   // $VF: Couldn't be decompiled
+-   // Bytecode:
+-   // 00: aload 0
+-   // 01: ldc "f"
+-   // 03: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-   // 06: bipush 0
+-   // 07: istore 1
+-   // 08: bipush 0
+-   // 09: istore 2
+-   // 0a: new pkg/TestSamWrapperObjectKt$byLength$1
+-   // 0d: dup
+-   // 0e: aload 0
+-   // 0f: invokespecial pkg/TestSamWrapperObjectKt$byLength$1.<init> (Lkotlin/jvm/functions/Function1;)V
+-   // 12: checkcast java/util/Comparator
+-   // 15: areturn
++   return object : Comparator {
++      fun compare(a: T, b: T): Int {
++         return (f(a) as java.lang.String).length() - (f(b) as java.lang.String).length()
++      }
++   }
+ }
+ 
+ public inline fun <T> nullsFirstBy(crossinline f: (T) -> String?): Comparator<T> {
+-   // $VF: Couldn't be decompiled
+-   // Bytecode:
+-   // 00: aload 0
+-   // 01: ldc "f"
+-   // 03: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-   // 06: bipush 0
+-   // 07: istore 1
+-   // 08: new pkg/TestSamWrapperObjectKt$nullsFirstBy$1
+-   // 0b: dup
+-   // 0c: aload 0
+-   // 0d: invokespecial pkg/TestSamWrapperObjectKt$nullsFirstBy$1.<init> (Lkotlin/jvm/functions/Function1;)V
+-   // 10: checkcast java/util/Comparator
+-   // 13: areturn
++   return object : Comparator {
++      fun compare(a: T, b: T): Int {
++         val x: java.lang.String = f(a) as java.lang.String
++         val y: java.lang.String = f(b) as java.lang.String
++         if (x == null) {
++            return if (y == null) 0 else -1
++         } else {
++            return if (y == null) 1 else x.length() - y.length()
++         }
++      }
++   }
+ }
+ 
+ public inline fun twice(crossinline g: (Int) -> Int): (Int) -> Int {
+-   // $VF: Couldn't be decompiled
+-   // Bytecode:
+-   // 00: aload 0
+-   // 01: ldc "g"
+-   // 03: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-   // 06: bipush 0
+-   // 07: istore 1
+-   // 08: new pkg/TestSamWrapperObjectKt$twice$1
+-   // 0b: dup
+-   // 0c: aload 0
+-   // 0d: invokespecial pkg/TestSamWrapperObjectKt$twice$1.<init> (Lkotlin/jvm/functions/Function1;)V
+-   // 10: checkcast kotlin/jvm/functions/Function1
+-   // 13: areturn
++   return object : Function1<Integer, Integer> {
++      fun invoke(it: Int): Int {
++         return (g(it) as java.lang.Number).intValue() * 2
++      }
++   }
+ }
 ```
 
 ### `pkg/TestSwitchExprConstLub`

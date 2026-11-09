@@ -67,6 +67,32 @@
       "source": "src/pkg/TestCatchLoopBack.java",
       "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
       "summary": "`read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone"
+    },
+    {
+      "id": "pkg/TestCapturedReceiverKt",
+      "fix": "jvm_fix_kt_local_as_extension_receiver",
+      "class_files": [
+        "pkg/TestCapturedReceiverKt.class",
+        "pkg/TestCapturedReceiverKt$iterator$1.class"
+      ],
+      "source": "src/pkg/TestCapturedReceiver.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
+      "summary": "`iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSamWrapperObjectKt",
+      "fix": "jvm_fix_kt_synthetic_anonymous_object",
+      "class_files": [
+        "pkg/TestSamWrapperObjectKt.class",
+        "pkg/TestSamWrapperObjectKt$byLength$1.class",
+        "pkg/TestSamWrapperObjectKt$nullsFirstBy$1.class",
+        "pkg/TestSamWrapperObjectKt$twice$1.class"
+      ],
+      "source": "src/pkg/TestSamWrapperObject.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
+      "summary": "`byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone",
+      "language": "kotlin"
     }
   ]
 }

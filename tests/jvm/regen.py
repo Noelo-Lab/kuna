@@ -99,6 +99,11 @@ FIX_SETS = (('Kuna Fixes, Vineflower compat', 'kuna-fixes-compat', '1', 'expecte
             ('Kuna Fixes', 'kuna-fixes', '0', 'expected'))
 
 
+def fix_ext(c):
+    """The extension of a kuna-fixes case's text: `.kt` for a Kotlin case (`"language": "kotlin"`), else `.java`."""
+    return '.kt' if c.get('language') == 'kotlin' else '.java'
+
+
 def fix_records(fm, base):
     """The set and case records of the kuna-fixes table: every case twice, compat and default."""
     set_lines, case_lines = [], []
@@ -113,12 +118,15 @@ def fix_records(fm, base):
     for name, slug, _, expected in FIX_SETS:
         for c in sorted(fm['cases'], key=lambda c: c['id']):
             case_lines.append(line('case', f'{slug}/{c["id"]}', name))
+            if c.get('language') == 'kotlin':
+                case_lines.append(line('opt', 'jvm_plugins', '1'))
             for k, v in c.get('options', []):
                 case_lines.append(line('opt', k, v))
             for f in c['class_files']:
                 case_lines.append(line('class', f'{FIXES_DIR}/classes/{f}'))
-            case_lines.append(line('expected', f'{FIXES_DIR}/{expected}/{c["id"]}.java'))
-            case_lines.append(line('compare', os.path.basename(c['class_files'][0])[:-len('.class')] + '.java'))
+            case_lines.append(line('expected', f'{FIXES_DIR}/{expected}/{c["id"]}{fix_ext(c)}'))
+            stem = os.path.basename(c['class_files'][0])[:-len('.class')]
+            case_lines.append(line('compare', *dict.fromkeys([stem + fix_ext(c), stem + '.java'])))
     return set_lines, case_lines
 
 
@@ -127,7 +135,7 @@ def fix_files(fm):
     files = set()
     for c in fm['cases']:
         files.update(f'{FIXES_DIR}/classes/{f}' for f in c['class_files'])
-        files.update(f'{FIXES_DIR}/{e}/{c["id"]}.java' for _, _, _, e in FIX_SETS)
+        files.update(f'{FIXES_DIR}/{e}/{c["id"]}{fix_ext(c)}' for _, _, _, e in FIX_SETS)
         if c.get('source'):
             files.add(f'{FIXES_DIR}/{c["source"]}')
     return sorted(files)
@@ -148,8 +156,10 @@ Each case is a small class that Vineflower 1.12.0 fails on, and runs twice in th
   output, reviewed by the diff below.
 
 Both run with the fixture's base option map plus {options}: Vineflower's stack trace in a failure
-comment is not kuna's, so no exception text is printed. `classes/` holds the class files, `src/` the
-source they were compiled from.
+comment is not kuna's, so no exception text is printed. A Kotlin case (`"language": "kotlin"` in
+`cases.json`) also runs with `jvm_plugins=1`, its oracle with Vineflower's bundled plugins loaded
+(`vf-decompile --plugins`), and its expected texts are `<id>.kt`. `classes/` holds the class files,
+`src/` the source they were compiled from.
 
 | Case | Fix | Compiled with | With the fix |
 |---|---|---|---|
@@ -165,10 +175,10 @@ def fix_readme(fm, root):
         rows.append(f'| `{c["id"]}` | `{c["fix"]}` | {c["compiler"]} | {c["summary"]} |')
         texts = []
         for _, _, _, e in FIX_SETS:
-            with open(os.path.join(root, FIXES_DIR, e, c['id'] + '.java'), encoding='utf-8') as f:
+            with open(os.path.join(root, FIXES_DIR, e, c['id'] + fix_ext(c)), encoding='utf-8') as f:
                 texts.append(f.read().splitlines())
-        diff = difflib.unified_diff(texts[0], texts[1], f'expected-compat/{c["id"]}.java',
-                                    f'expected/{c["id"]}.java', lineterm='')
+        diff = difflib.unified_diff(texts[0], texts[1], f'expected-compat/{c["id"]}{fix_ext(c)}',
+                                    f'expected/{c["id"]}{fix_ext(c)}', lineterm='')
         diffs.append(f'\n### `{c["id"]}`\n\n```diff\n' + '\n'.join(diff) + '\n```\n')
     options = ', '.join(f'`{k}={v}`' for k, v in fm['options'])
     return FIXES_README.format(options=options, rows='\n'.join(rows), diffs=''.join(diffs))

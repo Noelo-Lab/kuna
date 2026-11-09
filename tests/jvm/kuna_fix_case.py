@@ -3,17 +3,21 @@
 
   python3 -I tests/jvm/kuna_fix_case.py --fix jvm_fix_<slug> --class path/to/pkg/TestFoo.class \\
       [--source path/to/pkg/TestFoo.java] [--compiler "javac 17.0.20.1"] [--summary TEXT] [--opt k=v]...
+      [--language java|kotlin]
 
 The class's `Name$*.class` siblings in the same directory come with it, in name order (the corpus
-fixture's `addSource` order). Steps, all under tests/jvm/kuna-fixes/ (README.md there has the layout):
+fixture's `addSource` order). --language defaults to kotlin when the class carries `kotlin.Metadata`, else
+java. A Kotlin case (`"language": "kotlin"` in cases.json) is decompiled with Vineflower's bundled plugins
+(`vf-decompile --plugins`; kuna: `jvm_plugins=1`) and its texts are `.kt`; below, EXT is `.java` or `.kt`.
+Steps, all under tests/jvm/kuna-fixes/ (README.md there has the layout):
 
   1. copies the class files to classes/<package>/ and the source to src/<package>/;
   2. runs the released Vineflower jar through the oracle (`vf-decompile --fixture`, plus the options of
      cases.json, dump-exception-on-error=0, and every --opt) and stores its text as
-     expected-compat/<id>.java; the text must contain Vineflower's failure comment;
+     expected-compat/<id>EXT; the text must contain Vineflower's failure comment;
   3. records the case in cases.json and rebuilds cases.tsv and the READMEs with regen.py;
   4. runs the corpus runner on both passes: the compat pass must match Vineflower's text, and kuna's
-     default output becomes expected/<id>.java (printed as a diff against the compat text, for review);
+     default output becomes expected/<id>EXT (printed as a diff against the compat text, for review);
   5. runs both passes again and records them in tests/jvm/baseline.txt.
 
 Needs KUNA_JVM_ORACLE (the oracle workspace, decompiler/nonnative/kuna-jvm/tools/oracle/README.md) and
@@ -39,6 +43,12 @@ MARKER = "$VF: Couldn't be decompiled"
 # The fixture's leak check (unit-test mode) fails after the output is saved when a method fails
 # while it is written; the saved text is still Vineflower's.
 LEAK = 'TextBuffer was garbage collected without being added to another TextBuffer'
+
+
+def is_kotlin(path):
+    """Whether a class file carries the `kotlin.Metadata` annotation (its descriptor is in the constant pool)."""
+    with open(path, 'rb') as f:
+        return b'Lkotlin/Metadata;' in f.read()
 
 
 def class_name(path):
@@ -116,6 +126,8 @@ def main():
     ap.add_argument('--compiler', default='', help='the compiler that produced the class, e.g. "javac 17.0.20.1"')
     ap.add_argument('--summary', default='', help='one line: what the default output does instead of failing')
     ap.add_argument('--opt', action='append', default=[], help='an extra option pair k=v for both passes')
+    ap.add_argument('--language', choices=('java', 'kotlin'),
+                    help='the case\'s output language (default: kotlin if the class has kotlin.Metadata, else java)')
     a = ap.parse_args()
     if not os.environ.get('KUNA_JVM_ORACLE'):
         sys.exit('KUNA_JVM_ORACLE is not set: set it to the JVM oracle workspace '
@@ -135,6 +147,9 @@ def main():
 def add_case(a, extra, work):
     main_class = os.path.abspath(a.cls)
     name = class_name(main_class)
+    language = a.language or ('kotlin' if is_kotlin(main_class) else 'java')
+    ext = '.kt' if language == 'kotlin' else '.java'
+    print(f'{name}: a {language} case')
     stem = os.path.basename(main_class)[:-len('.class')]
     siblings = sorted(glob.glob(os.path.join(glob.escape(os.path.dirname(main_class)), glob.escape(stem) + '$*.class')))
     package = os.path.dirname(name)
@@ -155,12 +170,12 @@ def add_case(a, extra, work):
     with open(table_path, encoding='utf-8') as f:
         table = json.load(f)
     vf_out = os.path.join(work, 'vf')
-    cmd = [VF_DECOMPILE, '--fixture']
+    cmd = [VF_DECOMPILE, '--fixture'] + (['--plugins'] if language == 'kotlin' else [])
     for k, v in table['options'] + extra:
         cmd += ['--opt', f'{k}={v}']
     cmd += [os.path.join(FIXES, 'classes', f) for f in class_files] + ['-o', vf_out]
     code, out, err = run(cmd)
-    produced = os.path.join(vf_out, stem + '.java')
+    produced = os.path.join(vf_out, stem + ext)
     leak_only = err.count('Exception in thread') == 1 and LEAK in err
     if not os.path.isfile(produced) or (code != 0 and not leak_only):
         sys.exit(f'vf-decompile failed ({code}):\n{out}{err}')
@@ -169,15 +184,17 @@ def add_case(a, extra, work):
     if MARKER not in compat_text:
         sys.exit(f'Vineflower decompiles {name} without a failure comment: there is nothing for a fix to change')
     for sub in ('expected-compat', 'expected'):
-        os.makedirs(os.path.dirname(os.path.join(FIXES, sub, case_id + '.java')), exist_ok=True)
-    with open(os.path.join(FIXES, 'expected-compat', case_id + '.java'), 'w', encoding='utf-8', newline='\n') as f:
+        os.makedirs(os.path.dirname(os.path.join(FIXES, sub, case_id + ext)), exist_ok=True)
+    with open(os.path.join(FIXES, 'expected-compat', case_id + ext), 'w', encoding='utf-8', newline='\n') as f:
         f.write(compat_text)
-    default_path = os.path.join(FIXES, 'expected', case_id + '.java')
+    default_path = os.path.join(FIXES, 'expected', case_id + ext)
     if not os.path.exists(default_path):
-        shutil.copyfile(os.path.join(FIXES, 'expected-compat', case_id + '.java'), default_path)
+        shutil.copyfile(os.path.join(FIXES, 'expected-compat', case_id + ext), default_path)
 
     entry = {'id': case_id, 'fix': a.fix, 'class_files': class_files, 'source': source,
              'compiler': a.compiler, 'summary': a.summary}
+    if language == 'kotlin':
+        entry['language'] = 'kotlin'
     if extra:
         entry['options'] = extra
     table['cases'] = sorted([c for c in table['cases'] if c['id'] != case_id] + [entry], key=lambda c: c['id'])
@@ -203,7 +220,7 @@ def add_case(a, extra, work):
     regen()
 
     diff = difflib.unified_diff(compat_text.splitlines(), default_text.splitlines(),
-                                f'expected-compat/{case_id}.java', f'expected/{case_id}.java', lineterm='')
+                                f'expected-compat/{case_id}{ext}', f'expected/{case_id}{ext}', lineterm='')
     print('\n'.join(diff))
     before, after = compat_text.count(MARKER), default_text.count(MARKER)
     print(f'\nfailed methods: {before} with jvm_vineflower_compat on, {after} with the defaults')

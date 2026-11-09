@@ -1463,6 +1463,50 @@ tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with RuntimeException: computing post reverse post order failed!|a retry loop around a try with several catch blocks fails to decompile"
 
 [[option]]
+option = "jvm_fix_kt_synthetic_anonymous_object"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "kotlin"
+subphase = "kotlin_writer, kuna_fix_kt_synthetic_anonymous_object, k_exit_exprent"
+strength = "HARD"
+rewind = "kotlin"
+issue = ""
+summary = "Decompile a Kotlin method that creates an anonymous class kotlinc gave only synthetic-class metadata (k=3, no data): the class of a SAM conversion or function-type lambda in an inline function with a crossinline parameter, such as Comparator { a, b -> .. } in kotlin-stdlib's compareBy, sortedBy or thenBy. It is written as an object expression whose supertypes come from the class file (object : Comparator { fun compare(a: T, b: T): Int { return .. } }), where Vineflower fails the method with IllegalStateException: Anonymous class does not have Class Kotlin metadata. Only an object that needs no constructor arguments (superclass Object, every constructor parameter a captured variable) is written; a suspend function's continuation or a local function reference still fails."
+use_when = "Leave on; turn off only to reproduce Vineflower's failure on such a method."
+example = "kuna decompile kotlin-stdlib.jar kotlin.comparisons.ComparisonsKt__ComparisonsKt --option jvm_fix_kt_synthetic_anonymous_object off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 KotlinWriter.writeClassDefinition: an anonymous class must carry Class metadata (KClass) or it throws; kotlinc 2.x writes k=3 metadata without d1 for SAM wrappers and lambdas it regenerates at inline sites. Still present on develop/1.13.0 and on the unmerged branch fix/kotlin/decomp-metadata-failures (f45df054)"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "// $VF: Couldn't be decompiled with IllegalStateException: Anonymous class does not have Class Kotlin metadata|compareBy, sortedBy, sortBy, thenBy or a crossinline Comparator { } / fun interface lambda fails to decompile in Kotlin output"
+
+[[option]]
+option = "jvm_fix_kt_local_as_extension_receiver"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "kotlin"
+subphase = "kotlin_writer"
+strength = "HARD"
+rewind = "kotlin"
+issue = ""
+summary = "Write a Kotlin method without parameters and without metadata whose first local is named $this$.. (a captured extension receiver, or the receiver of a lambda with receiver kotlinc inlined into it) as a plain method, where Vineflower takes it for an extension function and fails with ArrayIndexOutOfBoundsException (index out of bounds: the len is 0 but the index is 0): the remove() kotlinc adds to an object : Iterator<T> returned by an extension function (kotlin-stdlib's Enumeration<T>.iterator()), and spring-framework's 22 BeanDefinitionDsl$bean$$inlined$bean$N classes, which fail whole."
+use_when = "Leave on; turn off only to reproduce Vineflower's failure on such a method."
+example = "kuna decompile kotlin-stdlib.jar kotlin.collections.CollectionsKt__IteratorsJVMKt --option jvm_fix_kt_local_as_extension_receiver off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 KotlinWriter.writeMethod: a method is an extension when the variable in its first parameter slot is named $this$..., and it then reads md.params[0]; in a parameterless method that slot holds a local: NestedClassProcessor's alias of a captured receiver, or an inlined lambda's receiver. Still present on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "// $VF: Couldn't be decompiled with index out of bounds: the len is 0 but the index is 0 (Vineflower: ArrayIndexOutOfBoundsException: Index 0 out of bounds for length 0) at KotlinWriter.writeMethod|$VF: Unable to decompile class with the same message on a Kotlin class inlined from a lambda with receiver|an extension function returning object : Iterator<T> { .. } fails to decompile"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""
