@@ -4746,8 +4746,11 @@ every other binary's pass list is byte-identical to before the pass existed):
     IMP is typed with its *own* class's property spelling, and otherwise its
     own method encoding, so two classes whose `view` return different classes
     each keep theirs and a class that merely shares a selector takes no other
-    class's spelling; only a stub, which belongs to no class, takes the first
-    spelling seen. Every
+    class's spelling. A stub belongs to no class, so it takes the class only
+    when every declaration that names one names the same class; once two
+    declarations name different classes (`@"UIView"@:` and `@"NSView"@:`) the
+    stub keeps the agreed encoding with the class left out (`@@:`), and so does
+    the SDK header reader (`objcsdk`). Every
     declaration — class, category and protocol — is recorded before any IMP is
     emitted. The
     decoder resolves `@"Base"` to the struct the layout built — a pointer built

@@ -59,6 +59,9 @@ pub struct Selectors {
     /// Per selector, the one type encoding every method with that selector
     /// agrees on; `None` once two methods disagree.
     encodings: HashMap<String, Option<String>>,
+    /// Selectors two declarations spell with different classes; their agreed
+    /// encoding names none.
+    class_conflicts: HashSet<String>,
     /// The SDK headers' declarations (`objcsdk`), consulted for a selector this
     /// image declares nowhere.
     sdk: HashMap<String, Option<String>>,
@@ -77,7 +80,9 @@ impl Selectors {
 
     /// Record one declaration's selector and type encoding. Two spellings
     /// agree when they match with frame offsets and class names erased; of
-    /// two that agree the one naming classes (`@"Base"`, a property's) is kept.
+    /// two that agree the one naming classes (`@"Base"`, a property's) is kept,
+    /// unless another declaration names different classes, which leaves the
+    /// agreed spelling with none.
     pub fn record(&mut self, selector: &str, types: Option<&str>) {
         let Some(new) = types else {
             self.encodings.entry(selector.to_string()).or_insert(None);
@@ -91,8 +96,14 @@ impl Selectors {
             Some(Some(have)) => {
                 if shape(have) != shape(new) {
                     self.encodings.insert(selector.to_string(), None);
-                } else if !have.contains('"') && new.contains('"') {
-                    self.encodings.insert(selector.to_string(), Some(new.to_string()));
+                } else if new.contains('"') && !self.class_conflicts.contains(selector) {
+                    if !have.contains('"') {
+                        self.encodings.insert(selector.to_string(), Some(new.to_string()));
+                    } else if classes(have) != classes(new) {
+                        let erased = erase_classes(have);
+                        self.encodings.insert(selector.to_string(), Some(erased));
+                        self.class_conflicts.insert(selector.to_string());
+                    }
                 }
             }
         }
@@ -283,6 +294,16 @@ fn shape(enc: &str) -> String {
         }
         None => enc.to_string(),
     }
+}
+
+/// The class names an encoding quotes, in order (`@"UIView"@:` → `["UIView"]`).
+fn classes(enc: &str) -> Vec<&str> {
+    enc.split('"').skip(1).step_by(2).collect()
+}
+
+/// `enc` with its quoted class names removed (`@"UIView"16@0:8` → `@16@0:8`).
+fn erase_classes(enc: &str) -> String {
+    enc.split('"').step_by(2).collect()
 }
 
 /// The prototype of a selector stub from its method's type encoding: the
@@ -639,6 +660,9 @@ mod tests {
         sel.record_for_class("B", "view", "@\"NSView\"@:");
         assert_eq!(sel.encoding_for_class("B", "view"), Some("@\"NSView\"@:"), "each class keeps its own class");
         assert_eq!(sel.encoding_for_class("C", "view"), None, "a class with no property takes no other class's spelling");
-        assert_eq!(sel.encoding("view"), Some("@\"UIView\"@:"), "a stub still takes the first spelling");
+        assert_eq!(sel.encoding_for_class("A", "view"), Some("@\"UIView\"@:"));
+        assert_eq!(sel.encoding("view"), Some("@@:"), "two classes named: a stub takes neither");
+        sel.record("view", Some("@\"UIView\"16@0:8"));
+        assert_eq!(sel.encoding("view"), Some("@@:"), "a later classed spelling does not bring a class back");
     }
 }
