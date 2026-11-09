@@ -792,7 +792,8 @@ recovered switch table.
   non-ARM target is unaffected by construction. That "the core is privileged" is
   an assumption rather than a proof (Cortex-M Thread mode really can run
   unprivileged, and the moves really do read as zero there) is why it is
-  `option cortexmpriv`, default off and on in the `aggressive` preset. Because
+  `option cortexmpriv`, on by default and reached only on a language that
+  declares the user-op. Because
   the architecture bootstraps before any `option` line, the flag is read at the
   *consumption* seam instead — `decompile_drive.rs (is_injected_userop)`, the one
   live per-CALLOTHER predicate that sees the applied options — so with the option
@@ -1327,7 +1328,7 @@ int3pad off` restores the unannotated rendering. Exercised by
 `tests/stages/kuna-int3pad.xml`.
 
 **(kuna) The x86-64 `SYSCALL` user-op's ABI effects — `option x64syscall`,
-default `off` and `on` in the `aggressive` preset (DIV-152),
+default `on`, x86-64-gated (DIV-152),
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_x64syscall.rs
 (ActionX64Syscall)`.** The 64-bit instruction is not an interrupt and takes none
 of the paths above: `ia.sinc:4836` lowers it as `RCX = inst_next; R11 = rflags;
@@ -1655,14 +1656,15 @@ constant and whose loop exit compares against a stack-relative limit — and
 rewrites the phi to the value the exit comparison pins:
 `INT_ADD(SP_in, limit_const - page)`. Inert on functions without a probe loop.
 
-**(kuna) V850 indirect branch — `option v850indirectbranch`, default off,
+**(kuna) V850 indirect branch — `option v850indirectbranch`, default on, V850-gated,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_v850indbranch.rs
 (kuna_is_v850_indirect_jmp)` (from Ghidra issue GH-8817).** The V850 SLEIGH
 spec lifts `jmp [reg]` to a CALLIND, so a compiler switch dispatch never
 reaches jump-table recovery (which is gated on BRANCHIND). When on, a CALLIND
 through a named non-PC hardware register is reclassified to BRANCHIND at the
-top of `xref_control_flow`. Kept opt-in per program because the same pattern is
-a genuine computed call on other architectures. The register name is resolved
+top of `xref_control_flow`. Gated on the V850 language id
+(`kuna_v850indbranch.rs (applies)`), because the same pattern is a genuine
+computed call on other architectures. The register name is resolved
 through the translator-neutral `RegisterLookup::get_register_name` surface:
 standalone runs read SLEIGH's local register table, while Ghidra mode uses its
 existing `getRegisterName` host callback. The shared flow predicate must not
@@ -2661,18 +2663,19 @@ budget is reported as a coverage note, since its import calls are then missing.
 
 ## 2.5 Arch quirks
 
-**(kuna) SPARC struct return — `option sparcstructret`, default off,
+**(kuna) SPARC struct return — `option sparcstructret`, default on, SPARC-gated,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_sparcstructret.rs
 (kuna_sparc_struct_ret_trap_producer)` (from Ghidra issue GH-6882).** The SPARC ABI
 places an `unimp <structsize>` word after a call to a struct-returning function.
 SLEIGH lifts this marker to an `IllegalInstructionTrap` CALLOTHER feeding a
-BRANCHIND. With the option enabled, flow classification recognizes the named
+BRANCHIND. Flow classification recognizes the named
 trap within the same instruction and removes the branch so execution falls
 through. When the producer has an output, it becomes an inert COPY, retaining
 its instruction-start operation until SSA so raw flow targets remain valid.
 If the producer cannot be rewritten, the branch is still removed, preserving
-the previous drop-only behavior. The option remains off by default because
-interpreting a real trap as an ABI marker would suppress its trap effect.
+the previous drop-only behavior. The user-op exists only in the SPARC SLEIGH, so
+the pass is inert on every other language; on SPARC, `off` keeps a genuine trap's
+effect, since the marker test cannot tell an ABI word from a real `unimp`.
 
 **Emulate-function hooks.** `kuna_emulatefunction.rs (EmulateFunction)` is the
 lightweight emulator behind every address enumeration in §2.3: a memory state
@@ -2757,7 +2760,7 @@ byte-identical to a build without the pass.
 
 ## 2.7 Linux `int 0x80` syscall naming
 
-**(kuna) `option linuxsyscall`, default off,
+**(kuna) `option linuxsyscall off|auto|on`, default `auto`,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_linuxsyscall.rs
 (ActionLinuxSyscall)`.** x86 SLEIGH lowers `INT imm8` to a black-box userop
 feeding an indirect call —
@@ -2849,14 +2852,17 @@ sees only names the register cache already holds; the seven it needs are there
 because the compiler spec's `<prototype>` elements are decoded during
 `registerProgram`, before the first function is lifted.
 
-**Why it ships off.** Naming the call asserts that the operating system behind
-vector `0x80` is Linux. That is true of essentially every x86 Linux ELF that
-uses this entry, but
-the vector alone does not prove it (on the original IBM PC the `0x80`–`0xF0`
-range was reserved for BASIC) and the engine has no OS/ABI channel it could
-consult at this seam. So the assertion is left to the operator, and
-`linuxsyscall` is a documented exclusion from the `aggressive` preset
-(`p0_knowledge/modes.rs`) rather than an unevaluated one.
+**The image gate.** `auto`, the default, acts only on an image the loader
+identified as a Linux ELF
+(`decompiler/crates/kuna-analysis/src/loader/format/elf_userland.rs (is_linux_image)`:
+an `EI_OSABI` of GNU, or System V with no FreeBSD/NetBSD/OpenBSD ABI-tag note),
+carried as `Architecture::image_linux_elf` and resolved into the per-function
+flag in `build_arch_handle`. Naming the call asserts that the operating system
+behind vector `0x80` is Linux; the vector alone does not prove it (on the
+original IBM PC the `0x80`–`0xF0` range was reserved for BASIC) and a BSD
+`int 0x80` takes its arguments from the stack, so a BSD or Solaris OSABI, a PE,
+a Mach-O and a raw image are left alone. `on` drops the image test for
+shellcode and raw dumps; `off` keeps the `swi` rendering.
 
 ## 2.8 Inlined MSVC `std::string` appends
 

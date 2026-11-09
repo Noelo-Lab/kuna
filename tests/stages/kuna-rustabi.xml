@@ -69,6 +69,7 @@
 <symbol space="ram" offset="0x201250" name="pair_shaped_reader"/>
 </binaryimage>
 <script>
+  <com>option rustabi off</com>
   <com>lo fu prod</com>
   <com>decompile</com>
   <com>print C</com>
@@ -90,7 +91,7 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="RUSTABI #1: by default the producer collapses to the one-bit discriminant and the EDX payload is deleted" min="1" max="1">bool prod\(uint4 a0\)</stringmatch>
+<stringmatch name="RUSTABI #1: with rustabi off the producer collapses to the one-bit discriminant and the EDX payload is deleted" min="1" max="1">bool prod\(uint4 a0\)</stringmatch>
 <stringmatch name="RUSTABI #2: the consumer never reads the payload register as a local nothing assigns" min="0" max="0">int4 v3; // edx</stringmatch>
 <stringmatch name="RUSTABI #3: the call to prod never lacks an output" min="0" max="0">^  prod\(\);$</stringmatch>
 <stringmatch name="RUSTABI #4: with the option on the producer returns the whole pair" min="1" max="1">undefined16 prod\(uint4 a0\)</stringmatch>

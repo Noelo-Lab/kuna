@@ -1041,8 +1041,8 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   slice named on the command line selects the same image the inventory reports.
   An
   arm64e slice selects the Apple-Silicon pointer-auth SLEIGH spec instead of
-  generic v8A only under the `macho-arm64e` env gate
-  (`decompiler/crates/kuna-analysis/src/loader/format/macho.rs (MACHO_ARM64E_ENV)`).
+  generic v8A unless the `macho-arm64e` env gate is off
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_macho_arm64e.rs (MACHO_ARM64E_ENV)`).
   Modern Mach-O pointer slots are chained-fixup entries, not pointers;
   `decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (ChainedFixups)`
   parses `LC_DYLD_CHAINED_FIXUPS` into a VMA→resolved-pointer overlay for every
@@ -1706,7 +1706,7 @@ funcsym stream:
   and match the *decoded* GOT target against the map — self-correcting, since PLT0
   and IRELATIVE/IFUNC stubs jump to non-symbol-bearing slots and fall out
   automatically. `.plt.sec`/`.plt.got` outrank `.plt` so the CET call target wins.
-  `option ifuncfpret` (default off, x86-64) adds a second pass that DOES name those
+  `option ifuncfpret` (on by default, x86-64) adds a second pass that DOES name those
   IRELATIVE IFUNC stubs — `ifunc_<resolver>`, keyed off the `R_X86_64_IRELATIVE`
   resolver-address map — so a tail `jmp` to a glibc math/mem/str dispatcher's stub
   is recovered as a `tailcalljump` to a discovered function instead of flowing into
@@ -1981,31 +1981,6 @@ funcsym stream:
   This is a different path from `relocobjects`/`relocrebase` above, which own the
   *pre-link* `ET_REL` object; a relocatable object's relocations are applied by
   the layout pass and this walk does not run for it.
-
-  A Mach-O image's dynamic relocations are its `LC_DYLD_CHAINED_FIXUPS` chains,
-  and there the on-disk word is worse than zero: it is not a value at all. Each
-  pointer slot holds a packed chain entry, the target in its low bits and the
-  hop to the next slot of the page in its high bits, and in Apple `ld64`'s
-  `DYLD_CHAINED_PTR_64_OFFSET` layout the target is an offset from the image
-  base. GH #1333's slot for a pointer to `audit_target` at `0x100000410` reads
-  `10 04 00 00 00 00 00 00`, and a slot that is not the last on its chain carries
-  `next` bits above the target (`0x0010000100000440` for a pointer to
-  `0x100000440`). `kuna_dynrelocs.rs (macho_chained)` takes the chains from
-  `chained.rs (resolve_chained_fixups)` and writes each rebase's resolved target
-  and a zero for each bind, the word every other format's loader leaves in an
-  import slot. A bind names an import, whose address is in another image, so
-  nothing better is knowable. The constancy warrant is the segment flag
-  `SG_READ_ONLY`, which the linker sets on `__DATA_CONST` to tell dyld to remap
-  the segment read-only once the fixups are applied, the same promise
-  `PT_GNU_RELRO` makes, so the rebased slots of such a segment join
-  `dynreloc_const` and fold, while a rebase in writable `__DATA` is written but
-  not declared constant. The Objective-C reference slots live in `__DATA`,
-  outside this warrant; their constancy comes from the metadata instead (§1.4,
-  `objc`). A classic
-  image (`LC_DYLD_INFO` rebase and bind opcodes) needs no write: its rebased words
-  are already the unslid pointers, and its bound slots are already zero or a
-  stub-helper address. `dynrelocs off` leaves the chain words as the linker wrote
-  them.
 
   A Mach-O image's dynamic relocations are its `LC_DYLD_CHAINED_FIXUPS` chains,
   and there the on-disk word is worse than zero: it is not a value at all. Each
@@ -3421,7 +3396,7 @@ moves.
   parameterless functions. Names from such minimal units retain their namespace
   qualification, so Rust `core::fmt::write` does not become a global `write`
   alias that could inherit the C import's incompatible signature.
-  The opt-in `godwarfsig` arm
+  The `godwarfsig` arm (on by default, inert off amd64 Go with DWARF)
   (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_godwarfsig.rs`)
   recovers complete scalar/pointer contracts from Go compiler units on
   little-endian amd64 under `abi-internal`. It requires the producer's `regabi`
@@ -4497,7 +4472,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   `minpc`/`maxpc`/`text`/`etext` nest) — an external link puts `crt` code and
   `.init`/`.plt` ahead of `runtime.text` — falling back to the lowest code section
   when no record is found.
-- **MSVC RTTI** (`rtti`, PE-only, default-off;
+- **MSVC RTTI** (`rtti`, PE-only, on by default and inert elsewhere;
   `decompiler/crates/kuna-analysis/src/analyzers/rtti/mod.rs`): find the shared
   `type_info` vftable, byte-search back from each `.?A…@@` TypeDescriptor to its
   CompleteObjectLocator, validate the COL→RTTI3→RTTI2→RTTI1→RTTI0 reachability
@@ -4524,7 +4499,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   exactly what a search per class would. A search per class is
   `O(classes × image)`: `torch_cpu.dll` (31,623 type descriptors in 309 MB) did
   not finish loading in 30 minutes that way.
-- **(kuna) Itanium RTTI** (`itaniumrtti`, ELF-only, default-off;
+- **(kuna) Itanium RTTI** (`itaniumrtti`, ELF-only, on by default and inert elsewhere;
   `decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_itaniumrtti.rs`): the
   GCC/Clang counterpart of the pass above, and a capability with **no Ghidra
   equivalent at all** — upstream's `RttiAnalyzer` is a Microsoft-PE analyzer and its
@@ -4593,8 +4568,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   so no anchor exists and the output is empty. Independent code-pointer-run scanning
   — which would find such vtables heuristically — is deliberately **not** part of
   this pass.
-- **Objective-C** (`objc`, Mach-O-only, default-off in the catalog but on in the
-  `aggressive` preset, which `auto` selects for any binary under 500 KiB;
+- **Objective-C** (`objc`, Mach-O-only, on by default and inert elsewhere;
   `decompiler/crates/kuna-analysis/src/analyzers/objc/mod.rs`): walk
   `__objc_classlist` → `class_t` → `class_ro_t` → method lists (both absolute and
   small/relative forms), reading pointer slots through the chained-fixup overlay
@@ -4645,7 +4619,7 @@ every other binary's pass list is byte-identical to before the pass existed):
   blocks read-only for that reason — but they live in writable `__DATA`, outside
   the `SG_READ_ONLY` warrant of `dynrelocs` (§1.3), so the claim is the
   metadata's, and it rides its own option, **`objcrefconst`** (kuna, default-on,
-  inert unless `objc` is on, as `objc` is on any Mach-O image under 500 KiB). The commit paints the ranges `Varnode::readonly`
+  inert unless `objc` is on, which it is by default). The commit paints the ranges `Varnode::readonly`
   and adds them to `dynreloc_const` **before** the slots' own symbols are mapped
   (a `SymbolEntry` copies the range property as it is created), so
   `ActionVarnodeProps` folds a load through a selref to the selector string and
@@ -4661,11 +4635,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   `dynrelocs` is off (the names stay; the ivar offset variables are plain words,
   not fixups, and keep folding). Like every analysis gate, `objcrefconst` is read at the
   `read symbols` commit; flipping it afterwards does not re-paint.
-
+- **Swift metadata** (`swiftmetadata`, Mach-O and ELF, Swift images only, on by
+  default and inert elsewhere; `decompiler/crates/kuna-analysis/src/analyzers/swift/mod.rs`, the
   The class walk reaches only what `__objc_classlist` reaches. Three more
   metadata tables fill in the rest (kuna; Ghidra's `ObjectiveC2_ClassAnalyzer`
   reads the same three):
-
   - **Categories**
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objccats.rs (categories)`):
     `__objc_catlist` and `__objc_nlcatlist` point at `category_t` records whose
@@ -4729,7 +4703,6 @@ every other binary's pass list is byte-identical to before the pass existed):
     denotes a complete struct (DWARF) is that struct. Class (`+`) methods keep
     `objc_object *self`. The number of classes given a layout is bounded
     (32,768): every type the factory interns costs a linear name scan.
-
   - **Declarations typed by class**
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcprops.rs (declarations)`):
     a method's own encoding spells every object as a bare `@`, so the structs
@@ -4795,15 +4768,11 @@ every other binary's pass list is byte-identical to before the pass existed):
     The 1.9 MB app: 2,897 → 1,221 argument-less stub calls; an 84 MB app sample: 32 → 4, 60 of
     265 stub calls change shape (`setTransitioningDelegate:(v3, delegate)`,
     `presentViewController:animated:completion:(vc, (UIViewController *)v10, 1, NULL)`).
-
   Decoding every method's encoding asks the type factory for `objc_object *`
   once per argument, and the factory finds a type by name with a linear scan of
   every type it holds; with thousands of class structs interned that scan is no
   longer cheap, so the decoder caches the named opaque pointer types it hands out
   (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (TypeCtx)`).
-- **Swift metadata** (`swiftmetadata`, Mach-O and ELF, Swift images only,
-  default-off but ON in the `aggressive` preset, which `auto` selects for any
-  binary under 500 KiB; `decompiler/crates/kuna-analysis/src/analyzers/swift/mod.rs`, the
   record layouts in `decompiler/crates/kuna-analysis/src/analyzers/swift/descriptors.rs`):
   a stripped Swift binary keeps its reflection sections, and they name much of
   its code. The pass reads `__swift5_types` / `swift5_type_metadata` (the nominal
@@ -5415,7 +5384,7 @@ signature. PE and Mach-O dispatch to their own oracles (`.pdata`/TLS/entry;
 a wrong entry is a garbage `sub_<addr>`; a missed one is invisible until a caller
 overruns into it (§1.7).
 
-(kuna) **`__unwind_info` is a stripping-proof function-start source for Mach-O** (`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_unwindinfo.rs (UnwindInfoStartsPass)`, option `unwindstarts`, default-off). The linker folds each object's `__compact_unwind` records into one `__TEXT,__unwind_info` section whose second-level pages — regular `(functionOffset, encoding)` pairs, or compressed `u32`s whose low 24 bits are the offset from the page's first function — list, in ascending order, the start of every function the unwinder can describe (one per `.cfi_startproc`). Because the section lives in the mapped `__TEXT` segment it survives the `strip` that removes `LC_FUNCTION_STARTS` from `__LINKEDIT`, which is the whole of its value: on an App-Store app whose function starts were stripped, `LC_MAIN`, the exports, `__mod_init_func` and the thin symbol stream seed only a handful of entries, and arm64 has no always-on prologue sweep (oracle 5 is x86-64-only), so the gap between the few seeds is the entire text and nothing starts a function inside it. Measured on a 249 MB arm64 third-party iOS app with no `LC_FUNCTION_STARTS`, the default inventory is 59,222 — of which only 23 are real `__text` functions, the rest `__got` slots and `__stubs` — while `__unwind_info` records 204,800 real starts; with the option on all 204,800 are recovered and each decodes to a normal function body. On an image that still carries `LC_FUNCTION_STARTS` the oracle is a strict no-op: every unwind start is already a function-starts entry — the linker folds runs of adjacent same-encoding functions into one page entry, so the set is in fact a *subset* (on an 84 MB third-party iOS app, 185,937 unwind entries against 296,775 function starts, discovery unchanged at 314,038). Only the function **starts** are read; the compact encodings (frame size, saved-register set, frameless stack size) are deliberately ignored, because kuna's S5/S7 frame analysis recovers the stack frame from the code — the same reason the `.eh_frame` oracle inherits CFI rather than rebuilding it. Output-changing (it adds entries), so default-off: a default run is byte-identical to before.
+(kuna) **`__unwind_info` is a stripping-proof function-start source for Mach-O** (`decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_unwindinfo.rs (UnwindInfoStartsPass)`, option `unwindstarts`, on by default). The linker folds each object's `__compact_unwind` records into one `__TEXT,__unwind_info` section whose second-level pages — regular `(functionOffset, encoding)` pairs, or compressed `u32`s whose low 24 bits are the offset from the page's first function — list, in ascending order, the start of every function the unwinder can describe (one per `.cfi_startproc`). Because the section lives in the mapped `__TEXT` segment it survives the `strip` that removes `LC_FUNCTION_STARTS` from `__LINKEDIT`, which is the whole of its value: on an App-Store app whose function starts were stripped, `LC_MAIN`, the exports, `__mod_init_func` and the thin symbol stream seed only a handful of entries, and arm64 has no always-on prologue sweep (oracle 5 is x86-64-only), so the gap between the few seeds is the entire text and nothing starts a function inside it. Measured on a 249 MB arm64 third-party iOS app with no `LC_FUNCTION_STARTS`, the default inventory is 59,222 — of which only 23 are real `__text` functions, the rest `__got` slots and `__stubs` — while `__unwind_info` records 204,800 real starts; with the option on all 204,800 are recovered and each decodes to a normal function body. On an image that still carries `LC_FUNCTION_STARTS` the oracle is a strict no-op: every unwind start is already a function-starts entry — the linker folds runs of adjacent same-encoding functions into one page entry, so the set is in fact a *subset* (on an 84 MB third-party iOS app, 185,937 unwind entries against 296,775 function starts, discovery unchanged at 314,038). Only the function **starts** are read; the compact encodings (frame size, saved-register set, frameless stack size) are deliberately ignored, because kuna's S5/S7 frame analysis recovers the stack frame from the code — the same reason the `.eh_frame` oracle inherits CFI rather than rebuilding it. On by default: it adds entries only on a Mach-O without `LC_FUNCTION_STARTS`, so every other image is byte-identical.
 
 (kuna) **The x86-64 half of oracle 4 reads two encodings, because "PC-relative" is
 a link model and not part of the idiom.** `main` reaches `rdi` as a `lea
@@ -5633,7 +5602,7 @@ low bit is masked off by the directory walk without producing a context paint.
 Such a header permits mixed ARM/Thumb code, so its machine value cannot supply a
 whole-image default. CHPE routing also remains a follow-up.
 
-**The widened vector-table signature** (`cortexmvectors`, default-off; kuna;
+**The widened vector-table signature** (`cortexmvectors`, on by default, ARM-only; kuna;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_cortexmvectors.rs`)
 relaxes all three of oracle 6's confirmation predicates, each of which measurement
 over the ARM Cortex-M corpus showed over-constrains real firmware. The table is
@@ -7409,7 +7378,7 @@ pass the strict valid-subroutine probe. It keeps the entries the Thumb scan and 
 gap walk would have reported (see the ARM reference walks later in §1.6), and when it validates
 no frame at all the Thumb scan runs exactly as with the option off.
 
-**Pointer-referenced entries** (`ptrentry`, default-off; kuna;
+**Pointer-referenced entries** (`ptrentry`, on by default, ARM-only; kuna;
 `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_ptrentry.rs`) re-admits
 what the second of those throws away. Measurement over the ARM Cortex-M corpus
 found its two shape predicates — a frame prologue, and more than two instructions —
@@ -7444,7 +7413,7 @@ an entry" a property of the wiring rather than of a heuristic. Output-changing
 (more functions), hence default-off; ARM-only and Listing-tier, so it is a strict
 no-op on every other architecture, with `listing off`, and on the XML datatest path.
 
-**Tail-call entries** (`tailcallentry`, default-off; kuna;
+**Tail-call entries** (`tailcallentry`, on by default, ARM-only; kuna;
 `decompiler/crates/kuna-analysis/src/listing/kuna_tailcallentry.rs (tail_call_entries)`)
 closes the walk's other structural blind spot. The recursive-descent walk
 (`decompiler/crates/kuna-analysis/src/listing/walk.rs`) makes a new function entry
@@ -7490,7 +7459,7 @@ they replaced. Output-changing (more functions), hence default-off; ARM-only and
 it is a strict no-op on every other architecture, with `listing off`, and on the
 XML datatest path.
 
-**Literal-pool inference** (`poolentry`, default-off; kuna;
+**Literal-pool inference** (`poolentry`, on by default, ARM-only; kuna;
 `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_poolentry.rs`) is aimed at
 the gap walk itself rather than at what the walk misses. AIF advances its cursor by
 **one byte** on a reject, with no instruction-alignment filter, because the
@@ -7558,16 +7527,14 @@ default-off; ARM-only in effect and Listing-tier, so it is a strict no-op withou
 `listing`, without `aif`, on the XML datatest path, and on every architecture whose
 constants live in `.rodata` rather than in `.text` interstices.
 
-**The four ARM entry passes reach the default path through the preset** (DIV-93).
-`cortexmvectors`, `ptrentry`, `tailcallentry` and `poolentry` each ship default-off in
-the catalog, which is what keeps the XML datatest corpus and an explicit
-`--mode reliable` byte-identical; but all four are members of `AGGRESSIVE_OVERRIDES`,
-and `auto` selects `aggressive` for any binary under 500 KiB, so on the whole-binary
-surfaces (`decompile-all`, `functions`, `decompile-project`, the WASM front-end and the
-benchmark) a stripped ARM image of that size gets all four. The preset supplies
-`listing` and `aif` ahead of them in the same list, which is what the last three
-consume; a preset that enabled them without `listing` would enable nothing. They are
-evaluated jointly because they compose: measured over the 110 stripped non-x86-64
+**The four ARM entry passes ship on** (DIV-93 measured them in the preset first).
+`cortexmvectors`, `ptrentry`, `tailcallentry` and `poolentry` are on in the catalog and
+ARM-gated, which is what keeps the XML datatest corpus byte-identical; the last three
+are Listing consumers, so they act only where `listing` (and, for `poolentry`, `aif`)
+is on -- the whole-binary surfaces (`decompile-all`, `functions`, `decompile-project`,
+the WASM front-end and the benchmark) inject both on non-x86-64, and the `aggressive`
+preset still lists all four with `listing` and `aif` ahead of them, so it owns them.
+They were evaluated jointly because they compose: measured over the 110 stripped non-x86-64
 decbench twins (50,724 symbol-table function starts), entry recall rises 44,957 ->
 47,330 (88.63% -> 93.31%) while mid-body false entries *fall* 8,333 -> 7,117. 98.8% of
 the 2,402 added entries are real function starts, no ground-truth entry is lost, and
@@ -8965,7 +8932,7 @@ PE corpus are unchanged. A function a case body calls is now walked too, and
 its own tail `b` takes the target in as any branch the walk follows does: on an
 armhf `libc.so.6` a case body calls `0x73248`, whose tail `b` pulls in
 `0x73078`, a true start nothing else reaches, so it is no longer listed;
-`tailcallentry` (on in `--mode aggressive`) recovers it. The walk decodes the
+`tailcallentry` (on by default with `listing`) recovers it. The walk decodes the
 case bodies, and what they call, on every Listing build, so discovery alone
 takes longer where tables are read (`kuna functions` about 8% on betaflight and
 that libc), while a whole-binary run gets faster because no case body is

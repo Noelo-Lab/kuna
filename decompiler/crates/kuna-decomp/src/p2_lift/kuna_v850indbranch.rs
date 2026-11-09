@@ -3,8 +3,10 @@
 //!
 //! The V850 SLEIGH spec lifts `jmp [reg]` (reg != lp) to `call [reg]`, i.e.
 //! `CPUI_CALLIND`, so a compiler switch dispatch never reaches jump-table
-//! recovery (gated on `CPUI_BRANCHIND`).  When `option v850indirectbranch on`,
-//! at flow-classification time such a CALLIND is reclassified to BRANCHIND.
+//! recovery (gated on `CPUI_BRANCHIND`).  With `option v850indirectbranch on`
+//! (the default) and a V850 language loaded ([`applies`]), at
+//! flow-classification time such a CALLIND is reclassified to BRANCHIND; on
+//! every other processor a register-indirect call is left alone.
 //!
 //! ## What this module ports
 //!
@@ -19,12 +21,11 @@
 //! Two pieces of the C++ live on the W4 `Architecture` and are taken here as
 //! resolved inputs / a closure rather than reached through `glb`:
 //!
-//!   - the **gate** `glb->v850_indirect_branch` (default \b false, shipped
-//!     `option v850indirectbranch off` — see `kuna_stages.cc` settableTable):
-//!     modelled by [`V850IndirectBranchOption`], whose `default()` is the
-//!     shipped off-by-default flag.  `flow.rs::FlowEnv::is_v850_indirect_jmp`
-//!     defaults to `false` and W4 will route it through this option + the
-//!     predicate below.
+//!   - the **gate** `glb->v850_indirect_branch` (shipped `option
+//!     v850indirectbranch on`), combined with the V850 language test in
+//!     [`applies`]: modelled by [`V850IndirectBranchOption`], whose `default()`
+//!     is the shipped flag.  `decompile_drive.rs` routes
+//!     `FlowEnv::is_v850_indirect_jmp` through `applies` + the predicate below.
 //!   - the **register-name resolution** `glb->translate->getRegisterName(spc,
 //!     off, size)` (W2 `Translate` is available, but it is reached through the
 //!     W4 `glb`): supplied to the predicate as the already-resolved register
@@ -42,8 +43,8 @@ use kuna_num::opcodes::OpCode;
 ///
 /// STUB(W4): the C++ `OptionV850IndirectBranch::apply` flips
 /// `glb->v850_indirect_branch`; here the flag is carried as a plain `bool` whose
-/// [`Default`] is the *shipped* default (`option v850indirectbranch off`,
-/// i.e. \b false — upstream byte-identical).  W4's `ArchOption` registry plugs
+/// [`Default`] is the *shipped* default (`option v850indirectbranch on`).
+/// W4's `ArchOption` registry plugs
 /// this into the option table; [`apply`](V850IndirectBranchOption::apply)
 /// transcribes the `onOrOff(p1)` body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,10 +55,10 @@ pub struct V850IndirectBranchOption {
 }
 
 impl Default for V850IndirectBranchOption {
-    /// Shipped default: `option v850indirectbranch off` (upstream byte-identical;
-    /// `architecture.cc:1433` sets `v850_indirect_branch = false`).
+    /// Shipped default: `option v850indirectbranch on` (inert off V850, see
+    /// [`applies`]).
     fn default() -> Self {
-        V850IndirectBranchOption { enabled: false }
+        V850IndirectBranchOption { enabled: true }
     }
 }
 
@@ -76,6 +77,12 @@ impl V850IndirectBranchOption {
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
+}
+
+/// The option is on and the loaded language is a V850 variant, the only
+/// processor whose SLEIGH lifts `jmp [reg]` to a CALLIND.
+pub fn applies(arch: &crate::infra::architecture::Architecture) -> bool {
+    arch.v850_indirect_branch && arch.archid.starts_with("V850:")
 }
 
 /// (kuna) Is `op` a V850 "jmp [reg]" CALLIND that should become a BRANCHIND?

@@ -170,7 +170,11 @@ kuna_options! { self, p1;
     "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
     "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
     "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
-    "linuxsyscall" => on_off!(linux_syscall, "Linux int 0x80 syscall naming"),
+    "linuxsyscall" => {
+        let (mode, msg) = crate::kuna_linuxsyscall::OptionLinuxSyscall.apply(p1)?;
+        self.linux_syscall = mode;
+        Ok(msg)
+    },
     "msvcstrappend" => on_off!(msvc_str_append, "MSVC std::string inlined append collapsing"),
     "switchselector" => on_off!(switch_selector_guard, "Lowered-switch in-function-selector restriction"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
@@ -1121,5 +1125,13 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
-    "macho-arm64e" => on_off!(macho_arm64e, "Mach-O arm64e Apple-Silicon spec selection"),
+    "macho-arm64e" => {
+        let val = on_or_off(p1)?;
+        self.macho_arm64e = val;
+        crate::kuna_macho_arm64e::set_macho_arm64e_env(val);
+        Ok(format!(
+            "Mach-O arm64e Apple-Silicon spec selection turned {}",
+            if val { "on" } else { "off" }
+        ))
+    },
 }
