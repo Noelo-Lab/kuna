@@ -120,12 +120,12 @@ impl AnalysisPass for NoReturnPropagatePass {
         // a nonzero constant (they call `exit(status)`), so a wrapper whose tail is
         // `call error(2,…)` is itself no-return — but `error` is NOT on the Known
         // no-return list (it *returns* for `error(0,…)`). The recognizer is a
-        // per-call-site value check (arg0 is a nonzero literal), gated by its own
-        // `--option noreturn_error` flag (default-on, DIV-16). When on, compute the
+        // per-call-site value check (arg0 is a nonzero literal) that runs with the
+        // known-no-return pass (`noreturn_known`, DIV-16). When on, compute the
         // `error`/`error_at_line` entry addresses (PLT stubs + any defined funcsym)
         // so the propagation rule can treat a `call error(nonzero)` tail as terminal.
         let imports = crate::loader::format::resolve_imports(ctx.file, ctx.bytes);
-        let error_recog = if ctx.arch.analysis_noreturn_error {
+        let error_recog = if ctx.arch.analysis_noreturn_known {
             ErrorRecognizer::from_imports(&imports, listing)
         } else {
             ErrorRecognizer::disabled()
@@ -141,9 +141,9 @@ impl AnalysisPass for NoReturnPropagatePass {
             out.noreturn.push(fact);
         }
         // (kuna, Ghidra-gap) Emit every `call error(nonzero,…)` site so the decompile
-        // seam prunes its fall-through (CALL_RETURN override). Gated by the same
-        // `noreturn_error` flag as the recognizer; the recognizer is `disabled()` (no
-        // addresses) when the flag is off, so this yields an empty set then.
+        // seam prunes its fall-through (CALL_RETURN override). The recognizer is
+        // `disabled()` (no addresses) under `noreturn_known off`, so this yields an
+        // empty set then.
         out.no_fallthru_calls = collect_error_noreturn_callsites(listing, &error_recog);
         out
     }

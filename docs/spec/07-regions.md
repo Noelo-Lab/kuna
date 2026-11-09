@@ -423,7 +423,7 @@ walks only the helper bodies it can reach. The same option therefore asserts
 the fact from the name at the flow seam
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
 (ArchFlowEnv::query_call_no_return)`) — the same seam, the same shape and the
-same one-list discipline as `noreturn_externmatch`, on a list that exists
+same one-list discipline as the known-no-return name match, on a list that exists
 nowhere but Rust. Without it roughly half the checks in a Rust binary survive
 as *returning* panic blocks the P7 guard correctly declines to remove.
 

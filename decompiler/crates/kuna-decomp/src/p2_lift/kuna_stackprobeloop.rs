@@ -26,19 +26,15 @@
 //! The loop's exit comparison pins the value: it iterates until
 //! `PHI - page == limit`, so the post-loop value is exactly
 //! `limit - page == SP_in + (limit_const - page)`, a fixed offset from the
-//! spacebase input.  When `option stackprobeloop on`, [`RuleStackProbeLoop`]
-//! recognizes the exact shape and rewrites the `MULTIEQUAL` into the concrete
-//! `INT_ADD(SP_in, limit_const - page)`.
+//! spacebase input.  [`RuleStackProbeLoop`] recognizes the exact shape and
+//! rewrites the `MULTIEQUAL` into the concrete `INT_ADD(SP_in, limit_const - page)`.
 //!
 //! # Faithfulness
 //!
 //! `uintb`→`u64`, `int4`→`i32`.  The probe step is read as an unsigned constant
 //! offset and the final offset is masked with [`calc_mask`] exactly as the C++
-//! `(limitoff - page) & calc_mask(sz)` (wrapping subtraction in `u64`).  The
-//! `data.getArch()->model_stack_probe_loop` gate is read **live** from the
-//! [`Architecture`](crate::architecture::Architecture) (kuna ships it default-on,
-//! `architecture.rs:423`; `option stackprobeloop off` flips it to byte-identical
-//! upstream output).  `findSpacebaseInput` is inlined faithfully
+//! `(limitoff - page) & calc_mask(sz)` (wrapping subtraction in `u64`).
+//! `findSpacebaseInput` is inlined faithfully
 //! (`vbank.findInput(point.size, Address(point.space, point.offset))` from the
 //! stack space's base register, `funcdata.cc:289`) — the same surface the alias
 //! checker reaches through `Funcdata::findSpacebaseInput`.
@@ -48,24 +44,8 @@
 //! opcode *value* is the load-bearing part for the rewrite and the action
 //! engine's dispatch (the `kuna_addcarrychain` / `kuna_arraystride` idiom).
 //! // STUB(W6): `glb->inst[CPUI_INT_ADD]` property flags.
-//!
-//! ## Gate wiring — STUB(W4)
-//!
-//! The C++ `applyOp` reads `data.getArch()->model_stack_probe_loop` live.  The
-//! boundary [`Architecture`](crate::context::ArchContext) on `Funcdata` does **not**
-//! carry the flag yet (it holds only the `AddrSpaceManager`), so — exactly as
-//! `kuna_memsetsequence`'s `RuleMemsetCopy` and `kuna_loweredswitch`'s Detect
-//! Action do — the resolved gate is carried in [`RuleStackProbeLoop::enabled`],
-//! set at construction.  kuna ships it default-on (`architecture.rs:423`
-//! `model_stack_probe_loop = true`; DIV-3 default-on, GH-8017); `apply_op`
-//! declines immediately when the gate is false, which is byte-identical to
-//! `option stackprobeloop off` and to upstream.  The option parse +
-//! confirmation message is [`parse_stack_probe_loop_form`]
-//! (`OptionStackProbeLoop::apply`); writing the flag into the live
-//! `Architecture` is the W4 assembler's job.
 
 use kuna_base::address::{calc_mask, Address};
-use kuna_base::error::KunaResult;
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
 
@@ -86,21 +66,16 @@ pub const ELEM_STACKPROBELOOP: ElementId = ElementId::new("stackprobeloop", 4012
 /// whose back-edge input is `PHI - page` (the probe decrement), whose other
 /// input is stack-relative, and whose loop exit compares `PHI - page` against a
 /// stack-relative limit.  Rewrites the `MULTIEQUAL` into
-/// `INT_ADD(spacebase_input, limit_const - page)`.  Only fires when
-/// `option stackprobeloop on`; the apply body returns 0 immediately when the
-/// arch flag is off, preserving byte-identical upstream output by default.
+/// `INT_ADD(spacebase_input, limit_const - page)`.
 pub struct RuleStackProbeLoop {
-    /// Resolved `glb->model_stack_probe_loop` gate (STUB(W4); see module docs).
-    enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,
 }
 
 impl RuleStackProbeLoop {
-    /// Construct in group `g` with the resolved gate (C++
-    /// `RuleStackProbeLoop(const string &g)`).
-    pub fn new(enabled: bool, g: impl Into<String>) -> RuleStackProbeLoop {
-        RuleStackProbeLoop { enabled, group: g.into() }
+    /// Construct in group `g` (C++ `RuleStackProbeLoop(const string &g)`).
+    pub fn new(g: impl Into<String>) -> RuleStackProbeLoop {
+        RuleStackProbeLoop { group: g.into() }
     }
 }
 
@@ -115,17 +90,11 @@ impl Rule for RuleStackProbeLoop {
         if !grouplist.contains(&self.group) {
             return None;
         }
-        Some(Box::new(RuleStackProbeLoop { enabled: self.enabled, group: self.group.clone() }))
+        Some(Box::new(RuleStackProbeLoop { group: self.group.clone() }))
     }
 
     /// C++ `RuleStackProbeLoop::applyOp` (`kuna_stackprobeloop.cc:63`).
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // The live gate is carried on the ArchContext Architecture (`build_arch_handle`);
-        // `enabled` stays as the unit-test OR-override (rule registered false).
-        if !self.enabled && !data.get_arch().model_stack_probe_loop {
-            return 0;
-        }
-
         // one entry edge, one back edge
         if op_num_input(data, op) != 2 {
             return 0;
@@ -247,49 +216,13 @@ impl Rule for RuleStackProbeLoop {
     }
 }
 
-/// (kuna GH-8017) How stack-probe-loop SP resolution is toggled (the two values
-/// of `option stackprobeloop`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StackProbeLoopForm {
-    /// `on`: resolve the probe loop's SP `MULTIEQUAL` to a constant offset
-    /// (`glb->model_stack_probe_loop = true`).
-    On,
-    /// `off`: leave the loop-carried `MULTIEQUAL` (`= false`, byte-identical
-    /// upstream).
-    Off,
-}
-
-impl StackProbeLoopForm {
-    /// The resolved `glb->model_stack_probe_loop` flag for this form.
-    pub fn model_stack_probe_loop(self) -> bool {
-        matches!(self, StackProbeLoopForm::On)
-    }
-}
-
-/// Parse the `option stackprobeloop on|off` argument and produce the resolved
-/// form plus the confirmation message (C++ `OptionStackProbeLoop::apply`).
-///
-/// The caller writes [`StackProbeLoopForm::model_stack_probe_loop`] into
-/// `Architecture::model_stack_probe_loop` (the W4 assembler's job).
-pub fn parse_stack_probe_loop_form(p1: &str) -> KunaResult<(StackProbeLoopForm, String)> {
-    let val = crate::options::on_or_off(p1)?;
-    // left to the caller.
-    let form = if val { StackProbeLoopForm::On } else { StackProbeLoopForm::Off };
-    let prop = if val { "on" } else { "off" };
-    Ok((form, format!("Stack-probe-loop stack-pointer resolution turned {prop}")))
-}
-
-/// Per-file registration row (one rule), in C++ definition order.
-///
-/// Shipped default: `option stackprobeloop on` (`model_stack_probe_loop = true`;
-/// kuna DIV-3 default-on, GH-8017).  The gate is resolved into the rule at
-/// construction (STUB(W4); see module docs), so the [`RuleSpec`] ctor builds it
-/// `enabled`; the group placeholder is the per-file `"analysis"` (the
-/// `universalAction` schedule re-registers it under its slot group).
+/// Per-file registration row (one rule), in C++ definition order; the group
+/// placeholder is the per-file `"analysis"` (the `universalAction` schedule
+/// re-registers it under its slot group).
 pub fn specs() -> Vec<RuleSpec> {
     vec![RuleSpec {
         group: "analysis",
-        ctor: || Box::new(RuleStackProbeLoop::new(true, "analysis")),
+        ctor: || Box::new(RuleStackProbeLoop::new("analysis")),
     }]
 }
 

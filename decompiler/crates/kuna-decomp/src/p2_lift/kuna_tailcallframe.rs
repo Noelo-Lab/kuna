@@ -54,7 +54,7 @@
 //! A delta that cancels is necessary but not sufficient: the run ending at the
 //! branch is also asked to give back what the entry run put on the stack, which
 //! is what tells a teardown apart from cdecl argument cleanup.  See
-//! [`kuna_tailcallsaved`](crate::kuna_tailcallsaved) (`option tailcallsaved`).
+//! [`kuna_tailcallsaved`](crate::kuna_tailcallsaved).
 //!
 //! ## What this rule cannot distinguish
 //!
@@ -339,7 +339,6 @@ pub fn kuna_is_frame_teardown_tail_call(
     entry: &Address,
     dest: &Address,
     sp: Option<&VarnodeStorage>,
-    saved_gate: bool,
 ) -> bool {
     if !gate {
         return false;
@@ -365,7 +364,7 @@ pub fn kuna_is_frame_teardown_tail_call(
     if epilogue <= 0 || epilogue != -prologue {
         return false;
     }
-    kuna_teardown_restores_saves(saved_gate, saved, restored)
+    kuna_teardown_restores_saves(saved, restored)
 }
 
 #[cfg(test)]
