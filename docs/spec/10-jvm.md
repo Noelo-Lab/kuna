@@ -1,0 +1,736 @@
+# 10 — The JVM engine (vineflower)
+
+```yaml
+Anchors:
+  - decompiler/nonnative/kuna-jvm/src
+  - decompiler/nonnative/kuna-jvm/options.toml
+  - decompiler/crates/kuna-cli/src/nonnative
+```
+
+Chapters 01-09 describe the native pipeline: machine code lifted through SLEIGH to
+p-code and recovered by `kuna-decomp`. This chapter describes the second, non-native
+engine, `kuna-jvm`, which decompiles JVM class files and jars to Java and shares none of
+that pipeline. JVM bytecode is typed and stack-based, and the class file already carries
+what native recovery has to infer: the class structure, member signatures, generic
+signatures, exception tables, nesting attributes and bootstrap methods for lambdas. The
+engine therefore works over a Java-level IR of its own (statements and expressions, in
+`decompiler/nonnative/kuna-jvm/src/substrate`) instead of over p-code. Why it is a
+separate engine, how it is tested and how it is maintained is `docs/jvm.md`; this chapter
+is what it computes.
+
+**Lineage.** The engine is a line-by-line Rust port of Vineflower 1.12.0, itself a fork
+of JetBrains' Fernflower. In this chapter, untagged prose describes the Vineflower port
+and `(kuna)` marks what kuna added or replaced. Upstream names are given as
+parenthetical provenance (`MethodProcessor.codeToJava`); every claim is anchored to the
+Rust file that implements it. Option names are the `jvm_*` rows of
+`decompiler/nonnative/kuna-jvm/options.toml`; their defaults, tiers, symptoms and flip
+guidance are in the generated catalog ([docs/options-jvm.md](../options-jvm.md)).
+
+**The fidelity contract** shapes everything below: on the same class files and options,
+the engine prints the text Vineflower prints, byte for byte. The port therefore keeps
+Vineflower's pass order, its iteration orders (including the iteration order of Java's
+hash collections, which reaches the output), its id counters (which reach the output as
+`var10000` and `label7`) and its failure behaviour. Where this chapter describes a
+heuristic that looks arbitrary, it is Vineflower's, kept for that reason.
+
+## 10.1 The phase folders and the schedule
+
+The source folders reuse kuna's phase taxonomy so a reader can find a stage by its
+phase, but the order of execution is the engine's own:
+
+| Folder | Holds |
+|---|---|
+| `p0_knowledge/` | options and the decompilation context, the class universe and where classes are read from (jars, directories, the JDK), the input front door (kuna) |
+| `p1_classfile/` | the class-file model (constant pool, members, attributes), class nesting, the per-class method loop |
+| `p2_lift/` | bytecode decoding, the control-flow graph and its repairs, the stack-to-expression lift |
+| `p3_dataflow/` | SSA and SSAU forms over the expression IR and the simplifications they license |
+| `p4_calls/` | lambdas and method references, synthetic accessors, dynamic constants, JDK varargs |
+| `p5_types/` | the variable type lattice, generic signatures and casts |
+| `p6_variables/` | variable versions, declaration placement, naming |
+| `p7_regions/` | dominator-based recovery of the statement tree, irreducible flow, `finally` |
+| `p8_structure/` | refinement of the statement tree into Java constructs |
+| `p9_emit/` | the Java writer, imports, line wrapping, line mapping |
+| `substrate/` | the shared IR: statements, expressions, edges, types and the set/map containers |
+| `rt/` | (kuna) the Java-runtime kernel the port stands on (section 10.13) |
+| `infra/` | the per-method schedule, pass hooks, the parallel driver and the debugging aids |
+
+The schedule has two levels. **Per input**, `decompiler/nonnative/kuna-jvm/src/p0_knowledge/fernflower.rs
+(Fernflower::decompile_context)` loads the class universe and nests classes (section
+10.2), then saves every own unit (`decompiler/nonnative/kuna-jvm/src/p0_knowledge/struct_context.rs
+(StructContext::save_context)`). Each unit is saved in two phases
+(`decompiler/nonnative/kuna-jvm/src/p0_knowledge/context_unit.rs (ContextUnit::save_selected)`):
+first every root class of the unit is *processed* (its methods decompiled, its nested
+classes attached), then every root class is *written*. The split is load-bearing: writing
+one class reads state that processing other classes left behind (the constructor masks of
+another class's nested classes, the switch maps of synthetic classes), so no class is
+written before all of its unit is processed. **Per method**,
+`decompiler/nonnative/kuna-jvm/src/infra/method_processor.rs (MethodProcessor::code_to_java)`
+runs the pass schedule of sections 10.4-10.10 from bytecode to a structured statement
+tree. Every pass is recorded by name through
+`decompiler/nonnative/kuna-jvm/src/infra/decompile_record.rs (DecompileRecord::add)`, which
+is also where the trace differ hooks in (section 10.14).
+
+Vineflower's plugin pass locations (`CfgConstruction`, `BeforeMain`, `InLoopDecomp`,
+`MainLoop`, `AfterMain`, `AtEnd`, `LateProcessing`) are kept in the schedule, but plugin
+loading is not ported, so no pass is ever registered at them
+(`decompiler/nonnative/kuna-jvm/src/infra/plugin_context.rs (PluginContext)`). Language
+plugins (Vineflower's Kotlin and Scala support) are not ported either: every class is
+written as Java.
+
+## 10.2 The class universe and nesting
+
+**Inputs (kuna).** `decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_input.rs (classify, load)`
+names an input's kind and reads it into an `InputSet`: a class file (`CA FE BA BE` and a
+major version from 45 to 255 at bytes 6-7, which is what tells it from a fat Mach-O with
+the same magic), an archive (a zip local or empty-archive header, or a `.jar`/`.war`/`.ear`/`.zip`
+file with a zip end record in its last KiB, for launcher-script jars), or a directory. A
+`.jmod` and a jimage are recognized and refused; a DEX file, and a zip without `.class`
+entries (an APK), are refused as not JVM bytecode. The `InputSet` holds the class bytes as
+shared read-only buffers and hands each engine thread its own context-source views, which
+list exactly what Vineflower's `JarContextSource`, `DirectoryContextSource` and
+`SingleFileContextSource` list for the same path, in the same order. For a single class
+file, `jvm_siblings` also loads the `Name$*.class` files next to it, each as its own
+source after the class, as Vineflower's test fixture and IDE integration do; without them
+a class's nested, local and anonymous classes are missing. Archive entries keep their
+names (`BOOT-INF/classes/a/B.class`, `META-INF/versions/<n>/...`); the engine places a
+class by its own name, not its entry path.
+
+**Sources and libraries.** `decompiler/nonnative/kuna-jvm/src/p0_knowledge/struct_context.rs
+(StructContext)` holds the session's units: *own* units (what is decompiled) and library
+units (read for context only: the user's libraries and the JDK class library). A class is
+read from the first unit that has it; lookups are cached, failed ones included. The class
+reader is `decompiler/nonnative/kuna-jvm/src/p0_knowledge/context_source.rs`, with
+`decompiler/nonnative/kuna-jvm/src/substrate/zip_reader.rs (ZipReader)`, which follows JDK
+21's `java.util.zip.ZipFile` (end-record search, central-directory order, prefix stubs
+absorbed through the central-directory offset, stored and deflated entries only).
+
+**The JDK (kuna).** Vineflower reads the Java standard library through the `jrt:` file
+system of the JVM it runs on. kuna has no JVM, so
+`decompiler/nonnative/kuna-jvm/src/p0_knowledge/jdk_runtime.rs (JdkRuntime)` locates a
+JDK home and reads its modules itself: from the `lib/modules` jimage, else from
+`jmods/*.jmod`, else (Java 8) from the jars in `jre/lib` and `lib`. Module entries are
+listed in the order the `jrt:` walk produces, including the duplicate `module-info.class`
+entry a JDK 17 or older `jrt-fs.jar` reports. `jvm_include_runtime` selects the JDK: `on`
+(or `current`) searches `JAVA_HOME`, then the `java` on `PATH`, then the usual install
+directories (newest version first); a path names a home; `off` uses none. The JDK only
+supplies context. Without it, the engine still decompiles every class, but whatever needs
+a JDK class's members or hierarchy degrades: `@Override` on a method that overrides a JDK
+method is not written, a diamond `new ArrayList<>()` prints raw, and casts and generic
+arguments that depend on JDK signatures can differ. The vendored test corpus runs without
+a JDK.
+
+**Renaming.** With `jvm_rename_members`,
+`decompiler/nonnative/kuna-jvm/src/p0_knowledge/identifier_converter.rs (IdentifierConverter)`
+renames classes, fields and methods whose names are not valid Java identifiers, are
+reserved words or are short obfuscated names, before anything is loaded, rewriting every
+constant-pool reference through `decompiler/nonnative/kuna-jvm/src/p0_knowledge/pool_interceptor.rs`.
+The naming policy is `decompiler/nonnative/kuna-jvm/src/p0_knowledge/converter_helper.rs
+(ConverterHelper)`; a user renamer class (Vineflower loads one by name) cannot be loaded
+without a JVM, so the default policy is always used.
+
+**Nesting.** `decompiler/nonnative/kuna-jvm/src/p1_classfile/classes_processor.rs
+(ClassesProcessor::load_classes)` turns the own classes into a forest of class nodes. A
+class whose qualified name was already loaded is skipped with an error log; a class whose
+internal name matches `jvm_excluded_classes`, or does not match `jvm_included_classes`
+(both full-match Java regular expressions, run by the small backtracking engine in the
+same file), is left out of the forest but still gives context. With `jvm_decompile_inner`
+(the default), the `InnerClasses` entries of every class are read into records of type
+*member*, *local* or *anonymous* (an entry with no simple name is anonymous; one whose
+`EnclosingMethod` names a method is local), each remembering which class declared it.
+Classes often disagree about a nested class; the record from the nested class itself
+wins over its enclosing class's, which wins over a third class's, and
+`jvm_warn_inconsistent_inner_attributes` logs each disagreement. With
+`jvm_validate_inner_classes_names`, a member entry is believed only when its name is the
+outer name, `$`, and its simple name. Then, from each root, a breadth-first walk attaches
+nested classes to their enclosing class: an anonymous class loses `static` and records
+the supertype it instantiates, a local class keeps only the modifiers a local declaration
+can carry, and `jvm_verify_anonymous_classes` first checks that a supposedly anonymous
+class has one supertype and is created exactly once by its enclosing class (never cast to,
+tested, or read statically); a class that fails is written as a local class instead.
+With `jvm_decompile_inner` off, no class is nested and every class file is written as its
+own top-level class. Lambdas get nodes too, but later (section 10.11).
+
+## 10.3 The class-file model
+
+`decompiler/nonnative/kuna-jvm/src/p1_classfile/struct_class.rs (StructClass)`,
+`struct_method.rs` and `struct_field.rs` (in the same folder) model a class: access
+flags, the constant pool (`decompiler/nonnative/kuna-jvm/src/p1_classfile/constant_pool.rs`),
+members, and the attributes Vineflower reads, each a view over one attribute object
+(`decompiler/nonnative/kuna-jvm/src/p1_classfile/struct_general_attribute.rs`).
+`decompiler/nonnative/kuna-jvm/src/p1_classfile/bytecode_version.rs (BytecodeVersion)`
+turns the major version into the feature predicates the passes test: `jsr` is legal up to
+Java 6, lambdas from Java 8, `invokedynamic` string concatenation from Java 9, `instanceof`
+patterns and switch expressions from Java 16, sealed classes from Java 17, record
+patterns from Java 21; preview versions count from the release that previewed them.
+
+Two lifetimes coexist (kuna). Classes, members, attributes and the class-node forest live
+for the whole session; the IR a class's decompilation builds lives only until that root
+class is finished. Method bodies are therefore kept as raw bytes and expanded on demand
+(`decompiler/nonnative/kuna-jvm/src/p1_classfile/struct_method.rs (StructMethod::expand_data)`),
+and annotations, which Vineflower parses straight into expressions, are parsed at load
+time into a session-lived element tree and built into expressions on first use in each
+class scope (`decompiler/nonnative/kuna-jvm/src/p1_classfile/struct_annotation_attribute.rs`).
+`jvm_decompile_generics` decides whether `Signature` attributes are parsed into generic
+descriptors (`decompiler/nonnative/kuna-jvm/src/p5_types/generic_main.rs`); off, every
+type prints erased. Debug attributes feed naming later: the `LocalVariableTable` and
+`LocalVariableTypeTable` (`jvm_use_lvt_names`) and `MethodParameters`
+(`jvm_use_method_parameters`).
+
+## 10.4 Bytecode to a control-flow graph
+
+**Decode.** `StructMethod::expand_data` decodes the code attribute into an instruction
+sequence with its exception table
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/full_instruction_sequence.rs`,
+`decompiler/nonnative/kuna-jvm/src/p2_lift/instruction.rs`), one instruction per opcode
+with resolved operands; `jvm_dump_bytecode_on_error` later prints this sequence inside a
+failed method. The method's local-variable count seeds the variable counter, so every
+variable the decompiler invents is numbered after the method's own locals.
+
+**Blocks.** `decompiler/nonnative/kuna-jvm/src/p2_lift/control_flow_graph.rs (ControlFlowGraph::new)`
+splits the sequence at leaders (jump and switch targets, the instruction after a jump,
+return, throw or switch, handler starts and the bounds of every protected range), links
+the blocks by their regular successors, gives each block of a protected range an
+exception edge to its handler, and links `jsr` subroutines. The first pass then removes
+every block not reachable from the entry over regular or exception edges
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/dead_code_helper.rs (DeadCodeHelper::remove_dead_blocks)`).
+
+**JSR.** For class files of Java 6 and older, or any class file under
+`jvm_force_jsr_inline`, `ControlFlowGraph::inline_jsr` removes subroutines: each
+subroutine body is copied for every `jsr` that reaches it, exception ranges are split to
+follow the copies, and the `jsr`/`ret` instructions are deleted. After that the graph has
+only regular, exception and exit edges.
+
+**Exits and gotos.** Every block that leaves the method is connected to one dummy exit
+block (`DeadCodeHelper::connect_dummy_exit_block`). `goto` instructions are then deleted,
+since the edges already carry the flow, except in cycles made only of gotos, and the
+blocks this empties are removed (`DeadCodeHelper::remove_gotos`).
+
+**Exception-range repairs.** Real compilers and obfuscators produce exception tables the
+structurer cannot use directly, so a fixed sequence of repairs runs in
+`decompiler/nonnative/kuna-jvm/src/p2_lift/exception_deobfuscator.rs (ExceptionDeobfuscator)`
+and `DeadCodeHelper`:
+
+1. `remove_circular_ranges` - a range whose handler lies inside the range it protects
+   (an obfuscator pattern) loses the blocks the handler reaches by itself.
+2. `restore_pop_ranges` - javac leaves the first instruction of a handler, the one that
+   stores or discards the caught exception (`astore`, `pop`), outside an enclosing range
+   that protects the same code. When a range's handler starts that way and another range
+   covers its protected blocks, that instruction is split into a block of its own and put
+   back into the outer range, so a nested `try` stays inside the outer one. Ranges with
+   the same handler and exception types are considered together.
+3. `remove_empty_ranges` (with `jvm_remove_empty_try_catch`) - a range that protects no
+   instructions is dropped together with its exception edges, and the method gets a
+   `$VF: Removed empty exception range` comment.
+4. `DeadCodeHelper::extend_synchronized_range_to_monitorexit` (with
+   `jvm_ensure_synchronized_monitors`) - when some path out of a `monitorenter` region
+   has no `monitorexit` inside the protected range, the range is extended to it, so the
+   region can still become a `synchronized` block.
+5. `DeadCodeHelper::incorporate_value_returns` (with `jvm_incorporate_returns`) - a block
+   that only returns (a bare `return`, or one load and a return) is added to the
+   exception ranges that protect all of its predecessors and taken out of ranges that
+   protect none of them, so `return x;` stays inside the `try` or `catch` it belongs to
+   instead of being hoisted after the `try` through a temporary.
+6. `insert_empty_exception_handler_blocks` - every handler gets an empty block in front
+   of it, the place the caught-exception variable is later stored.
+7. `DeadCodeHelper::merge_basic_blocks` - straight-line chains of blocks are merged.
+8. If a range has several entry blocks (`has_obfuscated_exceptions`; javac never emits
+   one), `handle_multiple_entry_exception_ranges` splits off, entry by entry, the blocks
+   of the range that entry reaches and dominates as a range of their own (comment
+   `$VF: Handled exception range with multiple entry points by splitting it`). Then
+   `insert_dummy_exception_handler_blocks` gives each range of a handler shared by
+   several ranges a handler of its own: a copy of the handler block by default
+   (`$VF: Duplicated exception handlers to handle obfuscated exceptions`), or with
+   `jvm_old_try_dedup` a dummy block in front of the shared handler. A range that cannot
+   be split leaves the method with `$VF: Could not handle exception ranges with multiple
+   entries`, and structuring is attempted anyway.
+
+## 10.5 Statement recovery
+
+`decompiler/nonnative/kuna-jvm/src/p7_regions/dom_helper.rs (DomHelper::parse_graph)`
+turns the graph into a statement tree. Each block becomes a basic-block statement inside
+one general statement (an unstructured region), under a root statement with a dummy exit;
+regular edges become `REGULAR` edges, an edge back to the first block becomes `CONTINUE`,
+an edge to the method exit becomes `BREAK` to the dummy exit, and each protected block
+gets an `EXCEPTION` edge to its handler.
+
+**The simple case.** `DomHelper::find_simple_statements` walks the region's statements in
+post-reverse-post-order and asks each, as a head, whether it starts one of six statement
+shapes, in this order: a loop (`DoStatement::is_head`), a switch, an if, a sequence, a
+`try`/`catch` (`CatchStatement::is_head`) and a catch-all (`CatchAllStatement::is_head`,
+the shape of every `finally` and `synchronized`). The first match collapses its nodes into
+one statement and the walk restarts; the region is done when one statement covers it.
+Everything is first recognized in its most general form - every loop is an infinite loop
+with breaks, every `try` a plain `try`, every catch-all an unprocessed `finally` - and the
+later passes refine it. The `try` and catch-all shapes are refused when their head would
+merge an `if` into a `try` inside a loop (`decompiler/nonnative/kuna-jvm/src/p7_regions/dec_helper.rs
+(DecHelper::invalid_head_merge)`, `jvm_try_loop_fix`), which otherwise builds malformed
+loops around `try`/`catch`.
+
+**When the simple case is stuck.** `DomHelper::find_general_statement` carves out a
+single-entry subregion bounded by a postdominator of its head and recurses into it: the
+candidates come from the region's postdominator tree on the first attempt, then from its
+*extended* postdominators
+(`decompiler/nonnative/kuna-jvm/src/p7_regions/fast_extended_postdominance_helper.rs`),
+and a candidate is accepted only if it has no entry besides its head, does not cut an
+exception range in half, and does not split a `monitorenter` from its successor. The
+recursion is the reason the engine can structure nested loops with breaks and continues
+that no single-level pattern would match: it solves the inner region first and uses the
+result as one node outside.
+
+**Irreducible flow.** If a region still does not reduce,
+`decompiler/nonnative/kuna-jvm/src/p7_regions/irreducible_cfg_deobfuscator.rs` checks
+whether it is irreducible and, if so, splits one node and tries again: among the
+statements with several predecessors it copies the one with the fewest successors, then
+the smallest size times its extra predecessors, and moves one predecessor's edges to the
+copy. There are up to five such rounds per region, and the whole procedure is retried once
+with a freshly computed postdominance map. A split adds
+`$VF: Irreducible bytecode was duplicated to produce valid code`; exhausting the rounds
+adds an error comment that the flow was not entirely decomposed. A region that is
+reducible but still cannot be decomposed, or whose irreducible node cannot be split, fails
+the method (`parsing failure!`, section 10.12).
+
+After the tree is built, `parse_graph` lowers `continue` labels, condenses sequences,
+computes the monitor flags and rebuilds `synchronized` blocks:
+`DomHelper::build_synchronized` turns a `monitorenter` followed by a catch-all whose
+handler exits the monitor into a synchronized statement and marks the duplicated
+`monitorexit` instructions dead.
+
+## 10.6 `finally`
+
+javac compiles `try { A } finally { F }` by copying `F` onto every exit of `A` and of
+each `catch`, plus a catch-all handler that runs `F` and rethrows.
+`decompiler/nonnative/kuna-jvm/src/p7_regions/finally_processor.rs (FinallyProcessor::iterate_graph)`
+undoes that, one catch-all at a time, on the control-flow graph, and the schedule
+re-runs `DomHelper::parse_graph` after each success: the copies are removed from the
+graph, so the statement tree has to be rebuilt from it.
+
+For each unprocessed catch-all, it first reads the handler's shape (where the exception
+is stored, where the rethrow is, whether it ends in a return of a saved value). With
+`jvm_decompile_finally`, it then verifies that every exit of the protected region is
+followed by an exact copy of the handler body, comparing the blocks instruction by
+instruction (`FinallyProcessor::verify_finally_ex`, `compare_subgraphs_ex`), where
+local-variable operands may differ when an SSA analysis shows they hold the same value;
+when every copy matches,
+the copies are deleted and the catch-all becomes a `finally`. When they do not match, or
+the option is off, the engine keeps the code correct instead of pretty: it adds a
+synthetic *semaphore* variable, set on entry to the `try` and cleared on every edge that
+leaves it normally, and the `finally` body runs only while the semaphore is set
+(`FinallyProcessor::insert_semaphore`); the copies on the normal exits stay where they
+are. The method gets the comment
+`$VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.`
+(under `jvm_decompiler_comments`). A handler whose shape cannot be read at all stays a
+catch-all with the comment `$VF: Could not inline inconsistent finally blocks`. Each
+change also re-runs dead-block removal and block merging on the graph.
+
+The schedule then rebuilds `synchronized` statements once more, removes their exception
+handlers (`DomHelper::remove_synchronized_handler`), condenses sequences and clears
+structure-only statements
+(`decompiler/nonnative/kuna-jvm/src/p7_regions/clear_struct_helper.rs`).
+
+## 10.7 The stack-to-expression lift
+
+`decompiler/nonnative/kuna-jvm/src/p2_lift/expr_processor.rs (ExprProcessor::process_statement)`
+converts each basic block's instructions into expressions. The tree is flattened into a
+direct graph of blocks
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/flatten_statements_helper.rs`), and the
+operand stack is simulated along it: every value pushed is assigned to a *stack variable*
+(numbered from 10000, `VarExprent::STACK_BASE` in
+`decompiler/nonnative/kuna-jvm/src/substrate/var_exprent.rs`), every instruction that
+consumes the stack reads those variables, and a block's stack on entry is taken from its
+predecessors. `dup` and `swap` families copy variables rather than expressions, and a
+catch handler starts with its exception on the stack. The result is correct and
+unreadable - `var10000 = System.out; var10001 = "hi"; var10000.println(var10001);` - and
+the next stage folds it back. Expression nodes are in
+`decompiler/nonnative/kuna-jvm/src/substrate/exprent.rs` (one kind per Java expression
+form: assignment, constant, field, function and operator, invocation, `new`, array,
+`instanceof` pattern, switch, exit, monitor, and so on).
+
+When a constructor call names a constructor its class does not declare (invalid or
+tampered bytecode), the method fails with `Constructor .. not found`; with
+`jvm_ignore_invalid_bytecode` the call is printed without hiding synthetic arguments
+instead (`decompiler/nonnative/kuna-jvm/src/substrate/expr_util.rs`).
+
+## 10.8 SSA, SSAU and stack-variable inlining
+
+The lifted tree goes through a fixed point
+(`MethodProcessor::code_to_java`): simplify stack variables, recompute variable versions
+(section 10.10), and look for `++`/`--` shapes
+(`decompiler/nonnative/kuna-jvm/src/p3_dataflow/p_pand_mm_helper.rs (PPandMMHelper::find_p_pand_mm)`);
+repeat while the last step finds one.
+
+`decompiler/nonnative/kuna-jvm/src/p3_dataflow/stack_vars_processor.rs (StackVarsProcessor::simplify_stack_vars)`
+alternates two views of the variables:
+
+- **SSA** (`decompiler/nonnative/kuna-jvm/src/p3_dataflow/ssa_constructor_sparse_ex.rs`):
+  every assignment of a variable gets its own version. On it,
+  `decompiler/nonnative/kuna-jvm/src/p3_dataflow/simplify_exprents_helper.rs
+  (SimplifyExprentsHelper::simplify_stack_vars_statement)` runs peephole rewrites to a
+  fixed point: a stack variable assigned and then used once next to it is inlined; array
+  creation followed by element stores becomes an array initializer; `i = i + 1` shapes
+  become `++`/`--`; `new` followed by the constructor call becomes one constructor
+  expression; the two-branch assignment of a ternary becomes `?:`; the javac null check
+  `outer.getClass()` before a qualified `outer.new Inner()` is dropped
+  (`jvm_remove_getclass`); the pre-Java-5 `class$` idiom is folded into a class literal
+  (`jvm_decompile_java4`, finished at class level by section 10.11).
+- **SSAU** (`decompiler/nonnative/kuna-jvm/src/p3_dataflow/ssau_constructor_sparse_ex.rs`):
+  versions also change at every use, which yields a graph of definitions and uses. On
+  the first round it marks effectively-final variables; on every round
+  `StackVarsProcessor::iterate_statements` walks the blocks and inlines a variable's
+  definition into its use when no intervening write can change the value. Each block is
+  swept twice; the second sweep, which also inlines across the boundaries between
+  expressions on the operand stack, runs only under `jvm_simplify_stack`, and it is what
+  turns chains of temporaries back into `a = b = c`, `arr[i++] = v` and chained calls.
+
+Both forms are reverted (all versions back to zero) after each use, so each round
+re-derives them from the current tree. Then, once: `++`/`--` inside conditions is inlined
+(`PPandMMHelper::inline_pp_iand_mmi_if`); for Java 9+ class files,
+`decompiler/nonnative/kuna-jvm/src/p3_dataflow/concatenation_helper.rs` turns
+`invokedynamic` string concatenation back into `+`; and with `jvm_decompile_assert`,
+`decompiler/nonnative/kuna-jvm/src/p8_structure/assert_processor.rs` rebuilds `assert`
+statements from the `$assertionsDisabled` check and the `throw new AssertionError(..)`
+that javac emits.
+
+## 10.9 The main structuring loop
+
+The tree now holds correct but generic statements. The main loop of
+`MethodProcessor::code_to_java` refines it; each pass returns whether it changed the tree,
+and most changes restart the loop from the top, so the order below is a priority order.
+
+1. `LabelHelper::clean_up_edges`
+   (`decompiler/nonnative/kuna-jvm/src/p8_structure/label_helper.rs`) normalizes the
+   edges: every `break`/`continue` points at the statement that really closes it.
+2. **The loop-merge loop**, only when the method has loops, repeated until nothing
+   changes:
+   `decompiler/nonnative/kuna-jvm/src/p8_structure/eliminate_loops_helper.rs` removes loops
+   that never loop; `decompiler/nonnative/kuna-jvm/src/p8_structure/merge_helper.rs
+   (MergeHelper::enhance_loops)` turns infinite loops with a leading or trailing exit test
+   into `while`, `do`-`while` and `for` loops, and iterator and array loops into for-each;
+   `decompiler/nonnative/kuna-jvm/src/p8_structure/loop_extract_helper.rs` moves code that
+   always leaves the loop out of it; and
+   `decompiler/nonnative/kuna-jvm/src/p8_structure/if_helper.rs (IfHelper::merge_all_ifs)`
+   merges nested `if`s into `&&`/`||` conditions and builds `if`-`else`. With
+   `jvm_ternary_in_if` it also collapses the nested ifs a ternary inside a condition
+   compiles to (`if (a ? b : c)`).
+3. Stack variables are simplified and variable versions recomputed again, and
+   `LabelHelper::identify_labels` decides which jumps need an explicit label.
+4. `decompiler/nonnative/kuna-jvm/src/p3_dataflow/secondary_functions_helper.rs
+   (SecondaryFunctionsHelper::identify_secondary_functions)` rewrites operator shapes:
+   an `lcmp`/`fcmpl`/`dcmpg` result compared with zero becomes a direct comparison (one
+   used as a value is spelled out as a ternary), `c ? true : false` and `c ? false : true`
+   fold to `c` and `!c`, negations are pushed into comparisons, and an `if`-`else` with an
+   empty `if` branch is inverted. `jvm_ternary_constant_simplification` extends the
+   folding to every ternary with one boolean constant branch (`c ? true : x` to
+   `c || x`).
+5. `decompiler/nonnative/kuna-jvm/src/p5_types/intersection_cast_processor.rs` builds
+   intersection casts (`(A & B) x`).
+6. With `jvm_pattern_matching`, on Java 16+ class files,
+   `decompiler/nonnative/kuna-jvm/src/p8_structure/if_pattern_match_processor.rs
+   (IfPatternMatchProcessor::match_instanceof)` turns `instanceof` followed by a cast into
+   an `instanceof` pattern, record patterns included.
+7. When the method has switches:
+   `decompiler/nonnative/kuna-jvm/src/p8_structure/switch_pattern_match_processor.rs`
+   rebuilds pattern switches from `SwitchBootstraps.typeSwitch` dispatch (also gated by
+   `jvm_pattern_matching`), and
+   `decompiler/nonnative/kuna-jvm/src/p8_structure/switch_expression_helper.rs` rebuilds
+   switch expressions with `->` arms and `yield` from the statement switch and temporary
+   javac emits (`jvm_decompile_switch_expressions`).
+8. When the method has a `try`:
+   `decompiler/nonnative/kuna-jvm/src/p8_structure/try_helper.rs (TryHelper::enhance_try_stats)`
+   rebuilds try-with-resources
+   (`decompiler/nonnative/kuna-jvm/src/p8_structure/try_with_resources_processor.rs`; the
+   Java 11+ shape from a plain `try`/`catch`, the older one from a `finally`) and merges
+   adjacent `try` statements that protect the same code.
+9. `decompiler/nonnative/kuna-jvm/src/p8_structure/inline_single_block_helper.rs` moves a
+   block reached only by a labeled `break` to where the break is, which removes most of
+   the labels the initial recovery left.
+10. `MergeHelper::make_do_while_loops` and `MergeHelper::condense_infinite_loops_with_return`
+    finish loop shapes.
+11. Outside static initializers,
+    `decompiler/nonnative/kuna-jvm/src/p8_structure/exit_helper.rs (ExitHelper::condense_exits)`
+    gives an `if` whose branch jumps to a shared `return` or `throw` block a copy of that
+    exit as its body, and removes the blocks this leaves unreachable.
+
+When a full pass of the loop changes nothing, the tail runs once, in this order:
+
+- `decompiler/nonnative/kuna-jvm/src/p8_structure/switch_helper.rs (SwitchHelper::simplify_switches)`
+  turns the javac lowering of an enum switch (a switch over a synthetic `$SwitchMap$`
+  array, read from the `<clinit>` of the class that holds it) back into a switch over the
+  enum constants, and the lowering of a string switch (a switch over `hashCode()` followed
+  by `equals` tests into a second switch) back into one switch over the strings; the
+  helper statements this leaves are marked hidden, and `jvm_show_hidden_statements`
+  prints them anyway. If that produced a switch expression, switch expressions, stack
+  variables and versions are processed once more.
+- `ExitHelper::adjust_return_type` and `ExitHelper::remove_redundant_returns` (a trailing
+  `return;` of a `void` method is dropped).
+- secondary functions once more, then
+  `decompiler/nonnative/kuna-jvm/src/p8_structure/synchronized_helper.rs` folds the
+  temporary that holds a `synchronized` block's monitor into `synchronized (expr)`, and
+  assigns a monitor that is a non-string constant to a fresh variable first
+  (`$VF: Added assignment to ensure synchronized validity`), since `synchronized` on a
+  literal is not valid Java.
+- variable definitions are placed (section 10.10), compound assignments (`x += y`) are
+  formed (`SecondaryFunctionsHelper::update_assignments`), and empty `default` arms are
+  hidden.
+- `decompiler/nonnative/kuna-jvm/src/p5_types/generics_processor.rs (GenericsProcessor::qualify_chains)`
+  qualifies generic call chains, and
+  `decompiler/nonnative/kuna-jvm/src/p2_lift/expr_processor.rs (ExprProcessor::canonicalize_casts)`
+  collapses a cast of a cast to the same type.
+- `LabelHelper::replace_continue_with_break`, and finally
+  `ExprProcessor::mark_expr_oddities`, which does not change the tree but adds an error
+  comment for every shape that means the result is not trustworthy: an invalid label, a
+  leftover `monitorenter`, an `if` destroyed into an expression, a variable whose type
+  could not be determined, an `assert` that could not be resugared.
+
+Two more passes run when the class is written, before any text is produced
+(`decompiler/nonnative/kuna-jvm/src/p9_emit/class_writer.rs (ClassWriter::invoke_processors)`):
+switch simplification once more (`FinalSimplifySwitches`) and, with `jvm_prettify_ifs`,
+the removal of an
+`else` after a branch that always returns or throws (`IfHelper::prettify_ifs`).
+
+## 10.10 Variables, types, declarations and names
+
+**Versions and types.** `decompiler/nonnative/kuna-jvm/src/p6_variables/var_processor.rs
+(VarProcessor::set_var_versions)` runs
+`decompiler/nonnative/kuna-jvm/src/p6_variables/var_versions_processor.rs
+(VarVersionsProcessor::set_var_versions)` each time the schedule asks for it: an SSA split,
+a merge of the versions a phi joins, type inference, and a renumbering that gives each
+remaining version its own variable index. Type inference is
+`decompiler/nonnative/kuna-jvm/src/p5_types/var_type_processor.rs (VarTypeProcessor::calculate_var_types)`:
+each variable version gets a lower and an upper bound in the type lattice of
+`decompiler/nonnative/kuna-jvm/src/substrate/var_type.rs`, seeded from the method
+descriptor and from every expression that defines or uses it, and the bounds are
+propagated over the direct graph to a fixed point. Integer constants start at the
+narrowest type that can hold them; with `jvm_boolean_as_int` the constant `1` (not only
+`0`) may also become `boolean`, so flags stored with `iconst_1`/`iconst_0` print as
+`true`/`false`. Before renumbering, the lattice's internal types become Java types: an
+integer-constant type becomes `byte`, `short` or `char`, and the null type `Object`.
+
+**Declarations.** `VarProcessor::set_var_definitions` runs
+`decompiler/nonnative/kuna-jvm/src/p6_variables/var_definition_helper.rs
+(VarDefinitionHelper::set_var_definitions)`: each variable is declared at the innermost
+statement that contains all its uses, folded into its first assignment where that
+assignment comes first there; variables of the same slot whose lives do not overlap are
+merged into one where the merge cannot change what a read sees; and local types from the
+`LocalVariableTypeTable` are applied. `jvm_verify_merges` and `jvm_verify_pre_post_merges` are experimental
+stricter merge checks: the second computes, with an extra SSA pass, which assignments
+each read can see, and refuses any merge that would change it.
+
+**Names.** After each method is processed
+(`decompiler/nonnative/kuna-jvm/src/p1_classfile/class_wrapper.rs (ClassWrapper::init)`),
+variables get `varN`-style names that avoid the class's field names
+(`decompiler/nonnative/kuna-jvm/src/p6_variables/var_names_collector.rs`), then, with
+`jvm_use_lvt_names`, the debug names from the `LocalVariableTable` replace them wherever
+the name is a valid identifier (`VarProcessor::set_debug_var_names`). With
+`jvm_use_method_parameters`, a `MethodParameters` attribute names (and marks `final`) the
+parameters. A method without code still gets parameter names. Names that clash within a
+scope - two variables, a variable and a captured variable, a variable and a field it
+shadows - are renamed apart (`VarDefinitionHelper::remap_clashing_names`), once at
+processing time and again at writing time (`VarProcessor::rerun_clashing`), when nested
+classes and lambdas have been processed. A parameter or lambda
+argument whose type stays undetermined prints as `Object` under `jvm_undefined_as_object`
+and as `<undefinedtype>` without it.
+
+## 10.11 Class-level processing
+
+Processing a root class (`ClassesProcessor::process_class`) runs, in order:
+
+1. **Lambdas.** `decompiler/nonnative/kuna-jvm/src/p4_calls/lambda_processor.rs
+   (LambdaProcessor::process_class)` reads the `BootstrapMethods` of every class of the
+   tree (Java 8+) and gives each `invokedynamic` to `LambdaMetafactory.metafactory` or
+   `altMetafactory` a lambda class node, which is written later as a lambda or a method
+   reference.
+2. **Methods.** Every class of the tree gets a wrapper whose `init` decompiles each of its
+   methods with the schedule of sections 10.4-10.10. Synthetic classes that hold only enum
+   switch maps are initialized first, so the switches of their users can be read back.
+3. **Nested classes.** `decompiler/nonnative/kuna-jvm/src/p8_structure/nested_class_processor.rs
+   (NestedClassProcessor::process_class)` finds, for each anonymous class, local class
+   and lambda, the enclosing variables it captures (the `val$x` fields and synthetic
+   constructor parameters javac adds), rewrites their uses into uses of the enclosing
+   method's variables, and places each local class's definition in the statement where it
+   is first used. `jvm_lambda_to_anonymous_class` writes every lambda as an anonymous class
+   instead. `jvm_synthetic_not_set` recognizes compiler-generated members (outer-instance
+   and captured-variable fields, accessors, `class$` caches) by their shape even without
+   the `ACC_SYNTHETIC` flag, which some compilers and obfuscators omit.
+4. **Synthetic accessors.** `decompiler/nonnative/kuna-jvm/src/p4_calls/nested_member_access.rs
+   (NestedMemberAccess::propagate_member_access)` replaces calls to the `access$NNN`
+   methods javac generates for private members of nested classes with the field access or
+   call they stand for.
+
+Writing a root class (`ClassesProcessor::write_class`) first runs, for each class of the
+tree, the late method passes of section 10.9 and then the class-level rewrites of
+`ClassWriter::invoke_processors`:
+`decompiler/nonnative/kuna-jvm/src/p8_structure/initializer_processor.rs` moves field
+initializers out of `<clinit>` and the constructors into the field declarations and drops
+a constructor's leading argument-less `super()` (`jvm_hide_empty_super`);
+`decompiler/nonnative/kuna-jvm/src/p4_calls/class_reference14_processor.rs` turns the
+Java 1.4 class-literal cache into `X.class` (`jvm_decompile_java4`);
+`decompiler/nonnative/kuna-jvm/src/p8_structure/enum_processor.rs` removes `$VALUES`,
+`values()`, `valueOf()` and the hidden name and ordinal constructor parameters
+(`jvm_decompile_enums`); and
+`decompiler/nonnative/kuna-jvm/src/p8_structure/record_helper.rs` restores a record's
+canonical constructor and hides the accessors, `equals`, `hashCode` and `toString` that
+match the generated ones. A failure here writes the class as `$VF: Couldn't be decompiled`
+(section 10.12).
+
+Two class-level facts come from outside the class. **Varargs (kuna).**
+`decompiler/nonnative/kuna-jvm/src/substrate/invocation_exprent.rs` needs to know
+whether a called method is varargs, to print `f(a, b)` instead of
+`f(new Object[]{a, b})`. It asks the class universe first; for a class the universe lacks,
+Vineflower uses reflection on the JVM it runs on, which kuna cannot.
+`decompiler/nonnative/kuna-jvm/src/p4_calls/classpath_helper.rs (ClasspathHelper)`
+answers from an embedded table, `classpath_helper_jdk.txt` in the same folder: every
+varargs method of OpenJDK 21 such a lookup can find, so the answer is the same whether or
+not a JDK runtime is loaded. **Dynamic constants.**
+`decompiler/nonnative/kuna-jvm/src/p4_calls/condy_helper.rs` writes constant-dynamic
+`VarHandle` constants as the equivalent `MethodHandles` lookup expression under
+`jvm_decompile_complex_constant_dynamic`, with a comment because the expression runs
+eagerly; otherwise the raw constant-dynamic form is kept.
+
+## 10.12 Emission
+
+`decompiler/nonnative/kuna-jvm/src/p9_emit/class_writer.rs (ClassWriter::write_class)`
+writes a root class and everything nested in it into a text buffer, and
+`ClassesProcessor::write_class` puts the header in front: `jvm_banner`, the package, and
+the imports `decompiler/nonnative/kuna-jvm/src/p9_emit/import_collector.rs (ImportCollector)`
+collected while the body was written. The collector decides, per class name, whether
+the short name can be used in this file without ambiguity, and lists the imports that
+requires; `jvm_remove_imports` writes no import statements. A
+`package-info` class and a `module-info` class have writers of their own.
+
+**What is written.** For each class: annotations, modifiers, type parameters, `extends`,
+`implements` and `permits`, and for a record its components; then the enum constants,
+the other fields with their initializers, the methods and the nested classes. Members are left out by
+policy: synthetic members (`jvm_remove_synthetic`), bridge methods (`jvm_remove_bridge`),
+a lone default constructor (`jvm_hide_default_constructor`), and whatever the class-level
+rewrites hid. `jvm_override_annotation` adds `@Override` where an instance method of a Java 5+ class
+file overrides or implements a method of a supertype the engine can see;
+`jvm_mark_corresponding_synthetics` names the synthetic method behind each lambda and the
+class behind each anonymous class in a comment; `jvm_sourcefile_comments` writes the
+`SourceFile` name above each class; `jvm_decompiler_comments` controls every `$VF:` note
+the passes above attached to a method. Lambdas are written inline at their use, without
+braces when the body is one expression (`jvm_inline_simple_lambdas`). Generic method calls
+carry explicit type arguments under `jvm_explicit_generics`. Constants print as source
+does: `Double.NaN`, `Long.MAX_VALUE` and `Math.PI` rather than their values unless
+`jvm_keep_literals` is on, and non-ASCII characters escaped only under
+`jvm_ascii_strings` (`decompiler/nonnative/kuna-jvm/src/substrate/const_exprent.rs`).
+Numbers print with the JDK's own algorithms (section 10.13).
+
+**Failed methods.** A method whose schedule threw is written as its signature and a body
+of comments (`ClassWriter::dump_error`): `$VF: Couldn't be decompiled`, then with
+`jvm_dump_exception_on_error` the `jvm_error_message` note (by default, Vineflower's
+request to report the class to its tracker), the exception text and its throw location,
+and with `jvm_dump_bytecode_on_error` a listing of the method's bytecode. The class around
+it is written normally.
+
+**Layout.** The buffer is a tree of line groups; after a class is written,
+`decompiler/nonnative/kuna-jvm/src/p9_emit/text_buffer.rs (TextBuffer::reformat)` breaks
+argument lists, chained calls and long operator chains at their recorded break points
+wherever a line exceeds `jvm_preferred_line_length` (160), and indents with
+`jvm_indent_string` (three spaces). Offsets and widths are counted in UTF-16 units, as Java
+counts them. Every reference and declaration in the text is a text token;
+`jvm_dump_text_tokens` appends a dump of them with their positions.
+
+**Line mapping.** While expressions are written,
+`decompiler/nonnative/kuna-jvm/src/p9_emit/bytecode_mapping_tracer.rs` records which
+bytecode offsets each output line came from, and
+`decompiler/nonnative/kuna-jvm/src/p9_emit/bytecode_source_mapper.rs` relates them to the
+class file's `LineNumberTable`. (kuna) `decompiler/nonnative/kuna-jvm/src/infra/kuna_spans.rs`
+records, with zero-width marks that ride through re-wrapping and are never printed, where
+each class and each method starts and ends in the final text, and groups the tracer's
+offsets by method and line. These spans are what lets a front end slice one method out of
+a class, report its line mapping in bytecode offsets, and mark a method as failed, without
+changing a byte of the output.
+
+**Failure granularity.** A method failure becomes the comment block above and the class
+survives. A class whose processing throws (section 10.11) is written as
+`// $VF: Couldn't be decompiled` followed by the exception, in place of its body. A class
+whose writing throws is written, with `jvm_dump_exception_on_error`, as a
+`/* $VF: Unable to decompile class ... */` comment, and without it not at all. Nothing
+else stops the run: the other classes of the input are still written. A Java
+`RuntimeException` and an ordinary Rust panic (an index out of bounds, an `unwrap` on
+`None`) are caught at these boundaries alike (section 10.13); a stack overflow or an
+allocation failure is not, and ends the process.
+
+**Time limit (kuna).** Vineflower enforces `max-time-per-method` by running each method on a
+watchdog thread and killing it. kuna instead arms a per-thread deadline
+(`decompiler/nonnative/kuna-jvm/src/infra/cancelation_manager.rs (CancelationManager)`)
+that the schedule polls at the heads of its fixed-point loops - the `finally` loop, the
+stack-variable loop, the main and merge loops, the SSA fixed point, statement recovery and
+irreducible-node splitting. A method past its deadline fails like a killed one: an error
+log and a `$VF: Couldn't be decompiled` body whose exception is a `TimeoutException`
+(`decompiler/nonnative/kuna-jvm/src/p1_classfile/class_wrapper.rs
+(ClassWrapper::code_to_java_on_watchdog)`). A method stuck between two polls is not
+interrupted.
+
+## 10.13 The runtime kernel (kuna)
+
+Vineflower is written against Java's object model, and the port keeps its control flow
+line for line, so `decompiler/nonnative/kuna-jvm/src/rt` gives each Java facility the
+port depends on one faithful Rust shape:
+
+- **Objects with identity** (`decompiler/nonnative/kuna-jvm/src/rt/arena.rs`). Every
+  ported class with identity or shared mutable state lives in a thread-local arena and is
+  referred to by a `Copy` handle, so `==` on handles is Java's reference `==`. Class-scope
+  arenas (statements, expressions, edges, graphs, wrappers) are emptied when a decompile
+  ends; session-scope arenas (the class model, the class forest) live as long as the
+  engine instance. Hash collections keyed by such objects order them by creation index,
+  where Java would use identity hashes.
+- **Hash collections in JDK order** (`decompiler/nonnative/kuna-jvm/src/rt/jhash.rs`).
+  Vineflower iterates `HashMap` and `HashSet` in places where the order reaches the
+  output, so the port reproduces JDK 21's table: hash spreading, power-of-two buckets,
+  tail insertion, order-preserving splits on resize, and capacity kept across `clear`.
+  Plain `std` hash maps are banned in the workspace for the same reason.
+- **Shared collections** (`decompiler/nonnative/kuna-jvm/src/rt/jlist.rs`): a list or map
+  that several holders read and mutate, as a Java reference would be.
+- **Strings** (`decompiler/nonnative/kuna-jvm/src/rt/jstring.rs`). A Java string is UTF-16
+  and may hold unpaired surrogates; they are kept in private-use scalars and mapped back
+  for every UTF-16 view, so lengths, indices and escapes are the JVM's.
+- **Characters and numbers** (`decompiler/nonnative/kuna-jvm/src/rt/jchar.rs`,
+  `decompiler/nonnative/kuna-jvm/src/rt/jnum.rs`): `Character` classification from JDK
+  21's tables, and `Double.toString`/`Float.toString` as JDK 19+ print them.
+- **Exceptions** (`decompiler/nonnative/kuna-jvm/src/rt/exception.rs`). A Java `throw`
+  unwinds as a panic carrying the exception, and `try_catch` is the
+  `catch (Throwable)` that receives it at the method and class boundaries of section 10.12.
+
+## 10.14 Front-end support (kuna)
+
+**Inventory.** `decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_inventory.rs` lists an
+input's classes and methods (names, nesting, access flags, source file, sizes, bytecode
+length per method) from the class files alone, without decompiling.
+
+**Parallel instances.** `decompiler/nonnative/kuna-jvm/src/infra/kuna_driver.rs (run)`
+decompiles one input on several threads with output identical to a single instance's. A
+planning instance loads the input and lists its root classes in the order a single run
+writes them. The single run's only cross-class dependency that changes output is a class
+reading another root class's processing results while it is written (most visibly the
+constructor masks of that root's nested classes, read when `new Outer.Inner(..)` or
+`super(..)` is written), so `decompiler/nonnative/kuna-jvm/src/infra/kuna_partition.rs`
+reads from the class files whose nested-class constructors each root calls. Roots
+are grouped into batches that also *process* (without writing) the roots they depend on,
+worker threads take batches from a shared cursor, largest first, and each runs its batch
+with `Fernflower::decompile_selected`, in the single run's order. A detector watches every
+read of another root's state during the run; a read whose answer would differ from the
+single run's (*a divergent read*) makes the driver repeat that batch with the missing root
+added, so results are delivered only once clean. Results reach the caller in root order,
+whatever the number of workers. Each engine instance runs on a thread with a 512 MiB
+stack, since the port recurses as deeply as Vineflower does on the JVM.
+
+**Options.** `decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_options.rs (resolve)`
+turns a `jvm_*` name, or Vineflower's long or three-letter name, and a value as a user
+writes it into the Vineflower key and value; the table is generated from `options.toml` by
+the crate's build script. Keys the front end sets itself (thread count, time limit, method
+selection, logging, line separator, line mapping, class-path keys a JVM would serve) are
+listed there as `[[driver_owned]]` and refused as user options.
+
+**Tracing.** With `KUNA_JVM_TRACE=<file>`,
+`decompiler/nonnative/kuna-jvm/src/infra/kuna_trace.rs` writes a canonical dump of each
+method's statement tree after every recorded pass, in the format the Java-side tracer of
+`decompiler/nonnative/kuna-jvm/tools/vftrace` prints for Vineflower, so the two can be
+compared pass by pass (`docs/jvm.md`).
+
+**The CLI seam.** `kuna-cli` routes an input to this engine before any native code runs
+when the input operand is a class file, an archive or a directory (chapter 00, section
+0.2); its non-native module (this chapter's third anchor) builds a driver configuration
+from the command line, slices classes and methods out of the delivered text by their
+spans, and renders the native CLI's text and JSON shapes. The CLI surface is `docs/cli.md`
+("JVM inputs").
