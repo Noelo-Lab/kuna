@@ -3234,6 +3234,13 @@ class	kuna-fixes/classes/pkg/TestSelfReferencingLambda.class
 class	kuna-fixes/classes/pkg/TestSelfReferencingLambda$Task.class
 expected	kuna-fixes/expected-compat/pkg/TestSelfReferencingLambda.java
 compare	TestSelfReferencingLambda.java
+case	kuna-fixes-compat/pkg/TestSuspendFinallyKt	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt.class
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$early$1.class
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$once$1.class
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$twice$1.class
+expected	kuna-fixes/expected-compat/pkg/TestSuspendFinallyKt.java
+compare	TestSuspendFinallyKt.java
 case	kuna-fixes-compat/pkg/TestSwitchExprConstLub	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub.class
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub$IntSink.class
@@ -3347,6 +3354,13 @@ class	kuna-fixes/classes/pkg/TestSelfReferencingLambda.class
 class	kuna-fixes/classes/pkg/TestSelfReferencingLambda$Task.class
 expected	kuna-fixes/expected/pkg/TestSelfReferencingLambda.java
 compare	TestSelfReferencingLambda.java
+case	kuna-fixes/pkg/TestSuspendFinallyKt	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt.class
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$early$1.class
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$once$1.class
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$twice$1.class
+expected	kuna-fixes/expected/pkg/TestSuspendFinallyKt.java
+compare	TestSuspendFinallyKt.java
 case	kuna-fixes/pkg/TestSwitchExprConstLub	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub.class
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub$IntSink.class

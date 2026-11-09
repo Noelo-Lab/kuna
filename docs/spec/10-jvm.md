@@ -1433,3 +1433,43 @@ a sequence or an infinite loop (all loops are still infinite at this point), who
 completion would show as a break edge into the throw, and none is left. The assignment-assert
 and switch-expression shapes, whose conversion replaces more than the `if`, keep Vineflower's
 behaviour.
+
+**The fix `handler_copy_offsets`**. A basic block keeps, next to its instructions, their original
+bytecode offsets (`instrOldOffsets`), which only feed source positions: expression offsets,
+line mapping and local-variable-table lookups. When a protected range has several entries,
+`decompiler/nonnative/kuna-jvm/src/p2_lift/exception_deobfuscator.rs (ExceptionDeobfuscator::handle_multiple_entry_exception_ranges)`
+splits it, and `insert_dummy_exception_handler_blocks` gives every part but the first its own
+copy of the handler block; the copy has the handler's instructions but no offsets. A Kotlin
+suspend function produces this whenever a `try` spans a suspension point: the state
+machine's resume label jumps into the middle of the protected range. If the handler is a
+`finally`, `decompiler/nonnative/kuna-jvm/src/p7_regions/finally_processor.rs (FinallyProcessor::remove_exception_instructions_ex)`
+strips the handler copy's leading `astore` and trailing `aload`/`athrow`, both when the inlined
+copies are verified and removed and when a semaphore variable is inserted instead, and it
+removes the matching offsets as it goes (added upstream in `d88f743c`, from ForgeFlower). On a
+handler copy there is no offset to remove, so Vineflower fails the method with an index out of
+bounds (`-1` on the verified path, `0` on the semaphore path). The defect is in this
+bookkeeping only: the instructions were already stripped, and the structure the processor
+builds does not depend on the offsets. With the fix, on a handler copy that holds the whole handler
+(a block without offsets whose only successor is the method's exit, because it ends in the
+rethrow), the processor removes an offset only when the block has one at that index, which is
+how the rest of the engine treats a block without offsets (`BasicBlock::get_old_offset` answers
+-1, and the block splitting of `compare_basic_blocks_ex` already guards its removal). Wherever
+Vineflower does not throw, the removals are the same as Vineflower's. Two shapes keep failing,
+because getting past the throw would print wrong code. When the `finally` body spans several
+blocks (`if (n.decrementAndGet() == 0) channel.close()`), the deobfuscator copies only its first
+block and every copy shares the rest, so stripping the shared rethrow for one part would leave
+the other parts without it; the copy is then not a whole handler and the method fails as in
+Vineflower (kotlinx-coroutines' `combineInternal` lambda, which `develop/1.13.0` prints with
+undefined `throw var2_2` statements). And when irreducible-flow splitting copied a catch-all of a
+method whose handler copy was stripped, `iterate_graph` (which leaves copies alone) would let the
+copy print as a `catch` that swallows the exception, so the method fails instead
+(kotlinx-coroutines' `consumeEach`, printed that way by `develop/1.13.0`). Upstream fixed the same failure on `develop/1.13.0`
+(commit `5c360738`, #597) by copying the offsets into the handler copy and no longer editing
+offsets in `FinallyProcessor`. kuna does not port that: a copy with offsets changes the
+local-variable names of handler copies in methods that decompile today (kotlinx-coroutines'
+`TimeoutKt`, `catch (TimeoutCancellationException var12)` becoming `e`), and no longer trimming
+the offsets shifts the source positions of every `finally` handler. The structure kuna prints
+for the methods the fix decompiles is the one `develop/1.13.0` prints: the `try` whose exit
+holds the inlined `finally` copy becomes a plain `try`/`finally`, and each part split off at a
+resume label becomes a `try`/`finally` guarded by a semaphore variable, because its normal exit
+leads to the suspension check rather than to a copy of the `finally`.

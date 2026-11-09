@@ -215,6 +215,19 @@
       "source": "src/pkg/TestEnumNoConstants.java",
       "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
       "summary": "the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged"
+    },
+    {
+      "id": "pkg/TestSuspendFinallyKt",
+      "fix": "handler_copy_offsets",
+      "class_files": [
+        "pkg/TestSuspendFinallyKt.class",
+        "pkg/TestSuspendFinallyKt$early$1.class",
+        "pkg/TestSuspendFinallyKt$once$1.class",
+        "pkg/TestSuspendFinallyKt$twice$1.class"
+      ],
+      "source": "src/pkg/TestSuspendFinally.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
+      "summary": "`once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable"
     }
   ]
 }

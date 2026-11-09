@@ -75,6 +75,9 @@ pub enum KunaFix {
     /// `assert_dead_throw`: the `throw new AssertionError` an assert
     /// consumed through a break is removed, not left behind as dead code.
     AssertDeadThrow,
+    /// `handler_copy_offsets`: the `finally` processing strips a
+    /// duplicated exception handler, which has no instruction offsets.
+    HandlerCopyOffsets,
 }
 
 impl KunaFix {
@@ -97,6 +100,7 @@ impl KunaFix {
         KunaFix::EnumBodySeparator,
         KunaFix::AnonymousStaticQualifier,
         KunaFix::AssertDeadThrow,
+        KunaFix::HandlerCopyOffsets,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -119,6 +123,7 @@ impl KunaFix {
             KunaFix::EnumBodySeparator => "enum_body_separator",
             KunaFix::AnonymousStaticQualifier => "anonymous_static_qualifier",
             KunaFix::AssertDeadThrow => "assert_dead_throw",
+            KunaFix::HandlerCopyOffsets => "handler_copy_offsets",
         }
     }
 
