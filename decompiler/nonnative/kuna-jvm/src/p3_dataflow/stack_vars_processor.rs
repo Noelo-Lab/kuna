@@ -578,7 +578,13 @@ impl StackVarsProcessor {
             for usedver in set_temp_used_vers.to_vec() {
                 let copy = right.copy();
 
-                Self::copy_field_var(ssau, right, copy);
+                if right.is_field() && ssau.get_map_field_vars().contains_key(&right.get_id()) {
+                    let field_var = ssau
+                        .get_map_field_vars()
+                        .get_cloned(&right.get_id())
+                        .expect("NullPointerException");
+                    ssau.get_map_field_vars_mut().put(copy.get_id(), field_var);
+                }
 
                 map_var_values.put(usedver, copy);
             }
@@ -592,15 +598,6 @@ impl StackVarsProcessor {
             Self::set_ret(ret, index + 1, changed);
         } else {
             Self::set_ret(ret, -1, changed);
-        }
-    }
-
-    /// `if (right instanceof FieldExprent && mapFieldVars.containsKey(right.id)) mapFieldVars.put(copy.id, mapFieldVars.get(right.id))`.
-    fn copy_field_var(ssau: &mut SSAUConstructorSparseEx, right: Exprent, copy: Exprent) {
-        if right.is_field() && ssau.get_map_field_vars().contains_key(&right.get_id()) {
-            let field_var = ssau.get_map_field_vars().get_cloned(&right.get_id());
-            let field_var = field_var.expect("NullPointerException");
-            ssau.get_map_field_vars_mut().put(copy.get_id(), field_var);
         }
     }
 
@@ -930,7 +927,13 @@ impl StackVarsProcessor {
         if !notdom && !vernotreplaced {
             for usedver in set_temp_used_vers.to_vec() {
                 let copy = right.copy();
-                Self::copy_field_var(ssau, right, copy);
+                if right.is_field() && ssau.get_map_field_vars().contains_key(&right.get_id()) {
+                    let field_var = ssau
+                        .get_map_field_vars()
+                        .get_cloned(&right.get_id())
+                        .expect("NullPointerException");
+                    ssau.get_map_field_vars_mut().put(copy.get_id(), field_var);
+                }
 
                 map_var_values.put(usedver, copy);
             }
