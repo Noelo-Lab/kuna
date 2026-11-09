@@ -1429,6 +1429,7 @@ kuna_options! { self, p1;
     },
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
     "objcrefconst" => on_off!(analysis_objcrefconst, "Objective-C reference-slot folding"),
+    "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
     "relocobjects" => {
         let val = on_or_off(p1)?;

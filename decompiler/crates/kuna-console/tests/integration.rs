@@ -327,6 +327,8 @@ mod verify_noreturn_propagate;
 
 #[path = "verify_objc.rs"]
 mod verify_objc;
+#[path = "verify_swiftmetadata.rs"]
+mod verify_swiftmetadata;
 
 #[path = "verify_importdata.rs"]
 mod verify_importdata;

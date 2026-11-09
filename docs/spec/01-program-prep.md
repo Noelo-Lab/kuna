@@ -4454,6 +4454,60 @@ every other binary's pass list is byte-identical to before the pass existed):
   so on a chained image the pass reports no constant slot while `dynrelocs` is
   off (the names stay). Like every analysis gate, `objcrefconst` is read at the
   `read symbols` commit; flipping it afterwards does not re-paint.
+- **Swift metadata** (`swiftmetadata`, Mach-O and ELF, Swift images only,
+  default-off but ON in the `aggressive` preset, which `auto` selects for any
+  binary under 500 KiB; `decompiler/crates/kuna-analysis/src/analyzers/swift/mod.rs`, the
+  record layouts in `decompiler/crates/kuna-analysis/src/analyzers/swift/descriptors.rs`):
+  a stripped Swift binary keeps its reflection sections, and they name much of
+  its code. The pass reads `__swift5_types` / `swift5_type_metadata` (the nominal
+  type context descriptors: kind, parent chain, name, metadata accessor, field
+  descriptor, and for a class the trailing vtable and override table),
+  `__swift5_protos` (protocol descriptors with their requirement rows),
+  `__swift5_proto` (conformance descriptors: protocol, conforming type, witness
+  table pattern, resilient witnesses) and `__swift5_fieldmd` (field descriptors),
+  per the ABI's `Metadata.h`. Everything there is a 32-bit self-relative pointer,
+  so no fixup resolution is needed; an *indirectable* pointer (low bit set)
+  names a pointer-sized slot, which is a rebase (resolved through the
+  chained-fixup overlay, §1.2) or a bind to another image — and the overlay
+  records each bind slot's import name (`ChainedFixups::binds`), which is
+  how a conformance to `Swift.Hashable` or an override of a UIKit initializer
+  learns the other image's descriptor name. Names follow the demangler's
+  name-only conventions so they read like symbol-table names and agree with the
+  real symbol where one survives (the fixture's unstripped build is the oracle):
+  `Module.Type.type_metadata_accessor`; `Module.Class.vtable#3.getter` for a
+  vtable slot's implementation by position and kind (a slot carries no selector;
+  the optimizer leaves a removed method's slot null, which is skipped);
+  `Module.Sub.init(coder:rootView:)` for an override whose overridden method
+  descriptor is an import (`…Tq`), the real member name; `Module.Sub.vtable#3.init`
+  for an override of a local base; `<Module.Type:Swift.Hashable>.hash(into:)`
+  for a resilient witness whose requirement descriptor is an import,
+  `<T:P>.requirement#2` for a local protocol's witness (the witness-table words
+  on a chained-fixup Mach-O; an ELF carries them as relocation addends, so they
+  are not named there), `Module.P.requirement#2.default` for a default
+  implementation; and the records: `….nominal_type_descriptor`,
+  `….protocol_descriptor`, `….module_descriptor`,
+  `<T:P>.protocol_conformance_descriptor`, `<T:P>.protocol_witness_table`,
+  `….reflection_field_descriptor`. A type path follows the parent chain
+  (`Module.Outer.Inner`; an anonymous context is transparent, an extension
+  context demangles its extended type, a parent in another image is named
+  through its module-descriptor import). Only a code address is ever named as a
+  function (a base-protocol or associated-type witness row points at data), and
+  function names use the FID-precedent placeholder gate. On a large
+  third-party iOS app (314,038 functions, 304,309 of them `sub_<addr>`) the
+  pass names 57,147 stripped functions — 14,615 metadata accessors, 15,204 vtable slots, 27,322
+  witnesses, 6 overrides — every one at an address function discovery already
+  found, in about 0.3 s and 135 MB over the baseline decompile. The work is
+  bounded by the image: a conformance descriptor several section entries name
+  is read once, every record row (a descriptor, a vtable, override,
+  requirement or witness row, a witness-table word) is charged against one row
+  per four bytes of the image, which a real image never exceeds since each row
+  occupies at least that much of it, and the names built (type paths included)
+  stop at 16 MiB plus the image's length, so repeated or overlapping records
+  in a crafted file cannot multiply into millions of names. The pass is
+  registered only for `Compiler::Swift` (§1.3's detector) in Mach-O or ELF, so
+  every other image's pass set is unchanged; the stage test
+  `tests/stages/kuna-swiftmetadata.xml` runs the fully stripped swiftc-built
+  `swift_metadata_elf` off and on.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

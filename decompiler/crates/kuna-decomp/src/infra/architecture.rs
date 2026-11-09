@@ -2740,6 +2740,12 @@ pub struct Architecture {
     /// bind slot (an imported class) keeps its `classRef_<Class>` name instead.
     /// Inert unless `objc` is on.
     pub analysis_objcrefconst: bool,
+    /// (kuna) `option swiftmetadata` — the Swift runtime-metadata recovery pass
+    /// (`kuna-analysis::analyzers::swift`): names metadata accessors, vtable and
+    /// override implementations, protocol witnesses and descriptor records from
+    /// the `swift5_*` reflection sections. Default-off, output-changing; inert on
+    /// an image without the sections.
+    pub analysis_swiftmetadata: bool,
     /// (kuna) Gate the PE PDB metadata recovery pass (`pdb`); default **off**. The
     /// kuna analog of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer;
     /// the MS-DIA `PdbAnalyzer` is Windows-native and out of scope) — the
@@ -3571,6 +3577,7 @@ impl Architecture {
             analysis_gonoreturn: false,
             analysis_objc: false,
             analysis_objcrefconst: true,
+            analysis_swiftmetadata: false,
             analysis_pdb: true,
             macho_arm64e: false,
 
@@ -4077,6 +4084,7 @@ impl Architecture {
         self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
         self.analysis_objcrefconst = true; // (kuna) ObjC reference slots fold to their selector/class; inert unless objc is on
+        self.analysis_swiftmetadata = false; // Swift runtime-metadata recovery default-off (inert without swift5_* sections)
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }

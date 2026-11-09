@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_393() {
-    assert_eq!(kuna_num_settables(), 393);
-    assert_eq!(SETTABLE_TABLE.len(), 393);
+fn settable_count_is_394() {
+    assert_eq!(kuna_num_settables(), 394);
+    assert_eq!(SETTABLE_TABLE.len(), 394);
 }
 
 #[test]
-fn tier_counts_are_136_core_158_transform_99_analysis() {
+fn tier_counts_are_136_core_158_transform_100_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_136_core_158_transform_99_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (136, 158, 99));
+    assert_eq!((core, transform, analysis), (136, 158, 100));
 }
 
 #[test]
@@ -512,6 +512,8 @@ fn option_values_live_value_present_for_189() {
         // the `objc` facts (read via kuna_live_value), like `objc` above.
         // Default-on, inert unless `objc` is on.
         "objcrefconst",
+        // (kuna) The Swift runtime-metadata pass gate, the objc precedent.
+        "swiftmetadata",
         // (kuna) PE PDB metadata recovery — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), like the gates around
         // it. Default-on (DIV-129), PE-only, `.pdb`-sidecar-gated.
@@ -1211,7 +1213,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `objcrefconst`; its P1 row sits beside `objc`.
     // +1 for `ptrauthtrap`; its P2 row sits beside `gowritebarrier`.
     // +1 for `authptrcall`; its P1 row sits beside `peimportcall`.
-    assert_eq!(json.matches("},\n").count(), 392);
+    // +1 for `swiftmetadata`; its P1 row sits beside `objc`.
+    assert_eq!(json.matches("},\n").count(), 393);
 }
 
 #[test]
