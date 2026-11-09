@@ -397,6 +397,16 @@ const DETECT_MAX_INSNS: usize = 4096;
 /// enters a large executable section other than its own -- the entry stub a
 /// protector leaves at the original address, or the SDK-marked region's
 /// `push imm; call vm_entry`.  Returns the first such target.
+/// The executable sections of the image at least [`MIN_VM_SECTION`] long.
+fn large_code_sections(arch: &Architecture) -> Vec<(u64, u64)> {
+    let Some(t) = ArchTarget::new(arch, 0) else { return Vec::new() };
+    t.sections
+        .iter()
+        .filter(|s| s.flags & section_flags::CODE != 0 && s.end - s.start >= MIN_VM_SECTION)
+        .map(|s| (s.start, s.end))
+        .collect()
+}
+
 pub fn detect_vm_entry(target: &ArchTarget<'_>, entry: u64) -> Option<u64> {
     if !target.sections.iter().any(|s| {
         s.flags & section_flags::CODE != 0 && s.end - s.start >= MIN_VM_SECTION && Some((s.start, s.end)) != target.entry_section
@@ -673,6 +683,14 @@ pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<Pus
         return Some(p);
     }
     if mode == MODE_AUTO {
+        if arch.pushan_vm_sections.is_none() {
+            arch.pushan_vm_sections = Some(large_code_sections(arch));
+        }
+        let candidates = arch.pushan_vm_sections.as_deref().unwrap_or(&[]);
+        if !candidates.iter().any(|&(s, e)| !(s <= entry && entry < e)) {
+            install(arch, None);
+            return None;
+        }
         let detected = ArchTarget::new(arch, entry).and_then(|t| detect_vm_entry(&t, entry));
         if detected.is_none() {
             install(arch, None);

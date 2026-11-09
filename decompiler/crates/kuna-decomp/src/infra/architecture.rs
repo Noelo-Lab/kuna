@@ -951,6 +951,9 @@ pub struct Architecture {
     pub pushan_mode: u8,
     /// (kuna `pushan`) Devirtualized programs by entry offset (restarts re-flow).
     pub pushan_cache: std::collections::BTreeMap<u64, Rc<crate::kuna_pushan::PushanProgram>>,
+    /// (kuna `pushan`) The image's executable sections large enough to hold an
+    /// interpreter, computed once; `auto` never looks further without two.
+    pub pushan_vm_sections: Option<Vec<(u64, u64)>>,
     /// (kuna `loweredswitchexact`) Label every case value of a re-rolled lowered
     /// switch and keep the switch only when it routes and computes as its compare
     /// tree.
@@ -3292,6 +3295,7 @@ impl Architecture {
             lowered_switch_value_check: false,
             pushan_mode: 0, // (kuna) option pushan; reset_defaults sets the shipped default
             pushan_cache: std::collections::BTreeMap::new(),
+            pushan_vm_sections: None,
             lowered_switch_exact: false,
             lowered_switch_every_head: false,
             callsite_stack_args: true,
