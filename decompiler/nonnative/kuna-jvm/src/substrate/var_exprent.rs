@@ -232,9 +232,9 @@ impl VarExprent {
             }
 
             let name = self.get_name();
-            let method = DecompilerContext::get_current_method_wrapper();
-            if method.is_some() && ("this" != name || index != 0) {
-                let mut method = method.expect("current method wrapper");
+            let method = DecompilerContext::get_current_method_wrapper()
+                .filter(|_| "this" != name || index != 0);
+            if let Some(mut method) = method {
                 let mut var_index = index;
                 let mut this_var: Option<String> = None;
                 if let Some(processor) = processor {
@@ -277,31 +277,33 @@ impl VarExprent {
                             0
                         };
 
-                if this_var.is_none() || !name.contains(".this") {
-                    let mut write_name = name.clone();
-                    if !VarExprent::is_valid_name(&name) && !name.contains(".this") {
-                        write_name = self.get_var_ver_name(self.get_var_version_pair());
+                match this_var {
+                    Some(this_var) if name.contains(".this") => {
+                        let i = name.find(".this").expect("contains .this");
+                        buffer.append_class(&name[..i], false, &this_var);
+                        buffer.append(".");
+                        self.write_name(&mut buffer, &name[i + 1..]);
                     }
+                    _ => {
+                        let mut write_name = name.clone();
+                        if !VarExprent::is_valid_name(&name) && !name.contains(".this") {
+                            write_name = self.get_var_ver_name(self.get_var_version_pair());
+                        }
 
-                    buffer.append_variable_descriptor(
-                        &write_name,
-                        definition,
-                        param,
-                        &class_struct.qualified_name(),
-                        &method_struct.get_name(),
-                        &descriptor,
-                        var_index,
-                        &name,
-                    );
-                    if write_name != name {
-                        buffer.append("/* $VF was: ").append(&name).append(" */");
+                        buffer.append_variable_descriptor(
+                            &write_name,
+                            definition,
+                            param,
+                            &class_struct.qualified_name(),
+                            &method_struct.get_name(),
+                            &descriptor,
+                            var_index,
+                            &name,
+                        );
+                        if write_name != name {
+                            buffer.append("/* $VF was: ").append(&name).append(" */");
+                        }
                     }
-                } else {
-                    let this_var = this_var.expect("thisVar");
-                    let i = name.find(".this").expect("contains .this");
-                    buffer.append_class(&name[..i], false, &this_var);
-                    buffer.append(".");
-                    self.write_name(&mut buffer, &name[i + 1..]);
                 }
             } else {
                 let mut this_var: Option<String> = None;
