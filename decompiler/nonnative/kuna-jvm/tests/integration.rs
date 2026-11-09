@@ -84,3 +84,5 @@ mod b02_function_exprent;
 mod b02_expr_util;
 #[path = "b03_exprents.rs"]
 mod b03_exprents;
+#[path = "b04_render.rs"]
+mod b04_render;

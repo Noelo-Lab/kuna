@@ -1,10 +1,10 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/stats/Statements.java`.
 
 use crate::class_wrapper::ClassWrapper;
-use crate::invocation_exprent::InvocationExprent;
+use crate::invocation_exprent::{InvocationExprent, Type as InvocationType};
 use crate::method_wrapper::MethodWrapper;
 use crate::statement::{Statement, StatementType};
-use crate::unported;
+use crate::var_version_pair::VarVersionPair;
 
 pub struct Statements;
 
@@ -29,11 +29,26 @@ impl Statements {
     }
 
     pub fn is_invocation_init_constructor(
-        _inv: InvocationExprent,
-        _method: MethodWrapper,
-        _wrapper: ClassWrapper,
-        _with_this: bool,
+        inv: InvocationExprent,
+        method: MethodWrapper,
+        wrapper: ClassWrapper,
+        with_this: bool,
     ) -> bool {
-        unported!("Statements.isInvocationInitConstructor")
+        if inv.get_functype() == InvocationType::Init {
+            if let Some(inst_var) = inv.get_instance().and_then(|i| i.try_as_var()) {
+                let var_pair = VarVersionPair::from_var(inst_var);
+                let class_name = method
+                    .with(|d| d.varproc)
+                    .get_this_vars()
+                    .borrow()
+                    .get_cloned(&var_pair);
+                if class_name.is_some() {
+                    return with_this
+                        || wrapper.get_class_struct().qualified_name() != inv.get_classname();
+                }
+            }
+        }
+
+        false
     }
 }

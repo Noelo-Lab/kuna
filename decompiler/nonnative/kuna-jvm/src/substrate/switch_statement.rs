@@ -7,9 +7,13 @@
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::const_exprent::ConstExprent;
 use crate::dec_helper::DecHelper;
+use crate::decompiler_context::DecompilerContext;
+use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
+use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_statement::set_head_slot;
+use crate::pattern::Pattern;
 use crate::rt::{JHashMap, JHashSet, JList};
 use crate::start_end_pair::StartEndPair;
 use crate::stat_edge::StatEdge;
@@ -20,7 +24,8 @@ use crate::statement::{
 use crate::text_buffer::TextBuffer;
 use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
-use crate::{java_subclass, jthrow, unported};
+use crate::var_type::VarType;
+use crate::{java_subclass, jthrow};
 
 pub struct SwitchStatementData {
     pub case_statements: JList<Statement>,
@@ -103,8 +108,137 @@ impl SwitchStatement {
         None
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("SwitchStatement.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut buf = TextBuffer::new();
+        buf.append_buffer(&ExprProcessor::list_to_java(
+            Some(&self.get_var_definitions()),
+            indent,
+        ));
+        buf.append_buffer(&self.get_first().expect("first").to_java(indent));
+
+        let show_phantom =
+            DecompilerContext::get_option(IFernflowerPreferences::SHOW_HIDDEN_STATEMENTS);
+
+        if self.is_phantom() && !show_phantom {
+            return buf;
+        }
+
+        if self.is_labeled() {
+            buf.append_indent(indent)
+                .append("label")
+                .append_int(self.id())
+                .append(":")
+                .append_line_separator();
+        }
+
+        buf.append_indent(indent);
+        if self.is_phantom() {
+            buf.append("/*");
+        }
+
+        let head = self.get_headexprent();
+        buf.append_buffer(&head.to_java(indent))
+            .append(" {")
+            .append_line_separator();
+
+        let switch_type = head.get_expr_type();
+
+        let (case_statements, case_edges, case_values, case_guards, default_edge) = self.d(|d| {
+            (
+                d.case_statements.clone(),
+                d.case_edges.clone(),
+                d.case_values.clone(),
+                d.case_guards.clone(),
+                d.default_edge,
+            )
+        });
+        for i in 0..case_statements.len() {
+            let stat = case_statements.get(i);
+            let edges = case_edges.get(i);
+            let values = case_values.get(i);
+            let guard = if case_guards.len() > i {
+                case_guards.get(i)
+            } else {
+                None
+            };
+            let scoped = self.d(|d| d.scoped_case_statements.contains(&stat));
+
+            for j in 0..edges.len() {
+                if Some(edges.get(j)) == default_edge {
+                    buf.append_indent(indent + 1).append("default:");
+                    if scoped && j == edges.len() - 1 {
+                        buf.append(" {");
+                    }
+
+                    buf.append_line_separator();
+                } else {
+                    let mut value = values.get(j);
+
+                    buf.append_indent(indent + 1).append("case ");
+
+                    if let Some(v) = value {
+                        if v.is_const() && !v.get_expr_type().equals(&VarType::VARTYPE_NULL()) {
+                            let copied = v.copy();
+                            copied.as_const().set_const_type(switch_type.clone());
+                            value = Some(copied);
+                        }
+                    }
+                    if let Some(field) = value
+                        .and_then(|v| v.try_as_field())
+                        .filter(|f| f.is_static())
+                    {
+                        let name = field.get_name();
+                        buf.append_field_descriptor(
+                            &name,
+                            false,
+                            &field.get_classname(),
+                            &name,
+                            &field.get_descriptor(),
+                        );
+                    } else if let Some(v) = value.filter(|v| {
+                        v.try_as_function()
+                            .is_some_and(|f| f.get_func_type() == FunctionType::Instanceof)
+                    }) {
+                        let pattern = Pattern::cast(v.get_all_exprents()[2]);
+                        for var in pattern.get_pattern_vars() {
+                            var.set_writing_pattern();
+                        }
+
+                        buf.append_buffer(&v.get_all_exprents()[2].to_java(indent));
+                    } else {
+                        buf.append_buffer(&value.expect("NullPointerException").to_java(indent));
+                    }
+
+                    if let Some(guard) = guard {
+                        buf.append(" when ").append_buffer(&guard.to_java_default());
+                    }
+
+                    buf.append(":");
+                    if scoped && j == edges.len() - 1 {
+                        buf.append(" {");
+                    }
+                    buf.append_line_separator();
+                }
+            }
+
+            buf.append_buffer(&ExprProcessor::jmp_wrapper(stat, indent + 2, false));
+
+            if scoped {
+                buf.append_indent(indent + 1);
+                buf.append("}");
+                buf.append_line_separator();
+            }
+        }
+
+        buf.append_indent(indent)
+            .append("}")
+            .append_line_separator();
+
+        if self.is_phantom() {
+            buf.append("*/");
+        }
+
+        buf
     }
 
     pub fn init_exprents(self) {

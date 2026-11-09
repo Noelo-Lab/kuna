@@ -10,7 +10,7 @@ use crate::statement::Statement;
 use crate::text_buffer::TextBuffer;
 use crate::var_map_holder::VarMapHolder;
 use crate::var_type::VarType;
-use crate::{java_subclass, jthrow, unported};
+use crate::{java_subclass, jthrow};
 
 /// Java `IfExprent.Type`. Every variant but `Value` is paired with its negation
 /// at `ordinal ^ 1`.
@@ -181,8 +181,18 @@ impl IfExprent {
         self.d(|d| lst.push(d.condition));
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("IfExprent.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let condition = self.get_condition();
+        condition.get_inferred_expr_type(Some(&VarType::VARTYPE_BOOLEAN()));
+
+        let mut buf = condition.to_java(indent);
+        buf.push_newline_group(indent, 1);
+        buf.append_possible_newline();
+        buf.enclose("if (", ")");
+        buf.append_possible_newline_dedent("", true);
+        buf.pop_newline_group();
+        buf.add_start_bytecode_mapping(self.get_bytecode().as_ref());
+        buf
     }
 
     pub fn replace_exprent(self, old_expr: Exprent, new_expr: Exprent) {

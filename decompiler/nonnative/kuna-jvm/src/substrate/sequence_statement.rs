@@ -1,10 +1,11 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/stats/SequenceStatement.java`.
 
 use crate::dec_helper::DecHelper;
+use crate::expr_processor::ExprProcessor;
+use crate::java_subclass;
 use crate::stat_edge::StatEdge;
 use crate::statement::{LastBasicType, Statement, StatementKind, StatementType};
 use crate::text_buffer::TextBuffer;
-use crate::{java_subclass, unported};
 
 pub struct SequenceStatementData {}
 
@@ -81,8 +82,51 @@ impl SequenceStatement {
         None
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("SequenceStatement.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut indent = indent;
+        let mut buf = TextBuffer::new();
+        let islabeled = self.is_labeled();
+
+        buf.append_buffer(&ExprProcessor::list_to_java(
+            Some(&self.get_var_definitions()),
+            indent,
+        ));
+
+        if islabeled {
+            buf.append_indent(indent)
+                .append("label")
+                .append_int(self.id())
+                .append(": {")
+                .append_line_separator();
+            indent += 1;
+        }
+
+        let mut notempty = false;
+
+        let stats = self.get_stats();
+        let mut i = 0;
+        while i < stats.borrow().len() {
+            let st = stats.borrow().get(i);
+
+            let str_ = ExprProcessor::jmp_wrapper(st, indent, false);
+
+            if i > 0 && !str_.contains_only_whitespaces() && notempty {
+                buf.append_line_separator();
+            }
+
+            buf.append_buffer(&str_);
+
+            notempty = !str_.contains_only_whitespaces();
+            i += 1;
+        }
+
+        if islabeled {
+            buf.append_indent(indent - 1)
+                .append("}")
+                .append_line_separator();
+        }
+
+        buf
     }
 
     pub fn get_simple_copy(self) -> Statement {

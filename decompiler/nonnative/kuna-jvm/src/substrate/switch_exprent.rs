@@ -1,13 +1,19 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/SwitchExprent.java`.
 
 use crate::basic_block_statement::BasicBlockStatement;
+use crate::code_constants::ACC_ENUM;
+use crate::const_exprent::ConstExprent;
+use crate::exit_exprent::Type as ExitType;
 use crate::exprent::{Exprent, ExprentKind};
-use crate::rt::{BitSet, JavaEq, JavaHash};
+use crate::field_exprent::FieldExprent;
+use crate::function_exprent::FunctionType;
+use crate::pattern::Pattern;
+use crate::rt::{BitSet, JHashSet, JavaEq, JavaHash};
 use crate::stat_edge::StatEdge;
 use crate::switch_statement::SwitchStatement;
 use crate::text_buffer::TextBuffer;
-use crate::var_type::VarType;
-use crate::{java_subclass, unported};
+use crate::var_type::{get_class, VarType};
+use crate::{java_subclass, jthrow};
 
 pub struct SwitchExprentData {
     pub backing: SwitchStatement,
@@ -50,23 +56,227 @@ impl SwitchExprent {
         ))
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("SwitchExprent.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let (backing, type_, standalone) = self.d(|d| (d.backing, d.type_.clone(), d.standalone));
+        if !backing.is_phantom() {
+            jthrow!(IllegalStateException; "Switch expression backing statement isn't phantom!");
+        }
+
+        let mut buf = TextBuffer::new();
+
+        let switch_type = backing.get_headexprent().get_expr_type();
+        let is_exhaustive = self.is_exhaustive();
+
+        buf.append_buffer(&backing.get_headexprent().to_java(indent))
+            .append(" {")
+            .append_line_separator();
+        for i in 0..backing.get_case_statements().len() {
+            let stat = backing.get_case_statements().get(i);
+            let edges = backing.get_case_edges().get(i);
+            let values = backing.get_case_values().get(i);
+            let guard = if backing.get_case_guards().len() > i {
+                backing.get_case_guards().get(i)
+            } else {
+                None
+            };
+
+            let mut has_default = false;
+
+            for edge in edges.iter() {
+                if Some(edge) == backing.get_default_edge() {
+                    if is_exhaustive && SwitchExprent::is_synthetic_throw_edge(edge) {
+                        break;
+                    }
+                    has_default = true;
+                    break;
+                }
+            }
+
+            let mut has_edge = false;
+            for j in 0..edges.len() {
+                let value = if Some(edges.get(j)) == backing.get_default_edge() && values.len() <= j
+                {
+                    Some(ConstExprent::new(VarType::VARTYPE_NULL(), None, None).0)
+                } else {
+                    values.get(j)
+                };
+                let Some(mut value_ex) = value else {
+                    continue;
+                };
+
+                if has_default && !value_ex.get_expr_type().ptr_eq(&VarType::VARTYPE_NULL()) {
+                    continue;
+                }
+
+                if !has_edge {
+                    buf.append_indent(indent + 1).append("case ");
+                } else {
+                    buf.append(", ");
+                }
+
+                if value_ex.is_const()
+                    && !standalone
+                    && !value_ex.get_expr_type().equals(&VarType::VARTYPE_NULL())
+                {
+                    value_ex = value_ex.copy();
+                    value_ex.as_const().set_const_type(switch_type.clone());
+                }
+
+                if let Some(field) = value_ex.try_as_field().filter(|f| f.is_static()) {
+                    let name = field.get_name();
+                    buf.append_field_descriptor(
+                        &name,
+                        false,
+                        &field.get_classname(),
+                        &name,
+                        &field.get_descriptor(),
+                    );
+                } else if value_ex
+                    .try_as_function()
+                    .is_some_and(|f| f.get_func_type() == FunctionType::Instanceof)
+                {
+                    let pattern = Pattern::cast(value_ex.get_all_exprents()[2]);
+                    for var in pattern.get_pattern_vars() {
+                        var.set_writing_pattern();
+                    }
+
+                    buf.append_buffer(&value_ex.get_all_exprents()[2].to_java(indent));
+                } else {
+                    buf.append_buffer(&value_ex.to_java(indent));
+                }
+
+                has_edge = true;
+            }
+
+            if let Some(guard) = guard {
+                buf.append(" when ").append_buffer(&guard.to_java_default());
+            }
+
+            if has_default {
+                if !has_edge {
+                    if let Some(block) = stat.try_as_basic_block() {
+                        if SwitchExprent::is_empty_default(block, backing) {
+                            continue;
+                        }
+                    }
+
+                    buf.append_indent(indent + 1).append("default");
+                } else {
+                    buf.append(", default");
+                }
+                has_edge = true;
+            }
+
+            if !has_edge {
+                continue;
+            }
+
+            buf.append(" -> ");
+
+            let mut simple = stat.is_basic_block();
+
+            if stat.get_exprents().is_some_and(|e| e.len() != 1) {
+                simple = false;
+            }
+
+            if simple {
+                let exprent = stat.get_exprents().expect("NullPointerException").get(0);
+
+                if let Some(yield_) = exprent.try_as_yield() {
+                    let content = yield_.get_content();
+
+                    if content.is_const()
+                        && !content.get_expr_type().equals(&VarType::VARTYPE_NULL())
+                    {
+                        content.as_const().set_const_type(type_.clone());
+                    }
+
+                    buf.append_buffer(content.to_java(indent + 1).append(";"));
+                } else if let Some(exit) = exprent.try_as_exit() {
+                    if exit.get_exit_type() == ExitType::Throw {
+                        buf.append_buffer(exit.0.to_java(indent + 1).append(";"));
+                    } else {
+                        jthrow!(IllegalStateException; "Can't have return in switch expression");
+                    }
+                } else {
+                    buf.append_buffer(exprent.to_java(indent + 1).append(";"));
+                }
+            } else {
+                buf.append("{");
+                buf.append_line_separator();
+                let stat_buf = stat.to_java(indent + 2);
+                buf.append_buffer(&stat_buf);
+                buf.append_indent(indent + 1).append("}");
+            }
+
+            buf.append_line_separator();
+        }
+
+        buf.append_indent(indent).append("}");
+
+        buf
     }
 
-    #[allow(dead_code)]
-    fn is_empty_default(_block: BasicBlockStatement, _head: SwitchStatement) -> bool {
-        unported!("SwitchExprent.isEmptyDefault")
+    fn is_empty_default(block: BasicBlockStatement, _head: SwitchStatement) -> bool {
+        if !block
+            .get_exprents()
+            .expect("NullPointerException")
+            .is_empty()
+        {
+            return false;
+        }
+
+        let edges = block.get_successor_edge_view(StatEdge::TYPE_BREAK);
+
+        edges.len() == 1
     }
 
-    #[allow(dead_code)]
     fn is_exhaustive(self) -> bool {
-        unported!("SwitchExprent.isExhaustive")
+        let backing = self.get_backing();
+        let mut enum_values_seen: JHashSet<FieldExprent> = JHashSet::new();
+        for case_value in backing.get_case_values().iter() {
+            for exprent in case_value.iter().flatten() {
+                if let Some(field) = exprent.try_as_field().filter(|f| f.is_static()) {
+                    enum_values_seen.add(field);
+                }
+            }
+        }
+        let enum_target_class = get_class(&backing.get_headexprent().get_expr_type().value);
+        let Some(enum_target_class) = enum_target_class else {
+            return false;
+        };
+        if !enum_target_class.has_modifier(ACC_ENUM) {
+            return false;
+        }
+        let seen = enum_values_seen.to_vec();
+        enum_target_class
+            .get_fields()
+            .to_vec()
+            .into_iter()
+            .filter(|x| x.has_modifier(ACC_ENUM))
+            .map(|x| x.get_name())
+            .all(|field_name| seen.iter().any(|found| found.get_name() == field_name))
     }
 
-    #[allow(dead_code)]
-    fn is_synthetic_throw_edge(_edge: StatEdge) -> bool {
-        unported!("SwitchExprent.isSyntheticThrowEdge")
+    fn is_synthetic_throw_edge(edge: StatEdge) -> bool {
+        let target = edge.get_destination();
+        let target_exprs = target.get_exprents();
+        if let Some(target_exprs) = target_exprs.filter(|e| e.len() == 1) {
+            let target_expr = target_exprs.get(0);
+            return match target_expr.try_as_exit() {
+                Some(exit) if exit.get_exit_type() == ExitType::Throw => {
+                    let value = exit
+                        .get_value()
+                        .expect("NullPointerException")
+                        .get_expr_type();
+                    let name = value.value.as_deref().expect("NullPointerException");
+                    name == "java/lang/IncompatibleClassChangeError"
+                        || name == "java/lang/MatchException"
+                }
+                _ => false,
+            };
+        }
+        false
     }
 
     pub fn set_type(self, type_: VarType) {

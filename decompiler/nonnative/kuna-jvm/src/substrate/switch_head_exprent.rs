@@ -2,10 +2,11 @@
 
 use crate::check_types_result::CheckTypesResult;
 use crate::exprent::{Exprent, ExprentKind};
+use crate::fast_sparse_set_factory::java_collection_to_string;
 use crate::rt::{BitSet, JList, JavaEq, JavaHash};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
-use crate::{java_subclass, unported};
+use crate::{java_subclass, jthrow};
 
 pub struct SwitchHeadExprentData {
     pub value: Exprent,
@@ -62,15 +63,60 @@ impl SwitchHeadExprent {
     }
 
     pub fn check_expr_type_bounds(self) -> Option<CheckTypesResult> {
-        unported!("SwitchHeadExprent.checkExprTypeBounds")
+        let mut result = CheckTypesResult::new();
+
+        let (value, case_values) = self.d(|d| (d.value, d.case_values.clone()));
+        result.add_expr_lower_bound(value, &VarType::VARTYPE_BYTECHAR());
+        result.add_expr_upper_bound(value, &VarType::VARTYPE_INT());
+
+        let mut val_type = Some(value.get_expr_type());
+        for lst in case_values.iter() {
+            for expr in lst.iter().flatten() {
+                let case_type = match expr.try_as_function() {
+                    Some(func) if func.get_lst_operands().len() == 3 => {
+                        func.get_lst_operands().get(1).get_expr_type()
+                    }
+                    _ => expr.get_expr_type(),
+                };
+                if !case_type.equals_opt(val_type.as_ref()) {
+                    let Some(current) = val_type.clone() else {
+                        let listed =
+                            java_collection_to_string(case_values.iter().map(|l| {
+                                java_collection_to_string(l.iter().map(|e| {
+                                    e.map_or_else(|| "null".to_string(), |e| e.to_string())
+                                }))
+                            }));
+                        jthrow!(
+                            IllegalStateException;
+                            "Invalid switch case set: {} for selector of type {}",
+                            listed,
+                            value.get_expr_type()
+                        );
+                    };
+                    let unboxed = VarType::UNBOXING_TYPES().get(&current).cloned();
+                    if unboxed.is_some_and(|u| u.higher_equal_in_lattice_than(&case_type)) {
+                        continue;
+                    }
+                    val_type = VarType::join(&case_type, &current);
+                    if let Some(joined) = &val_type {
+                        result.add_expr_lower_bound(value, joined);
+                    }
+                }
+            }
+        }
+
+        Some(result)
     }
 
     pub fn get_all_exprents_list(self, lst: &mut Vec<Exprent>) {
         self.d(|d| lst.push(d.value));
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("SwitchHeadExprent.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut buf = self.get_value().to_java(indent);
+        buf.enclose("switch (", ")");
+        buf.add_start_bytecode_mapping(self.get_bytecode().as_ref());
+        buf
     }
 
     pub fn replace_exprent(self, old_expr: Exprent, new_expr: Exprent) {

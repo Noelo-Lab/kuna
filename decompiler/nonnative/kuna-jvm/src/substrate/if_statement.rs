@@ -4,21 +4,23 @@
 //! slot (before `initExprents`) is the empty list.
 
 use crate::dec_helper::DecHelper;
+use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
-use crate::i_matchable::IMatchable;
+use crate::i_matchable::{IMatchable, MatchProperties};
 use crate::if_exprent::IfExprent;
+use crate::java_subclass;
 use crate::match_engine::MatchEngine;
 use crate::match_node::MatchNode;
-use crate::rt::JList;
+use crate::rt::{JList, JavaStr};
 use crate::start_end_pair::StartEndPair;
 use crate::stat_edge::StatEdge;
 use crate::statement::{
     add_instanceof_pattern_vars, LastBasicType, Statement, StatementKind, StatementType,
 };
 use crate::text_buffer::TextBuffer;
+use crate::text_util::TextUtil;
 use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
-use crate::{java_subclass, unported};
 
 pub struct IfStatementData {
     pub iftype: i32,
@@ -218,8 +220,104 @@ impl IfStatement {
         None
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("IfStatement.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut buf = TextBuffer::new();
+
+        buf.append_buffer(&ExprProcessor::list_to_java(
+            Some(&self.get_var_definitions()),
+            indent,
+        ));
+
+        buf.append_buffer(&self.get_first().expect("first").to_java(indent));
+
+        if self.is_labeled() {
+            buf.append_indent(indent)
+                .append("label")
+                .append_int(self.id())
+                .append(":")
+                .append_line_separator();
+        }
+
+        let condition = self.get_headexprent_list().first();
+        buf.append_indent(indent);
+        match condition {
+            Some(condition) => buf.append_buffer(&condition.to_java(indent)),
+            None => buf.append("if <null condition>"),
+        };
+        buf.append(" {").append_line_separator();
+
+        let (ifstat, elsestat, ifedge) = self.d(|d| (d.ifstat, d.elsestat, d.ifedge));
+        match ifstat {
+            None => {
+                let ifedge = ifedge.expect("NullPointerException");
+                let mut semicolon = false;
+                if ifedge.explicit() {
+                    semicolon = true;
+                    if ifedge.get_type() == StatEdge::TYPE_BREAK {
+                        buf.append_indent(indent + 1).append("break");
+                    } else {
+                        buf.append_indent(indent + 1).append("continue");
+                    }
+
+                    if ifedge.labeled() {
+                        let closure = match ifedge.closure() {
+                            None => "<unknownclosure>".to_string(),
+                            Some(closure) => closure.id().to_string(),
+                        };
+                        buf.append(" label").append(&closure);
+                    }
+                }
+                if semicolon {
+                    buf.append(";").append_line_separator();
+                }
+            }
+            Some(ifstat) => {
+                buf.append_buffer(&ExprProcessor::jmp_wrapper(ifstat, indent + 1, true));
+            }
+        }
+
+        let mut elseif = false;
+
+        if let Some(elsestat) = elsestat {
+            if elsestat.is_if()
+                && elsestat.get_var_definitions().is_empty()
+                && elsestat
+                    .get_first()
+                    .expect("first")
+                    .get_exprents()
+                    .is_some_and(|e| e.is_empty())
+                && !elsestat.is_labeled()
+                && (elsestat
+                    .get_successor_edges(Statement::STATEDGE_DIRECT_ALL)
+                    .is_empty()
+                    || !elsestat.get_successor_edges(Statement::STATEDGE_DIRECT_ALL)[0].explicit())
+            {
+                buf.append_indent(indent).append("} else ");
+
+                let mut content = ExprProcessor::jmp_wrapper(elsestat, indent, false);
+                content.set_start(TextUtil::get_indent_string(indent).jlen() as i32);
+                buf.append_buffer(&content);
+
+                elseif = true;
+            } else {
+                let content = ExprProcessor::jmp_wrapper(elsestat, indent + 1, false);
+
+                if content.length() > 0 {
+                    buf.append_indent(indent)
+                        .append("} else {")
+                        .append_line_separator();
+                    buf.append_buffer(&content);
+                }
+            }
+        }
+
+        if !elseif {
+            buf.append_indent(indent)
+                .append("}")
+                .append_line_separator();
+        }
+
+        buf
     }
 
     pub fn init_exprents(self) {
@@ -424,12 +522,36 @@ impl IfStatement {
         ])
     }
 
-    pub fn find_object(self, _match_node: &MatchNode, _index: i32) -> Option<Box<dyn IMatchable>> {
-        unported!("IfStatement.findObject")
+    pub fn find_object(self, match_node: &MatchNode, index: i32) -> Option<Box<dyn IMatchable>> {
+        let object = self.0.find_object_base(match_node, index);
+        if object.is_some() {
+            return object;
+        }
+
+        if match_node.get_type() == MatchNode::MATCHNODE_EXPRENT {
+            let position = match_node
+                .get_rule_value(MatchProperties::ExprentPosition)
+                .map(|p| p.as_string());
+            if position.as_deref() == Some("head") {
+                return self
+                    .get_headexprent_list()
+                    .first()
+                    .map(|head| Box::new(head.as_if().0) as Box<dyn IMatchable>);
+            }
+        }
+
+        None
     }
 
-    pub fn match_(self, _match_node: &MatchNode, _engine: &MatchEngine) -> bool {
-        unported!("IfStatement.match")
+    pub fn match_(self, match_node: &MatchNode, engine: &MatchEngine) -> bool {
+        if !self.0.match_base(match_node, engine) {
+            return false;
+        }
+
+        match match_node.get_rule_value(MatchProperties::StatementIftype) {
+            None => true,
+            Some(type_) => self.iftype() == type_.as_integer(),
+        }
     }
 
     pub fn fix_if_invariant_empty_else_branch(self) {

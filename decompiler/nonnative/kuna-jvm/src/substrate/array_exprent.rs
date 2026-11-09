@@ -1,11 +1,12 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/ArrayExprent.java`.
 
 use crate::check_types_result::CheckTypesResult;
+use crate::expr_processor::ExprProcessor;
 use crate::exprent::{Exprent, ExprentKind};
+use crate::java_subclass;
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
-use crate::{java_subclass, unported};
 
 pub struct ArrayExprentData {
     pub array: Exprent,
@@ -80,7 +81,11 @@ impl ArrayExprent {
     }
 
     pub fn check_expr_type_bounds(self) -> Option<CheckTypesResult> {
-        unported!("ArrayExprent.checkExprTypeBounds")
+        let index = self.get_index();
+        let mut result = CheckTypesResult::new();
+        result.add_expr_lower_bound(index, &VarType::VARTYPE_BYTECHAR());
+        result.add_expr_upper_bound(index, &VarType::VARTYPE_INT());
+        Some(result)
     }
 
     pub fn get_all_exprents_list(self, lst: &mut Vec<Exprent>) {
@@ -90,11 +95,32 @@ impl ArrayExprent {
         });
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("ArrayExprent.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let (array, index) = self.d(|d| (d.array, d.index));
+        let mut res = array.to_java(indent);
+
+        if array.get_precedence() > self.0.get_precedence() && !self.can_skip_paren_enclose(array) {
+            res.enclose_with_parens();
+        }
+
+        let arr_type = array.get_expr_type();
+        if arr_type.array_dim == 0 {
+            let obj_arr = VarType::VARTYPE_OBJECT().resize_array_dim(1);
+            res.enclose(
+                &format!("(({})", ExprProcessor::get_cast_type_name(&obj_arr)),
+                ")",
+            );
+            res.add_type_name_token(&obj_arr, 2);
+        }
+
+        res.add_bytecode_mapping(self.get_bytecode().as_ref());
+
+        res.append_char('[')
+            .append_buffer(&index.to_java(indent))
+            .append_char(']');
+        res
     }
 
-    #[allow(dead_code)]
     fn can_skip_paren_enclose(self, instance: Exprent) -> bool {
         let Some(new_expr) = instance.try_as_new() else {
             return false;

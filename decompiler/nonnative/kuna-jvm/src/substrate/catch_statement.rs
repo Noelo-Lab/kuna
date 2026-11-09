@@ -1,17 +1,19 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/stats/CatchStatement.java`.
 
+use crate::code_constants::OPC_ASTORE;
 use crate::code_type::CodeType;
 use crate::counter_container::CounterContainer;
 use crate::dec_helper::DecHelper;
 use crate::decompiler_context::DecompilerContext;
+use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
+use crate::java_subclass;
 use crate::rt::{BitSet, JHashSet, JList};
 use crate::stat_edge::StatEdge;
 use crate::statement::{LastBasicType, Statement, StatementKind, StatementType};
 use crate::text_buffer::TextBuffer;
-use crate::var_exprent::VarExprent;
+use crate::var_exprent::{DefinitionLocker, VarExprent};
 use crate::var_type::VarType;
-use crate::{java_subclass, unported};
 
 pub struct CatchStatementData {
     pub exctstrings: JList<Vec<String>>,
@@ -153,11 +155,95 @@ impl CatchStatement {
         None
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("CatchStatement.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut buf = TextBuffer::new();
+
+        buf.append_buffer(&ExprProcessor::list_to_java(
+            Some(&self.get_var_definitions()),
+            indent,
+        ));
+
+        if self.is_labeled() {
+            buf.append_indent(indent)
+                .append("label")
+                .append_int(self.id())
+                .append(":")
+                .append_line_separator();
+        }
+
+        let resources = self.get_resources();
+        if resources.is_empty() {
+            buf.append_indent(indent)
+                .append("try {")
+                .append_line_separator();
+        } else {
+            buf.append_indent(indent).append("try (");
+
+            if resources.len() > 1 {
+                buf.append_line_separator();
+                buf.append_buffer(&ExprProcessor::list_to_java(Some(&resources), indent + 1));
+                buf.append_indent(indent);
+            } else {
+                buf.append_buffer(&resources.get(0).to_java(indent + 1));
+            }
+            buf.append(") {").append_line_separator();
+        }
+
+        let first = self.get_first().expect("first");
+        buf.append_buffer(&ExprProcessor::jmp_wrapper(first, indent + 1, true));
+        buf.append_indent(indent).append("}");
+
+        let stats = self.get_stats();
+        let mut i = 1;
+        while i < stats.borrow().len() {
+            let stat = stats.borrow().get(i);
+            let block = stat.get_basichead().get_block();
+            if !block.get_seq().is_empty()
+                && block.get_instruction(0).with(|d| d.opcode) == OPC_ASTORE
+            {
+                let offset = block.get_old_offset(0);
+                if offset > -1 {
+                    buf.add_bytecode_mapping_offset(offset);
+                }
+            }
+
+            buf.append(" catch (");
+
+            let exception_types = self.get_exct_strings().get(i - 1);
+            for exc_index in 0..exception_types.len() {
+                let name = ExprProcessor::get_cast_type_name(&VarType::new_value(
+                    CodeType::Object,
+                    0,
+                    exception_types[exc_index].as_str(),
+                ));
+                if exception_types.len() > 1 && exc_index > 0 {
+                    buf.append(" | ");
+                }
+                buf.append(&name);
+            }
+
+            buf.append(" ");
+
+            let var = self.get_vars().get(i - 1);
+
+            self.validate_type(&exception_types, &var.get_var_type());
+
+            {
+                let _v = DefinitionLocker::new(var);
+                buf.append_buffer(&var.0.to_java(indent));
+            }
+
+            buf.append(") {").append_line_separator();
+            buf.append_buffer(&ExprProcessor::jmp_wrapper(stat, indent + 1, false))
+                .append_indent(indent)
+                .append("}");
+            i += 1;
+        }
+        buf.append_line_separator();
+
+        buf
     }
 
-    #[allow(dead_code)]
     fn validate_type(self, _ex_types: &[String], _ex_var_type: &VarType) {}
 
     pub fn get_stat_exprents(self) -> Vec<Exprent> {
