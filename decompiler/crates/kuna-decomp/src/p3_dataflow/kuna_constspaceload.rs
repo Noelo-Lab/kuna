@@ -78,11 +78,8 @@
 //! * A LOAD whose output is the spacebase placeholder a call set up is declined
 //!   for the same reason: only `RuleLoadVarnode` clears that trigger.
 //!
-//! Gated by the arch flag `const_space_load_fold` (option `constspaceload
-//! on|off`, shipped default `on`); with the option off the rule is inert and
-//! the output is byte-identical to upstream.
+//! Always on.
 
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
@@ -91,43 +88,24 @@ use kuna_num::opcodes::OpCode;
 use crate::action::{ActionGroupList, Rule, RuleSpec};
 use crate::context::{OpId, VarnodeId};
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 
-/// Marshalling element id for the option (kuna 4000+ range).
+/// Marshalling element id (kuna 4000+ range).
 pub const ELEM_CONSTSPACELOAD: ElementId = ElementId::new("constspaceload", 4162);
-
-/// The `constspaceload on|off` option (`Architecture::const_space_load_fold`).
-pub struct OptionConstSpaceLoad;
-
-impl OptionConstSpaceLoad {
-    /// The option name.
-    pub const NAME: &'static str = "constspaceload";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::const_space_load_fold`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Constant-space dynamic export folding turned {prop}")))
-    }
-}
 
 /// Rewrite `LOAD(const, p)` to the value of `p` (see the module docs).
 pub struct RuleConstSpaceLoad {
-    enabled: bool,
     group: String,
 }
 
 impl RuleConstSpaceLoad {
     /// Build the rule in the default `analysis` group.
-    pub fn new(enabled: bool) -> RuleConstSpaceLoad {
-        RuleConstSpaceLoad::with_group(enabled, "analysis")
+    pub fn new() -> RuleConstSpaceLoad {
+        RuleConstSpaceLoad::with_group("analysis")
     }
 
-    /// Build the rule for `group`; `enabled` forces it on independently of the
-    /// architecture flag (used by the unit tests).
-    pub fn with_group(enabled: bool, group: &str) -> RuleConstSpaceLoad {
-        RuleConstSpaceLoad { enabled, group: group.to_string() }
+    /// Build the rule for `group`.
+    pub fn with_group(group: &str) -> RuleConstSpaceLoad {
+        RuleConstSpaceLoad { group: group.to_string() }
     }
 }
 
@@ -140,13 +118,10 @@ impl Rule for RuleConstSpaceLoad {
         if !grouplist.contains(&self.group) {
             return None;
         }
-        Some(Box::new(RuleConstSpaceLoad { enabled: self.enabled, group: self.group.clone() }))
+        Some(Box::new(RuleConstSpaceLoad { group: self.group.clone() }))
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        if !self.enabled && !data.get_arch().const_space_load_fold {
-            return 0;
-        }
         let (spacevn, ptr, out) = {
             let o = match data.obank().get(op) {
                 Some(o) => o,
@@ -227,8 +202,7 @@ fn is_constant_space(data: &Funcdata, vn: VarnodeId) -> bool {
 pub fn specs() -> Vec<RuleSpec> {
     vec![RuleSpec {
         group: "analysis",
-        // Shipped default: `option constspaceload on`.
-        ctor: || Box::new(RuleConstSpaceLoad::with_group(true, "analysis")),
+        ctor: || Box::new(RuleConstSpaceLoad::with_group("analysis")),
     }]
 }
 

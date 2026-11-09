@@ -27,7 +27,6 @@
 //! array type came from real type recovery keeps upstream's behaviour. A dynamic
 //! name alone keeps the value guard; it asserts no array datatype.
 //!
-//! Gated by `Architecture::mul_blob` (option `mulblob on|off`).
 
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
@@ -98,9 +97,6 @@ fn read_only_by_subpiece(data: &Funcdata, vn: VarnodeId) -> bool {
 /// that should stay a value.  Called from `RulePieceStructure` before it converts
 /// the extension into a `PIECE`.
 pub fn declines_zext(data: &Funcdata, op: OpId) -> bool {
-    if !data.get_arch().mul_blob {
-        return false;
-    }
     let Some(o) = data.obank().get(op) else {
         return false;
     };
@@ -171,22 +167,6 @@ fn name_only_value(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(symbol) = scope.database().try_symbol(symbol) else { return false };
     !symbol.is_type_locked()
         && symbol.get_flags() & crate::varnode::varnode_flags::namelock != 0
-}
-
-/// `option mulblob on|off` (kuna).
-pub struct OptionMulBlob;
-
-impl OptionMulBlob {
-    /// The option name.
-    pub const NAME: &'static str = "mulblob";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::mul_blob`.
-    pub fn apply(&self, p1: &str) -> kuna_base::error::KunaResult<(bool, String)> {
-        let val = crate::p0_knowledge::options::on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Wide-multiply operand blobs turned {prop}")))
-    }
 }
 
 #[cfg(test)]

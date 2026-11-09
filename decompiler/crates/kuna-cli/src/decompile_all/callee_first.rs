@@ -88,7 +88,7 @@ pub(crate) fn decompile_callee_first(
         ledger.recording = true;
     }
     prog.arch_mut().kuna_gottailcall = kuna_decomp::kuna_gottailcall::Ledger {
-        recording: prog.arch().got_tail_call,
+        recording: true,
         planned: plan.iter().filter_map(|&(i, _)| vote_key(&targets[i])).collect(),
         ..Default::default()
     };

@@ -7,18 +7,7 @@
 //!   NE( SLESS(V+K, 0) , BOOL_AND( signTest , SLESS(-1, V+K) ) )
 //! ```
 //!
-//! to a single `INT_SLESS(V, -K)`.  Gated default-on by the arch flag
-//! `ov_less_simplify` (option `ovlesssimplify on|off`, shipped default `on`);
-//! inert when off, byte-identical to upstream.
-//!
-//! ## Gate wiring — STUB(W4)
-//!
-//! As in `kuna_booleanmask`, the C++ `if (!data.getArch()->ov_less_simplify)
-//! return 0;` gate is resolved at construction (the boundary `Funcdata::glb` does not
-//! carry kuna analysis flags; the fixed [`Rule::apply_op`] signature cannot reach
-//! the full `architecture.rs` [`Architecture`](crate::architecture::Architecture)).
-//! W8 threads the live `Architecture::ov_less_simplify`; [`specs`] uses the
-//! shipped default (`on`).
+//! to a single `INT_SLESS(V, -K)`.  Always on.
 //!
 //! ## STUB(W6) — opcode-flag resolution
 //!
@@ -37,22 +26,20 @@ use crate::context::{OpId, TypeOp, VarnodeId};
 /// (kuna GH-7190) Collapse the OV-flag signed-less-than idiom to `INT_SLESS(V,-K)`
 /// (C++ `RuleOvLessSimplify`).
 pub struct RuleOvLessSimplify {
-    /// Resolved `glb->ov_less_simplify` gate (STUB(W4); see module docs).
-    enabled: bool,
     /// Rule group (C++ `Rule::basegroup`).
     group: String,
 }
 
 impl RuleOvLessSimplify {
-    /// Construct with the resolved gate.  Default group `"analysis"` (the main
-    /// simplification pool, where the boolean cone is stable).
-    pub fn new(enabled: bool) -> RuleOvLessSimplify {
-        RuleOvLessSimplify { enabled, group: String::from("analysis") }
+    /// Default group `"analysis"` (the main simplification pool, where the
+    /// boolean cone is stable).
+    pub fn new() -> RuleOvLessSimplify {
+        RuleOvLessSimplify { group: String::from("analysis") }
     }
 
     /// Construct with an explicit group string.
-    pub fn with_group(enabled: bool, group: impl Into<String>) -> RuleOvLessSimplify {
-        RuleOvLessSimplify { enabled, group: group.into() }
+    pub fn with_group(group: impl Into<String>) -> RuleOvLessSimplify {
+        RuleOvLessSimplify { group: group.into() }
     }
 }
 
@@ -67,17 +54,12 @@ impl Rule for RuleOvLessSimplify {
         if !grouplist.contains(&self.group) {
             return None;
         }
-        Some(Box::new(RuleOvLessSimplify { enabled: self.enabled, group: self.group.clone() }))
+        Some(Box::new(RuleOvLessSimplify { group: self.group.clone() }))
     }
 
     /// C++ `RuleOvLessSimplify::applyOp` (`kuna_ovlesssimplify.cc:48`) —
     /// transcribed.
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // (kuna) gate (ArchContext-carried).
-        if !self.enabled && !data.get_arch().ov_less_simplify {
-            return 0;
-        }
-
         // Match  NE( SLESS(V+K,0) , BOOL_AND( signTest , SLESS(-1, V+K) ) )
         let in0 = match op_in(data, op, 0) {
             Some(v) => v,
@@ -198,9 +180,7 @@ impl Rule for RuleOvLessSimplify {
 pub fn specs() -> Vec<RuleSpec> {
     vec![RuleSpec {
         group: "analysis",
-        // Shipped default: `option ovlesssimplify on` (architecture.cc resets
-        // ov_less_simplify = true; kuna DIV-2 default-on, GH-7190).
-        ctor: || Box::new(RuleOvLessSimplify::with_group(true, "analysis")),
+        ctor: || Box::new(RuleOvLessSimplify::with_group("analysis")),
     }]
 }
 

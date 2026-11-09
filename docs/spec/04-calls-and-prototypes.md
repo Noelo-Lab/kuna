@@ -1,7 +1,7 @@
 # 04 — Calls & prototypes
 
-`armfloatargs on` (off in the catalog, on in the `aggressive` preset with
-`armfloatreturn`) recovers scalar ARM32 VFP inputs only when
+`armfloatargs` (on by default, with `armfloatreturn`) recovers scalar ARM32 VFP
+inputs only when
 the container states the hard-float ABI and `armfloatreturn` is on. Alone it
 changes nothing: the inputs it recovers rely on that option's widened
 d-register model and on its rule that keeps an unused VFP parameter in its
@@ -355,8 +355,8 @@ assertion. Locked models retain priority. Compiler-mechanism templates that
 reference instruction-specific placeholders such as `inst_next` are rejected;
 these boundaries do not supply an instruction-length context.
 
-When a stack register is wider than its logical stack address (`option
-truncptrflow`, default on, chapter 03), prototype setup
+When a stack register is wider than its logical stack address (chapter 03),
+prototype setup
 seeds the narrow input register and the remaining physical upper bytes as
 separate inputs, reconstructing the full register with PIECE at function entry.
 This links lifted full-register arithmetic to the modeled stack base before
@@ -2267,9 +2267,9 @@ speaks for. kuna carried that redirect as a stub, so an op inserted after a guar
 INDIRECT landed between the guards and their CALL, the backward walk stopped
 there, every output trial was marked no-use, and the call lost its return value
 while its INDIRECT creation stayed behind as a local the emitted C reads and never
-assigns. The (kuna) `indirectanchor` gate
+assigns. The (kuna) anchor
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_indirectanchor.rs (anchor_of)`)
-completes the redirect; with it off the op is inserted after the INDIRECT itself.
+completes the redirect.
 The shape that reaches it is `RulePullsubIndirect` pulling a SUBPIECE through the
 guard INDIRECT of a frame slot whose upper half is read after the call. A `prev`
 that is not an INDIRECT marker, an INDIRECT whose second input is not an iop
@@ -5190,9 +5190,9 @@ detection reported as rustc-produced (`Compiler::Rustc`, recorded on the
 is inert on the datatest corpus **by construction**, not by luck. `always` drops
 the language test, which is what `tests/stages/kuna-rustabi.xml` needs — a
 `<bytechunk>` carries no `.comment` record to detect. The shipped default is
-`off`: the pair this keeps alive is rendered as a raw fixed-size container until
-a later pass gives it an enum type, so the option buys information at the cost of
-polish, and that trade is the operator's to make.
+`auto`: the pair this keeps alive is rendered as a raw fixed-size container until
+a later pass gives it an enum type, so on a Rust image the option buys
+information at the cost of polish; `off` restores the one-register rendering.
 
 What this deliberately does **not** do: it does not name anything `Result` or
 `Option`, does not synthesize a union, struct or enum type, and does not touch
@@ -5283,7 +5283,7 @@ function is. The callee-body decode does not prove that absence for ARM's `r1`:
 a walk on ARM or MIPS completes only by reading through the `setISAMode` every
 return runs, and such a walk answers for no argument register. MIPS `$v1` is no
 argument register, so there the call guard keeps the caller's value
-(`calleeretpreserves`, chapter 03) and no `$v1` trial reaches this arm. The pair
+(the return-storage proof, chapter 03) and no `$v1` trial reaches this arm. The pair
 is therefore formed only when that decode *recorded* a write to the
 register the caller reads (the piece holding the read, whichever piece of the
 join entry it is). An indirect call has no decoded callee and keeps the old
@@ -6557,7 +6557,7 @@ type the call. One kind of fact is not carried across a stub. The definition's
 body answers what it reads and returns, never what it leaves alone: a compiler that
 emits `bl name@plt` cannot keep a value in a call-clobbered register across it
 (the lazy resolver runs first, and another definition may win), so the
-`calleepreserves` and `calleeretpreserves` proofs (chapter 03) are not taken for
+callee-body preservation proofs (chapter 03) are not taken for
 such a call. `voidret` files a caller's read of the call result against the
 stub as well as the definition, so the stub's own decompile keeps the return
 its callers read.
@@ -8108,11 +8108,11 @@ The ARM default model (`ARM.cspec`) lists the VFP registers only as the 4-byte
 `vmov.f64 d0,#1.5; bx lr` prints `unsigned int fixed(void) { return 0; }`, and a
 `double` parameter read from `d0` is never a parameter at all.
 
-`armfloatreturn` (off in the catalog; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_armfloatreturn.rs`)
+`armfloatreturn` (on by default; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_armfloatreturn.rs`)
 changes this only for an ARM ELF whose container states the VFP procedure-call
-standard. Both options are members of the `aggressive` preset, which `auto`
-selects below 500 KiB, so they are the default output for such a binary; the
-`reliable` and `fast` presets and the datatest corpus keep them off. Over 177
+standard. Both options are also members of the `aggressive` preset, so the preset
+owns them; every image without that ABI evidence, the datatest corpus included,
+prints byte-identically. Over 177
 probe binaries (six C sources built by gcc and clang for ARM and Thumb Linux
 and Cortex-M4F/M7, hard-float, softfp and soft-float, at -O0, -O2 and -Os), the
 soft-float and softfp images print byte-identically with the options on, and

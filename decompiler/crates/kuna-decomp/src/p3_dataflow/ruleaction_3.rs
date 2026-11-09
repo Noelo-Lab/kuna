@@ -2022,7 +2022,7 @@ impl Rule for RulePropagateCopy {
                         continue; // We must not allow merging of different addrtieds
                     }
                 }
-                // (kuna) `option tiedstorekeep on` widens the addrforce refusal
+                // (kuna) The address-tied store brake widens the addrforce refusal
                 // just above: decline when this marker is the LAST reader of an
                 // address-tied COPY output, which would otherwise strand the frame
                 // store for dead-code elimination.  See
@@ -2030,7 +2030,7 @@ impl Rule for RulePropagateCopy {
                 if crate::p3_dataflow::kuna_tiedstorekeep::declines(data, op, vn, invn) {
                     continue;
                 }
-                // (kuna) `option loopcounterstore on` refuses the same
+                // (kuna) The loop-counter store brake refuses the same
                 // propagation for a self-updating address-tied phi, which is how
                 // a frame-slot loop counter's write-back is deleted.  See
                 // [`crate::p3_dataflow::kuna_loopcounterstore`].
@@ -2510,14 +2510,8 @@ mod tests {
     }
 
     fn build_fd() -> Fd {
-        build_fd_with_global_fields(false)
-    }
-
-    fn build_fd_with_global_fields(enabled: bool) -> Fd {
         let manage = build_manager();
-        let mut glb = ArchContext::new(manage);
-        glb.global_field_store = enabled;
-        let glb = Rc::new(glb);
+        let glb = Rc::new(ArchContext::new(manage));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         let mut fd = Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap();
@@ -3329,7 +3323,7 @@ mod tests {
             (true, type_metatype::TYPE_STRUCT, true, 1),
             (true, type_metatype::TYPE_PARTIALSTRUCT, false, 1),
         ] {
-            let mut fd = build_fd_with_global_fields(true);
+            let mut fd = build_fd();
             let input = make_input(&mut fd, 0x100, 8);
             let (_, stored) = def_op(&mut fd, OpCode::CPUI_COPY, &[input], 8);
             let v = fd.vbank_mut().get_mut(stored).unwrap();
@@ -3350,22 +3344,6 @@ mod tests {
     }
 
     #[test]
-    fn propagate_copy_releases_aggregate_store_when_option_is_off() {
-        use crate::dtype::{type_metatype, Datatype};
-        use crate::varnode::varnode_flags;
-        let mut fd = build_fd_with_global_fields(false);
-        let input = make_input(&mut fd, 0x100, 8);
-        let (_, stored) = def_op(&mut fd, OpCode::CPUI_COPY, &[input], 8);
-        let v = fd.vbank_mut().get_mut(stored).unwrap();
-        v.set_flags_pub(varnode_flags::persist);
-        v.update_type_locked(Rc::new(Datatype::new(8, type_metatype::TYPE_ARRAY)), true, true);
-        let iop = fd.new_constant(8, 0);
-        let (marker, _) = def_op(&mut fd, OpCode::CPUI_INDIRECT, &[stored, iop], 8);
-        assert_eq!(RulePropagateCopy.apply_op(marker, &mut fd), 1);
-        assert_eq!(op_in(&fd, marker, 0), Some(input));
-    }
-
-    #[test]
     fn aggregate_load_store_needs_global_alias_ordering() {
         use crate::dtype::{type_metatype, Datatype};
         use crate::varnode::varnode_flags;
@@ -3375,7 +3353,6 @@ mod tests {
             (crate::kuna_indexaliasguard::LEVEL_GLOBAL, true)] {
             let manage = build_manager();
             let mut glb = ArchContext::new(manage);
-            glb.global_field_store = true;
             glb.index_alias_guard = level;
             let glb = Rc::new(glb);
             let memory = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());

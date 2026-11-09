@@ -3053,7 +3053,7 @@ impl ConsoleProgram {
 /// pass emits, or a function already in the symbol table. The walk from that start
 /// decodes through `arch`'s translator and does not fall through a call the
 /// decompiler will treat as no-return: a no-return fact this commit applies, a
-/// function already flagged no-return, or (under `noreturn_extern_match`) a callee
+/// function already flagged no-return, or (under `noreturn_known`) a callee
 /// whose name is on the known no-return list.
 fn suppress_pdb_interior_entries(
     arch: &Architecture,
@@ -3091,7 +3091,7 @@ fn suppress_pdb_interior_entries(
     let no_return = |target: u64| {
         noreturn.binary_search(&target).is_ok()
             || arch.symboltab.function_is_no_return_across_scopes(&at(target))
-            || (arch.noreturn_extern_match
+            || (arch.analysis_noreturn_known
                 && (names_at(target).any(is_known_noreturn_name)
                     || arch
                         .symboltab
@@ -4725,6 +4725,10 @@ pub fn bootstrap_from_object_with_isa(
     // syscallregs auto` acts only when it is.
     sleigh.base_mut().unwrap().image_os_userland =
         kuna_analysis::loader::format::elf_userland::is_os_userland_image(&bytes);
+    // (kuna `linuxsyscall`) And whether it is an ELF built for Linux: `option
+    // linuxsyscall auto` names an x86 `int 0x80` only when it is.
+    sleigh.base_mut().unwrap().image_linux_elf =
+        kuna_analysis::loader::format::elf_userland::is_linux_image(&bytes);
     // (kuna `callmechanisms`) And whether the loader validated PPC64 ELFv1
     // function descriptors (a linked image's or an object's `.opd`), whose ABI
     // reserves `0x28(r1)` for the TOC save: `option callmechanisms auto`

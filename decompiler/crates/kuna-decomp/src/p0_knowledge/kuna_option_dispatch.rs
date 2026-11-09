@@ -94,33 +94,7 @@ kuna_options! { self, p1;
         self.return_single = form.return_single();
         Ok(msg)
     },
-    "stubtailcall" => on_off!(stub_tail_call, "Loader-proven stub tail calls"),
-    "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
-    "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
-    "cancelbytearithmetic" => {
-        let (val, msg) =
-            crate::p3_dataflow::kuna_cancelbytearithmetic::OptionCancelByteArithmetic
-                .apply(p1)?;
-        self.cancel_byte_arithmetic = val;
-        Ok(msg)
-    },
-    "mulblob" => {
-        let (val, msg) = crate::p3_dataflow::kuna_mulblob::OptionMulBlob.apply(p1)?;
-        self.mul_blob = val;
-        Ok(msg)
-    },
-    "simdlane" => {
-        let (val, msg) = crate::p3_dataflow::kuna_simdlane::OptionSimdLane.apply(p1)?;
-        self.simd_lane_fold = val;
-        Ok(msg)
-    },
-    "constspaceload" => {
-        let (val, msg) =
-            crate::p3_dataflow::kuna_constspaceload::OptionConstSpaceLoad.apply(p1)?;
-        self.const_space_load_fold = val;
-        Ok(msg)
-    },
     "signedness" => {
         let (val, msg) = crate::kuna_typeround::OptionSignedness.apply(p1)?;
         self.signedness = val;
@@ -138,9 +112,7 @@ kuna_options! { self, p1;
         self.ret_split_limit = val;
         Ok(msg)
     },
-    "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
     "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
-    "fastfailnoreturn" => on_off!(fastfail_noreturn, "Windows int 0x29 (__fastfail) no-return"),
     "ptrauthtrap" => on_off!(ptrauth_trap, "arm64e pointer-auth failure-check removal"),
     "int3pad" => {
         let (mode, msg) = crate::kuna_int3pad::OptionInt3Pad.apply(p1)?;
@@ -150,12 +122,6 @@ kuna_options! { self, p1;
     "x64syscall" => {
         let (mode, msg) = crate::kuna_x64syscall::OptionX64Syscall.apply(p1)?;
         self.x64_syscall = mode;
-        Ok(msg)
-    },
-    "segmentize" => {
-        let (val, msg) = crate::kuna_segmentize::OptionSegmentize.apply(p1)?;
-        self.segmentize = val;
-        self.apply_segmentize();
         Ok(msg)
     },
     "fpuemu" => {
@@ -194,38 +160,24 @@ kuna_options! { self, p1;
         self.field_type = val;
         Ok(msg)
     },
-    "decodehalt" => on_off!(decode_halt, "Decode-failure halt reporting"),
-    "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
     "tailcalljump" => {
         let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
         self.tail_call_jumps = jumps;
         self.tail_call_tables = tables;
         Ok(msg.to_string())
     },
-    "gottailcall" => {
-        let (val, msg) = crate::kuna_gottailcall::OptionGotTailCall.apply(p1)?;
-        self.got_tail_call = val;
-        Ok(msg)
-    },
     "tailcallframe" => on_off!(tail_call_frame, "Frame-teardown tail-call recovery"),
-    "tailcallsaved" => {
-        on_off!(tail_call_saved, "Saved-register restore test for a frame teardown")
-    },
-    "calltrampoline" => on_off!(call_trampoline, "Return-address-discarding call trampoline flow-through"),
-    "callpopret" => on_off!(call_pop_ret, "Return-address-popping call transfer flow-through"),
-    "entryretdispatch" => on_off!(entry_ret_dispatch, "Entry-point RET-dispatch call-chain recovery"),
-    "pushimmediateret" => on_off!(push_immediate_ret, "Push-immediate RET tail-transfer recovery"),
     "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
-    "mappedflowboundary" => on_off!(mapped_flow_boundary, "Mapped ELF x86 flow boundaries"),
     "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
     "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
-    "linuxsyscall" => on_off!(linux_syscall, "Linux int 0x80 syscall naming"),
+    "linuxsyscall" => {
+        let (mode, msg) = crate::kuna_linuxsyscall::OptionLinuxSyscall.apply(p1)?;
+        self.linux_syscall = mode;
+        Ok(msg)
+    },
     "msvcstrappend" => on_off!(msvc_str_append, "MSVC std::string inlined append collapsing"),
     "switchselector" => on_off!(switch_selector_guard, "Lowered-switch in-function-selector restriction"),
-    "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
-    "multiregargs" => on_off!(multi_reg_args, "Complete ABI register argument partitions"),
-    "mipsunaligned" => on_off!(mips_unaligned, "MIPS unaligned load/store pairs as one access"),
     "callwide" => {
         let enabled = on_or_off(p1)?;
         self.kuna_callwide.clear();
@@ -294,11 +246,9 @@ kuna_options! { self, p1;
             None => "Source language follows detection (auto)".to_string(),
         })
     },
-    "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
     "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
     "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
     "stackalias" => on_off!(stack_alias_deadstore, "Stack-pointer-alias dead-store hold"),
-    "globalcallranges" => on_off!(global_call_ranges, "Global call access ranges"),
     "readonlycalls" => {
         let field = p1.trim();
         let (val, msg) = match field {
@@ -333,17 +283,10 @@ kuna_options! { self, p1;
         self.persist_calls = val;
         Ok(msg)
     },
-    "prunedssa" => on_off!(pruned_ssa, "Pruned SSA heritage markers"),
-    "loadguardreads" => on_off!(load_guard_reads, "LOAD guards read at renaming"),
     "stackviews" => {
         let (value, message) = crate::kuna_stackviews::OptionStackViews.apply(p1)?;
         self.stack_views = value;
         Ok(message)
-    },
-    "stackprobeloop" => {
-        let (form, msg) = crate::kuna_stackprobeloop::parse_stack_probe_loop_form(p1)?;
-        self.model_stack_probe_loop = form.model_stack_probe_loop();
-        Ok(msg)
     },
     "memsetrecover" => {
         let (form, msg) = crate::kuna_memsetsequence::parse_memset_recover_form(p1)?;
@@ -356,8 +299,6 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
-    "switchrunon" => on_off!(switch_run_on, "Jump-table run-on cut"),
-    "switchrunonguard" => on_off!(switch_run_on_guard, "Jump-table run-on cut past a non-bounding guard"),
     "constselectjump" => on_off!(const_select_jump, "Constant-select indirect branch recovery"),
     "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
     "highsliceguard" => on_off!(highslice_guard, "High-byte slice jump-table guard"),
@@ -365,10 +306,6 @@ kuna_options! { self, p1;
     "switchmultipred" => on_off!(switch_multi_pred, "Switch multi-predecessor unrolled-guard table"),
     "unrolledguard" => on_off!(unrolled_guard, "Interleaved unrolled-guard jump-table partial-flow recovery"),
     "jtsharepartial" => on_off!(jumptable_share_partial, "Shared jump-table partial sub-decompilation"),
-    "earlyrestart" => on_off!(early_restart, "Early restart after a dead-code delay bump"),
-    "haltloopguard" => on_off!(halt_loop_guard, "Global stores live in an exitless loop"),
-    "truncptrflow" => on_off!(trunc_ptr_flow, "Truncated-space pointer flow"),
-    "deadwaves" => on_off!(pool_dead_waves, "Rule-pool dead-removal waves"),
     "deadcascade" => {
         let field = p1.trim();
         let (val, msg) = match field {
@@ -386,21 +323,11 @@ kuna_options! { self, p1;
         self.dead_cascade = val;
         Ok(msg)
     },
-    "copywaves" => on_off!(pool_copy_waves, "Rule-pool copy-propagation waves"),
-    "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
     "loweredswitch" => {
         let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
         self.recover_lowered_switch = val;
         Ok(msg)
     },
-    "loweredswitchlabels" => {
-        let (val, msg) = crate::kuna_loweredswitchlabels::OptionLowerSwitchLabels.apply(p1)?;
-        self.lowered_switch_labels = val;
-        Ok(msg)
-    },
-    "loweredswitchvalue" => on_off!(lowered_switch_value_check, "Lowered-switch dispatch value check"),
-    "loweredswitchexact" => on_off!(lowered_switch_exact, "Exact lowered-switch recovery"),
-    "loweredswitchheads" => on_off!(lowered_switch_every_head, "Lowered-switch detection from every cascade head"),
     "nulterminator" => {
         let (val, msg) =
             crate::p6_variables::kuna_nulterminator::OptionNulTerminator.apply(p1)?;
@@ -471,30 +398,6 @@ kuna_options! { self, p1;
         self.mixed_tail_ret = val;
         Ok(msg)
     },
-    "calleepreserves" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleepreserves::OptionCalleePreserves.apply(p1)?;
-        self.callee_preserves = val;
-        Ok(msg)
-    },
-    "calleeretpreserves" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleeretpreserves::OptionCalleeRetPreserves.apply(p1)?;
-        self.callee_ret_preserves = val;
-        Ok(msg)
-    },
-    "calleescratchbody" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleescratchbody::OptionCalleeScratchBody.apply(p1)?;
-        self.callee_scratch_body = val;
-        Ok(msg)
-    },
-    "indirectanchor" => {
-        let (val, msg) =
-            crate::p3_dataflow::kuna_indirectanchor::OptionIndirectAnchor.apply(p1)?;
-        self.indirect_anchor = val;
-        Ok(msg)
-    },
     "varargsharedfloat" => on_off!(vararg_shared_float, "variadic doubles that also feed an earlier argument"),
     "calloverlap" => {
         let (val, msg) =
@@ -508,8 +411,6 @@ kuna_options! { self, p1;
         self.spill_arg_trial = val;
         Ok(msg)
     },
-    "loadguardrange" => on_off!(load_guard_range, "Indexed-stack guard ValueSet range refinement"),
-    "stackstoreguard" => on_off!(stack_store_guard, "Stack-derived store heritage guards"),
     "indexaliasguard" => {
         let (val, msg) =
             crate::p3_dataflow::kuna_indexaliasguard::OptionIndexAliasGuard.apply(p1)?;
@@ -529,20 +430,6 @@ kuna_options! { self, p1;
         self.array_size = val;
         Ok(msg)
     },
-    "tiedstorekeep" => {
-        on_off!(tied_store_keep, "Address-tied store copy-propagation brake")
-    },
-    "loopcounterstore" => {
-        on_off!(loop_counter_store, "Frame-slot loop-counter store brake")
-    },
-    "globalfieldstore" => on_off!(global_field_store, "Typed global field stores"),
-    "globalcallstore" => on_off!(global_call_store, "Loaded global store brake"),
-    "intfloatround" => on_off!(int_float_round, "Integer-to-float rounding preservation"),
-    "splitstorekeep" => {
-        on_off!(split_store_keep, "Refinement-split stack store mark")
-    },
-    "pairrefine" => on_off!(pair_refine, "Register-pair midpoint refinement"),
-    "wideslice" => on_off!(wide_slice_reduce, "Wide SSA slice reduction"),
     "devectorize" => on_off!(devectorize_reduction, "Vectorized reduction re-roll"),
     "strlenscan" => on_off!(strlen_scan, "inline repnz scasb string length as strlen"),
     "regionstructure" => {
@@ -695,7 +582,6 @@ kuna_options! { self, p1;
         on_off!(strip_msvc_stack_guard, "MSVC /GS frame-cookie stripping")
     },
     "gobounds" => on_off!(go_bounds, "Go compiler-check folding"),
-    "gojumpchain" => on_off!(go_jump_chain, "Early Go jump-chain normalization"),
     "rustfmtliteral" => on_off!(rust_fmt_literal, "Rust literal print macros"),
     "rustfmtargs" => on_off!(rust_fmt_args, "Rust primitive print arguments"),
     "rustfmtflags" => on_off!(rust_fmt_flags, "Rust static integer format specifications"),
@@ -1162,9 +1048,6 @@ kuna_options! { self, p1;
     "noreturn_propagate" => {
         on_off!(analysis_noreturn_propagate, "No-return propagation Listing consumer")
     },
-    "noreturn_error" => {
-        on_off!(analysis_noreturn_error, "error(nonzero,...) conditional no-return recognizer")
-    },
     "noreturn_reach" => {
         on_off!(analysis_noreturn_reach, "CFG-reachability no-return rule (Ghidra targetOnlyCallsNoReturn)")
     },
@@ -1247,5 +1130,13 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
-    "macho-arm64e" => on_off!(macho_arm64e, "Mach-O arm64e Apple-Silicon spec selection"),
+    "macho-arm64e" => {
+        let val = on_or_off(p1)?;
+        self.macho_arm64e = val;
+        crate::kuna_macho_arm64e::set_macho_arm64e_env(val);
+        Ok(format!(
+            "Mach-O arm64e Apple-Silicon spec selection turned {}",
+            if val { "on" } else { "off" }
+        ))
+    },
 }

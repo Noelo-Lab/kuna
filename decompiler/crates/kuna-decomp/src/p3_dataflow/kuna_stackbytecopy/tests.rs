@@ -40,7 +40,6 @@ fn loop_rewrite_reports_a_change_and_preserves_per_iteration_dataflow() {
     let entry_address = original.get_address().clone();
     drop(original);
     let mut arch = ArchContext::new_shared(manager);
-    arch.stack_store_guard = true;
     arch.opbehaviors = vec![None; OpCode::CPUI_MAX as usize];
     let behaviors: Vec<Rc<dyn OpBehavior>> = vec![
         Rc::new(OpBehaviorCopy),

@@ -24,11 +24,6 @@
 <com>parse line extern void no_finish(void);</com>
 <com>parse line extern float4 get(void);</com>
 <com>parse line extern void finish(void);</com>
-<com>option globalcallstore off</com>
-<com>load function caller</com>
-<com>decompile</com>
-<com>print C</com>
-<com>option globalcallstore on</com>
 <com>load function caller</com>
 <com>decompile</com>
 <com>print C</com>
@@ -42,8 +37,8 @@
 </script>
 <stringmatch name="store order: division call precedes the later global write" min="3" max="3">result = [^;]*get\(\);
   after = </stringmatch>
-<stringmatch name="store order: exactly one global write per function" min="4" max="4">^  after = </stringmatch>
-<stringmatch name="store order: globalcallstore off writes the global before the call" min="1" max="1">after = [^;]*;
+<stringmatch name="store order: exactly one global write per function" min="3" max="3">^  after = </stringmatch>
+<stringmatch name="store order: the global is never written before the call" min="0" max="0">after = [^;]*;
   result = [^;]*get\(\);</stringmatch>
 <stringmatch name="store order: final call remains after both writes" min="1" max="1">after = [^;]*;
   finish\(\);</stringmatch>

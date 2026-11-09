@@ -439,7 +439,7 @@ impl Action for ActionSegmentize {
     }
     /// C++ `ActionSegmentize::apply` (coreaction.cc:625): rewrite each live
     /// CALLOTHER of a segment op into `SEGMENTOP(spc, base, inner)`.  The table is
-    /// the per-function snapshot, empty under `option segmentize off`.
+    /// the per-function snapshot, empty when the spec declares no segment op.
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         let glb = Rc::clone(data.get_arch());
         let numops = glb.num_segment_ops();

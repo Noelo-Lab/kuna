@@ -37,16 +37,11 @@
     and each variable is solved and pushed at most once.
 
     Assert 1 is the fix: the decompile finishes and prints the loop around
-    the call. Before it, this test never finished. Asserts 2 and 3 are `h`:
-    its RET reads the slot at entry + 2, and no raw stack-pointer local is
-    left (both failed before the fix, with `h` decompiled on its own).
-
-    Pass one pins option segmentize off, so the stack accesses read as
-    segment() calls. The solver's guess for the call to g2 is the two bytes a
-    near call stores (see kuna-calleepop-x86-16.xml), so assert 2 reads the
-    return address at the entry slot that guess models. Pass two is the
-    default, where no stack access is left in the C: asserts 1 and 3 count
-    both passes.
+    the call. Before it, this test never finished. Assert 2 is `h`: no raw
+    stack-pointer local is left (it failed before the fix, with `h`
+    decompiled on its own). Both run at the shipped defaults, where the
+    callee's pop is read off the caller's push run and the real-mode
+    segment accesses are folded, so `h` is just the call and its return.
 -->
 <bytechunk space="ram" offset="0x0">
 4ce80c0085c075f9c390909090909090c3c20200909090909090909090909090
@@ -58,14 +53,6 @@
 <symbol space="ram" offset="0x20" name="h"/>
 </binaryimage>
 <script>
-  <com>option segmentize off</com>
-  <com>lo fu f</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu h</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option segmentize on</com>
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>
@@ -74,7 +61,7 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="stacksolver-unsolved #1: the solve terminates and the loop around the call is emitted in both passes" min="2" max="2">^  \} while \(g\(\)\);$</stringmatch>
-<stringmatch name="stacksolver-unsolved #2: h, which terminated before, reads its return address at the slot the near-call guess models" min="1" max="1">segment\(v\d+,\*\(unsigned short \*\)segment\(v\d+,&amp;Stack0000\)\);$</stringmatch>
-<stringmatch name="stacksolver-unsolved #3: no raw stack-pointer local is left" min="0" max="0">// sp$</stringmatch>
+<stringmatch name="stacksolver-unsolved #1: the solve terminates and the loop around the call is emitted" min="1" max="1">^  \} while \(g\(\)\);$</stringmatch>
+<stringmatch name="stacksolver-unsolved #2: no raw stack-pointer local is left" min="0" max="0">// sp$</stringmatch>
+<stringmatch name="stacksolver-unsolved #3: h is the call and its return, with no stack access left" min="1" max="1">^  g2\(\);$</stringmatch>
 </decompilertest>

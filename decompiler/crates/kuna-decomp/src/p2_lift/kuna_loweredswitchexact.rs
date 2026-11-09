@@ -11,7 +11,7 @@
 //! address. And the install deletes every compare block behind the head, with
 //! whatever a block computes for code outside the cascade.
 //!
-//! With this on every case value keeps its label, and a record is kept only when
+//! Every case value keeps its label, and a record is kept only when
 //! [`switch_routes_like_cascade`] shows the switch the install builds sends every
 //! value of the switch variable to the block the tree sends it to, and
 //! [`install_keeps_statements`] shows no block the install deletes has an effect
@@ -41,7 +41,6 @@ pub(crate) fn record_is_exact(
     spine: &BTreeSet<BlockId>,
     swvar: VarnodeId,
     rec: &KunaLoweredSwitchRecord,
-    all_labels: bool,
 ) -> bool {
     let mut targets: Vec<BlockId> = Vec::with_capacity(rec.case_targets.len() + 1);
     for addr in rec.case_targets.iter().chain(std::iter::once(&rec.default_target)) {
@@ -50,7 +49,7 @@ pub(crate) fn record_is_exact(
             None => return false,
         }
     }
-    switch_routes_like_cascade(data, head, spine, swvar, rec, all_labels) && install_keeps_statements(data, head, &targets)
+    switch_routes_like_cascade(data, head, spine, swvar, rec) && install_keeps_statements(data, head, &targets)
 }
 
 /// One compare block, decoded for evaluation.
@@ -67,9 +66,8 @@ struct Node {
 /// True when the switch `rec` describes routes every value of `swvar` as the
 /// compare tree rooted at `head` does.
 ///
-/// The switch is the one the install builds: every case value labels its body
-/// when `all_labels`, otherwise only the first value of each body does, and a
-/// case whose body is the default folds into it. The tree is evaluated through
+/// The switch is the one the install builds: every case value labels its body,
+/// and a case whose body is the default folds into it. The tree is evaluated through
 /// the blocks of `spine` reachable from `head` until it leaves them. Each compare
 /// is an equality or a threshold against a constant over the switch variable
 /// widened by zero or sign extension, so its outcome is constant between the
@@ -81,7 +79,6 @@ pub(crate) fn switch_routes_like_cascade(
     spine: &BTreeSet<BlockId>,
     swvar: VarnodeId,
     rec: &KunaLoweredSwitchRecord,
-    all_labels: bool,
 ) -> bool {
     let size = match data.vbank().get(swvar) {
         Some(v) => v.get_size(),
@@ -96,9 +93,6 @@ pub(crate) fn switch_routes_like_cascade(
     let mut bodies: Vec<&Address> = Vec::new();
     for (val, tgt) in rec.case_vals.iter().zip(rec.case_targets.iter()) {
         if *tgt == rec.default_target {
-            continue;
-        }
-        if bodies.contains(&tgt) && !all_labels {
             continue;
         }
         bodies.push(tgt);

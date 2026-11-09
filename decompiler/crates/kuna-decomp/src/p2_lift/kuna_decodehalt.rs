@@ -32,7 +32,6 @@
 //! reports it (`// no-return` on the call), and its rendering is pinned by the
 //! whole-corpus measurements behind `noreturn_propagate` and friends.
 
-use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::ElementId;
 use kuna_base::types::uint4;
 
@@ -77,35 +76,6 @@ pub fn halt_call_name(halt_type: uint4) -> Option<&'static str> {
         Some("halt_missing")
     } else {
         None
-    }
-}
-
-/// (kuna) Choose whether a decode-failure halt reports itself: `decodehalt on|off`.
-///
-/// Following the kuna-option idiom
-/// ([`OptionArrayNotation`](crate::kuna_arraynotation::OptionArrayNotation)),
-/// this struct owns only the parse; the caller
-/// (`Architecture::set_kuna_option`) writes the live field.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct OptionDecodeHalt;
-
-impl OptionDecodeHalt {
-    /// The option name.
-    pub const NAME: &'static str = "decodehalt";
-
-    /// Parse `on`/`off`, returning the bool value + a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = match p1 {
-            "on" => true,
-            "off" => false,
-            other => {
-                return Err(KunaError::parse(format!(
-                    "Unknown decodehalt value: {other} (expected on|off)"
-                )))
-            }
-        };
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Decode-failure halt reporting turned {prop}")))
     }
 }
 

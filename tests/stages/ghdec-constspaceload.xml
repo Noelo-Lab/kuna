@@ -43,11 +43,7 @@
     to widen `RuleLoadVarnode` so it folds a 16-byte const-space load; that
     works only because this need's value is zero, and would silently TRUNCATE
     every other `simdExpImm_16` arm (ARMneon.sinc:556, 574, 596, ...), none of
-    which appears in the witness.  Pass 1 pins all four lanes of `#1` at 1.
-
-    Pass 1 (default) asserts the fix; pass 2 (`option constspaceload off`) pins
-    the upstream rendering, which is the bug.  Assertion counts span both
-    passes.
+    which appears in the witness.  The test pins all four lanes of `#1` at 1.
 -->
 <bytechunk space="ram" offset="0x10004">
 00482de90db0a0e120d04de25100c0f20d10a0e1cd0a41f45020c0f2cd2a41f4
@@ -62,15 +58,11 @@
   <com>lo fu neon_init</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option constspaceload off</com>
-  <com>lo fu neon_init</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="constspaceload #1: the non-zero immediate vmov.i32 q8,#1 folds to all four of its 32-bit lanes, default pass only" min="4" max="4">v[0-9]+ = 1;</stringmatch>
-<stringmatch name="constspaceload #2: the zero immediate vmov.i32 q9,#0 becomes two whole 8-byte zero slots, default pass only" min="2" max="2">unsigned long long v[0-9]+; // stack - 0x1</stringmatch>
-<stringmatch name="constspaceload #3: only the option-off pass reads near-null memory for the lanes that need an offset" min="3" max="3">\*\)\(0 \+ (?:4|8|0xc)\)</stringmatch>
-<stringmatch name="constspaceload #4: only the option-off pass leaves the immediate as a 16-byte pointer-shaped value" min="1" max="1">_0_16_ \+ 0xc</stringmatch>
-<stringmatch name="constspaceload #5: the buffer still escapes to the callee in both passes" min="2" max="2">sink\(&amp;v[0-9]+,&amp;Stackfffffff8\);</stringmatch>
+<stringmatch name="constspaceload #1: the non-zero immediate vmov.i32 q8,#1 folds to all four of its 32-bit lanes" min="4" max="4">v[0-9]+ = 1;</stringmatch>
+<stringmatch name="constspaceload #2: the zero immediate vmov.i32 q9,#0 becomes two whole 8-byte zero slots" min="2" max="2">unsigned long long v[0-9]+; // stack - 0x1</stringmatch>
+<stringmatch name="constspaceload #3: no lane reads near-null memory" min="0" max="0">\*\)\(0 \+ (?:4|8|0xc)\)</stringmatch>
+<stringmatch name="constspaceload #4: the immediate is never left as a 16-byte pointer-shaped value" min="0" max="0">_0_16_ \+ 0xc</stringmatch>
+<stringmatch name="constspaceload #5: the buffer still escapes to the callee" min="1" max="1">sink\(&amp;v[0-9]+,&amp;Stackfffffff8\);</stringmatch>
 </decompilertest>

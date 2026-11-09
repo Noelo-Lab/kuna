@@ -85,9 +85,9 @@ fn bootstrap(on: bool) -> kuna_console::engine::ConsoleProgram {
     prog.arch_mut()
         .set_kuna_option("funcstart_patterns", "on")
         .expect("funcstart_patterns flips on");
-    if on {
-        prog.arch_mut().set_kuna_option("ptrentry", "on").expect("ptrentry flips on");
-    }
+    prog.arch_mut()
+        .set_kuna_option("ptrentry", if on { "on" } else { "off" })
+        .expect("ptrentry flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
 }
@@ -114,7 +114,7 @@ fn decompile(prog: kuna_console::engine::ConsoleProgram, func: &str) -> String {
 /// two-instruction leaf that only a data pointer reaches, so its bytes are never
 /// decompiled at all.
 #[test]
-fn default_drops_the_pointer_only_leaf() {
+fn off_drops_the_pointer_only_leaf() {
     let off = bootstrap(false);
     assert!(off.lookup_symbol(RESET).is_some(), "the reset vector is always found");
     assert!(off.lookup_symbol(CALLEE).is_some(), "the walk always follows the BL");

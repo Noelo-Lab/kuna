@@ -32,19 +32,19 @@ fn subphase_count_is_48() {
 }
 
 #[test]
-fn surface_count_is_113() {
-    assert_eq!(kuna_num_surfaces(), 113);
-    assert_eq!(SURFACE_TABLE.len(), 113);
+fn surface_count_is_101() {
+    assert_eq!(kuna_num_surfaces(), 101);
+    assert_eq!(SURFACE_TABLE.len(), 101);
 }
 
 #[test]
-fn settable_count_is_333() {
-    assert_eq!(kuna_num_settables(), 333);
-    assert_eq!(SETTABLE_TABLE.len(), 333);
+fn settable_count_is_278() {
+    assert_eq!(kuna_num_settables(), 278);
+    assert_eq!(SETTABLE_TABLE.len(), 278);
 }
 
 #[test]
-fn tier_counts_are_76_core_150_transform_107_analysis() {
+fn tier_counts_are_42_core_129_transform_107_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_76_core_150_transform_107_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (76, 150, 107));
+    assert_eq!((core, transform, analysis), (42, 129, 107));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_141() {
+fn option_values_live_value_present_for_90() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -589,7 +589,7 @@ fn option_values_live_value_present_for_141() {
         "typedepth",
         // (kuna) Itanium (GCC/Clang) RTTI + vtable recovery — an analysis-tier gate
         // read at the analysis COMMIT boundary (console-side via kuna_live_value),
-        // like the analysis-pass gates above. Default-off, ELF-only.
+        // like the analysis-pass gates above. Default-on, ELF-only.
         "itaniumrtti",
         // (kuna) DWARF aggregate-layout import — a LOAD-time gate read from the
         // `KUNA_DWARFSTRUCTS` env var (the layout is installed on the interned type
@@ -741,6 +741,10 @@ fn option_values_live_value_present_for_141() {
                             // same reason.  Its live value is
                             // `Architecture::syscall_regs`.
                             | "syscallregs"
+                            // (kuna) `linuxsyscall` takes the same MODE
+                            // (`off|auto|on`) over an enum field; its live
+                            // value is `Architecture::linux_syscall`.
+                            | "linuxsyscall"
                             // (kuna) `callmechanisms` takes a MODE
                             // (`off|auto|on`) over an enum field, for the
                             // same reason.  Its live value is
@@ -778,10 +782,6 @@ fn option_values_live_value_present_for_141() {
                             | "calleereadarg"
                             | "zerofillreturn"
                             | "zerocallregs"
-                            | "calleepreserves"
-                            | "calleeretpreserves"
-                            | "calleescratchbody"
-                            | "indirectanchor"
                             | "calloverlap"
                             | "indexaliasguard"
                             // (kuna) `arrayextent` takes a MODE
@@ -987,7 +987,7 @@ fn option_values_live_value_present_for_141() {
     // 179 -> 181: +1 for `copywaves` (pool_copy_waves), +1 for `armderef` (analysis_armderef).
     // 178 -> 179: +1 for `ptrauthtrap` (live_field = ptrauth_trap).
     // 179 -> 180: +1 for `authptrcall` (live_field = analysis_authptrcall).
-    assert_eq!(with_live, 141);
+    assert_eq!(with_live, 90);
 }
 
 #[test]
@@ -1233,7 +1233,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftcall`, beside that.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
-    assert_eq!(json.matches("},\n").count(), 332);
+    assert_eq!(json.matches("},\n").count(), 277);
 }
 
 #[test]

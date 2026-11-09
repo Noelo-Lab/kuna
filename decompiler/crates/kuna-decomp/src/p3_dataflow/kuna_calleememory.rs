@@ -683,7 +683,7 @@ fn walk(
 }
 
 pub fn seed(arch: &mut crate::architecture::Architecture, fd: &mut Funcdata) {
-    if !arch.stack_views && !arch.stack_alias_deadstore && !(arch.global_call_ranges && super::kuna_globalcallranges::should_seed(fd)) {
+    if !arch.stack_views && !arch.stack_alias_deadstore && !super::kuna_globalcallranges::should_seed(fd) {
         return;
     }
     let Some(stack_space) = arch.manage().get_stack_space() else {
