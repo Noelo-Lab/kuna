@@ -1174,10 +1174,54 @@ def kt_for_loops(old, new):
     return False
 
 
+KT_SEMAPHORE_OLD = (re.compile(r'\s*val var\d+: (?:Boolean|<unknown>)$'), re.compile(r'\s*val var\d+: Boolean = true$'))
+KT_SEMAPHORE_NEW = (re.compile(r'\s*var var\d+: Boolean = false /\* VF: Semaphore variable \*/$'),
+                    re.compile(r'\s*var\d+ = (?:true|false)$'))
+KT_SEMAPHORE_STORE = re.compile(r'\s*(var\d+) = (?:true|false)$')
+
+
+def kt_semaphore_lines(lines, patterns):
+    return [x for x in lines if x.strip() and not any(p.match(x) for p in patterns)]
+
+
+def kt_semaphore_store_liveness(old, new):
+    """kt_semaphore_store_liveness: a finally semaphore's stores kept. The new lines are the old ones
+    without the semaphore's orphan declaration after its guard (`val varN: Boolean`, `val varN: <unknown>`)
+    and the misdirected first store (`val varM: Boolean = true`), plus the semaphore's declaration
+    (`var varN: Boolean = false /* VF: Semaphore variable */`) and its stores (`varN = true`/`false`)."""
+    return (old != new and any(p.match(x) for x in old + new for p in KT_SEMAPHORE_OLD + KT_SEMAPHORE_NEW)
+            and kt_semaphore_lines(old, KT_SEMAPHORE_OLD) == kt_semaphore_lines(new, KT_SEMAPHORE_NEW))
+
+
+def kt_semaphore_store_liveness_scope(a, b, i1, i2, j1, j2, throw_names):
+    """kt_semaphore_store_liveness, where a kept store changes the statements around it: the Java
+    `break labelN;` Vineflower left inside a nested try becomes `varS = false` + `return@labelN` after
+    it (one hunk each), or a copy of a variable the Kotlin pass inlined into a semaphore's guard,
+    `(E as T)`, is read through the variable `V = E as T` assigned before it."""
+    old, new = a[i1:i2], b[j1:j2]
+    near_a, near_b = a[max(0, i1 - 12):i2 + 12], b[max(0, j1 - 12):j2 + 12]
+    brk = re.fullmatch(r'\s*break (label\d+);', old[0]) if len(old) == 1 else None
+    if brk and not new:
+        return (any(x.strip() == f'return@{brk.group(1)}' for x in near_b)
+                and any(KT_SEMAPHORE_STORE.match(x) for x in near_b))
+    ret = [x for x in new if x.strip()]
+    if not old and len(ret) == 2 and KT_SEMAPHORE_STORE.match(ret[0]):
+        m = re.fullmatch(r'\s*return@(label\d+)', ret[1])
+        return bool(m) and any(x.strip() == f'break {m.group(1)};' for x in near_a)
+    if len(old) == 1 and len(new) == 1:
+        for line in b[max(0, j1 - 40):j1]:
+            m = re.fullmatch(r'\s*([\w$`]+) = (.+)', line)
+            if m and old[0] in (new[0].replace(m.group(1), f'({m.group(2)})'),
+                                new[0].replace(m.group(1), m.group(2))) and old[0] != new[0]:
+                return any(p.match(x) for x in near_b for p in KT_SEMAPHORE_NEW)
+    return False
+
+
 CONTEXT_RECOGNISERS = {'enum_body_separator': enum_body_separator,
                        'assert_dead_throw': assert_dead_throw_scope,
                        'kt_failed_method_hidden': kt_failed_method_hidden,
-                       'kt_return_outside_lambda': kt_return_outside_lambda_scope}
+                       'kt_return_outside_lambda': kt_return_outside_lambda_scope,
+                       'kt_semaphore_store_liveness': kt_semaphore_store_liveness_scope}
 
 
 RECOGNISERS = {
@@ -1204,6 +1248,7 @@ RECOGNISERS = {
     'local_class_anonymous_subclass': local_class_anonymous_subclass,
     'kt_for_loops': kt_for_loops,
     'var_merge_liveness': var_merge_liveness,
+    'kt_semaphore_store_liveness': kt_semaphore_store_liveness,
 }
 
 

@@ -3295,6 +3295,12 @@ class	kuna-fixes/classes/pkg/TestIrreducibleTry.class
 class	kuna-fixes/classes/pkg/TestIrreducibleTry$Src.class
 expected	kuna-fixes/expected-compat/pkg/TestIrreducibleTry.java
 compare	TestIrreducibleTry.java
+case	kuna-fixes-compat/pkg/TestKtFinallySemaphore	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtFinallySemaphore.class
+class	kuna-fixes/classes/pkg/TestKtFinallySemaphore$Src.class
+expected	kuna-fixes/expected-compat/pkg/TestKtFinallySemaphore.kt
+compare	TestKtFinallySemaphore.kt	TestKtFinallySemaphore.java
 case	kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass.class
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1.class
@@ -3653,6 +3659,12 @@ class	kuna-fixes/classes/pkg/TestIrreducibleTry.class
 class	kuna-fixes/classes/pkg/TestIrreducibleTry$Src.class
 expected	kuna-fixes/expected/pkg/TestIrreducibleTry.java
 compare	TestIrreducibleTry.java
+case	kuna-fixes/pkg/TestKtFinallySemaphore	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestKtFinallySemaphore.class
+class	kuna-fixes/classes/pkg/TestKtFinallySemaphore$Src.class
+expected	kuna-fixes/expected/pkg/TestKtFinallySemaphore.kt
+compare	TestKtFinallySemaphore.kt	TestKtFinallySemaphore.java
 case	kuna-fixes/pkg/TestLocalClassAnonymousSubclass	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass.class
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1.class
