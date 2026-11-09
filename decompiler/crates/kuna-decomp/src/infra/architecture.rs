@@ -738,10 +738,6 @@ pub struct Architecture {
     /// halt does not veto the RETURN's output trial.  Read by
     /// [`crate::p4_calls::kuna_noreturnretuse`] through the `ArchContext` handle.
     pub noreturn_ret_use: bool,
-    /// (kuna) `option zeroidiomuse`: an `INT_XOR`/`INT_SUB` of a value with
-    /// itself does not veto that value's input trial.  Read by
-    /// [`crate::p4_calls::kuna_zeroidiomuse`] through the `ArchContext` handle.
-    pub zero_idiom_use: bool,
     /// (kuna) `option exclusivearguse`: let a LOAD/STORE on a path mutually
     /// exclusive with a call keep that call's input trial alive.  Read by
     /// `only_op_use` through
@@ -3229,7 +3225,6 @@ impl Architecture {
             ret_sys_reg: false, // (kuna) option retsysreg; reset_defaults sets the shipped default
             reload_arg: false, // (kuna) option reloadarg; reset_defaults sets the shipped default
             noreturn_ret_use: false, // (kuna) option noreturnretuse; reset_defaults sets the shipped default
-            zero_idiom_use: false, // (kuna) option zeroidiomuse; reset_defaults sets the shipped default
             stack_addr_arg_trial: false,
             exclusive_arg_use: false, // (kuna) option exclusivearguse; reset_defaults sets the shipped default
             exclusive_call_ret: false, // (kuna) option exclusivecallret; reset_defaults sets the shipped default
@@ -3714,7 +3709,6 @@ impl Architecture {
         self.reload_arg = true; // (kuna) GH-839 default-on: a register popped or reloaded from a frame slot that only holds the caller's incoming scratch register (clang's `push %rax` ... `pop %rcx` alignment pair) is no argument of the next call; only the topmost active trials are dropped. 0/675 byte-identical on the datatest corpus; restore the first-pass verdict with `option reloadarg off`
         self.ret_sys_reg = true; // (kuna) GH-885 default-on: the second register of a returned pair whose value only goes to a system register (vmsr fpscr, msr basepri, mtc0) is that write's operand, not a high word. 0/675 byte-identical on the datatest corpus; restore the pair with `option retsysreg off`
         self.noreturn_ret_use = true; // (kuna) DIV-118 default-on: a status value handed to a no-return failure call at the end of its block cannot compete with the same value at the function's RETURN, so it no longer forces the prototype to void. 0/675 byte-identical on the datatest corpus and 0 changed lines across 23 linked binaries; restore the upstream blanket rejection with `option noreturnretuse off`
-        self.zero_idiom_use = true; // (kuna) DIV-PENDING default-on: `INT_XOR(v,v)` is 0 whatever v is, so the x86 register-clearing idiom is not a competing use of the value it consumes and no longer sinks a call's input trials. An identity, one-directional (it can only decline a veto); 0/675 byte-identical on the datatest corpus. Restore the upstream walk with `option zeroidiomuse off`
         self.stack_addr_arg_trial = false;
         self.exclusive_call_ret = true; // (kuna) option exclusivecallret default-on: a call and a return on arms no execution shares no longer veto each other's narrow scalar trial; limited to the calloverlap auto register shape. Restore the upstream rejection with `option exclusivecallret off`
         self.exclusive_arg_use = true; // (kuna) DIV-PENDING default-on: a LOAD/STORE on a path that provably cannot co-execute with a call is not a competing use of the value the call is passed, so it no longer sinks the call's input trial. 0/675 byte-identical on the datatest corpus. Restore the upstream rejection with `option exclusivearguse off`
@@ -4588,9 +4582,6 @@ impl Architecture {
         // (kuna) carry the terminal-no-return trial gate so `only_op_use` reaches
         // `option noreturnretuse` via `glb`.
         ctx.noreturn_ret_use = self.noreturn_ret_use;
-        // (kuna) carry the self-cancelling-operand gate so `only_op_use` reaches
-        // `option zeroidiomuse` via `glb`.
-        ctx.zero_idiom_use = self.zero_idiom_use;
         // (kuna) carry the mutually-exclusive-path dereference gate so `only_op_use`
         // reaches `option exclusivearguse` via `glb`.
         ctx.exclusive_arg_use = self.exclusive_arg_use;

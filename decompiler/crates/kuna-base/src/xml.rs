@@ -1822,8 +1822,7 @@ mod tests {
         // address is flowed through instead of decoding a junk fall-through at the
         // unreachable return address (repipe r11)
         // and ghdec-zeroidiomuse / the x86 register-clearing idiom no longer
-        // vetoes a looped call's input trials (option off = watchdog() with an
-        // empty argument list) (repipe r12)
+        // vetoes a looped call's input trials (repipe r12)
         // and kuna-x64syscall / the x86-64 SYSCALL user-op carries the Linux ABI's
         // register effects instead of reading and writing nothing (option off =
         // syscall() with empty parens and a wrapper returning its own syscall

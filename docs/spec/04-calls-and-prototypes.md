@@ -1685,9 +1685,9 @@ classified:
   both of the bottom call's arguments go inactive, and it renders `f()` while
   the two instructions before it plainly load its argument registers.
 
-  (kuna) `zeroidiomuse` (default-on,
-  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_zeroidiomuse.rs`) skips such
-  an op entirely — neither a rejection nor a step the walk continues through —
+  (kuna) The self-cancelling-operand test
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_zeroidiomuse.rs`, always
+  on) skips such an op entirely — neither a rejection nor a step the walk continues through —
   when it is an `INT_XOR` or `INT_SUB` whose two operands are the same value.
   `INT_XOR(v,v)` is `0` whatever `v` is, so nothing downstream of it can observe
   the value being scored and the use it would veto on does not exist. Sameness
@@ -1700,9 +1700,7 @@ classified:
   themselves the same value, to a depth of two. `INT_AND` and `INT_OR` are
   deliberately not in the set: `v & v` is `v`, so the value does survive them.
   The rule is one-directional, promoting no trial by itself and admitting no
-  storage the upstream walk would not have admitted; `off` restores the
-  upstream walk, in which the zeroing idiom is followed like any other
-  arithmetic.
+  storage the upstream walk would not have admitted.
 
   The LOAD/STORE rejection asks the right question of the wrong set of ops. It
   is asking whether the value is used for something other than this call *on the
@@ -7971,7 +7969,7 @@ instruction clears registers when the last value it leaves in every register it
 writes is a provable zero, apart from one-byte flags computed by a comparison,
 and it clears at least one register wider than a flag. A provable zero is a
 constant zero, a value XORed or subtracted with itself (the operands compared as
-`zeroidiomuse` compares them), or a copy, extension, concatenation or slice of
+the self-cancelling-operand test compares them), or a copy, extension, concatenation or slice of
 zeros; a slice lying wholly in the zero half of a PIECE counts too, which is
 how heritage reads `edx` back out of the `rdx` a 32-bit `xor` rebuilt around
 it. A register write a later write of the same instruction covers is heritage

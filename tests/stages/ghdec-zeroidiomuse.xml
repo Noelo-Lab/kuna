@@ -39,13 +39,10 @@
     keeps the calleearity family from reconstructing the list from the callee
     body instead.
 
-    Phase: P4 active input-trial scoring, option zeroidiomuse off|on.  Pass 1
-    (off) pins the bug: watchdog() with no arguments.  Pass 2 (on, the shipped
-    default) pins the recovered pair.  Nothing else in the function moves.
-
-    `calleereadarg` is off in pass 1: watchdog reads rdi and esi on entry, so
-    that rule keeps both arguments by itself and would hide the bug.  Pass 2
-    is the shipped default, with both rules on.
+    Phase: P4 active input-trial scoring.  The self-cancelling-operand test is
+    always on; `calleereadarg` is off so that it cannot keep the arguments by
+    itself (watchdog reads rdi and esi on entry), which pins the recovered pair
+    to this rule alone.
 -->
 <bytechunk space="ram" offset="0x401000">
 89f801f0c366662e0f1f840000000000554889fd31ff5389f351e83100000031d24889c139d37e16488b44d5004889ce48ffc2482b304883fe027ee8eb0231c05a5b5dc366662e0f1f84000000000090b8c9000000c3662e0f1f84000000000041545389fb4531e44439e37e2031f631ffe88affffffbe02000000bf0020400041ffc4e888ffffff4885c074db4489e05b415cc366662e0f1f84000000000090bf03000000e8b6ffffff89c7b83c0000000f05
@@ -61,18 +58,13 @@
 </binaryimage>
 <script>
   <com>option calleereadarg off</com>
-  <com>option zeroidiomuse off</com>
   <com>lo fu feed</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option calleereadarg on</com>
-  <com>option zeroidiomuse on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="ZEROIDIOMUSE #1: off, the watchdog call inside the loop has an empty argument list" min="1" max="1">watchdog\(\)</stringmatch>
-<stringmatch name="ZEROIDIOMUSE #2: on, both loaded registers reach the call as arguments" min="1" max="1">watchdog\(timers,2\)</stringmatch>
-<stringmatch name="ZEROIDIOMUSE #3: the zeroing idiom itself is folded to the constants reader is called with in BOTH passes, so the option moved no other call" min="2" max="2">reader\(0,0\)</stringmatch>
-<stringmatch name="ZEROIDIOMUSE #4: both passes keep the loop counter and its two returns, so only the argument list moved" min="4" max="4">return v[0-9]+;</stringmatch>
+<stringmatch name="ZEROIDIOMUSE #1: the watchdog call inside the loop never has an empty argument list" min="0" max="0">watchdog\(\)</stringmatch>
+<stringmatch name="ZEROIDIOMUSE #2: both loaded registers reach the call as arguments" min="1" max="1">watchdog\(timers,2\)</stringmatch>
+<stringmatch name="ZEROIDIOMUSE #3: the zeroing idiom itself is folded to the constants reader is called with" min="1" max="1">reader\(0,0\)</stringmatch>
+<stringmatch name="ZEROIDIOMUSE #4: the loop counter and its two returns are kept" min="2" max="2">return v[0-9]+;</stringmatch>
 </decompilertest>
