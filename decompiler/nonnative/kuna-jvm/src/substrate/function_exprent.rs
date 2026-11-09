@@ -517,7 +517,9 @@ impl FunctionExprent {
                     supertype
                 }
             }
-            Other => jthrow!(PluginImplementationException; ""),
+            Other => {
+                jthrow!(PluginImplementationException; "Plugin should implement custom handling")
+            }
             _ => jthrow!(IllegalStateException; "No type for funcType={}", func_type.name()),
         })
     }
@@ -782,7 +784,9 @@ impl FunctionExprent {
                 );
                 result.add_expr_upper_bound(param1, type2_ref());
             }
-            Other => jthrow!(PluginImplementationException; ""),
+            Other => {
+                jthrow!(PluginImplementationException; "Plugin should implement custom handling")
+            }
             _ => {}
         }
 
@@ -829,7 +833,7 @@ impl FunctionExprent {
     pub fn to_java(self, indent: i32) -> TextBuffer {
         let func_type = self.get_func_type();
         if func_type == FunctionType::Other {
-            jthrow!(PluginImplementationException; "");
+            jthrow!(PluginImplementationException; "Plugin should implement custom handling");
         }
 
         let lst_operands = self.get_lst_operands();
@@ -1067,7 +1071,7 @@ impl FunctionExprent {
         }
 
         if func_type == FunctionType::Other {
-            jthrow!(PluginImplementationException; "");
+            jthrow!(PluginImplementationException; "Plugin should implement custom handling");
         }
 
         func_type.precedence()
