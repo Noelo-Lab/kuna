@@ -78,12 +78,89 @@ struct Section {
     flags: u32,
 }
 
+/// A fixed, benign thread environment block for a Windows image: the
+/// protector's checks against the TEB and PEB (debugger flags, heap flags,
+/// OS version, the block's own address) read the values an ordinary process
+/// sees, so they fold instead of forking the exploration on an unknown.
+#[derive(Clone, Debug)]
+struct ThreadBlock {
+    base: u64,
+    ptr: u8,
+    image_base: u64,
+}
+
+const TEB_SPAN: u64 = 0x4000;
+
+impl ThreadBlock {
+    fn new(ptr: u8, image_base: u64) -> ThreadBlock {
+        let base = if ptr == 8 { 0x7ff6_0000_0000 } else { 0x7ffd_c000 };
+        ThreadBlock { base, ptr, image_base }
+    }
+    fn peb(&self) -> u64 {
+        self.base + 0x2000
+    }
+    fn heap(&self) -> u64 {
+        self.base + 0x3000
+    }
+    fn contains(&self, addr: u64) -> bool {
+        addr >= self.base && addr < self.base + TEB_SPAN
+    }
+    /// The (offset, size, value) fields that are not zero.
+    fn fields(&self) -> Vec<(u64, u8, u64)> {
+        let p = self.ptr;
+        let (teb, peb, heap) = (self.base, self.peb(), self.heap());
+        if p == 8 {
+            vec![
+                (teb + 0x30, 8, teb),
+                (teb + 0x40, 8, 0x1000),
+                (teb + 0x48, 8, 0x1004),
+                (teb + 0x60, 8, peb),
+                (peb + 0x10, 8, self.image_base),
+                (peb + 0x30, 8, heap),
+                (peb + 0x118, 4, 10),
+                (peb + 0x120, 2, 19041),
+                (peb + 0x124, 4, 2),
+                (heap + 0x70, 4, 2),
+            ]
+        } else {
+            vec![
+                (teb + 0x18, 4, teb),
+                (teb + 0x20, 4, 0x1000),
+                (teb + 0x24, 4, 0x1004),
+                (teb + 0x30, 4, peb),
+                (peb + 0x08, 4, self.image_base),
+                (peb + 0x18, 4, heap),
+                (peb + 0xa4, 4, 10),
+                (peb + 0xac, 2, 19041),
+                (peb + 0xb0, 4, 2),
+                (heap + 0x40, 4, 2),
+            ]
+        }
+    }
+    fn byte(&self, addr: u64) -> u8 {
+        for (off, size, value) in self.fields() {
+            if addr >= off && addr < off + size as u64 {
+                return (value >> (8 * (addr - off))) as u8;
+            }
+        }
+        0
+    }
+}
+
+/// The segment base register holding the thread block's address.
+fn thread_block_register(arch: &Architecture, ptr: u8) -> Option<u64> {
+    let name = if ptr == 8 { "GS_OFFSET" } else { "FS_OFFSET" };
+    arch.translate().probe_register_varnode(name.as_bytes()).map(|v| v.offset)
+}
+
 /// [`PushanTarget`] over the live [`Architecture`].
 pub struct ArchTarget<'a> {
     arch: &'a Architecture,
     ram: Rc<AddrSpace>,
     sections: Vec<Section>,
     entry_section: Option<(u64, u64)>,
+    /// The synthetic thread block of a Windows image, when modelled.
+    teb: Option<ThreadBlock>,
     lifts: RefCell<BTreeMap<u64, Rc<LiftedInsn>>>,
     userops: Vec<String>,
     /// Entropy of each 256-byte block, computed on demand.
@@ -127,9 +204,13 @@ impl<'a> ArchTarget<'a> {
         let entry_section = sections.iter().find(|s| s.start <= entry && entry < s.end).map(|s| (s.start, s.end));
         let mut userops = Vec::new();
         arch.translate().get_user_op_names(&mut userops);
+        let ptr = ram.get_addr_size() as u8;
+        let image_base = sections.iter().map(|s| s.start).min().unwrap_or(0) & !0xffff;
+        let teb = super::kuna_fastfailnoreturn::archid_is_windows(&arch.archid).then(|| ThreadBlock::new(ptr, image_base));
         Some(ArchTarget {
             arch,
             ram,
+            teb,
             sections,
             entry_section,
             lifts: RefCell::new(BTreeMap::new()),
@@ -150,11 +231,20 @@ impl<'a> ArchTarget<'a> {
 
 impl PushanImage for ArchTarget<'_> {
     fn read_bytes(&self, addr: u64, buf: &mut [u8]) -> bool {
+        if let Some(teb) = self.teb.as_ref().filter(|t| t.contains(addr)) {
+            for (i, b) in buf.iter_mut().enumerate() {
+                *b = teb.byte(addr + i as u64);
+            }
+            return true;
+        }
         let loader_rc = self.arch.translate().loader_rc();
         let Ok(mut loader) = loader_rc.try_borrow_mut() else { return false };
         loader.load_fill(buf, &Address::new(Rc::clone(&self.ram), addr)).is_ok()
     }
     fn is_writable(&self, addr: u64) -> bool {
+        if self.teb.as_ref().is_some_and(|t| t.contains(addr)) {
+            return false;
+        }
         match self.section_of(addr) {
             Some(s) => s.flags & section_flags::READONLY == 0 && s.flags & section_flags::CODE == 0,
             None => true,
@@ -241,7 +331,7 @@ impl PushanTarget for ArchTarget<'_> {
 const BYTECODE_ENTROPY: f64 = 5.0;
 
 /// The register facts for the supported ISAs (x86-64 and x86).
-fn abi_for(arch: &Architecture) -> Option<Abi> {
+fn abi_for(arch: &Architecture, target: &ArchTarget<'_>) -> Option<Abi> {
     let t = arch.translate();
     let reg = |n: &str| t.probe_register_varnode(n.as_bytes()).map(|v| (v.offset, v.size as u8));
     let (sp, ptr) = reg("RSP").or_else(|| reg("ESP"))?;
@@ -269,7 +359,12 @@ fn abi_for(arch: &Architecture) -> Option<Abi> {
     let arg_names: &[&str] = if x64 { &["RCX", "RDX", "R8", "R9", "RSP"] } else { &["ESP"] };
     let callee_saved = saved_names.iter().filter_map(|n| reg(n)).collect();
     let args = arg_names.iter().filter_map(|n| reg(n)).collect();
+    let fixed_regs = match (&target.teb, thread_block_register(arch, ptr)) {
+        (Some(teb), Some(off)) => vec![(off, ptr, teb.base)],
+        _ => Vec::new(),
+    };
     Some(Abi {
+        fixed_regs,
         ptr_size: ptr,
         sp,
         return_reg,
@@ -350,7 +445,7 @@ pub fn detect_vm_entry(target: &ArchTarget<'_>, entry: u64) -> Option<u64> {
 /// Run the whole pipeline for a function entry.
 pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, String> {
     let target = ArchTarget::new(arch, entry).ok_or("no code space")?;
-    let abi = abi_for(arch).ok_or("unsupported architecture for pushan (x86/x86-64 only)")?;
+    let abi = abi_for(arch, &target).ok_or("unsupported architecture for pushan (x86/x86-64 only)")?;
     let sp_reg = abi.sp;
     let ptr = abi.ptr_size;
     let mut live_at_exit = abi.callee_saved.clone();
@@ -604,7 +699,6 @@ fn adopt(p: &PushanProgram, fd: &mut Funcdata) {
 pub fn mark_undefined_copies(p: &PushanProgram, fd: &mut Funcdata) {
     let is_placeholder = |off: u64, size: i32| p.placeholders.iter().any(|&(o, s)| off >= o && off + size as u64 <= o + s as u64);
     let copies: Vec<crate::context::OpId> = fd.obank().iter_alive().filter(|&o| fd.obank().get(o).is_some_and(|op| op.code() == OpCode::CPUI_COPY)).collect();
-    let mut marked = 0usize;
     for op in copies {
         let from = fd
             .obank()
@@ -617,13 +711,9 @@ pub fn mark_undefined_copies(p: &PushanProgram, fd: &mut Funcdata) {
             if is_placeholder(off, size) {
                 if let Some(o) = fd.obank_mut().get_mut(op) {
                     o.set_additional_flag(crate::op::pcodeop_addlflags::incidental_copy);
-                    marked += 1;
                 }
             }
         }
-    }
-    if std::env::var("KUNA_ACTIVEPARAM_TRACE").is_ok() {
-        eprintln!("[pushan-trace] marked {marked} placeholder copies incidental (placeholders {:x?})", p.placeholders);
     }
 }
 

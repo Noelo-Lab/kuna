@@ -671,9 +671,6 @@ impl Funcdata {
         if aliasyes {
             let alias: Vec<uintb> = state.get_alias().to_vec();
             let abl = self.get_arch().alias_block_level;
-            if std::env::var("KUNA_ACTIVEPARAM_TRACE").is_ok() {
-                eprintln!("[markunaliased-trace] aliases {:?}", alias.iter().map(|a| format!("{a:#x}")).collect::<Vec<_>>());
-            }
             if let Some(lm) = self.get_scope_local_mut() {
                 lm.mark_unaliased(&alias, abl);
             }

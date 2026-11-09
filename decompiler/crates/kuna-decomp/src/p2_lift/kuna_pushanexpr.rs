@@ -1766,8 +1766,12 @@ impl ExprArena {
         r
     }
 
-    /// The distinct values `e` takes over every assignment of its boolean
-    /// atoms, as expressions (constants when nothing else is symbolic).
+    /// The values `e` takes over every assignment of the boolean atoms it
+    /// actually depends on, as expressions (constants when nothing else is
+    /// symbolic).  An atom whose flip never changes the result is dropped
+    /// from the assignments: the interpreter's flag arithmetic carries every
+    /// flag bit through a conditional jump, and only the compared ones decide
+    /// it.
     pub fn case_split(&mut self, e: ExprId) -> Option<Vec<(Vec<(ExprId, bool)>, ExprId)>> {
         if self.is_const(e).is_some() {
             return Some(vec![(Vec::new(), e)]);
@@ -1776,19 +1780,32 @@ impl ExprArena {
         if atoms.is_empty() || atoms.len() > MAX_SPLIT_ATOMS {
             return None;
         }
-        let mut out = Vec::new();
         let n = atoms.len();
-        for bitsv in 0..(1u32 << n) {
+        let total = 1usize << n;
+        let mut results = Vec::with_capacity(total);
+        for bitsv in 0..total {
             let mut map = BTreeMap::new();
-            let mut assign = Vec::new();
             for (i, a) in atoms.iter().enumerate() {
-                let v = (bitsv >> i) & 1 == 1;
-                let k = self.cst(1, v as u128);
+                let k = self.cst(1, ((bitsv >> i) & 1) as u128);
                 map.insert(*a, k);
-                assign.push((*a, v));
             }
-            let r = self.substitute(e, &map);
-            out.push((assign, r));
+            results.push(self.substitute(e, &map));
+        }
+        let essential: Vec<usize> = (0..n)
+            .filter(|&i| (0..total).any(|b| results[b] != results[b ^ (1 << i)]))
+            .collect();
+        let mut out = Vec::with_capacity(1 << essential.len());
+        for bitsv in 0..(1usize << essential.len()) {
+            let mut full = 0usize;
+            let mut assign = Vec::with_capacity(essential.len());
+            for (j, &i) in essential.iter().enumerate() {
+                let v = (bitsv >> j) & 1 == 1;
+                if v {
+                    full |= 1 << i;
+                }
+                assign.push((atoms[i], v));
+            }
+            out.push((assign, results[full]));
         }
         Some(out)
     }

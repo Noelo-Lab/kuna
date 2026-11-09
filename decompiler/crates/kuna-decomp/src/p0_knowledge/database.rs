@@ -4322,9 +4322,6 @@ impl Database {
             if symbol_aliased && (curoff.wrapping_sub(symbol_alias) > 0xffff) {
                 symbol_aliased = false;
             }
-            if std::env::var("KUNA_ACTIVEPARAM_TRACE").is_ok() && first >= 0xffffffffffffff00 {
-                eprintln!("[markunaliased-trace]   symbol first {:#x} last {:#x} aliason={} curalias={:#x} symbol_aliased={} ranges={:?}", first, curoff, aliason, curalias, symbol_aliased, ranges.iter().map(|(s, f, l)| format!("{s}:{f:#x}-{l:#x}")).collect::<Vec<_>>());
-            }
             if !symbol_aliased {
                 self.set_attribute(sym, varnode_flags::nolocalalias);
             }

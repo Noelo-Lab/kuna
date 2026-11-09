@@ -129,6 +129,9 @@ pub struct Abi {
     pub fixed_flags: Vec<(u64, u8)>,
     /// Registers preserved across calls (plus the stack pointer).
     pub callee_saved: Vec<(u64, u8)>,
+    /// Registers with a fixed value at entry (offset, size, value): the
+    /// segment base of the thread block on Windows.
+    pub fixed_regs: Vec<(u64, u8, u64)>,
     /// Registers an external call may read.
     pub args: Vec<(u64, u8)>,
 }
@@ -208,6 +211,10 @@ impl<'a> Explorer<'a> {
         for &(off, v) in &self.abi.fixed_flags {
             let c = self.arena.cst(1, v as u128);
             st.write_reg(off, c, 1);
+        }
+        for &(off, size, v) in &self.abi.fixed_regs {
+            let c = self.arena.cst(size, v as u128);
+            st.write_reg(off, c, size);
         }
         st
     }
@@ -313,6 +320,25 @@ impl<'a> Explorer<'a> {
             let mut entry = node.entry.clone();
             let diffs = entry.diff_constants(&mut state, &mut self.arena, self.target);
             let vpc_reg = node.entry_ctx.vpc_reg;
+            if let Some(tr) = &self.config.trace {
+                use std::io::Write;
+                for d in &diffs {
+                    let (a, b) = match d.loc.loc {
+                        Loc::Reg { off } => (entry.read_reg(&mut self.arena, off, d.loc.size), state.read_reg(&mut self.arena, off, d.loc.size)),
+                        Loc::Mem { base, off } => (
+                            entry.read_mem(&mut self.arena, self.target, base, off, d.loc.size),
+                            state.read_mem(&mut self.arena, self.target, base, off, d.loc.size),
+                        ),
+                    };
+                    let _ = writeln!(
+                        tr.borrow_mut(),
+                        "        diff at node {id} {:?}: entry {} | incoming {}",
+                        d.loc.loc,
+                        self.arena.fmt(a).chars().take(300).collect::<String>(),
+                        self.arena.fmt(b).chars().take(300).collect::<String>()
+                    );
+                }
+            }
             let set = self.to_symbolize.entry(key).or_default();
             for d in diffs {
                 // The VPC itself is part of the key; never symbolize it.

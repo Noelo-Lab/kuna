@@ -643,12 +643,6 @@ impl Rule for RuleIndirectCollapse {
                 if o.is_indirect_creation() || o.no_indirect_collapse() {
                     return 0;
                 }
-                if std::env::var("KUNA_ACTIVEPARAM_TRACE").is_ok() {
-                    let ov = data.vbank().get(op_out(data, op).unwrap()).unwrap();
-                    if ov.get_space().get_name() == "stack" && ov.get_offset() >= 0xffffffffffffffe0 && ov.get_offset() < 0xffffffffffffffec {
-                        eprintln!("[indirectcollapse-trace] collapsing INDIRECT on stack {:#x}:{} at call {:#x} (nolocalalias)", ov.get_offset(), ov.get_size(), data.obank().get(indop).map(|o| o.get_addr().get_offset()).unwrap_or(0));
-                    }
-                }
                 let output = data.vbank().get(op_out(data, op).expect("indirect output"))
                     .expect("live indirect output");
                 if data.get_call_specs_index(indop).is_some_and(|index| {

@@ -18,7 +18,7 @@ use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 use OpCode::*;
 
-use super::kuna_pushanexpr::{ExprArena, ExprId, MAX_SIZE};
+use super::kuna_pushanexpr::{VarId, ExprArena, ExprId, MAX_SIZE};
 use super::kuna_pushanstate::{PushanImage, State};
 
 /// A lifted p-code operation (the SLEIGH template instantiated at an address).
@@ -148,6 +148,8 @@ pub struct InsnTrace {
 }
 
 const MAX_SPLIT_CASES: usize = 4;
+/// Assignments a split address may have before the load gives up.
+const MAX_SPLIT_ASSIGNMENTS: usize = 64;
 const MAX_FORK_DEPTH: u32 = 4;
 
 pub struct Emulator<'a> {
@@ -173,14 +175,14 @@ impl<'a> Emulator<'a> {
     fn read_vn(&mut self, state: &mut State, arena: &mut ExprArena, vn: &VarnodeData) -> ExprId {
         let size = vn.size.min(MAX_SIZE as u32) as u8;
         if vn.size > MAX_SIZE as u32 {
-            return arena.unknown(MAX_SIZE);
+            return self.unknown(arena, MAX_SIZE, "wide operand");
         }
         match self.vn_space(vn) {
             Space::Const => arena.cst(size, vn.offset as u128),
             Space::Register => state.read_reg(arena, vn.offset, size),
             Space::Unique => state.read_unique(arena, vn.offset, size),
             Space::Ram => state.read_mem(arena, self.target, None, vn.offset as i128, size),
-            Space::Other => arena.unknown(size),
+            Space::Other => self.unknown(arena, size, "operand in an unmodelled space"),
         }
     }
 
@@ -190,7 +192,7 @@ impl<'a> Emulator<'a> {
             let mut off = 0u64;
             while off < vn.size as u64 {
                 let chunk = ((vn.size as u64 - off).min(MAX_SIZE as u64)) as u8;
-                let u = arena.unknown(chunk);
+                let u = self.unknown(arena, chunk, "wide write");
                 match self.vn_space(vn) {
                     Space::Register => state.write_reg(vn.offset + off, u, chunk),
                     Space::Unique => state.write_unique(vn.offset + off, u, chunk),
@@ -280,12 +282,12 @@ impl<'a> Emulator<'a> {
                     return state.read_reg(arena, c as u64, size);
                 }
                 state.unknown_loads += 1;
-                return arena.unknown(size);
+                return self.unknown(arena, size, "register load at a symbolic offset");
             }
             Space::Ram => {}
             _ => {
                 state.unknown_loads += 1;
-                return arena.unknown(size);
+                return self.unknown(arena, size, "load from an unmodelled space");
             }
         }
         if let Some((base, off)) = arena.affine(addr) {
@@ -295,23 +297,49 @@ impl<'a> Emulator<'a> {
             }
             return v;
         }
+        // An address decided by boolean atoms (a conditional jump's next
+        // bytecode pointer): one load per distinct destination, selected by
+        // the disjunction of the assignments that reach it.
         if let Some(cases) = arena.case_split(addr) {
-            if cases.len() <= MAX_SPLIT_CASES && cases.iter().all(|(_, a)| arena.affine(*a).is_some()) {
-                let mut vals = Vec::with_capacity(cases.len());
-                for (_, a) in &cases {
-                    let (base, off) = arena.affine(*a).unwrap();
-                    vals.push(state.read_mem(arena, self.target, base, off, size));
-                }
-                let atoms: Vec<ExprId> = {
-                    let (assign, _) = &cases[0];
-                    assign.iter().map(|(a, _)| *a).collect()
+            let mut groups: Vec<((Option<VarId>, i128), Vec<ExprId>)> = Vec::new();
+            let mut ok = cases.len() <= MAX_SPLIT_ASSIGNMENTS;
+            for (assign, a) in &cases {
+                let Some(key) = arena.affine(*a) else {
+                    ok = false;
+                    break;
                 };
-                return ite_tree(arena, &atoms, &vals, 0, 0);
+                let cond = assignment_cond(arena, assign);
+                match groups.iter_mut().find(|(k, _)| *k == key) {
+                    Some((_, conds)) => conds.push(cond),
+                    None => groups.push((key, vec![cond])),
+                }
+            }
+            if ok && groups.len() <= MAX_SPLIT_CASES {
+                let mut vals = Vec::with_capacity(groups.len());
+                for ((base, off), _) in &groups {
+                    vals.push(state.read_mem(arena, self.target, *base, *off, size));
+                }
+                let mut result = vals[vals.len() - 1];
+                for i in (0..groups.len() - 1).rev() {
+                    let mut cond = groups[i].1[0];
+                    for c in &groups[i].1[1..] {
+                        cond = arena.mk_bin(CPUI_INT_OR, cond, *c, 1);
+                    }
+                    result = arena.mk_ite(cond, vals[i], result);
+                }
+                return result;
             }
         }
         state.unknown_loads += 1;
         self.note(format!("unknown load address {}", arena.fmt(addr)));
         arena.unknown(size)
+    }
+
+    /// A fresh unknown, with the reason on record for the trace.
+    fn unknown(&mut self, arena: &mut ExprArena, size: u8, why: &str) -> ExprId {
+        let u = arena.unknown(size);
+        self.note(format!("{why}: {}", arena.fmt(u)));
+        u
     }
 
     fn note(&mut self, s: String) {
@@ -487,7 +515,7 @@ impl<'a> Emulator<'a> {
                     let name = self.target.userop_name(idx).unwrap_or_else(|| format!("userop_{idx}"));
                     trace.userops.push(name);
                     if let Some(out) = &op.out {
-                        let u = arena.unknown(out.size.min(MAX_SIZE as u32) as u8);
+                        let u = self.unknown(arena, out.size.min(MAX_SIZE as u32) as u8, "user-op result");
                         trace.op_out[pc] = Some(u);
                         self.write_vn(state, arena, out, u);
                     }
@@ -509,7 +537,7 @@ impl<'a> Emulator<'a> {
                         size,
                         is_store: false,
                     });
-                    let v = if out.size > MAX_SIZE as u32 { arena.unknown(size) } else { self.load(state, arena, space, addr, size) };
+                    let v = if out.size > MAX_SIZE as u32 { self.unknown(arena, size, "wide load") } else { self.load(state, arena, space, addr, size) };
                     trace.op_out[pc] = Some(v);
                     self.write_vn(state, arena, &out, v);
                 }
@@ -542,7 +570,7 @@ impl<'a> Emulator<'a> {
                         continue;
                     };
                     if out.size > MAX_SIZE as u32 || op.ins.iter().any(|v| v.size > MAX_SIZE as u32) {
-                        let u = arena.unknown(out.size.min(MAX_SIZE as u32) as u8);
+                        let u = self.unknown(arena, out.size.min(MAX_SIZE as u32) as u8, "wide arithmetic");
                         self.write_vn(state, arena, out, u);
                         pc += 1;
                         continue;

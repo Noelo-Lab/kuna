@@ -2284,10 +2284,6 @@ impl Funcdata {
                         continue;
                     }
                 }
-                if std::env::var("KUNA_ACTIVEPARAM_TRACE").is_ok() {
-                    let vdesc = self.vbank().get(vn).map(|v| format!("{}/{:#x}:{}", v.get_space().get_name(), v.get_offset(), v.get_size())).unwrap_or_default();
-                    eprintln!("[onlyopuse-trace] match {:#x} trial slot {} visiting op {:#x}:{} {:?} via vn {}", self.obank().get(opmatch).map(|m| m.get_addr().get_offset()).unwrap_or(0), trial.get_slot(), o.get_addr().get_offset(), o.get_time(), code, vdesc);
-                }
                 let mut cur_flags = base_flags;
                 // (kuna) `exclusivecallret` — see [`crate::p4_calls::kuna_exclusivecallret`].
                 if call_return && crate::p4_calls::kuna_exclusivecallret::skips_use(self, opmatch, op, invn, vn) {
