@@ -46,6 +46,7 @@ use kuna_base::xml::{DocumentStorage, Element};
 use kuna_decomp::architecture::Architecture;
 use kuna_decomp::options::register_option_elements;
 use kuna_decomp::raw_arch::RawBinaryArchitectureCapability;
+use kuna_decomp::kuna_memoryspecs::IntoSpecRoot;
 use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase, SleighArchitecture};
 use kuna_decomp::xml_arch::XmlArchitectureCapability;
 
@@ -3645,11 +3646,12 @@ fn build_registry() -> IdRegistry {
 /// The Python tools pass `-s <specs>` and set `SLEIGHHOME=<specs>`; the bin's
 /// arg parser records the spec roots and hands them here.  The first existing
 /// root wins (mirroring the C++ `scanForSleighDirectories` over the recorded
-/// roots).
-fn scan_language_database(spec_roots: &[String], registry: &IdRegistry) -> KunaResult<LanguageDatabase> {
+/// roots).  A root may also be a tree held in memory
+/// ([`kuna_decomp::kuna_memoryspecs::MemorySpecs`]).
+fn scan_language_database(spec_roots: &[impl IntoSpecRoot], registry: &IdRegistry) -> KunaResult<LanguageDatabase> {
     let mut db = LanguageDatabase::new();
     for root in spec_roots {
-        db.scan_for_sleigh_directories(root);
+        db.add_spec_root(&root.to_spec_root());
     }
     db.get_descriptions(registry)?;
     Ok(db)
@@ -3691,7 +3693,7 @@ fn build_engine_and_init(sleigh: &mut SleighArchitecture, db: &LanguageDatabase)
     let resolved_sla = specs
         .slafile
         .ok_or_else(|| KunaError::lowlevel("build_spec_file resolved no .sla"))?;
-    let sla = std::fs::read(&resolved_sla)
+    let sla = db.read_spec(&resolved_sla)
         .map_err(|e| KunaError::lowlevel(format!("read sla {resolved_sla}: {e}")))?;
 
     // The loader is handed to the translator as a dummy first; the real opened
@@ -3723,11 +3725,11 @@ fn build_engine_and_init(sleigh: &mut SleighArchitecture, db: &LanguageDatabase)
     // A read failure is non-fatal: the architecture falls back to the name-only
     // default model (proto recovery simply won't fire).
     if !specs.compilerfile.is_empty() {
-        if let Ok(cspec) = std::fs::read(&specs.compilerfile) {
+        if let Ok(cspec) = db.read_spec(&specs.compilerfile) {
             sleigh
                 .base_mut()
                 .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
-                .set_cspec_xml(cspec);
+                .set_cspec_xml(cspec.into_owned());
         }
     }
 
@@ -3738,11 +3740,11 @@ fn build_engine_and_init(sleigh: &mut SleighArchitecture, db: &LanguageDatabase)
     // without it x86-64 lifts as 16-bit real mode.  A read failure is non-fatal
     // (the engine keeps the zero-default context).
     if !specs.processorfile.is_empty() {
-        if let Ok(pspec) = std::fs::read(&specs.processorfile) {
+        if let Ok(pspec) = db.read_spec(&specs.processorfile) {
             sleigh
                 .base_mut()
                 .ok_or_else(|| KunaError::lowlevel("no Architecture base after build_translator"))?
-                .set_pspec_xml(pspec);
+                .set_pspec_xml(pspec.into_owned());
         }
     }
 
@@ -3780,6 +3782,16 @@ pub fn bootstrap_program(
     binaryimage: Rc<Element>,
     arch_id: &str,
     spec_roots: &[String],
+) -> KunaResult<ConsoleProgram> {
+    bootstrap_program_with_specs(binaryimage, arch_id, spec_roots)
+}
+
+/// [`bootstrap_program`] over any spec roots: directories, in-memory
+/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
+pub fn bootstrap_program_with_specs(
+    binaryimage: Rc<Element>,
+    arch_id: &str,
+    spec_roots: &[impl IntoSpecRoot],
 ) -> KunaResult<ConsoleProgram> {
     let registry = build_registry();
 
@@ -3944,7 +3956,7 @@ fn input_isa_paints_for_ranges(
 fn build_sleigh_for_loader(
     path: &str,
     target: &str,
-    spec_roots: &[String],
+    spec_roots: &[impl IntoSpecRoot],
     registry: &IdRegistry,
     arch_type: &str,
     fallback_arch_id: Option<&[u8]>,
@@ -4104,6 +4116,19 @@ pub fn bootstrap_from_raw(
     isa: Option<ArmIsa>,
     spec_roots: &[String],
 ) -> KunaResult<ConsoleProgram> {
+    bootstrap_from_raw_with_specs(path, target, base, entries, isa, spec_roots)
+}
+
+/// [`bootstrap_from_raw`] over any spec roots: directories, in-memory
+/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
+pub fn bootstrap_from_raw_with_specs(
+    path: &str,
+    target: &str,
+    base: u64,
+    entries: &[u64],
+    isa: Option<ArmIsa>,
+    spec_roots: &[impl IntoSpecRoot],
+) -> KunaResult<ConsoleProgram> {
     bootstrap_raw_image(path, target, base, entries, isa, spec_roots, None)
 }
 
@@ -4114,7 +4139,7 @@ fn bootstrap_raw_image(
     base: u64,
     entries: &[u64],
     isa: Option<ArmIsa>,
-    spec_roots: &[String],
+    spec_roots: &[impl IntoSpecRoot],
     bytes: Option<Vec<u8>>,
 ) -> KunaResult<ConsoleProgram> {
     if target.trim().is_empty() {
@@ -4254,12 +4279,23 @@ pub fn bootstrap_from_image_with_isa(
     spec_roots: &[String],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
+    bootstrap_from_image_with_isa_with_specs(path, target, spec_roots, isa)
+}
+
+/// [`bootstrap_from_image_with_isa`] over any spec roots: directories, in-memory
+/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
+pub fn bootstrap_from_image_with_isa_with_specs(
+    path: &str,
+    target: &str,
+    spec_roots: &[impl IntoSpecRoot],
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
     if file_is_te_image(path) {
-        bootstrap_from_te(path, target, spec_roots, isa)
+        bootstrap_from_te_with_specs(path, target, spec_roots, isa)
     } else if let Some(bytes) = file_mz_dos_image(path) {
-        bootstrap_from_mz_bytes(path, &bytes, target, spec_roots, isa)
+        bootstrap_from_mz_bytes_with_specs(path, &bytes, target, spec_roots, isa)
     } else {
-        bootstrap_from_object_with_isa(path, target, spec_roots, isa)
+        bootstrap_from_object_with_isa_with_specs(path, target, spec_roots, isa)
     }
 }
 
@@ -4298,6 +4334,18 @@ pub fn bootstrap_from_mz_bytes(
     bytes: &[u8],
     target: &str,
     spec_roots: &[String],
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
+    bootstrap_from_mz_bytes_with_specs(path, bytes, target, spec_roots, isa)
+}
+
+/// [`bootstrap_from_mz_bytes`] over any spec roots: directories, in-memory
+/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
+pub fn bootstrap_from_mz_bytes_with_specs(
+    path: &str,
+    bytes: &[u8],
+    target: &str,
+    spec_roots: &[impl IntoSpecRoot],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
     let image = MzImage::parse(bytes)
@@ -4374,13 +4422,23 @@ pub fn bootstrap_from_image(
     target: &str,
     spec_roots: &[String],
 ) -> KunaResult<ConsoleProgram> {
+    bootstrap_from_image_with_specs(path, target, spec_roots)
+}
+
+/// [`bootstrap_from_image`] over any spec roots: directories, in-memory
+/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
+pub fn bootstrap_from_image_with_specs(
+    path: &str,
+    target: &str,
+    spec_roots: &[impl IntoSpecRoot],
+) -> KunaResult<ConsoleProgram> {
     let isa = std::env::var(ARM_ISA_ENV)
         .ok()
         .map(|value| ArmIsa::parse(&value))
         .transpose()
         .map_err(KunaError::lowlevel)?
         .flatten();
-    bootstrap_from_image_with_isa(path, target, spec_roots, isa)
+    bootstrap_from_image_with_isa_with_specs(path, target, spec_roots, isa)
 }
 
 /// Whether the file at `path` opens as a UEFI TE, reading only the bytes the
@@ -4415,10 +4473,21 @@ pub fn bootstrap_from_te(
     spec_roots: &[String],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
+    bootstrap_from_te_with_specs(path, target, spec_roots, isa)
+}
+
+/// [`bootstrap_from_te`] over any spec roots: directories, in-memory
+/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
+pub fn bootstrap_from_te_with_specs(
+    path: &str,
+    target: &str,
+    spec_roots: &[impl IntoSpecRoot],
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
     let bytes = std::fs::read(path).map_err(|error| {
         KunaError::lowlevel(format!("Unable to open TE image file: {path}: {error}"))
     })?;
-    bootstrap_from_te_bytes(path, &bytes, target, spec_roots, isa)
+    bootstrap_from_te_bytes_with_specs(path, &bytes, target, spec_roots, isa)
 }
 
 /// [`bootstrap_from_te`] over bytes a caller has already read.
@@ -4427,6 +4496,18 @@ pub fn bootstrap_from_te_bytes(
     bytes: &[u8],
     target: &str,
     spec_roots: &[String],
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
+    bootstrap_from_te_bytes_with_specs(path, bytes, target, spec_roots, isa)
+}
+
+/// [`bootstrap_from_te_bytes`] over any spec roots: directories, in-memory
+/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
+pub fn bootstrap_from_te_bytes_with_specs(
+    path: &str,
+    bytes: &[u8],
+    target: &str,
+    spec_roots: &[impl IntoSpecRoot],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
     let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
@@ -4526,13 +4607,23 @@ pub fn bootstrap_from_object(
     target: &str,
     spec_roots: &[String],
 ) -> KunaResult<ConsoleProgram> {
+    bootstrap_from_object_with_specs(path, target, spec_roots)
+}
+
+/// [`bootstrap_from_object`] over any spec roots: directories, in-memory
+/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
+pub fn bootstrap_from_object_with_specs(
+    path: &str,
+    target: &str,
+    spec_roots: &[impl IntoSpecRoot],
+) -> KunaResult<ConsoleProgram> {
     let isa = std::env::var(ARM_ISA_ENV)
         .ok()
         .map(|value| ArmIsa::parse(&value))
         .transpose()
         .map_err(KunaError::lowlevel)?
         .flatten();
-    bootstrap_from_object_with_isa(path, target, spec_roots, isa)
+    bootstrap_from_object_with_isa_with_specs(path, target, spec_roots, isa)
 }
 
 /// The MIPS t9 entry probe: the PIC-setup seed for `entry`, truncated to the
@@ -4562,6 +4653,17 @@ pub fn bootstrap_from_object_with_isa(
     path: &str,
     target: &str,
     spec_roots: &[String],
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
+    bootstrap_from_object_with_isa_with_specs(path, target, spec_roots, isa)
+}
+
+/// [`bootstrap_from_object_with_isa`] over any spec roots: directories, in-memory
+/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
+pub fn bootstrap_from_object_with_isa_with_specs(
+    path: &str,
+    target: &str,
+    spec_roots: &[impl IntoSpecRoot],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
     let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
@@ -6240,11 +6342,17 @@ fn commit_analysis_output(
 /// `<decompilertest>` wrapping one), reading the arch id off the
 /// `<binaryimage>` element.  Used by `load file` (path → parse → bootstrap).
 pub fn bootstrap_from_root(root: &Rc<Element>, spec_roots: &[String]) -> KunaResult<ConsoleProgram> {
+    bootstrap_from_root_with_specs(root, spec_roots)
+}
+
+/// [`bootstrap_from_root`] over any spec roots: directories, in-memory
+/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
+pub fn bootstrap_from_root_with_specs(root: &Rc<Element>, spec_roots: &[impl IntoSpecRoot]) -> KunaResult<ConsoleProgram> {
     let binaryimage = find_binaryimage(root)
         .ok_or_else(|| KunaError::lowlevel("Could not find binaryimage tag"))?;
     let arch_id = attr(&binaryimage, "arch")
         .ok_or_else(|| KunaError::lowlevel("<binaryimage> has no arch attribute"))?;
-    bootstrap_program(binaryimage, &arch_id, spec_roots)
+    bootstrap_program_with_specs(binaryimage, &arch_id, spec_roots)
 }
 
 /// The ELF magic (`\x7fELF`), used to route `load file` to the object path.
@@ -6343,10 +6451,20 @@ pub fn bootstrap_from_file(
     target: &str,
     spec_roots: &[String],
 ) -> KunaResult<ConsoleProgram> {
+    bootstrap_from_file_with_specs(path, target, spec_roots)
+}
+
+/// [`bootstrap_from_file`] over any spec roots: directories, in-memory
+/// [`MemorySpecs`](kuna_decomp::kuna_memoryspecs::MemorySpecs) trees, or a mix.
+pub fn bootstrap_from_file_with_specs(
+    path: &str,
+    target: &str,
+    spec_roots: &[impl IntoSpecRoot],
+) -> KunaResult<ConsoleProgram> {
     if kuna_analysis::loader::kuna_dyldcache::is_dyld_cache_file(Path::new(path))
         || kuna_analysis::image_bytes::ImageBytes::map_thin_macho(path).ok().flatten().is_some()
     {
-        return bootstrap_from_object(path, target, spec_roots);
+        return bootstrap_from_object_with_specs(path, target, spec_roots);
     }
     let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to recognize imagefile {path}: {e}")))?;
@@ -6357,7 +6475,7 @@ pub fn bootstrap_from_file(
             .transpose()
             .map_err(KunaError::lowlevel)?
             .flatten();
-        return bootstrap_from_mz_bytes(path, &bytes, target, spec_roots, isa);
+        return bootstrap_from_mz_bytes_with_specs(path, &bytes, target, spec_roots, isa);
     }
     if is_te_image(&bytes) {
         let isa = std::env::var(ARM_ISA_ENV)
@@ -6366,13 +6484,13 @@ pub fn bootstrap_from_file(
             .transpose()
             .map_err(KunaError::lowlevel)?
             .flatten();
-        return bootstrap_from_te_bytes(path, &bytes, target, spec_roots, isa);
+        return bootstrap_from_te_bytes_with_specs(path, &bytes, target, spec_roots, isa);
     }
     if is_object_binary(&bytes) || is_apple_container(&bytes) {
         // Real object-format binary (ELF / PE / Mach-O / COFF): drive the
         // object-crate loader.
         drop(bytes);
-        return bootstrap_from_object(path, target, spec_roots);
+        return bootstrap_from_object_with_specs(path, target, spec_roots);
     }
     if !bytes
         .iter()
@@ -6393,7 +6511,7 @@ pub fn bootstrap_from_file(
     if find_binaryimage(&root).is_none() {
         return Err(KunaError::lowlevel(RAW_IMAGE_INPUT_HINT));
     }
-    bootstrap_from_root(&root, spec_roots)
+    bootstrap_from_root_with_specs(&root, spec_roots)
 }
 
 /// Iterate the opened [`LoadImageXml`]'s symbol records (name → address) into a
