@@ -27,14 +27,14 @@ Rust file that implements it. Option names are the `jvm_*` rows of
 guidance are in the generated catalog ([docs/options-jvm.md](../options-jvm.md)).
 
 **The fidelity contract** shapes everything below: on the same class files and options,
-the engine prints the text Vineflower prints, byte for byte. The port therefore keeps
+the engine prints the text Vineflower prints, byte for byte, except where one of kuna's
+fixes of Vineflower's defects applies (section 10.16). The port therefore keeps
 Vineflower's pass order, its iteration orders (including the iteration order of Java's
 hash collections, which reaches the output), its id counters (which reach the output as
 `var10000` and `label7`) and its failure behaviour. Where this chapter describes a
-heuristic that looks arbitrary, it is Vineflower's, kept for that reason. The one
-deliberate exception is kuna's fixes of Vineflower's defects (section 10.16): each is a
-named option, on by default, that changes only what Vineflower gets wrong, and
-`jvm_vineflower_compat` turns them all off.
+heuristic that looks arbitrary, it is Vineflower's, kept for that reason. The fixes have
+no options of their own: each changes only what Vineflower gets wrong, all are always on,
+and `jvm_vineflower_compat` turns them all off, which gives Vineflower's text exactly.
 
 ## 10.1 The phase folders and the schedule
 

@@ -258,13 +258,16 @@ objects by creation in the arena; see the fidelity contract below.
   corpus's Vineflower-oracle cases run in it.
 - **Default mode** (the switch off): the same text, except where a kuna fix (*Kuna-only
   fixes*, below) corrects what Vineflower does wrong. Every fix is always on in this mode;
-  none has an option of its own. Today that means three things: a method Vineflower fails
-  on and a fix covers is decompiled instead of written as its `// $VF: Couldn't be
+  none has an option of its own. That means three things: a method Vineflower fails on
+  and a fix covers is decompiled instead of written as its `// $VF: Couldn't be
   decompiled` comment (with any imports its body needs); code Vineflower prints wrong (a
-  statement skipped after a denested `if`, a Kotlin supertype call with default-argument
-  placeholders) is printed as the program has it; and the note under a failure comment
-  that remains asks for reports to kuna's tracker instead of Vineflower's. Nothing else
-  may differ; that is the evidence each fix ships with (*Fixing a Vineflower bug*, below).
+  statement skipped after a denested `if`, a raw `new C(..)` that loses a lambda's
+  parameter types, an `assert` where Java needs an expression, an enum body without its
+  `;`, a `finally` copy that swallows the exception) is printed as the program has it, so
+  more classes recompile; and the note under a failure comment that remains asks for
+  reports to kuna's tracker instead of Vineflower's. Nothing else may differ; that is the
+  evidence each fix ships with (*Fixing a Vineflower bug*, below). `docs/jvm-benchmark.md`
+  measures both modes against Vineflower on five large projects.
 
 **The test oracle is Vineflower's text.** In compat mode, on the same class files and
 options, kuna-jvm prints exactly what Vineflower 1.12.0 prints. Every Vineflower-oracle case
@@ -366,8 +369,8 @@ the docs, the spec and `tests/jvm/kuna-fixes/cases.json`:
 | `anonymous_static_qualifier` | qualifies a call of an anonymous class's static method from a class nested in it with the class's missing name, `<unrepresentable>.m(...)` (Elasticsearch's `AbstractTSDBDocValuesProducer`) | the call is written unqualified, as Java requires |
 | `assert_dead_throw` | leaves the `throw new AssertionError(...)` an assert was built from as dead code when the assert's `if` reached it through a break (javac: `unreachable statement`), which also keeps its message's variables declared outside their loop (`for (key : keys)`) | the consumed throw is removed |
 | `handler_copy_offsets` | fails a method whose try/finally is protected by an exception range with several entries, typically a Kotlin suspend function whose `try` spans a suspension point: the copy of the `finally` handler that range splitting makes has no bytecode offsets, and the finally processing removes offsets it does not have (`removal index (is 0)` or `(is 18446744073709551615) should be < len (is 0)`; kotlinx-coroutines' `awaitClose`, `AbstractFlow.collect`) | the method decompiles; the `try` whose exit holds the inlined copy becomes a plain `try`/`finally`, each split-off part a `try`/`finally` guarded by a semaphore variable |
-| `nested_handler_copies` (fix) | fails a method whose duplicated handlers include a `catch` and the handler around it (`RuntimeException: parsing failure!`): record patterns inside a `try`/`catch`, Kotlin suspend functions with `try`/`finally`, `use` or `consume` (kotlinx-coroutines' `toList`, `consumeEach`) | the method decompiles; a duplication that was not needed is undone, so the source's single `try` comes back |
-| `copied_finally` (fix) | writes a `try`/`finally` that irreducible-flow splitting copied as `catch (Throwable)` without the rethrow, which swallows the exception | the copy is a `finally` like its original |
+| `nested_handler_copies` | fails a method whose duplicated handlers include a `catch` and the handler around it (`RuntimeException: parsing failure!`): record patterns inside a `try`/`catch`, Kotlin suspend functions with `try`/`finally`, `use` or `consume` (kotlinx-coroutines' `toList`, `consumeEach`) | the method decompiles; a duplication that was not needed is undone, so the source's single `try` comes back |
+| `copied_finally` | writes a `try`/`finally` that irreducible-flow splitting copied as `catch (Throwable)` without the rethrow, which swallows the exception | the copy is a `finally` like its original |
 | `type_switch_enum_label` | fails a Java 21+ pattern switch that mixes qualified enum constant labels with type patterns (`case E.X -> ...; case C c -> ...` on an interface), leaving the `EnumDesc` label as the raw switch index (`Invalid switch case set`; Vineflower's own `TestSwitchOnEnumJ21.testComplexPattern`) | the label is resolved (upstream `36ac62ec`) and printed qualified when the switch is on another type |
 | `type_switch_pattern_type` | types a type pattern that needs no cast (`case Integer i` on an `Integer` selector) as `Class`, so a switch that also has a constant label fails (`Invalid switch case set` with the JDK loaded, Vineflower's `TestSwitchPatternMatching18.test`/`test2`/`test3`; `invalid constant type` without debug info), and without debug info prints `case Class<Integer> var3` | the pattern is typed by its class; the selector keeps its type |
 | `type_switch_label_lookup` | finds a pattern switch's label only in the first position of a case and by value: a case with several labels keeps raw indices (`case Integer _, String _`, `case E.X, E.Y`: `invalid constant type`, index out of bounds; Vineflower's `TestUnnamedVar1.patternSwitch3`), and integer labels come out wrong (`case 5, 7` as `case 5: case 1:`, `case 1 ->` as `case Integer var5 ->`) | every label is resolved; a case of several type patterns prints as one label of unnamed patterns (`case Integer _, String _:`) without javac's re-test |
