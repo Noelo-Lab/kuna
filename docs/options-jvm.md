@@ -2,7 +2,7 @@
 
 **Generated** by `kuna catalog --markdown --engine jvm` from `decompiler/nonnative/kuna-jvm/options.toml` -- do not edit by hand; edit the table row and regenerate.
 
-These options steer the JVM engine (`kuna-jvm`, a port of Vineflower 1.12.0), which decompiles class files, jars and directories of classes. They apply to those inputs only, as the options of `docs/options.md` apply to native inputs only. Set any of them per run on `decompile`, `decompile-all`, `decompile-project` and `functions`: `kuna decompile app.jar com.ex.Main --option <name> <value>` (repeatable). Every Vineflower option also answers to Vineflower's long and three-letter names (its `aliases`). Booleans take `on|off` (also `1|0|true|false`). Defaults are Vineflower 1.12.0's.
+These options steer the JVM engine (`kuna-jvm`, a port of Vineflower 1.12.0), which decompiles class files, jars and directories of classes to Java, and classes compiled from Kotlin to Kotlin. They apply to those inputs only, as the options of `docs/options.md` apply to native inputs only. Set any of them per run on `decompile`, `decompile-all`, `decompile-project` and `functions`: `kuna decompile app.jar com.ex.Main --option <name> <value>` (repeatable). Every Vineflower option also answers to Vineflower's long and three-letter names (its `aliases`). Booleans take `on|off` (also `1|0|true|false`). Defaults are Vineflower 1.12.0's, its bundled plugins' included.
 
 Vineflower keys kuna sets itself, so they are not options:
 
@@ -24,7 +24,7 @@ Three tiers:
 
 - **Toggleable transforms** -- restructure, remove, or insert code; the on/off control surface.
 - **Input & analysis** -- what the engine reads: the class universe, libraries, the JDK.
-- **Rendering defaults** -- how the Java text is spelled.
+- **Rendering defaults** -- how the text is written: Java or Kotlin, and how it is spelled.
 
 ## Symptom index
 
@@ -97,6 +97,25 @@ Three tiers:
 | finally logic of a modern class built from subroutines | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline) |
 | else branch missing after an if that returns | [`jvm_prettify_ifs`](#jvm_prettify_ifs) |
 | deep else chains after returns (option is off) | [`jvm_prettify_ifs`](#jvm_prettify_ifs) |
+| locals named var1 var2 var3 with no hint of their type | [`jvm_variable_renaming`](#jvm_variable_renaming) |
+| obfuscated or meaningless local names from a forged LocalVariableTable | [`jvm_variable_renaming`](#jvm_variable_renaming) |
+| names differ from a Vineflower run with --variable-renaming=jad or tiny | [`jvm_variable_renaming`](#jvm_variable_renaming) |
+| locals renamed but parameters still named var1 or paramN | [`jvm_rename_parameters`](#jvm_rename_parameters) |
+| parameter names do not follow the renamer's scheme | [`jvm_rename_parameters`](#jvm_rename_parameters) |
+| an old Vineflower command line with --jad-style-variable-naming=1 gives JAD-style names | [`jvm_jad_style_variable_naming`](#jvm_jad_style_variable_naming) |
+| locals named var1 var2 where JAD-style names were expected | [`jvm_jad_style_variable_naming`](#jvm_jad_style_variable_naming) |
+| an old Vineflower command line with --jad-style-parameter-naming=1 renames parameters | [`jvm_jad_style_parameter_naming`](#jvm_jad_style_parameter_naming) |
+| parameters keep their names under the jad renamer | [`jvm_jad_style_parameter_naming`](#jvm_jad_style_parameter_naming) |
+| if (x == null) { $$$reportNull$$$0(0); } at the top of methods | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull) |
+| explicit null checks on @NotNull parameters or before returns (option is off) | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull) |
+| every Kotlin declaration starts with public | [`jvm_kt_show_public`](#jvm_kt_show_public) |
+| public modifiers that Kotlin source would omit | [`jvm_kt_show_public`](#jvm_kt_show_public) |
+| parameters written as x: Int = ... | [`jvm_kt_unknown_defaults`](#jvm_kt_unknown_defaults) |
+| default argument values missing from a Kotlin function signature | [`jvm_kt_unknown_defaults`](#jvm_kt_unknown_defaults) |
+| "a" + b + "c" in Kotlin output where a template was written | [`jvm_kt_collapse_string_concat`](#jvm_kt_collapse_string_concat) |
+| string templates hide the concatenation order | [`jvm_kt_collapse_string_concat`](#jvm_kt_collapse_string_concat) |
+| a facade class prints only This is a multifile facade and a list of files | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades) |
+| functions of a @JvmMultifileClass facade are missing | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades) |
 | Outer$Inner written as a separate class instead of nested | [`jvm_decompile_inner`](#jvm_decompile_inner) |
 | anonymous class body lands in the wrong method | [`jvm_decompile_inner`](#jvm_decompile_inner) |
 | need each class file decompiled on its own | [`jvm_decompile_inner`](#jvm_decompile_inner) |
@@ -121,6 +140,7 @@ Three tiers:
 | renamed inner classes not nested | [`jvm_validate_inner_classes_names`](#jvm_validate_inner_classes_names) |
 | inner and anonymous classes missing when decompiling one .class file | [`jvm_siblings`](#jvm_siblings) |
 | unrelated Name$x.class files nested into the class | [`jvm_siblings`](#jvm_siblings) |
+| a Vineflower command line to replay sets --kt-export-metadata=1 (the output is the same either way) | [`jvm_kt_export_metadata`](#jvm_kt_export_metadata) |
 | nonsense generic types from a tampered Signature attribute | [`jvm_decompile_generics`](#jvm_decompile_generics) |
 | need erased types that match the method descriptors | [`jvm_decompile_generics`](#jvm_decompile_generics) |
 | raw List where List<String> was expected (option is off) | [`jvm_decompile_generics`](#jvm_decompile_generics) |
@@ -170,6 +190,9 @@ Three tiers:
 | output differs from Vineflower's test fixture but matches java -jar | [`jvm_plugins`](#jvm_plugins) |
 | a class is written in a plugin's language instead of Java | [`jvm_plugins`](#jvm_plugins) |
 | a bundled plugin's pass changes the Java output | [`jvm_plugins`](#jvm_plugins) |
+| Kotlin classes come out as Java with @Metadata(mv = ..., d1 = ...) | [`jvm_kt_enable`](#jvm_kt_enable) |
+| a Kotlin class is written as .kt but Java output is wanted | [`jvm_kt_enable`](#jvm_kt_enable) |
+| Kotlin output of a class is wrong or failed | [`jvm_kt_enable`](#jvm_kt_enable) |
 
 ## Toggleable transforms
 
@@ -418,6 +441,87 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Also spelled:** `prettify-ifs`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_prettify_ifs off`
 
+### `jvm_variable_renaming` -- jad | tiny | <name>, default ``
+
+- **Symptoms:** locals named var1 var2 var3 with no hint of their type; obfuscated or meaningless local names from a forged LocalVariableTable; names differ from a Vineflower run with --variable-renaming=jad or tiny.
+- **What it does:** Rename locals with a renamer of the VariableRenaming plugin (needs jvm_plugins on, the default): jad names them after their type JAD-style (i, j, k, l, s, flag, file1, aobject), tiny the way tiny-remapper does (i, l, bl, the class name lowercased, plural for arrays); unset or an unknown name keeps the LocalVariableTable or var names.
+- **When to flip:** Set jad or tiny on obfuscated or debug-info-free code whose var1, var2 or forged names say nothing about the variables, or to match a Vineflower run that used the same renamer.
+- **Where / provenance:** plugins/variable_renaming_plugin, renamers, jad_name_provider, tiny_name_provider · vineflower · vineflower-option
+- **Also spelled:** `variable-renaming`
+- **Example:** `kuna decompile obf.jar a.b --option jvm_variable_renaming jad`
+
+### `jvm_rename_parameters` -- on | off, default `off`
+
+- **Symptoms:** locals renamed but parameters still named var1 or paramN; parameter names do not follow the renamer's scheme.
+- **What it does:** With a jvm_variable_renaming renamer, rename method and lambda parameters too, not only locals.
+- **When to flip:** Turn on with jvm_variable_renaming when the parameter names are as meaningless as the locals (obfuscated code, no MethodParameters or LocalVariableTable).
+- **Where / provenance:** plugins/jad_name_provider, tiny_name_provider · vineflower · vineflower-option
+- **Also spelled:** `rename-parameters`
+- **Example:** `kuna decompile obf.jar a.b --option jvm_variable_renaming tiny --option jvm_rename_parameters on`
+
+### `jvm_jad_style_variable_naming` -- on | off, default `off`
+
+- **Symptoms:** an old Vineflower command line with --jad-style-variable-naming=1 gives JAD-style names; locals named var1 var2 where JAD-style names were expected.
+- **What it does:** Deprecated in Vineflower: when jvm_variable_renaming is unset, use the jad renamer.
+- **When to flip:** Only to replay Vineflower command lines that still pass the deprecated flag; prefer jvm_variable_renaming jad.
+- **Where / provenance:** plugins/variable_renaming_plugin · vineflower · vineflower-option
+- **Also spelled:** `jad-style-variable-naming`
+- **Example:** `kuna decompile obf.jar a.b --option jvm_jad_style_variable_naming on`
+
+### `jvm_jad_style_parameter_naming` -- on | off, default `off`
+
+- **Symptoms:** an old Vineflower command line with --jad-style-parameter-naming=1 renames parameters; parameters keep their names under the jad renamer.
+- **What it does:** Deprecated in Vineflower: like jvm_rename_parameters, but for the jad renamer only.
+- **When to flip:** Only to replay Vineflower command lines that still pass the deprecated flag; prefer jvm_rename_parameters.
+- **Where / provenance:** plugins/jad_name_provider · vineflower · vineflower-option
+- **Also spelled:** `jad-style-parameter-naming`
+- **Example:** `kuna decompile obf.jar a.b --option jvm_variable_renaming jad --option jvm_jad_style_parameter_naming on`
+
+### `jvm_resugar_idea_notnull` -- on | off, default `on`
+
+- **Symptoms:** if (x == null) { $$$reportNull$$$0(0); } at the top of methods; explicit null checks on @NotNull parameters or before returns (option is off).
+- **What it does:** Remove the null checks IntelliJ IDEA's compiler inserts for @NotNull parameters and return values (if (x == null) { $$$reportNull$$$0(n); }), leaving the @NotNull annotations (IdeaNotNull plugin; needs jvm_plugins on, the default).
+- **When to flip:** Turn off to see the checks IDEA instrumented into a method, e.g. to confirm which parameters are checked at run time.
+- **Where / provenance:** plugins/idea_not_null_pass, idea_not_null_plugin · vineflower · vineflower-option
+- **Also spelled:** `resugar-idea-notnull`, `inn`
+- **Example:** `kuna decompile app.jar com.ex.Service --option jvm_resugar_idea_notnull off`
+
+### `jvm_kt_show_public` -- on | off, default `on`
+
+- **Symptoms:** every Kotlin declaration starts with public; public modifiers that Kotlin source would omit.
+- **What it does:** Kotlin plugin: write the public modifier on public classes, functions, constructors and properties of Kotlin classes, which Kotlin source normally leaves implicit (needs jvm_plugins and jvm_kt_enable on, the defaults).
+- **When to flip:** Turn off for idiomatic Kotlin with public implied, so that only internal, protected and private members carry a visibility keyword.
+- **Where / provenance:** kotlin/kotlin_writer, k_function, k_constructor, k_utils · vineflower · vineflower-option
+- **Also spelled:** `kt-show-public`
+- **Example:** `kuna decompile app.jar com.ex.Service --option jvm_kt_show_public off`
+
+### `jvm_kt_unknown_defaults` -- <text>, default `...`
+
+- **Symptoms:** parameters written as x: Int = ...; default argument values missing from a Kotlin function signature.
+- **What it does:** Kotlin plugin: the text written after = for a parameter that has a default value the plugin could not recover from the $default bridge (fun f(x: Int = ...)); empty writes no default at all.
+- **When to flip:** Set a marker of your own (for example /* default */) to make unrecovered defaults easy to find, or set it empty to drop them.
+- **Where / provenance:** kotlin/default_args_map · vineflower · vineflower-option
+- **Also spelled:** `kt-unknown-defaults`
+- **Example:** `kuna decompile app.jar com.ex.ApiKt --option jvm_kt_unknown_defaults "/* default */"`
+
+### `jvm_kt_collapse_string_concat` -- on | off, default `on`
+
+- **Symptoms:** "a" + b + "c" in Kotlin output where a template was written; string templates hide the concatenation order.
+- **What it does:** Kotlin plugin: turn string concatenations (StringBuilder chains, + chains, invokedynamic makeConcatWithConstants) in Kotlin methods into string templates "a $b ${c.d}".
+- **When to flip:** Turn off to see the concatenation exactly as compiled, for example to check which values are converted with toString or how a template was built.
+- **Where / provenance:** kotlin/collapse_string_concat_pass · vineflower · vineflower-option
+- **Also spelled:** `kt-collapse-string-concat`
+- **Example:** `kuna decompile app.jar com.ex.FormatKt --option jvm_kt_collapse_string_concat off`
+
+### `jvm_kt_decompile_facades` -- on | off, default `off`
+
+- **Symptoms:** a facade class prints only This is a multifile facade and a list of files; functions of a @JvmMultifileClass facade are missing.
+- **What it does:** Kotlin plugin: also write the wrapper functions of a multifile facade class (@file:JvmMultifileClass); off writes only the comment that lists the part classes holding the real implementations.
+- **When to flip:** Turn on to see a facade's forwarding functions, for example when callers in Java code call the facade and you need its exact signatures.
+- **Where / provenance:** kotlin/kotlin_writer · vineflower · vineflower-option
+- **Also spelled:** `kt-decompile-facades`
+- **Example:** `kuna decompile app.jar com.ex.UtilsKt --option jvm_kt_decompile_facades on`
+
 ## Input & analysis
 
 What the engine loads and infers before any class is written.
@@ -502,9 +606,18 @@ What the engine loads and infers before any class is written.
 - **Where / provenance:** p0_knowledge/kuna_input · kuna · kuna-input
 - **Example:** `kuna decompile Main.class --option jvm_siblings off`
 
+### `jvm_kt_export_metadata` -- on | off, default `off`
+
+- **Symptoms:** a Vineflower command line to replay sets --kt-export-metadata=1 (the output is the same either way).
+- **What it does:** Kotlin plugin: parse the @kotlin.Metadata of Kotlin classes even when jvm_kt_enable is off, so that the parsed metadata is available to other plugins; it does not change what is written (needs jvm_plugins on, the default).
+- **When to flip:** Only together with jvm_kt_enable off, to replay a Vineflower command line that passes it; kuna has no other consumer of the parsed metadata, so the Java output is the same either way.
+- **Where / provenance:** kotlin/kotlin_chooser · vineflower · vineflower-option
+- **Also spelled:** `kt-export-metadata`
+- **Example:** `kuna decompile app.jar com.ex.UserKt --option jvm_kt_enable off --option jvm_kt_export_metadata on`
+
 ## Rendering defaults
 
-How the Java text is spelled: formatting, literals, comments.
+How the text is written: its language (Java, or Kotlin for Kotlin classes), formatting, literals, comments.
 
 ### `jvm_decompile_generics` -- on | off, default `on`
 
@@ -707,10 +820,19 @@ How the Java text is spelled: formatting, literals, comments.
 ### `jvm_plugins` -- on | off, default `on`
 
 - **Symptoms:** output differs from Vineflower's test fixture but matches java -jar; a class is written in a plugin's language instead of Java; a bundled plugin's pass changes the Java output.
-- **What it does:** Load the plugins bundled with the engine (Vineflower's VariableRenaming, Kotlin and IdeaNotNull, as they are ported), as java -jar vineflower.jar does; off runs the bare Java pipeline, like Vineflower's test fixture.
+- **What it does:** Load the plugins bundled with the engine (Vineflower's VariableRenaming, Kotlin and IdeaNotNull), as java -jar vineflower.jar does; off runs the bare Java pipeline, like Vineflower's test fixture.
 - **When to flip:** Turn off to see what the core Java decompiler makes of a class a plugin would claim, or to compare with Vineflower's test fixture, which loads no plugin.
 - **Where / provenance:** p0_knowledge/fernflower, kuna_plugins · kuna · kuna-plugins
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_plugins off`
+
+### `jvm_kt_enable` -- on | off, default `on`
+
+- **Symptoms:** Kotlin classes come out as Java with @Metadata(mv = ..., d1 = ...); a Kotlin class is written as .kt but Java output is wanted; Kotlin output of a class is wrong or failed.
+- **What it does:** Kotlin plugin: write classes that carry @kotlin.Metadata as Kotlin source (.kt) through the plugin's own pipeline and writer; off writes them as Java (.java) with the @Metadata annotation, like any other class (needs jvm_plugins on, the default).
+- **When to flip:** Turn off to see the Java view of a Kotlin class (accessor methods, $default bridges, Intrinsics checks, every JVM method on its own), or when the Kotlin output of a class is wrong or fails and the Java output is enough; the CLI's --language java turns it off for the run.
+- **Where / provenance:** kotlin/kotlin_chooser · vineflower · vineflower-option
+- **Also spelled:** `kt-enable`
+- **Example:** `kuna decompile app.jar com.ex.UserKt --option jvm_kt_enable off`
 
 ## Programmatic use
 

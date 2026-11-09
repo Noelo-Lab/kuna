@@ -82,13 +82,15 @@ pub(crate) fn markdown() -> String {
     );
     preamble.push_str(
         "These options steer the JVM engine (`kuna-jvm`, a port of Vineflower 1.12.0), \
-         which decompiles class files, jars and directories of classes. They apply to \
+         which decompiles class files, jars and directories of classes to Java, and \
+         classes compiled from Kotlin to Kotlin. They apply to \
          those inputs only, as the options of `docs/options.md` apply to native inputs \
          only. Set any of them per run on `decompile`, `decompile-all`, \
          `decompile-project` and `functions`: `kuna decompile app.jar com.ex.Main \
          --option <name> <value>` (repeatable). Every Vineflower option also answers \
          to Vineflower's long and three-letter names (its `aliases`). Booleans take \
-         `on|off` (also `1|0|true|false`). Defaults are Vineflower 1.12.0's.\n\n",
+         `on|off` (also `1|0|true|false`). Defaults are Vineflower 1.12.0's, its \
+         bundled plugins' included.\n\n",
     );
     preamble.push_str("Vineflower keys kuna sets itself, so they are not options:\n\n");
     for owned in kuna_options::driver_owned() {
@@ -103,7 +105,10 @@ pub(crate) fn markdown() -> String {
         "- **Input & analysis** -- what the engine reads: the class universe, \
          libraries, the JDK.\n",
     );
-    preamble.push_str("- **Rendering defaults** -- how the Java text is spelled.\n\n");
+    preamble.push_str(
+        "- **Rendering defaults** -- how the text is written: Java or Kotlin, and how it \
+         is spelled.\n\n",
+    );
     emit_catalog_markdown_from(
         &rows,
         &MarkdownDoc {
@@ -122,7 +127,8 @@ pub(crate) fn markdown() -> String {
                 (
                     "core",
                     "## Rendering defaults",
-                    "How the Java text is spelled: formatting, literals, comments.",
+                    "How the text is written: its language (Java, or Kotlin for Kotlin classes), \
+                     formatting, literals, comments.",
                 ),
             ],
             tail: "## Programmatic use\n\n```bash\n# discover (machine-readable; includes tier, symptoms, aliases):\n\
