@@ -6,7 +6,6 @@
 //! is `Option<i32>` (hash 0, like Java's null key). For the same reason the
 //! clash-renaming maps key statements by `Option<Statement>` (a root's parent)
 //! and hold `Option<String>` names (an unnamed parameter).
-#![allow(dead_code)]
 
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
@@ -217,10 +216,6 @@ impl VarDefinitionHelper {
 
     fn root(self) -> RootStatement {
         self.with(|d| d.root)
-    }
-
-    fn mt(self) -> StructMethod {
-        self.with(|d| d.mt)
     }
 
     pub fn set_var_definitions(self) {
