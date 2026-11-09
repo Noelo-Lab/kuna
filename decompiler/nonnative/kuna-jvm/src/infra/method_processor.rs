@@ -18,6 +18,8 @@ use crate::counter_container::CounterContainer;
 use crate::dead_code_helper::DeadCodeHelper;
 use crate::decompile_record::DecompileRecord;
 use crate::decompiler_context::DecompilerContext;
+use crate::direct_graph::DirectGraph;
+use crate::direct_node::DirectNode;
 use crate::dom_helper::DomHelper;
 use crate::eliminate_loops_helper::EliminateLoopsHelper;
 use crate::exception_deobfuscator::ExceptionDeobfuscator;
@@ -36,6 +38,7 @@ use crate::label_helper::LabelHelper;
 use crate::loop_extract_helper::LoopExtractHelper;
 use crate::merge_helper::MergeHelper;
 use crate::method_descriptor::MethodDescriptor;
+use crate::method_wrapper::MethodWrapper;
 use crate::p_pand_mm_helper::PPandMMHelper;
 use crate::pass_context::PassContext;
 use crate::plugin_context::{LanguageSpec, PluginContext};
@@ -50,7 +53,10 @@ use crate::switch_helper::SwitchHelper;
 use crate::switch_pattern_match_processor::SwitchPatternMatchProcessor;
 use crate::synchronized_helper::SynchronizedHelper;
 use crate::try_helper::TryHelper;
+use crate::var_definition_helper::VarDefinitionHelper;
 use crate::var_processor::VarProcessor;
+use crate::var_version_node::VarVersionNode;
+use crate::var_versions_graph::VarVersionsGraph;
 
 thread_local! {
     static DEBUG_CURRENTLY_DECOMPILING: Cell<Option<RootStatement>> = const { Cell::new(None) };
@@ -59,6 +65,64 @@ thread_local! {
 }
 
 pub struct MethodProcessor;
+
+/// The scratch objects one `code_to_java` run allocates and drops on the floor
+/// (Java's GC reclaims them): direct graphs and their nodes, SSA version graphs
+/// and their nodes, variable-definition helpers. Released when the run returns
+/// or unwinds; the only ones that escape are the direct graphs another
+/// method's wrapper cached meanwhile, which are kept with their nodes.
+struct MethodScratch {
+    direct_graph: u32,
+    direct_node: u32,
+    versions_graph: u32,
+    version_node: u32,
+    var_definition_helper: u32,
+}
+
+impl MethodScratch {
+    fn open() -> MethodScratch {
+        MethodScratch {
+            direct_graph: DirectGraph::arena_len(),
+            direct_node: DirectNode::arena_len(),
+            versions_graph: VarVersionsGraph::arena_len(),
+            version_node: VarVersionNode::arena_len(),
+            var_definition_helper: VarDefinitionHelper::arena_len(),
+        }
+    }
+}
+
+impl Drop for MethodScratch {
+    fn drop(&mut self) {
+        let kept_graphs = MethodWrapper::cached_graphs_since(self.direct_graph);
+        let node_mark = self.direct_node;
+        let mut kept_nodes = vec![false; (DirectNode::arena_len() - node_mark) as usize];
+        let mut pending: Vec<DirectNode> = Vec::new();
+        for graph in &kept_graphs {
+            graph.with(|d| {
+                pending.extend(d.nodes.iter().copied());
+                pending.extend(d.extra_nodes.iter().copied());
+                pending.extend(d.first);
+            });
+        }
+        while let Some(node) = pending.pop() {
+            if node.index() < node_mark {
+                continue;
+            }
+            let seen = &mut kept_nodes[(node.index() - node_mark) as usize];
+            if !*seen {
+                *seen = true;
+                pending.extend(node.linked_nodes());
+            }
+        }
+        DirectGraph::release_since(self.direct_graph, |i| {
+            kept_graphs.iter().any(|g| g.index() == i)
+        });
+        DirectNode::release_since(node_mark, |i| kept_nodes[(i - node_mark) as usize]);
+        VarVersionsGraph::release_since(self.versions_graph, |_| false);
+        VarVersionNode::release_since(self.version_node, |_| false);
+        VarDefinitionHelper::release_since(self.var_definition_helper, |_| false);
+    }
+}
 
 impl MethodProcessor {
     /// `debugCurrentlyDecompiling.get()`.
@@ -99,6 +163,7 @@ impl MethodProcessor {
         var_proc: VarProcessor,
         spec: Option<&LanguageSpec>,
     ) -> RootStatement {
+        let _scratch = MethodScratch::open();
         CancelationManager::check_canceled();
 
         Self::set_debug_currently_decompiling(None);

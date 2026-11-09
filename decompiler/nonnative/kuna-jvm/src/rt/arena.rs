@@ -4,8 +4,11 @@
 //! A handle is a `Copy` index, so `==` on handles is Java's reference `==`. Each
 //! object sits in its own cell, so a `with`/`with_mut` closure may freely touch
 //! other objects and allocate; only re-entering the *same* object mutably is an
-//! error. Class-scope arenas are emptied after each root class; session-scope
-//! arenas live as long as the decompilation session.
+//! error. Class-scope arenas are emptied at the end of a decompilation run;
+//! session-scope arenas live as long as the decompilation session. Objects
+//! known to be garbage earlier can be released one by one: their slot (and
+//! so their index, which is their identity hash) stays taken, only the
+//! contents are dropped, and any later use of the handle panics.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -29,7 +32,7 @@ impl RawHandle {
 }
 
 pub struct Arena<T> {
-    slots: RefCell<Vec<Rc<RefCell<T>>>>,
+    slots: RefCell<Vec<Option<Rc<RefCell<T>>>>>,
     epoch: Cell<u32>,
     registered: Cell<bool>,
     scope: Scope,
@@ -64,7 +67,7 @@ impl<T> Arena<T> {
         }
         let mut slots = self.slots.borrow_mut();
         let index = u32::try_from(slots.len()).expect("arena overflow");
-        slots.push(Rc::new(RefCell::new(value)));
+        slots.push(Some(Rc::new(RefCell::new(value))));
         RawHandle {
             index,
             epoch: self.epoch.get(),
@@ -78,7 +81,25 @@ impl<T> Arena<T> {
                 self.name, handle.index
             );
         }
-        self.slots.borrow()[handle.index as usize].clone()
+        match &self.slots.borrow()[handle.index as usize] {
+            Some(cell) => cell.clone(),
+            None => released(self.name, handle.index),
+        }
+    }
+
+    /// Drop the contents of every object allocated at or after index `mark`
+    /// that `keep` (given the index; it must not touch this arena) rejects.
+    pub fn release_since(&self, mark: u32, keep: impl Fn(u32) -> bool) {
+        let len = self.slots.borrow().len() as u32;
+        let mut dropped = Vec::new();
+        for index in mark..len {
+            if !keep(index) {
+                if let Some(cell) = self.slots.borrow_mut()[index as usize].take() {
+                    dropped.push(cell);
+                }
+            }
+        }
+        drop(dropped);
     }
 
     pub fn is_live(&self, handle: RawHandle) -> bool {
@@ -119,6 +140,11 @@ pub fn reset_session_scope() {
     for clear in clearers {
         clear();
     }
+}
+
+#[cold]
+fn released(name: &str, index: u32) -> ! {
+    panic!("released {name} handle #{index} used after its owner declared it garbage");
 }
 
 #[cold]
@@ -187,6 +213,18 @@ macro_rules! arena_object {
             /// Creation-order index within the arena; stable for the object's lifetime.
             pub fn index(self) -> u32 {
                 self.0.index()
+            }
+
+            /// Number of objects allocated in this arena since its last reset: the
+            /// index the next allocation gets.
+            pub fn arena_len() -> u32 {
+                Self::__arena(|a| a.len() as u32)
+            }
+
+            /// Release every object allocated at or after index `mark` whose
+            /// index `keep` rejects; `keep` must not touch this arena.
+            pub fn release_since(mark: u32, keep: impl Fn(u32) -> bool) {
+                Self::__arena(|a| a.release_since(mark, keep))
             }
         }
 

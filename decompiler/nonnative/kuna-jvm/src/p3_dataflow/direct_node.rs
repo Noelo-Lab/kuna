@@ -120,6 +120,20 @@ impl DirectNode {
         }
     }
 
+    /// Every node this one references: its try-finally node and the ends of its edges.
+    pub(crate) fn linked_nodes(self) -> Vec<DirectNode> {
+        self.with(|d| {
+            let mut out: Vec<DirectNode> = d.try_finally.into_iter().collect();
+            for edges in d.successors.values().chain(d.predecessors.values()) {
+                for edge in edges.borrow().iter() {
+                    out.push(edge.get_source());
+                    out.push(edge.get_destination());
+                }
+            }
+            out
+        })
+    }
+
     pub fn equals(self, that: DirectNode) -> bool {
         if self == that {
             return true;
