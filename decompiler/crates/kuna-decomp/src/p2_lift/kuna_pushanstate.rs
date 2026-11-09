@@ -96,8 +96,10 @@ impl ByteStore {
     }
 
     /// Read `size` bytes at `off`, composing the stored slices.  Gaps are
-    /// filled by `fill(offset, length)`, whose value is stored so later reads
-    /// of the same bytes agree.
+    /// filled by `fill(offset, length)`.  A symbolic fill is stored so later
+    /// reads of the same bytes, at any width, agree; a constant one (an image
+    /// byte) is the same on every read and is not, which keeps the bytecode a
+    /// path fetched out of every later state.
     pub fn read_with(
         &mut self,
         arena: &mut ExprArena,
@@ -125,7 +127,9 @@ impl ByteStore {
                 }
                 None => {
                     let v = fill(arena, r.off, r.len);
-                    self.write(r.off, v, r.len, big_endian);
+                    if arena.is_const(v).is_none() {
+                        self.write(r.off, v, r.len, big_endian);
+                    }
                     v
                 }
             };

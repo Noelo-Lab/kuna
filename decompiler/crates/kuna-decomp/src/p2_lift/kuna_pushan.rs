@@ -524,6 +524,11 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
     call_kills.extend(placeholders.iter().copied());
     let (overlay, emit_stats) = emit(&cfg, &mut explorer.arena, &target, &conf, entry);
     let mut log = std::mem::take(&mut explorer.log);
+    if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
+        if let Some(l) = status.lines().find(|l| l.starts_with("VmHWM:")) {
+            log.push(format!("peak rss after emission: {}", l.trim_start_matches("VmHWM:").trim()));
+        }
+    }
     for s in &target.sections {
         log.push(format!("section {:#x}-{:#x} flags={:#x}{}", s.start, s.end, s.flags, if Some((s.start, s.end)) == target.entry_section { " (entry)" } else { "" }));
     }
