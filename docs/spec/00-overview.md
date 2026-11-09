@@ -507,7 +507,7 @@ Four front-ends drive one engine assembly:
   `Selected entry has no mapped bytes`; a later byte-load error while decoding
   a mapped entry also remains a failure, as it does in JSON output. Because that
   probe reads through the loader's 512-byte staging window, an unmapped address
-  just past mapped bytes can pass it; on a `mappedflowboundary` image it then
+  just past mapped bytes can pass it; on a mapped-flow-boundary-eligible image it then
   fails in the checked decode with `Instruction bytes at <addr> are not mapped`,
   while an address far from any segment is refused by the CLI selector with
   `address <addr> is not mapped in this input`. A PE IAT slot
@@ -2949,8 +2949,8 @@ flow-call-override-retain.md`): one directive against a 22-link body, which went
 from `LoadLibraryA(s_40151e);` to the whole self-unpacking sequence.
 
 The same bounded walk recognizes a chain reached from the function entry
-without a directive (`kuna_entry_chain_sites`) when the P2
-`entryretdispatch` option is on (default on, DIV-168). Before the shared
+without a directive (`kuna_entry_chain_sites`; the P2 `entryretdispatch`
+recovery, DIV-168, always on). Before the shared
 decompile step follows flow, every recognized link without an explicit caller
 fact is seeded as `call`. Caller-stated flow classifications own their sites;
 in particular, explicit `flow <site> return` vetoes an automatic CALL and is
@@ -2960,15 +2960,13 @@ through the incoming return-address word, a discarded exact-fall-through push,
 an unrelated exact-fall-through store, and a computed return whose source lacks
 the adjacent in-run store pair produce no sites and keep RETURN semantics. The
 console's prefollowed-IR fast path is declined only when
-the enabled entry scan finds a link, because that IR was followed before the
-derived calls were known. `option entryretdispatch off` restores the first-RET
-termination while leaving explicit `flow <site> call` chain propagation
-available. The site and instruction caps, continuation clearing, opaque-flow
+the entry scan finds a link, because that IR was followed before the
+derived calls were known. The site and instruction caps, continuation clearing, opaque-flow
 stops, and multi-link behavior are the same code as the explicit override path
 rather than a second recognizer.
 
-The same provenance has a separate one-store classification under
-`pushimmediateret` (default on, DIV-170). When RETURN pops the sole current-run
+The same provenance has a separate one-store classification, the
+`pushimmediateret` recovery (DIV-170, always on). When RETURN pops the sole current-run
 stack store and that exact store is an immediate, the shared decompile step
 seeds BRANCH rather than CALL, with no fall-through and without registering the
 target as a function. A second same-stack store declines so the adjacent-pair

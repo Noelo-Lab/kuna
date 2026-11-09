@@ -49,7 +49,7 @@ struct ArchFlowEnv {
     mapped_image: Option<Arc<dyn ImageBytes>>,
     /// (kuna `calltrampoline` / `callpopret`) Memo of both return-address-
     /// discarding probes, keyed by direct-call target.  Both inspect the same
-    /// bounded raw decode, so sharing the verdict also keeps the second option
+    /// bounded raw decode, so sharing the verdict also keeps the second probe
     /// from doubling `getPcode` traffic in ghidra mode.
     return_discard_memo:
         std::cell::RefCell<std::collections::HashMap<(i32, u64), (bool, bool)>>,
@@ -180,10 +180,7 @@ impl FlowEnvironment for ArchFlowEnv {
         self.arch().overlap_branch
     }
     fn decode_halt_reports(&self) -> bool {
-        // (kuna decodehalt) the Architecture-owned gate (`option decodehalt`).
-        // When on, a halt planted because the decode failed carries the upstream
-        // truncation + header warnings.
-        self.arch().decode_halt
+        true
     }
     fn decode_failure_hint(&self, addr: &Address) -> Option<String> {
         crate::kuna_decodehalt::powerpc_isa_hint(
@@ -429,16 +426,12 @@ impl FlowEnvironment for ArchFlowEnv {
                 .is_some_and(|space| locked.contains(&(space.get_index(), entry.get_offset())))
     }
     fn is_fastfail_callind(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
-        // (kuna `fastfailnoreturn`) wire the `int 0x29` predicate.  The gate is the
-        // architecture-owned `fastfail_noreturn` flag (`option fastfailnoreturn
-        // on|off`, DIV default-on) plus the compiler-spec component of the resolved
-        // language id — `int 0x29` is `__fastfail` by Windows convention alone.  The
-        // user-op name resolution is `glb->userops.getOp(id)->getName()`.
+        // (kuna `fastfailnoreturn`) wire the `int 0x29` predicate.  The gate is
+        // the compiler-spec component of the resolved language id — `int 0x29` is
+        // `__fastfail` by Windows convention alone.  The user-op name resolution
+        // is `glb->userops.getOp(id)->getName()`.
         let arch = self.arch();
-        if !arch.fastfail_noreturn
-            || !crate::kuna_fastfailnoreturn::archid_is_windows(arch.get_description())
-        {
-            // Fast-path both gates without touching the IR.
+        if !crate::kuna_fastfailnoreturn::archid_is_windows(arch.get_description()) {
             return false;
         }
         crate::kuna_fastfailnoreturn::is_fastfail_callind(fd, op, |id| {
@@ -519,12 +512,11 @@ impl FlowEnvironment for ArchFlowEnv {
             dest == fd.get_address(),
             dest_outside_extent,
             || {
-                if arch.got_tail_call
-                    && (crate::kuna_gottailcall::callable(arch, fd, dest)
-                        || !self.mapped_flow_image().map_or_else(
-                            || self.code_bytes_mapped(dest),
-                            |image| crate::kuna_mappedflowboundary::mapped_start(image, dest),
-                        ))
+                if crate::kuna_gottailcall::callable(arch, fd, dest)
+                    || !self.mapped_flow_image().map_or_else(
+                        || self.code_bytes_mapped(dest),
+                        |image| crate::kuna_mappedflowboundary::mapped_start(image, dest),
+                    )
                 {
                     return true;
                 }
@@ -543,20 +535,10 @@ impl FlowEnvironment for ArchFlowEnv {
     }
 
     fn is_return_discarding_trampoline(&self, dest: &Address) -> bool {
-        // (kuna `calltrampoline`) Fast-path the gate: this runs at every direct
-        // CALL site, and off it must not touch the decoder.
-        if !self.arch().call_trampoline {
-            return false;
-        }
         self.return_discard_verdicts(dest).1
     }
 
     fn pops_return_address(&self, dest: &Address) -> bool {
-        // (kuna `callpopret`) Fast-path the gate: this runs at every direct CALL
-        // site, and off it must not touch the decoder.
-        if !self.arch().call_pop_ret {
-            return false;
-        }
         self.return_discard_verdicts(dest).0
     }
 
@@ -587,7 +569,6 @@ impl FlowEnvironment for ArchFlowEnv {
             fd.get_address(),
             dest,
             sp.as_ref(),
-            arch.tail_call_saved,
         )
     }
 }
@@ -616,19 +597,14 @@ impl ArchFlowEnv {
         ) else {
             return (false, false);
         };
-        let popret = arch.call_pop_ret
-            && crate::kuna_callpopret::kuna_call_pops_return_address(&ops, &sp);
-        let trampoline = if arch.call_trampoline {
-            crate::kuna_calltrampoline::kuna_trampoline_branch_target(&ops, &sp)
-                .and_then(|target| {
-                    let space = target.space.as_ref()?;
-                    let re_entry = Address::new(std::rc::Rc::clone(space), target.offset);
-                    Some(self.query_call(&re_entry).is_none())
-                })
-                .unwrap_or(false)
-        } else {
-            false
-        };
+        let popret = crate::kuna_callpopret::kuna_call_pops_return_address(&ops, &sp);
+        let trampoline = crate::kuna_calltrampoline::kuna_trampoline_branch_target(&ops, &sp)
+            .and_then(|target| {
+                let space = target.space.as_ref()?;
+                let re_entry = Address::new(std::rc::Rc::clone(space), target.offset);
+                Some(self.query_call(&re_entry).is_none())
+            })
+            .unwrap_or(false);
         let verdict = (popret, trampoline);
         if let Some(k) = key {
             self.return_discard_memo.borrow_mut().insert(k, verdict);
@@ -912,7 +888,7 @@ fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> 
         Some((start.clone(), Address::new(space, last)))
     });
     let env = ArchFlowEnv {
-        mapped_image: if arch.mapped_flow_boundary && arch.mapped_flow_boundary_image {
+        mapped_image: if arch.mapped_flow_boundary_image {
             arch.translate().loader_rc().borrow().shared_bytes()
         } else {
             None

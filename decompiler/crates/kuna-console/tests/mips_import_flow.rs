@@ -106,16 +106,12 @@ fn the_listing_and_xrefs_walks_never_follow_a_resolver_fall_through() {
     let file = object::File::parse(&*bytes).unwrap();
     let image = ObjectLoadImage::from_bytes(path, &bytes).unwrap();
     let &(site, end) = image.mips_linkage().unwrap().transfers.iter().max().unwrap();
-    for enabled in [true, false] {
-        let mut prog = bootstrap_from_object(path, "", &[root.join("specs").to_string_lossy().into_owned()]).unwrap();
-        prog.arch_mut().set_kuna_option("stubtailcall", if enabled { "on" } else { "off" }).unwrap();
-        let arch = prog.arch();
-        let listing = Listing::build(&file, &image, arch, arch.translate(), &[site - 8]);
-        assert!(listing.is_instruction_start(site));
-        assert_eq!(listing.is_instruction_start(end), !enabled,
-            "stubtailcall={enabled}: bytes after the last stub ({end:#x})");
-        assert_eq!(listing.refs_from(site).is_empty(), enabled, "stubtailcall={enabled}");
-        let index = kuna_analysis::listing::xrefs::build(&file, arch, arch.translate(), &[site - 8]);
-        assert_eq!(index.is_decoded(end), !enabled, "xrefs, stubtailcall={enabled}");
-    }
+    let prog = bootstrap_from_object(path, "", &[root.join("specs").to_string_lossy().into_owned()]).unwrap();
+    let arch = prog.arch();
+    let listing = Listing::build(&file, &image, arch, arch.translate(), &[site - 8]);
+    assert!(listing.is_instruction_start(site));
+    assert!(!listing.is_instruction_start(end), "bytes after the last stub ({end:#x})");
+    assert!(listing.refs_from(site).is_empty());
+    let index = kuna_analysis::listing::xrefs::build(&file, arch, arch.translate(), &[site - 8]);
+    assert!(!index.is_decoded(end), "xrefs");
 }

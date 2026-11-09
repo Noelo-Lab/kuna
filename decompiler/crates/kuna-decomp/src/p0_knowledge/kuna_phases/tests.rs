@@ -32,19 +32,19 @@ fn subphase_count_is_48() {
 }
 
 #[test]
-fn surface_count_is_108() {
-    assert_eq!(kuna_num_surfaces(), 108);
-    assert_eq!(SURFACE_TABLE.len(), 108);
+fn surface_count_is_101() {
+    assert_eq!(kuna_num_surfaces(), 101);
+    assert_eq!(SURFACE_TABLE.len(), 101);
 }
 
 #[test]
-fn settable_count_is_300() {
-    assert_eq!(kuna_num_settables(), 300);
-    assert_eq!(SETTABLE_TABLE.len(), 300);
+fn settable_count_is_278() {
+    assert_eq!(kuna_num_settables(), 278);
+    assert_eq!(SETTABLE_TABLE.len(), 278);
 }
 
 #[test]
-fn tier_counts_are_49_core_144_transform_107_analysis() {
+fn tier_counts_are_42_core_129_transform_107_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_49_core_144_transform_107_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (49, 144, 107));
+    assert_eq!((core, transform, analysis), (42, 129, 107));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_113() {
+fn option_values_live_value_present_for_91() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -982,7 +982,7 @@ fn option_values_live_value_present_for_113() {
     // 179 -> 181: +1 for `copywaves` (pool_copy_waves), +1 for `armderef` (analysis_armderef).
     // 178 -> 179: +1 for `ptrauthtrap` (live_field = ptrauth_trap).
     // 179 -> 180: +1 for `authptrcall` (live_field = analysis_authptrcall).
-    assert_eq!(with_live, 113);
+    assert_eq!(with_live, 91);
 }
 
 #[test]
@@ -1228,7 +1228,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftcall`, beside that.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
-    assert_eq!(json.matches("},\n").count(), 299);
+    assert_eq!(json.matches("},\n").count(), 277);
 }
 
 #[test]
