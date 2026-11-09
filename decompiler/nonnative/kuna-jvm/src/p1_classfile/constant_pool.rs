@@ -6,9 +6,9 @@
 //! of Java's two-pass resolution whenever every reference has the kind that
 //! pass expects; a pool where one does not is read eagerly, as in Java.
 
-use crate::byte_cursor::ByteCursor;
 use std::rc::Rc;
 
+use crate::byte_cursor::ByteCursor;
 use crate::code_constants::{
     CONSTANT_CLASS, CONSTANT_DOUBLE, CONSTANT_DYNAMIC, CONSTANT_FIELDREF, CONSTANT_FLOAT,
     CONSTANT_INTEGER, CONSTANT_INTERFACE_METHODREF, CONSTANT_INVOKE_DYNAMIC, CONSTANT_LONG,
