@@ -1493,6 +1493,9 @@ impl ExprArena {
     /// variable's change at three dissimilar points is `var + d`; over a
     /// pointer variable, one that holds the same value at all three is that
     /// constant (an image base the obfuscator derives from the stack pointer).
+    /// The points differ in the bits of the variable that are not known; a
+    /// variable with at most four possible values is evaluated at each of
+    /// them instead, so a select over it is never read as `var + d`.
     /// This is how angr's concretizing solver sees through mixed
     /// boolean-arithmetic rewrites of the stack pointer, without fixing the
     /// pointer's value.
@@ -1517,9 +1520,17 @@ impl ExprArena {
                 let mut d: Option<u128> = None;
                 let mut same: Option<u128> = None;
                 let mut ok = true;
+                let free = m & !(info.known.0 | info.known.1);
+                let mut points: Vec<u128> =
+                    [0x0000_7ffd_3a5c_9e40u128, 0x0000_1234_5678_9ab0, 0x0000_6b8b_4567_3270].iter().map(|p| ((p & m) & !info.known.0) | info.known.1).collect();
                 let mut constant = info.pointer;
-                for p in [0x0000_7ffd_3a5c_9e40u128, 0x0000_1234_5678_9ab0, 0x0000_6b8b_4567_3270] {
-                    let pv = ((p & m) & !info.known.0) | info.known.1;
+                if free.count_ones() <= 2 {
+                    points = (0..1u128 << free.count_ones()).map(|i| deposit(i, free) | info.known.1).collect();
+                    constant = true;
+                } else if points.iter().collect::<BTreeSet<_>>().len() < points.len() {
+                    points = [0x9e40_3a5cu128, 0x9ab0_5678, 0x3270_4567].iter().map(|p| deposit(*p, free) | info.known.1).collect();
+                }
+                for pv in points {
                     let k = self.cst(size, pv);
                     let mut map = BTreeMap::new();
                     map.insert(var_e, k);
@@ -1962,7 +1973,8 @@ impl ExprArena {
         Some(vals.into_iter().collect())
     }
 
-    /// Render for diagnostics.
+    /// Render for diagnostics, cut off after [`MAX_FMT`] bytes (a DAG prints
+    /// as a tree, which can be exponentially long).
     pub fn fmt(&self, e: ExprId) -> String {
         let mut s = String::new();
         self.fmt_rec(e, &mut s, 0);
@@ -1971,7 +1983,7 @@ impl ExprArena {
 
     fn fmt_rec(&self, e: ExprId, s: &mut String, depth: u32) {
         use std::fmt::Write;
-        if depth > 40 {
+        if depth > 40 || s.len() > MAX_FMT {
             s.push_str("...");
             return;
         }
@@ -2026,6 +2038,23 @@ impl ExprArena {
             }
         }
     }
+}
+
+/// Longest rendering [`ExprArena::fmt`] builds.
+const MAX_FMT: usize = 8192;
+
+/// The low bits of `v` spread, in order, over the set bits of `m`.
+fn deposit(mut v: u128, mut m: u128) -> u128 {
+    let mut out = 0;
+    while m != 0 {
+        let bit = m & m.wrapping_neg();
+        if v & 1 == 1 {
+            out |= bit;
+        }
+        v >>= 1;
+        m &= m - 1;
+    }
+    out
 }
 
 #[inline]

@@ -34,6 +34,15 @@ pub type NodeId = u32;
 pub struct NodeKey {
     pub addr: u64,
     pub ctx: Option<u64>,
+    /// The stack pointer's offset from its entry value on entry (None when
+    /// it is not relative to the entry stack pointer).
+    pub sp: Option<i128>,
+}
+
+impl NodeKey {
+    pub fn at(addr: u64, ctx: Option<u64>) -> Self {
+        NodeKey { addr, ctx, sp: None }
+    }
 }
 
 /// Per-path interpreter context carried along edges (not part of the state).
@@ -82,6 +91,10 @@ pub struct Node {
     /// exits, as the constant it is offset by there, with the stack pointer's
     /// offset from its entry value there.
     pub exit_locs: Option<(Vec<(VarId, Loc, i128)>, Option<i128>)>,
+    /// For a select that forked the virtual PC: where the VPC is held at the
+    /// node's exit (a register, or a concrete memory cell), and the VPC each
+    /// target continues with, in target order.
+    pub vpc_fork: Option<(Loc, Vec<u64>)>,
     pub key: NodeKey,
     pub entry: State,
     pub entry_ctx: VmCtx,
@@ -180,10 +193,14 @@ pub struct Explorer<'a> {
     escapes: BTreeSet<i128>,
     /// Locations recorded by the last select built, for its node.
     pending_locs: Option<(Vec<(VarId, Loc, i128)>, Option<i128>)>,
+    /// The VPC holder and per-target VPCs of the last virtual-PC fork.
+    pending_vpc_fork: Option<(Loc, Vec<u64>)>,
     /// Callees in the image already read.
     callees: BTreeMap<u64, Option<CalleeScan>>,
     /// The native addresses nodes start at this round (handler entries).
     node_addrs: BTreeSet<u64>,
+    /// The stack depths seen this round at each native address and context.
+    stack_depths: BTreeMap<(u64, Option<u64>), Vec<Option<i128>>>,
     /// The node being resolved left by a direct jump (a constant in the instruction).
     direct_exit: bool,
     pub stats: Stats,
@@ -212,6 +229,8 @@ const CALL_POINTEE_BYTES: i128 = 16;
 const MAX_CALLEE_SCAN: usize = 512;
 /// Most stack words a call's pushed arguments are counted over.
 const MAX_PUSHED_WORDS: i128 = 16;
+/// Most stack depths kept apart at one native address and context.
+const MAX_STACK_DEPTHS: usize = 4;
 
 /// A call leaving the interpreter: where it goes and where it comes back.
 #[derive(Clone, Copy, Debug)]
@@ -251,8 +270,10 @@ impl<'a> Explorer<'a> {
             image_ptrs: BTreeMap::new(),
             escapes: BTreeSet::new(),
             pending_locs: None,
+            pending_vpc_fork: None,
             callees: BTreeMap::new(),
             node_addrs: BTreeSet::new(),
+            stack_depths: BTreeMap::new(),
             direct_exit: false,
             stats: Stats::default(),
             log: Vec::new(),
@@ -337,10 +358,11 @@ impl<'a> Explorer<'a> {
         self.stats.unresolved = 0;
         self.stats.halts = 0;
         self.node_addrs.clear();
+        self.stack_depths.clear();
         let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0, escapes: Vec::new() };
         let mut worklist: VecDeque<NodeId> = VecDeque::new();
         let init = self.initial_state();
-        let key = NodeKey { addr: self.entry_addr, ctx: None };
+        let key = NodeKey::at(self.entry_addr, None);
         let entry = self.reach(&mut cfg, &mut worklist, key, init, VmCtx::default(), None);
         cfg.entry = entry;
         let mut emu = Emulator::new(self.target);
@@ -393,6 +415,7 @@ impl<'a> Explorer<'a> {
         ctx: VmCtx,
         from: Option<NodeId>,
     ) -> NodeId {
+        let key = self.at_depth(key, &mut state);
         if let Some(&id) = cfg.index.get(&key) {
             let node = &mut cfg.nodes[id as usize];
             if let Some(f) = from {
@@ -408,7 +431,7 @@ impl<'a> Explorer<'a> {
             if sa != sb && !self.same_on_stack(sa, sb) {
                 if let Some(tr) = &self.config.trace {
                     use std::io::Write;
-                    let _ = writeln!(tr.borrow_mut(), "        stack pointer differs at node {id}: not merged");
+                    let _ = writeln!(tr.borrow_mut(), "        stack pointer differs at node {id}: not merged: entry {:x?} incoming {:x?}", self.arena.affine(sa), self.arena.affine(sb));
                 }
                 return id;
             }
@@ -514,6 +537,10 @@ impl<'a> Explorer<'a> {
             let tag = key_tag(&key);
             let made = state.symbolize_known(&mut self.arena, tag, &with_known);
             for (l, e) in made {
+                if let Some(tr) = &self.config.trace {
+                    use std::io::Write;
+                    let _ = writeln!(tr.borrow_mut(), "        symbolize {:#x}/{:?} {:?} -> {} known={:x?} vals={:x?}", key.addr, key.ctx, l, self.arena.fmt(e), self.sym_known.get(&(key, l)), locs.get(&l));
+                }
                 if let (Some(v), Some(vals)) = (self.arena.as_var(e), locs.get(&l)) {
                     self.sym_values.borrow_mut().insert(v, vals.clone());
                 }
@@ -522,6 +549,7 @@ impl<'a> Explorer<'a> {
         let id = cfg.nodes.len() as NodeId;
         cfg.nodes.push(Node {
             exit_locs: None,
+            vpc_fork: None,
             key,
             entry: state,
             entry_ctx: ctx,
@@ -534,6 +562,32 @@ impl<'a> Explorer<'a> {
         self.node_addrs.insert(key.addr);
         worklist.push_back(id);
         id
+    }
+
+    /// `key` at the incoming stack depth.  Paths that reach one handler with
+    /// one virtual PC at different stack depths are different nodes: VMProtect
+    /// places its register context below the stack the last re-entry found,
+    /// so after a call that left a different number of argument words the
+    /// same bytecode runs with its context elsewhere, and neither state can
+    /// stand for the other (angr likewise merges only states at the same
+    /// stack pointer).  At most [`MAX_STACK_DEPTHS`] depths are kept apart
+    /// per address and context; a further one is reached at the first.
+    fn at_depth(&mut self, mut key: NodeKey, state: &mut State) -> NodeKey {
+        let sp = state.read_reg(&mut self.arena, self.abi.sp, self.abi.ptr_size);
+        let depth = match self.arena.affine_probe(sp) {
+            Some((Some(b), k)) if Some(b) == self.sp0 => Some(k),
+            _ => None,
+        };
+        let seen = self.stack_depths.entry((key.addr, key.ctx)).or_default();
+        key.sp = if seen.contains(&depth) {
+            depth
+        } else if seen.len() < MAX_STACK_DEPTHS {
+            seen.push(depth);
+            depth
+        } else {
+            seen[0]
+        };
+        key
     }
 
     /// Emulate one node.  An interpreter instruction that branches back to
@@ -640,12 +694,15 @@ impl<'a> Explorer<'a> {
             None => self.resolve_exit(cfg, worklist, id, exit, state, next_ctx, &insns),
         };
         let exit_locs = if matches!(node_exit, NodeExit::Select { .. }) { self.pending_locs.take() } else { None };
+        let vpc_fork = if matches!(node_exit, NodeExit::Select { .. }) { self.pending_vpc_fork.take() } else { None };
         self.pending_locs = None;
+        self.pending_vpc_fork = None;
         let node = &mut cfg.nodes[id as usize];
         node.insns = insns;
         node.traces = traces;
         node.exit = node_exit;
         node.exit_locs = exit_locs;
+        node.vpc_fork = vpc_fork;
     }
 
     /// Two values built over the entry stack pointer that agree wherever the
@@ -673,8 +730,8 @@ impl<'a> Explorer<'a> {
 
     /// A register or entry-stack slot holding each variable the atoms read,
     /// in `state`, or else holding it plus a constant (a loop counter the
-    /// interpreter already advanced past the value its guard tested); None
-    /// when one has no home (it was only ever in flight).
+    /// interpreter already advanced past the value its guard tested).  A
+    /// variable that was only ever in flight has no entry.
     fn locate_vars(&mut self, state: &mut State, atoms: &[ExprId]) -> Option<(Vec<(VarId, Loc, i128)>, Option<i128>)> {
         let mut vars = BTreeSet::new();
         for a in atoms {
@@ -729,8 +786,9 @@ impl<'a> Explorer<'a> {
                     }
                 }
             }
-            let (loc, k) = found.or(shifted)?;
-            out.push((v, loc, k));
+            if let Some((loc, k)) = found.or(shifted) {
+                out.push((v, loc, k));
+            }
         }
         Some((out, sp_off))
     }
@@ -767,6 +825,14 @@ impl<'a> Explorer<'a> {
                 Some((_, a)) => a.push(assign.clone()),
                 None => groups.push((c, vec![assign.clone()])),
             }
+        }
+        if let [(c, _)] = groups[..] {
+            // Every assignment of its atoms gives the same virtual PC: the
+            // register or cell holds that constant from here on.
+            let mut map = BTreeMap::new();
+            map.insert(v, self.arena.cst(self.arena.size(v), c as u128));
+            state.map_values(&mut self.arena, &mut |a, e| a.substitute(e, &map));
+            return None;
         }
         if groups.len() < 2 || groups.len() > MAX_VPC_FORK {
             return None;
@@ -815,7 +881,9 @@ impl<'a> Explorer<'a> {
             }
         }
         let mut targets = Vec::with_capacity(plans.len());
+        let mut vpcs = Vec::with_capacity(plans.len());
         for (c, assigns, map, next) in plans {
+            vpcs.push(c);
             let mut st = state.clone();
             st.map_values(&mut self.arena, &mut |a, e| a.substitute(e, &map));
             let mut sctx = ctx;
@@ -829,6 +897,12 @@ impl<'a> Explorer<'a> {
         let mut atoms = atoms;
         fuse_signed_compares(&mut self.arena, &mut atoms, &mut targets);
         self.pending_locs = self.locate_vars(state, &atoms);
+        let holder = match (ctx.vpc_cell, ctx.vpc_reg) {
+            (Some(a), _) => Some(Loc::Mem { base: None, off: a as i128 }),
+            (None, Some(r)) => Some(Loc::Reg { off: r }),
+            _ => None,
+        };
+        self.pending_vpc_fork = holder.map(|h| (h, vpcs));
         Some(NodeExit::Select { atoms, targets, by_atoms: true })
     }
 
@@ -1019,7 +1093,7 @@ impl<'a> Explorer<'a> {
     ) -> NodeExit {
         match exit {
             Exit::Fallthrough(next) => {
-                let key = NodeKey { addr: next, ctx: ctx.ctx };
+                let key = NodeKey::at(next, ctx.ctx);
                 NodeExit::Branch(self.reach(cfg, worklist, key, state, ctx, Some(id)))
             }
             Exit::Halt(m) => {
@@ -1039,7 +1113,7 @@ impl<'a> Explorer<'a> {
             Exit::CondJump { arms, fallthrough } => {
                 let one = self.arena.cst(1, 1);
                 let zero = self.arena.cst(1, 0);
-                let fkey = NodeKey { addr: fallthrough, ctx: ctx.ctx };
+                let fkey = NodeKey::at(fallthrough, ctx.ctx);
                 let mut out_arms = Vec::with_capacity(arms.len());
                 let mut earlier: Vec<ExprId> = Vec::new();
                 let mut arm_targets: Vec<(u64, State)> = Vec::new();
@@ -1048,7 +1122,7 @@ impl<'a> Explorer<'a> {
                         self.stats.unresolved += 1;
                         return NodeExit::Unresolved("conditional branch with symbolic target".into());
                     };
-                    let tkey = NodeKey { addr: tc as u64, ctx: ctx.ctx };
+                    let tkey = NodeKey::at(tc as u64, ctx.ctx);
                     if tkey == fkey {
                         // Both sides continue at the same place (a CMOV-style
                         // skip): one state, selecting on the guard.
@@ -1071,7 +1145,7 @@ impl<'a> Explorer<'a> {
                 }
                 let mut resolved = Vec::with_capacity(out_arms.len());
                 for ((cond, tc), (_, st)) in out_arms.into_iter().zip(arm_targets.into_iter()) {
-                    let tkey = NodeKey { addr: tc, ctx: ctx.ctx };
+                    let tkey = NodeKey::at(tc, ctx.ctx);
                     let taken = self.reach(cfg, worklist, tkey, st, ctx, Some(id));
                     resolved.push((cond, taken));
                 }
@@ -1091,7 +1165,7 @@ impl<'a> Explorer<'a> {
                             let salt = ctx.ctx.unwrap_or(0).rotate_left(17) ^ fallthrough;
                             ctx.ctx = Some(salt);
                         }
-                        let key = NodeKey { addr: c, ctx: ctx.ctx };
+                        let key = NodeKey::at(c, ctx.ctx);
                         return NodeExit::Branch(self.reach(cfg, worklist, key, state, ctx, Some(id)));
                     }
                 }
@@ -1101,7 +1175,7 @@ impl<'a> Explorer<'a> {
                 let callee = Callee { target: tc, slot, ret: Some(fallthrough) };
                 self.apply_call_summary(&mut state, insns.last().map(|i| i.addr).unwrap_or(0), callee);
                 let ctx = after_call(ctx, fallthrough);
-                let key = NodeKey { addr: fallthrough, ctx: ctx.ctx };
+                let key = NodeKey::at(fallthrough, ctx.ctx);
                 let ret = self.reach(cfg, worklist, key, state, ctx, Some(id));
                 NodeExit::Call { target: tc, ret, slot }
             }
@@ -1149,7 +1223,7 @@ impl<'a> Explorer<'a> {
                 let _ = writeln!(tr.borrow_mut(), "          atom {}", self.arena.fmt(*a).chars().take(1500).collect::<String>());
             }
             let vars = self.arena.free_vars(t);
-            let _ = writeln!(tr.borrow_mut(), "          free vars: {:?}", vars.iter().map(|v| format!("{:?}", self.arena.var_info(*v).kind)).collect::<Vec<_>>());
+            let _ = writeln!(tr.borrow_mut(), "          free vars: {:?}", vars.iter().map(|v| format!("{v}:{:?}", self.arena.var_info(*v).kind)).collect::<Vec<_>>());
         }
         let vars_before = self.arena.num_vars() as u32;
         let Some(cases) = self.enumerate_symbol_target(t).or_else(|| self.arena.case_split(t)) else {
@@ -1271,7 +1345,7 @@ impl<'a> Explorer<'a> {
         let site = cfg.nodes[id as usize].key.addr;
         self.apply_call_summary(&mut state, site, Callee { target: None, slot: None, ret: Some(ret) });
         let ctx = after_call(ctx, ret);
-        let key = NodeKey { addr: ret, ctx: ctx.ctx };
+        let key = NodeKey::at(ret, ctx.ctx);
         let ret_node = self.reach(cfg, worklist, key, state, ctx, Some(id));
         Some(NodeExit::Call { target: None, ret: ret_node, slot: None })
     }
@@ -1337,7 +1411,7 @@ impl<'a> Explorer<'a> {
                         let site = cfg.nodes[id as usize].key.addr;
                         self.apply_call_summary(&mut state, site, Callee { target: None, slot: Some(slot), ret: Some(ret) });
                         let ctx = after_call(ctx, ret);
-                        let key = NodeKey { addr: ret, ctx: ctx.ctx };
+                        let key = NodeKey::at(ret, ctx.ctx);
                         let ret_node = self.reach(cfg, worklist, key, state, ctx, Some(id));
                         return NodeExit::Call { target: None, ret: ret_node, slot: Some(slot) };
                     }
@@ -1375,7 +1449,7 @@ impl<'a> Explorer<'a> {
                     let site = cfg.nodes[id as usize].key.addr;
                     self.apply_call_summary(&mut state, site, Callee { target: Some(c), slot: None, ret: Some(ret) });
                     let ctx = after_call(ctx, ret);
-                    let key = NodeKey { addr: ret, ctx: ctx.ctx };
+                    let key = NodeKey::at(ret, ctx.ctx);
                     let ret_node = self.reach(cfg, worklist, key, state, ctx, Some(id));
                     return NodeExit::Call { target: Some(c), ret: ret_node, slot: None };
                 }
@@ -1384,7 +1458,7 @@ impl<'a> Explorer<'a> {
                 return NodeExit::TailCall(c);
             }
         }
-        let key = NodeKey { addr: c, ctx: ctx.ctx };
+        let key = NodeKey::at(c, ctx.ctx);
         NodeExit::Branch(self.reach(cfg, worklist, key, state, ctx, Some(id)))
     }
 
@@ -1426,7 +1500,8 @@ impl<'a> Explorer<'a> {
         let tag = 0x7f00_0000_0000_0000u64 ^ (from as u64).rotate_left(32) ^ addr;
         cfg.nodes.push(Node {
             exit_locs: None,
-            key: NodeKey { addr, ctx: Some(tag) },
+            vpc_fork: None,
+            key: NodeKey::at(addr, Some(tag)),
             entry: State::new(self.abi.big_endian, self.abi.flag_regs),
             entry_ctx: VmCtx::default(),
             insns: Vec::new(),
@@ -1869,5 +1944,7 @@ fn vpc_key(vals: &[u64]) -> u64 {
 }
 
 pub fn key_tag(key: &NodeKey) -> u64 {
-    key.addr.wrapping_mul(0x9E3779B97F4A7C15) ^ key.ctx.unwrap_or(0xFFFF_FFFF_FFFF_FFFF).rotate_left(29)
+    key.addr.wrapping_mul(0x9E3779B97F4A7C15)
+        ^ key.ctx.unwrap_or(0xFFFF_FFFF_FFFF_FFFF).rotate_left(29)
+        ^ key.sp.map(|k| (k as u64).wrapping_mul(0xff51afd7ed558ccd)).unwrap_or(0)
 }

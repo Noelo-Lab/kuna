@@ -779,7 +779,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
             }
         }
     }
-    let call_preserves = emit_stats.private_regs.into_iter().chain(emit_stats.frame_reg).collect();
+    let call_preserves = emit_stats.private_regs.into_iter().chain(emit_stats.frame_reg).chain(emit_stats.slot_regs).collect();
     Ok(PushanProgram { entry, call_kills, placeholders, call_preserves, overlay: Rc::new(overlay), strings, stats: explorer.stats.clone(), emit_stats, log })
 }
 

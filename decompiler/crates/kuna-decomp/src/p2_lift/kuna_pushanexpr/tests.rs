@@ -408,3 +408,22 @@ fn sign_of_not_plus_const() {
     let of = a.mk_bin(CPUI_INT_SCARRY, k, n, 1);
     eprintln!("sum={} sf={} of={}", a.fmt(sum), a.fmt(sf), a.fmt(of));
 }
+
+/// A merged loop counter seen only as 0 and 1 carries bits 1..31 as known
+/// zero: three probe points masked by them coincide, so a select between two
+/// bytecode addresses over it must not pass for `counter + d`.
+#[test]
+fn a_narrow_merged_location_never_probes_affine() {
+    let mut a = ExprArena::new();
+    let k = a.var_of_known(VarKind::Merged { node: 1, tag: 2 }, 4, false, (0xffff_fffe, 0));
+    let b = a.mk_subpiece(k, 0, 1);
+    let (t, f) = (a.cst(4, 0x4744de), a.cst(4, 0x47444c));
+    let vpc = a.mk_ite(b, t, f);
+    assert_eq!(a.affine_probe(vpc), None, "{}", a.fmt(vpc));
+    let one = a.cst(4, 1);
+    let next = a.mk_bin(CPUI_INT_ADD, k, one, 4);
+    assert_eq!(a.affine_probe(next), Some((a.as_var(k), 1)));
+    let sq = a.mk_bin(CPUI_INT_MULT, k, k, 4);
+    let zero = a.mk_bin(CPUI_INT_SUB, sq, k, 4);
+    assert_eq!(a.affine_probe(zero), Some((None, 0)), "{}", a.fmt(zero));
+}

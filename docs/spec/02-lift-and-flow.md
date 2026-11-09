@@ -3341,9 +3341,20 @@ the plain flow. A successful result is cached per entry on the architecture
 **Exploration keys.** The flat graph is built by
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanflow.rs (Explorer)`. A
 node is a native address plus the virtual program counter (VPC) the
-interpreter holds when it gets there. As a result, every bytecode
+interpreter holds when it gets there, plus the stack pointer's offset from its
+entry value (`Explorer::at_depth`). As a result, every bytecode
 instruction's run through its handler is a separate block, and the graph is
 the protected program's control flow laid out flat through the interpreter.
+The stack depth is part of the key because two paths can reach the same
+bytecode at different depths and neither state can stand for the other.
+VMProtect places its register context below the stack that the last re-entry
+from a call found. After a call that left one more argument word on the
+stack, the same loop head runs with its context 4 bytes lower, while the
+virtual stack pointer and every program variable are where they were. angr
+merges only states at the same stack pointer, too. Up to 4 depths are kept
+apart per address and VPC. A further depth is reached at the first one and is
+not merged, so a path that grows the stack on every iteration cannot unroll a
+loop forever.
 The VPC is found as angr's `find_vip` finds it (`Explorer::successor_ctx`),
 from the state at the end of each block. A VPC value must point into a
 section of the image that is not writable (angr excludes only the data
@@ -3400,10 +3411,16 @@ over disjoint sums, which is how a `pushfq` flags word or a De Morgan mask
 over it stays decidable. A comparison of two offsets from the same pointer
 base is decided by the offsets. Mixed boolean-arithmetic rewrites of the
 stack pointer that the normal form does not see are checked by a probe
-(`ExprArena::affine_probe`). The expression is evaluated with the entry
-stack pointer set to three dissimilar values. If it moves by the same amount
-as the pointer each time, it is `sp + d`, and a stack-pointer write is stored
-in that form. If it gives the same value each time, it is that constant.
+(`ExprArena::affine_probe`). The expression is evaluated with its one
+variable set to three values that differ in the variable's unknown bits. If
+it moves by the same amount as the variable each time, it is `var + d`, and a
+stack-pointer write is stored in that form. If it gives the same value each
+time, it is that constant. A variable with at most two unknown bits (a merged
+loop counter seen only as 0 and 1 has one) is evaluated at each of its
+possible values instead. Three probe points masked by its known bits would
+coincide, and a select between two bytecode addresses over that counter would
+pass for `counter + 0x47444c`, sending the next bytecode fetch into a region
+that does not exist.
 Themida derives its image base by XOR-swapping it through the stack pointer,
 so a register written by such an XOR is stored as the constant. The constant
 reading is only taken over the entry stack pointer, whose value is a
@@ -3445,11 +3462,16 @@ narrowed bits. A computed target that depends on exactly one symbolized
 location is enumerated over that location's recorded constants instead of
 atoms, by substituting each constant (`Explorer::enumerate_symbol_target`),
 and each successor's state pins the symbol to its constant. A load whose
-address depends on exactly one symbolized location is read once per recorded
-constant (up to 16) and becomes a select over the reads, keyed by comparing
-the symbol with each constant (`kuna_pushanemu.rs (Emulator::indexed_load)`).
-That is how a Themida dispatch through a handler table, indexed by an opcode
-slot that a merge symbolized, resolves. A loop counter or a virtual register that differs between iterations
+address depends on exactly one symbolized location and lies at concrete
+addresses for every recorded constant is read once per constant (up to 16)
+and becomes a select over the reads, keyed by comparing the symbol with each
+constant (`kuna_pushanemu.rs (Emulator::indexed_load)`). That is how a Themida
+dispatch through a handler table, indexed by an opcode slot that a merge
+symbolized, resolves. An array on the stack or behind a pointer, indexed by a
+loop counter, is not read this way. The counter takes more values than the
+merges saw, and a select over `v[0]` and `v[1]` would rebuild the program's
+`v[i]` test as a test of those two elements; such a load is an unknown value,
+and the test on it is witnessed where the program computes it. A loop counter or a virtual register that differs between iterations
 therefore becomes a variable, while a value that is the same on every path
 stays a constant and keeps its handler resolved.
 
@@ -3461,7 +3483,11 @@ angr's emulator does for a two-valued expression. For each of up to 4 VPC
 values, the deciding atoms are pinned to the assignment that produces it in a
 copy of the state. Each path then decodes its own bytecode with a concrete
 context. The node's exit becomes an atom-labelled select over those
-successors.
+successors, and the node records which register or cell holds the VPC at its
+exit and the VPC of each arm. When every assignment gives the same VPC,
+there is no fork: that constant replaces the VPC expression throughout the
+state, so the next handler fetches from a concrete VPC instead of carrying a
+select whose value only a case split knows.
 
 **External calls.** A call into the foreign code section to an address that
 is not a known function is the interpreter's own dispatch. It is followed as a
@@ -3600,13 +3626,25 @@ with these edits:
   of sign and overflow atoms of one addition, which the assignments consult
   only through their exclusive or, by the single signed comparison it encodes
   (`a < -b`). That pair is the shape of a `jl`, `jge`, `jg` or `jle`.
+- Variable witnesses. A variable that a select's atoms read but that no
+  register or stack slot holds at the node's exit (a value loaded from the
+  heap, tested and then dropped by the interpreter) gets a register slot past
+  the boolean slots. The emitted op whose emulated result is exactly that
+  variable also copies it into the slot, and the rebuilt condition reads the
+  slot. `while (1 < *(int *)(heap + 4))` is then rebuilt from the program's
+  own load, instead of from the VPC that the interpreter computed from its
+  flags.
 - Witness slots for selects. When a condition cannot be rebuilt, each deciding atom of an atom-labelled select gets
   a one-byte slot in a register range past the real registers. The emitted op
   that computes the atom, or its negation, also copies it into the slot. When
   every atom of a select has been witnessed, the exit is a chain of CBRANCHes on
   the slot conjunctions, so the decompiler sees the program's own comparison
-  as the branch condition. Otherwise the exit compares the computed target
-  against each destination's native address.
+  as the branch condition. Otherwise a select that forked the VPC compares the
+  VPC's register or cell against each arm's VPC. Its arms usually continue at
+  one native address, so their targets cannot tell them apart. Any other
+  select compares the computed target against each destination's native
+  address. Every external call preserves the witness slots, as it preserves
+  the frame register.
 
 **How the decompiler consumes it.** `prepare_flow` is called by
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (generate_flow)`
@@ -3622,9 +3660,9 @@ stored on the `Funcdata`, and `Heritage::guardCalls`
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs`) consults
 `kuna_pushan.rs (call_kills)` to turn an unknown effect on those registers
 into killed-by-call, and `kuna_pushan.rs (call_preserves)` turns an unknown
-effect on the frame register and on the privatized interpreter-memory
-registers into unaffected, so the saved VM context and the entry stack pointer
-flow across every call. The interpreter re-saves its whole context right after
+effect on the frame register, the witness slots and the privatized
+interpreter-memory registers into unaffected, so the saved VM context, the
+entry stack pointer and a value witnessed before a call flow across it. The interpreter re-saves its whole context right after
 each call, reading registers the callee has just clobbered. With the
 prototype model's unknown effect, that read would look like a live use of the
 argument the caller placed there. After block generation,

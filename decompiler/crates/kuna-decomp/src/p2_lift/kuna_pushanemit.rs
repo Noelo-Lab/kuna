@@ -25,7 +25,7 @@ use kuna_sleigh::kuna_pcodeoverlay::{OverlayInsn, OverlayOp, PcodeOverlay};
 use OpCode::*;
 
 use super::kuna_pushanemu::{classify_space, LiftedInsn, PushanTarget, RawOp, Space};
-use super::kuna_pushanexpr::{ExprArena, ExprId, ExprKind};
+use super::kuna_pushanexpr::{ExprArena, ExprId, ExprKind, VarId};
 use super::kuna_pushanstate::Loc;
 use super::kuna_pushanflow::{FlatCfg, NodeExit, NodeId};
 
@@ -84,6 +84,8 @@ pub struct EmitStats {
     pub private_regs: Option<(u64, u32)>,
     /// The register holding the entry stack pointer, which calls preserve.
     pub frame_reg: Option<(u64, u32)>,
+    /// The witness slots, which calls preserve.
+    pub slot_regs: Option<(u64, u32)>,
 }
 
 /// Register-space offset, past the witness slots, of the placeholder registers
@@ -529,6 +531,12 @@ struct Emitter<'a> {
     negated: BTreeMap<ExprId, ExprId>,
     /// Booleans some emitted op actually witnessed.
     witnessed: BTreeSet<ExprId>,
+    /// Variables a select's atoms read that no register or stack slot holds
+    /// at its exit, each with the register an emitted op producing it copies
+    /// it into.
+    var_slots: BTreeMap<VarId, u64>,
+    /// Variables some emitted op actually produced.
+    var_witnessed: BTreeSet<VarId>,
     /// The scratch holding the rematerialized address of the access being emitted.
     last_addr_scratch: Option<VarnodeData>,
     /// Byte address of the interpreter's own memory -> its register offset.
@@ -565,13 +573,18 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
         slots: BTreeMap::new(),
         negated: BTreeMap::new(),
         witnessed: BTreeSet::new(),
+        var_slots: BTreeMap::new(),
+        var_witnessed: BTreeSet::new(),
         last_addr_scratch: None,
         private: BTreeMap::new(),
         private_accesses: BTreeSet::new(),
         frame_reg: 0,
     };
     em.assign_slots();
-    em.frame_reg = conf.slot_base + 8 * em.slots.len() as u64;
+    em.frame_reg = conf.slot_base + 8 * (em.slots.len() + em.var_slots.len()) as u64;
+    if em.frame_reg > conf.slot_base {
+        em.stats.slot_regs = Some((conf.slot_base, (em.frame_reg - conf.slot_base) as u32));
+    }
     em.stats.frame_reg = Some((em.frame_reg, conf.ptr_size as u32));
     em.plan_private();
     let mut overlay = PcodeOverlay::new(conf.ram.get_index());
@@ -801,6 +814,18 @@ impl<'a> Emitter<'a> {
             let one = self.arena.cst(1, 1);
             let na = self.arena.mk_bin(CPUI_INT_XOR, *a, one, 1);
             self.negated.insert(na, *a);
+        }
+        let mut homeless: BTreeSet<VarId> = BTreeSet::new();
+        for node in &self.cfg.nodes {
+            if let NodeExit::Select { atoms: a, by_atoms: true, .. } = &node.exit {
+                let homed: BTreeSet<VarId> = node.exit_locs.iter().flat_map(|(l, _)| l.iter().map(|(v, _, _)| *v)).collect();
+                for x in a {
+                    homeless.extend(self.arena.free_vars(*x).into_iter().filter(|v| !homed.contains(v) && self.arena.var_info(*v).size <= 8));
+                }
+            }
+        }
+        for (i, v) in homeless.into_iter().enumerate() {
+            self.var_slots.insert(v, self.conf.slot_base + 8 * (atoms.len() + i) as u64);
         }
     }
 
@@ -1059,6 +1084,17 @@ impl<'a> Emitter<'a> {
                 mem_ops.push((out.len(), i));
             }
             out.push(rewritten);
+            // A homeless variable of a select is copied out where an op produces it.
+            if let (Some(trace), Some(out_vn)) = (trace, &op.out) {
+                if let Some(Some(v)) = (!trace.forked).then(|| trace.op_out.get(i).copied().flatten()) {
+                    if let Some((var, &slot)) = self.arena.as_var(v).and_then(|x| self.var_slots.get(&x).map(|s| (x, s))) {
+                        if out_vn.size == self.arena.size(v) as u32 {
+                            out.push(OverlayOp { opc: CPUI_COPY, out: Some(self.vn(&self.conf.register, slot, out_vn.size)), ins: vec![out_vn.clone()] });
+                            self.var_witnessed.insert(var);
+                        }
+                    }
+                }
+            }
             // Witness a deciding boolean the moment an op computes it.
             if let (Some(trace), Some(out_vn)) = (trace, &op.out) {
                 if !trace.forked && out_vn.size == 1 {
@@ -1255,6 +1291,22 @@ impl<'a> Emitter<'a> {
                     }
                     return;
                 }
+                // A forked virtual PC: its arms may share a native address, so
+                // branch on the value the interpreter holds as its VPC.
+                if let Some((loc, vpcs)) = &node.vpc_fork {
+                    let holder = self.vpc_holder(*loc, out);
+                    let n = targets.len();
+                    for (i, ((_, succ), c)) in targets.iter().zip(vpcs.iter()).enumerate() {
+                        if i + 1 == n {
+                            out.push(self.branch_op(syn_addr(self.conf, *succ)));
+                            break;
+                        }
+                        let t = self.scratch(2 + i as u64, 1);
+                        out.push(OverlayOp { opc: CPUI_INT_EQUAL, out: Some(t.clone()), ins: vec![holder.clone(), self.cst(*c, holder.size)] });
+                        out.push(OverlayOp { opc: CPUI_CBRANCH, out: None, ins: vec![self.code(syn_addr(self.conf, *succ)), t] });
+                    }
+                    return;
+                }
                 let tv = insn.ops.iter().rev().find(|op| Self::is_flow(op)).and_then(|op| match op.opc {
                     CPUI_BRANCHIND | CPUI_RETURN | CPUI_CALLIND => op.ins.first().cloned(),
                     _ => None,
@@ -1416,6 +1468,12 @@ impl<'a> Emitter<'a> {
         };
         let r = match self.arena.kind(e).clone() {
             ExprKind::Const(c) => self.cst(c as u64, size),
+            ExprKind::Var(v) if !homes.contains_key(&v) => {
+                if !self.var_witnessed.contains(&v) {
+                    return None;
+                }
+                self.vn(&self.conf.register, self.var_slots[&v], size)
+            }
             ExprKind::Var(v) => {
                 let (loc, k) = *homes.get(&v)?;
                 let held = match loc {
@@ -1474,6 +1532,27 @@ impl<'a> Emitter<'a> {
         };
         memo.insert(e, r.clone());
         Some(r)
+    }
+
+    /// The varnode holding the virtual PC at a node's exit: its register, or
+    /// its memory cell (through the cell's private register when the
+    /// interpreter's memory was privatized).
+    fn vpc_holder(&mut self, loc: Loc, out: &mut Vec<OverlayOp>) -> VarnodeData {
+        let ptr = self.conf.ptr_size as u32;
+        match loc {
+            Loc::Reg { off } => self.vn(&self.conf.register, off, ptr),
+            Loc::Mem { off, .. } => {
+                let a = off as u64;
+                if let Some(&r) = self.private.get(&a) {
+                    if (1..ptr as u64).all(|i| self.private.get(&(a + i)) == Some(&(r + i))) {
+                        return self.vn(&self.conf.register, r, ptr);
+                    }
+                }
+                let t = self.scratch(1, ptr);
+                out.push(OverlayOp { opc: CPUI_LOAD, out: Some(t.clone()), ins: vec![self.cst(self.conf.ram.get_index() as u64, ptr), self.cst(a, ptr)] });
+                t
+            }
+        }
     }
 
     /// `scratch = *slot`, the target of a call through an import slot.

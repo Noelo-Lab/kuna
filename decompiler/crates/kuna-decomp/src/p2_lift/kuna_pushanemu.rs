@@ -342,7 +342,9 @@ impl<'a> Emulator<'a> {
     /// A load whose address depends on one symbolized location (a handler
     /// table indexed by an opcode the merge turned into a symbol): one read
     /// per constant the location was seen to hold, selected by comparing the
-    /// symbol against it.
+    /// symbol against it.  Only a table at concrete addresses is read this
+    /// way: an array on the stack or behind a pointer indexed by a program
+    /// variable (a loop counter) holds more than the indices the merges saw.
     fn indexed_load(&mut self, state: &mut State, arena: &mut ExprArena, addr: ExprId, size: u8) -> Option<ExprId> {
         let (var, values) = {
             let known = self.sym_values.borrow();
@@ -368,8 +370,8 @@ impl<'a> Emulator<'a> {
             let mut map = BTreeMap::new();
             map.insert(ve, k);
             let a = arena.substitute(addr, &map);
-            let (base, off) = arena.affine_probe(a)?;
-            let val = state.read_mem(arena, self.target, base, off, size);
+            let (None, off) = arena.affine_probe(a)? else { return None };
+            let val = state.read_mem(arena, self.target, None, off, size);
             arms.push((k, val));
         }
         let mut result = arms[arms.len() - 1].1;
