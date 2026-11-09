@@ -167,6 +167,9 @@ Three tiers:
 | imports are noise for the task at hand | [`jvm_remove_imports`](#jvm_remove_imports) |
 | stack trace names lambda$main$0 or Main$1 and the matching code is hard to find | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics) |
 | need the class file of an anonymous class | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics) |
+| output differs from Vineflower's test fixture but matches java -jar | [`jvm_plugins`](#jvm_plugins) |
+| a class is written in a plugin's language instead of Java | [`jvm_plugins`](#jvm_plugins) |
+| a bundled plugin's pass changes the Java output | [`jvm_plugins`](#jvm_plugins) |
 
 ## Toggleable transforms
 
@@ -400,8 +403,8 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 ### `jvm_force_jsr_inline` -- on | off, default `off`
 
 - **Symptoms:** method with jsr/ret fails to decompile in a modern class file; finally logic of a modern class built from subroutines.
-- **What it does:** Inline jsr/ret subroutines in every class file; normally only class files older than Java 6, where they are legal, get this.
-- **When to flip:** Turn on for hand-assembled or obfuscated Java 6+ class files that use jsr/ret anyway and fail to decompile.
+- **What it does:** Inline jsr/ret subroutines in every class file; normally only class files of Java 6 or older, where they are legal, get this.
+- **When to flip:** Turn on for hand-assembled or obfuscated Java 7+ class files that use jsr/ret anyway and fail to decompile.
 - **Where / provenance:** infra/method_processor · vineflower · vineflower-option
 - **Also spelled:** `force-jsr-inline`, `fji`
 - **Example:** `kuna decompile obf.jar a.b --option jvm_force_jsr_inline on`
@@ -578,7 +581,7 @@ How the Java text is spelled: formatting, literals, comments.
 ### `jvm_override_annotation` -- on | off, default `on`
 
 - **Symptoms:** @Override missing on toString or interface methods (supertype not loaded); @Override that javac did not write is unwanted.
-- **What it does:** Add @Override to instance methods (Java 6+ class files) that override or implement a method found in a superclass or interface the decompiler can see.
+- **What it does:** Add @Override to instance methods (Java 5+ class files) that override or implement a method found in a superclass or interface the decompiler can see.
 - **When to flip:** Turn off for output without inferred annotations; leave on and give a runtime or libraries so supertypes are known.
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `override-annotation`, `ovr`
@@ -700,6 +703,14 @@ How the Java text is spelled: formatting, literals, comments.
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `mark-corresponding-synthetics`, `mcs`
 - **Example:** `kuna decompile app.jar com.ex.Handlers --option jvm_mark_corresponding_synthetics on`
+
+### `jvm_plugins` -- on | off, default `on`
+
+- **Symptoms:** output differs from Vineflower's test fixture but matches java -jar; a class is written in a plugin's language instead of Java; a bundled plugin's pass changes the Java output.
+- **What it does:** Load the plugins bundled with the engine (Vineflower's VariableRenaming, Kotlin and IdeaNotNull, as they are ported), as java -jar vineflower.jar does; off runs the bare Java pipeline, like Vineflower's test fixture.
+- **When to flip:** Turn off to see what the core Java decompiler makes of a class a plugin would claim, or to compare with Vineflower's test fixture, which loads no plugin.
+- **Where / provenance:** p0_knowledge/fernflower, kuna_plugins · kuna · kuna-plugins
+- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_plugins off`
 
 ## Programmatic use
 
