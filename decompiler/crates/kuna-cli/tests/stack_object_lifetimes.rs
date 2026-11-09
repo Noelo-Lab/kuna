@@ -435,9 +435,6 @@ fn decompile_surface(
             "--sleighpath",
         ])
         .arg(common::repo_root().join("specs"));
-    if !enabled {
-        command.args(["--option", "localstackviews", "off"]);
-    }
     if function == "rgb_reuse" {
         command.args(["--target", "x86:LE:64:default:windows"]);
     }
@@ -1099,8 +1096,6 @@ fn a_renamed_indexed_backing_survives_assertion_replay() {
 
 #[test]
 fn reused_pair_and_handle_share_their_storage() {
-    let baseline = decompile("stack_reuse", false);
-    assert!(!baseline.contains("union stack_views_"), "{baseline}");
     native_control("stack_reuse", 67);
 }
 

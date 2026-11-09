@@ -1003,6 +1003,25 @@ adrnext_sh4.py`; no SuperH toolchain here). Recipe, toolchains and SHA-256s in
 `kuna-cli/tests/xrefs_cli.rs (an_address_of_the_next_instruction_is_a_data_reference,
 no_link_references_the_return_address_it_leaves)`.
 
+## dyld shared cache (`dyld_cache_arm64e/`)
+
+`dyld_cache_arm64e/` (about 29 KB in three files) is a synthetic two-image arm64e
+dyld shared cache, split the way iOS 16 splits one: `dyld_shared_cache_arm64e`
+(header, image table, `__TEXT`/`__DATA`/`__LINKEDIT` mappings, v3 slide info),
+`.01` (a `__TEXT_STUBS` stub island), and `.symbols` (the local symbols).
+`/usr/lib/libcaller.dylib` calls `/usr/lib/libcallee.dylib`'s `callee_add`
+through the island at `0x180008800` and through a coalesced `__got` slot. That
+slot's v3 chain links a plain pointer to an authenticated one. Its `helper_local`
+is a `<redacted>` placeholder in its own symbol table, named only by `.symbols`.
+It drives the `kuna_dyldcache` unit tests and `tests/stages/kuna-dyldcrossrefs.xml`.
+No Apple toolchain is needed: `dyld_cache_arm64e.py` assembles the files from
+the public `dyld_cache_format.h` layouts and hand-encodes the A64 bodies.
+Regenerate with:
+
+```bash
+python3 dyld_cache_arm64e.py
+```
+
 ## Mach-O fat/universal + arm64e (PR-8)
 
 The fat/universal + arm64e gate (`kuna-console/tests/verify_macho_fat.rs`, design
@@ -1338,8 +1357,8 @@ and `==`@`0x2b00`. With `--option swiftmetadata on` they decompile as
 `metafix.Point.type_metadata_accessor`, `metafix.Animal.vtable#4.method`,
 `<metafix.Square:Swift.Hashable>.hash(into:)`, …; off, they are `sub_<addr>`.
 The `Square: Shape` (local protocol) witness table is a relocated pointer table,
-which an ELF file carries as addends, so its slots are not named here — the
-Mach-O form (chained fixups) is.
+which an ELF file carries as `R_X86_64_RELATIVE` addends; the pass reads those
+like a Mach-O's chained-fixup rebases, so its slots are named too.
 
 ### `macho_cfstring` — Core Foundation constant strings (`cfstrings`)
 
@@ -1369,6 +1388,116 @@ string longer than one entry"), `_get_after`@`0x100000550` → entry@`0x10000404
 ("after the long one"). With `--option cfstrings on` each getter returns
 `CFSTR("...")` of its string (`annotate` adds `/* cfstring@0x<entry> */`); off, it
 returns the entry by its data symbol (`&_kGreeting`).
+
+### `elf_gotdata_x86_64.so` / `elf_gotdata_aarch64.so` — ELF GOT data imports
+
+Two `-fPIC` shared objects (~3.5 KB each) built from `elf_gotdata.c`, for the ELF
+half of `importdata` (pass `elfgotimports`; `kuna-console/tests/verify_elfgotimports.rs`,
+`tests/stages/kuna-elfgotimports.xml`). Each reads `imported_counter`, `environ` and
+`stdout` through `R_*_GLOB_DAT` slots it leaves undefined, and `exported_value`,
+which it defines (a `GLOB_DAT` to a defined, preemptible symbol). The committed
+files were built with clang and LLD 22.1.8 (their `.comment` section says so), no
+libc; the devcontainer's older clang + lld take the same recipe but may lay the
+image out differently, so the pinned VMAs below are the committed files':
+
+```
+clang --target=x86_64-linux-gnu  -O1 -fPIC -shared -fuse-ld=lld -nostdlib \
+      -Wl,--build-id=none -o elf_gotdata_x86_64.so  elf_gotdata.c
+clang --target=aarch64-linux-gnu -O1 -fPIC -shared -fuse-ld=lld -nostdlib \
+      -Wl,--build-id=none -o elf_gotdata_aarch64.so elf_gotdata.c
+```
+
+**Pinned VMAs.** x86-64: `get_counter`@`0x1580`, `get_env`@`0x1590`,
+`get_out`@`0x15a0`, `get_exported`@`0x15b0`, `addr_exported`@`0x15c0`; GOT slots
+`imported_counter`@`0x2680`, `environ`@`0x2688`, `stdout`@`0x2690`. AArch64:
+`get_counter`@`0x104e4` … `addr_exported`@`0x10524` (stride 0x10); GOT slots
+`0x205c0`/`0x205c8`/`0x205d0`. With `--option importdata on` the three reads are
+`imported_counter` / `environ` / `stdout`; off they are `*dat_<slot>`.
+`exported_value` / `&exported_value` read the same either way.
+
+### `macho_objc_meta_arm64` — categories, a protocol, ivars
+
+`macho_objc_meta_arm64` (arm64, ~51 KB) is the fixture for the ObjC category /
+protocol / instance-layout recovery (`analyzers/objc/kuna_objccats.rs`,
+`kuna_objcprotos.rs`, `kuna_objcivars.rs`; stage test `tests/stages/kuna-objcmeta.xml`).
+Source `macho_objc_meta.m`: root class `Base { Class isa; int count; double ratio;
+id name; }` with `-count`/`-setCount:`/`-ratio`; protocol `Greeter` (`-greet:`
+required, `-wave` optional); category `Base(Extra) <Greeter>` (`-greet:`,
+`+extraTag`); `@interface Remote` with **no implementation** and its category
+`Remote(Extra)` (`-remoteGreet:`, `+remoteTag`), so the category's class is an
+imported (bind) class; `Sub : Remote { int x; id tag; }` whose `-[Sub x]` reads
+`x` through the `__objc_ivar` offset variable (non-fragile, the superclass being
+external) while `Base`'s own methods use direct offsets; `use` sends `wave` through
+a linker stub. The committed `.s` is `clang -S` output with that one send routed
+through `_objc_msgSend$wave` and the `.globl` dropped from the `_OBJC_IVAR_$_`
+symbols so `-x` strips them as a shipped app does:
+
+```bash
+clang -target arm64-apple-macos11 -fno-objc-arc -O1 -S macho_objc_meta.m -o macho_objc_meta_arm64.s
+# edit: route the `wave` send through `_objc_msgSend$wave`; delete the `.globl _OBJC_IVAR_$_*` lines
+clang -target arm64-apple-macos11 -c macho_objc_meta_arm64.s -o meta.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -objc_stubs_fast \
+         -undefined dynamic_lookup -x -e _main -o macho_objc_meta_arm64 meta.o
+```
+
+**Pinned VMAs:** `-[Base ratio]`@`0x100000830`, `-[Base(Extra) greet:]`@`0x10000083c`,
+`-[Sub x]`@`0x100000860` (reads the offset variable `Sub::x`@`0x100008388`),
+`objc_msgSend$wave`@`0x1000008e0`, `__objc_catlist`@`0x100004020` (two entries),
+`__objc_protolist`@`0x100004008` (`Greeter`), `__objc_ivar`@`0x100008378` (six
+offset variables). With `objc on` the categories render `-[Base(Extra) greet:]` /
+`+[Remote(Extra) remoteTag]`, `self` is `Base *` / `Sub *` and the ivars read
+`self->ratio`, `self->x`; with `objcivars off` `self` stays `objc_object *` and
+`-[Sub x]` reads `(int8)self + (int8)Sub::x`; with `objc off` the category methods
+are `sub_10000083c`… and the ivar load is `dat_100008388`.
+
+### `macho_objc_sdk_arm64` + `objc_sdk/Widget.h` — signatures from headers
+
+`macho_objc_sdk_arm64` (arm64, ~50 KB) is the fixture for the `objcsdk` header
+reader (`analyzers/objc/kuna_objcsdk.rs`, stage test `tests/stages/kuna-objcsdk.xml`).
+Source `macho_objc_sdk.m`: a root class `Widget` **declared and never implemented**
+(`setAlpha:`, `setFrame:`, `setTag:`, `isHidden`, `frame`, `insertSubview:atIndex:`)
+and one function `style` that sends all six, every send routed through a linker stub
+(the `.s` is `clang -S` output with each `adrp/ldr x1` selref load dropped and the
+`bl _objc_msgSend` replaced by `bl "_objc_msgSend$<sel>"`), so nothing in the image
+types the selectors. `objc_sdk/Widget.h` is a **hand-written** stand-in for an SDK
+header (no Apple text): `typedef`s (`CGFloat`, `NSInteger`, `NS_ENUM`, an
+`NSString *` typed enum, an opaque struct), a protocol with an `@optional` section,
+and an `@interface` with an ivar block, properties with `getter=` / `readonly` /
+`API_AVAILABLE(...)` trailers, a block parameter and by-value `CGRect`s. The
+`CGRect` in the `.m` is a local four-double struct standing in for CoreGraphics'.
+
+```bash
+clang -target arm64-apple-macos11 -fno-objc-arc -O1 -S macho_objc_sdk.m -o macho_objc_sdk_arm64.s
+# edit: route every send through `_objc_msgSend$<sel>` (drop the selref loads)
+clang -target arm64-apple-macos11 -c macho_objc_sdk_arm64.s -o sdk.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -objc_stubs_fast \
+         -undefined dynamic_lookup -x -e _main -o macho_objc_sdk_arm64 sdk.o
+```
+
+**Pinned VMAs:** `_style`@`0x100000500`, `__objc_stubs`@`0x1000005a0` (six 32-byte
+entries, `objc_msgSend$frame` first), `__objc_selrefs`@`0x100008000`. With `objc on`
+alone `style` reads `objc_msgSend$setAlpha:();`; with `option objcsdk
+decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk` it reads
+`objc_msgSend$setAlpha:(a1,a0);`, `v1 = objc_msgSend$frame(a1);` as a `CGRect` and
+`objc_msgSend$setFrame:(a1,v1.x,v1.y,v1.width + 10.0,v1.height);`.
+
+### `macho_objc_types_arm64` — declarations typed by class
+
+`macho_objc_types_arm64` (arm64, ~50 KB) is the fixture for class-typed
+declarations (`analyzers/objc/kuna_objcprops.rs`, stage test
+`tests/stages/kuna-objctypes.xml`). Source `macho_objc_types.m`: `Base { Class
+isa; int count; }` with a synthesized `count` property (attributes `Ti,N,Vcount`),
+`Holder : Base { Base *inner; }` with a synthesized `inner` property
+(`T@"Base",N,Vinner`), and `-[Holder innerCount]` reading `inner->count`,
+`[inner count]` and `[[self inner] count]`; the `.s` routes the `inner` send
+through `_objc_msgSend$inner` (same recipe as `macho_objc_meta_arm64`, `-x`
+link). **Pinned VMAs:** `-[Holder innerCount]`@`0x100000740`, `-[Holder
+inner]`@`0x100000798`, `-[Holder setInner:]`@`0x1000007a0`, `objc_msgSend$inner`@
+`0x1000007c0`. With `objc on` the body reads `v1 = self->inner->count;`, the
+getter is `Base * -[Holder inner](Holder *self, …)` and the setter takes `Base
+*arg1`; with `objcivars off` the getter keeps its `Base *` return (the property
+declares it) but `self` is untyped; with `objc off` everything is
+`sub_<addr>(void *a0)`.
 
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 
@@ -1932,3 +2061,187 @@ below `0x1000`, where an address formed from the PC (`adrp` + `add`/`ldr`, `adr`
 `rust_store_value_harness.c` and `.rs` compare 33 complete Rust bodies emitted from the existing `go_store_value_x86_64` fixture with C at O0/O2. They check all destination and guard bytes, sibling fields, nested fields, and exact pointer/value callback counts over 324 boundary pairs. `array_store` retains an existing raw-pointer indexing error and is excluded from native compilation.
 
 `array_address_x86_64` is an authored x86-64 ELF built with `cc -O2 -g -fno-inline -fno-pie -no-pie array_address.c array_address_helpers.c -o array_address_x86_64` (SHA-256 `477ee45558cae15d4412e642e4a6ec3bc0afbed8d1bba3d425cb17fb9b80edbc`). Its 33 functions cover array addresses and pointer-to-integer array decay. `array_address.kuna` supplies prototypes; `array_address_harness.c` and `.rs` compare complete emitted bodies at O0/O2 over readable and PROT_NONE memory, with one-past addresses, nested arrays, callback order and modular pointer bits.
+
+### `swift_types_elf` — a stripped Swift executable with layouts (`swifttypes`)
+
+`swift_types_elf` (x86-64 ELF, 18 KB) is the Swift type-layout fixture
+(`tests/stages/kuna-swifttypes.xml`, `kuna-console/tests/verify_swifttypes.rs`).
+Its source `swift_types_elf.swift` declares a struct of mixed field types
+(`Pixel`: a nested struct, a `Double`, a `Bool`, a `UInt8`, a `String`, a class
+reference and an optional class reference), a class hierarchy whose stored
+properties are read through `self` in vtable getters (`Animal`, `Dog`,
+`Sprite`), and a struct read through `self` in a protocol witness
+(`Pixel.area()`). Built like `swift_metadata_elf`:
+
+```bash
+swiftc -O -module-name typefix swift_types_elf.swift -o typefix
+llvm-strip --strip-all -o swift_types_elf typefix
+```
+
+Its `DT_RUNPATH` was blanked after the build the same way (`$ORIGIN` padded with
+NULs in `.dynstr`).
+
+**Expected layouts** (the unstripped code's own offsets: `Pixel.area()` reads
+`0(%r13)`, `8(%r13)`, `0x19(%r13)`; `Sprite.count.getter` reads `0x60(%r13)`):
+`typefix.Point {x@0, y@8}` 16 bytes; `typefix.Pixel {at@0: Point, alpha@16:
+double, on@24: bool, tag@25: uint1, label@32: Swift.String, owner@48: Animal *,
+shadow@56: Dog *}` 64 bytes; `typefix.Animal {isa, refcounts, legs@16,
+name@24}` 40 bytes; `typefix.Dog {super@0: Animal, tricks@40}` 48 bytes;
+`typefix.Sprite {isa, refcounts, origin@16: Point, pixel@32: Pixel, count@96,
+mate@104}` 112 bytes.
+
+**Pinned VMAs** (the unstripped `typefix` symbol table): `$s7typefix5PointVMa`
+(Point's accessor)@`0x4110` returning `$s7typefix5PointVN`@`0x5318`,
+`$s7typefix5PointVWV`@`0x52b0`, `$s7typefix5PixelVN`@`0x5398`,
+`$s7typefix6SpriteCN`@`0x6790`, `$s7typefix6SpriteC5countSivg` (vtable slot 6,
+a getter)@`0x3e60`, `$s7typefix6SpriteC6originAA5PointVvg` (slot 0)@`0x3cb0`,
+`$s7typefix6AnimalC4legsSivg`@`0x37f0`, and the `Pixel: Shape` witnesses
+`area()`@`0x2cc0` and `name.getter`@`0x2ce0`. With `swiftmetadata on` (the
+layout arm `swifttypes` is on by default) the getters decompile as
+`long typefix.Sprite.vtable#6.getter(typefix.Sprite *self) { … return
+self->count; }` and the accessor as `swift.type_metadata *
+typefix.Point.type_metadata_accessor(long request) { return
+&typefix.Point.type_metadata; }`; with `swifttypes off` the getter takes no
+parameter and reads `*(long *)(v2 + 0x60)`.
+
+### `swift_icf_elf` — a stripped Swift executable with folded code (`swiftmetadata`)
+
+`swift_icf_elf` (x86-64 ELF, 12 KB) is the identical-code-folding fixture
+(`tests/stages/kuna-swifticf.xml`). Its source `swift_icf_elf.swift` declares
+protocols `Tagged` and `Keyed` and structs whose witnesses the linker folds:
+`Alpha.tag` and `Beta.tag` are both `{ 7 }` (one protocol member, two types),
+`Delta.tag` and `Delta.describe()` are both `{ d * 3 }` (one type, two
+members), and `Gamma.key` is its own `{ k + 11 }`. Built with function sections
+and the linker's folding:
+
+```bash
+swiftc -O -module-name icffix -use-ld=lld -Xfrontend -function-sections \
+  -Xlinker --icf=all swift_icf_elf.swift -o icffix
+llvm-strip --strip-all -o swift_icf_elf icffix
+```
+
+Its `DT_RUNPATH` was blanked after the build the same way as
+`swift_metadata_elf`'s (`$ORIGIN` padded with NULs in `.dynstr`).
+
+**Pinned VMAs** (the unstripped `icffix` symbol table): the `Tagged.tag.getter`
+witnesses of `Alpha` and `Beta` both at `0x27f0`, `Delta`'s `tag.getter` and
+`describe()` witnesses both at `0x2ab0`, `Gamma`'s `Keyed.key.getter` witness
+at `0x2850`, `Alpha`'s `describe()` at `0x2800`. With `swiftmetadata on` they
+decompile as `<*:icffix.Tagged>.requirement#0(void)`,
+`<icffix.Delta:icffix.Tagged>.requirement#0.merged#2(void)` and
+`<icffix.Gamma:icffix.Keyed>.requirement#0(swift.type_metadata *Self, void
+*witness_table, icffix.Gamma *self)`.
+### `swift_call_elf` / `swift_call_syms_elf` — Swift methods, witnesses and a throwing call (`swiftcall`)
+
+`swift_call_elf` (x86-64 ELF, 16 KB, stripped) and `swift_call_syms_elf` (the
+same link with its symbols, 29 KB) are the Swift calling-convention fixtures
+(`tests/stages/kuna-swiftcall.xml`, `kuna-cli/tests/swift_call_cli.rs`). Their
+source `swift_call_elf.swift` declares a class method of two arguments
+(`Account.deposit(_:fee:)`), a throwing one (`Account.withdraw(_:)`), a final
+method that calls another on its own `self` (`Account.settle(_:)` calling
+`fee(for:)`), a mutating struct method (`Counter.advance(by:times:)`, `self` in
+r13) and a non-mutating one (`Counter.peek(_:)`, `self` exploded into its
+trailing arguments), and a protocol whose witnesses a struct and a class
+provide; `run` calls them and wraps the throwing call in `try?`. Built with the
+swiftly 6.3 toolchain:
+
+```bash
+swiftc -O -module-name callfix swift_call_elf.swift -o swift_call_syms_elf
+llvm-strip --strip-all -o swift_call_elf swift_call_syms_elf
+```
+
+Both blobs' `DT_RUNPATH` was blanked after the build the same way as
+`swift_metadata_elf`'s (`$ORIGIN` padded with NULs in `.dynstr`); the checksums
+are of the blanked files.
+
+SHA-256: `swift_call_elf` `7daa276007f3cd21a6d9a35c4557507f7efc6713f595240e94c9b6e8da72dc30`,
+`swift_call_syms_elf` `e7e52786c446aa427673fbcf192d71bd7111578421f556c4efa43ff27b848b1a`.
+
+**Pinned VMAs** (the symbol table of `swift_call_syms_elf`):
+`$s7callfix7AccountC7deposit_3feeS2i_SitF` (vtable slot 7)@`0x3830`,
+`$s7callfix7AccountC8withdrawyS2iKF` (slot 8, throws)@`0x3870`,
+`$s7callfix7AccountC6settleyS2iF`@`0x35e0`, `$s7callfix7AccountC3fee3forS2i_tF`@`0x38f0`,
+`$s7callfix7CounterV7advance2by5timesySi_SitF`@`0x3660`,
+`$s7callfix7CounterV4peekyS2iF`@`0x3680`, the `bump` witnesses
+`$s7callfix7CounterVAA8PingableA2aDP4bumpyySiFTW`@`0x2ff0` and
+`$s7callfix7AccountCAA8PingableA2aDP4bumpyySiFTW`@`0x3060`, and
+`$s7callfix3runySiAA7AccountC_AA7CounterVzSitF`@`0x3490`, which sets r13 for
+the virtual `deposit` call at `0x34c5`, zeroes r12 (`xor %r12d,%r12d`) before
+the throwing virtual call at `0x34de` and tests it after. With `swiftmetadata
+on` (`swiftcall` is on by default) the class method decompiles as
+`callfix.Account.vtable#7.method(callfix.Account *self,long a1,long a2)` and
+passes `self` to the virtual calls it makes on itself, the struct witness
+writes `self->step`, the class witness takes `callfix.Account **self`, and
+`run` passes `a0` to both virtual calls and keeps `if (v5) {
+swift_release(v5); v3 = -1; }`; with symbols, `advance` takes `callfix.Counter
+*self` and `run` passes it `a1`, `peek` gains no `self`, and `settle` hands its
+own `self` to both `fee(for:)` calls. With `swiftcall off` the methods read
+`self` from an unnamed r13, the calls pass none, and `run` returns the throwing
+call's result unchecked.
+
+### `swift_call_helper_elf` — a mutating struct call after a runtime helper (`swiftcall`)
+
+`swift_call_helper_elf` (x86-64 ELF, 17 KB, with symbols) is the fixture for the
+`swiftself` value a runtime helper call preserves (`tests/stages/kuna-swiftcall.xml`).
+Its source `swift_call_helper_elf.swift` calls the mutating
+`Counter.bump()` after `swift_beginAccess`, which runs between the caller
+setting r13 and the call, straight-line in `once` and in a loop in `loop`:
+
+```bash
+swiftc -O -module-name helperfix swift_call_helper_elf.swift -o swift_call_helper_elf
+```
+
+Its `DT_RUNPATH` was blanked after the build the same way; the checksum is of the
+blanked file.
+
+SHA-256: `aac515b2332292701091ea7e55a4044ecb884eed10e0dd9819a862597bac942f`.
+
+**Pinned VMAs:** `$s9helperfix4onceySiAA7CounterVz_AA3BoxCtF`@`0x2440`,
+`$s9helperfix4loopySiAA7CounterVz_AA3BoxCSitF`@`0x2480`,
+`$s9helperfix7CounterV4bumpyyF`@`0x2640`. With `swiftmetadata on` both calls
+decompile as `helperfix.Counter.bump()(a0)`; with `swiftcall off` they pass
+nothing.
+
+### `swift_call_native_elf` — a Swift executable with C code using r12 and a class-bound protocol (`swiftcall`)
+
+`swift_call_native_elf` (x86-64 ELF, 12 KB, SHA-256
+`364ca3ac1ba7169e7f94cb680cb56d4cd8b5b3b73448a2c97560be7083f65b8a`) is built
+from `swift_call_native_elf.swift` and `swift_call_native_helper.c`:
+
+```bash
+gcc -c -O1 swift_call_native_helper.c -o helper.o
+swiftc -O -wmo -module-name nativefix -no-toolchain-stdlib-rpath \
+  swift_call_native_elf.swift helper.o -o nativefix
+llvm-objcopy --strip-all nativefix swift_call_native_elf
+```
+
+(swiftc 6.4.2, gcc 11.4.0.) `native_counter` (`0x10dc`) and `native_arm`
+(`0x10fe`) zero r12, make an unrelated call and read r12 back as a value,
+which no throwing call's caller does: `tests/stages/kuna-swiftcall.xml` pins
+that their `__swiftcall_throws` rule stays off, so the zero stays a zero.
+`<nativefix.Impl:nativefix.ClassOnly>.requirement#0` (`0xe70`) is the witness
+of a class-bound protocol on a class, whose `self` is the reference itself.
+
+### `swift_call_arm64_elf` — arm64 callers that test x21 after a throwing call (`swiftcall`)
+
+`swift_call_arm64_elf` (arm64 ELF shared object, 11 KB, SHA-256
+`5e58fe72a4d5881da74cbfc03126d367e293b6be4c2a1f077d5664a35feb813c`) is built
+from `swift_call_arm64_elf.swift` and `swift_call_arm64_select.s` with the
+x86-64 Linux swiftc 6.4.2 toolchain, which carries no arm64 standard library,
+so the Swift part is compiled as its own minimal standard library:
+
+```bash
+swiftc -frontend -c -parse-stdlib -module-name Swift \
+  -target aarch64-unknown-linux-gnu -Onone swift_call_arm64_elf.swift -o swiftpart.o
+clang --target=aarch64-linux-gnu -c swift_call_arm64_select.s -o select.o
+ld.lld -shared -o swift_call_arm64_elf swiftpart.o select.o
+```
+
+`Swift.doCatch(_:)` (`0x1120c`) is swiftc's debug-build caller: after the call
+it copies x21 to x8, stores x8 and then tests x21 itself with `cbnz`.
+`select_error` (`0x112d4`) is hand-written: the select an optimized build makes
+on the error register (swiftc's x86-64 output for `(try? f(x)) ?? 7` on a typed
+throw is `test r12, r12; cmovne`), here `cmp x21, #0; csel`, whose zero the
+arm64 instruction loads into a temporary before comparing. With `swiftmetadata
+on` both keep their error path: `doCatch` releases the error and calls `altv`,
+and `select_error` returns 7 when x21 is set.

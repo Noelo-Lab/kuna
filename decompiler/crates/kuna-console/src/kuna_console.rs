@@ -156,14 +156,26 @@ fn engine_unavailable(entry: &str) -> IfaceError {
 pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static, str>> {
     // C++ returns "" for an unknown option (suppressing the current field).
     let on_off = |b: bool| if b { "on" } else { "off" };
-    // (kuna `symbolnamebound`) The one VALUED live reader whose value is not a
-    // fixed token, so it owns its string; every other arm borrows and the
-    // emitted catalog bytes are unchanged.
+    // (kuna `dyldimage`, `symbolnamebound`) The valued live readers whose value
+    // is not a fixed token own their string; every other arm borrows.
+    if option == "dyldimage" {
+        return Some(
+            std::env::var(kuna_decomp::kuna_dyldcache::DYLDIMAGE_ENV)
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .map_or(Cow::Borrowed("none"), Cow::Owned),
+        );
+    }
     if option == "symbolnamebound" {
         return Some(match conf.analysis_symbolnamebound {
             None => Cow::Borrowed("off"),
             Some(n) => Cow::Owned(n.to_string()),
         });
+    }
+    if option == "kernelcache" {
+        // The loader reads the env bridge, which the `option` command also sets.
+        let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
+        return Some(Cow::Owned(choice.as_str().to_string()));
     }
     Some(Cow::Borrowed(match option {
         "bytearrayc" => on_off(conf.print().options.bytearray_c),
@@ -180,13 +192,10 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         // C++ `arraynotation` reads `conf->print` (PrintC::getArrayNotation), now
         // exposed via `Architecture::print()` (the owned `PrintC`).
         "arraynotation" => on_off(conf.print().options.array_notation()),
-        "thumbfuncptr" => on_off(conf.preserve_thumb_funcptr),
         "armfloatargs" => on_off(conf.arm_float_args),
         "callarrayextent" => on_off(conf.call_array_extent),
         "stackstruct" => on_off(conf.stack_struct),
-        "inferfuncentry" => on_off(conf.infer_funcentry),
         "globalarrayanchor" => on_off(conf.global_array_anchor),
-        "addcarrychain" => on_off(conf.add_carry_chain),
         "memsetrecover" => on_off(conf.memset_recover),
         "rodatastring" => on_off(conf.rodata_string),
         "returnpair" => {
@@ -196,11 +205,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
                 "pair"
             }
         }
-        "declhightype" => on_off(conf.decl_high_type),
         "nulterminator" => on_off(conf.nul_terminator),
         "retsplitglobal" => on_off(conf.ret_split_global),
-        "inputvarnodeadjust" => on_off(conf.input_varnode_adjust),
-        "retinputhalf" => on_off(conf.ret_input_half),
         // (kuna `protoorder`) Three-valued, so it reports its own token.
         "protoorder" => conf.protoorder.as_str(),
         // (kuna `calleevote`) Three-valued, so it reports its own token.
@@ -216,8 +222,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "syscallregs" => conf.syscall_regs.as_str(),
         // (kuna `callmechanisms`) Three-valued, so it reports its own token.
         "callmechanisms" => conf.call_mechanism_mode.as_str(),
-        "retpushedhalf" => on_off(conf.ret_pushed_half),
-        "inputparamgap" => on_off(conf.input_param_gap),
         // (kuna `rustabi`) Three-valued, so it reports its own token.
         "rustabi" => kuna_decomp::kuna_rustabi::RustAbiMode::from_u8(conf.rust_abi).as_str(),
         // (kuna `fatstr`) Three-valued, so it reports its own token.
@@ -243,11 +247,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "sparcstructret" => on_off(conf.sparc_struct_return),
         "arraystride" => on_off(conf.recover_array_stride),
         "stackalias" => on_off(conf.stack_alias_deadstore),
-        "localstackviews" => on_off(conf.local_stack_views),
         "stackviews" => on_off(conf.stack_views),
-        "dynamichashmax" => on_off(conf.dynamic_hash_maxdup_high),
         "stackprobeloop" => on_off(conf.model_stack_probe_loop),
-        "callpush" => on_off(conf.drop_call_push),
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
         "constselectjump" => on_off(conf.const_select_jump),
@@ -309,6 +310,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "peordinal" => on_off(conf.analysis_peordinal),
         "symbolnamerepair" => on_off(conf.analysis_symbolnamerepair),
         "swiftdemangle" => on_off(conf.analysis_swiftdemangle),
+        "dyldcrossrefs" => on_off(kuna_decomp::kuna_dyldcache::dyldcrossrefs_enabled()),
         // (kuna `symbolnamechars`) Three-valued, so it reports its own token.
         "symbolnamechars" => conf.analysis_symbolnamechars.as_str(),
         "msvcfpconst" => on_off(conf.analysis_msvcfpconst),
@@ -855,7 +857,7 @@ impl IfaceCommandAction for IfcKunaAssert {
                 let oldname = tokens[0].clone();
                 let newname = tokens[1].clone();
                 let dcp = dcp_mut(status)?;
-                let maxduplicates = if dcp.conf.as_ref().is_some_and(|p| p.arch().dynamic_hash_maxdup_high) { 16 } else { 8 };
+                let maxduplicates = kuna_decomp::kuna_dynamichashmax::MAX_DUPLICATES;
                 dcp.local_symbol_fd(&oldname)?;
                 let (Some(fd), arch) = (dcp.fd.as_mut(), dcp.conf.as_ref().map(|p| p.arch())) else {
                     return Err(IfaceError::execution("no function selected"));

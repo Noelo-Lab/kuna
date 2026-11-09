@@ -1,5 +1,5 @@
-//! (kuna) `pltlocal` — a call through a PLT stub the image binds to its own
-//! definition is a call to that definition.
+//! (kuna) A call through a PLT stub the image binds to its own definition is a
+//! call to that definition.
 //!
 //! A shared library calls its own default-visibility functions through
 //! `name@plt`. The loader names the stub after the relocation's symbol and
@@ -14,7 +14,7 @@
 //!
 //! The loader records, per stub, the function the slot's dynamic relocation
 //! binds it to (`loader::kuna_pltlocal`, joined by relocation symbol, never by
-//! name). With the option on, flow builds the call spec of a direct call to
+//! name). Flow builds the call spec of a direct call to
 //! such a stub at the definition's entry: the printed name and the flow effects
 //! (no-return, inline, injection) stay the stub's. A stub that declares a
 //! prototype of its own (a library signature seeded on the import, an
@@ -26,31 +26,14 @@
 //! `calleepreserves` and `calleeretpreserves` take no proof across a stub.
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 
 use crate::infra::architecture::Architecture;
-use crate::p0_knowledge::options::on_or_off;
-
-/// `option pltlocal on|off`.
-pub struct OptionPltLocal;
-
-impl OptionPltLocal {
-    /// The option name.
-    pub const NAME: &'static str = "pltlocal";
-
-    /// Resolve the flag and its confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Calls through a PLT stub bound to the image's own definition turned {prop}")))
-    }
-}
 
 /// The definition the PLT stub at `entry` is bound to, in `entry`'s space, when
-/// the option is on, the stub declares no prototype of its own, and the symbol
-/// table knows a function there.
+/// the stub declares no prototype of its own and the symbol table knows a
+/// function there.
 pub fn definition(arch: &Architecture, entry: &Address) -> Option<Address> {
-    if !arch.plt_local_calls || arch.plt_local.is_empty() {
+    if arch.plt_local.is_empty() {
         return None;
     }
     let target = target_of(&arch.plt_local, entry.get_offset())?;

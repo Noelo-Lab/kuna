@@ -13,42 +13,26 @@ const MERGED_EMPTY: [uint1; WINDOW] = [
 ];
 
 #[test]
-fn option_parses_on_and_off() {
-    let (val, msg) = OptionEmptyStrConst.apply("on").unwrap();
-    assert!(val);
-    assert!(msg.contains("on"));
-    let (val, msg) = OptionEmptyStrConst.apply("off").unwrap();
-    assert!(!val);
-    assert!(msg.contains("off"));
-    assert!(OptionEmptyStrConst.apply("maybe").is_err());
-}
-
-#[test]
 fn blob_neighbourhood_is_not_string_data() {
     assert!(!reads_as_string_data(&MAZE));
-    assert!(declines_literal(true, 0, Some(&MAZE)));
+    assert!(declines_literal(0, Some(&MAZE)));
 }
 
 #[test]
 fn merged_empty_literal_keeps_its_quotes() {
     assert!(reads_as_string_data(&MERGED_EMPTY));
-    assert!(!declines_literal(true, 0, Some(&MERGED_EMPTY)));
+    assert!(!declines_literal(0, Some(&MERGED_EMPTY)));
 }
 
 #[test]
 fn a_literal_with_any_content_is_never_declined() {
-    assert!(!declines_literal(true, 1, Some(&MAZE)));
-    assert!(!declines_literal(true, 64, Some(&MAZE)));
+    assert!(!declines_literal(1, Some(&MAZE)));
+    assert!(!declines_literal(64, Some(&MAZE)));
 }
 
 #[test]
 fn an_unreadable_neighbourhood_is_not_evidence() {
-    assert!(!declines_literal(true, 0, None));
-}
-
-#[test]
-fn option_off_restores_the_upstream_literal() {
-    assert!(!declines_literal(false, 0, Some(&MAZE)));
+    assert!(!declines_literal(0, None));
 }
 
 #[test]
@@ -74,5 +58,5 @@ fn only_the_run_after_the_terminator_is_judged() {
 fn a_window_of_nothing_but_nuls_says_nothing() {
     // Padding at the end of a section is not evidence against the literal.
     assert!(reads_as_string_data(&[0u8; WINDOW]));
-    assert!(!declines_literal(true, 0, Some(&[0u8; WINDOW])));
+    assert!(!declines_literal(0, Some(&[0u8; WINDOW])));
 }

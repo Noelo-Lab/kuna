@@ -91,17 +91,15 @@ wholly in padding receives a temporary instead
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs (varnode_out)`);
 padding renormalizes to constant zero, and any other constant output address is
 still refused. Attaching a constant as an operation's output is refused before
-the operation changes. With `option aggregatefields` on (the default), a
-struct- or array-typed concatenation with low zero bytes stays a PIECE for
-field recovery rather than becoming an integer shift; off restores
-`RuleConcatZero`'s upstream rewrite for every concatenation.
+the operation changes. A struct- or array-typed concatenation with low zero
+bytes stays a PIECE for field recovery rather than becoming an integer shift
+(`RuleConcatZero`'s upstream rewrite applies to every other concatenation).
 Join addresses use the join space's target byte order, including a partial join
 whose first piece is a constant. Byte positions within padding stay separate
 from its zero value, so slicing that padding neither invents nonzero constants
 nor shifts the adjacent physical fields.
 
-Cleanup splitting can extract fields from an already truncated aggregate. With
-`option aggregatefields` on (the default), its
+Cleanup splitting can extract fields from an already truncated aggregate. Its
 new SUBPIECEs immediately collapse nested truncations through the existing
 double-subpiece rule, preserving their total byte offset. The main
 simplification pool has already finished at this point; leaving the intermediate
@@ -676,7 +674,7 @@ arm answers only processor-space ranges, because a callee's memory writes are `S
 address the walk cannot follow; only *killed by call* is downgraded, never
 promoted; and a prototype carrying its own effect-record override has had a
 deliberate statement made about it and is left alone. A call built past a PLT stub at the
-definition the stub is bound to (`pltlocal`, chapter 04) takes no proof either:
+definition the stub is bound to (`kuna_pltlocal.rs`, chapter 04) takes no proof either:
 the compiler that emitted `bl name@plt` could not rely on what one definition
 leaves alone, since the lazy resolver runs first and another may win.
 
@@ -742,7 +740,7 @@ no write to the return storage proves the call has no return value at all
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeretpreserves.rs
 (callee_preserves_return_storage)`). For an exact range the effect is downgraded
 to *unaffected*, the output-active arm is skipped, and the caller's own
-definition flows across the call. A call built past a PLT stub (`pltlocal`) takes no such proof,
+definition flows across the call. A call built past a PLT stub (`kuna_pltlocal.rs`) takes no such proof,
 for the reason given above for `calleepreserves`.
 
 Three conditions bound it. The range must characterize as the call's *output*.
@@ -866,7 +864,7 @@ Floating-point slots, ambiguous contained entries, unnamed ranges, other
 address widths and memory ranges are excluded. `off` disables the partial-range
 guards; `in` and `full` retain their broader opt-in behavior.
 
-Trial scoring for this shape has one companion rule, `exclusivecallret`
+Trial scoring for this shape has one companion rule, `kuna_exclusivecallret.rs`
 (chapter 04, `ActionActiveParam`), which lets a call and a return on mutually
 exclusive arms keep each other's narrow scalar trial.
 
@@ -1073,10 +1071,9 @@ those COPYs in the order upstream built them leaves every Varnode's readers in
 upstream's order. Only the pairs a later read sees build their COPY, and each
 reads the reached Varnode directly where upstream's chains the guard COPYs of
 consecutive LOADs. The read
-locations that branch-scope trimming (chapter 06, `guardedreadtrim`) records
-for the stack guard COPYs are recorded once per block and range
-(`kuna_stackreadscope.rs (mark_guarded_read)`). With the option off, every
-COPY is built as upstream builds it.
+locations that branch-scope trimming (chapter 06, `kuna_guardedreadtrim.rs`)
+records for the stack guard COPYs are recorded once per block and range
+(`kuna_stackreadscope.rs (mark_guarded_read)`).
 
 At `global`, the default, the LOAD guard runs and so does the global half of
 upstream's STORE guard (`heritage.rs (Heritage::guard_global_stores)`): every
@@ -2307,7 +2304,7 @@ for the four ARM cspecs, the nine MIPS cspecs, the four Loongarch cspecs and
 8051, and `align="4"` (two word-alignment bits) for the five AARCH64 cspecs;
 AARCH64's own `blr` masks nothing, so there the rule only fires on a mask the
 program itself wrote. `funcptr_align` has two other live readers — the jump-table
-model (chapter 02) and the `thumbfuncptr` const-pointer preservation (chapter 05,
+model (chapter 02) and the Thumb const-pointer preservation (chapter 05,
 §5) — and the three do not interact: this rule only ever removes an `INT_AND`
 that a `CALLIND` consumes.
 
@@ -2952,7 +2949,7 @@ every trial register — rax in slot 1, rdx in slot 2 on x86-64 — and a consta
 known for rdx then replaced the rax slot: a function with a second RETURN
 reached only when `rdx == 0` printed `return 0;` there instead of the entry
 value. That happens whenever the output container outlives the first mainloop
-iteration (a model with a delayed heritage space, or the `condexeret` extra
+iteration (a model with a delayed heritage space, or the `kuna_condexeret.rs` extra
 pass, 04 §4.4). kuna stores the COPY in the slot that actually reads the
 varnode (`condconst.rs (propagate_constant)`); on a trimmed RETURN that is slot
 1, as upstream.
@@ -3034,7 +3031,7 @@ including auto when the input size selects aggressive. An explicit
 INT_CARRY or its const-folded `INT_LESSEQUAL((-b) & mask, a)` form, matched
 through CAST/COPY chains. Rewrite: one wide `INT_ADD(PIECE(hipart, b),
 ZEXT(a))`, recovering the single 16-bit addition the 6502-class ADC pair
-implements. Settable `addcarrychain`, shipped default **on** (DIV-2).
+implements. The rule is always on.
 
 Carry-chain and array-stride helper outputs use
 `decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs (new_unique_out)`
@@ -3437,8 +3434,8 @@ hold that dead-code elimination immediately reinstates would prevent the main
 loop from converging; ordinary temporary holds keep their existing release rule.
 
 
-With `guardedreadtrim on`, a physical stack LOAD lowered by `RuleLoadVarnode`
-retains its original read block and byte range. Indexed frame LOAD guards also
+A physical stack LOAD lowered by `RuleLoadVarnode` retains its original read
+block and byte range. Indexed frame LOAD guards also
 record their conservative range when heritage creates the preserving COPY.
 When copy propagation binds that read to call-written frame memory, the call
 is associated with that provenance before the COPY is removed.
@@ -3511,7 +3508,7 @@ without any restart (§0.7): the next mainloop iteration simply re-heritages
 the smaller graph.
 
 
-`localstackviews` adds only positively proved local byte ranges to
+The bounded local policy (`kuna_localstackviews.rs`) adds only positively proved local byte ranges to
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackeffects.rs`.
 The native STORE hook exposes those ranges before the next heritage pass;
 waiting for dead-code preparation can incorrectly fold a later frame read

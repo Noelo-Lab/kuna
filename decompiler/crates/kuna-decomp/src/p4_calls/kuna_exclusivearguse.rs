@@ -1,5 +1,4 @@
-//! P4 mutually-exclusive-path tolerance in input-trial scoring — the
-//! `exclusivearguse` decision point.
+//! P4 mutually-exclusive-path tolerance in input-trial scoring.
 //!
 //! # The gap
 //!
@@ -105,16 +104,13 @@ const ADDRESS_SLOT: i32 = 1;
 pub(crate) const MAX_VISIT: usize = 4096;
 
 /// Whether the `CPUI_LOAD`/`CPUI_STORE` at `op` may be skipped while scoring the
-/// input trial matched at `opmatch`. Off restores the upstream rejection.
+/// input trial matched at `opmatch`.
 pub fn access_cannot_reach_call(
     data: &Funcdata,
     opmatch: OpId,
     op: OpId,
     vn: VarnodeId,
 ) -> bool {
-    if !data.get_arch().exclusive_arg_use {
-        return false;
-    }
     if !matches!(
         data.obank().get(opmatch).map(|o| o.code()),
         Some(OpCode::CPUI_CALL) | Some(OpCode::CPUI_CALLIND)

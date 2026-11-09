@@ -1,5 +1,5 @@
-//! Unit tests for `zeroidiomuse`'s predicate: which descendant ops throw their
-//! operand away, and how far the structural sameness test reaches.  The
+//! Unit tests for the self-cancelling-operand predicate: which descendant ops
+//! throw their operand away, and how far the structural sameness test reaches.  The
 //! end-to-end behaviour is `tests/stages/gh dec-zeroidiomuse.xml` and
 //! `tests/cli/argument-recovery-drops-both.json`.
 
@@ -42,10 +42,8 @@ fn build_manager() -> AddrSpaceManager {
     m
 }
 
-fn build_fd(zero_idiom_use: bool) -> Funcdata {
-    let mut ctx = ArchContext::new(build_manager());
-    ctx.zero_idiom_use = zero_idiom_use;
-    let glb = Rc::new(ctx);
+fn build_fd() -> Funcdata {
+    let glb = Rc::new(ArchContext::new(build_manager()));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
     Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
@@ -120,7 +118,7 @@ fn slice(fd: &mut Funcdata, bl: BlockId, off: u64, src: VarnodeId, outoff: u64) 
 
 #[test]
 fn self_xor_of_one_varnode_discards_its_operand() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let a = mk_vn(&mut fd, 0x40, 8);
     let op = binop(&mut fd, bl, 0x2000, OpCode::CPUI_INT_XOR, a, a);
@@ -129,7 +127,7 @@ fn self_xor_of_one_varnode_discards_its_operand() {
 
 #[test]
 fn self_sub_of_one_varnode_discards_its_operand() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let a = mk_vn(&mut fd, 0x40, 8);
     let op = binop(&mut fd, bl, 0x2000, OpCode::CPUI_INT_SUB, a, a);
@@ -138,7 +136,7 @@ fn self_sub_of_one_varnode_discards_its_operand() {
 
 #[test]
 fn xor_of_two_different_varnodes_is_a_real_use() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let a = mk_vn(&mut fd, 0x40, 8);
     let b = mk_vn(&mut fd, 0x48, 8);
@@ -151,7 +149,7 @@ fn self_and_and_self_or_are_real_uses() {
     // `x & x` and `x | x` are `x`, not 0 — the value survives them, so the walk
     // must keep following it.
     for opc in [OpCode::CPUI_INT_AND, OpCode::CPUI_INT_OR] {
-        let mut fd = build_fd(true);
+        let mut fd = build_fd();
         let bl = mk_block(&mut fd);
         let a = mk_vn(&mut fd, 0x40, 8);
         let op = binop(&mut fd, bl, 0x2000, opc, a, a);
@@ -159,14 +157,6 @@ fn self_and_and_self_or_are_real_uses() {
     }
 }
 
-#[test]
-fn option_off_declines_every_op() {
-    let mut fd = build_fd(false);
-    let bl = mk_block(&mut fd);
-    let a = mk_vn(&mut fd, 0x40, 8);
-    let op = binop(&mut fd, bl, 0x2000, OpCode::CPUI_INT_XOR, a, a);
-    assert!(!op_discards_operand(&fd, op));
-}
 
 // --- structural sameness ----------------------------------------------------
 
@@ -176,7 +166,7 @@ fn two_subpieces_of_one_source_are_the_same_value() {
     // `INT_XOR(SUBPIECE(rsi,0), SUBPIECE(rsi,0))` over two DISTINCT SUBPIECE
     // Varnodes, because the operands are not common-subexpression eliminated
     // until well after ActionActiveParam.
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let src = mk_vn(&mut fd, 0x40, 8);
     let lo1 = slice(&mut fd, bl, 0x2000, src, 0x100);
@@ -188,7 +178,7 @@ fn two_subpieces_of_one_source_are_the_same_value() {
 
 #[test]
 fn subpieces_of_different_sources_are_not_the_same_value() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let src1 = mk_vn(&mut fd, 0x40, 8);
     let src2 = mk_vn(&mut fd, 0x48, 8);
@@ -200,7 +190,7 @@ fn subpieces_of_different_sources_are_not_the_same_value() {
 
 #[test]
 fn equal_constants_are_the_same_value_and_unequal_ones_are_not() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let a = fd.new_constant(4, 7);
     let b = fd.new_constant(4, 7);
@@ -213,7 +203,7 @@ fn equal_constants_are_the_same_value_and_unequal_ones_are_not() {
 
 #[test]
 fn a_constant_and_a_register_are_never_the_same_value() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let a = fd.new_constant(8, 0);
     let b = mk_vn(&mut fd, 0x40, 8);
@@ -224,7 +214,7 @@ fn a_constant_and_a_register_are_never_the_same_value() {
 #[test]
 fn sameness_does_not_look_through_an_impure_op() {
     // Two LOADs of one address are two reads of memory, not one value.
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let ptr = mk_vn(&mut fd, 0x40, 8);
     let mut load = |off: u64, outoff: u64| {
@@ -244,7 +234,7 @@ fn sameness_does_not_look_through_an_impure_op() {
 fn sameness_stops_at_the_depth_bound() {
     // Three levels of reshaping is one more than `MAX_DEPTH` looks through, so
     // the predicate declines rather than recursing without a bound.
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let bl = mk_block(&mut fd);
     let src = mk_vn(&mut fd, 0x40, 8);
     let mut chain = |off: u64, base: u64| {

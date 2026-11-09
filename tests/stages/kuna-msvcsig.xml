@@ -34,10 +34,9 @@
     hidden return pointer, typed. The copy constructor's evidence (it is
     imported) is what proves MakeStack returns Arr through that pointer.
     MakeStack's by-value `Arr` has a size the name does not state, so the
-    parameters after it are left open. `option msvcbyval` (on by default) sizes
-    that class from the caller's cleanup; it is pinned off in both passes here
-    so this test pins msvcsig alone (tests/stages/kuna-msvcbyval.xml covers
-    it), and without it the pushes above the slot stay stores before the call.
+    parameters after it are left open until the by-value sizing
+    (kuna_msvcbyval.rs, always on; tests/stages/kuna-msvcbyval.xml) reads the
+    class's size from the caller's cleanup and MakeStack takes every argument.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -48,7 +47,6 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/msvcsig_protos_i386.exe</com>
   <com>option msvcsig off</com>
-  <com>option msvcbyval off</com>
   <com>read symbols</com>
   <com>load addr 0x401000</com>
   <com>decompile</com>
@@ -58,7 +56,6 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/msvcsig_protos_i386.exe</com>
-  <com>option msvcbyval off</com>
   <com>read symbols</com>
   <com>load addr 0x401000</com>
   <com>decompile</com>
@@ -72,8 +69,8 @@ c3
 <stringmatch name="MSVCSIG #2: off hands MakeStack's pushes to the copy constructor" min="1" max="1">Arr\(a2,a0,a2,a3\);</stringmatch>
 <stringmatch name="MSVCSIG #3: on passes this to the __thiscall import" min="1" max="1">v1 = Arr::IsValid\(a0\);</stringmatch>
 <stringmatch name="MSVCSIG #4: on types the caller's parameter as the class pointer" min="1" max="1">int4 sub_401000\(Arr \*a0\)</stringmatch>
-<stringmatch name="MSVCSIG #5: on gives the copy constructor its slot and its source" min="1" max="1">Arr::Arr\(\(Arr \*\)&amp;v1,a2\);</stringmatch>
-<stringmatch name="MSVCSIG #6: the hidden return pointer is MakeStack's argument in both passes" min="2" max="2">MakeStack\(a1\);</stringmatch>
+<stringmatch name="MSVCSIG #5: on gives the copy constructor its slot and its source" min="1" max="1">Arr::Arr\(\(Arr \*\)&amp;v1,a1\);</stringmatch>
+<stringmatch name="MSVCSIG #6: off keeps only the hidden return pointer as MakeStack's argument" min="1" max="1">MakeStack\(a1\);</stringmatch>
 <stringmatch name="MSVCSIG #7: on types the hidden return pointer" min="1" max="1">Arr \* sub_401020\(</stringmatch>
 <stringmatch name="MSVCSIG #8: the cdecl import keeps its argument in both passes" min="2" max="2">Note\(v1\);</stringmatch>
 </decompilertest>

@@ -1147,20 +1147,18 @@ fn concatzero_rejects_nonzero_const() {
 
 #[test]
 fn concatzero_preserves_structured_values_for_field_recovery() {
-    for (enabled, metatype, kept) in [
-        (true, type_metatype::TYPE_STRUCT, true),
-        (true, type_metatype::TYPE_INT, false),
-        (false, type_metatype::TYPE_STRUCT, false),
+    for (metatype, kept) in [
+        (type_metatype::TYPE_STRUCT, true),
+        (type_metatype::TYPE_INT, false),
     ] {
-        let mut fd = build_fd_with(|ctx| ctx.aggregate_fields = enabled);
+        let mut fd = build_fd();
         let block = mk_block(&mut fd);
         let value = mk_vn(&mut fd, 12, 0x10);
         let zero = fd.new_constant(4, 0);
         let (op, output) = mk_def(&mut fd, block, OpCode::CPUI_PIECE, 16, 0x30, &[value, zero]);
         fd.vbank_mut().get_mut(output).unwrap()
             .update_type(Rc::new(Datatype::new(16, metatype)));
-        assert_eq!(RuleConcatZero::new().apply_op(op, &mut fd), i32::from(!kept),
-            "aggregatefields={enabled} {metatype:?}");
+        assert_eq!(RuleConcatZero::new().apply_op(op, &mut fd), i32::from(!kept), "{metatype:?}");
         let code = fd.obank().get(op).unwrap().code();
         assert_eq!(code, if kept { OpCode::CPUI_PIECE } else { OpCode::CPUI_INT_LEFT });
         if kept {
@@ -1173,8 +1171,8 @@ fn concatzero_preserves_structured_values_for_field_recovery() {
 #[test]
 fn every_copy_on_the_chain_to_the_return_resolves_the_whole_container() {
     use crate::fspec::ProtoStore;
-    for enabled in [true, false] {
-        let mut fd = build_fd_with(|ctx| ctx.aggregate_fields = enabled);
+    {
+        let mut fd = build_fd();
         let parent = Rc::new(Datatype::new(8, type_metatype::TYPE_STRUCT));
         let mut store = crate::fspec::ProtoStoreInternal::new(Rc::new(Datatype::new(0, type_metatype::TYPE_VOID)));
         store.set_output(&crate::fspec::ParameterPieces {
@@ -1195,8 +1193,8 @@ fn every_copy_on_the_chain_to_the_return_resolves_the_whole_container() {
         fd.op_set_input(ret, last, 1).unwrap();
         fd.op_insert(ret, block, None);
         for (op, slot) in [(first, -1), (first, 0), (second, -1), (second, 0), (ret, 1)] {
-            assert_eq!(crate::kuna_aggregatefields::returns_whole_container(&fd, op, slot, &parent), enabled,
-                "aggregatefields={enabled} op={op:?} slot={slot}");
+            assert!(crate::kuna_aggregatefields::returns_whole_container(&fd, op, slot, &parent),
+                "op={op:?} slot={slot}");
         }
     }
 }

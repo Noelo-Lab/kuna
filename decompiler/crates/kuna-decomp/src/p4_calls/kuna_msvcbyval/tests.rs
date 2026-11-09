@@ -25,9 +25,3 @@ fn a_range_reaching_past_the_object_is_not() {
     assert!(!within(0, 0, 4));
 }
 
-#[test]
-fn the_option_is_on_or_off() {
-    assert!(OptionMsvcByval.apply("on").unwrap().0);
-    assert!(!OptionMsvcByval.apply("off").unwrap().0);
-    assert!(OptionMsvcByval.apply("maybe").is_err());
-}

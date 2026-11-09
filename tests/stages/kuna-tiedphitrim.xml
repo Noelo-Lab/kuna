@@ -28,14 +28,13 @@
     buf[i] with `cmp byte [rsp+rax+0x20],0`.
 
     In all three the loop variable is MULTIEQUAL(buf[0], LOAD) at the loop
-    head.  Stage: P6 forced merge (Merge::mergeOp).  P0 assertion: option
-    tiedphitrim on|off.  With the option off, Merge puts the buf[0] read and
-    the LOAD into one HighVariable, which is the frame slot, so every byte
-    the loop fetches prints as a store into buf[0].  With the option on (the
-    default, pass 1) the loop-head input is trimmed into a copy on the
-    entering edge and the loop variable is its own.
+    head.  Stage: P6 forced merge (Merge::mergeOp), kuna_tiedphitrim.rs
+    (always on).  Upstream puts the buf[0] read and the LOAD into one
+    HighVariable, which is the frame slot, so every byte the loop fetches
+    prints as a store into buf[0]; the loop-head input is instead trimmed into
+    a copy on the entering edge and the loop variable is its own.
 
-    Negative controls, identical in both passes:
+    Negative controls:
     - store_loop really stores each fetched byte into buf[0] inside the loop
       and passes buf to a call after it, so the store is live and must print;
       the write into buf[0] inside the loop declines the trim.
@@ -225,46 +224,6 @@ b801000000c3
   <com>lo fu t1b</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option tiedphitrim off</com>
-  <com>lo fu sum_msvc</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu sum_gcc</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu sum_clang</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu store_loop</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu store_join</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu outparam_join</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu accum_loop</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu xa11</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu xa13</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu outparam_walk</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu t8</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu t1</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu t1b</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="TIEDPHITRIM #1: default, MSVC: buf[0] is read once into its own variable and the loop reloads that variable from buf[i]" min="1" max="1">strncpy\(v4,a0,0x3f\);
@@ -278,7 +237,7 @@ v3 \+= 1;
 v5 \+= \(uint4\)v4\[v2\];
 v1 = v4\[v3\];
 \}</stringmatch>
-<stringmatch name="TIEDPHITRIM #2: option off, MSVC: the loop tests buf[0] and stores buf[i] into it" min="1" max="1">strncpy\(v3,a0,0x3f\);
+<stringmatch name="TIEDPHITRIM #2: MSVC: the loop never tests buf[0] and stores buf[i] into it" min="0" max="0">strncpy\(v3,a0,0x3f\);
 v4 = 0;
 v2 = 0;
 v5 = 0;
@@ -298,7 +257,7 @@ v2 = &amp;v2\[1\];
 v4 \+= \(uint4\)v1;
 v1 = \*v2;
 \} while \(v1\);</stringmatch>
-<stringmatch name="TIEDPHITRIM #4: option off, gcc -O2: each fetched byte is stored into the byte strncpy filled" min="1" max="1">strncpy\(&amp;v2,a0,0x3f\);
+<stringmatch name="TIEDPHITRIM #4: gcc -O2: no fetched byte is stored into the byte strncpy filled" min="0" max="0">strncpy\(&amp;v2,a0,0x3f\);
 v4 = 0;
 if \(v2\) \{
 v3 = 0;
@@ -317,7 +276,7 @@ v3 = &amp;v3\[1\];
 v1 \+= \(uint4\)v2;
 v2 = \*v3;
 \} while \(v2\);</stringmatch>
-<stringmatch name="TIEDPHITRIM #6: option off, clang-12 -O2: each fetched byte is stored into the byte strncpy filled" min="1" max="1">strncpy2\(&amp;v3,a0,0x3f\);
+<stringmatch name="TIEDPHITRIM #6: clang-12 -O2: no fetched byte is stored into the byte strncpy filled" min="0" max="0">strncpy2\(&amp;v3,a0,0x3f\);
 v4 = 0;
 if \(v3\) \{
 v1 = 0;
@@ -326,7 +285,7 @@ v2 = &amp;v2\[1\];
 v1 \+= \(uint4\)v3;
 v3 = \*v2;
 \} while \(v3\);</stringmatch>
-<stringmatch name="TIEDPHITRIM #7: both passes print store_loop's live store of each fetched byte into buf[0]" min="2" max="2">strncpy\(&amp;v4,a0,0x3f\);
+<stringmatch name="TIEDPHITRIM #7: store_loop's live store of each fetched byte into buf[0] is printed" min="1" max="1">strncpy\(&amp;v4,a0,0x3f\);
 v3 = 0;
 if \(v4\) \{
 v2 = v5;
@@ -338,20 +297,20 @@ v2 = v1;
 \} while \(v4\);
 \}
 strncpy\(&amp;v4\);</stringmatch>
-<stringmatch name="TIEDPHITRIM #8: both passes print store_join's store of the joined byte into buf[0]" min="2" max="2">strncpy\(v1,a1,0x3f\);
+<stringmatch name="TIEDPHITRIM #8: store_join's store of the joined byte into buf[0] is printed" min="1" max="1">strncpy\(v1,a1,0x3f\);
 if \(a1\)
 v1\[0\] = \*a0;
 strncpy\(v1\);</stringmatch>
-<stringmatch name="TIEDPHITRIM #9: both passes keep upstream's merge at outparam_join's if/else join" min="2" max="2">fill_int\(v1\);
+<stringmatch name="TIEDPHITRIM #9: upstream's merge is kept at outparam_join's if/else join" min="1" max="1">fill_int\(v1\);
 if \(a1\)
 v1\[0\] = \*a0;
 return v1\[0\];</stringmatch>
-<stringmatch name="TIEDPHITRIM #10: both passes keep upstream's merge for accum_loop's computed loop value" min="2" max="2">fill_int\(v1\);
+<stringmatch name="TIEDPHITRIM #10: upstream's merge is kept for accum_loop's computed loop value" min="1" max="1">fill_int\(v1\);
 for \(; a0; a0 = a0 \+ -1\) \{
 v1\[0\] = v1\[0\] \* 0x1f \+ 7;
 \}
 return v1\[0\];</stringmatch>
-<stringmatch name="TIEDPHITRIM #11: both passes keep xa11's upstream merge, the loop's x stored into buf[0] only after the loop" min="2" max="2">while \(v1 = v2, v6\[0\]\) \{
+<stringmatch name="TIEDPHITRIM #11: xa11 keeps upstream's merge, the loop's x stored into buf[0] only after the loop" min="1" max="1">while \(v1 = v2, v6\[0\]\) \{
 v2 = v6\[0\] \+ 1 \+ v5;
 v3 = &amp;v4\[1\];
 v5 = v5 \* 3 \+ \(int4\)v6\[0\];
@@ -361,7 +320,7 @@ v1 = v2;
 if \(v3 == &amp;v6\[0x1f\]\) break;
 \}
 v6\[0\] = v1;</stringmatch>
-<stringmatch name="TIEDPHITRIM #12: both passes keep xa13's upstream merge, the loop's x stored into buf[0] only after the loop" min="2" max="2">v5\[0\] = v5\[v3 &amp; 0x3f\];
+<stringmatch name="TIEDPHITRIM #12: xa13 keeps upstream's merge, the loop's x stored into buf[0] only after the loop" min="1" max="1">v5\[0\] = v5\[v3 &amp; 0x3f\];
 v1 = v2;
 if \(100000 &lt; v4\) break;
 \}
@@ -374,7 +333,7 @@ do \{
 v1 \+= \*\(int4 \*\)&amp;v2\[1\];
 v2 = \(int8 \*\)\*v2;
 \} while \(v2\);</stringmatch>
-<stringmatch name="TIEDPHITRIM #14: option off, outparam_walk stores each next pointer into the stack slot getnode filled" min="1" max="1">do \{
+<stringmatch name="TIEDPHITRIM #14: outparam_walk never stores a next pointer into the stack slot getnode filled" min="0" max="0">do \{
 v1 \+= \*\(int4 \*\)&amp;v2\[0\]\[1\];
 v2\[0\] = \(int8 \*\)\*v2\[0\];
 \} while \(v2\[0\]\);</stringmatch>

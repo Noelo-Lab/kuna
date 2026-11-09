@@ -1875,10 +1875,9 @@ impl Heritage {
                 && spc.get_type() == spacetype::IPTR_SPACEBASE
                 && tryregister
             {
-                if let Some(floor) = crate::p4_calls::kuna_calleeprotostack::declared_caller_frame_floor(
-                    fd.get_arch().callee_proto_stack,
-                    fc.proto(),
-                ) {
+                if let Some(floor) =
+                    crate::p4_calls::kuna_calleeprotostack::declared_caller_frame_floor(fc.proto())
+                {
                     if crate::p4_calls::kuna_calleeprotostack::above_callee_frame(
                         trans_addr.get_offset(),
                         size,

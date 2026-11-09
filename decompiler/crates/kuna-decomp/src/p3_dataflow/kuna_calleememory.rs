@@ -852,10 +852,7 @@ fn for_call<'a>(
         return None;
     }
     let space = fd.get_scope_local()?.get_space_id();
-    let mut floor = i64::from(crate::kuna_calleeprotostack::declared_caller_frame_floor(
-        true,
-        call.proto(),
-    )?);
+    let mut floor = i64::from(crate::kuna_calleeprotostack::declared_caller_frame_floor(call.proto())?);
     for slot in 0..call.proto().num_params() {
         let param = call.proto().get_param(slot)?;
         let address = param.get_address();

@@ -104,10 +104,7 @@ fn reset_defaults_internal_matches_cpp() {
 fn kuna_anchor_flags_default_to_div_values() {
     let arch = Architecture::new("test:LE:32", bare_sleigh());
     // DIV-2/DIV-3 default-on (architecture.cc:1430-1451).
-    assert!(arch.infer_funcentry);
     assert!(arch.memset_recover);
-    assert!(arch.input_varnode_adjust);
-    assert!(arch.dynamic_hash_maxdup_high);
     assert!(arch.recover_array_stride);
     assert!(arch.recover_lowered_switch);
     assert!(arch.lowered_switch_labels);
@@ -115,10 +112,8 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.lowered_switch_exact);
     assert!(arch.lowered_switch_every_head);
     assert!(arch.name_style_angr);
-    assert!(arch.add_carry_chain);
     assert!(arch.model_stack_probe_loop);
     assert!(arch.present_lessequal);
-    assert!(arch.preserve_thumb_funcptr);
     // (kuna) signedness ships `auto` -- a declaration is re-signed when every
     // signedness-sensitive reader of the value agrees.
     assert_eq!(arch.signedness, crate::kuna_typeround::SignPolicy::Auto);
@@ -135,7 +130,6 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.dedup_ite_tail);
     assert!(arch.fold_call_returns);
     // (kuna) foldcallretphi default-on (docs/features/foldcallretphi/flip.md).
-    assert!(arch.fold_call_ret_phi);
     assert!(arch.branch_flip);
     // (kuna) DIV-14 default-on sweep: 4 more flags default-on (3 of them REMOVE
     // CODE — stackguard/noreturn_extern/noreturn_propagate). Per-test opt-out
@@ -157,11 +151,9 @@ fn kuna_anchor_flags_default_to_div_values() {
 #[test]
 fn reset_defaults_is_idempotent_after_mutation() {
     let mut arch = Architecture::new("t", bare_sleigh());
-    arch.infer_funcentry = false;
     arch.max_instructions = 7;
     arch.signedness = crate::kuna_typeround::SignPolicy::Upstream;
     arch.reset_defaults();
-    assert!(arch.infer_funcentry);
     assert_eq!(arch.max_instructions, 100000);
     // (kuna) `signedness` ships `auto`: the struct literal holds the inert
     // `Upstream` arm, so only reset_defaults puts the shipped value in place.
@@ -222,7 +214,6 @@ fn apply_mode_fast_replaces_exhaustive_with_bounded_discovery() {
     assert!(!arch.analysis_funcstart_patterns);
     assert!(!arch.analysis_aif);
     assert!(arch.analysis_fast_funcdisc);
-    assert!(arch.infer_funcentry);
     assert!(arch.analysis_noreturn_propagate);
     assert!(!arch.switch_guard_bound);
 }
@@ -464,18 +455,6 @@ fn arch_option_context_proto_model_registry() {
     assert!(format!("{err}").contains("Unknown function name"));
 }
 
-/// (kuna) `tiedphitrim` (DIV-182): ships default-ON, toggles by name and
-/// refuses a bogus value.
-#[test]
-fn tiedphitrim_defaults_on_and_toggles() {
-    let mut arch = Architecture::new("t", bare_sleigh());
-    arch.reset_defaults_internal();
-    assert!(arch.tied_phi_trim, "tiedphitrim ships default-ON (DIV-182)");
-    arch.set_kuna_option("tiedphitrim", "off").unwrap();
-    assert!(!arch.tied_phi_trim);
-    arch.set_kuna_option("tiedphitrim", "on").unwrap();
-    assert!(arch.tied_phi_trim);
-    assert!(arch.set_kuna_option("tiedphitrim", "maybe").is_err());
 }
 
 /// (kuna) `jumptablemax`: ships at upstream's 1024, takes a positive decimal

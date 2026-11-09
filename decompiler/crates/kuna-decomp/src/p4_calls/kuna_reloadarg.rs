@@ -1,6 +1,5 @@
 //! (kuna) A register reloaded from the caller's frame is no argument when the
-//! slot only gave back a scratch register no prototype passes: option
-//! `reloadarg`.
+//! slot only gave back a scratch register no prototype passes.
 //!
 //! clang -O2 keeps the stack aligned around a single call with `push %rax` and
 //! takes the slot back with `pop %rcx` before tail-calling a variadic function:
@@ -40,7 +39,7 @@ use crate::varmap::AliasChecker;
 /// Flag trial `i` of call spec `idx` for [`recheck`] when one of `loads`, the
 /// LOADs its walk took as solid, reads the caller's frame.
 pub(crate) fn note(data: &mut Funcdata, idx: int4, i: int4, loads: &[OpId]) {
-    if loads.is_empty() || !data.get_arch().reload_arg || data.get_arch().source_lang.is_go() {
+    if loads.is_empty() || data.get_arch().source_lang.is_go() {
         return;
     }
     let Some(sp) = super::kuna_spillargtrial::stack_pointer_storage(data) else { return };

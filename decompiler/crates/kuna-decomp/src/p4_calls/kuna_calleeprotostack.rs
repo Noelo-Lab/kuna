@@ -1,5 +1,5 @@
-//! (kuna) `calleeprotostack` — read a declared callee's stack contract off its
-//! prototype instead of guessing it from the caller's push run.
+//! (kuna) Read a declared callee's stack contract off its prototype instead of
+//! guessing it from the caller's push run.
 //!
 //! # The gap
 //!
@@ -61,35 +61,17 @@
 //! Inert on any target whose callees carry no declared prototype, which is both
 //! parity corpora.
 
-use kuna_base::error::KunaResult;
 use kuna_base::types::{int4, uintb};
 
 use crate::fspec::{FuncProto, EXTRAPOP_UNKNOWN};
-use crate::p0_knowledge::options::on_or_off;
-
-/// `option calleeprotostack on|off` (C++ `ArchOption` shape).
-pub struct OptionCalleeProtoStack;
-
-impl OptionCalleeProtoStack {
-    /// The option name.
-    pub const NAME: &'static str = "calleeprotostack";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_proto_stack`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Declared-callee stack contract turned {prop}")))
-    }
-}
 
 /// Give a freshly seeded, locked callee prototype the extrapop its parameter
 /// list implies (`ActionDefaultParams`).
 ///
 /// A no-op unless the prototype is input-locked and its MODEL declines to state
 /// an extrapop; a model that states one already has the exact answer.
-pub fn resolve_declared_extra_pop(on: bool, fp: &mut FuncProto) {
-    if !on || !fp.is_input_locked() {
+pub fn resolve_declared_extra_pop(fp: &mut FuncProto) {
+    if !fp.is_input_locked() {
         return;
     }
     if fp.get_extra_pop() != EXTRAPOP_UNKNOWN {
@@ -103,8 +85,8 @@ pub fn resolve_declared_extra_pop(on: bool, fp: &mut FuncProto) {
 ///
 /// This is the prototype's extrapop: the return-address slot plus the stack
 /// argument bytes the callee owns.
-pub fn declared_caller_frame_floor(on: bool, fp: &FuncProto) -> Option<int4> {
-    if !on || !fp.is_input_locked() || fp.is_dotdotdot() {
+pub fn declared_caller_frame_floor(fp: &FuncProto) -> Option<int4> {
+    if !fp.is_input_locked() || fp.is_dotdotdot() {
         return None;
     }
     let ep = fp.get_extra_pop();

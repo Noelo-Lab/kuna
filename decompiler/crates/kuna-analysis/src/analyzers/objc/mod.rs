@@ -53,28 +53,26 @@
 
 pub mod classt;
 pub mod encoding;
+pub mod kuna_objccats;
+pub mod kuna_objcivars;
+pub mod kuna_objcprops;
+pub mod kuna_objcprotos;
 pub mod kuna_objcrefs;
+pub mod kuna_objcsdk;
 pub mod methods;
 pub mod sections;
 
-use kuna_decomp::dtype::TypeFactory;
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use object::read::Object;
 
 use crate::pass::{
-    AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Phase, SymFact, SymKind,
+    AnalysisCtx, AnalysisOutput, AnalysisPass, ConstGate, ConstRange, DataObjectFact, FidMatch, Phase,
+    SymFact, SymKind,
 };
+use encoding::TypeCtx;
 use sections::MachoImage;
-
-/// The type-mapping context an IMP/ivar prototype is built against: the
-/// architecture's [`TypeFactory`] + its pointer size / word size (`data_org`).
-/// Threaded from `ctx.arch` into the method walk so the ObjC type-encoding
-/// decoder can map `i20@0:8i16` → `int (id, SEL, int)` (design §5 PR-O2).
-struct TypeCtx<'a> {
-    arch: &'a kuna_decomp::architecture::Architecture,
-    types: &'a dyn TypeFactory,
-    ptr_size: i32,
-    word_size: u32,
-}
 
 /// The Mach-O Objective-C metadata pass (gate id `objc`, default-off).
 ///
@@ -102,85 +100,157 @@ impl AnalysisPass for ObjcMetadataPass {
         // Resolve LC_DYLD_CHAINED_FIXUPS (PR-O0) so an arm64(e) image's __objc_*
         // pointer slots dereference to real addresses, not packed fixup entries.
         // Empty (no-op) on a classic x86-64 LC_DYLD_INFO Mach-O — the walk then
-        // reads raw section words exactly as the x86-64 PR-O1 path did.
+        // reads raw section words exactly as the x86-64 PR-O1 path did, and the
+        // classic bind program names its import slots instead.
         let fixups = crate::loader::format::macho::resolve_chained_fixups(ctx.file, ctx.bytes);
-        let img = MachoImage::with_fixups(ctx.file, fixups);
+        let binds = if fixups.is_chained() {
+            HashMap::new()
+        } else {
+            crate::loader::format::macho::resolve_dyld_info_binds(ctx.file, ctx.bytes)
+        };
+        let img = MachoImage::with_fixups(ctx.file, fixups).with_binds(binds);
+        let architecture = ctx.file.architecture();
 
         // The type-mapping context for IMP/ivar prototypes (PR-O2).
         let (ptr_size, word_size) = ctx.arch.data_org();
-        let tctx = TypeCtx { arch: ctx.arch, types: ctx.arch.types(), ptr_size, word_size };
-        let mut selectors = kuna_objcrefs::Selectors::default();
+        let tctx = TypeCtx::new(ctx.arch.types(), ptr_size, word_size);
+        let sdk = match kuna_decomp::kuna_objcsdk::sdk_path_from_env() {
+            Some(root) => kuna_objcsdk::signatures(&root, &kuna_objcsdk::linked_frameworks(ctx.file, ctx.bytes)),
+            None => HashMap::new(),
+        };
+        let mut selectors = kuna_objcrefs::Selectors::with_sdk(sdk);
 
-        let ps = img.ptr_size() as usize;
-        // Walk `__objc_classlist`: an array of `class_t*` (stride = ptr size).
+        // Walk `__objc_classlist`: an array of `class_t*` (stride = ptr size). The
+        // classes are read first so every instance layout is known before any
+        // method is typed — a subclass embeds its local superclass's struct.
+        let mut classes: Vec<(classt::ClassT, String)> = Vec::new();
         if let Some((cl_addr, cl_data)) = img.classlist(ctx.file) {
+            let ps = img.ptr_size() as usize;
             for (i, _) in cl_data.chunks_exact(ps).enumerate() {
-                let entry_va = cl_addr.wrapping_add((i * ps) as u64);
-                let Some(class_ptr) = img.read_ptr(entry_va) else {
-                    continue;
-                };
-                if class_ptr == 0 {
-                    continue;
-                }
-                self.walk_class(&img, &tctx, ctx.file.architecture(), class_ptr, &mut selectors, &mut out);
+                let Some(class_ptr) = img.read_ptr(cl_addr.wrapping_add((i * ps) as u64)) else { continue };
+                let Some(class) = classt::read_class_t(&img, class_ptr) else { continue };
+                let Some(name) = classt::class_name(&img, class.ro) else { continue };
+                classes.push((class, name));
             }
         }
-        let const_ranges = kuna_objcrefs::emit(&img, ctx.file, &tctx, &mut selectors, &mut out);
+        // The layouts are built only under `objcivars` (its load-time half): off,
+        // no class struct is interned and no offset variable reported constant.
+        let objcivars = kuna_decomp::kuna_objcivars::objcivars_enabled();
+        let layouts: HashMap<String, kuna_objcivars::Layout> = classes
+            .iter()
+            .filter(|_| objcivars)
+            .filter_map(|(class, name)| kuna_objcivars::layout(&img, class, name).map(|l| (name.clone(), l)))
+            .collect();
+        let structs = kuna_objcivars::Structs::build(&tctx, &layouts);
+        let categories = kuna_objccats::categories(&img, ctx.file);
+
+        // Every declaration's encoding first — methods and properties of classes,
+        // metaclasses, categories and protocols — so a getter emitted below takes
+        // the class-naming spelling its own property gives it whichever class
+        // comes first.
+        for (class, name) in &classes {
+            let meta_ro = classt::metaclass_ro(&img, class.isa);
+            for ro in [Some(class.ro), meta_ro].into_iter().flatten() {
+                if let Some(list) = classt::base_methods(&img, ro) {
+                    for m in methods::walk_method_list(&img, list, architecture) {
+                        selectors.record(&m.selector, m.types.as_deref());
+                    }
+                }
+                if let Some(list) = classt::base_properties(&img, ro) {
+                    for (sel, enc) in kuna_objcprops::declarations(&img, list) {
+                        selectors.record_for_class(name, &sel, &enc);
+                    }
+                }
+            }
+        }
+        for cat in &categories {
+            for list in [cat.instance_methods, cat.class_methods].into_iter().flatten() {
+                for m in methods::walk_method_list(&img, list, architecture) {
+                    selectors.record(&m.selector, m.types.as_deref());
+                }
+            }
+            for list in [cat.instance_properties, cat.class_properties].into_iter().flatten() {
+                for (sel, enc) in kuna_objcprops::declarations(&img, list) {
+                    match &cat.class {
+                        Some(class) => selectors.record_for_class(class, &sel, &enc),
+                        None => selectors.record(&sel, Some(&enc)),
+                    }
+                }
+            }
+        }
+        let protocols = kuna_objcprotos::protocols(&img, ctx.file);
+        for proto in &protocols {
+            for m in &proto.methods {
+                selectors.record(&m.selector, m.types.as_deref());
+            }
+            for (sel, enc) in &proto.properties {
+                selectors.record(sel, Some(enc));
+            }
+        }
+
+        for (class, name) in &classes {
+            out.symbols.push(SymFact {
+                addr: class.addr,
+                name: format!("_OBJC_CLASS_$_{name}"),
+                kind: SymKind::Data,
+            });
+            let self_type = objcivars.then(|| structs.self_type(&tctx, name)).flatten();
+            let shown = display_class_name(name);
+            if let Some(list) = classt::base_methods(&img, class.ro) {
+                self.emit_methods(&img, &tctx, architecture, &shown, '-', list, self_type.as_ref(), &mut selectors, &mut out);
+            }
+            if let Some(list) = classt::metaclass_ro(&img, class.isa).and_then(|ro| classt::base_methods(&img, ro)) {
+                self.emit_methods(&img, &tctx, architecture, &shown, '+', list, None, &mut selectors, &mut out);
+            }
+            if let Some(ivar_list) = classt::base_ivars(&img, class.ro) {
+                emit_ivars(&classt::walk_ivar_list(&img, ivar_list), &shown, objcivars, &mut out);
+            }
+        }
+
+        for cat in &categories {
+            let self_type = cat.class.as_deref().filter(|_| objcivars).and_then(|c| structs.self_type(&tctx, c));
+            if let Some(list) = cat.instance_methods {
+                self.emit_methods(&img, &tctx, architecture, &cat.label, '-', list, self_type.as_ref(), &mut selectors, &mut out);
+            }
+            if let Some(list) = cat.class_methods {
+                self.emit_methods(&img, &tctx, architecture, &cat.label, '+', list, None, &mut selectors, &mut out);
+            }
+        }
+        for proto in &protocols {
+            out.symbols.push(SymFact {
+                addr: proto.addr,
+                name: format!("_OBJC_PROTOCOL_$_{}", proto.name),
+                kind: SymKind::Data,
+            });
+            for m in &proto.methods {
+                if m.selector_va != 0 {
+                    selectors.name(&mut out, m.selector_va, &m.selector);
+                }
+            }
+        }
+        let refs = kuna_objcrefs::emit(&img, ctx.file, ctx.arch, &tctx, &mut selectors, &mut out);
+
         // A chained slot holds its packed fixup word until `dynrelocs` unpacks it
-        // at load; with that gate off the slot is named but never folded.
+        // at load; with that gate off the slots are named but never folded.
         if !img.chained() || kuna_decomp::kuna_dynrelocs::dynrelocs_enabled() {
-            out.const_ranges = const_ranges;
+            out.const_ranges.extend(refs.into_iter().map(|(first, last_open)| ConstRange {
+                first,
+                last_open,
+                gate: ConstGate::ObjcRefs,
+            }));
+        } else {
+            out.const_ranges.retain(|r| r.gate != ConstGate::ObjcRefs);
         }
         out
     }
 }
 
 impl ObjcMetadataPass {
-    /// Recover one class: its name, instance (`-`)/class (`+`) methods, and ivars.
-    fn walk_class(
-        &self,
-        img: &MachoImage,
-        tctx: &TypeCtx,
-        architecture: object::Architecture,
-        class_ptr: u64,
-        selectors: &mut kuna_objcrefs::Selectors,
-        out: &mut AnalysisOutput,
-    ) {
-        let Some(class) = classt::read_class_t(img, class_ptr) else {
-            return;
-        };
-        let Some(runtime_name) = classt::class_name(img, class.ro) else {
-            return;
-        };
-
-        // The class symbol (`_OBJC_CLASS_$_Greeter`), a Data fact at the class_t,
-        // under the runtime's own spelling.
-        out.symbols.push(SymFact {
-            addr: class.addr,
-            name: format!("_OBJC_CLASS_$_{runtime_name}"),
-            kind: SymKind::Data,
-        });
-        let name = display_class_name(&runtime_name);
-        let name = name.as_str();
-
-        // Instance (`-`) methods: class_ro_t.baseMethods.
-        if let Some(list) = classt::base_methods(img, class.ro) {
-            self.emit_methods(img, tctx, architecture, &name, '-', list, selectors, out);
-        }
-        // Class (`+`) methods: metaclass (isa) class_ro_t.baseMethods.
-        if let Some(meta_ro) = classt::metaclass_ro(img, class.isa) {
-            if let Some(list) = classt::base_methods(img, meta_ro) {
-                self.emit_methods(img, tctx, architecture, &name, '+', list, selectors, out);
-            }
-        }
-        // Instance variables: `<Class>::ivar` Data labels (PR-O2).
-        if let Some(ivar_list) = classt::base_ivars(img, class.ro) {
-            self.emit_ivars(img, tctx, &name, ivar_list, out);
-        }
-    }
-
     /// Emit the rename + function/selector symbols + (PR-O2) the typed prototype
-    /// for one method list. `kind` is `-` (instance) or `+` (class).
+    /// for one method list. `kind` is `-` (instance) or `+` (class); `class` is the
+    /// label stem, `Greeter` or `Greeter(Extra)`. `self_type` is the class's own
+    /// struct pointer, recorded apart from the prototype so `objcivars` decides
+    /// at the commit whether `self` is typed by it.
     fn emit_methods(
         &self,
         img: &MachoImage,
@@ -189,11 +259,15 @@ impl ObjcMetadataPass {
         class: &str,
         kind: char,
         list_va: u64,
+        self_type: Option<&Rc<kuna_decomp::dtype::Datatype>>,
         selectors: &mut kuna_objcrefs::Selectors,
         out: &mut AnalysisOutput,
     ) {
         for m in methods::walk_method_list(img, list_va, architecture) {
             selectors.record(&m.selector, m.types.as_deref());
+            if m.imp == 0 {
+                continue;
+            }
             // `-[Greeter greet:]` / `+[Greeter classMethod]` — the ObjC method name
             // the printer renders. Selectors are ASCII, so no demangling.
             let label = format!("{kind}[{class} {sel}]", sel = m.selector);
@@ -219,11 +293,17 @@ impl ObjcMetadataPass {
             // FunctionSymbol installed above with that same `-[Class sel]` name).
             // Best-effort — an unparseable / absent encoding leaves the IMP *named*
             // (above) but untyped, never a failure.
-            if let Some(enc) = m.types.as_deref() {
-                if let Some(pieces) = encoding::decode_method(
-                    &label, enc, tctx.types, tctx.ptr_size, tctx.word_size,
-                ) {
+            // The spelling the class's own property gives the selector, else the
+            // method's own: another class's property of the same selector says
+            // nothing about this class's return type.
+            let owner = class.split('(').next().unwrap_or(class);
+            let enc = selectors.encoding_for_class(owner, &m.selector).map(str::to_string).or_else(|| m.types.clone());
+            if let Some(enc) = enc.as_deref() {
+                if let Some(pieces) = encoding::decode_method(&label, enc, tctx, None) {
                     out.prototypes.push(pieces);
+                    if let Some(st) = self_type {
+                        out.objc_self_types.push((label.clone(), Rc::clone(st)));
+                    }
                 }
             }
 
@@ -235,37 +315,20 @@ impl ObjcMetadataPass {
             }
         }
     }
+}
 
-    /// Emit the `<Class>::ivar` Data labels for one `ivar_list_t` (PR-O2). Each
-    /// ivar's `*offset` slot is labeled with the `<Class>::<ivar>` name so the
-    /// listing names the field-offset constant; the type encoding is decoded for
-    /// completeness (the offset slot itself is a `long`, the field type rides the
-    /// label name). Best-effort, additive — a malformed list emits nothing.
-    fn emit_ivars(
-        &self,
-        img: &MachoImage,
-        tctx: &TypeCtx,
-        class: &str,
-        list_va: u64,
-        out: &mut AnalysisOutput,
-    ) {
-        for iv in classt::walk_ivar_list(img, list_va) {
-            // The `<Class>::<ivar>` label on the ivar's offset variable
-            // (`_OBJC_IVAR_$_Class.ivar`), a Data symbol at the offset slot VMA.
-            out.symbols.push(SymFact {
-                addr: iv.offset_va,
-                name: format!("{class}::{name}", name = iv.name),
-                kind: SymKind::Data,
-            });
-            // Decode the ivar element type for completeness (not committed as a
-            // typed datatype here — the offset slot is a scalar; this just
-            // validates the encoding path and keeps the decoder exercised).
-            if let Some(enc) = iv.types.as_deref() {
-                let _ = encoding::decode_ivar_type(
-                    enc, tctx.types, tctx.ptr_size, tctx.word_size,
-                );
-            }
-        }
+/// The `<Class>::<ivar>` data object on each ivar's offset variable, sized to
+/// the `u32` the method loads so the access binds the name, and the slot
+/// reported constant under `objcivars` so the load folds to the layout offset.
+fn emit_ivars(ivars: &[classt::Ivar], class: &str, objcivars: bool, out: &mut AnalysisOutput) {
+    for iv in ivars {
+        out.data_objects.push(DataObjectFact {
+            addr: iv.offset_va,
+            name: format!("{class}::{}", iv.name),
+            size: 4,
+        });
+        let Some(last_open) = iv.offset_va.checked_add(4).filter(|_| objcivars) else { continue };
+        out.const_ranges.push(ConstRange { first: iv.offset_va, last_open, gate: ConstGate::ObjcIvars });
     }
 }
 
@@ -293,6 +356,17 @@ fn sanitize_selector(sel: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An offset variable mapped at the very top of the address space keeps its
+    /// name but is not reported constant: its range would wrap.
+    #[test]
+    fn ivar_offset_variable_at_the_top_of_the_address_space_is_not_folded() {
+        let ivar = classt::Ivar { offset_va: u64::MAX - 1, name: "x".into(), types: None, offset: 8, size: 4 };
+        let mut out = AnalysisOutput::default();
+        emit_ivars(&[ivar], "C", true, &mut out);
+        assert_eq!(out.data_objects.len(), 1);
+        assert!(out.const_ranges.is_empty());
+    }
 
     #[test]
     fn pass_identity() {

@@ -1768,8 +1768,7 @@ offset, and `register` for a local the C declares outside the stack frame (a reg
 a temporary, or a value with no storage of its own). A `register` row carries the
 declaration's own name, so it joins to its declaration line in `code`, and its type
 spelled as the other rows spell theirs (`char[16]` for `char v1 [16];`); its
-`stack_offset` and `arg_index` are `null`. `--option reglocals off` drops those rows
-and leaves the parameters and the frame.
+`stack_offset` and `arg_index` are `null`.
 `line_mappings` maps 1-based
 lines in `code` to sorted, unique machine-instruction VMAs. Variable `line_numbers`
 come from the printer's `varref` tokens; variable `addresses` are the union of the
@@ -3617,6 +3616,24 @@ packer's trailer), to total exactly the original file size, and to reproduce **b
 of the packer's own Adler-32 checksums (a flipped literal byte
 decodes to a wrong image of exactly the right length; only the checksum catches it).
 
+### A dyld shared cache
+
+```bash
+kuna unpack dyld_shared_cache_arm64e --list [--json]        # index, address, install name
+kuna unpack dyld_shared_cache_arm64e --image CoreFoundation # writes <cache>.CoreFoundation.unpacked
+```
+
+A dyld shared cache is not packed, but it is the same kind of first step: every
+system library of an iOS or macOS release exists only inside one. Pass the main
+cache file; its sub-caches (`.01`, `.27.dylddata`, `.44.dyldlinkedit`, ...) and
+`.symbols` file are found beside it by the names its header records. `--list`
+prints the images. `--image NAME` writes the chosen image as a standalone thin
+Mach-O, the same rebuild every other surface does for itself (see
+[`--image NAME`](#--image-name--one-image-of-a-dyld-shared-cache)). `--json`
+reports `{binary, output, packer: "dyld_shared_cache", image, unpacked_size}` or,
+with `--list`, `{binary, arch, mappings, images: [{index, address,
+address_hex, path}]}`.
+
 ## `kuna decompile-project` — recompile-oriented project export
 
 ```bash
@@ -4248,6 +4265,36 @@ It applies to every surface that reads the image — `decompile`, `functions`,
 `decompile-all`, `strings`, `xrefs`, `disassemble`, `decompile-graph`,
 `decompile-project` — so an inventory, its `--summary`, and a string scan of the
 same file all describe the same slice.
+
+## `--image NAME` — one image of a dyld shared cache
+
+A dyld shared cache (`dyld_shared_cache_arm64e` and the sub-caches beside it)
+holds thousands of images, and every kuna surface works on one of them. Pass the
+main cache file as the binary and name the image with `--image`: a full install
+name (`/usr/lib/libobjc.A.dylib`), else a unique basename (`libobjc.A.dylib`,
+`CoreFoundation`), else a unique basename without its last extension (`libobjc.A`).
+Without `--image`, a cache of one image loads it, and a larger one exits `2` with
+the image count; an unknown or ambiguous name exits `2` with the closest matches.
+`kuna unpack <cache> --list` lists the images.
+
+```
+$ kuna decompile dyld_shared_cache_arm64e --image libobjc.A.dylib class_copyMethodList
+$ kuna functions dyld_shared_cache_arm64e --image CoreFoundation --json
+```
+
+The image is rebuilt as a thin Mach-O before anything parses it, and every
+segment keeps its address in the cache, so addresses match `ipsw` and crash logs.
+Pointers in its data are rewritten from the cache's slide-info chains (v2, v3
+with arm64e auth pointers, v5) to their targets. Its local symbols come from the
+`.symbols` file, in place of the `<redacted>` placeholders in its own symbol
+table. Calls into other images name their targets: a `bl` to a `__TEXT_STUBS`
+stub island, or to another image's stub, renders as the callee
+(`os_unfair_lock_lock_with_options(...)`), and so does a load through a `__got`
+slot the cache builder coalesced. `--option dyldcrossrefs off` shows the raw
+island addresses instead. `--image` is global: it applies to every subcommand
+and is passed to the `decomp_dbg` subprocess through `KUNA_DYLD_IMAGE`. The
+console spells it `option dyldimage NAME`, given before `load file`; it is
+accepted before any image is loaded.
 
 ## Everything else
 
