@@ -2272,9 +2272,9 @@ speaks for. kuna carried that redirect as a stub, so an op inserted after a guar
 INDIRECT landed between the guards and their CALL, the backward walk stopped
 there, every output trial was marked no-use, and the call lost its return value
 while its INDIRECT creation stayed behind as a local the emitted C reads and never
-assigns. The (kuna) `indirectanchor` gate
+assigns. The (kuna) anchor
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_indirectanchor.rs (anchor_of)`)
-completes the redirect; with it off the op is inserted after the INDIRECT itself.
+completes the redirect.
 The shape that reaches it is `RulePullsubIndirect` pulling a SUBPIECE through the
 guard INDIRECT of a frame slot whose upper half is read after the call. A `prev`
 that is not an INDIRECT marker, an INDIRECT whose second input is not an iop

@@ -112,18 +112,7 @@ kuna_options! { self, p1;
     "aggregatefields" => on_off!(aggregate_fields, "Whole-aggregate field recovery"),
     "stubtailcall" => on_off!(stub_tail_call, "Loader-proven stub tail calls"),
     "gotimportproto" => on_off!(got_import_proto, "GOT import type-only prototypes"),
-    "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
-    "mulblob" => {
-        let (val, msg) = crate::p3_dataflow::kuna_mulblob::OptionMulBlob.apply(p1)?;
-        self.mul_blob = val;
-        Ok(msg)
-    },
-    "simdlane" => {
-        let (val, msg) = crate::p3_dataflow::kuna_simdlane::OptionSimdLane.apply(p1)?;
-        self.simd_lane_fold = val;
-        Ok(msg)
-    },
     "callpush" => on_off!(drop_call_push, "Call return-address push removal"),
     "declhightype" => {
         let (val, msg) = crate::kuna_declhightype::OptionDeclHighType.apply(p1)?;
@@ -158,12 +147,6 @@ kuna_options! { self, p1;
     "x64syscall" => {
         let (mode, msg) = crate::kuna_x64syscall::OptionX64Syscall.apply(p1)?;
         self.x64_syscall = mode;
-        Ok(msg)
-    },
-    "segmentize" => {
-        let (val, msg) = crate::kuna_segmentize::OptionSegmentize.apply(p1)?;
-        self.segmentize = val;
-        self.apply_segmentize();
         Ok(msg)
     },
     "fpuemu" => {
@@ -242,7 +225,6 @@ kuna_options! { self, p1;
     "exclusivecallret" => on_off!(exclusive_call_ret, "Mutually-exclusive call and return uses in narrow scalar trials"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
     "callretpair" => on_off!(call_ret_pair, "Two-register CALL output completion"),
-    "multiregargs" => on_off!(multi_reg_args, "Complete ABI register argument partitions"),
     "mipsunaligned" => on_off!(mips_unaligned, "MIPS unaligned load/store pairs as one access"),
     "callwide" => {
         let enabled = on_or_off(p1)?;
@@ -567,12 +549,6 @@ kuna_options! { self, p1;
         self.mixed_tail_ret = val;
         Ok(msg)
     },
-    "indirectanchor" => {
-        let (val, msg) =
-            crate::p3_dataflow::kuna_indirectanchor::OptionIndirectAnchor.apply(p1)?;
-        self.indirect_anchor = val;
-        Ok(msg)
-    },
     "inputparamgap" => {
         let (val, msg) =
             crate::p4_calls::kuna_inputparamgap::OptionInputParamGap.apply(p1)?;
@@ -648,7 +624,6 @@ kuna_options! { self, p1;
     },
     "condexeret" => on_off!(cond_exe_ret, "return-trial retry after conditional-execution removal"),
     "condexeretuse" => on_off!(cond_exe_ret_use, "return-value uses ruled out by a re-tested condition"),
-    "loadguardrange" => on_off!(load_guard_range, "Indexed-stack guard ValueSet range refinement"),
     "stackstoreguard" => on_off!(stack_store_guard, "Stack-derived store heritage guards"),
     "indexaliasguard" => {
         let (val, msg) =
@@ -672,17 +647,9 @@ kuna_options! { self, p1;
     "tiedstorekeep" => {
         on_off!(tied_store_keep, "Address-tied store copy-propagation brake")
     },
-    "loopcounterstore" => {
-        on_off!(loop_counter_store, "Frame-slot loop-counter store brake")
-    },
-    "intfloatround" => on_off!(int_float_round, "Integer-to-float rounding preservation"),
     "tiedphitrim" => {
         on_off!(tied_phi_trim, "Loop-head address-tied input trim")
     },
-    "splitstorekeep" => {
-        on_off!(split_store_keep, "Refinement-split stack store mark")
-    },
-    "pairrefine" => on_off!(pair_refine, "Register-pair midpoint refinement"),
     "wideslice" => on_off!(wide_slice_reduce, "Wide SSA slice reduction"),
     "devectorize" => on_off!(devectorize_reduction, "Vectorized reduction re-roll"),
     "strlenscan" => on_off!(strlen_scan, "inline repnz scasb string length as strlen"),

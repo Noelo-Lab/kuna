@@ -71,8 +71,7 @@
 //!   * `LoadGuard::establish_range`/`LoadGuard::finalize_range` and
 //!     `Heritage::analyze_new_load_guards`/`handle_new_load_copies` are live
 //!     against the IR-bound value-set solver
-//!     ([`crate::rangeutil::ValueSetSolver`]), gated by
-//!     `option loadguardrange` (default on).
+//!     ([`crate::rangeutil::ValueSetSolver`]).
 //!
 //! The [`Heritage::bump_deadcode_delay`] recorder anchor (the kuna restart
 //! observability hook) is realized against the merged [`Override`] and
@@ -2235,11 +2234,9 @@ impl Heritage {
                 }
                 return;
             }
-            let partition = fd.get_arch().multi_reg_args.then(|| {
-                super::kuna_multiregargs::input_partition(
-                    fc.proto(), fd.get_arch().manage(), trans_addr, size,
-                )
-            }).flatten();
+            let partition = super::kuna_multiregargs::input_partition(
+                fc.proto(), fd.get_arch().manage(), trans_addr, size,
+            );
             if let Some(pieces) = partition {
                 if pieces.iter().all(|piece| {
                     crate::kuna_armfloatreturn::call_input_allowed(
@@ -3766,7 +3763,7 @@ impl Heritage {
         &self, fd: &crate::funcdata::Funcdata, addr: &Address, size: int4,
     ) -> Option<Vec<kuna_num::pcoderaw::VarnodeData>> {
         let proto = fd.get_func_proto();
-        if !fd.get_arch().multi_reg_args || !proto.has_model()
+        if !proto.has_model()
             || proto.is_input_locked() || proto.possible_input_param(addr, size)
         { return None; }
         let pieces = super::kuna_multiregargs::input_partition(
@@ -3828,8 +3825,8 @@ impl Heritage {
     /// Fill input holes in a heritaged range (C++ `Heritage::guardInput`,
     /// `heritage.cc:1953`).  When a single input fills the range it links
     /// automatically and we return; otherwise the gaps are filled with input
-    /// Varnodes and concatenated. `multiregargs` rewrites illegal wide entry
-    /// inputs and fills complete ABI holes per slot before concatenation.
+    /// Varnodes and concatenated. The multi-register partition rewrites illegal
+    /// wide entry inputs and fills complete ABI holes per slot before concatenation.
     fn guard_input(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
@@ -6132,8 +6129,8 @@ impl Heritage {
                 // records for STOREs/LOADs reached through a non-constant ADD or
                 // a MULTIEQUAL.  The store-guard set is the W7 `StackAffectingOps`
                 // cross-call test source.  The initial guard covers the whole
-                // space (`LoadGuard::set`); `analyze_new_load_guards` (option
-                // `loadguardrange`) refines it after renaming completes.
+                // space (`LoadGuard::set`); `analyze_new_load_guards` refines
+                // it after renaming completes.
                 if self.discover_indexed_stack_pointers(fd, &space, &mut free_stores, true) {
                     reprocess_stack_count += 1;
                     stack_space = Some(space.clone());
@@ -6236,14 +6233,9 @@ impl Heritage {
             self.reprocess_free_stores(fd, &spc, &mut free_stores);
         }
         super::kuna_spillstoreguard::prune(fd, &self.spill_store_guards);
-        // (kuna) `option loadguardrange` — the upstream ValueSet range
-        // refinement of new LOAD/STORE guards (heritage.cc:2753-2754).  Off
-        // reproduces the pre-port behavior: every guard keeps the whole-space
-        // range and `step == 0`, so `MapState::addGuard` never sees an
-        // index bound.
-        if fd.get_arch().load_guard_range {
-            self.analyze_new_load_guards(fd);
-        }
+        // The upstream ValueSet range refinement of new LOAD/STORE guards
+        // (heritage.cc:2753-2754).
+        self.analyze_new_load_guards(fd);
         super::kuna_stackstoreguard::prune_indexed(
             fd,
             &self.store_guard,
@@ -6432,9 +6424,7 @@ mod tests {
                 addrspace_flags::hasphysical, 1, 1,
             ));
             manager.insert_space(register.clone()).unwrap();
-            let mut context = ArchContext::new(manager);
-            context.multi_reg_args = true;
-            let arch = Rc::new(context);
+            let arch = Rc::new(ArchContext::new(manager));
             let entry = Address::new(arch.manage().get_space_by_name("ram").unwrap().clone(), 0x1000);
             let mut fd = Funcdata::new("func", "func", arch, entry.clone(), 0x10000000, 0x40).unwrap();
             let block = build_cfg(&mut fd, 1, &[])[0];
@@ -6478,16 +6468,14 @@ mod tests {
         }
     }
 
-    fn entry_partition_fixture(big: bool, enabled: bool, wide: bool) -> (Funcdata, Address) {
+    fn entry_partition_fixture(big: bool, wide: bool) -> (Funcdata, Address) {
         let mut manager = build_manager();
         let register = Rc::new(AddrSpace::new(
             spacetype::IPTR_PROCESSOR, "register", big, 4, 1, 3,
             addrspace_flags::hasphysical, 1, 1,
         ));
         manager.insert_space(register.clone()).unwrap();
-        let mut context = ArchContext::new(manager);
-        context.multi_reg_args = enabled;
-        let arch = Rc::new(context);
+        let arch = Rc::new(ArchContext::new(manager));
         let entry = Address::new(arch.manage().get_space_by_name("ram").unwrap().clone(), 0x1000);
         let mut fd = Funcdata::new("func", "func", arch, entry, 0x10000000, 0x40).unwrap();
         let block = build_cfg(&mut fd, 1, &[])[0];
@@ -6536,15 +6524,15 @@ mod tests {
     }
 
     #[test]
-    fn entry_partition_preserves_off_locked_legal_wide_and_partial_inputs() {
-        for (enabled, wide, locked) in [(false, false, false), (true, true, false), (true, false, true)] {
-            let (mut fd, addr) = entry_partition_fixture(true, enabled, wide);
+    fn entry_partition_preserves_locked_legal_wide_and_partial_inputs() {
+        for (wide, locked) in [(true, false), (false, true)] {
+            let (mut fd, addr) = entry_partition_fixture(true, wide);
             fd.get_func_proto_mut().set_input_lock(locked);
             let value = Heritage::new().new_entry_input(&mut fd, 8, &addr).unwrap();
             assert!(fd.vbank().get(value).unwrap().is_input());
             assert_eq!(fd.vbank().get(value).unwrap().get_size(), 8);
         }
-        let (mut fd, addr) = entry_partition_fixture(true, true, false);
+        let (mut fd, addr) = entry_partition_fixture(true, false);
         let partial = fd.new_varnode(2, &addr, None);
         fd.set_input_varnode(partial).unwrap();
         assert!(Heritage::new().entry_partition(&fd, &addr, 8).is_none());
@@ -6555,7 +6543,7 @@ mod tests {
         for flags in [0,
             crate::varnode::varnode_flags::typelock, crate::varnode::varnode_flags::namelock,
             crate::varnode::varnode_flags::persist, crate::varnode::varnode_flags::addrtied] {
-            let (mut fd, addr) = entry_partition_fixture(true, true, false);
+            let (mut fd, addr) = entry_partition_fixture(true, false);
             let whole = fd.new_varnode(8, &addr, None);
             fd.set_input_varnode(whole).unwrap();
             if flags == 0 { fd.vbank_mut().get_mut(whole).unwrap().set_write_mask(); }
@@ -6563,7 +6551,7 @@ mod tests {
             assert!(Heritage::new().entry_partition(&fd, &addr, 8).is_none());
             assert!(fd.vbank().get(whole).unwrap().is_input());
         }
-        let (mut fd, addr) = entry_partition_fixture(true, true, false);
+        let (mut fd, addr) = entry_partition_fixture(true, false);
         let slot = fd.new_varnode(4, &addr, None);
         fd.set_input_varnode(slot).unwrap();
         fd.vbank_mut().get_mut(slot).unwrap().set_flags_pub(crate::varnode::varnode_flags::typelock);
@@ -6572,7 +6560,7 @@ mod tests {
 
     #[test]
     fn entry_partition_preserves_a_partially_locked_prototype() {
-        let (mut fd, addr) = entry_partition_fixture(true, true, false);
+        let (mut fd, addr) = entry_partition_fixture(true, false);
         for i in 0..2 {
             let piece = crate::fspec::ParameterPieces {
                 addr: Address::new(addr.get_space().unwrap().clone(), 0x20 + i as u64 * 4),

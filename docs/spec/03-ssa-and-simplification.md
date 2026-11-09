@@ -366,15 +366,15 @@ so the piece at offset 0 of a 32-bit space is the right `SUBPIECE` in both byte
 orders. This keeps the value byte for byte, and no Varnode heritage sees wraps,
 so its cover stays linear. Code with no wrapping access is unchanged.
 
-**Register pairs refined at their midpoint** (`option pairrefine`,
-`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pairrefine.rs (split_pair)`,
-default **on**). The size test above never refines a range that some access
+**Register pairs refined at their midpoint**
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pairrefine.rs (split_pair)`,
+always on). The size test above never refines a range that some access
 covers whole, so a SPARC32 even/odd integer register pair that an `ldd` or `std`
 moves as one 8-byte value is heritaged as an 8-byte range even where its two
 registers also hold unrelated 32-bit values (a loop index in `%l4`, a counter in
 `%l5`). Every 4-byte access is joined to the pair through `PIECE`/`SUBPIECE`,
 the phis are placed on the whole pair, and variable merging fuses the two
-registers into one 64-bit variable updated by `CONCAT44`. With the option on, a
+registers into one 64-bit variable updated by `CONCAT44`. A
 range is refined at its midpoint only when it is a named 8-byte pair register
 whose halves are named 4-byte registers, at least one whole-pair load writes it,
 it is accessed whole only by memory
@@ -398,11 +398,11 @@ callee-saved ARM `d8` that `vpush` saves and `vpop` restores, with `s16` and
 `s17` written by `vmov.f32` copies, stays whole. Neither is an 8-byte register
 read through a half that is not a register of its own (x86-64 `rax`/`eax`).
 A pair assembled only from half-register writes and stored whole is not
-selected. `option pairrefine off` restores the whole-range heritage.
+selected.
 
-**Refinement pieces keep the store mark** (`option splitstorekeep`,
-`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_splitstorekeep.rs
-(keep_store_mark)`, default **on**). A frame store reaches this phase as a
+**Refinement pieces keep the store mark**
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_splitstorekeep.rs
+(keep_store_mark)`, always on). A frame store reaches this phase as a
 direct `stackvn = COPY(value)` whose output `RuleStoreVarnode` marked
 `stack_store` — "originally came from a CPUI_STORE". That mark is what keeps the
 store printed: `ActionDirectWrite` calls a COPY into the frame a *direct write*
@@ -416,9 +416,9 @@ split. The shape is the compiler's own idiom for copying an object whose size is
 not a multiple of the word: a 31-byte copy done as four 8-byte moves at offsets
 0, 8, 15 and 23 overlaps on byte 15, so the two middle stores are refined away
 and the emitted C copies the first eight bytes and the last eight and nothing
-between them. With the option on the mark is carried onto each partition cell,
+between them. The mark is carried onto each partition cell,
 which claims nothing new — a piece of a store is a store — and the copy prints
-in full. `option splitstorekeep off` restores upstream's unmarked pieces.
+in full.
 
 **Call and return guards.** For ranges with new addresses, data-flow across
 call sites is made explicit before renaming
@@ -870,7 +870,7 @@ Trial scoring for this shape has one companion rule, `exclusivecallret`
 (chapter 04, `ActionActiveParam`), which lets a call and a return on mutually
 exclusive arms keep each other's narrow scalar trial.
 
-With `option multiregargs on` (the default), a physical register range
+A physical register range
 completely covered by two or more general ABI input slots receives separate
 call trials before dead-code elimination, at every `calloverlap` level
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_multiregargs.rs
@@ -878,7 +878,7 @@ call trials before dead-code elimination, at every `calloverlap` level
 caller overwrites each component. The trials keep those current component
 values live; ordinary trial scoring still decides whether they are used.
 
-The same option keeps an unlocked function's entry inputs in independently
+The same partition keeps an unlocked function's entry inputs in independently
 recoverable ABI slots when their whole range cannot be a single input
 parameter. The whole entry value is a PIECE of those slot inputs, so a later
 wide read cannot hide the function's real arguments. Declared inputs and legal
@@ -890,15 +890,14 @@ wide tiles also retain their representation. In-place conversion is a backstop
 for input creation outside renaming or before a model was resolved. Non-general entries,
 overlapping or joined entries, gaps, partial coverage, protected input
 storage, and memory or stack ranges decline this partition. Complete
-partitions are bounded to eight slots and 64 bytes. With `multiregargs off`,
-both changes are disabled and the existing `calloverlap` behavior applies.
+partitions are bounded to eight slots and 64 bytes.
 
 The slot trials of one call all truncate the same PIECE of the range, so
 upstream `onlyOpUse` would see a value written into one slot reach the call
 again through a sibling slot and reject the trial as a double use. That drops
 a single argument the caller just wrote whenever the other half of the range
 still holds a stale or clobbered pair half, as in `ldd [p],%o0; call f;
-mov 3,%o0; call g`. Under `multiregargs`, the walk skips a SUBPIECE whose kept
+mov 3,%o0; call g`. The walk skips a SUBPIECE whose kept
 bytes lie wholly outside the PIECE input it reached the PIECE through
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_multiregargs.rs
 (subpiece_drops_reached_piece)`); that SUBPIECE cannot carry the value.
@@ -998,8 +997,8 @@ INDIRECTs from any STORE that turned out not to need a guard
 
 After renaming completes each pass, the value-set analysis narrows every newly
 discovered guard to a real `[min,max,step]` window
-(`heritage.rs (Heritage::analyze_new_load_guards)`, gated by
-`option loadguardrange`, default on): the guards' pointer Varnodes become the
+(`heritage.rs (Heritage::analyze_new_load_guards)`, always on): the guards'
+pointer Varnodes become the
 sinks of a `ValueSetSolver` system (the solver itself — constraint
 generation, weak topological ordering, widening — is chapter
 [05](05-types.md)'s machinery in
@@ -2022,9 +2021,9 @@ parameter, a frame variable or a constant, are left to the STORE guard above:
 at `indexaliasguard load` a load after a pointer store still prints the stored
 value there (issue #792).
 
-**Keeping a loop counter's write-back** (`option loopcounterstore`,
-`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_loopcounterstore.rs
-(declines)`, default-on) is the same refusal for the same op, on a different
+**Keeping a loop counter's write-back**
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_loopcounterstore.rs
+(declines)`, always on) is the same refusal for the same op, on a different
 shape. A counter the compiler keeps in a frame slot is read, bumped in a
 register and stored back — `MOV EAX,[RSP+0x84]` / `INC EAX` /
 `MOV [RSP+0x84],EAX` — so after heritage the write-back is an address-tied
@@ -2052,8 +2051,7 @@ itself whether the counter's load side or its write-back is folded first, so a
 predicate that only accepted a direct reference to the phi output would fire or
 not depending on that order. `tiedstorekeep` does not reach this shape — its
 predicate requires the stored value to come from a call, and a counter bump is an
-`INT_ADD` — and `option loopcounterstore off` restores upstream's behavior
-exactly. One printing consequence travels with the brake. Where `Merge` would
+`INT_ADD`. One printing consequence travels with the brake. Where `Merge` would
 have succeeded anyway the kept `COPY` becomes the statement's root op, with the
 arithmetic hanging off it as an implied expression, and chapter 09's in-place
 render (`option inplaceops`, DIV-36) matches only a bare two-input op — so a
@@ -2318,7 +2316,7 @@ model (chapter 02) and the `thumbfuncptr` const-pointer preservation (chapter 05
 §5) — and the three do not interact: this rule only ever removes an `INT_AND`
 that a `CALLIND` consumes.
 
-**Segmented addressing (`segmentize`).** A processor spec can name the SLEIGH
+**Segmented addressing.** A processor spec can name the SLEIGH
 user op that computes an effective address from a segment and an offset: the
 pspec `<segmentop space="ram" userop="segment" farpointer="yes">` of x86 16-bit
 real and protected mode, Z80 and HCS12, with a `<pcode>` snippet for the address
@@ -2332,8 +2330,7 @@ snippet emulator,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_segmentize.rs (SegmentDef)`,
 which `SegmentDef::execute` runs on constant inputs (C++ `SegmentOp::execute`
 over `ExecutablePcode::evaluate`). The definitions are shared into the
-per-function architecture snapshot only while `option segmentize` is on (the
-default), so off leaves every behaviour below inert.
+per-function architecture snapshot.
 
 `ActionSegmentize`
 (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs (ActionSegmentize)`)
@@ -2364,8 +2361,7 @@ bytes. `Architecture::apply_segmentize` marks each inferable space that has such
 resolvable segment op as accepting near-pointer-sized constants (C++
 `markNearPointers`), and a far-pointer segment op on the default data space sets
 the data organization's pointer size to the near size and its alternate pointer
-size to near plus segment (C++ `TypeFactory::setupSizes`). Turning the option off
-puts the saved sizes and space properties back.
+size to near plus segment (C++ `TypeFactory::setupSizes`).
 
 The real-mode spec's code segment is `currentCS = (inst_next >> 4) & 0xf000`, the
 instruction address rounded down to 64 KiB. For code in a segment that is not
@@ -2374,7 +2370,7 @@ entries are whatever words sit there. A table of the program's own branches
 never targets bytes the image does not have, so while a segment op is active
 `JumpBasic`'s sanity check rejects a table with any target outside the load image
 (`kuna_segmentize.rs (table_leaves_image)`), where upstream only truncates at a
-far unloadable row: the jump stays a jump-as-call, as with the option off,
+far unloadable row: the jump stays a jump-as-call
 instead of decoding junk or failing the function on a fall-through off the end
 of the image. A wrong-segment table whose words all happen to land inside the
 image is still followed. Only a jump whose target, or the table read feeding
@@ -2609,8 +2605,7 @@ larger ambiguous graphs conservatively retain the conversion. `RuleFloatCast`
 uses this guard before making an identity COPY; `SubfloatFlow::trace_backward`
 uses it before replacing a conversion by a COPY at the reduced precision.
 
-Integer-to-float conversions also retain their rounding width (`option
-intfloatround`, default on;
+Integer-to-float conversions also retain their rounding width (always on;
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_intfloatround.rs`). `RuleFloatCast`
 combines an integer conversion followed by a floating conversion only when
 both floating widths match or the intermediate format can represent every
@@ -3109,8 +3104,7 @@ ONE-BYTE lane read, because a wider SUBPIECE of a shuffle is a concatenation of
 lanes and not another SUBPIECE. A mask wider than eight bytes does not fit a
 `uintb` offset and is accepted only at value `0`, where the offset IS the whole
 value and every lane byte is provably zero — the broadcast mask, and the only
-wide constant mask the engine constructs. Settable `simdlane`, shipped default
-**on**.
+wide constant mask the engine constructs. Always on.
 
 **Wide-slice SSA reduction** (`option wideslice`, default **on**) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_wideslice.rs
@@ -3312,7 +3306,7 @@ as the source wrote it). Always on (DIV-3).
 S/OV-flag signed-less-than computation (V850-style),
 `NE(SLESS(V+K, 0), BOOL_AND(signtest, SLESS(-1, V+K)))` — the sign flag XORed
 with the overflow test spelled out in p-code. Rewrite: `INT_SLESS(V, -K)`.
-Settable `ovlesssimplify`, shipped default **on** (DIV-2).
+Always on (DIV-2).
 
 **compareform** (GH-558) — not a pool peephole but the canonicalization
 round-trip for `<=`. The analysis wants one canonical compare form, so
@@ -3394,8 +3388,7 @@ therefore reads `v1 = x; ... = v1 / N;` rather than repeating `x` on both sides
 structured, has always rendered the same code. With the blob present the copy
 into it supplied that second name, so the repetition survived.
 
-Settable `mulblob on|off`, shipped default **on**. Flipping it off restores
-upstream Ghidra's rendering, which prints the same `undefined1 auVarN [16]`
+Always on. Upstream Ghidra's rendering prints the same `undefined1 auVarN [16]`
 blobs — this is a deliberate readability divergence, not a fidelity fix, and it
 is inert on every function with no wide multiply.
 
@@ -3686,7 +3679,7 @@ only the first byte incorrectly declares that wider value unaffected. The existi
 negative-stack alias boundary is monotone, so testing both endpoints suffices.
 Positive-growth frames retain a conservative guard.
 
-For `mulblob`, an isolated dynamic name without a type lock still describes a
+For the widened-operand guard, an isolated dynamic name without a type lock still describes a
 numeric value. Mapping that name does not disable the widened-operand guard when
 the datatype is the fallback array and every reader satisfies the existing
 arithmetic/SUBPIECE checks. Explicit locked array types keep their structuring.

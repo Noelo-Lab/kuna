@@ -454,7 +454,7 @@ fn w5_ovlesssimplify_mone_not_minus_one_declines() {
     let oout = fd.new_unique(1, Some(unk(1)));
     let _ = set_def(&mut fd, oout, op);
 
-    let mut rule = RuleOvLessSimplify::new(true);
+    let mut rule = RuleOvLessSimplify::new();
     assert_eq!(
         rule.apply_op(op, &mut fd),
         0,

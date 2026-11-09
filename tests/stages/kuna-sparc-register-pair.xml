@@ -1,12 +1,12 @@
 <decompilertest>
 <!--
     SPARC32 integer register pairs (kuna, no upstream issue).
-    Stage: P3 heritage refinement. P0 assertion: option pairrefine (default on).
+    Stage: P3 heritage refinement (register pairs refined at their midpoint).
     The pair %l4:%l5 is loaded whole by ldd on one path and set as two 32-bit
     values on the other; after the join %l4 is a loop index and %l5 a counter.
     Upstream heritages the pair as one 8-byte range because the ldd covers it,
     so the two registers merge into one unsigned long long updated by CONCAT44.
-    #1-#3 prove the fix at the default; #4-#5 reproduce the bug with the option off.
+    #1-#3 prove the fix; #4-#5 pin that the fused pair never appears.
 -->
 <binaryimage arch="sparc:BE:32:default:default">
 <!-- Independently assembled.
@@ -49,15 +49,11 @@ pair_loop:
 <com>lo fu pair_loop</com>
 <com>decompile</com>
 <com>print C</com>
-<com>option pairrefine off</com>
-<com>lo fu pair_loop</com>
-<com>decompile</com>
-<com>print C</com>
 <com>quit</com>
 </script>
-<stringmatch name="SPARC-REGISTER-PAIR #1: the loop index in %l4 steps by itself at the default" min="1" max="1">n -= 1;</stringmatch>
-<stringmatch name="SPARC-REGISTER-PAIR #2: the counter in %l5 is a 32-bit local incremented in place at the default" min="1" max="1">v[0-9]+ \+= 1;</stringmatch>
+<stringmatch name="SPARC-REGISTER-PAIR #1: the loop index in %l4 steps by itself" min="1" max="1">n -= 1;</stringmatch>
+<stringmatch name="SPARC-REGISTER-PAIR #2: the counter in %l5 is a 32-bit local incremented in place" min="1" max="1">v[0-9]+ \+= 1;</stringmatch>
 <stringmatch name="SPARC-REGISTER-PAIR #3: the ldd still loads both halves, the high word into the index" min="1" max="1">n = \(uint8\)\*p &gt;&gt; 0x20;</stringmatch>
-<stringmatch name="SPARC-REGISTER-PAIR #4: pairrefine off restores the fused 64-bit pair local" min="1" max="1">uint8 v[0-9]+; // l4_5</stringmatch>
-<stringmatch name="SPARC-REGISTER-PAIR #5: and its CONCAT44 piece updates, only with the option off" min="1" max="1">CONCAT44</stringmatch>
+<stringmatch name="SPARC-REGISTER-PAIR #4: the fused 64-bit pair local never appears" min="0" max="0">uint8 v[0-9]+; // l4_5</stringmatch>
+<stringmatch name="SPARC-REGISTER-PAIR #5: and neither do its CONCAT44 piece updates" min="0" max="0">CONCAT44</stringmatch>
 </decompilertest>

@@ -1158,9 +1158,8 @@ impl Funcdata {
         }
         // The LoadGuard/StoreGuard hint loops (C++ varmap.cc:1241-1248): each
         // heritage-recorded indexed LOAD/STORE guard contributes an open hint.
-        // A guard only carries a bound once `option loadguardrange` has run the
-        // ValueSet refinement (`addGuard` bails on `step == 0`), so with the
-        // option off these loops add nothing.
+        // A guard only carries a bound once the ValueSet refinement has run
+        // (`addGuard` bails on `step == 0`).
         let follow = extent >= super::kuna_arrayextent::LEVEL_ON;
         let load_guards: Vec<crate::heritage::LoadGuard> = self.get_load_guards().to_vec();
         for guard in &load_guards {

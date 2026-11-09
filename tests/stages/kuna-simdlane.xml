@@ -9,7 +9,7 @@
     at 0x100003f30 the vectorised body indexes ({0,1,...,15}, {16 x 16},
     {32 x 16}).
 
-    Option `simdlane` (P3 simplification-quiescence).  The compiler broadcasts
+    The constant-mask lane fold (P3 simplification-quiescence).  The compiler broadcasts
     one byte across an XMM register with the standard idiom
 
         66 0f ef d2        pxor   xmm2,xmm2
@@ -24,14 +24,11 @@
 
     The instruction is a pure permutation with an exact per-lane definition once
     the mask is known, so a one-byte lane read of a constant-mask shuffle IS a
-    lane read of its source.  With the option on all thirty-two resolve to
+    lane read of its source.  All thirty-two resolve to
     `dat_100008040` / `dat_100008041` and the lane temporaries and their
     declarations are gone.
 
-    Two passes over one function: pass 1 pins the upstream rendering with
-    `option simdlane off`, pass 2 the shipped default.  Counts are over the
-    whole transcript, so a shape present in only one pass pins that pass.
-    Both passes run at `option indexaliasguard load`.  The function reads
+    One pass over the function at `option indexaliasguard load`.  The function reads
     dat_100008040 and the constant table once, before the store loop
     that writes through a pointer, and the default level keeps those reads
     in temporaries ahead of the loop; the counts here are about the lane
@@ -71,19 +68,14 @@ ffe92afeffff662e0f1f840000000000
 </binaryimage>
 <script>
   <com>option indexaliasguard load</com>
-  <com>option simdlane off</com>
-  <com>lo fu alphabet_init</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option simdlane on</com>
   <com>lo fu alphabet_init</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="simdlane #1: the option-off pass keeps all 32 opaque lane extractions (and the option-on pass has none)" min="32" max="32">SUB161\(</stringmatch>
-<stringmatch name="simdlane #2: the option-off pass declares the 16-byte shuffle result as an array temporary" min="1" max="1">char v7 \[16\]; // xmm0</stringmatch>
-<stringmatch name="simdlane #3: the option-off pass declares the last byte-lane temporary of the second register" min="1" max="1">char v55; // ([^\n]+ \| )?xmm5_bp( \| [^\n]+)?$</stringmatch>
-<stringmatch name="simdlane #4: the option-on pass re-anchors every lane on the broadcast source byte (49 of the 50 occurrences)" min="50" max="50">dat_100008040 \+ </stringmatch>
-<stringmatch name="simdlane #5: neither pass invents a lane the shuffle does not select" min="0" max="0">SUB161\(v7,0x1[0-9a-f]\)</stringmatch>
+<stringmatch name="simdlane #1: no opaque lane extraction survives" min="0" max="0">SUB161\(</stringmatch>
+<stringmatch name="simdlane #2: the 16-byte shuffle result is never declared as an array temporary" min="0" max="0">char v7 \[16\]; // xmm0</stringmatch>
+<stringmatch name="simdlane #3: no byte-lane temporary of the second register is declared" min="0" max="0">char v55; // ([^\n]+ \| )?xmm5_bp( \| [^\n]+)?$</stringmatch>
+<stringmatch name="simdlane #4: every lane is re-anchored on the broadcast source byte" min="49" max="49">dat_100008040 \+ </stringmatch>
+<stringmatch name="simdlane #5: no lane the shuffle does not select is invented" min="0" max="0">SUB161\(v7,0x1[0-9a-f]\)</stringmatch>
 </decompilertest>

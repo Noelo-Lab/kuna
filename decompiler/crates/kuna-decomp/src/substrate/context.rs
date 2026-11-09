@@ -765,8 +765,6 @@ pub struct ArchContext {
     /// a detected rustc one.  Read by
     /// [`crate::p4_calls::kuna_callretpair::live`].
     pub call_ret_pair: bool,
-    /// Recover complete ABI argument slots within wider physical register ranges.
-    pub multi_reg_args: bool,
     /// (kuna) `option bejoin`: when may a two-register value join with its
     /// high word in the first register where the ABI puts it?  Read by
     /// [`crate::p4_calls::kuna_bejoin::mode`].
@@ -839,10 +837,6 @@ pub struct ArchContext {
     pub ret_split_global: bool,
     /// (kuna) `retsplitlimit`, read by `Funcdata::return_split_apply`.
     pub ret_split_limit: Option<u64>,
-    /// (kuna) resolve a one-byte lane read of a CONSTANT-mask `pshufb` shuffle
-    /// to the source lane it selects (`simdlane`).  Read by
-    /// [`RuleSimdShuffleLane`](crate::kuna_simdlane::RuleSimdShuffleLane).
-    pub simd_lane_fold: bool,
 
     /// (kuna) Delete a call's own return-address push through an untracked
     /// stack pointer (`callpush`).  Read by
@@ -875,10 +869,6 @@ pub struct ArchContext {
     /// (kuna) `gotimportproto`, default-on: bind type-only declarations at
     /// loader-proven MIPS GOT import calls ([`crate::kuna_gotimportproto`]).
     pub got_import_proto: bool,
-    /// (kuna) GH-7190: collapse the OV-flag signed-less-than idiom to INT_SLESS
-    /// (C++ `ov_less_simplify`, DIV-2 default-on).  Read by
-    /// [`RuleOvLessSimplify`](crate::kuna_ovlesssimplify::RuleOvLessSimplify).
-    pub ov_less_simplify: bool,
     /// (kuna) GH-8724: re-express a strided-induction offset as counter*stride
     /// (C++ `recover_array_stride`, DIV-3 default-on).  Read by
     /// [`RuleArrayStride`](crate::kuna_arraystride::RuleArrayStride).
@@ -1033,10 +1023,6 @@ pub struct ArchContext {
     /// is declared `T` (`castobject`).  Read by
     /// [`crate::p6_variables::kuna_castobject::declare_out_params`].
     pub cast_object: bool,
-    /// (kuna) a widened multiply operand stays a value instead of being
-    /// structured into an aggregate (`mulblob`).  Read by
-    /// [`crate::p3_dataflow::kuna_mulblob::declines_zext`].
-    pub mul_blob: bool,
     /// (kuna) read the caller's own stack discipline for the argument bytes a
     /// callee pops (`calleepop`).  Read by
     /// [`StackSolver::build`](crate::coreaction_stackptr) through
@@ -1151,10 +1137,6 @@ pub struct ArchContext {
     pub pruned_ssa: bool,
     /// (kuna) `loadguardreads`, read by `Heritage::guard_loads` and `Heritage::guard_global_loads`.
     pub load_guard_reads: bool,
-    /// (kuna) anchor an op inserted after a call's guard INDIRECT to the call
-    /// itself (`indirectanchor`).  Read by `Funcdata::op_insert_after` through
-    /// [`crate::p3_dataflow::kuna_indirectanchor::anchor_of`].
-    pub indirect_anchor: bool,
     /// (kuna) in the function's OWN input recovery, tolerate a run of unused
     /// argument REGISTERS before a live-in register (`inputparamgap`).  Read by
     /// `ActionInputPrototype`, which stamps it onto the
@@ -1258,15 +1240,6 @@ pub struct ArchContext {
     /// (`condexeretuse`).  Read by `Funcdata::only_op_use` through
     /// [`crate::p4_calls::kuna_condexeretuse`].
     pub cond_exe_ret_use: bool,
-    /// (kuna) `option loadguardrange`: run the upstream ValueSet solver over
-    /// new indexed-stack LOAD/STORE guard pointers at the end of each heritage
-    /// pass (`Heritage::analyzeNewLoadGuards`, heritage.cc:834), refining each
-    /// [`LoadGuard`](crate::p3_dataflow::heritage::LoadGuard)'s
-    /// min/max/step so `MapState::addGuard` can supply real array extents in
-    /// P6.  Off keeps every guard at the whole-space range with `step == 0`
-    /// (the pre-port behavior).  Read by
-    /// [`Heritage::heritage`](crate::p3_dataflow::heritage::Heritage::heritage).
-    pub load_guard_range: bool,
     /// (kuna) `option indexaliasguard off|load|global|full`: how much of the
     /// upstream index-alias arm at the end of `Heritage::guard`
     /// (`heritage.cc:1194`, the `highPtrPossible` gate) runs — `load` puts an
@@ -1311,29 +1284,14 @@ pub struct ArchContext {
     pub tied_store_keep: bool,
     /// Preserve guarded stack-read scope when inserting merge trims.
     pub guarded_read_trim: bool,
-    /// (kuna) `option loopcounterstore` (default-on, DIV-146): refuse the
-    /// `RulePropagateCopy` marker propagation that would delete the write-back
-    /// of a loop counter living in an address-tied frame slot, so the counter's
-    /// increment prints on the counter instead of on the register that carried
-    /// it.  Read by
-    /// [`crate::p3_dataflow::kuna_loopcounterstore::declines`].
-    pub loop_counter_store: bool,
     /// (kuna) `option truncptrflow` (default-on): on a truncated default data
     /// space, narrow address operands and seed a wide stack register as
     /// `PIECE(upper, low)`. Read by `RulePtrFlow` and `ActionPrototypeTypes`.
     pub trunc_ptr_flow: bool,
-    /// (kuna) `option intfloatround` (default-on): keep an integer-to-float
-    /// conversion's rounding through `RuleFloatCast` and `SubfloatFlow`. Read
-    /// by [`crate::p3_dataflow::kuna_intfloatround`].
-    pub int_float_round: bool,
     /// (kuna) `option tiedphitrim` (default-on, DIV-182): `Merge::mergeOp` trims a
     /// loop head's direct read of an aliased location out of the forced merge.
     /// Read through `MergeContext::kuna_tied_phi_trim`.
     pub tied_phi_trim: bool,
-    /// (kuna) `splitstorekeep` — carry `stack_store` onto refinement pieces.
-    pub split_store_keep: bool,
-    /// (kuna) `pairrefine` — refine integer register pairs at their midpoint.
-    pub pair_refine: bool,
     /// (kuna) `wideslice` — slice reduction through synthetic-width SSA trees.
     pub wide_slice_reduce: bool,
     /// (kuna) `devectorize` — re-roll a vectorized reduction into its scalar loop.
@@ -1421,9 +1379,8 @@ pub struct ArchContext {
     /// left out, so a spec-declared model always wins.  Read by
     /// [`ActionX64Syscall`](crate::p2_lift::kuna_x64syscall::ActionX64Syscall).
     pub x64_syscall_userops: Vec<kuna_base::types::uint4>,
-    /// (kuna `segmentize`) The processor's segment operations by address-space
-    /// index (C++ `userops.segmentop`); empty when the option is off, so no
-    /// CALLOTHER is segmentized and every constant resolves flat.
+    /// (kuna) The processor's segment operations by address-space index (C++
+    /// `userops.segmentop`); empty when the spec declares none.
     pub segment_ops: Vec<Option<Rc<crate::kuna_segmentize::SegmentDef>>>,
     /// (kuna) `option syscallregs`, resolved against the loader's user-space
     /// fact: does the ARM/AArch64/RISC-V/MIPS/PowerPC system-call user-op read
@@ -1889,7 +1846,6 @@ impl ArchContext {
             be_join: crate::kuna_bejoin::BeJoinMode::Off,
             be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode::Off,
             call_wide: false,
-            multi_reg_args: false,
             // (kuna) `option rustabi` default-off; the real value is copied from
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,
@@ -1928,7 +1884,6 @@ impl ArchContext {
             global_array_anchor: false,
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             ret_split_limit: None,       // retsplitlimit (the ArchSeam carries the real default)
-            simd_lane_fold: false,       // simdlane (the ArchSeam carries the real default)
             drop_call_push: false,        // callpush (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),
             x87_float_to_int_userops: Vec::new(),
@@ -1937,7 +1892,6 @@ impl ArchContext {
             aggregate_fields: false,     // aggregatefields
             stub_tail_call: false,       // stubtailcall
             got_import_proto: false,     // gotimportproto
-            ov_less_simplify: false,     // GH-7190 ovlesssimplify
             recover_array_stride: false, // GH-8724 arraystride
             memset_recover: false,       // GH-9230/1537 memsetrecover
             rodata_string: false,        // (kuna) rodatastring
@@ -1988,9 +1942,6 @@ impl ArchContext {
             // castobject only re-types a slot whose readers agree, so the fixture
             // seam carries the shipped default.
             cast_object: true,
-            // mulblob only declines a rewrite, so the fixture seam carries the
-            // shipped default.
-            mul_blob: true,
             // calleepop only refines a guess the solver already had to make, so
             // the hand-built-fixture seam carries the same default.
             callee_pop: true,
@@ -2032,7 +1983,6 @@ impl ArchContext {
             persist_calls: Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT),
             pruned_ssa: true,
             load_guard_reads: true,
-            indirect_anchor: true,      // indirectanchor (default-on)
             input_param_gap: true,
             narrow_args: true,
             narrow_locals: true,
@@ -2052,7 +2002,6 @@ impl ArchContext {
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             cond_exe_ret: true,          // condexeret (default-on)
             cond_exe_ret_use: true,      // condexeretuse (default-on)
-            load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
             call_array_extent: false,
             stack_struct: false,
@@ -2064,12 +2013,8 @@ impl ArchContext {
             libc_names: false, // libcnames (opt-in)
             guarded_read_trim: false,
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
-            loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             trunc_ptr_flow: false,       // truncptrflow (Architecture::reset_defaults sets the shipped default: on)
-            int_float_round: false,      // intfloatround (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)
-            split_store_keep: false,     // splitstorekeep (Architecture::reset_defaults sets the shipped default: on)
-            pair_refine: false,          // pairrefine (Architecture::reset_defaults sets the shipped default: on)
             wide_slice_reduce: false,    // wideslice (Architecture::reset_defaults sets the shipped default: on)
             devectorize_reduction: false, // devectorize (opt-in default-off)
             strlen_scan: false, // strlenscan (live value copied from the Architecture)

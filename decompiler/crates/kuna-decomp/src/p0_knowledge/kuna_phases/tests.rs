@@ -32,9 +32,9 @@ fn subphase_count_is_48() {
 }
 
 #[test]
-fn surface_count_is_117() {
-    assert_eq!(kuna_num_surfaces(), 117);
-    assert_eq!(SURFACE_TABLE.len(), 117);
+fn surface_count_is_116() {
+    assert_eq!(kuna_num_surfaces(), 116);
+    assert_eq!(SURFACE_TABLE.len(), 116);
 }
 
 #[test]
@@ -769,7 +769,6 @@ fn option_values_live_value_present_for_189() {
                             | "calleereadarg"
                             | "zerofillreturn"
                             | "zerocallregs"
-                            | "indirectanchor"
                             | "calloverlap"
                             | "indexaliasguard"
                             // (kuna) `arrayextent` takes a MODE

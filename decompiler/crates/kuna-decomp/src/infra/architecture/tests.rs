@@ -106,7 +106,6 @@ fn kuna_anchor_flags_default_to_div_values() {
     // DIV-2/DIV-3 default-on (architecture.cc:1430-1451).
     assert!(arch.infer_funcentry);
     assert!(arch.memset_recover);
-    assert!(arch.ov_less_simplify);
     assert!(arch.input_varnode_adjust);
     assert!(arch.dynamic_hash_maxdup_high);
     assert!(arch.recover_array_stride);
@@ -463,23 +462,6 @@ fn arch_option_context_proto_model_registry() {
     // Unknown function (no symbol table function) errors faithfully.
     let err = arch.set_function_extra_pop("nofunc", 4).unwrap_err();
     assert!(format!("{err}").contains("Unknown function name"));
-}
-
-/// (kuna) `loopcounterstore` (DIV-146): the shipped default is ON, the option
-/// name toggles it, and a bogus value is refused.  The brake is read through
-/// the ArchSeam copy in `build_arch_handle`, so a field that is declared and
-/// never copied is silently inert -- `reset_defaults` is the only place the
-/// shipped default exists.
-#[test]
-fn loopcounterstore_defaults_on_and_toggles() {
-    let mut arch = Architecture::new("t", bare_sleigh());
-    arch.reset_defaults_internal();
-    assert!(arch.loop_counter_store, "loopcounterstore ships default-ON (DIV-146)");
-    arch.set_kuna_option("loopcounterstore", "off").unwrap();
-    assert!(!arch.loop_counter_store);
-    arch.set_kuna_option("loopcounterstore", "on").unwrap();
-    assert!(arch.loop_counter_store);
-    assert!(arch.set_kuna_option("loopcounterstore", "maybe").is_err());
 }
 
 /// (kuna) `tiedphitrim` (DIV-182): ships default-ON, toggles by name and

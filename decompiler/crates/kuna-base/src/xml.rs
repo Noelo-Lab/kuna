@@ -1748,8 +1748,7 @@ mod tests {
         // the foldcallret indirect-read barrier (an out-parameter copy printed
         // above the call that fills it, so freecon consumed the pre-call NULL)
         // and gh182-loadguardrange / the ValueSet refinement of indexed-stack
-        // guards sizes a stack array by its real index bound (option off = the
-        // 4-element cap with split-off never-assigned tail scalars)
+        // guards sizes a stack array by its real index bound
         // and gh275-spillargtrial / caller-save spill tolerance in input-trial
         // scoring (option off drops the first atan2 call's second argument to
         // the `movapd [rsp+0x20],xmm1` spill, on recovers it)
@@ -1829,8 +1828,7 @@ mod tests {
         // syscall() with empty parens and a wrapper returning its own syscall
         // number) (repipe r12)
         // and kuna-splitstorekeep / a 31-byte stack-to-stack copy whose middle
-        // two 8-byte stores overlap keeps them (option off = the head store and
-        // the tail store with the fifteen bytes between them gone) (repipe r12)
+        // two 8-byte stores overlap keeps them (repipe r12)
         // and kuna-entrythumbflow / bounded Thumb context from a TE entry
         // and kuna-callretpair / a call whose cspec output rule asked for a
         // register pair gets that pair (option off = a bare call statement and
@@ -2120,7 +2118,7 @@ mod tests {
         // and kuna-prunedssa / heritage markers only where a range is live (options prunedssa, readonlycalls)
         // and kuna-lanedivide-terminator / a terminating SUBPIECE of an upper-lane piece
         // and kuna-x86-16-real-rel16 + kuna-x86-16-protected-rel16 / 16-bit near branches keep their segment
-        // and kuna-segmentize / x86 real-mode accesses go through the segment op (option segmentize)
+        // and kuna-segmentize / x86 real-mode accesses go through the segment op
         // and kuna-calleepop-x86-16 / a near call is credited the two bytes it stores (option calleepop)
         // and kuna-returnglobal-sparc / a global in %o1 is not joined into an int's return
         // and kuna-segmentize-z80 / a Z80 table with a row outside the image is still followed

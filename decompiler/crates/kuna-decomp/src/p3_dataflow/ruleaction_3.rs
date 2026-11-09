@@ -2030,7 +2030,7 @@ impl Rule for RulePropagateCopy {
                 if crate::p3_dataflow::kuna_tiedstorekeep::declines(data, op, vn, invn) {
                     continue;
                 }
-                // (kuna) `option loopcounterstore on` refuses the same
+                // (kuna) The loop-counter store brake refuses the same
                 // propagation for a self-updating address-tied phi, which is how
                 // a frame-slot loop counter's write-back is deleted.  See
                 // [`crate::p3_dataflow::kuna_loopcounterstore`].

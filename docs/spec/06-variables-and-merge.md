@@ -1626,7 +1626,7 @@ current Varnodes) and fills a `varmap.rs (MapState)` with typed hints — one
   (`min_items` 3). The same routine then walks the heritage LOAD/STORE
   guards (chapter [03](03-ssa-and-simplification.md)):
   `funcdata_spacebase.rs (Funcdata::add_guard)` turns each guard whose range
-  the value-set refinement locked (`option loadguardrange`) into an open hint
+  the value-set refinement locked into an open hint
   at the guard's minimum with the **real** index bound,
   `highind = ((max - min) + 1) / step - 1` — upstream's only hint source that
   can push an indexed array's extent past the [0,3] fallback (an unrefined or
@@ -1915,7 +1915,7 @@ open hint that `attempt_join` cannot extend ends where the next hint starts, so
 `strncpy(buf, s, sizeof(buf) - 1); buf[sizeof(buf) - 1] = 0;` splits into `char
 buf[63]` plus a separate `char` assigned 0 and never read: the terminator's
 constant index is folded into a direct frame store, and a NUL-scan loop leaves
-`loadguardrange` no range to lock. With the option on,
+the value-set refinement no range to lock. With the option on,
 `funcdata_spacebase.rs (Funcdata::gather_varnodes)` records, for every frame
 slot a constant COPY writes, whether each such write is a zero that no op reads
 directly (`varmap.rs (MapState::note_terminator_store)`), and after
