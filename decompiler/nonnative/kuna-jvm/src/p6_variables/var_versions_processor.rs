@@ -103,7 +103,7 @@ impl VarVersionsProcessor {
 
     fn update_versions(graph: DirectGraph, versions: &JHashMap<VarVersionPair, i32>) {
         graph.iterate_exprents(|exprent: Exprent| {
-            let mut lst = exprent.get_all_exprents_rec(true).to_vec();
+            let mut lst = exprent.get_all_exprents_rec(true);
             lst.push(exprent);
 
             for expr in lst {

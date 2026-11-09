@@ -14,7 +14,7 @@ use crate::rt::{JHashSet, JavaEq, JavaHash, JavaListExt};
 use crate::statement::Statement;
 use crate::type_family::TypeFamily;
 use crate::var_exprent::VarExprent;
-use crate::var_type::VarType;
+use crate::var_type::{self, VarType};
 
 pub struct IntersectionCastProcessor;
 
@@ -123,19 +123,18 @@ impl IntersectionCastProcessor {
                 let casts = Self::get_casts(cast.0);
                 let mut types = casts.a;
                 let inner = casts.b;
-                let ctx = DecompilerContext::get_struct_context();
                 let bounds: Vec<VarType> = Self::get_bounds(exp, i as i32)
                     .into_iter()
                     .filter(|bound| {
                         !types.iter().any(|constant| {
-                            ctx.instance_of(constant.get_expr_type().value_str(), bound.value_str())
+                            var_type::instance_of(&constant.get_expr_type().value, &bound.value)
                         })
                     })
                     .collect();
 
                 if !bounds.is_empty()
                     && bounds.iter().all(|bound| {
-                        ctx.instance_of(inner.get_expr_type().value_str(), bound.value_str())
+                        var_type::instance_of(&inner.get_expr_type().value, &bound.value)
                     })
                 {
                     types.push(ConstExprent::new(inner.get_expr_type(), None, None).0);
@@ -176,11 +175,10 @@ impl IntersectionCastProcessor {
                     });
                 }
 
-                let ctx = DecompilerContext::get_struct_context();
                 let mut filtered: JHashSet<VarType> = JHashSet::new();
                 for bound in bounds.iter() {
                     if !types.iter().any(|constant| {
-                        ctx.instance_of(constant.get_expr_type().value_str(), bound.value_str())
+                        var_type::instance_of(&constant.get_expr_type().value, &bound.value)
                     }) {
                         filtered.add(bound.clone());
                     }
@@ -189,7 +187,7 @@ impl IntersectionCastProcessor {
 
                 if !bounds.is_empty()
                     && bounds.iter().any(|bound| {
-                        ctx.instance_of(inner.get_expr_type().value_str(), bound.value_str())
+                        var_type::instance_of(&inner.get_expr_type().value, &bound.value)
                     })
                 {
                     types.push(ConstExprent::new(inner.get_expr_type(), None, None).0);
@@ -334,8 +332,7 @@ impl IntersectionCastProcessor {
         if types.len() > 1 {
             let mut non_interface: Option<Exprent> = None;
             for type_ in types.iter() {
-                let clazz = DecompilerContext::get_struct_context()
-                    .get_class(type_.get_expr_type().value_str());
+                let clazz = var_type::get_class(&type_.get_expr_type().value);
                 if let Some(clazz) = clazz {
                     if !clazz.has_modifier(ACC_INTERFACE) {
                         if non_interface.is_none() {
