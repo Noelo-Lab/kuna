@@ -1135,7 +1135,7 @@ impl ConsoleProgram {
     ///
     /// The address half of the loader's import resolution
     /// (`ObjectLoadImage::import_slot_ranges`). Always false on the XML datatest
-    /// path, for a raw image, and for every non-PE object.
+    /// path and for a raw image.
     pub fn is_import_slot(&self, vma: u64) -> bool {
         self.import_slots.iter().any(|&(lo, hi)| vma >= lo && vma < hi)
     }
@@ -3142,6 +3142,9 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // Metadata alone has no output effect; the live flow option gates its use.
         "ppc32_pic_slots" => true,
         "authptrcall" => arch.analysis_authptrcall,
+        // (kuna) ELF GOT data imports: the slot names + externref paint exist only
+        // to let `importdata` render a read through the slot, so they share its gate.
+        "elfgotimports" => arch.import_data,
         "libproto" => arch.analysis_libproto,
         // (kuna) The measured libc signature extension — the ~200 prototypes the
         // 27-entry base table does not carry, seeded onto IMPORTED names only. The
@@ -5007,6 +5010,22 @@ fn commit_analysis_output(
         }
     }
 
+    // 1-. (kuna `elfgotimports`) The import a loader import slot holds. A
+    //     `FunctionSymbol` in the symbol table, exactly as the format's own import
+    //     names are, so `query_function` resolves a read or a call through the slot;
+    //     but not registered in the function inventory, because the slot is a
+    //     pointer word, not a function.
+    for (slot, name) in &out.import_slot_names {
+        let addr = Address::new(Rc::clone(code_space), *slot);
+        let type_code = prog.arch().types().get_type_code()?;
+        let min_size = prog.arch().min_funcsymbol_size;
+        let arch = prog.arch_mut();
+        let (scope, base) = arch.symboltab.find_create_scope_from_symbol_name(name, "::", None, num_spaces)?;
+        if arch.symboltab.find_function(scope, &addr).is_none() {
+            arch.symboltab.add_function(scope, &addr, &base, min_size, type_code)?;
+        }
+    }
+
     // 1a. Named data globals with a known byte size (`out.data_objects`, the DWARF
     //     top-level variables). Mapped into the global scope with an
     //     `undefined<size>` type so a memory access of the object's storage
@@ -5491,15 +5510,24 @@ fn commit_analysis_output(
     let stream_syms = if prog.arch().analysis_datasyms { out.typed_data.as_slice() } else { &[] };
     for fact in stream_syms {
         let addr = Address::new(Rc::clone(code_space), fact.addr);
+        // A function symbol on an import slot only carries the import's name; the
+        // slot is still a pointer word whose type the stream declares.
+        let import_slot = prog.is_import_slot(fact.addr);
         let occupied = {
             let arch = prog.arch();
             match arch.symboltab.get_global_scope() {
                 Some(global) => {
-                    arch.symboltab.find_function(global, &addr).is_some()
+                    let names_import = |s: &kuna_decomp::database::Symbol| {
+                        import_slot
+                            && matches!(s.kind, kuna_decomp::database::SymbolKind::Function { .. })
+                    };
+                    (arch.symboltab.find_function(global, &addr).is_some() && !import_slot)
                         || arch.is_lazy_entry(addr.get_offset())
                         || arch
                             .symboltab
-                            .find_container(global, &addr, 1, &Address::new_invalid())
+                            .find_container_matching(global, &addr, 1, &Address::new_invalid(), |s| {
+                                !names_import(s)
+                            })
                             .is_some()
                 }
                 None => false,

@@ -434,6 +434,12 @@ pub struct AnalysisOutput {
     /// `peimportcall` pass; empty for formats without such typed slots. See
     /// [`crate::loader::kuna_peimportcall`].
     pub externref: Vec<(u64, u64)>,
+    /// (kuna `elfgotimports`) The import each loader import slot holds, as
+    /// `(slot VMA, import name)`. Committed as a `FunctionSymbol` in the symbol
+    /// table, so `query_function` resolves a read or a call through the slot to
+    /// the import, but never registered in the function inventory: the slot is a
+    /// pointer word, not a function.
+    pub import_slot_names: Vec<(u64, String)>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
     pub strings: Vec<StringFact>,
     /// (kuna `fatstr`) Length-BOUNDED string literals recovered from static
@@ -734,6 +740,7 @@ impl AnalysisOutput {
         self.readonly.extend(other.readonly);
         self.const_ranges.extend(other.const_ranges);
         self.externref.extend(other.externref);
+        self.import_slot_names.extend(other.import_slot_names);
         self.strings.extend(other.strings);
         self.bounded_strings.extend(other.bounded_strings);
         self.wide_strings.extend(other.wide_strings);

@@ -87,6 +87,7 @@ pub mod kuna_dataptrs;
 // (kuna) `pltlocal`: the PLT stubs the image's own relocations bind to a
 // function it defines.
 pub(crate) mod kuna_pltlocal;
+pub mod kuna_elfgotimports;
 // (kuna) `msvcfpconst`: recover an MSVC `__real@` floating-point constant COMDAT
 // from its mangled symbol name -- materialise the undefined half's bytes at its
 // synthetic extern slot, and mark both halves foldable.

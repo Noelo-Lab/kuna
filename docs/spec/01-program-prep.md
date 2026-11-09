@@ -2001,6 +2001,29 @@ funcsym stream:
   the valued rebases and binds, as before. The list is read whatever the
   `dynrelocs` gate says, so a reader compares the loaded bytes with the file's
   to learn what was applied. Any other image lists none, under coverage `none`.
+- **ELF GOT data imports** (kuna, `elfgotimports`, committed under `importdata`,
+  default off; `decompiler/crates/kuna-analysis/src/loader/kuna_elfgotimports.rs`):
+  the complement of the `dynrelocs` walk above. A `GLOB_DAT` slot whose symbol is *undefined*
+  is skipped there because its value lives in another object, and the PLT/import
+  naming covers a *call* to it. A `-fPIC` *data* read is not a call: it loads the
+  slot (the import's address) and then loads through it, and with nothing naming
+  the slot that printed as `*dat_<slot>` — or, for a stdio stream `libctypes`
+  types, as `*stdout_ptr`. `resolve` lists every such slot with its symbol, over
+  the same relocation triple (x86-64, AArch64, i386, ARM). `ElfFormat::import_slots`
+  reports them, so a slot is a pointer word and never a function body. The pass
+  names each one for its import (a symbol-table `FunctionSymbol`, as the format's
+  own import names are, but not a function-inventory entry, since the slot is not a
+  function; the name goes through the `symbolnamechars` sanitizer like every name
+  the loader mints) and paints it `externref`, so `PrintC::op_load`
+  renders the read as the import (`importdata`, chapter [09](09-emission.md)):
+  `return imported_counter;`, `return environ;`, `stdout`. Painting the slot also
+  lets `ActionDeindirect` bind a call through it (`(*dat_e9f30)()` becomes
+  `__cxa_finalize()`), the binding `peimportcall` gives a PE or Mach-O slot. A slot
+  whose symbol the image defines is never taken. `dynrelocs` already fills it in and
+  folds it to the object (`exported_value`, `&exported_value`), and `externref` would
+  stop that fold. The same holds for a local GOT entry (`RELATIVE` to an in-image
+  object) inside RELRO, which the fold above already renders as the object. A
+  local entry outside RELRO stays a dereference for the reason given above.
 - **In-code literal pools** (kuna, `litpoolconst`, default-on, DIV-136,
   `decompiler/crates/kuna-decomp/src/p1_partition/kuna_litpoolconst.rs`): the
   third user of the same "constant by construction, not by policy" exception, and

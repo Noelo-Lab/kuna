@@ -1370,6 +1370,32 @@ string longer than one entry"), `_get_after`@`0x100000550` → entry@`0x10000404
 `CFSTR("...")` of its string (`annotate` adds `/* cfstring@0x<entry> */`); off, it
 returns the entry by its data symbol (`&_kGreeting`).
 
+### `elf_gotdata_x86_64.so` / `elf_gotdata_aarch64.so` — ELF GOT data imports
+
+Two `-fPIC` shared objects (~3.5 KB each) built from `elf_gotdata.c`, for the ELF
+half of `importdata` (pass `elfgotimports`; `kuna-console/tests/verify_elfgotimports.rs`,
+`tests/stages/kuna-elfgotimports.xml`). Each reads `imported_counter`, `environ` and
+`stdout` through `R_*_GLOB_DAT` slots it leaves undefined, and `exported_value`,
+which it defines (a `GLOB_DAT` to a defined, preemptible symbol). The committed
+files were built with clang and LLD 22.1.8 (their `.comment` section says so), no
+libc; the devcontainer's older clang + lld take the same recipe but may lay the
+image out differently, so the pinned VMAs below are the committed files':
+
+```
+clang --target=x86_64-linux-gnu  -O1 -fPIC -shared -fuse-ld=lld -nostdlib \
+      -Wl,--build-id=none -o elf_gotdata_x86_64.so  elf_gotdata.c
+clang --target=aarch64-linux-gnu -O1 -fPIC -shared -fuse-ld=lld -nostdlib \
+      -Wl,--build-id=none -o elf_gotdata_aarch64.so elf_gotdata.c
+```
+
+**Pinned VMAs.** x86-64: `get_counter`@`0x1580`, `get_env`@`0x1590`,
+`get_out`@`0x15a0`, `get_exported`@`0x15b0`, `addr_exported`@`0x15c0`; GOT slots
+`imported_counter`@`0x2680`, `environ`@`0x2688`, `stdout`@`0x2690`. AArch64:
+`get_counter`@`0x104e4` … `addr_exported`@`0x10524` (stride 0x10); GOT slots
+`0x205c0`/`0x205c8`/`0x205d0`. With `--option importdata on` the three reads are
+`imported_counter` / `environ` / `stdout`; off they are `*dat_<slot>`.
+`exported_value` / `&exported_value` read the same either way.
+
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 
 The multi-format **entry-discovery** gate
