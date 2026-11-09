@@ -148,8 +148,37 @@ fn write_tree(args: &Args, out_dir: &Path, outcome: &Outcome) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::safe_relative;
+    use super::{safe_relative, write_tree};
+    use super::super::args::{parse, Sub};
+    use super::super::run::Outcome;
+    use kuna_jvm::kuna_driver::ClassResult;
+    use kuna_jvm::kuna_input::InputKind;
     use std::path::PathBuf;
+
+    #[test]
+    fn a_class_without_output_gets_a_marker_stub_and_fails_the_export() {
+        let dir = tempfile::tempdir().unwrap();
+        let argv = vec!["app.jar".to_string()];
+        let Ok(args) = parse(Sub::Project, &argv, "app.jar", InputKind::Archive) else {
+            panic!("parse");
+        };
+        let outcome = Outcome {
+            results: vec![ClassResult {
+                index: 0,
+                qualified_name: "com/ex/Broken".into(),
+                unit: None,
+                error: Some("the engine failed: boom".into()),
+            }],
+            missing: vec![("com/ex/Gone".into(), "not a top-level class of the input".into())],
+            error: None,
+        };
+        assert_eq!(write_tree(&args, dir.path(), &outcome), 1);
+        let broken = std::fs::read_to_string(dir.path().join("com/ex/Broken.java")).unwrap();
+        assert_eq!(broken, "// kuna: could not decompile com.ex.Broken: the engine failed: boom\n");
+        let gone = std::fs::read_to_string(dir.path().join("com/ex/Gone.java")).unwrap();
+        let marker = regex::Regex::new(r"\$VF: Couldn't be decompiled|kuna: (?:could not|couldn't) decompile").unwrap();
+        assert!(marker.is_match(&gone), "{gone}");
+    }
 
     #[test]
     fn export_paths_stay_inside_the_directory() {
