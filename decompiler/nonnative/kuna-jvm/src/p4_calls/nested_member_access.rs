@@ -92,12 +92,8 @@ impl NestedMemberAccess {
     }
 
     fn same_tree(caller: ClassNode, callee: ClassNode) -> bool {
-        let caller_name = caller
-            .with(|d| d.class_struct)
-            .with(|d| d.qualified_name.clone());
-        let callee_name = callee
-            .with(|d| d.class_struct)
-            .with(|d| d.qualified_name.clone());
+        let caller_name = caller.with(|d| d.class_struct).qualified_name();
+        let callee_name = callee.with(|d| d.class_struct).qualified_name();
         if caller_name == callee_name {
             return false;
         }

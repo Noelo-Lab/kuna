@@ -102,7 +102,7 @@ impl MethodWrapper {
 impl fmt::Display for MethodWrapper {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (class_struct, method_struct) = self.with(|d| (d.class_struct, d.method_struct));
-        let qualified_name = class_struct.with(|d| d.qualified_name.clone());
+        let qualified_name = class_struct.qualified_name();
         write!(f, "{{{}: {}}}", qualified_name, method_struct.get_name())
     }
 }

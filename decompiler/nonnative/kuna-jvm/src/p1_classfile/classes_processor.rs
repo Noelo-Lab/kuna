@@ -140,7 +140,7 @@ impl ClassesProcessor {
             d.class_struct
         });
         class_struct.release_resources();
-        let methods = class_struct.get_methods().borrow().to_vec();
+        let methods = class_struct.get_methods().to_vec();
         for m in methods {
             m.clear_variable_namer();
         }
@@ -254,9 +254,9 @@ impl ClassNode {
             &lambda_information.content_method_descriptor,
         );
 
-        let anonymous_class_type = VarType::new_cl(lambda_class_name, true);
+        let anonymous_class_type = VarType::new_signature_cl(lambda_class_name, true);
 
-        let mut is_method_reference = class_struct.with(|d| d.qualified_name != content_class_name);
+        let mut is_method_reference = class_struct.qualified_name() != content_class_name;
         if !is_method_reference {
             let mt = class_struct
                 .get_method(content_method_name, content_method_descriptor)
@@ -288,7 +288,7 @@ impl ClassNode {
 
     /// Java: ClassNode(Type, StructClass)
     pub fn new(type_: ClassNodeType, class_struct: StructClass) -> ClassNode {
-        let qualified_name = class_struct.with(|d| d.qualified_name.clone());
+        let qualified_name = class_struct.qualified_name();
         let simple_name = match qualified_name.rfind('/') {
             Some(i) => qualified_name[i + 1..].to_string(),
             None => qualified_name.clone(),
@@ -296,7 +296,7 @@ impl ClassNode {
 
         let mut enclosing_method = None;
         let enclosing_method_attr =
-            class_struct.get_attribute(StructGeneralAttribute::ATTRIBUTE_ENCLOSING_METHOD());
+            class_struct.get_attribute(StructGeneralAttribute::ATTRIBUTE_ENCLOSING_METHOD);
         if let Some(enclosing_method_attr) = enclosing_method_attr {
             let name = enclosing_method_attr.get_method_name();
             let desc = enclosing_method_attr.get_method_descriptor();
@@ -330,7 +330,7 @@ impl ClassNode {
         let nested = self.with(|d| d.nested.clone());
         for node in nested.iter() {
             let class_struct = node.with(|d| d.class_struct);
-            if class_struct.with(|d| d.qualified_name == qualified_name) {
+            if class_struct.qualified_name() == qualified_name {
                 return Some(node);
             }
         }
@@ -357,12 +357,8 @@ impl ClassNode {
     }
 
     pub fn compare_to(self, o: ClassNode) -> Ordering {
-        let a = self
-            .with(|d| d.class_struct)
-            .with(|d| d.qualified_name.clone());
-        let b = o
-            .with(|d| d.class_struct)
-            .with(|d| d.qualified_name.clone());
+        let a = self.with(|d| d.class_struct).qualified_name();
+        let b = o.with(|d| d.class_struct).qualified_name();
         string_compare_to(&a, &b)
     }
 }
@@ -370,7 +366,7 @@ impl ClassNode {
 impl fmt::Display for ClassNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (type_, class_struct) = self.with(|d| (d.type_, d.class_struct));
-        let qualified_name = class_struct.with(|d| d.qualified_name.clone());
+        let qualified_name = class_struct.qualified_name();
         write!(f, "{type_} class {qualified_name}")
     }
 }

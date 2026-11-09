@@ -58,9 +58,7 @@ impl NestedClassProcessor {
         stack.push_back(root);
 
         while let Some(node) = stack.pop_front() {
-            let qualified_name = node
-                .with(|d| d.class_struct)
-                .with(|d| d.qualified_name.clone());
+            let qualified_name = node.with(|d| d.class_struct).qualified_name();
             if set_enclosing.borrow().contains(&qualified_name) {
                 let nested = node.with(|d| d.nested.clone());
                 nested.add(child);
@@ -123,7 +121,7 @@ impl NestedClassProcessor {
             }
         }
         if type_ != ClassNodeType::Member {
-            let qualified_name = class_struct.with(|d| d.qualified_name.clone());
+            let qualified_name = class_struct.qualified_name();
             let enclosing = collection_to_string(enclosing_classes.borrow().iter());
             DecompilerContext::get_logger().write_message(
                 &format!(

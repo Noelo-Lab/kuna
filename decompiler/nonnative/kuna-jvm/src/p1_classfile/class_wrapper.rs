@@ -98,7 +98,7 @@ impl ClassWrapper {
 impl fmt::Display for ClassWrapper {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let class_struct = self.get_class_struct();
-        let qualified_name = class_struct.with(|d| d.qualified_name.clone());
+        let qualified_name = class_struct.qualified_name();
         f.write_str(&qualified_name)
     }
 }

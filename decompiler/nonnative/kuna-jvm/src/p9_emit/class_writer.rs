@@ -24,7 +24,6 @@ use crate::generic_field_descriptor::GenericFieldDescriptor;
 use crate::generic_method_descriptor::GenericMethodDescriptor;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::import_collector::ImportCollector;
-use crate::key::Key;
 use crate::link_constant::LinkConstant;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
@@ -37,7 +36,7 @@ use crate::struct_annotation_parameter_attribute::StructAnnotationParameterAttri
 use crate::struct_bootstrap_methods_attribute::StructBootstrapMethodsAttribute;
 use crate::struct_class::StructClass;
 use crate::struct_field::StructField;
-use crate::struct_general_attribute::StructGeneralAttribute;
+use crate::struct_general_attribute::{AttributeKey, StructGeneralAttribute};
 use crate::struct_member::StructMember;
 use crate::struct_method::StructMethod;
 use crate::struct_module_attribute::StructModuleAttribute;
@@ -219,7 +218,7 @@ impl ClassWriter {
         buffer: &mut TextBuffer,
         import_collector: ImportCollector,
     ) {
-        let qualified_name = cl.with(|d| d.qualified_name.clone());
+        let qualified_name = cl.qualified_name();
         if let Some(index) = qualified_name.rfind('/') {
             let package_name = qualified_name[..index].replace('/', ".");
             buffer
@@ -238,9 +237,9 @@ impl ClassWriter {
     }
 
     pub fn package_info_to_java(cl: StructClass, buffer: &mut TextBuffer) {
-        ClassWriter::append_annotations(buffer, 0, cl, -1);
+        ClassWriter::append_annotations(buffer, 0, cl.0, -1);
 
-        let qualified_name = cl.with(|d| d.qualified_name.clone());
+        let qualified_name = cl.qualified_name();
         let index = qualified_name.rfind('/').unwrap();
         let package_name = qualified_name[..index].replace('/', ".");
         buffer
@@ -381,7 +380,7 @@ impl ClassWriter {
         unported!("ClassWriter.getFieldTypeData")
     }
 
-    fn contains_deprecated_annotation<M: Into<StructMember>>(mb: M) -> bool {
+    fn contains_deprecated_annotation(mb: StructMember) -> bool {
         unported!("ClassWriter.containsDeprecatedAnnotation")
     }
 
@@ -464,7 +463,7 @@ impl ClassWriter {
     }
 
     pub fn append_synthetic_class_comment(cl: StructClass, buffer: &mut TextBuffer) {
-        let qualified_name = cl.with(|d| d.qualified_name.clone());
+        let qualified_name = cl.qualified_name();
         let class_name = &qualified_name[qualified_name.rfind('/').map_or(0, |i| i + 1)..];
         buffer
             .append(" /* ")
@@ -472,35 +471,27 @@ impl ClassWriter {
             .append(" */");
     }
 
-    #[allow(non_snake_case)]
-    pub fn ANNOTATION_ATTRIBUTES() -> [Key<StructAnnotationAttribute>; 2] {
-        [
-            StructGeneralAttribute::ATTRIBUTE_RUNTIME_VISIBLE_ANNOTATIONS(),
-            StructGeneralAttribute::ATTRIBUTE_RUNTIME_INVISIBLE_ANNOTATIONS(),
-        ]
-    }
+    pub const ANNOTATION_ATTRIBUTES: [AttributeKey<StructAnnotationAttribute>; 2] = [
+        StructGeneralAttribute::ATTRIBUTE_RUNTIME_VISIBLE_ANNOTATIONS,
+        StructGeneralAttribute::ATTRIBUTE_RUNTIME_INVISIBLE_ANNOTATIONS,
+    ];
 
-    #[allow(non_snake_case)]
-    pub fn PARAMETER_ANNOTATION_ATTRIBUTES() -> [Key<StructAnnotationParameterAttribute>; 2] {
-        [
-            StructGeneralAttribute::ATTRIBUTE_RUNTIME_VISIBLE_PARAMETER_ANNOTATIONS(),
-            StructGeneralAttribute::ATTRIBUTE_RUNTIME_INVISIBLE_PARAMETER_ANNOTATIONS(),
-        ]
-    }
+    pub const PARAMETER_ANNOTATION_ATTRIBUTES: [AttributeKey<StructAnnotationParameterAttribute>;
+        2] = [
+        StructGeneralAttribute::ATTRIBUTE_RUNTIME_VISIBLE_PARAMETER_ANNOTATIONS,
+        StructGeneralAttribute::ATTRIBUTE_RUNTIME_INVISIBLE_PARAMETER_ANNOTATIONS,
+    ];
 
-    #[allow(non_snake_case)]
-    pub fn TYPE_ANNOTATION_ATTRIBUTES() -> [Key<StructTypeAnnotationAttribute>; 2] {
-        [
-            StructGeneralAttribute::ATTRIBUTE_RUNTIME_VISIBLE_TYPE_ANNOTATIONS(),
-            StructGeneralAttribute::ATTRIBUTE_RUNTIME_INVISIBLE_TYPE_ANNOTATIONS(),
-        ]
-    }
+    pub const TYPE_ANNOTATION_ATTRIBUTES: [AttributeKey<StructTypeAnnotationAttribute>; 2] = [
+        StructGeneralAttribute::ATTRIBUTE_RUNTIME_VISIBLE_TYPE_ANNOTATIONS,
+        StructGeneralAttribute::ATTRIBUTE_RUNTIME_INVISIBLE_TYPE_ANNOTATIONS,
+    ];
 
     /// Writes the declaration annotations of `mb`; returns their texts, for filtering type annotations.
-    pub fn append_annotations<M: Into<StructMember>>(
+    pub fn append_annotations(
         buffer: &mut TextBuffer,
         indent: i32,
-        mb: M,
+        mb: StructMember,
         target_type: i32,
     ) -> JHashSet<String> {
         unported!("ClassWriter.appendAnnotations")
@@ -524,10 +515,10 @@ impl ClassWriter {
         unported!("ClassWriter.appendParameterAnnotations")
     }
 
-    fn append_top_level_type_annotations<M: Into<StructMember>>(
+    fn append_top_level_type_annotations(
         buffer: &mut TextBuffer,
         indent: i32,
-        mb: M,
+        mb: StructMember,
         target_type: i32,
         index: i32,
         filter: &JHashSet<String>,
@@ -535,8 +526,8 @@ impl ClassWriter {
         unported!("ClassWriter.appendTopLevelTypeAnnotations")
     }
 
-    pub fn get_type_annotations<M: Into<StructMember>>(
-        mb: M,
+    pub fn get_type_annotations(
+        mb: StructMember,
         target_type: i32,
         index: i32,
     ) -> Vec<Pair<VecDeque<PathValue>, AnnotationExprent>> {

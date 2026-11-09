@@ -32,7 +32,7 @@ impl ImportCollector {
     /// Java: ImportCollector(ClassNode)
     pub fn new(root: ClassNode) -> ImportCollector {
         let class_struct = root.with(|d| d.class_struct);
-        let cl_name = class_struct.with(|d| d.qualified_name.clone());
+        let cl_name = class_struct.qualified_name();
         let (current_package_slash, current_package_point) = match cl_name.rfind('/') {
             Some(index) => {
                 let package_name = &cl_name[..index];
@@ -56,13 +56,13 @@ impl ImportCollector {
         let mut current_class = Some(class_struct);
         while let Some(class) = current_class {
             processed_classes.add(class);
-            let fields = class.get_fields().borrow().to_vec();
+            let fields = class.get_fields().to_vec();
             for f in fields {
                 let name = f.get_name();
                 collector.with_mut(|d| d.set_field_names.add(name));
             }
 
-            let super_class = class.with(|d| d.super_class.clone());
+            let super_class = class.super_class();
             current_class = match super_class {
                 Some(super_class) => ctx.get_class(&super_class.get_string()),
                 None => None,
@@ -156,9 +156,7 @@ impl ImportCollector {
 
             let type_ = node.with(|d| d.type_);
             if type_ == ClassNodeType::Root {
-                full_name = node
-                    .with(|d| d.class_struct)
-                    .with(|d| d.qualified_name.clone());
+                full_name = node.with(|d| d.class_struct).qualified_name();
                 full_name = full_name.replace('/', ".");
             } else {
                 if result.is_none() && type_ == ClassNodeType::Anonymous {
@@ -195,9 +193,7 @@ impl ImportCollector {
 
         let map_key = match DecompilerContext::get_current_class_node() {
             None => String::new(),
-            Some(curr_cls) => curr_cls
-                .with(|d| d.class_struct)
-                .with(|d| d.qualified_name.clone()),
+            Some(curr_cls) => curr_cls.with(|d| d.class_struct).qualified_name(),
         };
         let inner_class_name = |name: &str| -> Option<String> {
             self.with(|d| {
@@ -329,7 +325,7 @@ impl ImportCollector {
         let mut names = root_names.clone();
         self.get_super_class_inner_classes(root, &mut names);
         let (class_struct, nested) = root.with(|d| (d.class_struct, d.nested.to_vec()));
-        let qualified_name = class_struct.with(|d| d.qualified_name.clone());
+        let qualified_name = class_struct.qualified_name();
         let stored = names.clone();
         self.with_mut(|d| d.map_inner_class_names.put(qualified_name, stored));
 
@@ -345,23 +341,18 @@ impl ImportCollector {
         let mut current_class = Some(node.with(|d| d.class_struct));
         while let Some(class) = current_class {
             processed_classes.add(class);
-            if let Some(super_class) = class.with(|d| d.super_class.clone()) {
-                queue.push_back(super_class.get_string());
+            if let Some(super_class) = class.super_class() {
+                queue.push_back(super_class.get_string().to_string());
             }
 
             queue.extend(class.get_interface_names());
 
-            let attribute = class.get_attribute(StructGeneralAttribute::ATTRIBUTE_INNER_CLASSES());
+            let attribute = class.get_attribute(StructGeneralAttribute::ATTRIBUTE_INNER_CLASSES);
             if let Some(attribute) = attribute {
-                let qualified_name = class.with(|d| d.qualified_name.clone());
+                let qualified_name = class.qualified_name();
                 for entry in attribute.get_entries() {
                     if entry.enclosing_name.as_deref() == Some(qualified_name.as_str()) {
-                        let inner_name = entry
-                            .inner_name
-                            .as_ref()
-                            .unwrap()
-                            .replace('/', ".")
-                            .replace('$', ".");
+                        let inner_name = entry.inner_name.replace('/', ".").replace('$', ".");
                         if let Some(simple_name) = entry.simple_name.clone() {
                             names.put(simple_name, inner_name);
                         }
