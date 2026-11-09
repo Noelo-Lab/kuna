@@ -1,0 +1,95 @@
+package pkg;
+
+public abstract class TestDeprecations {
+   /** @deprecated */
+   public int byComment;
+   @Deprecated
+   public int byAnno;
+
+   /** @deprecated */
+   public void byComment() {
+      int a = 5;// 27
+   }// 28
+
+   /** @deprecated */
+   public abstract void byCommentAbstract();
+
+   @Deprecated
+   public void byAnno() {
+      int a = 5;// 35
+   }// 36
+
+   @Deprecated
+   public abstract void byAnnoAbstract();
+
+   @Deprecated
+   public static class ByAnno {
+      int a = 5;// 52
+
+      void foo() {
+         int x = 5;// 55
+      }// 56
+   }
+
+   /** @deprecated */
+   public static class ByComment {
+      int a = 5;// 43
+
+      void foo() {
+         int x = 5;// 46
+      }// 47
+   }
+}
+
+class 'pkg/TestDeprecations' {
+   method 'byComment ()V' {
+      0      10
+      1      10
+      2      11
+   }
+
+   method 'byAnno ()V' {
+      0      18
+      1      18
+      2      19
+   }
+}
+
+class 'pkg/TestDeprecations$ByAnno' {
+   method '<init> ()V' {
+      5      26
+   }
+
+   method 'foo ()V' {
+      0      29
+      1      29
+      2      30
+   }
+}
+
+class 'pkg/TestDeprecations$ByComment' {
+   method '<init> ()V' {
+      5      35
+   }
+
+   method 'foo ()V' {
+      0      38
+      1      38
+      2      39
+   }
+}
+
+Lines mapping:
+27 <-> 11
+28 <-> 12
+35 <-> 19
+36 <-> 20
+43 <-> 36
+46 <-> 39
+47 <-> 40
+52 <-> 27
+55 <-> 30
+56 <-> 31
+Not mapped:
+42
+51

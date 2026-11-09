@@ -1,0 +1,173 @@
+package pkg;
+
+public class TestSwitchAssign {
+   public void test(int x) {
+      int assign = 1;// 5
+      switch (x) {// 6
+         case 1:
+         case 3:
+         case 5:
+            assign = 3;// 10
+            break;// 11
+         case 2:
+         case 4:
+         case 6:
+            assign = 4;// 15
+      }
+
+      System.out.println(assign);// 19
+   }// 20
+
+   public void test1(String s) {
+      int assign;
+      switch (s) {// 24
+         case "a":
+         default:
+            assign = 3;// 27
+            break;// 28
+         case "0":
+            assign = -2;// 30
+            break;// 31
+         case "?":
+            assign = 999;// 33
+      }
+
+      System.out.println(assign);// 37
+   }// 38
+}
+
+class 'pkg/TestSwitchAssign' {
+   method 'test (I)V' {
+      0      4
+      1      4
+      2      5
+      3      5
+      4      5
+      5      5
+      6      5
+      7      5
+      8      5
+      9      5
+      a      5
+      b      5
+      c      5
+      d      5
+      e      5
+      f      5
+      10      5
+      11      5
+      12      5
+      13      5
+      14      5
+      15      5
+      16      5
+      17      5
+      18      5
+      19      5
+      1a      5
+      1b      5
+      1c      5
+      1d      5
+      1e      5
+      1f      5
+      20      5
+      21      5
+      22      5
+      23      5
+      24      5
+      25      5
+      26      5
+      27      5
+      28      9
+      29      9
+      2a      10
+      2d      14
+      2e      14
+      2f      17
+      30      17
+      31      17
+      32      17
+      33      17
+      34      17
+      35      17
+      36      18
+   }
+
+   method 'test1 (Ljava/lang/String;)V' {
+      0      22
+      2d      23
+      2e      23
+      3c      27
+      3d      27
+      4b      30
+      4c      30
+      58      22
+      59      22
+      5a      22
+      5b      22
+      5c      22
+      5d      22
+      5e      22
+      5f      22
+      60      22
+      61      22
+      62      22
+      63      22
+      64      22
+      65      22
+      66      22
+      67      22
+      68      22
+      69      22
+      6a      22
+      6b      22
+      6c      22
+      6d      22
+      6e      22
+      6f      22
+      70      22
+      71      22
+      72      22
+      73      22
+      74      22
+      75      22
+      76      22
+      77      22
+      78      25
+      79      25
+      7a      26
+      7d      28
+      7e      28
+      7f      28
+      80      29
+      83      31
+      84      31
+      85      31
+      86      31
+      87      34
+      88      34
+      89      34
+      8a      34
+      8b      34
+      8c      34
+      8d      34
+      8e      35
+   }
+}
+
+Lines mapping:
+5 <-> 5
+6 <-> 6
+10 <-> 10
+11 <-> 11
+15 <-> 15
+19 <-> 18
+20 <-> 19
+24 <-> 23
+27 <-> 26
+28 <-> 27
+30 <-> 29
+31 <-> 30
+33 <-> 32
+37 <-> 35
+38 <-> 36

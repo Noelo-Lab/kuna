@@ -1,0 +1,61 @@
+package pkg;
+
+public class TestInterfaceLambdaCast {
+   private static int x = (() -> {
+      System.out.println("Hi");// 9
+      return 1;// 10
+   }).get();// 11
+
+   private static void main() {
+      System.out.println(x);// 14
+   }// 15
+
+   public interface Func {
+      int get();
+   }
+}
+
+class 'pkg/TestInterfaceLambdaCast' {
+   method 'lambda$static$0 ()I' {
+      0      4
+      1      4
+      2      4
+      3      4
+      4      4
+      5      4
+      6      4
+      7      4
+      8      5
+      9      5
+   }
+
+   method '<clinit> ()V' {
+      5      6
+      6      6
+      7      6
+      8      6
+      9      6
+   }
+
+   method 'main ()V' {
+      0      9
+      1      9
+      2      9
+      3      9
+      4      9
+      5      9
+      6      9
+      7      9
+      8      9
+      9      10
+   }
+}
+
+Lines mapping:
+9 <-> 5
+10 <-> 6
+11 <-> 7
+14 <-> 10
+15 <-> 11
+Not mapped:
+8

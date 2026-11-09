@@ -1,0 +1,107 @@
+package pkg;
+
+public class TestIllegalMethodNames {
+   public void _I_V/* $VF was: (I)V */(int var1) {
+      this.__V/* $VF was: ()V */();// 21 22
+      System.out.println(this._I_Z/* $VF was: (I)Z */(var1));// 23 24 25 26 27
+   }// 28
+
+   public void __V/* $VF was: ()V */() {
+      System.out.println(this.__I/* $VF was: ()I */());// 34 35 36 37
+   }// 38
+
+   public int __I/* $VF was: ()I */() {
+      return 13;// 44 45
+   }
+
+   public boolean _I_Z/* $VF was: (I)Z */(int var1) {
+      return var1 <= this.__I/* $VF was: ()I */();// 51 52 53 54 61
+   }
+
+   public void __V() {
+   }// 67
+}
+
+class 'pkg/TestIllegalMethodNames' {
+   method '(I)V (I)V' {
+      0      4
+      1      4
+      2      4
+      3      4
+      4      5
+      5      5
+      6      5
+      7      5
+      8      5
+      9      5
+      a      5
+      b      5
+      c      5
+      d      5
+      e      5
+      f      6
+   }
+
+   method '()V ()V' {
+      0      9
+      1      9
+      2      9
+      3      9
+      4      9
+      5      9
+      6      9
+      7      9
+      8      9
+      9      9
+      a      10
+   }
+
+   method '()I ()I' {
+      0      13
+      1      13
+      2      13
+   }
+
+   method '(I)Z (I)Z' {
+      0      17
+      1      17
+      2      17
+      3      17
+      4      17
+      5      17
+      6      17
+      7      17
+      d      17
+   }
+
+   method '__V ()V' {
+      0      21
+   }
+}
+
+Lines mapping:
+21 <-> 5
+22 <-> 5
+23 <-> 6
+24 <-> 6
+25 <-> 6
+26 <-> 6
+27 <-> 6
+28 <-> 7
+34 <-> 10
+35 <-> 10
+36 <-> 10
+37 <-> 10
+38 <-> 11
+44 <-> 14
+45 <-> 14
+51 <-> 18
+52 <-> 18
+53 <-> 18
+54 <-> 18
+61 <-> 18
+67 <-> 22
+Not mapped:
+55
+56
+58

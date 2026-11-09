@@ -1,0 +1,449 @@
+package pkg;
+
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Map.Entry;
+
+public class TestForeachMultipleLoops {
+   public void test(Object a, Map<Integer, String> map, int i) {
+      if (a != null) {// 8
+         System.out.println(a);// 9
+      } else {
+         for (Entry<Integer, String> entry : map.entrySet()) {// 13
+            String s = (String)entry.getValue();// 14
+            if (a == null) {// 15
+               s = s + s;// 16
+            } else {
+               if (s != null) {// 18
+                  continue;
+               }
+
+               s = "hello";// 21
+            }
+
+            Object v = entry.getValue();// 24
+            if (v == null) {// 25
+               if (i == 3) {// 26
+                  continue;
+               }
+
+               System.out.println("if");// 29
+            } else {
+               System.out.println("else");// 31
+            }
+
+            try {
+               System.out.println(1);// 35
+            } catch (Exception e) {// 36
+               e.printStackTrace();// 37
+            }
+         }
+      }
+   }// 10 40
+
+   public void test1(Object a, Map<Integer, String> map, int i) {
+      if (a != null) {// 43
+         System.out.println(a);// 44
+      } else {
+         Iterator var4 = map.entrySet().iterator();// 48
+
+         while (true) {
+            while (true) {
+               Entry<Integer, String> entry;
+               while (true) {
+                  if (!var4.hasNext()) {
+                     return;// 82
+                  }
+
+                  entry = (Entry<Integer, String>)var4.next();
+                  String s = (String)entry.getValue();// 49
+                  if (a == null) {// 50
+                     s = s + s;// 51
+                     break;
+                  }
+
+                  if (s == null) {// 53
+                     s = "hello";// 56
+                     break;
+                  }
+               }
+
+               Object v = entry.getValue();// 59
+               if (v == null) {// 60
+                  if (i == 3) {// 61
+                     continue;
+                  }
+
+                  System.out.println("if");// 64
+                  break;
+               }
+
+               System.out.println("else");// 66
+               break;
+            }
+
+            for (String value : map.values()) {// 69
+               if (value != null) {// 70
+                  System.out.println(value);// 73
+               }
+            }
+
+            try {
+               System.out.println(1);// 77
+            } catch (Exception e) {// 78
+               e.printStackTrace();// 79
+            }
+         }
+      }
+   }// 45
+}
+
+class 'pkg/TestForeachMultipleLoops' {
+   method 'test (Ljava/lang/Object;Ljava/util/Map;I)V' {
+      0      8
+      1      8
+      2      8
+      3      8
+      4      9
+      5      9
+      6      9
+      7      9
+      8      9
+      9      9
+      a      9
+      b      41
+      c      11
+      d      11
+      e      11
+      f      11
+      10      11
+      11      11
+      12      11
+      13      11
+      14      11
+      15      11
+      16      11
+      17      11
+      18      11
+      23      11
+      24      11
+      25      11
+      26      11
+      27      11
+      28      11
+      29      11
+      2a      11
+      2b      11
+      2c      11
+      2d      11
+      2e      11
+      2f      12
+      30      12
+      31      12
+      32      12
+      33      12
+      34      12
+      35      12
+      36      12
+      37      12
+      38      12
+      39      12
+      3a      12
+      3b      13
+      3c      13
+      3d      13
+      3e      13
+      46      14
+      47      14
+      4b      14
+      4c      14
+      50      14
+      51      14
+      52      14
+      53      14
+      54      14
+      58      16
+      59      16
+      5a      16
+      5b      16
+      5c      16
+      60      20
+      61      20
+      62      20
+      63      20
+      64      23
+      65      23
+      66      23
+      67      23
+      68      23
+      69      23
+      6a      23
+      6b      23
+      6c      23
+      6d      24
+      6e      24
+      6f      24
+      70      24
+      71      24
+      72      25
+      73      25
+      74      25
+      75      25
+      76      25
+      7a      29
+      7b      29
+      7c      29
+      7d      29
+      7e      29
+      7f      29
+      80      29
+      81      29
+      85      31
+      86      31
+      87      31
+      88      31
+      89      31
+      8a      31
+      8b      31
+      8c      31
+      8d      35
+      8e      35
+      8f      35
+      90      35
+      91      35
+      92      35
+      93      35
+      97      36
+      99      37
+      9a      37
+      9b      37
+      9c      37
+      9d      37
+      a1      41
+   }
+
+   method 'test1 (Ljava/lang/Object;Ljava/util/Map;I)V' {
+      0      44
+      1      44
+      2      44
+      3      44
+      4      45
+      5      45
+      6      45
+      7      45
+      8      45
+      9      45
+      a      45
+      b      97
+      c      47
+      d      47
+      e      47
+      f      47
+      10      47
+      11      47
+      12      47
+      13      47
+      14      47
+      15      47
+      16      47
+      17      47
+      18      47
+      19      53
+      1a      53
+      1b      53
+      1c      53
+      1d      53
+      1e      53
+      1f      53
+      20      53
+      21      53
+      22      53
+      23      57
+      24      57
+      25      57
+      26      57
+      27      57
+      28      57
+      29      57
+      2a      57
+      2b      57
+      2c      57
+      2d      57
+      2e      57
+      2f      58
+      30      58
+      31      58
+      32      58
+      33      58
+      34      58
+      35      58
+      36      58
+      37      58
+      38      58
+      39      58
+      3a      58
+      3b      59
+      3c      59
+      3d      59
+      3e      59
+      46      60
+      47      60
+      4b      60
+      4c      60
+      50      60
+      51      60
+      52      60
+      53      60
+      54      60
+      55      61
+      58      64
+      59      64
+      5a      64
+      5b      64
+      5c      64
+      60      65
+      61      65
+      62      65
+      63      65
+      64      70
+      65      70
+      66      70
+      67      70
+      68      70
+      69      70
+      6a      70
+      6b      70
+      6c      70
+      6d      71
+      6e      71
+      6f      71
+      70      71
+      71      71
+      72      72
+      73      72
+      74      72
+      75      72
+      76      72
+      7a      76
+      7b      76
+      7c      76
+      7d      76
+      7e      76
+      7f      76
+      80      76
+      81      76
+      82      77
+      85      80
+      86      80
+      87      80
+      88      80
+      89      80
+      8a      80
+      8b      80
+      8c      80
+      8d      84
+      8e      84
+      8f      84
+      90      84
+      91      84
+      92      84
+      93      84
+      94      84
+      95      84
+      96      84
+      97      84
+      98      84
+      99      84
+      a4      84
+      a5      84
+      a6      84
+      a7      84
+      a8      84
+      a9      84
+      aa      84
+      ab      84
+      ac      84
+      ad      84
+      ae      84
+      af      84
+      b0      85
+      b1      85
+      b2      85
+      b3      85
+      b4      85
+      b8      86
+      b9      86
+      ba      86
+      bb      86
+      bc      86
+      bd      86
+      be      86
+      bf      86
+      c3      91
+      c4      91
+      c5      91
+      c6      91
+      c7      91
+      c8      91
+      c9      91
+      cd      92
+      cf      93
+      d0      93
+      d1      93
+      d2      93
+      d3      93
+      d7      54
+   }
+}
+
+Lines mapping:
+8 <-> 9
+9 <-> 10
+10 <-> 42
+13 <-> 12
+14 <-> 13
+15 <-> 14
+16 <-> 15
+18 <-> 17
+21 <-> 21
+24 <-> 24
+25 <-> 25
+26 <-> 26
+29 <-> 30
+31 <-> 32
+35 <-> 36
+36 <-> 37
+37 <-> 38
+40 <-> 42
+43 <-> 45
+44 <-> 46
+45 <-> 98
+48 <-> 48
+49 <-> 59
+50 <-> 60
+51 <-> 61
+53 <-> 65
+56 <-> 66
+59 <-> 71
+60 <-> 72
+61 <-> 73
+64 <-> 77
+66 <-> 81
+69 <-> 85
+70 <-> 86
+73 <-> 87
+77 <-> 92
+78 <-> 93
+79 <-> 94
+82 <-> 55
+Not mapped:
+19
+27
+38
+39
+54
+62
+71
+74
+80
+81

@@ -1,0 +1,143 @@
+package pkg;
+
+import java.io.FileInputStream;
+import java.io.InputStream;
+
+public class TestTrySynchronized {
+   private static TestTrySynchronized monitor = new TestTrySynchronized();
+
+   public static void case01() throws Exception {
+      synchronized (monitor) {// 11
+         System.out.println("Inside synchronized block.");// 12
+      }// 13
+
+      InputStream stream = null;// 15
+
+      try {
+         stream = new FileInputStream("nul");// 17
+      } catch (Throwable e) {// 18
+         stream.close();// 19
+      }
+   }// 21
+
+   public static void case02() throws Exception {
+      synchronized (monitor) {// 25
+         System.out.println("Inside first synchronized block.");// 26
+      }// 27
+
+      InputStream stream = null;// 29
+
+      try {
+         stream = getInputStream();// 31
+         synchronized (monitor) {// 33
+            System.out.println("Inside second synchronized block.");// 34
+         }// 35
+      } catch (Throwable e) {// 37
+         stream.close();// 38
+      }
+   }// 41
+
+   private static InputStream getInputStream() {
+      return null;// 44
+   }
+}
+
+class 'pkg/TestTrySynchronized' {
+   method 'case01 ()V' {
+      0      9
+      1      9
+      2      9
+      5      9
+      6      10
+      7      10
+      8      10
+      9      10
+      a      10
+      b      10
+      c      10
+      d      10
+      f      11
+      18      13
+      19      13
+      1e      16
+      1f      16
+      23      16
+      27      17
+      28      18
+      29      18
+      2a      18
+      2b      18
+      2c      20
+   }
+
+   method 'case02 ()V' {
+      0      23
+      1      23
+      2      23
+      5      23
+      6      24
+      7      24
+      8      24
+      9      24
+      a      24
+      b      24
+      c      24
+      d      24
+      f      25
+      18      27
+      19      27
+      1a      30
+      1b      30
+      1c      30
+      1d      30
+      1e      31
+      1f      31
+      20      31
+      23      31
+      24      32
+      25      32
+      26      32
+      27      32
+      28      32
+      29      32
+      2a      32
+      2b      32
+      2d      33
+      39      34
+      3a      35
+      3b      35
+      3c      35
+      3d      35
+      3e      37
+   }
+
+   method 'getInputStream ()Ljava/io/InputStream;' {
+      0      40
+      1      40
+   }
+}
+
+Lines mapping:
+11 <-> 10
+12 <-> 11
+13 <-> 12
+15 <-> 14
+17 <-> 17
+18 <-> 18
+19 <-> 19
+21 <-> 21
+25 <-> 24
+26 <-> 25
+27 <-> 26
+29 <-> 28
+31 <-> 31
+33 <-> 32
+34 <-> 33
+35 <-> 34
+37 <-> 35
+38 <-> 36
+41 <-> 38
+44 <-> 41
+Not mapped:
+20
+39
