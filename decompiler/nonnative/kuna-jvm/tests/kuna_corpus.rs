@@ -59,6 +59,7 @@ fn unit(path: &str, content: &str) -> DecompiledClass {
         path: path.to_string(),
         content: content.to_string(),
         mapping: None,
+        ..DecompiledClass::default()
     }
 }
 

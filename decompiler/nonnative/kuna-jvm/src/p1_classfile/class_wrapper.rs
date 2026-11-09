@@ -3,11 +3,15 @@
 //! Methods are decompiled on the calling thread. With `max-time-per-method`
 //! set, Vineflower runs each `MethodProcessor` on a watchdog thread and kills
 //! it at the deadline (`killThread`, not ported); here that branch runs the
-//! same schedule inline, with no deadline yet.
+//! same schedule inline under a cooperative deadline that the schedule's
+//! cancelation polls enforce, and a method that overruns it ends as the
+//! killed one does (see [`ClassWrapper::code_to_java_on_watchdog`]).
 
 use std::fmt;
+use std::panic::{self, AssertUnwindSafe};
+use std::time::{Duration, Instant};
 
-use crate::cancelation_manager::CanceledException;
+use crate::cancelation_manager::{CancelationManager, CanceledException, MethodDeadlineExceeded};
 use crate::classes_processor::ClassNode;
 use crate::code_constants::ACC_STATIC;
 use crate::decompiler_context::{java_parse_int, DecompilerContext};
@@ -129,13 +133,20 @@ impl ClassWrapper {
                             spec,
                         ))
                     } else {
-                        Some(Self::code_to_java_on_watchdog(
+                        match Self::code_to_java_on_watchdog(
                             class_struct,
                             mt,
                             &md,
                             var_proc,
                             spec,
-                        ))
+                            max_sec,
+                        ) {
+                            Ok(root) => Some(root),
+                            Err(timeout) => {
+                                error = Some(timeout);
+                                None
+                            }
+                        }
                     }
                 } else {
                     Self::name_parameters(class_struct, mt, &md, var_proc, vc);
@@ -190,18 +201,39 @@ impl ClassWrapper {
         DecompilerContext::get_logger().end_class();
     }
 
-    /// The `max-time-per-method` branch: Java runs the schedule on a watchdog
-    /// thread that is killed at the deadline (logging "Processing time limit
-    /// exceeded for method …" and recording a `TimeoutException`); this runs it
-    /// inline without a deadline.
+    /// The `max-time-per-method` branch. Java runs the schedule on a watchdog
+    /// thread, waking every 200 ms; past `maxSec` seconds it logs "Processing
+    /// time limit exceeded for method …", kills the thread and records a new
+    /// `TimeoutException` as the method's error, leaving it without a body.
+    /// Here the deadline is armed for the schedule's polls; `Err` is that
+    /// `TimeoutException`. Anything else the schedule throws passes through
+    /// untouched (with its original location), as the Java rethrows it.
     fn code_to_java_on_watchdog(
         cl: StructClass,
         mt: StructMethod,
         md: &MethodDescriptor,
         var_proc: VarProcessor,
         spec: Option<&LanguageSpec>,
-    ) -> RootStatement {
-        MethodProcessor::code_to_java(cl, mt, md, var_proc, spec)
+        max_sec: i32,
+    ) -> Result<RootStatement, Caught> {
+        let budget = Duration::from_millis((max_sec as i64 * 1000).max(200) as u64);
+        let previous = CancelationManager::set_method_deadline(Some(Instant::now() + budget));
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+            MethodProcessor::code_to_java(cl, mt, md, var_proc, spec)
+        }));
+        CancelationManager::set_method_deadline(previous);
+        match result {
+            Ok(root) => Ok(root),
+            Err(payload) if MethodDeadlineExceeded::is_payload(payload.as_ref()) => {
+                let message = format!(
+                    "Processing time limit exceeded for method {}, execution interrupted.",
+                    mt.get_name()
+                );
+                DecompilerContext::get_logger().write_message(&message, Severity::Error);
+                Err(try_catch(|| crate::rt::throw("TimeoutException", "")).unwrap_err())
+            }
+            Err(payload) => panic::resume_unwind(payload),
+        }
     }
 
     /// The no-code branch of `init`: `this` and the parameters get `var<index>` names.

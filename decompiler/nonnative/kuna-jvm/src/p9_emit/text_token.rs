@@ -23,6 +23,8 @@ pub enum TextTokenKind {
     Field(FieldTextToken),
     Method(MethodTextToken),
     Variable(VariableTextToken),
+    /// A zero-width position kuna records (see `kuna_spans`); never visited.
+    KunaMark(u32),
 }
 
 impl TextToken {
@@ -49,6 +51,7 @@ impl TextToken {
             TextTokenKind::Field(t) => FieldTextToken::visit(t, self, visitor),
             TextTokenKind::Method(t) => MethodTextToken::visit(t, self, visitor),
             TextTokenKind::Variable(t) => VariableTextToken::visit(t, self, visitor),
+            TextTokenKind::KunaMark(_) => {}
         }
     }
 

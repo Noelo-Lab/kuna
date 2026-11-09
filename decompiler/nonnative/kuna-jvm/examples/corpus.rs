@@ -327,6 +327,7 @@ fn stored(case: &Case, dir: &Path) -> CaseResult {
             path: case.compare[0].clone(),
             content: String::from_utf8_lossy(&bytes).into_owned(),
             mapping: None,
+            ..DecompiledClass::default()
         }],
         Err(_) => Vec::new(),
     };

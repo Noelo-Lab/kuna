@@ -19,6 +19,8 @@ use crate::fernflower::DecompiledClass;
 use crate::i_decompiled_data::IDecompiledData;
 use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::kuna_partition::{self, Phase, RootSelection};
+use crate::kuna_spans::{self, ClassSpan, MethodSpan};
 use crate::rt::{rethrow, try_catch, Caught, JLinkedHashSet};
 use crate::struct_class::StructClass;
 use crate::struct_context::{is_io_exception, qualified_name_of};
@@ -176,6 +178,18 @@ impl ContextUnit {
         loader: &dyn Fn(&str) -> Option<StructClass>,
         sink: &mut dyn FnMut(DecompiledClass),
     ) {
+        self.save_selected(loader, sink, None);
+    }
+
+    /// [`ContextUnit::save`] restricted to `selection` (`None`: every class):
+    /// the selected roots are pre-processed in the unit's order, and the
+    /// delivered ones among them are then written, in that order, to `sink`.
+    pub fn save_selected(
+        self,
+        loader: &dyn Fn(&str) -> Option<StructClass>,
+        sink: &mut dyn FnMut(DecompiledClass),
+        selection: Option<&RootSelection>,
+    ) {
         if !self.is_own() {
             jthrow!(IllegalStateException; "Trying to save non-own unit?");
         }
@@ -206,7 +220,9 @@ impl ContextUnit {
             if let Some(entry_name) = entry_name {
                 let qualified_name = qualified_name_of(cl);
                 if seen.add(qualified_name.clone()) {
-                    to_dump.push(ClassContext::new(cl, entry_name));
+                    if selection.is_none_or(|s| s.processes(&qualified_name)) {
+                        to_dump.push(ClassContext::new(cl, entry_name));
+                    }
                 } else {
                     DecompilerContext::get_logger().write_message(
                         &format!("Skipping writing already existing class: {qualified_name}"),
@@ -221,7 +237,9 @@ impl ContextUnit {
             futures.push(Self::run_on_worker(|| {
                 self.set_context(root_context.as_ref());
                 class_ctx.ctx = DecompilerContext::get_current_context();
+                kuna_partition::enter(Some((&qualified_name_of(class_ctx.cl), Phase::Process)));
                 let processed = try_catch(|| decompiled_data.process_class(class_ctx.cl));
+                kuna_partition::enter(None);
                 if let Err(thr) = processed {
                     DecompilerContext::get_logger().write_message_throwable(
                         &format!(
@@ -240,16 +258,27 @@ impl ContextUnit {
         let mut futures: Vec<Result<(), Caught>> = Vec::new();
 
         for class_ctx in to_dump.iter_mut() {
+            if selection.is_some_and(|s| !s.delivers(&qualified_name_of(class_ctx.cl))) {
+                continue;
+            }
             if let Some(pending_error) = &class_ctx.pending_error {
                 let mut buf = TextBuffer::new();
                 ClassWriter::write_exception(&mut buf, pending_error);
                 class_ctx.class_content = Some(buf.convert_to_string_and_allow_data_discard());
+                class_ctx.error = Some(pending_error.message.clone());
                 continue;
             }
 
             futures.push(Self::run_on_worker(|| {
                 DecompilerContext::set_current_context(class_ctx.ctx.clone());
+                kuna_partition::enter(Some((&qualified_name_of(class_ctx.cl), Phase::Write)));
+                kuna_spans::begin();
                 class_ctx.class_content = decompiled_data.get_class_content(class_ctx.cl);
+                let recorded = kuna_spans::take();
+                kuna_partition::enter(None);
+                class_ctx.error = recorded.error;
+                class_ctx.classes = recorded.classes;
+                class_ctx.methods = recorded.methods;
                 if DecompilerContext::get_option(IFernflowerPreferences::BYTECODE_SOURCE_MAPPING) {
                     class_ctx.mapping = Some(
                         DecompilerContext::get_bytecode_source_mapper()
@@ -262,12 +291,19 @@ impl ContextUnit {
         Self::wait_for_all(futures);
 
         for cls in to_dump {
+            let qualified_name = qualified_name_of(cls.cl);
+            if selection.is_some_and(|s| !s.delivers(&qualified_name)) {
+                continue;
+            }
             if let Some(class_content) = cls.class_content {
                 sink(DecompiledClass {
-                    qualified_name: qualified_name_of(cls.cl),
+                    qualified_name,
                     path: cls.entry_name,
                     content: class_content,
                     mapping: cls.mapping,
+                    error: cls.error,
+                    classes: cls.classes,
+                    methods: cls.methods,
                 });
             }
         }
@@ -358,6 +394,9 @@ struct ClassContext {
     class_content: Option<String>,
     mapping: Option<Vec<i32>>,
     pending_error: Option<Caught>,
+    error: Option<String>,
+    classes: Vec<ClassSpan>,
+    methods: Vec<MethodSpan>,
 }
 
 impl ClassContext {
@@ -369,6 +408,9 @@ impl ClassContext {
             class_content: None,
             mapping: None,
             pending_error: None,
+            error: None,
+            classes: Vec::new(),
+            methods: Vec::new(),
         }
     }
 

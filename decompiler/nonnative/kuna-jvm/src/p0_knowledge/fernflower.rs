@@ -12,12 +12,13 @@
 //! keeps them for that), so no class-scope object may die earlier.
 
 use std::cell::{Cell, OnceCell};
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::rc::Rc;
 
 use crate::class_writer::ClassWriter;
 use crate::classes_processor::{ClassNode, ClassNodeType, ClassesProcessor};
-use crate::context_source::IContextSource;
+use crate::context_source::{read_class_info, IContextSource};
 use crate::converter_helper::ConverterHelper;
 use crate::decompiler_context::DecompilerContext;
 use crate::i_decompiled_data::IDecompiledData;
@@ -27,6 +28,8 @@ use crate::i_identifier_renamer::IIdentifierRenamer;
 use crate::identifier_converter::IdentifierConverter;
 use crate::identity_renamer_factory::IdentityRenamerFactory;
 use crate::jdk_runtime::JdkRuntime;
+use crate::kuna_partition::RootSelection;
+use crate::kuna_spans::{ClassSpan, MethodSpan};
 use crate::pool_interceptor::PoolInterceptor;
 use crate::rt::{try_catch, Caught, JHashMap, JavaException, JavaStr, Shared};
 use crate::struct_class::StructClass;
@@ -35,8 +38,9 @@ use crate::text_buffer::TextBuffer;
 use crate::text_token_dump_visitor::TextTokenDumpVisitor;
 use crate::text_token_visitor::{Factory, TextTokenVisitor};
 
-/// One decompiled root class, as the Java's `IOutputSink.acceptClass` receives it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// One decompiled root class, as the Java's `IOutputSink.acceptClass` receives it,
+/// plus where its classes and methods lie in `content` (kuna).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DecompiledClass {
     pub qualified_name: String,
     /// The output entry, e.g. `a/b/C.java`.
@@ -44,6 +48,13 @@ pub struct DecompiledClass {
     pub content: String,
     /// The original line mapping when `bytecode-source-mapping` is on.
     pub mapping: Option<Vec<i32>>,
+    /// Why the class could not be written normally (`content` is then the
+    /// error comment Vineflower writes in its place).
+    pub error: Option<String>,
+    /// Every class written into `content`, in writing order.
+    pub classes: Vec<ClassSpan>,
+    /// Every method written into `content`, in writing order.
+    pub methods: Vec<MethodSpan>,
 }
 
 /// `JrtFinder.CURRENT`.
@@ -55,6 +66,7 @@ pub struct Fernflower {
     helper: Option<Rc<dyn IIdentifierRenamer>>,
     converter: Option<IdentifierConverter>,
     data: Rc<FernflowerDecompiledData>,
+    loaded: bool,
 }
 
 /// The `IDecompiledData` half of `Fernflower`, which the struct context and its
@@ -171,6 +183,7 @@ impl Fernflower {
             helper,
             converter,
             data,
+            loaded: false,
         }
     }
 
@@ -223,15 +236,79 @@ impl Fernflower {
     /// Renames (when enabled), loads and decompiles every own class; each
     /// finished root class goes to `sink`, then the class scope is reset.
     pub fn decompile_context(&mut self, sink: &mut dyn FnMut(DecompiledClass)) {
+        self.load();
+
+        self.struct_context.save_context(sink);
+
+        Self::end_class_scope();
+        self.loaded = false;
+    }
+
+    /// Renames (when enabled) and loads every own class into class nodes, once
+    /// per run; [`Fernflower::decompile_context`] does it itself when needed.
+    pub fn load(&mut self) {
+        if self.loaded {
+            return;
+        }
+        self.loaded = true;
+
         if let Some(converter) = &mut self.converter {
             converter.rename();
         }
 
         self.class_processor.load_classes(self.helper.as_deref());
+    }
 
-        self.struct_context.save_context(sink);
+    /// The root classes a full run delivers, in its order (own units in order,
+    /// each in entry order); loads first. Reads only cached classes and class
+    /// headers, so it leaves the run unchanged.
+    pub fn root_classes(&mut self) -> Vec<String> {
+        self.load();
+        let mut result = Vec::new();
+        for unit in self.struct_context.get_units() {
+            if !unit.is_own() {
+                continue;
+            }
+            let mut seen = BTreeSet::new();
+            for entry in unit.get_class_names() {
+                let cached = self
+                    .struct_context
+                    .with(|d| d.classes.get(&entry).copied().flatten());
+                let name = match cached {
+                    Some(cl) => Some(cl.qualified_name()),
+                    None => unit
+                        .get_class_bytes(&entry)
+                        .and_then(|bytes| read_class_info(&bytes).ok())
+                        .map(|info| info.this_class),
+                };
+                let Some(name) = name else {
+                    continue;
+                };
+                let is_root = root_class_node(self.class_processor, &name)
+                    .is_some_and(|node| class_node_type(node) == ClassNodeType::Root);
+                if is_root && seen.insert(name.clone()) {
+                    result.push(name);
+                }
+            }
+        }
+        result
+    }
+
+    /// [`Fernflower::decompile_context`] for the roots of `selection` only: they
+    /// are pre-processed and written in the full run's order; only the
+    /// delivered ones reach `sink`. The whole class universe stays loaded.
+    pub fn decompile_selected(
+        &mut self,
+        selection: &RootSelection,
+        sink: &mut dyn FnMut(DecompiledClass),
+    ) {
+        self.load();
+
+        self.struct_context
+            .save_context_selected(sink, Some(selection));
 
         Self::end_class_scope();
+        self.loaded = false;
     }
 
     /// `rt::reset_class_scope()` for the whole decompilation, keeping the
@@ -329,11 +406,13 @@ impl IDecompiledData for FernflowerDecompiledData {
             }
 
             let res = buffer.borrow().convert_to_string_and_allow_data_discard();
+            crate::kuna_spans::finish(&buffer.borrow(), &res);
             Some(res)
         });
         match result {
             Ok(res) => res,
             Err(t) => {
+                crate::kuna_spans::fail(&qualified_name_of(cl), &t);
                 DecompilerContext::get_logger().write_message_throwable(
                     &format!(
                         "Class {} couldn't be fully decompiled.",
