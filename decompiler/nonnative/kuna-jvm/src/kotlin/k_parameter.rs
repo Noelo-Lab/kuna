@@ -3,6 +3,11 @@
 //! An immutable record compared both by identity (`KContract.KExpression`
 //! tests `== THIS_TYPE`) and by value (a `DefaultArgsMap` key), so it is an
 //! `Rc`-backed value: `equals` is the record's, `ptr_eq` is Java `==`.
+//!
+//! kuna fix `kt_vararg_from_metadata`: in `stringify`, a parameter is
+//! `vararg` when it has a vararg element type, whatever its array type;
+//! Vineflower also requires `kotlin/Array`, so `vararg n: Int` printed as
+//! `n: IntArray`.
 
 use std::ops::Deref;
 use std::rc::Rc;
@@ -10,6 +15,7 @@ use std::rc::Rc;
 use crate::k_type::KType;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_flags::Flags;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::jstring::java_string_hash;
 use crate::rt::{JavaEq, JavaHash};
 use crate::text_buffer::TextBuffer;
@@ -91,7 +97,11 @@ impl KParameter {
             buf.append("noinline ");
         }
 
-        let is_vararg = self.vararg_type.is_some() && self.type_.k().kotlin_type == "kotlin/Array";
+        let is_vararg = if kuna_fixes::enabled(KunaFix::KtVarargFromMetadata) {
+            self.vararg_type.is_some()
+        } else {
+            self.vararg_type.is_some() && self.type_.k().kotlin_type == "kotlin/Array"
+        };
 
         if is_vararg {
             buf.append("vararg ");

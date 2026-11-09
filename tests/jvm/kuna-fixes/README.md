@@ -25,13 +25,18 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestAssertExpressionPosition` | `statement_as_expression` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects |
 | `pkg/TestCapturedReceiverKt` | `kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
 | `pkg/TestCatchLoopBack` | `catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
+| `pkg/TestConstructorDiamond` | `kt_constructor_diamond` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the constructor calls whose type arguments Kotlin infers (`return Bag(0)`, `Pair(a, b)`) are written without the Java diamond `<>` |
+| `pkg/TestDefaultArgAssignedParam` | `kt_default_arg_assigned_param` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `chain` and `twice`, whose defaults are computed through locals, print the unknown default `= ...` instead of the first local's initializer `this.measure(s)`; `plain` keeps `b: Int = this.measure(a) + 1` |
 | `pkg/TestDefaultArgCompoundBranch` | `kt_default_arg_compound_branch` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7` |
+| `pkg/TestDefaultArgsCtorDescriptor` | `kt_default_args_ctor_descriptor` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the inner class `Sink` declares its defaults (`finished: Boolean = false, limit: Long = 16L`) instead of the unknown `= ...` |
 | `pkg/TestDefaultArgsSuperCall` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call |
+| `pkg/TestDefaultArgsSuperNamed` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `skipsMiddle` (`TestDefaultArgsSuperNamed(a = x, c = 9L)`), `innerSuper` (an inner superclass, `Inner(z)`) and `picksPrimary` (`Overloaded(a = x)`, named because `Overloaded(x)` would select the secondary constructor) decompile; `picksSecondary` keeps `Overloaded(x)` |
 | `pkg/TestDiamondExternalClass` | `external_class_diamond` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are |
 | `pkg/TestEnumNoConstants` | `enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
 | `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
+| `pkg/TestLocalVisibilityComment` | `kt_local_visibility_comment` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0 |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestObjectSuperCall` | `kt_object_super_call` | kotlinc 2.0.0 | an object expression's superclass is written with its constructor arguments, object : Base(k + 1, s) (Vineflower prints object : Base) |
 | `pkg/TestRecordPatternInTry` | `nested_handler_copies` | javac 21.0.12.1 (`--release 21 -g`) | `describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's |
@@ -45,6 +50,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestTypeSwitchEnumLabel` | `type_switch_enum_label` | javac 21.0.12.1 -g | case Kind.CIRCLE beside type patterns in a switch on an interface: the enum label is resolved and printed qualified |
 | `pkg/TestTypeSwitchLabelLookup` | `type_switch_label_lookup` | javac 25.0.5 -g | cases with several labels (case Integer _, String _; case Kind.CIRCLE, Kind.SQUARE; case 5, 7) and an integer label equal to a later switch index: every label is resolved, multi-pattern cases print as one unnamed-pattern label |
 | `pkg/TestTypeSwitchPatternType` | `type_switch_pattern_type` | javac 21.0.12.1 (no -g) | case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type |
+| `pkg/TestVarargFromMetadata` | `kt_vararg_from_metadata` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the primary constructor's `Array<String>` parameter is no longer written `vararg names: Any`, and the `vararg` primitive parameters of a constructor and a function keep `vararg` with their element type (`vararg rest: Int`, not `rest: IntArray`) |
 
 ## Diffs (compat -> default)
 
@@ -452,12 +458,54 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     public int readOneCatch() throws TestCatchLoopBack.IoError {
 ```
 
+### `pkg/TestConstructorDiamond`
+
+```diff
+--- expected-compat/pkg/TestConstructorDiamond.kt
++++ expected/pkg/TestConstructorDiamond.kt
+@@ -4,11 +4,11 @@
+    private final val bag: pkg.TestConstructorDiamond.Bag<String> = TestConstructorDiamond.Bag(4)
+ 
+    public fun empty(): pkg.TestConstructorDiamond.Bag<Long> {
+-      return TestConstructorDiamond.Bag<>(0)
++      return TestConstructorDiamond.Bag(0)
+    }
+ 
+    public fun <A, B> pair(a: A, b: B): pkg.TestConstructorDiamond.Pair<A, B> {
+-      return (TestConstructorDiamond.Pair<A, B>)TestConstructorDiamond.Pair<>(a, b)
++      return (TestConstructorDiamond.Pair<A, B>)TestConstructorDiamond.Pair(a, b)
+    }
+ 
+    public fun explicit(): Any {
+```
+
+### `pkg/TestDefaultArgAssignedParam`
+
+```diff
+--- expected-compat/pkg/TestDefaultArgAssignedParam.kt
++++ expected/pkg/TestDefaultArgAssignedParam.kt
+@@ -4,11 +4,11 @@
+ 
+ @SourceDebugExtension(["SMAP\nTestDefaultArgAssignedParam.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestDefaultArgAssignedParam.kt\npkg/TestDefaultArgAssignedParam\n*L\n1#1,14:1\n12#1:15\n12#1:16\n*S KotlinDebug\n*F\n+ 1 TestDefaultArgAssignedParam.kt\npkg/TestDefaultArgAssignedParam\n*L\n4#1:15\n6#1:16\n*E\n"])
+ public class TestDefaultArgAssignedParam {
+-   public fun chain(s: Int, t: Int = this.measure(s)): Int {
++   public fun chain(s: Int, t: Int = ...): Int {
+       return s + t
+    }
+ 
+-   public fun twice(x: Int, y: Int = this.measure(x)): Int {
++   public fun twice(x: Int, y: Int = ...): Int {
+       return x * y
+    }
+ 
+```
+
 ### `pkg/TestDefaultArgCompoundBranch`
 
 ```diff
 --- expected-compat/pkg/TestDefaultArgCompoundBranch.kt
 +++ expected/pkg/TestDefaultArgCompoundBranch.kt
-@@ -1,16 +1,27 @@
+@@ -1,16 +1,26 @@
  package pkg
 +
 +import kotlin.jvm.internal.SourceDebugExtension
@@ -484,8 +532,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +         }
 +
 +         @SourceDebugExtension(["SMAP\nTestDefaultArgCompoundBranch.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestDefaultArgCompoundBranch.kt\npkg/TestDefaultArgCompoundBranch$make$1$Box\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n*L\n1#1,12:1\n1557#2:13\n1628#2,3:14\n*S KotlinDebug\n*F\n+ 1 TestDefaultArgCompoundBranch.kt\npkg/TestDefaultArgCompoundBranch$make$1$Box\n*L\n7#1:13\n7#1:14,3\n*E\n"])
-+         // $VF: local visibility outside of methodSupplier
-+internal inner class Box(sizes: List<Int> = ...) {
++         /* $VF: local visibility outside of method */ internal inner class Box(sizes: List<Int> = ...) {
 +            public final val sizes: List<Int>
 +
 +            init {
@@ -497,12 +544,28 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestDefaultArgsCtorDescriptor`
+
+```diff
+--- expected-compat/pkg/TestDefaultArgsCtorDescriptor.kt
++++ expected/pkg/TestDefaultArgsCtorDescriptor.kt
+@@ -17,7 +17,7 @@
+       }
+    }
+ 
+-   public inner class Sink(finished: Boolean = ..., limit: Long = ...) {
++   public inner class Sink(finished: Boolean = false, limit: Long = 16L) {
+       public final val finished: Boolean
+       public final val limit: Long
+ 
+```
+
 ### `pkg/TestDefaultArgsSuperCall`
 
 ```diff
 --- expected-compat/pkg/TestDefaultArgsSuperCall.kt
 +++ expected/pkg/TestDefaultArgsSuperCall.kt
-@@ -12,27 +12,21 @@
+@@ -12,46 +12,35 @@
     }
  
     public fun twoDefaults(x: Int): Any {
@@ -516,8 +579,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      return object {
 +         public final val sub: pkg.TestDefaultArgsSuperCall.twoDefaults.1.Sub = Sub()
 +
-+         // $VF: local visibility outside of methodSupplier
-+internal inner class Sub : TestDefaultArgsSuperCall(x)
++         /* $VF: local visibility outside of method */ internal inner class Sub : TestDefaultArgsSuperCall(x)
 +      }
     }
  
@@ -536,12 +598,107 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      return object {
 +         public final val sub: pkg.TestDefaultArgsSuperCall.oneDefault.1.Sub = Sub()
 +
-+         // $VF: local visibility outside of methodSupplier
-+internal inner class Sub : TestDefaultArgsSuperCall(x, y)
++         /* $VF: local visibility outside of method */ internal inner class Sub : TestDefaultArgsSuperCall(x, y)
 +      }
     }
  
     public fun noDefault(x: Int): Any {
+       return object {
+          public final val sub: pkg.TestDefaultArgsSuperCall.noDefault.1.Sub = Sub()
+ 
+-         // $VF: local visibility outside of methodSupplier
+-internal inner class Sub : TestDefaultArgsSuperCall(x, "x", 1L)
++         /* $VF: local visibility outside of method */ internal inner class Sub : TestDefaultArgsSuperCall(x, "x", 1L)
+       }
+    }
+ 
+    public fun otherConstructor(x: Int): Any {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: new pkg/TestDefaultArgsSuperCall$otherConstructor$1
+-      // 3: dup
+-      // 4: iload 1
+-      // 5: invokespecial pkg/TestDefaultArgsSuperCall$otherConstructor$1.<init> (I)V
+-      // 8: areturn
++      return object {
++         public final val sub: pkg.TestDefaultArgsSuperCall.otherConstructor.1.Sub = Sub()
++
++         /* $VF: local visibility outside of method */ internal inner class Sub : TestDefaultArgsSuperCall.Overloaded(a = x)
++      }
+    }
+ 
+    public open class Overloaded(a: Int, b: String = "b") {
+```
+
+### `pkg/TestDefaultArgsSuperNamed`
+
+```diff
+--- expected-compat/pkg/TestDefaultArgsSuperNamed.kt
++++ expected/pkg/TestDefaultArgsSuperNamed.kt
+@@ -12,46 +12,38 @@
+    }
+ 
+    public fun skipsMiddle(x: Int): Any {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: new pkg/TestDefaultArgsSuperNamed$skipsMiddle$1
+-      // 3: dup
+-      // 4: iload 1
+-      // 5: invokespecial pkg/TestDefaultArgsSuperNamed$skipsMiddle$1.<init> (I)V
+-      // 8: areturn
++      return object {
++         public final val sub: pkg.TestDefaultArgsSuperNamed.skipsMiddle.1.Sub = Sub()
++
++         /* $VF: local visibility outside of method */ internal inner class Sub : TestDefaultArgsSuperNamed(a = x, c = 9L)
++      }
+    }
+ 
+    public fun innerSuper(z: Int): Any {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: new pkg/TestDefaultArgsSuperNamed$innerSuper$1
+-      // 3: dup
+-      // 4: aload 0
+-      // 5: iload 1
+-      // 6: invokespecial pkg/TestDefaultArgsSuperNamed$innerSuper$1.<init> (Lpkg/TestDefaultArgsSuperNamed;I)V
+-      // 9: areturn
++      return object {
++         public final val sub: pkg.TestDefaultArgsSuperNamed.innerSuper.1.Sub = Sub()
++
++         /* $VF: local visibility outside of method */ internal inner class Sub : TestDefaultArgsSuperNamed.Inner(z)
++      }
+    }
+ 
+    public fun picksPrimary(x: Int): Any {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: new pkg/TestDefaultArgsSuperNamed$picksPrimary$1
+-      // 3: dup
+-      // 4: iload 1
+-      // 5: invokespecial pkg/TestDefaultArgsSuperNamed$picksPrimary$1.<init> (I)V
+-      // 8: areturn
++      return object {
++         public final val sub: pkg.TestDefaultArgsSuperNamed.picksPrimary.1.Sub = Sub()
++
++         /* $VF: local visibility outside of method */ internal inner class Sub : TestDefaultArgsSuperNamed.Overloaded(a = x)
++      }
+    }
+ 
+    public fun picksSecondary(x: Int): Any {
+       return object {
+          public final val sub: pkg.TestDefaultArgsSuperNamed.picksSecondary.1.Sub = Sub()
+ 
+-         // $VF: local visibility outside of methodSupplier
+-internal inner class Sub : TestDefaultArgsSuperNamed.Overloaded(x)
++         /* $VF: local visibility outside of method */ internal inner class Sub : TestDefaultArgsSuperNamed.Overloaded(x)
+       }
+    }
+ 
+-   public open inner class Inner(p: Int, q: String = ...) {
++   public open inner class Inner(p: Int, q: String = "q") {
+       public final val p: Int
+       public final val q: String
+ 
 ```
 
 ### `pkg/TestDiamondExternalClass`
@@ -969,6 +1126,23 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
  
        class Node extends TestInnerOfGenericOuter.Ref<TestInnerOfGenericOuter<E>.Itr> {
+```
+
+### `pkg/TestLocalVisibilityComment`
+
+```diff
+--- expected-compat/pkg/TestLocalVisibilityComment.kt
++++ expected/pkg/TestLocalVisibilityComment.kt
+@@ -11,8 +11,7 @@
+       return object {
+          public final val sub: pkg.TestLocalVisibilityComment.make.1.Sub = Sub()
+ 
+-         // $VF: local visibility outside of methodSupplier
+-internal inner class Sub : TestLocalVisibilityComment(x)
++         /* $VF: local visibility outside of method */ internal inner class Sub : TestLocalVisibilityComment(x)
+       }
+    }
+ }
 ```
 
 ### `pkg/TestMethodRefWildcardReceiver`
@@ -3181,4 +3355,30 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      }
     }
  }
+```
+
+### `pkg/TestVarargFromMetadata`
+
+```diff
+--- expected-compat/pkg/TestVarargFromMetadata.kt
++++ expected/pkg/TestVarargFromMetadata.kt
+@@ -1,6 +1,6 @@
+ package pkg
+ 
+-public class TestVarargFromMetadata(vararg names: Any, counts: IntArray) {
++public class TestVarargFromMetadata(names: Array<String>, counts: IntArray) {
+    public final val names: Array<String>
+    public final val counts: IntArray
+ 
+@@ -10,8 +10,8 @@
+    }
+ 
+    public constructor(vararg parts: String) : this(parts, IntArray(parts.length))
+-   public constructor(first: Int, rest: IntArray) : this(arrayOfNulls(0), rest)
+-   public fun sum(values: IntArray): Int {
++   public constructor(first: Int, vararg rest: Int) : this(arrayOfNulls(0), rest)
++   public fun sum(vararg values: Int): Int {
+       var total: Int = 0
+ 
+       for (v in values) {
 ```

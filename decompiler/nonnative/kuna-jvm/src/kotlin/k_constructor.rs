@@ -5,6 +5,16 @@
 //! constructor is written as a call of the constructor it stands for
 //! (`kuna_fix_kt_default_args_super_call`), where Vineflower removes only the
 //! marker argument and names a constructor that does not exist.
+//!
+//! kuna fix `kt_vararg_from_metadata`: in `parse`, a parameter gets a vararg
+//! element type only when its metadata has one; Vineflower gives every
+//! constructor parameter one, so every array parameter printed as `vararg`.
+//!
+//! kuna fix `kt_default_args_ctor_descriptor`: in `parse`, the
+//! default-arguments constructor's descriptor is the constructor's own
+//! parameters, then the masks and the marker; Vineflower spells the
+//! parameters from their Kotlin types (and the enum prefix), which misses an
+//! inner class's outer instance, so its defaults were never found.
 
 use std::rc::Rc;
 
@@ -119,15 +129,15 @@ impl KConstructor {
                 let flags = proto_parameter.get_flags();
                 let name = resolver.resolve(proto_parameter.get_name());
                 let type_ = KType::from(&proto_parameter.get_type(), resolver);
-                let vararg_type = KType::from(&proto_parameter.get_vararg_element_type(), resolver);
+                let vararg_type = if !kuna_fixes::enabled(KunaFix::KtVarargFromMetadata)
+                    || proto_parameter.has_vararg_element_type()
+                {
+                    Some(KType::from(&proto_parameter.get_vararg_element_type(), resolver))
+                } else {
+                    None
+                };
                 let type_id = proto_parameter.get_type_id();
-                parameters.push(KParameter::new(
-                    flags,
-                    name,
-                    type_,
-                    Some(vararg_type),
-                    type_id,
-                ));
+                parameters.push(KParameter::new(flags, name, type_, vararg_type, type_id));
             }
             let parameters: Rc<[KParameter]> = Rc::from(parameters);
 
@@ -171,13 +181,19 @@ impl KConstructor {
             let is_primary = !Flags::IS_SECONDARY.get(flags);
 
             let mut default_args_desc = String::from("(");
-            if Flags::CLASS_KIND.get(class_flags) == Some(ClassKind::EnumClass) {
-                default_args_desc.push_str("Ljava/lang/String;");
-                default_args_desc.push('I');
-            }
+            if kuna_fixes::enabled(KunaFix::KtDefaultArgsCtorDescriptor) {
+                for param in method.method_descriptor().params.iter() {
+                    default_args_desc.push_str(&param.to_string());
+                }
+            } else {
+                if Flags::CLASS_KIND.get(class_flags) == Some(ClassKind::EnumClass) {
+                    default_args_desc.push_str("Ljava/lang/String;");
+                    default_args_desc.push('I');
+                }
 
-            for parameter in parameters.iter() {
-                default_args_desc.push_str(&parameter.type_.0.to_string());
+                for parameter in parameters.iter() {
+                    default_args_desc.push_str(&parameter.type_.0.to_string());
+                }
             }
 
             default_args_desc.push_str(&"I".repeat(parameters.len() / 32 + 1));

@@ -4,6 +4,10 @@
 //! a static call of an anonymous class's method from a class nested in it is
 //! written unqualified instead of as `<unrepresentable>.m(...)`
 //! (`kuna_fix_anonymous_static_qualifier`).
+//!
+//! kuna fix `kt_default_args_super_call`: `append_param_list` writes the
+//! arguments by the names the fix sets (`kuna_arg_names`), leaving out the
+//! ones it names none; unset (always, but for that fix) changes nothing.
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -146,6 +150,9 @@ pub struct InvocationExprentData {
     pub boxing: BoxState,
     pub is_synthetic_null_check: bool,
     pub was_lazy_condy: bool,
+    /// kuna fix `kt_default_args_super_call`: per argument, the name it is
+    /// written with (`name = arg`), or `None` to leave it out.
+    pub kuna_arg_names: Option<Rc<[Option<String>]>>,
 }
 
 impl InvocationExprentData {
@@ -174,6 +181,7 @@ impl InvocationExprentData {
             boxing: BoxState::default(),
             is_synthetic_null_check: false,
             was_lazy_condy: false,
+            kuna_arg_names: None,
         }
     }
 }
@@ -1700,10 +1708,18 @@ impl InvocationExprent {
             buf.push_newline_group(indent, 0);
         }
 
+        let arg_names = self.d(|d| d.kuna_arg_names.clone());
         for i in start..lst_parameters.len() {
             if !mask_allows(&mask, i) {
                 continue;
             }
+            let arg_name = match &arg_names {
+                Some(names) => match names.get(i) {
+                    Some(Some(name)) => Some(name.clone()),
+                    _ => continue,
+                },
+                None => None,
+            };
             let mut buff = TextBuffer::new();
             let ambiguous = set_ambiguous_parameters.get(i);
 
@@ -1734,6 +1750,10 @@ impl InvocationExprent {
                 true,
                 true,
             );
+
+            if let Some(name) = arg_name {
+                buff.prepend(&format!("{name} = "));
+            }
 
             if buff.length() > 0 {
                 if !first_parameter {
@@ -2584,6 +2604,11 @@ impl InvocationExprent {
 
     pub fn get_string_descriptor(self) -> String {
         self.d(|d| d.string_descriptor.clone())
+    }
+
+    /// kuna fix `kt_default_args_super_call`: write the arguments by name.
+    pub fn set_kuna_arg_names(self, names: Rc<[Option<String>]>) {
+        self.d_mut(|d| d.kuna_arg_names = Some(names));
     }
 
     pub fn set_string_descriptor(self, string_descriptor: String) {

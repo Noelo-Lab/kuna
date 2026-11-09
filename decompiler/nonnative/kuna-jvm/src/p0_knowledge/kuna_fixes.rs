@@ -105,6 +105,21 @@ pub enum KunaFix {
     /// `kt_object_super_call`: an `object` expression's superclass is
     /// written with the arguments of the superclass constructor call.
     KtObjectSuperCall,
+    /// `kt_vararg_from_metadata`: a Kotlin parameter is `vararg` exactly when
+    /// its metadata gives it a vararg element type.
+    KtVarargFromMetadata,
+    /// `kt_default_arg_assigned_param`: a default value is read from the
+    /// default-arguments branch's assignment to the parameter itself.
+    KtDefaultArgAssignedParam,
+    /// `kt_constructor_diamond`: a Kotlin constructor call whose type
+    /// arguments are inferred is written without the Java diamond `<>`.
+    KtConstructorDiamond,
+    /// `kt_local_visibility_comment`: the note on a local declaration written
+    /// outside its function names the function and keeps the declaration's indent.
+    KtLocalVisibilityComment,
+    /// `kt_default_args_ctor_descriptor`: a constructor's default-arguments
+    /// constructor is looked up by the constructor's own descriptor.
+    KtDefaultArgsCtorDescriptor,
 }
 
 impl KunaFix {
@@ -136,6 +151,11 @@ impl KunaFix {
         KunaFix::KtReturnOutsideLambda,
         KunaFix::KtFailedMethodHidden,
         KunaFix::KtObjectSuperCall,
+        KunaFix::KtVarargFromMetadata,
+        KunaFix::KtDefaultArgAssignedParam,
+        KunaFix::KtConstructorDiamond,
+        KunaFix::KtLocalVisibilityComment,
+        KunaFix::KtDefaultArgsCtorDescriptor,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -167,6 +187,11 @@ impl KunaFix {
             KunaFix::KtReturnOutsideLambda => "kt_return_outside_lambda",
             KunaFix::KtFailedMethodHidden => "kt_failed_method_hidden",
             KunaFix::KtObjectSuperCall => "kt_object_super_call",
+            KunaFix::KtVarargFromMetadata => "kt_vararg_from_metadata",
+            KunaFix::KtDefaultArgAssignedParam => "kt_default_arg_assigned_param",
+            KunaFix::KtConstructorDiamond => "kt_constructor_diamond",
+            KunaFix::KtLocalVisibilityComment => "kt_local_visibility_comment",
+            KunaFix::KtDefaultArgsCtorDescriptor => "kt_default_args_ctor_descriptor",
         }
     }
 

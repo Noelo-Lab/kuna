@@ -1266,13 +1266,24 @@ default-arguments shape (n >= 1 parameters, n / 32 + 1 `int` masks, the marker);
 `int` constants that default only parameters of the constructor, at least one and only trailing
 ones; each left-out argument is a constant placeholder; the superclass has the synthetic
 default-arguments constructor and `<init>(P1..Pn)`, and its Kotlin metadata declares
-`<init>(P1..Pn)` with n value parameters and a default for each left-out one; and no other
+`<init>(P1..Pn)` with a default for each left-out value parameter; and no other
 constructor of the superclass could take the arguments that remain (one with that many
-parameters, a varargs one, or one with defaults of its own). The call then keeps its leading
+parameters, a varargs one, or one with defaults of its own). The masks number the value
+parameters, which for an inner superclass follow the outer instance (`<init>(Outer, P1..Pn)`);
+an outer instance is kept as a leading argument and hidden as usual. The call then keeps its leading
 arguments and the descriptor of `<init>(P1..Pn)`, and is printed `: Base(a)`, which Kotlin resolves
-to that constructor with the same defaults. Every other shape keeps Vineflower's code: a call that
-leaves out an argument before one it passes needs named arguments, which the parameter-list
-printer cannot write, and with a competing constructor the shorter call could select it. As the
+to that constructor with the same defaults. When leaving out trailing arguments is not enough,
+because an argument before a passed one is defaulted (`Base(x, c = 9L)`) or another constructor
+could take the arguments left (`Overloaded(a = x)` beside `constructor(n: Int)`), the call keeps
+its descriptor and arguments and every passed argument is written by name: the fix gives the
+invocation a name per argument (`InvocationExprent::set_kuna_arg_names`), and
+`decompiler/nonnative/kuna-jvm/src/substrate/invocation_exprent.rs (InvocationExprent::append_param_list)`
+writes `name = arg` for a named argument and leaves out the others (the placeholders, masks and
+marker). That needs a superclass without an outer instance, no passed `vararg` parameter (which
+by name needs a spread), and, from the metadata's names, defaults and varargs, exactly one
+constructor that a call naming those parameters can select: one having each name whose other
+parameters all have defaults or are `vararg`. The arguments are written in parameter order, the
+order the bytecode evaluates them. Every other shape keeps Vineflower's code. As the
 defect is the rewriting and not the lookup, the fix also changes the supertype calls Vineflower
 prints with placeholders without failing: okhttp 4.7.2's `RealWebSocket.WriterTask` and
 kotlin-stdlib 2.2.20's `TerminateException` lose their `false, 2` and `null, null, 6` and read
@@ -1620,3 +1631,63 @@ Vineflower. The default output differs from Vineflower's on code Vineflower prin
 object headers of okio, okhttp, kotlin-stdlib, kotlinx-coroutines and kotlin-reflect, which match
 the published sources (`object : Task(name, cancelable)`, `object : ForwardingSource(source)`,
 `object : AbstractList<Int>(), RandomAccess`).
+**`kt_vararg_from_metadata`.** A Kotlin `vararg` parameter carries a vararg element type in its
+metadata (`ValueParameter.varargElementType`). `decompiler/nonnative/kuna-jvm/src/kotlin/k_function.rs (KFunction::parse)`
+reads it only when present, but
+`decompiler/nonnative/kuna-jvm/src/kotlin/k_constructor.rs (KConstructor::parse)` reads it for
+every constructor parameter, and the protobuf getter returns the empty type, which prints `Any`.
+`decompiler/nonnative/kuna-jvm/src/kotlin/k_parameter.rs (KParameter::stringify)` then writes as
+`vararg` any parameter with an element type whose own type is `kotlin/Array`, so every array
+parameter of a constructor came out `vararg x: Any` (okio's `Options(byteStrings: Array<out
+ByteString>, ...)`, okhttp's `ConnectionSpec` with two of them, which Kotlin rejects), while a
+primitive or unsigned vararg (`vararg values: Int`, element type `Int` and type `IntArray`) failed
+the `kotlin/Array` test and lost its `vararg` in constructors and functions alike (`fun
+String.trim(chars: CharArray)` for `vararg chars: Char`). With the fix a constructor parameter
+has an element type only when its metadata has one, and a parameter is `vararg` exactly when it
+has one, written with that element type.
+
+**`kt_default_arg_assigned_param`.** The default of a parameter is read back from the
+default-arguments method's `if ((mask & bit) != 0)` branch
+(`decompiler/nonnative/kuna-jvm/src/kotlin/default_args_map.rs (DefaultArgsMap::from)`, see
+`kt_default_arg_compound_branch`), whose first statement Vineflower takes, when it is an
+assignment, for the assignment of the parameter. A default computed through locals the
+simplifier cannot fold (`t: Int = run { val u = measure(s); val v = u + u; v - 1 }`) is a basic
+block whose first statement assigns the first local, so the default printed was that local's
+initializer (`t: Int = this.measure(s)`), a different value. With the fix,
+`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_arg_assigned_param.rs (default_value)`
+accepts two shapes: a branch that is one assignment to a parameter slot (a variable below the
+first mask's slot), whose right-hand side is the default; and kotlinc's checked temporary for a
+platform-typed default, `tmp = E; Intrinsics.checkNotNull..(E or tmp, "..."); param = tmp`, whose
+default is `E` (okhttp's `Credentials.basic(charset = ISO_8859_1)`, kotlin-reflect's
+`CallerImpl.Method`). Any other branch records nothing and the parameter prints `= ...`.
+
+**`kt_constructor_diamond`.** Where a constructor call's type arguments follow from the expected
+type, `InvocationExprent::get_inferred_expr_type` records a single `GenericType::DUMMY_VAR`
+argument, which the Java writer prints as the diamond, `new ArrayList<>(4)`.
+`decompiler/nonnative/kuna-jvm/src/kotlin/k_new_exprent.rs (KNewExprent::to_java)` prints the
+same argument list, so Kotlin output had `ArrayList<>(4)`, which is not Kotlin. With the fix a
+diamond argument list is not printed: `ArrayList(4)`. Kotlin infers omitted constructor type
+arguments from the same two sources Java's diamond uses, the call's arguments and its expected
+type, and the Kotlin writer prints the expected types the Java writer does (declared return
+types, property and local types, parameter types), so the call infers the arguments the
+diamond stood for; explicit arguments are not needed and would require the types the
+inference suppressed.
+
+**`kt_local_visibility_comment`.** A declaration with local visibility (a class local to a
+function, written outside it, such as an object expression's inner class or a `$$inlined$`
+copy) gets a note before its `internal` from
+`decompiler/nonnative/kuna-jvm/src/kotlin/k_utils.rs (KUtils::append_visibility)`. Vineflower's
+note is a line comment followed by a line break and no indentation, so the declaration's header
+starts in column 0 inside its enclosing body, and its text reads `outside of methodSupplier`
+(upstream's commit `793b6870` renamed the field `method` to `methodSupplier` and the comment's
+word with it). With the fix the note is an inline comment on the declaration's line,
+`/* $VF: local visibility outside of method */ internal inner class Sub`, which Kotlin accepts.
+
+**`kt_default_args_ctor_descriptor`.** `KConstructor::parse` finds a constructor's
+default-arguments constructor by building its descriptor from the value parameters' Kotlin
+types, with the name and ordinal prepended for an enum, then the masks and the marker. An inner
+class's constructors take the outer instance first, so the descriptor named no constructor: the
+defaults of every inner class's constructor printed as unknown (`= ...`; okhttp's
+`Http2Stream.FramingSink(finished: Boolean = false)`), and its default-arguments constructor was
+not marked hidden. With the fix the descriptor is the constructor's own JVM descriptor with the
+masks and the marker appended, which covers the enum and inner-class prefixes alike.

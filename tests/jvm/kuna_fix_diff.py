@@ -443,6 +443,94 @@ def kt_failed_method_hidden_reflow(old, new):
                 continue
         s += 1
     return inserted and (tokens(rest) == tokens(old) or kt_return_outside_lambda(old, rest))
+def kt_constructor_diamond(old, new):
+    """kt_constructor_diamond: token for token, a Kotlin constructor call's `C<>(` became `C(`."""
+    a, b = tokens(old), tokens(new)
+    out, i, found = [], 0, False
+    while i < len(a):
+        if a[i:i + 3] == ['<', '>', '('] and i > 0 and WORD.fullmatch(a[i - 1]):
+            out.append('(')
+            i, found = i + 3, True
+            continue
+        out.append(a[i])
+        i += 1
+    return found and out == b
+
+
+KT_LOCAL_OLD = '// $VF: local visibility outside of methodSupplier'
+KT_LOCAL_NEW = '/* $VF: local visibility outside of method */ '
+
+
+def kt_local_visibility_comment(old, new):
+    """kt_local_visibility_comment: the line comment before a local declaration's `internal` became an
+    inline comment on the declaration's line."""
+    kept = [x for x in old if x.strip() != KT_LOCAL_OLD]
+    return (len(kept) < len(old) and any(KT_LOCAL_NEW in x for x in new)
+            and tokens(kept) == tokens([x.replace(KT_LOCAL_NEW, '') for x in new]))
+
+
+KT_ARRAYS = {p + 'Array': p for p in ('Boolean', 'Byte', 'Char', 'Short', 'Int', 'Long', 'Float', 'Double',
+                                     'UByte', 'UShort', 'UInt', 'ULong')}
+
+
+def kotlin_type_end(toks, j):
+    """The index after the Kotlin type starting at toks[j] (a name, its type arguments, a `?`)."""
+    while j + 2 < len(toks) and toks[j + 1] == '.' and WORD.fullmatch(toks[j + 2]):
+        j += 2
+    j += 1
+    if j < len(toks) and toks[j] == '<':
+        depth = 0
+        while j < len(toks):
+            depth += {'<': 1, '>': -1}.get(toks[j], 0)
+            j += 1
+            if depth == 0:
+                break
+    if j < len(toks) and toks[j] == '?':
+        j += 1
+    return j
+
+
+def kt_vararg_from_metadata(old, new):
+    """kt_vararg_from_metadata: token for token, parameters changed only as `vararg x: Any` ->
+    `x: Array<..>` (an array parameter the metadata does not mark vararg) or `x: IntArray` ->
+    `vararg x: Int` (a primitive vararg parameter)."""
+    a, b = tokens(old), tokens(new)
+    i = j = 0
+    found = False
+    while i < len(a) or j < len(b):
+        if i < len(a) and j < len(b) and a[i] == b[j]:
+            i, j = i + 1, j + 1
+        elif (a[i:i + 1] == ['vararg'] and a[i + 1:i + 3] == b[j:j + 2] and a[i + 2:i + 3] == [':']
+              and a[i + 3:i + 4] == ['Any'] and b[j + 2:j + 3] == ['Array']):
+            i, j, found = i + 4, kotlin_type_end(b, j + 2), True
+        elif (b[j:j + 1] == ['vararg'] and b[j + 1:j + 3] == a[i:i + 2] and a[i + 1:i + 2] == [':']
+              and i + 2 < len(a) and j + 3 < len(b) and KT_ARRAYS.get(a[i + 2]) == b[j + 3]):
+            i, j, found = i + 3, j + 4, True
+        else:
+            return False
+    return found
+
+
+def kt_default_args_ctor_descriptor(old, new):
+    """kt_default_args_ctor_descriptor: token for token, a parameter's unknown default `= ...` became a
+    value (the default found in an inner class's default-arguments constructor)."""
+    a, b = tokens(old), tokens(new)
+    i = j = 0
+    found = False
+    while i < len(a):
+        if a[i:i + 4] == ['=', '.', '.', '.'] and b[j:j + 1] == ['='] and b[j + 1:j + 4] != ['.', '.', '.']:
+            end, depth = j + 1, 0
+            while end < len(b) and not (depth == 0 and b[end] in ',)'):
+                depth += {'(': 1, '[': 1, '{': 1, ')': -1, ']': -1, '}': -1}.get(b[end], 0)
+                end += 1
+            if end == j + 1:
+                return False
+            i, j, found = i + 4, end, True
+        elif j < len(b) and a[i] == b[j]:
+            i, j = i + 1, j + 1
+        else:
+            return False
+    return found and j == len(b)
 
 
 CONTEXT_RECOGNISERS = {'enum_body_separator': enum_body_separator,
@@ -459,6 +547,10 @@ RECOGNISERS = {
     'kt_return_outside_lambda': kt_return_outside_lambda,
     'kt_object_super_call': kt_object_super_call,
     'kt_failed_method_hidden': kt_failed_method_hidden_reflow,
+    'kt_constructor_diamond': kt_constructor_diamond,
+    'kt_local_visibility_comment': kt_local_visibility_comment,
+    'kt_vararg_from_metadata': kt_vararg_from_metadata,
+    'kt_default_args_ctor_descriptor': kt_default_args_ctor_descriptor,
 }
 
 

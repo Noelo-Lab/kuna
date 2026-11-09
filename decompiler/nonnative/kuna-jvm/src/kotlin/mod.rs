@@ -50,6 +50,7 @@ pub mod kotlin_object_processors;
 pub mod kotlin_options;
 pub mod kotlin_plugin;
 pub mod kotlin_writer;
+pub mod kuna_fix_kt_default_arg_assigned_param;
 pub mod kuna_fix_kt_default_args_super_call;
 pub mod kuna_fix_kt_object_super_call;
 pub mod kuna_fix_kt_return_outside_lambda;

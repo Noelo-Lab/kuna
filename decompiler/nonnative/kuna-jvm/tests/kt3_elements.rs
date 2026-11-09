@@ -28,6 +28,7 @@ use kuna_jvm::kotlin_import_collector::KotlinImportCollector;
 use kuna_jvm::kt_attrs::KtAttrs;
 use kuna_jvm::kt_metadata::KtMetadata;
 use kuna_jvm::kt_proto::{self, Visibility};
+use kuna_jvm::kuna_fixes::{self, KunaFixes};
 use kuna_jvm::metadata_name_resolver::MetadataNameResolver;
 use kuna_jvm::rt::jstring::from_utf16;
 use kuna_jvm::rt::{rethrow, try_catch, Caught, JHashMap, JHashSet};
@@ -35,6 +36,13 @@ use kuna_jvm::text_buffer::TextBuffer;
 use kuna_jvm::var_type::VarType;
 
 use crate::common;
+
+/// Vineflower's goldens are compared with the kuna-only fixes off.
+fn vineflower(guard: common::ContextGuard) -> common::ContextGuard {
+    guard.context().with_mut(|d| d.kuna_fixes = KunaFixes::COMPAT);
+    kuna_fixes::activate(KunaFixes::COMPAT);
+    guard
+}
 
 fn data_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/kt3")
@@ -695,7 +703,7 @@ fn check_meta(cases: &[MetaCase], tally: &mut Tally) {
 
 #[test]
 fn kt3_elements_match_plugin() {
-    let _guard = common::install_default_context();
+    let _guard = vineflower(common::install_default_context());
     let cases = read_meta(&data_dir().join("meta.golden"));
     let mut tally = Tally::default();
     check_meta(&cases, &mut tally);
@@ -705,7 +713,7 @@ fn kt3_elements_match_plugin() {
 
 #[test]
 fn kt3_crafted_elements_match_plugin() {
-    let _guard = common::install_default_context();
+    let _guard = vineflower(common::install_default_context());
     let cases = read_meta(&data_dir().join("crafted.golden"));
     let mut tally = Tally::default();
     check_meta(&cases, &mut tally);
@@ -767,7 +775,7 @@ fn kt3_kotlin_types_match_plugin() {
 fn kt3_java_signatures_and_visibility_match_plugin() {
     let text = std::fs::read_to_string(data_dir().join("misc.golden")).unwrap();
     let mut checked = 0;
-    let mut guard = common::install_default_context();
+    let mut guard = vineflower(common::install_default_context());
     let mut show: Option<String> = None;
     for line in text.lines() {
         let parts: Vec<&str> = line.split(' ').collect();
@@ -784,7 +792,7 @@ fn kt3_java_signatures_and_visibility_match_plugin() {
             "vis" => {
                 if show.as_deref() != Some(parts[1]) {
                     drop(guard);
-                    guard = common::install_context_with(&[("kt-show-public", parts[1])]);
+                    guard = vineflower(common::install_context_with(&[("kt-show-public", parts[1])]));
                     show = Some(parts[1].to_string());
                 }
                 let visibility = match parts[2] {

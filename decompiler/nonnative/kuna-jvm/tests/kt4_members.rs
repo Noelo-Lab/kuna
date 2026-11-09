@@ -31,6 +31,7 @@ use kuna_jvm::kotlin_object_processors::KotlinObjectProcessors;
 use kuna_jvm::kt_attrs::KtAttrs;
 use kuna_jvm::kt_flags::Flags;
 use kuna_jvm::kt_metadata::{KotlinMetadataAnnotation, KotlinMetadataMessage, KtMetadata};
+use kuna_jvm::kuna_fixes::{self, KunaFixes};
 use kuna_jvm::method_wrapper::MethodWrapper;
 use kuna_jvm::rt::{rethrow, try_catch, Caught};
 use kuna_jvm::struct_class::StructClass;
@@ -40,6 +41,13 @@ use kuna_jvm::struct_method::StructMethod;
 use kuna_jvm::text_buffer::TextBuffer;
 
 use crate::common::{self, ContextGuard};
+
+/// Vineflower's goldens are compared with the kuna-only fixes off.
+fn vineflower(guard: ContextGuard) -> ContextGuard {
+    guard.context().with_mut(|d| d.kuna_fixes = KunaFixes::COMPAT);
+    kuna_fixes::activate(KunaFixes::COMPAT);
+    guard
+}
 
 fn data_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/kt4")
@@ -54,12 +62,12 @@ fn golden(name: &str) -> Vec<String> {
 }
 
 fn install() -> ContextGuard {
-    let guard = common::install_context_with(&[
+    let guard = vineflower(common::install_context_with(&[
         (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
         (IFernflowerPreferences::LOG_LEVEL, "warn"),
         ("kt-unknown-defaults", "..."),
         ("kt-show-public", "0"),
-    ]);
+    ]));
     guard
         .struct_context()
         .add_space_file(&data_dir().join("classes"), true);
@@ -597,12 +605,12 @@ fn kt4_members_sweep() {
     };
     for pair in sweep.split(',') {
         let (input, dump) = pair.split_once('=').unwrap();
-        let guard = common::install_context_with(&[
+        let guard = vineflower(common::install_context_with(&[
             (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
             (IFernflowerPreferences::LOG_LEVEL, "warn"),
             ("kt-unknown-defaults", "..."),
             ("kt-show-public", "0"),
-        ]);
+        ]));
         guard
             .struct_context()
             .add_space_file(Path::new(input), true);
