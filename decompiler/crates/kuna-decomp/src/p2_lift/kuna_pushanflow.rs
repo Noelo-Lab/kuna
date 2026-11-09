@@ -1160,8 +1160,17 @@ impl<'a> Explorer<'a> {
             self.stats.halts += 1;
             return NodeExit::Halt(m);
         }
-        let native = !self.target.is_foreign_code(c) && !self.target.bytecode_like(c);
+        // Compiled code can pass the bytecode entropy test; a known function
+        // entry is native whatever its bytes look like.
+        let native = !self.target.is_foreign_code(c) && (self.target_is_function(c) || !self.target.bytecode_like(c));
         if native {
+            if let Some(tr) = &self.config.trace {
+                use std::io::Write;
+                let ps = self.abi.ptr_size;
+                let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
+                let top = self.arena.affine_probe(sp).map(|(b, o)| state.read_mem(&mut self.arena, self.target, b, o, ps));
+                let _ = writeln!(tr.borrow_mut(), "        native target {c:#x}: stack top {}", top.map(|t| self.arena.fmt(t).chars().take(300).collect::<String>()).unwrap_or_else(|| "?".into()));
+            }
             // `push return; jmp/ret target`: a call whose return address the
             // interpreter already pushed.
             if let Some(ret) = self.pushed_return_address(&mut state) {
