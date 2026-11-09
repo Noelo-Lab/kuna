@@ -120,7 +120,7 @@ pub(crate) fn guard(
     write: &[VarnodeId],
     marks: &mut BTreeMap<usize, Vec<Address>>,
 ) {
-    if heads.is_empty() || (fl & varnode_flags::persist) == 0 || !fd.get_arch().halt_loop_guard {
+    if heads.is_empty() || (fl & varnode_flags::persist) == 0 {
         return;
     }
     let stored = write.iter().any(|&vn| {

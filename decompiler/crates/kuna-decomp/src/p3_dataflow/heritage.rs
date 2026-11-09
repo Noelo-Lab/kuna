@@ -1658,7 +1658,7 @@ impl Heritage {
             crate::kuna_syscallregs::guard_memory(fd, fl, addr, size, write);
             crate::kuna_x64syscall::guard_memory(fd, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
-            if fd.get_arch().halt_loop_guard && (fl & varnode_flags::persist) != 0 {
+            if (fl & varnode_flags::persist) != 0 {
                 let heads = self.halt_loops.get_or_insert_with(|| super::kuna_haltloopguard::exitless_loops(fd));
                 super::kuna_haltloopguard::guard(fd, heads, fl, addr, write, &mut self.halt_loop_marks);
             }
@@ -1895,7 +1895,7 @@ impl Heritage {
                     }
                 }
             }
-            // (kuna) `calleepreserves` — the cspec's `killedbycall` set is a
+            // (kuna) The cspec's `killedbycall` set is a
             // statement about the CONVENTION, not about this callee.  When a
             // bounded decode of the callee's own body proves it never writes
             // this register, downgrade the effect to `unaffected` so the
@@ -1905,20 +1905,18 @@ impl Heritage {
             // never writes cannot be carrying its return value either, so
             // registering an output trial for it would put the clobber straight
             // back.  See [`crate::p4_calls::kuna_calleepreserves`].
-            // (kuna) `calleeretpreserves` — the same evidence, asked of the
-            // call's RETURN storage, where `calleepreserves`'s own
+            // (kuna) The same evidence, asked of the
+            // call's RETURN storage, where the register arm's own
             // positive-evidence gate (the callee must write a register the
             // convention promises is preserved) declines a helper that clobbers
             // only what it is allowed to.  See
             // [`crate::p4_calls::kuna_calleeretpreserves`].
-            let exact_cookie_site = (fd.get_arch().callee_ret_preserves
-                || fd.get_arch().strip_msvc_stack_guard)
-                && fd.get_override().is_msvc_cookie_call(
-                    fd.obank()
-                        .get(op)
-                        .expect("guardCalls: stale call")
-                        .get_addr(),
-                );
+            let exact_cookie_site = fd.get_override().is_msvc_cookie_call(
+                fd.obank()
+                    .get(op)
+                    .expect("guardCalls: stale call")
+                    .get_addr(),
+            );
             let caller_declared_output_slice = fd.get_func_proto().is_output_locked()
                 && matches!(
                     fd.get_func_proto()

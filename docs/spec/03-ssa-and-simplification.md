@@ -642,7 +642,7 @@ is cheaper. `x86gcc.cspec` puts `ECX` and `EDX` in `<killedbycall>`, so a value
 the caller loaded into `EDX` before that call becomes an INDIRECT creation and
 every later read of it prints as a local the function never assigns.
 
-Under `option calleepreserves` the call guard consults the callee's own
+The call guard consults the callee's own
 instructions instead. The evidence is the bounded body walk chapter 04 already
 takes for the call-output seam (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_rustabi.rs
 (probe_callee_return_writes)`): from the callee's entry it follows fall-through
@@ -710,7 +710,7 @@ and `sub rsp,rax` became `v1 = -v2` off an unassigned local with every frame
 slot then indexed by it. That is the whole frame destroyed by one INDIRECT
 creation, not one expression.
 
-`option calleescratchbody` adds a second, independent way for a summary to count
+The scratch-body clause adds a second, independent way for a summary to count
 as a body, and requires both of its marks
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleescratchbody.rs
 (scratch_body_is_a_body)`). The body must have written **memory**: a
@@ -736,7 +736,7 @@ checker leaves it alone. Declaring the callee void does not help; it turns the
 invented call result into an uninitialised local.
 
 For the call's return storage the evidence available is sharper than for a
-scratch register, and `option calleeretpreserves` asks for that instead: a callee
+scratch register, and the return-storage arm asks for that instead: a callee
 that returns a value in `RAX` must *write* `RAX`, so a complete walk that records
 no write to the return storage proves the call has no return value at all
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeretpreserves.rs
@@ -812,7 +812,7 @@ the flow builder makes about the same two ops.
 `msvcstackguard` has a narrower algebraic answer for the late P7 cookie shape.
 In its destructive arm the first exact direct, unread-output,
 one-cookie-cancel match records that instruction address and requests a restart.
-Independently, `calleeretpreserves on` collects every exact locked-`void` match,
+Independently, the preservation arm collects every exact locked-`void` match,
 records the full set, and requests one restart; marking the whole set at once
 keeps duplicated epilogues from exhausting the outer eight-reflow limit. On
 replay `Heritage::guard_calls` downgrades only an actual `KILLEDBYCALL` effect on
@@ -951,7 +951,7 @@ each RETURN (`return_copy`), which is precisely what keeps a global store's
 def-chain alive through dead-code elimination so `glob = ...` survives to the
 output.
 
-**Loops the function never leaves** (`option haltloopguard`, default on). A
+**Loops the function never leaves** (always on). A
 function that ends in a cycle of basic blocks with no edge out of it (`b .`,
 `for (;;) __WFI();`, a firmware super-loop) has no RETURN, so upstream gives a
 global it stores before or inside that cycle no reader, and dead-code
@@ -1857,7 +1857,7 @@ Retained source facts identify their machine write. If stack heritage later
 reveals that a load was an outgoing reload of an existing local, its register
 fact can be withdrawn without removing a different write to that register.
 
-**Preserving memory-loaded global stores** (`option globalcallstore`, default on;
+**Preserving memory-loaded global stores** (always on;
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalcallstore.rs`).
 A persistent store keeps its COPY instead of propagating a LOAD input into
 its sole marker use at the same address and width. Without the COPY, forced
@@ -1876,11 +1876,9 @@ store to a global it may read, and that check runs only at
 `option indexaliasguard global`. The refusal therefore applies only at that
 level (the default); at `off`, `load` or `full` it would print
 `gj = 0; gi = *a0;` for a load the binary makes before the store to `gj`.
-No new purity assumption is made. The option exists because keeping the COPY
-also changes correct output: a storage comment no longer lists the global,
-and a value the store kept can print as its own variable.
+No new purity assumption is made.
 
-`globalfieldstore` (default on) keeps a typed global COPY spanning structure
+The typed global field store rule (always on) keeps a typed global COPY spanning structure
 fields or an array-typed global view, including a complete global array,
 attached to its memory destination when read by a MULTIEQUAL or
 INDIRECT marker.
@@ -2976,17 +2974,12 @@ produce one; the guard keeps a malformed graph from killing the process before t
 pass that malformed it can be identified, but it does not by itself make the emitted
 C right.
 
-(kuna) **condexeplace** — GH-9203: that materialized COPY could land inside a
-*loop* predecessor block, re-executing a supposedly loop-invariant `= 0` every
-iteration and malforming the do/while. Under the gate,
+(kuna) **Loop-block COPY placement** — GH-9203: that materialized COPY could
+land inside a *loop* predecessor block, re-executing a supposedly
+loop-invariant `= 0` every iteration and malforming the do/while.
 `condconst.rs (handle_phi_nodes)` declines the placement when the predecessor
-has a loop in-edge and leaves the phi edge untouched. Settable
-`condexeplace` (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_condexeplace.rs`
-owns the option surface; the gate itself is the guarded block in
-`handle_phi_nodes`); shipped default **on** per
-`decompiler/crates/kuna-decomp/phases.toml` (DIV-3 — corpus-neutral, 0 of 675
-assertions changed); `option condexeplace off` restores the upstream placement.
-Catalog: [docs/options.md](../options.md).
+has a loop in-edge and leaves the phi edge untouched (always on; DIV-3 —
+corpus-neutral, 0 of 675 assertions changed).
 
 ## 3.5 kuna peephole rewrites
 
@@ -3067,11 +3060,11 @@ byte-aligned case already belongs to `RuleLeftRight`), where the pre-shift
 value's known-nonzero mask fits entirely below the shifted-out bits — i.e. `b`
 is a boolean being smeared across the word. Rewrite: `INT_2COMP(b)` (`0 - b`,
 giving 0 or all-ones), which the surrounding compare rules then clean to a
-plain boolean test. Settable `booleanmask`, shipped default **on** (DIV-2).
+plain boolean test. Always on.
 
 **cancelbytearithmetic** (repipe `cancelling-byte-arithmetic-splits`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_cancelbytearithmetic.rs`
-owns the option and exact graph matcher; a small hook remains in the
+owns the exact graph matcher; a small hook remains in the
 upstream-derived `RuleSubCommute::apply_op` because the witness begins at its
 `SUBPIECE(INT_LEFT(...),0)` arm. Pattern: an outer one-byte add whose inputs are
 `low8(x << s)` and an inner add containing both an independent value and
@@ -3088,9 +3081,7 @@ producers decline. Wrong coefficients, sources, widths or offsets; shared
 intermediates; variable or out-of-range shifts; and all unrelated
 RuleSubCommute arms also decline. The fold does not push a SUBPIECE through the
 shift and never creates narrow shift arithmetic, avoiding signed `char << s`
-in emitted C. The original INT_ZEXT/PIECE route ignores this gate and remains
-unchanged when the option is off. Settable `cancelbytearithmetic`, shipped
-default **on** (DIV-174).
+in emitted C. The original INT_ZEXT/PIECE route is unchanged. Always on.
 
 **simdlane** (repipe `simd-constant-string-initializer`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_simdlane.rs
@@ -3276,8 +3267,7 @@ registers on statically linked glibc, and in `__strlen_evex`-shaped code one
 mask lost its reaching definition at a shared label, so the scan loop read a
 stale earlier compare; a constant pointer is left to `RuleLoadVarnode`, which
 also resolves the spacebase-placeholder tail that a bare COPY would drop; a
-free pointer is declined. Settable `constspaceload`,
-shipped default **on** (DIV-158).
+free pointer is declined. Always on (DIV-158).
 
 **x87truncate** —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_x87truncate.rs
@@ -3307,15 +3297,14 @@ is the conversion the instruction performs under that control word.
 
 **flagcompare** (GH-1276 / GH-8777) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_flagcompare.rs`, two rules
-under one gate, for architectures that model condition flags as explicit bits.
+for architectures that model condition flags as explicit bits.
 `RuleBoolSignLess` (fires on INT_SLESS): a boolean shifted into the sign bit
 and tested with `s< 0` — where the operand's nonzero mask is exactly the bit
 landing in the sign position — becomes `b != 0`. `RuleSborrowGe` (fires on
 BOOL_AND/BOOL_OR): the `N == V` signed-comparison idiom — the
 XNOR of the result sign of `V - K` with `SBORROW(V, K)`, in either its
 AND-of-ORs or OR-of-ANDs lowering — becomes `INT_SLESSEQUAL(K, V)` (`V >= K`
-as the source wrote it). Settable `flagcompare`, shipped default **on**
-(DIV-3).
+as the source wrote it). Always on (DIV-3).
 
 **ovlesssimplify** (GH-7190) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_ovlesssimplify.rs

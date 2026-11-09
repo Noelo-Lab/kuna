@@ -107,10 +107,8 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.infer_funcentry);
     assert!(arch.memset_recover);
     assert!(arch.ov_less_simplify);
-    assert!(arch.fold_boolean_mask);
     assert!(arch.input_varnode_adjust);
     assert!(arch.dynamic_hash_maxdup_high);
-    assert!(arch.fold_flag_compare);
     assert!(arch.recover_array_stride);
     assert!(arch.recover_lowered_switch);
     assert!(arch.lowered_switch_labels);
@@ -118,7 +116,6 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.lowered_switch_exact);
     assert!(arch.lowered_switch_every_head);
     assert!(arch.name_style_angr);
-    assert!(arch.condexe_block_placement);
     assert!(arch.add_carry_chain);
     assert!(arch.model_stack_probe_loop);
     assert!(arch.present_lessequal);

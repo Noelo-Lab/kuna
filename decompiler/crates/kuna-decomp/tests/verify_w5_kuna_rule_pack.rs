@@ -1,7 +1,7 @@
 //! Independent verifier adversarial tests for item `w5-kuna-rule-pack`
 //! (the 7 kuna simplification rules:
 //! `kuna_{addcarrychain,booleanmask,ovlesssimplify,flagcompare,stackalias,
-//! arraystride,condexeplace}`).
+//! arraystride}`).
 //!
 //! Re-derived from the C++ oracle (NOT the Rust port).  These target the
 //! hunt-list spots flagged most fragile that the in-crate porter tests do NOT
@@ -490,7 +490,7 @@ fn w5_booleanmask_byte_aligned_shift_declines() {
     let out = fd.new_unique(2, Some(unk(2)));
     let _ = set_def(&mut fd, out, op);
 
-    let mut rule = RuleBoolSignShift::new(true);
+    let mut rule = RuleBoolSignShift::new();
     assert_eq!(
         rule.apply_op(op, &mut fd),
         0,

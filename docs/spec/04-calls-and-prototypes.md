@@ -5186,7 +5186,7 @@ function is. The callee-body decode does not prove that absence for ARM's `r1`:
 a walk on ARM or MIPS completes only by reading through the `setISAMode` every
 return runs, and such a walk answers for no argument register. MIPS `$v1` is no
 argument register, so there the call guard keeps the caller's value
-(`calleeretpreserves`, chapter 03) and no `$v1` trial reaches this arm. The pair
+(the return-storage proof, chapter 03) and no `$v1` trial reaches this arm. The pair
 is therefore formed only when that decode *recorded* a write to the
 register the caller reads (the piece holding the read, whichever piece of the
 join entry it is). An indirect call has no decoded callee and keeps the old
@@ -6460,7 +6460,7 @@ type the call. One kind of fact is not carried across a stub. The definition's
 body answers what it reads and returns, never what it leaves alone: a compiler that
 emits `bl name@plt` cannot keep a value in a call-clobbered register across it
 (the lazy resolver runs first, and another definition may win), so the
-`calleepreserves` and `calleeretpreserves` proofs (chapter 03) are not taken for
+callee-body preservation proofs (chapter 03) are not taken for
 such a call. `voidret` files a caller's read of the call result against the
 stub as well as the definition, so the stub's own decompile keeps the return
 its callers read.

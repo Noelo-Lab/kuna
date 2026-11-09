@@ -1241,8 +1241,8 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         crate::p4_calls::kuna_calleevote::seed(arch, fd);
         crate::p4_calls::kuna_callerargs::seed(arch, fd);
         crate::kuna_elemptr::seed(arch, fd);
-        // (kuna `calleepreserves`) And for the call-guard seam's view of the
-        // callee's writes; shares rustabi's cache, so this is a map lookup.
+        // The call-guard seam's view of the callee's writes; shares rustabi's
+        // cache, so this is a map lookup.
         crate::p4_calls::kuna_calleepreserves::seed_callee_preserves(arch, fd);
         crate::kuna_calleememory::seed(arch, fd);
     }
@@ -1942,9 +1942,8 @@ fn decompile_func_full_with_objects_inner(
         crate::p4_calls::kuna_callerargs::seed(arch, &mut fd);
         // (kuna `elemptr`) The globals another function of the batch disagrees about.
         crate::kuna_elemptr::seed(arch, &mut fd);
-        // (kuna `calleepreserves`) The call-guard seam's view of the same
-        // decode: the registers the callee is proven NOT to write; inert unless
-        // `option calleepreserves` is live.
+        // The call-guard seam's view of the same decode: the registers the
+        // callee is proven NOT to write.
         crate::p4_calls::kuna_calleepreserves::seed_callee_preserves(arch, &mut fd);
         crate::kuna_calleememory::seed(arch, &mut fd);
         // Report a pass panic as a per-function failure at the driver boundary.

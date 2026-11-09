@@ -113,15 +113,7 @@ kuna_options! { self, p1;
     "stubtailcall" => on_off!(stub_tail_call, "Loader-proven stub tail calls"),
     "gotimportproto" => on_off!(got_import_proto, "GOT import type-only prototypes"),
     "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
-    "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
-    "cancelbytearithmetic" => {
-        let (val, msg) =
-            crate::p3_dataflow::kuna_cancelbytearithmetic::OptionCancelByteArithmetic
-                .apply(p1)?;
-        self.cancel_byte_arithmetic = val;
-        Ok(msg)
-    },
     "mulblob" => {
         let (val, msg) = crate::p3_dataflow::kuna_mulblob::OptionMulBlob.apply(p1)?;
         self.mul_blob = val;
@@ -130,12 +122,6 @@ kuna_options! { self, p1;
     "simdlane" => {
         let (val, msg) = crate::p3_dataflow::kuna_simdlane::OptionSimdLane.apply(p1)?;
         self.simd_lane_fold = val;
-        Ok(msg)
-    },
-    "constspaceload" => {
-        let (val, msg) =
-            crate::p3_dataflow::kuna_constspaceload::OptionConstSpaceLoad.apply(p1)?;
-        self.const_space_load_fold = val;
         Ok(msg)
     },
     "callpush" => on_off!(drop_call_push, "Call return-address push removal"),
@@ -161,7 +147,6 @@ kuna_options! { self, p1;
         self.ret_split_limit = val;
         Ok(msg)
     },
-    "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
     "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
     "fastfailnoreturn" => on_off!(fastfail_noreturn, "Windows int 0x29 (__fastfail) no-return"),
     "ptrauthtrap" => on_off!(ptrauth_trap, "arm64e pointer-auth failure-check removal"),
@@ -327,7 +312,6 @@ kuna_options! { self, p1;
             None => "Source language follows detection (auto)".to_string(),
         })
     },
-    "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
     "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
     "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
     "stackalias" => on_off!(stack_alias_deadstore, "Stack-pointer-alias dead-store hold"),
@@ -401,7 +385,6 @@ kuna_options! { self, p1;
     "unrolledguard" => on_off!(unrolled_guard, "Interleaved unrolled-guard jump-table partial-flow recovery"),
     "jtsharepartial" => on_off!(jumptable_share_partial, "Shared jump-table partial sub-decompilation"),
     "earlyrestart" => on_off!(early_restart, "Early restart after a dead-code delay bump"),
-    "haltloopguard" => on_off!(halt_loop_guard, "Global stores live in an exitless loop"),
     "truncptrflow" => on_off!(trunc_ptr_flow, "Truncated-space pointer flow"),
     "deadwaves" => on_off!(pool_dead_waves, "Rule-pool dead-removal waves"),
     "deadcascade" => {
@@ -584,24 +567,6 @@ kuna_options! { self, p1;
         self.mixed_tail_ret = val;
         Ok(msg)
     },
-    "calleepreserves" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleepreserves::OptionCalleePreserves.apply(p1)?;
-        self.callee_preserves = val;
-        Ok(msg)
-    },
-    "calleeretpreserves" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleeretpreserves::OptionCalleeRetPreserves.apply(p1)?;
-        self.callee_ret_preserves = val;
-        Ok(msg)
-    },
-    "calleescratchbody" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleescratchbody::OptionCalleeScratchBody.apply(p1)?;
-        self.callee_scratch_body = val;
-        Ok(msg)
-    },
     "indirectanchor" => {
         let (val, msg) =
             crate::p3_dataflow::kuna_indirectanchor::OptionIndirectAnchor.apply(p1)?;
@@ -710,8 +675,6 @@ kuna_options! { self, p1;
     "loopcounterstore" => {
         on_off!(loop_counter_store, "Frame-slot loop-counter store brake")
     },
-    "globalfieldstore" => on_off!(global_field_store, "Typed global field stores"),
-    "globalcallstore" => on_off!(global_call_store, "Loaded global store brake"),
     "intfloatround" => on_off!(int_float_round, "Integer-to-float rounding preservation"),
     "tiedphitrim" => {
         on_off!(tied_phi_trim, "Loop-head address-tied input trim")

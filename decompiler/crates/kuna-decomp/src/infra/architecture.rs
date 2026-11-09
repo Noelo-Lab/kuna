@@ -36,7 +36,7 @@
 //! ## The kuna anchor flags
 //!
 //! `architecture.cc`/`.hh` carry a block of kuna-specific boolean flags (the
-//! `(kuna)`-marked members `present_lessequal`, `fold_flag_compare`,
+//! `(kuna)`-marked members `present_lessequal`,
 //! `strip_stack_guard`, …) that the kuna stage-model sub-stage fixes read.  They
 //! are ported here as plain `bool` fields on [`Architecture`] (defaulted by
 //! `resetDefaultsInternal`); the `w4-kuna-p0-pack` item's `OptionValues` alias
@@ -683,15 +683,9 @@ pub struct Architecture {
     /// (kuna GH-7190) Collapse the OV-flag signed-less-than idiom to INT_SLESS
     /// (C++ `ov_less_simplify`).
     pub ov_less_simplify: bool,
-    /// (kuna GH-1282) Fold `(b<<k) s>> k` boolean sign-extension-mask idioms
-    /// (C++ `fold_boolean_mask`).
-    pub fold_boolean_mask: bool,
     /// Keep mapped global array bases separate from negative element offsets
     /// (option `globalarrayanchor`).
     pub global_array_anchor: bool,
-    /// (kuna) Fold an exact one-byte modular cancellation around a bounded
-    /// left shift (option `cancelbytearithmetic`).
-    pub cancel_byte_arithmetic: bool,
     /// (kuna) Refuse to split a shared RETURN block that stores to GLOBALS, so
     /// a 72-store epilogue is not cloned into each predecessor (option
     /// `retsplitglobal`).  See [`crate::p8_structure::kuna_retsplitglobal`].
@@ -704,10 +698,6 @@ pub struct Architecture {
     /// to the source lane it selects (option `simdlane`).  See
     /// [`crate::p3_dataflow::kuna_simdlane`].
     pub simd_lane_fold: bool,
-    /// (kuna) Resolve a SLEIGH dynamic constant-space export (`LOAD(const, p)`)
-    /// to the value of `p` (option `constspaceload`).  See
-    /// [`crate::p3_dataflow::kuna_constspaceload`].
-    pub const_space_load_fold: bool,
     /// (kuna) Delete a call's own return-address push through a stack pointer
     /// the frame cannot track (option `callpush`).  See
     /// [`crate::p4_calls::kuna_callpush`].
@@ -824,18 +814,12 @@ pub struct Architecture {
     /// pointer-auth failure trap whose guard is the return-address bit test.
     /// Default on.
     pub ptrauth_trap: bool,
-    /// (kuna GH-9203) Decline placing a const COPY in a loop block
-    /// (C++ `condexe_block_placement`).
-    pub condexe_block_placement: bool,
     /// (kuna GH-8467) Raise DynamicHash same-address collision budget 8->16
     /// (C++ `dynamic_hash_maxdup_high`).
     pub dynamic_hash_maxdup_high: bool,
     /// (kuna GH-8017) Resolve gcc stack-probe loop SP MULTIEQUAL to a constant
     /// (C++ `model_stack_probe_loop`).
     pub model_stack_probe_loop: bool,
-    /// (kuna GH-1276/8777) Fold flag-modelled comparison idioms
-    /// (C++ `fold_flag_compare`).
-    pub fold_flag_compare: bool,
     /// (kuna GH-9191) Bound a modulo/and-mask LOAD-table jumptable index
     /// (C++ `switch_modulo_bound`).
     pub switch_modulo_bound: bool,
@@ -1060,10 +1044,6 @@ pub struct Architecture {
     /// the return value (option `zerocallregs`).  See
     /// [`crate::p4_calls::kuna_zerocallregs`].
     pub zero_call_regs: bool,
-    /// (kuna) Narrow a call's `killedbycall` set to the registers a bounded
-    /// decode of the callee's own body proves it writes (option
-    /// `calleepreserves`).  See [`crate::p4_calls::kuna_calleepreserves`].
-    pub callee_preserves: bool,
     pub global_call_ranges: bool,
     /// (kuna) Give a call no guard over read-only memory once a pass would build
     /// this many such guards, `None` to keep them all (option `readonlycalls`).
@@ -1076,14 +1056,6 @@ pub struct Architecture {
     pub pruned_ssa: bool,
     /// (kuna) Read LOAD guards at renaming instead of through COPY ops (option `loadguardreads`).
     pub load_guard_reads: bool,
-    /// (kuna) Let the callee's decoded body answer for the call's RETURN
-    /// register too (option `calleeretpreserves`).  See
-    /// [`crate::p4_calls::kuna_calleeretpreserves`].
-    pub callee_ret_preserves: bool,
-    /// (kuna) Accept a callee that clobbers only scratch registers as
-    /// `calleepreserves` evidence (option `calleescratchbody`).  See
-    /// [`crate::p4_calls::kuna_calleescratchbody`].
-    pub callee_scratch_body: bool,
     /// (kuna) Anchor an op inserted after a call's guard INDIRECT to the call
     /// itself, as upstream `opInsertAfter` does (option `indirectanchor`).  See
     /// [`crate::p3_dataflow::kuna_indirectanchor`].
@@ -1224,21 +1196,10 @@ pub struct Architecture {
     /// (option `loopcounterstore`, default-on, DIV-146).  See
     /// [`crate::p3_dataflow::kuna_loopcounterstore`].
     pub loop_counter_store: bool,
-    /// (kuna `haltloopguard`) Read each stored global at the entry of a loop
-    /// the function never leaves, as at a RETURN
-    /// ([`crate::p3_dataflow::kuna_haltloopguard`]).
-    pub halt_loop_guard: bool,
     /// (kuna `truncptrflow`) Narrow address operands to their space's width
     /// and seed a wide stack register as `PIECE(upper, low)` on a truncated
     /// default data space (`RulePtrFlow`, `ActionPrototypeTypes`).
     pub trunc_ptr_flow: bool,
-    /// (kuna) Keep a global's COPY of a loaded value whose only reader is the
-    /// global's own marker, so the write stays after the call or loop edge
-    /// that observes the old value (option `globalcallstore`, default-on).
-    /// See [`crate::p3_dataflow::kuna_globalcallstore`].
-    pub global_call_store: bool,
-    /// Preserve typed global field stores through marker propagation.
-    pub global_field_store: bool,
     /// (kuna) Keep the rounding of an integer-to-float conversion that a
     /// later float conversion or a narrower float trace would fold away
     /// (option `intfloatround`, default-on).  See
@@ -3215,11 +3176,8 @@ impl Architecture {
             noreturn_extern_calls: false, // (kuna) option noreturn_extern, default off
             sparc_struct_return: false,
             ov_less_simplify: false,
-            fold_boolean_mask: false,
             global_array_anchor: false,
-            cancel_byte_arithmetic: false,
             simd_lane_fold: false,
-            const_space_load_fold: false,
             drop_call_push: false,
             ret_split_global: false,
             ret_split_limit: None,
@@ -3259,10 +3217,8 @@ impl Architecture {
             go_bool: 0, // (kuna) option gobool; reset_defaults sets the shipped default (auto)
             go_write_barrier: 0, // (kuna) option gowritebarrier; reset_defaults sets the shipped default (auto)
             ptrauth_trap: false, // (kuna) option ptrauthtrap; reset_defaults sets the shipped default (on)
-            condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
             model_stack_probe_loop: false,
-            fold_flag_compare: false,
             switch_modulo_bound: false,
             switch_run_on: false, // (kuna) option switchrunon; reset_defaults sets the shipped default
             switch_run_on_guard: false, // (kuna) option switchrunonguard; reset_defaults sets the shipped default
@@ -3317,14 +3273,11 @@ impl Architecture {
             push_pad_read: true,
             zero_fill_return: true,
             zero_call_regs: true,
-            callee_preserves: true,
             global_call_ranges: true,
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             persist_calls: Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT),
             pruned_ssa: true,
             load_guard_reads: true,
-            callee_ret_preserves: true,
-            callee_scratch_body: true,
             indirect_anchor: true,
             input_param_gap: true,
             narrow_args: true,
@@ -3355,10 +3308,7 @@ impl Architecture {
             guarded_read_trim: false,
             tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
             loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
-            halt_loop_guard: false,
             trunc_ptr_flow: false, // (kuna) option truncptrflow; reset_defaults sets the shipped default (on)
-            global_field_store: false,
-            global_call_store: false, // (kuna) option globalcallstore; reset_defaults sets the shipped default (on)
             int_float_round: false, // (kuna) option intfloatround; reset_defaults sets the shipped default (on)
             tied_phi_trim: false, // (kuna) option tiedphitrim; reset_defaults sets the shipped default (on)
             split_store_keep: false, // (kuna) option splitstorekeep; reset_defaults sets the shipped default (on)
@@ -3701,12 +3651,9 @@ impl Architecture {
         self.noreturn_extern_calls = true; // (kuna) DIV-14 default-on: REMOVES CODE (drops the post-call fall-through after a matched extern no-return). Byte-identical (0/675) — no datatest call resolves to a known no-return name; overlaps `noreturn_known`'s name match for defined/imported symbols, restore upstream with `option noreturn_extern off`
         self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
-        self.fold_boolean_mask = true; // (kuna) DIV-2 default-on (GH-1282)
-        self.cancel_byte_arithmetic = true; // (kuna) DIV-174 default-on: exact low-byte modular cancellation; corpus evidence is recorded with the feature
         self.ret_split_global = true; // (kuna) DIV-PENDING default-on: a shared RETURN block that stores to GLOBALS is not the bare epilogue `ActionReturnSplit::isSplittable` assumes, so it is no longer cloned into every predecessor. One-directional (it can only decline a split) and byte-identical (0/675) on the datatest corpus; restore the upstream predicate with `option retsplitglobal off`
         self.ret_split_limit = Some(crate::p8_structure::kuna_retsplitlimit::DEFAULT_LIMIT); // (kuna) GH-1034 default-on: a return block whose split would clone more than 2^20 ops keeps its gotos
         self.simd_lane_fold = true; // (kuna) DIV-PENDING default-on: an exact identity (pshufb with a constant mask IS a byte permutation), so a lane read resolves to the source lane instead of an opaque CALLOTHER temporary. Byte-identical (0/675) on the datatest corpus; restore the opaque rendering with `option simdlane off`
-        self.const_space_load_fold = true; // (kuna) DIV-PENDING default-on: a LOAD from the CONSTANT space is the address-is-value identity `RuleLoadVarnode` already applies to a constant pointer, and it does not stop holding for a temporary, so a SLEIGH dynamic const export is no longer left as a pointer-shaped LOAD for `ActionLaneDivide` to slice into near-null lane reads. Byte-identical (0/675) on the datatest corpus; restore the upstream rendering with `option constspaceload off`
         self.drop_call_push = true; // (kuna) callpush default-on: a call's own return-address push through an untracked stack pointer (an alloca frame) is deleted; the tracked case was already a dead stack store. Restore the upstream statement with `option callpush off`
         self.input_varnode_adjust = true; // (kuna) DIV-3 default-on (GH-9218)
         self.ret_input_half = true; // (kuna) DIV-85 default-on: a returned register half whose value is an input parameter the function MOVED into the return register is a real return, not leftover; keeping it also keeps the parameter it came from in the recovered signature. 0/675 byte-identical; an untouched return register is still dropped (the GH-6990 SPARC pass-through), restore the strict rule with `option retinputhalf off`
@@ -3734,7 +3681,6 @@ impl Architecture {
         self.go_write_barrier = crate::kuna_gowritebarrier::GoWriteBarrierMode::Auto.as_u8(); // (kuna) fold the Go write barrier on Go images
         self.ptrauth_trap = true; // (kuna) drop arm64e pointer-auth failure checks; inert unless a brk #0xc47x trap's guard is the return-address bit test, 0/675 datatests
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
-        self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
         self.switch_run_on = true; // (kuna) GH-1034 default-on: an unguarded table keeps only its leading rows inside the function when every later row runs on into two or more other functions; 0/675 datatest
         self.switch_run_on_guard = true; // (kuna) GH-1034 default-on: a guard that does not narrow the selector leaves the table unguarded for switchrunon; 0/675 datatest
@@ -3783,9 +3729,6 @@ impl Architecture {
         self.persist_calls = Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT);
         self.pruned_ssa = true;
         self.load_guard_reads = true;
-        self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
-        self.callee_ret_preserves = true; // (kuna) DIV-PENDING default-on: a fully decoded callee body that never writes the call's return register also answers for that register, so an MSVC /GS `main` returns the zero it set instead of the cookie check's invented result (0/675 ablation)
-        self.callee_scratch_body = true; // (kuna) DIV-149 default-on: a decoded callee that clobbers only SCRATCH registers still counts as a body for calleepreserves, so the value a caller sets before MSVC's out-of-line stack probe survives it (0/675 ablation)
         self.indirect_anchor = true; // (kuna) DIV-PENDING default-on: an op inserted after a call's guard INDIRECT anchors to the CALL as upstream opInsertAfter does, instead of landing inside the guard run where it hides the return-value trial (0/675 ablation)
         self.stack_arg_gap = true; // (kuna) DIV-140 default-on: at a call site an argument register the caller never wrote ends the argument list when the next slot is on the stack, so a body-less import stops acquiring the caller's own untouched parameter plus a stack leftover as arguments (0/675 ablation)
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
@@ -3815,10 +3758,7 @@ impl Architecture {
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
         self.loop_counter_store = true; // (kuna) DIV-146 default-on: RulePropagateCopy refuses the marker propagation that would delete a frame-slot loop counter's write-back, so the increment prints on the counter and the emitted `for` terminates (0/675 ablation); `option loopcounterstore off` restores upstream's propagation
-        self.halt_loop_guard = true;
         self.trunc_ptr_flow = true; // (kuna) option truncptrflow default-on: RulePtrFlow narrows address operands and the entry stack register is PIECE(upper, low) on a truncated default data space (0/675 datatest; untruncated targets byte-identical); `option truncptrflow off` restores the stubbed-out pass
-        self.global_call_store = true; // (kuna) default-on (0/675 datatest assertions): RulePropagateCopy keeps a global's COPY of a loaded value whose only reader is the global's marker, so the write stays after the call that observes the old value; `option globalcallstore off` restores the propagation
-        self.global_field_store = true;
         self.int_float_round = true; // (kuna) default-on (0/675 datatest assertions): RuleFloatCast and SubfloatFlow keep an integer-to-float conversion's rounding unless the float it passes through holds the integer exactly; `option intfloatround off` restores the unconditional fold
         self.hide_shadow = true; // (kuna) default-on: the upstream ActionHideShadow body, which kuna carried as an inert stub. Consolidates two copies of one value into one chain so ActionCopyMarker can hide the repeated assignment (0/675 ablation, stages PARITY OK; 434 of 444 stripped ELFs byte-identical and the other 10 each lose a duplicated assignment); `option hideshadow off` restores the stub's behaviour exactly
         self.tied_phi_trim = true; // (kuna) DIV-182 default-on: Merge::mergeOp trims a loop head's direct read of an aliased location, so the values the loop loads do not print as stores into it (0/675 ablation); `option tiedphitrim off` restores upstream's merge
@@ -3919,7 +3859,6 @@ impl Architecture {
         self.calleevote = crate::kuna_calleevote::CalleeVoteMode::Fields; // (kuna) option calleevote default `fields`: on a whole-binary run a parameter every known caller passes the same committed pointer to takes it, and a closed function's lone field is a record field; inert without a callee-first pass
         self.protoorder = crate::kuna_protoorder::ProtoOrderMode::Cycles; // (kuna) option protoorder default `cycles`: the callee's recovered parameter types reach its call sites as a vote, with no lock and no arity change, and a function in a recursive component states its types too (`types` is the same without them); `lock` also states the arity and stays opt-in
         self.codescalar = true; // (kuna) DIV-138 default-on: a `code` pointee is never a value type, so blocking it can only replace a widthless scalar with the size-correct default
-        self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
         self.aggregate_fields = true; // (kuna) option aggregatefields default-on: 0/675 datatest assertions move; restore upstream's field-only resolution with `option aggregatefields off`
         self.stub_tail_call = true; // (kuna) option stubtailcall default-on: only loader-proven MIPS lazy-binding stubs, which raw and XML images never have (0/675); restore the plain resolver call with `option stubtailcall off`
@@ -4640,11 +4579,8 @@ impl Architecture {
         // <name> on|off` reaches the consuming Rule/Action via `glb` (each rule
         // reads `data.get_arch().<flag>`; the rule is registered `enabled=false`
         // so the live flag drives both the DIV default and the toggle).
-        ctx.fold_boolean_mask = self.fold_boolean_mask; // GH-1282 booleanmask
         ctx.global_array_anchor = self.global_array_anchor;
-        ctx.cancel_byte_arithmetic = self.cancel_byte_arithmetic; // cancelbytearithmetic
         ctx.simd_lane_fold = self.simd_lane_fold; // simdlane
-        ctx.const_space_load_fold = self.const_space_load_fold; // constspaceload
         ctx.drop_call_push = self.drop_call_push; // callpush
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
         ctx.ret_split_limit = self.ret_split_limit; // retsplitlimit
@@ -4668,7 +4604,6 @@ impl Architecture {
                 self.userops.get_op_by_name(name).map(|u| (u.get_index() as kuna_base::types::uint4, width))
             })
             .collect();
-        ctx.fold_flag_compare = self.fold_flag_compare; // GH-1276/8777 flagcompare
         ctx.add_carry_chain = self.add_carry_chain; // GH-8913 addcarrychain
         ctx.aggregate_fields = self.aggregate_fields; // aggregatefields
         ctx.stub_tail_call = self.stub_tail_call; // stubtailcall
@@ -4735,9 +4670,6 @@ impl Architecture {
         ctx.persist_calls = self.persist_calls;
         ctx.pruned_ssa = self.pruned_ssa;
         ctx.load_guard_reads = self.load_guard_reads;
-        ctx.callee_preserves = self.callee_preserves; // calleepreserves
-        ctx.callee_ret_preserves = self.callee_ret_preserves; // calleeretpreserves
-        ctx.callee_scratch_body = self.callee_scratch_body; // calleescratchbody
         ctx.indirect_anchor = self.indirect_anchor; // indirectanchor
         ctx.input_param_gap = self.input_param_gap; // inputparamgap
         ctx.narrow_args = self.narrow_args; // narrowargs
@@ -4771,10 +4703,7 @@ impl Architecture {
         ctx.guarded_read_trim = self.guarded_read_trim;
         ctx.tied_store_keep = self.tied_store_keep; // tiedstorekeep
         ctx.loop_counter_store = self.loop_counter_store; // loopcounterstore
-        ctx.halt_loop_guard = self.halt_loop_guard; // haltloopguard
         ctx.trunc_ptr_flow = self.trunc_ptr_flow; // truncptrflow
-        ctx.global_call_store = self.global_call_store; // globalcallstore
-        ctx.global_field_store = self.global_field_store;
         ctx.int_float_round = self.int_float_round; // intfloatround
         ctx.tied_phi_trim = self.tied_phi_trim; // tiedphitrim
         ctx.split_store_keep = self.split_store_keep; // splitstorekeep
@@ -4850,9 +4779,6 @@ impl Architecture {
         ctx.go_jump_chain = self.go_jump_chain;
         ctx.strip_security_check = self.strip_security_check; // securitycheck
         ctx.branch_flip = self.branch_flip; // branchflip (negated-guard branch flipping)
-        // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the
-        // `condexeplace off` option reaches `ActionConditionalConst` via `glb`.
-        ctx.condexe_block_placement = self.condexe_block_placement;
         // (kuna) carry the whiledo->for reroll gate (C++ `glb->analyze_for_loops`)
         // so `ActionStructureTransform` reaches it for
         // `Funcdata::finalize_forloop_transform`.

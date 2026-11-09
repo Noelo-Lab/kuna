@@ -52,12 +52,6 @@ fn check_record(members: &str, fields: &[&str]) {
             "--assert-strict",
             "--json",
         ]);
-        if let Some(option) = option {
-            command.args(["--option", "globalfieldstore", option]);
-            if option == "off" {
-                command.args(["--option", "pairrefine", "off"]);
-            }
-        }
         let output = command.output().unwrap();
         assert!(
             output.status.success(),
@@ -68,18 +62,7 @@ fn check_record(members: &str, fields: &[&str]) {
         assert!(document["functions"][0]["error"].is_null(), "{document}");
         document
     };
-    let document = run(None);
-    let enabled = run(Some("on"));
-    let disabled = run(Some("off"));
-    assert_eq!(
-        document["functions"][0]["code"],
-        enabled["functions"][0]["code"]
-    );
-    let legacy = disabled["functions"][0]["code"].as_str().unwrap();
-    assert!(
-        legacy.contains("cache_") || legacy.contains("cache = v"),
-        "{legacy}"
-    );
+    let document = run();
     let body = document["functions"][0]["code"].as_str().unwrap();
     for member in fields {
         assert!(body.contains(&format!("cache.{member} =")), "{body}");
