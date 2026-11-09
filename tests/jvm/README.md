@@ -118,7 +118,9 @@ cargo run -q --release -p kuna-jvm --example corpus -- --manifest /tmp/kt-all.ts
 ```
 
 The *Entire Classpath* cases need the current JDK to be 17 (`JAVA_HOME`); the plain-CLI forms use the
-current JDK as their runtime (JDK 17 and 21 give the same text). Refresh the vendored cases with
+current JDK as their runtime (JDK 17 and 21 give the same text). `kotlin_corpus.py --overlays NEW_DIR`
+also replays the 66 plugin cases under option overlays (each Kotlin plugin option, `kt-enable=0`, a few
+core options) with the oracle and writes `NEW_DIR/cases.tsv`. Refresh the vendored cases with
 `python3 -I tests/jvm/kotlin_corpus.py --corpus-kt ~/kwt/jvm/corpus-kt`, then `regen.py`.
 
 ### Not vendored

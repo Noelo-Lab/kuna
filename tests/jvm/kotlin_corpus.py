@@ -21,6 +21,11 @@ forms (sets kotlin-*, kotlin-defaults, kotlin-defaults-stdlib); the 2 core Entir
 both plain-CLI forms need libraries or a JDK (kotlin-stdlib on the class path, include-classpath=1 or
 include-runtime), so they are run from there, not vendored. Existing files are overwritten, nothing is
 deleted.
+
+--overlays NEW_DIR runs the corpus's oracle (<corpus-kt>/bin/vf-decompile-kt, 16 JVMs) on the 66
+KotlinTests cases under each option overlay of OVERLAYS (the Kotlin plugin's options and a few core
+ones) and writes NEW_DIR/cases.tsv with their expected text under NEW_DIR/expected/; run it with
+`corpus --manifest NEW_DIR/cases.tsv`.
 """
 import argparse
 import hashlib
@@ -35,6 +40,17 @@ SOURCE = {
     'SingleClassesTest': 'test/org/jetbrains/java/decompiler/SingleClassesTest.java',
 }
 PLUGINS = {'kotlin-only': '1', 'none': '0'}
+OVERLAYS = {
+    'kt-show-public-off': [('kt-show-public', '0')],
+    'kt-collapse-string-concat-off': [('kt-collapse-string-concat', '0')],
+    'kt-unknown-defaults-empty': [('kt-unknown-defaults', '')],
+    'kt-decompile-facades-on': [('kt-decompile-facades', '1')],
+    'kt-enable-off': [('kt-enable', '0')],
+    'kt-enable-off-export': [('kt-enable', '0'), ('kt-export-metadata', '1')],
+    'remove-synthetic-on': [('remove-synthetic', '1')],
+    'decompile-generics-off': [('decompile-generics', '0')],
+    'dump-exception-on': [('dump-exception-on-error', '1'), ('dump-bytecode-on-error', '0')],
+}
 STDLIB = 'tools/m2/kotlin-stdlib-2.0.0.jar'
 
 
@@ -89,7 +105,8 @@ def main():
     ap.add_argument('--corpus-kt', required=True, help='the Kotlin oracle corpus (holds manifest.json)')
     ap.add_argument('--out', default=here, help='the tests/jvm directory to write (default: %(default)s)')
     ap.add_argument('--full-manifest', help='also write a manifest of all 73 cases x 3 forms rooted at --corpus-kt')
-    ap.add_argument('--skip-vendor', action='store_true', help='only write --full-manifest')
+    ap.add_argument('--skip-vendor', action='store_true', help='only write --full-manifest / --overlays')
+    ap.add_argument('--overlays', help='a new directory: oracle runs of the KotlinTests cases under OVERLAYS')
     a = ap.parse_args()
     corpus = os.path.abspath(os.path.expanduser(a.corpus_kt))
     out = os.path.abspath(a.out)
@@ -104,6 +121,8 @@ def main():
 
     if a.full_manifest:
         write_full_manifest(os.path.abspath(a.full_manifest), corpus, tests, sets)
+    if a.overlays:
+        write_overlays(os.path.abspath(a.overlays), corpus, tests, sets)
     if a.skip_vendor:
         return
 
@@ -195,6 +214,47 @@ def write_full_manifest(path, corpus, tests, sets):
     with open(path, 'w', encoding='utf-8', newline='\n') as f:
         f.writelines(out)
     print(f'wrote {path}: {3 * len(tests)} cases')
+
+
+def write_overlays(out, corpus, tests, sets):
+    import concurrent.futures
+    import subprocess
+    os.makedirs(out, exist_ok=False)
+    tests = [t for t in tests if t['plugins'] == 'kotlin-only']
+    jobs = [(name, t, dict(t['options'], **dict(pairs))) for name, pairs in OVERLAYS.items() for t in tests]
+
+    def run(job):
+        name, t, opts = job
+        work = os.path.join(out, 'work', name, t['id'])
+        os.makedirs(work)
+        cmd = [os.path.join(corpus, 'bin', 'vf-decompile-kt'), '--fixture', '--kotlin-only']
+        for k, v in opts.items():
+            cmd += ['--opt', f'{k}={v}']
+        cmd += [os.path.join(corpus, 'classes', c) for c in t['class_files']] + ['-o', os.path.join(work, 'o')]
+        with open(os.path.join(work, 'log'), 'wb') as log:
+            subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, check=True, env=dict(os.environ, VF_XMX='1g'))
+        for produced in (t['decompiled_file'], t['decompiled_file_fallback']):
+            p = os.path.join(work, 'o', produced)
+            if os.path.exists(p):
+                dst = os.path.join(out, 'expected', name, t['id'] + os.path.splitext(produced)[1])
+                copy(p, dst)
+                return name, t, opts, dst
+        sys.exit(f'{name}/{t["id"]}: no output')
+
+    with concurrent.futures.ThreadPoolExecutor(16) as pool:
+        done = list(pool.map(run, jobs))
+    lines = [FORMAT + '\n', line('root', corpus)]
+    lines += [line('set', name, name) for name in OVERLAYS]
+    for name, t, opts, dst in done:
+        lines.append(line('case', f'{name}/{t["id"]}', name))
+        lines.append(line('opt', 'jvm_plugins', '1'))
+        lines += [line('opt', k, v) for k, v in opts.items()]
+        lines += [line('class', 'classes/' + c) for c in t['class_files']]
+        lines.append(line('expected', dst))
+        lines.append(line('compare', t['decompiled_file'], t['decompiled_file_fallback']))
+    with open(os.path.join(out, 'cases.tsv'), 'w', encoding='utf-8', newline='\n') as f:
+        f.writelines(lines)
+    print(f'wrote {out}/cases.tsv: {len(done)} cases')
 
 
 def copy(src, dst):
