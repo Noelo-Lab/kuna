@@ -20,6 +20,7 @@ source they were compiled from.
 |---|---|---|---|
 | `pkg/TestInnerOfGenericOuter` | `jvm_fix_generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
 | `pkg/TestMethodRefWildcardReceiver` | `jvm_fix_lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
+| `pkg/TestSelfReferencingLambda` | `jvm_fix_self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
 | `pkg/TestTryCatchNotFlag` | `jvm_fix_twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 
 ## Diffs (compat -> default)
@@ -157,6 +158,28 @@ source they were compiled from.
     }
  
     TestMethodRefWildcardReceiver.Pipe<Object> objectsOf(TestMethodRefWildcardReceiver.Factory<String> factory) {
+```
+
+### `pkg/TestSelfReferencingLambda`
+
+```diff
+--- expected-compat/pkg/TestSelfReferencingLambda.java
++++ expected/pkg/TestSelfReferencingLambda.java
+@@ -1 +1,13 @@
+-// $VF: Couldn't be decompiled
++package pkg;
++
++public class TestSelfReferencingLambda {
++   TestSelfReferencingLambda.Task task = this::body;
++
++   public void plain() {
++      this.task = () -> this.task = this::body;
++   }
++
++   interface Task {
++      void run();
++   }
++}
 ```
 
 ### `pkg/TestTryCatchNotFlag`

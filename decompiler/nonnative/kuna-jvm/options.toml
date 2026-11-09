@@ -1419,6 +1419,28 @@ tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with NullPointerException (Cannot read field \"genericType\" because the return value of StructClass.getSignature() is null in Vineflower)|a method using an Outer<E>.Inner.Node value fails to decompile when Inner is not generic"
 
 [[option]]
+option = "jvm_fix_self_referencing_lambda"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p4_calls"
+subphase = "lambda_processor"
+strength = "HARD"
+rewind = "p4_calls"
+issue = ""
+summary = "Decompile a class with a lambda whose synthetic implementation method instantiates the same lambda again, directly or through other lambda bodies (obfuscated or hand-written bytecode): such a method stays a method of the class and every lambda it implements is written as a method reference to it (this::body), where Vineflower nests the lambda under itself and fails the whole class (Lambda X is recursive?!) or overflows the stack. A recursive lambda that captures values besides its receiver has no method-reference form and still fails the class, with a message saying so."
+use_when = "Always on; jvm_vineflower_compat on gives Vineflower's failure."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_self_referencing_lambda off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 LambdaProcessor.processClass: the lambda hierarchy nests each lambda under the lambda whose body creates it, so a body that creates its own lambda is a cycle; upstream bfa4a794 throws only when the lookup returns the node itself (one ordering of the one-method cycle); still present on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "// $VF: Couldn't be decompiled with RuntimeException: IllegalStateException: Lambda X is recursive?! for a whole class|StackOverflowError on a class whose lambda bodies create each other"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""

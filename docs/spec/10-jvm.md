@@ -1111,3 +1111,26 @@ ones, and the mapping goes on to the next enclosing type, so `Outer`'s `E` still
 value's argument (`Outer<String>.Itrs.Node` gives `E` to `String`). That is what Vineflower
 does when every class on the way has a signature; the other choice, skipping the enclosing
 types, would lose the mapping and print redundant casts.
+
+**`jvm_fix_self_referencing_lambda`** (the fix `self_referencing_lambda`). A lambda whose
+implementation is a synthetic method of its own class is written in place, as a lambda
+expression whose body is that method's code, and
+`decompiler/nonnative/kuna-jvm/src/p4_calls/lambda_processor.rs (LambdaProcessor::process_class)`
+nests every lambda a method creates under the lambda that method implements, so that the
+inner lambda is written inside the outer one's body. When an implementation method creates,
+directly or through the bodies of other lambdas, a lambda that it implements itself (no
+compiler does this; obfuscators and hand-written bytecode do, as Vineflower's
+`TestRecursiveLambda` does), the nesting has a cycle and writing it in place never ends.
+Vineflower throws `Lambda X is recursive?!` for the whole class when the lookup returns the
+lambda itself, which happens for one ordering of the one-method cycle only (upstream
+`bfa4a794`, unchanged on `develop/1.13.0`), and overflows the stack for every other ordering
+and for longer cycles, where kuna, whose stack overflow is not recoverable, aborts. With the
+fix, `decompiler/nonnative/kuna-jvm/src/p4_calls/kuna_fix_self_referencing_lambda.rs (write_recursive_lambdas_as_method_references)`
+runs before the nesting is built: it finds the implementation methods that reach themselves
+through the lambdas they create, writes every lambda one of them implements as a method
+reference to it (`this::body`, `Owner::body` for a static one), which calls the same method
+with the same receiver, and nests nothing under those lambdas; the methods stay methods of
+the class, hidden like every synthetic method under `jvm_remove_synthetic`. A recursive
+lambda that captures values besides its receiver has no method-reference form, and the class
+fails with a message that says so instead of the overflow. Lambdas whose methods are not on
+such a cycle are written in place as before.

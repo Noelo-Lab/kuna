@@ -36,6 +36,9 @@ pub enum KunaFix {
     /// enclosing type through a class without a `Signature` attribute no
     /// longer fails.
     GenericParentWithoutSignature,
+    /// `jvm_fix_self_referencing_lambda`: a lambda whose implementation method
+    /// instantiates it again is written as a method reference.
+    SelfReferencingLambda,
 }
 
 impl KunaFix {
@@ -45,6 +48,7 @@ impl KunaFix {
         KunaFix::LambdaWildcardReturn,
         KunaFix::TwrUnaryCondition,
         KunaFix::GenericParentWithoutSignature,
+        KunaFix::SelfReferencingLambda,
     ];
 
     /// The option row that turns this fix on or off.
@@ -54,6 +58,7 @@ impl KunaFix {
             KunaFix::LambdaWildcardReturn => "jvm_fix_lambda_wildcard_return",
             KunaFix::TwrUnaryCondition => "jvm_fix_twr_unary_condition",
             KunaFix::GenericParentWithoutSignature => "jvm_fix_generic_parent_without_signature",
+            KunaFix::SelfReferencingLambda => "jvm_fix_self_referencing_lambda",
         }
     }
 

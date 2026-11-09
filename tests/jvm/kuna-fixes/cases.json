@@ -37,6 +37,17 @@
       "summary": "`objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone"
     },
     {
+      "id": "pkg/TestSelfReferencingLambda",
+      "fix": "jvm_fix_self_referencing_lambda",
+      "class_files": [
+        "pkg/TestSelfReferencingLambda.class",
+        "pkg/TestSelfReferencingLambda$Task.class"
+      ],
+      "source": "src/pkg/TestSelfReferencingLambda.jasm",
+      "compiler": "asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1",
+      "summary": "the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place"
+    },
+    {
       "id": "pkg/TestTryCatchNotFlag",
       "fix": "jvm_fix_twr_unary_condition",
       "class_files": [
