@@ -1022,11 +1022,15 @@ impl<'a> Explorer<'a> {
                         return NodeExit::Branch(self.reach(cfg, worklist, key, state, ctx, Some(id)));
                     }
                 }
-                let callee = Callee { target: tc, slot: None, ret: Some(fallthrough) };
+                // A target read from a data slot of the image: an unbound import.
+                let slot = tc.filter(|c| self.classify_target(*c).is_err()).and_then(|c| self.image_ptrs.get(&c).copied()).filter(|s| !self.target.is_executable(*s));
+                let tc = if slot.is_some() { None } else { tc };
+                let callee = Callee { target: tc, slot, ret: Some(fallthrough) };
                 self.apply_call_summary(&mut state, insns.last().map(|i| i.addr).unwrap_or(0), callee);
+                let ctx = after_call(ctx, fallthrough);
                 let key = NodeKey { addr: fallthrough, ctx: ctx.ctx };
                 let ret = self.reach(cfg, worklist, key, state, ctx, Some(id));
-                NodeExit::Call { target: tc, ret, slot: None }
+                NodeExit::Call { target: tc, ret, slot }
             }
         }
     }
@@ -1076,17 +1080,8 @@ impl<'a> Explorer<'a> {
         }
         let vars_before = self.arena.num_vars() as u32;
         let Some(cases) = self.enumerate_symbol_target(t).or_else(|| self.arena.case_split(t)) else {
-            // `push ret; push target; ret` over a target the program computed
-            // (a function pointer it loaded): an indirect call.
-            let mut st = state;
-            if let Some(ret) = self.pushed_return_address(&mut st) {
-                if self.target.is_foreign_code(ret) {
-                    let site = cfg.nodes[id as usize].key.addr;
-                    self.apply_call_summary(&mut st, site);
-                    let key = NodeKey { addr: ret, ctx: ctx.ctx };
-                    let ret_node = self.reach(cfg, worklist, key, st, ctx, Some(id));
-                    return NodeExit::Call { target: None, ret: ret_node, slot: None };
-                }
+            if let Some(e) = self.call_through(cfg, worklist, id, t, &state, ctx) {
+                return e;
             }
             self.stats.unresolved += 1;
             return NodeExit::Unresolved(format!(
@@ -1188,6 +1183,26 @@ impl<'a> Explorer<'a> {
         NodeExit::Select { atoms, targets, by_atoms: !symbol_pins }
     }
 
+    /// A jump to a target no enumeration resolves, below a pushed code
+    /// address, where the target is program data (a call's result or output,
+    /// an input of the function, a merged location) rather than a value the
+    /// emulation lost: a call through a pointer (the interpreter leaving to
+    /// `GetProcAddress`'s result), continuing at the pushed return address.
+    fn call_through(&mut self, cfg: &mut FlatCfg, worklist: &mut VecDeque<NodeId>, id: NodeId, t: ExprId, state: &State, ctx: VmCtx) -> Option<NodeExit> {
+        let vars = self.arena.free_vars(t);
+        if vars.is_empty() || vars.iter().any(|v| matches!(self.arena.var_info(*v).kind, VarKind::Unknown { .. })) {
+            return None;
+        }
+        let mut state = state.clone();
+        let ret = self.pushed_return_address(&mut state)?;
+        let site = cfg.nodes[id as usize].key.addr;
+        self.apply_call_summary(&mut state, site, Callee { target: None, slot: None, ret: Some(ret) });
+        let ctx = after_call(ctx, ret);
+        let key = NodeKey { addr: ret, ctx: ctx.ctx };
+        let ret_node = self.reach(cfg, worklist, key, state, ctx, Some(id));
+        Some(NodeExit::Call { target: None, ret: ret_node, slot: None })
+    }
+
     /// A target over one symbolized location (`sym + k`, or a table entry
     /// indexed by it) that is constant for every constant the location was
     /// seen to hold: one case per constant, pinning the symbol to it.
@@ -1248,6 +1263,7 @@ impl<'a> Explorer<'a> {
                     if let Some(ret) = self.pushed_return_address(&mut state) {
                         let site = cfg.nodes[id as usize].key.addr;
                         self.apply_call_summary(&mut state, site, Callee { target: None, slot: Some(slot), ret: Some(ret) });
+                        let ctx = after_call(ctx, ret);
                         let key = NodeKey { addr: ret, ctx: ctx.ctx };
                         let ret_node = self.reach(cfg, worklist, key, state, ctx, Some(id));
                         return NodeExit::Call { target: None, ret: ret_node, slot: Some(slot) };
@@ -1280,6 +1296,7 @@ impl<'a> Explorer<'a> {
                 if ret != c {
                     let site = cfg.nodes[id as usize].key.addr;
                     self.apply_call_summary(&mut state, site, Callee { target: Some(c), slot: None, ret: Some(ret) });
+                    let ctx = after_call(ctx, ret);
                     let key = NodeKey { addr: ret, ctx: ctx.ctx };
                     let ret_node = self.reach(cfg, worklist, key, state, ctx, Some(id));
                     return NodeExit::Call { target: Some(c), ret: ret_node, slot: None };
@@ -1351,7 +1368,7 @@ impl<'a> Explorer<'a> {
                         self.escapes.insert(o);
                     }
                     for k in 0..(CALL_POINTEE_BYTES / ps as i128) {
-                        let u = self.arena.unknown(ps);
+                        let u = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallOutput { site }, ps, false));
                         state.write_mem(Some(base), o + k * ps as i128, u, ps);
                     }
                 }
@@ -1359,7 +1376,7 @@ impl<'a> Explorer<'a> {
                     let a = a as u64;
                     if self.target.is_mapped(a) && self.target.is_writable(a) {
                         for k in 0..(CALL_POINTEE_BYTES / ps as i128) {
-                            let u = self.arena.unknown(ps);
+                            let u = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallOutput { site }, ps, false));
                             state.write_mem(None, a as i128 + k * ps as i128, u, ps);
                         }
                     }
@@ -1676,6 +1693,18 @@ fn covers(outer: &SymLoc, inner: &SymLoc) -> bool {
         _ => return false,
     };
     o0 <= i0 && i0 + inner.size as i128 <= o0 + outer.size as i128
+}
+
+/// The context a call's return continues in.  The interpreter exits to
+/// make the call and restores the native registers, so a register that
+/// held the VPC holds a program value afterwards (a memory cell in the VM
+/// context keeps it); the return address salts the context so two re-entry
+/// stubs never share a key through a stale VPC.
+fn after_call(mut ctx: VmCtx, ret: u64) -> VmCtx {
+    if ctx.vpc_reg.take().is_some() {
+        ctx.ctx = Some(ctx.ctx.unwrap_or(0).rotate_left(17) ^ ret);
+    }
+    ctx
 }
 
 /// The context for a VPC with these possible values.

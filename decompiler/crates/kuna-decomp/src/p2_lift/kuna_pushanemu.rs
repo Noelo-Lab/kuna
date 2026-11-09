@@ -204,7 +204,16 @@ impl<'a> Emulator<'a> {
             Space::Const => arena.cst(size, vn.offset as u128),
             Space::Register => state.read_reg(arena, vn.offset, size),
             Space::Unique => state.read_unique(arena, vn.offset, size),
-            Space::Ram => state.read_mem(arena, self.target, None, vn.offset as i128, size),
+            Space::Ram => {
+                let from_image = !state.mem_written(None, vn.offset as i128, size);
+                let v = state.read_mem(arena, self.target, None, vn.offset as i128, size);
+                if from_image && size == self.target.ptr_size() {
+                    if let Some(c) = arena.is_const(v) {
+                        self.image_loads.insert(c as u64, vn.offset);
+                    }
+                }
+                v
+            }
             Space::Other => self.unknown(arena, size, "operand in an unmodelled space"),
         }
     }

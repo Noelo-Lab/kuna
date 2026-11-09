@@ -65,6 +65,8 @@ pub enum VarKind {
     CallResult { site: u64 },
     /// Whatever an external call left in a scratch register it may clobber.
     CallClobber { site: u64, offset: u64 },
+    /// Memory an external call may have written through a pointer argument.
+    CallOutput { site: u64 },
     /// A location that held different constants on two paths into a node.
     Merged { node: u32, tag: u64 },
     /// Anything the emulator does not model.
@@ -1984,6 +1986,7 @@ impl ExprArena {
                     VarKind::InitMem { base, offset } => write!(s, "mem[{:?}{:+#x}]_{}", base, offset, info.size),
                     VarKind::CallResult { site } => write!(s, "ret@{:x}", site),
                     VarKind::CallClobber { site, offset } => write!(s, "clobber{:x}@{:x}", offset, site),
+                    VarKind::CallOutput { site } => write!(s, "out@{:x}", site),
                     VarKind::Merged { node, tag } => write!(s, "sym{}_{:x}", node, tag),
                     VarKind::Unknown { tag } => write!(s, "unk{}", tag),
                 };
