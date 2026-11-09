@@ -1397,6 +1397,28 @@ tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with index out of bounds: the len is 1 but the index is 1 (IndexOutOfBoundsException: Index 1 out of bounds for length 1 in Vineflower)|a try/catch (Throwable) whose handler starts with if (!flag) fails to decompile"
 
 [[option]]
+option = "jvm_fix_handler_copy_offsets"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p7_regions"
+subphase = "finally_processor"
+strength = "HARD"
+rewind = "p7_regions"
+issue = ""
+summary = "Decompile a method whose try/finally is protected by an exception range with several entries (a Kotlin suspend function whose try spans a suspension point): the exception deobfuscator splits the range and gives each part a copy of the finally handler, and the copy carries no bytecode offsets; when the finally processing strips the copy's astore/athrow it removes only the offsets the block has, where Vineflower removes them unconditionally and fails the method with an index out of bounds. The try/finally is then inlined or guarded by a semaphore variable as for any other handler; a copy of only the first block of a longer finally body, or a stripped finally copied by irreducible-flow splitting, keeps the method failing."
+use_when = "Leave on; jvm_vineflower_compat on reproduces Vineflower's failure."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_handler_copy_offsets off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 FinallyProcessor.removeExceptionInstructionsEx (instrOldOffsets.remove in step with the instructions, added by d88f743c / ForgeFlower#105) on a handler copy that ExceptionDeobfuscator.insertDummyExceptionHandlerBlocks (added by 868c468c, #368) builds without instrOldOffsets. develop/1.13.0 fixes it in 5c360738 (#597) by copying the offsets into the copy and no longer editing offsets in FinallyProcessor; kuna keeps both Vineflower behaviours elsewhere and only tolerates the missing offsets, which changes nothing else"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "// $VF: Couldn't be decompiled with removal index (is 18446744073709551615) should be < len (is 0) or removal index (is 0) should be < len (is 0) (IndexOutOfBoundsException: Index -1 / 0 out of bounds for length 0 in Vineflower's FinallyProcessor.removeExceptionInstructionsEx)|a Kotlin suspend function with try/finally around a suspension point fails to decompile"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""

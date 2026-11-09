@@ -1,4 +1,12 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/FinallyProcessor.java`.
+//!
+//! kuna fix `handler_copy_offsets` (`kuna_fixes`): on a handler copy made by
+//! `ExceptionDeobfuscator::insert_dummy_exception_handler_blocks` that holds the
+//! whole handler, `remove_exception_instructions_ex` removes only the instruction
+//! offsets the copy has (none). A method in which that happened fails, as in
+//! Vineflower, when irreducible-flow splitting copied a catch-all, since
+//! `iterate_graph` leaves copies alone and a stripped copy would print as a
+//! `catch` without its rethrow.
 
 use std::collections::VecDeque;
 
@@ -26,6 +34,8 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::instruction::Instruction;
 use crate::instruction_sequence::InstructionSequence;
 use crate::interpreter_util::InterpreterUtil;
+use crate::jthrow;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JLinkedHashSet, JavaEq};
@@ -56,6 +66,7 @@ pub struct FinallyProcessor {
     var_processor: VarProcessor,
     ssuversions: Option<VarVersionsGraph>,
     instr_rewrites: Option<JHashMap<Instruction, i32>>,
+    stripped_handler_copy: bool,
 }
 
 struct Record {
@@ -149,6 +160,7 @@ impl FinallyProcessor {
             var_processor: var_proc,
             ssuversions: None,
             instr_rewrites: None,
+            stripped_handler_copy: false,
         }
     }
 
@@ -167,6 +179,11 @@ impl FinallyProcessor {
         while let Some(stat) = stack.pop() {
             let parent = stat.get_parent();
             if let Some(fin) = parent.and_then(|p| p.try_as_catch_all()) {
+                if self.stripped_handler_copy && Some(stat) == fin.get_first() && fin.is_copied() {
+                    jthrow!(
+                        "copy of a finally handler left as a catch by irreducible-flow splitting"
+                    );
+                }
                 if Some(stat) == fin.get_first() && !fin.is_copied() {
                     let head = fin.get_basichead().get_block();
                     let handler = fin.get_handler().get_basichead().get_block();
@@ -184,6 +201,11 @@ impl FinallyProcessor {
                             )
                         }));
                     } else {
+                        if kuna_fixes::enabled(KunaFix::HandlerCopyOffsets)
+                            && Self::is_whole_handler_copy(graph, handler)
+                        {
+                            self.stripped_handler_copy = true;
+                        }
                         let inf = self.get_finally_information(cl, mt, root, fin);
 
                         match inf {
@@ -517,10 +539,10 @@ impl FinallyProcessor {
         let finallytype = information.first_code;
         let map_last = &information.map_last;
 
-        Self::remove_exception_instructions_ex(handler, 1, finallytype);
+        Self::remove_exception_instructions_ex(graph, handler, 1, finallytype);
         for (last, value) in map_last.entry_vec() {
             if value {
-                Self::remove_exception_instructions_ex(last, 2, finallytype);
+                Self::remove_exception_instructions_ex(graph, last, 2, finallytype);
                 graph.get_finally_exits().borrow_mut().add(last);
             }
         }
@@ -684,7 +706,7 @@ impl FinallyProcessor {
         let mut skipped_first = false;
 
         if finallytype == 3 {
-            Self::remove_exception_instructions_ex(first, 3, finallytype);
+            Self::remove_exception_instructions_ex(graph, first, 3, finallytype);
 
             if map_last.contains_key(&first) {
                 graph.get_finally_exits().borrow_mut().add(first);
@@ -740,7 +762,7 @@ impl FinallyProcessor {
         let mut true_exit: Option<BasicBlock> = None;
         for (last, value) in map_last.entry_vec() {
             if value {
-                Self::remove_exception_instructions_ex(last, 2, finallytype);
+                Self::remove_exception_instructions_ex(graph, last, 2, finallytype);
                 graph.get_finally_exits().borrow_mut().add(last);
                 ValidationHelper::validate_true(true_exit.is_none(), "More than one true exit");
                 true_exit = Some(last);
@@ -748,6 +770,7 @@ impl FinallyProcessor {
         }
 
         Self::remove_exception_instructions_ex(
+            graph,
             fstat.get_handler().get_basichead().get_block(),
             1,
             finallytype,
@@ -1246,32 +1269,57 @@ impl FinallyProcessor {
         }
     }
 
-    fn remove_exception_instructions_ex(block: BasicBlock, blocktype: i32, finallytype: i32) {
+    /// kuna: whether `block` is a handler copy (no offsets) that holds the whole
+    /// handler, i.e. it leaves the method only by throwing. A copy of the first
+    /// block of a longer handler shares the rest with the other copies.
+    fn is_whole_handler_copy(graph: ControlFlowGraph, block: BasicBlock) -> bool {
+        let last = graph.get_last();
+        block.get_instr_old_offsets().is_empty()
+            && block.get_succs().iter().all(|succ| succ == last)
+    }
+
+    fn remove_exception_instructions_ex(
+        graph: ControlFlowGraph,
+        block: BasicBlock,
+        blocktype: i32,
+        finallytype: i32,
+    ) {
         let seq = block.get_seq();
         let instr_old_offsets = block.get_instr_old_offsets();
+        let missing_ok = kuna_fixes::enabled(KunaFix::HandlerCopyOffsets)
+            && Self::is_whole_handler_copy(graph, block);
+        let remove_offset = |index: i32| {
+            if missing_ok {
+                if (0..instr_old_offsets.len() as i32).contains(&index) {
+                    instr_old_offsets.remove_at(index as usize);
+                }
+            } else {
+                instr_old_offsets.remove_at(index as usize);
+            }
+        };
 
         if finallytype == 3 {
             let mut i = seq.length() - 1;
             while i >= 0 {
                 seq.remove_instruction(i);
-                instr_old_offsets.remove_at(i as usize);
+                remove_offset(i);
                 i -= 1;
             }
         } else {
             if (blocktype & 1) > 0 && (finallytype == 2 || finallytype == 1) {
                 seq.remove_instruction(0);
-                instr_old_offsets.remove_at(0);
+                remove_offset(0);
             }
 
             if (blocktype & 2) > 0 {
                 if finallytype == 2 || finallytype == 0 {
                     seq.remove_last();
-                    instr_old_offsets.remove_at((instr_old_offsets.len() as i32 - 1) as usize);
+                    remove_offset(instr_old_offsets.len() as i32 - 1);
                 }
 
                 if finallytype == 2 {
                     seq.remove_last();
-                    instr_old_offsets.remove_at((instr_old_offsets.len() as i32 - 1) as usize);
+                    remove_offset(instr_old_offsets.len() as i32 - 1);
                 }
             }
         }

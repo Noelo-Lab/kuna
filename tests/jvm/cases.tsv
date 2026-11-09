@@ -3140,6 +3140,13 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected-compat/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes-compat/pkg/TestSuspendFinallyKt	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt.class
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$early$1.class
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$once$1.class
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$twice$1.class
+expected	kuna-fixes/expected-compat/pkg/TestSuspendFinallyKt.java
+compare	TestSuspendFinallyKt.java
 case	kuna-fixes-compat/pkg/TestTryCatchNotFlag	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class
@@ -3154,6 +3161,13 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes/pkg/TestSuspendFinallyKt	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt.class
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$early$1.class
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$once$1.class
+class	kuna-fixes/classes/pkg/TestSuspendFinallyKt$twice$1.class
+expected	kuna-fixes/expected/pkg/TestSuspendFinallyKt.java
+compare	TestSuspendFinallyKt.java
 case	kuna-fixes/pkg/TestTryCatchNotFlag	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class

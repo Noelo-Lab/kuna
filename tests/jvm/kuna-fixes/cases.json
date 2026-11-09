@@ -23,6 +23,19 @@
       "summary": "`objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone"
     },
     {
+      "id": "pkg/TestSuspendFinallyKt",
+      "fix": "jvm_fix_handler_copy_offsets",
+      "class_files": [
+        "pkg/TestSuspendFinallyKt.class",
+        "pkg/TestSuspendFinallyKt$early$1.class",
+        "pkg/TestSuspendFinallyKt$once$1.class",
+        "pkg/TestSuspendFinallyKt$twice$1.class"
+      ],
+      "source": "src/pkg/TestSuspendFinally.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
+      "summary": "`once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable"
+    },
+    {
       "id": "pkg/TestTryCatchNotFlag",
       "fix": "jvm_fix_twr_unary_condition",
       "class_files": [
