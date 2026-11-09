@@ -199,6 +199,10 @@ pub enum KunaFix {
     /// `type_annotation_argument_scope`: a type annotation on a generic
     /// argument is written in that argument, not in an earlier one.
     TypeAnnotationArgumentScope,
+    /// `assert_throw_after_if`: an assert whose `throw new AssertionError`
+    /// is the statement after an `if ($assertionsDisabled || cond)` whose
+    /// body cannot complete normally is resugared.
+    AssertThrowAfterIf,
 }
 
 impl KunaFix {
@@ -259,6 +263,7 @@ impl KunaFix {
         KunaFix::LambdaCatchVarRename,
         KunaFix::TypeAnnotationQualifiedName,
         KunaFix::TypeAnnotationArgumentScope,
+        KunaFix::AssertThrowAfterIf,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -319,6 +324,7 @@ impl KunaFix {
             KunaFix::LambdaCatchVarRename => "lambda_catch_var_rename",
             KunaFix::TypeAnnotationQualifiedName => "type_annotation_qualified_name",
             KunaFix::TypeAnnotationArgumentScope => "type_annotation_argument_scope",
+            KunaFix::AssertThrowAfterIf => "assert_throw_after_if",
         }
     }
 

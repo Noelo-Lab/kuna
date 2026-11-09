@@ -584,6 +584,7 @@ kuna-fixes-compat/pkg/TestAnonymousStaticCall
 kuna-fixes-compat/pkg/TestArrayOfArrays
 kuna-fixes-compat/pkg/TestAssertDeadThrow
 kuna-fixes-compat/pkg/TestAssertExpressionPosition
+kuna-fixes-compat/pkg/TestAssertThrowAfterIf
 kuna-fixes-compat/pkg/TestCapturedReceiverKt
 kuna-fixes-compat/pkg/TestCatchLoopBack
 kuna-fixes-compat/pkg/TestConstructorDiamond
@@ -640,6 +641,7 @@ kuna-fixes/pkg/TestAnonymousStaticCall
 kuna-fixes/pkg/TestArrayOfArrays
 kuna-fixes/pkg/TestAssertDeadThrow
 kuna-fixes/pkg/TestAssertExpressionPosition
+kuna-fixes/pkg/TestAssertThrowAfterIf
 kuna-fixes/pkg/TestCapturedReceiverKt
 kuna-fixes/pkg/TestCatchLoopBack
 kuna-fixes/pkg/TestConstructorDiamond

@@ -3157,6 +3157,11 @@ class	kuna-fixes/classes/pkg/TestAssertExpressionPosition$Sink.class
 class	kuna-fixes/classes/pkg/TestAssertExpressionPosition$Source.class
 expected	kuna-fixes/expected-compat/pkg/TestAssertExpressionPosition.java
 compare	TestAssertExpressionPosition.java
+case	kuna-fixes-compat/pkg/TestAssertThrowAfterIf	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestAssertThrowAfterIf.class
+class	kuna-fixes/classes/pkg/TestAssertThrowAfterIf$Ctx.class
+expected	kuna-fixes/expected-compat/pkg/TestAssertThrowAfterIf.java
+compare	TestAssertThrowAfterIf.java
 case	kuna-fixes-compat/pkg/TestCapturedReceiverKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestCapturedReceiverKt.class
@@ -3534,6 +3539,11 @@ class	kuna-fixes/classes/pkg/TestAssertExpressionPosition$Sink.class
 class	kuna-fixes/classes/pkg/TestAssertExpressionPosition$Source.class
 expected	kuna-fixes/expected/pkg/TestAssertExpressionPosition.java
 compare	TestAssertExpressionPosition.java
+case	kuna-fixes/pkg/TestAssertThrowAfterIf	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestAssertThrowAfterIf.class
+class	kuna-fixes/classes/pkg/TestAssertThrowAfterIf$Ctx.class
+expected	kuna-fixes/expected/pkg/TestAssertThrowAfterIf.java
+compare	TestAssertThrowAfterIf.java
 case	kuna-fixes/pkg/TestCapturedReceiverKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestCapturedReceiverKt.class

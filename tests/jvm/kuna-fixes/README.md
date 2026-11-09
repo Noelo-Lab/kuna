@@ -24,6 +24,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestArrayOfArrays` | `kt_partial_array_dims` | kotlinc 2.0.0 | `rows`, `grid` and `table`, which create an array of arrays with only its outer length, decompile (`arrayOfNulls(n)`) |
 | `pkg/TestAssertDeadThrow` | `assert_dead_throw` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the dead `throw new AssertionError(...)` statements after `return` in `spans` and `widths` are gone, and `widths` declares its for-each variable in the header (`for (int[] row : rows)`, was `for (row : rows)`) |
 | `pkg/TestAssertExpressionPosition` | `statement_as_expression` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects |
+| `pkg/TestAssertThrowAfterIf` | `assert_throw_after_if` | javac 17.0.20.1 (`-g`) | asserts at the end of a loop body and before a return, which the structurer wrote as if ($assertionsDisabled || cond) { rest } throw new AssertionError(), are resugared; no $assertionsDisabled reference is left |
 | `pkg/TestCapturedReceiverKt` | `kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
 | `pkg/TestCatchLoopBack` | `catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
 | `pkg/TestConstructorDiamond` | `kt_constructor_diamond` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the constructor calls whose type arguments Kotlin infers (`return Bag(0)`, `Pair(a, b)`) are written without the Java diamond `<>` |
@@ -250,6 +251,52 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           }
        }
  
+```
+
+### `pkg/TestAssertThrowAfterIf`
+
+```diff
+--- expected-compat/pkg/TestAssertThrowAfterIf.java
++++ expected/pkg/TestAssertThrowAfterIf.java
+@@ -1,33 +1,26 @@
+ package pkg;
+ 
+ public class TestAssertThrowAfterIf {
+-   // $VF: Could not resugar all assert statements!
+    public static void loopEnd(TestAssertThrowAfterIf.Ctx c) {
+       while (c.more()) {
+          if (!c.exec()) {
+             return;
+          }
+ 
+-         if (!$assertionsDisabled && !c.initial()) {
+-            throw new AssertionError();
+-         }
++         assert c.initial();
+       }
+    }
+ 
+-   // $VF: Could not resugar all assert statements!
+    public static void beforeReturn(TestAssertThrowAfterIf.Ctx c, Object current) {
+       while (c.more()) {
+          Object request = c.next();
+          if (request == null) {
+-            if ($assertionsDisabled || current == null && !c.more()) {
+-               if (c.initial()) {
+-                  c.done();
+-               }
+-
+-               return;
++            assert current == null && !c.more() : "sources left";
++            if (c.initial()) {
++               c.done();
+             }
+ 
+-            throw new AssertionError("sources left");
++            return;
+          }
+ 
+          c.exec();
 ```
 
 ### `pkg/TestCapturedReceiverKt`

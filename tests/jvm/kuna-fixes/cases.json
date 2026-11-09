@@ -58,6 +58,17 @@
       "summary": "`consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects"
     },
     {
+      "id": "pkg/TestAssertThrowAfterIf",
+      "fix": "assert_throw_after_if",
+      "class_files": [
+        "pkg/TestAssertThrowAfterIf.class",
+        "pkg/TestAssertThrowAfterIf$Ctx.class"
+      ],
+      "source": "src/pkg/TestAssertThrowAfterIf.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "asserts at the end of a loop body and before a return, which the structurer wrote as if ($assertionsDisabled || cond) { rest } throw new AssertionError(), are resugared; no $assertionsDisabled reference is left"
+    },
+    {
       "id": "pkg/TestCapturedReceiverKt",
       "fix": "kt_local_as_extension_receiver",
       "class_files": [

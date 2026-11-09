@@ -12,6 +12,7 @@ pub mod kuna_fix_type_switch_enum_label;
 pub mod kuna_fix_type_switch_label_lookup;
 pub mod inline_single_block_helper;
 pub mod kuna_fix_assert_dead_throw;
+pub mod kuna_fix_assert_throw_after_if;
 pub mod kuna_fix_local_class_anonymous_subclass;
 pub mod kuna_fix_lambda_catch_var_rename;
 pub mod kuna_fix_pattern_variable_scope;

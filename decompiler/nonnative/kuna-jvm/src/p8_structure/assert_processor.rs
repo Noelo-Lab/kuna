@@ -3,6 +3,10 @@
 //! kuna fix `assert_dead_throw` (`kuna_fixes`): in `replace_assertion`,
 //! a `throw new AssertionError` the `if` reached by a break is removed once
 //! the assert has consumed it (`kuna_fix_assert_dead_throw`).
+//!
+//! kuna fix `assert_throw_after_if`: an assert whose throw follows an `if`
+//! the structurer wrote the other way round is recognised
+//! (`kuna_fix_assert_throw_after_if`).
 
 use crate::assert_exprent::AssertExprent;
 use crate::basic_block_statement::BasicBlockStatement;
@@ -21,6 +25,8 @@ use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::p8_structure::kuna_fix_assert_dead_throw;
+use crate::p8_structure::kuna_fix_assert_throw_after_if;
+use crate::secondary_functions_helper::SecondaryFunctionsHelper;
 use crate::root_statement::RootStatement;
 use crate::rt::JList;
 use crate::sequence_helper::SequenceHelper;
@@ -197,6 +203,9 @@ impl AssertProcessor {
             throw_error = Self::is_assertion_error(elsestat);
 
             if throw_error.is_none() {
+                if kuna_fixes::enabled(KunaFix::AssertThrowAfterIf) {
+                    return Self::replace_assertion_after_if(parent, stat, classname, key);
+                }
                 return false;
             } else {
                 throw_in_if = false;
@@ -361,6 +370,48 @@ impl AssertProcessor {
             }
         }
 
+        true
+    }
+
+    /// kuna fix `assert_throw_after_if`: the assert whose throw is the
+    /// statement after `stat`, reached when its condition is false.
+    fn replace_assertion_after_if(
+        parent: Statement,
+        stat: IfStatement,
+        classname: &str,
+        key: &str,
+    ) -> bool {
+        let Some(next) = kuna_fix_assert_throw_after_if::throw_after(parent, stat) else {
+            return false;
+        };
+        let Some(throw_error) = Self::is_assertion_error(Some(next)) else {
+            return false;
+        };
+        let negated = FunctionExprent::new_single(
+            FunctionType::BoolNot,
+            stat.get_headexprent().get_condition().copy(),
+            None,
+        )
+        .0;
+        let condition = SecondaryFunctionsHelper::propagate_bool_not(negated).unwrap_or(negated);
+        let res = Self::get_assertion_exprent(stat.0, condition, classname, key, true);
+        if !res.valid || res.assignment || res.replace_parent {
+            return false;
+        }
+
+        let ascond = res.exprent.map(|e| {
+            FunctionExprent::new_single(FunctionType::BoolNot, e, throw_error.get_bytecode().as_ref()).0
+        });
+        let mut lst_params: Vec<Option<Exprent>> = vec![ascond];
+        if !throw_error.get_lst_parameters().is_empty() {
+            lst_params.push(Some(throw_error.get_lst_parameters().get(0)));
+        }
+        let assertion: Statement = BasicBlockStatement::create().0;
+        let exprs: JList<Exprent> = JList::new();
+        exprs.add(AssertExprent::new(lst_params).0);
+        assertion.set_exprents(exprs);
+
+        kuna_fix_assert_throw_after_if::replace(parent, stat, next, assertion);
         true
     }
 
