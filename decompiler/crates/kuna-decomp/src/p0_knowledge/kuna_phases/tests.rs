@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_391() {
-    assert_eq!(kuna_num_settables(), 391);
-    assert_eq!(SETTABLE_TABLE.len(), 391);
+fn settable_count_is_399() {
+    assert_eq!(kuna_num_settables(), 399);
+    assert_eq!(SETTABLE_TABLE.len(), 399);
 }
 
 #[test]
-fn tier_counts_are_135_core_157_transform_99_analysis() {
+fn tier_counts_are_136_core_159_transform_104_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_135_core_157_transform_99_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (135, 157, 99));
+    assert_eq!((core, transform, analysis), (136, 159, 104));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_186() {
+fn option_values_live_value_present_for_189() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -333,6 +333,10 @@ fn option_values_live_value_present_for_186() {
         // (kuna) `.eh_frame` LSDA landing-pad discovery sub-feature of entry_disc
         // (GccExceptionAnalyzer), default-off; analysis-tier, no codegen live reader.
         "eh_frame_full",
+        // (kuna) Mach-O `__unwind_info` function-start discovery — an analysis-pass
+        // gate with no codegen live reader (read console-side via kuna_live_value),
+        // same as `eh_frame_full` above. Default-off.
+        "unwindstarts",
         // (kuna) `.eh_frame` FDE-interior entry suppression — an analysis-pass gate
         // with no codegen live reader (read console-side via kuna_live_value), same
         // as the gates around it. Default-ON (DIV-61).
@@ -508,6 +512,14 @@ fn option_values_live_value_present_for_186() {
         // the `objc` facts (read via kuna_live_value), like `objc` above.
         // Default-on, inert unless `objc` is on.
         "objcrefconst",
+        // (kuna) The Swift runtime-metadata pass gate, the objc precedent.
+        "swiftmetadata",
+        // (kuna) Mach-O __cfstring constant-string recovery — an analysis-pass gate
+        // with no codegen live reader (read console-side via kuna_live_value), like
+        // the gates around it. Default-on, Mach-O-only.
+        "cfstrings",
+        // (kuna) The Swift type-layout arm's gate, read inside that pass.
+        "swifttypes",
         // (kuna) Objective-C instance layouts — same commit-side gate as `objcrefconst`.
         "objcivars",
         // (kuna) The Objective-C SDK header directory — a load-time env bridge
@@ -592,6 +604,9 @@ fn option_values_live_value_present_for_186() {
         // `read symbols` (the commit either creates a Function per entry or parks
         // the starts), so it has no codegen live reader. Default-off.
         "lazyfuncs",
+        // (kuna) Apple kernelcache unwrapping + MH_FILESET entry choice -- a
+        // LOAD-time gate read from `KUNA_KERNELCACHE`. Default auto.
+        "kernelcache",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -971,7 +986,9 @@ fn option_values_live_value_present_for_186() {
     // 179 -> 178: `callmechanisms` takes `off|auto|on` and has no live_field.
     // 179 -> 182: +1 for `copywaves` (pool_copy_waves), +2 for `armpltslot` and `armcondskip` (analysis_armpltslot, analysis_armcondskip).
     // 179 -> 181: +1 for `copywaves` (pool_copy_waves), +1 for `armderef` (analysis_armderef).
-    assert_eq!(with_live, 186);
+    // 178 -> 179: +1 for `ptrauthtrap` (live_field = ptrauth_trap).
+    // 179 -> 180: +1 for `authptrcall` (live_field = analysis_authptrcall).
+    assert_eq!(with_live, 189);
 }
 
 #[test]
@@ -1206,10 +1223,16 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `copywaves`, its P3 row after `deadwaves`; +1 for `deadcascade`, its P3 row after `copywaves`;
     // +2 for `armpltslot` and `armcondskip`, their P1 rows beside `armwalkmode`.
     // +1 for `armderef`, its P1 row after `armwalkmode`.
+    // +1 for `unwindstarts`; its P1 row sits beside `eh_frame_full`.
     // +1 for `objcrefconst`; its P1 row sits beside `objc`.
+    // +1 for `ptrauthtrap`; its P2 row sits beside `gowritebarrier`.
+    // +1 for `authptrcall`; its P1 row sits beside `peimportcall`.
+    // +1 for `swiftmetadata`; its P1 row sits beside `objc`.
+    // +1 for `swifttypes`, beside it.
+    // +1 for `kernelcache`; its P1 row sits beside `macho-arm64e`.
     // +1 for `objcivars`; its P1 row sits beside `objcrefconst`.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
-    assert_eq!(json.matches("},\n").count(), 390);
+    assert_eq!(json.matches("},\n").count(), 398);
 }
 
 #[test]

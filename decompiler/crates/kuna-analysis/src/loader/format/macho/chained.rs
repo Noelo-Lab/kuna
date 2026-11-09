@@ -70,6 +70,14 @@ mod ptr_format {
     /// `DYLD_CHAINED_PTR_ARM64E_USERLAND24` — `ARM64E_USERLAND` with a 24-bit
     /// bind ordinal.
     pub const ARM64E_USERLAND24: u16 = 12;
+    /// `DYLD_CHAINED_PTR_64_KERNEL_CACHE` — 4-byte stride, a 30-bit target offset
+    /// from the base of the cache level named in bits 30..31.
+    pub const PTR_64_KERNEL_CACHE: u16 = 8;
+    /// `DYLD_CHAINED_PTR_X86_64_KERNEL_CACHE` — the same layout, 1-byte stride.
+    pub const X86_64_KERNEL_CACHE: u16 = 11;
+    /// `DYLD_CHAINED_PTR_ARM64E_FIRMWARE` — the arm64e layout with a 4-byte
+    /// stride; a non-auth target is a full vmaddr, as in `ARM64E`.
+    pub const ARM64E_FIRMWARE: u16 = 10;
 }
 
 /// `SG_READ_ONLY` (`mach-o/loader.h`): dyld maps the segment read-only once its
@@ -120,9 +128,24 @@ pub struct ChainedFixups {
     width: u8,
     /// `[vmaddr, vmaddr + vmsize)` of every segment flagged `SG_READ_ONLY`.
     readonly_segments: Vec<(u64, u64)>,
+    /// Kernel-collection rebases as `(slot_vma, cache_level, target_offset)`,
+    /// resolved into `rebases` once every chain has been read
+    /// ([`resolve_kernel_cache_levels`]).
+    kernel_cache: Vec<(u64, u8, u64)>,
 }
 
 impl ChainedFixups {
+    /// An overlay from another loader's resolved pointer slots (an ELF's
+    /// `R_*_RELATIVE` addends), so a reader works the same on both formats.
+    pub fn from_rebases(rebases: impl IntoIterator<Item = (u64, u64)>) -> ChainedFixups {
+        let mut out = ChainedFixups {
+            rebases: rebases.into_iter().collect(),
+            ..ChainedFixups::default()
+        };
+        out.sort_slots();
+        out
+    }
+
     /// Whether this image carried any chained-fixup rebases (a quick "is this a
     /// chained-fixup binary" probe; `false` ⇒ the resolver is a no-op).
     pub fn is_empty(&self) -> bool {
@@ -242,10 +265,14 @@ where
     // base (the imagebase the OFFSET formats add). __PAGEZERO (filesize 0) is
     // skipped so it does not win as the minimum.
     let mut imagebase: u64 = u64::MAX;
+    let mut prelink_info: Option<&[u8]> = None;
 
     while let Ok(Some(command)) = commands.next() {
         // Segment (either width) → SegInfo + imagebase candidate.
         if let Ok(Some((segment, _))) = Mach::Segment::from_command(command) {
+            if trim_name(segment.name()) == b"__PRELINK_INFO" {
+                prelink_info = segment.data(endian, bytes).ok();
+            }
             let vmaddr = segment.vmaddr(endian).into();
             let fileoff = segment.fileoff(endian).into();
             let filesize = segment.filesize(endian).into();
@@ -282,8 +309,72 @@ where
     let mut out = ChainedFixups { chained: true, readonly_segments, ..ChainedFixups::default() };
     let mut walk = Walk::new(&segs, bytes, blob);
     walk_fixups(blob, imagebase, &mut walk, &mut out);
+    let links = prelink_info.map(CollectionLinks::read);
+    resolve_kernel_cache_levels(&mut out, imagebase, links);
     out.sort_slots();
     out
+}
+
+fn trim_name(raw: &[u8]) -> &[u8] {
+    &raw[..raw.iter().position(|&b| b == 0).unwrap_or(raw.len())]
+}
+
+/// Which other kernel collections a collection's `__PRELINK_INFO` plist (the
+/// segment's bytes; its one section is `__info`) says it
+/// was linked against: `_BootKCID` (the boot collection) and `_PageableKCID`
+/// (the System collection), the UUID keys xnu's `OSKext` checks before it
+/// accepts a System or Auxiliary collection. A boot collection carries neither.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CollectionLinks {
+    boot: bool,
+    pageable: bool,
+}
+
+impl CollectionLinks {
+    fn read(info: &[u8]) -> Self {
+        let has = |key: &[u8]| info.windows(key.len()).any(|w| w == key);
+        CollectionLinks { boot: has(b"<key>_BootKCID</key>"), pageable: has(b"<key>_PageableKCID</key>") }
+    }
+}
+
+/// Resolve the kernel-collection rebases that target this collection.
+///
+/// A `DYLD_CHAINED_PTR_64_KERNEL_CACHE` target is an offset from the base of
+/// the collection its `cacheLevel` names -- xnu's `basePointers` index
+/// (`kc_kind_t`: 0 the boot collection, 1 the pageable System one, 3 the
+/// Auxiliary one). Only targets at this collection's own level can be rebased
+/// from this file's base; a target in another collection needs that file.
+///
+/// Nothing in the Mach-O header or the chains names the own level: xnu learns a
+/// collection's kind from whoever loads it. The `__PRELINK_INFO` plist does
+/// say which collections it was linked against (`links`): none for the boot
+/// collection (0); `_PageableKCID` only for an Auxiliary one (3); `_BootKCID`
+/// alone for a System collection or for an Auxiliary one built without a
+/// System collection. That last pair is told apart by the chains, which is
+/// sound there because neither can name the other's level: a System
+/// collection is loaded before any Auxiliary one, and an Auxiliary one that
+/// links no System collection cannot point into it. Without the plist, or when
+/// the chains name both levels, the own level is unknown and no
+/// kernel-collection target is written at all.
+fn resolve_kernel_cache_levels(out: &mut ChainedFixups, imagebase: u64, links: Option<CollectionLinks>) {
+    let pending = std::mem::take(&mut out.kernel_cache);
+    let names = |level: u8| pending.iter().any(|&(_, l, _)| l == level);
+    let own = match links {
+        Some(CollectionLinks { boot: false, pageable: false }) => Some(0),
+        Some(CollectionLinks { pageable: true, .. }) => Some(3),
+        Some(CollectionLinks { boot: true, pageable: false }) => match (names(1), names(3)) {
+            (true, false) => Some(1),
+            (false, true) => Some(3),
+            _ => None,
+        },
+        None => None,
+    };
+    let Some(own) = own else { return };
+    for (va, level, offset) in pending {
+        if level == own {
+            out.rebases.push((va, imagebase.wrapping_add(offset)));
+        }
+    }
 }
 
 /// The image a chain walk reads, the file words it has decoded, and the page
@@ -485,7 +576,10 @@ fn walk_segment(
         ptr_format::PTR_64
         | ptr_format::PTR_64_OFFSET
         | ptr_format::PTR_32
-        | ptr_format::ARM64E_KERNEL => 4,
+        | ptr_format::ARM64E_KERNEL
+        | ptr_format::ARM64E_FIRMWARE
+        | ptr_format::PTR_64_KERNEL_CACHE => 4,
+        ptr_format::X86_64_KERNEL_CACHE => 1,
         _ => return,
     };
     out.width = if pointer_format == ptr_format::PTR_32 { 4 } else { 8 };
@@ -564,6 +658,14 @@ fn walk_chain(
             rd_u64(walk.file, fo as usize)
         };
         let Some(raw) = raw else { return true };
+        if let Some((next, level, offset)) = kernel_cache_rebase(raw, format.pointer_format) {
+            out.kernel_cache.push((va, level, offset));
+            if next == 0 {
+                return true;
+            }
+            va = va.wrapping_add(next * stride);
+            continue;
+        }
         let (next, fixup) = decode_ptr(raw, format);
         match fixup {
             Some(Fixup::Rebase(target)) => out.rebases.push((va, target)),
@@ -632,6 +734,7 @@ fn decode_ptr(raw: u64, format: &Format) -> (u64, Option<Fixup>) {
         // a plain bind carries a signed 19-bit addend at 32..50.
         ptr_format::ARM64E
         | ptr_format::ARM64E_KERNEL
+        | ptr_format::ARM64E_FIRMWARE
         | ptr_format::ARM64E_USERLAND
         | ptr_format::ARM64E_USERLAND24 => {
             let auth = (raw >> 63) & 1 == 1;
@@ -651,13 +754,22 @@ fn decode_ptr(raw: u64, format: &Format) -> (u64, Option<Fixup>) {
             }
             let unpacked = (raw & 0x7FF_FFFF_FFFF) | (((raw >> 43) & 0xFF) << 56);
             let resolved = match format.pointer_format {
-                ptr_format::ARM64E => unpacked,
+                ptr_format::ARM64E | ptr_format::ARM64E_FIRMWARE => unpacked,
                 _ => imagebase.wrapping_add(unpacked),
             };
             (next, Some(Fixup::Rebase(resolved)))
         }
         _ => (0, None),
     }
+}
+
+/// `dyld_chained_ptr_64_kernel_cache_rebase` (`PTR_64_KERNEL_CACHE`,
+/// `X86_64_KERNEL_CACHE`): `(next, cacheLevel, target)` — a 30-bit target
+/// offset, the 2-bit level in bits 30..31, `next` in bits 51..62. `None` for any
+/// other format.
+fn kernel_cache_rebase(raw: u64, pointer_format: u16) -> Option<(u64, u8, u64)> {
+    matches!(pointer_format, ptr_format::PTR_64_KERNEL_CACHE | ptr_format::X86_64_KERNEL_CACHE)
+        .then(|| ((raw >> 51) & 0xFFF, ((raw >> 30) & 3) as u8, raw & 0x3FFF_FFFF))
 }
 
 /// Map a VMA to its file offset via the segment table (the inverse of the load
@@ -774,6 +886,60 @@ mod tests {
         assert_eq!(fixup, Some(Fixup::Bind { ordinal: 0x12_0003, addend: -1 }));
         let (_n, fixup) = decode_ptr(raw | (1 << 63), &fmt(ptr_format::ARM64E));
         assert_eq!(fixup, Some(Fixup::Bind { ordinal: 3, addend: 0 }));
+    }
+
+    /// The kernel-collection formats split a word into `next`, the cache level
+    /// and a 30-bit offset; `ARM64E_KERNEL` rebases every target from the base.
+    #[test]
+    fn decode_kernel_cache_formats() {
+        let base = 0xffff_fff0_0700_4000;
+        let raw = (1u64 << 63) | (5u64 << 51) | (0x1234u64 << 32) | (3u64 << 30) | 0x00d7_8010;
+        assert_eq!(kernel_cache_rebase(raw, ptr_format::PTR_64_KERNEL_CACHE), Some((5, 3, 0xd7_8010)));
+        assert_eq!(kernel_cache_rebase(raw, ptr_format::X86_64_KERNEL_CACHE), Some((5, 3, 0xd7_8010)));
+        assert_eq!(kernel_cache_rebase(raw, ptr_format::ARM64E_KERNEL), None);
+        let at = Format { pointer_format: ptr_format::ARM64E_KERNEL, imagebase: base, max_valid_pointer: 0 };
+        let plain = (2u64 << 51) | 0x8000;
+        assert_eq!(decode_ptr(plain, &at), (2, Some(Fixup::Rebase(base + 0x8000))));
+    }
+
+    /// The own cache level comes from the collections the plist links: an
+    /// Auxiliary KC rebases its level-3 targets and leaves the boot and System
+    /// ones alone; a boot KC rebases level 0; with no plist, or a `_BootKCID`
+    /// collection whose chains name both 1 and 3, nothing is written.
+    #[test]
+    fn kernel_cache_rebases_resolve_the_collections_own_level() {
+        let base = 0xffff_fe00_0700_0000;
+        let pending = vec![(base + 0x10, 3, 0x4000), (base + 0x18, 0, 0x8000), (base + 0x20, 1, 0x100)];
+        let run = |pending: Vec<(u64, u8, u64)>, links| {
+            let mut f = ChainedFixups { kernel_cache: pending, ..ChainedFixups::default() };
+            resolve_kernel_cache_levels(&mut f, base, links);
+            f.sort_slots();
+            [base + 0x10, base + 0x18, base + 0x20].map(|va| f.resolved_ptr(va))
+        };
+        let aux = Some(CollectionLinks { boot: true, pageable: true });
+        assert_eq!(run(pending.clone(), aux), [Some(base + 0x4000), None, None]);
+        let boot = Some(CollectionLinks { boot: false, pageable: false });
+        assert_eq!(run(pending.clone(), boot), [None, Some(base + 0x8000), None]);
+        let boot_only = Some(CollectionLinks { boot: true, pageable: false });
+        assert_eq!(run(pending.clone(), boot_only), [None, None, None], "both 1 and 3 named: unknown");
+        assert_eq!(run(vec![(base + 0x20, 1, 0x100), (base + 0x18, 0, 0x8000)], boot_only), [None, None, Some(base + 0x100)]);
+        assert_eq!(run(pending, None), [None, None, None], "no plist: unknown");
+        assert_eq!(
+            CollectionLinks::read(b"<dict><key>_BootKCID</key><data>AA==</data></dict>"),
+            CollectionLinks { boot: true, pageable: false }
+        );
+    }
+
+    /// `ARM64E_FIRMWARE` keeps a non-auth target as a full vmaddr and rebases an
+    /// auth target from the image base.
+    #[test]
+    fn decode_arm64e_firmware() {
+        let base = 0x1_0000_0000;
+        let at = Format { pointer_format: ptr_format::ARM64E_FIRMWARE, imagebase: base, max_valid_pointer: 0 };
+        let plain = (3u64 << 51) | 0x1_0000_4020;
+        assert_eq!(decode_ptr(plain, &at), (3, Some(Fixup::Rebase(0x1_0000_4020))));
+        let auth = (1u64 << 63) | (1u64 << 51) | (0x77u64 << 32) | 0x4020;
+        assert_eq!(decode_ptr(auth, &at), (1, Some(Fixup::Rebase(base + 0x4020))));
     }
 
     /// An unhandled pointer format resolves nothing and stops the chain.
@@ -985,6 +1151,24 @@ mod tests {
         let classic = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_objc")).unwrap();
         let classic_file = object::File::parse(classic.as_slice()).unwrap();
         assert!(!resolve_chained_fixups(&classic_file, &classic).is_chained());
+    }
+
+    /// `macho_arm64e_auth` (`ARM64E_USERLAND24`): an authenticated rebase strips
+    /// its signing context, authenticated binds name their import with no
+    /// addend, and a plain bind keeps its addend.
+    #[test]
+    fn fixture_arm64e_auth_entries() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_arm64e_auth");
+        let bytes = std::fs::read(path).expect("read fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse Mach-O");
+        let fixups = resolve_chained_fixups(&file, &bytes);
+        let bind = |va| fixups.bind_at(va).map(|b| (std::str::from_utf8(&b.name).unwrap(), b.addend));
+        assert_eq!(fixups.resolved_ptr(0x100004000), Some(0x100000410));
+        assert_eq!(bind(0x100004008), Some(("_ext_func", 0)));
+        assert_eq!(bind(0x100004010), Some(("_ext_data", 16)));
+        assert_eq!(bind(0x100004018), Some(("_ext_func", 0)));
+        assert_eq!(fixups.resolved_ptr(0x100008000), Some(0x100000418));
+        assert!(fixups.in_readonly_segment(0x100004018));
     }
 
     /// `resolve_chained_fixups` is a strict no-op on a non-Mach-O input.

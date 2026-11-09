@@ -2229,6 +2229,32 @@ returns: `param_N`, type-prefixed `iVar1`/`uVar2`-style locals
 recognized as "generated" by `kuna_naming.rs (kuna_is_generated_name)` so
 cross-function name recommendation never propagates a default name.
 
+A data read through an import slot is the exception to `dat_<addr>` (`importdata`,
+`naming-policy`). The option is off in the shipped catalog but on in the `aggressive`
+preset, which `auto` selects below 500 KiB, so on a small binary this is the default
+rendering. A data import — a Mach-O `__got`/`__auth_got`
+entry, a dyld-cache coalesced GOT slot, a PE IAT entry — is reached through a slot
+the dynamic loader fills with the import's address (`ldr x8,[slot]; ldr w8,[x8]`).
+The loader already names that slot for the import and paints it `externref`, which
+is how `ActionDeindirect` turns a *call* through it into a direct call to the
+import. A *data* read is not a call, so it printed as a dereference of the
+anonymous slot, `*dat_<slot>`. With the option on, `PrintC::op_load`
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (import_slot_name)`) renders
+a LOAD whose pointer is such a slot as the import itself — `*slot` where the slot
+holds `&imported_counter` is `imported_counter` — resolving it exactly as
+`ActionDeindirect` resolves a call through the same slot (`query_function` on the
+externref persist address, after a plain COPY chain). Calls never reach this path,
+since deindirection consumes them first, and a read through anything that is not an
+externref import slot keeps `*dat_<addr>`. It depends on the slot being painted:
+PE and Mach-O slots by `peimportcall`, ELF `GLOB_DAT` GOT slots by `elfgotimports`
+(chapter [01](01-program-prep.md)), which is committed under this same gate, so it
+is a no-op when neither paints. A pointer that reaches the LOAD through a phi rather
+than a COPY chain is left as the dereference. A slot pointer the body
+holds in a named local (`v2 = stdout_ptr;`, then several reads through `v2`) names
+the import only while some other printed statement still reads that local: when
+every read of it is such a load, the loads keep `*v2`, so naming the import never
+leaves the local's assignment dead.
+
 (kuna) **The ghidra-mode third style (Phase 3, DIV-77).** The ghidra-mode
 process sets a separate `name_style_ghidra` flag alongside (not instead of)
 the angr default; the resolver `Architecture::kuna_name_style` /

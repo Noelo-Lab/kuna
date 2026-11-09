@@ -1,0 +1,62 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    arm64e __auth_ptr call binding (`option authptrcall on|off`).
+
+    Issue: on an arm64e iOS system daemon every call through an __auth_got slot was
+    named, but the three calls clang routes through __auth_ptr
+    (`adrp/ldr x16; blraaz x16`, ___chkstk_darwin) rendered
+    `(*dat_1000716c0)(...)`. __auth_ptr is a plain S_REGULAR section with no
+    LC_DYSYMTAB indirect-symbol entries, so only its chained bind names the
+    import.
+
+    Stage / sub-stage: P1 external-refinement. `loader/kuna_authptrcall.rs`
+    names each addend-free bind slot of __auth_ptr after its import and paints
+    it Varnode::externref, the `peimportcall` facts, so ActionDeindirect
+    resolves the call.
+
+    P0 assertion: `option authptrcall on|off`.
+
+    The XML wrapper only supplies the harness architecture; every pass loads
+    the `macho_arm64e_auth` fixture (an arm64e PAC00 image, see the fixtures
+    README) through the object bootstrap. `_call_auth_ptr` calls through
+    `__auth_ptr[0]`, an authenticated bind of `_ext_func`; `_call_table`
+    calls through `__const[0]`, an authenticated rebase to `_helper` that the
+    chained-fixup resolver unpacks under `dynrelocs`.
+
+    Pass 1 (`option authptrcall off`) reproduces the BUG: the call reads
+    `(*_slot_ext)()`, through the slot's own data symbol.
+    Pass 2 (`option authptrcall on`, the shipped default) is the FIX:
+    `ext_func()`. `_call_table` calls `_helper` in both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_arm64e_auth</com>
+  <com>option authptrcall off</com>
+  <com>read symbols</com>
+  <com>load function _call_auth_ptr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _call_table</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_arm64e_auth</com>
+  <com>read symbols</com>
+  <com>load function _call_auth_ptr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _call_table</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="AUTHPTRCALL #1: off calls through the __auth_ptr slot, not the import" min="1" max="1">\(\*_slot_ext\)\(\);</stringmatch>
+<stringmatch name="AUTHPTRCALL #2: on names the import the slot binds" min="1" max="1">  ext_func\(\);</stringmatch>
+<stringmatch name="AUTHPTRCALL #3: the authenticated rebase resolves the blraa target in both passes" min="2" max="2">  _helper\(\);</stringmatch>
+</decompilertest>
