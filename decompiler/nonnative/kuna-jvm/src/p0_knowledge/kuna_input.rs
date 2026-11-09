@@ -414,23 +414,22 @@ fn zip_unit(path: &Path) -> io::Result<Unit> {
         .map(|e| (e.name.clone(), e.is_directory()))
         .collect();
     let listing = crate::rt::try_catch(|| zip_listing(&raw));
-    let mut bytes = BTreeMap::new();
+    let mut names: Vec<&String> = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
     for (name, is_directory) in &raw {
         if *is_directory || !name.ends_with(CLASS_SUFFIX) || name.starts_with("META-INF/versions/")
         {
             continue;
         }
-        if bytes.contains_key(name) {
-            continue;
+        if seen.insert(name) {
+            names.push(name);
         }
-        let read = match zip.get_entry(name) {
-            Some(entry) => zip
-                .read_entry(entry)
-                .map(Arc::from)
-                .map_err(|e| e.to_string()),
-            None => continue,
-        };
-        bytes.insert(name.clone(), read);
+    }
+    let mut bytes = BTreeMap::new();
+    for (name, read) in read_entries(&zip, path, &names) {
+        if let Some(read) = read {
+            bytes.insert(name.clone(), read);
+        }
     }
     let (classes, directories, others) = listing.unwrap_or_default();
     Ok(Unit {
@@ -445,6 +444,59 @@ fn zip_unit(path: &Path) -> io::Result<Unit> {
         bytes,
         children: Vec::new(),
     })
+}
+
+type EntryRead = Option<Result<Arc<[u8]>, String>>;
+
+/// `zip.get_entry(name)` read for every name (`None`: no such entry), in
+/// order; large archives are inflated on up to 8 threads, each with its own reader.
+fn read_entries<'a>(
+    zip: &ZipReader,
+    path: &Path,
+    names: &[&'a String],
+) -> Vec<(&'a String, EntryRead)> {
+    let read = |zip: &ZipReader, name: &String| -> EntryRead {
+        zip.get_entry(name).map(|entry| {
+            zip.read_entry(entry)
+                .map(Arc::from)
+                .map_err(|e| e.to_string())
+        })
+    };
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .clamp(1, 8)
+        .min(names.len().div_ceil(256).max(1));
+    if threads == 1 {
+        return names.iter().map(|&name| (name, read(zip, name))).collect();
+    }
+    let chunk = names.len().div_ceil(threads);
+    let parts: Vec<Option<Vec<EntryRead>>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = names
+            .chunks(chunk)
+            .map(|part| {
+                scope.spawn(move || {
+                    let own = ZipReader::open(Path::new(&java_file_path(path))).ok()?;
+                    Some(
+                        part.iter()
+                            .map(|&name| read(&own, name))
+                            .collect::<Vec<_>>(),
+                    )
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().ok().flatten())
+            .collect()
+    });
+    let mut out = Vec::with_capacity(names.len());
+    for (part, reads) in names.chunks(chunk).zip(parts) {
+        match reads {
+            Some(reads) => out.extend(part.iter().copied().zip(reads)),
+            None => out.extend(part.iter().map(|&name| (name, read(zip, name)))),
+        }
+    }
+    out
 }
 
 fn utf16_sorted_children(dir: &str) -> io::Result<Vec<String>> {

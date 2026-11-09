@@ -824,10 +824,7 @@ fn plan(fernflower: &mut Fernflower, input: &InputSet) -> Plan {
 
     let mut cost = vec![0u64; roots.len()];
     let mut deps = vec![BTreeSet::new(); roots.len()];
-    for class in input.classes() {
-        let Ok((info, refs)) = kuna_inventory::parse(class.bytes) else {
-            continue;
-        };
+    for (info, refs) in kuna_inventory::parse_all(input).into_iter().flatten() {
         let Some(&root) = root_of.get(&info.internal) else {
             continue;
         };

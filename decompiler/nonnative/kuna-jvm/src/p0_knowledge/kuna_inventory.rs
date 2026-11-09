@@ -45,14 +45,38 @@ pub struct ClassRefs {
 /// Every class of `input`, sorted by internal name (the first of duplicate names).
 /// Class files that do not parse are left out.
 pub fn list(input: &InputSet) -> Vec<ClassInfo> {
-    let mut classes: Vec<ClassInfo> = input
-        .classes()
-        .iter()
-        .filter_map(|c| parse(c.bytes).ok().map(|(info, _)| info))
+    let mut classes: Vec<ClassInfo> = parse_all(input)
+        .into_iter()
+        .filter_map(|parsed| parsed.map(|(info, _)| info))
         .collect();
     classes.sort_by(|a, b| a.internal.cmp(&b.internal));
     classes.dedup_by(|b, a| a.internal == b.internal);
     classes
+}
+
+/// [`parse`] of every class file of `input`, in [`InputSet::classes`] order
+/// (`None` where it does not parse), on up to 8 threads.
+pub fn parse_all(input: &InputSet) -> Vec<Option<(ClassInfo, ClassRefs)>> {
+    let classes = input.classes();
+    let threads = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .clamp(1, 8)
+        .min(classes.len().div_ceil(256).max(1));
+    let chunk = classes.len().div_ceil(threads).max(1);
+    std::thread::scope(|scope| {
+        let parts: Vec<_> = classes
+            .chunks(chunk)
+            .map(|part| {
+                let parsed =
+                    scope.spawn(move || part.iter().map(|c| parse(c.bytes).ok()).collect());
+                (part.len(), parsed)
+            })
+            .collect();
+        parts
+            .into_iter()
+            .flat_map(|(len, parsed)| parsed.join().unwrap_or_else(|_| vec![None; len]))
+            .collect()
+    })
 }
 
 /// `public`, `static`, … of class (`InnerClasses`) access flags, in Java modifier order.
