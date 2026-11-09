@@ -2,18 +2,23 @@
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
-use crate::exprent::{Exprent, ExprentKind};
+use crate::const_exprent::ConstExprent;
+use crate::expr_processor::ExprProcessor;
+use crate::exprent::{Exprent, ExprentKind, ExprentType};
+use crate::i_matchable::MatchProperties;
+use crate::int_helper::IntHelper;
 use crate::list_stack::ListStack;
 use crate::match_engine::MatchEngine;
-use crate::match_node::MatchNode;
+use crate::match_node::{MatchNode, MatchValue};
+use crate::pattern::Pattern;
 use crate::rt::{BitSet, JList, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
 use crate::text_buffer::TextBuffer;
 use crate::typed::Typed;
 use crate::var_map_holder::VarMapHolder;
-use crate::var_type::VarType;
-use crate::{java_subclass, jthrow, unported};
+use crate::var_type::{instance_of, VarType};
+use crate::{java_subclass, jthrow};
 
 /// Java `FunctionExprent.FunctionType`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
@@ -333,6 +338,24 @@ impl FunctionType {
     }
 }
 
+#[track_caller]
+fn npe(what: &str) -> ! {
+    jthrow!(NullPointerException; "{}", what)
+}
+
+/// `(Integer) constExprent.getValue()`, unboxed.
+fn const_int_value(c: ConstExprent) -> i32 {
+    match c.get_value() {
+        Some(v) => v.as_int(),
+        None => npe("constant value"),
+    }
+}
+
+/// Java `a == b` where `a` may be `null`.
+fn same_type(a: &Option<VarType>, b: &VarType) -> bool {
+    a.as_ref().is_some_and(|a| a.ptr_eq(b))
+}
+
 const ASSOCIATIVITY: [FunctionType; 8] = [
     FunctionType::Add,
     FunctionType::Mul,
@@ -432,16 +455,26 @@ impl FunctionExprent {
         FunctionExprent(e)
     }
 
+    /// Java `getExprType()`; where Java returns `null` (a `++`/`--` without an
+    /// implicit type) this throws `NullPointerException`, see [`Self::get_expr_type_opt`].
     pub fn get_expr_type(self) -> VarType {
+        match self.get_expr_type_opt() {
+            Some(t) => t,
+            None => jthrow!(NullPointerException; "FunctionExprent.getExprType() is null"),
+        }
+    }
+
+    /// Java `getExprType()` exactly, `null` included.
+    pub fn get_expr_type_opt(self) -> Option<VarType> {
         let (func_type, implicit_type, lst_operands) =
             self.d(|d| (d.func_type, d.implicit_type.clone(), d.lst_operands.clone()));
         if let Some(static_type) = func_type.type_() {
-            return static_type;
+            return Some(static_type);
         }
 
         use FunctionType::*;
-        match func_type {
-            Imm | Mmi | Ipp | Ppi => implicit_type.expect("NullPointerException: implicitType"),
+        Some(match func_type {
+            Imm | Mmi | Ipp | Ppi => return implicit_type,
             Shl | Shr | Ushr | BitNot | Neg => {
                 FunctionExprent::get_max_var_type(&[lst_operands.get(0).get_expr_type()])
             }
@@ -458,7 +491,7 @@ impl FunctionExprent {
                     FunctionExprent::get_max_var_type(&[type1, type2])
                 }
             }
-            Cast => lst_operands.get(1).get_expr_type(),
+            Cast => return lst_operands.get(1).get_expr_type_opt(),
             Ternary => {
                 let param1 = lst_operands.get(1);
                 let param2 = lst_operands.get(2);
@@ -480,16 +513,138 @@ impl FunctionExprent {
             }
             Other => jthrow!(PluginImplementationException; ""),
             _ => jthrow!(IllegalStateException; "No type for funcType={}", func_type.name()),
+        })
+    }
+
+    pub fn get_inferred_expr_type(self, upper_bound: Option<&VarType>) -> VarType {
+        let (func_type, lst_operands) = self.d(|d| (d.func_type, d.lst_operands.clone()));
+        if func_type == FunctionType::Cast {
+            self.set_needs_cast(true);
+            let mut right = lst_operands.get(0).get_inferred_expr_type(upper_bound);
+            let cast: Vec<VarType> = lst_operands
+                .sub_vec(1, lst_operands.len())
+                .iter()
+                .map(|e| e.get_expr_type())
+                .collect();
+
+            let generic_bound = upper_bound.filter(|ub| ub.is_generic() || right.is_generic());
+            if let Some(upper_bound) = generic_bound {
+                let mut upper_bound = upper_bound.clone();
+                let names = self.get_named_generics();
+                let mut array_dim = 0;
+
+                if upper_bound.array_dim == right.array_dim && upper_bound.array_dim > 0 {
+                    array_dim = upper_bound.array_dim;
+                    upper_bound = upper_bound.resize_array_dim(0);
+                    right = right.resize_array_dim(0);
+                }
+
+                let mut types = names.get(&right);
+                if types.is_none() {
+                    types = names.get(&upper_bound);
+                }
+
+                if let Some(final_types) = types {
+                    if cast.iter().all(|cast_type| {
+                        final_types
+                            .iter()
+                            .any(|type_| instance_of(&type_.value, &cast_type.value))
+                    }) {
+                        self.set_needs_cast(false);
+                    }
+                } else {
+                    self.set_needs_cast(
+                        right.type_ == CodeType::Null
+                            || !instance_of(&right.value, &upper_bound.value)
+                            || !FunctionExprent::are_generic_types_same(&right, &upper_bound),
+                    );
+                }
+
+                if !self.does_cast() {
+                    if array_dim > 0 {
+                        right = right.resize_array_dim(array_dim);
+                    }
+
+                    return right;
+                }
+            } else {
+                let final_right = right.clone();
+                self.set_needs_cast(
+                    right.type_ == CodeType::Null
+                        || cast
+                            .iter()
+                            .any(|cast_type| !instance_of(&final_right.value, &cast_type.value))
+                        || cast
+                            .iter()
+                            .any(|cast_type| final_right.array_dim != cast_type.array_dim),
+                );
+            }
+
+            return self.get_expr_type();
+        } else if func_type == FunctionType::Ternary {
+            let type1 = lst_operands.get(1).get_inferred_expr_type(upper_bound);
+            let type2 = lst_operands.get(2).get_inferred_expr_type(upper_bound);
+
+            if type1.type_ == CodeType::Null {
+                return type2;
+            } else if type2.type_ == CodeType::Null {
+                return type1;
+            }
+
+            let mut union = VarType::join(&type1, &type2);
+
+            if let Some(u) = &union {
+                if lst_operands.get(1).is_const()
+                    && lst_operands.get(2).is_const()
+                    && u.type_ != CodeType::Boolean
+                    && VarType::VARTYPE_INT().higher_equal_in_lattice_than(u)
+                {
+                    union = Some(VarType::VARTYPE_INT());
+                }
+            }
+
+            return match union {
+                Some(u) => u,
+                None => self.get_expr_type(),
+            };
+        } else if func_type == FunctionType::Instanceof {
+            for oper in lst_operands.iter() {
+                oper.get_inferred_expr_type(None);
+            }
+            return self.get_expr_type();
         }
+
+        for oper in lst_operands.iter() {
+            oper.get_inferred_expr_type(upper_bound);
+        }
+
+        self.get_expr_type()
     }
 
-    pub fn get_inferred_expr_type(self, _upper_bound: Option<&VarType>) -> VarType {
-        unported!("FunctionExprent.getInferredExprType")
-    }
+    fn are_generic_types_same(right: &VarType, upper_bound: &VarType) -> bool {
+        if !(right.is_generic_type() && upper_bound.is_generic_type()) {
+            return true;
+        }
 
-    #[allow(dead_code)]
-    fn are_generic_types_same(_right: &VarType, _upper_bound: &VarType) -> bool {
-        unported!("FunctionExprent.areGenericTypesSame")
+        let right_generic = right.as_generic();
+        let upper_bound_generic = upper_bound.as_generic();
+        let right_args = right_generic.get_arguments();
+        let upper_args = upper_bound_generic.get_arguments();
+
+        if right_args.len() != upper_args.len() {
+            return false;
+        }
+
+        for i in 0..upper_args.len() {
+            let upper_type = &upper_args[i];
+            let right_type = &right_args[i];
+
+            if upper_type.is_some() && right_type.is_none() {
+                return false;
+            }
+        }
+
+        true
     }
 
     pub fn get_exprent_use(self) -> i32 {
@@ -508,7 +663,114 @@ impl FunctionExprent {
     }
 
     pub fn check_expr_type_bounds(self) -> Option<CheckTypesResult> {
-        unported!("FunctionExprent.checkExprTypeBounds")
+        let mut result = CheckTypesResult::new();
+        let (func_type, implicit_type, lst_operands) =
+            self.d(|d| (d.func_type, d.implicit_type.clone(), d.lst_operands.clone()));
+
+        let param1 = lst_operands.get(0);
+        let type1 = param1.get_expr_type_opt();
+        let mut param2: Option<Exprent> = None;
+        let mut type2: Option<VarType> = None;
+
+        if lst_operands.len() > 1 {
+            let p2 = lst_operands.get(1);
+            param2 = Some(p2);
+            type2 = p2.get_expr_type_opt();
+        }
+
+        let type1_ref = || type1.as_ref().unwrap_or_else(|| npe("type1"));
+        let type2_ref = || type2.as_ref().unwrap_or_else(|| npe("type2"));
+        let param2_ref = || param2.unwrap_or_else(|| npe("param2"));
+
+        use FunctionType::*;
+        match func_type {
+            Ternary => {
+                let supertype = self.get_expr_type();
+                result.add_expr_lower_bound(param1, &VarType::VARTYPE_BOOLEAN());
+                result.add_expr_upper_bound(param1, &VarType::VARTYPE_BOOLEAN());
+
+                result.add_expr_lower_bound(
+                    param2_ref(),
+                    &VarType::find_family_bottom(supertype.type_family),
+                );
+                result.add_expr_lower_bound(
+                    lst_operands.get(2),
+                    &VarType::find_family_bottom(supertype.type_family),
+                );
+                result.add_expr_upper_bound(param2_ref(), &supertype);
+                result.add_expr_upper_bound(lst_operands.get(2), &supertype);
+            }
+            I2l | I2f | I2d | I2b | I2c | I2s => {
+                result.add_expr_lower_bound(param1, &VarType::VARTYPE_BYTECHAR());
+                result.add_expr_upper_bound(param1, &VarType::VARTYPE_INT());
+            }
+            Imm | Ipp | Mmi | Ppi => {
+                let implicit = implicit_type
+                    .as_ref()
+                    .unwrap_or_else(|| npe("implicitType bound"));
+                result.add_expr_lower_bound(param1, implicit);
+                result.add_expr_upper_bound(param1, implicit);
+            }
+            Add | Sub | Mul | Div | Rem | Shl | Shr | Ushr | Lt | Ge | Gt | Le => {
+                result.add_expr_lower_bound(param2_ref(), &VarType::VARTYPE_BYTECHAR());
+                result.add_expr_lower_bound(param1, &VarType::VARTYPE_BYTECHAR());
+            }
+            BitNot | Neg => {
+                result.add_expr_lower_bound(param1, &VarType::VARTYPE_BYTECHAR());
+            }
+            And | Or | Xor | Eq | Ne => {
+                if type1_ref().type_ == CodeType::Boolean {
+                    if type2_ref().higher_in_lattice_than(type1_ref()) {
+                        result.add_expr_lower_bound(param1, &VarType::VARTYPE_BYTECHAR());
+                    } else {
+                        let param1_false_boolean = param1
+                            .try_as_const()
+                            .is_some_and(|c| !c.has_boolean_value());
+                        let param2_false_boolean = param2
+                            .and_then(|p| p.try_as_const())
+                            .is_some_and(|c| !c.has_boolean_value());
+
+                        if param1_false_boolean || param2_false_boolean {
+                            result.add_expr_lower_bound(param1, &VarType::VARTYPE_BYTECHAR());
+                            result.add_expr_lower_bound(param2_ref(), &VarType::VARTYPE_BYTECHAR());
+                        }
+                    }
+                } else if type2_ref().type_ == CodeType::Boolean {
+                    if type1_ref().higher_in_lattice_than(type2_ref()) {
+                        result.add_expr_lower_bound(param2_ref(), &VarType::VARTYPE_BYTECHAR());
+                    }
+                }
+            }
+            Instanceof => {
+                if lst_operands.len() > 2 && lst_operands.get(2).is_var() {
+                    let bound = lst_operands.get(1).get_expr_type();
+                    result.add_expr_lower_bound(lst_operands.get(2), &bound);
+                }
+            }
+            StrConcat => {
+                let type_ = implicit_type
+                    .clone()
+                    .unwrap_or_else(VarType::VARTYPE_STRING);
+                if type1_ref().type_family == type_.type_family {
+                    result.add_expr_lower_bound(param1, &type_);
+                }
+
+                if type2_ref().type_family == type_.type_family {
+                    result.add_expr_lower_bound(param2_ref(), &type_);
+                }
+            }
+            Cast => {
+                result.add_expr_lower_bound(
+                    param1,
+                    &VarType::find_family_bottom(type2_ref().type_family),
+                );
+                result.add_expr_upper_bound(param1, type2_ref());
+            }
+            Other => jthrow!(PluginImplementationException; ""),
+            _ => {}
+        }
+
+        Some(result)
     }
 
     pub fn get_all_exprents_list(self, lst: &mut Vec<Exprent>) {
@@ -548,8 +810,209 @@ impl FunctionExprent {
         }
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("FunctionExprent.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let func_type = self.get_func_type();
+        if func_type == FunctionType::Other {
+            jthrow!(PluginImplementationException; "");
+        }
+
+        let lst_operands = self.get_lst_operands();
+        let operator = func_type.operator().unwrap_or("null");
+        let mut buf = TextBuffer::new();
+        buf.add_bytecode_mapping(self.get_bytecode().as_ref());
+
+        if func_type.is_arithmetic_binary_operation() {
+            let left = lst_operands.get(0);
+            let right = lst_operands.get(1);
+
+            if func_type.is_arithmetic_binary_operation() {
+                if let Some(right_const) = right.try_as_const() {
+                    right_const.adjust_const_type(&left.get_expr_type());
+                } else if let Some(left_const) = left.try_as_const() {
+                    left_const.adjust_const_type(&right.get_expr_type());
+                }
+            }
+
+            let mut left_operand = self.wrap_operand_string_group(left, false, indent, true);
+            let mut right_operand = self.wrap_operand_string_group(right, true, indent, true);
+
+            if func_type == FunctionType::And || func_type == FunctionType::Or {
+                if let Some(right_const) = right.try_as_const() {
+                    if right.get_expr_type().ptr_eq(&VarType::VARTYPE_INT()) {
+                        let value = const_int_value(right_const);
+                        right_operand.set_length(0);
+                        right_operand.append(&IntHelper::adjusted_int_representation(value));
+                    }
+                }
+
+                if let Some(left_const) = left.try_as_const() {
+                    if left.get_expr_type().ptr_eq(&VarType::VARTYPE_INT()) {
+                        let value = const_int_value(left_const);
+                        left_operand.set_length(0);
+                        left_operand.append(&IntHelper::adjusted_int_representation(value));
+                    }
+                }
+            }
+
+            let disable = self.d(|d| d.disable_newline_group_creation);
+            if !disable {
+                buf.push_newline_group(indent, 1);
+            }
+            buf.append_buffer(&left_operand)
+                .append_possible_newline_alt(" ")
+                .append(operator)
+                .append(" ")
+                .append_buffer(&right_operand);
+            if !disable {
+                buf.pop_newline_group();
+            }
+
+            return buf;
+        }
+
+        if func_type.ordinal() >= FunctionType::Eq.ordinal() {
+            let left = lst_operands.get(0);
+            let right = lst_operands.get(1);
+
+            if func_type.ordinal() <= FunctionType::Le.ordinal() {
+                if let Some(right_const) = right.try_as_const() {
+                    if let Some(other) = left.get_expr_type_opt() {
+                        right_const.adjust_const_type(&other);
+                    }
+                } else if let Some(left_const) = left.try_as_const() {
+                    if let Some(other) = right.get_expr_type_opt() {
+                        left_const.adjust_const_type(&other);
+                    }
+                }
+            }
+
+            let disable = self.d(|d| d.disable_newline_group_creation);
+            if !disable {
+                buf.push_newline_group(indent, 1);
+            }
+            let left_operand = self.wrap_operand_string_group(left, false, indent, true);
+            buf.append_buffer(&left_operand)
+                .append_possible_newline_alt(" ")
+                .append(operator)
+                .append(" ");
+            let right_operand = self.wrap_operand_string_group(right, true, indent, true);
+            buf.append_buffer(&right_operand);
+            if !disable {
+                buf.pop_newline_group();
+            }
+            return buf;
+        }
+
+        use FunctionType::*;
+        match func_type {
+            BitNot | BoolNot | Neg | Mmi | Ppi => {
+                let mut operand = self.wrap_operand_string(lst_operands.get(0), true, indent);
+                operand.prepend(operator);
+                buf.append_buffer(&operand);
+                return buf;
+            }
+            Ipp | Imm => {
+                let mut operand = self.wrap_operand_string(lst_operands.get(0), true, indent);
+                operand.append(operator);
+                buf.append_buffer(&operand);
+                return buf;
+            }
+            Cast => {
+                if !self.does_cast() {
+                    buf.append_buffer(&lst_operands.get(0).to_java(indent));
+                    return buf;
+                }
+                for i in 1..lst_operands.len() {
+                    if i > 1 {
+                        buf.append(" & ");
+                    }
+                    buf.append_buffer(&lst_operands.get(i).to_java(indent));
+                }
+                buf.enclose_with_parens();
+                let operand = self.wrap_operand_string(lst_operands.get(0), true, indent);
+                buf.append_buffer(&operand);
+                return buf;
+            }
+            ArrayLength => {
+                let arr = lst_operands.get(0);
+
+                buf.append_buffer(&self.wrap_operand_string(arr, false, indent));
+                if arr.get_expr_type().array_dim == 0 {
+                    let obj_arr = VarType::VARTYPE_OBJECT().resize_array_dim(1);
+                    buf.enclose(
+                        &format!("(({})", ExprProcessor::get_cast_type_name(&obj_arr)),
+                        ")",
+                    );
+                    buf.add_type_name_token(&obj_arr, 2);
+                }
+                buf.append(".length");
+                return buf;
+            }
+            Ternary => {
+                buf.push_newline_group(indent, 1);
+                let first = self.wrap_operand_string(lst_operands.get(0), true, indent);
+                buf.append_buffer(&first)
+                    .append_possible_newline_alt(" ")
+                    .append("? ");
+                let second = self.wrap_operand_string(lst_operands.get(1), true, indent);
+                buf.append_buffer(&second)
+                    .append_possible_newline_alt(" ")
+                    .append(": ");
+                let third = self.wrap_operand_string(lst_operands.get(2), true, indent);
+                buf.append_buffer(&third);
+                buf.pop_newline_group();
+                return buf;
+            }
+            Instanceof => {
+                let value = self.wrap_operand_string(lst_operands.get(0), true, indent);
+                buf.append_buffer(&value).append(" instanceof ");
+
+                if lst_operands.len() > 2 {
+                    let pattern = Pattern::cast(lst_operands.get(2));
+                    for var in pattern.get_pattern_vars() {
+                        var.set_writing_pattern();
+                    }
+
+                    let tested = self.wrap_operand_string(lst_operands.get(2), true, indent);
+                    buf.append_buffer(&tested);
+                } else {
+                    let tested = self.wrap_operand_string(lst_operands.get(1), true, indent);
+                    buf.append_buffer(&tested);
+                }
+
+                return buf;
+            }
+            Lcmp | Fcmpl | Fcmpg | Dcmpl | Dcmpg => {
+                let mut first = self.wrap_operand_string(lst_operands.get(0), true, indent);
+                first.prepend(&format!("{operator}("));
+                buf.append_buffer(&first).append(", ");
+                let second = self.wrap_operand_string(lst_operands.get(1), true, indent);
+                buf.append_buffer(&second).append(")");
+                return buf;
+            }
+            _ => {}
+        }
+
+        if let Some(cast_type) = func_type.cast_type() {
+            if let Some(inv) = lst_operands.get(0).try_as_invocation() {
+                if inv.is_unboxing_call() {
+                    inv.force_unboxing(true);
+                }
+            }
+
+            if !self.does_cast() {
+                buf.append_buffer(&lst_operands.get(0).to_java(indent));
+                return buf;
+            }
+
+            buf.append(&ExprProcessor::get_type_name(&cast_type))
+                .enclose_with_parens();
+            let operand = self.wrap_operand_string(lst_operands.get(0), true, indent);
+            buf.append_buffer(&operand);
+            return buf;
+        }
+
+        jthrow!("invalid function")
     }
 
     fn unwrap_boxing(self, expr: Exprent) -> Exprent {
@@ -606,15 +1069,61 @@ impl FunctionExprent {
     /// Java: `wrapOperandString(Exprent, boolean, int, boolean)`.
     fn wrap_operand_string_group(
         self,
-        _expr: Exprent,
-        _eq: bool,
-        _indent: i32,
-        _newline_group: bool,
+        expr: Exprent,
+        eq: bool,
+        indent: i32,
+        newline_group: bool,
     ) -> TextBuffer {
-        unported!("FunctionExprent.wrapOperandString")
+        let func_type = self.get_func_type();
+        let myprec = self.get_precedence();
+        let exprprec = expr.get_precedence();
+
+        let mut parentheses = exprprec > myprec;
+        if !parentheses && eq {
+            parentheses = exprprec == myprec;
+            if parentheses {
+                if expr
+                    .try_as_function()
+                    .is_some_and(|f| f.get_func_type() == func_type)
+                {
+                    if !same_type(&expr.get_expr_type_opt(), &VarType::VARTYPE_FLOAT())
+                        && !same_type(&expr.get_expr_type_opt(), &VarType::VARTYPE_DOUBLE())
+                    {
+                        parentheses = !FunctionExprent::is_associative(func_type);
+                    }
+                }
+            }
+        }
+
+        if newline_group && !parentheses && myprec == exprprec {
+            if let Some(mut func_expr) = expr.try_as_function() {
+                if func_expr.get_func_type() == FunctionType::Cast && !func_expr.does_cast() {
+                    let sub_expr = func_expr.get_lst_operands().get(0);
+                    if let Some(sub_func) = sub_expr.try_as_function() {
+                        func_expr = sub_func;
+                    }
+                }
+                func_expr.d_mut(|d| d.disable_newline_group_creation = true);
+            }
+        }
+
+        let mut res = expr.to_java(indent);
+
+        if parentheses {
+            let old_res = res;
+            res = TextBuffer::new();
+            res.append("(");
+            res.push_newline_group(indent, 1);
+            res.append_possible_newline();
+            res.append_buffer(&old_res);
+            res.append_possible_newline_dedent("", true);
+            res.pop_newline_group();
+            res.append(")");
+        }
+
+        res
     }
 
-    #[allow(dead_code)]
     fn is_associative(func_type: FunctionType) -> bool {
         ASSOCIATIVITY.contains(&func_type)
     }
@@ -691,16 +1200,176 @@ impl FunctionExprent {
 
     pub fn process_sforms(
         self,
-        _s_forms_constructor: &mut SFormsConstructor,
-        _var_maps: &mut VarMapHolder,
-        _stat: Statement,
-        _calc_live_vars: bool,
+        s_forms_constructor: &mut SFormsConstructor,
+        var_maps: &mut VarMapHolder,
+        stat: Statement,
+        calc_live_vars: bool,
     ) {
-        unported!("FunctionExprent.processSforms")
+        let lst_operands = self.get_lst_operands();
+        match self.get_func_type() {
+            FunctionType::Ternary => {
+                lst_operands.get(0).process_sforms(
+                    s_forms_constructor,
+                    var_maps,
+                    stat,
+                    calc_live_vars,
+                );
+
+                let mut b_var_maps = VarMapHolder::of_normal(&var_maps.get_if_true());
+                lst_operands.get(1).process_sforms(
+                    s_forms_constructor,
+                    &mut b_var_maps,
+                    stat,
+                    calc_live_vars,
+                );
+
+                let if_false = var_maps.get_if_false();
+                var_maps.set_normal(if_false);
+                lst_operands.get(2).process_sforms(
+                    s_forms_constructor,
+                    var_maps,
+                    stat,
+                    calc_live_vars,
+                );
+
+                if b_var_maps.is_normal() && var_maps.is_normal() {
+                    let b_normal = b_var_maps.get_normal();
+                    var_maps.merge_normal(Some(&b_normal));
+                } else if !var_maps.is_normal() {
+                    let b_if_true = b_var_maps.get_if_true();
+                    var_maps.merge_if_true(Some(&b_if_true));
+                    let b_if_false = b_var_maps.get_if_false();
+                    var_maps.merge_if_false(Some(&b_if_false));
+                } else {
+                    let normal = var_maps.get_normal();
+                    b_var_maps.merge_if_true(Some(&normal));
+                    let normal = var_maps.get_normal();
+                    b_var_maps.merge_if_false(Some(&normal));
+
+                    var_maps.set(&b_var_maps);
+                }
+            }
+            FunctionType::BooleanAnd => {
+                lst_operands.get(0).process_sforms(
+                    s_forms_constructor,
+                    var_maps,
+                    stat,
+                    calc_live_vars,
+                );
+
+                var_maps.make_fully_mutable();
+                let if_false = var_maps.get_if_false();
+                let if_true = var_maps.get_if_true();
+                var_maps.set_normal(if_true);
+
+                lst_operands.get(1).process_sforms(
+                    s_forms_constructor,
+                    var_maps,
+                    stat,
+                    calc_live_vars,
+                );
+                var_maps.merge_if_false(Some(&if_false));
+            }
+            FunctionType::BooleanOr => {
+                lst_operands.get(0).process_sforms(
+                    s_forms_constructor,
+                    var_maps,
+                    stat,
+                    calc_live_vars,
+                );
+
+                var_maps.make_fully_mutable();
+                let if_true = var_maps.get_if_true();
+                let if_false = var_maps.get_if_false();
+                var_maps.set_normal(if_false);
+
+                lst_operands.get(1).process_sforms(
+                    s_forms_constructor,
+                    var_maps,
+                    stat,
+                    calc_live_vars,
+                );
+                var_maps.merge_if_true(Some(&if_true));
+            }
+            FunctionType::BoolNot => {
+                lst_operands.get(0).process_sforms(
+                    s_forms_constructor,
+                    var_maps,
+                    stat,
+                    calc_live_vars,
+                );
+                var_maps.swap();
+            }
+            FunctionType::Instanceof => {
+                lst_operands.get(0).process_sforms(
+                    s_forms_constructor,
+                    var_maps,
+                    stat,
+                    calc_live_vars,
+                );
+                var_maps.to_normal();
+
+                if lst_operands.len() == 3 {
+                    var_maps.make_fully_mutable();
+
+                    let pattern = Pattern::cast(lst_operands.get(2));
+
+                    for var in pattern.get_pattern_vars() {
+                        let if_true = var_maps.get_if_true();
+                        s_forms_constructor.update_var_exprent(var, stat, &if_true, calc_live_vars);
+                    }
+                }
+            }
+            FunctionType::Imm | FunctionType::Mmi | FunctionType::Ipp | FunctionType::Ppi => {
+                lst_operands.get(0).process_sforms(
+                    s_forms_constructor,
+                    var_maps,
+                    stat,
+                    calc_live_vars,
+                );
+
+                let operand = lst_operands.get(0);
+                match operand.get_type() {
+                    ExprentType::Var => {
+                        let var_exprent = operand.as_var();
+
+                        let phantom_pair = s_forms_constructor
+                            .get_or_create_phantom(var_exprent.get_var_version_pair());
+
+                        var_maps
+                            .get_normal()
+                            .borrow_mut()
+                            .set_current_var_pair(phantom_pair);
+                    }
+                    ExprentType::Field => {
+                        var_maps.get_normal().borrow_mut().remove_all_fields();
+                    }
+                    _ => {}
+                }
+            }
+            _ => {
+                Exprent::process_sforms_base(
+                    self.0,
+                    s_forms_constructor,
+                    var_maps,
+                    stat,
+                    calc_live_vars,
+                );
+            }
+        }
     }
 
     /// Java: `match(MatchNode, MatchEngine)`.
-    pub fn match_(self, _match_node: &MatchNode, _engine: &MatchEngine) -> bool {
-        unported!("FunctionExprent.match")
+    pub fn match_(self, match_node: &MatchNode, engine: &MatchEngine) -> bool {
+        if !Exprent::match_base(self.0, match_node, engine) {
+            return false;
+        }
+
+        let type_ = match match_node.get_rule_value(MatchProperties::ExprentFunctype) {
+            None => None,
+            Some(MatchValue::FunctionType(t)) => Some(t),
+            Some(_) => jthrow!(ClassCastException; "match value is not a FunctionType"),
+        };
+        type_.is_none() || Some(self.get_func_type()) == type_
     }
 }
