@@ -13,8 +13,10 @@ Each case is a small class that Vineflower 1.12.0 fails on, and runs twice in th
   output, reviewed by the diff below.
 
 Both run with the fixture's base option map plus `dump-exception-on-error=0`: Vineflower's stack trace in a failure
-comment is not kuna's, so no exception text is printed. `classes/` holds the class files, `src/` the
-source they were compiled from.
+comment is not kuna's, so no exception text is printed. A Kotlin case (`"language": "kotlin"` in
+`cases.json`) also runs with `jvm_plugins=1`, its oracle with Vineflower's bundled plugins loaded
+(`vf-decompile --plugins`), and its expected texts are `<id>.kt`. `classes/` holds the class files,
+`src/` the source they were compiled from.
 
 | Case | Fix | Compiled with | With the fix |
 |---|---|---|---|
