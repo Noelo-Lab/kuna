@@ -135,3 +135,22 @@ fn identifier_converter_matches_vineflower() {
     assert_eq!(new_to_old, expected("N"));
     assert_eq!(old_to_new.len(), 25);
 }
+
+#[test]
+fn identity_naming_keeps_every_name() {
+    use kuna_jvm::byte_cursor::ByteCursor;
+    use kuna_jvm::i_variable_naming_factory::IVariableNamingFactory;
+    use kuna_jvm::identity_renamer_factory::IdentityRenamerFactory;
+    use kuna_jvm::rt::JLinkedHashMap;
+    use kuna_jvm::struct_class::StructClass;
+
+    let cl = StructClass::create(ByteCursor::new(crate::f4_util::class_bytes("p/A")), true);
+    let provider = IdentityRenamerFactory.create_factory(cl.get_methods().get(0));
+    assert!(provider.rename(&JLinkedHashMap::new()).is_none());
+    assert_eq!(
+        provider.rename_abstract_parameter(Some("x"), 0).as_deref(),
+        Some("x")
+    );
+    assert_eq!(provider.rename_abstract_parameter(None, 1), None);
+    provider.add_parent_context(provider.clone());
+}

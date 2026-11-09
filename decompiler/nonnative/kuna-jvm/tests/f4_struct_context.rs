@@ -131,7 +131,10 @@ fn queries(sc: StructContext, lines: &Shared<Vec<String>>) {
         ("p/B", "foo", "(IJLjava/lang/String;)V"),
     ] {
         let names: Vec<String> = (0..5)
-            .map(|i| sc.rename_abstract_parameter(class, method, desc, i, &format!("def{i}")))
+            .map(|i| {
+                sc.rename_abstract_parameter(class, method, desc, i, Some(&format!("def{i}")))
+                    .unwrap()
+            })
             .collect();
         push(format!(
             "P\t{}\t{}\t{}\t{}",

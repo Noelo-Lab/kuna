@@ -454,13 +454,13 @@ impl StructContext {
         method_name: &str,
         descriptor: &str,
         index: i32,
-        default: &str,
-    ) -> String {
+        default: Option<&str>,
+    ) -> Option<String> {
         let key = format!("{class_name} {method_name} {descriptor}");
         let params = self.with(|d| d.abstract_names.get_cloned(&key));
         match params {
-            Some(params) if index < params.len() as i32 => params[index as usize].clone(),
-            _ => default.to_string(),
+            Some(params) if index < params.len() as i32 => Some(params[index as usize].clone()),
+            _ => default.map(str::to_string),
         }
     }
 

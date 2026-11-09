@@ -1,7 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/main/Fernflower.java`, adapted to
 //! kuna: finished classes are handed to a callback instead of an
-//! `IResultSaver`, and the plugin API, renamer class loading and the JVM
-//! classpath scan have no Rust counterpart.
+//! `IResultSaver`; the plugin API and renamer class loading have no Rust
+//! counterpart, and `include-classpath` adds the current JDK runtime (the
+//! system-module half of `ClasspathScanner`; the JVM's own class path has no
+//! analogue here).
 //!
 //! Class-scope arenas are reset at the end of [`Fernflower::decompile_context`],
 //! once every class of every unit has been delivered: Vineflower emits all

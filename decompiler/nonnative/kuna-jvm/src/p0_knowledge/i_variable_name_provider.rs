@@ -15,16 +15,23 @@ pub trait IVariableNameProvider {
         variables: &JLinkedHashMap<VarVersionPair, Pair<VarType, Option<String>>>,
     ) -> Option<JHashMap<VarVersionPair, String>>;
 
-    fn rename_abstract_parameter(&self, name: &str, _index: i32) -> String {
-        name.to_string()
+    /// `name` is `None` where the caller had no name (Java `null`).
+    fn rename_abstract_parameter(&self, name: Option<&str>, _index: i32) -> Option<String> {
+        name.map(str::to_string)
     }
 
-    fn rename_parameter(&self, flags: i32, _type_: &VarType, name: &str, index: i32) -> String {
+    fn rename_parameter(
+        &self,
+        flags: i32,
+        _type_: &VarType,
+        name: Option<&str>,
+        index: i32,
+    ) -> Option<String> {
         if (flags & (ACC_ABSTRACT | ACC_NATIVE)) != 0 {
             return self.rename_abstract_parameter(name, index);
         }
 
-        name.to_string()
+        name.map(str::to_string)
     }
 
     fn add_parent_context(&self, renamer: Rc<dyn IVariableNameProvider>);
