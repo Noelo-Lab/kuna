@@ -3295,6 +3295,12 @@ class	kuna-fixes/classes/pkg/TestIrreducibleTry.class
 class	kuna-fixes/classes/pkg/TestIrreducibleTry$Src.class
 expected	kuna-fixes/expected-compat/pkg/TestIrreducibleTry.java
 compare	TestIrreducibleTry.java
+case	kuna-fixes-compat/pkg/TestLambdaCatchVarRename	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestLambdaCatchVarRename.class
+class	kuna-fixes/classes/pkg/TestLambdaCatchVarRename$Each.class
+class	kuna-fixes/classes/pkg/TestLambdaCatchVarRename$Task.class
+expected	kuna-fixes/expected-compat/pkg/TestLambdaCatchVarRename.java
+compare	TestLambdaCatchVarRename.java
 case	kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass.class
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1.class
@@ -3445,6 +3451,19 @@ class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class
 expected	kuna-fixes/expected-compat/pkg/TestTryCatchNotFlag.java
 compare	TestTryCatchNotFlag.java
+case	kuna-fixes-compat/pkg/TestTypeAnnotationArgumentScope	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestTypeAnnotationArgumentScope.class
+class	kuna-fixes/classes/pkg/TestTypeAnnotationArgumentScope$A.class
+class	kuna-fixes/classes/pkg/TestTypeAnnotationArgumentScope$Fn.class
+class	kuna-fixes/classes/pkg/TestTypeAnnotationArgumentScope$Pair.class
+expected	kuna-fixes/expected-compat/pkg/TestTypeAnnotationArgumentScope.java
+compare	TestTypeAnnotationArgumentScope.java
+case	kuna-fixes-compat/pkg/TestTypeAnnotationQualifiedName	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestTypeAnnotationQualifiedName.class
+class	kuna-fixes/classes/pkg/TestTypeAnnotationQualifiedName$A.class
+class	kuna-fixes/classes/pkg/TestTypeAnnotationQualifiedName$Entry.class
+expected	kuna-fixes/expected-compat/pkg/TestTypeAnnotationQualifiedName.java
+compare	TestTypeAnnotationQualifiedName.java
 case	kuna-fixes-compat/pkg/TestTypeSwitchEnumLabel	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestTypeSwitchEnumLabel.class
 class	kuna-fixes/classes/pkg/TestTypeSwitchEnumLabel$Kind.class
@@ -3653,6 +3672,12 @@ class	kuna-fixes/classes/pkg/TestIrreducibleTry.class
 class	kuna-fixes/classes/pkg/TestIrreducibleTry$Src.class
 expected	kuna-fixes/expected/pkg/TestIrreducibleTry.java
 compare	TestIrreducibleTry.java
+case	kuna-fixes/pkg/TestLambdaCatchVarRename	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestLambdaCatchVarRename.class
+class	kuna-fixes/classes/pkg/TestLambdaCatchVarRename$Each.class
+class	kuna-fixes/classes/pkg/TestLambdaCatchVarRename$Task.class
+expected	kuna-fixes/expected/pkg/TestLambdaCatchVarRename.java
+compare	TestLambdaCatchVarRename.java
 case	kuna-fixes/pkg/TestLocalClassAnonymousSubclass	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass.class
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1.class
@@ -3803,6 +3828,19 @@ class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class
 expected	kuna-fixes/expected/pkg/TestTryCatchNotFlag.java
 compare	TestTryCatchNotFlag.java
+case	kuna-fixes/pkg/TestTypeAnnotationArgumentScope	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestTypeAnnotationArgumentScope.class
+class	kuna-fixes/classes/pkg/TestTypeAnnotationArgumentScope$A.class
+class	kuna-fixes/classes/pkg/TestTypeAnnotationArgumentScope$Fn.class
+class	kuna-fixes/classes/pkg/TestTypeAnnotationArgumentScope$Pair.class
+expected	kuna-fixes/expected/pkg/TestTypeAnnotationArgumentScope.java
+compare	TestTypeAnnotationArgumentScope.java
+case	kuna-fixes/pkg/TestTypeAnnotationQualifiedName	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestTypeAnnotationQualifiedName.class
+class	kuna-fixes/classes/pkg/TestTypeAnnotationQualifiedName$A.class
+class	kuna-fixes/classes/pkg/TestTypeAnnotationQualifiedName$Entry.class
+expected	kuna-fixes/expected/pkg/TestTypeAnnotationQualifiedName.java
+compare	TestTypeAnnotationQualifiedName.java
 case	kuna-fixes/pkg/TestTypeSwitchEnumLabel	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestTypeSwitchEnumLabel.class
 class	kuna-fixes/classes/pkg/TestTypeSwitchEnumLabel$Kind.class

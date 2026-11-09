@@ -44,6 +44,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
 | `pkg/TestIrreducibleTry` | `irreducible_with_exception_edges` | asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1 | `run` and `poll`, loops entered at their head and, from a resume branch, in their middle, whose body is protected by one catch-all in several ranges with an unprotected early `return` between them, decompile; the try is built inside its own region or a statement outside every range is copied, and the output recompiles and behaves as the original on 140,000 scripted runs (`run` fails earlier in Vineflower, IndexOutOfBounds, the fix `handler_copy_offsets`) |
+| `pkg/TestLambdaCatchVarRename` | `lambda_catch_var_rename` | javac 17.0.20.1 (`-g`) | catch variables of lambda bodies renamed for a clash with the enclosing method (e -> ex, ex -> exx/exxx) are declared under the name their uses read |
 | `pkg/TestLocalClassAnonymousSubclass` | `local_class_anonymous_subclass` | javac 17.0.20.1 (`-g`) | the local class is declared before new LocalClass<String>() {} instead of inside the later loop that uses LocalClass.class |
 | `pkg/TestLocalVisibilityComment` | `kt_local_visibility_comment` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0 |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
@@ -66,6 +67,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSwitchExprPolyCast` | `switch_expression_poly_cast` | javac 17.0.20.1 (`-g`) | `intOrLong`, `charOrInt` and `argument`, whose switch expressions yield numbers of different types to a reference target: the switch is no longer wrapped in a cast, which made it a standalone numeric switch (`case 1 -> 1` a `Long`) |
 | `pkg/TestTernaryNumericArms` | `ternary_numeric_arms` | javac 17.0.20.1 (`-g`) | the conditionals whose boxed arms would print as numbers of different types (`int` and `long`, `int` and `Integer`, `boolean` and `Boolean`, `Double` and `double`) keep an arm cast, so they stay reference conditionals: no promotion of `1` to `Long`, no unboxing of a `null` arm |
 | `pkg/TestTryCatchNotFlag` | `twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
+| `pkg/TestTypeAnnotationArgumentScope` | `type_annotation_argument_scope` | javac 17.0.20.1 (`-g`) | type annotations on a later generic argument (Fn<Pair<String, @A Object>, @A Pair<String, @A Object>>) are written in that argument, not repeated in an earlier one |
+| `pkg/TestTypeAnnotationQualifiedName` | `type_annotation_qualified_name` | javac 17.0.20.1 (`-g`, against a `lib.AnnotatedHolder` that is not in the input) | type-annotated uses of lib.AnnotatedHolder.Entry, which the class's own nested Entry shadows, keep their qualifier (lib.AnnotatedHolder.@A Entry) instead of naming the nested class |
 | `pkg/TestTypeSwitchEnumLabel` | `type_switch_enum_label` | javac 21.0.12.1 -g | case Kind.CIRCLE beside type patterns in a switch on an interface: the enum label is resolved and printed qualified |
 | `pkg/TestTypeSwitchLabelLookup` | `type_switch_label_lookup` | javac 25.0.5 -g | cases with several labels (case Integer _, String _; case Kind.CIRCLE, Kind.SQUARE; case 5, 7) and an integer label equal to a later switch index: every label is resolved, multi-pattern cases print as one unnamed-pattern label |
 | `pkg/TestTypeSwitchPatternType` | `type_switch_pattern_type` | javac 21.0.12.1 (no -g) | case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type |
@@ -1827,6 +1830,34 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public interface Src {
+```
+
+### `pkg/TestLambdaCatchVarRename`
+
+```diff
+--- expected-compat/pkg/TestLambdaCatchVarRename.java
++++ expected/pkg/TestLambdaCatchVarRename.java
+@@ -21,7 +21,7 @@
+       forEach(tasks, t -> {
+          try {
+             t.run();
+-         } catch (Exception e) {
++         } catch (Exception ex) {
+             log(ex);
+          }
+       });
+@@ -35,9 +35,9 @@
+          try {
+             t.run();
+             n[0]++;
+-         } catch (RuntimeException ex) {
++         } catch (RuntimeException exxx) {
+             log(exxx);
+-         } catch (Exception ex) {
++         } catch (Exception exx) {
+             throw new IllegalStateException(exx);
+          }
+       });
 ```
 
 ### `pkg/TestLocalClassAnonymousSubclass`
@@ -5202,6 +5233,46 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     int read(String name) throws Exception {
+```
+
+### `pkg/TestTypeAnnotationArgumentScope`
+
+```diff
+--- expected-compat/pkg/TestTypeAnnotationArgumentScope.java
++++ expected/pkg/TestTypeAnnotationArgumentScope.java
+@@ -6,10 +6,10 @@
+ import java.lang.annotation.Target;
+ 
+ public class TestTypeAnnotationArgumentScope {
+-   public TestTypeAnnotationArgumentScope.Fn<TestTypeAnnotationArgumentScope.Pair<String, @TestTypeAnnotationArgumentScope.A @TestTypeAnnotationArgumentScope.A Object>, TestTypeAnnotationArgumentScope.@TestTypeAnnotationArgumentScope.A Pair<String, Object>> finisher;
++   public TestTypeAnnotationArgumentScope.Fn<TestTypeAnnotationArgumentScope.Pair<String, @TestTypeAnnotationArgumentScope.A Object>, TestTypeAnnotationArgumentScope.@TestTypeAnnotationArgumentScope.A Pair<String, @TestTypeAnnotationArgumentScope.A Object>> finisher;
+ 
+    public TestTypeAnnotationArgumentScope.Fn<TestTypeAnnotationArgumentScope.Pair<String, Object>, TestTypeAnnotationArgumentScope.Pair<@TestTypeAnnotationArgumentScope.A String, Object>> second(
+-      TestTypeAnnotationArgumentScope.Fn<TestTypeAnnotationArgumentScope.@TestTypeAnnotationArgumentScope.A Pair<String, Object>, TestTypeAnnotationArgumentScope.@TestTypeAnnotationArgumentScope.A Pair<String, Object>> f
++      TestTypeAnnotationArgumentScope.Fn<TestTypeAnnotationArgumentScope.@TestTypeAnnotationArgumentScope.A Pair<String, Object>, TestTypeAnnotationArgumentScope.Pair<String, @TestTypeAnnotationArgumentScope.A Object>> f
+    ) {
+       return null;
+    }
+```
+
+### `pkg/TestTypeAnnotationQualifiedName`
+
+```diff
+--- expected-compat/pkg/TestTypeAnnotationQualifiedName.java
++++ expected/pkg/TestTypeAnnotationQualifiedName.java
+@@ -6,10 +6,10 @@
+ import java.lang.annotation.Target;
+ 
+ public class TestTypeAnnotationQualifiedName {
+-   private @TestTypeAnnotationQualifiedName.A Entry<String> annotated;
++   private lib.AnnotatedHolder.@TestTypeAnnotationQualifiedName.A Entry<String> annotated;
+    private lib.AnnotatedHolder.Entry<String> plain;
+ 
+-   public @TestTypeAnnotationQualifiedName.A Entry<String> pick(@TestTypeAnnotationQualifiedName.A Entry<String> other) {
++   public lib.AnnotatedHolder.@TestTypeAnnotationQualifiedName.A Entry<String> pick(lib.AnnotatedHolder.@TestTypeAnnotationQualifiedName.A Entry<String> other) {
+       return other != null ? other : this.annotated;
+    }
+ 
 ```
 
 ### `pkg/TestTypeSwitchEnumLabel`

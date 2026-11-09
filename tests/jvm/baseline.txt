@@ -604,6 +604,7 @@ kuna-fixes-compat/pkg/TestForRangeUnmatchedBound
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestInnerOfGenericOuter
 kuna-fixes-compat/pkg/TestIrreducibleTry
+kuna-fixes-compat/pkg/TestLambdaCatchVarRename
 kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes-compat/pkg/TestLocalVisibilityComment
 kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver
@@ -626,6 +627,8 @@ kuna-fixes-compat/pkg/TestSwitchExprConstLub
 kuna-fixes-compat/pkg/TestSwitchExprPolyCast
 kuna-fixes-compat/pkg/TestTernaryNumericArms
 kuna-fixes-compat/pkg/TestTryCatchNotFlag
+kuna-fixes-compat/pkg/TestTypeAnnotationArgumentScope
+kuna-fixes-compat/pkg/TestTypeAnnotationQualifiedName
 kuna-fixes-compat/pkg/TestTypeSwitchEnumLabel
 kuna-fixes-compat/pkg/TestTypeSwitchLabelLookup
 kuna-fixes-compat/pkg/TestTypeSwitchPatternType
@@ -657,6 +660,7 @@ kuna-fixes/pkg/TestForRangeUnmatchedBound
 kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestInnerOfGenericOuter
 kuna-fixes/pkg/TestIrreducibleTry
+kuna-fixes/pkg/TestLambdaCatchVarRename
 kuna-fixes/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes/pkg/TestLocalVisibilityComment
 kuna-fixes/pkg/TestMethodRefWildcardReceiver
@@ -679,6 +683,8 @@ kuna-fixes/pkg/TestSwitchExprConstLub
 kuna-fixes/pkg/TestSwitchExprPolyCast
 kuna-fixes/pkg/TestTernaryNumericArms
 kuna-fixes/pkg/TestTryCatchNotFlag
+kuna-fixes/pkg/TestTypeAnnotationArgumentScope
+kuna-fixes/pkg/TestTypeAnnotationQualifiedName
 kuna-fixes/pkg/TestTypeSwitchEnumLabel
 kuna-fixes/pkg/TestTypeSwitchLabelLookup
 kuna-fixes/pkg/TestTypeSwitchPatternType

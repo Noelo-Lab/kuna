@@ -1,4 +1,11 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/TypeAnnotation.java`.
+//!
+//! kuna fix `type_annotation_qualified_name` (`kuna_fixes`): an annotated
+//! class type keeps the qualifier the import collector gives its name
+//! (`kuna_fix_type_annotation_qualified_name`). kuna fix
+//! `type_annotation_argument_scope`: the annotations of a generic argument
+//! are looked for only inside that argument
+//! (`kuna_fix_type_annotation_argument_scope`).
 
 use std::collections::VecDeque;
 
@@ -10,6 +17,9 @@ use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::generic_type::GenericType;
 use crate::jthrow;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::substrate::kuna_fix_type_annotation_argument_scope;
+use crate::substrate::kuna_fix_type_annotation_qualified_name;
 use crate::pair::Pair;
 use crate::rt::{JHashSet, JavaEq, JavaHash};
 use crate::text_buffer::TextBuffer;
@@ -264,6 +274,8 @@ impl TypeAnnotation {
 
                 if i > 0 {
                     buffer.append(".");
+                } else if kuna_fixes::enabled(KunaFix::TypeAnnotationQualifiedName) {
+                    buffer.append(&kuna_fix_type_annotation_qualified_name::qualifier(clazz));
                 }
 
                 if i >= start_idx {
@@ -288,48 +300,42 @@ impl TypeAnnotation {
                         }
 
                         let final_j = j as i32;
+                        let in_arg = kuna_fixes::enabled(KunaFix::TypeAnnotationArgumentScope)
+                            .then(|| {
+                                kuna_fix_type_annotation_argument_scope::entering(
+                                    type_annotations,
+                                    final_j,
+                                )
+                            });
                         TypeAnnotation::stepwise_write_annotations(
                             buffer,
                             type_annotations,
                             filter,
                             &|v| v.kind() == PathKind::GenericArgument && v.type_arg() == final_j,
                         );
-
-                        let wildcard_arg = match arg {
-                            None => true,
-                            Some(a) => a
-                                .try_as_generic()
-                                .is_some_and(|g| g.get_wildcard() != GenericType::WILDCARD_NO),
-                        };
-                        if wildcard_arg {
-                            TypeAnnotation::stepwise_write_annotations(
+                        match in_arg {
+                            Some(in_arg) => {
+                                let mut sub = kuna_fix_type_annotation_argument_scope::take(
+                                    type_annotations,
+                                    &in_arg,
+                                );
+                                TypeAnnotation::append_generic_argument(
+                                    buffer, arg.as_ref(), &mut sub, filter, vararg,
+                                );
+                                kuna_fix_type_annotation_argument_scope::put_back(
+                                    type_annotations,
+                                    &in_arg,
+                                    sub,
+                                );
+                            }
+                            None => TypeAnnotation::append_generic_argument(
                                 buffer,
+                                arg.as_ref(),
                                 type_annotations,
                                 filter,
-                                &|v| v.kind() == PathKind::OnWildcard,
-                            );
+                                vararg,
+                            ),
                         }
-
-                        let Some(arg) = arg else {
-                            buffer.append("?");
-                            continue;
-                        };
-                        if let Some(gen_arg) = arg.try_as_generic() {
-                            if gen_arg.get_wildcard() == GenericType::WILDCARD_EXTENDS {
-                                buffer.append("? extends ");
-                            } else if gen_arg.get_wildcard() == GenericType::WILDCARD_SUPER {
-                                buffer.append("? super ");
-                            }
-                        }
-
-                        TypeAnnotation::append_cast_type_name(
-                            buffer,
-                            arg,
-                            type_annotations,
-                            filter,
-                            vararg,
-                            false,
-                        );
                     }
                     buffer.append(">");
                 }
@@ -356,6 +362,46 @@ impl TypeAnnotation {
         if flush {
             TypeAnnotation::dump_unwritten_annotations(buffer, type_annotations);
         }
+    }
+
+    /// One generic argument of `appendCastTypeName`, after the annotations of
+    /// its `GENERIC_ARGUMENT` step: its wildcard's annotations, the wildcard,
+    /// and the argument's type.
+    fn append_generic_argument(
+        buffer: &mut TextBuffer,
+        arg: Option<&VarType>,
+        type_annotations: &mut [TypeAnnotationEntry],
+        filter: &JHashSet<String>,
+        vararg: bool,
+    ) {
+        let wildcard_arg = match arg {
+            None => true,
+            Some(a) => a
+                .try_as_generic()
+                .is_some_and(|g| g.get_wildcard() != GenericType::WILDCARD_NO),
+        };
+        if wildcard_arg {
+            TypeAnnotation::stepwise_write_annotations(
+                buffer,
+                type_annotations,
+                filter,
+                &|v| v.kind() == PathKind::OnWildcard,
+            );
+        }
+
+        let Some(arg) = arg else {
+            buffer.append("?");
+            return;
+        };
+        if let Some(gen_arg) = arg.try_as_generic() {
+            if gen_arg.get_wildcard() == GenericType::WILDCARD_EXTENDS {
+                buffer.append("? extends ");
+            } else if gen_arg.get_wildcard() == GenericType::WILDCARD_SUPER {
+                buffer.append("? super ");
+            }
+        }
+
+        TypeAnnotation::append_cast_type_name(buffer, arg, type_annotations, filter, vararg, false);
     }
 
     /// Java: `stepwiseWriteAnnotations(TextBuffer, List, Set, Predicate)`.

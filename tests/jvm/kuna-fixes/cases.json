@@ -8,51 +8,66 @@
   ],
   "cases": [
     {
-      "id": "pkg/TestMethodRefWildcardReceiver",
-      "fix": "lambda_wildcard_return",
+      "id": "pkg/TestAnonymousStaticCall",
+      "fix": "anonymous_static_qualifier",
       "class_files": [
-        "pkg/TestMethodRefWildcardReceiver.class",
-        "pkg/TestMethodRefWildcardReceiver$Factory.class",
-        "pkg/TestMethodRefWildcardReceiver$Fn.class",
-        "pkg/TestMethodRefWildcardReceiver$Pipe.class",
-        "pkg/TestMethodRefWildcardReceiver$Shape.class",
-        "pkg/TestMethodRefWildcardReceiver$ShapeFactory.class"
+        "pkg/TestAnonymousStaticCall.class",
+        "pkg/TestAnonymousStaticCall$1$1.class",
+        "pkg/TestAnonymousStaticCall$1.class",
+        "pkg/TestAnonymousStaticCall$Counter.class",
+        "pkg/TestAnonymousStaticCall$Counter2.class"
       ],
-      "source": "src/pkg/TestMethodRefWildcardReceiver.java",
+      "source": "src/pkg/TestAnonymousStaticCall.java",
       "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "`objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone"
+      "summary": "the inner anonymous class's call of its enclosing anonymous class's static `twice` is written `twice(value)`, not `<unrepresentable>.twice(value)`; the call of a named class's static method keeps its qualifier"
     },
     {
-      "id": "pkg/TestTryCatchNotFlag",
-      "fix": "twr_unary_condition",
+      "id": "pkg/TestArrayOfArrays",
+      "fix": "kt_partial_array_dims",
       "class_files": [
-        "pkg/TestTryCatchNotFlag.class",
-        "pkg/TestTryCatchNotFlag$Res.class"
+        "pkg/TestArrayOfArrays.class",
+        "pkg/TestArrayOfArrays$Cell.class"
       ],
-      "source": "src/pkg/TestTryCatchNotFlag.java",
-      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "`create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one"
+      "source": "src/pkg/TestArrayOfArrays.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "`rows`, `grid` and `table`, which create an array of arrays with only its outer length, decompile (`arrayOfNulls(n)`)",
+      "language": "kotlin"
     },
     {
-      "id": "pkg/TestIfDenestFallthrough",
-      "fix": "if_denest_fallthrough",
+      "id": "pkg/TestAssertDeadThrow",
+      "fix": "assert_dead_throw",
       "class_files": [
-        "pkg/TestIfDenestFallthrough.class"
+        "pkg/TestAssertDeadThrow.class"
       ],
-      "source": "src/pkg/TestIfDenestFallthrough.java",
-      "compiler": "javac 17.0.20.1 (`-g`)",
-      "summary": "`assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's"
+      "source": "src/pkg/TestAssertDeadThrow.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "the dead `throw new AssertionError(...)` statements after `return` in `spans` and `widths` are gone, and `widths` declares its for-each variable in the header (`for (int[] row : rows)`, was `for (row : rows)`)"
     },
     {
-      "id": "pkg/TestSwitchExprConstLub",
-      "fix": "switch_yield_const_retype",
+      "id": "pkg/TestAssertExpressionPosition",
+      "fix": "statement_as_expression",
       "class_files": [
-        "pkg/TestSwitchExprConstLub.class",
-        "pkg/TestSwitchExprConstLub$IntSink.class"
+        "pkg/TestAssertExpressionPosition.class",
+        "pkg/TestAssertExpressionPosition$Pairs.class",
+        "pkg/TestAssertExpressionPosition$Runnable.class",
+        "pkg/TestAssertExpressionPosition$Sink.class",
+        "pkg/TestAssertExpressionPosition$Source.class"
       ],
-      "source": "src/pkg/TestSwitchExprConstLub.java",
+      "source": "src/pkg/TestAssertExpressionPosition.java",
       "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone"
+      "summary": "`consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects"
+    },
+    {
+      "id": "pkg/TestCapturedReceiverKt",
+      "fix": "kt_local_as_extension_receiver",
+      "class_files": [
+        "pkg/TestCapturedReceiverKt.class",
+        "pkg/TestCapturedReceiverKt$iterator$1.class"
+      ],
+      "source": "src/pkg/TestCapturedReceiver.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
+      "summary": "`iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver",
+      "language": "kotlin"
     },
     {
       "id": "pkg/TestCatchLoopBack",
@@ -69,29 +84,27 @@
       "summary": "`read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone"
     },
     {
-      "id": "pkg/TestCapturedReceiverKt",
-      "fix": "kt_local_as_extension_receiver",
+      "id": "pkg/TestConstructorDiamond",
+      "fix": "kt_constructor_diamond",
       "class_files": [
-        "pkg/TestCapturedReceiverKt.class",
-        "pkg/TestCapturedReceiverKt$iterator$1.class"
+        "pkg/TestConstructorDiamond.class",
+        "pkg/TestConstructorDiamond$Bag.class",
+        "pkg/TestConstructorDiamond$Pair.class"
       ],
-      "source": "src/pkg/TestCapturedReceiver.kt",
-      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
-      "summary": "`iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver",
+      "source": "src/pkg/TestConstructorDiamond.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "the constructor calls whose type arguments Kotlin infers (`return Bag(0)`, `Pair(a, b)`) are written without the Java diamond `<>`",
       "language": "kotlin"
     },
     {
-      "id": "pkg/TestSamWrapperObjectKt",
-      "fix": "kt_synthetic_anonymous_object",
+      "id": "pkg/TestDefaultArgAssignedParam",
+      "fix": "kt_default_arg_assigned_param",
       "class_files": [
-        "pkg/TestSamWrapperObjectKt.class",
-        "pkg/TestSamWrapperObjectKt$byLength$1.class",
-        "pkg/TestSamWrapperObjectKt$nullsFirstBy$1.class",
-        "pkg/TestSamWrapperObjectKt$twice$1.class"
+        "pkg/TestDefaultArgAssignedParam.class"
       ],
-      "source": "src/pkg/TestSamWrapperObject.kt",
-      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
-      "summary": "`byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone",
+      "source": "src/pkg/TestDefaultArgAssignedParam.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "`chain` and `twice`, whose defaults are computed through locals, print the unknown default `= ...` instead of the first local's initializer `this.measure(s)`; `plain` keeps `b: Int = this.measure(a) + 1`",
       "language": "kotlin"
     },
     {
@@ -105,6 +118,19 @@
       "source": "src/pkg/TestDefaultArgCompoundBranch.kt",
       "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
       "summary": "`make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDefaultArgsCtorDescriptor",
+      "fix": "kt_default_args_ctor_descriptor",
+      "class_files": [
+        "pkg/TestDefaultArgsCtorDescriptor.class",
+        "pkg/TestDefaultArgsCtorDescriptor$Nested.class",
+        "pkg/TestDefaultArgsCtorDescriptor$Sink.class"
+      ],
+      "source": "src/pkg/TestDefaultArgsCtorDescriptor.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "the inner class `Sink` declares its defaults (`finished: Boolean = false, limit: Long = 16L`) instead of the unknown `= ...`",
       "language": "kotlin"
     },
     {
@@ -125,276 +151,6 @@
       "source": "src/pkg/TestDefaultArgsSuperCall.kt",
       "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
       "summary": "`twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call",
-      "language": "kotlin"
-    },
-    {
-      "id": "pkg/TestInnerOfGenericOuter",
-      "fix": "generic_parent_without_signature",
-      "class_files": [
-        "pkg/TestInnerOfGenericOuter.class",
-        "pkg/TestInnerOfGenericOuter$Itr.class",
-        "pkg/TestInnerOfGenericOuter$Itrs$Node.class",
-        "pkg/TestInnerOfGenericOuter$Itrs.class",
-        "pkg/TestInnerOfGenericOuter$Ref.class"
-      ],
-      "source": "src/pkg/TestInnerOfGenericOuter.java",
-      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "`sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone"
-    },
-    {
-      "id": "pkg/TestSelfReferencingLambda",
-      "fix": "self_referencing_lambda",
-      "class_files": [
-        "pkg/TestSelfReferencingLambda.class",
-        "pkg/TestSelfReferencingLambda$Task.class"
-      ],
-      "source": "src/pkg/TestSelfReferencingLambda.jasm",
-      "compiler": "asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1",
-      "summary": "the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place"
-    },
-    {
-      "id": "pkg/TestDiamondExternalClass",
-      "fix": "external_class_diamond",
-      "class_files": [
-        "pkg/TestDiamondExternalClass.class",
-        "pkg/TestDiamondExternalClass$Fn.class",
-        "pkg/TestDiamondExternalClass$Fn2.class",
-        "pkg/TestDiamondExternalClass$Holder.class"
-      ],
-      "source": "src/pkg/TestDiamondExternalClass.java",
-      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are"
-    },
-    {
-      "id": "pkg/TestAssertExpressionPosition",
-      "fix": "statement_as_expression",
-      "class_files": [
-        "pkg/TestAssertExpressionPosition.class",
-        "pkg/TestAssertExpressionPosition$Pairs.class",
-        "pkg/TestAssertExpressionPosition$Runnable.class",
-        "pkg/TestAssertExpressionPosition$Sink.class",
-        "pkg/TestAssertExpressionPosition$Source.class"
-      ],
-      "source": "src/pkg/TestAssertExpressionPosition.java",
-      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "`consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects"
-    },
-    {
-      "id": "pkg/TestAnonymousStaticCall",
-      "fix": "anonymous_static_qualifier",
-      "class_files": [
-        "pkg/TestAnonymousStaticCall.class",
-        "pkg/TestAnonymousStaticCall$1$1.class",
-        "pkg/TestAnonymousStaticCall$1.class",
-        "pkg/TestAnonymousStaticCall$Counter.class",
-        "pkg/TestAnonymousStaticCall$Counter2.class"
-      ],
-      "source": "src/pkg/TestAnonymousStaticCall.java",
-      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "the inner anonymous class's call of its enclosing anonymous class's static `twice` is written `twice(value)`, not `<unrepresentable>.twice(value)`; the call of a named class's static method keeps its qualifier"
-    },
-    {
-      "id": "pkg/TestAssertDeadThrow",
-      "fix": "assert_dead_throw",
-      "class_files": [
-        "pkg/TestAssertDeadThrow.class"
-      ],
-      "source": "src/pkg/TestAssertDeadThrow.java",
-      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "the dead `throw new AssertionError(...)` statements after `return` in `spans` and `widths` are gone, and `widths` declares its for-each variable in the header (`for (int[] row : rows)`, was `for (row : rows)`)"
-    },
-    {
-      "id": "pkg/TestEnumNoConstants",
-      "fix": "enum_body_separator",
-      "class_files": [
-        "pkg/TestEnumNoConstants.class",
-        "pkg/TestEnumNoConstants$Empty.class",
-        "pkg/TestEnumNoConstants$Holder.class",
-        "pkg/TestEnumNoConstants$Only.class"
-      ],
-      "source": "src/pkg/TestEnumNoConstants.java",
-      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged"
-    },
-    {
-      "id": "pkg/TestSuspendFinallyKt",
-      "fix": "handler_copy_offsets",
-      "class_files": [
-        "pkg/TestSuspendFinallyKt.class",
-        "pkg/TestSuspendFinallyKt$early$1.class",
-        "pkg/TestSuspendFinallyKt$once$1.class",
-        "pkg/TestSuspendFinallyKt$twice$1.class"
-      ],
-      "source": "src/pkg/TestSuspendFinally.kt",
-      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
-      "summary": "`once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable"
-    },
-    {
-      "id": "pkg/TestRecordPatternInTry",
-      "fix": "nested_handler_copies",
-      "class_files": [
-        "pkg/TestRecordPatternInTry.class",
-        "pkg/TestRecordPatternInTry$Circle.class",
-        "pkg/TestRecordPatternInTry$Label.class",
-        "pkg/TestRecordPatternInTry$Missing.class",
-        "pkg/TestRecordPatternInTry$Shape.class"
-      ],
-      "source": "src/pkg/TestRecordPatternInTry.java",
-      "compiler": "javac 21.0.12.1 (`--release 21 -g`)",
-      "summary": "`describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's"
-    },
-    {
-      "id": "pkg/TestSuspendLoopFinally",
-      "fix": "copied_finally",
-      "class_files": [
-        "pkg/TestSuspendLoopFinally.class",
-        "pkg/TestSuspendLoopFinally$Source.class",
-        "pkg/TestSuspendLoopFinally$drain$1.class",
-        "pkg/TestSuspendLoopFinally$first$1.class"
-      ],
-      "source": "src/pkg/TestSuspendLoopFinally.kt",
-      "compiler": "kotlinc-jvm 2.0.0 (JDK 17.0.20.1)",
-      "summary": "`drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies)"
-    },
-    {
-      "id": "pkg/TestTypeSwitchEnumLabel",
-      "fix": "type_switch_enum_label",
-      "class_files": [
-        "pkg/TestTypeSwitchEnumLabel.class",
-        "pkg/TestTypeSwitchEnumLabel$Kind.class",
-        "pkg/TestTypeSwitchEnumLabel$Polygon.class",
-        "pkg/TestTypeSwitchEnumLabel$Shape.class"
-      ],
-      "source": "src/pkg/TestTypeSwitchEnumLabel.java",
-      "compiler": "javac 21.0.12.1 -g",
-      "summary": "case Kind.CIRCLE beside type patterns in a switch on an interface: the enum label is resolved and printed qualified"
-    },
-    {
-      "id": "pkg/TestTypeSwitchLabelLookup",
-      "fix": "type_switch_label_lookup",
-      "class_files": [
-        "pkg/TestTypeSwitchLabelLookup.class",
-        "pkg/TestTypeSwitchLabelLookup$Kind.class",
-        "pkg/TestTypeSwitchLabelLookup$Line.class",
-        "pkg/TestTypeSwitchLabelLookup$Point.class",
-        "pkg/TestTypeSwitchLabelLookup$Polygon.class",
-        "pkg/TestTypeSwitchLabelLookup$Shape.class"
-      ],
-      "source": "src/pkg/TestTypeSwitchLabelLookup.java",
-      "compiler": "javac 25.0.5 -g",
-      "summary": "cases with several labels (case Integer _, String _; case Kind.CIRCLE, Kind.SQUARE; case 5, 7) and an integer label equal to a later switch index: every label is resolved, multi-pattern cases print as one unnamed-pattern label"
-    },
-    {
-      "id": "pkg/TestTypeSwitchPatternType",
-      "fix": "type_switch_pattern_type",
-      "class_files": [
-        "pkg/TestTypeSwitchPatternType.class"
-      ],
-      "source": "src/pkg/TestTypeSwitchPatternType.java",
-      "compiler": "javac 21.0.12.1 (no -g)",
-      "summary": "case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type"
-    },
-    {
-      "id": "pkg/TestReturnOutsideLambdaKt",
-      "fix": "kt_return_outside_lambda",
-      "class_files": [
-        "pkg/TestReturnOutsideLambdaKt.class",
-        "pkg/TestReturnOutsideLambdaKt$maker$1$1.class"
-      ],
-      "source": "src/pkg/TestReturnOutsideLambda.kt",
-      "compiler": "kotlinc 2.0.0",
-      "summary": "a @JvmOverloads overload and the function of an object written inside a lambda return their values (Vineflower prints the values as bare expression statements)",
-      "language": "kotlin"
-    },
-    {
-      "id": "pkg/TestFailedMethodHidden",
-      "fix": "kt_failed_method_hidden",
-      "class_files": [
-        "pkg/TestFailedMethodHidden.class",
-        "pkg/TestFailedMethodHidden$DefaultImpls.class",
-        "pkg/TestFailedMethodHidden$twice$1.class"
-      ],
-      "source": "src/pkg/TestFailedMethodHidden.kt",
-      "compiler": "kotlinc 2.0.0",
-      "summary": "a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace)",
-      "language": "kotlin"
-    },
-    {
-      "id": "pkg/TestObjectSuperCall",
-      "fix": "kt_object_super_call",
-      "class_files": [
-        "pkg/TestObjectSuperCall.class",
-        "pkg/TestObjectSuperCall$Base.class",
-        "pkg/TestObjectSuperCall$Marker.class",
-        "pkg/TestObjectSuperCall$Plain.class",
-        "pkg/TestObjectSuperCall$captured$1.class",
-        "pkg/TestObjectSuperCall$make$1.class",
-        "pkg/TestObjectSuperCall$plain$1.class"
-      ],
-      "source": "src/pkg/TestObjectSuperCall.kt",
-      "compiler": "kotlinc 2.0.0",
-      "summary": "an object expression's superclass is written with its constructor arguments, object : Base(k + 1, s) (Vineflower prints object : Base)",
-      "language": "kotlin"
-    },
-    {
-      "id": "pkg/TestVarargFromMetadata",
-      "fix": "kt_vararg_from_metadata",
-      "class_files": [
-        "pkg/TestVarargFromMetadata.class"
-      ],
-      "source": "src/pkg/TestVarargFromMetadata.kt",
-      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
-      "summary": "the primary constructor's `Array<String>` parameter is no longer written `vararg names: Any`, and the `vararg` primitive parameters of a constructor and a function keep `vararg` with their element type (`vararg rest: Int`, not `rest: IntArray`)",
-      "language": "kotlin"
-    },
-    {
-      "id": "pkg/TestDefaultArgAssignedParam",
-      "fix": "kt_default_arg_assigned_param",
-      "class_files": [
-        "pkg/TestDefaultArgAssignedParam.class"
-      ],
-      "source": "src/pkg/TestDefaultArgAssignedParam.kt",
-      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
-      "summary": "`chain` and `twice`, whose defaults are computed through locals, print the unknown default `= ...` instead of the first local's initializer `this.measure(s)`; `plain` keeps `b: Int = this.measure(a) + 1`",
-      "language": "kotlin"
-    },
-    {
-      "id": "pkg/TestConstructorDiamond",
-      "fix": "kt_constructor_diamond",
-      "class_files": [
-        "pkg/TestConstructorDiamond.class",
-        "pkg/TestConstructorDiamond$Bag.class",
-        "pkg/TestConstructorDiamond$Pair.class"
-      ],
-      "source": "src/pkg/TestConstructorDiamond.kt",
-      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
-      "summary": "the constructor calls whose type arguments Kotlin infers (`return Bag(0)`, `Pair(a, b)`) are written without the Java diamond `<>`",
-      "language": "kotlin"
-    },
-    {
-      "id": "pkg/TestLocalVisibilityComment",
-      "fix": "kt_local_visibility_comment",
-      "class_files": [
-        "pkg/TestLocalVisibilityComment.class",
-        "pkg/TestLocalVisibilityComment$make$1$Sub.class",
-        "pkg/TestLocalVisibilityComment$make$1.class"
-      ],
-      "source": "src/pkg/TestLocalVisibilityComment.kt",
-      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
-      "summary": "the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0",
-      "language": "kotlin"
-    },
-    {
-      "id": "pkg/TestDefaultArgsCtorDescriptor",
-      "fix": "kt_default_args_ctor_descriptor",
-      "class_files": [
-        "pkg/TestDefaultArgsCtorDescriptor.class",
-        "pkg/TestDefaultArgsCtorDescriptor$Nested.class",
-        "pkg/TestDefaultArgsCtorDescriptor$Sink.class"
-      ],
-      "source": "src/pkg/TestDefaultArgsCtorDescriptor.kt",
-      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
-      "summary": "the inner class `Sink` declares its defaults (`finished: Boolean = false, limit: Long = 16L`) instead of the unknown `= ...`",
       "language": "kotlin"
     },
     {
@@ -419,152 +175,65 @@
       "language": "kotlin"
     },
     {
-      "id": "pkg/TestSuspendResultCast",
-      "fix": "var_merge_narrowing",
+      "id": "pkg/TestDiamondExternalClass",
+      "fix": "external_class_diamond",
       "class_files": [
-        "pkg/TestSuspendResultCast.class",
-        "pkg/TestSuspendResultCast$Source.class",
-        "pkg/TestSuspendResultCast$fold$1.class",
-        "pkg/TestSuspendResultCast$sum$1.class"
+        "pkg/TestDiamondExternalClass.class",
+        "pkg/TestDiamondExternalClass$Fn.class",
+        "pkg/TestDiamondExternalClass$Fn2.class",
+        "pkg/TestDiamondExternalClass$Holder.class"
       ],
-      "source": "src/pkg/TestSuspendResultCast.kt",
-      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
-      "summary": "`sum` and `fold`, suspend loops: the result of the suspend call is cast to `Integer` after the `COROUTINE_SUSPENDED` check, as in the bytecode, not before it (where the marker would throw `ClassCastException`)"
+      "source": "src/pkg/TestDiamondExternalClass.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are"
     },
     {
-      "id": "pkg/TestSwitchExprPolyCast",
-      "fix": "switch_expression_poly_cast",
+      "id": "pkg/TestEnumNoConstants",
+      "fix": "enum_body_separator",
       "class_files": [
-        "pkg/TestSwitchExprPolyCast.class"
+        "pkg/TestEnumNoConstants.class",
+        "pkg/TestEnumNoConstants$Empty.class",
+        "pkg/TestEnumNoConstants$Holder.class",
+        "pkg/TestEnumNoConstants$Only.class"
       ],
-      "source": "src/pkg/TestSwitchExprPolyCast.java",
-      "compiler": "javac 17.0.20.1 (`-g`)",
-      "summary": "`intOrLong`, `charOrInt` and `argument`, whose switch expressions yield numbers of different types to a reference target: the switch is no longer wrapped in a cast, which made it a standalone numeric switch (`case 1 -> 1` a `Long`)"
+      "source": "src/pkg/TestEnumNoConstants.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged"
     },
     {
-      "id": "pkg/TestTernaryNumericArms",
-      "fix": "ternary_numeric_arms",
+      "id": "pkg/TestFailedMethodHidden",
+      "fix": "kt_failed_method_hidden",
       "class_files": [
-        "pkg/TestTernaryNumericArms.class"
+        "pkg/TestFailedMethodHidden.class",
+        "pkg/TestFailedMethodHidden$DefaultImpls.class",
+        "pkg/TestFailedMethodHidden$twice$1.class"
       ],
-      "source": "src/pkg/TestTernaryNumericArms.java",
-      "compiler": "javac 17.0.20.1 (`-g`)",
-      "summary": "the conditionals whose boxed arms would print as numbers of different types (`int` and `long`, `int` and `Integer`, `boolean` and `Boolean`, `Double` and `double`) keep an arm cast, so they stay reference conditionals: no promotion of `1` to `Long`, no unboxing of a `null` arm"
-    },
-    {
-      "id": "pkg/TestVarMergeNarrowing",
-      "fix": "var_merge_narrowing",
-      "class_files": [
-        "pkg/TestVarMergeNarrowing.class",
-        "pkg/TestVarMergeNarrowing$Source.class"
-      ],
-      "source": "src/pkg/TestVarMergeNarrowing.java",
-      "compiler": "javac 17.0.20.1 (no `-g`)",
-      "summary": "`firstLength`, whose two block-scoped locals share a slot: the `Object` one is no longer merged into the `String` one, so `src.next()` is not cast to `String` before it is compared with `MARK`"
-    },
-    {
-      "id": "pkg/TestPropertyReferencesKt",
-      "fix": "kt_property_reference",
-      "class_files": [
-        "pkg/TestPropertyReferencesKt.class",
-        "pkg/TestPropertyReferencesKt$bound$1.class",
-        "pkg/TestPropertyReferencesKt$boundMutable$ref$1.class",
-        "pkg/TestPropertyReferencesKt$extension$ref$1.class",
-        "pkg/TestPropertyReferencesKt$member$ref$1.class",
-        "pkg/TestPropertyReferencesKt$mutableMember$ref$1.class",
-        "pkg/TestPropertyReferencesKt$topLevel$ref$1.class"
-      ],
-      "source": "src/pkg/TestPropertyReferences.kt",
-      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
-      "summary": "`bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled`",
+      "source": "src/pkg/TestFailedMethodHidden.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace)",
       "language": "kotlin"
     },
     {
-      "id": "pkg/TestReferenceClassesKt",
-      "fix": "kt_reference_anonymous_super_call",
+      "id": "pkg/TestForLoopContinueUpdate",
+      "fix": "kt_for_loop_continue_update",
       "class_files": [
-        "pkg/TestReferenceClassesKt.class",
-        "pkg/TestReferenceClassesKt$bound$ref$1.class",
-        "pkg/TestReferenceClassesKt$constructor$ref$1.class",
-        "pkg/TestReferenceClassesKt$topLevel$ref$1.class",
-        "pkg/TestReferenceClassesKt$unbound$ref$1.class"
+        "pkg/TestForLoopContinueUpdate.class"
       ],
-      "source": "src/pkg/TestReferenceClasses.kt",
-      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
-      "summary": "`bound` (`adder::add`, which failed) and `unbound`, `constructor` and `topLevel` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their function references: `NestedClassProcessor` took the reference classes' `super(..)` calls out of their constructors, and they are read from the class node",
+      "source": "src/pkg/TestForLoopContinueUpdate.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "the loop whose body continues it is written `if (i < limit) { label35@ do { ... } while (run { i++; i < limit }) }`, so `continue@label35` runs `i++`, instead of an inclusive range over a counter the body assigns",
       "language": "kotlin"
     },
     {
-      "id": "pkg/TestLocalClassAnonymousSubclass",
-      "fix": "local_class_anonymous_subclass",
+      "id": "pkg/TestForLoopDefinitions",
+      "fix": "kt_for_loop_definitions",
       "class_files": [
-        "pkg/TestLocalClassAnonymousSubclass.class",
-        "pkg/TestLocalClassAnonymousSubclass$1.class",
-        "pkg/TestLocalClassAnonymousSubclass$1LocalClass.class"
+        "pkg/TestForLoopDefinitions.class"
       ],
-      "source": "src/pkg/TestLocalClassAnonymousSubclass.java",
-      "compiler": "javac 17.0.20.1 (`-g`)",
-      "summary": "the local class is declared before new LocalClass<String>() {} instead of inside the later loop that uses LocalClass.class"
-    },
-    {
-      "id": "pkg/TestNonPublicNestedImport",
-      "fix": "nonpublic_nested_import",
-      "class_files": [
-        "pkg/TestNonPublicNestedImport.class",
-        "pkg/TestNonPublicNestedImport$1.class",
-        "pkg/TestNonPublicNestedImport$2.class"
-      ],
-      "source": "src/pkg/TestNonPublicNestedImport.java",
-      "compiler": "javac 17.0.20.1 (`-g`, against a `lib.Base` that is not in the input)",
-      "summary": "protected member classes of a library class used in a subclass (Base.Helper, Base.Holder.Deep, an enum switched on, one inside an anonymous subclass) are written Base.Helper, not imported"
-    },
-    {
-      "id": "pkg/TestOverrideInaccessible",
-      "fix": "override_inaccessible_method",
-      "class_files": [
-        "pkg/TestOverrideInaccessible.class",
-        "pkg/TestOverrideInaccessible$Inner.class",
-        "pkg/TestOverrideInaccessible$InnerSub.class",
-        "ext/TestOverrideInaccessibleBase.class"
-      ],
-      "source": "src/pkg/TestOverrideInaccessible.java",
-      "compiler": "javac 17.0.20.1 (`-g`) (with ext/TestOverrideInaccessibleBase.java, vendored as a second input class)",
-      "summary": "methods matching a package-private superclass method of another package or a private one get no @Override; true overrides keep it"
-    },
-    {
-      "id": "pkg/TestPatternVariableScope",
-      "fix": "pattern_variable_scope",
-      "class_files": [
-        "pkg/TestPatternVariableScope.class",
-        "pkg/TestPatternVariableScope$Special.class",
-        "pkg/TestPatternVariableScope$Stream.class"
-      ],
-      "source": "src/pkg/TestPatternVariableScope.java",
-      "compiler": "javac 17.0.20.1 (`-g`)",
-      "summary": "a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch still becomes a pattern"
-    },
-    {
-      "id": "pkg/TestSwitchCaseScope",
-      "fix": "switch_case_scope",
-      "class_files": [
-        "pkg/TestSwitchCaseScope.class"
-      ],
-      "source": "src/pkg/TestSwitchCaseScope.java",
-      "compiler": "javac 17.0.20.1 (`-g`)",
-      "summary": "two cases declaring double z before an if, and a case-level int length clashing with a nested one in a later case, are written with braces"
-    },
-    {
-      "id": "pkg/TestWildcardArrayBound",
-      "fix": "primitive_array_wildcard",
-      "class_files": [
-        "pkg/TestWildcardArrayBound.class",
-        "pkg/TestWildcardArrayBound$BytesEncoder.class",
-        "pkg/TestWildcardArrayBound$Encoder.class",
-        "pkg/TestWildcardArrayBound$Source.class"
-      ],
-      "source": "src/pkg/TestWildcardArrayBound.java",
-      "compiler": "javac 17.0.20.1 (`-g`)",
-      "summary": "Source<? extends byte[]> and Source<? super int[]> keep their wildcards, so BytesEncoder.encode overrides Encoder<byte[]>.encode"
+      "source": "src/pkg/TestForLoopDefinitions.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "the counter of the loop written as a `while` is declared, `var var4: Int`, before the loop",
+      "language": "kotlin"
     },
     {
       "id": "pkg/TestForLoopExitCondition",
@@ -612,26 +281,396 @@
       "language": "kotlin"
     },
     {
-      "id": "pkg/TestForLoopDefinitions",
-      "fix": "kt_for_loop_definitions",
+      "id": "pkg/TestIfDenestFallthrough",
+      "fix": "if_denest_fallthrough",
       "class_files": [
-        "pkg/TestForLoopDefinitions.class"
+        "pkg/TestIfDenestFallthrough.class"
       ],
-      "source": "src/pkg/TestForLoopDefinitions.kt",
-      "compiler": "kotlinc 2.0.0",
-      "summary": "the counter of the loop written as a `while` is declared, `var var4: Int`, before the loop",
+      "source": "src/pkg/TestIfDenestFallthrough.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "`assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's"
+    },
+    {
+      "id": "pkg/TestInnerOfGenericOuter",
+      "fix": "generic_parent_without_signature",
+      "class_files": [
+        "pkg/TestInnerOfGenericOuter.class",
+        "pkg/TestInnerOfGenericOuter$Itr.class",
+        "pkg/TestInnerOfGenericOuter$Itrs$Node.class",
+        "pkg/TestInnerOfGenericOuter$Itrs.class",
+        "pkg/TestInnerOfGenericOuter$Ref.class"
+      ],
+      "source": "src/pkg/TestInnerOfGenericOuter.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone"
+    },
+    {
+      "id": "pkg/TestIrreducibleTry",
+      "fix": "irreducible_with_exception_edges",
+      "class_files": [
+        "pkg/TestIrreducibleTry.class",
+        "pkg/TestIrreducibleTry$Src.class"
+      ],
+      "source": "src/pkg/TestIrreducibleTry.jasm",
+      "compiler": "asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1",
+      "summary": "`run` and `poll`, loops entered at their head and, from a resume branch, in their middle, whose body is protected by one catch-all in several ranges with an unprotected early `return` between them, decompile; the try is built inside its own region or a statement outside every range is copied, and the output recompiles and behaves as the original on 140,000 scripted runs (`run` fails earlier in Vineflower, IndexOutOfBounds, the fix `handler_copy_offsets`)"
+    },
+    {
+      "id": "pkg/TestLambdaCatchVarRename",
+      "fix": "lambda_catch_var_rename",
+      "class_files": [
+        "pkg/TestLambdaCatchVarRename.class",
+        "pkg/TestLambdaCatchVarRename$Each.class",
+        "pkg/TestLambdaCatchVarRename$Task.class"
+      ],
+      "source": "src/pkg/TestLambdaCatchVarRename.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "catch variables of lambda bodies renamed for a clash with the enclosing method (e -> ex, ex -> exx/exxx) are declared under the name their uses read"
+    },
+    {
+      "id": "pkg/TestLocalClassAnonymousSubclass",
+      "fix": "local_class_anonymous_subclass",
+      "class_files": [
+        "pkg/TestLocalClassAnonymousSubclass.class",
+        "pkg/TestLocalClassAnonymousSubclass$1.class",
+        "pkg/TestLocalClassAnonymousSubclass$1LocalClass.class"
+      ],
+      "source": "src/pkg/TestLocalClassAnonymousSubclass.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "the local class is declared before new LocalClass<String>() {} instead of inside the later loop that uses LocalClass.class"
+    },
+    {
+      "id": "pkg/TestLocalVisibilityComment",
+      "fix": "kt_local_visibility_comment",
+      "class_files": [
+        "pkg/TestLocalVisibilityComment.class",
+        "pkg/TestLocalVisibilityComment$make$1$Sub.class",
+        "pkg/TestLocalVisibilityComment$make$1.class"
+      ],
+      "source": "src/pkg/TestLocalVisibilityComment.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0",
       "language": "kotlin"
     },
     {
-      "id": "pkg/TestForLoopContinueUpdate",
-      "fix": "kt_for_loop_continue_update",
+      "id": "pkg/TestMethodRefWildcardReceiver",
+      "fix": "lambda_wildcard_return",
       "class_files": [
-        "pkg/TestForLoopContinueUpdate.class"
+        "pkg/TestMethodRefWildcardReceiver.class",
+        "pkg/TestMethodRefWildcardReceiver$Factory.class",
+        "pkg/TestMethodRefWildcardReceiver$Fn.class",
+        "pkg/TestMethodRefWildcardReceiver$Pipe.class",
+        "pkg/TestMethodRefWildcardReceiver$Shape.class",
+        "pkg/TestMethodRefWildcardReceiver$ShapeFactory.class"
       ],
-      "source": "src/pkg/TestForLoopContinueUpdate.kt",
+      "source": "src/pkg/TestMethodRefWildcardReceiver.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone"
+    },
+    {
+      "id": "pkg/TestNonPublicNestedImport",
+      "fix": "nonpublic_nested_import",
+      "class_files": [
+        "pkg/TestNonPublicNestedImport.class",
+        "pkg/TestNonPublicNestedImport$1.class",
+        "pkg/TestNonPublicNestedImport$2.class"
+      ],
+      "source": "src/pkg/TestNonPublicNestedImport.java",
+      "compiler": "javac 17.0.20.1 (`-g`, against a `lib.Base` that is not in the input)",
+      "summary": "protected member classes of a library class used in a subclass (Base.Helper, Base.Holder.Deep, an enum switched on, one inside an anonymous subclass) are written Base.Helper, not imported"
+    },
+    {
+      "id": "pkg/TestObjectSuperCall",
+      "fix": "kt_object_super_call",
+      "class_files": [
+        "pkg/TestObjectSuperCall.class",
+        "pkg/TestObjectSuperCall$Base.class",
+        "pkg/TestObjectSuperCall$Marker.class",
+        "pkg/TestObjectSuperCall$Plain.class",
+        "pkg/TestObjectSuperCall$captured$1.class",
+        "pkg/TestObjectSuperCall$make$1.class",
+        "pkg/TestObjectSuperCall$plain$1.class"
+      ],
+      "source": "src/pkg/TestObjectSuperCall.kt",
       "compiler": "kotlinc 2.0.0",
-      "summary": "the loop whose body continues it is written `if (i < limit) { label35@ do { ... } while (run { i++; i < limit }) }`, so `continue@label35` runs `i++`, instead of an inclusive range over a counter the body assigns",
+      "summary": "an object expression's superclass is written with its constructor arguments, object : Base(k + 1, s) (Vineflower prints object : Base)",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestOverrideInaccessible",
+      "fix": "override_inaccessible_method",
+      "class_files": [
+        "pkg/TestOverrideInaccessible.class",
+        "pkg/TestOverrideInaccessible$Inner.class",
+        "pkg/TestOverrideInaccessible$InnerSub.class",
+        "ext/TestOverrideInaccessibleBase.class"
+      ],
+      "source": "src/pkg/TestOverrideInaccessible.java",
+      "compiler": "javac 17.0.20.1 (`-g`) (with ext/TestOverrideInaccessibleBase.java, vendored as a second input class)",
+      "summary": "methods matching a package-private superclass method of another package or a private one get no @Override; true overrides keep it"
+    },
+    {
+      "id": "pkg/TestPatternVariableScope",
+      "fix": "pattern_variable_scope",
+      "class_files": [
+        "pkg/TestPatternVariableScope.class",
+        "pkg/TestPatternVariableScope$Special.class",
+        "pkg/TestPatternVariableScope$Stream.class"
+      ],
+      "source": "src/pkg/TestPatternVariableScope.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch still becomes a pattern"
+    },
+    {
+      "id": "pkg/TestPropertyReferencesKt",
+      "fix": "kt_property_reference",
+      "class_files": [
+        "pkg/TestPropertyReferencesKt.class",
+        "pkg/TestPropertyReferencesKt$bound$1.class",
+        "pkg/TestPropertyReferencesKt$boundMutable$ref$1.class",
+        "pkg/TestPropertyReferencesKt$extension$ref$1.class",
+        "pkg/TestPropertyReferencesKt$member$ref$1.class",
+        "pkg/TestPropertyReferencesKt$mutableMember$ref$1.class",
+        "pkg/TestPropertyReferencesKt$topLevel$ref$1.class"
+      ],
+      "source": "src/pkg/TestPropertyReferences.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
+      "summary": "`bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestRecordPatternInTry",
+      "fix": "nested_handler_copies",
+      "class_files": [
+        "pkg/TestRecordPatternInTry.class",
+        "pkg/TestRecordPatternInTry$Circle.class",
+        "pkg/TestRecordPatternInTry$Label.class",
+        "pkg/TestRecordPatternInTry$Missing.class",
+        "pkg/TestRecordPatternInTry$Shape.class"
+      ],
+      "source": "src/pkg/TestRecordPatternInTry.java",
+      "compiler": "javac 21.0.12.1 (`--release 21 -g`)",
+      "summary": "`describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's"
+    },
+    {
+      "id": "pkg/TestReferenceClassesKt",
+      "fix": "kt_reference_anonymous_super_call",
+      "class_files": [
+        "pkg/TestReferenceClassesKt.class",
+        "pkg/TestReferenceClassesKt$bound$ref$1.class",
+        "pkg/TestReferenceClassesKt$constructor$ref$1.class",
+        "pkg/TestReferenceClassesKt$topLevel$ref$1.class",
+        "pkg/TestReferenceClassesKt$unbound$ref$1.class"
+      ],
+      "source": "src/pkg/TestReferenceClasses.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
+      "summary": "`bound` (`adder::add`, which failed) and `unbound`, `constructor` and `topLevel` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their function references: `NestedClassProcessor` took the reference classes' `super(..)` calls out of their constructors, and they are read from the class node",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestReturnOutsideLambdaKt",
+      "fix": "kt_return_outside_lambda",
+      "class_files": [
+        "pkg/TestReturnOutsideLambdaKt.class",
+        "pkg/TestReturnOutsideLambdaKt$maker$1$1.class"
+      ],
+      "source": "src/pkg/TestReturnOutsideLambda.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "a @JvmOverloads overload and the function of an object written inside a lambda return their values (Vineflower prints the values as bare expression statements)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSamWrapperObjectKt",
+      "fix": "kt_synthetic_anonymous_object",
+      "class_files": [
+        "pkg/TestSamWrapperObjectKt.class",
+        "pkg/TestSamWrapperObjectKt$byLength$1.class",
+        "pkg/TestSamWrapperObjectKt$nullsFirstBy$1.class",
+        "pkg/TestSamWrapperObjectKt$twice$1.class"
+      ],
+      "source": "src/pkg/TestSamWrapperObject.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
+      "summary": "`byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSelfReferencingLambda",
+      "fix": "self_referencing_lambda",
+      "class_files": [
+        "pkg/TestSelfReferencingLambda.class",
+        "pkg/TestSelfReferencingLambda$Task.class"
+      ],
+      "source": "src/pkg/TestSelfReferencingLambda.jasm",
+      "compiler": "asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1",
+      "summary": "the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place"
+    },
+    {
+      "id": "pkg/TestSuspendFinallyKt",
+      "fix": "handler_copy_offsets",
+      "class_files": [
+        "pkg/TestSuspendFinallyKt.class",
+        "pkg/TestSuspendFinallyKt$early$1.class",
+        "pkg/TestSuspendFinallyKt$once$1.class",
+        "pkg/TestSuspendFinallyKt$twice$1.class"
+      ],
+      "source": "src/pkg/TestSuspendFinally.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
+      "summary": "`once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable"
+    },
+    {
+      "id": "pkg/TestSuspendLoopFinally",
+      "fix": "copied_finally",
+      "class_files": [
+        "pkg/TestSuspendLoopFinally.class",
+        "pkg/TestSuspendLoopFinally$Source.class",
+        "pkg/TestSuspendLoopFinally$drain$1.class",
+        "pkg/TestSuspendLoopFinally$first$1.class"
+      ],
+      "source": "src/pkg/TestSuspendLoopFinally.kt",
+      "compiler": "kotlinc-jvm 2.0.0 (JDK 17.0.20.1)",
+      "summary": "`drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies)"
+    },
+    {
+      "id": "pkg/TestSuspendLoopTry",
+      "fix": "irreducible_with_exception_edges",
+      "class_files": [
+        "pkg/TestSuspendLoopTry.class",
+        "pkg/TestSuspendLoopTry$Source.class",
+        "pkg/TestSuspendLoopTry$indexOf$1.class",
+        "pkg/TestSuspendLoopTry$pairs$1.class",
+        "pkg/TestSuspendLoopTry$watch$1.class"
+      ],
+      "source": "src/pkg/TestSuspendLoopTry.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
+      "summary": "`indexOf`, `pairs` and `watch`, suspend functions whose loop inside a `try` (with `catch`/`finally`) suspends and resumes in its middle, decompile: `indexOf` and `pairs` once a try region is isolated or a statement outside every range is copied, `watch` (whose loop is resumed in three places) with both"
+    },
+    {
+      "id": "pkg/TestSuspendResultCast",
+      "fix": "var_merge_narrowing",
+      "class_files": [
+        "pkg/TestSuspendResultCast.class",
+        "pkg/TestSuspendResultCast$Source.class",
+        "pkg/TestSuspendResultCast$fold$1.class",
+        "pkg/TestSuspendResultCast$sum$1.class"
+      ],
+      "source": "src/pkg/TestSuspendResultCast.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
+      "summary": "`sum` and `fold`, suspend loops: the result of the suspend call is cast to `Integer` after the `COROUTINE_SUSPENDED` check, as in the bytecode, not before it (where the marker would throw `ClassCastException`)"
+    },
+    {
+      "id": "pkg/TestSwitchCaseScope",
+      "fix": "switch_case_scope",
+      "class_files": [
+        "pkg/TestSwitchCaseScope.class"
+      ],
+      "source": "src/pkg/TestSwitchCaseScope.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "two cases declaring double z before an if, and a case-level int length clashing with a nested one in a later case, are written with braces"
+    },
+    {
+      "id": "pkg/TestSwitchExprConstLub",
+      "fix": "switch_yield_const_retype",
+      "class_files": [
+        "pkg/TestSwitchExprConstLub.class",
+        "pkg/TestSwitchExprConstLub$IntSink.class"
+      ],
+      "source": "src/pkg/TestSwitchExprConstLub.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone"
+    },
+    {
+      "id": "pkg/TestSwitchExprPolyCast",
+      "fix": "switch_expression_poly_cast",
+      "class_files": [
+        "pkg/TestSwitchExprPolyCast.class"
+      ],
+      "source": "src/pkg/TestSwitchExprPolyCast.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "`intOrLong`, `charOrInt` and `argument`, whose switch expressions yield numbers of different types to a reference target: the switch is no longer wrapped in a cast, which made it a standalone numeric switch (`case 1 -> 1` a `Long`)"
+    },
+    {
+      "id": "pkg/TestTernaryNumericArms",
+      "fix": "ternary_numeric_arms",
+      "class_files": [
+        "pkg/TestTernaryNumericArms.class"
+      ],
+      "source": "src/pkg/TestTernaryNumericArms.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "the conditionals whose boxed arms would print as numbers of different types (`int` and `long`, `int` and `Integer`, `boolean` and `Boolean`, `Double` and `double`) keep an arm cast, so they stay reference conditionals: no promotion of `1` to `Long`, no unboxing of a `null` arm"
+    },
+    {
+      "id": "pkg/TestTryCatchNotFlag",
+      "fix": "twr_unary_condition",
+      "class_files": [
+        "pkg/TestTryCatchNotFlag.class",
+        "pkg/TestTryCatchNotFlag$Res.class"
+      ],
+      "source": "src/pkg/TestTryCatchNotFlag.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one"
+    },
+    {
+      "id": "pkg/TestTypeAnnotationArgumentScope",
+      "fix": "type_annotation_argument_scope",
+      "class_files": [
+        "pkg/TestTypeAnnotationArgumentScope.class",
+        "pkg/TestTypeAnnotationArgumentScope$A.class",
+        "pkg/TestTypeAnnotationArgumentScope$Fn.class",
+        "pkg/TestTypeAnnotationArgumentScope$Pair.class"
+      ],
+      "source": "src/pkg/TestTypeAnnotationArgumentScope.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "type annotations on a later generic argument (Fn<Pair<String, @A Object>, @A Pair<String, @A Object>>) are written in that argument, not repeated in an earlier one"
+    },
+    {
+      "id": "pkg/TestTypeAnnotationQualifiedName",
+      "fix": "type_annotation_qualified_name",
+      "class_files": [
+        "pkg/TestTypeAnnotationQualifiedName.class",
+        "pkg/TestTypeAnnotationQualifiedName$A.class",
+        "pkg/TestTypeAnnotationQualifiedName$Entry.class"
+      ],
+      "source": "src/pkg/TestTypeAnnotationQualifiedName.java",
+      "compiler": "javac 17.0.20.1 (`-g`, against a `lib.AnnotatedHolder` that is not in the input)",
+      "summary": "type-annotated uses of lib.AnnotatedHolder.Entry, which the class's own nested Entry shadows, keep their qualifier (lib.AnnotatedHolder.@A Entry) instead of naming the nested class"
+    },
+    {
+      "id": "pkg/TestTypeSwitchEnumLabel",
+      "fix": "type_switch_enum_label",
+      "class_files": [
+        "pkg/TestTypeSwitchEnumLabel.class",
+        "pkg/TestTypeSwitchEnumLabel$Kind.class",
+        "pkg/TestTypeSwitchEnumLabel$Polygon.class",
+        "pkg/TestTypeSwitchEnumLabel$Shape.class"
+      ],
+      "source": "src/pkg/TestTypeSwitchEnumLabel.java",
+      "compiler": "javac 21.0.12.1 -g",
+      "summary": "case Kind.CIRCLE beside type patterns in a switch on an interface: the enum label is resolved and printed qualified"
+    },
+    {
+      "id": "pkg/TestTypeSwitchLabelLookup",
+      "fix": "type_switch_label_lookup",
+      "class_files": [
+        "pkg/TestTypeSwitchLabelLookup.class",
+        "pkg/TestTypeSwitchLabelLookup$Kind.class",
+        "pkg/TestTypeSwitchLabelLookup$Line.class",
+        "pkg/TestTypeSwitchLabelLookup$Point.class",
+        "pkg/TestTypeSwitchLabelLookup$Polygon.class",
+        "pkg/TestTypeSwitchLabelLookup$Shape.class"
+      ],
+      "source": "src/pkg/TestTypeSwitchLabelLookup.java",
+      "compiler": "javac 25.0.5 -g",
+      "summary": "cases with several labels (case Integer _, String _; case Kind.CIRCLE, Kind.SQUARE; case 5, 7) and an integer label equal to a later switch index: every label is resolved, multi-pattern cases print as one unnamed-pattern label"
+    },
+    {
+      "id": "pkg/TestTypeSwitchPatternType",
+      "fix": "type_switch_pattern_type",
+      "class_files": [
+        "pkg/TestTypeSwitchPatternType.class"
+      ],
+      "source": "src/pkg/TestTypeSwitchPatternType.java",
+      "compiler": "javac 21.0.12.1 (no -g)",
+      "summary": "case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type"
     },
     {
       "id": "pkg/TestVarMergeLiveness",
@@ -647,41 +686,39 @@
       "language": "kotlin"
     },
     {
-      "id": "pkg/TestArrayOfArrays",
-      "fix": "kt_partial_array_dims",
+      "id": "pkg/TestVarMergeNarrowing",
+      "fix": "var_merge_narrowing",
       "class_files": [
-        "pkg/TestArrayOfArrays.class",
-        "pkg/TestArrayOfArrays$Cell.class"
+        "pkg/TestVarMergeNarrowing.class",
+        "pkg/TestVarMergeNarrowing$Source.class"
       ],
-      "source": "src/pkg/TestArrayOfArrays.kt",
-      "compiler": "kotlinc 2.0.0",
-      "summary": "`rows`, `grid` and `table`, which create an array of arrays with only its outer length, decompile (`arrayOfNulls(n)`)",
+      "source": "src/pkg/TestVarMergeNarrowing.java",
+      "compiler": "javac 17.0.20.1 (no `-g`)",
+      "summary": "`firstLength`, whose two block-scoped locals share a slot: the `Object` one is no longer merged into the `String` one, so `src.next()` is not cast to `String` before it is compared with `MARK`"
+    },
+    {
+      "id": "pkg/TestVarargFromMetadata",
+      "fix": "kt_vararg_from_metadata",
+      "class_files": [
+        "pkg/TestVarargFromMetadata.class"
+      ],
+      "source": "src/pkg/TestVarargFromMetadata.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "the primary constructor's `Array<String>` parameter is no longer written `vararg names: Any`, and the `vararg` primitive parameters of a constructor and a function keep `vararg` with their element type (`vararg rest: Int`, not `rest: IntArray`)",
       "language": "kotlin"
     },
     {
-      "id": "pkg/TestIrreducibleTry",
-      "fix": "irreducible_with_exception_edges",
+      "id": "pkg/TestWildcardArrayBound",
+      "fix": "primitive_array_wildcard",
       "class_files": [
-        "pkg/TestIrreducibleTry.class",
-        "pkg/TestIrreducibleTry$Src.class"
+        "pkg/TestWildcardArrayBound.class",
+        "pkg/TestWildcardArrayBound$BytesEncoder.class",
+        "pkg/TestWildcardArrayBound$Encoder.class",
+        "pkg/TestWildcardArrayBound$Source.class"
       ],
-      "source": "src/pkg/TestIrreducibleTry.jasm",
-      "compiler": "asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1",
-      "summary": "`run` and `poll`, loops entered at their head and, from a resume branch, in their middle, whose body is protected by one catch-all in several ranges with an unprotected early `return` between them, decompile; the try is built inside its own region or a statement outside every range is copied, and the output recompiles and behaves as the original on 140,000 scripted runs (`run` fails earlier in Vineflower, IndexOutOfBounds, the fix `handler_copy_offsets`)"
-    },
-    {
-      "id": "pkg/TestSuspendLoopTry",
-      "fix": "irreducible_with_exception_edges",
-      "class_files": [
-        "pkg/TestSuspendLoopTry.class",
-        "pkg/TestSuspendLoopTry$Source.class",
-        "pkg/TestSuspendLoopTry$indexOf$1.class",
-        "pkg/TestSuspendLoopTry$pairs$1.class",
-        "pkg/TestSuspendLoopTry$watch$1.class"
-      ],
-      "source": "src/pkg/TestSuspendLoopTry.kt",
-      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
-      "summary": "`indexOf`, `pairs` and `watch`, suspend functions whose loop inside a `try` (with `catch`/`finally`) suspends and resumes in its middle, decompile: `indexOf` and `pairs` once a try region is isolated or a statement outside every range is copied, `watch` (whose loop is resumed in three places) with both"
+      "source": "src/pkg/TestWildcardArrayBound.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "Source<? extends byte[]> and Source<? super int[]> keep their wildcards, so BytesEncoder.encode overrides Encoder<byte[]>.encode"
     }
   ]
 }

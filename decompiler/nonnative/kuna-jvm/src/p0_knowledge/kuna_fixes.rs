@@ -190,6 +190,15 @@ pub enum KunaFix {
     /// `irreducible_with_exception_edges`: an irreducible level of the
     /// statement graph that holds exception edges is split like one without.
     IrreducibleWithExceptionEdges,
+    /// `lambda_catch_var_rename`: a lambda body's catch variable renamed for
+    /// a clash with the enclosing method is declared under its new name.
+    LambdaCatchVarRename,
+    /// `type_annotation_qualified_name`: an annotated class type keeps the
+    /// qualifier the import collector gives its name (`Map.@A Entry`).
+    TypeAnnotationQualifiedName,
+    /// `type_annotation_argument_scope`: a type annotation on a generic
+    /// argument is written in that argument, not in an earlier one.
+    TypeAnnotationArgumentScope,
 }
 
 impl KunaFix {
@@ -247,6 +256,9 @@ impl KunaFix {
         KunaFix::VarMergeLiveness,
         KunaFix::KtPartialArrayDims,
         KunaFix::IrreducibleWithExceptionEdges,
+        KunaFix::LambdaCatchVarRename,
+        KunaFix::TypeAnnotationQualifiedName,
+        KunaFix::TypeAnnotationArgumentScope,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -304,6 +316,9 @@ impl KunaFix {
             KunaFix::VarMergeLiveness => "var_merge_liveness",
             KunaFix::KtPartialArrayDims => "kt_partial_array_dims",
             KunaFix::IrreducibleWithExceptionEdges => "irreducible_with_exception_edges",
+            KunaFix::LambdaCatchVarRename => "lambda_catch_var_rename",
+            KunaFix::TypeAnnotationQualifiedName => "type_annotation_qualified_name",
+            KunaFix::TypeAnnotationArgumentScope => "type_annotation_argument_scope",
         }
     }
 
