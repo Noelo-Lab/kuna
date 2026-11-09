@@ -93,9 +93,9 @@ fn run_scenario(fmt: &Format, lines: &[(usize, &str)]) {
             "ss" => bufs[b].set_start(n(2)),
             "sl" => bufs[b].set_length(n(2)),
             "cls" => drop(bufs[b].append_class(&decode(a[2]), n(3) == 1, &decode(a[4]))),
-            "aac" => drop(bufs[b].append_all_classes(&decode(a[2]), &decode(a[3]))),
+            "aac" => drop(bufs[b].append_all_classes(&decode(a[2]), Some(&decode(a[3])))),
             "act" => drop(bufs[b].add_class_token(n(2), n(3), &decode(a[4]))),
-            "aat" => drop(bufs[b].add_all_class_tokens(n(2), &decode(a[3]), &decode(a[4]))),
+            "aat" => drop(bufs[b].add_all_class_tokens(n(2), &decode(a[3]), Some(&decode(a[4])))),
             "bsm" => bufs[b].add_start_bytecode_mapping_offset(n(2)),
             "bm" => bufs[b].add_bytecode_mapping_offset(n(2)),
             "apb" => {

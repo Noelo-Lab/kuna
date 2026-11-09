@@ -93,7 +93,7 @@ fn token_visitors_chain_in_factory_order() {
     buf.append("new ");
     buf.append_class("Map.Entry", false, "java/util/Map$Entry");
     buf.append("();");
-    buf.append_all_classes("Outer.Inner", "a/Outer$Inner");
+    buf.append_all_classes("Outer.Inner", Some("a/Outer$Inner"));
     let log = Rc::new(std::cell::RefCell::new(Vec::new()));
     let (l1, l2) = (log.clone(), log.clone());
     <dyn TextTokenVisitor>::add_visitor(Rc::new(move |next: Box<dyn TextTokenVisitor>| {
