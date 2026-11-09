@@ -26,14 +26,14 @@ pub mod substrate;
 
 pub use infra::{
     cancelation_manager, class_pass, class_pass_location, decompile_record, java_pass_location,
-    java_pass_registrar, kuna_corpus, kuna_trace, looping_pass_builder, main_pass_builder, method_processor, named_pass,
+    java_pass_registrar, kuna_corpus, kuna_driver, kuna_partition, kuna_spans, kuna_trace, looping_pass_builder, main_pass_builder, method_processor, named_pass,
     pass, pass_context, plugin_context, validation_helper, wrapped_pass,
 };
 pub use p0_knowledge::{
     class_wrapper_node, context_source, context_unit, converter_helper, counter_container,
     decompiler_context, fernflower, i_decompiled_data, i_fernflower_logger,
     i_fernflower_preferences, i_identifier_renamer, i_variable_name_provider,
-    i_variable_naming_factory, identifier_converter, identity_renamer_factory, jdk_runtime,
+    i_variable_naming_factory, identifier_converter, identity_renamer_factory, jdk_runtime, kuna_input, kuna_inventory, kuna_options,
     pool_interceptor, struct_context,
 };
 pub use p1_classfile::{

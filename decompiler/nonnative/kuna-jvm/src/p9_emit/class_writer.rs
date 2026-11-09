@@ -45,6 +45,7 @@ use crate::import_collector::ImportCollector;
 use crate::initializer_processor::InitializerProcessor;
 use crate::interpreter_util::InterpreterUtil;
 use crate::java_pass_location::JavaPassLocation;
+use crate::kuna_spans;
 use crate::link_constant::LinkConstant;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
@@ -707,10 +708,12 @@ impl ClassWriter {
 
         {
             let _finally = RestoreClassNode(outer_node);
+            let span = kuna_spans::open_class(buffer, node.with(|d| d.class_struct));
 
             let ok = ClassWriter::invoke_processors(buffer, node);
 
             if !ok {
+                kuna_spans::close_failed(buffer, span);
                 return;
             }
 
@@ -842,8 +845,10 @@ impl ClassWriter {
                 }
 
                 let mut method_buffer = TextBuffer::new();
+                let span = kuna_spans::open_method(&mut method_buffer, cl, mt, wrapper);
                 let method_skipped =
                     !self.write_method(node, mt, i as i32, &mut method_buffer, indent + 1);
+                kuna_spans::close(&mut method_buffer, span);
                 if !method_skipped {
                     if has_content {
                         buffer.append_line_separator();
@@ -894,6 +899,7 @@ impl ClassWriter {
             if node_type != ClassNodeType::Anonymous {
                 buffer.append_line_separator();
             }
+            kuna_spans::close(buffer, span);
         }
 
         DecompilerContext::get_logger().end_write_class();

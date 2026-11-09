@@ -126,3 +126,17 @@ mod trace_vectors;
 mod trace_file;
 #[path = "s3_parity.rs"]
 mod s3_parity;
+#[path = "kuna_support.rs"]
+mod kuna_support;
+#[path = "kuna_input.rs"]
+mod kuna_input;
+#[path = "kuna_options.rs"]
+mod kuna_options;
+#[path = "kuna_inventory.rs"]
+mod kuna_inventory;
+#[path = "kuna_spans.rs"]
+mod kuna_spans;
+#[path = "kuna_deadline.rs"]
+mod kuna_deadline;
+#[path = "kuna_driver.rs"]
+mod kuna_driver;

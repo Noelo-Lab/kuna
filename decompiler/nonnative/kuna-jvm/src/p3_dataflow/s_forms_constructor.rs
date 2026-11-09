@@ -7,6 +7,7 @@
 //! Var maps are `Shared`: the same map sits in a holder, a node's slot in these
 //! tables and `currentCatchableMap`, and is compared by identity. The set
 //! factory is an aliasing handle shared by every map and set it makes.
+use crate::cancelation_manager::CancelationManager;
 use crate::code_constants::ACC_STATIC;
 use crate::code_type::CodeType;
 use crate::direct_edge_type::DirectEdgeType;
@@ -133,6 +134,7 @@ impl SFormsConstructor {
         let mut iteration = 1;
         let mut updated: JHashSet<String> = JHashSet::new();
         loop {
+            CancelationManager::check_canceled();
             self.ssa_statements(dgraph, &mut updated, false, mt, iteration);
             iteration += 1;
             if updated.is_empty() {

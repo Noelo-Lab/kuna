@@ -1585,7 +1585,9 @@ impl ClassNode {
     /// before `initWrappers` and, for a root node, after `destroyWrappers`
     /// (nested wrappers stay for the whole run, as in Java). A wrapper left from
     /// a finished run (class scope reset) also reads as `None`.
+    #[track_caller]
     pub fn get_wrapper(self) -> Option<ClassWrapper> {
+        crate::kuna_partition::note_wrapper_read(self, std::panic::Location::caller());
         let mut node = self;
         while node.with(|d| d.type_) == ClassNodeType::Lambda {
             node = node.with(|d| d.parent).unwrap();

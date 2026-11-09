@@ -32,7 +32,7 @@ use crate::rt::{
     exception, jchar, objects_hash, BitSet, JHashMap, JHashSet, JLinkedHashMap, JavaEq, JavaHash,
     JavaStr, Shared,
 };
-use crate::text_token::TextToken;
+use crate::text_token::{TextToken, TextTokenKind};
 use crate::text_token_visitor::TextTokenVisitor;
 use crate::type_annotation::{PathValue, TypeAnnotation};
 use crate::var_type::VarType;
@@ -666,6 +666,24 @@ impl TextBuffer {
         self.my_groups[self.my_current_group].my_tokens.push(token);
     }
 
+    /// Records the current end of the text under `id`; the position follows
+    /// every later edit like a token's (kuna, see `kuna_spans`).
+    pub fn add_kuna_mark(&mut self, id: u32) {
+        let at = self.my_string_builder.len() as i32;
+        self.add_token(TextToken::new(at, 0, false, TextTokenKind::KunaMark(id)));
+    }
+
+    /// Every mark of [`TextBuffer::add_kuna_mark`] still in the text, as `(id, UTF-16 offset)`.
+    pub fn kuna_marks(&self) -> Vec<(u32, i32)> {
+        self.get_tokens()
+            .into_iter()
+            .filter_map(|t| match t.kind {
+                TextTokenKind::KunaMark(id) => Some((id, t.start)),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Opens a group of possible newlines that are either all taken or none.
     pub fn push_newline_group(&mut self, base_indent: i32, extra_indent: i32) -> &mut Self {
         let group = NewlineGroup::new(
@@ -808,6 +826,33 @@ impl TextBuffer {
             tracer.add_mapping(key.my_bytecode_offset);
         }
         tracers
+    }
+
+    /// What [`TextBuffer::get_tracers`] feeds its tracers, without creating
+    /// any: `(class, method key, bytecode offset, 0-based line)` in mapping order (kuna).
+    pub fn kuna_bytecode_lines(&self) -> Vec<(Option<String>, Option<String>, i32, i32)> {
+        let sb = &self.my_string_builder;
+        let sep = &self.my_line_separator;
+        let mut newline_offsets: Vec<i32> = Vec::new();
+        let mut i = index_of(sb, sep, 0);
+        while i != -1 {
+            newline_offsets.push(i);
+            i = index_of(sb, sep, i + 1);
+        }
+        self.my_bytecode_offset_mapping
+            .iter()
+            .map(|(key, &text_offset)| {
+                let line_no = match newline_offsets.binary_search(&text_offset) {
+                    Ok(at) | Err(at) => at as i32,
+                };
+                (
+                    key.my_class.clone(),
+                    key.my_method.clone(),
+                    key.my_bytecode_offset,
+                    line_no,
+                )
+            })
+            .collect()
     }
 
     fn reformat_group(&mut self, group: usize, offset_mapping: &mut Vec<i32>, extra_indent: i32) {

@@ -5,6 +5,7 @@
 
 use std::collections::VecDeque;
 
+use crate::cancelation_manager::CancelationManager;
 use crate::catch_statement::CatchStatement;
 use crate::code_constants::INIT_NAME;
 use crate::code_type::CodeType;
@@ -79,6 +80,7 @@ impl StackVarsProcessor {
         let mut set_reordered_ifs: JHashSet<i32> = JHashSet::new();
         let mut ssau: Option<SSAUConstructorSparseEx> = None;
         loop {
+            CancelationManager::check_canceled();
             let mut found = false;
             let first = ssau.is_none();
 

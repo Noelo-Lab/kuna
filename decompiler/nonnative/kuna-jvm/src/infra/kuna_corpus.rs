@@ -810,6 +810,7 @@ pub fn expected_as_actual(case: &Case) -> Result<EngineRun, String> {
         path: format!("decoy/{}", case.compare[0]),
         content: String::new(),
         mapping: None,
+        ..DecompiledClass::default()
     };
     let unit = DecompiledClass {
         qualified_name: String::new(),
@@ -820,6 +821,7 @@ pub fn expected_as_actual(case: &Case) -> Result<EngineRun, String> {
         },
         content: String::from_utf8_lossy(&content).into_owned(),
         mapping: None,
+        ..DecompiledClass::default()
     };
     Ok(EngineRun {
         units: vec![decoy, unit],

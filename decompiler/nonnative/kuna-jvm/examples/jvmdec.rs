@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use kuna_jvm::classes_processor::ClassNodeType;
 use kuna_jvm::decompiler_context::DecompilerContext;
@@ -10,11 +11,14 @@ use kuna_jvm::fernflower::{DecompiledClass, Fernflower};
 use kuna_jvm::i_fernflower_logger::{IFernflowerLogger, PrintStreamLogger};
 use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
 use kuna_jvm::kuna_corpus::{overlay_option, reset_engine_thread, with_engine_stack, Thrown};
+use kuna_jvm::kuna_driver::{self, DriverConfig, Jobs, Strategy};
+use kuna_jvm::kuna_input::{self, LoadOptions, SharedRuntime};
+use kuna_jvm::kuna_partition::RootSelection;
 use kuna_jvm::rt::try_catch;
 
 const USAGE: &str = "\
 usage: jvmdec [--opt key=value]... [--lib PATH]... [--runtime SPEC] [--log trace|info|warn|error]
-              [-o DIR] <class|jar|dir>...
+              [--jobs N|auto [--strategy closure|components] | --naive N] [-o DIR] <class|jar|dir>...
 
   --opt key=value   a Vineflower option (long or three-letter name; later wins)
   --lib PATH        a library: classes used for context, not decompiled
@@ -22,6 +26,11 @@ usage: jvmdec [--opt key=value]... [--lib PATH]... [--runtime SPEC] [--log trace
                     (default: Vineflower's, the current JDK)
   --log LEVEL       log level on stderr (default: warn)
   -o DIR            write each class to DIR/<path> instead of printing it
+  --jobs N|auto     decompile one input with the parallel driver on N engine instances
+                    (output identical to the single-instance run); prints a report on stderr
+  --strategy S      the driver's batching (default closure)
+  --naive N         experiment: split the roots into N contiguous parts decompiled by independent
+                    instances with no dependency handling (shows what splitting alone changes)
 
 Prints every decompiled class to stdout under a `// ---- <path> ----` header.
 Exit status: 0 if every class produced output, 1 if any failed, 2 on usage errors.";
@@ -31,6 +40,9 @@ struct Args {
     libs: Vec<PathBuf>,
     inputs: Vec<PathBuf>,
     out: Option<PathBuf>,
+    jobs: Option<Jobs>,
+    strategy: Strategy,
+    naive: Option<usize>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -42,6 +54,9 @@ fn parse_args() -> Result<Args, String> {
         libs: Vec::new(),
         inputs: Vec::new(),
         out: None,
+        jobs: None,
+        strategy: Strategy::Closure,
+        naive: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -71,6 +86,31 @@ fn parse_args() -> Result<Args, String> {
                 overlay_option(&mut a.options, IFernflowerPreferences::LOG_LEVEL, &level);
             }
             "-o" => a.out = Some(PathBuf::from(value("-o")?)),
+            "--jobs" => {
+                let v = value("--jobs")?;
+                a.jobs = Some(if v == "auto" {
+                    Jobs::Auto
+                } else {
+                    Jobs::Exactly(
+                        v.parse()
+                            .map_err(|_| format!("--jobs: not a number: {v}"))?,
+                    )
+                });
+            }
+            "--strategy" => {
+                a.strategy = match value("--strategy")?.as_str() {
+                    "closure" => Strategy::Closure,
+                    "components" => Strategy::Components,
+                    other => return Err(format!("--strategy: unknown {other}")),
+                }
+            }
+            "--naive" => {
+                let v = value("--naive")?;
+                a.naive = Some(
+                    v.parse()
+                        .map_err(|_| format!("--naive: not a number: {v}"))?,
+                );
+            }
             "-h" | "--help" => {
                 println!("{USAGE}");
                 std::process::exit(0);
@@ -142,6 +182,161 @@ fn write_unit(out: &Path, unit: &DecompiledClass) -> std::io::Result<()> {
     std::fs::write(path, &unit.content)
 }
 
+fn option_value(args: &Args, key: &str) -> Option<String> {
+    args.options
+        .iter()
+        .rev()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.clone())
+}
+
+fn driver_config(args: &Args) -> Result<DriverConfig, String> {
+    let options = args.options.clone();
+    let mut config = DriverConfig::new(
+        options,
+        Arc::new(|| Rc::new(PrintStreamLogger::stderr()) as Rc<dyn IFernflowerLogger>),
+    );
+    config.strategy = args.strategy;
+    let runtime = option_value(args, IFernflowerPreferences::INCLUDE_JAVA_RUNTIME)
+        .unwrap_or_else(|| "1".to_string());
+    if !(runtime.is_empty() || runtime == "0") {
+        config.runtime = Some(Arc::new(SharedRuntime::open(&runtime)?));
+    }
+    for lib in &args.libs {
+        let set =
+            kuna_input::load(lib, &LoadOptions { siblings: false }).map_err(|e| e.to_string())?;
+        config.libraries.push(Arc::new(set));
+    }
+    if let Some(seconds) = option_value(args, IFernflowerPreferences::MAX_PROCESSING_METHOD) {
+        config.max_method_seconds = seconds.parse().unwrap_or(0);
+    }
+    Ok(config)
+}
+
+fn run_driver(args: &Args, jobs: Jobs) -> Outcome {
+    let failed = |message: String| Outcome {
+        units: Vec::new(),
+        roots: Vec::new(),
+        error: Some(Thrown {
+            class: None,
+            message,
+            location: String::new(),
+        }),
+    };
+    if args.inputs.len() != 1 {
+        return failed("--jobs takes exactly one input".to_string());
+    }
+    let input = match kuna_input::load(&args.inputs[0], &LoadOptions { siblings: false }) {
+        Ok(set) => set,
+        Err(e) => return failed(e.to_string()),
+    };
+    let mut config = match driver_config(args) {
+        Ok(c) => c,
+        Err(e) => return failed(e),
+    };
+    config.jobs = jobs;
+    let mut units = Vec::new();
+    match kuna_driver::run(&input, &config, &mut |result| {
+        if let Some(unit) = result.unit {
+            units.push(unit);
+        }
+    }) {
+        Ok(report) => {
+            eprintln!(
+                "jvmdec: driver: {} roots, {} workers, {} batches, {} instances, {} roots processed, {} repeated, {} divergent reads, {} leaks, plan {} ms, total {} ms",
+                report.roots.len(),
+                report.workers,
+                report.batches,
+                report.instances,
+                report.processed,
+                report.repeated,
+                report.divergent_reads.len(),
+                report.leaks.len(),
+                report.plan_millis,
+                report.millis
+            );
+            for read in &report.divergent_reads {
+                eprintln!("jvmdec: divergent read: {read:?}");
+            }
+            for run in &report.runs {
+                eprintln!(
+                    "jvmdec: batch: delivered {} processed {} round {} load {} ms run {} ms",
+                    run.delivered, run.processed, run.round, run.load_millis, run.millis
+                );
+            }
+            Outcome {
+                units,
+                roots: report.roots,
+                error: None,
+            }
+        }
+        Err(e) => failed(e.to_string()),
+    }
+}
+
+/// The experiment of `--naive`: contiguous parts, one independent instance each.
+fn run_naive(args: &Args, parts: usize) -> Outcome {
+    let input =
+        kuna_input::load(&args.inputs[0], &LoadOptions { siblings: false }).expect("load input");
+    let config = driver_config(args).expect("config");
+    let roots: Vec<String> = with_engine_stack(|| {
+        reset_engine_thread();
+        let mut ff = Fernflower::new(&args.options, Rc::new(PrintStreamLogger::stderr()));
+        for s in input.sources() {
+            ff.add_source(s);
+        }
+        let roots = ff.root_classes();
+        ff.clear_context();
+        reset_engine_thread();
+        roots
+    });
+    let per = roots.len().div_ceil(parts.max(1)).max(1);
+    let chunks: Vec<Vec<String>> = roots.chunks(per).map(|c| c.to_vec()).collect();
+    let mut units = Vec::new();
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = chunks
+            .iter()
+            .map(|chunk| {
+                let input = &input;
+                let config = &config;
+                std::thread::Builder::new()
+                    .stack_size(kuna_jvm::kuna_corpus::ENGINE_STACK_BYTES)
+                    .spawn_scoped(scope, move || {
+                        reset_engine_thread();
+                        let mut options = config.options.clone();
+                        options.push(("include-runtime".to_string(), "0".to_string()));
+                        let mut ff =
+                            Fernflower::new(&options, Rc::new(PrintStreamLogger::stderr()));
+                        if let Some(rt) = &config.runtime {
+                            for s in rt.sources() {
+                                ff.add_library(s);
+                            }
+                        }
+                        for s in input.sources() {
+                            ff.add_source(s);
+                        }
+                        let mut out = Vec::new();
+                        let selection = RootSelection::only(chunk.iter().cloned());
+                        let _ =
+                            try_catch(|| ff.decompile_selected(&selection, &mut |u| out.push(u)));
+                        let _ = try_catch(|| ff.clear_context());
+                        reset_engine_thread();
+                        out
+                    })
+                    .expect("spawn")
+            })
+            .collect();
+        for h in handles {
+            units.extend(h.join().expect("join"));
+        }
+    });
+    Outcome {
+        units,
+        roots,
+        error: None,
+    }
+}
+
 fn main() -> ExitCode {
     let args = match parse_args() {
         Ok(a) => a,
@@ -150,7 +345,13 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let outcome = with_engine_stack(|| decompile(&args));
+    let outcome = if let Some(parts) = args.naive {
+        run_naive(&args, parts)
+    } else if let Some(jobs) = args.jobs {
+        run_driver(&args, jobs)
+    } else {
+        with_engine_stack(|| decompile(&args))
+    };
 
     let mut failed = false;
     for unit in &outcome.units {

@@ -1,5 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/deobfuscator/IrreducibleCFGDeobfuscator.java`.
 
+use crate::cancelation_manager::CancelationManager;
 use crate::rt::{JHashMap, JHashSet};
 use crate::stat_edge::StatEdge;
 use crate::statement::{EdgeDirection, Statement};
@@ -52,6 +53,7 @@ impl IrreducibleCFGDeobfuscator {
         }
 
         loop {
+            CancelationManager::check_canceled();
             let mut ttype = 0;
             let mut node: Option<usize> = None;
 

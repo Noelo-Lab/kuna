@@ -1,0 +1,922 @@
+//! The parallel driver: one input's root classes decompiled on N threads, one
+//! engine instance per thread, with output identical to a single instance's.
+//!
+//! A planning instance loads the input and lists its root classes in the
+//! order a single run visits them; it also reads, from the class files, which
+//! other roots a root needs pre-processed (the roots whose nested classes'
+//! constructors it calls, see `kuna_partition`). The roots are then grouped
+//! into batches ([`Strategy`]); worker threads take batches from a shared
+//! cursor, largest first, and run each with `Fernflower::decompile_selected`,
+//! which pre-processes and writes the batch's roots plus their dependencies in
+//! the single run's order and delivers the batch's roots. A worker keeps its
+//! engine (the loaded class universe) for its next batch unless that batch
+//! needs a root this engine already processed. The divergent-read detector
+//! watches every run; a batch that read the state of a root it did not process
+//! is run again with that root added (and, after a few rounds, with every root),
+//! so its results are delivered only once clean. Results reach the sink on
+//! the calling thread in root order, whatever the number of workers.
+
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::Instant;
+
+use crate::classes_processor::ClassNode;
+use crate::decompiler_context::DecompilerContext;
+use crate::exprent::Exprent;
+use crate::fernflower::{DecompiledClass, Fernflower};
+use crate::i_fernflower_logger::IFernflowerLogger;
+use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::kuna_corpus::{reset_engine_thread, ENGINE_STACK_BYTES};
+use crate::kuna_input::{InputSet, SharedRuntime};
+use crate::kuna_inventory;
+use crate::kuna_partition::{self, DivergentRead, RootPos, RootSelection};
+use crate::rt::try_catch;
+
+/// The most worker threads `Jobs::Auto` picks.
+pub const MAX_AUTO_JOBS: usize = 16;
+
+/// How many engine instances run at once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Jobs {
+    /// `min(cores, MAX_AUTO_JOBS)`, fewer when the estimated memory of an
+    /// instance times the count does not fit in the available memory.
+    Auto,
+    Exactly(usize),
+}
+
+/// How root classes are grouped into batches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Strategy {
+    /// Contiguous runs of roots (in run order) of similar size; each batch
+    /// also pre-processes the roots it depends on, so a root may be
+    /// processed by several instances.
+    Closure,
+    /// Roots joined with everything they depend on (connected components),
+    /// packed into batches; no root is processed twice, but one large
+    /// component limits the parallelism.
+    Components,
+}
+
+/// Creates the engine logger of each instance (called on the worker thread).
+pub type LoggerFactory = Arc<dyn Fn() -> Rc<dyn IFernflowerLogger> + Send + Sync>;
+/// Creates the method guard of each worker thread (see `CancelationManager::set_method_guard`).
+pub type GuardFactory = Arc<dyn Fn() -> Rc<dyn Fn() -> Option<String>> + Send + Sync>;
+pub type ProgressFn = Arc<dyn Fn(&Progress) + Send + Sync>;
+
+pub struct DriverConfig {
+    /// Vineflower options as `(key, value)`; later pairs win. The driver sets
+    /// `include-runtime`, `include-classpath`, `thread-count` and
+    /// `new-line-separator` itself.
+    pub options: Vec<(String, String)>,
+    pub jobs: Jobs,
+    pub strategy: Strategy,
+    /// The JDK whose classes give the engine context (`None`: no runtime).
+    pub runtime: Option<Arc<SharedRuntime>>,
+    /// Inputs read for context only, not decompiled.
+    pub libraries: Vec<Arc<InputSet>>,
+    /// The roots to deliver (internal names); `None` delivers every root.
+    pub select: Option<BTreeSet<String>>,
+    /// Seconds a method may take (`max-time-per-method`); 0: no limit.
+    pub max_method_seconds: u32,
+    pub logger: LoggerFactory,
+    pub method_guard: Option<GuardFactory>,
+    pub progress: Option<ProgressFn>,
+    pub stack_size: usize,
+    /// Memory to plan with, in bytes (`None`: `MemAvailable`).
+    pub available_memory: Option<u64>,
+    /// Memory one instance needs for the loaded class universe, in bytes
+    /// (`None`: estimated from the input, see [`estimate_memory`]).
+    pub instance_memory: Option<u64>,
+}
+
+impl DriverConfig {
+    pub fn new(options: Vec<(String, String)>, logger: LoggerFactory) -> DriverConfig {
+        DriverConfig {
+            options,
+            jobs: Jobs::Auto,
+            strategy: Strategy::Closure,
+            runtime: None,
+            libraries: Vec::new(),
+            select: None,
+            max_method_seconds: 0,
+            logger,
+            method_guard: None,
+            progress: None,
+            stack_size: ENGINE_STACK_BYTES,
+            available_memory: None,
+            instance_memory: None,
+        }
+    }
+}
+
+/// What the driver reports while it runs.
+#[derive(Clone, Debug)]
+pub enum Progress {
+    Planned {
+        roots: usize,
+        batches: usize,
+        workers: usize,
+    },
+    /// A root class's result reached the sink.
+    Delivered {
+        done: usize,
+        total: usize,
+        class: String,
+    },
+    /// A batch is run again because a run read state it had not produced.
+    Repeating { roots: usize, read: DivergentRead },
+}
+
+/// One root class's outcome, in root order.
+#[derive(Clone, Debug)]
+pub struct ClassResult {
+    /// Position in the run order of the roots.
+    pub index: usize,
+    pub qualified_name: String,
+    /// `None` when the engine produced no text for the class.
+    pub unit: Option<DecompiledClass>,
+    /// Why there is no unit, or the unit's own error.
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Report {
+    /// Root classes of the input, in run order.
+    pub roots: Vec<String>,
+    pub delivered: usize,
+    /// Roots selected but without output.
+    pub failed: Vec<String>,
+    pub workers: usize,
+    pub batches: usize,
+    /// Engine instances created (the planning one included).
+    pub instances: usize,
+    /// Root classes pre-processed in total, dependencies included.
+    pub processed: usize,
+    /// Batches run again after a divergent read.
+    pub repeated: usize,
+    pub divergent_reads: Vec<DivergentRead>,
+    /// Batches after which the engine's thread-local lambda-type map was not
+    /// empty: a later class on that thread could have seen the leftover.
+    pub leaks: Vec<String>,
+    /// Every batch run, in completion order.
+    pub runs: Vec<BatchRun>,
+    pub plan_millis: u64,
+    pub millis: u64,
+}
+
+/// One batch run.
+#[derive(Clone, Debug, Default)]
+pub struct BatchRun {
+    pub delivered: usize,
+    pub processed: usize,
+    /// Repetition round (0: first run).
+    pub round: usize,
+    /// Whether the run needed a new engine instance (`load_millis` is then its loading time).
+    pub fresh_instance: bool,
+    pub load_millis: u64,
+    pub millis: u64,
+}
+
+/// Why nothing could be decompiled.
+#[derive(Debug)]
+pub struct DriverError(pub String);
+
+impl std::fmt::Display for DriverError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for DriverError {}
+
+struct Plan {
+    roots: Vec<String>,
+    order: Arc<BTreeMap<String, RootPos>>,
+    cost: Vec<u64>,
+    deps: Vec<BTreeSet<usize>>,
+}
+
+#[derive(Clone, Debug)]
+struct Batch {
+    id: usize,
+    deliver: BTreeSet<usize>,
+    process: BTreeSet<usize>,
+    cost: u64,
+    round: usize,
+}
+
+struct Outcome {
+    batch: Batch,
+    units: Vec<DecompiledClass>,
+    reads: Vec<DivergentRead>,
+    leak: bool,
+    failure: Option<String>,
+    fresh_instance: bool,
+    load_millis: u64,
+    millis: u64,
+}
+
+/// Decompiles `input` under `config`, handing each selected root class's
+/// result to `sink` in root order.
+pub fn run(
+    input: &InputSet,
+    config: &DriverConfig,
+    sink: &mut dyn FnMut(ClassResult),
+) -> Result<Report, DriverError> {
+    let started = Instant::now();
+    let workers_wanted = worker_count(input, config);
+
+    let (plan_tx, plan_rx) = mpsc::channel::<Result<Plan, String>>();
+    let (out_tx, out_rx) = mpsc::channel::<Outcome>();
+    let instances = Arc::new(AtomicUsize::new(0));
+    let board = Arc::new(Board::default());
+
+    let mut report = Report::default();
+    let result = std::thread::scope(|scope| -> Result<(), DriverError> {
+        let _finish = FinishOnDrop(&board);
+        let mut handles = Vec::new();
+        for worker in 0..workers_wanted {
+            let out_tx = out_tx.clone();
+            let plan_tx = (worker == 0).then(|| plan_tx.clone());
+            let instances = instances.clone();
+            let board = board.clone();
+            let handle = std::thread::Builder::new()
+                .name(format!("kuna-jvm-{worker}"))
+                .stack_size(config.stack_size)
+                .spawn_scoped(scope, move || {
+                    worker_main(input, config, plan_tx, &board, &out_tx, &instances)
+                })
+                .map_err(|e| DriverError(format!("cannot start a worker thread: {e}")))?;
+            handles.push(handle);
+        }
+        drop(plan_tx);
+        drop(out_tx);
+
+        let plan = match plan_rx.recv() {
+            Ok(Ok(plan)) => plan,
+            Ok(Err(e)) => {
+                board.finish();
+                return Err(DriverError(e));
+            }
+            Err(_) => {
+                board.finish();
+                return Err(DriverError("the planning engine stopped".to_string()));
+            }
+        };
+        report.plan_millis = started.elapsed().as_millis() as u64;
+        report.roots = plan.roots.clone();
+
+        let selected: Vec<usize> = match &config.select {
+            None => (0..plan.roots.len()).collect(),
+            Some(names) => names
+                .iter()
+                .filter_map(|n| plan.order.get(n).map(|p| p.index))
+                .collect::<BTreeSet<usize>>()
+                .into_iter()
+                .collect(),
+        };
+        if let Some(names) = &config.select {
+            for name in names {
+                if !plan.order.contains_key(name) {
+                    report.failed.push(name.clone());
+                }
+            }
+        }
+
+        let batches = make_batches(&plan, &selected, workers_wanted, config.strategy);
+        report.batches = batches.len();
+        report.workers = workers_wanted.min(batches.len().max(1));
+        if let Some(progress) = &config.progress {
+            progress(&Progress::Planned {
+                roots: selected.len(),
+                batches: batches.len(),
+                workers: report.workers,
+            });
+        }
+        let shared = Arc::new(SharedPlan {
+            order: plan.order.clone(),
+            roots: plan.roots.clone(),
+            all: (0..plan.roots.len()).collect(),
+        });
+        let mut sorted = batches.clone();
+        sorted.sort_by(|a, b| b.cost.cmp(&a.cost).then(a.id.cmp(&b.id)));
+        board.start(shared, sorted);
+
+        let mut slots: BTreeMap<usize, ClassResult> = BTreeMap::new();
+        let mut next = 0usize;
+        let order_of_selected: Vec<usize> = selected.clone();
+        let mut done = 0usize;
+        let mut next_id = batches.len();
+        let mut outstanding = batches.len();
+
+        while outstanding > 0 {
+            let Ok(outcome) = out_rx.recv() else {
+                break;
+            };
+            outstanding -= 1;
+            report.processed += outcome.batch.process.len();
+            report.runs.push(BatchRun {
+                delivered: outcome.batch.deliver.len(),
+                processed: outcome.batch.process.len(),
+                round: outcome.batch.round,
+                fresh_instance: outcome.fresh_instance,
+                load_millis: outcome.load_millis,
+                millis: outcome.millis,
+            });
+            if outcome.fresh_instance {
+                report.instances += 1;
+            }
+            if outcome.leak {
+                report
+                    .leaks
+                    .push(names_of(&plan.roots, &outcome.batch.deliver).join(" "));
+            }
+            if !outcome.reads.is_empty() && outcome.failure.is_none() {
+                report.repeated += 1;
+                let mut process = outcome.batch.process.clone();
+                for read in &outcome.reads {
+                    if let Some(owner) = plan.order.get(&read.owner) {
+                        process.insert(owner.index);
+                    }
+                }
+                let round = outcome.batch.round + 1;
+                if round >= MAX_ROUNDS || process == outcome.batch.process {
+                    process = (0..plan.roots.len()).collect();
+                }
+                if let Some(progress) = &config.progress {
+                    progress(&Progress::Repeating {
+                        roots: outcome.batch.deliver.len(),
+                        read: outcome.reads[0].clone(),
+                    });
+                }
+                report.divergent_reads.extend(outcome.reads.iter().cloned());
+                let batch = Batch {
+                    id: next_id,
+                    deliver: outcome.batch.deliver.clone(),
+                    cost: process.iter().map(|&i| plan.cost[i]).sum(),
+                    process,
+                    round,
+                };
+                next_id += 1;
+                outstanding += 1;
+                board.push_front(batch);
+                continue;
+            }
+            let mut by_name: BTreeMap<String, DecompiledClass> = BTreeMap::new();
+            for unit in outcome.units {
+                by_name.entry(unit.qualified_name.clone()).or_insert(unit);
+            }
+            for &index in &outcome.batch.deliver {
+                let name = plan.roots[index].clone();
+                let unit = by_name.remove(&name);
+                let error = match (&unit, &outcome.failure) {
+                    (_, Some(failure)) => Some(failure.clone()),
+                    (Some(unit), None) => unit.error.clone(),
+                    (None, None) => Some(format!("no output for class {name}")),
+                };
+                slots.insert(
+                    index,
+                    ClassResult {
+                        index,
+                        qualified_name: name,
+                        unit: if outcome.failure.is_some() {
+                            None
+                        } else {
+                            unit
+                        },
+                        error,
+                    },
+                );
+            }
+            while next < order_of_selected.len() {
+                let index = order_of_selected[next];
+                let Some(result) = slots.remove(&index) else {
+                    break;
+                };
+                if result.unit.is_none() {
+                    report.failed.push(result.qualified_name.clone());
+                } else {
+                    report.delivered += 1;
+                }
+                done += 1;
+                if let Some(progress) = &config.progress {
+                    progress(&Progress::Delivered {
+                        done,
+                        total: order_of_selected.len(),
+                        class: result.qualified_name.clone(),
+                    });
+                }
+                sink(result);
+                next += 1;
+            }
+        }
+        board.finish();
+        for handle in handles {
+            let _ = handle.join();
+        }
+        if next < order_of_selected.len() {
+            return Err(DriverError(format!(
+                "{} root class(es) were never delivered (a worker stopped)",
+                order_of_selected.len() - next
+            )));
+        }
+        Ok(())
+    });
+    result?;
+    report.instances = report.instances.max(instances.load(Ordering::SeqCst));
+    report.millis = started.elapsed().as_millis() as u64;
+    Ok(report)
+}
+
+/// Rounds of repeating a batch with added roots before it is run with every root.
+const MAX_ROUNDS: usize = 3;
+
+struct SharedPlan {
+    order: Arc<BTreeMap<String, RootPos>>,
+    roots: Vec<String>,
+    all: BTreeSet<usize>,
+}
+
+/// Ends the run for the workers however the coordinating thread leaves.
+struct FinishOnDrop<'a>(&'a Board);
+
+impl Drop for FinishOnDrop<'_> {
+    fn drop(&mut self) {
+        self.0.finish();
+    }
+}
+
+/// The work queue the workers take batches from.
+#[derive(Default)]
+struct Board {
+    state: Mutex<BoardState>,
+    changed: Condvar,
+}
+
+#[derive(Default)]
+struct BoardState {
+    plan: Option<Arc<SharedPlan>>,
+    queue: VecDeque<Batch>,
+    finished: bool,
+}
+
+impl Board {
+    fn start(&self, plan: Arc<SharedPlan>, batches: Vec<Batch>) {
+        let mut state = self.state.lock().unwrap();
+        state.plan = Some(plan);
+        state.queue.extend(batches);
+        self.changed.notify_all();
+    }
+
+    fn push_front(&self, batch: Batch) {
+        self.state.lock().unwrap().queue.push_front(batch);
+        self.changed.notify_all();
+    }
+
+    fn finish(&self) {
+        self.state.lock().unwrap().finished = true;
+        self.changed.notify_all();
+    }
+
+    /// The next batch, or `None` once the run is over.
+    fn take(&self) -> Option<(Batch, Arc<SharedPlan>)> {
+        let mut state = self.state.lock().unwrap();
+        loop {
+            if state.finished {
+                return None;
+            }
+            if let Some(plan) = state.plan.clone() {
+                if let Some(batch) = state.queue.pop_front() {
+                    return Some((batch, plan));
+                }
+            }
+            state = self.changed.wait(state).unwrap();
+        }
+    }
+}
+
+fn names_of(roots: &[String], indices: &BTreeSet<usize>) -> Vec<String> {
+    indices.iter().map(|&i| roots[i].clone()).collect()
+}
+
+/// One engine instance on this thread.
+struct Session {
+    fernflower: Fernflower,
+    processed: BTreeSet<usize>,
+}
+
+fn engine_options(config: &DriverConfig) -> Vec<(String, String)> {
+    let mut options = config.options.clone();
+    let mut set = |key: &str, value: String| {
+        options.retain(|(k, _)| k != key);
+        options.push((key.to_string(), value));
+    };
+    set(
+        IFernflowerPreferences::INCLUDE_JAVA_RUNTIME,
+        "0".to_string(),
+    );
+    set(
+        IFernflowerPreferences::INCLUDE_ENTIRE_CLASSPATH,
+        "0".to_string(),
+    );
+    set(IFernflowerPreferences::THREADS, "1".to_string());
+    set(IFernflowerPreferences::NEW_LINE_SEPARATOR, "1".to_string());
+    set(
+        IFernflowerPreferences::MAX_PROCESSING_METHOD,
+        config.max_method_seconds.to_string(),
+    );
+    options
+}
+
+fn open_session(input: &InputSet, config: &DriverConfig) -> Result<Session, String> {
+    reset_engine_thread();
+    let logger = (config.logger)();
+    let options = engine_options(config);
+    let opened = try_catch(|| {
+        let fernflower = Fernflower::new(&options, logger);
+        if let Some(runtime) = &config.runtime {
+            for source in runtime.sources() {
+                fernflower.add_library(source);
+            }
+        }
+        for library in &config.libraries {
+            for source in library.sources() {
+                fernflower.add_library(source);
+            }
+        }
+        for source in input.sources() {
+            fernflower.add_source(source);
+        }
+        fernflower
+    });
+    match opened {
+        Ok(fernflower) => Ok(Session {
+            fernflower,
+            processed: BTreeSet::new(),
+        }),
+        Err(e) => {
+            let _ = try_catch(reset_engine_thread);
+            Err(format!(
+                "cannot load {}: {}",
+                input.path().display(),
+                e.message
+            ))
+        }
+    }
+}
+
+fn close_session(session: Option<Session>) {
+    if let Some(mut session) = session {
+        let _ = try_catch(|| session.fernflower.clear_context());
+    }
+    let _ = try_catch(reset_engine_thread);
+}
+
+fn worker_main(
+    input: &InputSet,
+    config: &DriverConfig,
+    plan_tx: Option<mpsc::Sender<Result<Plan, String>>>,
+    board: &Board,
+    out_tx: &mpsc::Sender<Outcome>,
+    instances: &AtomicUsize,
+) {
+    if let Some(guard) = &config.method_guard {
+        crate::cancelation_manager::CancelationManager::set_method_guard(Some(guard()));
+    }
+    let mut session: Option<Session> = None;
+    let mut fresh = false;
+    let mut load_millis = 0u64;
+    if let Some(plan_tx) = plan_tx {
+        let loading = Instant::now();
+        match open_session(input, config) {
+            Ok(mut s) => {
+                instances.fetch_add(1, Ordering::SeqCst);
+                let planned = try_catch(|| plan(&mut s.fernflower, input));
+                match planned {
+                    Ok(plan) => {
+                        load_millis = loading.elapsed().as_millis() as u64;
+                        let _ = plan_tx.send(Ok(plan));
+                        session = Some(s);
+                        fresh = true;
+                    }
+                    Err(e) => {
+                        let _ = plan_tx.send(Err(format!(
+                            "cannot plan {}: {}",
+                            input.path().display(),
+                            e.message
+                        )));
+                        close_session(Some(s));
+                        return;
+                    }
+                }
+            }
+            Err(e) => {
+                let _ = plan_tx.send(Err(e));
+                return;
+            }
+        }
+    }
+    while let Some((batch, shared)) = board.take() {
+        let reuse = session
+            .as_ref()
+            .is_some_and(|s| s.processed.is_disjoint(&batch.process));
+        if !reuse {
+            close_session(session.take());
+            let loading = Instant::now();
+            match open_session(input, config) {
+                Ok(mut s) => {
+                    instances.fetch_add(1, Ordering::SeqCst);
+                    let _ = try_catch(|| s.fernflower.load());
+                    load_millis = loading.elapsed().as_millis() as u64;
+                    session = Some(s);
+                    fresh = true;
+                }
+                Err(e) => {
+                    let _ = out_tx.send(Outcome {
+                        batch,
+                        units: Vec::new(),
+                        reads: Vec::new(),
+                        leak: false,
+                        failure: Some(e),
+                        fresh_instance: true,
+                        load_millis: 0,
+                        millis: 0,
+                    });
+                    continue;
+                }
+            }
+        }
+        let s = session.as_mut().expect("session");
+        let mut outcome = run_batch(s, batch, &shared, fresh);
+        outcome.load_millis = std::mem::take(&mut load_millis);
+        fresh = false;
+        if out_tx.send(outcome).is_err() {
+            break;
+        }
+    }
+    close_session(session);
+    crate::cancelation_manager::CancelationManager::set_method_guard(None);
+}
+
+fn run_batch(session: &mut Session, batch: Batch, plan: &SharedPlan, fresh: bool) -> Outcome {
+    let process: BTreeSet<String> = batch
+        .process
+        .iter()
+        .map(|&i| plan.roots[i].clone())
+        .collect();
+    let selection = RootSelection {
+        process,
+        deliver: batch
+            .deliver
+            .iter()
+            .map(|&i| plan.roots[i].clone())
+            .collect(),
+    };
+    session.processed.extend(batch.process.iter().copied());
+    let watched = batch.process != plan.all;
+    if watched {
+        kuna_partition::watch(plan.order.clone(), &selection);
+    }
+    let mut units = Vec::new();
+    let started = Instant::now();
+    let result = try_catch(|| {
+        session
+            .fernflower
+            .decompile_selected(&selection, &mut |unit| units.push(unit))
+    });
+    let reads = if watched {
+        kuna_partition::unwatch()
+    } else {
+        Vec::new()
+    };
+    let leak = !Exprent::with_inferred_lambda_types(|m| m.is_empty());
+    Outcome {
+        batch,
+        units,
+        reads,
+        leak,
+        failure: result
+            .err()
+            .map(|e| format!("the engine failed: {}", e.message)),
+        fresh_instance: fresh,
+        load_millis: 0,
+        millis: started.elapsed().as_millis() as u64,
+    }
+}
+
+/// Lists the roots in run order with their sizes and dependencies.
+fn plan(fernflower: &mut Fernflower, input: &InputSet) -> Plan {
+    let placed = fernflower.root_classes_in_units();
+    let roots: Vec<String> = placed.iter().map(|(_, n)| n.clone()).collect();
+    let order: BTreeMap<String, RootPos> = placed
+        .iter()
+        .enumerate()
+        .rev()
+        .map(|(index, (unit, n))| (n.clone(), RootPos { unit: *unit, index }))
+        .collect();
+
+    let mut root_of: BTreeMap<String, usize> = BTreeMap::new();
+    let nodes: Vec<(String, ClassNode)> = DecompilerContext::get_class_processor()
+        .get_map_root_classes()
+        .borrow()
+        .iter()
+        .map(|(name, node)| (name.clone(), *node))
+        .collect();
+    for (name, node) in nodes {
+        let mut top = node;
+        while let Some(parent) = top.with(|d| d.parent) {
+            top = parent;
+        }
+        let top_name = top.with(|d| d.class_struct).qualified_name();
+        if let Some(pos) = order.get(&top_name) {
+            root_of.insert(name, pos.index);
+        }
+    }
+
+    let mut cost = vec![0u64; roots.len()];
+    let mut deps = vec![BTreeSet::new(); roots.len()];
+    for class in input.classes() {
+        let Ok((info, refs)) = kuna_inventory::parse(class.bytes) else {
+            continue;
+        };
+        let Some(&root) = root_of.get(&info.internal) else {
+            continue;
+        };
+        cost[root] += 256
+            + info
+                .methods
+                .iter()
+                .map(|m| m.code_length.unwrap_or(0) as u64)
+                .sum::<u64>();
+        for owner in &refs.constructors {
+            if let Some(&dep) = root_of.get(owner) {
+                if dep != root && !order.contains_key(owner) {
+                    deps[root].insert(dep);
+                }
+            }
+        }
+    }
+    Plan {
+        roots,
+        order: Arc::new(order),
+        cost,
+        deps,
+    }
+}
+
+fn make_batches(plan: &Plan, selected: &[usize], workers: usize, strategy: Strategy) -> Vec<Batch> {
+    if selected.is_empty() {
+        return Vec::new();
+    }
+    let target = (workers * 4).clamp(1, selected.len());
+    let groups: Vec<BTreeSet<usize>> = match strategy {
+        Strategy::Closure => {
+            let total: u64 = selected.iter().map(|&i| plan.cost[i].max(1)).sum();
+            let per = total.div_ceil(target as u64).max(1);
+            let mut groups = Vec::new();
+            let mut current = BTreeSet::new();
+            let mut weight = 0u64;
+            for &i in selected {
+                current.insert(i);
+                weight += plan.cost[i].max(1);
+                if weight >= per {
+                    groups.push(std::mem::take(&mut current));
+                    weight = 0;
+                }
+            }
+            if !current.is_empty() {
+                groups.push(current);
+            }
+            groups
+        }
+        Strategy::Components => {
+            let mut parent: Vec<usize> = (0..plan.roots.len()).collect();
+            fn find(parent: &mut [usize], x: usize) -> usize {
+                let mut r = x;
+                while parent[r] != r {
+                    r = parent[r];
+                }
+                let mut y = x;
+                while parent[y] != r {
+                    let next = parent[y];
+                    parent[y] = r;
+                    y = next;
+                }
+                r
+            }
+            for (root, deps) in plan.deps.iter().enumerate() {
+                for &dep in deps {
+                    let (a, b) = (find(&mut parent, root), find(&mut parent, dep));
+                    if a != b {
+                        parent[a.max(b)] = a.min(b);
+                    }
+                }
+            }
+            let mut components: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+            for i in 0..plan.roots.len() {
+                let r = find(&mut parent, i);
+                components.entry(r).or_default().insert(i);
+            }
+            let wanted: BTreeSet<usize> = selected.iter().map(|&i| find(&mut parent, i)).collect();
+            let members: Vec<BTreeSet<usize>> = components
+                .into_iter()
+                .filter(|(r, _)| wanted.contains(r))
+                .map(|(_, s)| s)
+                .collect();
+            let mut sized: Vec<(u64, BTreeSet<usize>)> = members
+                .into_iter()
+                .map(|s| (s.iter().map(|&i| plan.cost[i].max(1)).sum(), s))
+                .collect();
+            sized.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+            let mut bins: Vec<(u64, BTreeSet<usize>)> = vec![(0, BTreeSet::new()); target];
+            for (weight, set) in sized {
+                let bin = bins
+                    .iter_mut()
+                    .min_by_key(|(w, s)| (*w, s.first().copied()))
+                    .expect("bins");
+                bin.0 += weight;
+                bin.1.extend(set);
+            }
+            bins.into_iter()
+                .map(|(_, s)| s)
+                .filter(|s| !s.is_empty())
+                .collect()
+        }
+    };
+    let selected_set: BTreeSet<usize> = selected.iter().copied().collect();
+    groups
+        .into_iter()
+        .enumerate()
+        .map(|(id, group)| {
+            let mut process = group.clone();
+            if strategy == Strategy::Closure {
+                for &i in &group {
+                    process.extend(plan.deps[i].iter().copied());
+                }
+            }
+            let deliver: BTreeSet<usize> = group.intersection(&selected_set).copied().collect();
+            Batch {
+                id,
+                cost: process.iter().map(|&i| plan.cost[i].max(1)).sum(),
+                deliver,
+                process,
+                round: 0,
+            }
+        })
+        .collect()
+}
+
+fn worker_count(input: &InputSet, config: &DriverConfig) -> usize {
+    match config.jobs {
+        Jobs::Exactly(n) => n.max(1),
+        Jobs::Auto => {
+            let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+            let wanted = cores.clamp(1, MAX_AUTO_JOBS);
+            let Some(available) = config.available_memory.or_else(mem_available) else {
+                return wanted;
+            };
+            let budget = available / 10 * 9;
+            (1..=wanted)
+                .rev()
+                .find(|&n| estimate_memory(input, config, n) <= budget)
+                .unwrap_or(1)
+        }
+    }
+}
+
+/// A rough upper bound of a run's memory with `workers` instances: each
+/// instance holds the loaded class universe (`instance_memory`, else about 64
+/// bytes per class-file byte plus a fixed part and the JDK index), and the
+/// decompiled state of the classes being worked on, about 400 bytes per
+/// class-file byte of the whole input, is spread over the instances' batches.
+/// Fitted to Guava (6.5 MB of classes: 2.7 GB with one worker, 9.4 GB with
+/// 16) and spring-boot (3.0 MB: 0.9 and 2.3 GB).
+pub fn estimate_memory(input: &InputSet, config: &DriverConfig, workers: usize) -> u64 {
+    let input_bytes = input.class_bytes() as u64;
+    let universe = input_bytes
+        + config
+            .libraries
+            .iter()
+            .map(|l| l.class_bytes() as u64)
+            .sum::<u64>();
+    let runtime = if config.runtime.is_some() {
+        96 << 20
+    } else {
+        0
+    };
+    let per_instance = config
+        .instance_memory
+        .unwrap_or((128 << 20) + runtime + universe * 64);
+    per_instance * workers as u64 + input_bytes * 400
+}
+
+/// `MemAvailable` from `/proc/meminfo`, in bytes.
+pub fn mem_available() -> Option<u64> {
+    let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let line = text.lines().find(|l| l.starts_with("MemAvailable:"))?;
+    let kib: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+    Some(kib * 1024)
+}

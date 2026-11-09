@@ -190,6 +190,7 @@ impl MethodProcessor {
         let mut finally_processed = 0;
 
         while f_proc.iterate_graph(cl, mt, root, graph) {
+            CancelationManager::check_canceled();
             finally_processed += 1;
             let old_root = root;
             decompile_record.add(
@@ -235,6 +236,7 @@ impl MethodProcessor {
 
         let mut stack_vars_processed = 0;
         loop {
+            CancelationManager::check_canceled();
             stack_vars_processed += 1;
 
             StackVarsProcessor::simplify_stack_vars(root, mt, cl);
@@ -274,6 +276,7 @@ impl MethodProcessor {
         Self::set_debug_currently_decompiling(Some(root));
 
         loop {
+            CancelationManager::check_canceled();
             decompile_record.increment_main_loop();
             decompile_record.add("Start", Some(root));
 
@@ -282,6 +285,7 @@ impl MethodProcessor {
 
             if root.has_loops() {
                 loop {
+                    CancelationManager::check_canceled();
                     decompile_record.increment_merge_loop();
                     decompile_record.add("MergeLoopStart", Some(root));
 

@@ -5,6 +5,7 @@
 use std::collections::VecDeque;
 
 use crate::basic_block_statement::BasicBlockStatement;
+use crate::cancelation_manager::CancelationManager;
 use crate::catch_all_statement::CatchAllStatement;
 use crate::catch_statement::CatchStatement;
 use crate::control_flow_graph::ControlFlowGraph;
@@ -527,6 +528,7 @@ impl DomHelper {
         for mapstage in 0..2 {
             let mut reducibility = 0;
             while reducibility < 5 {
+                CancelationManager::check_canceled();
                 if reducibility > 0 {
                     if IrreducibleCFGDeobfuscator::is_statement_irreducible(general) {
                         if !IrreducibleCFGDeobfuscator::split_irreducible_node(general) {
@@ -888,6 +890,7 @@ impl DomHelper {
         let mut success = false;
 
         loop {
+            CancelationManager::check_canceled();
             let mut found = false;
 
             let lst_stats = stat.get_post_reverse_post_order_list();

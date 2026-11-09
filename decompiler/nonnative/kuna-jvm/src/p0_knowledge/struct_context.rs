@@ -18,6 +18,7 @@ use crate::generic_main::GenericMain;
 use crate::generic_method_descriptor::GenericMethodDescriptor;
 use crate::i_decompiled_data::IDecompiledData;
 use crate::i_fernflower_logger::Severity;
+use crate::kuna_partition::RootSelection;
 use crate::plugin_context::PluginContext;
 use crate::rt::{rethrow, try_catch, Caught, JHashMap, JavaException};
 use crate::struct_class::StructClass;
@@ -197,11 +198,22 @@ impl StructContext {
     /// Decompiles every own unit; each finished class goes to `sink` in place
     /// of the Java's `IResultSaver`.
     pub fn save_context(self, sink: &mut dyn FnMut(DecompiledClass)) {
+        self.save_context_selected(sink, None);
+    }
+
+    /// [`StructContext::save_context`] restricted to `selection`; see
+    /// [`ContextUnit::save_selected`].
+    pub fn save_context_selected(
+        self,
+        sink: &mut dyn FnMut(DecompiledClass),
+        selection: Option<&RootSelection>,
+    ) {
         let units = self.with(|d| d.units.clone());
         for unit in units {
             if unit.is_own() {
-                let result =
-                    try_catch(|| unit.save(&|name: &str| self.get_class(name), &mut *sink));
+                let result = try_catch(|| {
+                    unit.save_selected(&|name: &str| self.get_class(name), &mut *sink, selection)
+                });
                 match result {
                     Ok(()) => {}
                     Err(ex) if is_io_exception(&ex) => {
