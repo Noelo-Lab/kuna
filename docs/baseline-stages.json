@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3977,
-    3977
+    3983,
+    3983
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1110,7 +1110,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 393 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 394 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -3788,6 +3788,12 @@
     "data:swiftdemangle default: the Swift 5 symbol demangles to its reference path",
     "data:swiftdemangle off: the ObjC method label carries the runtime class name",
     "data:swiftdemangle off: the Swift 5 symbol stays mangled",
+    "data:swiftmetadata off: the metadata accessor is a placeholder",
+    "data:swiftmetadata off: the protocol witness is a placeholder",
+    "data:swiftmetadata off: the vtable method is a placeholder",
+    "data:swiftmetadata on: the metadata accessor is named after its type",
+    "data:swiftmetadata on: the vtable slot is named by class, position and kind",
+    "data:swiftmetadata on: the witness is named by conformance and requirement",
     "data:switch-return-paths #1: tag 3 keeps its own case in all configurations",
     "data:switch-return-paths #2: first byte toggle",
     "data:switch-return-paths #3: second byte toggle",
