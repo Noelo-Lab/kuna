@@ -1,10 +1,13 @@
 //! The selection grammar: which class or method of an input a target names.
 //!
 //! A class is `com.ex.Main`, `com/ex/Main`, `Main.class`, `com.ex.Main$Inner`
-//! or `com.ex.Main.Inner`, or a bare simple name that only one class has. A
-//! method is `<class>.<name>` or `<class>#<name>`, optionally followed by its
-//! JVM descriptor; `<init>` and `<clinit>` are written as such. A whole target
-//! that names a class is that class; otherwise it splits at its last `.`.
+//! or `com.ex.Main.Inner`, or a simple name (`Main`, `Main.Inner`) that only
+//! one class has. A method is `<class>.<name>` or `<class>#<name>`, optionally
+//! followed by its JVM descriptor; `<init>` and `<clinit>` are written as such.
+//! Names are the class file's, also for Kotlin: a property is its accessors
+//! (`getX`, `setX`), a companion member is in `Outer$Companion`, a top-level
+//! function in its `…Kt` file class. A whole target that names a class is that
+//! class; otherwise it splits at its last `.`.
 
 use std::collections::BTreeMap;
 
@@ -101,14 +104,15 @@ impl Universe {
                 return Ok(Some(candidate));
             }
         }
-        if text.contains(['.', '/']) {
+        if text.contains('/') {
             return Ok(None);
         }
+        let nested = text.replace('.', "$");
         let simple: Vec<&str> = self
             .classes
             .iter()
             .map(|c| c.internal.as_str())
-            .filter(|internal| internal.rsplit('/').next() == Some(text))
+            .filter(|internal| internal.rsplit('/').next() == Some(nested.as_str()))
             .collect();
         match simple.as_slice() {
             [] => Ok(None),
@@ -183,8 +187,15 @@ impl Universe {
             .map(|m| format!("{owner}.{}{}", m.name, m.descriptor))
             .collect();
         let mut message = format!("no method {text:?} in {owner}");
+        let accessors = property_accessors(info, name);
         if !overloads.is_empty() {
             message.push_str(&format!("; its overloads are {}", overloads.join(", ")));
+        } else if !accessors.is_empty() {
+            let named: Vec<String> = accessors.iter().map(|a| format!("{:?}", format!("{owner}.{a}"))).collect();
+            message.push_str(&format!(
+                "; a Kotlin property is selected by its JVM accessors: {}",
+                named.join(", ")
+            ));
         } else if let Some(near) = nearest(name, info.methods.iter().map(|m| m.name.as_str())) {
             message.push_str(&format!("; did you mean {:?}?", format!("{owner}.{near}")));
         }
@@ -204,6 +215,23 @@ impl Universe {
         let wanted = text.replace('/', ".");
         nearest(&wanted, names.iter().map(String::as_str)).map(str::to_string)
     }
+}
+
+/// The getter and setter names Kotlin gives a property `name` that `class` has.
+fn property_accessors<'a>(class: &'a ClassInfo, name: &str) -> Vec<&'a str> {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return Vec::new();
+    };
+    let capitalized: String = first.to_uppercase().chain(chars).collect();
+    let wanted = [format!("get{capitalized}"), format!("is{capitalized}"), format!("set{capitalized}")];
+    let mut found: Vec<&str> = Vec::new();
+    for want in &wanted {
+        if let Some(m) = class.methods.iter().find(|m| &m.name == want) {
+            found.push(m.name.as_str());
+        }
+    }
+    found
 }
 
 /// The closest of `candidates` to `wanted`: equal ignoring case first, else
@@ -262,7 +290,7 @@ mod tests {
             assert_eq!(u.resolve(text, None, "app.jar").unwrap(), main, "{text}");
         }
         let nested = Target::Class("com/ex/Main$Checker".into());
-        for text in ["com.ex.Main$Checker", "com.ex.Main.Checker", "Main$Checker"] {
+        for text in ["com.ex.Main$Checker", "com.ex.Main.Checker", "Main$Checker", "Main.Checker"] {
             assert_eq!(u.resolve(text, None, "app.jar").unwrap(), nested, "{text}");
         }
         assert_eq!(u.root_of("com/ex/Main$Checker"), "com/ex/Main");
@@ -285,7 +313,31 @@ mod tests {
         assert!(!add.matches("com/ex/Main", "add", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"));
         assert!(u.resolve("com.ex.Main.<init>", None, "app.jar").is_ok());
         assert!(u.resolve("com.ex.Main.Checker.verify", None, "app.jar").is_ok());
+        assert_eq!(
+            u.resolve("Main.Checker.verify", None, "app.jar").unwrap(),
+            Target::Methods {
+                class: "com/ex/Main$Checker".into(),
+                name: "verify".into(),
+                descriptor: None,
+            }
+        );
         assert_eq!(u.resolve("check", Some("com/ex/Main"), "Main.class").unwrap(), check);
+    }
+
+    #[test]
+    fn a_kotlin_property_name_points_at_its_accessors() {
+        let u = Universe::new(vec![class(
+            "pkg/TestKt",
+            None,
+            &[("getCount", "()I"), ("setCount", "(I)V"), ("isReady", "()Z"), ("run", "()V")],
+        )]);
+        let e = u.resolve("TestKt.count", None, "kt.jar").unwrap_err();
+        assert!(
+            e.ends_with("a Kotlin property is selected by its JVM accessors: \"pkg.TestKt.getCount\", \"pkg.TestKt.setCount\""),
+            "{e}"
+        );
+        let e = u.resolve("TestKt.ready", None, "kt.jar").unwrap_err();
+        assert!(e.contains("\"pkg.TestKt.isReady\""), "{e}");
     }
 
     #[test]

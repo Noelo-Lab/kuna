@@ -28,6 +28,11 @@ fn main_class() -> String {
     fixtures().join("classes/com/ex/Main.class").display().to_string()
 }
 
+/// `tests/fixtures/jvm/kotlin/classes`: `Counter.kt` and `Counters.kt` compiled by kotlinc 2.0.0.
+fn kotlin_dir() -> String {
+    fixtures().join("kotlin/classes").display().to_string()
+}
+
 fn kuna(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args(args)
@@ -194,7 +199,8 @@ fn decompile_json_is_the_native_document_with_java_records() {
         keys(record),
         [
             "name", "address", "address_hex", "aliases", "object_location", "size", "code", "error",
-            "unstructured_gotos", "line_mappings", "class", "method", "descriptor", "access", "path", "line"
+            "unstructured_gotos", "line_mappings", "class", "method", "descriptor", "access", "path", "language",
+            "line"
         ]
     );
     assert_eq!(record["name"], "com.ex.Main.check");
@@ -203,6 +209,7 @@ fn decompile_json_is_the_native_document_with_java_records() {
     assert_eq!(record["descriptor"], "(Ljava/lang/String;)Z");
     assert_eq!(record["access"], serde_json::json!(["public", "static"]));
     assert_eq!(record["path"], "com/ex/Main.java");
+    assert_eq!(record["language"], "java");
     assert!(record["code"].as_str().unwrap().starts_with("public static boolean check(String key) {\n"));
     let line = record["line"].as_u64().unwrap() as usize;
     let unit = ok(&jvm(&["decompile", &jar(), "com.ex.Main"]));
@@ -221,7 +228,7 @@ fn decompile_json_of_a_class_carries_the_unit_and_its_methods() {
     assert_eq!(doc["omitted"], serde_json::json!(["line_mappings", "variables", "types", "stack_objects"]));
     let classes = doc["classes"].as_array().unwrap();
     assert_eq!(classes.len(), 1);
-    assert_eq!(keys(&classes[0]), ["name", "path", "size", "code", "error"]);
+    assert_eq!(keys(&classes[0]), ["name", "path", "language", "size", "code", "error"]);
     assert_eq!(classes[0]["name"], "com.ex.Main");
     assert_eq!(classes[0]["code"].as_str().unwrap(), ok(&jvm(&["decompile", &jar(), "com.ex.Main"])));
     let names: Vec<&str> = doc["functions"].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
@@ -371,6 +378,7 @@ fn bad_options_and_native_flags_are_usage_errors() {
         (&["--define-function", "0x10"], "native-engine flag"),
         (&["--mode", "bogus"], "unknown --mode"),
         (&["--language", "c"], "decompiles to Java"),
+        (&["--language", "kotlin"], "cannot write a Java class as Kotlin"),
         (&["--no-such-flag"], "unknown option --no-such-flag"),
     ];
     let jar = jar();
@@ -437,6 +445,23 @@ fn a_directory_without_classes_says_so() {
     let out = kuna(&["functions", empty.to_str().unwrap()]);
     assert_eq!(out.status.code(), Some(1));
     assert!(stderr(&out).contains("no .class files under"), "{}", stderr(&out));
+}
+
+#[test]
+fn a_library_without_classes_adds_nothing_and_fails_nothing() {
+    let dir = scratch_dir("jvm-classless-lib");
+    let empty_jar = dir.join("kmp-root.jar");
+    let mut eocd = b"PK\x05\x06".to_vec();
+    eocd.resize(22, 0);
+    std::fs::write(&empty_jar, &eocd).unwrap();
+    let empty_dir = scratch_dir("jvm-classless-lib-dir");
+    let plain = ok(&jvm(&["decompile", &jar(), "com.ex.Main"]));
+    for lib in [&empty_jar, &empty_dir] {
+        let with = ok(&jvm(&["decompile", &jar(), "com.ex.Main", "--lib", lib.to_str().unwrap()]));
+        assert_eq!(with, plain, "{}", lib.display());
+    }
+    let out = jvm(&["decompile-all", empty_jar.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(1), "as an input it has nothing to decompile");
 }
 
 #[test]
@@ -521,4 +546,173 @@ fn a_reader_that_walks_away_is_not_a_panic() {
     let out = child.wait_with_output().unwrap();
     assert!(!stderr(&out).contains("panicked"), "{}", stderr(&out));
     assert_eq!(out.status.code(), Some(0));
+}
+
+const COUNTER: &str = "\
+package com.ex.kt
+
+public class Counter(start: Int) {
+   public final var count: Int
+      private set
+
+   public final var label: String
+      internal set
+
+   init {
+      this.count = start
+      this.label = \"counter\"
+   }
+
+   public fun bump(by: Int = 1): Int {
+      this.count += by
+      return this.count
+   }
+
+   public companion object {
+      public fun of(text: String): Counter {
+         return Counter(text.length())
+      }
+   }
+}
+";
+
+#[test]
+fn a_kotlin_class_prints_as_kotlin_and_language_java_prints_it_as_java() {
+    let kotlin = ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter"]));
+    assert_eq!(kotlin, COUNTER);
+    let java = ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--language", "java"]));
+    assert!(java.starts_with("package com.ex.kt;\n\nimport kotlin.Metadata;\n"), "{java}");
+    assert!(java.contains("\npublic final class Counter {\n"), "{java}");
+    assert!(java.contains("\n   public final int bump(int by) {\n"), "{java}");
+    assert_eq!(ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--option", "jvm_kt_enable", "off"])), java);
+    assert_eq!(ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--option", "jvm_plugins", "off"])), java);
+    assert_eq!(ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--language", "auto"])), kotlin);
+    let out = jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--language", "java", "--option", "kt-enable", "1"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr(&out).contains("--language java writes every class as Java"), "{}", stderr(&out));
+}
+
+#[test]
+fn kotlin_members_are_selected_by_their_jvm_names() {
+    let dir = kotlin_dir();
+    let getter = ok(&jvm(&["decompile", &dir, "com.ex.kt.Counter.getCount"]));
+    assert_eq!(getter, "public final var count: Int\n   private set\n");
+    let bump = ok(&jvm(&["decompile", &dir, "Counter.bump"]));
+    assert_eq!(bump, "public fun bump(by: Int = 1): Int {\n   this.count += by\n   return this.count\n}\n");
+    let of = ok(&jvm(&["decompile", &dir, "Counter.Companion.of"]));
+    assert!(of.starts_with("public fun of(text: String): Counter {\n"), "{of}");
+    assert_eq!(ok(&jvm(&["decompile", &dir, "com.ex.kt.Counter$Companion.of"])), of);
+    let companion = ok(&jvm(&["decompile", &dir, "Counter.Companion"]));
+    assert!(companion.starts_with("public companion object {\n"), "{companion}");
+    let top = ok(&jvm(&["decompile", &dir, "com.ex.kt.CountersKt.quadruple"]));
+    assert!(top.starts_with("public fun quadruple(x: Int): Int {\n   return applyTwice({ it: Int ->\n"), "{top}");
+    let init = ok(&jvm(&["decompile", &dir, "Counter.<init>"]));
+    assert!(init.starts_with("init {\n"), "{init}");
+
+    let out = jvm(&["decompile", &dir, "Counter.count"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        stderr(&out).contains("a Kotlin property is selected by its JVM accessors: \"com.ex.kt.Counter.getCount\""),
+        "{}",
+        stderr(&out)
+    );
+    for folded in ["Counter.bump$default", "CountersKt.quadruple$lambda$0"] {
+        let out = jvm(&["decompile", &dir, folded]);
+        assert_eq!(out.status.code(), Some(1), "{folded}");
+        let err = stderr(&out);
+        assert!(err.contains("has no declaration of its own in the Kotlin source") && err.contains("--language java"), "{err}");
+        let java = ok(&jvm(&["decompile", &dir, folded, "--language", "java", "--option", "jvm_remove_synthetic", "off"]));
+        assert!(java.contains(folded.rsplit('.').next().unwrap()), "{folded}: {java}");
+    }
+}
+
+#[test]
+fn a_property_getter_and_setter_share_one_declaration() {
+    let dir = kotlin_dir();
+    let text = ok(&jvm(&["decompile-all", &dir, "--filter", "Label"]));
+    assert_eq!(
+        text,
+        "// Method: com.ex.kt.Counter.getLabel()Ljava/lang/String;, com.ex.kt.Counter.setLabel(Ljava/lang/String;)V  \
+         (com/ex/kt/Counter.kt:7)\npublic final var label: String\n   internal set\n\n"
+    );
+    let doc = json(&jvm(&["decompile-all", &dir, "--json", "--filter", "Label"]));
+    let records = doc["functions"].as_array().unwrap();
+    assert_eq!(records.len(), 2, "one record per JVM method");
+    assert_eq!(records[0]["method"], "getLabel");
+    assert_eq!(records[1]["method"], "setLabel");
+    assert_eq!(records[0]["code"], records[1]["code"]);
+    assert_eq!(records[0]["line"], records[1]["line"]);
+    assert_eq!(
+        ok(&jvm(&["decompile", &dir, "com.ex.kt.Counter.setLabel"])),
+        ok(&jvm(&["decompile", &dir, "com.ex.kt.Counter.getLabel"]))
+    );
+}
+
+#[test]
+fn json_records_carry_the_language_of_their_unit() {
+    let doc = json(&jvm(&["decompile-all", &kotlin_dir(), "--json", "--omit", "line_mappings"]));
+    assert_eq!(doc["language"], "kotlin");
+    for record in doc["functions"].as_array().unwrap() {
+        assert_eq!(record["language"], "kotlin", "{record}");
+        assert!(record["path"].as_str().unwrap().ends_with(".kt"), "{record}");
+    }
+    let classes: Vec<(&str, &str)> = doc["classes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["path"].as_str().unwrap(), c["language"].as_str().unwrap()))
+        .collect();
+    assert_eq!(classes, [("com/ex/kt/Counter.kt", "kotlin"), ("com/ex/kt/CountersKt.kt", "kotlin")]);
+    let java = json(&jvm(&["decompile-all", &kotlin_dir(), "--json", "--language", "java"]));
+    assert_eq!(java["language"], "java");
+    assert!(java["functions"].as_array().unwrap().iter().all(|r| r["language"] == "java"));
+    assert_eq!(java["classes"][0]["path"], "com/ex/kt/Counter.java");
+    let text = ok(&jvm(&["decompile-all", &kotlin_dir()]));
+    assert!(text.starts_with("// Class: com.ex.kt.Counter  (com/ex/kt/Counter.kt)\npackage com.ex.kt\n"), "{text}");
+
+    let mixed = scratch_dir("jvm-mixed-languages");
+    for (from, to) in [
+        ("kotlin/classes/com/ex/kt/CountersKt.class", "CountersKt.class"),
+        ("classes/com/ex/util/Helper.class", "Helper.class"),
+    ] {
+        std::fs::copy(fixtures().join(from), mixed.join(to)).unwrap();
+    }
+    let doc = json(&jvm(&["decompile-all", mixed.to_str().unwrap(), "--json"]));
+    assert_eq!(doc["language"], "mixed");
+    let languages: Vec<(&str, &str)> = doc["classes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["name"].as_str().unwrap(), c["language"].as_str().unwrap()))
+        .collect();
+    assert_eq!(languages, [("com.ex.kt.CountersKt", "kotlin"), ("com.ex.util.Helper", "java")]);
+}
+
+#[test]
+fn decompile_project_writes_kotlin_classes_as_kt_files() {
+    let out_dir = scratch_dir("jvm-project-kotlin");
+    let summary = ok(&jvm(&["decompile-project", &kotlin_dir(), "-o", out_dir.to_str().unwrap()]));
+    let counter = std::fs::read_to_string(out_dir.join("com/ex/kt/Counter.kt")).unwrap();
+    let counters = std::fs::read_to_string(out_dir.join("com/ex/kt/CountersKt.kt")).unwrap();
+    assert_eq!(counter, COUNTER);
+    assert_eq!(
+        summary,
+        format!(
+            "wrote {}: 2 .kt files ({} bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 failed\n",
+            out_dir.display(),
+            counter.len() + counters.len()
+        )
+    );
+    assert_eq!(walk(&out_dir).len(), 2);
+    let java_dir = scratch_dir("jvm-project-kotlin-as-java");
+    let summary = ok(&jvm(&["decompile-project", &kotlin_dir(), "-o", java_dir.to_str().unwrap(), "--language", "java"]));
+    assert!(summary.contains(": 2 .java files ("), "{summary}");
+    assert!(java_dir.join("com/ex/kt/Counter.java").is_file() && java_dir.join("com/ex/kt/CountersKt.java").is_file());
+
+    let mixed = scratch_dir("jvm-project-mixed-input");
+    std::fs::copy(fixtures().join("kotlin/classes/com/ex/kt/CountersKt.class"), mixed.join("CountersKt.class")).unwrap();
+    std::fs::copy(fixtures().join("classes/com/ex/util/Helper.class"), mixed.join("Helper.class")).unwrap();
+    let mixed_out = scratch_dir("jvm-project-mixed");
+    let summary = ok(&jvm(&["decompile-project", mixed.to_str().unwrap(), "-o", mixed_out.to_str().unwrap()]));
+    assert!(summary.contains(": 1 .java files, 1 .kt files ("), "{summary}");
 }

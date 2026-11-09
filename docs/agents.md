@@ -9,8 +9,8 @@ everything else is one lookup away via the **doc map** at the bottom.
 kuna is an **agent-first decompiler written in Rust**: a decompilation engine plus a SLEIGH
 compiler, organized around an explicit phase model whose decision points are exposed as
 per-run, flippable options — the LLM control surface is the product. A second,
-non-native engine decompiles JVM class files and jars to Java (`docs/jvm.md`). It started as a Rust
-port of Ghidra's decompiler (Apache-2.0 — see `LICENSE` and `NOTICE`) and has since
+non-native engine decompiles JVM class files and jars to Java and Kotlin (`docs/jvm.md`).
+It started as a Rust port of Ghidra's decompiler (Apache-2.0 — see `LICENSE` and `NOTICE`) and has since
 diverged on its own defaults and features; the origin story lives in `docs/history.md`, and
 is not needed for day-to-day work.
 
@@ -19,7 +19,7 @@ is not needed for day-to-day work.
 | Path | What |
 |---|---|
 | `decompiler/` | The engine — a cargo workspace. `kuna-decomp` is the decompiler (`src/` is phase-foldered: `p0_knowledge/`…`p9_emit/`, plus `substrate/` and `infra/`); `kuna-analysis` the loader/analyzer tier (ELF markup, strings, DWARF, function discovery); `kuna-sleigh`/`kuna-slacomp` the SLEIGH runtime/compiler (binary `slacomp`); `kuna-console` the `decomp_dbg`/`decomp_test_dbg` binaries; `kuna-cli` the user-facing `kuna` binary; `kuna-ghidra` and `kuna-wasm` the Ghidra and browser front-ends; `kuna-base`/`kuna-num`/`kuna-harness`/`kuna-lift-diff` support. |
-| `decompiler/nonnative/` | Non-native engines, outside the p-code pipeline: `kuna-jvm`, a Rust port of Vineflower 1.12.0 (class files and jars to Java), same phase-folder taxonomy, its own schedule and IR; `kuna-cli` routes JVM inputs to it. |
+| `decompiler/nonnative/` | Non-native engines, outside the p-code pipeline: `kuna-jvm`, a Rust port of Vineflower 1.12.0 and its bundled plugins (class files and jars to Java, Kotlin classes to Kotlin), same phase-folder taxonomy, its own schedule and IR; `kuna-cli` routes JVM inputs to it. |
 | `tests/datatests/` | Vendored XML regression corpus (83 files / 675 assertions) — what `make test` runs. |
 | `tests/stages/` | kuna-owned issue testcases — `make test-stages`. Conventions: `tests/stages/README.md`. |
 | `tests/golden/` | Differential golden vectors for the workspace suite (`make rust-test`). |
@@ -128,7 +128,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   row and its `docs/spec/` chapter — there is no separate registry to update.
 - **JVM engine options** are `jvm_*` rows in `decompiler/nonnative/kuna-jvm/options.toml`
   (not `phases.toml`; no catalog counts to bump). Its Vineflower rows stay one-to-one with
-  `IFernflowerPreferences` (`kuna-jvm/tests/kuna_options.rs`); a kuna-only behavior is a
+  `IFernflowerPreferences` and the bundled plugins' options (`kuna-jvm/tests/kuna_options.rs`); a kuna-only behavior is a
   new row with `source_decompiler = "kuna"`, default-on only if `make test-jvm` still
   matches every baseline case. Regenerate `docs/options-jvm.md` with
   `kuna catalog --markdown --engine jvm`; describe it in `docs/spec/10-jvm.md`.
@@ -185,7 +185,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 | `docs/phases.md` | The phase model on one screen (P0–P9, Band B, feedback edges). |
 | `docs/spec/` | How any algorithm/pass actually works (start `00-overview.md`). |
 | `docs/options.md` | The generated option catalog (tiers, symptoms, flip guidance). |
-| `docs/jvm.md` | The JVM engine (`kuna-jvm`): why non-native, layout, provenance, fidelity contract, testing, Vineflower re-sync. |
+| `docs/jvm.md` | The JVM engine (`kuna-jvm`): why non-native, layout, provenance, fidelity contract, Kotlin output and the bundled plugins, testing, Vineflower re-sync. |
 | `docs/options-jvm.md` | The generated `jvm_*` option catalog of the JVM engine. |
 | `docs/cli.md` | The full `kuna` CLI reference. |
 | `docs/pr-bodies.md` | How to write a PR body (read before opening or editing any PR). |

@@ -1,12 +1,15 @@
 //! What `decompile`, `decompile-all` and `functions` print for a JVM input.
 //!
-//! Text is Java: a class is its compilation unit exactly as the engine writes
-//! it, a method its slice of that unit with the common indentation removed.
-//! The JSON documents keep the native shapes (`decompile-all --json`,
-//! `functions --json`, see `docs/cli.md`) and add what a method needs to be
-//! named: `class`, `method`, `descriptor`, `access`, `path` and `line`.
-//! Addresses are `null`, `size` is the bytecode length, and `line_mappings`
-//! map lines of `code` to bytecode offsets.
+//! Text is the engine's: Java, or Kotlin for a class the Kotlin plugin claims.
+//! A class is its compilation unit exactly as the engine writes it, a method
+//! its slice of that unit (by the engine's method spans) with the common
+//! indentation removed; JVM methods that share a span, such as a Kotlin
+//! property's getter and setter, print it once. The JSON documents keep the
+//! native shapes (`decompile-all --json`, `functions --json`, see
+//! `docs/cli.md`) and add what a method needs to be named: `class`, `method`,
+//! `descriptor`, `access`, `path`, `language` and `line`. Addresses are
+//! `null`, `size` is the bytecode length, and `line_mappings` map lines of
+//! `code` to bytecode offsets.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -32,8 +35,11 @@ pub(crate) struct Record {
     pub(crate) code: String,
     pub(crate) error: Option<String>,
     pub(crate) path: String,
+    pub(crate) language: &'static str,
     pub(crate) line: u32,
     pub(crate) lines: Vec<(u32, Vec<u32>)>,
+    /// The span's byte range in its unit.
+    span: (usize, usize),
 }
 
 impl Record {
@@ -66,9 +72,16 @@ impl Record {
             code: dedent(raw),
             error: span.error.clone(),
             path: unit.path.clone(),
+            language: unit.language(),
             line: span.start_line,
             lines,
+            span: (span.start, span.end),
         }
+    }
+
+    /// Whether `other` is the same text of the same unit (a property's accessors).
+    fn shares_text(&self, other: &Record) -> bool {
+        self.path == other.path && self.span == other.span
     }
 
     fn json(&self, omit_line_mappings: bool) -> Json {
@@ -102,6 +115,7 @@ impl Record {
             ("descriptor".into(), Json::Str(self.descriptor.clone())),
             ("access".into(), access_json(method_access_names(self.access as u16))),
             ("path".into(), Json::Str(self.path.clone())),
+            ("language".into(), Json::Str(self.language.into())),
             ("line".into(), number(self.line)),
         ]);
         Json::Object(record)
@@ -112,6 +126,7 @@ impl Record {
 struct ClassBlock {
     name: String,
     path: Option<String>,
+    language: Option<&'static str>,
     line: Option<u32>,
     size: u64,
     code: Option<String>,
@@ -123,6 +138,7 @@ impl ClassBlock {
         Json::Object(vec![
             ("name".into(), Json::Str(self.name.clone())),
             ("path".into(), optional(self.path.as_deref())),
+            ("language".into(), optional(self.language)),
             ("size".into(), number(self.size)),
             ("code".into(), optional(self.code.as_deref())),
             ("error".into(), optional(self.error.as_deref())),
@@ -203,9 +219,25 @@ fn runtime_json(runtime: Option<&Arc<SharedRuntime>>) -> Json {
     }
 }
 
+/// The language of the units a document holds: `java` or `kotlin`, `mixed`
+/// for both, `null` for none.
+fn language_of(records: &[Record], classes: &[ClassBlock]) -> Json {
+    let found: BTreeSet<&str> = records
+        .iter()
+        .map(|r| r.language)
+        .chain(classes.iter().filter_map(|c| c.language))
+        .collect();
+    match found.len() {
+        0 => Json::Null,
+        1 => Json::Str(found.into_iter().next().unwrap_or_default().into()),
+        _ => Json::Str("mixed".into()),
+    }
+}
+
 /// The document head of `decompile --json` and `decompile-all --json`.
 fn document(
     args: &Args,
+    language: Json,
     count: usize,
     total: Option<usize>,
     error: Option<&str>,
@@ -222,7 +254,7 @@ fn document(
     let mut head = vec![
         ("binary".to_string(), Json::Str(args.input.clone())),
         ("engine".to_string(), Json::Str("jvm".into())),
-        ("language".to_string(), Json::Str("java".into())),
+        ("language".to_string(), language),
         (
             "omitted".to_string(),
             Json::Array(omitted.into_iter().map(|k| Json::Str(k.into())).collect()),
@@ -297,8 +329,20 @@ fn within_class(unit: &DecompiledClass, class: &str, span: &MethodSpan) -> bool 
         .is_some_and(|c| c.start <= span.start && span.end <= c.end)
 }
 
-fn hidden_method(target: &Target) -> String {
+/// Why `target` has no text in its unit, and what prints it; `kotlin` when
+/// the unit is Kotlin, whose writer prints declarations rather than methods.
+fn hidden_member(target: &Target, kotlin: bool) -> String {
     match target {
+        Target::Methods { class, name, .. } if kotlin => format!(
+            "{}.{name} has no declaration of its own in the Kotlin source of {}: the Kotlin writer \
+             puts a primary constructor in the class header and folds lambda bodies, $default \
+             methods and @JvmStatic forwarders into the declarations they serve (--option \
+             jvm_kt_decompile_facades on writes a multifile facade's functions); --language java \
+             (jvm_kt_enable off) writes the class as Java, method by method, and --option \
+             jvm_remove_synthetic off adds its synthetic methods",
+            java_name(class),
+            java_name(class)
+        ),
         Target::Methods { class, name, .. } if name == "<init>" => format!(
             "{}.<init> is not in the decompiled source of {} (the engine leaves out default \
              constructors, and always an anonymous class's; --option jvm_hide_default_constructor off \
@@ -386,10 +430,11 @@ fn finish_decompile(
     outcome: &Outcome,
     runtime: Option<&Arc<SharedRuntime>>,
 ) -> i32 {
-    let failed = |why: String| {
+    let failed = |why: String, unit: Option<&DecompiledClass>| {
         let message = format!("could not decompile {}: {why}", java_name(root));
         if args.json {
-            let head = document(args, 0, None, Some(&message), runtime);
+            let language = unit.map_or(Json::Null, |u| Json::Str(u.language().into()));
+            let head = document(args, language, 0, None, Some(&message), runtime);
             emit_document(args, head, &[], &[], 1);
         }
         eprintln!("error: {message}");
@@ -397,12 +442,12 @@ fn finish_decompile(
     };
     let unit = match unit_of(outcome, root) {
         Ok(unit) => unit,
-        Err(why) => return failed(why),
+        Err(why) => return failed(why, None),
     };
     let (records, classes): (Vec<Record>, Vec<ClassBlock>) = match target {
         Target::Class(class) => {
             let Some((code, line)) = class_slice(unit, class) else {
-                return failed(hidden_method(target));
+                return failed(hidden_member(target, unit.language() == "kotlin"), Some(unit));
             };
             let records = unit
                 .methods
@@ -413,6 +458,7 @@ fn finish_decompile(
             let block = ClassBlock {
                 name: java_name(class),
                 path: Some(unit.path.clone()),
+                language: Some(unit.language()),
                 line: (class != root).then_some(line),
                 size: if class == root {
                     unit_sizes(&loaded.universe).get(root).copied().unwrap_or(0)
@@ -432,7 +478,7 @@ fn finish_decompile(
                 .map(|span| Record::from_span(unit, span, &loaded.universe))
                 .collect();
             if records.is_empty() {
-                return failed(hidden_method(target));
+                return failed(hidden_member(target, unit.language() == "kotlin"), Some(unit));
             }
             (records, Vec::new())
         }
@@ -456,7 +502,8 @@ fn finish_decompile(
     let status = i32::from(all_failed);
     if args.json {
         let error = all_failed.then(|| format!("could not decompile {}", records[0].name()));
-        let head = document(args, records.len(), None, error.as_deref(), runtime);
+        let language = language_of(&records, &classes);
+        let head = document(args, language, records.len(), None, error.as_deref(), runtime);
         return emit_document(args, head, &records, &classes, status);
     }
     let text = match target {
@@ -469,7 +516,7 @@ fn finish_decompile(
         }
         Target::Methods { .. } => {
             let mut text = String::new();
-            for (i, record) in records.iter().enumerate() {
+            for (i, (record, _)) in shared_text(&records).into_iter().enumerate() {
                 if i > 0 {
                     text.push('\n');
                 }
@@ -480,6 +527,19 @@ fn finish_decompile(
         }
     };
     crate::output::emit_with_status(&text, status)
+}
+
+/// `records` with each text once, in order: a record and the signatures of
+/// every record that shares its text.
+fn shared_text(records: &[Record]) -> Vec<(&Record, Vec<String>)> {
+    let mut out: Vec<(&Record, Vec<String>)> = Vec::new();
+    for record in records {
+        match out.iter_mut().find(|(first, _)| first.shares_text(record)) {
+            Some((_, signatures)) => signatures.push(record.signature()),
+            None => out.push((record, vec![record.signature()])),
+        }
+    }
+    out
 }
 
 // --- decompile-all -----------------------------------------------------------
@@ -669,6 +729,7 @@ fn finish_decompile_all(
                     Some((code, line)) => ClassBlock {
                         name: java_name(class),
                         path: Some(unit.path.clone()),
+                        language: Some(unit.language()),
                         line: (*class != root).then_some(line),
                         size: if *class == root {
                             unit_size(&root)
@@ -681,15 +742,17 @@ fn finish_decompile_all(
                     None => ClassBlock {
                         name: java_name(class),
                         path: None,
+                        language: None,
                         line: None,
                         size: 0,
                         code: None,
-                        error: Some(hidden_method(&Target::Class(class.clone()))),
+                        error: Some(hidden_member(&Target::Class(class.clone()), unit.language() == "kotlin")),
                     },
                 },
                 Err(why) => ClassBlock {
                     name: java_name(class),
                     path: None,
+                    language: None,
                     line: None,
                     size: unit_size(&root),
                     code: None,
@@ -714,7 +777,8 @@ fn finish_decompile_all(
     }
     if args.json {
         let total = by_method.then_some(total);
-        let head = document(args, records.len(), total, error.as_deref(), runtime);
+        let language = language_of(&records, &classes);
+        let head = document(args, language, records.len(), total, error.as_deref(), runtime);
         return emit_document(args, head, &records, &classes, status);
     }
     let mut text = String::new();
@@ -727,14 +791,9 @@ fn finish_decompile_all(
                 .iter()
                 .any(|t| matches!(t, Target::Class(c) if inside(universe, &record.class, c)))
         };
-        for record in records.iter().filter(|r| !in_class_block(r)) {
-            let _ = writeln!(
-                text,
-                "// Method: {}  ({}:{})",
-                record.signature(),
-                record.path,
-                record.line
-            );
+        let outside: Vec<Record> = records.into_iter().filter(|r| !in_class_block(r)).collect();
+        for (record, signatures) in shared_text(&outside) {
+            let _ = writeln!(text, "// Method: {}  ({}:{})", signatures.join(", "), record.path, record.line);
             text.push_str(&record.code);
             text.push_str("\n\n");
         }

@@ -167,6 +167,7 @@ pub(crate) fn parse(sub: Sub, argv: &[String], input: &str, kind: InputKind) -> 
     let triageable = matches!(sub, Sub::DecompileAll | Sub::Functions);
     let has_json = sub != Sub::Project;
     let mut seen_input = false;
+    let mut force_java = false;
     let mut i = 0;
     while i < argv.len() {
         let a = argv[i].as_str();
@@ -196,11 +197,24 @@ pub(crate) fn parse(sub: Sub, argv: &[String], input: &str, kind: InputKind) -> 
             }
             "--language" => {
                 let language = take(argv, &mut i, "--language")?;
-                if !matches!(language.as_str(), "auto" | "java") {
-                    return Err(Refusal::Usage(format!(
-                        "--language {language}: {input} is a {}, which decompiles to Java (--language java|auto)",
-                        super::input_label(kind)
-                    )));
+                match language.as_str() {
+                    "auto" => force_java = false,
+                    "java" => force_java = true,
+                    "kotlin" => {
+                        return Err(Refusal::Usage(format!(
+                            "--language kotlin: the JVM engine writes a class as Kotlin when the class was \
+                             compiled from Kotlin (it carries @kotlin.Metadata), which --language auto, the \
+                             default, already does; it cannot write a Java class as Kotlin \
+                             (--language auto|java; {DOCS_POINTER})"
+                        )));
+                    }
+                    _ => {
+                        return Err(Refusal::Usage(format!(
+                            "--language {language}: {input} is a {}, which decompiles to Java, and to \
+                             Kotlin for classes compiled from Kotlin (--language auto|java)",
+                            super::input_label(kind)
+                        )));
+                    }
                 }
             }
             "--lib" => args.libs.push(take(argv, &mut i, "--lib")?),
@@ -284,8 +298,19 @@ pub(crate) fn parse(sub: Sub, argv: &[String], input: &str, kind: InputKind) -> 
     if !args.json && (args.omit_line_mappings || args.omit_classes) && sub == Sub::Decompile {
         return Err(Refusal::Usage("--omit selects --json record keys; add --json".into()));
     }
+    if force_java {
+        if args.options.iter().rev().find(|(k, _)| k == KT_ENABLE).is_some_and(|(_, v)| v == "1") {
+            return Err(Refusal::Usage(
+                "--language java writes every class as Java, and --option jvm_kt_enable on asks for Kotlin".into(),
+            ));
+        }
+        args.options.push((KT_ENABLE.to_string(), "0".to_string()));
+    }
     Ok(args)
 }
+
+/// The Kotlin plugin's switch; `--language java` turns it off.
+const KT_ENABLE: &str = "kt-enable";
 
 fn omit(args: &mut Args, value: &str) -> Result<(), String> {
     let mut named = false;
@@ -338,31 +363,33 @@ pub(crate) fn usage(sub: &str) -> String {
     let body = match sub {
         "decompile" => {
             "kuna decompile <class|jar|dir> <class|method> [--json] [--omit line_mappings,classes] \\\n\
-             \x20             [--option NAME VALUE].. [--lib PATH].. [--jobs N|auto] [--mode M] \\\n\
-             \x20             [--max-fn-seconds N] [--max-fn-memory MiB]\n\
+             \x20             [--language auto|java] [--option NAME VALUE].. [--lib PATH].. [--jobs N|auto] \\\n\
+             \x20             [--mode M] [--max-fn-seconds N] [--max-fn-memory MiB]\n\
              \n\
              A class prints its whole compilation unit (a nested class: its own part);\n\
              a method prints its slice. Targets: com.ex.Main, com/ex/Main, Main.class,\n\
-             com.ex.Main$Inner or com.ex.Main.Inner, bare Main when unique;\n\
+             com.ex.Main$Inner or com.ex.Main.Inner, bare Main or Main.Inner when unique;\n\
              com.ex.Main.check or com.ex.Main#check, optionally with a JVM descriptor:\n\
-             com.ex.Main.check(Ljava/lang/String;)Z. A single .class input may omit it."
+             com.ex.Main.check(Ljava/lang/String;)Z. A single .class input may omit it.\n\
+             A class compiled from Kotlin prints as Kotlin; --language java prints it as Java."
         }
         "decompile-all" => {
             "kuna decompile-all <class|jar|dir> [--json] [--functions a,b,..] [--filter REGEX] \\\n\
              \x20                 [--min-size N] [--max-size N] [--sort addr|size|name] [--limit N] \\\n\
-             \x20                 [--omit line_mappings,classes] [--option NAME VALUE].. [--lib PATH].. \\\n\
-             \x20                 [--jobs N|auto] [--mode M] [--max-fn-seconds N] [--max-fn-memory MiB]\n\
+             \x20                 [--omit line_mappings,classes] [--language auto|java] [--option NAME VALUE].. \\\n\
+             \x20                 [--lib PATH].. [--jobs N|auto] [--mode M] [--max-fn-seconds N] [--max-fn-memory MiB]\n\
              \n\
              Every compilation unit under `// Class:` headers; the triage flags narrow to\n\
              methods (sizes are bytecode lengths) and print `// Method:` slices instead."
         }
         "decompile-project" => {
-            "kuna decompile-project <class|jar|dir> [-o DIR] [--functions a,b,..] \\\n\
+            "kuna decompile-project <class|jar|dir> [-o DIR] [--functions a,b,..] [--language auto|java] \\\n\
              \x20                     [--option NAME VALUE].. [--lib PATH].. [--jobs N|auto] [--mode M] \\\n\
              \x20                     [--max-fn-seconds N] [--max-fn-memory MiB]\n\
              \n\
-             Writes DIR/<package path>/<Class>.java per top-level class (default DIR:\n\
-             <input>.kuna). Exits 0 when at least one class was produced."
+             Writes DIR/<package path>/<Class>.java per top-level class, <Class>.kt for one\n\
+             compiled from Kotlin (default DIR: <input>.kuna). Exits 0 when at least one\n\
+             class was produced."
         }
         "functions" => {
             "kuna functions <class|jar|dir> [--json] [--filter REGEX] [--min-size N] [--max-size N] \\\n\
@@ -374,7 +401,8 @@ pub(crate) fn usage(sub: &str) -> String {
         _ => "kuna decompile|decompile-all|decompile-project|functions <class|jar|dir> ..",
     };
     format!(
-        "usage: {body}\n\nThis is the JVM engine's form (class files, jars, directories of classes).\n\
+        "usage: {body}\n\nThis is the JVM engine's form (class files, jars, directories of classes;\n\
+         Java and Kotlin output).\n\
          Options: `kuna catalog --engine jvm`; manual: `{DOCS_POINTER}`."
     )
 }

@@ -1,17 +1,19 @@
 # The JVM engine
 
 `kuna-jvm` (`decompiler/nonnative/kuna-jvm`) decompiles JVM class files, jars and
-directories of classes to Java. It is a Rust port of
-[Vineflower](https://github.com/Vineflower/vineflower) 1.12.0, and on the same class files
-and options it prints the same text Vineflower prints, byte for byte. It is reached
-through the ordinary `kuna` CLI: give a command a `.class`, a jar or a directory where it
-would take a binary.
+directories of classes to Java, and the classes the Kotlin compiler emitted to Kotlin. It
+is a Rust port of [Vineflower](https://github.com/Vineflower/vineflower) 1.12.0 with the
+three plugins Vineflower bundles (Kotlin, variable renaming, IDEA not-null), and on the
+same class files and options it prints the same text Vineflower prints, byte for byte. It
+is reached through the ordinary `kuna` CLI: give a command a `.class`, a jar or a
+directory where it would take a binary.
 
 ```bash
 kuna decompile app.jar com.ex.Main            # one class, as a compilation unit
 kuna decompile app.jar com.ex.Main.check      # one method
-kuna decompile-project app.jar -o out         # out/com/ex/Main.java, ...
+kuna decompile-project app.jar -o out         # out/com/ex/Main.java, out/com/ex/UserKt.kt, ...
 kuna functions app.jar --json                 # the class and method inventory, no decompiling
+kuna decompile app.jar com.ex.UserKt --language java   # a Kotlin class as Java
 kuna catalog --engine jvm                     # the jvm_* options
 ```
 
@@ -73,7 +75,9 @@ chapter 00, section 0.2).
 | `src/p9_emit/` | the Java writer, imports, line wrapping, line mapping |
 | `src/substrate/` | the shared IR (statements, expressions, edges, types) and its containers |
 | `src/rt/` | the Java-runtime kernel (below) |
-| `src/infra/` | the per-method schedule (`method_processor`), and kuna's parallel driver, spans, tracer and corpus runner |
+| `src/infra/` | the per-method schedule (`method_processor`), the plugin and language-plugin API, and kuna's parallel driver, spans, tracer, plugin bundle (`kuna_plugins`) and corpus runner |
+| `src/plugins/` | Vineflower's VariableRenaming and IdeaNotNull plugins |
+| `src/kotlin/` | Vineflower's Kotlin plugin: the metadata decoder, its pass schedule, the Kotlin expression and statement layer, the Kotlin writer (below, "Kotlin") |
 | `options.toml` | the `jvm_*` option rows; `build.rs` generates the static table from it |
 | `examples/` | `corpus` (the regression runner), `jvmdec` (a development CLI), `jvmtrace` (trace one run) |
 | `tests/` | the unit and differential suite, one `integration` test binary (`tests/integration.rs` registers every file) |
@@ -85,9 +89,10 @@ stages run in is the engine's own schedule, `src/infra/method_processor.rs` per 
 
 ### Porting conventions
 
-Every ported file starts with `//! Port of \`org/jetbrains/java/decompiler/.../X.java\`.`,
-and the port follows the original line by line, so a Vineflower fix can be found and
-applied in the same place. A maintainer needs these rules:
+Every ported file starts with `//! Port of \`org/jetbrains/java/decompiler/.../X.java\`.`
+(`org/vineflower/...` for the plugins), and the port follows the original line by line,
+so a Vineflower fix can be found and applied in the same place. A maintainer needs these
+rules:
 
 - **One Java top-level class, one module**, named after the class in snake case
   (`IfHelper` is `if_helper`, `SSAUConstructorSparseEx` is `ssau_constructor_sparse_ex`;
@@ -116,8 +121,9 @@ applied in the same place. A maintainer needs these rules:
   an extra temporary.
 - **kuna's own code** lives in `kuna_*` modules (`kuna_input`, `kuna_inventory`,
   `kuna_options`, `kuna_driver`, `kuna_partition`, `kuna_plugins`, `kuna_spans`,
-  `kuna_trace`, `kuna_corpus`) and in the modules that replace JVM facilities (`context_source`,
-  `jdk_runtime`, `zip_reader`, `byte_cursor`). Changes inside ported files are kept to the
+  `kuna_trace`, `kuna_corpus`), in the modules that replace JVM facilities (`context_source`,
+  `jdk_runtime`, `zip_reader`, `byte_cursor`), and in the Kotlin plugin's seams
+  (`kt_metadata`, `kt_attrs`, `k_dispatch`). Changes inside ported files are kept to the
   seams those modules need (span marks in the writer, a deadline poll in the
   cancellation manager, partial runs in `fernflower.rs`), noted in the file headers.
 - **Comments are minimal**, as everywhere in kuna: Java comments and Javadoc are not
@@ -148,8 +154,8 @@ objects by creation in the arena; see the fidelity contract below.
   JetBrains' Fernflower through ForgeFlower, FabricMC's fork and Quiltflower. The
   attribution is in the repo's `NOTICE`.
 - **Test data:** the regression corpus in `tests/jvm/` is built from Vineflower's own
-  `testData` sources and registrations and from the output of the released
-  `vineflower-1.12.0.jar` (`tests/jvm/README.md`).
+  `testData` sources and registrations (core's and its plugins') and from the output of
+  the released `vineflower-1.12.0.jar` (`tests/jvm/README.md`).
 - **What was ported.** Of the 273 Java files under `org/jetbrains/java/decompiler/` in
   Vineflower's `src/`, 242 are ported one to one; each names its original in its first
   line, so `grep -r '^//! Port of' decompiler/nonnative/kuna-jvm/src` is the manifest. The
@@ -185,24 +191,43 @@ objects by creation in the arena; see the fidelity contract below.
     instance's state single-threaded.
   - **The watchdog:** Vineflower kills a method's thread at `max-time-per-method`; kuna
     polls a cooperative per-method deadline (below).
-- **Not ported:** Vineflower's plugins (Kotlin, Scala, IDEA `@NotNull`, variable renaming).
-  The plugin and language-plugin API is ported, and `jvm_plugins` (default `on`) loads the
-  plugins bundled with the engine, but that bundle is still empty: every class, including
-  one compiled from Kotlin or Scala, is written as Java. A user renamer class and
-  Vineflower's `include-classpath` need a JVM and are refused (`options.toml`,
-  `[[driver_owned]]`).
+- **The bundled plugins.** Vineflower's release jar bundles three plugins, which
+  `java -jar vineflower.jar` loads; all three are ported, one module per Java file, and
+  kuna carries them in the same registration order (`src/infra/kuna_plugins.rs`):
+
+| Plugin (`plugins/` in Vineflower's repository) | Java files | Ported to | What it does |
+|---|---:|---|---|
+| `variable-renaming` | 5 | `src/plugins/` (5 modules) | renames locals (and parameters) JAD-style or tiny-style on request |
+| `kotlin` | 51 | `src/kotlin/` (50 modules; the marker interface `KExprent` is a flag on the expression) | detects Kotlin classes and decompiles and writes them as Kotlin |
+| `idea-not-null` | 3 | `src/plugins/` (3 modules) | removes the null checks IntelliJ's compiler adds for `@NotNull` |
+
+  The Kotlin plugin also ships a prebuilt jar (`plugins/kotlin/libs/metadata.jar`) with a
+  shaded copy of the Kotlin compiler's metadata schema and the protobuf-lite runtime it
+  runs on; kuna ports the parts it reads as `src/kotlin/kt_proto.rs` and
+  `src/kotlin/kt_flags.rs`. Plugins are not discovered on a class path: `jvm_plugins`
+  (default `on`, as with `java -jar`) loads the bundle, and `off` runs the bare Java
+  pipeline of Vineflower's test fixture.
+- **Not ported:** a user renamer class and Vineflower's `include-classpath` need a JVM and
+  are refused (`options.toml`, `[[driver_owned]]`); third-party plugin jars cannot be
+  loaded. Vineflower has no Scala or Groovy support, so classes compiled from those
+  languages are written as Java.
 
 ## The fidelity contract
 
 **The test oracle is Vineflower's text.** On the same class files and options, kuna-jvm
-prints exactly what Vineflower 1.12.0 prints. Every case of the vendored corpus (530, all
-listed in `tests/jvm/baseline.txt`) matches, and so do the 68 cases that need a particular
-JDK on the machine and are run from the external oracle corpus (598 in all). Whole jars (log4j,
-pdfbox, fontbox, commons-logging, gettext, the Vineflower jar itself, Vineflower's
-obfuscated test jars) and 1,755 classes of JDK 21 come out identical apart from the
-differences below, and the parallel driver's output on Guava and spring-boot is identical
-at every worker count. A change that makes a case differ is a regression to fix, unless
-it is a named kuna option that is off by default.
+prints exactly what Vineflower 1.12.0 prints. Every case of the vendored corpus matches:
+607 cases, all listed in `tests/jvm/baseline.txt`, of which 530 are core's Java tests, 6
+the variable-renaming and IDEA not-null plugins' tests, and 71 the Kotlin plugin's tests
+and core's Kotlin tests. So do the 68 Java cases that need a particular JDK on the machine
+and are run from the external oracle corpus (598 Java cases in all), and the Kotlin
+plugin's tests under nine option overlays (594 runs). Whole jars (log4j, pdfbox, fontbox,
+commons-logging, gettext, the Vineflower jar itself, Vineflower's obfuscated test jars)
+and 1,755 classes of JDK 21 come out identical apart from the differences below, and so
+do the Kotlin libraries okio 2.6.0, okhttp 4.7.2, kotlinx-coroutines 1.8.0 and
+kotlin-stdlib 2.2.20 and spring-framework's Kotlin classes, printed as Kotlin. The parallel
+driver's output is identical to a single instance's: on Guava and spring-boot at every
+worker count, on okio, okhttp and spring-framework at 16 workers. A change that makes a case differ is a regression to fix, unless it is
+a named kuna option that is off by default.
 
 **Known, deliberate differences:**
 
@@ -224,8 +249,12 @@ it is a named kuna option that is off by default.
    ```
 
    With `jvm_dump_exception_on_error off` neither decompiler writes the exception. Run
-   with the command-line defaults of both decompilers, 11 of the 598 corpus cases differ
-   only in this, and one more because of a plugin (item 5).
+   with the command-line defaults of both decompilers, 11 of the 598 Java corpus cases and
+   2 of the 73 Kotlin ones differ only in this, and so do every difference on the Kotlin
+   libraries above but one (item 5): Vineflower fails the same method with the same
+   exception and message, and only the trace lines differ. On spring-framework's Kotlin
+   classes, half the classes differ this way, because Vineflower itself fails 22 of them
+   whole.
 2. **Directory order.** Vineflower visits a directory input in `File.listFiles()` order,
    which Java leaves unspecified; kuna visits each directory's entries sorted by name, so
    its output does not depend on the file system. The order is visible only where it
@@ -240,11 +269,17 @@ it is a named kuna option that is off by default.
    order of a statement's predecessor edges after loop elimination. Stock Vineflower is
    not stable from run to run there; kuna orders by creation and is deterministic. No
    output difference has been observed from it.
-5. **Plugins.** Output that a Vineflower plugin would change differs: Kotlin and Scala
-   classes are written as Java, and IDEA's `@NotNull` checks are not folded (one corpus
-   test, `TestIdeaNotNull`).
+5. **Vineflower's thread pool.** Vineflower decompiles the classes of one run on several
+   threads, and one lookup crosses root classes: written as Java, the switch over a
+   `$WhenMappings` array that a Kotlin `when` on an enum compiles to reads the processed
+   `$WhenMappings` class of another root, and what it finds depends on whether that root
+   was processed yet. So Vineflower's own output can change from run to run there (okhttp
+   with `--kt-enable=0` sometimes gains `$VF: Unable to simplify switch on enum`); kuna
+   prints what Vineflower prints on one thread (`--thread-count=1`). One other okhttp line differs between a
+   Vineflower running on JDK 17 and one on JDK 21 (a `HashMap` sizing difference in the
+   JDK), and kuna matches the JDK 21 one, as in item 3.
 6. **Resources.** Vineflower's savers copy a jar's non-class entries into the output; kuna
-   writes Java sources only.
+   writes Java and Kotlin sources only.
 
 ## The JDK runtime library
 
@@ -278,6 +313,209 @@ therefore depends on which JDK is found: for reproducible output, pin one with
 `--option jvm_include_runtime /path/to/jdk` or use `off`. The vendored corpus runs with no
 JDK. `--lib PATH` adds further class files or jars as context the same way, without
 decompiling them.
+
+## Kotlin
+
+The Kotlin compiler emits ordinary class files, and the Java pipeline decompiles them to
+correct but noisy Java: property accessors, `Intrinsics` null checks, `$default` stubs,
+`Companion` fields and a `@Metadata(d1 = ...)` annotation full of encoded strings.
+Vineflower's Kotlin plugin, which kuna bundles and loads by default, writes them as Kotlin
+instead.
+
+**What is detected, and how.** A class is Kotlin when it carries the `kotlin.Metadata`
+annotation, which the Kotlin compiler puts on every class it emits; nothing else (file
+name, `SourceFile` attribute, package) counts, and a Java class is never written as
+Kotlin. The annotation holds a protobuf description of the Kotlin declarations behind the
+class (its properties, functions, constructors, nullable types, default arguments,
+modifiers), and the plugin decodes it to decide what to write. The decision is per
+top-level class and covers everything nested in it; such a unit is written as Kotlin
+source to `<package path>/<Class>.kt`, every other unit as Java to `.java`. A top-level
+function lives in a file class named after its source file (`Counters.kt` compiles to
+`CountersKt`), and so does its unit. The spec's section 10.15 has the algorithm.
+
+**What the output looks like.** `tests/fixtures/jvm/kotlin` holds two small Kotlin files
+compiled with kotlinc 2.0.0 (`src/` has the source):
+
+```
+$ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.CountersKt
+package com.ex.kt
+
+public fun total(counters: List<Counter>): Int {
+   var sum: Int = 0
+
+   for (c in counters) {
+      sum += c.count
+   }
+
+   return sum
+}
+
+public fun applyTwice(f: (Int) -> Int, x: Int): Int {
+   return (f(f(x)) as java.lang.Number).intValue()
+}
+
+public fun quadruple(x: Int): Int {
+   return applyTwice({ it: Int ->
+      it * 2
+   }, x)
+}
+
+public fun describe(c: Counter): String {
+   return "count=${c.count}"
+}
+```
+
+Declarations come from the metadata (`fun`, parameter and return types, `(Int) -> Int`,
+`List<Counter>`, `val`/`var`, a property's `private set`, default arguments, `companion
+object`, `data`/`sealed`/`object` classes). Bodies come from the bytecode through the same
+pipeline as Java, then rewritten into Kotlin syntax: string templates, `for (x in xs)`,
+`when`, `?:`, `is`/`as`, lambdas. What the compiler lowered stays visible where the
+metadata says nothing: calls keep their JVM targets (`System.out.println`,
+`text.length()`, `StringsKt.repeat(..)` for an extension function), boxing shows as casts
+(`as java.lang.Number`), a captured local that a lambda changes is an `IntRef`, and the
+body of an inline function (`let`, `forEach`) appears expanded where it was called. A Java
+type whose simple name Kotlin reuses is written qualified (`java.lang.String`). The text
+is Vineflower's, quirks included: the public setter of `Counter.label` prints as
+`internal set` (below).
+
+**The CLI on Kotlin units.** Classes and methods are still named by their class-file
+names, which is what `kuna functions` lists, so a selection works the same for Java and
+Kotlin input (`docs/cli.md`, "JVM inputs", has the details):
+
+```
+$ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.getLabel
+public final var label: String
+   internal set
+$ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.label
+error: no method "com.ex.kt.Counter.label" in com.ex.kt.Counter; a Kotlin property is selected by its JVM accessors: "com.ex.kt.Counter.getLabel", "com.ex.kt.Counter.setLabel"
+$ kuna decompile tests/fixtures/jvm/kotlin/classes Counter.Companion.of
+public fun of(text: String): Counter {
+   return Counter(text.length())
+}
+$ kuna decompile-project tests/fixtures/jvm/kotlin/classes -o out
+wrote out: 2 .kt files (882 bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 failed
+```
+
+A property's getter and setter both select the property's declaration; a companion
+object's member is in the `$Companion` class; a method the Kotlin writer folds into
+another declaration (a `$default` stub, the body of a lambda compiled to a method, a
+`@JvmStatic` forwarder) has no text of its own, and naming it is an error that says so.
+Every JSON record carries the `language` of its unit (`java` or `kotlin`).
+
+**Getting Java instead.** `--language java` writes every class as Java (it sets
+`jvm_kt_enable off`), which shows what the Kotlin view hides: the accessor methods, the
+`$default` stubs, the `Intrinsics` checks, every JVM method on its own:
+
+```
+$ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.bump --language java
+public final int bump(int by) {
+   this.count += by;
+   return this.count;
+}
+```
+
+`--language auto`, the default, writes each class in the language the engine picks for it.
+There is no `--language kotlin`: the engine can only write a class as Kotlin when the
+class was compiled from Kotlin, which `auto` already does, so the flag is refused with that
+explanation (exit `2`). `--option jvm_plugins off` also gives Java, since it loads no plugin
+at all.
+
+**Options.** The plugin's options are the `jvm_kt_*` rows of `kuna catalog --engine jvm`;
+each also answers to Vineflower's name (`kt-enable`, ...):
+
+| Option | Default | Effect |
+|---|---|---|
+| `jvm_kt_enable` | `on` | write Kotlin classes as Kotlin; `off` writes them as Java with the `@Metadata` annotation |
+| `jvm_kt_show_public` | `on` | write the `public` that Kotlin source leaves implicit |
+| `jvm_kt_unknown_defaults` | `...` | the text after `=` for a default argument whose value could not be recovered from the `$default` stub; empty writes none |
+| `jvm_kt_collapse_string_concat` | `on` | write string concatenations as string templates (`"count=${c.count}"`); `off` keeps `"count=" + c.count` |
+| `jvm_kt_decompile_facades` | `off` | also write the forwarding functions of a multifile facade (`@file:JvmMultifileClass`), not only the comment listing its parts |
+| `jvm_kt_export_metadata` | `off` | parse the metadata even with `jvm_kt_enable off`, for other plugins; changes no output in kuna |
+
+**Known limits.** The Kotlin output is Vineflower's, so it has Vineflower's gaps. The
+plugin rewrites syntax, not semantics, so whatever the compiler lowered stays lowered
+(above). A `suspend` function that suspends is not decompiled: its continuation is an
+anonymous class without Kotlin metadata, and the plugin fails on it as Vineflower does (one
+that never suspends is written with `suspend`). A function reference compiled to a
+singleton class prints as `<unrepresentable>.INSTANCE`. The metadata schema is the one
+the plugin was built with (Kotlin 2.2), applied without a version check. When Vineflower
+cannot decompile a method, its Kotlin declaration is written with Vineflower's failure
+comment in place of the body, exactly as for Java, and the CLI reports it on stderr and in
+the record's `error`; `--language java` usually still gets the Java view:
+
+```
+$ kuna decompile tests/jvm/classes/kotlin/kt/pkg/TestAnonymousEverything.class testFunctionReference 2>&1 | head -6
+warning: pkg.TestAnonymousEverything.testFunctionReference()V: IllegalStateException: Anonymous class does not have Class Kotlin metadata
+public fun testFunctionReference() {
+   // $VF: Couldn't be decompiled
+   // Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)
+   // IllegalStateException: Anonymous class does not have Class Kotlin metadata
+   //   at nonnative/kuna-jvm/src/kotlin/kotlin_writer.rs:1273
+$ kuna decompile tests/jvm/classes/kotlin/kt/pkg/TestAnonymousEverything.class testFunctionReference --language java
+public final void testFunctionReference() {
+   var ref = (KFunction & Function2)(new Function2<Integer, Integer, Integer>(this) {
+      public final Integer invoke(int p0, int p1) {
+         return ((TestAnonymousEverything)this.receiver).add(p0, p1);
+      }
+   });
+   ((Function2)ref).invoke(1, 2);
+}
+```
+
+The trace line under the exception is kuna's own, as for Java (item 1 of the fidelity
+contract). A whole class the plugin cannot write is a `// $VF: Couldn't be decompiled`
+comment with the exception. A class whose metadata cannot be decoded is still written as
+Kotlin, from its class file alone, under `// $VF: Class flags could not be determined`.
+
+## The other bundled plugins
+
+**IDEA not-null.** IntelliJ IDEA's compiler instruments `@NotNull` parameters and return
+values with checks that call a synthetic `$$$reportNull$$$0`. The plugin removes them
+(`jvm_resugar_idea_notnull`, on by default) and keeps the annotations; `off` shows them:
+
+```
+$ kuna decompile tests/jvm/classes/custom/TestIdeaNotNull.class pkg.TestIdeaNotNull.test1
+public void test1(@NotNull String s) {
+   System.out.println(s);
+}
+$ kuna decompile tests/jvm/classes/custom/TestIdeaNotNull.class pkg.TestIdeaNotNull.test1 --option jvm_resugar_idea_notnull off
+public void test1(@NotNull String s) {
+   if (s == null) {
+      $$$reportNull$$$0(2);
+   }
+
+   System.out.println(s);
+}
+```
+
+**Variable renaming.** Off unless asked for: `--option jvm_variable_renaming jad` names
+locals after their type the way JAD did (`i`, `j`, `s`, `flag`, `file1`), `tiny` the way
+tiny-remapper does, and `jvm_rename_parameters on` renames parameters too. It overrides
+the LocalVariableTable's names, so it is for obfuscated or debug-info-free code:
+
+```
+$ kuna decompile tests/fixtures/jvm/app.jar com.ex.util.Helper.loop --option jvm_variable_renaming jad
+public static int loop(int n) {
+   int i = 0;
+
+   while (n > 0) {
+      if (n % 3 == 0) {
+         i += n;
+      } else {
+         i--;
+      }
+
+      n--;
+   }
+
+   return i;
+}
+```
+
+`tiny` with `jvm_rename_parameters on` fails every method that has a LocalVariableTable
+(`NullPointerException: type`), as Vineflower's provider does. The two deprecated
+Vineflower flags, `jvm_jad_style_variable_naming` and `jvm_jad_style_parameter_naming`,
+are accepted for old command lines.
 
 ## Performance and limits
 
@@ -318,7 +556,7 @@ stack overflow or a failed allocation is not, and ends the process; the engine t
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline still prints Vineflower's exact text. Needs no SLEIGH specs and no JDK. |
+| `make test-jvm` (= `kuna test --jvm --baseline tests/jvm/baseline.txt`) | the gate: every case in the baseline (607: Java, plugin and Kotlin) still prints Vineflower's exact text. Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the unit and differential suite (part of `make rust-test`): kernel goldens against a real JDK, per-pass oracles, option-table checks, driver determinism |
 | `cd decompiler && cargo run --release -p kuna-jvm --example corpus -- --jobs 16 --baseline ../tests/jvm/baseline.txt` | the same corpus gate without the CLI |
 
@@ -326,14 +564,17 @@ Useful corpus-runner flags (`corpus --help` lists all): `--filter SUBSTR` runs m
 cases in-process (quick); `--out DIR` writes each case's actual text, diff and log;
 `--save-baseline ../tests/jvm/baseline.txt` re-records the baseline when a change makes
 more cases match (never to absorb a regression); `--manifest FILE` runs another manifest,
-such as the full 598-case one generated from the external corpus.
+such as the full 598-case Java one or the Kotlin one generated from the external corpora.
 
 **Regenerating the corpus.** `tests/jvm/` is generated, never edited by hand:
 `python3 -I tests/jvm/regen.py --corpus <oracle corpus>`. The oracle corpus compiles
 Vineflower's `testData` sources with the JDK of each source set and decompiles them with
 the released jar; `tests/jvm/README.md` records how and with which JDKs. The 68
 JDK-dependent cases run only from that external corpus
-(`regen.py --skip-vendor --full-manifest FILE`, then `corpus --manifest FILE`).
+(`regen.py --skip-vendor --full-manifest FILE`, then `corpus --manifest FILE`). The plugin
+cases come from `tests/jvm/plugin_oracle.py` and the Kotlin cases from a Kotlin oracle
+corpus (the plugin's test sources compiled with kotlinc 2.0.0) through
+`tests/jvm/kotlin_corpus.py`; `regen.py` appends both.
 
 **When a case differs.** The diff shows the symptom, rarely the pass. The trace differ
 (`decompiler/nonnative/kuna-jvm/tools/vftrace/`) runs both engines on the same classes and
@@ -360,18 +601,20 @@ option names directly.
 ## Adding an option or a kuna improvement
 
 **The option table is one to one with Vineflower.** `options.toml` has one `[[option]]`
-row per Vineflower key a user may set, named `jvm_<long name>` with `-` turned into `_`
-(Vineflower's long and three-letter names are accepted as aliases), and a
-`[[driver_owned]]` entry for each key kuna sets itself. `tests/kuna_options.rs` checks the
-two together against `IFernflowerPreferences::all_options()`: every key is exactly one row
-or one driver-owned entry, every default agrees with Vineflower's, every row's
+row per Vineflower key a user may set, its bundled plugins' keys included, named
+`jvm_<long name>` with `-` turned into `_` (Vineflower's long and three-letter names are
+accepted as aliases), and a `[[driver_owned]]` entry for each key kuna sets itself.
+`tests/kuna_options.rs` checks the two together against
+`IFernflowerPreferences::all_options()` and the options the bundled plugins declare: every
+key is exactly one row or one driver-owned entry, every default agrees with Vineflower's
+(a plugin option's with the plugin's), every row's
 `inspiration` names the Java constant, and `phase`/`subphase` name a real folder and the
 modules that read the key. `build.rs` refuses an incomplete row. There are no hard-coded
 option counts to bump, unlike the native catalog. After touching the table, regenerate the
 catalog page: `decompiler/target/release/kuna catalog --markdown --engine jvm >
 docs/options-jvm.md` (CI checks it is fresh).
 
-**A kuna improvement is a named option.** Anything that changes the emitted Java beyond
+**A kuna improvement is a named option.** Anything that changes the emitted Java or Kotlin beyond
 what Vineflower prints ships behind a `jvm_*` row of its own: `vineflower = ""`,
 `short = ""`, `aliases = []`, `source_decompiler = "kuna"`, a `change_kind` of its own, and
 every other field filled in. Its code goes in a `kuna_<slug>.rs` module in the owning phase
@@ -390,19 +633,21 @@ not majorly slow kuna down).
 
 ## Re-syncing with a newer Vineflower
 
-1. Diff the new release against `b8273988` (`git diff b8273988..<tag> -- src/`) and map
-   each changed Java file to its module through the `//! Port of` headers. New files get
+1. Diff the new release against `b8273988` (`git diff b8273988..<tag> -- src/ plugins/`)
+   and map each changed Java file to its module through the `//! Port of` headers; a new
+   `plugins/kotlin/libs/metadata.jar` means a new metadata schema for `kt_proto`. New files get
    new modules in the folder of their closest neighbours, named by the convention above.
 2. Port each change line by line in the same place, keeping the order of operations,
    iteration orders and constructor calls; `cargo test -p kuna-jvm` after each file.
-3. Reconcile the options: new keys in `IFernflowerPreferences` get rows (or
-   `[[driver_owned]]` entries); removed keys lose theirs; changed defaults change the row.
+3. Reconcile the options: new keys in `IFernflowerPreferences` or in a bundled plugin's
+   options get rows (or `[[driver_owned]]` entries); removed keys lose theirs; changed
+   defaults change the row.
    `tests/kuna_options.rs` fails until the table matches. Regenerate
    `docs/options-jvm.md`.
 4. If the reference JDK moves, regenerate the embedded varargs table
    (`tests/data/jdk_varargs/gen.sh`) and the kernel goldens under `tests/data/`.
-5. Rebuild the oracle corpus with the new release jar and regenerate `tests/jvm/` with
-   `regen.py`; run the corpus and use the trace differ on every case that no longer
+5. Rebuild the oracle corpora (Java, plugins, Kotlin) with the new release jar and
+   regenerate `tests/jvm/` with `regen.py`; run the corpus and use the trace differ on every case that no longer
    matches. Re-record `tests/jvm/baseline.txt` only as part of the sync, and say so in the
    commit message.
 6. Update this page (version, commit, the differences above), the crate header in

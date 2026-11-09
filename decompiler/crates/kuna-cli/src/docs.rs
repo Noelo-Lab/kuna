@@ -72,14 +72,14 @@ pub const DOCS: &[Doc] = &[
     Doc {
         topic: "jvm",
         title: "The JVM engine",
-        summary: "The JVM engine for class files, jars and directories: why it is separate, its fidelity contract, the JDK it reads, its limits and tests.",
+        summary: "The JVM engine for class files, jars and directories: why it is separate, its fidelity contract, Kotlin output and the bundled plugins, the JDK it reads, its limits and tests.",
         path: "docs/jvm.md",
         body: include_str!("../../../../docs/jvm.md"),
     },
     Doc {
         topic: "options-jvm",
         title: "kuna JVM option catalog",
-        summary: "Generated catalog of the JVM engine's --option rows (Vineflower's options), by tier, with a symptom index.",
+        summary: "Generated catalog of the JVM engine's --option rows (Vineflower's and its bundled plugins' options), by tier, with a symptom index.",
         path: "docs/options-jvm.md",
         body: include_str!("../../../../docs/options-jvm.md"),
     },

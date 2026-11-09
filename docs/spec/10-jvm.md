@@ -9,8 +9,8 @@ Anchors:
 
 Chapters 01-09 describe the native pipeline: machine code lifted through SLEIGH to
 p-code and recovered by `kuna-decomp`. This chapter describes the second, non-native
-engine, `kuna-jvm`, which decompiles JVM class files and jars to Java and shares none of
-that pipeline. JVM bytecode is typed and stack-based, and the class file already carries
+engine, `kuna-jvm`, which decompiles JVM class files and jars to Java, and classes
+compiled from Kotlin to Kotlin, and shares none of that pipeline. JVM bytecode is typed and stack-based, and the class file already carries
 what native recovery has to infer: the class structure, member signatures, generic
 signatures, exception tables, nesting attributes and bootstrap methods for lambdas. The
 engine therefore works over a Java-level IR of its own (statements and expressions, in
@@ -53,6 +53,8 @@ phase, but the order of execution is the engine's own:
 | `substrate/` | the shared IR: statements, expressions, edges, types and the set/map containers |
 | `rt/` | (kuna) the Java-runtime kernel the port stands on (section 10.13) |
 | `infra/` | the per-method schedule, pass hooks, the parallel driver and the debugging aids |
+| `plugins/` | Vineflower's VariableRenaming and IdeaNotNull plugins (this section, below) |
+| `kotlin/` | Vineflower's Kotlin plugin: metadata decoding, its pass schedule, expression and statement layer and writer (section 10.15) |
 
 The schedule has two levels. **Per input**, `decompiler/nonnative/kuna-jvm/src/p0_knowledge/fernflower.rs
 (Fernflower::decompile_context)` loads the class universe and nests classes (section
@@ -104,8 +106,10 @@ heading the method body for a parameter whose invisible parameter annotations ca
 when javac recorded fewer lists than parameters) is replaced, head block and all, by an
 empty block; and, in a method annotated `@NotNull`, an `if (v == null) $$$reportNull$$$0(n);`
 right before `return v;` is removed, its head block's expressions moving into the return's
-block, as is the older `if (v == null) <exit>; else return v;` shape. Language plugins (Vineflower's Kotlin and Scala support) are not
-bundled yet: every class is written as Java.
+block, as is the older `if (v == null) <exit>; else return v;` shape. The third bundled
+plugin, **Kotlin**, is a language plugin: it claims the classes the Kotlin compiler
+emitted and decompiles and writes them as Kotlin (section 10.15). Every other class is
+written as Java; Vineflower has no other language support.
 
 ## 10.2 The class universe and nesting
 
@@ -115,7 +119,10 @@ major version from 45 to 255 at bytes 6-7, which is what tells it from a fat Mac
 the same magic), an archive (a zip local or empty-archive header, or a `.jar`/`.war`/`.ear`/`.zip`
 file with a zip end record in its last KiB, for launcher-script jars), or a directory. A
 `.jmod` and a jimage are recognized and refused; a DEX file, and a zip without `.class`
-entries (an APK), are refused as not JVM bytecode. The `InputSet` holds the class bytes as
+entries (an APK), are refused as not JVM bytecode. A *library* is read the same way by
+`load_library`, except that an archive or a directory without class files is an empty set
+rather than an error, since Vineflower adds such a library without complaint (a Kotlin
+Multiplatform root jar holds only metadata). The `InputSet` holds the class bytes as
 shared read-only buffers and hands each engine thread its own context-source views, which
 list exactly what Vineflower's `JarContextSource`, `DirectoryContextSource` and
 `SingleFileContextSource` list for the same path, in the same order. For a single class
@@ -767,5 +774,201 @@ compared pass by pass (`docs/jvm.md`).
 when the input operand is a class file, an archive or a directory (chapter 00, section
 0.2); its non-native module (this chapter's third anchor) builds a driver configuration
 from the command line, slices classes and methods out of the delivered text by their
-spans, and renders the native CLI's text and JSON shapes. The CLI surface is `docs/cli.md`
-("JVM inputs").
+spans, and renders the native CLI's text and JSON shapes, tagging each unit with its
+language (`java`, or `kotlin` for a unit the Kotlin plugin wrote, whose file name ends in
+`.kt`). The CLI surface is `docs/cli.md` ("JVM inputs").
+
+## 10.15 Kotlin
+
+Vineflower's Kotlin plugin, ported in `decompiler/nonnative/kuna-jvm/src/kotlin`, is the
+one bundled language plugin. A class it claims is decompiled by a method pipeline and
+written by a writer of its own, as Kotlin source in a `.kt` unit. Everything before the
+point where it takes over is the Java engine's: loading and nesting (section 10.2), the
+class-file model (10.3), the control-flow graph up to the exception-range repairs (10.4),
+lambda discovery and the nested-class and accessor processing of a root class (10.11).
+
+**Which classes are Kotlin.** `decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_chooser.rs
+(KotlinChooser::is_language)` claims a class when `jvm_kt_enable` is on (the default) and
+the class carries a `kotlin/Metadata` annotation, visible or invisible at run time: the
+annotation the Kotlin compiler puts on every class it emits. Nothing else counts, so a Java
+class is never written as Kotlin and a Kotlin class whose annotation was stripped is
+written as Java. The plugin context asks the chooser of every loaded language plugin in
+turn (`decompiler/nonnative/kuna-jvm/src/infra/plugin_context.rs
+(PluginContext::get_language_spec)`), and the first that claims a class supplies its
+language spec (`decompiler/nonnative/kuna-jvm/src/infra/language_spec.rs`): a CFG pass, a
+statement parser, a main pass, a root-class processor, a writer and a file extension. The
+question is asked for the root class at four places - when it is processed
+(`decompiler/nonnative/kuna-jvm/src/p1_classfile/classes_processor.rs
+(ClassesProcessor::process_class)`), which hands the spec to the wrapper of every class
+nested in it; when it is written (`ClassesProcessor::write_class`), which picks the writer;
+and when its unit's file name is formed (`decompiler/nonnative/kuna-jvm/src/p0_knowledge/fernflower.rs`),
+which takes the spec's extension, `kt`. A nested class therefore follows its root. (The
+chooser is asked once more while statements are written, to decide whether they end in a
+semicolon.) With `jvm_kt_enable`
+off, a Kotlin class takes the Java pipeline and is written as Java, the `@Metadata`
+annotation printed like any other annotation; `jvm_kt_export_metadata` then still parses
+the metadata, for other plugins (kuna bundles none that read it), and changes no output.
+With `jvm_plugins off` no plugin is loaded and every class is Java.
+
+**Metadata.** Asking the chooser also parses the class's metadata, once
+(`KotlinChooser::parse_metadata_for`). The annotation's `k` (the kind), `d1` (the data)
+and `d2` (the strings) are decoded by `decompiler/nonnative/kuna-jvm/src/kotlin/kt_metadata.rs`:
+`d1` is protobuf bytes spread over Java strings, either one byte per character (after a
+leading NUL) or, by default, seven bits per character
+(`decompiler/nonnative/kuna-jvm/src/kotlin/bit_encoding.rs`). Its first message is a string
+table whose records `decompiler/nonnative/kuna-jvm/src/kotlin/metadata_name_resolver.rs`
+expands into the names the rest refers to: each record a `d2` string or one of a fixed list
+of predefined names, optionally cut to a substring or with one character replaced, `$`
+read as `.` (including Vineflower's slip of testing the substring list but reading the
+replacement list, kept for fidelity). The second message is the one `k` names: a class
+(1); a file of top-level declarations, compiled to a `...Kt` class (2); a synthetic class,
+such as a lambda compiled to a class, described by one function (3); a multifile facade,
+whose `d1` lists its part classes (4); or a multifile part, a file whose facade is named by
+the annotation's `xs` (5). The messages follow the Kotlin compiler's metadata schema, which
+the plugin ships as a shaded protobuf-lite build; `decompiler/nonnative/kuna-jvm/src/kotlin/kt_proto.rs`
+ports that runtime and schema as one schema-driven reader with the same semantics: unknown
+fields and enum numbers are skipped, repeated fields accept packed and unpacked encodings,
+a scalar given twice keeps the last value, a sub-message given twice is merged, and a
+missing required field fails the parse. The flag words (visibility, modality, class kind, `data`,
+`value`, `inline`, `suspend`, `operator`, `infix`, `const`, `lateinit`, accessor flags,
+parameter defaults) are unpacked by `decompiler/nonnative/kuna-jvm/src/kotlin/kt_flags.rs`.
+A parse that throws is logged as a warning and leaves the class with what was attached
+before the failure; a class without a usable `k` or `d1` gets no model, and its writer
+says `// $VF: Class flags could not be determined`.
+
+The decoded message becomes the plugin's model of the class
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_element.rs`): properties with their getters,
+setters, backing fields and delegates (`k_property.rs`), functions with receivers, type
+parameters, parameters, return types and contracts (`k_function.rs`), constructors, one
+marked primary (`k_constructor.rs`), and types carrying nullability, type arguments and
+variance (`k_type.rs`), all in the same folder. Each element is attached to the
+class-file members it describes, found through the JVM names and signatures the metadata
+records (or, for a function, built from its Kotlin signature). Members that exist only
+for the compiler get a hidden marker instead: the `name$default` stub of a function with
+default arguments, a companion object's members mirrored as static methods on the outer
+class, a property's `$annotations` holder method and a delegated property's delegate
+field, and, when the class is written, the `Companion` and `INSTANCE` fields. Vineflower stores all of these in the
+members' attribute maps; (kuna) the port keeps them in a session-scope side table keyed by
+member (`decompiler/nonnative/kuna-jvm/src/kotlin/kt_attrs.rs`), which the plugin clears
+when it closes. Parsing one class can mark members of another (a companion's outer class),
+so the order of parsing matters, and it is Vineflower's: before any class is processed,
+`decompiler/nonnative/kuna-jvm/src/p0_knowledge/context_unit.rs` forms every class's file
+name, which parses the metadata of every class in entry order.
+
+**The pass schedule.** For a Kotlin class,
+`decompiler/nonnative/kuna-jvm/src/infra/method_processor.rs (MethodProcessor::code_to_java)`
+builds the graph, removes dead blocks, inlines `jsr`, connects the exit and removes gotos
+as for Java, then
+hands the method to the spec's passes, declared in
+`decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_plugin.rs`, and returns; none of the Java
+schedule after that point runs, nor any plugin pass registered at the Java pass locations
+(IdeaNotNull's, for one). The CFG pass is the exception-range repairs of section 10.4 in
+the same order, step 8 as `decompiler/nonnative/kuna-jvm/src/kotlin/obfuscated_exceptions_pass.rs`,
+except that steps 3-5 always run, whatever `jvm_remove_empty_try_catch`,
+`jvm_ensure_synchronized_monitors` and `jvm_incorporate_returns` say. The statement tree comes from the same dominator-based recovery (10.5), and the
+main pass is the Java schedule of sections 10.6-10.10 with these differences: the
+`finally` loop, the initial stack-variable loop and the loop-merge step are plugin passes
+(`java_finally_pass.rs`, `stack_var_initial_pass.rs`, `k_merge_pass.rs`, which recognizes
+`while`, `for` and for-each loops but not `do`-`while`); secondary functions always fold
+ternaries with a boolean constant branch; each round of the main loop also removes
+assignments of `null`, zero or `Unit` to a variable that no read can see, found on the SSAU
+graph (`eliminate_dead_vars_pass.rs`); the last stack-variable pass inlines ordinary local
+variables as well as stack variables; and the Java main loop's pattern-matching,
+switch-expression, try-with-resources and intersection-cast passes, and its tail's
+switch-map simplification, `synchronized`-monitor folding, generic-chain qualification,
+cast canonicalization and oddity comments, are not part of it. After variable definitions
+are placed, five passes turn the tree into Kotlin. `replace_stats_pass.rs` and
+`replace_exprents_pass.rs` (in `decompiler/nonnative/kuna-jvm/src/kotlin`) replace every
+sequence, loop, switch, `if` and `try` statement and every expression by its Kotlin
+counterpart, and mark each variable declaration, catch variable and loop variable as a
+Kotlin declaration. `resugar_kotlin_methods_pass.rs` matches calls of the Kotlin runtime:
+the `Intrinsics.checkNotNull...` checks the compiler inserts for non-null parameters and
+values are removed, `Intrinsics.areEqual(a, b)` becomes `a == b`, `x != null ? x : y`
+(with `x` a variable) becomes `x ?: y`, and `Reflection.getOrCreateKotlinClass(C.class)`
+becomes `C::class`. `collapse_string_concat_pass.rs`, under `jvm_kt_collapse_string_concat`,
+flattens nested string concatenations into one string template (`"count=${c.count}"`), and
+the last pass replaces `continue` with `break` where Java's tail does.
+
+**The Kotlin expression and statement layer.** Vineflower writes Kotlin syntax by
+subclassing the Java expression and statement classes: `KVarExprent` prints `val`/`var`
+declarations with their type (`k_var_exprent.rs`), `KFunctionExprent` the Kotlin
+operators (`is`/`!is`, `as`, `===`, `?:`, `::class`, ranges and string templates,
+`k_function_exprent.rs`), `KInvocationExprent` property syntax for getter and setter
+calls and the `infix` and operator call forms (`k_invocation_exprent.rs`), `KNewExprent`
+lambdas (`{ x: Int -> ... }`), `object : T { ... }` expressions and array constructors
+(`k_new_exprent.rs`), `KExitExprent` labelled returns (`return@label`, `k_exit_exprent.rs`),
+and the statement subclasses `if` as statement or expression, `while`/`do`/`for (x in
+xs)` loops, `when`, `try`/`catch` and labelled blocks (`k_if_statement.rs`,
+`k_do_statement.rs`, `k_switch_statement.rs`, `k_catch_statement.rs`,
+`k_sequence_statement.rs`), all in `decompiler/nonnative/kuna-jvm/src/kotlin`. JVM types
+are written as Kotlin types (`int` as `Int`, `java.util.List` as `List` or `MutableList`
+by the metadata, nullable types with `?`; `k_types.rs`). (kuna) A Kotlin expression or
+statement in the port is its Java object with a Kotlin flag and the subclass's extra data,
+and every dispatcher of a method a Kotlin subclass overrides checks the flag first
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_dispatch.rs`): the object stays an instance of
+its Java kind for every core helper that still runs on it, which is what subclassing gives
+Vineflower.
+
+**The Kotlin writer.** `decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_writer.rs
+(KotlinWriter::write_class)` writes a Kotlin root class and everything nested in it. The
+unit header has the file annotations (`@file:JvmName` and `@file:JvmMultifileClass` for a
+multifile part), the package and imports without semicolons, and the class's type aliases;
+the import collector (`kotlin_import_collector.rs`) leaves out the packages Kotlin imports
+by default (`kotlin`, `kotlin.collections`, `kotlin.io`, `kotlin.text` and the other
+`kotlin.*` defaults), and a Java type that a Kotlin type of the same simple name would
+shadow (`java.lang.String`, `java.util.List`) is written qualified. Before writing, the
+class-level rewrites run: field initializers move into their declarations, Java 1.4 class
+literals are restored, an enum's synthetic members are hidden (`k_enum_processor.rs`), and
+the instance fields of `object`s and companion objects are found
+(`kotlin_object_processors.rs`). What a class is written as comes from its metadata, not
+from its modifiers: the declaration's keyword and modifiers (`class`, `interface`, `enum
+class`, `annotation class`, `object`, `companion object`, `data`, `value`, `sealed`,
+`inner`, `fun interface`, visibility, modality, `expect`/`external`) from the class flags,
+the primary constructor's parameters in the header, the supertypes; a file class (kind 2
+or 5) has no declaration, only its top-level members; a lambda class (kind 3) is written
+as a lambda where it is created; a multifile facade (kind 4) is written as a comment listing
+its parts, and with `jvm_kt_decompile_facades` also its forwarding functions. The members
+are walked in class-file order, enum constants first, then fields, then methods, then
+member classes, but each is written as the metadata element it belongs to: a field or an
+accessor as its property, once, at the first of them (`val` or `var`, type, initializer,
+`const`, `lateinit`, delegate, and the accessors' own visibility and bodies when they are
+not the default ones); a method as its function, with `fun` modifiers (`operator`,
+`infix`, `inline`, `tailrec`, `suspend`, `override`), receiver, parameters with their
+default values and return type; a constructor as a secondary `constructor(..) : this(..)`
+or, for the primary one, the `init` block of its body. Hidden members and the bodies of
+lambdas compiled to methods (`name$lambda$N`, written inline where they are used) are
+skipped, as are synthetic and bridge members under `jvm_remove_synthetic` and
+`jvm_remove_bridge`. A member the metadata does not describe is written from its JVM
+signature as a plain `fun`, and a warning is logged. `jvm_kt_show_public` writes the `public` that Kotlin source
+leaves implicit (on by default, as in Vineflower). A parameter default is recovered from
+the `$default` stub's body (`decompiler/nonnative/kuna-jvm/src/kotlin/default_args_map.rs`):
+the value it assigns when the parameter's mask bit is set; when no value can be read, the
+parameter is written with `jvm_kt_unknown_defaults` (`= ...`), or with no default when
+that text is empty.
+
+**What stays Java-shaped.** The plugin rewrites syntax, not semantics: the statement tree
+and every expression in it are what the Java pipeline recovers from the bytecode. Calls
+keep their JVM targets (`System.out.println(x)`, `text.length()` rather than
+`text.length`, `StringsKt.repeat(..)` for an extension function), a value boxed or unboxed
+by the compiler keeps the conversion (`(f(x) as java.lang.Number).intValue()`), a captured
+local that a lambda mutates stays the compiler's `IntRef`/`ObjectRef` holder, the body of an
+inline function (`let`, `apply`, `forEach`) appears expanded where it was called, since the
+compiler copied it there, and a function reference compiled to a singleton class prints as
+`<unrepresentable>.INSTANCE`. Local variables carry
+the types the Java pipeline infers, so a local whose type has no Kotlin counterpart in the
+metadata is written with its JVM type. A method or class that fails is written with
+Vineflower's `// $VF: Couldn't be decompiled` comment inside its Kotlin declaration, as
+for Java (section 10.12).
+
+**Fidelity and front-end support (kuna).** The engine's Kotlin output is Vineflower's: the
+Kotlin plugin's own tests and core's Kotlin tests are corpus cases (`tests/jvm/kotlin.json`),
+compared with the released jar's text. `decompiler/nonnative/kuna-jvm/src/infra/kuna_spans.rs`
+spans are recorded by the Kotlin writer too: a property's getter and setter share the span
+of the property's declaration, a primary constructor's span is its `init` block (it has
+none when the body is empty), and members the writer folds away have none.
+`DecompiledClass::language` (`decompiler/nonnative/kuna-jvm/src/infra/kuna_plugins.rs`)
+reports `kotlin` for a unit whose file name ends in `.kt`, which is how the CLI labels
+units and writes `.kt` files in a project export; the CLI's `--language java` is
+`jvm_kt_enable off`. The Kotlin schedule polls the per-method deadline (section 10.12) at
+the heads of its own loops: each round of a looping pass, the `finally` loop and the
+initial stack-variable loop.

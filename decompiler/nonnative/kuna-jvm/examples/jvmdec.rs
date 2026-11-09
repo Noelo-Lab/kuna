@@ -203,8 +203,7 @@ fn driver_config(args: &Args) -> Result<DriverConfig, String> {
         config.runtime = Some(Arc::new(SharedRuntime::open(&runtime)?));
     }
     for lib in &args.libs {
-        let set =
-            kuna_input::load(lib, &LoadOptions { siblings: false }).map_err(|e| e.to_string())?;
+        let set = kuna_input::load_library(lib).map_err(|e| e.to_string())?;
         config.libraries.push(Arc::new(set));
     }
     if let Some(seconds) = option_value(args, IFernflowerPreferences::MAX_PROCESSING_METHOD) {

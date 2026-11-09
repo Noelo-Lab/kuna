@@ -1,0 +1,41 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "com.ex.kt.Counter.getLabel",
+    "--option",
+    "jvm_include_runtime",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {},
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "tests/fixtures/jvm/kotlin/classes/com/ex/kt/Counter.class",
+    "binary_sha256": "f695d9acc53b042fc895a794e3e9e46f1270f85dbbf28b5d52fd348a74134e6b",
+    "binary_size": 1840,
+    "binary_source": "in-repo",
+    "in_repo_path": "tests/fixtures/jvm/kotlin/classes/com/ex/kt/Counter.class",
+    "selector": "com.ex.kt.Counter.getLabel",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "^public final var label: String\\n   internal set\\n$"
+    ],
+    "stdout_absent": [
+      "getLabel",
+      "package com\\.ex\\.kt"
+    ]
+  },
+  "notes": "A class compiled from Kotlin prints as Kotlin, and a property accessor selected by its JVM name prints the property declaration its getter and setter share.",
+  "probe_id": "p-a863ae186764"
+}
