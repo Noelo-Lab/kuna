@@ -6,6 +6,8 @@
 //! `DirectEdgeType`s and never iterated, so they are a two-slot array; the
 //! hash is fixed at construction because type and id never change.
 
+use std::rc::Rc;
+
 use crate::arena_object;
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::direct_edge::DirectEdge;
@@ -18,7 +20,7 @@ use crate::validation_helper::ValidationHelper;
 
 pub struct DirectNodeData {
     pub type_: DirectNodeType,
-    pub id: String,
+    pub id: Rc<str>,
     pub block: Option<BasicBlockStatement>,
     pub statement: Statement,
     pub exprents: JList<Exprent>,
@@ -36,7 +38,7 @@ impl DirectNode {
         statement: Statement,
         try_finally: Option<DirectNode>,
     ) -> DirectNode {
-        let id = type_.make_id(statement.with(|d| d.id));
+        let id: Rc<str> = type_.make_id(statement.with(|d| d.id)).into();
         let hash = objects_hash(&[type_.java_hash(), id.java_hash()]);
         DirectNode::alloc(DirectNodeData {
             type_,
@@ -64,6 +66,11 @@ impl DirectNode {
     }
 
     pub fn id(self) -> String {
+        self.with(|d| d.id.to_string())
+    }
+
+    /// The id as a shared string: a key for the id-keyed maps without a copy.
+    pub fn id_key(self) -> Rc<str> {
         self.with(|d| d.id.clone())
     }
 

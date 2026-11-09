@@ -636,7 +636,7 @@ impl FlattenStatementsHelper {
             if self.map_pos_if_branch.contains_key(&source)
                 && Some(edge.stat) != self.map_pos_if_branch.get(&source).copied()
             {
-                let (source_id, dest_id) = (source.id(), dest.id());
+                let (source_id, dest_id) = (source.id_key(), dest.id_key());
                 self.graph()
                     .with_mut(|d| d.map_neg_if_branch.put(source_id, dest_id));
             }
