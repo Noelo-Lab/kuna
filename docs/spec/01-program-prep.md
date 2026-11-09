@@ -4047,7 +4047,7 @@ moves.
   by-value class, no `...`) the arm also parks the whole declaration, the class a
   placeholder, and records every entry that builds an object at an address it is
   handed: a 32-bit `__thiscall` constructor (`??0`) and an applied declaration
-  returning a class by value; `msvcbyval` (04 §4.4) sizes the class at each call
+  returning a class by value; `kuna_msvcbyval.rs` (04 §4.4) sizes the class at each call
   from the caller's cleanup. LOSS: where it declines, those arguments render as stores before the
   call (`MakeStack(a1)`, after `Arr::Arr((Arr *)&v1,a2)`, keeps only its hidden
   return pointer). `--option msvcsig off` restores the Itanium-arm reading of MSVC
@@ -4136,7 +4136,7 @@ moves.
   (`Architecture::source_lang` reports the effective value, and the catalog's
   `current` reports the option — `auto` until a run forces a language). The
   per-function rules that used to read the `source_is_rust`/`source_is_go`
-  bools (`rustabi auto`, `reloadarg`'s Go stand-down) read that one fact now.
+  bools (`rustabi auto`, the frame-reload rule's Go stand-down) read that one fact now.
   Forcing a language never invents facts (forcing `go` on a non-Go image
   enables the pclntab pass, which finds no table); it changes which
   language-gated rules may act. It is also the escape hatch when detection
@@ -9056,5 +9056,5 @@ call through the first stub names its import.
 Without a callee prototype, a preserved incoming argument register cannot
 establish import arity: calls with and without that argument can have identical
 instructions. A declared prototype supplies that missing contract
-(`gotimportproto`, §4).
+(`kuna_gotimportproto.rs`, §4).
 

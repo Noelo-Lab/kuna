@@ -111,7 +111,6 @@ kuna_options! { self, p1;
     "addcarrychain" => on_off!(add_carry_chain, "Carry-chain wide-add recovery"),
     "aggregatefields" => on_off!(aggregate_fields, "Whole-aggregate field recovery"),
     "stubtailcall" => on_off!(stub_tail_call, "Loader-proven stub tail calls"),
-    "gotimportproto" => on_off!(got_import_proto, "GOT import type-only prototypes"),
     "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
     "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
@@ -249,10 +248,6 @@ kuna_options! { self, p1;
     "retinputhalf" => on_off!(ret_input_half, "Returned input-parameter half retention"),
     "retpushedhalf" => on_off!(ret_pushed_half, "Push-only register placement rejection"),
     "retsysreg" => on_off!(ret_sys_reg, "System-register operand high-word rejection"),
-    "reloadarg" => on_off!(reload_arg, "Frame-reload scratch-register argument rejection"),
-    "noreturnretuse" => on_off!(noreturn_ret_use, "No-return call argument use in return trials"),
-    "exclusivearguse" => on_off!(exclusive_arg_use, "Mutually-exclusive-path dereference in input trials"),
-    "exclusivecallret" => on_off!(exclusive_call_ret, "Mutually-exclusive call and return uses in narrow scalar trials"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
     "multiregargs" => on_off!(multi_reg_args, "Complete ABI register argument partitions"),
     "mipsunaligned" => on_off!(mips_unaligned, "MIPS unaligned load/store pairs as one access"),
@@ -476,18 +471,6 @@ kuna_options! { self, p1;
         self.callee_pop_frame = val;
         Ok(msg)
     },
-    "msvcbyval" => {
-        let (val, msg) = crate::p4_calls::kuna_msvcbyval::OptionMsvcByval.apply(p1)?;
-        self.msvc_byval = val;
-        Ok(msg)
-    },
-    "hiddenretarg" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_hiddenretarg::OptionHiddenRetArg.apply(p1)?;
-        self.hidden_ret_arg = val;
-        Ok(msg)
-    },
-    "pushpadread" => on_off!(push_pad_read, "push-only reads left out of callee-read argument evidence"),
     "zerocallregs" => {
         let (val, msg) =
             crate::p4_calls::kuna_zerocallregs::OptionZeroCallRegs.apply(p1)?;
@@ -547,11 +530,6 @@ kuna_options! { self, p1;
         self.pass_through = val;
         Ok(msg)
     },
-    "pltlocal" => {
-        let (val, msg) = crate::p4_calls::kuna_pltlocal::OptionPltLocal.apply(p1)?;
-        self.plt_local_calls = val;
-        Ok(msg)
-    },
     "mixedtailret" => {
         let (val, msg) = crate::p4_calls::kuna_mixedtailret::OptionMixedTailRet.apply(p1)?;
         self.mixed_tail_ret = val;
@@ -579,12 +557,6 @@ kuna_options! { self, p1;
         let (val, msg) =
             crate::p3_dataflow::kuna_indirectanchor::OptionIndirectAnchor.apply(p1)?;
         self.indirect_anchor = val;
-        Ok(msg)
-    },
-    "inputparamgap" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_inputparamgap::OptionInputParamGap.apply(p1)?;
-        self.input_param_gap = val;
         Ok(msg)
     },
     "stackarggap" => {
@@ -618,8 +590,6 @@ kuna_options! { self, p1;
         self.spill_arg_trial = val;
         Ok(msg)
     },
-    "condexeret" => on_off!(cond_exe_ret, "return-trial retry after conditional-execution removal"),
-    "condexeretuse" => on_off!(cond_exe_ret_use, "return-value uses ruled out by a re-tested condition"),
     "loadguardrange" => on_off!(load_guard_range, "Indexed-stack guard ValueSet range refinement"),
     "stackstoreguard" => on_off!(stack_store_guard, "Stack-derived store heritage guards"),
     "indexaliasguard" => {
@@ -740,12 +710,6 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "iteexpr" => on_off!(iteexpr, "Computed-expression arm ?: recovery (iteregion extension)"),
-    "evalcurrentproto" => {
-        let (val, msg) =
-            crate::kuna_evalcurrentproto::OptionEvalCurrentProto.apply(p1)?;
-        self.evalcurrentproto = val;
-        Ok(msg)
-    },
     "iteboolean" => {
         let (val, msg) =
             crate::p8_structure::kuna_iteboolean::OptionIteBoolean.apply(p1)?;

@@ -1754,8 +1754,7 @@ impl Action for ActionReturnRecovery {
             None => return 0,
         };
         let maxancestor = data.get_arch().trim_recurse_max;
-        let cond_exe_ret = data.get_arch().cond_exe_ret;
-        let remembering = crate::p4_calls::kuna_condexeret::remembering(&active, cond_exe_ret);
+        let remembering = crate::p4_calls::kuna_condexeret::remembering(&active);
         let mut cond_failed = Vec::new();
         let return_ops: Vec<crate::context::OpId> =
             data.obank().iter_code(OpCode::CPUI_RETURN).collect();
@@ -1838,7 +1837,7 @@ impl Action for ActionReturnRecovery {
         }
 
         crate::p4_calls::kuna_voidret::score_forced(data, &mut active, &return_ops, maxancestor);
-        crate::p4_calls::kuna_condexeret::end_pass(&mut active, cond_exe_ret, cond_failed);
+        crate::p4_calls::kuna_condexeret::end_pass(&mut active, cond_failed);
         active.finish_pass();
         if active.get_num_passes() > active.get_max_pass() {
             active.mark_fully_checked();
@@ -1999,12 +1998,12 @@ impl Action for ActionInputPrototype {
             // the heritage collected).  `triallist[i]` is the i-th registered
             // trial's Varnode (1-based slot in ParamTrial).
             let mut active = crate::fspec::ParamActive::new(false);
-            // (kuna) `inputparamgap`: these are the function's OWN input trials,
-            // where an ACTIVE trial means the body reads the register before it
-            // writes it.  Tell `forceInactiveChain` that a run of unused argument
-            // registers is not evidence against a later one.  See
+            // (kuna) These are the function's OWN input trials, where an ACTIVE
+            // trial means the body reads the register before it writes it.  Tell
+            // `forceInactiveChain` that a run of unused argument registers is not
+            // evidence against a later one.  See
             // [`crate::p4_calls::kuna_inputparamgap`].
-            active.set_own_input_gap(data.get_arch().input_param_gap);
+            active.set_own_input_gap(true);
             let mut triallist: Vec<crate::context::VarnodeId> = Vec::new();
             let input_vns: Vec<crate::context::VarnodeId> =
                 data.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();

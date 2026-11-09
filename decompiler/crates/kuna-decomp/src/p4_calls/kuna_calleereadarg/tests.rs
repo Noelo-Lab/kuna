@@ -35,7 +35,7 @@ fn a_register_the_callee_reads_is_an_argument() {
     let reg = reg_space();
     let live = body(&[0x38], true);
     let (a, s) = loc(&reg, 0x38);
-    assert!(reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true, false));
+    assert!(reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true));
 }
 
 /// `g(void)`: nothing read, nothing reinstated.
@@ -44,7 +44,7 @@ fn a_register_the_callee_never_reads_is_not() {
     let reg = reg_space();
     let live = body(&[], true);
     let (a, s) = loc(&reg, 0x38);
-    assert!(!reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true, false));
+    assert!(!reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true));
 }
 
 /// A variadic register-save prologue reads every argument register through the
@@ -54,7 +54,7 @@ fn a_callee_that_reads_the_last_register_of_the_class_declines() {
     let reg = reg_space();
     let live = body(&[0x30, 0x10, 0x8, 0x80, 0x88], true);
     let (a, s) = loc(&reg, 0x30);
-    assert!(!reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true, false));
+    assert!(!reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true));
 }
 
 /// A walk that did not cover the body proves no read.
@@ -63,7 +63,7 @@ fn an_incomplete_walk_declines() {
     let reg = reg_space();
     let live = body(&[0x38], false);
     let (a, s) = loc(&reg, 0x38);
-    assert!(!reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true, false));
+    assert!(!reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true));
 }
 
 /// No register entry of the trial's class in the model: no bound, no claim.
@@ -72,7 +72,7 @@ fn no_class_bound_declines() {
     let reg = reg_space();
     let live = body(&[0x38], true);
     let (a, s) = loc(&reg, 0x38);
-    assert!(!reads_as_argument(&live, &a, s, None, true, false));
+    assert!(!reads_as_argument(&live, &a, s, None, true));
 }
 
 /// A distinct arena handle; the extension only carries these.
@@ -168,7 +168,7 @@ fn a_wide_read_past_a_low_byte_write_is_not_an_argument() {
     let live = body(&[0x8], true).with_written_byte(0x8);
     let (a, s) = loc(&reg, 0x8);
     assert!(live.proves_input(&a, s));
-    assert!(!reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true, false));
+    assert!(!reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true));
 }
 
 /// A body the walk could not decode all of (an ARM function decoded as Thumb
@@ -178,7 +178,7 @@ fn a_walk_that_met_bad_instruction_data_declines() {
     let reg = reg_space();
     let live = body(&[0x38], true).with_undecodable();
     let (a, s) = loc(&reg, 0x38);
-    assert!(!reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true, false));
+    assert!(!reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true));
 }
 
 /// gcc AArch64 bounds a variadic callee's register save to the `va_arg` it can
@@ -189,21 +189,20 @@ fn a_register_only_stored_counts_only_where_variadic_calls_are_marked() {
     let reg = reg_space();
     let live = body(&[0x38], true).with_stored_byte(0x38);
     let (a, s) = loc(&reg, 0x38);
-    assert!(reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true, false));
-    assert!(!reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), false, false));
+    assert!(reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true));
+    assert!(!reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), false));
 }
 
 /// gcc pads an odd number of stack arguments with a push of a register it never
 /// set (`push %rdx` before three pushes for `__snprintf_chk`), and the stack
 /// pointer moves back past that slot after the call with nothing reading it:
-/// with `pads` (option `pushpadread`) that push is no read of the register.
+/// that push is no read of the register.
 #[test]
-fn a_register_only_pushed_for_the_next_call_counts_only_without_pads() {
+fn a_register_only_pushed_for_the_next_call_does_not_count() {
     let reg = reg_space();
     let live = body(&[0x10], true).with_padded_byte(0x10);
     let (a, s) = loc(&reg, 0x10);
-    assert!(reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true, false));
-    assert!(!reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true, true));
+    assert!(!reads_as_argument(&live, &a, s, Some(&loc(&reg, 0x88)), true));
     let read = body(&[0x10], true);
-    assert!(reads_as_argument(&read, &a, s, Some(&loc(&reg, 0x88)), true, true));
+    assert!(reads_as_argument(&read, &a, s, Some(&loc(&reg, 0x88)), true));
 }

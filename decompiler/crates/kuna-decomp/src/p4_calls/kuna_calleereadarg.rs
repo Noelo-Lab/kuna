@@ -154,18 +154,17 @@ fn is_register(addr: &Address) -> bool {
 
 /// Does the callee summary `live` show `[addr, addr+size)` consumed as an
 /// argument: its low byte read on entry, with `last`, the final register of its
-/// storage class, left unread? With `pads`, a register the callee only pushes
-/// for its next call, with nothing reading the slot back, is not read.
+/// storage class, left unread? A register the callee only pushes for its next
+/// call, with nothing reading the slot back, is not read.
 pub(crate) fn reads_as_argument(
     live: &CalleeEntryDead,
     addr: &Address,
     size: int4,
     last: Option<&(Address, int4)>,
     stores: bool,
-    pads: bool,
 ) -> bool {
     let Some((last_addr, last_size)) = last else { return false };
-    live.reads_low_byte(addr, size, stores, pads) && !live.proves_read(last_addr, *last_size)
+    live.reads_low_byte(addr, size, stores, true) && !live.proves_read(last_addr, *last_size)
 }
 
 /// Record the calls this rule must leave alone, before heritage folds the
@@ -250,7 +249,6 @@ pub fn capture(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingReadArg> {
                 e.get_size(),
             )
     });
-    let pads = data.get_arch().push_pad_read;
     let active = fc.active_input();
     let mut any = false;
     let mut fresh = false;
@@ -268,7 +266,7 @@ pub fn capture(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingReadArg> {
         let (addr, size) = (t.get_address().clone(), t.get_size());
         let callee_reads = match (live, &seen) {
             (Some(f), _) => {
-                f.reads_low_byte(&addr, size, stores, pads)
+                f.reads_low_byte(&addr, size, stores, true)
                     || (stated(&addr) && crate::kuna_entryreads::overlaps(&passes, &addr, size))
             }
             (None, Some(r)) => stated(&addr) && crate::kuna_entryreads::overlaps(r, &addr, size),
@@ -292,7 +290,7 @@ pub fn capture(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingReadArg> {
             !t.is_used() && !t.is_active() && (t.has_ancestor_realistic() || t.has_ancestor_solid());
         let as_argument = match (live, &seen) {
             (Some(f), _) => {
-                reads_as_argument(f, &addr, size, last.as_ref(), stores, pads)
+                reads_as_argument(f, &addr, size, last.as_ref(), stores)
                     || (stated(&addr)
                         && crate::kuna_entryreads::overlaps(&passes, &addr, size)
                         && last.as_ref().is_some_and(|(a, s)| !f.proves_read(a, *s)))
@@ -304,7 +302,7 @@ pub fn capture(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingReadArg> {
         };
         let reads = refused && vn.is_some() && as_argument;
         any |= reads;
-        fresh |= reads && !live.is_some_and(|f| reads_as_argument(f, &addr, size, last.as_ref(), stores, pads));
+        fresh |= reads && !live.is_some_and(|f| reads_as_argument(f, &addr, size, last.as_ref(), stores));
         row.push(Some(Slot { index: i, addr, size, width, vn, reads }));
     }
     if fresh {

@@ -5219,7 +5219,7 @@ fn commit_analysis_output(
     // for the callee-body probe (not the varargs typing above, so independent of
     // the `formatstring` gate). gcc pushes a format call's stack arguments below
     // an alignment pad, and the probe uses this count to tell the two apart.
-    if prog.arch().push_pad_read && !out.format_sites.is_empty() {
+    if !out.format_sites.is_empty() {
         let model = prog.arch().default_fp().cloned();
         let stack_idx = prog.arch().manage().get_stack_space().map(|sp| sp.get_index());
         if let (Some(model), Some(stack_idx)) = (model, stack_idx) {

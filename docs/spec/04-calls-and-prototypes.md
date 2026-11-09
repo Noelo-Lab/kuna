@@ -447,7 +447,7 @@ DWARF `DW_AT_object_pointer` is not wired.
 
 Registration is not the whole story, because a spec can also **nominate** one of
 its registered models for evaluating a function's own unlocked prototype:
-`<eval_current_prototype name=…>` (`evalcurrentproto`, default-on;
+`<eval_current_prototype name=…>` (always honored;
 `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_evalcurrentproto.rs
 (eval_current_model_name)`). The nominated model is looked up at
 `<default_proto>` time and handed to each function through the arch handle, where
@@ -459,7 +459,7 @@ the slot empty and evaluates with `<default_proto>` as before. Nominating a mode
 outranks `option defaultprototype` for an unlocked prototype (that option sets
 the *default* model, which the nomination replaces); an explicit
 `option protoeval` outranks the nomination in turn, since both write the same
-slot. Turning `evalcurrentproto` off restores `<default_proto>`-only evaluation.
+slot.
 
 What the nomination buys is the **merged-model machinery** — a
 `ProtoModelMerged` union whose `FuncProto::resolveModel` picks the constituent
@@ -746,7 +746,7 @@ parameter list. For the standard input list the decision sequence is:
    the chain immediately (the callee never touched the stack area, so nothing
    beyond it is a parameter); finally every inactive slot *before* the last
    surviving active trial is promoted — interior holes are filled, because
-   the list must be contiguous. (kuna) `inputparamgap` exempts an *active
+   the list must be contiguous. (kuna) The own-input gap tolerance exempts an *active
    register* trial from that demotion when the trials are the function's
    **own** inputs rather than a call's, and (kuna) `stackarggap` ends a call
    site's chain at an *unreferenced register* slot whose next credible slot is
@@ -797,13 +797,13 @@ in the image, so its body is the only evidence there is. The Wayland
 `wl_keyboard`/`serial`/`time` ignored, `key` and `state` arriving in `r8d`/`r9d`
 behind a three-register hole, one past `maxchain` — and kuna rendered it as
 `void sub_6500(long a0)` whose first statement branches on a local nothing ever
-assigned. (kuna) `inputparamgap` (default-on,
-`decompiler/crates/kuna-decomp/src/p4_calls/kuna_inputparamgap.rs`) stops a gap
+assigned. (kuna) The own-input gap tolerance
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_inputparamgap.rs`, always on) stops a gap
 slot from ending the chain when the `ParamActive` is the one
 `ActionInputPrototype` built, so the active trials past the hole survive and step
 4's own promotion fills the interior with the unreferenced trials
 `build_trial_map` had already synthesized — the full ABI signature, positions and
-all. A two-slot hole was always tolerated, so the option moves only where the
+all. A two-slot hole was always tolerated, so the rule moves only where the
 limit sits.
 
 Three clauses bound it, and the second was settled by measurement rather than
@@ -860,7 +860,7 @@ immediately; the option extends it to the register slot in front of the stack.
 
 Four clauses bound it. It reads `ParamActive::is_recover_subcall`, so the
 function's own input recovery — where an untouched argument register is an
-ignored parameter, which is `inputparamgap`'s whole premise — is untouched. It
+ignored parameter, which is the own-input gap tolerance's whole premise — is untouched. It
 fires on **unreferenced** trials only: an inactive register trial still has a
 Varnode, meaning the caller put something there and trial scoring merely could
 not prove it was for the callee, and that ambiguous case still fills, so a
@@ -1714,8 +1714,8 @@ classified:
   `append_slow(container)` — the callee's own recovery having meanwhile settled
   on three parameters.
 
-  (kuna) `exclusivearguse` (default-on,
-  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_exclusivearguse.rs`) skips a
+  (kuna) The mutually-exclusive-path test
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_exclusivearguse.rs`, always on) skips a
   `CPUI_LOAD`/`CPUI_STORE` descendant when the matched op is a `CALL`/`CALLIND`,
   the walked Varnode is the **address** operand of the access rather than the
   stored datum, the walked Varnode is **defined in a block that both the
@@ -1744,17 +1744,16 @@ classified:
   merely narrow. The address-operand test hands the `STORE` value slot to
   `spillargtrial` and takes only the pointer slot, so the two options never
   decide the same descendant. The `CALL` match restricts it to caller-side input
-  trials, leaving the function's own output trial to `noreturnretuse`. And
+  trials, leaving the function's own output trial to the no-return tolerance. And
   `BRANCH`/`CBRANCH`/`BRANCHIND` keep the upstream rejection outright: the
   `calleearity` family below was built for a `CBRANCH` use in a block that
   *dominates* the call (`test rcx,rcx; jz; call`), and a dominating block always
   co-executes with the call, so relaxing that shape is the fabrication the
-  family's own design notes warn against. `off` restores the upstream
-  rejection, in which any LOAD or STORE of the value sinks the trial.
+  family's own design notes warn against.
 
-  (kuna) `exclusivecallret` (default-on,
-  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_exclusivecallret.rs (applies, skips_use)`)
-  applies the same mutual-exclusion argument to a call and a return. GCC
+  (kuna) The mutually-exclusive call/return test
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_exclusivecallret.rs (applies, skips_use)`,
+  always on) applies the same mutual-exclusion argument to a call and a return. GCC
   compiles `return a(x) ? b(x) : x` with a tail call to `b`, so on e500 the same
   scalar is the tail call's argument on one arm and the function's return on the
   other. Each use vetoes the other's trial although no execution reaches both,
@@ -1776,12 +1775,11 @@ classified:
   narrow scalar shape `calloverlap auto` recovers (chapter 03): a four-byte
   trial in the low word of a named eight-byte register on a truncated 32-bit
   address target, such as an e500 GPR. Whether a trial has that shape does not
-  depend on the use being scored, so it is decided once per walk. `off`
-  restores the upstream rejection.
+  depend on the use being scored, so it is decided once per walk.
 
-  (kuna) `reloadarg` (default-on,
-  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_reloadarg.rs (note, recheck)`)
-  judges a register reloaded from the caller's own frame again once the frame is
+  (kuna) The frame-reload rule
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_reloadarg.rs (note, recheck)`,
+  always on) judges a register reloaded from the caller's own frame again once the frame is
   heritaged. Register trials are scored on `ActionActiveParam`'s first pass,
   before `ActionStackPtrFlow` and the stack heritage, and a checked trial is
   never scored again. At that point a value popped off the stack is a raw
@@ -1907,7 +1905,7 @@ classified:
   `foo(0x38,3)` for a one-argument `foo`, and every glibc syscall wrapper
   passed its syscall number to the helper it calls after the `svc`.
 
-  `hiddenretarg` (default-on) rescores that trial no-use once scoring has
+  The hidden-return veto (always on) rescores that trial no-use once scoring has
   made it active. A trial scoring left inactive keeps that answer, because
   freeing its dataflow as well would only reshape the caller's variables: a
   zlib loop flag kept in `w8` across a `memset` call changed its storage
@@ -2052,8 +2050,8 @@ classified:
   argument would print as an uninitialised local.
 
   A register the callee only pushes above a call's stack arguments -- an
-  alignment pad -- is no read either (`pushpadread`, default-on,
-  `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs (at_call)`).
+  alignment pad -- is no read either
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs (at_call)`, always on).
   x86 compilers align an odd number of stack arguments by pushing whatever
   register is at hand before them: gcc 9 at -O2 and gcc 11 at -Os push an `rdx`
   the body never set ahead of three bytes for `__snprintf_chk`. The push copies
@@ -3207,26 +3205,26 @@ Register-space parents (`r3:r4` is not a named register, `EDX:EAX` is not
 contiguous) are unaffected.
 
 The sole-use check has one narrow terminating-path exception, the (kuna)
-`noreturnretuse` gate (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_noreturnretuse.rs
-(call_cannot_reach_return)`). When the use being matched is a RETURN, a candidate
+no-return tolerance (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_noreturnretuse.rs
+(call_cannot_reach_return)`, always on). When the use being matched is a RETURN, a candidate
 return register may also feed a CALL/CALLIND whose immediately following and
 block-final op is an artificial halt marked no-return. That call consumes the same
 ABI register as its first argument on a failure path but cannot reach the RETURN,
 so it does not disqualify the normal path's output trial. An ordinary call, a
 non-adjacent halt, or a halt that may return still rejects the trial. The shape
 needs the return register and the first argument register to be the same storage,
-so it is an ARM/AArch64 finding in practice; with the gate off the check is
-upstream's, rejecting on every competing call use.
+so it is an ARM/AArch64 finding in practice.
 
-A second exception, (kuna) `condexeretuse`, covers uses that sit on a branch
-no execution carrying the scored value can take. It is described with
-`condexeret` in §4.4, because both come from the same merge blocks.
+A second exception, the (kuna) re-tested-condition rule (`kuna_condexeretuse.rs`),
+covers uses that sit on a branch no execution carrying the scored value can
+take. It is described with the retry pass in §4.4, because both come from the
+same merge blocks.
 
 The output container normally gets a single pass (its budget is 0 unless the
 model has a delayed heritage space), and that pass runs before
-`ActionConditionalExe` in the same mainloop iteration. The (kuna) `condexeret`
-gate adds at most one more pass for trials that failed only on a path that
-pass can remove — §4.4.
+`ActionConditionalExe` in the same mainloop iteration. The (kuna) retry pass
+(`kuna_condexeret.rs`) adds at most one more pass for trials that failed only on
+a path that pass can remove — §4.4.
 
 ### Fixating the function's own prototype
 
@@ -3234,7 +3232,7 @@ In the one-shot tail, after merge has built HighVariables:
 **`ActionInputPrototype`** (`coreaction_protos.rs (ActionInputPrototype)`)
 re-derives the function's own parameter list from its input Varnodes — each
 input that the model admits as a possible parameter becomes a trial, active
-iff it has readers; `fillin_map` orders them (with the (kuna) `inputparamgap`
+iff it has readers; `fillin_map` orders them (with the (kuna) own-input
 gap-tolerance above, which applies only to this call of it); recovered-but-unreferenced
 parameters get fresh input Varnodes unless something already overlaps the
 slot; and the store is rewritten with each parameter typed from its
@@ -3964,7 +3962,7 @@ pointer that is still an unresolved frame-derived expression keeps the INDIRECT
 too, until the merge resolves. Elsewhere such a pointer is usually a cursor into
 a local buffer, and it defers to the mark.
 
-### (kuna) `msvcbyval` — an MSVC by-value class sized at the call
+### (kuna) An MSVC by-value class sized at the call (`kuna_msvcbyval.rs`)
 
 An MSVC name states every parameter's type but not the size of a class passed by
 value, so `msvcsig` (01) applies a `__cdecl` import's parameters up to the class
@@ -4143,7 +4141,7 @@ found 3 of the 675 upstream assertions legitimately need the join — a global
 CONCAT-return symptom; the symptom table and flip guidance live in
 [`docs/options.md`](../options.md#returnpair).
 
-### (kuna) `condexeret` — a return register tested on the same condition twice
+### (kuna) A return register tested on the same condition twice (`kuna_condexeret.rs`)
 
 `AncestorRealistic` fails a return trial as soon as one MULTIEQUAL input is
 the function's own register on entry and not directwrite, so one path that
@@ -4161,7 +4159,7 @@ spent the output container's only pass, so `twice` printed `void twice(void)`
 while the one-branch spelling of the same logic returned a value. Upstream has
 the same order.
 
-With `condexeret on` (the default), when the walk fails at a non-directwrite
+When the walk fails at a non-directwrite
 function input read by op `m`
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs
 (AncestorRealistic::input_fail_reader)`), and `m` is a MULTIEQUAL in a block
@@ -4218,9 +4216,9 @@ remember step; in the extra pass only remembered (trial, RETURN) pairs are
 looked at, and `keep_tail_return_whole` still runs once, just before
 `derive_output_map`, which with a pending retry happens after the extra pass.
 
-### (kuna) `condexeretuse` — a use the re-test rules out
+### (kuna) A use the re-test rules out (`kuna_condexeretuse.rs`)
 
-`condexeret` covers a return trial whose ancestor walk fails at an input. The
+The retry pass covers a return trial whose ancestor walk fails at an input. The
 same merge blocks also fail return trials through the sole-use check. ARM
 conditional execution writes the return value and returns under one
 condition, and tail-calls under the other:
@@ -4237,9 +4235,9 @@ scores output trials before `ActionConditionalExe` removes the merge, the
 CALL counts as a competing use, and `int pick(int a) { if (a) return getv();
 return 7; }` printed `void pick(int a0)`.
 
-With `condexeretuse on` (the default), a sole-use walk matched at a RETURN
+A sole-use walk matched at a RETURN
 that fails, and that passed through a MULTIEQUAL in a merge block of the shape
-`condexeret` uses, is walked once more
+the retry pass uses, is walked once more
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs
 (Funcdata::only_op_use)`). In the repeated walk, a value that enters such a
 MULTIEQUAL through exactly one in-edge fixes the merge's branch for that
@@ -6409,7 +6407,7 @@ also repeats its callee's recovered type, so the nuttx callers of `getopt`
 compare against `0xffffffff` because `getopt_common` is recovered as returning
 `unsigned int`. No MIPS corpus with DWARF was measured.
 
-### (kuna) `pltlocal` — a call through a stub the image binds to its own definition
+### (kuna) A call through a stub the image binds to its own definition (`kuna_pltlocal.rs`)
 
 A shared library calls its own default-visibility functions through
 `name@plt`, so that another object loaded first can interpose them. The PLT
@@ -6427,7 +6425,7 @@ under `decompile-all`, where the `-Bsymbolic` build of the same object renders
 the same; only the tail call `b send_helper@plt` kept its arguments, because the
 wrapper reloads x0/x1 there, which the caller's own trial scoring accepts.
 
-`option pltlocal` (default on) follows the binding the image itself states.
+kuna follows the binding the image itself states (always on).
 At load the loader records, for each decoded stub whose slot carries a
 symbol-bearing dynamic relocation naming a defined `STT_FUNC`, the pair
 (stub, definition) (`decompiler/crates/kuna-analysis/src/loader/kuna_pltlocal.rs
@@ -6474,8 +6472,7 @@ down to it. The 14 that exceed it are behaviors a direct call shows as well:
 `calleereadarg` reading a register
 an instruction with an internal p-code branch writes (AArch64 `cneg` in
 libgcc's `__floatsitf`), libgcc's unwinder saving the EH data registers, and a
-definition kuna under-recovers. `option pltlocal off` restores the stub as the
-callee entry everywhere.
+definition kuna under-recovers.
 
 ### (kuna) `mixedtailret` — a value returned beside a tail call
 
@@ -8699,15 +8696,13 @@ symbol's call-fixup injection is kept, and its no-return flag is carried under
 `peimportcall`, as on the other two paths. Pieces with no explicit storage
 (library, loader and DWARF prototypes) keep the code-type lookup unchanged:
 incomplete debug-information pieces must not replace a result read by the
-caller with a locked void return. The sole type-only exception,
-`option gotimportproto` (default on,
-`decompiler/crates/kuna-decomp/src/p4_calls/kuna_gotimportproto.rs (binds_type_only)`),
-is an entry identified by the MIPS ELF loader's external-symbol GOT: its
+caller with a locked void return. The sole type-only exception
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_gotimportproto.rs (binds_type_only)`,
+always on) is an entry identified by the MIPS ELF loader's external-symbol GOT: its
 concrete, non-void declaration supplies the imported call's argument and return
 storage, because a preserved incoming argument register cannot establish an
 import's arity. Unknown, missing or void return types, incomplete parameter
-types and variadic declarations, which fix no arity, decline that case, and off
-keeps the storage requirement for imports too.
+types and variadic declarations, which fix no arity, decline that case.
 Ordinary MIPS definitions and other architectures retain the code-type
 behavior. The construction lives in
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_qualifiedcall.rs`.

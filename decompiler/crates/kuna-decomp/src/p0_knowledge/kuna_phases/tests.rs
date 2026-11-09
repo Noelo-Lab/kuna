@@ -756,7 +756,6 @@ fn option_values_live_value_present_for_189() {
                             | "protoranges"
                             | "varargstackargs"
                             | "varargforward"
-                            | "hiddenretarg"
                             | "mixedtailret"
                             | "zerofillreturn"
                             | "zerocallregs"
