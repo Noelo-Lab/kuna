@@ -215,7 +215,9 @@ pub(crate) fn abandon(outcome: Outcome) {
 pub(crate) struct Outcome {
     /// Delivered root classes, in root order.
     pub(crate) results: Vec<ClassResult>,
-    /// Roots asked for but never delivered, with the reason.
+    /// Roots asked for but never delivered, with the reason. A selection may
+    /// also name a nested class in case the engine takes it for a top-level
+    /// one (`Universe::chain`); one it does not is not listed.
     pub(crate) missing: Vec<(String, String)>,
     /// Why the run as a whole stopped early.
     pub(crate) error: Option<String>,
@@ -231,8 +233,9 @@ pub(crate) fn drive(
     watch: &Watch,
     finish: &(dyn Fn(Outcome) -> i32 + Sync),
 ) -> i32 {
+    let top_level = |name: &str| loaded.universe.root_of(name) == name;
     let expected: Vec<String> = match &config.select {
-        Some(select) => select.iter().cloned().collect(),
+        Some(select) => select.iter().filter(|name| top_level(name)).cloned().collect(),
         None => loaded.roots(),
     };
     let results: Mutex<Vec<ClassResult>> = Mutex::new(Vec::new());
@@ -295,7 +298,7 @@ pub(crate) fn drive(
                 let missing = report
                     .failed
                     .iter()
-                    .filter(|name| !delivered_names.contains(name.as_str()))
+                    .filter(|name| !delivered_names.contains(name.as_str()) && top_level(name))
                     .map(|name| (name.clone(), "not a top-level class of the input".to_string()))
                     .collect();
                 Outcome {

@@ -5,13 +5,16 @@
 //! plugin wrote (nested classes stay inside). A class the engine produced no
 //! text for gets a `.java` stub at the path its name implies, holding
 //! `// kuna: could not decompile <class>: <reason>`. The summary line counts
-//! the files of each extension. The command exits 0 when at least one class
-//! was produced.
+//! the files of each extension, classes the engine decompiled or not, methods
+//! whose text holds a failure (their own or a body written inside them,
+//! `failures`), and, when there are any, failed bodies outside every method.
+//! The command exits 0 when at least one class was decompiled.
 
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
 use super::args::Args;
+use super::failures::{self, Units};
 use super::render;
 use super::run::{self, Outcome};
 use super::select::{java_name, Target};
@@ -23,14 +26,14 @@ pub(crate) fn run(args: &Args) -> i32 {
     };
     kuna_jvm::kuna_driver::trace(|| "cli loaded".into());
     let own = loaded.own_class();
-    let mut select: Option<BTreeSet<String>> = None;
+    let mut wanted: Option<BTreeSet<String>> = None;
     for text in args.functions.iter().flatten() {
         match loaded.universe.resolve(text, own.as_deref(), &args.input) {
             Ok(target) => {
                 let class = match &target {
                     Target::Class(class) | Target::Methods { class, .. } => class,
                 };
-                select.get_or_insert_with(BTreeSet::new).insert(loaded.universe.root_of(class));
+                wanted.get_or_insert_with(BTreeSet::new).insert(class.clone());
             }
             Err(e) => {
                 eprintln!("error: {e}");
@@ -46,8 +49,19 @@ pub(crate) fn run(args: &Args) -> i32 {
         eprintln!("error: cannot create {}: {e}", out_dir.display());
         return 1;
     }
-    let status = render::execute(args, &loaded, select, &|outcome, _runtime| {
+    let select = wanted
+        .as_ref()
+        .map(|classes| classes.iter().flat_map(|c| loaded.universe.chain(c)).collect::<BTreeSet<String>>());
+    let status = render::execute(args, &loaded, select, &|mut outcome, _runtime| {
         kuna_jvm::kuna_driver::trace(|| "cli write start".into());
+        if wanted.is_some() {
+            let keep: BTreeSet<String> = Units::new(&outcome)
+                .holding(&loaded.universe, wanted.as_ref())
+                .iter()
+                .map(|r| r.qualified_name.clone())
+                .collect();
+            outcome.results.retain(|r| keep.contains(&r.qualified_name));
+        }
         let status = write_tree(args, &out_dir, &outcome);
         kuna_jvm::kuna_driver::trace(|| "cli write end".into());
         run::abandon(outcome);
@@ -75,6 +89,7 @@ fn write_tree(args: &Args, out_dir: &Path, outcome: &Outcome) -> i32 {
     let (mut java_files, mut kotlin_files, mut bytes) = (0usize, 0usize, 0usize);
     let (mut classes_ok, mut classes_failed) = (0usize, 0usize);
     let (mut methods_ok, mut methods_failed) = (0usize, 0usize);
+    let mut outside_failed = 0usize;
     let mut write = |relative: PathBuf, text: &str| -> Result<(), String> {
         if !written.insert(relative.clone()) {
             eprintln!("warning: {} is written twice; keeping the first", relative.display());
@@ -100,20 +115,21 @@ fn write_tree(args: &Args, out_dir: &Path, outcome: &Outcome) -> i32 {
             why.replace('\n', " ")
         )
     };
-    let mut failures: Vec<(String, String)> = Vec::new();
+    let mut failed: Vec<(String, String)> = Vec::new();
     for result in &outcome.results {
         let written = match &result.unit {
             Some(unit) => {
                 for method in &unit.methods {
-                    if method.error.is_some() {
+                    if method.error.is_some() || !method.nested.is_empty() {
                         methods_failed += 1;
                     } else {
                         methods_ok += 1;
                     }
                 }
-                if let Some(why) = &unit.error {
+                outside_failed += failures::outside_methods(unit, &unit.qualified_name).len();
+                if let Some(why) = failures::unit_failure(unit) {
                     classes_failed += 1;
-                    failures.push((result.qualified_name.clone(), why.clone()));
+                    failed.push((result.qualified_name.clone(), why));
                 } else {
                     classes_ok += 1;
                 }
@@ -122,7 +138,7 @@ fn write_tree(args: &Args, out_dir: &Path, outcome: &Outcome) -> i32 {
             None => {
                 let why = result.error.clone().unwrap_or_else(|| "no output".into());
                 classes_failed += 1;
-                failures.push((result.qualified_name.clone(), why.clone()));
+                failed.push((result.qualified_name.clone(), why.clone()));
                 write(
                     safe_relative(&format!("{}.java", result.qualified_name)),
                     &stub(&result.qualified_name, &why),
@@ -136,13 +152,13 @@ fn write_tree(args: &Args, out_dir: &Path, outcome: &Outcome) -> i32 {
     }
     for (name, why) in &outcome.missing {
         classes_failed += 1;
-        failures.push((name.clone(), why.clone()));
+        failed.push((name.clone(), why.clone()));
         if let Err(e) = write(safe_relative(&format!("{name}.java")), &stub(name, why)) {
             eprintln!("error: {e}");
             return 1;
         }
     }
-    for (name, why) in &failures {
+    for (name, why) in &failed {
         eprintln!("warning: could not decompile {}: {why}", java_name(name));
     }
     let files = match (java_files, kotlin_files) {
@@ -150,9 +166,14 @@ fn write_tree(args: &Args, out_dir: &Path, outcome: &Outcome) -> i32 {
         (0, kotlin) => format!("{kotlin} .kt files"),
         (java, kotlin) => format!("{java} .java files, {kotlin} .kt files"),
     };
+    let outside = if outside_failed > 0 {
+        format!("; outside methods: {outside_failed} failed")
+    } else {
+        String::new()
+    };
     let summary = format!(
         "wrote {}: {files} ({bytes} bytes); classes: {classes_ok} ok, {classes_failed} failed; \
-         methods: {methods_ok} ok, {methods_failed} failed\n",
+         methods: {methods_ok} ok, {methods_failed} failed{outside}\n",
         out_dir.display()
     );
     let status = crate::output::emit_with_status(&summary, i32::from(classes_ok == 0));
