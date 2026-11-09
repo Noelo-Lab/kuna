@@ -126,6 +126,17 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // instructions are NOT recovered — kuna's S5/S7 frame analysis already
         // recovers the stack frame from the code, so CFI is inherited, not rebuilt.
         Box::new(crate::entry::EhFrameLsdaPass),
+        // (kuna `unwindstarts`) S1 Mach-O `__unwind_info` function-start discovery:
+        // the linker-built second-level pages of `__TEXT,__unwind_info` list every
+        // function the unwinder can describe, by start offset. The section survives
+        // the `strip` that drops `LC_FUNCTION_STARTS`, so on a stripped App-Store app
+        // whose only starts are `LC_MAIN`/exports it recovers the whole `__text`.
+        // Registered always (the facts are cheap and stashed at load), COMMIT gated
+        // by `--option unwindstarts on|off` (default-OFF, output-changing: it ADDS
+        // entries) via `engine.rs::analysis_pass_enabled`, so a default run is
+        // byte-identical and an image carrying `LC_FUNCTION_STARTS` gains nothing
+        // (unwind starts are a strict subset there). After EntryDiscoveryPass.
+        Box::new(crate::entry::kuna_unwindinfo::UnwindInfoStartsPass),
         // (kuna `entrymainproto`) S1 PE CRT entry-function prototype recovery: the
         // function `__scrt_common_main_seh` calls immediately after the named
         // argc/argv/envp CRT accessors gets the prototype that call site

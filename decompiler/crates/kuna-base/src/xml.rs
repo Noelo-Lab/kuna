@@ -2158,6 +2158,7 @@ mod tests {
         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
         // and kuna-dedupitetail-gototarget / a goto into an unwrapped if clause keeps its target
         // and kuna-dedupitetail-switchgoto / a switch case goto into an unwrapped if clause keeps its target
+        // and kuna-unwindstarts / a stripped Mach-O's __unwind_info starts join the inventory
         // and kuna-ppc64-toc-reload-switch / an ELFv1 TOC reload keeps a jump table's base (option callmechanisms)
         // and kuna-elf-unwind-pcread / a PowerPC PC read keeps its FDE-owned body
         // and kuna-e500-call-slots / e500 scalar call slots inside 64-bit registers (option calloverlap)
@@ -2171,7 +2172,7 @@ mod tests {
         // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
         // and kuna-armpltslot, -armcondskip / the ARM xref options parse and are
         // inert on the console path
-        assert_eq!(count, 716, "corpus file count drifted");
+        assert_eq!(count, 717, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
