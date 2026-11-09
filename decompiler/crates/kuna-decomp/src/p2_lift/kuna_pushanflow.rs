@@ -518,6 +518,11 @@ impl<'a> Explorer<'a> {
         id
     }
 
+    /// Emulate one node.  An interpreter instruction that branches back to
+    /// itself with a decided guard (a `rep movsb` with a concrete count)
+    /// repeats inside the node, one instance per iteration, as angr's
+    /// rep-movsb shortcut does, instead of re-reaching its own node and
+    /// symbolizing its counters.
     fn emulate_node(&mut self, cfg: &mut FlatCfg, worklist: &mut VecDeque<NodeId>, emu: &mut Emulator<'a>, id: NodeId) {
         let mut state = cfg.nodes[id as usize].entry.clone();
         let ctx = cfg.nodes[id as usize].entry_ctx;
@@ -585,8 +590,18 @@ impl<'a> Explorer<'a> {
                     );
                 }
             }
+            let (here, after) = (insn.addr, insn.addr.wrapping_add(insn.len as u64));
+            let repeated = insns.last().is_some_and(|p| p.addr == here);
+            let forked = trace.forked;
             insns.push(insn);
             traces.push(trace);
+            if let (Exit::Jump(t), false) = (&exit, forked) {
+                match self.arena.is_const(*t).map(|c| c as u64) {
+                    Some(c) if c == here && ctx.in_vm && insns.len() < self.config.max_block_insns => continue,
+                    Some(c) if c == after && repeated => exit = Exit::Fallthrough(after),
+                    _ => {}
+                }
+            }
             match exit {
                 Exit::Fallthrough(next) => {
                     if insns.len() >= self.config.max_block_insns {
