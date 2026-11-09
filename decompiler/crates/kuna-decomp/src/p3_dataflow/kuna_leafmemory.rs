@@ -39,8 +39,7 @@ fn register_only_body(summary: &CalleeReturnWrites, register: i32, stack: (u64, 
 
 /// Reuse the register-write probe; the call's own return-address store stays live.
 pub(super) fn preserves(fd: &Funcdata, call: &FuncCallSpecs, address: &Address, size: i32) -> bool {
-    if !fd.get_arch().callee_preserves
-        || !(1..=16).contains(&size)
+    if !(1..=16).contains(&size)
         || call.proto().has_effect_override()
         || call.get_spacebase_offset() == OFFSET_UNKNOWN
         || !fd

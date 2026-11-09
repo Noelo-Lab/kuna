@@ -22,7 +22,7 @@
 //!
 //! The terminator's index is a constant, so heritage folds its STORE into a
 //! direct one-byte frame store at `buf + 63`, and the scan loop's index is
-//! unbounded, so `loadguardrange` has no range to lock.  The layout becomes
+//! unbounded, so the value-set refinement has no range to lock.  The layout becomes
 //! `char buf[63]` plus a separate `char` that is written once and never read.
 //!
 //! # The rule

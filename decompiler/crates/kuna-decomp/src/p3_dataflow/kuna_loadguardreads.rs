@@ -18,7 +18,6 @@
 //! COPYs in upstream's order leaves every Varnode's readers in upstream's order.
 
 use crate::context::{OpId, VarnodeId};
-use crate::funcdata::Funcdata;
 use crate::kuna_fasthash::{FxHashMap, FxHashSet};
 use kuna_base::address::Address;
 use kuna_base::types::int4;
@@ -44,10 +43,6 @@ pub(crate) struct Behind {
 }
 
 impl Reads {
-    pub(crate) fn enabled(fd: &Funcdata) -> bool {
-        fd.get_arch().load_guard_reads
-    }
-
     /// Record the range `addr`/`size` and return its index for [`Reads::guard`].
     pub(crate) fn add_range(&mut self, addr: &Address, size: int4) -> u32 {
         self.ranges.push((addr.clone(), size));

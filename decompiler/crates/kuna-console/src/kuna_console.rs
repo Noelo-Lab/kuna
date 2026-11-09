@@ -190,9 +190,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "callarrayextent" => on_off(conf.call_array_extent),
         "stackstruct" => on_off(conf.stack_struct),
         "globalarrayanchor" => on_off(conf.global_array_anchor),
-        "booleanmask" => on_off(conf.fold_boolean_mask),
-        "ovlesssimplify" => on_off(conf.ov_less_simplify),
-        "flagcompare" => on_off(conf.fold_flag_compare),
         "memsetrecover" => on_off(conf.memset_recover),
         "rodatastring" => on_off(conf.rodata_string),
         "returnpair" => {
@@ -202,8 +199,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
                 "pair"
             }
         }
-        "simdlane" => on_off(conf.simd_lane_fold),
-        "constspaceload" => on_off(conf.const_space_load_fold),
         "nulterminator" => on_off(conf.nul_terminator),
         "retsplitglobal" => on_off(conf.ret_split_global),
         // (kuna `protoorder`) Three-valued, so it reports its own token.
@@ -243,7 +238,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         // (kuna `bejoin`) Three-valued, so it reports its own token.
         "bejoin" => conf.be_join.as_str(),
         "bejoinpass" => conf.be_join_pass.as_str(),
-        "condexeplace" => on_off(conf.condexe_block_placement),
         "sparcstructret" => on_off(conf.sparc_struct_return),
         "arraystride" => on_off(conf.recover_array_stride),
         "stackalias" => on_off(conf.stack_alias_deadstore),

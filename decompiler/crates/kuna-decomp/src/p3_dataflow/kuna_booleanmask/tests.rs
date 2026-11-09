@@ -136,7 +136,7 @@ fn transforms_bool_sign_shift_to_2comp() {
     // sa=7 (not a multiple of 8), boolean value 1 (NZMask 1 fits low (8-7)=1 bit).
     let (op, boolvn) = build_idiom(&mut fd, 7, 1);
 
-    let mut rule = RuleBoolSignShift::new(true);
+    let mut rule = RuleBoolSignShift::new();
     let changed = rule.apply_op(op, &mut fd);
     assert_eq!(changed, 1, "rule must fire and report a change");
 
@@ -148,26 +148,12 @@ fn transforms_bool_sign_shift_to_2comp() {
 }
 
 #[test]
-fn gate_off_is_noop() {
-    let mut fd = build_fd();
-    let (op, _bool) = build_idiom(&mut fd, 7, 1);
-
-    let mut rule = RuleBoolSignShift::new(false); // gate off
-    let changed = rule.apply_op(op, &mut fd);
-    assert_eq!(changed, 0, "gate off: byte-identical to upstream (no change)");
-    // op unchanged: still INT_SRIGHT with two inputs.
-    let o = fd.obank().get(op).unwrap();
-    assert_eq!(o.code(), OpCode::CPUI_INT_SRIGHT);
-    assert_eq!(o.num_input(), 2);
-}
-
-#[test]
 fn byte_aligned_shift_defers_to_leftright() {
     let mut fd = build_fd();
     // sa=8 is a multiple of 8 -> RuleLeftRight handles it; this rule declines.
     let (op, _bool) = build_idiom(&mut fd, 8, 1);
 
-    let mut rule = RuleBoolSignShift::new(true);
+    let mut rule = RuleBoolSignShift::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
     assert_eq!(fd.obank().get(op).unwrap().code(), OpCode::CPUI_INT_SRIGHT);
 }
@@ -178,7 +164,7 @@ fn nzmask_above_low_bits_declines() {
     // sa=7, but boolean value 0xff has NZMask bits above the low (8-7)=1 bit.
     let (op, _bool) = build_idiom(&mut fd, 7, 0xff);
 
-    let mut rule = RuleBoolSignShift::new(true);
+    let mut rule = RuleBoolSignShift::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
     assert_eq!(fd.obank().get(op).unwrap().code(), OpCode::CPUI_INT_SRIGHT);
 }
@@ -204,7 +190,7 @@ fn mismatched_shift_amounts_decline() {
     let _ = set_def(&mut fd, out, op);
     let _ = r;
 
-    let mut rule = RuleBoolSignShift::new(true);
+    let mut rule = RuleBoolSignShift::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
 }
 

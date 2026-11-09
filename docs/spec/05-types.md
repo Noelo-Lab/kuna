@@ -3349,13 +3349,13 @@ stack-pointer constraints keep their existing path.
 
 The solver's one in-tree client is the LoadGuard range refinement at
 `decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs (LoadGuard)`,
-gated by `option loadguardrange` (default on): at the end of each heritage
+always on: at the end of each heritage
 pass the pointer of every newly discovered indexed-stack LOAD/STORE guard is
 solved for its `[min,max,step]` window (chapter
 [03](03-ssa-and-simplification.md)), and the refined, range-locked guards are
 what let the P6 frame layout size an indexed stack array by its real index
 bound (chapter [06](06-variables-and-merge.md)). The refinement is
-load-bearing for correctness, not just precision: with it off, every guard
+load-bearing for correctness, not just precision: without it, every guard
 keeps the conservative whole-space range, and the P6 fallback bound of 3
 splits any element past index 3 of an indexed array into a separate
 never-assigned scalar — an *under*-sized array with out-of-bounds subscripts

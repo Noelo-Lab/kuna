@@ -69,7 +69,7 @@ A fresh comparison on the identical Clang 14 ELF gives a concrete result against
 
 The [full output capture](talk/simd-evidence.json) includes the input hash, executable hashes, commands, and all four bodies. Recompiling the exact final body with GCC and Clang at O0 and O2 passed 1,569 comparisons per build, 6,276 total, against the source compiled with Clang O3. Inputs include vector handoff lengths, zero and maximum byte values, deterministic pseudorandom data, and lengths crossing the signed-sum boundary and unsigned wrap. Run `bash docs/talk/verify-simd.sh` to repeat these behavioral checks on the captured body. This establishes a useful witness where Kuna recovers a form this Ghidra configuration does not; it does not establish superiority across SIMD code generally.
 
-`wideslice` is default-on; `devectorize` is default-off and enabled by the aggressive preset. A live demo should specify both `--mode reliable` and `--option devectorize off|on`, so the preset does not decide the experiment.
+`wideslice` is always on; `devectorize` is default-off and enabled by the aggressive preset. A live demo should specify both `--mode reliable` and `--option devectorize off|on`, so the preset does not decide the experiment.
 
 ## Reused stack storage is a problem of identity and aliasing
 
