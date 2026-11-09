@@ -57,6 +57,7 @@ pub mod kuna_fix_kt_return_outside_lambda;
 pub mod kuna_fix_kt_anonymous_class_failure_reason;
 pub mod kuna_fix_kt_property_reference;
 pub mod kuna_fix_kt_reference_anonymous_super_call;
+pub mod kuna_fix_kt_for_range_counter;
 pub mod kuna_fix_kt_synthetic_anonymous_object;
 pub mod obfuscated_exceptions_pass;
 pub mod replace_exprents_pass;

@@ -581,6 +581,7 @@ kotlin-multifile-facade/pkg/TestMultifile
 kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA
 kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB
 kuna-fixes-compat/pkg/TestAnonymousStaticCall
+kuna-fixes-compat/pkg/TestArrayOfArrays
 kuna-fixes-compat/pkg/TestAssertDeadThrow
 kuna-fixes-compat/pkg/TestAssertExpressionPosition
 kuna-fixes-compat/pkg/TestCapturedReceiverKt
@@ -594,6 +595,12 @@ kuna-fixes-compat/pkg/TestDefaultArgsSuperNamed
 kuna-fixes-compat/pkg/TestDiamondExternalClass
 kuna-fixes-compat/pkg/TestEnumNoConstants
 kuna-fixes-compat/pkg/TestFailedMethodHidden
+kuna-fixes-compat/pkg/TestForLoopContinueUpdate
+kuna-fixes-compat/pkg/TestForLoopDefinitions
+kuna-fixes-compat/pkg/TestForLoopExitCondition
+kuna-fixes-compat/pkg/TestForRangeCounter
+kuna-fixes-compat/pkg/TestForRangeExclusiveBound
+kuna-fixes-compat/pkg/TestForRangeUnmatchedBound
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestInnerOfGenericOuter
 kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass
@@ -620,10 +627,12 @@ kuna-fixes-compat/pkg/TestTryCatchNotFlag
 kuna-fixes-compat/pkg/TestTypeSwitchEnumLabel
 kuna-fixes-compat/pkg/TestTypeSwitchLabelLookup
 kuna-fixes-compat/pkg/TestTypeSwitchPatternType
+kuna-fixes-compat/pkg/TestVarMergeLiveness
 kuna-fixes-compat/pkg/TestVarMergeNarrowing
 kuna-fixes-compat/pkg/TestVarargFromMetadata
 kuna-fixes-compat/pkg/TestWildcardArrayBound
 kuna-fixes/pkg/TestAnonymousStaticCall
+kuna-fixes/pkg/TestArrayOfArrays
 kuna-fixes/pkg/TestAssertDeadThrow
 kuna-fixes/pkg/TestAssertExpressionPosition
 kuna-fixes/pkg/TestCapturedReceiverKt
@@ -637,6 +646,12 @@ kuna-fixes/pkg/TestDefaultArgsSuperNamed
 kuna-fixes/pkg/TestDiamondExternalClass
 kuna-fixes/pkg/TestEnumNoConstants
 kuna-fixes/pkg/TestFailedMethodHidden
+kuna-fixes/pkg/TestForLoopContinueUpdate
+kuna-fixes/pkg/TestForLoopDefinitions
+kuna-fixes/pkg/TestForLoopExitCondition
+kuna-fixes/pkg/TestForRangeCounter
+kuna-fixes/pkg/TestForRangeExclusiveBound
+kuna-fixes/pkg/TestForRangeUnmatchedBound
 kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestInnerOfGenericOuter
 kuna-fixes/pkg/TestLocalClassAnonymousSubclass
@@ -663,6 +678,7 @@ kuna-fixes/pkg/TestTryCatchNotFlag
 kuna-fixes/pkg/TestTypeSwitchEnumLabel
 kuna-fixes/pkg/TestTypeSwitchLabelLookup
 kuna-fixes/pkg/TestTypeSwitchPatternType
+kuna-fixes/pkg/TestVarMergeLiveness
 kuna-fixes/pkg/TestVarMergeNarrowing
 kuna-fixes/pkg/TestVarargFromMetadata
 kuna-fixes/pkg/TestWildcardArrayBound

@@ -1,4 +1,20 @@
 //! Port of `org/vineflower/kotlin/stat/KDoStatement.java`.
+//!
+//! kuna fixes (`kuna_fixes`) in the `FOR` case: `kt_for_loop_exit_condition`
+//! writes a loop it cannot resugar as `while (COND)`, where Vineflower writes
+//! `while (true) { if (COND) break` and so leaves the loop when it should go on;
+//! `kt_for_range_counter` (`kuna_fix_kt_for_range_counter`) rewrites only
+//! loops that count their initializer's variable to the bound;
+//! `kt_for_range_exclusive_bound` keeps the bound exclusive (`until` for a
+//! variable bound, `repeat(N)` with the bound itself), where Vineflower writes
+//! the inclusive `..` of a variable and `repeat(N - 1)`;
+//! `kt_for_loop_definitions` writes the declarations of such a loop's
+//! variables, which Vineflower leaves out;
+//! `kt_for_loop_continue_update` writes such a loop whose body continues it
+//! as a `do`-`while` whose condition runs the update, where Vineflower's
+//! `while` puts the update at the end of the body, which `continue` skips;
+//! `kt_for_range_unmatched_bound` writes the loop of a bound it cannot match
+//! as a `while`, where Vineflower's `break resugar` writes no loop at all.
 
 use crate::const_exprent::{ConstExprent, ConstValue};
 use crate::do_statement::{DoStatement, Type as LoopType};
@@ -11,6 +27,9 @@ use crate::k_if_statement::copy_statement_fields;
 use crate::k_utils::KUtils;
 use crate::k_var_exprent::{DeclarationType, KVarExprent};
 use crate::kotlin_statement;
+use crate::kuna_fix_kt_for_range_counter;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::stat_edge::StatEdge;
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -151,6 +170,8 @@ impl KDoStatement {
                             var_expr,
                             inc_type,
                             condition_expr,
+                            count_expr,
+                            exclusive,
                         } = header;
 
                         let repeat = inc_type.is_pp()
@@ -160,7 +181,7 @@ impl KDoStatement {
                                 .is_some_and(|c| matches!(c.get_value(), Some(ConstValue::Int(0))));
                         if repeat {
                             buf.append("repeat(");
-                            buf.append_buffer(&condition_expr.to_java_default())
+                            buf.append_buffer(&count_expr.to_java_default())
                                 .append(") ");
 
                             if labeled {
@@ -184,7 +205,13 @@ impl KDoStatement {
                             buf.append_buffer(&var_expr.0 .0.to_java(indent))
                                 .append(" in ");
                             buf.append_buffer(&init.get_right().to_java_default())
-                                .append(if inc_type.is_pp() { ".." } else { " downTo " });
+                                .append(if exclusive {
+                                    " until "
+                                } else if inc_type.is_pp() {
+                                    ".."
+                                } else {
+                                    " downTo "
+                                });
                             buf.append_buffer(&condition_expr.to_java_default())
                                 .append(") {")
                                 .append_line_separator();
@@ -211,11 +238,28 @@ impl KDoStatement {
                             buf.append_indent(indent);
                         }
 
+                        let definitions = self.get_var_definitions();
+                        if kuna_fixes::enabled(KunaFix::KtForLoopDefinitions)
+                            && !definitions.is_empty()
+                        {
+                            buf.set_length(0);
+                            buf.append_buffer(&ExprProcessor::list_to_java(
+                                Some(&definitions),
+                                indent,
+                            ));
+                            buf.append_indent(indent);
+                        }
+
                         buf.append("// $VF: Unable to resugar Kotlin loop from Java for loop")
                             .append_line_separator()
                             .append_indent(indent);
 
-                        if labeled {
+                        let do_form = kuna_fixes::enabled(KunaFix::KtForLoopContinueUpdate)
+                            && self
+                                .get_predecessor_edges(StatEdge::TYPE_CONTINUE)
+                                .iter()
+                                .any(|edge| edge.explicit());
+                        if labeled && !do_form {
                             indent += 1;
                             buf.append("run label")
                                 .append_int(id)
@@ -230,22 +274,32 @@ impl KDoStatement {
                                 .append_indent(indent);
                         }
 
-                        buf.append("while (true) {").append_line_separator();
-                        buf.append_indent(indent + 1);
-                        buf.append("if (");
-                        buf.append_buffer(
-                            &condition
-                                .expect("NullPointerException: condition")
-                                .to_java(indent + 1),
-                        );
-                        buf.append(") break").append_line_separator();
+                        let condition = condition.expect("NullPointerException: condition");
+                        let inc = inc.expect("NullPointerException: inc");
+                        if do_form {
+                            self.write_continue_update_loop(&mut buf, indent, condition, inc);
+                            return buf;
+                        }
+                        if kuna_fixes::enabled(KunaFix::KtForLoopExitCondition) {
+                            buf.append("while (");
+                            buf.push_newline_group(indent, 1);
+                            buf.append_possible_newline();
+                            buf.append_buffer(&condition.to_java(indent));
+                            buf.append_possible_newline_dedent("", true);
+                            buf.pop_newline_group();
+                            buf.append(") {").append_line_separator();
+                        } else {
+                            buf.append("while (true) {").append_line_separator();
+                            buf.append_indent(indent + 1);
+                            buf.append("if (");
+                            buf.append_buffer(&condition.to_java(indent + 1));
+                            buf.append(") break").append_line_separator();
+                        }
                         buf.append_buffer(&KExprProcessor::jmp_wrapper(first(), indent + 1, false));
                         buf.append_line_separator();
                         buf.append_indent(indent + 1);
-                        buf.append_buffer(
-                            &inc.expect("NullPointerException: inc").to_java(indent + 1),
-                        )
-                        .append_line_separator();
+                        buf.append_buffer(&inc.to_java(indent + 1))
+                            .append_line_separator();
                         buf.append_indent(indent)
                             .append("}")
                             .append_line_separator();
@@ -262,6 +316,36 @@ impl KDoStatement {
         }
 
         buf
+    }
+
+    /// `kt_for_loop_continue_update`: `if (C) { do { BODY } while (run { INC; C }) }`,
+    /// the form of a `for (; C; INC)` whose body continues it: a `continue` of
+    /// a `do`-`while` evaluates its condition, which runs `INC` first.
+    fn write_continue_update_loop(
+        self,
+        buf: &mut TextBuffer,
+        indent: i32,
+        condition: Exprent,
+        inc: Exprent,
+    ) {
+        let first = self.get_first().expect("NullPointerException: first");
+        buf.append("if (");
+        buf.append_buffer(&condition.to_java(indent));
+        buf.append(") {").append_line_separator();
+        buf.append_indent(indent + 1);
+        if self.is_labeled() {
+            buf.append("label").append_int(self.id()).append("@ ");
+        }
+        buf.append("do {").append_line_separator();
+        buf.append_buffer(&KExprProcessor::jmp_wrapper(first, indent + 2, false));
+        buf.append_indent(indent + 1).append("} while (run { ");
+        buf.append_buffer(&inc.to_java(indent + 1)).append("; ");
+        buf.append_buffer(&condition.to_java(indent + 1))
+            .append(" })");
+        buf.append_line_separator();
+        buf.append_indent(indent)
+            .append("}")
+            .append_line_separator();
     }
 
     /// The `resugar:` labeled `if` of the `FOR` case up to the rendering:
@@ -291,6 +375,11 @@ impl KDoStatement {
         if condition.get_func_type() != FunctionType::Lt {
             return Resugar::NotRange;
         }
+        if kuna_fixes::enabled(KunaFix::KtForRangeCounter)
+            && !kuna_fix_kt_for_range_counter::is_counted_loop(self.0, var_expr, inc, condition)
+        {
+            return Resugar::NotRange;
+        }
 
         let var_expr = KVarExprent::new(var_expr);
         var_expr.set_declaration_type(Some(DeclarationType::ForLoopVariable));
@@ -315,10 +404,32 @@ impl KDoStatement {
                 && left.is_var()
             {
                 KVarExprent::new(left.as_var()).0 .0
+            } else if kuna_fixes::enabled(KunaFix::KtForRangeUnmatchedBound) {
+                return Resugar::NotRange;
             } else {
                 return Resugar::Abandoned;
             }
         };
+
+        let exclusive_bound = kuna_fixes::enabled(KunaFix::KtForRangeExclusiveBound);
+        let mut exclusive = false;
+        if exclusive_bound {
+            match condition_expr.try_as_const().and_then(|c| c.get_value()) {
+                Some(ConstValue::Int(i))
+                    if Self::step_past(i as i64, inc.get_func_type())
+                        .is_none_or(|v| v != v as i32 as i64) =>
+                {
+                    return Resugar::NotRange;
+                }
+                Some(ConstValue::Long(l)) if Self::step_past(l, inc.get_func_type()).is_none() => {
+                    return Resugar::NotRange;
+                }
+                Some(_) => {}
+                None if inc.get_func_type().is_pp() => exclusive = true,
+                None => return Resugar::NotRange,
+            }
+        }
+        let mut count_expr = condition_expr;
 
         if let Some(condition_const) = condition_expr.try_as_const() {
             condition_const.set_const_type(var_expr.0 .0.get_expr_type());
@@ -335,7 +446,21 @@ impl KDoStatement {
                 ))
                 .0
                  .0;
+            } else if let (true, Some(ConstValue::Long(l))) =
+                (exclusive_bound, condition_const.get_value())
+            {
+                let new_value = Self::step_past(l, inc.get_func_type()).expect("checked above");
+                condition_expr = KConstExprent::new(ConstExprent::new(
+                    var_expr.0 .0.get_expr_type(),
+                    Some(ConstValue::Long(new_value)),
+                    condition_const.get_bytecode().as_ref(),
+                ))
+                .0
+                 .0;
             }
+        }
+        if !exclusive_bound {
+            count_expr = condition_expr;
         }
 
         if let Some(const_expr) = init.get_right().try_as_const() {
@@ -347,7 +472,19 @@ impl KDoStatement {
             var_expr,
             inc_type: inc.get_func_type(),
             condition_expr,
+            count_expr,
+            exclusive,
         })
+    }
+
+    /// `kt_for_range_exclusive_bound`: the last value a loop stepping by
+    /// `inc` reaches before the exclusive bound `bound`, if it exists.
+    fn step_past(bound: i64, inc: FunctionType) -> Option<i64> {
+        if inc.is_pp() {
+            bound.checked_sub(1)
+        } else {
+            bound.checked_add(1)
+        }
     }
 }
 
@@ -356,6 +493,8 @@ struct RangeHeader {
     var_expr: KVarExprent,
     inc_type: FunctionType,
     condition_expr: Exprent,
+    count_expr: Exprent,
+    exclusive: bool,
 }
 
 enum Resugar {

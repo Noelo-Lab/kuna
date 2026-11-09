@@ -1953,3 +1953,71 @@ lands later, and javac cannot resolve the anonymous class's supertype (still so 
 `develop/1.13.0`). With the fix
 (`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_local_class_anonymous_subclass.rs`),
 `new` of an anonymous class whose superclass or interface is the local class is a use of it.
+**Kotlin `for` loops** (`kt_for_loop_exit_condition`, `kt_for_range_counter`,
+`kt_for_range_exclusive_bound`, `kt_for_range_unmatched_bound`, `kt_for_loop_definitions`,
+`kt_for_loop_continue_update`). Kotlin has no `for (init; cond; update)`, so the plugin's
+`decompiler/nonnative/kuna-jvm/src/kotlin/k_do_statement.rs (KDoStatement::to_java)` rewrites a
+Java `for` loop `for (V = A; L < R; V++)` (or `V--`) whose variable is an integer into a range,
+`for (V in A..B)`, `for (V in A downTo B)` or, from `0` upwards, `repeat(N) { V -> }`, and
+writes any other `for` loop as its initializer followed by a `while (true)` loop that tests the
+condition and runs the update at the end of the body. Six defects of that writer have one fix
+each. *Exit condition*: the fallback prints `if (COND) break` with the loop's condition as it
+is, the condition for going on, so the loop leaves at once whenever it should run; with the fix
+it is `while (COND) {`. *Counter* (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_for_range_counter.rs (is_counted_loop)`):
+the rewrite takes the initializer's variable for the loop variable without checking the rest of
+the header, and `MergeHelper.matchFor` often takes as initializer the assignment just before the
+loop, which for kotlinc's array loops (`int i = 0; for (int n = a.length; i < n; i++)`) is the
+bound's, so the counter becomes the bound (`for (n in a.length..i)`); it also accepts a body
+that assigns the counter or the bound and a counter read after the loop, neither of which a
+Kotlin range can express. With the fix the range is written only when the update and the
+comparison name the initializer's variable, on the side the update moves it towards (`V < X`
+for `++`, `X < V` for `--`), the bound is a constant or a variable, the body assigns neither,
+and the initializer declares the variable. *Exclusive bound*: `V < X` is exclusive; Vineflower
+moves a constant `int` bound by one (`0..9` for `< 10`) but writes a variable bound inclusive
+(`A..X`) and a long constant unmoved, and feeds the moved constant to `repeat`, whose count is
+exclusive already; with the fix a variable bound is written `A until X`, a long constant is
+moved like an int, `repeat` gets the bound itself, and a decrementing loop with a variable bound
+(Kotlin has no exclusive `downTo`) or a constant that moving would overflow takes the fallback.
+*Unmatched bound*: when the comparison's operands are neither a constant nor two variables
+(`i < a.length`), the Java ends the `resugar:` block with `break resugar`, which skips the
+fallback too, so nothing is printed for the loop at all; with the fix such a loop takes the
+fallback (the counter fix already sends it there, since its bound is neither a constant nor a
+variable; this fix covers the `break` itself). *Definitions*: the `FOR` case does not print the loop statement's variable
+definitions, which the range form does not need but the fallback does when the loop's counter
+is declared by the loop; with the fix the fallback prints them first. *Continue update*: a
+`continue` of the loop (an explicit continue edge, which `matchFor` creates for the paths that
+reached the update) skips an update written at the end of a `while` body; with the fix a
+fallback loop with such an edge is written
+`if (COND) { [labelN@ ]do { BODY } while (run { UPDATE; COND }) }`, where `continue` goes to the
+condition and so runs the update, and the loop's label sits on the `do` rather than on Vineflower's
+`run labelN@{` block. Upstream (`develop/1.13.0`) has none of these fixes.
+
+**`var_merge_liveness`.** `VarDefinitionHelper.mergeVars` merges a variable into an earlier
+one with the same original slot (two versions of one local or stack slot), so that the output
+reuses one name where the bytecode reused one slot. It checks at most that the earlier variable
+is not read in the rest of the block that defines the later one, and a definition hoisted to a
+statement's variable list is merged with no check at all. That is enough while every version
+keeps the lifetime its slot gave it in the bytecode, where two versions of one slot cannot be
+live at once; the Kotlin schedule's second `SimplifyStack` runs with `inlineRegularVars`, which
+replaces a local copied from a stack variable by the stack variable, so the stack variable now
+lives as long as the local did, across later versions of the same stack slot. The merge then
+makes the later version overwrite a value still to be read: kotlinc's two elvis results
+`val a = x?.split(..) ?: listOf(); val b = y?.split(..) ?: listOf(); if (a.size > b.size) a else b`
+come out as `if (var39.size() > var39.size()) var39 else var39`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_var_merge_liveness.rs (overwrites_live)`),
+each merge `mergeVars` proposes is also checked on the method's flattened flow graph: no path
+may read the earlier variable after a write of the later one (other than a copy of the earlier
+one, or a reference cast of it, which leaves the two equal) without the earlier one being
+written in between. Writes are read in evaluation order, a write under `&&`, `||` or `?:` that
+may not happen does not end a path, and a `for`-each or caught-exception variable is written by
+its node. The fix changes no method of the five Java benchmark projects. Upstream has no
+such check; its later changes to `mergeVars` (`3ce9eb26`, `ba0aedef`) concern the merged type.
+
+**`kt_partial_array_dims`.** `KNewExprent.toJava` writes an array creation without
+initializer as `Array(d0) { .. XArray(dn) }`, reading one length for every dimension of the
+array's type; `anewarray` of an array class (`arrayOfNulls<ByteArray>(n)`, the outer array of
+`Array(n) { IntArray(it) }`) gives only the outer length, and the method fails on the missing
+one. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_new_exprent.rs (KNewExprent::partial_dims_to_java)`),
+a creation with fewer lengths than dimensions is written `Array(d0) { .. arrayOfNulls(dk) }`,
+its innermost sized level holding null arrays. Upstream leaves the case as a TODO.

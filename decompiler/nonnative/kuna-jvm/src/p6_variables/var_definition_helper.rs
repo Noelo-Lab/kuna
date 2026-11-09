@@ -1,5 +1,10 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/vars/VarDefinitionHelper.java`.
 //!
+//! kuna fix `var_merge_liveness` (`kuna_fix_var_merge_liveness`): `mergeVars`
+//! does not merge a variable into an earlier one whose value is read after the
+//! later one is written; such a merge is denied like one `remapVar` refuses, or,
+//! for a definition hoisted to a statement, left there.
+//!
 //! The merge maps (`this_vars`, `parent`, `leaked`) are keyed by
 //! `varproc.getVarOriginalIndex(..)`, which is null for a var created after
 //! version splitting; Java's `HashMap` then holds a `null` key, so the key type
@@ -32,6 +37,7 @@ use crate::function_exprent::FunctionType;
 use crate::generic_type::GenericType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
+use crate::kuna_fix_var_merge_liveness;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::p6_variables::kuna_fix_switch_case_scope;
 use crate::method_descriptor::MethodDescriptor;
@@ -721,11 +727,11 @@ impl VarDefinitionHelper {
         let mut denylist: JHashMap<VarVersionPair, VarVersionPair> = JHashMap::new();
         let mut remap = self.merge_vars_rec(stat.0, &parent, &mut JHashMap::new(), &denylist);
         while let Some(entry) = remap {
-            if kuna_fixes::enabled(KunaFix::VarMergeNarrowing)
-                && self.narrowing_merge(entry.get_key(), entry.get_value())
+            if (kuna_fixes::enabled(KunaFix::VarMergeNarrowing)
+                && self.narrowing_merge(entry.get_key(), entry.get_value()))
+                || self.merge_overwrites_live(entry.get_key(), entry.get_value())
+                || !self.remap_var(stat.0, entry.get_key(), entry.get_value())
             {
-                denylist.put(entry.get_key(), entry.get_value());
-            } else if !self.remap_var(stat.0, entry.get_key(), entry.get_value()) {
                 denylist.put(entry.get_key(), entry.get_value());
             }
 
@@ -777,6 +783,7 @@ impl VarDefinitionHelper {
                             let to = this_vars.get_cloned(&index).expect("contained");
                             if !(kuna_fixes::enabled(KunaFix::VarMergeNarrowing)
                                 && self.narrowing_merge(VarVersionPair::from_var(var), to))
+                                && !self.merge_overwrites_live(VarVersionPair::from_var(var), to)
                             {
                                 var_definitions.remove_at(x);
                                 return Some(VPPEntry::new(var, to));
@@ -933,6 +940,14 @@ impl VarDefinitionHelper {
             }
         }
         None
+    }
+
+    /// `var_merge_liveness`: whether merging `key` into `target` makes a write
+    /// of `key` overwrite a value of `target` that is read later; always false
+    /// in compat mode.
+    fn merge_overwrites_live(self, key: VarVersionPair, target: VarVersionPair) -> bool {
+        kuna_fixes::enabled(KunaFix::VarMergeLiveness)
+            && kuna_fix_var_merge_liveness::overwrites_live(self.root(), key, target)
     }
 
     fn identify_parent(stat: Statement) -> Option<Statement> {

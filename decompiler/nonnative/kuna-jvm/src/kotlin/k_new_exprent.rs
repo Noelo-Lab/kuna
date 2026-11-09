@@ -15,6 +15,10 @@
 //! are left to inference (Java's diamond, a single `GenericType::DUMMY_VAR`)
 //! is written without type arguments, which is how Kotlin leaves them to
 //! inference; Vineflower writes `<>`, which is not Kotlin.
+//! kuna fix `kt_partial_array_dims` (`kuna_fixes`): in `to_java`, an array
+//! creation that sizes fewer dimensions than its type (`anewarray` of an array
+//! class) ends in `arrayOfNulls`, where Vineflower reads a length for every
+//! dimension of the type.
 
 use crate::class_writer::ClassWriter;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -432,6 +436,12 @@ impl KNewExprent {
             buf.append_possible_newline_dedent("", true);
             buf.pop_newline_group();
             buf.append_char(']');
+        } else if self.get_lst_array_elements().is_empty()
+            && !self.get_lst_dims().is_empty()
+            && (self.get_lst_dims().len() as i32) < new_type.array_dim
+            && kuna_fixes::enabled(KunaFix::KtPartialArrayDims)
+        {
+            self.partial_dims_to_java(&mut buf, indent);
         } else if self.get_lst_array_elements().is_empty() {
             for i in 0..new_type.array_dim - 1 {
                 buf.append("Array(");
@@ -502,6 +512,35 @@ impl KNewExprent {
 
     pub fn copy(self) -> Exprent {
         KNewExprent::new(NewExprent::copy(self.0).as_new()).0 .0
+    }
+
+    /// `kt_partial_array_dims`: `Array(d0) { .. arrayOfNulls(dn) }` for an
+    /// array creation whose sized dimensions `d0..dn` stop short of its type's,
+    /// so the innermost sized level holds null arrays.
+    fn partial_dims_to_java(self, buf: &mut TextBuffer, indent: i32) {
+        let dims = self.get_lst_dims();
+        let sized = dims.len();
+        for i in 0..sized {
+            let dim = dims.get(i);
+            if dim.get_type() == ExprentType::Const {
+                dim.as_const().adjust_const_type(&VarType::VARTYPE_INT());
+            }
+            if i + 1 < sized {
+                buf.append("Array(");
+                buf.append_buffer(&dim.to_java(indent));
+                buf.append(") {");
+                buf.push_newline_group(indent, 1);
+                buf.append_possible_newline_alt(" ");
+            } else {
+                buf.append("arrayOfNulls(");
+                buf.append_buffer(&dim.to_java(indent)).append_char(')');
+            }
+        }
+        for _ in 1..sized {
+            buf.append_possible_newline_dedent(" ", true);
+            buf.pop_newline_group();
+            buf.append_char('}');
+        }
     }
 
     pub fn set_in_annotation(self, in_annotation: bool) {

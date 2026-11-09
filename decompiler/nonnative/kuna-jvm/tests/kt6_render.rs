@@ -489,6 +489,7 @@ fn golden() -> Vec<(String, String)> {
 #[test]
 fn kotlin_statements_render_like_vineflower() {
     let _context = common::install_default_context();
+    kuna_jvm::kuna_fixes::activate(kuna_jvm::kuna_fixes::KunaFixes::COMPAT);
     let actual = render_all();
     let expected = golden();
     assert_eq!(

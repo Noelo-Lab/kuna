@@ -565,6 +565,98 @@
       "source": "src/pkg/TestWildcardArrayBound.java",
       "compiler": "javac 17.0.20.1 (`-g`)",
       "summary": "Source<? extends byte[]> and Source<? super int[]> keep their wildcards, so BytesEncoder.encode overrides Encoder<byte[]>.encode"
+    },
+    {
+      "id": "pkg/TestForLoopExitCondition",
+      "fix": "kt_for_loop_exit_condition",
+      "class_files": [
+        "pkg/TestForLoopExitCondition.class",
+        "pkg/TestForLoopExitCondition$Node.class"
+      ],
+      "source": "src/pkg/TestForLoopExitCondition.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "`sumBackwards` and `total`, whose `for` loops the plugin cannot resugar, are written `while (i >= 0)` and `while (node != null)` instead of `while (true) { if (COND) break`, which leaves each loop at once",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestForRangeCounter",
+      "fix": "kt_for_range_counter",
+      "class_files": [
+        "pkg/TestForRangeCounter.class"
+      ],
+      "source": "src/pkg/TestForRangeCounter.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "`weighted` (bound assigned before the counter), `skipping` (counter assigned in the body) and `sumUntilBig` (condition on another variable) are written as `while` loops instead of the ranges `for (n in a.length..i)`, `repeat(limit) { var5 ->` and `repeat(99) { i ->`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestForRangeExclusiveBound",
+      "fix": "kt_for_range_exclusive_bound",
+      "class_files": [
+        "pkg/TestForRangeExclusiveBound.class"
+      ],
+      "source": "src/pkg/TestForRangeExclusiveBound.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "`for (i in from until to)` and `repeat(10)` instead of the off-by-one `for (i in from..to)` and `repeat(9)`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestForRangeUnmatchedBound",
+      "fix": "kt_for_range_unmatched_bound",
+      "class_files": [
+        "pkg/TestForRangeUnmatchedBound.class"
+      ],
+      "source": "src/pkg/TestForRangeUnmatchedBound.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "the loop `while (i < a.length)`, which Vineflower leaves out (its bound is neither a constant nor a variable), is written",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestForLoopDefinitions",
+      "fix": "kt_for_loop_definitions",
+      "class_files": [
+        "pkg/TestForLoopDefinitions.class"
+      ],
+      "source": "src/pkg/TestForLoopDefinitions.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "the counter of the loop written as a `while` is declared, `var var4: Int`, before the loop",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestForLoopContinueUpdate",
+      "fix": "kt_for_loop_continue_update",
+      "class_files": [
+        "pkg/TestForLoopContinueUpdate.class"
+      ],
+      "source": "src/pkg/TestForLoopContinueUpdate.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "the loop whose body continues it is written `if (i < limit) { label35@ do { ... } while (run { i++; i < limit }) }`, so `continue@label35` runs `i++`, instead of an inclusive range over a counter the body assigns",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestVarMergeLiveness",
+      "fix": "var_merge_liveness",
+      "class_files": [
+        "pkg/TestVarMergeLiveness.class",
+        "pkg/TestVarMergeLiveness$Key.class",
+        "pkg/TestVarMergeLiveness$Node.class"
+      ],
+      "source": "src/pkg/TestVarMergeLiveness.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "the two elvis results keep their own variables, `return if (var10000.size > var9.size) var10000 else var9`, instead of one variable that the second overwrites (`var10000.size > var10000.size`)",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestArrayOfArrays",
+      "fix": "kt_partial_array_dims",
+      "class_files": [
+        "pkg/TestArrayOfArrays.class",
+        "pkg/TestArrayOfArrays$Cell.class"
+      ],
+      "source": "src/pkg/TestArrayOfArrays.kt",
+      "compiler": "kotlinc 2.0.0",
+      "summary": "`rows`, `grid` and `table`, which create an array of arrays with only its outer length, decompile (`arrayOfNulls(n)`)",
+      "language": "kotlin"
     }
   ]
 }
