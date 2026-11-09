@@ -1,0 +1,2124 @@
+=== crafted B
+kt Byte
+ko Byte
+end
+=== crafted C
+kt Char
+ko Char
+end
+=== crafted D
+kt Double
+ko Double
+end
+=== crafted F
+kt Float
+ko Float
+end
+=== crafted I
+kt Int
+ko Int
+end
+=== crafted J
+kt Long
+ko Long
+end
+=== crafted Lfoo/Outer$Inner;
+kt Inner
+ko Inner
+end
+=== crafted Lfoo/Outer<TT;>.Inner<TU;>;
+kt Outer<T>.Inner<U>
+ko Inner<U>
+end
+=== crafted Ljava/lang/Integer;
+kt Int
+ko Int
+end
+=== crafted Ljava/lang/Iterable<*>;
+kt MutableIterable<*>
+ko MutableIterable<*>
+end
+=== crafted Ljava/lang/Object;
+kt Any
+ko Any
+end
+=== crafted Ljava/lang/String;
+kt java.lang.String
+ko String
+end
+=== crafted Ljava/lang/Void;
+kt Void
+ko Void
+end
+=== crafted Ljava/util/Collection<[[Ljava/lang/String;>;
+kt MutableCollection<Array<Array<java.lang.String>>>
+ko MutableCollection<Array<Array<java.lang.String>>>
+end
+=== crafted Ljava/util/HashMap<TK;TV;>;
+kt HashMap<K,\u0020V>
+ko HashMap<K,\u0020V>
+end
+=== crafted Ljava/util/Iterator<[I>;
+kt MutableIterator<IntArray>
+ko MutableIterator<IntArray>
+end
+=== crafted Ljava/util/Map$Entry<TK;TV;>;
+kt MutableMap.MutableEntry<K,\u0020V>
+ko MutableMap.MutableEntry<K,\u0020V>
+end
+=== crafted Ljava/util/Map;
+kt java.util.Map
+ko Map
+end
+=== crafted Ljava/util/Map<Ljava/lang/String;Ljava/util/List<Ljava/lang/Integer;>;>;
+kt MutableMap<java.lang.String,\u0020MutableList<Int>>
+ko MutableMap<java.lang.String,\u0020MutableList<Int>>
+end
+=== crafted Ljava/util/Set<-Ljava/lang/CharSequence;>;
+kt MutableSet<java.lang.CharSequence>
+ko MutableSet<java.lang.CharSequence>
+end
+=== crafted Lkotlin/Unit;
+kt Unit
+ko Unit
+end
+=== crafted Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;
+kt ()\u0020->\u0020Unit
+ko ()\u0020->\u0020Unit
+end
+=== crafted Lkotlin/jvm/functions/Function1<*Ljava/lang/String;>;
+!NullPointerException
+!NullPointerException
+end
+=== crafted Lkotlin/jvm/functions/Function1<-Ljava/lang/String;+Ljava/lang/Integer;>;
+kt (java.lang.String?)\u0020->\u0020Int
+ko (java.lang.String?)\u0020->\u0020Int
+end
+=== crafted Lkotlin/jvm/functions/Function2<-Ljava/lang/Integer;-Lkotlin/jvm/functions/Function1<-TT;Lkotlin/Unit;>;Lkotlin/jvm/functions/Function0<TR;>;>;
+kt (Int?,\u0020((T?)\u0020->\u0020Unit)?)\u0020->\u0020(()\u0020->\u0020R)
+ko (Int?,\u0020((T?)\u0020->\u0020Unit)?)\u0020->\u0020(()\u0020->\u0020R)
+end
+=== crafted Lkotlin/jvm/functions/Function2<Ljava/lang/String;>;
+!IndexOutOfBoundsException
+!IndexOutOfBoundsException
+end
+=== crafted Lkotlin/jvm/functions/Function3;
+kt Function3
+ko Function3
+end
+=== crafted Lkotlin/jvm/functions/FunctionN;
+kt FunctionN
+ko FunctionN
+end
+=== crafted Lkotlin/jvm/functions/FunctionN<*>;
+kt FunctionN<*>
+ko FunctionN<*>
+end
+=== crafted Lkotlin/jvm/functions/FunctionX<Ljava/lang/String;>;
+!NumberFormatException
+!NumberFormatException
+end
+=== crafted S
+kt Short
+ko Short
+end
+=== crafted TT;
+kt T
+ko T
+end
+=== crafted V
+kt Unit
+ko Unit
+end
+=== crafted Z
+kt Boolean
+ko Boolean
+end
+=== crafted [I
+kt IntArray
+ko IntArray
+end
+=== crafted [Ljava/lang/Object;
+kt Array<Any>
+ko Array<Any>
+end
+=== crafted [Lkotlin/jvm/functions/Function1<Ljava/lang/Object;Ljava/lang/Object;>;
+kt Array<(Any?)\u0020->\u0020Any>
+ko Array<(Any?)\u0020->\u0020Any>
+end
+=== crafted [TT;
+kt Array<T>
+ko Array<T>
+end
+=== crafted [[Ljava/util/List<+Ljava/lang/Number;>;
+kt Array<Array<MutableList<java.lang.Number>>>
+ko Array<Array<MutableList<java.lang.Number>>>
+end
+=== crafted [[Z
+kt Array<BooleanArray>
+ko Array<BooleanArray>
+end
+=== crafted [[[D
+kt Array<Array<DoubleArray>>
+ko Array<Array<DoubleArray>>
+end
+=== kt1fx D
+kt Double
+ko Double
+end
+=== kt1fx I
+kt Int
+ko Int
+end
+=== kt1fx J
+kt Long
+ko Long
+end
+=== kt1fx Ljava/lang/Integer;
+kt Int
+ko Int
+end
+=== kt1fx Ljava/lang/Object;
+kt Any
+ko Any
+end
+=== kt1fx Ljava/lang/String;
+kt java.lang.String
+ko String
+end
+=== kt1fx Lkotlin/jvm/internal/DefaultConstructorMarker;
+kt DefaultConstructorMarker
+ko DefaultConstructorMarker
+end
+=== kt1fx Lpkg/Logger;
+kt Logger
+ko Logger
+end
+=== kt1fx Lpkg/Point$Factory;
+kt Factory
+ko Factory
+end
+=== kt1fx Lpkg/Point;
+kt Point
+ko Point
+end
+=== kt1fx V
+kt Unit
+ko Unit
+end
+=== kt1fx Z
+kt Boolean
+ko Boolean
+end
+=== kt C
+kt Char
+ko Char
+end
+=== kt D
+kt Double
+ko Double
+end
+=== kt I
+kt Int
+ko Int
+end
+=== kt J
+kt Long
+ko Long
+end
+=== kt Lext/Person;
+kt Person
+ko Person
+end
+=== kt Ljava/io/File;
+kt File
+ko File
+end
+=== kt Ljava/io/InputStream;
+kt InputStream
+ko InputStream
+end
+=== kt Ljava/lang/Boolean;
+kt java.lang.Boolean
+ko Boolean
+end
+=== kt Ljava/lang/CharSequence;
+kt java.lang.CharSequence
+ko CharSequence
+end
+=== kt Ljava/lang/Exception;
+kt Exception
+ko Exception
+end
+=== kt Ljava/lang/Integer;
+kt Int
+ko Int
+end
+=== kt Ljava/lang/Iterable;
+kt java.lang.Iterable
+ko Iterable
+end
+=== kt Ljava/lang/Iterable<*>;
+kt MutableIterable<*>
+ko MutableIterable<*>
+end
+=== kt Ljava/lang/Iterable<Ljava/lang/Integer;>;
+kt MutableIterable<Int>
+ko MutableIterable<Int>
+end
+=== kt Ljava/lang/Iterable<Ljava/lang/String;>;
+kt MutableIterable<java.lang.String>
+ko MutableIterable<java.lang.String>
+end
+=== kt Ljava/lang/Object;
+kt Any
+ko Any
+end
+=== kt Ljava/lang/String;
+kt java.lang.String
+ko String
+end
+=== kt Ljava/lang/Void;
+kt Void
+ko Void
+end
+=== kt Ljava/nio/file/Path;
+kt Path
+ko Path
+end
+=== kt Ljava/util/Iterator;
+kt java.util.Iterator
+ko Iterator
+end
+=== kt Ljava/util/Iterator<+Ljava/io/File;>;
+kt MutableIterator<File>
+ko MutableIterator<File>
+end
+=== kt Ljava/util/List;
+kt java.util.List
+ko List
+end
+=== kt Ljava/util/List<Ljava/lang/Object;>;
+kt MutableList<Any>
+ko MutableList<Any>
+end
+=== kt Ljava/util/List<Ljava/lang/String;>;
+kt MutableList<java.lang.String>
+ko MutableList<java.lang.String>
+end
+=== kt Ljava/util/Map;
+kt java.util.Map
+ko Map
+end
+=== kt Ljava/util/Map<Ljava/lang/String;Ljava/lang/String;>;
+kt MutableMap<java.lang.String,\u0020java.lang.String>
+ko MutableMap<java.lang.String,\u0020java.lang.String>
+end
+=== kt Ljava/util/Set;
+kt java.util.Set
+ko Set
+end
+=== kt Ljava/util/Set<Ljava/lang/String;>;
+kt MutableSet<java.lang.String>
+ko MutableSet<java.lang.String>
+end
+=== kt Ljava/util/function/Supplier;
+kt Supplier
+ko Supplier
+end
+=== kt Ljava/util/function/Supplier<Ljava/lang/Boolean;>;
+kt Supplier<java.lang.Boolean>
+ko Boolean>
+end
+=== kt Lkotlin/Pair;
+kt Pair
+ko Pair
+end
+=== kt Lkotlin/Pair<Ljava/lang/Integer;Ljava/lang/String;>;
+kt Pair<Integer,\u0020java.lang.String>
+ko String>
+end
+=== kt Lkotlin/Pair<Ljava/lang/String;Ljava/lang/Integer;>;
+kt Pair<java.lang.String,\u0020Integer>
+ko String,\u0020Integer>
+end
+=== kt Lkotlin/Triple;
+kt Triple
+ko Triple
+end
+=== kt Lkotlin/Triple<+Ljava/lang/Number;Ljava/lang/Boolean;Ljava/lang/String;>;
+kt Triple<?\u0020extends\u0020java.lang.Number,\u0020java.lang.Boolean,\u0020java.lang.String>
+ko String>
+end
+=== kt Lkotlin/Triple<Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;>;
+kt Triple<java.lang.String,\u0020Integer,\u0020java.lang.String>
+ko String>
+end
+=== kt Lkotlin/Unit;
+kt Unit
+ko Unit
+end
+=== kt Lkotlin/enums/EnumEntries;
+kt EnumEntries
+ko EnumEntries
+end
+=== kt Lkotlin/enums/EnumEntries<Lpkg/TestEnumClass;>;
+kt EnumEntries<TestEnumClass>
+ko EnumEntries<TestEnumClass>
+end
+=== kt Lkotlin/jvm/functions/Function0;
+kt Function0
+ko Function0
+end
+=== kt Lkotlin/jvm/functions/Function0<Ljava/lang/Integer;>;
+kt ()\u0020->\u0020Int
+ko ()\u0020->\u0020Int
+end
+=== kt Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;
+kt ()\u0020->\u0020Unit
+ko ()\u0020->\u0020Unit
+end
+=== kt Lkotlin/jvm/functions/Function1;
+kt Function1
+ko Function1
+end
+=== kt Lkotlin/jvm/functions/Function1<-Ljava/lang/Integer;Ljava/lang/Boolean;>;
+kt (Int?)\u0020->\u0020java.lang.Boolean
+ko (Int?)\u0020->\u0020java.lang.Boolean
+end
+=== kt Lkotlin/jvm/functions/Function1<-Ljava/lang/Integer;Ljava/lang/String;>;
+kt (Int?)\u0020->\u0020java.lang.String
+ko (Int?)\u0020->\u0020java.lang.String
+end
+=== kt Lkotlin/jvm/functions/Function1<Ljava/lang/Integer;Lkotlin/Unit;>;
+kt (Int?)\u0020->\u0020Unit
+ko (Int?)\u0020->\u0020Unit
+end
+=== kt Lkotlin/jvm/internal/DefaultConstructorMarker;
+kt DefaultConstructorMarker
+ko DefaultConstructorMarker
+end
+=== kt Lkotlin/jvm/internal/Ref$IntRef;
+kt IntRef
+ko IntRef
+end
+=== kt Lkotlin/jvm/internal/Ref$ObjectRef;
+kt ObjectRef
+ko ObjectRef
+end
+=== kt Lkotlin/text/Regex;
+kt Regex
+ko Regex
+end
+=== kt Lpkg/Constants;
+kt Constants
+ko Constants
+end
+=== kt Lpkg/TestAnonymousEverything$testConstructorReference$createAny$1;
+kt 1
+ko 1
+end
+=== kt Lpkg/TestAnonymousEverything$testNoTypeReference$newList$1;
+kt 1
+ko 1
+end
+=== kt Lpkg/TestAnonymousEverything$testSerializableLambda$lambda$1;
+kt 1
+ko 1
+end
+=== kt Lpkg/TestClassDec$Vec2iVal;
+kt Vec2iVal
+ko Vec2iVal
+end
+=== kt Lpkg/TestCompanionObject$Companion;
+kt Companion
+ko Companion
+end
+=== kt Lpkg/TestCompileTimeErrors$Test;
+kt Test
+ko Test
+end
+=== kt Lpkg/TestDataClass;
+kt TestDataClass
+ko TestDataClass
+end
+=== kt Lpkg/TestEnumClass;
+kt TestEnumClass
+ko TestEnumClass
+end
+=== kt Lpkg/TestFuncRefKt$test$1;
+kt 1
+ko 1
+end
+=== kt Lpkg/TestGenerics;
+kt TestGenerics
+ko TestGenerics
+end
+=== kt Lpkg/TestGenerics<*>;
+kt TestGenerics<*>
+ko TestGenerics<*>
+end
+=== kt Lpkg/TestGenerics<+TT;>;
+kt TestGenerics<out\u0020T>
+ko TestGenerics<out\u0020T>
+end
+=== kt Lpkg/TestGenerics<-TT;>;
+kt TestGenerics<in\u0020T>
+ko TestGenerics<in\u0020T>
+end
+=== kt Lpkg/TestNonInlineLambda;
+kt TestNonInlineLambda
+ko TestNonInlineLambda
+end
+=== kt Lpkg/TestObject;
+kt TestObject
+ko TestObject
+end
+=== kt Lpkg/TestParams;
+kt TestParams
+ko TestParams
+end
+=== kt Lpkg/TestReflection$testFunctionReference$f$1;
+kt 1
+ko 1
+end
+=== kt Lpkg/TestReflection;
+kt TestReflection
+ko TestReflection
+end
+=== kt Lpkg/TestSealedHierarchy$TestObject;
+kt TestObject
+ko TestObject
+end
+=== kt Lpkg/TestSmartCasts$A;
+kt A
+ko A
+end
+=== kt Lpkg/TestSmartCasts$X;
+kt X
+ko X
+end
+=== kt Lpkg/TestTailrecFunctions;
+kt TestTailrecFunctions
+ko TestTailrecFunctions
+end
+=== kt Lpkg/TestTrySplit$Companion;
+kt Companion
+ko Companion
+end
+=== kt Lpkg/TestTrySynchronized$Companion;
+kt Companion
+ko Companion
+end
+=== kt Lpkg/TestTrySynchronized;
+kt TestTrySynchronized
+ko TestTrySynchronized
+end
+=== kt TI;
+kt I
+ko I
+end
+=== kt TO;
+kt O
+ko O
+end
+=== kt TT;
+kt T
+ko T
+end
+=== kt V
+kt Unit
+ko Unit
+end
+=== kt Z
+kt Boolean
+ko Boolean
+end
+=== kt [Ljava/lang/Object;
+kt Array<Any>
+ko Array<Any>
+end
+=== kt [Ljava/lang/String;
+kt Array<java.lang.String>
+ko Array<String>
+end
+=== kt [Lpkg/TestAnnotations$RepeatableAnnotation;
+kt Array<RepeatableAnnotation>
+ko Array<RepeatableAnnotation>
+end
+=== kt [Lpkg/TestEnumClass;
+kt Array<TestEnumClass>
+ko Array<TestEnumClass>
+end
+=== kt [[[Ljava/lang/String;
+kt Array<Array<Array<java.lang.String>>>
+ko Array<Array<Array<String>>>
+end
+=== ktold I
+kt Int
+ko Int
+end
+=== ktold Ljava/lang/String;
+kt java.lang.String
+ko String
+end
+=== ktold V
+kt Unit
+ko Unit
+end
+=== corekt I
+kt Int
+ko Int
+end
+=== corekt Ljava/lang/Object;
+kt Any
+ko Any
+end
+=== corekt Ljava/lang/String;
+kt java.lang.String
+ko String
+end
+=== corekt Ljava/util/Collection;
+kt java.util.Collection
+ko Collection
+end
+=== corekt Ljava/util/Collection<Ljava/lang/String;>;
+kt MutableCollection<java.lang.String>
+ko MutableCollection<java.lang.String>
+end
+=== corekt Ljava/util/List;
+kt java.util.List
+ko List
+end
+=== corekt Ljava/util/List<Lpkg/Mapping;>;
+kt MutableList<Mapping>
+ko MutableList<Mapping>
+end
+=== corekt Lkotlin/DeprecationLevel;
+kt DeprecationLevel
+ko DeprecationLevel
+end
+=== corekt Lkotlin/Result;
+kt Result
+ko Result
+end
+=== corekt Lkotlin/Result<Lkotlin/Unit;>;
+kt Result<Unit>
+ko Result<Unit>
+end
+=== corekt Lkotlin/coroutines/Continuation;
+kt Continuation
+ko Continuation
+end
+=== corekt Lkotlin/coroutines/Continuation<*>;
+kt Continuation<*>
+ko Continuation<*>
+end
+=== corekt Lkotlin/coroutines/Continuation<-Ljava/lang/Integer;>;
+kt Continuation<in\u0020Integer>
+ko Continuation<in\u0020Integer>
+end
+=== corekt Lkotlin/coroutines/Continuation<-Lkotlin/Unit;>;
+kt Continuation<in\u0020Unit>
+ko Continuation<in\u0020Unit>
+end
+=== corekt Lkotlin/coroutines/Continuation<-Lpkg/TestNamedSuspendFun2Kt$foo2$1;>;
+kt Continuation<in\u00201>
+ko Continuation<in\u00201>
+end
+=== corekt Lkotlin/coroutines/Continuation<-Lpkg/TestSuspendLambdaKt$sl1$1;>;
+kt Continuation<in\u00201>
+ko Continuation<in\u00201>
+end
+=== corekt Lkotlin/coroutines/Continuation<Lkotlin/Unit;>;
+kt Continuation<Unit>
+ko Continuation<Unit>
+end
+=== corekt Lkotlin/enums/EnumEntries;
+kt EnumEntries
+ko EnumEntries
+end
+=== corekt Lkotlin/enums/EnumEntries<Lpkg/TestKotlinEnumWhen;>;
+kt EnumEntries<TestKotlinEnumWhen>
+ko EnumEntries<TestKotlinEnumWhen>
+end
+=== corekt Lkotlin/jvm/functions/Function1;
+kt Function1
+ko Function1
+end
+=== corekt Lkotlin/jvm/functions/Function1<Lkotlin/coroutines/Continuation<-Lkotlin/Unit;>;Ljava/lang/Object;>;
+kt (Continuation<in\u0020Unit>?)\u0020->\u0020Any
+ko (Continuation<in\u0020Unit>?)\u0020->\u0020Any
+end
+=== corekt Lpkg/TestKotlinEnumWhen;
+kt TestKotlinEnumWhen
+ko TestKotlinEnumWhen
+end
+=== corekt V
+kt Unit
+ko Unit
+end
+=== corekt [I
+kt IntArray
+ko IntArray
+end
+=== corekt [Lpkg/TestKotlinEnumWhen;
+kt Array<TestKotlinEnumWhen>
+ko Array<TestKotlinEnumWhen>
+end
+=== spring B
+kt Byte
+ko Byte
+end
+=== spring Ljakarta/validation/ConstraintValidator;
+kt ConstraintValidator
+ko ConstraintValidator
+end
+=== spring Ljava/io/ObjectInputStream;
+kt ObjectInputStream
+ko ObjectInputStream
+end
+=== spring Ljava/lang/Class<+Ljavax/management/remote/JMXConnectorServer;>;
+kt Class<out\u0020JMXConnectorServer>
+ko Class<out\u0020JMXConnectorServer>
+end
+=== spring Ljava/lang/Double;
+kt java.lang.Double
+ko Double
+end
+=== spring Ljava/lang/RuntimeException;
+kt RuntimeException
+ko RuntimeException
+end
+=== spring Ljava/lang/reflect/Constructor;
+kt Constructor
+ko Constructor
+end
+=== spring Ljava/nio/channels/WritableByteChannel;
+kt WritableByteChannel
+ko WritableByteChannel
+end
+=== spring Ljava/time/temporal/ChronoUnit;
+kt ChronoUnit
+ko ChronoUnit
+end
+=== spring Ljava/util/Collection<Ljava/lang/Class<+Ljava/lang/Throwable;>;>;
+kt MutableCollection<Class<?\u0020extends\u0020java.lang.Throwable>>
+ko MutableCollection<Class<?\u0020extends\u0020java.lang.Throwable>>
+end
+=== spring Ljava/util/Comparator<Ljava/util/Map$Entry<Ljava/lang/Object;Ljava/lang/Object;>;>;
+kt Comparator<Entry<Object,\u0020Object>>
+ko Comparator<Entry<Object,\u0020Object>>
+end
+=== spring Ljava/util/HashMap<Ljava/lang/String;Ljava/lang/String;>;
+kt HashMap<java.lang.String,\u0020java.lang.String>
+ko HashMap<java.lang.String,\u0020java.lang.String>
+end
+=== spring Ljava/util/List<*>;
+kt MutableList<*>
+ko MutableList<*>
+end
+=== spring Ljava/util/List<Lorg/springframework/aot/generate/MethodReference;>;
+kt MutableList<MethodReference>
+ko MutableList<MethodReference>
+end
+=== spring Ljava/util/List<Lorg/springframework/context/event/EventListenerFactory;>;
+kt MutableList<EventListenerFactory>
+ko MutableList<EventListenerFactory>
+end
+=== spring Ljava/util/List<Lorg/springframework/util/StopWatch$TaskInfo;>;
+kt MutableList<TaskInfo>
+ko MutableList<TaskInfo>
+end
+=== spring Ljava/util/Map<Ljava/lang/Character;Ljava/lang/String;>;
+kt MutableMap<Character,\u0020java.lang.String>
+ko MutableMap<Character,\u0020java.lang.String>
+end
+=== spring Ljava/util/Map<Ljava/lang/Object;Ljava/lang/String;>;
+kt MutableMap<Any,\u0020java.lang.String>
+ko MutableMap<Any,\u0020java.lang.String>
+end
+=== spring Ljava/util/Map<Ljava/lang/String;Ljava/util/Set<Ljava/lang/String;>;>;
+kt MutableMap<java.lang.String,\u0020MutableSet<java.lang.String>>
+ko MutableMap<java.lang.String,\u0020MutableSet<java.lang.String>>
+end
+=== spring Ljava/util/Map<Ljava/lang/String;[B>;
+kt MutableMap<java.lang.String,\u0020ByteArray>
+ko MutableMap<java.lang.String,\u0020ByteArray>
+end
+=== spring Ljava/util/Map<Lorg/springframework/context/annotation/ConfigurationClass;Ljava/lang/Boolean;>;
+kt MutableMap<ConfigurationClass,\u0020java.lang.Boolean>
+ko MutableMap<ConfigurationClass,\u0020java.lang.Boolean>
+end
+=== spring Ljava/util/OptionalLong;
+kt OptionalLong
+ko OptionalLong
+end
+=== spring Ljava/util/Set<Ljava/lang/reflect/Type;>;
+kt MutableSet<Type>
+ko MutableSet<Type>
+end
+=== spring Ljava/util/Set<Lorg/springframework/context/ApplicationListener<*>;>;
+kt MutableSet<ApplicationListener<*>>
+ko MutableSet<ApplicationListener<*>>
+end
+=== spring Ljava/util/Spliterator<Lorg/springframework/beans/PropertyValue;>;
+kt Spliterator<PropertyValue>
+ko Spliterator<PropertyValue>
+end
+=== spring Ljava/util/concurrent/Delayed;
+kt Delayed
+ko Delayed
+end
+=== spring Ljava/util/concurrent/atomic/AtomicReference<Ljava/lang/Object;>;
+kt AtomicReference<Object>
+ko AtomicReference<Object>
+end
+=== spring Ljava/util/function/BiPredicate<TT;TT;>;
+kt BiPredicate<T,\u0020T>
+ko BiPredicate<T,\u0020T>
+end
+=== spring Ljava/util/function/Consumer<Lorg/springframework/core/io/buffer/DataBuffer;>;
+kt Consumer<DataBuffer>
+ko Consumer<DataBuffer>
+end
+=== spring Ljava/util/function/Function<Lorg/springframework/beans/factory/BeanRegistry$SupplierContext;TT;>;
+kt Function<SupplierContext,\u0020T>
+ko Function<SupplierContext,\u0020T>
+end
+=== spring Ljava/util/function/Predicate<Lorg/springframework/context/ApplicationListener<*>;>;
+kt Predicate<ApplicationListener<?>>
+ko Predicate<ApplicationListener<?>>
+end
+=== spring Ljava/util/function/Supplier<Lorg/springframework/cache/interceptor/KeyGenerator;>;
+kt Supplier<KeyGenerator>
+ko Supplier<KeyGenerator>
+end
+=== spring Ljava/util/stream/Stream<Lorg/springframework/aot/hint/FieldHint;>;
+kt Stream<FieldHint>
+ko Stream<FieldHint>
+end
+=== spring Ljavax/management/AttributeList;
+kt AttributeList
+ko AttributeList
+end
+=== spring Ljavax/xml/namespace/QName;
+kt QName
+ko QName
+end
+=== spring Lkotlin/enums/EnumEntries<Lorg/springframework/context/support/BeanDefinitionDsl$Role;>;
+kt EnumEntries<Role>
+ko EnumEntries<Role>
+end
+=== spring Lkotlin/jvm/functions/Function1<-Lorg/springframework/context/support/BeanDefinitionDsl$BeanSupplierContext;+TT;>;
+kt (BeanSupplierContext?)\u0020->\u0020T
+ko (BeanSupplierContext?)\u0020->\u0020T
+end
+=== spring Lkotlin/jvm/functions/Function8;
+kt Function8
+ko Function8
+end
+=== spring Lorg/reactivestreams/Publisher<+Ljava/nio/ByteBuffer;>;
+kt Publisher<out\u0020ByteBuffer>
+ko Publisher<out\u0020ByteBuffer>
+end
+=== spring Lorg/springframework/aot/generate/MethodReference$ArgumentCodeGenerator;
+kt ArgumentCodeGenerator
+ko ArgumentCodeGenerator
+end
+=== spring Lorg/springframework/aot/hint/TypeHint$Builder;
+kt Builder
+ko Builder
+end
+=== spring Lorg/springframework/asm/ClassWriter;
+kt ClassWriter
+ko ClassWriter
+end
+=== spring Lorg/springframework/beans/CachedIntrospectionResults;
+kt CachedIntrospectionResults
+ko CachedIntrospectionResults
+end
+=== spring Lorg/springframework/beans/factory/InjectionPoint;
+kt InjectionPoint
+ko InjectionPoint
+end
+=== spring Lorg/springframework/beans/factory/aot/BeanFactoryInitializationAotProcessor;
+kt BeanFactoryInitializationAotProcessor
+ko BeanFactoryInitializationAotProcessor
+end
+=== spring Lorg/springframework/beans/factory/config/PropertyPlaceholderConfigurer;
+kt PropertyPlaceholderConfigurer
+ko PropertyPlaceholderConfigurer
+end
+=== spring Lorg/springframework/beans/factory/support/AbstractBeanFactory;
+kt AbstractBeanFactory
+ko AbstractBeanFactory
+end
+=== spring Lorg/springframework/beans/factory/support/MethodDescriptor;
+kt MethodDescriptor
+ko MethodDescriptor
+end
+=== spring Lorg/springframework/cache/annotation/Cacheable;
+kt Cacheable
+ko Cacheable
+end
+=== spring Lorg/springframework/cache/interceptor/CachePutOperation;
+kt CachePutOperation
+ko CachePutOperation
+end
+=== spring Lorg/springframework/cglib/core/DebuggingClassWriter;
+kt DebuggingClassWriter
+ko DebuggingClassWriter
+end
+=== spring Lorg/springframework/cglib/core/internal/Function<TK;TV;>;
+kt Function<K,\u0020V>
+ko Function<K,\u0020V>
+end
+=== spring Lorg/springframework/cglib/reflect/MethodDelegate;
+kt MethodDelegate
+ko MethodDelegate
+end
+=== spring Lorg/springframework/context/MessageSourceResolvable;
+kt MessageSourceResolvable
+ko MessageSourceResolvable
+end
+=== spring Lorg/springframework/context/annotation/DeferredImportSelector;
+kt DeferredImportSelector
+ko DeferredImportSelector
+end
+=== spring Lorg/springframework/context/event/EventExpressionEvaluator;
+kt EventExpressionEvaluator
+ko EventExpressionEvaluator
+end
+=== spring Lorg/springframework/core/MethodIntrospector$MetadataLookup<TT;>;
+kt MetadataLookup<T>
+ko MetadataLookup<T>
+end
+=== spring Lorg/springframework/core/annotation/AnnotationTypeMapping$MirrorSets$MirrorSet;
+kt MirrorSet
+ko MirrorSet
+end
+=== spring Lorg/springframework/core/annotation/TypeMappedAnnotations$Aggregate;
+kt Aggregate
+ko Aggregate
+end
+=== spring Lorg/springframework/core/convert/converter/GenericConverter$ConvertiblePair;
+kt ConvertiblePair
+ko ConvertiblePair
+end
+=== spring Lorg/springframework/core/io/buffer/DataBufferFactory;
+kt DataBufferFactory
+ko DataBufferFactory
+end
+=== spring Lorg/springframework/core/io/support/SpringFactoriesLoader$FailureHandler;
+kt FailureHandler
+ko FailureHandler
+end
+=== spring Lorg/springframework/core/style/ValueStyler;
+kt ValueStyler
+ko ValueStyler
+end
+=== spring Lorg/springframework/format/AnnotationFormatterFactory<+Ljava/lang/annotation/Annotation;>;
+kt AnnotationFormatterFactory<out\u0020Annotation>
+ko AnnotationFormatterFactory<out\u0020Annotation>
+end
+=== spring Lorg/springframework/instrument/classloading/WeavingTransformer;
+kt WeavingTransformer
+ko WeavingTransformer
+end
+=== spring Lorg/springframework/jmx/access/MBeanClientInterceptor$MethodCacheKey;
+kt MethodCacheKey
+ko MethodCacheKey
+end
+=== spring Lorg/springframework/objenesis/instantiator/ObjectInstantiator<TT;>;
+kt ObjectInstantiator<T>
+ko ObjectInstantiator<T>
+end
+=== spring Lorg/springframework/scheduling/config/FixedRateTask;
+kt FixedRateTask
+ko FixedRateTask
+end
+=== spring Lorg/springframework/util/AntPathMatcher$AntPathStringMatcher;
+kt AntPathStringMatcher
+ko AntPathStringMatcher
+end
+=== spring Lorg/springframework/util/ConcurrentReferenceHashMap;
+kt ConcurrentReferenceHashMap
+ko ConcurrentReferenceHashMap
+end
+=== spring Lorg/springframework/util/MultiValueMapCollector<TV;TK;TV;>;
+kt MultiValueMapCollector<V,\u0020K,\u0020V>
+ko MultiValueMapCollector<V,\u0020K,\u0020V>
+end
+=== spring Lorg/springframework/util/function/SingletonSupplier;
+kt SingletonSupplier
+ko SingletonSupplier
+end
+=== spring Lorg/springframework/validation/DataBinder$NameResolver;
+kt NameResolver
+ko NameResolver
+end
+=== spring Lorg/xml/sax/SAXParseException;
+kt SAXParseException
+ko SAXParseException
+end
+=== spring TO;
+kt O
+ko O
+end
+=== spring [Ljava/lang/Throwable;
+kt Array<java.lang.Throwable>
+ko Array<Throwable>
+end
+=== spring [Lkotlin/reflect/KClass<*>;
+kt Array<KClass<*>>
+ko Array<KClass<*>>
+end
+=== spring [Lorg/springframework/beans/factory/support/ConstructorResolver$FallbackMode;
+kt Array<FallbackMode>
+ko Array<FallbackMode>
+end
+=== spring [Lorg/springframework/core/annotation/AnnotationTypeMapping;
+kt Array<AnnotationTypeMapping>
+ko Array<AnnotationTypeMapping>
+end
+=== spring [Lorg/springframework/jmx/export/metadata/ManagedOperationParameter;
+kt Array<ManagedOperationParameter>
+ko Array<ManagedOperationParameter>
+end
+=== spring [TV;
+kt Array<V>
+ko Array<V>
+end
+=== stdlib B
+kt Byte
+ko Byte
+end
+=== stdlib Ljava/lang/Byte;
+kt java.lang.Byte
+ko Byte
+end
+=== stdlib Ljava/lang/Iterable<Ljava/lang/Byte;>;
+kt MutableIterable<java.lang.Byte>
+ko MutableIterable<java.lang.Byte>
+end
+=== stdlib Ljava/lang/String;
+kt java.lang.String
+ko String
+end
+=== stdlib Ljava/nio/file/attribute/FileTime;
+kt FileTime
+ko FileTime
+end
+=== stdlib Ljava/util/Collection<Ljava/lang/Object;>;
+kt MutableCollection<Any>
+ko MutableCollection<Any>
+end
+=== stdlib Ljava/util/Comparator<Ljava/lang/String;>;
+kt Comparator<java.lang.String>
+ko String>
+end
+=== stdlib Ljava/util/Iterator<Ljava/lang/Short;>;
+kt MutableIterator<java.lang.Short>
+ko MutableIterator<java.lang.Short>
+end
+=== stdlib Ljava/util/List<+TT;>;
+kt MutableList<T>
+ko MutableList<T>
+end
+=== stdlib Ljava/util/List<Lkotlin/Pair<Ljava/lang/Short;TR;>;>;
+kt MutableList<Pair<java.lang.Short,\u0020R>>
+ko MutableList<Pair<java.lang.Short,\u0020R>>
+end
+=== stdlib Ljava/util/ListIterator<TT;>;
+kt java.util.ListIterator<T>
+ko ListIterator<T>
+end
+=== stdlib Ljava/util/Map<TK;+TV;>;
+kt MutableMap<K,\u0020V>
+ko MutableMap<K,\u0020V>
+end
+=== stdlib Ljava/util/Properties;
+kt Properties
+ko Properties
+end
+=== stdlib Ljava/util/SortedSet<Ljava/lang/Double;>;
+kt SortedSet<java.lang.Double>
+ko Double>
+end
+=== stdlib Ljava/util/regex/MatchResult;
+kt MatchResult
+ko MatchResult
+end
+=== stdlib Lkotlin/Pair<Ljava/util/List<Ljava/lang/Boolean;>;Ljava/util/List<Ljava/lang/Boolean;>;>;
+kt Pair<java.util.List<java.lang.Boolean>,\u0020java.util.List<java.lang.Boolean>>
+ko Boolean>>
+end
+=== stdlib Lkotlin/UShort$Companion;
+kt Companion
+ko Companion
+end
+=== stdlib Lkotlin/collections/Grouping<TT;+TK;>;
+kt Grouping<T,\u0020out\u0020K>
+ko Grouping<T,\u0020out\u0020K>
+end
+=== stdlib Lkotlin/collections/builders/MapBuilder<TE;*>;
+kt MapBuilder<E,\u0020*>
+ko MapBuilder<E,\u0020*>
+end
+=== stdlib Lkotlin/coroutines/Continuation<-Lkotlin/sequences/SequencesKt__SequencesKt$shuffled$1;>;
+kt Continuation<in\u00201>
+ko Continuation<in\u00201>
+end
+=== stdlib Lkotlin/enums/EnumEntries<Lkotlin/DeprecationLevel;>;
+kt EnumEntries<DeprecationLevel>
+ko EnumEntries<DeprecationLevel>
+end
+=== stdlib Lkotlin/io/FileTreeWalk$FileTreeWalkIterator;
+kt FileTreeWalkIterator
+ko FileTreeWalkIterator
+end
+=== stdlib Lkotlin/jvm/functions/Function0<Lkotlin/time/Duration;>;
+kt ()\u0020->\u0020Duration
+ko ()\u0020->\u0020Duration
+end
+=== stdlib Lkotlin/jvm/functions/Function1<-Ljava/lang/Byte;Ljava/lang/Boolean;>;
+kt (java.lang.Byte?)\u0020->\u0020java.lang.Boolean
+ko (java.lang.Byte?)\u0020->\u0020java.lang.Boolean
+end
+=== stdlib Lkotlin/jvm/functions/Function1<-Ljava/lang/Double;+TK;>;
+kt (java.lang.Double?)\u0020->\u0020K
+ko (java.lang.Double?)\u0020->\u0020K
+end
+=== stdlib Lkotlin/jvm/functions/Function1<-Ljava/lang/Integer;+Lkotlin/Pair<+TK;+TV;>;>;
+kt (Int?)\u0020->\u0020Pair<out\u0020K,\u0020out\u0020V>
+ko (Int?)\u0020->\u0020Pair<out\u0020K,\u0020out\u0020V>
+end
+=== stdlib Lkotlin/jvm/functions/Function1<-Ljava/lang/Long;Ljava/lang/Long;>;
+kt (java.lang.Long?)\u0020->\u0020java.lang.Long
+ko (java.lang.Long?)\u0020->\u0020java.lang.Long
+end
+=== stdlib Lkotlin/jvm/functions/Function1<-Ljava/util/Map$Entry<+TK;+TV;>;+Lkotlin/sequences/Sequence<+TR;>;>;
+kt (MutableMap.MutableEntry<K,\u0020V>?)\u0020->\u0020Sequence<out\u0020R>
+ko (MutableMap.MutableEntry<K,\u0020V>?)\u0020->\u0020Sequence<out\u0020R>
+end
+=== stdlib Lkotlin/jvm/functions/Function1<-Lkotlin/UInt;Ljava/lang/Double;>;
+kt (UInt?)\u0020->\u0020java.lang.Double
+ko (UInt?)\u0020->\u0020java.lang.Double
+end
+=== stdlib Lkotlin/jvm/functions/Function1<-Lkotlin/UShort;Ljava/lang/Long;>;
+kt (UShort?)\u0020->\u0020java.lang.Long
+ko (UShort?)\u0020->\u0020java.lang.Long
+end
+=== stdlib Lkotlin/jvm/functions/Function1<-TT;+TR;>;
+kt (T?)\u0020->\u0020R
+ko (T?)\u0020->\u0020R
+end
+=== stdlib Lkotlin/jvm/functions/Function2<-Ljava/io/File;-Ljava/io/IOException;Lkotlin/Unit;>;
+kt (File?,\u0020IOException?)\u0020->\u0020Unit
+ko (File?,\u0020IOException?)\u0020->\u0020Unit
+end
+=== stdlib Lkotlin/jvm/functions/Function2<-Ljava/lang/Integer;-Ljava/lang/Character;+Ljava/lang/Iterable<+TR;>;>;
+kt (Int?,\u0020Character?)\u0020->\u0020MutableIterable<R>
+ko (Int?,\u0020Character?)\u0020->\u0020MutableIterable<R>
+end
+=== stdlib Lkotlin/jvm/functions/Function2<-Ljava/lang/Integer;-Lkotlin/UInt;+Ljava/lang/Iterable<+TR;>;>;
+kt (Int?,\u0020UInt?)\u0020->\u0020MutableIterable<R>
+ko (Int?,\u0020UInt?)\u0020->\u0020MutableIterable<R>
+end
+=== stdlib Lkotlin/jvm/functions/Function2<-Ljava/nio/file/Path;-Ljava/io/IOException;+Ljava/nio/file/FileVisitResult;>;
+kt (Path?,\u0020IOException?)\u0020->\u0020FileVisitResult
+ko (Path?,\u0020IOException?)\u0020->\u0020FileVisitResult
+end
+=== stdlib Lkotlin/jvm/functions/Function2<-TR;-Lkotlin/UInt;+TR;>;
+kt (R?,\u0020UInt?)\u0020->\u0020R
+ko (R?,\u0020UInt?)\u0020->\u0020R
+end
+=== stdlib Lkotlin/jvm/functions/Function3<-Ljava/lang/Integer;-Ljava/lang/Character;-Ljava/lang/Character;Ljava/lang/Character;>;
+kt (Int?,\u0020Character?,\u0020Character?)\u0020->\u0020Character
+ko (Int?,\u0020Character?,\u0020Character?)\u0020->\u0020Character
+end
+=== stdlib Lkotlin/jvm/functions/Function3<-Ljava/lang/Integer;-TR;-Lkotlin/ULong;+TR;>;
+kt (Int?,\u0020R?,\u0020ULong?)\u0020->\u0020R
+ko (Int?,\u0020R?,\u0020ULong?)\u0020->\u0020R
+end
+=== stdlib Lkotlin/jvm/functions/Function5<-TA;-TB;-TC;-TD;-TE;+TR;>;
+kt (A?,\u0020B?,\u0020C?,\u0020D?,\u0020E?)\u0020->\u0020R
+ko (A?,\u0020B?,\u0020C?,\u0020D?,\u0020E?)\u0020->\u0020R
+end
+=== stdlib Lkotlin/jvm/internal/TypeReference;
+kt TypeReference
+ko TypeReference
+end
+=== stdlib Lkotlin/ranges/IntProgression;
+kt IntProgression
+ko IntProgression
+end
+=== stdlib Lkotlin/reflect/KMutableProperty$Setter;
+kt Setter
+ko Setter
+end
+=== stdlib Lkotlin/reflect/KType;
+kt KType
+ko KType
+end
+=== stdlib Lkotlin/sequences/Sequence<+Lkotlin/Pair<+TT;+TR;>;>;
+kt Sequence<?\u0020extends\u0020Pair<out\u0020T,\u0020out\u0020R>>
+ko Sequence<?\u0020extends\u0020Pair<out\u0020T,\u0020out\u0020R>>
+end
+=== stdlib Lkotlin/sequences/Sequence<TT1;>;
+kt Sequence<T1>
+ko Sequence<T1>
+end
+=== stdlib Lkotlin/text/DelimitedRangesSequence;
+kt DelimitedRangesSequence
+ko DelimitedRangesSequence
+end
+=== stdlib Lkotlin/time/DurationUnit;
+kt DurationUnit
+ko DurationUnit
+end
+=== stdlib TK;
+kt K
+ko K
+end
+=== stdlib V
+kt Unit
+ko Unit
+end
+=== stdlib [Ljava/nio/file/LinkOption;
+kt Array<LinkOption>
+ko Array<LinkOption>
+end
+=== stdlib [Lkotlin/reflect/KType;
+kt Array<KType>
+ko Array<KType>
+end
+=== reflect B
+kt Byte
+ko Byte
+end
+=== reflect Ljava/lang/Iterable<+Ljava/lang/Integer;>;
+kt MutableIterable<Int>
+ko MutableIterable<Int>
+end
+=== reflect Ljava/lang/annotation/Annotation;
+kt Annotation
+ko Annotation
+end
+=== reflect Ljava/util/Collection;
+kt java.util.Collection
+ko Collection
+end
+=== reflect Ljava/util/Collection<Lkotlin/reflect/KProperty2<TT;**>;>;
+kt MutableCollection<KProperty2<T,\u0020*,\u0020*>>
+ko MutableCollection<KProperty2<T,\u0020*,\u0020*>>
+end
+=== reflect Ljava/util/Collection<Lkotlin/reflect/jvm/internal/impl/load/java/typeEnhancement/JavaTypeQualifiers;>;
+kt MutableCollection<JavaTypeQualifiers>
+ko MutableCollection<JavaTypeQualifiers>
+end
+=== reflect Ljava/util/Iterator;
+kt java.util.Iterator
+ko Iterator
+end
+=== reflect Ljava/util/List<+Lkotlin/reflect/jvm/internal/impl/descriptors/ValueParameterDescriptor;>;
+kt MutableList<ValueParameterDescriptor>
+ko MutableList<ValueParameterDescriptor>
+end
+=== reflect Ljava/util/List<Lkotlin/reflect/KClass<+TT;>;>;
+kt MutableList<KClass<out\u0020T>>
+ko MutableList<KClass<out\u0020T>>
+end
+=== reflect Ljava/util/List<Lkotlin/reflect/jvm/internal/impl/descriptors/runtime/structure/ReflectJavaAnnotationArgument;>;
+kt MutableList<ReflectJavaAnnotationArgument>
+ko MutableList<ReflectJavaAnnotationArgument>
+end
+=== reflect Ljava/util/List<Lkotlin/reflect/jvm/internal/impl/km/internal/extensions/KmValueParameterExtension;>;
+kt MutableList<KmValueParameterExtension>
+ko MutableList<KmValueParameterExtension>
+end
+=== reflect Ljava/util/List<Lkotlin/reflect/jvm/internal/impl/metadata/jvm/JvmProtoBuf$StringTableTypes$Record;>;
+kt MutableList<Record>
+ko MutableList<Record>
+end
+=== reflect Ljava/util/Map$Entry<TK;Lkotlin/reflect/jvm/internal/impl/protobuf/LazyField;>;
+kt MutableMap.MutableEntry<K,\u0020LazyField>
+ko MutableMap.MutableEntry<K,\u0020LazyField>
+end
+=== reflect Ljava/util/Map<Lkotlin/reflect/jvm/internal/impl/builtins/PrimitiveType;Lkotlin/reflect/jvm/internal/impl/resolve/jvm/JvmPrimitiveType;>;
+kt MutableMap<PrimitiveType,\u0020JvmPrimitiveType>
+ko MutableMap<PrimitiveType,\u0020JvmPrimitiveType>
+end
+=== reflect Ljava/util/Map<Lkotlin/reflect/jvm/internal/impl/name/FqNameUnsafe;Lkotlin/reflect/jvm/internal/impl/builtins/PrimitiveType;>;
+kt MutableMap<FqNameUnsafe,\u0020PrimitiveType>
+ko MutableMap<FqNameUnsafe,\u0020PrimitiveType>
+end
+=== reflect Ljava/util/Queue<Lkotlin/reflect/jvm/internal/impl/descriptors/CallableMemberDescriptor;>;
+kt Queue<CallableMemberDescriptor>
+ko Queue<CallableMemberDescriptor>
+end
+=== reflect Ljava/util/Set<Lkotlin/reflect/jvm/internal/impl/renderer/DescriptorRendererModifier;>;
+kt MutableSet<DescriptorRendererModifier>
+ko MutableSet<DescriptorRendererModifier>
+end
+=== reflect Lkotlin/Lazy<Ljava/lang/Integer;>;
+kt Lazy<Integer>
+ko Lazy<Integer>
+end
+=== reflect Lkotlin/coroutines/Continuation<*>;
+kt Continuation<*>
+ko Continuation<*>
+end
+=== reflect Lkotlin/jvm/functions/Function0<Ljava/util/Collection<Lkotlin/reflect/jvm/internal/impl/descriptors/FunctionDescriptor;>;>;
+kt ()\u0020->\u0020MutableCollection<FunctionDescriptor>
+ko ()\u0020->\u0020MutableCollection<FunctionDescriptor>
+end
+=== reflect Lkotlin/jvm/functions/Function1<-Lkotlin/reflect/jvm/internal/impl/resolve/scopes/MemberScope;+Ljava/util/Collection<+TR;>;>;
+kt (MemberScope?)\u0020->\u0020MutableCollection<R>
+ko (MemberScope?)\u0020->\u0020MutableCollection<R>
+end
+=== reflect Lkotlin/jvm/functions/Function1<Lkotlin/reflect/jvm/internal/impl/descriptors/ValueParameterDescriptor;Ljava/lang/String;>;
+kt (ValueParameterDescriptor?)\u0020->\u0020java.lang.String
+ko (ValueParameterDescriptor?)\u0020->\u0020java.lang.String
+end
+=== reflect Lkotlin/jvm/functions/Function3<Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Lkotlin/Unit;>;
+kt (Any?,\u0020Any?,\u0020Any?)\u0020->\u0020Unit
+ko (Any?,\u0020Any?,\u0020Any?)\u0020->\u0020Unit
+end
+=== reflect Lkotlin/reflect/KClass<Ljava/lang/Void;>;
+kt KClass<Void>
+ko KClass<Void>
+end
+=== reflect Lkotlin/reflect/KProperty1;
+kt KProperty1
+ko KProperty1
+end
+=== reflect Lkotlin/reflect/jvm/internal/ConvertFromJavaKt$$Lambda$3;
+kt 3
+ko 3
+end
+=== reflect Lkotlin/reflect/jvm/internal/DescriptorKParameter;
+kt DescriptorKParameter
+ko DescriptorKParameter
+end
+=== reflect Lkotlin/reflect/jvm/internal/DescriptorKPropertyN<TV;>;
+kt DescriptorKPropertyN<V>
+ko DescriptorKPropertyN<V>
+end
+=== reflect Lkotlin/reflect/jvm/internal/KDeclarationContainerImpl$$Lambda$4;
+kt 4
+ko 4
+end
+=== reflect Lkotlin/reflect/jvm/internal/KotlinKProperty0$Getter;
+kt Getter
+ko Getter
+end
+=== reflect Lkotlin/reflect/jvm/internal/ReflectProperties$LazySoftVal<Ljava/util/List<Lkotlin/reflect/jvm/internal/KTypeParameterImpl;>;>;
+kt LazySoftVal<java.util.List<KTypeParameterImpl>>
+ko List<KTypeParameterImpl>>
+end
+=== reflect Lkotlin/reflect/jvm/internal/calls/ValueClassAwareCaller$BoxUnboxData;
+kt BoxUnboxData
+ko BoxUnboxData
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/builtins/functions/FunctionTypeKind$Function;
+kt Function
+ko Function
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/descriptors/CallableMemberDescriptor;
+kt CallableMemberDescriptor
+ko CallableMemberDescriptor
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/descriptors/Modality$Companion;
+kt Companion
+ko Companion
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/descriptors/SupertypeLoopChecker$EMPTY;
+kt EMPTY
+ko EMPTY
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/descriptors/annotations/KotlinRetention;
+kt KotlinRetention
+ko KotlinRetention
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/descriptors/impl/PropertyDescriptorImpl$CopyConfiguration;
+kt CopyConfiguration
+ko CopyConfiguration
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/descriptors/runtime/structure/Java8ParameterNamesLoader;
+kt Java8ParameterNamesLoader
+ko Java8ParameterNamesLoader
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/km/Attributes$kind$11;
+kt 11
+ko 11
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/km/KmFlexibleTypeUpperBound$Companion;
+kt Companion
+ko Companion
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/km/internal/EnumFlagDelegate;
+kt EnumFlagDelegate
+ko EnumFlagDelegate
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/km/internal/extensions/MetadataExtensions$Companion;
+kt Companion
+ko Companion
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/load/java/AnnotationTypeQualifierResolver;
+kt AnnotationTypeQualifierResolver
+ko AnnotationTypeQualifierResolver
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/load/java/SpecialBuiltinMembers$$Lambda$0;
+kt 0
+ko 0
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/load/java/lazy/LazyJavaPackageFragmentProvider;
+kt LazyJavaPackageFragmentProvider
+ko LazyJavaPackageFragmentProvider
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/load/java/lazy/descriptors/LazyJavaTypeParameterDescriptor;
+kt LazyJavaTypeParameterDescriptor
+ko LazyJavaTypeParameterDescriptor
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/load/java/typeEnhancement/AbstractSignatureParts;
+kt AbstractSignatureParts
+ko AbstractSignatureParts
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/load/kotlin/AbstractBinaryClassAnnotationAndConstantLoader;
+kt AbstractBinaryClassAnnotationAndConstantLoader
+ko AbstractBinaryClassAnnotationAndConstantLoader
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/load/kotlin/KotlinJvmBinaryClass$AnnotationArgumentVisitor;
+kt AnnotationArgumentVisitor
+ko AnnotationArgumentVisitor
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/metadata/ProtoBuf$Annotation$Argument;
+kt Argument
+ko Argument
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/metadata/ProtoBuf$Property;
+kt Property
+ko Property
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/metadata/builtins/BuiltInsBinaryVersion;
+kt BuiltInsBinaryVersion
+ko BuiltInsBinaryVersion
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/metadata/jvm/JvmProtoBuf$JvmPropertySignature;
+kt JvmPropertySignature
+ko JvmPropertySignature
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/name/State;
+kt State
+ko State
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/protobuf/GeneratedMessageLite$ExtendableBuilder<Lkotlin/reflect/jvm/internal/impl/metadata/ProtoBuf$ValueParameter;*>;
+kt ExtendableBuilder<ValueParameter,\u0020*>
+ko ExtendableBuilder<ValueParameter,\u0020*>
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/protobuf/GeneratedMessageLite$GeneratedExtension<TM;Ljava/util/List<TT;>;>;
+kt GeneratedExtension<M,\u0020java.util.List<T>>
+ko List<T>>
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/protobuf/MessageLite$Builder;
+kt Builder
+ko Builder
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/protobuf/Parser<Lkotlin/reflect/jvm/internal/impl/metadata/jvm/JvmProtoBuf$JvmPropertySignature;>;
+kt Parser<JvmPropertySignature>
+ko Parser<JvmPropertySignature>
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/renderer/DescriptorRenderer$$Lambda$3;
+kt 3
+ko 3
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/resolve/DescriptorEquivalenceForOverrides;
+kt DescriptorEquivalenceForOverrides
+ko DescriptorEquivalenceForOverrides
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/resolve/descriptorUtil/DescriptorUtilsKt$$Lambda$0;
+kt 0
+ko 0
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/resolve/scopes/receivers/ReceiverValue;
+kt ReceiverValue
+ko ReceiverValue
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/serialization/deserialization/LocalClassifierTypeSettings$Default;
+kt Default
+ko Default
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/serialization/deserialization/descriptors/PreReleaseInfo$Companion;
+kt Companion
+ko Companion
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/storage/MemoizedFunctionToNotNull<Lkotlin/reflect/jvm/internal/impl/name/Name;Lkotlin/reflect/jvm/internal/impl/descriptors/ClassDescriptor;>;
+kt MemoizedFunctionToNotNull<Name,\u0020ClassDescriptor>
+ko MemoizedFunctionToNotNull<Name,\u0020ClassDescriptor>
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/storage/NotNullLazyValue<Lkotlin/reflect/jvm/internal/impl/types/KotlinType;>;
+kt NotNullLazyValue<KotlinType>
+ko NotNullLazyValue<KotlinType>
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/types/AnnotationsTypeAttribute;
+kt AnnotationsTypeAttribute
+ko AnnotationsTypeAttribute
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/types/TypeAliasExpansionReportStrategy$DO_NOTHING;
+kt DO_NOTHING
+ko DO_NOTHING
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/types/Variance;
+kt Variance
+ko Variance
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/types/error/ErrorTypeKind;
+kt ErrorTypeKind
+ko ErrorTypeKind
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/types/typesApproximation/TypeArgument;
+kt TypeArgument
+ko TypeArgument
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/util/OperatorNameConventions;
+kt OperatorNameConventions
+ko OperatorNameConventions
+end
+=== reflect Lkotlin/reflect/jvm/internal/impl/utils/SmartSet$Companion;
+kt Companion
+ko Companion
+end
+=== reflect TFieldDescriptorType;
+kt FieldDescriptorType
+ko FieldDescriptorType
+end
+=== reflect [Lkotlin/reflect/jvm/internal/TypeNullability;
+kt Array<TypeNullability>
+ko Array<TypeNullability>
+end
+=== reflect [Lkotlin/reflect/jvm/internal/impl/load/java/ReportLevel;
+kt Array<ReportLevel>
+ko Array<ReportLevel>
+end
+=== reflect [Lkotlin/reflect/jvm/internal/impl/protobuf/WireFormat$FieldType;
+kt Array<FieldType>
+ko Array<FieldType>
+end
+=== reflect [TE;
+kt Array<E>
+ko Array<E>
+end
+=== coroutines110 I
+kt Int
+ko Int
+end
+=== coroutines110 Ljava/lang/ref/ReferenceQueue;
+kt ReferenceQueue
+ko ReferenceQueue
+end
+=== coroutines110 Ljava/util/List<Ljava/lang/String;>;
+kt MutableList<java.lang.String>
+ko MutableList<java.lang.String>
+end
+=== coroutines110 Ljava/util/concurrent/RejectedExecutionException;
+kt RejectedExecutionException
+ko RejectedExecutionException
+end
+=== coroutines110 Lkotlin/coroutines/Continuation<-Ljava/lang/Throwable;>;
+kt Continuation<?\u0020super\u0020java.lang.Throwable>
+ko Throwable>
+end
+=== coroutines110 Lkotlin/coroutines/Continuation<-Lkotlinx/coroutines/channels/ChannelsKt__DeprecatedKt$dropWhile$1;>;
+kt Continuation<in\u00201>
+ko Continuation<in\u00201>
+end
+=== coroutines110 Lkotlin/coroutines/Continuation<-Lkotlinx/coroutines/channels/ProduceKt$awaitClose$1;>;
+kt Continuation<in\u00201>
+ko Continuation<in\u00201>
+end
+=== coroutines110 Lkotlin/coroutines/Continuation<-Lkotlinx/coroutines/flow/FlowKt__DelayKt$timeoutInternal$1$1$2;>;
+kt Continuation<in\u00202>
+ko Continuation<in\u00202>
+end
+=== coroutines110 Lkotlin/coroutines/Continuation<-Lkotlinx/coroutines/flow/FlowKt__ReduceKt$fold$1;>;
+kt Continuation<in\u00201>
+ko Continuation<in\u00201>
+end
+=== coroutines110 Lkotlin/coroutines/Continuation<-Lkotlinx/coroutines/flow/StartedWhileSubscribed$command$1;>;
+kt Continuation<in\u00201>
+ko Continuation<in\u00201>
+end
+=== coroutines110 Lkotlin/coroutines/Continuation<-Lkotlinx/coroutines/selects/WhileSelectKt$whileSelect$1;>;
+kt Continuation<in\u00201>
+ko Continuation<in\u00201>
+end
+=== coroutines110 Lkotlin/jvm/functions/Function0<Lkotlin/Unit;>;
+kt ()\u0020->\u0020Unit
+ko ()\u0020->\u0020Unit
+end
+=== coroutines110 Lkotlin/jvm/functions/Function1<-TT;+TK;>;
+kt (T?)\u0020->\u0020K
+ko (T?)\u0020->\u0020K
+end
+=== coroutines110 Lkotlin/jvm/functions/Function2<-Lkotlinx/coroutines/channels/ChannelSegment<TE;>;-Ljava/lang/Integer;+TR;>;
+kt (ChannelSegment<E>?,\u0020Int?)\u0020->\u0020R
+ko (ChannelSegment<E>?,\u0020Int?)\u0020->\u0020R
+end
+=== coroutines110 Lkotlin/jvm/functions/Function2<TE;Lkotlin/coroutines/Continuation<-Lkotlinx/coroutines/channels/ReceiveChannel<+TR;>;>;Ljava/lang/Object;>;
+kt (E?,\u0020Continuation<?\u0020super\u0020ReceiveChannel<out\u0020R>>?)\u0020->\u0020Any
+ko (E?,\u0020Continuation<?\u0020super\u0020ReceiveChannel<out\u0020R>>?)\u0020->\u0020Any
+end
+=== coroutines110 Lkotlin/jvm/functions/Function3<Ljava/lang/Object;-Lkotlinx/coroutines/selects/SelectInstance<*>;Ljava/lang/Object;Lkotlin/Unit;>;
+kt (Any?,\u0020SelectInstance<*>?,\u0020Any?)\u0020->\u0020Unit
+ko (Any?,\u0020SelectInstance<*>?,\u0020Any?)\u0020->\u0020Unit
+end
+=== coroutines110 Lkotlin/jvm/internal/Ref$BooleanRef;
+kt BooleanRef
+ko BooleanRef
+end
+=== coroutines110 Lkotlinx/coroutines/CancellableContinuation;
+kt CancellableContinuation
+ko CancellableContinuation
+end
+=== coroutines110 Lkotlinx/coroutines/CopyableThreadContextElement;
+kt CopyableThreadContextElement
+ko CopyableThreadContextElement
+end
+=== coroutines110 Lkotlinx/coroutines/ExecutorCoroutineDispatcher$Key;
+kt Key
+ko Key
+end
+=== coroutines110 Lkotlinx/coroutines/Waiter;
+kt Waiter
+ko Waiter
+end
+=== coroutines110 Lkotlinx/coroutines/channels/ChannelResult$Failed;
+kt Failed
+ko Failed
+end
+=== coroutines110 Lkotlinx/coroutines/channels/ReceiveChannel<TT;>;
+kt ReceiveChannel<T>
+ko ReceiveChannel<T>
+end
+=== coroutines110 Lkotlinx/coroutines/flow/CallbackFlowBuilder;
+kt CallbackFlowBuilder
+ko CallbackFlowBuilder
+end
+=== coroutines110 Lkotlinx/coroutines/flow/Flow<TT1;>;
+kt Flow<T1>
+ko Flow<T1>
+end
+=== coroutines110 Lkotlinx/coroutines/flow/FlowKt__CountKt$count$4<-TT;>;
+kt 4<in\u0020T>
+ko 4<in\u0020T>
+end
+=== coroutines110 Lkotlinx/coroutines/flow/FlowKt__LimitKt$dropWhile$1$1<-TT;>;
+kt 1<in\u0020T>
+ko 1<in\u0020T>
+end
+=== coroutines110 Lkotlinx/coroutines/flow/FlowKt__TransformKt$filterIsInstance$$inlined$filter$1;
+kt 1
+ko 1
+end
+=== coroutines110 Lkotlinx/coroutines/flow/SharedFlowImpl$Emitter;
+kt Emitter
+ko Emitter
+end
+=== coroutines110 Lkotlinx/coroutines/flow/internal/ChannelFlow<TT;>;
+kt ChannelFlow<T>
+ko ChannelFlow<T>
+end
+=== coroutines110 Lkotlinx/coroutines/future/ContinuationHandler;
+kt ContinuationHandler
+ko ContinuationHandler
+end
+=== coroutines110 Lkotlinx/coroutines/internal/Segment<*>;
+kt Segment<*>
+ko Segment<*>
+end
+=== coroutines110 Lkotlinx/coroutines/selects/SelectClause1<+TQ;>;
+kt SelectClause1<out\u0020Q>
+ko SelectClause1<out\u0020Q>
+end
+=== coroutines110 Lkotlinx/coroutines/sync/SemaphoreAndMutexImpl$addAcquireToQueue$createNewSegment$1;
+kt 1
+ko 1
+end
+=== coroutines110 [Lkotlinx/coroutines/Deferred;
+kt Array<Deferred>
+ko Array<Deferred>
+end
+=== okio B
+kt Byte
+ko Byte
+end
+=== okio Lkotlin/jvm/functions/Function1;
+kt Function1
+ko Function1
+end
+=== okio Lokio/Pipe;
+kt Pipe
+ko Pipe
+end
+=== okhttp B
+kt Byte
+ko Byte
+end
+=== okhttp Ljava/net/InetSocketAddress;
+kt InetSocketAddress
+ko InetSocketAddress
+end
+=== okhttp Ljava/util/Iterator;
+kt java.util.Iterator
+ko Iterator
+end
+=== okhttp Ljava/util/List<Lokhttp3/Protocol;>;
+kt MutableList<Protocol>
+ko MutableList<Protocol>
+end
+=== okhttp Ljava/util/concurrent/ExecutorService;
+kt ExecutorService
+ko ExecutorService
+end
+=== okhttp Lkotlin/jvm/functions/Function1<-TT;Ljava/lang/Integer;>;
+kt (T?)\u0020->\u0020Int
+ko (T?)\u0020->\u0020Int
+end
+=== okhttp Lokhttp3/ConnectionSpec;
+kt ConnectionSpec
+ko ConnectionSpec
+end
+=== okhttp Lokhttp3/MultipartBody$Companion;
+kt Companion
+ko Companion
+end
+=== okhttp Lokhttp3/internal/cache/DiskLruCache$Companion;
+kt Companion
+ko Companion
+end
+=== okhttp Lokhttp3/internal/http/ExchangeCodec$Companion;
+kt Companion
+ko Companion
+end
+=== okhttp Lokhttp3/internal/http2/Http2Stream$Companion;
+kt Companion
+ko Companion
+end
+=== okhttp Lokhttp3/internal/platform/android/AndroidCertificateChainCleaner$Companion;
+kt Companion
+ko Companion
+end
+=== okhttp Lokio/Buffer$UnsafeCursor;
+kt UnsafeCursor
+ko UnsafeCursor
+end
+=== okhttp [Lokhttp3/internal/http2/Huffman$Node;
+kt Array<Node>
+ko Array<Node>
+end
+=== coroutines I
+kt Int
+ko Int
+end
+=== coroutines Ljava/lang/instrument/Instrumentation;
+kt Instrumentation
+ko Instrumentation
+end
+=== coroutines Ljava/util/List<+Lkotlinx/coroutines/internal/MainDispatcherFactory;>;
+kt MutableList<MainDispatcherFactory>
+ko MutableList<MainDispatcherFactory>
+end
+=== coroutines Ljava/util/concurrent/ConcurrentLinkedQueue<Ljava/lang/Runnable;>;
+kt ConcurrentLinkedQueue<Runnable>
+ko ConcurrentLinkedQueue<Runnable>
+end
+=== coroutines Lkotlin/coroutines/Continuation<*>;
+kt Continuation<*>
+ko Continuation<*>
+end
+=== coroutines Lkotlin/coroutines/Continuation<-Lkotlinx/coroutines/channels/ChannelsKt__DeprecatedKt$distinct$1;>;
+kt Continuation<in\u00201>
+ko Continuation<in\u00201>
+end
+=== coroutines Lkotlin/coroutines/Continuation<-Lkotlinx/coroutines/channels/ChannelsKt__DeprecatedKt$toMap$2;>;
+kt Continuation<in\u00202>
+ko Continuation<in\u00202>
+end
+=== coroutines Lkotlin/coroutines/Continuation<-Lkotlinx/coroutines/flow/FlowKt__DelayKt$sample$2$values$1;>;
+kt Continuation<in\u00201>
+ko Continuation<in\u00201>
+end
+=== coroutines Lkotlin/coroutines/Continuation<-Lkotlinx/coroutines/flow/FlowKt__ReduceKt$fold$1;>;
+kt Continuation<in\u00201>
+ko Continuation<in\u00201>
+end
+=== coroutines Lkotlin/coroutines/Continuation<-Lkotlinx/coroutines/flow/StateFlow<+TT;>;>;
+kt Continuation<?\u0020super\u0020StateFlow<out\u0020T>>
+ko Continuation<?\u0020super\u0020StateFlow<out\u0020T>>
+end
+=== coroutines Lkotlin/coroutines/Continuation<-Lkotlinx/coroutines/sync/MutexKt$withLock$1;>;
+kt Continuation<in\u00201>
+ko Continuation<in\u00201>
+end
+=== coroutines Lkotlin/jvm/functions/Function0<TT;>;
+kt ()\u0020->\u0020T
+ko ()\u0020->\u0020T
+end
+=== coroutines Lkotlin/jvm/functions/Function1<-TT;Ljava/lang/Long;>;
+kt (T?)\u0020->\u0020java.lang.Long
+ko (T?)\u0020->\u0020java.lang.Long
+end
+=== coroutines Lkotlin/jvm/functions/Function2<-Lkotlinx/coroutines/flow/FlowCollector<-TT;>;-Lkotlin/coroutines/Continuation<-Lkotlin/Unit;>;+Ljava/lang/Object;>;
+kt (FlowCollector<in\u0020T>?,\u0020Continuation<in\u0020Unit>?)\u0020->\u0020Any
+ko (FlowCollector<in\u0020T>?,\u0020Continuation<in\u0020Unit>?)\u0020->\u0020Any
+end
+=== coroutines Lkotlin/jvm/functions/Function2<TK;TV;TE;>;
+kt (K?,\u0020V?)\u0020->\u0020E
+ko (K?,\u0020V?)\u0020->\u0020E
+end
+=== coroutines Lkotlin/jvm/functions/Function3<Lkotlinx/coroutines/flow/FlowCollector<-TR;>;[TT;Lkotlin/coroutines/Continuation<-Lkotlin/Unit;>;Ljava/lang/Object;>;
+kt (FlowCollector<in\u0020R>?,\u0020Array<T>?,\u0020Continuation<in\u0020Unit>?)\u0020->\u0020Any
+ko (FlowCollector<in\u0020R>?,\u0020Array<T>?,\u0020Continuation<in\u0020Unit>?)\u0020->\u0020Any
+end
+=== coroutines Lkotlin/jvm/internal/Ref$ObjectRef<TT;>;
+kt ObjectRef<T>
+ko ObjectRef<T>
+end
+=== coroutines Lkotlinx/coroutines/CancellableContinuation<Lkotlin/Unit;>;
+kt CancellableContinuation<Unit>
+ko CancellableContinuation<Unit>
+end
+=== coroutines Lkotlinx/coroutines/CoroutineId$Key;
+kt Key
+ko Key
+end
+=== coroutines Lkotlinx/coroutines/JobCancellationException;
+kt JobCancellationException
+ko JobCancellationException
+end
+=== coroutines Lkotlinx/coroutines/channels/BroadcastChannel<TT;>;
+kt BroadcastChannel<T>
+ko BroadcastChannel<T>
+end
+=== coroutines Lkotlinx/coroutines/channels/ChannelsKt__DeprecatedKt$zip$1;
+kt 1
+ko 1
+end
+=== coroutines Lkotlinx/coroutines/channels/SendChannel<-Lkotlin/Unit;>;
+kt SendChannel<in\u0020Unit>
+ko SendChannel<in\u0020Unit>
+end
+=== coroutines Lkotlinx/coroutines/flow/AbstractFlow;
+kt AbstractFlow
+ko AbstractFlow
+end
+=== coroutines Lkotlinx/coroutines/flow/Flow<TS;>;
+kt Flow<S>
+ko Flow<S>
+end
+=== coroutines Lkotlinx/coroutines/flow/FlowKt__CountKt$count$4;
+kt 4
+ko 4
+end
+=== coroutines Lkotlinx/coroutines/flow/FlowKt__LimitKt$drop$2$1;
+kt 1
+ko 1
+end
+=== coroutines Lkotlinx/coroutines/flow/FlowKt__TransformKt$filterIsInstance$$inlined$filter$2$2;
+kt 2
+ko 2
+end
+=== coroutines Lkotlinx/coroutines/flow/SharedFlowImpl;
+kt SharedFlowImpl
+ko SharedFlowImpl
+end
+=== coroutines Lkotlinx/coroutines/flow/internal/ChannelFlowMerge$collectTo$2;
+kt 2
+ko 2
+end
+=== coroutines Lkotlinx/coroutines/flow/internal/SubscriptionCountStateFlow;
+kt SubscriptionCountStateFlow
+ko SubscriptionCountStateFlow
+end
+=== coroutines Lkotlinx/coroutines/internal/ResizableAtomicArray<Lkotlinx/coroutines/scheduling/CoroutineScheduler$Worker;>;
+kt ResizableAtomicArray<Worker>
+ko ResizableAtomicArray<Worker>
+end
+=== coroutines Lkotlinx/coroutines/selects/OnTimeout$selectClause$1;
+kt 1
+ko 1
+end
+=== coroutines Lkotlinx/coroutines/selects/UnbiasedSelectImplementation<TR;>;
+kt UnbiasedSelectImplementation<R>
+ko UnbiasedSelectImplementation<R>
+end
+=== coroutines [I
+kt IntArray
+ko IntArray
+end
+=== moshi I
+kt Int
+ko Int
+end
+=== moshi TP;
+kt P
+ko P
+end
+=== reflect16 B
+kt Byte
+ko Byte
+end
+=== reflect16 Ljava/lang/Iterable<+TK;>;
+kt MutableIterable<K>
+ko MutableIterable<K>
+end
+=== reflect16 Ljava/lang/reflect/Method;
+kt Method
+ko Method
+end
+=== reflect16 Ljava/util/Collection<+Lkotlin/reflect/jvm/internal/impl/descriptors/ValueParameterDescriptor;>;
+kt MutableCollection<ValueParameterDescriptor>
+ko MutableCollection<ValueParameterDescriptor>
+end
+=== reflect16 Ljava/util/Collection<Lkotlin/reflect/jvm/internal/impl/descriptors/impl/TypeAliasConstructorDescriptor;>;
+kt MutableCollection<TypeAliasConstructorDescriptor>
+ko MutableCollection<TypeAliasConstructorDescriptor>
+end
+=== reflect16 Ljava/util/HashMap<Lkotlin/reflect/jvm/internal/impl/name/FqNameUnsafe;Lkotlin/reflect/jvm/internal/impl/name/ClassId;>;
+kt HashMap<FqNameUnsafe,\u0020ClassId>
+ko HashMap<FqNameUnsafe,\u0020ClassId>
+end
+=== reflect16 Ljava/util/List<+Lkotlin/reflect/jvm/internal/impl/descriptors/PackageFragmentProvider;>;
+kt MutableList<PackageFragmentProvider>
+ko MutableList<PackageFragmentProvider>
+end
+=== reflect16 Ljava/util/List<Lkotlin/reflect/KType;>;
+kt MutableList<KType>
+ko MutableList<KType>
+end
+=== reflect16 Ljava/util/List<Lkotlin/reflect/jvm/internal/impl/descriptors/runtime/structure/ReflectJavaClassifierType;>;
+kt MutableList<ReflectJavaClassifierType>
+ko MutableList<ReflectJavaClassifierType>
+end
+=== reflect16 Ljava/util/List<Lkotlin/reflect/jvm/internal/impl/metadata/ProtoBuf$TypeParameter;>;
+kt MutableList<TypeParameter>
+ko MutableList<TypeParameter>
+end
+=== reflect16 Ljava/util/Map;
+kt java.util.Map
+ko Map
+end
+=== reflect16 Ljava/util/Map<Lkotlin/reflect/jvm/internal/impl/load/java/SpecialGenericSignatures$Companion$NameAndSignature;Lkotlin/reflect/jvm/internal/impl/load/java/SpecialGenericSignatures$TypeSafeBarrierDescription;>;
+kt MutableMap<NameAndSignature,\u0020TypeSafeBarrierDescription>
+ko MutableMap<NameAndSignature,\u0020TypeSafeBarrierDescription>
+end
+=== reflect16 Ljava/util/Map<Lkotlin/reflect/jvm/internal/impl/name/Name;Lkotlin/reflect/jvm/internal/impl/resolve/constants/ConstantValue<*>;>;
+kt MutableMap<Name,\u0020ConstantValue<*>>
+ko MutableMap<Name,\u0020ConstantValue<*>>
+end
+=== reflect16 Ljava/util/Set<Lkotlin/reflect/jvm/internal/impl/descriptors/ClassConstructorDescriptor;>;
+kt MutableSet<ClassConstructorDescriptor>
+ko MutableSet<ClassConstructorDescriptor>
+end
+=== reflect16 Ljava/util/regex/Pattern;
+kt Pattern
+ko Pattern
+end
+=== reflect16 Lkotlin/coroutines/Continuation<*>;
+kt Continuation<*>
+ko Continuation<*>
+end
+=== reflect16 Lkotlin/jvm/functions/Function1<-Lkotlin/reflect/jvm/internal/impl/descriptors/CallableMemberDescriptor;Ljava/lang/Boolean;>;
+kt (CallableMemberDescriptor?)\u0020->\u0020java.lang.Boolean
+ko (CallableMemberDescriptor?)\u0020->\u0020java.lang.Boolean
+end
+=== reflect16 Lkotlin/jvm/functions/Function1<Lkotlin/reflect/jvm/internal/impl/builtins/KotlinBuiltIns;Lkotlin/reflect/jvm/internal/impl/types/KotlinType;>;
+kt (KotlinBuiltIns?)\u0020->\u0020KotlinType
+ko (KotlinBuiltIns?)\u0020->\u0020KotlinType
+end
+=== reflect16 Lkotlin/jvm/functions/Function2<-Lkotlin/reflect/jvm/internal/impl/types/SimpleType;-Lkotlin/reflect/jvm/internal/impl/types/SimpleType;Ljava/lang/Boolean;>;
+kt (SimpleType?,\u0020SimpleType?)\u0020->\u0020java.lang.Boolean
+ko (SimpleType?,\u0020SimpleType?)\u0020->\u0020java.lang.Boolean
+end
+=== reflect16 Lkotlin/reflect/KClassifier;
+kt KClassifier
+ko KClassifier
+end
+=== reflect16 Lkotlin/reflect/KVariance;
+kt KVariance
+ko KVariance
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/KDeclarationContainerImpl$findPropertyDescriptor$mostVisibleProperties$2<TT;>;
+kt 2<T>
+ko 2<T>
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/KProperty1Impl<TT;TV;>;
+kt KProperty1Impl<T,\u0020V>
+ko KProperty1Impl<T,\u0020V>
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/ReflectProperties$LazyVal<Ljava/lang/reflect/Field;>;
+kt LazyVal<Field>
+ko LazyVal<Field>
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/builtins/BuiltInsLoader$Companion$Instance$2;
+kt 2
+ko 2
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/builtins/jvm/JavaToKotlinClassMap$PlatformMutabilityMapping;
+kt PlatformMutabilityMapping
+ko PlatformMutabilityMapping
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/descriptors/ConstructorDescriptor;
+kt ConstructorDescriptor
+ko ConstructorDescriptor
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/descriptors/NotFoundClasses;
+kt NotFoundClasses
+ko NotFoundClasses
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/descriptors/Visibilities$InvisibleFake;
+kt InvisibleFake
+ko InvisibleFake
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/descriptors/impl/AbstractTypeParameterDescriptor;
+kt AbstractTypeParameterDescriptor
+ko AbstractTypeParameterDescriptor
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/descriptors/java/JavaVisibilities$PackageVisibility;
+kt PackageVisibility
+ko PackageVisibility
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/descriptors/runtime/structure/ReflectJavaClass$innerClassNames$2;
+kt 2
+ko 2
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/load/java/JavaClassFinder$Request;
+kt Request
+ko Request
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/load/java/components/JavaAnnotationMapper;
+kt JavaAnnotationMapper
+ko JavaAnnotationMapper
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/load/java/lazy/descriptors/DeclaredMemberIndex$Empty;
+kt Empty
+ko Empty
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/load/java/lazy/types/RawTypeImpl$render$newArgs$1;
+kt 1
+ko 1
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/load/java/typeEnhancement/JavaTypeQualifiers;
+kt JavaTypeQualifiers
+ko JavaTypeQualifiers
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/load/kotlin/DeserializedDescriptorResolver$Companion;
+kt Companion
+ko Companion
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/load/kotlin/TypeMappingConfigurationImpl;
+kt TypeMappingConfigurationImpl
+ko TypeMappingConfigurationImpl
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/metadata/ProtoBuf$Expression$Builder;
+kt Builder
+ko Builder
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/metadata/ProtoBuf$TypeTable;
+kt TypeTable
+ko TypeTable
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/metadata/jvm/JvmProtoBuf$JvmMethodSignature$Builder;
+kt Builder
+ko Builder
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/protobuf/AbstractMessageLite$Builder;
+kt Builder
+ko Builder
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/protobuf/GeneratedMessageLite$ExtendableMessage$ExtensionWriter;
+kt ExtensionWriter
+ko ExtensionWriter
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/protobuf/GeneratedMessageLite$GeneratedExtension<TMessageType;Ljava/util/List<TType;>;>;
+kt GeneratedExtension<MessageType,\u0020java.util.List<Type>>
+ko List<Type>>
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/protobuf/Parser<Lkotlin/reflect/jvm/internal/impl/metadata/ProtoBuf$Annotation$Argument;>;
+kt Parser<Argument>
+ko Parser<Argument>
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/protobuf/RopeByteString$1;
+kt 1
+ko 1
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/renderer/DescriptorRenderer$Companion;
+kt Companion
+ko Companion
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/resolve/calls/inference/CapturedType;
+kt CapturedType
+ko CapturedType
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/resolve/scopes/DescriptorKindExclude$TopLevelPackages;
+kt TopLevelPackages
+ko TopLevelPackages
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/serialization/deserialization/ContractDeserializer$Companion;
+kt Companion
+ko Companion
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/serialization/deserialization/descriptors/DeserializedClassDescriptor$DeserializedClassMemberScope;
+kt DeserializedClassMemberScope
+ko DeserializedClassMemberScope
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/storage/LockBasedStorageManager;
+kt LockBasedStorageManager
+ko LockBasedStorageManager
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/storage/NotNullLazyValue<Ljava/util/Collection<Lkotlin/reflect/jvm/internal/impl/descriptors/PackageViewDescriptor;>;>;
+kt NotNullLazyValue<java.util.Collection<PackageViewDescriptor>>
+ko Collection<PackageViewDescriptor>>
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/types/AbstractNullabilityChecker;
+kt AbstractNullabilityChecker
+ko AbstractNullabilityChecker
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/types/KotlinTypeFactory$ExpandedTypeOrRefinedConstructor;
+kt ExpandedTypeOrRefinedConstructor
+ko ExpandedTypeOrRefinedConstructor
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/types/UnresolvedType;
+kt UnresolvedType
+ko UnresolvedType
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/types/model/SimpleTypeMarker;
+kt SimpleTypeMarker
+ko SimpleTypeMarker
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/util/OperatorChecks$checks$1;
+kt 1
+ko 1
+end
+=== reflect16 Lkotlin/reflect/jvm/internal/impl/utils/SmartList<Lkotlin/reflect/jvm/internal/impl/resolve/scopes/MemberScope;>;
+kt SmartList<MemberScope>
+ko SmartList<MemberScope>
+end
+=== reflect16 TC;
+kt C
+ko C
+end
+=== reflect16 [Lkotlin/reflect/jvm/internal/calls/AnnotationConstructorCaller$Origin;
+kt Array<Origin>
+ko Array<Origin>
+end
+=== reflect16 [Lkotlin/reflect/jvm/internal/impl/load/kotlin/header/KotlinClassHeader$Kind;
+kt Array<Kind>
+ko Array<Kind>
+end
+=== reflect16 [Lkotlin/reflect/jvm/internal/impl/serialization/deserialization/AnnotatedCallableKind;
+kt Array<AnnotatedCallableKind>
+ko Array<AnnotatedCallableKind>
+end

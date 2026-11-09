@@ -770,17 +770,15 @@ fn kotlin_statements_and_import_collectors_dispatch_to_their_kotlin_class() {
     assert!(collector.try_as_kotlin().is_none());
     collector.set_kotlin(true);
     assert!(collector.is_kotlin());
+    assert!(collector.keep_import(("List", "java.util")));
+    assert!(!collector.keep_import(("List", "kotlin.collections")));
+    assert!(!collector.keep_import(("Unit", "kotlin")));
+    assert_eq!(collector.pack_imports(), ["java.util.List"]);
+    let mut imports = TextBuffer::new();
+    collector.write_imports(&mut imports, true);
     assert_eq!(
-        unported(|| collector.keep_import(("List", "java.util"))),
-        "KotlinImportCollector.keepImport"
-    );
-    assert_eq!(
-        unported(|| collector.pack_imports()),
-        "KotlinImportCollector.keepImport"
-    );
-    assert_eq!(
-        unported(|| collector.write_imports(&mut TextBuffer::new(), true)),
-        "KotlinImportCollector.writeImports"
+        imports.convert_to_string_and_allow_data_discard(),
+        "import java.util.List\n\n"
     );
     assert!(ImportCollector::keep_import_base(
         collector,
