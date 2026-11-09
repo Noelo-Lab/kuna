@@ -45,3 +45,14 @@ java/util/stream/IntStream	boxed	()Ljava/util/stream/Stream;
 java/sql/DriverManager	getConnection	(Ljava/lang/String;)Ljava/sql/Connection;
 java/lang/Missing	foo	()Ljava/lang/Object;
 com/example/Foo	bar	(Ljava/lang/String;)Ljava/lang/String;
+java/rmi/server/LogStream	printf	(Ljava/lang/String;[Ljava/lang/Object;)Ljava/io/PrintStream;
+java/io/PrintStream	format	(Ljava/util/Locale;Ljava/lang/String;[Ljava/lang/Object;)Ljava/io/PrintStream;
+java/util/Objects	hash	([Ljava/lang/Object;)I
+java/util/Collections	addAll	(Ljava/util/Collection;[Ljava/lang/Object;)Z
+java/net/http/HttpRequest$Builder	headers	([Ljava/lang/String;)Ljava/net/http/HttpRequest$Builder;
+java/util/EnumSet	of	(Ljava/lang/Enum;[Ljava/lang/Enum;)Ljava/util/EnumSet;
+java/lang/String	formatted	([Ljava/lang/Object;)Ljava/lang/String;
+java/lang/reflect/Method	invoke	(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;
+java/lang/invoke/MethodHandles	dropArguments	(Ljava/lang/invoke/MethodHandle;I[Ljava/lang/Class;)Ljava/lang/invoke/MethodHandle;
+java/text/MessageFormat	format	(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;
+java/util/Map$Entry	comparingByKey	()Ljava/util/Comparator;
