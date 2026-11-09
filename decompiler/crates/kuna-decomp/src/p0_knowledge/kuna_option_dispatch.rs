@@ -1268,6 +1268,8 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
+    "dyldimage" => Ok(crate::kuna_dyldcache::set_dyldimage(p1)),
+    "dyldcrossrefs" => crate::kuna_dyldcache::set_dyldcrossrefs(p1),
     "swiftdemangle" => {
         let val = on_or_off(p1)?;
         self.analysis_swiftdemangle = val;

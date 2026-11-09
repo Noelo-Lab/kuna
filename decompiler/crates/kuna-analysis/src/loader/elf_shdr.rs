@@ -59,7 +59,10 @@ pub fn read_image_sliced_repaired(
     path: &str,
     pref: super::macho_fat::SlicePref,
 ) -> std::io::Result<(Vec<u8>, bool)> {
-    let bytes = std::fs::read(path)?;
+    let bytes = match super::kuna_dyldcache::read_selected_image(std::path::Path::new(path)) {
+        Some(image) => image.map_err(std::io::Error::other)?,
+        None => std::fs::read(path)?,
+    };
     let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
     let bytes = super::kuna_kernelcache::peel(bytes, &choice).map_err(std::io::Error::other)?.bytes;
     let bytes = super::macho_fat::peel_fat_image(bytes, pref);

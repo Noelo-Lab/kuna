@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_400() {
-    assert_eq!(kuna_num_settables(), 400);
-    assert_eq!(SETTABLE_TABLE.len(), 400);
+fn settable_count_is_402() {
+    assert_eq!(kuna_num_settables(), 402);
+    assert_eq!(SETTABLE_TABLE.len(), 402);
 }
 
 #[test]
-fn tier_counts_are_136_core_159_transform_105_analysis() {
+fn tier_counts_are_136_core_159_transform_107_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_136_core_159_transform_105_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (136, 159, 105));
+    assert_eq!((core, transform, analysis), (136, 159, 107));
 }
 
 #[test]
@@ -288,6 +288,10 @@ fn option_values_live_value_present_for_189() {
         // (kuna) Swift demangling - a loadtime env bridge (`KUNA_SWIFTDEMANGLE`,
         // the rexthunk pattern); live state read console-side.
         "swiftdemangle",
+        // (kuna) dyld shared cache image selection and cross-image naming -
+        // loadtime env bridges (`KUNA_DYLD_IMAGE`, `KUNA_DYLDCROSSREFS`).
+        "dyldimage",
+        "dyldcrossrefs",
         // (kuna) golang cspec selection - a loadtime env bridge (`KUNA_GOABI`,
         // the rexthunk/sourcelang pattern) whose live state is read
         // console-side via `kuna_live_value` (auto|off token), so it has no
@@ -1235,7 +1239,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `objcivars`; its P1 row sits beside `objcrefconst`.
     // +1 for `swiftcall`, beside that.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
-    assert_eq!(json.matches("},\n").count(), 399);
+    // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
+    assert_eq!(json.matches("},\n").count(), 401);
 }
 
 #[test]
