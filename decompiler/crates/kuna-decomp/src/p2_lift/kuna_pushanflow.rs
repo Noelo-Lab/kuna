@@ -1131,6 +1131,16 @@ impl<'a> Explorer<'a> {
             return None;
         }
         let var_expr = self.arena.var_expr(var)?;
+        // A guard other than the symbol's comparison with a recorded constant
+        // (a loop's exit test) can take values the recorded constants never
+        // showed: that target is split on its atoms instead.
+        for a in self.arena.bool_atoms(t) {
+            let super::kuna_pushanexpr::ExprKind::Bin(OpCode::CPUI_INT_EQUAL, x, k) = self.arena.kind(a).clone() else { return None };
+            let (x, k) = if self.arena.is_const(x).is_some() { (k, x) } else { (x, k) };
+            if x != var_expr || !self.arena.is_const(k).is_some_and(|c| values.contains(&c)) {
+                return None;
+            }
+        }
         let mut out = Vec::new();
         for v in values {
             let kc = self.arena.cst(self.arena.size(var_expr), v);
