@@ -3253,6 +3253,12 @@ class	kuna-fixes/classes/pkg/TestInnerOfGenericOuter$Itrs.class
 class	kuna-fixes/classes/pkg/TestInnerOfGenericOuter$Ref.class
 expected	kuna-fixes/expected-compat/pkg/TestInnerOfGenericOuter.java
 compare	TestInnerOfGenericOuter.java
+case	kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass.class
+class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1.class
+class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1LocalClass.class
+expected	kuna-fixes/expected-compat/pkg/TestLocalClassAnonymousSubclass.java
+compare	TestLocalClassAnonymousSubclass.java
 case	kuna-fixes-compat/pkg/TestLocalVisibilityComment	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestLocalVisibilityComment.class
@@ -3269,6 +3275,12 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected-compat/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes-compat/pkg/TestNonPublicNestedImport	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestNonPublicNestedImport.class
+class	kuna-fixes/classes/pkg/TestNonPublicNestedImport$1.class
+class	kuna-fixes/classes/pkg/TestNonPublicNestedImport$2.class
+expected	kuna-fixes/expected-compat/pkg/TestNonPublicNestedImport.java
+compare	TestNonPublicNestedImport.java
 case	kuna-fixes-compat/pkg/TestObjectSuperCall	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestObjectSuperCall.class
@@ -3280,6 +3292,19 @@ class	kuna-fixes/classes/pkg/TestObjectSuperCall$make$1.class
 class	kuna-fixes/classes/pkg/TestObjectSuperCall$plain$1.class
 expected	kuna-fixes/expected-compat/pkg/TestObjectSuperCall.kt
 compare	TestObjectSuperCall.kt	TestObjectSuperCall.java
+case	kuna-fixes-compat/pkg/TestOverrideInaccessible	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestOverrideInaccessible.class
+class	kuna-fixes/classes/pkg/TestOverrideInaccessible$Inner.class
+class	kuna-fixes/classes/pkg/TestOverrideInaccessible$InnerSub.class
+class	kuna-fixes/classes/ext/TestOverrideInaccessibleBase.class
+expected	kuna-fixes/expected-compat/pkg/TestOverrideInaccessible.java
+compare	TestOverrideInaccessible.java
+case	kuna-fixes-compat/pkg/TestPatternVariableScope	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestPatternVariableScope.class
+class	kuna-fixes/classes/pkg/TestPatternVariableScope$Special.class
+class	kuna-fixes/classes/pkg/TestPatternVariableScope$Stream.class
+expected	kuna-fixes/expected-compat/pkg/TestPatternVariableScope.java
+compare	TestPatternVariableScope.java
 case	kuna-fixes-compat/pkg/TestPropertyReferencesKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestPropertyReferencesKt.class
@@ -3348,6 +3373,10 @@ class	kuna-fixes/classes/pkg/TestSuspendResultCast$fold$1.class
 class	kuna-fixes/classes/pkg/TestSuspendResultCast$sum$1.class
 expected	kuna-fixes/expected-compat/pkg/TestSuspendResultCast.java
 compare	TestSuspendResultCast.java
+case	kuna-fixes-compat/pkg/TestSwitchCaseScope	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSwitchCaseScope.class
+expected	kuna-fixes/expected-compat/pkg/TestSwitchCaseScope.java
+compare	TestSwitchCaseScope.java
 case	kuna-fixes-compat/pkg/TestSwitchExprConstLub	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub.class
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub$IntSink.class
@@ -3396,6 +3425,13 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestVarargFromMetadata.class
 expected	kuna-fixes/expected-compat/pkg/TestVarargFromMetadata.kt
 compare	TestVarargFromMetadata.kt	TestVarargFromMetadata.java
+case	kuna-fixes-compat/pkg/TestWildcardArrayBound	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestWildcardArrayBound.class
+class	kuna-fixes/classes/pkg/TestWildcardArrayBound$BytesEncoder.class
+class	kuna-fixes/classes/pkg/TestWildcardArrayBound$Encoder.class
+class	kuna-fixes/classes/pkg/TestWildcardArrayBound$Source.class
+expected	kuna-fixes/expected-compat/pkg/TestWildcardArrayBound.java
+compare	TestWildcardArrayBound.java
 case	kuna-fixes/pkg/TestAnonymousStaticCall	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall.class
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$1$1.class
@@ -3518,6 +3554,12 @@ class	kuna-fixes/classes/pkg/TestInnerOfGenericOuter$Itrs.class
 class	kuna-fixes/classes/pkg/TestInnerOfGenericOuter$Ref.class
 expected	kuna-fixes/expected/pkg/TestInnerOfGenericOuter.java
 compare	TestInnerOfGenericOuter.java
+case	kuna-fixes/pkg/TestLocalClassAnonymousSubclass	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass.class
+class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1.class
+class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1LocalClass.class
+expected	kuna-fixes/expected/pkg/TestLocalClassAnonymousSubclass.java
+compare	TestLocalClassAnonymousSubclass.java
 case	kuna-fixes/pkg/TestLocalVisibilityComment	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestLocalVisibilityComment.class
@@ -3534,6 +3576,12 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes/pkg/TestNonPublicNestedImport	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestNonPublicNestedImport.class
+class	kuna-fixes/classes/pkg/TestNonPublicNestedImport$1.class
+class	kuna-fixes/classes/pkg/TestNonPublicNestedImport$2.class
+expected	kuna-fixes/expected/pkg/TestNonPublicNestedImport.java
+compare	TestNonPublicNestedImport.java
 case	kuna-fixes/pkg/TestObjectSuperCall	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestObjectSuperCall.class
@@ -3545,6 +3593,19 @@ class	kuna-fixes/classes/pkg/TestObjectSuperCall$make$1.class
 class	kuna-fixes/classes/pkg/TestObjectSuperCall$plain$1.class
 expected	kuna-fixes/expected/pkg/TestObjectSuperCall.kt
 compare	TestObjectSuperCall.kt	TestObjectSuperCall.java
+case	kuna-fixes/pkg/TestOverrideInaccessible	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestOverrideInaccessible.class
+class	kuna-fixes/classes/pkg/TestOverrideInaccessible$Inner.class
+class	kuna-fixes/classes/pkg/TestOverrideInaccessible$InnerSub.class
+class	kuna-fixes/classes/ext/TestOverrideInaccessibleBase.class
+expected	kuna-fixes/expected/pkg/TestOverrideInaccessible.java
+compare	TestOverrideInaccessible.java
+case	kuna-fixes/pkg/TestPatternVariableScope	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestPatternVariableScope.class
+class	kuna-fixes/classes/pkg/TestPatternVariableScope$Special.class
+class	kuna-fixes/classes/pkg/TestPatternVariableScope$Stream.class
+expected	kuna-fixes/expected/pkg/TestPatternVariableScope.java
+compare	TestPatternVariableScope.java
 case	kuna-fixes/pkg/TestPropertyReferencesKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestPropertyReferencesKt.class
@@ -3613,6 +3674,10 @@ class	kuna-fixes/classes/pkg/TestSuspendResultCast$fold$1.class
 class	kuna-fixes/classes/pkg/TestSuspendResultCast$sum$1.class
 expected	kuna-fixes/expected/pkg/TestSuspendResultCast.java
 compare	TestSuspendResultCast.java
+case	kuna-fixes/pkg/TestSwitchCaseScope	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSwitchCaseScope.class
+expected	kuna-fixes/expected/pkg/TestSwitchCaseScope.java
+compare	TestSwitchCaseScope.java
 case	kuna-fixes/pkg/TestSwitchExprConstLub	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub.class
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub$IntSink.class
@@ -3661,3 +3726,10 @@ opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestVarargFromMetadata.class
 expected	kuna-fixes/expected/pkg/TestVarargFromMetadata.kt
 compare	TestVarargFromMetadata.kt	TestVarargFromMetadata.java
+case	kuna-fixes/pkg/TestWildcardArrayBound	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestWildcardArrayBound.class
+class	kuna-fixes/classes/pkg/TestWildcardArrayBound$BytesEncoder.class
+class	kuna-fixes/classes/pkg/TestWildcardArrayBound$Encoder.class
+class	kuna-fixes/classes/pkg/TestWildcardArrayBound$Source.class
+expected	kuna-fixes/expected/pkg/TestWildcardArrayBound.java
+compare	TestWildcardArrayBound.java

@@ -13,6 +13,7 @@ same tokens (`layout`, which such a fix causes where a line grows past the wrap 
 is printed as collateral and the exit status is 1. The counts it prints are the evidence a fix's commit quotes
 (docs/jvm.md, "Fixing a Vineflower bug").
 """
+import collections
 import difflib
 import os
 import re
@@ -725,6 +726,124 @@ def kt_callable_reference(old, new):
         return False
     pattern = CALLABLE_REFERENCE.join(re.escape(p) for p in o.split(UNREPRESENTABLE_INSTANCE))
     return re.fullmatch(pattern, n) is not None
+IDENT = re.compile(r'[A-Za-z_$][\w$]*$')
+PRIMITIVES = {'boolean', 'byte', 'char', 'short', 'int', 'long', 'float', 'double'}
+
+
+def nonpublic_nested_import(old, new):
+    """nonpublic_nested_import: token for token, a class name `Inner` became `Outer.Inner` (one or more
+    capitalized qualifiers put before a name not itself qualified), or a fully qualified `pkg.Outer.Inner`
+    lost its package, the lines possibly reflowed."""
+    a, b = tokens(old), tokens(new)
+    i = j = 0
+    found = False
+    while j < len(b):
+        if i < len(a) and a[i] == b[j]:
+            i, j = i + 1, j + 1
+        elif (i + 1 < len(a) and a[i + 1] == '.' and IDENT.match(a[i]) and a[i][0].islower()
+              and (i == 0 or a[i - 1] != '.') and IDENT.match(b[j]) and b[j][0].isupper()):
+            k = i
+            while k + 1 < len(a) and a[k + 1] == '.' and IDENT.match(a[k]) and a[k][0].islower():
+                k += 2
+            if k < len(a) and a[k] == b[j]:
+                i, found = k, True
+            else:
+                return False
+        elif (j + 2 < len(b) and b[j + 1] == '.' and IDENT.match(b[j]) and b[j][0].isupper()
+              and (j == 0 or b[j - 1] != '.')):
+            k = j
+            while k + 2 < len(b) and b[k + 1] == '.' and IDENT.match(b[k]) and b[k][0].isupper() and b[k + 2] != (a[i] if i < len(a) else None):
+                k += 2
+            if k + 2 < len(b) and b[k + 1] == '.' and i < len(a) and b[k + 2] == a[i]:
+                j, found = k + 2, True
+            else:
+                return False
+        else:
+            return False
+    return found and i == len(a)
+
+
+def override_inaccessible_method(old, new):
+    """override_inaccessible_method: `@Override` lines removed and nothing else changed."""
+    return bool(old) and not any(x.strip() for x in new) and all(x.strip() == '@Override' for x in old)
+
+
+def primitive_array_wildcard(old, new):
+    """primitive_array_wildcard: token for token, `? extends`/`? super` put before a primitive array type
+    argument, and a cast to a primitive array type (with parentheses) added, the lines possibly reflowed."""
+    a, b = tokens(old), tokens(new)
+    out, i, wild = [], 0, False
+    while i < len(b):
+        if (b[i] == '?' and i + 3 < len(b) and b[i + 1] in ('extends', 'super') and b[i + 2] in PRIMITIVES
+                and b[i + 3] == '['):
+            i, wild = i + 2, True
+            continue
+        if b[i] == '(' and i + 4 < len(b) and b[i + 1] in PRIMITIVES and b[i + 2] == '[':
+            k = i + 2
+            while k + 1 < len(b) and b[k] == '[' and b[k + 1] == ']':
+                k += 2
+            if k < len(b) and b[k] == ')':
+                i = k + 1
+                continue
+        out.append(b[i])
+        i += 1
+    if not wild and out == b:
+        return False
+    return [t for t in out if t not in '()'] == [t for t in a if t not in '()']
+
+
+PATTERN = re.compile(r'instanceof ([\w$.<>\[\], ?]+?) (?!extends\b|super\b)([A-Za-z_$][\w$]*)\b(?!\s*[.(<])')
+
+
+def pattern_variable_scope(old, new):
+    """pattern_variable_scope: a pattern `x instanceof T v` became `x instanceof T` with `T v;` declared
+    and `v = (T)x;` assigned (the branches possibly inverted): every token that differs is the
+    variable, the type, the operand, or punctuation, `if`, `else` and `!`."""
+    a_text, b_text = '\n'.join(old), '\n'.join(new)
+    patterns = PATTERN.findall(a_text)
+    if not patterns:
+        return False
+    allowed = {'=', '(', ')', ';', '{', '}', 'else', '!', 'if', '.', ',', '<', '>', '[', ']', '?', 'extends',
+               'super'}
+    for type_, var in patterns:
+        if re.search(r'instanceof %s %s\b' % (re.escape(type_), re.escape(var)), b_text):
+            continue
+        if not re.search(r'(?<![\w$])%s = \(' % re.escape(var), b_text):
+            return False
+        allowed |= {var} | set(TOKEN.findall(type_))
+        for m in re.finditer(r'([\w$.()]+) instanceof %s %s\b' % (re.escape(type_), re.escape(var)), a_text):
+            allowed |= set(TOKEN.findall(m.group(1)))
+    ca, cb = collections.Counter(tokens(old)), collections.Counter(tokens(new))
+    return set((ca - cb) | (cb - ca)) <= allowed
+
+
+CASE_LABEL = re.compile(r'^(\s*(?:case .*|default):) \{$')
+
+
+def switch_case_scope(old, new):
+    """switch_case_scope: case labels opened with `{` and closed with `}` lines, and locals renamed between
+    `name` and `name` with `x`s appended (a case written earlier keeps the name, a later clash is renamed
+    or braced), and nothing else."""
+    def norm(lines):
+        out = []
+        for line in lines:
+            if line.strip() == '}':
+                continue
+            m = CASE_LABEL.match(line)
+            out.append(m.group(1) if m else line)
+        return [re.sub(r'x+$', '', t) if IDENT.match(t) else t for t in tokens(out)]
+    return old != new and norm(old) == norm(new)
+
+
+LOCAL_CLASS = re.compile(r'^\s*(?:(?:final|abstract|static|strictfp) )*(?:class|interface|enum|record) [\w$]+')
+
+
+def local_class_anonymous_subclass(old, new):
+    """local_class_anonymous_subclass: a local class declaration (its lines, and a blank line) moved: the
+    hunk only deletes or only inserts lines that start with a local class header and end its body."""
+    moved = [x for x in (old or new) if x.strip()]
+    return (not old or not new) and bool(moved) and LOCAL_CLASS.match(moved[0]) is not None \
+        and moved[-1].strip() == '}'
 
 
 CONTEXT_RECOGNISERS = {'enum_body_separator': enum_body_separator,
@@ -749,6 +868,12 @@ RECOGNISERS = {
     'ternary_numeric_arms': ternary_numeric_arms,
     'var_merge_narrowing': var_merge_narrowing,
     'kt_callable_reference': kt_callable_reference,
+    'nonpublic_nested_import': nonpublic_nested_import,
+    'override_inaccessible_method': override_inaccessible_method,
+    'primitive_array_wildcard': primitive_array_wildcard,
+    'pattern_variable_scope': pattern_variable_scope,
+    'switch_case_scope': switch_case_scope,
+    'local_class_anonymous_subclass': local_class_anonymous_subclass,
 }
 
 

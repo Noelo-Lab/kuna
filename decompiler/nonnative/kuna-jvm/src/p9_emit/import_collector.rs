@@ -1,4 +1,5 @@
 //! Port of `org/jetbrains/java/decompiler/main/collectors/ImportCollector.java`.
+//! kuna fix `nonpublic_nested_import` (`kuna_fix_nonpublic_nested_import`).
 
 use std::collections::VecDeque;
 
@@ -7,6 +8,8 @@ use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::kotlin_import_collector::KotlinImportCollector;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p9_emit::kuna_fix_nonpublic_nested_import::qualified_name;
 use crate::rt::{JHashMap, JHashSet};
 use crate::struct_class::StructClass;
 use crate::struct_general_attribute::StructGeneralAttribute;
@@ -170,6 +173,11 @@ impl ImportCollector {
                 return result;
             }
         } else {
+            if kuna_fixes::enabled(KunaFix::NonpublicNestedImport) && !self.with(|d| d.kotlin) {
+                if let Some(name) = qualified_name(self, &full_name, imported) {
+                    return Some(name);
+                }
+            }
             full_name = full_name.replace('$', ".");
         }
 

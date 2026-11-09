@@ -1833,3 +1833,96 @@ class of each caller; 12 in kotlinx-coroutines 1.10.2, such as `drop$2$1` create
 `NestedClassProcessor` against the declaring method's variables, which do not exist where it is
 created. Anything else is an object whose superclass constructor arguments or captured values an
 `object` expression cannot pass. The message is printed only with `dump-exception-on-error` on.
+**The fix `nonpublic_nested_import`**. A single-type import must name a type accessible from
+the compilation unit (JLS 7.5.1), and a member class that is not public, or that is nested in
+one that is not, is accessible from another package only inside the body of a subclass of its
+enclosing class. `ImportCollector.getShortName`
+(`decompiler/nonnative/kuna-jvm/src/p9_emit/import_collector.rs (ImportCollector::get_short_name_imported)`)
+imports every nested class from outside the input by its dotted name, so a protected member
+class of a library type used in a subclass (Lucene's `Weight.DefaultScorerSupplier` in the
+anonymous `Weight` subclasses of Elasticsearch's queries; `FilteredTermsEnum.AcceptStatus`,
+`LRUQueryCache.CacheAndCount`, `ConcurrentMergeScheduler.MergeThread`) becomes an import javac
+rejects (`has protected access`), and the whole file fails to compile (still so on
+`develop/1.13.0`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p9_emit/kuna_fix_nonpublic_nested_import.rs`), a class
+outside the input that the `InnerClasses` attribute of the class being written (or of a class
+enclosing it, or of the class itself when it is loaded) records as a member class of a class in
+another package, and that is not public or is nested in a class that is not, is named through
+its enclosing class, whose own name is shortened (and imported) as usual:
+`Weight.DefaultScorerSupplier`. That name is accessible wherever the source could use the
+class. Kotlin output keeps its imports.
+
+**The fix `override_inaccessible_method`**. A method overrides a superclass method only if
+that method is public, protected, or has package access in the overriding class's package
+(JLS 8.4.8.1); a private method is never overridden. `ClassWriter.searchForMethod`
+(`decompiler/nonnative/kuna-jvm/src/p9_emit/class_writer.rs (ClassWriter::search_for_method)`),
+which decides whether to write `@Override`, matches any non-static supertype method by name and
+descriptor, so a package-private method redeclared in a subclass in another package
+(Elasticsearch's `OptionParser getParser()` in three `ElasticsearchNodeCommand` subclasses) or a
+method that has the name of a private superclass method gets an `@Override` javac rejects
+(`method does not override or implement a method from a supertype`; still so on
+`develop/1.13.0`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p9_emit/kuna_fix_override_inaccessible_method.rs`), the
+search skips a supertype method the class cannot override and goes on to that type's own
+supertypes.
+
+**The fix `primitive_array_wildcard`**. `GenericType.parse`
+(`decompiler/nonnative/kuna-jvm/src/p5_types/generic_type.rs (GenericType::parse_units)`) keeps a
+wildcard only on a class or type-variable type and returns a plain type for a primitive element
+type, so a type argument bounded by a primitive array (`Publisher<+[B>`, `? extends byte[]`) is
+printed without its wildcard, `Publisher<byte[]>`. The method's signature then differs from
+the one it overrides (spring-framework's `ByteArrayEncoder.encode`: javac reports a name clash
+and an unimplemented abstract method; still so on `develop/1.13.0`). With the fix such an
+argument is a generic type with the wildcard, printed `? extends byte[]`; reading it through
+the wildcard gives the array type with a cast, as for a wildcard on any other array type.
+
+**The fix `pattern_variable_scope`**. A pattern variable is in scope only where its
+`instanceof` is known to have matched (JLS 6.3.1): in the `if`'s then-branch for `x
+instanceof T v`, in the else-branch for `!(x instanceof T v)`, and after an `if` without
+`else` that cannot complete normally when its condition is false on a match.
+`IfPatternMatchProcessor.checkBranch`
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/if_pattern_match_processor.rs (IfPatternMatchProcessor::check_branch)`)
+turns `if (x instanceof T) { v = (T) x; ... }` into a pattern after checking only that no
+predecessor assigns `v`. A local the source declares before the `if` and assigns on the other
+path, or reads after it (`T v; if (x instanceof T) { v = (T) x; } else { v = new T(); }
+v.use();`, Elasticsearch's `ES812PostingsReader.postings`, Ghidra's
+`FileBytesAdapterV0.createBuffers`), becomes a pattern variable used outside its scope, which
+javac cannot resolve (still so on `develop/1.13.0`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_pattern_variable_scope.rs`), the
+pattern is made only when no statement of the method outside the pattern's scope uses the
+variable (by index): the scope is the branch the assignment came from when it is the `if`'s own
+branch, or the statements after the `if` in its sequence when it is the `if`'s successor, plus
+the `if`'s condition. Otherwise the `instanceof` and the cast assignment stay as they are.
+
+**The fix `switch_case_scope`**. The body of a switch statement is one block (JLS 6.3), so a
+local declared at the top level of a case is in scope in every later case. The clash renaming
+of `VarDefinitionHelper.iterateClashingNames`
+(`decompiler/nonnative/kuna-jvm/src/p6_variables/var_definition_helper.rs (VarDefinitionHelper::iterate_clashing_names)`)
+keeps the declarations of a case whose body is one basic block live until the switch ends, and
+on a clash with a later case puts both cases in braces, but it forgets the declarations of a
+case whose body is a statement sequence when the sequence ends, and it visits a switch's
+children in the order of its statement list, which need not be the order the cases are
+written in. Two cases that each declare `double z` before an `if` (Guava's
+`DoubleMath.roundIntermediate`, ASM's `ClassReader.readCode` in spring-framework, Ghidra's
+`ConsistencyChecker.sizeRestriction`, Elasticsearch's `DocValuesConsumerUtil`) are then written
+without braces and javac rejects the second (`already defined`), and where a clash is detected
+the earlier written case can be the one renamed. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_switch_case_scope.rs`), a switch
+statement's cases are visited in the order they are written, the declarations made at the top
+level of a case sequence stay live until the switch ends, as for a single-block case, and a
+declaration nested deeper in a later case that clashes only with top-level declarations of
+earlier cases puts those cases in braces instead of being renamed (a case-level declaration is
+used in its own case only, or it would have been declared before the switch), which is the
+source's own form and gives its local slots.
+
+**The fix `local_class_anonymous_subclass`**. A local class must be declared before its first
+use in the method. `NestedClassProcessor.setLocalClassDefinition`
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/nested_class_processor.rs (NestedClassProcessor::search_for_class)`)
+puts the declaration before the first statement it sees using the class: a class literal, a
+field or method of it, `new` of it, a variable of its type. `new` of an anonymous class that
+extends the local class (`class LocalClass<T> {} ... new LocalClass<String>() {}`, Guava's
+`Types.ClassOwnership.detectJvmBehavior`) names only the anonymous class, so the declaration
+lands later, and javac cannot resolve the anonymous class's supertype (still so on
+`develop/1.13.0`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_local_class_anonymous_subclass.rs`),
+`new` of an anonymous class whose superclass or interface is the local class is a use of it.

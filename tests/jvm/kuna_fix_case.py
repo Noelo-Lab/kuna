@@ -4,7 +4,7 @@
   python3 -I tests/jvm/kuna_fix_case.py --fix <id> --class path/to/pkg/TestFoo.class \\
       [--source path/to/pkg/TestFoo.java] [--compiler "javac 17.0.20.1"] [--summary TEXT] [--opt k=v]...
       [--language java|kotlin]
-      [--wrong-output]
+      [--wrong-output] [--extra-class path/to/other/Lib.class]...
 
 <id> is the fix's id, the string `KunaFix::id` returns for it in kuna_fixes.rs (e.g. lambda_wildcard_return).
 The class's `Name$*.class` siblings in the same directory come with it, in name order (the corpus
@@ -132,6 +132,8 @@ def main():
     ap.add_argument('--opt', action='append', default=[], help='an extra option pair k=v for both passes')
     ap.add_argument('--language', choices=('java', 'kotlin'),
                     help='the case\'s output language (default: kotlin if the class has kotlin.Metadata, else java)')
+    ap.add_argument('--extra-class', action='append', default=[],
+                    help='another class of the input (e.g. a superclass in another package), vendored after the siblings')
     ap.add_argument('--wrong-output', action='store_true',
                     help='the fix corrects output Vineflower prints wrongly: no failure comment is required')
     a = ap.parse_args()
@@ -163,9 +165,9 @@ def add_case(a, extra, work):
     package = os.path.dirname(name)
     case_id = name
     class_files = []
-    for path in [main_class] + siblings:
-        rel = '/'.join(filter(None, [package, os.path.basename(path)]))
-        os.makedirs(os.path.join(FIXES, 'classes', package), exist_ok=True)
+    for path in [main_class] + siblings + [os.path.abspath(x) for x in a.extra_class]:
+        rel = '/'.join(filter(None, [os.path.dirname(class_name(path)), os.path.basename(path)]))
+        os.makedirs(os.path.join(FIXES, 'classes', os.path.dirname(rel)), exist_ok=True)
         shutil.copyfile(path, os.path.join(FIXES, 'classes', rel))
         class_files.append(rel)
     source = None

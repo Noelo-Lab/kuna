@@ -9,6 +9,11 @@
 //!
 //! kuna fix `var_merge_narrowing` (`kuna_fix_var_merge_narrowing.rs`): `mergeVars`
 //! refuses a merge whose type is narrower than a value either variable is assigned.
+//! kuna fix `switch_case_scope` (`kuna_fixes`): in `iterate_clashing_names`,
+//! a switch's cases are visited in the order they are written, and the
+//! declarations at the top level of a case's statement sequence stay live
+//! until the end of the switch block, which is their scope
+//! (`kuna_fix_switch_case_scope`).
 
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
@@ -28,6 +33,7 @@ use crate::generic_type::GenericType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::kuna_fixes::{self, KunaFix};
+use crate::p6_variables::kuna_fix_switch_case_scope;
 use crate::method_descriptor::MethodDescriptor;
 use crate::p6_variables::kuna_fix_var_merge_narrowing;
 use crate::pair::Pair;
@@ -76,8 +82,8 @@ arena_object!(pub VarDefinitionHelper => VarDefinitionHelperData, Class);
 arena_identity!(VarDefinitionHelper);
 
 type MergeMap = JHashMap<Option<i32>, VarVersionPair>;
-type VarDefs = JHashMap<Option<Statement>, JHashSet<VarInMethod>>;
-type NameMap = JHashMap<VarInMethod, Option<String>>;
+pub(crate) type VarDefs = JHashMap<Option<Statement>, JHashSet<VarInMethod>>;
+pub(crate) type NameMap = JHashMap<VarInMethod, Option<String>>;
 
 impl VarDefinitionHelper {
     /// Java: VarDefinitionHelper(RootStatement, StructMethod, VarProcessor)
@@ -1981,7 +1987,10 @@ impl VarDefinitionHelper {
         let deferred: Vec<Statement> = Vec::new();
         let seperate = stat.is_if() || stat.is_catch();
         if iterate {
-            let stats = stat.get_stats().borrow().to_vec();
+            let mut stats = stat.get_stats().borrow().to_vec();
+            if kuna_fixes::enabled(KunaFix::SwitchCaseScope) {
+                stats = kuna_fix_switch_case_scope::in_text_order(stat, stats, mt);
+            }
             for st in stats {
                 let mut st_vars: JHashSet<VarInMethod> = JHashSet::new();
                 let tmp_vars = statement_vars.get_or_default(&st, JHashSet::new());
@@ -2006,14 +2015,20 @@ impl VarDefinitionHelper {
             }
         }
 
-        if should_remove_at_end {
+        let case_block = kuna_fixes::enabled(KunaFix::SwitchCaseScope)
+            && kuna_fix_switch_case_scope::is_case_block(stat, mt);
+        if should_remove_at_end && !case_block {
             self.clear_statement(var_definitions, live_var_defs, name_map, stat);
         }
 
         for st in JHashSet::from_collection(var_definitions.key_vec()).to_vec() {
             let st = st.expect("NullPointerException: statement");
             if st.get_parent() == Some(stat) {
-                self.clear_statement(var_definitions, live_var_defs, name_map, st);
+                if case_block && st.get_exprents().is_some() {
+                    kuna_fix_switch_case_scope::keep_in_case(var_definitions, st, stat);
+                } else {
+                    self.clear_statement(var_definitions, live_var_defs, name_map, st);
+                }
             }
         }
 
@@ -2277,6 +2292,17 @@ impl VarDefinitionHelper {
                                     }
                                 }
                             }
+                        }
+
+                        if !scoped_switch && kuna_fixes::enabled(KunaFix::SwitchCaseScope) {
+                            scoped_switch = kuna_fix_switch_case_scope::scope_clashing_cases(
+                                stat,
+                                mt,
+                                parent.and_then(|p| p.try_as_switch()).is_some(),
+                                &original_name,
+                                name_map,
+                                live_var_defs,
+                            );
                         }
 
                         if !scoped_switch {
@@ -2622,6 +2648,14 @@ pub struct VarInMethod {
 impl VarInMethod {
     fn new(pair: VarVersionPair, mt: StructMethod) -> VarInMethod {
         VarInMethod { pair, mt }
+    }
+
+    pub(crate) fn pair(&self) -> VarVersionPair {
+        self.pair
+    }
+
+    pub(crate) fn mt(&self) -> StructMethod {
+        self.mt
     }
 }
 

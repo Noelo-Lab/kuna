@@ -596,9 +596,13 @@ kuna-fixes-compat/pkg/TestEnumNoConstants
 kuna-fixes-compat/pkg/TestFailedMethodHidden
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestInnerOfGenericOuter
+kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes-compat/pkg/TestLocalVisibilityComment
 kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver
+kuna-fixes-compat/pkg/TestNonPublicNestedImport
 kuna-fixes-compat/pkg/TestObjectSuperCall
+kuna-fixes-compat/pkg/TestOverrideInaccessible
+kuna-fixes-compat/pkg/TestPatternVariableScope
 kuna-fixes-compat/pkg/TestPropertyReferencesKt
 kuna-fixes-compat/pkg/TestRecordPatternInTry
 kuna-fixes-compat/pkg/TestReferenceClassesKt
@@ -608,6 +612,7 @@ kuna-fixes-compat/pkg/TestSelfReferencingLambda
 kuna-fixes-compat/pkg/TestSuspendFinallyKt
 kuna-fixes-compat/pkg/TestSuspendLoopFinally
 kuna-fixes-compat/pkg/TestSuspendResultCast
+kuna-fixes-compat/pkg/TestSwitchCaseScope
 kuna-fixes-compat/pkg/TestSwitchExprConstLub
 kuna-fixes-compat/pkg/TestSwitchExprPolyCast
 kuna-fixes-compat/pkg/TestTernaryNumericArms
@@ -617,6 +622,7 @@ kuna-fixes-compat/pkg/TestTypeSwitchLabelLookup
 kuna-fixes-compat/pkg/TestTypeSwitchPatternType
 kuna-fixes-compat/pkg/TestVarMergeNarrowing
 kuna-fixes-compat/pkg/TestVarargFromMetadata
+kuna-fixes-compat/pkg/TestWildcardArrayBound
 kuna-fixes/pkg/TestAnonymousStaticCall
 kuna-fixes/pkg/TestAssertDeadThrow
 kuna-fixes/pkg/TestAssertExpressionPosition
@@ -633,9 +639,13 @@ kuna-fixes/pkg/TestEnumNoConstants
 kuna-fixes/pkg/TestFailedMethodHidden
 kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestInnerOfGenericOuter
+kuna-fixes/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes/pkg/TestLocalVisibilityComment
 kuna-fixes/pkg/TestMethodRefWildcardReceiver
+kuna-fixes/pkg/TestNonPublicNestedImport
 kuna-fixes/pkg/TestObjectSuperCall
+kuna-fixes/pkg/TestOverrideInaccessible
+kuna-fixes/pkg/TestPatternVariableScope
 kuna-fixes/pkg/TestPropertyReferencesKt
 kuna-fixes/pkg/TestRecordPatternInTry
 kuna-fixes/pkg/TestReferenceClassesKt
@@ -645,6 +655,7 @@ kuna-fixes/pkg/TestSelfReferencingLambda
 kuna-fixes/pkg/TestSuspendFinallyKt
 kuna-fixes/pkg/TestSuspendLoopFinally
 kuna-fixes/pkg/TestSuspendResultCast
+kuna-fixes/pkg/TestSwitchCaseScope
 kuna-fixes/pkg/TestSwitchExprConstLub
 kuna-fixes/pkg/TestSwitchExprPolyCast
 kuna-fixes/pkg/TestTernaryNumericArms
@@ -654,6 +665,7 @@ kuna-fixes/pkg/TestTypeSwitchLabelLookup
 kuna-fixes/pkg/TestTypeSwitchPatternType
 kuna-fixes/pkg/TestVarMergeNarrowing
 kuna-fixes/pkg/TestVarargFromMetadata
+kuna-fixes/pkg/TestWildcardArrayBound
 lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass
 lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass2
 literals/pkg/TestConstantUninlining

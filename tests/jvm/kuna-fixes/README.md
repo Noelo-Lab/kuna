@@ -36,9 +36,13 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
+| `pkg/TestLocalClassAnonymousSubclass` | `local_class_anonymous_subclass` | javac 17.0.20.1 (`-g`) | the local class is declared before new LocalClass<String>() {} instead of inside the later loop that uses LocalClass.class |
 | `pkg/TestLocalVisibilityComment` | `kt_local_visibility_comment` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0 |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
+| `pkg/TestNonPublicNestedImport` | `nonpublic_nested_import` | javac 17.0.20.1 (`-g`, against a `lib.Base` that is not in the input) | protected member classes of a library class used in a subclass (Base.Helper, Base.Holder.Deep, an enum switched on, one inside an anonymous subclass) are written Base.Helper, not imported |
 | `pkg/TestObjectSuperCall` | `kt_object_super_call` | kotlinc 2.0.0 | an object expression's superclass is written with its constructor arguments, object : Base(k + 1, s) (Vineflower prints object : Base) |
+| `pkg/TestOverrideInaccessible` | `override_inaccessible_method` | javac 17.0.20.1 (`-g`) (with ext/TestOverrideInaccessibleBase.java, vendored as a second input class) | methods matching a package-private superclass method of another package or a private one get no @Override; true overrides keep it |
+| `pkg/TestPatternVariableScope` | `pattern_variable_scope` | javac 17.0.20.1 (`-g`) | a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch still becomes a pattern |
 | `pkg/TestPropertyReferencesKt` | `kt_property_reference` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled` |
 | `pkg/TestRecordPatternInTry` | `nested_handler_copies` | javac 21.0.12.1 (`--release 21 -g`) | `describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's |
 | `pkg/TestReferenceClassesKt` | `kt_reference_anonymous_super_call` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` (`adder::add`, which failed) and `unbound`, `constructor` and `topLevel` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their function references: `NestedClassProcessor` took the reference classes' `super(..)` calls out of their constructors, and they are read from the class node |
@@ -48,6 +52,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSuspendFinallyKt` | `handler_copy_offsets` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable |
 | `pkg/TestSuspendLoopFinally` | `copied_finally` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies) |
 | `pkg/TestSuspendResultCast` | `var_merge_narrowing` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `sum` and `fold`, suspend loops: the result of the suspend call is cast to `Integer` after the `COROUTINE_SUSPENDED` check, as in the bytecode, not before it (where the marker would throw `ClassCastException`) |
+| `pkg/TestSwitchCaseScope` | `switch_case_scope` | javac 17.0.20.1 (`-g`) | two cases declaring double z before an if, and a case-level int length clashing with a nested one in a later case, are written with braces |
 | `pkg/TestSwitchExprConstLub` | `switch_yield_const_retype` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestSwitchExprPolyCast` | `switch_expression_poly_cast` | javac 17.0.20.1 (`-g`) | `intOrLong`, `charOrInt` and `argument`, whose switch expressions yield numbers of different types to a reference target: the switch is no longer wrapped in a cast, which made it a standalone numeric switch (`case 1 -> 1` a `Long`) |
 | `pkg/TestTernaryNumericArms` | `ternary_numeric_arms` | javac 17.0.20.1 (`-g`) | the conditionals whose boxed arms would print as numbers of different types (`int` and `long`, `int` and `Integer`, `boolean` and `Boolean`, `Double` and `double`) keep an arm cast, so they stay reference conditionals: no promotion of `1` to `Long`, no unboxing of a `null` arm |
@@ -57,6 +62,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestTypeSwitchPatternType` | `type_switch_pattern_type` | javac 21.0.12.1 (no -g) | case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type |
 | `pkg/TestVarMergeNarrowing` | `var_merge_narrowing` | javac 17.0.20.1 (no `-g`) | `firstLength`, whose two block-scoped locals share a slot: the `Object` one is no longer merged into the `String` one, so `src.next()` is not cast to `String` before it is compared with `MARK` |
 | `pkg/TestVarargFromMetadata` | `kt_vararg_from_metadata` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the primary constructor's `Array<String>` parameter is no longer written `vararg names: Any`, and the `vararg` primitive parameters of a constructor and a function keep `vararg` with their element type (`vararg rest: Int`, not `rest: IntArray`) |
+| `pkg/TestWildcardArrayBound` | `primitive_array_wildcard` | javac 17.0.20.1 (`-g`) | Source<? extends byte[]> and Source<? super int[]> keep their wildcards, so BytesEncoder.encode overrides Encoder<byte[]>.encode |
 
 ## Diffs (compat -> default)
 
@@ -1134,6 +1140,29 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        class Node extends TestInnerOfGenericOuter.Ref<TestInnerOfGenericOuter<E>.Itr> {
 ```
 
+### `pkg/TestLocalClassAnonymousSubclass`
+
+```diff
+--- expected-compat/pkg/TestLocalClassAnonymousSubclass.java
++++ expected/pkg/TestLocalClassAnonymousSubclass.java
+@@ -2,12 +2,12 @@
+ 
+ public class TestLocalClassAnonymousSubclass {
+    public static Object detect(Object[] values) {
++      class LocalClass<T> {
++      }
++
+       Class<?> subclass = (new LocalClass<String>() {}).getClass();
+ 
+       for (Object value : values) {
+-         class LocalClass<T> {
+-         }
+-
+          if (value == LocalClass.class) {
+             return subclass;
+          }
+```
+
 ### `pkg/TestLocalVisibilityComment`
 
 ```diff
@@ -1192,6 +1221,54 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     TestMethodRefWildcardReceiver.Pipe<Object> objectsOf(TestMethodRefWildcardReceiver.Factory<String> factory) {
 ```
 
+### `pkg/TestNonPublicNestedImport`
+
+```diff
+--- expected-compat/pkg/TestNonPublicNestedImport.java
++++ expected/pkg/TestNonPublicNestedImport.java
+@@ -1,26 +1,22 @@
+ package pkg;
+ 
+ import lib.Base;
+-import lib.Base.Helper;
+-import lib.Base.Marker;
+-import lib.Base.Status;
+-import lib.Base.Holder.Deep;
+ 
+ public class TestNonPublicNestedImport extends Base {
+-   private Helper last;
++   private Base.Helper last;
+ 
+    public Object make(Object o) {
+-      Helper h = new Helper(o);
++      Base.Helper h = new Base.Helper(o);
+       this.last = h;
+       return h.value;
+    }
+ 
+    public Object deep() {
+-      return new Deep();
++      return new Base.Holder.Deep();
+    }
+ 
+-   protected Status accept(int i) {
+-      return i > 0 ? Status.YES : Status.NO;
++   protected Base.Status accept(int i) {
++      return i > 0 ? Base.Status.YES : Base.Status.NO;
+    }
+ 
+    public int code(int i) {
+@@ -37,7 +33,7 @@
+    public Base anonymous() {
+       return new Base() {
+          public Object make(Object o) {
+-            return o == null ? new Marker() : o;
++            return o == null ? new Base.Marker() : o;
+          }
+       };
+    }
+```
+
 ### `pkg/TestObjectSuperCall`
 
 ```diff
@@ -1223,6 +1300,64 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      return object : pkg.TestObjectSuperCall.Base(this.q, "c") {
           public override fun get(): Int {
              return r + TestObjectSuperCall.this.q
+          }
+```
+
+### `pkg/TestOverrideInaccessible`
+
+```diff
+--- expected-compat/pkg/TestOverrideInaccessible.java
++++ expected/pkg/TestOverrideInaccessible.java
+@@ -3,12 +3,10 @@
+ import ext.TestOverrideInaccessibleBase;
+ 
+ public class TestOverrideInaccessible extends TestOverrideInaccessibleBase {
+-   @Override
+    Object parser() {
+       return this;
+    }
+ 
+-   @Override
+    public int secret() {
+       return 2;
+    }
+@@ -30,7 +28,6 @@
+    }
+ 
+    static class InnerSub extends TestOverrideInaccessible.Inner {
+-      @Override
+       int hidden() {
+          return 5;
+       }
+```
+
+### `pkg/TestPatternVariableScope`
+
+```diff
+--- expected-compat/pkg/TestPatternVariableScope.java
++++ expected/pkg/TestPatternVariableScope.java
+@@ -2,7 +2,10 @@
+ 
+ public class TestPatternVariableScope {
+    public TestPatternVariableScope.Stream reuse(Object reuse, String s) {
+-      if (!(reuse instanceof TestPatternVariableScope.Stream stream)) {
++      TestPatternVariableScope.Stream stream;
++      if (reuse instanceof TestPatternVariableScope.Stream) {
++         stream = (TestPatternVariableScope.Stream)reuse;
++      } else {
+          stream = new TestPatternVariableScope.Stream();
+       }
+ 
+@@ -11,7 +14,9 @@
+    }
+ 
+    public TestPatternVariableScope.Stream reuseChecked(Object reuse) {
+-      if (reuse instanceof TestPatternVariableScope.Special special) {
++      TestPatternVariableScope.Special special;
++      if (reuse instanceof TestPatternVariableScope.Special) {
++         special = (TestPatternVariableScope.Special)reuse;
+          if (special.hashCode() == 0) {
+             special = new TestPatternVariableScope.Special();
           }
 ```
 
@@ -2739,6 +2874,54 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           $continuation.L$0 = src;
 ```
 
+### `pkg/TestSwitchCaseScope`
+
+```diff
+--- expected-compat/pkg/TestSwitchCaseScope.java
++++ expected/pkg/TestSwitchCaseScope.java
+@@ -5,20 +5,22 @@
+       switch (mode) {
+          case 0:
+             return x;
+-         case 1:
++         case 1: {
+             double z = Math.rint(x);
+             if (Math.abs(x - z) == 0.5) {
+                return x + 1.0;
+             }
+ 
+             return z;
+-         case 2:
++         }
++         case 2: {
+             double z = Math.rint(x);
+             if (Math.abs(x - z) == 0.5) {
+                return x;
+             }
+ 
+             return z;
++         }
+          default:
+             throw new IllegalStateException();
+       }
+@@ -27,13 +29,14 @@
+    public static int nested(int kind, int[] data) {
+       int total = 0;
+       switch (kind) {
+-         case 0:
++         case 0: {
+             int length = data.length;
+ 
+             for (int i = 0; i < length; i++) {
+                total += data[i];
+             }
+             break;
++         }
+          case 1:
+             if (data.length > 2) {
+                int length = data[0] * 2;
+```
+
 ### `pkg/TestSwitchExprConstLub`
 
 ```diff
@@ -3665,4 +3848,29 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        var total: Int = 0
  
        for (v in values) {
+```
+
+### `pkg/TestWildcardArrayBound`
+
+```diff
+--- expected-compat/pkg/TestWildcardArrayBound.java
++++ expected/pkg/TestWildcardArrayBound.java
+@@ -1,14 +1,14 @@
+ package pkg;
+ 
+ public class TestWildcardArrayBound {
+-   public static int count(TestWildcardArrayBound.Source<int[]> sink, TestWildcardArrayBound.Source<? extends String[]> names) {
++   public static int count(TestWildcardArrayBound.Source<? super int[]> sink, TestWildcardArrayBound.Source<? extends String[]> names) {
+       return ((String[])names.get()).length;
+    }
+ 
+    public static class BytesEncoder extends TestWildcardArrayBound.Encoder<byte[]> {
+       @Override
+-      public int encode(TestWildcardArrayBound.Source<byte[]> source) {
+-         return source.get().length;
++      public int encode(TestWildcardArrayBound.Source<? extends byte[]> source) {
++         return ((byte[])source.get()).length;
+       }
+    }
+ 
 ```
