@@ -48,3 +48,5 @@ mod context_source;
 mod jdk_runtime;
 #[path = "jimage_synthetic.rs"]
 mod jimage_synthetic;
+#[path = "k2_statement_graph.rs"]
+mod k2_statement_graph;
