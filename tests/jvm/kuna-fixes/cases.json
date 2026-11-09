@@ -586,6 +586,17 @@
       "summary": "`sum` and `fold`, suspend loops: the result of the suspend call is cast to `Integer` after the `COROUTINE_SUSPENDED` check, as in the bytecode, not before it (where the marker would throw `ClassCastException`)"
     },
     {
+      "id": "pkg/TestSwitchAssignNotYield",
+      "fix": "switch_expression_assignments",
+      "class_files": [
+        "pkg/TestSwitchAssignNotYield.class",
+        "pkg/TestSwitchAssignNotYield$Time.class"
+      ],
+      "source": "src/pkg/TestSwitchAssignNotYield.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "switch statements that assign a local more than once in a case, leave a case through an if without else or a loop exit, or have an empty case stay switch statements instead of switch expressions with unreachable or missing yields"
+    },
+    {
       "id": "pkg/TestSwitchCaseScope",
       "fix": "switch_case_scope",
       "class_files": [

@@ -64,6 +64,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSuspendLoopFinally` | `copied_finally` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies) |
 | `pkg/TestSuspendLoopTry` | `irreducible_with_exception_edges` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `indexOf`, `pairs` and `watch`, suspend functions whose loop inside a `try` (with `catch`/`finally`) suspends and resumes in its middle, decompile: `indexOf` and `pairs` once a try region is isolated or a statement outside every range is copied, `watch` (whose loop is resumed in three places) with both |
 | `pkg/TestSuspendResultCast` | `var_merge_narrowing` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `sum` and `fold`, suspend loops: the result of the suspend call is cast to `Integer` after the `COROUTINE_SUSPENDED` check, as in the bytecode, not before it (where the marker would throw `ClassCastException`) |
+| `pkg/TestSwitchAssignNotYield` | `switch_expression_assignments` | javac 17.0.20.1 (`-g`) | switch statements that assign a local more than once in a case, leave a case through an if without else or a loop exit, or have an empty case stay switch statements instead of switch expressions with unreachable or missing yields |
 | `pkg/TestSwitchCaseScope` | `switch_case_scope` | javac 17.0.20.1 (`-g`) | two cases declaring double z before an if, and a case-level int length clashing with a nested one in a later case, are written with braces |
 | `pkg/TestSwitchExprConstLub` | `switch_yield_const_retype` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestSwitchExprPolyCast` | `switch_expression_poly_cast` | javac 17.0.20.1 (`-g`) | `intOrLong`, `charOrInt` and `argument`, whose switch expressions yield numbers of different types to a reference target: the switch is no longer wrapped in a cast, which made it a standalone numeric switch (`case 1 -> 1` a `Long`) |
@@ -4914,6 +4915,117 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           Integer var16 = Boxing.boxInt(acc);
           Integer var17 = Boxing.boxInt(var11);
           $continuation.L$0 = src;
+```
+
+### `pkg/TestSwitchAssignNotYield`
+
+```diff
+--- expected-compat/pkg/TestSwitchAssignNotYield.java
++++ expected/pkg/TestSwitchAssignNotYield.java
+@@ -11,30 +11,32 @@
+       while (i < math.length()) {
+          boolean round = math.charAt(i++) == '/';
+          char unit = math.charAt(i++);
+-
+-         t = switch (unit) {
+-            case 'H', 'h' -> {
++         switch (unit) {
++            case 'H':
++            case 'h':
+                if (round) {
+-                  yield t.truncate();
++                  t = t.truncate();
+                   if (up) {
+-                     yield t.plus(1L);
++                     t = t.plus(1L);
+                   }
+                } else {
+-                  yield t.plus(2L);
++                  t = t.plus(2L);
+                }
+-            }
+-            case 'm' -> {
++               break;
++            case 'm':
+                if (round) {
+-                  yield t.truncate().truncate();
++                  t = t.truncate().truncate();
+                   if (up) {
+-                     yield t.plus(3L);
++                     t = t.plus(3L);
+                   }
+                } else {
+-                  yield t.plus(4L);
++                  t = t.plus(4L);
+                }
+-            }
+-            default -> throw new IllegalStateException("unit");
+-         };
++               break;
++            default:
++               throw new IllegalStateException("unit");
++         }
++
+          i += skip(t);
+       }
+ 
+@@ -46,30 +48,41 @@
+    }
+ 
+    public static int encode(int mode, int value) {
+-      return switch (mode) {
+-         case 0 -> {
+-         }
+-         case 1 -> 8;
+-         case 2 -> swap(value);
+-         default -> throw new IllegalStateException("mode");
+-      } * 2;
++      switch (mode) {
++         case 0:
++            break;
++         case 1:
++            value <<= 8;
++            break;
++         case 2:
++            value = swap(value);
++            break;
++         default:
++            throw new IllegalStateException("mode");
++      }
++
++      return value * 2;
+    }
+ 
+    public static double first(int mode, double[] scores, boolean[] hits) {
+       double factor = 1.0;
+-
+-      return switch (mode) {
+-         case 0 -> {
++      switch (mode) {
++         case 0:
+             for (int i = 0; i < scores.length; i++) {
+                if (hits[i]) {
+-                  yield scores[i];
++                  factor = scores[i];
+                   break;
+                }
+             }
+-         }
+-         case 1 -> scores[0];
+-         default -> throw new IllegalStateException("mode");
+-      };
++            break;
++         case 1:
++            factor = scores[0];
++            break;
++         default:
++            throw new IllegalStateException("mode");
++      }
++
++      return factor;
+    }
+ 
+    interface Time {
 ```
 
 ### `pkg/TestSwitchCaseScope`

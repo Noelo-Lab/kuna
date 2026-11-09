@@ -3445,6 +3445,11 @@ class	kuna-fixes/classes/pkg/TestSuspendResultCast$fold$1.class
 class	kuna-fixes/classes/pkg/TestSuspendResultCast$sum$1.class
 expected	kuna-fixes/expected-compat/pkg/TestSuspendResultCast.java
 compare	TestSuspendResultCast.java
+case	kuna-fixes-compat/pkg/TestSwitchAssignNotYield	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSwitchAssignNotYield.class
+class	kuna-fixes/classes/pkg/TestSwitchAssignNotYield$Time.class
+expected	kuna-fixes/expected-compat/pkg/TestSwitchAssignNotYield.java
+compare	TestSwitchAssignNotYield.java
 case	kuna-fixes-compat/pkg/TestSwitchCaseScope	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSwitchCaseScope.class
 expected	kuna-fixes/expected-compat/pkg/TestSwitchCaseScope.java
@@ -3838,6 +3843,11 @@ class	kuna-fixes/classes/pkg/TestSuspendResultCast$fold$1.class
 class	kuna-fixes/classes/pkg/TestSuspendResultCast$sum$1.class
 expected	kuna-fixes/expected/pkg/TestSuspendResultCast.java
 compare	TestSuspendResultCast.java
+case	kuna-fixes/pkg/TestSwitchAssignNotYield	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSwitchAssignNotYield.class
+class	kuna-fixes/classes/pkg/TestSwitchAssignNotYield$Time.class
+expected	kuna-fixes/expected/pkg/TestSwitchAssignNotYield.java
+compare	TestSwitchAssignNotYield.java
 case	kuna-fixes/pkg/TestSwitchCaseScope	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSwitchCaseScope.class
 expected	kuna-fixes/expected/pkg/TestSwitchCaseScope.java

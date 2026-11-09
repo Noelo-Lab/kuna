@@ -1,4 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SwitchExpressionHelper.java`.
+//!
+//! kuna fix `switch_expression_assignments` (`kuna_fixes`): a switch becomes
+//! an expression only when every assignment it turns into a `yield` is the
+//! last thing a case does before it breaks
+//! (`kuna_fix_switch_expression_assignments`).
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::basic_block_statement::BasicBlockStatement;
@@ -6,6 +11,8 @@ use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::Type as ExitType;
 use crate::exprent::Exprent;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p8_structure::kuna_fix_switch_expression_assignments;
 use crate::pair::Pair;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet};
@@ -140,6 +147,16 @@ impl SwitchExpressionHelper {
         let Some(relevant_var) = Self::find_relevant_var(&assignments) else {
             return false;
         };
+
+        if kuna_fixes::enabled(KunaFix::SwitchExpressionAssignments)
+            && !kuna_fix_switch_expression_assignments::every_assignment_yields(
+                stat,
+                &break_jumps,
+                relevant_var.get_index(),
+            )
+        {
+            return false;
+        }
 
         let mut edges: JHashSet<StatEdge> = JHashSet::new();
         for case_stat in stat.get_case_statements().iter() {

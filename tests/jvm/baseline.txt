@@ -624,6 +624,7 @@ kuna-fixes-compat/pkg/TestSuspendFinallyKt
 kuna-fixes-compat/pkg/TestSuspendLoopFinally
 kuna-fixes-compat/pkg/TestSuspendLoopTry
 kuna-fixes-compat/pkg/TestSuspendResultCast
+kuna-fixes-compat/pkg/TestSwitchAssignNotYield
 kuna-fixes-compat/pkg/TestSwitchCaseScope
 kuna-fixes-compat/pkg/TestSwitchExprConstLub
 kuna-fixes-compat/pkg/TestSwitchExprPolyCast
@@ -682,6 +683,7 @@ kuna-fixes/pkg/TestSuspendFinallyKt
 kuna-fixes/pkg/TestSuspendLoopFinally
 kuna-fixes/pkg/TestSuspendLoopTry
 kuna-fixes/pkg/TestSuspendResultCast
+kuna-fixes/pkg/TestSwitchAssignNotYield
 kuna-fixes/pkg/TestSwitchCaseScope
 kuna-fixes/pkg/TestSwitchExprConstLub
 kuna-fixes/pkg/TestSwitchExprPolyCast

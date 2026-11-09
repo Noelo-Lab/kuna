@@ -206,6 +206,9 @@ pub enum KunaFix {
     /// `sealed_private_permits`: a top-level sealed class whose permitted
     /// subclasses are its own members, one of them private, has no `permits`.
     SealedPrivatePermits,
+    /// `switch_expression_assignments`: a switch statement becomes a switch
+    /// expression only when each assignment made a `yield` ends its case.
+    SwitchExpressionAssignments,
 }
 
 impl KunaFix {
@@ -268,6 +271,7 @@ impl KunaFix {
         KunaFix::TypeAnnotationArgumentScope,
         KunaFix::AssertThrowAfterIf,
         KunaFix::SealedPrivatePermits,
+        KunaFix::SwitchExpressionAssignments,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -330,6 +334,7 @@ impl KunaFix {
             KunaFix::TypeAnnotationArgumentScope => "type_annotation_argument_scope",
             KunaFix::AssertThrowAfterIf => "assert_throw_after_if",
             KunaFix::SealedPrivatePermits => "sealed_private_permits",
+            KunaFix::SwitchExpressionAssignments => "switch_expression_assignments",
         }
     }
 
