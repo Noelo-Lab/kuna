@@ -28,6 +28,24 @@ Portions of the structuring and region-recovery code are ported from angr
 ported algorithms are tagged with their source decompiler in
 decompiler/crates/kuna-decomp/phases.toml and docs/spec/.
 
+The JVM engine (decompiler/nonnative/kuna-jvm) is a Rust port of Vineflower
+1.12.0 (https://github.com/Vineflower/vineflower), released under the Apache
+License, Version 2.0. Vineflower is a fork of JetBrains' Fernflower,
+MinecraftForge's ForgeFlower and FabricMC's fork of Fernflower, and a
+continuation of Quiltflower; its ported source files carry these notices:
+
+    Copyright 2000-2022 JetBrains s.r.o.
+    Copyright 2000-2022 JetBrains s.r.o. and ForgeFlower contributors
+    Copyright 2019 FabricMC project
+    Use of this source code is governed by the Apache 2.0 license.
+
+with the remaining portions copyright the Vineflower contributors. The JVM
+regression corpus (tests/jvm/) is derived from Vineflower's test data
+(copyright JetBrains s.r.o. and the Vineflower contributors, Apache License,
+Version 2.0): class files compiled or assembled from its testData sources, the
+class files it ships there, and the Java text the released vineflower-1.12.0.jar
+prints for them; its provenance is recorded in tests/jvm/README.md.
+
 The PKLITE unpacker (decompiler/crates/kuna-analysis/src/pklite) is ported
 from deark (https://github.com/jsummers/deark), released under the MIT
 License:
