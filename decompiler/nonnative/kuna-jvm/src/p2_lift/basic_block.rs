@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/code/cfg/BasicBlock.java`.
+//!
+//! `copy_of` is kuna's: the block a statement copy's block was copied from
+//! (fix `copied_finally`, spec 10.16).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::i_graph_node::IGraphNode;
@@ -16,6 +19,7 @@ pub struct BasicBlockData {
     pub instr_old_offsets: JList<i32>,
     pub pred_exceptions: JList<BasicBlock>,
     pub succ_exceptions: JList<BasicBlock>,
+    pub copy_of: Option<BasicBlock>,
 }
 
 arena_object!(pub BasicBlock => BasicBlockData, Class);
@@ -33,7 +37,16 @@ impl BasicBlock {
             instr_old_offsets: JList::new(),
             pred_exceptions: JList::new(),
             succ_exceptions: JList::new(),
+            copy_of: None,
         })
+    }
+
+    pub fn get_copy_of(self) -> Option<BasicBlock> {
+        self.with(|d| d.copy_of)
+    }
+
+    pub fn set_copy_of(self, block: Option<BasicBlock>) {
+        self.with_mut(|d| d.copy_of = block)
     }
 
     pub fn get_instruction(self, index: i32) -> Instruction {

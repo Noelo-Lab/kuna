@@ -13,6 +13,7 @@ pub mod instruction;
 pub mod instruction_impact;
 pub mod instruction_sequence;
 pub mod jump_instruction;
+pub mod kuna_fix_nested_handler_copies;
 pub mod method_properties;
 pub mod method_properties_processor;
 pub mod primitive_exprs_list;

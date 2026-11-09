@@ -3,10 +3,10 @@
 //! kuna fix `handler_copy_offsets` (`kuna_fixes`): on a handler copy made by
 //! `ExceptionDeobfuscator::insert_dummy_exception_handler_blocks` that holds the
 //! whole handler, `remove_exception_instructions_ex` removes only the instruction
-//! offsets the copy has (none). A method in which that happened fails, as in
-//! Vineflower, when irreducible-flow splitting copied a catch-all, since
-//! `iterate_graph` leaves copies alone and a stripped copy would print as a
-//! `catch` without its rethrow.
+//! offsets the copy has (none).
+//!
+//! kuna fix `copied_finally` (spec 10.16): `iterate_graph` marks the copies
+//! irreducible-flow splitting made of a processed `finally` as `finally`.
 
 use std::collections::VecDeque;
 
@@ -34,7 +34,6 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::instruction::Instruction;
 use crate::instruction_sequence::InstructionSequence;
 use crate::interpreter_util::InterpreterUtil;
-use crate::jthrow;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::root_statement::RootStatement;
@@ -66,7 +65,6 @@ pub struct FinallyProcessor {
     var_processor: VarProcessor,
     ssuversions: Option<VarVersionsGraph>,
     instr_rewrites: Option<JHashMap<Instruction, i32>>,
-    stripped_handler_copy: bool,
 }
 
 struct Record {
@@ -160,7 +158,6 @@ impl FinallyProcessor {
             var_processor: var_proc,
             ssuversions: None,
             instr_rewrites: None,
-            stripped_handler_copy: false,
         }
     }
 
@@ -179,11 +176,6 @@ impl FinallyProcessor {
         while let Some(stat) = stack.pop() {
             let parent = stat.get_parent();
             if let Some(fin) = parent.and_then(|p| p.try_as_catch_all()) {
-                if self.stripped_handler_copy && Some(stat) == fin.get_first() && fin.is_copied() {
-                    jthrow!(
-                        "copy of a finally handler left as a catch by irreducible-flow splitting"
-                    );
-                }
                 if Some(stat) == fin.get_first() && !fin.is_copied() {
                     let head = fin.get_basichead().get_block();
                     let handler = fin.get_handler().get_basichead().get_block();
@@ -201,11 +193,6 @@ impl FinallyProcessor {
                             )
                         }));
                     } else {
-                        if kuna_fixes::enabled(KunaFix::HandlerCopyOffsets)
-                            && Self::is_whole_handler_copy(graph, handler)
-                        {
-                            self.stripped_handler_copy = true;
-                        }
                         let inf = self.get_finally_information(cl, mt, root, fin);
 
                         match inf {
@@ -260,6 +247,10 @@ impl FinallyProcessor {
 
                         return true;
                     }
+                } else if Some(stat) == fin.get_first()
+                    && kuna_fixes::enabled(KunaFix::CopiedFinally)
+                {
+                    self.mark_copied_finally(fin);
                 }
             }
 
@@ -268,6 +259,21 @@ impl FinallyProcessor {
         }
 
         false
+    }
+
+    /// A copy of a catch-all that was processed as a `finally` is a `finally` too.
+    fn mark_copied_finally(&self, fin: CatchAllStatement) {
+        let mut handler = fin.get_handler().get_basichead().get_block();
+        while let Some(original) = handler.get_copy_of() {
+            handler = original;
+        }
+
+        if let Some(var) = self.finally_blocks.get(&handler).copied() {
+            fin.set_finally(true);
+            fin.set_monitor(var.map(|var| {
+                VarExprent::new(var, Some(VarType::VARTYPE_INT()), Some(self.var_processor))
+            }));
+        }
     }
 
     fn get_finally_information(

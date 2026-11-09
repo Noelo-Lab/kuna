@@ -1,4 +1,8 @@
 //! Port of `org/jetbrains/java/decompiler/modules/code/ExceptionDeobfuscator.java`.
+//!
+//! kuna fix `nested_handler_copies` (spec 10.16): the handler copies of
+//! `insert_dummy_exception_handler_blocks` are nested in the outer-handler copy
+//! of the range they serve.
 
 use std::collections::VecDeque;
 
@@ -15,6 +19,8 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::i_graph::IGraph;
 use crate::instruction::Instruction;
 use crate::instruction_sequence::InstructionSequence;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p2_lift::kuna_fix_nested_handler_copies::NestedHandlerCopies;
 use crate::rt::{objects_equals, JHashMap, JHashSet, JList, JavaListExt};
 
 pub struct ExceptionDeobfuscator;
@@ -416,6 +422,9 @@ impl ExceptionDeobfuscator {
                 .push(range);
         }
 
+        let nest_copies = kuna_fixes::enabled(KunaFix::NestedHandlerCopies);
+        let mut copies: JHashMap<BasicBlock, BasicBlock> = JHashMap::new();
+
         for (handler, ranges) in map_ranges.entry_vec() {
             if ranges.len() == 1 {
                 continue;
@@ -429,6 +438,9 @@ impl ExceptionDeobfuscator {
                     });
                     let new_block = BasicBlock::new(id);
                     new_block.set_seq(handler.get_seq().java_clone());
+                    if nest_copies {
+                        copies.put(new_block, handler);
+                    }
 
                     graph
                         .get_blocks()
@@ -527,6 +539,10 @@ impl ExceptionDeobfuscator {
                     );
                 }
             }
+        }
+
+        if nest_copies && !copies.is_empty() {
+            NestedHandlerCopies::nest(graph, &copies);
         }
     }
 

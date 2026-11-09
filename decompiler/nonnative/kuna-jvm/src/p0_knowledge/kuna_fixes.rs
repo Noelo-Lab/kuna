@@ -78,6 +78,13 @@ pub enum KunaFix {
     /// `handler_copy_offsets`: the `finally` processing strips a
     /// duplicated exception handler, which has no instruction offsets.
     HandlerCopyOffsets,
+    /// Fix `nested_handler_copies`: a duplicated exception handler is
+    /// protected by the copies of the outer handlers that protect the range
+    /// it serves.
+    NestedHandlerCopies,
+    /// Fix `copied_finally`: a `finally` copied by irreducible-flow
+    /// splitting is a `finally` like its original.
+    CopiedFinally,
 }
 
 impl KunaFix {
@@ -101,6 +108,8 @@ impl KunaFix {
         KunaFix::AnonymousStaticQualifier,
         KunaFix::AssertDeadThrow,
         KunaFix::HandlerCopyOffsets,
+        KunaFix::NestedHandlerCopies,
+        KunaFix::CopiedFinally,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -124,6 +133,8 @@ impl KunaFix {
             KunaFix::AnonymousStaticQualifier => "anonymous_static_qualifier",
             KunaFix::AssertDeadThrow => "assert_dead_throw",
             KunaFix::HandlerCopyOffsets => "handler_copy_offsets",
+            KunaFix::NestedHandlerCopies => "nested_handler_copies",
+            KunaFix::CopiedFinally => "copied_finally",
         }
     }
 

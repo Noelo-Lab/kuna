@@ -1456,14 +1456,13 @@ how the rest of the engine treats a block without offsets (`BasicBlock::get_old_
 -1, and the block splitting of `compare_basic_blocks_ex` already guards its removal). Wherever
 Vineflower does not throw, the removals are the same as Vineflower's. Two shapes keep failing,
 because getting past the throw would print wrong code. When the `finally` body spans several
+Vineflower does not throw, the removals are the same as Vineflower's. One shape keeps failing,
+because getting past the throw would print wrong code: when the `finally` body spans several
 blocks (`if (n.decrementAndGet() == 0) channel.close()`), the deobfuscator copies only its first
 block and every copy shares the rest, so stripping the shared rethrow for one part would leave
 the other parts without it; the copy is then not a whole handler and the method fails as in
 Vineflower (kotlinx-coroutines' `combineInternal` lambda, which `develop/1.13.0` prints with
-undefined `throw var2_2` statements). And when irreducible-flow splitting copied a catch-all of a
-method whose handler copy was stripped, `iterate_graph` (which leaves copies alone) would let the
-copy print as a `catch` that swallows the exception, so the method fails instead
-(kotlinx-coroutines' `consumeEach`, printed that way by `develop/1.13.0`). Upstream fixed the same failure on `develop/1.13.0`
+undefined `throw var2_2` statements). A catch-all that irreducible-flow splitting copied in such a method, which `iterate_graph` leaves alone and which would print as a `catch` that swallows the exception (kotlinx-coroutines' `consumeEach`, printed that way by `develop/1.13.0`), is made a `finally` by the fix `copied_finally` below. Upstream fixed the same failure on `develop/1.13.0`
 (commit `5c360738`, #597) by copying the offsets into the handler copy and no longer editing
 offsets in `FinallyProcessor`. kuna does not port that: a copy with offsets changes the
 local-variable names of handler copies in methods that decompile today (kotlinx-coroutines'
@@ -1473,3 +1472,37 @@ for the methods the fix decompiles is the one `develop/1.13.0` prints: the `try`
 holds the inlined `finally` copy becomes a plain `try`/`finally`, and each part split off at a
 resume label becomes a `try`/`finally` guarded by a semaphore variable, because its normal exit
 leads to the suspension check rather than to a copy of the `finally`.
+
+**Fix `nested_handler_copies`**. The same duplication puts each copy into every range that
+protects the original handler, under that range's handler. When the handler is itself protected,
+as the `catch` of a `try`/`catch`/`finally` is by the `finally`'s handler, and the outer handler
+was duplicated too (it has one range for the try body and one for the catch, and more when the
+body was split), a try body ends up protected by one copy of the outer handler and its catch by
+another. `DomHelper` builds a `try`/`catch` only when the body and the catch share their other
+handlers (`DecHelper.checkStatementExceptions`), so the method fails with `parsing failure!`; the
+original outer handler, moreover, now protects several separate copies, the multiple-entry range
+the pass exists to remove. javac produces the shape with record deconstruction patterns inside a
+`try`: each accessor call gets a `catch (Throwable)` that throws `MatchException`, one handler with
+a range per call, which sets the duplication off and with it the duplication of the user's
+`catch`; kotlinc produces it with `try`/`catch`/`finally`, `use` and `consume` around a
+suspension point. kuna restores the nesting right after the duplication
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_nested_handler_copies.rs
+(NestedHandlerCopies::nest)`), for each outer handler whose copies break it: when that handler's
+ranges together have a single entry, its copies were not needed and their ranges go back to the
+handler itself, which gives the source's single `try`; otherwise each catch, with the blocks only
+it runs, moves to the copy of the outer handler that protects its try body. Both changes are
+exact, since the copies of a handler have its code, successors and protection. Not fixed on
+develop/1.13.0.
+
+**Fix `copied_finally`**. A suspend function's loop is entered at its head and, from the resume
+path, in its middle. `IrreducibleCFGDeobfuscator.splitIrreducibleNode` copies statements to give
+it a single entry, and once the try regions inside it are built the copies can include a
+`try`/`finally`. `FinallyProcessor.iterateGraph` processes only catch-alls that are not copies, and
+the copies are made anew by every re-parse before their original is known to be a `finally`, so a
+copy stays a `catch (Throwable)` around the handler the processing has stripped of its `astore`
+and rethrow, and the output swallows the exception. With the fix,
+`BasicBlockStatement.getSimpleCopy` records the block a copy's block comes from
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/basic_block.rs (BasicBlock::get_copy_of)`), and
+`iterateGraph` marks a copied catch-all whose handler block traces back to a processed `finally`
+as a `finally`, with its original's semaphore variable. Without the two fixes above no method
+reaches this; with them, every suspend loop inside a `try`/`finally` does.
