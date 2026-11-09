@@ -23,6 +23,7 @@ kuna catalog --engine jvm                     # the jvm_* options
 | `docs/spec/10-jvm.md` | what the engine computes, stage by stage |
 | `docs/options-jvm.md` | the generated `jvm_*` option catalog (`kuna catalog --markdown --engine jvm`) |
 | `tests/jvm/README.md` | the regression corpus: what a case is, how it was generated |
+| `decompiler/nonnative/kuna-jvm/tools/oracle/README.md` | the Vineflower oracle the corpus is cut from: what it downloads, how to rebuild it |
 | `decompiler/nonnative/kuna-jvm/tools/vftrace/README.md` | the pass-by-pass trace differ |
 
 ## Why a separate engine
@@ -81,6 +82,7 @@ chapter 00, section 0.2).
 | `options.toml` | the `jvm_*` option rows; `build.rs` generates the static table from it |
 | `examples/` | `corpus` (the regression runner), `jvmdec` (a development CLI), `jvmtrace` (trace one run) |
 | `tests/` | the unit and differential suite, one `integration` test binary (`tests/integration.rs` registers every file) |
+| `tools/oracle/` | the Vineflower oracle: rebuilds the Java and Kotlin corpora the regression corpus comes from |
 | `tools/vftrace/` | the trace differ against the real Vineflower |
 
 The folders follow kuna's phase names so a stage can be found by its phase; the order the
@@ -659,8 +661,8 @@ not majorly slow kuna down).
    `docs/options-jvm.md`.
 4. If the reference JDK moves, regenerate the embedded varargs table
    (`tests/data/jdk_varargs/gen.sh`) and the kernel goldens under `tests/data/`.
-5. Rebuild the oracle corpora (Java, plugins, Kotlin) with the new release jar and
-   regenerate `tests/jvm/` with `regen.py`; run the corpus and use the trace differ on every case that no longer
+5. Rebuild the oracle corpora (Java, plugins, Kotlin) with the new release jar (`tools/oracle`
+   pins 1.12.0's jar hash and commit; update both) and regenerate `tests/jvm/`; run the corpus and use the trace differ on every case that no longer
    matches. Re-record `tests/jvm/baseline.txt` only as part of the sync, and say so in the
    commit message.
 6. Update this page (version, commit, the differences above), the crate header in
