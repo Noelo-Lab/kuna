@@ -12,7 +12,7 @@ pub trait IVariableNameProvider {
     /// `None` keeps every name (Java returns `null`).
     fn rename(
         &self,
-        variables: &JLinkedHashMap<VarVersionPair, Pair<VarType, Option<String>>>,
+        variables: &JLinkedHashMap<VarVersionPair, Pair<Option<VarType>, Option<String>>>,
     ) -> Option<JHashMap<VarVersionPair, String>>;
 
     /// `name` is `None` where the caller had no name (Java `null`).
