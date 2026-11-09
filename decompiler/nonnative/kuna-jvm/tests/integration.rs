@@ -76,3 +76,5 @@ mod f2_context;
 mod k1_exprents;
 #[path = "b02_const_exprent.rs"]
 mod b02_const_exprent;
+#[path = "b02_function_exprent.rs"]
+mod b02_function_exprent;

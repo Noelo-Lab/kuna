@@ -79,7 +79,12 @@ impl AssignmentExprent {
 
     pub fn get_expr_type(self) -> VarType {
         let (left, right) = self.d(|d| (d.left, d.right));
-        let r_type = VarType::join(&left.get_expr_type(), &right.get_expr_type());
+        let (Some(left_type), Some(right_type)) =
+            (left.get_expr_type_opt(), right.get_expr_type_opt())
+        else {
+            jthrow!(NullPointerException; "VarType.join on null");
+        };
+        let r_type = VarType::join(&left_type, &right_type);
         match r_type {
             Some(t) => t,
             None => left.get_expr_type(),
@@ -94,8 +99,11 @@ impl AssignmentExprent {
         let mut result = CheckTypesResult::new();
         let (left, right) = self.d(|d| (d.left, d.right));
 
-        let type_left = left.get_expr_type();
-        let mut type_right = right.get_expr_type();
+        let type_left = left.get_expr_type_opt();
+        let type_right = right.get_expr_type_opt();
+        let (Some(type_left), Some(mut type_right)) = (type_left, type_right) else {
+            jthrow!(NullPointerException; "typeFamily of null");
+        };
 
         if type_left.type_family.is_greater(type_right.type_family) {
             result.add_expr_lower_bound(right, &VarType::find_family_bottom(type_left.type_family));
@@ -112,7 +120,7 @@ impl AssignmentExprent {
 
             match VarType::join(&type_left, &type_right) {
                 Some(joined) => result.add_expr_lower_bound(left, &joined),
-                None => jthrow!(NullPointerException; "AssignmentExprent lower bound is null"),
+                None => jthrow!(NullPointerException; "Null not expected here"),
             }
         }
 
@@ -320,7 +328,7 @@ impl AssignmentExprent {
         }
 
         if did_reset {
-            func.0.get_inferred_expr_type(None);
+            func.0.get_inferred_expr_type_opt(None);
         }
     }
 

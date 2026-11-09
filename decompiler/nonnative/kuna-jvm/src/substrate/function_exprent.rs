@@ -476,16 +476,19 @@ impl FunctionExprent {
         Some(match func_type {
             Imm | Mmi | Ipp | Ppi => return implicit_type,
             Shl | Shr | Ushr | BitNot | Neg => {
-                FunctionExprent::get_max_var_type(&[lst_operands.get(0).get_expr_type()])
+                FunctionExprent::get_max_var_type(&[lst_operands.get(0).get_expr_type_opt()])
             }
-            Add | Sub | Mul | Div | Rem => FunctionExprent::get_max_var_type(&[
-                lst_operands.get(0).get_expr_type(),
-                lst_operands.get(1).get_expr_type(),
-            ]),
+            Add | Sub | Mul | Div | Rem => {
+                let type1 = lst_operands.get(0).get_expr_type_opt();
+                let type2 = lst_operands.get(1).get_expr_type_opt();
+                FunctionExprent::get_max_var_type(&[type1, type2])
+            }
             And | Or | Xor => {
-                let type1 = lst_operands.get(0).get_expr_type();
-                let type2 = lst_operands.get(1).get_expr_type();
-                if type1.type_ == CodeType::Boolean && type2.type_ == CodeType::Boolean {
+                let type1 = lst_operands.get(0).get_expr_type_opt();
+                let type2 = lst_operands.get(1).get_expr_type_opt();
+                let deref =
+                    |t: &Option<VarType>| t.as_ref().map_or_else(|| npe("type"), |t| t.type_);
+                if deref(&type1) == CodeType::Boolean && deref(&type2) == CodeType::Boolean {
                     VarType::VARTYPE_BOOLEAN()
                 } else {
                     FunctionExprent::get_max_var_type(&[type1, type2])
@@ -495,9 +498,12 @@ impl FunctionExprent {
             Ternary => {
                 let param1 = lst_operands.get(1);
                 let param2 = lst_operands.get(2);
-                let Some(supertype) =
-                    VarType::join(&param1.get_expr_type(), &param2.get_expr_type())
-                else {
+                let type1 = param1.get_expr_type_opt();
+                let type2 = param2.get_expr_type_opt();
+                let (Some(type1), Some(type2)) = (type1, type2) else {
+                    npe("VarType.join on null");
+                };
+                let Some(supertype) = VarType::join(&type1, &type2) else {
                     jthrow!(IllegalStateException; "No common supertype for ternary expression");
                 };
 
@@ -516,7 +522,17 @@ impl FunctionExprent {
         })
     }
 
+    /// Java `getInferredExprType(VarType)`; throws `NullPointerException` where
+    /// Java returns `null`, see [`Self::get_inferred_expr_type_opt`].
     pub fn get_inferred_expr_type(self, upper_bound: Option<&VarType>) -> VarType {
+        match self.get_inferred_expr_type_opt(upper_bound) {
+            Some(t) => t,
+            None => jthrow!(NullPointerException; "FunctionExprent.getInferredExprType() is null"),
+        }
+    }
+
+    /// Java `getInferredExprType(VarType)` exactly, `null` included.
+    pub fn get_inferred_expr_type_opt(self, upper_bound: Option<&VarType>) -> Option<VarType> {
         let (func_type, lst_operands) = self.d(|d| (d.func_type, d.lst_operands.clone()));
         if func_type == FunctionType::Cast {
             self.set_needs_cast(true);
@@ -565,7 +581,7 @@ impl FunctionExprent {
                         right = right.resize_array_dim(array_dim);
                     }
 
-                    return right;
+                    return Some(right);
                 }
             } else {
                 let final_right = right.clone();
@@ -580,15 +596,15 @@ impl FunctionExprent {
                 );
             }
 
-            return self.get_expr_type();
+            return self.get_expr_type_opt();
         } else if func_type == FunctionType::Ternary {
             let type1 = lst_operands.get(1).get_inferred_expr_type(upper_bound);
             let type2 = lst_operands.get(2).get_inferred_expr_type(upper_bound);
 
             if type1.type_ == CodeType::Null {
-                return type2;
+                return Some(type2);
             } else if type2.type_ == CodeType::Null {
-                return type1;
+                return Some(type1);
             }
 
             let mut union = VarType::join(&type1, &type2);
@@ -604,21 +620,21 @@ impl FunctionExprent {
             }
 
             return match union {
-                Some(u) => u,
-                None => self.get_expr_type(),
+                Some(u) => Some(u),
+                None => self.get_expr_type_opt(),
             };
         } else if func_type == FunctionType::Instanceof {
             for oper in lst_operands.iter() {
-                oper.get_inferred_expr_type(None);
+                oper.get_inferred_expr_type_opt(None);
             }
-            return self.get_expr_type();
+            return self.get_expr_type_opt();
         }
 
         for oper in lst_operands.iter() {
-            oper.get_inferred_expr_type(upper_bound);
+            oper.get_inferred_expr_type_opt(upper_bound);
         }
 
-        self.get_expr_type()
+        self.get_expr_type_opt()
     }
 
     fn are_generic_types_same(right: &VarType, upper_bound: &VarType) -> bool {
@@ -707,7 +723,7 @@ impl FunctionExprent {
             Imm | Ipp | Mmi | Ppi => {
                 let implicit = implicit_type
                     .as_ref()
-                    .unwrap_or_else(|| npe("implicitType bound"));
+                    .unwrap_or_else(|| npe("Null not expected here"));
                 result.add_expr_lower_bound(param1, implicit);
                 result.add_expr_upper_bound(param1, implicit);
             }
@@ -1128,7 +1144,8 @@ impl FunctionExprent {
         ASSOCIATIVITY.contains(&func_type)
     }
 
-    fn get_max_var_type(arr: &[VarType]) -> VarType {
+    /// A `null` element throws only when the scan reaches it, as in Java.
+    fn get_max_var_type(arr: &[Option<VarType>]) -> VarType {
         let type_primitives = [CodeType::Double, CodeType::Float, CodeType::Long];
         let types = [
             VarType::VARTYPE_DOUBLE(),
@@ -1137,6 +1154,9 @@ impl FunctionExprent {
         ];
         for i in 0..type_primitives.len() {
             for an_arr in arr {
+                let an_arr = an_arr
+                    .as_ref()
+                    .unwrap_or_else(|| npe("getMaxVarType on null"));
                 if an_arr.type_ == type_primitives[i] {
                     return types[i].clone();
                 }

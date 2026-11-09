@@ -332,6 +332,22 @@ impl Exprent {
         self.get_expr_type()
     }
 
+    /// Java `getInferredExprType(VarType)` including its `null` (a `++`/`--`
+    /// without an implicit type, directly or as an assignment's left side), for
+    /// callers that tolerate or discard it.
+    pub fn get_inferred_expr_type_opt(self, upper_bound: Option<&VarType>) -> Option<VarType> {
+        match self.get_type() {
+            ExprentType::Function => {
+                FunctionExprent::get_inferred_expr_type_opt(self.as_function(), upper_bound)
+            }
+            ExprentType::Assignment => self
+                .as_assignment()
+                .get_left()
+                .get_inferred_expr_type_opt(upper_bound),
+            _ => Some(self.get_inferred_expr_type(upper_bound)),
+        }
+    }
+
     pub fn get_exprent_use(self) -> i32 {
         match self.get_type() {
             ExprentType::Array => ArrayExprent::get_exprent_use(self.as_array()),

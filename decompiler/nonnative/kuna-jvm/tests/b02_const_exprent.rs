@@ -45,7 +45,7 @@ fn dump(buf: TextBuffer) -> String {
     }
 }
 
-fn vartype(name: &str) -> VarType {
+pub fn vartype(name: &str) -> VarType {
     match name {
         "VARTYPE_UNKNOWN" => VarType::VARTYPE_UNKNOWN(),
         "VARTYPE_INT" => VarType::VARTYPE_INT(),
