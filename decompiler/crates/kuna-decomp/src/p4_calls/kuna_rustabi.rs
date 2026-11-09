@@ -163,9 +163,10 @@ const DISCRIMINANT_MASK: u64 = 0xff;
 /// The three values of `option rustabi`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RustAbiMode {
-    /// Never act (the shipped default): byte-identical to the pre-fix engine.
+    /// Never act: byte-identical to the pre-fix engine.
     Off,
-    /// Act only when the loader detected a rustc-produced image.
+    /// Act only when the loader detected a rustc-produced image (the shipped
+    /// default).
     Auto,
     /// Act regardless of the detected source language.
     Always,

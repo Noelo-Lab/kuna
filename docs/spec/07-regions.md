@@ -554,13 +554,15 @@ deleted by that step: a slot version still feeding a live reader survives, and
 the store, the cookie read and the scramble die only through the ordinary
 consume fixpoint.
 
-**Why tier=transform, destructive, default-off.** Like §7.3 and §7.4 it
+**Why tier=transform, destructive, default-on.** Like §7.3 and §7.4 it
 deletes real instructions the binary executes (`REMOVES CODE`,
-`destructive = true`). It ships **off** because the cost of a wrong match is a
-deleted call and a deleted argument computation, and because a reader who
-wants to audit the protector itself should get the same escape hatch
-`stackguard off` gives — kept as a separate option so flipping one never
-silently changes the other. Nothing in the pass consults the compiler spec:
+`destructive = true`). It ships **on** because the shape it matches -- the
+MSVC `/GS` cookie's `(K ^ SP) ^ SP` -- occurs in no other compiler's output,
+so a Windows PE loses its boilerplate by default and nothing else is touched;
+`off` is the escape hatch for a reader who wants to audit the protector
+itself, the same one `stackguard off` gives — kept as a separate option so
+flipping one never silently changes the other. Nothing in the pass consults
+the compiler spec:
 the shape is the gate, and GCC/Clang read the canary from `%fs:0x28` and never
 mix the stack pointer into it, so `(K ^ SP) ^ SP` cannot occur in
 `-fstack-protector` output and the option is byte-identical (0/675) on the

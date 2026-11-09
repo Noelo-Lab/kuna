@@ -15,25 +15,24 @@
 //! so the option is catalog-visible and `phase catalog`'s live `current` field
 //! reflects it.
 //!
-//! ## Why default **off**
+//! ## Default **on**
 //!
 //! An IFUNC IRELATIVE slot carries no symbol, so a wrapper that tail-jumps to its
-//! stub (a glibc `log`/`memcpy`/`strlen` dispatcher) flows into the stub and
-//! renders `(*dat_...)(...)`, losing the callee return type — but the stub the
-//! naming would create is a *synthetic* `ifunc.<resolver>` entry with no real
-//! prototype, so its downstream value (return-type recovery) depends on the rest
-//! of the `ifuncfpret` chain. Kept opt-in until that chain is validated; when on,
-//! the tail jump becomes a named tail call.
+//! stub (a glibc `log`/`memcpy`/`strlen` dispatcher) would flow into the stub and
+//! render `(*dat_...)(...)`, losing the callee. The stub the naming creates is a
+//! *synthetic* `ifunc_<resolver>` entry with no real prototype; the return-type
+//! recovery it unblocks is the rest of the `ifuncfpret` chain. Only an x86-64
+//! ELF with `R_X86_64_IRELATIVE` relocations is touched.
 
 /// Environment variable that gates the x86-64 IFUNC PLT-stub naming (read by
-/// `kuna-analysis::loader::elf_plt::resolve_plt_imports`). Absent or an off-token
-/// ⇒ **disabled** (default-off, opt-in); any on-token ⇒ enabled.
+/// `kuna-analysis::loader::elf_plt::resolve_plt_imports`). Absent or an on-token
+/// ⇒ enabled; an off-token ⇒ disabled.
 pub const IFUNCFPRET_ENV: &str = "KUNA_IFUNCFPRET";
 
 /// Whether IFUNC PLT-stub naming is enabled for this process (the loader gate).
-/// Default **off**: only an explicit on-token in [`IFUNCFPRET_ENV`] enables it.
+/// Default **on**: only an explicit off-token in [`IFUNCFPRET_ENV`] disables it.
 pub fn ifuncfpret_enabled() -> bool {
-    crate::options::env_toggle(IFUNCFPRET_ENV, false)
+    crate::options::env_toggle(IFUNCFPRET_ENV, true)
 }
 
 /// Bridge a `set_kuna_option("ifuncfpret", val)` toggle to [`IFUNCFPRET_ENV`] so a
@@ -47,9 +46,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn env_gate_default_off_and_on_tokens() {
+    fn env_gate_default_on_and_off_tokens() {
         std::env::remove_var(IFUNCFPRET_ENV);
-        assert!(!ifuncfpret_enabled(), "unset env ⇒ default off");
+        assert!(ifuncfpret_enabled(), "unset env ⇒ default on");
 
         for on in ["on", "1", "true", "ON", "True", ""] {
             std::env::set_var(IFUNCFPRET_ENV, on);
