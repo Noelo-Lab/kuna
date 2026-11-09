@@ -699,6 +699,16 @@ fn kt3_elements_match_plugin() {
     assert!(tally.cases >= 100);
 }
 
+#[test]
+fn kt3_crafted_elements_match_plugin() {
+    let _guard = common::install_default_context();
+    let cases = read_meta(&data_dir().join("crafted.golden"));
+    let mut tally = Tally::default();
+    check_meta(&cases, &mut tally);
+    tally.check("crafted.golden");
+    assert!(tally.cases >= 16);
+}
+
 // ---- KTypes.getKotlinType
 
 fn check_kotlin_types(path: &Path, tally: &mut Tally) {

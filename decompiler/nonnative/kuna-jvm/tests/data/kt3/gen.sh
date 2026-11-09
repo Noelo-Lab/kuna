@@ -5,8 +5,9 @@
 #
 #   gen.sh              committed vectors: meta.golden (KT1's fixtures, the
 #                       Kotlin corpus, subset.txt of the real-world jars),
-#                       chooser.golden, kotlintypes.golden, misc.golden; also
-#                       recompiles classes/ from src/
+#                       chooser.golden, kotlintypes.golden, misc.golden,
+#                       crafted.golden (gen_crafted.py); also recompiles
+#                       classes/ from src/
 #   gen.sh sweep DIR    full dumps of every input into DIR; then
 #                       KT3_SWEEP_DIR=DIR cargo test -p kuna-jvm --test integration kt3_sweep -- --ignored
 set -eu
@@ -72,3 +73,5 @@ done
   jars | while IFS== read -r label path; do run kotlintypes "$label" "$path" 31; done
 } > "$HERE/kotlintypes.golden"
 run misc > "$HERE/misc.golden"
+python3 "$HERE/gen_crafted.py" > "$WORK/crafted.in"
+run metaraw "$WORK/crafted.in" > "$HERE/crafted.golden"

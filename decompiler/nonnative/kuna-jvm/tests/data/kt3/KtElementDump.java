@@ -42,6 +42,7 @@ import org.vineflower.kt.protobuf.ExtensionRegistryLite;
  * and KotlinChooser on real metadata and prints what they produce.
  *
  *   meta <label> <jar|dir> [<id-list>]   per class: the raw k/d1/d2/xs, then the element dump
+ *   metaraw <file>                        the same for crafted k/d1/d2/xs (gen_crafted.py)
  *   chooser <label> <dir>                 isLanguage twice per class, under three option sets
  *   kotlintypes <label> <jar|dir> [<n>]   KTypes.getKotlinType over the type signatures of the
  *                                         classes (every n-th), plus crafted ones
@@ -58,6 +59,7 @@ public class KtElementDump {
     StructGeneralAttribute.init();
     switch (args[0]) {
       case "meta" -> meta(args[1], args[2], args.length > 3 ? args[3] : null);
+      case "metaraw" -> metaRaw(args[1]);
       case "chooser" -> chooser(args[1], args[2]);
       case "kotlintypes" -> kotlinTypes(args[1], args[2], args.length > 3 ? Integer.parseInt(args[3]) : 1);
       case "misc" -> misc();
@@ -277,6 +279,73 @@ public class KtElementDump {
       }
       if (c.xs != null) p("xs " + esc(c.xs));
       p("--");
+      walk(c);
+      p("end");
+    }
+  }
+
+  static String unesc(String s) {
+    StringBuilder b = new StringBuilder();
+    for (int i = 0; i < s.length(); i++) {
+      char c = s.charAt(i);
+      if (c == '\\') {
+        b.append((char) Integer.parseInt(s.substring(i + 2, i + 6), 16));
+        i += 5;
+      } else {
+        b.append(c);
+      }
+    }
+    return b.toString();
+  }
+
+  static String d1String(String line) {
+    if (line.startsWith("h ")) {
+      StringBuilder b = new StringBuilder();
+      for (int i = 2; i + 1 < line.length(); i += 2) b.append((char) Integer.parseInt(line.substring(i, i + 2), 16));
+      return b.toString();
+    }
+    return unesc(line.substring(2));
+  }
+
+  static void metaRaw(String file) throws Exception {
+    Iterator<String> it = Files.readAllLines(Paths.get(file)).iterator();
+    while (it.hasNext()) {
+      String header = it.next();
+      if (header.isEmpty()) continue;
+      Case c = new Case();
+      c.id = header.substring(4);
+      p(header);
+      String line = it.next();
+      p(line);
+      c.pkg = unesc(line.substring(4));
+      line = it.next();
+      p(line);
+      c.k = Integer.parseInt(line.substring(2));
+      line = it.next();
+      p(line);
+      c.d1 = new String[Integer.parseInt(line.substring(3))];
+      for (int i = 0; i < c.d1.length; i++) {
+        line = it.next();
+        p(line);
+        c.d1[i] = d1String(line);
+      }
+      line = it.next();
+      p(line);
+      if (!line.equals("d2 -")) {
+        c.d2 = new String[Integer.parseInt(line.substring(3))];
+        for (int i = 0; i < c.d2.length; i++) {
+          line = it.next();
+          p(line);
+          c.d2[i] = unesc(line.substring(2));
+        }
+      }
+      line = it.next();
+      if (line.startsWith("xs ")) {
+        p(line);
+        c.xs = unesc(line.substring(3));
+        line = it.next();
+      }
+      p(line);
       walk(c);
       p("end");
     }
