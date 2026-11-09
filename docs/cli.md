@@ -4345,10 +4345,10 @@ must be reproducible.
 ### Parallelism and limits
 
 `--jobs N|auto` (default `auto`) runs N engine instances on N threads of one process. The
-output is byte-identical at every N. `auto` is the core count, at most 16, reduced to what
-the available memory fits: each instance holds the whole input's class universe, roughly
-128 MiB (96 MiB more with a JDK) plus 64 bytes per byte of input and library class files
-(`docs/jvm.md`).
+output is byte-identical at every N. `auto` is the core count, at most 24 and at most one
+per 16 class files, reduced to what the available memory fits: each instance reads only
+the classes it uses, roughly 32 MiB plus 4 bytes per byte of input class files, and the
+decompiled state adds about 90 bytes per input byte (`docs/jvm.md`).
 
 `--max-fn-seconds N` (default 120, `0` disables) bounds each method: the engine polls a
 deadline inside its loops, and a method past it is written as `// $VF: Couldn't be

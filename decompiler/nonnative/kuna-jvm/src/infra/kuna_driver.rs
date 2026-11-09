@@ -38,13 +38,18 @@ use crate::kuna_partition::{self, DivergentRead, RootPos, RootSelection};
 use crate::rt::try_catch;
 
 /// The most worker threads `Jobs::Auto` picks.
-pub const MAX_AUTO_JOBS: usize = 16;
+pub const MAX_AUTO_JOBS: usize = 24;
+
+/// Class files per worker `Jobs::Auto` wants at least: a worker costs an
+/// engine load whatever its share.
+pub const AUTO_CLASSES_PER_JOB: usize = 16;
 
 /// How many engine instances run at once.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Jobs {
-    /// `min(cores, MAX_AUTO_JOBS)`, fewer when the estimated memory of an
-    /// instance times the count does not fit in the available memory.
+    /// `min(cores, MAX_AUTO_JOBS, class files / AUTO_CLASSES_PER_JOB)`, fewer
+    /// when [`estimate_memory`] for the count does not fit in 90% of the
+    /// available memory.
     Auto,
     Exactly(usize),
 }
@@ -965,7 +970,9 @@ fn worker_count_unselected(input: &InputSet, config: &DriverConfig) -> usize {
         Jobs::Exactly(n) => n.max(1),
         Jobs::Auto => {
             let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
-            let wanted = cores.clamp(1, MAX_AUTO_JOBS);
+            let wanted = cores
+                .clamp(1, MAX_AUTO_JOBS)
+                .min((input.classes().len() / AUTO_CLASSES_PER_JOB).max(1));
             let Some(available) = config.available_memory.or_else(mem_available) else {
                 return wanted;
             };
@@ -978,30 +985,25 @@ fn worker_count_unselected(input: &InputSet, config: &DriverConfig) -> usize {
     }
 }
 
-/// A rough upper bound of a run's memory with `workers` instances: each
-/// instance holds the loaded class universe (`instance_memory`, else about 64
-/// bytes per class-file byte plus a fixed part and the JDK index), and the
-/// decompiled state of the classes being worked on, about 400 bytes per
-/// class-file byte of the whole input, is spread over the instances' batches.
-/// Fitted to Guava (6.5 MB of classes: 2.7 GB with one worker, 9.4 GB with
-/// 16) and spring-boot (3.0 MB: 0.9 and 2.3 GB).
+/// A rough upper bound of a run's memory with `workers` instances: about 90
+/// bytes per byte of input class files (the decompiled state and the results,
+/// whatever the count), plus per instance 32 MiB, 4 bytes per byte of input
+/// class files and 1 per byte of library class files (the class universe, whose
+/// classes are read as they are used) unless `instance_memory` says otherwise.
+/// Fitted to the peaks of Elasticsearch (53 MB of classes: 4.8 GB with 8
+/// workers, 8.7 GB with 24), Guava (6.6 MB: 1.0 and 1.9 GB), Ghidra (9.1 MB:
+/// 1.1 and 1.8 GB) and spring-boot (3.0 MB: 0.36 and 0.73 GB).
 pub fn estimate_memory(input: &InputSet, config: &DriverConfig, workers: usize) -> u64 {
     let input_bytes = input.class_bytes() as u64;
-    let universe = input_bytes
-        + config
-            .libraries
-            .iter()
-            .map(|l| l.class_bytes() as u64)
-            .sum::<u64>();
-    let runtime = if config.runtime.is_some() {
-        96 << 20
-    } else {
-        0
-    };
+    let library_bytes = config
+        .libraries
+        .iter()
+        .map(|l| l.class_bytes() as u64)
+        .sum::<u64>();
     let per_instance = config
         .instance_memory
-        .unwrap_or((128 << 20) + runtime + universe * 64);
-    per_instance * workers as u64 + input_bytes * 400
+        .unwrap_or((32 << 20) + input_bytes * 4 + library_bytes);
+    per_instance * workers as u64 + input_bytes * 90
 }
 
 /// `MemAvailable` from `/proc/meminfo`, in bytes.

@@ -286,15 +286,19 @@ over the same input (`src/infra/kuna_driver.rs`). The output is byte-identical a
 each instance decompiles a batch of root classes in the order a single run would, also
 processes (without writing) the other roots its classes depend on, and a batch whose run
 read state it did not produce is repeated before its result is used (spec section
-10.14). `auto` is the number of cores, at most 16, reduced until the memory estimate below
-fits in 90% of the available memory. Measured on Guava (6.5 MB of classes): 81 s with
-one worker, 28 s with four, 14 s with sixteen.
+10.14). `auto` is the number of cores, at most 24 and at most one per 16 class files,
+reduced until the memory estimate below fits in 90% of the available memory. Measured on
+an 80-core machine: Elasticsearch (53 MB of classes) 31.7 s with eight workers, 14.5 s
+with twenty-four; Guava (6.6 MB) 22 s with one worker, 4.8 s with eight, 2.9 s with
+twenty-four.
 
-**Memory.** Each instance holds the whole class universe of the input and its libraries.
-The driver estimates an instance at 128 MiB, plus 96 MiB with a JDK, plus 64 bytes per
-byte of input and library class files, and the decompiled state of the whole input at 400
-bytes per input byte, spread over the instances; the estimate is fitted to Guava (2.7 GB
-with one worker, 9.4 GB with sixteen) and spring-boot (3.0 MB of classes: 0.9 and 2.3 GB).
+**Memory.** An instance reads a class's constant pool entries and members when it first
+uses them (spec section 10.3), so it holds little more than the classes its batches touch.
+The driver estimates an instance at 32 MiB plus 4 bytes per byte of input class files and
+1 per byte of library class files, and the decompiled state and results at 90 bytes per
+input byte, whatever the count; the estimate is fitted to the peaks of Elasticsearch (4.8
+GB with eight workers, 8.7 GB with twenty-four), Guava (1.0 and 1.9 GB), Ghidra (9.1 MB of
+classes: 1.1 and 1.8 GB) and spring-boot (3.0 MB: 0.36 and 0.73 GB).
 `--max-fn-memory` is process-wide on JVM inputs, since the instances are threads of one
 process.
 
