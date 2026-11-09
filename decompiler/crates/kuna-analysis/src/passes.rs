@@ -1070,7 +1070,7 @@ pub fn run_listing_consumers_replaying(
                                 continue;
                             }
                         }
-                        if arch.analysis_aif && frame_aif.is_none() {
+                        if arch.analysis_aif.enabled() && frame_aif.is_none() {
                             let probe = translate.context_scope();
                             if let Some(scope) = &probe { let _ = scope.protect_variable(b"TMode"); }
                             let pointers = if arch.analysis_ptrentry {
@@ -1260,7 +1260,7 @@ pub fn run_listing_consumers_replaying(
     // is checked before this speculative work; the output keeps the `aif` id for
     // the defensive commit gate. A no-op (empty `entries`) when there is no code
     // space.
-    if arch.analysis_listing && arch.analysis_aif {
+    if arch.analysis_listing && arch.analysis_aif.enabled() {
         if let Some(code_space) = arch.manage().get_default_code_space() {
             let mut aif_out = AnalysisOutput::default();
             let checked = frame_aif.unwrap_or_else(|| crate::aif::kuna_entrychecks::run(

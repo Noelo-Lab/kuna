@@ -159,7 +159,7 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_dwarf_lines() {
     let mut arch = Architecture::new("test:LE:32", bare_sleigh());
     // Off-by-default under the shipped defaults.
     assert!(!arch.analysis_listing);
-    assert!(!arch.analysis_aif);
+    assert_eq!(arch.analysis_aif, crate::kuna_aif::AifMode::Off);
     assert!(!arch.analysis_fast_funcdisc);
     assert!(!arch.switch_guard_bound);
     assert!(!arch.analysis_dwarf_lines);
@@ -168,7 +168,7 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_dwarf_lines() {
 
     // Representative aggressive members turned on.
     assert!(arch.analysis_listing);
-    assert!(arch.analysis_aif);
+    assert_eq!(arch.analysis_aif, crate::kuna_aif::AifMode::Strict);
     assert!(arch.analysis_fast_funcdisc);
     assert!(arch.switch_guard_bound);
     // Listed by the preset even though DIV-54 makes it a shipped default, so the
@@ -188,7 +188,7 @@ fn apply_mode_reliable_is_a_no_op() {
     // reliable == shipped defaults: nothing off-default gets flipped, and nothing
     // on-default gets cleared.
     assert!(!arch.analysis_listing);
-    assert!(!arch.analysis_aif);
+    assert_eq!(arch.analysis_aif, crate::kuna_aif::AifMode::Off);
     assert!(arch.duplicate_shared_returns); // DIV-54 shipped default survives
 }
 
@@ -197,13 +197,13 @@ fn apply_mode_fast_replaces_exhaustive_with_bounded_discovery() {
     let mut arch = Architecture::new("test:LE:32", bare_sleigh());
     arch.analysis_listing = true;
     arch.analysis_funcstart_patterns = true;
-    arch.analysis_aif = true;
+    arch.analysis_aif = crate::kuna_aif::AifMode::Strict;
 
     arch.apply_mode("fast").expect("fast mode applies");
 
     assert!(!arch.analysis_listing);
     assert!(!arch.analysis_funcstart_patterns);
-    assert!(!arch.analysis_aif);
+    assert_eq!(arch.analysis_aif, crate::kuna_aif::AifMode::Off);
     assert!(arch.analysis_fast_funcdisc);
     assert!(arch.analysis_noreturn_propagate);
     assert!(!arch.switch_guard_bound);

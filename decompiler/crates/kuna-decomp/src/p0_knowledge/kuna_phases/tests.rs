@@ -38,13 +38,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_278() {
-    assert_eq!(kuna_num_settables(), 278);
-    assert_eq!(SETTABLE_TABLE.len(), 278);
+fn settable_count_is_276() {
+    assert_eq!(kuna_num_settables(), 276);
+    assert_eq!(SETTABLE_TABLE.len(), 276);
 }
 
 #[test]
-fn tier_counts_are_42_core_129_transform_107_analysis() {
+fn tier_counts_are_42_core_129_transform_105_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_42_core_129_transform_107_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (42, 129, 107));
+    assert_eq!((core, transform, analysis), (42, 129, 105));
 }
 
 #[test]
@@ -480,17 +480,9 @@ fn option_values_live_value_present_for_90() {
         // `KUNA_PEORDINAL` env var, like `rexthunk` above. Default-ON.
         "peordinal",
         "aif",
-        // (kuna, GH-299) The AIF gap-cursor aligned slide — an analysis-tier gate
-        // with no codegen live reader (read console-side via kuna_live_value), like
-        // `aif` above. Default-OFF, carried by the `aggressive` preset.
-        "aifstrict",
-        // (kuna, GH-313) The AIF accept corroboration test — an analysis-tier gate
-        // with no codegen live reader (read console-side via kuna_live_value), like
-        // `aifstrict` above. Default-OFF, carried by the `aggressive` preset.
-        "aifcorroborate",
         // (kuna, GH-299) The AIF bracketed-candidate reject — an analysis-tier gate
         // with no codegen live reader (read console-side via kuna_live_value), like
-        // `aifcorroborate` above. Default-ON, inert without `aif`.
+        // `aif` above. Default-ON, inert without `aif`.
         "aifbracket",
         // (kuna, GH-299) The AIF filler reject, read console-side like `aifbracket`.
         "aifnoppad",
@@ -1093,14 +1085,13 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // row, libcsigs' S1 row, funcboundflow's S2 row, poolentry's S1 row, the
     // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row,
     // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
-    // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
-    // aifstrict's P1 row, spillargtrial's P4 row, dynrelocs' P1 row and
+    // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row,
+    // spillargtrial's P4 row, dynrelocs' P1 row and
     // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1, rustabi's P4 and
     // symbolnamerepair's P1 rows sit mid-table, so they do not move the tail).
     // noreturn_discstrict's P1 row is mid-table too, so it only bumps the count.
     // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1, rustabi's P4,
-    // symbolnamerepair's P1 and aifcorroborate's P1 rows sit mid-table, so they do
-    // not move the tail).
+    // symbolnamerepair's P1 rows sit mid-table, so they do not move the tail).
     // symbolnamerepair's P1 and symbolnamechars' P1 rows sit mid-table, so they
     // do not move the tail).
     // symbolnamerepair's P1 and symbolnamebound's P1 rows sit mid-table, so they
@@ -1233,7 +1224,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftcall`, beside that.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
-    assert_eq!(json.matches("},\n").count(), 277);
+    assert_eq!(json.matches("},\n").count(), 275);
 }
 
 #[test]

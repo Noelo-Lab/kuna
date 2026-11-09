@@ -7083,15 +7083,20 @@ the `noreturn_error`/`noreturn_reach` sub-rules), the FID matcher (§1.4), the A
 gap-walk, and (kuna) the recursive-descent promotion `funcdisc_recursive`, which
 commits the walk's discovered CALL targets as real functions (coupled to the
 `funcstart_patterns` flag; this is what finds call-only targets with no
-recognizable prologue). **AIF** (`aif`, default-off with upstream's own "IT MAY
-CREATE A LOT OF BAD CODE!" warning;
+recognizable prologue). **AIF** (`aif off|on|strict|precise`, default `off` with
+upstream's own "IT MAY CREATE A LOT OF BAD CODE!" warning;
 `decompiler/crates/kuna-analysis/src/analyzers/aif/mod.rs (run_aif)`) speculatively
 decodes each undefined gap between discovered functions and accepts a gap start
 only when it both disassembles into a valid subroutine (a clean flow to RET, more
 than 2 instructions, no bad byte or out-of-range flow) *and* its prologue matches a
 start fingerprint shared by at least 4 already-discovered functions
 (`FINGERPRINT_THRESHOLD`) — the exhaustive gap oracle for functions with no
-static or accepted pointer-table root.
+static or accepted pointer-table root. The option's four values are cumulative
+settings of one walk (`decompiler/crates/kuna-decomp/src/p1_partition/kuna_aif.rs`):
+`off` runs no walk, `on` runs it with the byte-granular cursor, `strict` with the
+aligned cursor described below, and `precise` adds upstream's second fingerprint
+test to `strict`. The `aggressive` preset sets `strict`; the whole-binary drivers
+inject `on` on a non-x86-64 image when the selected mode names no value.
 
 The gap cursor caches its current undefined span instead of repeating Listing
 lookups at every candidate. The next known instruction still bounds subroutine
@@ -7133,19 +7138,19 @@ cannot be instruction boundaries — a candidate starting mid-instruction reads 
 tail of one encoding plus the head of the next, and that synthetic pair matches a
 common prologue about as often as a real one. On a large stripped i386 PE the walk
 plants roughly 2,100 entries in the middle of a function body, a third of them inside
-a function the discovery set already has an entry for. `aifstrict` (default-off,
-carried by the `aggressive` preset;
+a function the discovery set already has an entry for. `aif strict` (the setting
+the `aggressive` preset carries;
 `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifstrict.rs`) narrows the
 cursor: it advances to the next 4-byte boundary rather than the next byte, and a
 candidate is probed only when it is 4-byte aligned **or** it is the first byte of its
-hole. The hole-start exemption is the whole distinction the option draws — a hole
+hole. The hole-start exemption is the whole distinction the setting draws — a hole
 boundary is evidence, since the recursive-descent walk decoded up to exactly there
 and stopped, while an interior byte the cursor slid onto is a guess. The stride is 4
 on every architecture deliberately: 16-byte alignment kills nine tenths of the bad
 Cortex-M entries but takes four fifths of the real ones with it. Declining a probe
 also *recovers* entries rather than only removing them, because an accept advances
 the cursor past the accepted body — a phantom accepted one halfword inside a literal
-pool consumes the real function behind it. Off restores the byte-granular cursor
+pool consumes the real function behind it. `aif on` keeps the byte-granular cursor
 exactly.
 
 (kuna, GH-299) The complementary reject the issue asks for — refuse a candidate
@@ -7173,7 +7178,8 @@ no-return call opens (the word admits the function behind a one-word A32 literal
 pool); or the instruction ending exactly at it is alignment padding (`nop`, `int3`,
 a self-move or self-`lea`), a return or an unconditional jump. A hole a computed jump
 opens has no such boundary, which is exactly the unresolved-switch case. Like an
-`aifcorroborate` refusal, a refused fragment still consumes its body so the cursor
+uncorroborated refusal under `aif precise`, a refused fragment still consumes its
+body so the cursor
 does not resume inside it. The refusal runs only in the plain gap walk (both the
 Listing and the reference-walk callers); the frame-prefix reconciliation, which
 replaces one accepted root by another, is untouched. Scored against unstripped twins
@@ -7263,8 +7269,8 @@ alone, and again after the validity walk, where a routine that adds no informati
 must match a prologue shared by fifty discovered functions rather than four. kuna
 ported the first refusal and the "no two-instruction routines" half of the second,
 so a self-contained routine that calls nothing, jumps nowhere known, and merely
-reaches a return is accepted on a two-mnemonic coincidence. `aifcorroborate`
-(default-off, **in no preset**;
+reaches a return is accepted on a two-mnemonic coincidence. `aif precise` (the
+aligned cursor of `strict` plus this test, set by **no preset**;
 `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifcorroborate.rs`) restores
 it: an accept must either add information — a call, or a jump into already-discovered
 code — or match a prologue that fifty discovered functions share. The corroborating
@@ -7276,8 +7282,8 @@ consumes its body: the gap cursor advances past an accepted routine but only one
 past a rejected one, so an accept-side refusal that released the cursor would hand it
 back to the interior of the same hole, replacing one bad entry with a worse one.
 
-The option ships opt-in because it was **measured out of the default path**, not
-because it is unevaluated. Over the same corpus `aifstrict` was measured on it cuts
+No preset sets `precise` because it was **measured out of the default path**, not
+because it is unevaluated. Over the same corpus, compared with `strict`, it cuts
 roughly a third of the remaining mid-body entries but costs about half a real
 function for each one removed, raises recall on none of the images, and takes real
 functions off the A32 targets AIF's remaining justification rests on — which is the

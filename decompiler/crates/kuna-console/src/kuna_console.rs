@@ -356,6 +356,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "gopclntab" => on_off(conf.analysis_gopclntab),
         "gotypes" => on_off(conf.analysis_gotypes),
         "gonoreturn" => on_off(conf.analysis_gonoreturn),
+        // (kuna `aif`) Four-valued, so it reports its own token.
+        "aif" => conf.analysis_aif.as_str(),
         "aifbracket" => on_off(conf.analysis_aifbracket),
         "aifnoppad" => on_off(conf.analysis_aifnoppad),
         "aifpoolslide" => on_off(conf.analysis_aifpoolslide),

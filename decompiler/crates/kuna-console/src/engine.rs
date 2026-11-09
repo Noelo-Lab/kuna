@@ -3279,21 +3279,11 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // + its passes_for registration both self-gate on ELF), so a default run /
         // every non-ELF binary commits nothing here.
         "itaniumrtti" => arch.analysis_itaniumrtti,
-        "aif" => arch.analysis_aif,
-        // (kuna, GH-299) The AIF gap-cursor aligned slide has no fact stream of its
-        // own — it shapes the `aif` accept list inside `run_aif`, which the `aif` arm
-        // above already gates. Registered here so the fail-open `_ => true` never
-        // silently re-enables a pass id that does not exist.
-        "aifstrict" => arch.analysis_aifstrict,
-        // (kuna, GH-313) The AIF accept corroboration test — like `aifstrict` it has
-        // no fact stream of its own, shaping the `aif` accept list inside `run_aif`.
-        // Registered here so the fail-open `_ => true` never silently re-enables a
-        // pass id that does not exist.
-        "aifcorroborate" => arch.analysis_aifcorroborate,
-        // (kuna, GH-299) The AIF bracketed-candidate reject — like `aifstrict` it
-        // has no fact stream of its own, shaping the `aif` accept list inside
-        // `run_aif`. Registered here so the fail-open `_ => true` never silently
-        // re-enables a pass id that does not exist.
+        "aif" => arch.analysis_aif.enabled(),
+        // (kuna, GH-299) The AIF bracketed-candidate reject has no fact stream of
+        // its own -- it shapes the `aif` accept list inside `run_aif`, which the
+        // `aif` arm above already gates. Registered here so the fail-open
+        // `_ => true` never silently re-enables a pass id that does not exist.
         "aifbracket" => arch.analysis_aifbracket,
         // (kuna, GH-299) The AIF filler reject, shaping the `aif` accept list the
         // same way; registered for the same fail-open reason.

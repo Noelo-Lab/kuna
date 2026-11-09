@@ -80,7 +80,7 @@ fn bootstrap_image(
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    for (name, value) in [("listing", "on"), ("aif", "on"), ("aifstrict", "on")]
+    for (name, value) in [("listing", "on"), ("aif", "strict")]
         .iter()
         .chain(options)
     {
