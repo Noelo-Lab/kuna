@@ -63,9 +63,9 @@ pub use kotlin::{
     collapse_string_concat_pass, default_args_map, eliminate_dead_vars_pass, java_finally_pass,
     k_contract, k_enum_processor, k_expr_processor, k_merge_pass, k_parameter, k_property_accessor,
     k_type_parameter, k_types, k_utils, kotlin_chooser, kotlin_object_processors, kotlin_options,
-    kotlin_plugin, kotlin_writer, kuna_fix_kt_synthetic_anonymous_object,
-    obfuscated_exceptions_pass, replace_exprents_pass, replace_stats_pass,
-    resugar_kotlin_methods_pass, stack_var_initial_pass,
+    kotlin_plugin, kotlin_writer, kuna_fix_kt_for_range_counter,
+    kuna_fix_kt_synthetic_anonymous_object, obfuscated_exceptions_pass, replace_exprents_pass,
+    replace_stats_pass, resugar_kotlin_methods_pass, stack_var_initial_pass,
 };
 pub use kotlin::{
     k_annotation_exprent, k_catch_statement, k_class, k_const_exprent, k_constructor, k_dispatch,
@@ -118,8 +118,8 @@ pub use p5_types::{
     intersection_cast_processor, var_type_processor,
 };
 pub use p6_variables::{
-    var_definition_helper, var_names_collector, var_processor, var_version_node, var_version_pair,
-    var_versions_graph, var_versions_processor,
+    kuna_fix_var_merge_liveness, var_definition_helper, var_names_collector, var_processor,
+    var_version_node, var_version_pair, var_versions_graph, var_versions_processor,
 };
 pub use p7_regions::{
     clear_struct_helper, dec_helper, dom_helper, dom_tracer, dominator_engine,

@@ -292,6 +292,334 @@ def assert_dead_throw_scope(a, b, i1, i2, j1, j2, throw_names):
     return all(o == n or declared_in_scope(o, n, throw_names) for o, n in zip(old, new))
 
 
+RESUGAR_NOTE = '// $VF: Unable to resugar Kotlin loop from Java for loop'
+KT_DECLARATION = re.compile(r'\s*(?:val|var) [^\s=]+: [^=]+$')
+KT_RUN_LABEL = re.compile(r'\s*run (label\d+)@\{$')
+KT_DO_HEAD = re.compile(r'\s*(?:(label\d+)@ )?do \{$')
+KT_DO_TAIL = re.compile(r'\s*\} while \(run \{ (.+); (.+) \}\)$')
+KT_INC = re.compile(r'\s*(?:([^\s+-]+)(\+\+|--)|(\+\+|--)([^\s+-]+))$')
+KT_UNTIL_HEAD = re.compile(r'(\s*(?:label\d+@ )?for \(\S+ in .+) until (\S+\) \{)$')
+KT_REPEAT_HEAD = re.compile(r'(\s*repeat\()(-?\d+)(\) .*)$')
+KT_LOOP_KINDS = {}
+KT_TOKEN = re.compile(r'`[^`\n]+`|' + TOKEN.pattern)
+
+
+def kt_tokens(text_lines):
+    """`tokens`, with a backquoted Kotlin name one token."""
+    return KT_TOKEN.findall('\n'.join(text_lines))
+
+
+def indent_of(line):
+    return len(line) - len(line.lstrip(' '))
+
+
+def closing(lines, start, indent):
+    """The index of the first line after `start` that is `}` at `indent`, or None."""
+    for k in range(start + 1, len(lines)):
+        if lines[k].strip() and indent_of(lines[k]) <= indent:
+            return k if lines[k].strip().startswith('}') and indent_of(lines[k]) == indent else None
+    return None
+
+
+def kt_loop_segments(lines):
+    """The lines of a new-text span as segments: ('line', text) or ('loop', parts) for each loop the
+    Kotlin writer prints as `// $VF: Unable to resugar Kotlin loop from Java for loop` and a `while` or
+    `do`-`while` (the bodies parsed recursively)."""
+    segs, i = [], 0
+    while i < len(lines):
+        bare = (lines[i].lstrip().startswith('if (') and i + 1 < len(lines)
+                and KT_DO_HEAD.match(lines[i + 1]) is not None)
+        if lines[i].strip() != RESUGAR_NOTE and not bare:
+            segs.append(('line', lines[i]))
+            i += 1
+            continue
+        defs = []
+        while not bare and segs and segs[-1][0] == 'line' and KT_DECLARATION.match(segs[-1][1]) \
+                and indent_of(segs[-1][1]) == indent_of(lines[i]):
+            defs.insert(0, segs.pop()[1])
+        loop = {'defs': defs, 'label': None, 'run': False, 'init': [], 'do': False, 'bare': bare}
+        j = i if bare else i + 1
+        m = KT_RUN_LABEL.match(lines[j]) if j < len(lines) and not bare else None
+        if m:
+            loop['label'], loop['run'] = m.group(1), True
+            j += 1
+        while j < len(lines) and not lines[j].lstrip().startswith(('while (', 'if (')):
+            loop['init'].append(lines[j])
+            j += 1
+        if j >= len(lines):
+            segs += [('line', x) for x in lines[i:]]
+            break
+        head = j
+        while j < len(lines) and not lines[j].rstrip().endswith(') {'):
+            j += 1
+        if j >= len(lines):
+            segs += [('line', x) for x in lines[i:]]
+            break
+        cond = ' '.join(x.strip() for x in lines[head:j + 1])
+        cond = cond[cond.index('(') + 1:-3].strip()
+        loop['cond'], head_indent, body_start = cond, indent_of(lines[head]), j + 1
+        if lines[head].lstrip().startswith('if ('):
+            d = KT_DO_HEAD.match(lines[body_start]) if body_start < len(lines) else None
+            if not d:
+                segs += [('line', x) for x in lines[i:body_start]]
+                i = body_start
+                continue
+            loop['do'], loop['label'] = True, d.group(1)
+            end = closing(lines, body_start, indent_of(lines[body_start]))
+            tail = KT_DO_TAIL.match(lines[end]) if end is not None else None
+            if end is None or not tail or (end + 1 < len(lines) and lines[end + 1].strip() != '}'):
+                segs += [('line', x) for x in lines[i:body_start + 1]]
+                i = body_start + 1
+                continue
+            loop['inc'], loop['body'] = tail.group(1), kt_loop_segments(lines[body_start + 1:end])
+            loop['closed'] = end + 1 < len(lines)
+            i = end + 2
+        else:
+            end = closing(lines, j, head_indent)
+            body = lines[body_start:end if end is not None else len(lines)]
+            loop['closed'] = end is not None
+            loop['inc'] = None
+            if len(body) >= 2 and body[-2].strip() == '' and KT_INC.match(body[-1]):
+                loop['inc'], body = body[-1].strip(), body[:-2]
+            loop['body'] = kt_loop_segments(body)
+            i = end + 1 if end is not None else len(lines)
+            if loop['run'] and loop['closed']:
+                if i < len(lines) and lines[i].strip() == '}':
+                    i += 1
+                else:
+                    loop['closed'] = False
+        segs.append(('loop', loop))
+    return segs
+
+
+KT_CONSTANT = re.compile(r"-?\d+L?|'(?:[^'\\]|\\.)+'|true|false|null")
+
+
+def kt_step(text, delta):
+    """A constant bound as Vineflower prints it: an int literal moved by `delta`, a long literal as it
+    is; None for a constant whose moved text this check does not compute (a char)."""
+    if re.fullmatch(r'-?\d+', text):
+        return str(int(text) + delta)
+    return text if re.fullmatch(r'-?\d+L', text) else None
+
+
+def kt_range_header(loop):
+    """What Vineflower's range resugaring prints for the loop's header, or None when it would not."""
+    if len(loop['init']) != 1 or not loop['inc']:
+        return None
+    init = re.fullmatch(r'\s*(?:(?:val|var) )?(\S+?)(?:: [^=]+)? = (.+)', loop['init'][0])
+    inc = KT_INC.match(loop['inc'])
+    cond = re.fullmatch(r'(\S+) < (\S+)', loop['cond'])
+    if not init or not inc or not cond:
+        return None
+    var, start = init.group(1), init.group(2)
+    pp = (inc.group(2) or inc.group(3)) == '++'
+    left, right = cond.group(1), cond.group(2)
+    delta = -1 if pp else 1
+    name = re.compile(r'`[^`]+`|[A-Za-z_$][\w$]*')
+    if KT_CONSTANT.fullmatch(right) or KT_CONSTANT.fullmatch(left):
+        bound = kt_step(right if KT_CONSTANT.fullmatch(right) else left, delta)
+        if bound is None:
+            return None
+    elif left == var and name.fullmatch(right):
+        bound = right
+    elif right == var and name.fullmatch(left):
+        bound = left
+    else:
+        return 'abandoned'
+    label = loop['label']
+    if pp and start == '0':
+        return f'repeat({bound}) ' + (f'{label}@' if label else '') + '{' + ('' if var == 'it' else f' {var} ->')
+    return (f'{label}@ ' if label else '') + f'for ({var} in {start}' + ('..' if pp else ' downTo ') + f'{bound}) {{'
+
+
+def kt_loop_candidates(loop):
+    """(kind, prefix tokens, keep body, suffix tokens) for each text Vineflower may have printed for a loop
+    kuna prints as a `while`/`do`-`while`: its own `while (true) { if (C) break` form, its range or
+    repeat form, or nothing (`break resugar`)."""
+    init = kt_tokens(loop['init'])
+    note = kt_tokens([RESUGAR_NOTE]) if not loop.get('bare') else []
+    inc = kt_tokens([loop['inc']]) if loop['inc'] else []
+    wrapped = loop['run'] or (loop['do'] and loop['label'])
+    run = kt_tokens([f'run {loop["label"]}@{{']) if wrapped and not loop.get('bare') else []
+    wrapped_end = kt_tokens(['}']) if wrapped else []
+    head = kt_tokens([f'while (true) {{ if ({loop["cond"]}) break'])
+    out = []
+    end = kt_tokens(['}']) if loop['closed'] else []
+    out.append(('kt_for_loop_exit_condition', note + run + init + head, True,
+                inc + end + (wrapped_end if loop['closed'] else [])))
+    header = kt_range_header(loop) if not loop.get('bare') else None
+    if header == 'abandoned':
+        out.append(('kt_for_range_unmatched_bound', [], False, []))
+    elif header:
+        out.append(('kt_for_range_counter', kt_tokens([header]), True, end))
+    return out
+
+
+def kt_eq(old, q, new, renames):
+    """`renames` extended so that `new` reads as old[q:...] when each of its fresh names (`renames`'
+    keys) stands for one old name; None when it cannot."""
+    if old[q:q + len(new)] == new:
+        return renames
+    if len(old) < q + len(new):
+        return None
+    out = dict(renames)
+    for o, n in zip(old[q:q + len(new)], new):
+        if o == n:
+            continue
+        if n not in out or not KT_NAME.fullmatch(o) or (out[n] is not None and out[n] != o):
+            return None
+        out[n] = o
+    return out
+
+
+def kt_match(segs, old, p, kinds, renames=None):
+    """The states (position in `old`, loop kinds used, renames) where the segments can end when matched
+    from `p`; Vineflower's texts are tried for each loop."""
+    states = [(p, kinds, renames or {})]
+    for kind, seg in segs:
+        nxt = []
+        for q, ks, rn in states:
+            if kind == 'line':
+                for alt, alt_kind in kt_line_alternatives(seg):
+                    t = kt_tokens([alt])
+                    r2 = kt_eq(old, q, t, rn)
+                    if r2 is not None:
+                        nxt.append((q + len(t), ks + ([alt_kind] if alt_kind else []), r2))
+                continue
+            for defs in ([], seg['defs']) if seg['defs'] else ([],):
+                for name, pre, body, post in kt_loop_candidates(seg):
+                    pre = kt_tokens(defs) + pre
+                    r1 = kt_eq(old, q, pre, rn)
+                    if r1 is None:
+                        continue
+                    ends = kt_match(seg['body'], old, q + len(pre), [], r1) if body else [(q + len(pre), [], r1)]
+                    for r, inner, r2 in ends:
+                        r3 = kt_eq(old, r, post, r2)
+                        if r3 is not None:
+                            extra = ['kt_for_loop_definitions'] if seg['defs'] and not defs else []
+                            extra += ['kt_for_loop_continue_update'] if seg['do'] else []
+                            nxt.append((r + len(post), ks + inner + [name] + extra, r3))
+        seen, states = set(), []
+        for st in nxt:
+            key = (st[0], tuple(st[1]), tuple(sorted(st[2].items(), key=str)))
+            if key not in seen:
+                seen.add(key)
+                states.append(st)
+        states = states[:64]
+        if not states:
+            return []
+    return states
+
+
+def kt_line_alternatives(line):
+    """(text, kind) for each text Vineflower may have printed for one line kuna prints: the line itself
+    (kind None) or, for an import a fixed method needs, nothing; the inclusive `..` / `repeat(N - 1)` of a range header kuna writes exclusive, or the
+    `while (true) { if (C) break` of a loop kuna writes `while (C)`."""
+    out = [(line, None)]
+    if line.startswith('import '):
+        out.append(('', None))
+    m = KT_UNTIL_HEAD.match(line)
+    if m:
+        out.append((f'{m.group(1)}..{m.group(2)}', 'kt_for_range_exclusive_bound'))
+    m = KT_REPEAT_HEAD.match(line)
+    if m:
+        out.append((f'{m.group(1)}{int(m.group(2)) - 1}{m.group(3)}', 'kt_for_range_exclusive_bound'))
+    m = re.fullmatch(r'\s*while \((.+)\) \{', line)
+    if m:
+        out.append((f'while (true) {{ if ({m.group(1)}) break', 'kt_for_loop_exit_condition'))
+    return out
+
+
+KT_NAME = re.compile(r'`[^`]+`|[A-Za-z_$][\w$]*')
+KT_DECLARED = re.compile(r'^(\s*)(?:val|var) (`[^`]+`|[\w$]+): [^=]+? = (.*)$')
+KT_JAVA_CAST = re.compile(r'\((?:[A-Z][\w.$]*(?:<[^()]*>)?(?:\[\])*|char|byte|short|int|long|float|double|boolean)\)(?=[\w`(])')
+KT_AS_CAST = re.compile(r' as [\w.$]+(?:<[^()]*?>)?\??')
+
+
+def kt_unmerged(lines):
+    """The lines with what a split variable changes besides its name taken out: declarations
+    without a value, the `val`/`var` and type of a declaration with one, and casts."""
+    out = []
+    for line in lines:
+        if KT_DECLARATION.match(line):
+            continue
+        m = KT_DECLARED.match(line)
+        if m:
+            line = f'{m.group(1)}{m.group(2)} = {m.group(3)}'
+        out.append(KT_AS_CAST.sub('', kt_uncast(line)))
+    return out
+
+
+def kt_uncast(line):
+    """The line without its Java-style casts, and the parentheses around a cast operand."""
+    while True:
+        m = KT_JAVA_CAST.search(line)
+        if not m:
+            return line
+        rest = line[m.end():]
+        if rest.startswith('('):
+            depth = 0
+            for k, c in enumerate(rest):
+                depth += {'(': 1, ')': -1}.get(c, 0)
+                if depth == 0:
+                    rest = rest[1:k] + rest[k + 1:]
+                    break
+        line = line[:m.start()] + rest
+
+
+def kt_fresh_names(old, new):
+    """The names `new` uses more often than `old`: the variables a split gave their own name."""
+    before, after = {}, {}
+    for t in kt_tokens(old):
+        before[t] = before.get(t, 0) + 1
+    for t in kt_tokens(new):
+        after[t] = after.get(t, 0) + 1
+    return {t: None for t, n in after.items()
+            if KT_NAME.fullmatch(t) and n > before.get(t, 0) and not t.lstrip('`')[:1].isupper()}
+
+
+def var_merge_liveness(old, new):
+    """var_merge_liveness: token for token, the new text is the old one with some uses of a merged
+    variable renamed to a fresh name (each standing for one old name), declarations of that name added,
+    a declaration's `val`/`var` and type and casts changed."""
+    o, n = kt_unmerged(old), kt_unmerged(new)
+    fresh = kt_fresh_names(old, new)
+    if not fresh or kt_tokens(o) == kt_tokens(n):
+        return False
+    renames = kt_eq(kt_tokens(o), 0, kt_tokens(n), fresh)
+    return renames is not None and len(kt_tokens(o)) == len(kt_tokens(n)) and any(v for v in renames.values())
+
+
+def kt_for_loops(old, new):
+    """kt_for_loop_*, kt_for_range_*: each `for` loop kuna writes differently is, token for token, the
+    loop Vineflower printed: `while (true) { if (C) break` (exit condition), a range or `repeat` header
+    without the initializer and update (counter, exclusive bound), nothing at all (unmatched bound),
+    `..` / `repeat(N - 1)` for `until` / `repeat(N)` (exclusive bound), no declarations before the loop
+    (definitions), or a `while` for a `do`-`while` (continue update)."""
+    if not [x for x in old if x.strip()] and new and all(KT_DECLARATION.match(x) for x in new):
+        KT_LOOP_KINDS['kt_for_loop_definitions'] = KT_LOOP_KINDS.get('kt_for_loop_definitions', 0) + 1
+        return True
+    segs = kt_loop_segments(new)
+    a = kt_tokens(old)
+    if kt_tokens(new) == a:
+        return False
+    for q, kinds, _ in kt_match(segs, a, 0, []):
+        if q == len(a) and kinds:
+            for k in kinds:
+                KT_LOOP_KINDS[k] = KT_LOOP_KINDS.get(k, 0) + 1
+            return True
+    fresh = kt_fresh_names(old, new)
+    if fresh:
+        a = kt_tokens(kt_unmerged(old))
+        for q, kinds, renames in kt_match(kt_loop_segments(kt_unmerged(new)), a, 0, [], fresh):
+            if q == len(a) and kinds:
+                for k in kinds + ['var_merge_liveness']:
+                    KT_LOOP_KINDS[k] = KT_LOOP_KINDS.get(k, 0) + 1
+                return True
+    return False
+
+
 CONTEXT_RECOGNISERS = {'enum_body_separator': enum_body_separator,
                        'assert_dead_throw': assert_dead_throw_scope}
 
@@ -301,6 +629,8 @@ RECOGNISERS = {
     'statement_as_expression': statement_as_expression,
     'anonymous_static_qualifier': anonymous_static_qualifier,
     'assert_dead_throw': assert_dead_throw,
+    'kt_for_loops': kt_for_loops,
+    'var_merge_liveness': var_merge_liveness,
 }
 
 

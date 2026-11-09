@@ -95,6 +95,31 @@ pub enum KunaFix {
     /// by its own index constant, so labels after the first of a case and
     /// labels whose index equals an integer label's value are resolved.
     TypeSwitchLabelLookup,
+    /// `kt_for_loop_exit_condition`: a Kotlin `for` loop that cannot be
+    /// resugared is written `while (COND)`, not `while (true) { if (COND) break`.
+    KtForLoopExitCondition,
+    /// `kt_for_range_counter`: a Kotlin range loop is written only for a
+    /// `for` that counts its initializer's variable to the bound.
+    KtForRangeCounter,
+    /// `kt_for_range_exclusive_bound`: a Kotlin range loop keeps the `for`
+    /// loop's exclusive bound (`until`, `repeat(N)`).
+    KtForRangeExclusiveBound,
+    /// `kt_for_range_unmatched_bound`: a Kotlin `for` whose bound is neither
+    /// a constant nor a variable is written as a `while`, not dropped.
+    KtForRangeUnmatchedBound,
+    /// `kt_for_loop_definitions`: a Kotlin `for` loop written as a `while`
+    /// declares the variables Vineflower attached to the loop.
+    KtForLoopDefinitions,
+    /// `kt_for_loop_continue_update`: a Kotlin `for` loop written as a loop
+    /// whose body continues it runs the update on `continue`.
+    KtForLoopContinueUpdate,
+    /// `var_merge_liveness`: two variables of one original slot are merged
+    /// only when the earlier one's value is not read after the later one is
+    /// written.
+    VarMergeLiveness,
+    /// `kt_partial_array_dims`: a Kotlin array creation that sizes fewer
+    /// dimensions than its type (`arrayOfNulls<ByteArray>(n)`) is written.
+    KtPartialArrayDims,
 }
 
 impl KunaFix {
@@ -123,6 +148,14 @@ impl KunaFix {
         KunaFix::TypeSwitchEnumLabel,
         KunaFix::TypeSwitchPatternType,
         KunaFix::TypeSwitchLabelLookup,
+        KunaFix::KtForLoopExitCondition,
+        KunaFix::KtForRangeCounter,
+        KunaFix::KtForRangeExclusiveBound,
+        KunaFix::KtForRangeUnmatchedBound,
+        KunaFix::KtForLoopDefinitions,
+        KunaFix::KtForLoopContinueUpdate,
+        KunaFix::VarMergeLiveness,
+        KunaFix::KtPartialArrayDims,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -151,6 +184,14 @@ impl KunaFix {
             KunaFix::TypeSwitchEnumLabel => "type_switch_enum_label",
             KunaFix::TypeSwitchPatternType => "type_switch_pattern_type",
             KunaFix::TypeSwitchLabelLookup => "type_switch_label_lookup",
+            KunaFix::KtForLoopExitCondition => "kt_for_loop_exit_condition",
+            KunaFix::KtForRangeCounter => "kt_for_range_counter",
+            KunaFix::KtForRangeExclusiveBound => "kt_for_range_exclusive_bound",
+            KunaFix::KtForRangeUnmatchedBound => "kt_for_range_unmatched_bound",
+            KunaFix::KtForLoopDefinitions => "kt_for_loop_definitions",
+            KunaFix::KtForLoopContinueUpdate => "kt_for_loop_continue_update",
+            KunaFix::VarMergeLiveness => "var_merge_liveness",
+            KunaFix::KtPartialArrayDims => "kt_partial_array_dims",
         }
     }
 

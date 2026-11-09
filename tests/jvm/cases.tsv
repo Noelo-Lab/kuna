@@ -3139,6 +3139,12 @@ class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$Counter.class
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$Counter2.class
 expected	kuna-fixes/expected-compat/pkg/TestAnonymousStaticCall.java
 compare	TestAnonymousStaticCall.java
+case	kuna-fixes-compat/pkg/TestArrayOfArrays	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestArrayOfArrays.class
+class	kuna-fixes/classes/pkg/TestArrayOfArrays$Cell.class
+expected	kuna-fixes/expected-compat/pkg/TestArrayOfArrays.kt
+compare	TestArrayOfArrays.kt	TestArrayOfArrays.java
 case	kuna-fixes-compat/pkg/TestAssertDeadThrow	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestAssertDeadThrow.class
 expected	kuna-fixes/expected-compat/pkg/TestAssertDeadThrow.java
@@ -3200,6 +3206,37 @@ class	kuna-fixes/classes/pkg/TestEnumNoConstants$Holder.class
 class	kuna-fixes/classes/pkg/TestEnumNoConstants$Only.class
 expected	kuna-fixes/expected-compat/pkg/TestEnumNoConstants.java
 compare	TestEnumNoConstants.java
+case	kuna-fixes-compat/pkg/TestForLoopContinueUpdate	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestForLoopContinueUpdate.class
+expected	kuna-fixes/expected-compat/pkg/TestForLoopContinueUpdate.kt
+compare	TestForLoopContinueUpdate.kt	TestForLoopContinueUpdate.java
+case	kuna-fixes-compat/pkg/TestForLoopDefinitions	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestForLoopDefinitions.class
+expected	kuna-fixes/expected-compat/pkg/TestForLoopDefinitions.kt
+compare	TestForLoopDefinitions.kt	TestForLoopDefinitions.java
+case	kuna-fixes-compat/pkg/TestForLoopExitCondition	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestForLoopExitCondition.class
+class	kuna-fixes/classes/pkg/TestForLoopExitCondition$Node.class
+expected	kuna-fixes/expected-compat/pkg/TestForLoopExitCondition.kt
+compare	TestForLoopExitCondition.kt	TestForLoopExitCondition.java
+case	kuna-fixes-compat/pkg/TestForRangeCounter	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestForRangeCounter.class
+expected	kuna-fixes/expected-compat/pkg/TestForRangeCounter.kt
+compare	TestForRangeCounter.kt	TestForRangeCounter.java
+case	kuna-fixes-compat/pkg/TestForRangeExclusiveBound	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestForRangeExclusiveBound.class
+expected	kuna-fixes/expected-compat/pkg/TestForRangeExclusiveBound.kt
+compare	TestForRangeExclusiveBound.kt	TestForRangeExclusiveBound.java
+case	kuna-fixes-compat/pkg/TestForRangeUnmatchedBound	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestForRangeUnmatchedBound.class
+expected	kuna-fixes/expected-compat/pkg/TestForRangeUnmatchedBound.kt
+compare	TestForRangeUnmatchedBound.kt	TestForRangeUnmatchedBound.java
 case	kuna-fixes-compat/pkg/TestIfDenestFallthrough	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected-compat/pkg/TestIfDenestFallthrough.java
@@ -3286,6 +3323,13 @@ case	kuna-fixes-compat/pkg/TestTypeSwitchPatternType	Kuna Fixes, Vineflower comp
 class	kuna-fixes/classes/pkg/TestTypeSwitchPatternType.class
 expected	kuna-fixes/expected-compat/pkg/TestTypeSwitchPatternType.java
 compare	TestTypeSwitchPatternType.java
+case	kuna-fixes-compat/pkg/TestVarMergeLiveness	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestVarMergeLiveness.class
+class	kuna-fixes/classes/pkg/TestVarMergeLiveness$Key.class
+class	kuna-fixes/classes/pkg/TestVarMergeLiveness$Node.class
+expected	kuna-fixes/expected-compat/pkg/TestVarMergeLiveness.kt
+compare	TestVarMergeLiveness.kt	TestVarMergeLiveness.java
 case	kuna-fixes/pkg/TestAnonymousStaticCall	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall.class
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$1$1.class
@@ -3294,6 +3338,12 @@ class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$Counter.class
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$Counter2.class
 expected	kuna-fixes/expected/pkg/TestAnonymousStaticCall.java
 compare	TestAnonymousStaticCall.java
+case	kuna-fixes/pkg/TestArrayOfArrays	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestArrayOfArrays.class
+class	kuna-fixes/classes/pkg/TestArrayOfArrays$Cell.class
+expected	kuna-fixes/expected/pkg/TestArrayOfArrays.kt
+compare	TestArrayOfArrays.kt	TestArrayOfArrays.java
 case	kuna-fixes/pkg/TestAssertDeadThrow	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestAssertDeadThrow.class
 expected	kuna-fixes/expected/pkg/TestAssertDeadThrow.java
@@ -3355,6 +3405,37 @@ class	kuna-fixes/classes/pkg/TestEnumNoConstants$Holder.class
 class	kuna-fixes/classes/pkg/TestEnumNoConstants$Only.class
 expected	kuna-fixes/expected/pkg/TestEnumNoConstants.java
 compare	TestEnumNoConstants.java
+case	kuna-fixes/pkg/TestForLoopContinueUpdate	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestForLoopContinueUpdate.class
+expected	kuna-fixes/expected/pkg/TestForLoopContinueUpdate.kt
+compare	TestForLoopContinueUpdate.kt	TestForLoopContinueUpdate.java
+case	kuna-fixes/pkg/TestForLoopDefinitions	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestForLoopDefinitions.class
+expected	kuna-fixes/expected/pkg/TestForLoopDefinitions.kt
+compare	TestForLoopDefinitions.kt	TestForLoopDefinitions.java
+case	kuna-fixes/pkg/TestForLoopExitCondition	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestForLoopExitCondition.class
+class	kuna-fixes/classes/pkg/TestForLoopExitCondition$Node.class
+expected	kuna-fixes/expected/pkg/TestForLoopExitCondition.kt
+compare	TestForLoopExitCondition.kt	TestForLoopExitCondition.java
+case	kuna-fixes/pkg/TestForRangeCounter	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestForRangeCounter.class
+expected	kuna-fixes/expected/pkg/TestForRangeCounter.kt
+compare	TestForRangeCounter.kt	TestForRangeCounter.java
+case	kuna-fixes/pkg/TestForRangeExclusiveBound	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestForRangeExclusiveBound.class
+expected	kuna-fixes/expected/pkg/TestForRangeExclusiveBound.kt
+compare	TestForRangeExclusiveBound.kt	TestForRangeExclusiveBound.java
+case	kuna-fixes/pkg/TestForRangeUnmatchedBound	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestForRangeUnmatchedBound.class
+expected	kuna-fixes/expected/pkg/TestForRangeUnmatchedBound.kt
+compare	TestForRangeUnmatchedBound.kt	TestForRangeUnmatchedBound.java
 case	kuna-fixes/pkg/TestIfDenestFallthrough	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected/pkg/TestIfDenestFallthrough.java
@@ -3441,3 +3522,10 @@ case	kuna-fixes/pkg/TestTypeSwitchPatternType	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestTypeSwitchPatternType.class
 expected	kuna-fixes/expected/pkg/TestTypeSwitchPatternType.java
 compare	TestTypeSwitchPatternType.java
+case	kuna-fixes/pkg/TestVarMergeLiveness	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestVarMergeLiveness.class
+class	kuna-fixes/classes/pkg/TestVarMergeLiveness$Key.class
+class	kuna-fixes/classes/pkg/TestVarMergeLiveness$Node.class
+expected	kuna-fixes/expected/pkg/TestVarMergeLiveness.kt
+compare	TestVarMergeLiveness.kt	TestVarMergeLiveness.java

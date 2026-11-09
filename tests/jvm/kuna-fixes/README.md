@@ -21,6 +21,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | Case | Fix id | Compiled with | With the fix |
 |---|---|---|---|
 | `pkg/TestAnonymousStaticCall` | `anonymous_static_qualifier` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner anonymous class's call of its enclosing anonymous class's static `twice` is written `twice(value)`, not `<unrepresentable>.twice(value)`; the call of a named class's static method keeps its qualifier |
+| `pkg/TestArrayOfArrays` | `kt_partial_array_dims` | kotlinc 2.0.0 | `rows`, `grid` and `table`, which create an array of arrays with only its outer length, decompile (`arrayOfNulls(n)`) |
 | `pkg/TestAssertDeadThrow` | `assert_dead_throw` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the dead `throw new AssertionError(...)` statements after `return` in `spans` and `widths` are gone, and `widths` declares its for-each variable in the header (`for (int[] row : rows)`, was `for (row : rows)`) |
 | `pkg/TestAssertExpressionPosition` | `statement_as_expression` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects |
 | `pkg/TestCapturedReceiverKt` | `kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
@@ -29,6 +30,12 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestDefaultArgsSuperCall` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call |
 | `pkg/TestDiamondExternalClass` | `external_class_diamond` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are |
 | `pkg/TestEnumNoConstants` | `enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
+| `pkg/TestForLoopContinueUpdate` | `kt_for_loop_continue_update` | kotlinc 2.0.0 | the loop whose body continues it is written `if (i < limit) { label35@ do { ... } while (run { i++; i < limit }) }`, so `continue@label35` runs `i++`, instead of an inclusive range over a counter the body assigns |
+| `pkg/TestForLoopDefinitions` | `kt_for_loop_definitions` | kotlinc 2.0.0 | the counter of the loop written as a `while` is declared, `var var4: Int`, before the loop |
+| `pkg/TestForLoopExitCondition` | `kt_for_loop_exit_condition` | kotlinc 2.0.0 | `sumBackwards` and `total`, whose `for` loops the plugin cannot resugar, are written `while (i >= 0)` and `while (node != null)` instead of `while (true) { if (COND) break`, which leaves each loop at once |
+| `pkg/TestForRangeCounter` | `kt_for_range_counter` | kotlinc 2.0.0 | `weighted` (bound assigned before the counter), `skipping` (counter assigned in the body) and `sumUntilBig` (condition on another variable) are written as `while` loops instead of the ranges `for (n in a.length..i)`, `repeat(limit) { var5 ->` and `repeat(99) { i ->` |
+| `pkg/TestForRangeExclusiveBound` | `kt_for_range_exclusive_bound` | kotlinc 2.0.0 | `for (i in from until to)` and `repeat(10)` instead of the off-by-one `for (i in from..to)` and `repeat(9)` |
+| `pkg/TestForRangeUnmatchedBound` | `kt_for_range_unmatched_bound` | kotlinc 2.0.0 | the loop `while (i < a.length)`, which Vineflower leaves out (its bound is neither a constant nor a variable), is written |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
@@ -42,6 +49,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestTypeSwitchEnumLabel` | `type_switch_enum_label` | javac 21.0.12.1 -g | case Kind.CIRCLE beside type patterns in a switch on an interface: the enum label is resolved and printed qualified |
 | `pkg/TestTypeSwitchLabelLookup` | `type_switch_label_lookup` | javac 25.0.5 -g | cases with several labels (case Integer _, String _; case Kind.CIRCLE, Kind.SQUARE; case 5, 7) and an integer label equal to a later switch index: every label is resolved, multi-pattern cases print as one unnamed-pattern label |
 | `pkg/TestTypeSwitchPatternType` | `type_switch_pattern_type` | javac 21.0.12.1 (no -g) | case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type |
+| `pkg/TestVarMergeLiveness` | `var_merge_liveness` | kotlinc 2.0.0 | the two elvis results keep their own variables, `return if (var10000.size > var9.size) var10000 else var9`, instead of one variable that the second overwrites (`var10000.size > var10000.size`) |
 
 ## Diffs (compat -> default)
 
@@ -59,6 +67,68 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
                 }
              };
              this.value = inner.next();
+```
+
+### `pkg/TestArrayOfArrays`
+
+```diff
+--- expected-compat/pkg/TestArrayOfArrays.kt
++++ expected/pkg/TestArrayOfArrays.kt
+@@ -2,43 +2,23 @@
+ 
+ public class TestArrayOfArrays {
+    public fun rows(n: Int): Array<ByteArray?> {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: iload 1
+-      // 1: anewarray 15
+-      // 4: areturn
++      return arrayOfNulls(n)
+    }
+ 
+    public fun grid(n: Int): Array<Array<pkg.TestArrayOfArrays.Cell>?> {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: iload 1
+-      // 1: anewarray 21
+-      // 4: areturn
++      return arrayOfNulls(n)
+    }
+ 
+    public fun table(n: Int): Array<IntArray> {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: bipush 0
+-      // 01: istore 2
+-      // 02: iload 1
+-      // 03: anewarray 25
+-      // 06: astore 3
+-      // 07: iload 2
+-      // 08: iload 1
+-      // 09: if_icmpge 1d
+-      // 0c: iload 2
+-      // 0d: istore 4
+-      // 0f: aload 3
+-      // 10: iload 4
+-      // 12: iload 4
+-      // 14: newarray 10
+-      // 16: aastore
+-      // 17: iinc 2 1
+-      // 1a: goto 07
+-      // 1d: aload 3
+-      // 1e: areturn
++      var var2: Int = 0
++      val var3: Array<IntArray> = arrayOfNulls(n)
++
++      while (var2 < n) {
++         var3[var2] = IntArray(var2)
++         var2++
++      }
++
++      return var3
+    }
+ 
+    public class Cell(v: Int) {
 ```
 
 ### `pkg/TestAssertDeadThrow`
@@ -634,6 +704,195 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        static int twice(int x) {
           return x * 2;
        }
+```
+
+### `pkg/TestForLoopContinueUpdate`
+
+```diff
+--- expected-compat/pkg/TestForLoopContinueUpdate.kt
++++ expected/pkg/TestForLoopContinueUpdate.kt
+@@ -2,18 +2,22 @@
+ 
+ public class TestForLoopContinueUpdate {
+    public fun colonOffset(input: CharArray, pos: Int, limit: Int): Int {
+-      label35@ for (i in pos..limit) {
+-         val var5: Char = input[i]
+-         if (input[i] == '[') {
+-            while (true) {
+-               i++
+-               if (i >= limit || input[i] == ']') {
+-                  continue@label35
++      // $VF: Unable to resugar Kotlin loop from Java for loop
++      var i: Int = pos
++      if (i < limit) {
++         label35@ do {
++            val var5: Char = input[i]
++            if (input[i] == '[') {
++               while (true) {
++                  i++
++                  if (i >= limit || input[i] == ']') {
++                     continue@label35
++                  }
+                }
++            } else if (var5 == ':') {
++               return i
+             }
+-         } else if (var5 == ':') {
+-            return i
+-         }
++         } while (run { i++; i < limit })
+       }
+ 
+       return limit
+```
+
+### `pkg/TestForLoopDefinitions`
+
+```diff
+--- expected-compat/pkg/TestForLoopDefinitions.kt
++++ expected/pkg/TestForLoopDefinitions.kt
+@@ -4,9 +4,14 @@
+    public fun jumpy(a: IntArray): Int {
+       var c: Int = 0
+ 
+-      repeat(99) { var4 ->
++      var var4: Int
++      // $VF: Unable to resugar Kotlin loop from Java for loop
++      var4 = 0
++      while (var4 < 100) {
+          c += a[var4]
+          var4 += a[var4]
++
++         var4++
+       }
+ 
+       return c + var4
+```
+
+### `pkg/TestForLoopExitCondition`
+
+```diff
+--- expected-compat/pkg/TestForLoopExitCondition.kt
++++ expected/pkg/TestForLoopExitCondition.kt
+@@ -6,8 +6,7 @@
+ 
+       // $VF: Unable to resugar Kotlin loop from Java for loop
+       var i: Int = a.length - 1
+-      while (true) {
+-         if (i >= 0) break
++      while (i >= 0) {
+          c += a[i] * i
+ 
+          i--
+@@ -21,8 +20,7 @@
+ 
+       // $VF: Unable to resugar Kotlin loop from Java for loop
+       var node: TestForLoopExitCondition.Node = head
+-      while (true) {
+-         if (node != null) break
++      while (node != null) {
+          sum += node.value
+ 
+          node = node.next
+```
+
+### `pkg/TestForRangeCounter`
+
+```diff
+--- expected-compat/pkg/TestForRangeCounter.kt
++++ expected/pkg/TestForRangeCounter.kt
+@@ -5,8 +5,12 @@
+       var s: Int = 0
+       var i: Int = 0
+ 
+-      for (n in a.length..i) {
++      // $VF: Unable to resugar Kotlin loop from Java for loop
++      val n: Int = a.length
++      while (i < n) {
+          s += a[i] * i
++
++         i++
+       }
+ 
+       return s
+@@ -15,9 +19,13 @@
+    public fun skipping(a: IntArray, limit: Int): Int {
+       var c: Int = 0
+ 
+-      repeat(limit) { var5 ->
++      // $VF: Unable to resugar Kotlin loop from Java for loop
++      var var5: Int = 0
++      while (var5 < limit) {
+          c += a[var5]
+          var5 += a[var5]
++
++         var5++
+       }
+ 
+       return c
+@@ -26,8 +34,12 @@
+    public fun sumUntilBig(a: IntArray): Int {
+       var total: Int = 0
+ 
+-      repeat(99) { i ->
++      // $VF: Unable to resugar Kotlin loop from Java for loop
++      var i: Int = 0
++      while (total < 100) {
+          total += a[i]
++
++         i++
+       }
+ 
+       return total
+```
+
+### `pkg/TestForRangeExclusiveBound`
+
+```diff
+--- expected-compat/pkg/TestForRangeExclusiveBound.kt
++++ expected/pkg/TestForRangeExclusiveBound.kt
+@@ -4,7 +4,7 @@
+    public fun sumUntil(from: Int, to: Int): Int {
+       var c: Int = 0
+ 
+-      for (i in from..to) {
++      for (i in from until to) {
+          c += i
+       }
+ 
+@@ -14,7 +14,7 @@
+    public fun tenTimes(): Int {
+       var c: Int = 0
+ 
+-      repeat(9) { i ->
++      repeat(10) { i ->
+          c += i * 3
+       }
+ 
+```
+
+### `pkg/TestForRangeUnmatchedBound`
+
+```diff
+--- expected-compat/pkg/TestForRangeUnmatchedBound.kt
++++ expected/pkg/TestForRangeUnmatchedBound.kt
+@@ -3,6 +3,15 @@
+ public class TestForRangeUnmatchedBound {
+    public fun sum(a: IntArray): Int {
+       var c: Int = 0
+-            return c
++
++      // $VF: Unable to resugar Kotlin loop from Java for loop
++      var i: Int = 0
++      while (i < a.length) {
++         c += a[i]
++
++         i++
++      }
++
++      return c
+    }
+ }
 ```
 
 ### `pkg/TestIfDenestFallthrough`
@@ -3003,4 +3262,35 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      }
     }
  }
+```
+
+### `pkg/TestVarMergeLiveness`
+
+```diff
+--- expected-compat/pkg/TestVarMergeLiveness.kt
++++ expected/pkg/TestVarMergeLiveness.kt
+@@ -25,18 +25,19 @@
+          var10000 = this.empty()
+       }
+ 
++      var var9: TestVarMergeLiveness.Node
+       run label33@{
+          if (b != null) {
+-            var10000 = this.find(b)
+-            if (var10000 != null) {
++            var9 = this.find(b)
++            if (var9 != null) {
+                return@label33
+             }
+          }
+ 
+-         var10000 = this.empty()
++         var9 = this.empty()
+       }
+ 
+-      return if (var10000.size > var10000.size) var10000 else var10000
++      return if (var10000.size > var9.size) var10000 else var9
+    }
+ 
+    public class Key(v: Int) {
 ```

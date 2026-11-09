@@ -878,6 +878,7 @@ fn kotlin_exprents_match_vineflower() {
         (IFernflowerPreferences::PREFERRED_LINE_LENGTH, "40"),
         ("kt-collapse-string-concat", "1"),
     ]);
+    kuna_jvm::kuna_fixes::activate(kuna_jvm::kuna_fixes::KunaFixes::COMPAT);
     let _attributes = attributes(&guard);
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/b02/b02/B02Fields.class");
     let bytes = std::fs::read(path).expect("B02Fields.class");
