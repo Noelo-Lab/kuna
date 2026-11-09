@@ -15,6 +15,7 @@ is printed as collateral and the exit status is 1. The counts it prints are the 
 """
 import collections
 import difflib
+import functools
 import os
 import re
 import sys
@@ -65,7 +66,12 @@ TOKEN = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'|[\w$]+|\S')
 
 def tokens(text_lines):
     """The Java tokens of some lines: string and char literals whole, whitespace dropped."""
-    return TOKEN.findall('\n'.join(text_lines))
+    return list(_tokens(tuple(text_lines)))
+
+
+@functools.lru_cache(maxsize=4096)
+def _tokens(text_lines):
+    return tuple(TOKEN.findall('\n'.join(text_lines)))
 
 
 def same_tokens(old, new):
@@ -703,29 +709,33 @@ def cast_at(toks, i):
 def unparen(toks):
     """`( X )` dropped where X is a primary (no operator at its top level) and the parentheses are not a
     call's or a statement's."""
-    toks = list(toks)
-    changed = True
-    while changed:
-        changed = False
-        for i, t in enumerate(toks):
-            if t != '(' or (i > 0 and toks[i - 1] not in CAST_BEFORE) or cast_at(toks, i) is not None:
-                continue
-            end = block_end(toks, i)
-            if end is None:
-                continue
-            inner = [toks[k] for k in top_level(toks, i + 1, end)]
-            if inner and not any(x in ('?', '=', ',', '+', '-', '*', '/', '<', '>', 'instanceof', ':', '%', '&',
-                                       '|', '^', '!') for x in inner):
-                toks = toks[:i] + toks[i + 1:end] + toks[end + 1:]
-                changed = True
-                break
+    toks, i = list(toks), 0
+    while i < len(toks):
+        if toks[i] != '(' or (i > 0 and toks[i - 1] not in CAST_BEFORE) or cast_at(toks, i) is not None:
+            i += 1
+            continue
+        end = block_end(toks, i)
+        if end is None:
+            i += 1
+            continue
+        inner = [toks[k] for k in top_level(toks, i + 1, end)]
+        if inner and not any(x in ('?', '=', ',', '+', '-', '*', '/', '<', '>', 'instanceof', ':', '%', '&',
+                                   '|', '^', '!') for x in inner):
+            del toks[end]
+            del toks[i]
+            continue
+        i += 1
     return toks
 
 
 def strip_casts(toks):
     """The tokens with every cast removed and the parentheses that only grouped a cast's operand dropped."""
+    return list(_strip_casts(tuple(toks)))
+
+
+@functools.lru_cache(maxsize=4096)
+def _strip_casts(toks):
     out, i = [], 0
-    toks = list(toks)
     while i < len(toks):
         j = cast_at(toks, i)
         if j is not None:
@@ -733,7 +743,7 @@ def strip_casts(toks):
             continue
         out.append(toks[i])
         i += 1
-    return unparen(out)
+    return tuple(unparen(out))
 
 
 def cast_only(old, new):
@@ -802,6 +812,18 @@ def without_self_copies(toks):
     return out
 
 
+def renamable(a, b):
+    """A renaming of names in `b` and dropping `v = v ;` copies can give `a`: it keeps every other token,
+    and each copy drops two names, one `=` and one `;`."""
+    copies, rest = divmod(len(b) - len(a), 4)
+    if copies < 0 or rest:
+        return False
+    other_a = collections.Counter(t for t in a if not IDENT.match(t))
+    other_b = collections.Counter(t for t in b if not IDENT.match(t))
+    other_b.subtract({'=': copies, ';': copies})
+    return +other_b == other_a and min(other_b.values(), default=0) >= 0
+
+
 def var_merge_narrowing(old, new):
     """var_merge_narrowing: the same statements once a variable the fix keeps apart from another (its own
     name, declaration and copy `v = w`) is renamed back onto it, and casts, declarations and self-copies
@@ -811,6 +833,8 @@ def var_merge_narrowing(old, new):
         return False
     if a == b:
         return True
+    if not renamable(a, b):
+        return False
     mapping = {}
     for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
         if tag == 'replace' and i2 - i1 == j2 - j1:
@@ -1725,6 +1749,13 @@ def kt_line_undo(old, new, fired):
 
 def ktprint_undo(old, new):
     """The ktprint fixes whose change undone line by line turns `new` into `old`, else None."""
+    fired = _ktprint_undo(tuple(old), tuple(new))
+    return None if fired is None else set(fired)
+
+
+@functools.lru_cache(maxsize=1024)
+def _ktprint_undo(old, new):
+    old, new = list(old), list(new)
     fired = set()
     plain = kt_unjava_char_casts(old)
     if plain != old:
@@ -1732,8 +1763,9 @@ def ktprint_undo(old, new):
         old = plain
     if len(old) == len(new):
         if [kt_line_undo(o, n, fired) for o, n in zip(old, new)] == old:
-            return fired
-    return kt_joined_undo(old, new, fired)
+            return frozenset(fired)
+    fired = kt_joined_undo(old, new, fired)
+    return None if fired is None else frozenset(fired)
 
 
 def kt_joined_undo(old, new, fired):
@@ -1846,9 +1878,21 @@ def ktprint_canon(old, new):
     return out
 
 
+KTPRINT_CONTEXT_LAST = [None, None]
+
+
+def ktprint_context_once(a, b, i1, i2, j1, j2, throw_names):
+    """`ktprint_context`, computed once for the hunk the recognisers of all its fixes ask about in turn."""
+    key = (a, b, i1, i2, j1, j2)
+    last = KTPRINT_CONTEXT_LAST[0]
+    if last is None or last[0] is not a or last[1] is not b or last[2:] != key[2:]:
+        KTPRINT_CONTEXT_LAST[:] = [key, ktprint_context(a, b, i1, i2, j1, j2, throw_names)]
+    return KTPRINT_CONTEXT_LAST[1]
+
+
 def ktprint_context_recogniser(fix):
     def recognise(a, b, i1, i2, j1, j2, throw_names):
-        return ktprint_context(a, b, i1, i2, j1, j2, throw_names) == fix
+        return ktprint_context_once(a, b, i1, i2, j1, j2, throw_names) == fix
     recognise.__name__ = fix + '_context'
     return recognise
 
@@ -1910,9 +1954,6 @@ def classify(a, b, i1, i2, j1, j2, marked):
     if kind != 'other':
         return kind
     old, new = a[i1:i2], b[j1:j2]
-    for fix, recognises in RECOGNISERS.items():
-        if recognises(old, new):
-            return fix
     plain = ktprint_canon(old, new)
     if plain != new:
         for fix, recognises in RECOGNISERS.items():
