@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::ops::Deref;
 use std::rc::Rc;
 
-use crate::classes_processor::{ClassNode, Type as ClassNodeType};
+use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::{ACC_ENUM, INIT_NAME};
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;

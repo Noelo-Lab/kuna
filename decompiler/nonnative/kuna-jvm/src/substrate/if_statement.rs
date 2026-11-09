@@ -428,7 +428,7 @@ impl IfStatement {
         unported!("IfStatement.findObject")
     }
 
-    pub fn match_(self, _match_node: &MatchNode, _engine: &mut MatchEngine) -> bool {
+    pub fn match_(self, _match_node: &MatchNode, _engine: &MatchEngine) -> bool {
         unported!("IfStatement.match")
     }
 

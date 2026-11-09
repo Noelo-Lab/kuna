@@ -458,7 +458,7 @@ impl VarExprent {
     }
 
     /// Java: `match(MatchNode, MatchEngine)`.
-    pub fn match_(self, _match_node: &MatchNode, _engine: &mut MatchEngine) -> bool {
+    pub fn match_(self, _match_node: &MatchNode, _engine: &MatchEngine) -> bool {
         unported!("VarExprent.match")
     }
 

@@ -381,7 +381,7 @@ impl ClassWriter {
         unported!("ClassWriter.getFieldTypeData")
     }
 
-    fn contains_deprecated_annotation<M: StructMember>(mb: M) -> bool {
+    fn contains_deprecated_annotation<M: Into<StructMember>>(mb: M) -> bool {
         unported!("ClassWriter.containsDeprecatedAnnotation")
     }
 
@@ -497,7 +497,7 @@ impl ClassWriter {
     }
 
     /// Writes the declaration annotations of `mb`; returns their texts, for filtering type annotations.
-    pub fn append_annotations<M: StructMember>(
+    pub fn append_annotations<M: Into<StructMember>>(
         buffer: &mut TextBuffer,
         indent: i32,
         mb: M,
@@ -524,7 +524,7 @@ impl ClassWriter {
         unported!("ClassWriter.appendParameterAnnotations")
     }
 
-    fn append_top_level_type_annotations<M: StructMember>(
+    fn append_top_level_type_annotations<M: Into<StructMember>>(
         buffer: &mut TextBuffer,
         indent: i32,
         mb: M,
@@ -535,7 +535,7 @@ impl ClassWriter {
         unported!("ClassWriter.appendTopLevelTypeAnnotations")
     }
 
-    pub fn get_type_annotations<M: StructMember>(
+    pub fn get_type_annotations<M: Into<StructMember>>(
         mb: M,
         target_type: i32,
         index: i32,

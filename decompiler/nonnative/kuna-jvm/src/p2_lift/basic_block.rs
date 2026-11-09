@@ -217,7 +217,7 @@ impl BasicBlock {
 }
 
 impl IGraphNode for BasicBlock {
-    fn get_predecessors(self) -> Vec<BasicBlock> {
+    fn get_predecessors(&self) -> Vec<BasicBlock> {
         let mut lst = self.get_preds().to_vec();
         lst.extend(self.get_pred_exceptions().to_vec());
         lst

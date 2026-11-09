@@ -1,7 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/NewExprent.java`.
 
 use crate::check_types_result::CheckTypesResult;
-use crate::classes_processor::{ClassNode, Type as ClassNodeType};
+use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_type::CodeType;
 use crate::dec_helper::DecHelper;
 use crate::decompiler_context::DecompilerContext;

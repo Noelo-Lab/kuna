@@ -198,7 +198,7 @@ impl IMatchable for Exprent {
         Exprent::find_object(*self, match_node, index).map(|e| Box::new(e) as Box<dyn IMatchable>)
     }
 
-    fn match_(&self, match_node: &MatchNode, engine: &mut MatchEngine) -> bool {
+    fn match_(&self, match_node: &MatchNode, engine: &MatchEngine) -> bool {
         Exprent::match_(*self, match_node, engine)
     }
 }
@@ -801,7 +801,7 @@ impl Exprent {
     }
 
     /// Java: `match(MatchNode, MatchEngine)`.
-    pub fn match_(self, match_node: &MatchNode, engine: &mut MatchEngine) -> bool {
+    pub fn match_(self, match_node: &MatchNode, engine: &MatchEngine) -> bool {
         match self.get_type() {
             ExprentType::Const => ConstExprent::match_(self.as_const(), match_node, engine),
             ExprentType::Exit => ExitExprent::match_(self.as_exit(), match_node, engine),
@@ -817,7 +817,7 @@ impl Exprent {
         }
     }
 
-    pub fn match_base(self, _match_node: &MatchNode, _engine: &mut MatchEngine) -> bool {
+    pub fn match_base(self, _match_node: &MatchNode, _engine: &MatchEngine) -> bool {
         unported!("Exprent.match")
     }
 

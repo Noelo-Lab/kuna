@@ -1283,14 +1283,14 @@ impl Statement {
         unported!("Statement.findObject")
     }
 
-    pub fn match_(self, match_node: &MatchNode, engine: &mut MatchEngine) -> bool {
+    pub fn match_(self, match_node: &MatchNode, engine: &MatchEngine) -> bool {
         match self.type_() {
             StatementType::If => IfStatement::match_(IfStatement(self), match_node, engine),
             _ => self.match_base(match_node, engine),
         }
     }
 
-    pub fn match_base(self, _match_node: &MatchNode, _engine: &mut MatchEngine) -> bool {
+    pub fn match_base(self, _match_node: &MatchNode, _engine: &MatchEngine) -> bool {
         unported!("Statement.match")
     }
 }
@@ -1300,7 +1300,7 @@ impl IMatchable for Statement {
         Statement::find_object(*self, match_node, index)
     }
 
-    fn match_(&self, match_node: &MatchNode, engine: &mut MatchEngine) -> bool {
+    fn match_(&self, match_node: &MatchNode, engine: &MatchEngine) -> bool {
         Statement::match_(*self, match_node, engine)
     }
 }
