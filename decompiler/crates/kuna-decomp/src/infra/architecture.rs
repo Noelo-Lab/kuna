@@ -570,21 +570,12 @@ pub struct Architecture {
     /// the destination lies outside a declared extent or the callee's stated
     /// prototype loses nothing.  Off under `option tailcalljump direct|off`.
     pub tail_call_tables: bool,
-    /// (kuna `gottailcall`) Also take that tail call when the destination has
-    /// no bytes, or is a function a callee-first run filed as losing nothing
-    /// to a call.  See [`crate::kuna_gottailcall`].
-    pub got_tail_call: bool,
     /// (kuna `tailcallframe`) Recover a direct `jmp` whose target is NOT a known
     /// function as a tail call when the instructions immediately before it tear
     /// down exactly the frame the entry block built — the callback-only callee no
     /// discovery oracle reaches (`option tailcallframe`).  See
     /// [`crate::p2_lift::kuna_tailcallframe`].
     pub tail_call_frame: bool,
-    /// (kuna) `option tailcallsaved`: narrow `tailcallframe` to a teardown that
-    /// gives back what the entry block saved, so cdecl argument cleanup after a
-    /// `call` is not read as a frame teardown (`option tailcallsaved`).  See
-    /// [`crate::p2_lift::kuna_tailcallsaved`].
-    pub tail_call_saved: bool,
     /// (kuna `cleanupcode`) Delete the Rust drop/deallocate call sites (the
     /// `core::ptr::drop_in_place` / `Drop::drop` / `RawVecInner::deallocate` /
     /// `__rust_dealloc` family) from the pre-SSA op graph, so the drop glue and
@@ -627,12 +618,6 @@ pub struct Architecture {
     /// decode swallows the real instruction boundary and desynchronises the stream
     /// (`option overlapbranch`).
     pub overlap_branch: bool,
-    /// (kuna) Treat a direct CALL whose resolved callee display name matches a
-    /// known ELF no-return name (`__stack_chk_fail`, `abort`, `exit`, …) as
-    /// no-return at flow time, even when the address-keyed no-return flag is unset
-    /// — the undefined-extern (`ET_REL .o`) case the analysis-tier `noreturn_known`
-    /// pass cannot reach (`option noreturn_extern`, default off).
-    pub noreturn_extern_calls: bool,
     /// (kuna GH-6882) Let a SPARC struct-return post-call `unimp` fall through
     /// (C++ `sparc_struct_return`).
     pub sparc_struct_return: bool,
@@ -859,14 +844,6 @@ pub struct Architecture {
     /// reaches only for its opcode just the far-walking rules
     /// (`infra/action.rs (ActionPool::wave_wants)`).
     pub pool_copy_waves: bool,
-    /// (kuna, angr `test_decompiling_incorrect_duplication_chcon_main`) Treat a
-    /// direct CALL to a function whose *name* matches the vendored ELF
-    /// known-no-return list as no-return at the `query_call_no_return` flow hook,
-    /// even when the address-keyed `noreturn_known` scan emitted no fact (an
-    /// ET_REL `.o` undefined extern such as `__stack_chk_fail`). DIV-13 default-on
-    /// (clean 0/675 ablation; a no-op on a normal ELF since the proto flag is
-    /// already set). See `kuna_noreturn_externmatch`.
-    pub noreturn_extern_match: bool,
     /// (kuna GH-8500) Hold a store-through-a-stack-pointer-alias across the
     /// deadcode race (C++ `stack_alias_deadstore`).
     pub stack_alias_deadstore: bool,
@@ -1456,8 +1433,6 @@ pub struct Architecture {
     pub strip_security_check: bool,
     /// Fold Go compiler bounds/division panic arms (option gobounds).
     pub go_bounds: bool,
-    /// Normalize Go branch-only blocks before runtime idiom matching.
-    pub go_jump_chain: bool,
     /// Render verified Rust literal formatting calls as print macros.
     pub rust_fmt_literal: bool,
     /// Render verified primitive Rust formatting arguments as print macros.
@@ -2474,18 +2449,6 @@ pub struct Architecture {
     /// builds it); a no-op when the Listing is absent. Default-off ⇒ every parity
     /// gate is byte-identical.
     pub analysis_noreturn_propagate: bool,
-    /// (kuna, decbench F2) Gate the `error(status,…)`-conditional recognizer inside
-    /// the `noreturn_propagate` consumer (`noreturn_error`); default **on**
-    /// (DIV-16). glibc `error`/`error_at_line` never return WHEN their first
-    /// argument (`int status`) is a nonzero constant — they call `exit(status)` —
-    /// but *do* return for `status == 0`, so `error` cannot be a Known no-return.
-    /// A wrapper whose tail is `call error(2,…)` (GNU `pfatal_with_name`, …) is
-    /// nonetheless no-return; when on, the propagation treats such a tail call as
-    /// terminal (arg0 = a nonzero literal, x86-64 SysV `EDI`/`RDI`), concludes the
-    /// wrapper no-return, and its callers drop the dead fall-through. REMOVES CODE.
-    /// Requires the Listing (`--option listing on`) AND `noreturn_propagate` on;
-    /// a no-op otherwise, so every parity gate is byte-identical (real-ELF path).
-    pub analysis_noreturn_error: bool,
     /// (kuna) Gate the CFG-reachability no-return rule (`noreturn_reach`), the port of
     /// Ghidra's `FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn`: a function is
     /// no-return iff no `RETURN` is reachable from entry once calls to already-no-return
@@ -2497,7 +2460,7 @@ pub struct Architecture {
     /// (kuna, Ghidra-gap) `call error(nonzero,…)` call-site addresses whose fall-through
     /// the decompile stage must prune (as `CALL_RETURN` flow overrides). Populated at the
     /// analysis commit from `AnalysisOutput::no_fallthru_calls` (empty unless `listing` +
-    /// `noreturn_error` are on); read by `decompile-all` per function. glibc `error()`
+    /// `noreturn_known` are on); read by `decompile-all` per function. glibc `error()`
     /// with a nonzero status never returns, so without the prune the flow-follower walks
     /// past the call into the next function and absorbs it. Sorted/deduped.
     pub error_noreturn_callsites: Vec<u64>,
@@ -3155,9 +3118,7 @@ impl Architecture {
             image_windows_user: false, // (kuna) a load-time fact; set by the console's `load file`
             tail_call_jumps: false,
             tail_call_tables: false, // (kuna) option tailcalljump; reset_defaults sets the shipped default
-            got_tail_call: false, // (kuna) option gottailcall; reset_defaults sets the shipped default
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
-            tail_call_saved: false, // (kuna) option tailcallsaved; reset_defaults sets the shipped default
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
             mapped_flow_boundary_image: false,
             overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
@@ -3165,7 +3126,6 @@ impl Architecture {
             linux_syscall: false, // (kuna) option linuxsyscall; reset_defaults sets the shipped default
             msvc_str_append: false, // (kuna) option msvcstrappend; reset_defaults sets the shipped default
             switch_selector_guard: false, // (kuna) option switchselector; reset_defaults sets the shipped default
-            noreturn_extern_calls: false, // (kuna) option noreturn_extern, default off
             sparc_struct_return: false,
             ov_less_simplify: false,
             fold_boolean_mask: false,
@@ -3226,7 +3186,6 @@ impl Architecture {
             pool_dead_waves: true,
             dead_cascade: Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES),
             pool_copy_waves: true,
-            noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
             local_stack_views: true,
             stack_views: false,
@@ -3346,7 +3305,6 @@ impl Architecture {
             strip_stack_guard: false,
             strip_msvc_stack_guard: false,
             go_bounds: true,
-            go_jump_chain: true,
             rust_fmt_literal: true,
             rust_fmt_args: true,
             rust_fmt_flags: true,
@@ -3514,7 +3472,6 @@ impl Architecture {
             analysis_noreturn_disc: false,
             analysis_noreturn_discstrict: false,
             analysis_noreturn_propagate: false,
-            analysis_noreturn_error: false,
             analysis_noreturn_reach: false,
             error_noreturn_callsites: Vec::new(),
             analysis_fid: false,
@@ -3633,16 +3590,13 @@ impl Architecture {
         self.struct_headless = crate::kuna_structheadless::StructHeadlessMode::Off; // (kuna) structheadless default `off`: a closed function's parameter read at two or more constant offsets, none of them zero, is declared `struct_N *` with filler over the bytes before its first access; `option structheadless closed` turns it on
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.tail_call_tables = true; // (kuna) GH-781 default `tailcalljump on`: a veneer whose one destination is another function's entry is a tail call when the destination is outside a declared extent, or the callee's prototype is stated and its return value (if any) reaches a stated output. 0/675 byte-identical on the datatest corpus; `option tailcalljump direct` restores the flow into the destination
-        self.got_tail_call = true; // (kuna) GH-904 default-on: a one-destination computed jump to a function with no bytes, or to one a callee-first run filed as losing nothing to a call, is a tail call. 0/675 byte-identical on the datatest corpus; `option gottailcall off` restores tailcalljump's rule
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
-        self.tail_call_saved = true; // (kuna) DIV-157 default-on: a run that raises the stack pointer without loading a single byte back through it is cdecl argument cleanup, not a frame teardown, so `push ebx; push esi; ...; call f; add esp,8; jmp L` no longer truncates the function at an internal join. Narrows `tailcallframe` only; 0/675 byte-identical on the datatest corpus. Restore the delta-only test with `option tailcallsaved off`
         self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
         self.overlap_branch = true; // (kuna) DIV-106 default-on: REMOVES CODE. Ends a conditional branch's fall-through in a halt when the branch's own target lies strictly inside that fall-through instruction's encoding (the anti-disassembly junk-lead-byte overlap), instead of letting the bogus decode swallow the target and desynchronise the stream. Two real instruction starts cannot sit at `next` and strictly inside `next`, so the trigger never matches well-formed code and is byte-identical (0/675) on the datatest corpus; restore the fall-through-wins decode with `option overlapbranch off`
         self.remove_cleanup_code = true; // (kuna) DIV-81 default-on: REMOVES CODE. Deletes the Rust drop/deallocate call sites (`core::ptr::drop_in_place`, `Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) and the argument setup that only feeds them. Structurally inert outside a Rust binary (no C ELF resolves a call to one of those names), so byte-identical (0/675) on the datatest corpus; keep the drop glue with `option cleanupcode off`
         self.switch_selector_guard = false; // (kuna) option switchselector, default-off: re-rolling a parameter-dispatch cascade into a switch is the better default; ON narrows `loweredswitch` to cascades whose selector the function itself computes
         self.msvc_str_append = false; // (kuna) option msvcstrappend, default-off: it deletes the inlined fast path's stores and renames the grow call, and no MSVC C++ corpus in the tree can measure it
         self.linux_syscall = false; // (kuna) option linuxsyscall, default-off this round: it renames a call and locks a prototype, which is a judgement about the target OS that the vector alone does not prove
-        self.noreturn_extern_calls = true; // (kuna) DIV-14 default-on: REMOVES CODE (drops the post-call fall-through after a matched extern no-return). Byte-identical (0/675) — no datatest call resolves to a known no-return name; overlaps `noreturn_known`'s name match for defined/imported symbols, restore upstream with `option noreturn_extern off`
         self.sparc_struct_return = false; // (kuna) default: upstream byte-identical (GH-6882)
         self.ov_less_simplify = true; // (kuna) DIV-2 default-on (GH-7190)
         self.fold_boolean_mask = true; // (kuna) DIV-2 default-on (GH-1282)
@@ -3690,7 +3644,6 @@ impl Architecture {
         self.pool_dead_waves = true;
         self.dead_cascade = Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES);
         self.pool_copy_waves = true;
-        self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_views = false;
         self.local_stack_views = true;
         self.libc_names = false; // (kuna) option libcnames default-off: six stage assertions of other features spell a `vN` it names; ON in the `aggressive` preset, which `auto` selects under 500 KiB
@@ -3790,7 +3743,6 @@ impl Architecture {
         self.fpu_trunc_views = true;
         self.fold_call_ret_phi = true; // (kuna) default-on: a call result foldcallret already proved order-safe folds even when the call reads a global it may also write (0/675 ablation, stages PARITY OK); `option foldcallretphi off` restores the spill
         self.go_bounds = true;
-        self.go_jump_chain = true;
         self.rust_fmt_literal = true;
         self.rust_fmt_args = true;
         self.rust_fmt_flags = true;
@@ -4008,7 +3960,6 @@ impl Architecture {
         self.analysis_noreturn_disc = true; // (kuna) DIV-22 default-on: Ghidra's FindNoReturnFunctionsAnalyzer ≥3-evidence discovered-no-return (default-on in Ghidra). REMOVES CODE (marks a callee no-return from ≥3 dead-fall-through sites → drops post-call dead code at callers). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_disc off`
         self.analysis_noreturn_discstrict = true; // (kuna, GH-312) DIV-92 default-on: drop noreturn_disc's decode-failure evidence arm, keeping the terminal arm + the two positive arms. RESTORES CODE (a forged no-return verdict no longer deletes the caller's tail). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore the legacy three-arm tally with `option noreturn_discstrict off`
         self.analysis_noreturn_propagate = true; // (kuna) DIV-14 default-on: REMOVES CODE (call-graph no-return propagation drops post-call dead code). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_propagate off`
-        self.analysis_noreturn_error = true; // (kuna) DIV-16 default-on: REMOVES CODE (conclude error(nonzero,...) wrappers no-return, dropping the dead fall-through at every caller). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_error off`
         self.analysis_noreturn_reach = true; // (kuna) DIV-19 default-on: REMOVES CODE (CFG-reachability no-return, Ghidra's FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn — mid-body no-return calls, dead returns, switch-of-no-return). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_reach off`
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
         self.analysis_rtti = false; // MSVC RTTI / vftable recovery default-off (PE-only, output-changing)
@@ -4779,7 +4730,6 @@ impl Architecture {
         ctx.strip_stack_guard = self.strip_stack_guard; // stackguard
         ctx.strip_msvc_stack_guard = self.strip_msvc_stack_guard; // msvcstackguard
         ctx.go_bounds = self.go_bounds;
-        ctx.go_jump_chain = self.go_jump_chain;
         ctx.strip_security_check = self.strip_security_check; // securitycheck
         ctx.branch_flip = self.branch_flip; // branchflip (negated-guard branch flipping)
         // (kuna) GH-9203 DIV-3: carry the loop-block COPY-placement gate so the

@@ -1,5 +1,5 @@
-//! (kuna) Name-matched no-return for unresolved externs — `option
-//! noreturn_externmatch` (angr port: `test_decompiling_incorrect_duplication_chcon_main`;
+//! (kuna) Name-matched no-return for unresolved externs, part of `noreturn_known`
+//! (angr port: `test_decompiling_incorrect_duplication_chcon_main`;
 //! angr CLE/CFGFast extern no-return tagging; S2 flow follow).
 //!
 //! ## The gap
@@ -24,9 +24,9 @@
 //! `chcon.o::main` symptom angr's `test_decompiling_incorrect_duplication_chcon_main`
 //! does not have.
 //!
-//! ## What this option does
+//! ## What this does
 //!
-//! When `option noreturn_externmatch on`, the `FlowEnvironment::query_call_no_return`
+//! Under `noreturn_known`, the `FlowEnvironment::query_call_no_return`
 //! hook (`infra/decompile_drive.rs`) additionally consults the callee **name** at
 //! the direct-call entry: if the name (after stripping leading `_`, honoring the
 //! upstream global/`std` namespace guard) matches the same vendored ELF
@@ -43,15 +43,14 @@
 //! build-time string include, *not* a crate dependency) so it can never drift from
 //! `noreturn_known`.
 //!
-//! Ships **default-ON** (DIV-13): a clean 0/675 datatest ablation (the corpus is
-//! either real ELFs, where `noreturn_known` already set the proto flag and this is
-//! a no-op, or bytechunks with no name-matched returning extern) and a ~23% speed
-//! *win* on the target (less dead padding to decompile). It carries no risk class
-//! beyond the already-default-on `noreturn_known`: it applies the *same* vendored
-//! name list and the *same* global/`std` namespace guard, just at the flow query
-//! boundary to reach the ET_REL extern that the address-keyed scan structurally
-//! misses. Set `option noreturn_externmatch off` to restore the prior
-//! byte-identical rendering (the dead `add`-padding after the call reappears).
+//! A clean 0/675 datatest ablation (DIV-13: the corpus is either real ELFs, where
+//! `noreturn_known` already set the proto flag and this is a no-op, or bytechunks
+//! with no name-matched returning extern) and a ~23% speed *win* on the target
+//! (less dead padding to decompile). It carries no risk class beyond
+//! `noreturn_known` itself: it applies the *same* vendored name list and the *same*
+//! global/`std` namespace guard, just at the flow query boundary to reach the
+//! ET_REL extern that the address-keyed scan structurally misses, and it is
+//! gated by that pass's flag.
 
 use kuna_base::marshal::ElementId;
 

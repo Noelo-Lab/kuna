@@ -3053,7 +3053,7 @@ impl ConsoleProgram {
 /// pass emits, or a function already in the symbol table. The walk from that start
 /// decodes through `arch`'s translator and does not fall through a call the
 /// decompiler will treat as no-return: a no-return fact this commit applies, a
-/// function already flagged no-return, or (under `noreturn_extern_match`) a callee
+/// function already flagged no-return, or (under `noreturn_known`) a callee
 /// whose name is on the known no-return list.
 fn suppress_pdb_interior_entries(
     arch: &Architecture,
@@ -3091,7 +3091,7 @@ fn suppress_pdb_interior_entries(
     let no_return = |target: u64| {
         noreturn.binary_search(&target).is_ok()
             || arch.symboltab.function_is_no_return_across_scopes(&at(target))
-            || (arch.noreturn_extern_match
+            || (arch.analysis_noreturn_known
                 && (names_at(target).any(is_known_noreturn_name)
                     || arch
                         .symboltab

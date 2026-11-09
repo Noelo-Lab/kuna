@@ -138,9 +138,8 @@ fn pe_exit_eliminates_dead_code_via_noreturn_list() {
 
     let prog_off = boot("pe_imports.exe");
     // OFF: the dead code after `exit(…)` reappears. (kuna DIV-13/DIV-14/DIV-57/DIV-67)
-    // ALL FIVE no-return / bound gates must be disabled: `noreturn_known` (the
-    // address-keyed scan), `noreturn_externmatch` (the flow-seam name match, default-on
-    // DIV-13), `noreturn_extern` (the flow-seam name match, now default-on DIV-14),
+    // ALL THREE no-return / bound gates must be disabled: `noreturn_known` (the
+    // address-keyed scan and the flow-seam name matches, DIV-13/DIV-14),
     // `peimportcall` (the PE-only vendored Win32 list, default-on DIV-57, which also
     // names `exit`), AND `funcboundflow` (the name-independent function-boundary bound,
     // default-on DIV-67, which stops the same fall-through at the next function's entry) —
@@ -149,8 +148,6 @@ fn pe_exit_eliminates_dead_code_via_noreturn_list() {
         prog_off,
         &[
             "option noreturn_known off",
-            "option noreturn_externmatch off",
-            "option noreturn_extern off",
             "option peimportcall off",
             "option funcboundflow off",
             "load function __tmainCRTStartup",

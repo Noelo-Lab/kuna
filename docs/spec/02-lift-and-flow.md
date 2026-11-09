@@ -923,7 +923,7 @@ spec, and input recovery marks a trial on it unused
 (`funcdata_callsite.rs (check_input_trial_use)`): its value is the callee's
 own address, never an argument.
 
-In every other case, unless `gottailcall` below takes it, the old behaviour
+In every other case, unless the GOT-slot rule below takes it, the old behaviour
 stays: the follower walks into the callee as a one-case `switch`, because
 `RuleSwitchSingle`, which upstream uses to collapse that switch, is a stub
 here. That copied-in body is wrong in structure, but it still shows the
@@ -939,8 +939,8 @@ meets the out-of-bounds halt. A `flow ... branch` override cannot veto this
 per site: `override_flow` refuses `branch` on a computed jump, so the only
 switch is the option value.
 
-**(kuna) Tail calls through a GOT slot — `option gottailcall`, default on
-(GH-904), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_gottailcall.rs`.**
+**(kuna) Tail calls through a GOT slot — part of `tailcalljump` (GH-904),
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_gottailcall.rs`.**
 A position-independent tail call loads its target from a GOT slot and jumps
 through it: MIPS `lw $t9,%call16(f)($gp); jr $t9`, x86-64 `-fno-plt`
 `jmp *f@GOTPCREL(%rip)`. Jump-table recovery reads the slot, so it is the
@@ -948,7 +948,7 @@ one-destination computed jump above, and with no stated prototype the
 function printed `switch(0x1340) {` around `f`'s copied-in body, or, when
 the slot names an extern of a relocatable object, `switch(0x402000) { case
 0x402000: halt_missing(); }` with the call's arguments gone. Under
-`tailcalljump on`, `gottailcall` adds two cases to the `call_states_the_body`
+`tailcalljump on`, the GOT-slot rule adds two cases to the `call_states_the_body`
 test that `decompile_drive.rs (ArchFlowEnv::is_tail_call_table)` hands
 `kuna_tailcalljump.rs (kuna_is_tail_call_table)`:
 
@@ -1009,8 +1009,8 @@ redone at once. That is the call-graph edge the walk misses, learned from
 the caller's own decompile. The ledger lives only for the length of a
 callee-first run. A single-function `kuna decompile`, `--jobs N`, `protoorder
 off` and a run narrowed past the callee file nothing and keep the copied-in
-body. `option gottailcall off` restores `tailcalljump`'s own rule.
-`tests/stages/kuna-gottailcall.xml` pins the extern arm in two passes, with
+body. `tailcalljump off` keeps the copied-in body for these jumps too.
+`tests/stages/kuna-gottailcall.xml` pins the extern arm, with
 an unmapped non-function and a real one-case switch as controls, and
 `tests/cli/gottailcall-*.json` pin the callee-first arm on an x86-64
 `-fno-plt` library and a MIPS PIC object.
@@ -1064,8 +1064,8 @@ and none of them fire). Deferring the decision until the flow work-stack drains,
 and then asking whether the function decoded `dest` by another path, is the sound
 fix; it is a change to the walk's ordering rather than to this predicate.
 
-**(kuna) A teardown has to give back what the entry block saved — `option
-tailcallsaved`, default on (DIV-157),
+**(kuna) A teardown has to give back what the entry block saved — part of
+`tailcallframe` (DIV-157),
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_tailcallsaved.rs
 (kuna_stack_saved_bytes / kuna_stack_restored_bytes /
 kuna_teardown_restores_saves)`.** Cancelling deltas are necessary but not
@@ -1137,14 +1137,14 @@ block readers index off the end of. Giving the halt its own block puts a real
 no-return RETURN on the far end of the fall-through instead. The halt is deliberately
 *not* marked as an instruction start: `flow.rs (FlowInfo::fallthru_op)` can only
 resolve the fall-through to it as a same-instruction op, the truncated address never
-having been decoded. This overlaps `noreturn_extern`/`noreturn_externmatch` (which stop
+having been decoded. This overlaps the no-return name matches of `noreturn_known` (which stop
 the same leak by callee *name*) but is name-independent — it bounds at the function
 *boundary* whatever the callee. On real binaries ~36% of application functions in a
 measured static-pie build end in such a call and were corrupted this way; IDA and
 Ghidra both bound decompilation to the function body. The `longdouble` datatest
 (which deliberately flows a tail `jmp` into its callee and on across adjacent
 functions) and the `ghangr-noreturn_extern` test (which isolates the
-`noreturn_extern` toggle) opt out per-test.
+name match) opt out per-test.
 
 The foreign entry is also retained as an effective flow cutoff. A branch target
 can have been queued but left unprocessed when another path discovers that
@@ -2573,7 +2573,7 @@ sources, checked in order:
    declared prototype, or by the analysis-tier passes (`noreturn_known`, and
    the call-graph fixpoint `noreturn_propagate`) described in chapter
    [01 — Program preparation](01-program-prep.md);
-2. **(angr) `noreturn_externmatch`, default on (DIV-13)** —
+2. **(angr) the vendored-list name match (DIV-13, under `noreturn_known`)** —
    `decompiler/crates/kuna-decomp/src/p2_lift/kuna_noreturn_externmatch.rs
    (is_known_noreturn_name)`: the callee *display name* matched against the
    same vendored list the analysis tier uses
@@ -2581,7 +2581,7 @@ sources, checked in order:
    build-time-included so the two matchers cannot drift), with the same
    all-leading-underscore strip, global/`std`-only namespace guard, and
    trailing-`*` wildcard-prefix support;
-3. **(angr) `noreturn_extern`, default on (DIV-14)** —
+3. **(angr) the closed-list name match (DIV-14, under `noreturn_known`)** —
    `decompiler/crates/kuna-decomp/src/p2_lift/kuna_noreturnextern.rs
    (matches_noreturn_extern_name)`: an exact-match check against a closed,
    hard-coded ELF no-return name set with the same namespace guard.
@@ -3158,14 +3158,14 @@ the compiler's own polarity) and by the kuna-console `verify_go_writebarrier`
 gate, which builds a real stripped Go binary and proves the detection-driven
 `auto` path end to end.
 
-### Early Go jump chains (`gojumpchain`)
+### Early Go jump chains (`kuna_gojumpchain.rs`)
 
 `kuna_gojumpchain.rs (ActionGoJumpChain)` runs before Go write-barrier
 recognition, while heritage has not yet built SSA. Unoptimized Go builds place
 unconditional forwarding jumps between the flag test and runtime bookkeeping.
 Later branch cleanup is too late to expose these shapes to the early pass.
 
-The default-on option acts only on Go images with `gowritebarrier` enabled.
+It runs whenever `gowritebarrier` is enabled on a Go image.
 It matches a conditional whose two forwarding paths lead to a single-entry
 block with exactly one recognized barrier call and its common join. It removes
 only forwarding blocks in those paths, including any between the call and join;
@@ -3177,7 +3177,6 @@ block-removal primitive redirects the edge and resets structure.
 
 This normalization removes no computation or memory effect. The existing
 `gowritebarrier` pass independently removes the exposed runtime bookkeeping.
-`gojumpchain off` restores the previous recognition boundary.
 
 ## Octeon integer targets
 

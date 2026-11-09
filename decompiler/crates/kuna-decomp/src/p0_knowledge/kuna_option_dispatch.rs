@@ -221,22 +221,13 @@ kuna_options! { self, p1;
         self.tail_call_tables = tables;
         Ok(msg.to_string())
     },
-    "gottailcall" => {
-        let (val, msg) = crate::kuna_gottailcall::OptionGotTailCall.apply(p1)?;
-        self.got_tail_call = val;
-        Ok(msg)
-    },
     "tailcallframe" => on_off!(tail_call_frame, "Frame-teardown tail-call recovery"),
-    "tailcallsaved" => {
-        on_off!(tail_call_saved, "Saved-register restore test for a frame teardown")
-    },
     "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
     "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
     "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
     "linuxsyscall" => on_off!(linux_syscall, "Linux int 0x80 syscall naming"),
     "msvcstrappend" => on_off!(msvc_str_append, "MSVC std::string inlined append collapsing"),
     "switchselector" => on_off!(switch_selector_guard, "Lowered-switch in-function-selector restriction"),
-    "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),
     "inputvarnodeadjust" => on_off!(input_varnode_adjust, "Overlapping input-varnode adjustment"),
     "retinputhalf" => on_off!(ret_input_half, "Returned input-parameter half retention"),
     "retpushedhalf" => on_off!(ret_pushed_half, "Push-only register placement rejection"),
@@ -405,7 +396,6 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "copywaves" => on_off!(pool_copy_waves, "Rule-pool copy-propagation waves"),
-    "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
     "loweredswitch" => {
         let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
         self.recover_lowered_switch = val;
@@ -886,7 +876,6 @@ kuna_options! { self, p1;
         on_off!(strip_msvc_stack_guard, "MSVC /GS frame-cookie stripping")
     },
     "gobounds" => on_off!(go_bounds, "Go compiler-check folding"),
-    "gojumpchain" => on_off!(go_jump_chain, "Early Go jump-chain normalization"),
     "rustfmtliteral" => on_off!(rust_fmt_literal, "Rust literal print macros"),
     "rustfmtargs" => on_off!(rust_fmt_args, "Rust primitive print arguments"),
     "rustfmtflags" => on_off!(rust_fmt_flags, "Rust static integer format specifications"),
@@ -1364,9 +1353,6 @@ kuna_options! { self, p1;
     },
     "noreturn_propagate" => {
         on_off!(analysis_noreturn_propagate, "No-return propagation Listing consumer")
-    },
-    "noreturn_error" => {
-        on_off!(analysis_noreturn_error, "error(nonzero,...) conditional no-return recognizer")
     },
     "noreturn_reach" => {
         on_off!(analysis_noreturn_reach, "CFG-reachability no-return rule (Ghidra targetOnlyCallsNoReturn)")

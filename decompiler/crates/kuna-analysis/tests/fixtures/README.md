@@ -1706,9 +1706,8 @@ lld-link-14 /entry:mainCRTStartup /subsystem:console /nodefaultlib /debug \
 `addl $8,%esp` that discards the two arguments of the `call helper` above it, so
 the two stack-pointer deltas cancel while both saved registers are still on the
 stack and `.Ljoin` is an ordinary block of `classify`. `tests/cli/argument-cleanup-creates-false.json`
-proves both arms: default keeps the whole function (`| 7` from `.Ljoin`), `option
-tailcallsaved off` ends it at `return sub_804901d();` with a `tailcallframe:
-recovered tail call` warning.
+proves the whole function is kept (`| 7` from `.Ljoin`); read on the deltas alone it
+ended at `return sub_804901d();` with a `tailcallframe: recovered tail call` warning.
 
 NB: a `.pdb` (MSF container) has a minimum multi-stream page-table overhead, so
 `pdb_prog.pdb` / `pdb_prog_mismatch.pdb` are ~72 KB each — the two PDBs are the only

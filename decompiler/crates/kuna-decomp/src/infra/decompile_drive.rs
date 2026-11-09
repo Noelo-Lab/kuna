@@ -512,12 +512,11 @@ impl FlowEnvironment for ArchFlowEnv {
             dest == fd.get_address(),
             dest_outside_extent,
             || {
-                if arch.got_tail_call
-                    && (crate::kuna_gottailcall::callable(arch, fd, dest)
-                        || !self.mapped_flow_image().map_or_else(
-                            || self.code_bytes_mapped(dest),
-                            |image| crate::kuna_mappedflowboundary::mapped_start(image, dest),
-                        ))
+                if crate::kuna_gottailcall::callable(arch, fd, dest)
+                    || !self.mapped_flow_image().map_or_else(
+                        || self.code_bytes_mapped(dest),
+                        |image| crate::kuna_mappedflowboundary::mapped_start(image, dest),
+                    )
                 {
                     return true;
                 }
@@ -570,7 +569,6 @@ impl FlowEnvironment for ArchFlowEnv {
             fd.get_address(),
             dest,
             sp.as_ref(),
-            arch.tail_call_saved,
         )
     }
 }

@@ -9353,7 +9353,7 @@ gates still control this inference.
 
 Two rules fold into the same fixpoint, both Ghidra-derived:
 
-- **The `error(nonzero,…)` value rule** (`noreturn_error`, DIV-16): glibc `error()`
+- **The `error(nonzero,…)` value rule** (DIV-16, under `noreturn_known`): glibc `error()`
   and `error_at_line()` exit when `status != 0` but return for `status == 0`, so
   `error` can never be a Known name. The recognizer resolves the `error` entry
   addresses, then per call site backward-scans the straight-line predecessors for
@@ -9396,17 +9396,17 @@ Two rules fold into the same fixpoint, both Ghidra-derived:
 Finally, (angr) **flow-time extern matching** closes the case no address-keyed fact
 can reach: in an ET_REL `.o`, a libc no-return is a UND symbol with no address and
 no PLT, so nothing above ever marks it, and flow runs off the function's end into
-alignment padding decoded as garbage `add [rax],al` statements.
-`noreturn_externmatch`
-(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_noreturn_externmatch.rs`) applies
+alignment padding decoded as garbage `add [rax],al` statements. Under
+`noreturn_known`,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_noreturn_externmatch.rs` applies
 the same vendored name list and namespace guard *at the flow query seam*
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
-(query_call_no_return)`); its sibling `noreturn_extern` applies an equivalent
-name match in the same query, differing in gate flag, name-resolution path, and
-name set — `noreturn_extern` carries a frozen hard-coded copy of upstream's 21
-names rather than reading the shipped list, so neither kuna divergence block
-reaches it; it is queried only after `noreturn_externmatch` (which does read the
-list, and is default-on) has already declined. On a
+(query_call_no_return)`); its sibling
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_noreturnextern.rs` applies an
+equivalent name match in the same query, differing in name-resolution path and
+name set — it carries a frozen hard-coded copy of upstream's 21 names rather than
+reading the shipped list, so neither kuna divergence block reaches it; it is
+queried only after the vendored-list match has already declined. On a
 normally-linked ELF the proto flag is already set, so both are no-ops there. These
 two run inside the engine, not the analysis tier — chapter 02 owns the halt
 mechanics they feed.
