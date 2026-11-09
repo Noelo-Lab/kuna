@@ -55,11 +55,12 @@
       "class_files": [
         "pkg/TestSuspendTryFinally.class",
         "pkg/TestSuspendTryFinally$Step.class",
-        "pkg/TestSuspendTryFinally$runThenDone$1.class"
+        "pkg/TestSuspendTryFinally$runThenDone$1.class",
+        "pkg/TestSuspendTryFinally$runThenMaybeDone$1.class"
       ],
       "source": "src/pkg/TestSuspendTryFinally.kt",
       "compiler": "kotlinc-jvm 2.0.0 (JDK 17.0.20.1)",
-      "summary": "`runThenDone`, a suspend function whose try/finally spans its suspension point, decompiles: each copy of the finally handler becomes a finally guarded by its semaphore variable"
+      "summary": "`runThenDone` and `runThenMaybeDone`, suspend functions whose try/finally spans the suspension point, decompile: each copy of the finally handler, with its own copy of a conditional finally body, becomes a finally guarded by its semaphore variable"
     }
   ]
 }
