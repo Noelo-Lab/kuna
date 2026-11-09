@@ -85,7 +85,7 @@
     with every callee a local stub in the same chunk.  f keeps a real frame
     (push/sub rsp), so the CALL's stack-effect ops are recovered away and
     printed_shape measures the guard blocks at their emitted width; the body is
-    12 calls wide so the default-on taildup does not duplicate it away.
+    12 calls wide so the default `gotoreduce on` does not duplicate it away.
 
     Pass 1 (option condfold off): the fold is declined, so the middle guard's
     two calls are emitted as plain statements ahead of a nested if.

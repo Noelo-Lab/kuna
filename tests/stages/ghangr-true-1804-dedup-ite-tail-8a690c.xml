@@ -11,7 +11,7 @@
     trailing `if (v4 == 0) { A } else { B }` emits a shared online-help printf /
     setlocale / Full-documentation tail TWICE (loc 121 / 9 ifs vs angr's 112 / 6).
     angr emits each shared continuation once.  This is the exact inverse of
-    gotoreduce/crossjumprevert/taildup (which DUPLICATE a shared tail to remove a
+    gotoreduce/crossjumprevert (which DUPLICATE a shared tail to remove a
     goto): here kuna over-duplicated, and the readability win is to MERGE the copies.
 
     The `dedupitetail` pass (option-gated, default-off) does the sound, bounded
@@ -72,10 +72,9 @@
 <symbol space="ram" offset="0x100047" name="post"/>
 </binaryimage>
 <script>
-  <!-- kuna: the 10 angr structuring/switch flags below are now default-on (DIV-13); this stage test asserts the pre-sweep (flags-off) baseline in pass 1, so pass 1 turns them all OFF (each pass-2 'option <flag> on' re-enables only the flag under test) -->
+  <!-- kuna: the 9 angr structuring/switch flags below are now default-on (DIV-13); this stage test asserts the pre-sweep (flags-off) baseline in pass 1, so pass 1 turns them all OFF (each pass-2 'option <flag> on' re-enables only the flag under test) -->
   <com>option gotoreduce off</com>
   <com>option crossjumprevert off</com>
-  <com>option taildup off</com>
   <com>option dedupitetail off</com>
   <com>option regionlooprefine off</com>
   <com>option ifelseflatten off</com>
