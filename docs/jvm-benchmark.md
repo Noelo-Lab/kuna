@@ -74,8 +74,9 @@ sampled resident set of its process tree.
 
 Every score field is identical between the two tools on all 110,238 methods: the
 scoreboards match, and so does every per-method record (GED, type and bytecode scores,
-perfect flags, failures). That is the expected result for a port whose output is
-Vineflower's byte for byte (`docs/jvm.md`, "The fidelity contract"); the benchmark shows it
+perfect flags, failures). That is the expected result for a port whose output was then
+Vineflower's byte for byte (`docs/jvm.md`, "The fidelity contract"; kuna's fixes of methods
+Vineflower fails on came later, and `--option jvm_vineflower_compat on` turns them off); the benchmark shows it
 holds on large real-world inputs, and the timing columns show what the port costs. A method
 that is not perfect is one where Vineflower's output (and so kuna's) departs from the source,
 or one of the few the harness cannot score perfectly even from the source itself: the source

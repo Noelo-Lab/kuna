@@ -31,7 +31,10 @@ the engine prints the text Vineflower prints, byte for byte. The port therefore 
 Vineflower's pass order, its iteration orders (including the iteration order of Java's
 hash collections, which reaches the output), its id counters (which reach the output as
 `var10000` and `label7`) and its failure behaviour. Where this chapter describes a
-heuristic that looks arbitrary, it is Vineflower's, kept for that reason.
+heuristic that looks arbitrary, it is Vineflower's, kept for that reason. The one
+deliberate exception is kuna's fixes of Vineflower's defects (section 10.16): each is a
+named option, on by default, that changes only what Vineflower gets wrong, and
+`jvm_vineflower_compat` turns them all off.
 
 ## 10.1 The phase folders and the schedule
 
@@ -675,10 +678,10 @@ Numbers print with the JDK's own algorithms (section 10.13).
 
 **Failed methods.** A method whose schedule threw is written as its signature and a body
 of comments (`ClassWriter::dump_error`): `$VF: Couldn't be decompiled`, then with
-`jvm_dump_exception_on_error` the `jvm_error_message` note (by default, Vineflower's
-request to report the class to its tracker), the exception text and its throw location,
-and with `jvm_dump_bytecode_on_error` a listing of the method's bytecode. The class around
-it is written normally.
+`jvm_dump_exception_on_error` the `jvm_error_message` note (by default a request to report
+the class to kuna's tracker, Vineflower's in compat mode; section 10.16), the exception
+text and its throw location, and with `jvm_dump_bytecode_on_error` a listing of the
+method's bytecode. The class around it is written normally.
 
 **Layout.** The buffer is a tree of line groups; after a class is written,
 `decompiler/nonnative/kuna-jvm/src/p9_emit/text_buffer.rs (TextBuffer::reformat)` breaks
@@ -797,7 +800,10 @@ turns a `jvm_*` name, or Vineflower's long or three-letter name, and a value as 
 writes it into the Vineflower key and value; the table is generated from `options.toml` by
 the crate's build script. Keys the front end sets itself (thread count, time limit, method
 selection, logging, line separator, line mapping, class-path keys a JVM would serve) are
-listed there as `[[driver_owned]]` and refused as user options.
+listed there as `[[driver_owned]]` and refused as user options. kuna's own rows resolve to
+their own names; `Fernflower::new` takes `jvm_plugins`, `jvm_vineflower_compat` and the
+`jvm_fix_*` switches off the property list before the rest becomes Vineflower's option map
+(section 10.16), so that map is the one Vineflower would build.
 
 **Tracing.** With `KUNA_JVM_TRACE=<file>`,
 `decompiler/nonnative/kuna-jvm/src/infra/kuna_trace.rs` writes a canonical dump of each
@@ -1013,3 +1019,60 @@ units and writes `.kt` files in a project export; the CLI's `--language java` is
 `jvm_kt_enable off`. The Kotlin schedule polls the per-method deadline (section 10.12) at
 the heads of its own loops: each round of a looping pass, the `finally` loop and the
 initial stack-variable loop.
+
+## 10.16 Kuna-only fixes (kuna)
+
+Vineflower 1.12.0 throws on some methods, and the port, which keeps its failure behaviour,
+throws there too and writes the method as `// $VF: Couldn't be decompiled` (section 10.12).
+A *fix* is a deliberate departure from the Java at the place of such a defect.
+
+**The gate.** `decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_fixes.rs (KunaFix)`
+names each fix, and each has an option row `jvm_fix_<slug>`, on by default.
+`jvm_vineflower_compat` (off by default) turns every fix off at once; with it on, the
+engine is the plain port and prints Vineflower's text, failures included. Every site
+where a fix changes behaviour asks `kuna_fixes::enabled(KunaFix::..)` and keeps the
+Java's behaviour verbatim in the other branch. `Fernflower::new`
+(`decompiler/nonnative/kuna-jvm/src/p0_knowledge/fernflower.rs`) takes the switches off the
+custom property list, resolves them into the set of active fixes (later pairs win; compat
+on means none) and stores it in the decompilation context; installing a context
+(`DecompilerContext::set_current_context`) makes its set the one `enabled` answers from on
+that thread, which costs one thread-local read per question. The per-class contexts of
+`ContextUnit::set_context` copy the set from the root context, and no context means every
+fix on. The regression corpus's runner
+(`decompiler/nonnative/kuna-jvm/src/infra/kuna_corpus.rs (engine_options)`) turns compat
+on unless a case says otherwise, so its Vineflower-oracle cases test the plain port, and
+each fix has a case that runs in both modes (`tests/jvm/kuna-fixes/`): in compat mode it
+must print the released Vineflower jar's text, failure comment included, and by default
+kuna's reviewed text.
+
+**`jvm_fix_report_to_kuna`.** Vineflower's error comments (`$VF: Couldn't be decompiled`,
+and the other `$VF:` errors a method collects, such as an `assert` that could not be
+resugared) carry the `error-message` note, whose default asks the reader to report the
+class to Vineflower's issue tracker. With this fix, `Fernflower::new` puts kuna's request
+(to report to kuna's tracker, `KUNA_ERROR_MESSAGE`) in place of that default before the
+caller's options are applied, so a `jvm_error_message` the caller sets still wins. The
+fix is read from the set being built, since no context is installed yet at that point.
+The marker line itself never changes: the CLI and the benchmark count failed methods by
+it.
+
+**`jvm_fix_lambda_wildcard_return`.** When a lambda or method reference is an argument of
+a generic call, `decompiler/nonnative/kuna-jvm/src/substrate/new_exprent.rs
+(NewExprent::get_inferred_expr_type)` infers the type arguments of its functional
+interface: from the call's expected type (the upper bound) it gathers a first mapping of
+the interface's type variables, and for a method reference it then maps the interface
+method's return variable to the referenced method's return type, remapped through the
+receiver's type arguments. A guard Vineflower added in 1.10 (upstream commit `13d4112e`,
+unchanged on `develop/1.13.0`) keeps an already inferred, finished generic mapping when
+the method's return type is a subtype of it, and reads that return type's class name. When
+the receiver's type argument is an unbounded wildcard (`Instantiator<?> i; ...
+map(i::instantiateType)`, where `instantiateType` returns the class's `T`), the receiver's
+mapping sends `T` to Fernflower's encoding of `?`, which is null, so the remapped return type
+is null; the code before the guard allows that (it then adds the mapping), but the guard
+dereferences it, and the method fails with `NullPointerException: returnType` while it is
+written. With the fix, an unknown return type cannot contradict the mapping inferred from
+the context, so the guard keeps that mapping, as it does for a known subtype. Only the
+branch that threw changes: without an inferred generic mapping, the null return type is
+added as before. spring-boot's `StructuredLoggingJsonProperties.customizers` is the case that
+showed it; with the fix it prints `this.customizer().stream().map(instantiator::instantiateType).toList()`,
+the source without its raw `(List)` cast, which javac does not record, exactly as Vineflower
+prints the same call on a receiver without a wildcard.
