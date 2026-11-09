@@ -214,6 +214,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "narrowext" => conf.narrow_ext.as_str(),
         // (kuna `syscallregs`) Three-valued, so it reports its own token.
         "syscallregs" => conf.syscall_regs.as_str(),
+        // (kuna `linuxsyscall`) Three-valued, so it reports its own token.
+        "linuxsyscall" => conf.linux_syscall.as_str(),
         // (kuna `callmechanisms`) Three-valued, so it reports its own token.
         "callmechanisms" => conf.call_mechanism_mode.as_str(),
         // (kuna `rustabi`) Three-valued, so it reports its own token.
@@ -242,7 +244,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "arraystride" => on_off(conf.recover_array_stride),
         "stackalias" => on_off(conf.stack_alias_deadstore),
         "stackviews" => on_off(conf.stack_views),
-        "stackprobeloop" => on_off(conf.model_stack_probe_loop),
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
         "constselectjump" => on_off(conf.const_select_jump),
@@ -255,9 +256,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
             kuna_decomp::kuna_calloverlap::LEVEL_IN => "in",
             _ => "full",
         },
-        "entryretdispatch" => on_off(conf.entry_ret_dispatch),
-        "pushimmediateret" => on_off(conf.push_immediate_ret),
-        "mappedflowboundary" => on_off(conf.mapped_flow_boundary),
         // (kuna) Analysis-pass gates: the live `current` field reflects each pass's
         // per-run enable flag (set by `--option <id> on|off`). Real-ELF path only;
         // with no program loaded these never reach (kuna_live_value's caller passes

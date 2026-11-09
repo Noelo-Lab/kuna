@@ -21,15 +21,11 @@
     `a3 83 c0 05 c3` is `MOV [0xc305c083],EAX`, a store to a global that does not
     exist, and `add eax,5` never appears.
 
-    Pass 1 (default, calltrampoline on): the call is followed as a branch, the
-    fragment is flowed through, and the body is `return a0 + 5`.
-    Pass 2 (calltrampoline off, the bug): the fall-through at 0x100005 is decoded
-    and the junk store appears.
-
-    Assert #1 pins the junk store to EXACTLY ONE occurrence across both print C
-    passes: present in the calltrampoline-off pass, absent in the default one.
-    Assert #2 pins the real continuation the same way, in the other direction:
-    the fix has to RESTORE `a0 + 5`, not merely delete the junk.
+    The call is followed as a branch, the fragment is flowed through, and the
+    body is `return a0 + 5`.  Assert #1 pins the junk store the fall-through
+    decode would have produced to zero occurrences; assert #2 pins the real
+    continuation, so the rewrite has to RESTORE `a0 + 5`, not merely delete the
+    junk.
 -->
 <binaryimage arch="x86:LE:32:default:gcc">
 <bytechunk space="ram" offset="0x100000" readonly="true">e80b000000a383c005c3c3</bytechunk>
@@ -40,11 +36,8 @@
   <com>lo fu caller</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option calltrampoline off</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CALLTRAMPOLINE #1: the junk store decoded at the unreachable return address appears only in the calltrampoline-off pass" min="1" max="1">dat_c305c083 = </stringmatch>
-<stringmatch name="CALLTRAMPOLINE #2: the default pass flows through the fragment and recovers the real continuation" min="1" max="1">return a0 \+ 5;</stringmatch>
+<stringmatch name="CALLTRAMPOLINE #1: no junk store is decoded at the unreachable return address" min="0" max="0">dat_c305c083 = </stringmatch>
+<stringmatch name="CALLTRAMPOLINE #2: the call flows through the fragment and recovers the real continuation" min="1" max="1">return a0 \+ 5;</stringmatch>
 </decompilertest>

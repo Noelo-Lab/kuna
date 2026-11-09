@@ -88,21 +88,12 @@ fn incoming_return_address_is_not_a_dispatch_target() {
 fn unrelated_computed_returns_are_not_calls() {
     for function in [
         "computed_ret",
-        "constant_ret",
         "adjusted_fallthrough_ret",
         "negative_displacement_ret",
         "conditional_bypass_ret",
         "partial_sp_ret",
     ] {
-        // `constant_ret` is a one-store push-immediate/RET tail transfer, now
-        // owned by `pushimmediateret`. Disable that independent classifier so
-        // this PR595 regression remains scoped to entry-return dispatch.
-        let extra = if function == "constant_ret" {
-            &["--option", "pushimmediateret", "off"][..]
-        } else {
-            &[]
-        };
-        let code = decompile_with(function, extra);
+        let code = decompile(function);
         assert!(
             code.contains("return;"),
             "{function} became a call:\n{code}"
@@ -128,14 +119,11 @@ fn unrelated_computed_returns_are_not_calls() {
         !code.contains("(*"),
         "unrelated store made the incoming return address callable:\n{code}"
     );
-}
-
-#[test]
-fn option_off_restores_the_first_ret_termination() {
-    let code = decompile_with("entry_dispatch", &["--option", "entryretdispatch", "off"]);
-    assert!(code.contains("return;"), "option off did not restore the return:\n{code}");
+    // `constant_ret` is a one-store push-immediate/RET tail transfer, which the
+    // `pushimmediateret` rule owns; it derives none of the dispatch calls.
+    let code = decompile("constant_ret");
     for call in CALLS {
-        assert!(!code.contains(call), "option off still derived {call}:\n{code}");
+        assert!(!code.contains(call), "constant_ret recovered unrelated {call}:\n{code}");
     }
 }
 

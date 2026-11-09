@@ -99,29 +99,24 @@ pub const MODE_TABLE: &[Mode] = &[
 const RELIABLE_OVERRIDES: &[(&str, &str)] = &[];
 
 /// `aggressive` = every off-by-default option flipped ON, **except**
-/// `v850indirectbranch` and `dwarf_lines`. `returndup` and `pdb` are listed even
-/// though DIV-54 and DIV-129 made them shipped defaults: the preset owns the
-/// option outright, so a user `--option returndup off` earlier on the command
-/// line is re-enabled by the preset and the contract survives any later default
-/// drift.
+/// `dwarf_lines`. The options that became shipped defaults stay listed
+/// (`returndup` since DIV-54, `pdb` since DIV-129, and the target-gated passes
+/// -- `rtti`=PE, `itaniumrtti`=ELF-with-RTTI, `objc`/`macho-arm64e`=Mach-O,
+/// `sparcstructret`=SPARC, `v850indirectbranch`=V850, the ARM entry and
+/// hard-float passes -- all inert off their target): the preset owns the option
+/// outright, so a user `--option returndup off` earlier on the command line is
+/// re-enabled by the preset and the contract survives any later default drift.
 ///
-/// The default-off options are safe to blanket-enable except those two. Unlike
-/// the format-gated no-ops (`rtti`=PE, `itaniumrtti`=ELF-with-RTTI,
-/// `objc`/`macho-arm64e`=Mach-O, `sparcstructret`=SPARC `unimp`-trap idiom -- all
-/// inert off their target):
+/// The default-off options are safe to blanket-enable except that one:
 ///
-///   - `v850indirectbranch`'s predicate matches *any* register-indirect `CALLIND`
-///     (`kuna_is_v850_indirect_jmp`, `p2_lift/kuna_v850indbranch.rs`), so on
-///     x86-64 / ARM it would reclassify every `call reg` into an indirect branch
-///     -- corruption, not recovery.
 ///   - `dwarf_lines` recovers nothing. It annotates every instruction with its
 ///     `.debug_line` `file:line` and those comments survive into the C body, so
 ///     on any binary built with `-g` it buries the code under interleaved
 ///     `/* src.c:NNN */` lines (`auto` picks `aggressive` under 500 KiB, which
 ///     made that the *default* rendering for small debug binaries).
 ///
-/// Both stay manual per-run opt-ins (`--option v850indirectbranch on`,
-/// `--option dwarf_lines on`) even under `--mode aggressive`.
+/// It stays a manual per-run opt-in (`--option dwarf_lines on`) even under
+/// `--mode aggressive`.
 ///
 /// `formatstring` used to be a third exclusion, for cost: its
 /// decompile->override->re-decompile loop paid a **second full decompile** of
@@ -147,6 +142,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("unrolledguard", "on"),    // speed-expensive
     ("globalarrayanchor", "on"),
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
+    ("v850indirectbranch", "on"), // V850-gated (kuna_v850indbranch::applies); no-op off-V850
     ("regionedgeorder", "on"),
     ("returndup", "on"), // default-ON since DIV-54; kept so the preset owns it
     // (kuna) Decline the returndup split at the join of a one-block `if`, so
@@ -186,13 +182,10 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("voidtailreturn", "on"),
     ("importdata", "on"),
     // (kuna, DIV-99) Fold the Cortex-M `isCurrentModePrivileged()` guard the
-    // vendored ARM SLEIGH wraps around every VERSION_7M MRS/MSR. Shipped default
-    // OFF because "the core is privileged" is a modelling judgement rather than a
-    // proof; preset membership is the delivery route, since the guard is only ever
-    // reached by ARM Cortex-M firmware, which is small enough that `auto` always
-    // picks `aggressive` for it. Structurally inert everywhere else -- the fixup
-    // is registered only on a language that declares the user-op, and only 12
-    // Thumb-2 constructors emit it.
+    // vendored ARM SLEIGH wraps around every VERSION_7M MRS/MSR. A shipped
+    // default, kept so the preset owns it. Structurally inert everywhere else --
+    // the fixup is registered only on a language that declares the user-op, and
+    // only 12 Thumb-2 constructors emit it.
     ("cortexmpriv", "on"),
     ("x64syscall", "on"),
     // (kuna, DIV-108) Cap the pointer nesting `ActionInferTypes` will adopt. A
@@ -223,8 +216,8 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("libcnames", "on"),
     // (kuna) ARM hard-float scalar VFP contracts: a double returned whole in d0
     // and float/double parameters in their s/d registers on both sides of a
-    // call. Shipped default OFF in the catalog; inert unless the ELF container
-    // states the VFP procedure-call standard, so soft-float, softfp and raw
+    // call. Shipped defaults, kept so the preset owns them; inert unless the ELF
+    // container states the VFP procedure-call standard, so soft-float, softfp and raw
     // images print byte-identically. `armfloatargs` needs `armfloatreturn`.
     // Measured over a 42-binary gcc/clang ABI corpus (hard, softfp and soft
     // float; -O0/-O2/-Os) and 84 hard-float decbench firmware slices; see the
@@ -426,14 +419,10 @@ mod tests {
     }
 
     #[test]
-    fn aggressive_excludes_v850_and_dwarf_lines_but_includes_the_rest() {
+    fn aggressive_excludes_dwarf_lines_but_includes_the_rest() {
         let agg = mode_overrides("aggressive").unwrap();
-        // The two intentional exclusions: corruption off-V850, and source-line
-        // comment noise over every statement of a `-g` binary.
-        assert!(
-            !agg.iter().any(|(o, _)| *o == "v850indirectbranch"),
-            "aggressive must NOT enable v850indirectbranch (reclassifies x86-64 call reg)"
-        );
+        // The one intentional exclusion: source-line comment noise over every
+        // statement of a `-g` binary.
         assert!(
             !agg.iter().any(|(o, _)| *o == "dwarf_lines"),
             "aggressive must NOT enable dwarf_lines (buries `-g` output in /* src.c:N */)"
@@ -445,6 +434,7 @@ mod tests {
             "switchguardbound",
             "returndup",
             "sparcstructret",
+            "v850indirectbranch",
             "globalarrayanchor",
         ] {
             assert!(
@@ -471,34 +461,17 @@ mod tests {
         use crate::kuna_phases::{kuna_num_settables, kuna_settable_by_index};
 
         /// The DELIBERATE exclusions, each with its reason recorded on
-        /// `AGGRESSIVE_OVERRIDES`: `v850indirectbranch` corrupts non-V850 targets,
-        /// `dwarf_lines` buries a `-g` binary's C under per-instruction
-        /// `/* src.c:N */` comments, and `formatstring` costs a second full
+        /// `AGGRESSIVE_OVERRIDES`: `dwarf_lines` buries a `-g` binary's C under
+        /// per-instruction `/* src.c:N */` comments, and `formatstring` costs a second full
         /// decompile of every caller that yields a varargs override -- measured
         /// +43.7% to +77.5% on whole-binary `decompile-all`, far over the 5% speed
         /// budget, so standing requirement 4 holds it to an opt-in (DIV-66).
-        /// `ifuncfpret` is Stage A of the IFUNC FP-return chain: on its own it only
-        /// renames x86-64 IFUNC stubs to synthetic `ifunc_<resolver>` names and
-        /// recovers a tail call to them -- it does NOT yet fix the `xmm0`-return the
-        /// feature exists for (that needs the Ghidra-divergent Stage B), so it is an
-        /// explicit opt-in until the chain is complete rather than a rendering default.
         /// `aifcorroborate` (GH-313) is upstream's second AIF fingerprint test, and it
         /// was MEASURED OUT of the preset rather than left unevaluated: over the same
         /// 110 stripped non-x86-64 binaries `aifstrict` was measured on, it cuts
         /// mid-body entries 6,728 -> 4,653 but costs 850 of 44,957 recovered
         /// functions, raises recall on zero of the 110 images, and takes 84 / 141 real
         /// functions off the two u-boot A32 images DIV-20 exists for.
-        /// `linuxsyscall` names an x86-32 `int 0x80` after the Linux syscall the
-        /// constant in `EAX` selects. The vector alone does not prove the target OS
-        /// -- on the original IBM PC the 0x80..0xF0 range was reserved for BASIC --
-        /// and the engine has no OS/ABI channel it could consult, so naming the call
-        /// is a statement about the platform that the operator makes, not one the
-        /// preset should make for every x86-32 image it meets. Measured (the sweep
-        /// in the option's catalog row): on the eleven x86-32 ELF images of the
-        /// crackmes corpus it changes two lines in two binaries, both a `swi(0x80)`
-        /// indirect call becoming the named syscall, and is byte-identical on the
-        /// other nine and on the 675-assertion datatest corpus. It is excluded for
-        /// the platform-assertion reason, not a measured one.
         /// `nulterminator` folds a lone unread zero after an open stack `char`
         /// array into the array, and the same frame shape is the struct-first-member
         /// idiom (`strncpy(u.name, s, N); u.active = 0; f(&u);`): measured on gcc and
@@ -595,8 +568,8 @@ mod tests {
         /// `ppcapu` selects the e500 model, whose scalar call arguments are not
         /// yet recovered, so it requires an explicit option.
         const EXCLUDED_ON_PURPOSE: &[&str] =
-            &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
-              "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
+            &["dwarf_lines",
+              "aifcorroborate", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
               "armconstshift", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustfmtwrite", "rustfmtio", "rustprobestack", "highsliceguard", "rustarrayzero",
@@ -625,9 +598,9 @@ mod tests {
         /// asked for was run over the 110 stripped non-x86-64 decbench twins and all
         /// four passed it, so they are in `AGGRESSIVE_OVERRIDES` above.
         /// `godwarfsig` remains explicit while aggregate ABI interactions and
-        /// decompression costs across Go corpus sizes are evaluated for automatic selection.
+        /// `gopairreturns` remains explicit while aggregate ABI interactions across
+        /// Go corpus sizes are evaluated for automatic selection.
         const UNEVALUATED: &[&str] = &[
-            "godwarfsig",
             // Stack-address liveness can be incidental; synthetic regressions and
             // a local speed measurement do not justify a broad preset flip.
             "stackaddrargtrial",
@@ -648,14 +621,6 @@ mod tests {
             // hold back -- preset membership is a DIV-recorded default change,
             // and the DIV registry is not this change's to write.
             "switchselector",
-            // `msvcstackguard` strips the MSVC `/GS` frame cookie, and every
-            // corpus this repo can sweep is ELF or a hand-built PE -- none carries
-            // a real `/GS` cookie, so the ON-shape effect cannot be measured here
-            // at all. The OFF-shape evidence exists (0/675 datatests, 561
-            // functions across two glibc `-fstack-protector` binaries unchanged),
-            // but preset membership is a DIV-recorded default change and the
-            // measurement that would justify it needs a `/GS` corpus first.
-            "msvcstackguard",
             // (kuna `charptr`) Commit a pointer the program only ever uses on
             // characters to `char *`. The sweep says no: once a constant PTRADD
             // index counts as a field offset (as a literal INT_ADD always did), 444
@@ -680,15 +645,6 @@ mod tests {
             // preset sweep or speed measurement needed before changing the
             // default output for every aggressive-mode decompile.
             "bytearrayc",
-            // (kuna `unwindstarts`) Mach-O `__unwind_info` function-start discovery.
-            // Inert when `LC_FUNCTION_STARTS` is present (every unwind start is
-            // already a function-starts entry, a strict subset -- 0 change measured
-            // on an 84 MB third-party iOS app), so its only gain is on a stripped Mach-O; the
-            // stripped App-Store apps it was measured on exceed the 500 KiB
-            // `auto`->`aggressive` threshold, so the default path (`auto` under
-            // 500 KiB) would exercise nothing it changes. Promote to the preset
-            // after a Mach-O-inclusive sweep and speed measurement.
-            "unwindstarts",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();

@@ -9,17 +9,13 @@ use std::ffi::OsString;
 use std::process::Command;
 
 use kuna_decomp::{
-    kuna_calltargettype, kuna_dyldcache,
-    kuna_ifuncfpret, kuna_kernelcache, kuna_libctypes, kuna_ppcapu,
-    kuna_goabi, kuna_objcivars, kuna_objcsdk, kuna_sourcelang,
-    kuna_symbolnamechars,
+    kuna_calltargettype, kuna_dyldcache, kuna_ifuncfpret, kuna_kernelcache, kuna_libctypes, kuna_ppcapu, kuna_goabi, kuna_objcivars, kuna_objcsdk, kuna_sourcelang, kuna_symbolnamechars, kuna_macho_arm64e,
 };
 
 #[derive(Clone, Copy)]
 enum Encoding {
     DefaultOn,
     DefaultOff,
-    Arm64e,
     SymbolNameChars,
     Trimmed,
     LibcTypes,
@@ -32,14 +28,14 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
     use Encoding::*;
     Some(match name {
         "ppc32picimports" => (kuna_decomp::kuna_ppc32picimports::ENV, Ppc32Pic),
-        "ifuncfpret" => (kuna_ifuncfpret::IFUNCFPRET_ENV, DefaultOff),
+        "ifuncfpret" => (kuna_ifuncfpret::IFUNCFPRET_ENV, DefaultOn),
         "ppcapu" => (kuna_ppcapu::PPCAPU_ENV, DefaultOff),
         "kernelcache" => (kuna_kernelcache::KERNELCACHE_ENV, Kernelcache),
         "goabi" => (kuna_goabi::GOABI_ENV, DefaultOn),
         "symbolnamechars" => (kuna_symbolnamechars::SYMBOLNAMECHARS_ENV, SymbolNameChars),
         "libctypes" => (kuna_libctypes::LIBCTYPES_ENV, LibcTypes),
         "calltargettype" => (kuna_calltargettype::CALLTARGETTYPE_ENV, DefaultOff),
-        "macho-arm64e" => ("KUNA_MACHO_ARM64E", Arm64e),
+        "macho-arm64e" => (kuna_macho_arm64e::MACHO_ARM64E_ENV, DefaultOn),
         "sourcelang" => (kuna_sourcelang::SOURCELANG_ENV, SourceLang),
         "objcivars" => (kuna_objcivars::OBJCIVARS_ENV, DefaultOn),
         "objcsdk" => (kuna_objcsdk::OBJCSDK_ENV, Trimmed),
@@ -61,9 +57,6 @@ impl Encoding {
                 "off"
             }
             .into(),
-            Self::Arm64e => {
-                return matches!(token.as_str(), "on" | "true" | "1" | "yes").then(|| "1".into());
-            }
             Self::SymbolNameChars => kuna_symbolnamechars::NameChars::parse(value)
                 .unwrap_or_default()
                 .as_str()
@@ -213,7 +206,7 @@ mod tests {
                 ],
             ),
             (
-                "ifuncfpret",
+                "ppcapu",
                 vec![
                     (" TRUE ", Some("on")),
                     ("", Some("on")),
@@ -224,11 +217,11 @@ mod tests {
             (
                 "macho-arm64e",
                 vec![
-                    (" YES ", Some("1")),
-                    ("1", Some("1")),
-                    ("", None),
-                    ("off", None),
-                    ("invalid", None),
+                    (" YES ", Some("on")),
+                    ("1", Some("on")),
+                    ("", Some("on")),
+                    ("off", Some("off")),
+                    ("0", Some("off")),
                 ],
             ),
             (
@@ -271,6 +264,7 @@ mod tests {
             ("objcivars".into(), "off".into()),
             ("macho-arm64e".into(), "off".into()),
             ("dyldcrossrefs".into(), "off".into()),
+            ("sourcelang".into(), "auto".into()),
             ("unrelated".into(), "on".into()),
         ];
         let mut cmd = Command::new("unused");
@@ -283,9 +277,10 @@ mod tests {
             actual,
             BTreeMap::from([
                 ("KUNA_OBJCIVARS", Some("off")),
-                ("KUNA_MACHO_ARM64E", None),
+                ("KUNA_MACHO_ARM64E", Some("off")),
                 ("KUNA_MACHO_SLICE", Some("arm64")),
                 ("KUNA_DYLDCROSSREFS", Some("off")),
+                (kuna_sourcelang::SOURCELANG_ENV, None),
             ])
         );
         assert!(settings(&[], Some("  "), 1).is_empty());

@@ -81,11 +81,9 @@ fn bootstrap(on: bool) -> kuna_console::engine::ConsoleProgram {
     let bin = fixture().to_str().expect("UTF-8 fixture path").to_string();
     let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    if on {
-        prog.arch_mut()
-            .set_kuna_option("cortexmvectors", "on")
-            .expect("cortexmvectors flips on");
-    }
+    prog.arch_mut()
+        .set_kuna_option("cortexmvectors", if on { "on" } else { "off" })
+        .expect("cortexmvectors flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
 }
@@ -112,7 +110,7 @@ fn decompile(prog: kuna_console::engine::ConsoleProgram, func: &str) -> String {
 /// rejects the table on all three counts, so none of the four vector handlers is
 /// registered and the whole firmware is one undecodable function.
 #[test]
-fn default_misses_the_ccm_relocated_vector_table() {
+fn off_misses_the_ccm_relocated_vector_table() {
     let off = bootstrap(false);
     for h in [RESET_HANDLER, NMI_HANDLER, HARDFAULT_HANDLER, SYSTICK_HANDLER] {
         assert!(

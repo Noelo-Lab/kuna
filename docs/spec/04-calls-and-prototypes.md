@@ -1,7 +1,7 @@
 # 04 — Calls & prototypes
 
-`armfloatargs on` (off in the catalog, on in the `aggressive` preset with
-`armfloatreturn`) recovers scalar ARM32 VFP inputs only when
+`armfloatargs` (on by default, with `armfloatreturn`) recovers scalar ARM32 VFP
+inputs only when
 the container states the hard-float ABI and `armfloatreturn` is on. Alone it
 changes nothing: the inputs it recovers rely on that option's widened
 d-register model and on its rule that keeps an unused VFP parameter in its
@@ -5190,9 +5190,9 @@ detection reported as rustc-produced (`Compiler::Rustc`, recorded on the
 is inert on the datatest corpus **by construction**, not by luck. `always` drops
 the language test, which is what `tests/stages/kuna-rustabi.xml` needs — a
 `<bytechunk>` carries no `.comment` record to detect. The shipped default is
-`off`: the pair this keeps alive is rendered as a raw fixed-size container until
-a later pass gives it an enum type, so the option buys information at the cost of
-polish, and that trade is the operator's to make.
+`auto`: the pair this keeps alive is rendered as a raw fixed-size container until
+a later pass gives it an enum type, so on a Rust image the option buys
+information at the cost of polish; `off` restores the one-register rendering.
 
 What this deliberately does **not** do: it does not name anything `Result` or
 `Option`, does not synthesize a union, struct or enum type, and does not touch
@@ -8108,11 +8108,11 @@ The ARM default model (`ARM.cspec`) lists the VFP registers only as the 4-byte
 `vmov.f64 d0,#1.5; bx lr` prints `unsigned int fixed(void) { return 0; }`, and a
 `double` parameter read from `d0` is never a parameter at all.
 
-`armfloatreturn` (off in the catalog; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_armfloatreturn.rs`)
+`armfloatreturn` (on by default; `decompiler/crates/kuna-decomp/src/p4_calls/kuna_armfloatreturn.rs`)
 changes this only for an ARM ELF whose container states the VFP procedure-call
-standard. Both options are members of the `aggressive` preset, which `auto`
-selects below 500 KiB, so they are the default output for such a binary; the
-`reliable` and `fast` presets and the datatest corpus keep them off. Over 177
+standard. Both options are also members of the `aggressive` preset, so the preset
+owns them; every image without that ABI evidence, the datatest corpus included,
+prints byte-identically. Over 177
 probe binaries (six C sources built by gcc and clang for ARM and Thumb Linux
 and Cortex-M4F/M7, hard-float, softfp and soft-float, at -O0, -O2 and -Os), the
 soft-float and softfp images print byte-identically with the options on, and

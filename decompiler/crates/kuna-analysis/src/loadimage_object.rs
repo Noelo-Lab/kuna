@@ -1772,9 +1772,9 @@ fn language_id_for(
     // (PR-8 §3.7) Pointer-auth arm64e spec selection, GATED + opt-in: an arm64e
     // Mach-O (`cpusubtype` CPU_SUBTYPE_ARM64E) selects the Apple-Silicon SLEIGH
     // spec (`AARCH64:LE:64:AppleSilicon`) instead of the generic v8A. This is the
-    // ONLY thing arm64e changes (import naming / symbols are unaffected). Off by
-    // default (the `macho-arm64e` gate); when on and the binary is an arm64e
-    // Mach-O, the AppleSilicon id wins over the composed `v8A` id below.
+    // ONLY thing arm64e changes (import naming / symbols are unaffected). On by
+    // default (the `macho-arm64e` gate); unless it is off, on an arm64e Mach-O
+    // the AppleSilicon id wins over the composed `v8A` id below.
     if let Some(apple_id) = crate::loader::format::macho::apple_silicon_id(fmt, arch, bytes) {
         return Ok(apple_id.into_bytes());
     }

@@ -68,7 +68,7 @@ pub fn run(argv: &[String]) -> i32 {
 }
 
 /// Load and resolve the target as `disassemble` does, with the decode context
-/// the decompiler lifts under (`option mipsunaligned`'s pairs), then run
+/// the decompiler lifts under (the MIPS unaligned pairs), then run
 /// `walk` over it: in Thumb mode at the even address when the operand is an
 /// odd ARM32 pointer.
 fn with_target<R>(

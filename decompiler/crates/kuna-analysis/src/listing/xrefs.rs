@@ -773,11 +773,8 @@ fn descend(
     // to classify data references against it (they would all be wrong).
     let exec_set = range_union(exec.clone());
     let sections_are_runtime = !exec.is_empty() && seeds.iter().any(|&s| in_range(&exec_set, s));
-    let stub_sites: HashSet<u64> = if arch.stub_tail_call {
-        arch.loader_transfer_sites.iter().map(Address::get_offset).collect()
-    } else {
-        HashSet::new()
-    };
+    let stub_sites: HashSet<u64> =
+        arch.loader_transfer_sites.iter().map(Address::get_offset).collect();
     let mapped = if sections_are_runtime { range_union(mapped_ranges(file)) } else { Vec::new() };
 
     // Paint the decode-mode context (ARM `TMode` / MIPS `ISA_MODE`) before the

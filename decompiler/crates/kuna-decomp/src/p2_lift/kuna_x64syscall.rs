@@ -116,10 +116,10 @@ const SETUP_WALK_LIMIT: usize = 64;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum X64SyscallMode {
     /// Upstream: a zero-input, zero-output `CALLOTHER`.
-    #[default]
     Off,
     /// Read `RAX` and every argument register the block provably sets up; write
     /// `RAX`.
+    #[default]
     On,
     /// Read `RAX` and all six argument registers; write `RAX`.
     Abi,

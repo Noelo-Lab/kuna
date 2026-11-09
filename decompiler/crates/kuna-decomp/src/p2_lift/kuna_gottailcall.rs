@@ -40,29 +40,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::types::{int4, uint4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::dtype::type_metatype;
 use crate::funcdata::Funcdata;
 use crate::infra::architecture::Architecture;
-use crate::p0_knowledge::options::on_or_off;
-
-/// `option gottailcall on|off`.
-pub struct OptionGotTailCall;
-
-impl OptionGotTailCall {
-    /// The option name.
-    pub const NAME: &'static str = "gottailcall";
-
-    /// Resolve the flag and its confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Tail call through a one-destination jump turned {prop}")))
-    }
-}
 
 type Key = (int4, uintb);
 
@@ -145,7 +128,7 @@ fn returns_on_its_own(data: &Funcdata) -> bool {
 /// prototype is `tailcalljump`'s to read, and a variadic or model-less
 /// recovery states nothing a call could carry.
 pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
-    if !arch.got_tail_call || !arch.kuna_gottailcall.recording {
+    if !arch.kuna_gottailcall.recording {
         return;
     }
     let Some(own) = key(entry) else { return };

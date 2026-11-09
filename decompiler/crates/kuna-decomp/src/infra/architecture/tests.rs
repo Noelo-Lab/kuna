@@ -107,12 +107,7 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.memset_recover);
     assert!(arch.recover_array_stride);
     assert!(arch.recover_lowered_switch);
-    assert!(arch.lowered_switch_labels);
-    assert!(arch.lowered_switch_value_check);
-    assert!(arch.lowered_switch_exact);
-    assert!(arch.lowered_switch_every_head);
     assert!(arch.name_style_angr);
-    assert!(arch.model_stack_probe_loop);
     assert!(arch.present_lessequal);
     // (kuna) signedness ships `auto` -- a declaration is re-signed when every
     // signedness-sensitive reader of the value agrees.
@@ -131,18 +126,17 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.fold_call_returns);
     // (kuna) foldcallretphi default-on (docs/features/foldcallretphi/flip.md).
     assert!(arch.branch_flip);
-    // (kuna) DIV-14 default-on sweep: 4 more flags default-on (3 of them REMOVE
-    // CODE — stackguard/noreturn_extern/noreturn_propagate). Per-test opt-out
+    // (kuna) DIV-14 default-on sweep: 3 more flags default-on (2 of them REMOVE
+    // CODE — stackguard/noreturn_propagate). Per-test opt-out
     // (stackguard on the 2 Partial-splitting datatests) keeps the corpora at
     // parity; noreturn_propagate is Listing-gated so it is inert on every gate.
     assert!(arch.strip_stack_guard); // stackguard (REMOVES CODE)
-    assert!(arch.noreturn_extern_calls); // noreturn_extern (REMOVES CODE)
     assert!(arch.analysis_noreturn_propagate); // noreturn_propagate (REMOVES CODE, Listing-gated)
     assert!(arch.switch_shared_case); // switchsharedcase
+    assert!(arch.sparc_struct_return); // sparcstructret (SPARC-gated)
+    assert!(arch.v850_indirect_branch); // v850indirectbranch (V850-gated)
     // default-off (upstream byte-identical).
     assert!(!arch.return_single);
-    assert!(!arch.v850_indirect_branch);
-    assert!(!arch.sparc_struct_return);
     assert!(!arch.switch_modulo_bound);
     assert!(!arch.unrolled_guard);
     assert!(!arch.stack_alias_deadstore);
@@ -161,15 +155,13 @@ fn reset_defaults_is_idempotent_after_mutation() {
 }
 
 #[test]
-fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850_or_dwarf_lines() {
+fn apply_mode_aggressive_flips_offdefault_flags_but_not_dwarf_lines() {
     let mut arch = Architecture::new("test:LE:32", bare_sleigh());
     // Off-by-default under the shipped defaults.
     assert!(!arch.analysis_listing);
     assert!(!arch.analysis_aif);
     assert!(!arch.analysis_fast_funcdisc);
     assert!(!arch.switch_guard_bound);
-    assert!(!arch.sparc_struct_return);
-    assert!(!arch.v850_indirect_branch);
     assert!(!arch.analysis_dwarf_lines);
 
     arch.apply_mode("aggressive").expect("aggressive mode applies");
@@ -183,9 +175,8 @@ fn apply_mode_aggressive_flips_offdefault_flags_but_not_v850_or_dwarf_lines() {
     // preset re-enables it after an earlier `--option returndup off`.
     assert!(arch.duplicate_shared_returns);
     assert!(arch.sparc_struct_return); // SPARC-idiom-gated, safe to enable
-    // Exclusion 1: reclassifies register-indirect calls on non-V850 targets.
-    assert!(!arch.v850_indirect_branch);
-    // Exclusion 2: annotates every statement of a `-g` binary with a
+    assert!(arch.v850_indirect_branch); // V850-gated, listed so the preset owns it
+    // The exclusion: annotates every statement of a `-g` binary with a
     // `/* src.c:NNN */` comment — noise, not recovery.
     assert!(!arch.analysis_dwarf_lines);
 }
