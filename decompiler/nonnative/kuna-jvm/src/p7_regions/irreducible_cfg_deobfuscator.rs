@@ -143,7 +143,7 @@ impl IrreducibleCFGDeobfuscator {
         let splitcopy = Self::copy_statement(splitnode, None, &mut JHashMap::new());
         Self::init_copied_statement(splitcopy);
 
-        splitcopy.set_parent(statement);
+        splitcopy.set_parent(Some(statement));
         let splitcopy_id = splitcopy.with(|d| d.id);
         statement
             .get_stats()
@@ -248,7 +248,7 @@ impl IrreducibleCFGDeobfuscator {
 
         let stats: Vec<Statement> = statement.get_stats().borrow().iter().copied().collect();
         for st in stats {
-            st.set_parent(statement);
+            st.set_parent(Some(statement));
             Self::init_copied_statement(st);
         }
     }

@@ -539,8 +539,9 @@ impl ExceptionDeobfuscator {
                     .expect("NullPointerException")
                     .get_pool()
                     .get_primitive_constant(instr.operand(0))
-                    .get_string();
-                if class_name == "java/lang/MatchException" {
+                    .expect("NullPointerException")
+                    .get_string_opt();
+                if class_name.as_deref() == Some("java/lang/MatchException") {
                     return true;
                 }
             }

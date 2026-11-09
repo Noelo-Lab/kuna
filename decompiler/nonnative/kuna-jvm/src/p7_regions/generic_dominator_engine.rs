@@ -85,7 +85,12 @@ impl<N: IGraphNode + Copy + PartialEq + JavaHash + JavaEq> GenericDominatorEngin
     fn calc_idoms(&mut self) {
         self.order_nodes();
 
-        let lst_nodes: Vec<N> = self.col_ordered_idoms.get_lst_keys().to_vec();
+        let lst_nodes: Vec<N> = self
+            .col_ordered_idoms
+            .get_lst_keys()
+            .iter()
+            .map(|k| k.expect("NullPointerException"))
+            .collect();
 
         loop {
             let mut changed = false;

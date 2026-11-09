@@ -729,7 +729,7 @@ impl ControlFlowGraph {
             if suc.get_mark() != 1 {
                 let mut point = DataPoint::new();
                 point.set_local_variables(data.get_local_variables().clone());
-                point.get_stack_mut().push(VarType::new_value(
+                point.get_stack().push(VarType::new_value(
                     CodeType::Object,
                     0,
                     Some("java/lang/Object"),

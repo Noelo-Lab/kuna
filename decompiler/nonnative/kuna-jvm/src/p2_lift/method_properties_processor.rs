@@ -21,7 +21,7 @@ pub enum LambdaInstrProgress {
 }
 
 impl MethodPropertiesProcessor {
-    pub fn parse(mt: StructMethod, cl: StructClass, props: MethodProperties) {
+    pub fn parse(mt: StructMethod, cl: StructClass, props: &mut MethodProperties) {
         if !mt.contains_code() {
             return;
         }
@@ -30,7 +30,7 @@ impl MethodPropertiesProcessor {
         Self::find_assert_field(mt, cl, props);
     }
 
-    fn find_assert_field(mt: StructMethod, cl: StructClass, props: MethodProperties) {
+    fn find_assert_field(mt: StructMethod, cl: StructClass, props: &mut MethodProperties) {
         if mt.get_name() == "<clinit>" {
             if let Err(e) = try_catch(|| mt.expand_data(cl)) {
                 eprintln!("{}", e.message);
@@ -39,7 +39,7 @@ impl MethodPropertiesProcessor {
 
             let pool = cl.get_pool();
 
-            let name = cl.with(|d| d.qualified_name.clone());
+            let name = cl.qualified_name();
 
             let seq = mt.get_instruction_sequence().expect("NullPointerException");
             let size = seq.length();
@@ -47,8 +47,10 @@ impl MethodPropertiesProcessor {
                 let instr = seq.get_instr(i);
                 let opcode = |k: i32| seq.get_instr(k).with(|d| d.opcode);
                 if instr.with(|d| d.opcode) == OPC_INVOKEVIRTUAL && i > 0 && i + 5 < size {
-                    let link = pool.get_link_constant(instr.operand(0));
-                    if link.classname == "java/lang/Class"
+                    let link = pool
+                        .get_link_constant(instr.operand(0))
+                        .expect("NullPointerException");
+                    if link.classname.as_deref() == Some("java/lang/Class")
                         && link.elementname == "desiredAssertionStatus"
                     {
                         let last = seq.get_instr(i - 1);
@@ -63,11 +65,15 @@ impl MethodPropertiesProcessor {
                         {
                             let field = seq.get_instr(i + 5);
                             if field.with(|d| d.opcode) == OPC_PUTSTATIC {
-                                let putstatic = pool.get_link_constant(field.operand(0));
-                                if name == putstatic.classname && putstatic.descriptor == "Z" {
+                                let putstatic = pool
+                                    .get_link_constant(field.operand(0))
+                                    .expect("NullPointerException");
+                                if putstatic.classname.as_deref() == Some(name.as_str())
+                                    && putstatic.descriptor == "Z"
+                                {
                                     let assert_field =
                                         cl.get_field(&putstatic.elementname, &putstatic.descriptor);
-                                    props.with_mut(|d| d.assert_field = assert_field);
+                                    props.assert_field = assert_field;
                                     return;
                                 }
                             }
@@ -78,7 +84,11 @@ impl MethodPropertiesProcessor {
         }
     }
 
-    fn find_synthetic_reference_lambda(mt: StructMethod, cl: StructClass, props: MethodProperties) {
+    fn find_synthetic_reference_lambda(
+        mt: StructMethod,
+        cl: StructClass,
+        props: &mut MethodProperties,
+    ) {
         if mt.has_modifier(ACC_STATIC) && mt.has_modifier(ACC_SYNTHETIC) {
             if let Err(e) = try_catch(|| mt.expand_data(cl)) {
                 eprintln!("{}", e.message);
@@ -102,7 +112,7 @@ impl MethodPropertiesProcessor {
                 }
             }
 
-            props.with_mut(|d| d.is_synthetic_reference_lambda = true);
+            props.is_synthetic_reference_lambda = true;
         }
     }
 
