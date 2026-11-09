@@ -38,13 +38,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_210() {
-    assert_eq!(kuna_num_settables(), 210);
-    assert_eq!(SETTABLE_TABLE.len(), 210);
+fn settable_count_is_217() {
+    assert_eq!(kuna_num_settables(), 217);
+    assert_eq!(SETTABLE_TABLE.len(), 217);
 }
 
 #[test]
-fn tier_counts_are_42_core_116_transform_52_analysis() {
+fn tier_counts_are_42_core_123_transform_52_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_42_core_116_transform_52_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (42, 116, 52));
+    assert_eq!((core, transform, analysis), (42, 123, 52));
 }
 
 #[test]
@@ -474,7 +474,6 @@ fn option_values_live_value_present_for_73() {
                             | "gotoreduce"
                             | "ifelseflatten"
                             | "crossjumprevert"
-                            | "taildup"
                             | "dedupitetail"
                             | "iteregion"
                             | "iteexpr"
@@ -885,7 +884,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // tailcalljump's, noreturn_extern's, and noreturn_externmatch's S2 rows,
     // branchflip's, regionstructure's, regionlooprefine's, regionedgeorder's,
     // ifelseflatten's,
-    // crossjumprevert's, taildup's, dedupitetail's, returndup's, iteregion's and
+    // crossjumprevert's, dedupitetail's, returndup's, iteregion's and
     // iteboolean's S8 rows,
     // noreturn_error's S1 analysis row, eh_frame_full's S1 row,
     // cortexmvectors' S1 row, ptrentry's S1 row,
@@ -1037,7 +1036,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftcall`, beside that.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
-    assert_eq!(json.matches("},\n").count(), 209);
+    assert_eq!(json.matches("},\n").count(), 216);
 }
 
 #[test]

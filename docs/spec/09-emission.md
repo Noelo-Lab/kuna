@@ -440,7 +440,7 @@ must all hold, and each has a named counterexample:
 - that leaf is not an unstructured goto target — bash `rl_echo_signal_char`
   prints `label_115e79:` directly above its trailing `return;`, and eliding the
   statement would leave a label with nothing after it, which is invalid C;
-- exactly one structured leaf carries that RETURN op. `returndup` and `taildup`
+- exactly one structured leaf carries that RETURN op. `returndup` and `gotoreduce`
   clone a shared epilogue by ALIASING one op across several leaves, so
   suppressing by identity would also delete genuine mid-body early returns; a
   unique owner makes the elision positional rather than identity-based.
@@ -1288,14 +1288,14 @@ it) or inside a field (`((int *)&a0->field_0x10)[1]`, the upper half of an
 
 The rewrite only removes ops: the integer form's two casts become one or none.
 That can move one structuring decision. The tail
-duplication passes of chapter 08 (`gotoreduce`, `taildup`, `crossjumprevert`)
+duplication passes of chapter 08 (`gotoreduce`, `crossjumprevert`)
 run after this pass and bound the tail they copy by its op count, `CAST`s
 included, so a tail that was just over the bound can fit after the rewrite, and
 a `goto` to it becomes a duplicated `return` marked `// return-dupe`. The
 duplicate computes what the goto reached. It is rare: when this shipped, 4 of
 75,296 functions over 201 binaries changed their control flow, all of them this
-way and all through `taildup`, and with `option taildup off` both arms printed
-the same `goto`s.
+way and all through `gotoreduce`'s return-tail-with-a-call pass, and with
+`option gotoreduce return` both arms printed the same `goto`s.
 
 The JSON surface loses a little provenance: a subscript is a surround token and
 carries no op, as for every native subscript, so an instruction whose only
@@ -3236,7 +3236,7 @@ What differs, and why each is a language fact rather than a preference:
   `panic!("kuna: unstructured goto to <label>")`. Diverging so the document still
   type-checks in any position, loud so a reader cannot mistake it for a
   translation, and greppable because that count over a whole-binary render IS the
-  quality number for this back-end — exactly what `gotoreduce`, `taildup`,
+  quality number for this back-end — exactly what `gotoreduce`,
   `ifelseflatten` and `crossjumprevert` reduce. A genuine switch fall-through gets
   the same treatment: resolving it needs the next arm's body duplicated, which is
   a block-graph edit and not a printing decision.
