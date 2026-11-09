@@ -323,58 +323,50 @@ impl State {
     /// Locations where `self` (the recorded entry state) and `other` (a new
     /// incoming state) disagree and at least one side is a constant.
     pub fn diff_constants(&mut self, other: &mut State, arena: &mut ExprArena, image: &dyn PushanImage) -> Vec<Diff> {
+        // Every location is compared as its aligned 8-byte slot, so a
+        // constant in one slot is never hidden by a symbolic neighbour.
         let mut out = Vec::new();
-        // A location is its 8-byte slot, but the constant test looks at the
-        // bytes that actually differ (a byte register write inside a slot).
-        let mut reg_slots: Vec<i128> = Vec::new();
-        for (o, len) in self.regs.diff_bytes(&other.regs) {
-            let a = self.read_reg(arena, o as u64, len);
-            let b = other.read_reg(arena, o as u64, len);
-            if a != b && (arena.is_const(a).is_some() || arena.is_const(b).is_some()) {
-                let slot = o.div_euclid(8) * 8;
-                if !reg_slots.contains(&slot) {
-                    reg_slots.push(slot);
+        let slots_of = |runs: Vec<(i128, u8)>| {
+            let mut slots: Vec<i128> = Vec::new();
+            for (o, len) in runs {
+                let mut s = o.div_euclid(8) * 8;
+                while s < o + len as i128 {
+                    if !slots.contains(&s) {
+                        slots.push(s);
+                    }
+                    s += 8;
                 }
             }
-        }
-        for slot in reg_slots {
+            slots.sort_unstable();
+            slots
+        };
+        for slot in slots_of(self.regs.diff_bytes(&other.regs)) {
             let a = self.read_reg(arena, slot as u64, 8);
             let b = other.read_reg(arena, slot as u64, 8);
-            out.push(Diff {
-                loc: SymLoc { loc: Loc::Reg { off: slot as u64 }, size: 8 },
-                values: arena.is_const(a).zip(arena.is_const(b)),
-                entry_const: arena.is_const(a),
-                incoming_const: arena.is_const(b),
-            });
+            if a != b && (arena.is_const(a).is_some() || arena.is_const(b).is_some()) {
+                out.push(Diff {
+                    loc: SymLoc { loc: Loc::Reg { off: slot as u64 }, size: 8 },
+                    values: arena.is_const(a).zip(arena.is_const(b)),
+                    entry_const: arena.is_const(a),
+                    incoming_const: arena.is_const(b),
+                });
+            }
         }
         let bases: Vec<Option<VarId>> = self.mem.keys().chain(other.mem.keys()).copied().collect::<std::collections::BTreeSet<_>>().into_iter().collect();
         let empty = ByteStore::default();
         for base in bases {
             let runs = self.mem.get(&base).unwrap_or(&empty).diff_bytes(other.mem.get(&base).unwrap_or(&empty));
-            let mut slots: Vec<i128> = Vec::new();
-            for (o, len) in runs {
-                let a = self.read_mem(arena, image, base, o, len);
-                let b = other.read_mem(arena, image, base, o, len);
-                if a != b && (arena.is_const(a).is_some() || arena.is_const(b).is_some()) {
-                    let slot = o.div_euclid(8) * 8;
-                    if !slots.contains(&slot) {
-                        slots.push(slot);
-                    }
-                    let last = (o + len as i128 - 1).div_euclid(8) * 8;
-                    if last != slot && !slots.contains(&last) {
-                        slots.push(last);
-                    }
-                }
-            }
-            for slot in slots {
+            for slot in slots_of(runs) {
                 let a = self.read_mem(arena, image, base, slot, 8);
                 let b = other.read_mem(arena, image, base, slot, 8);
-                out.push(Diff {
-                    loc: SymLoc { loc: Loc::Mem { base, off: slot }, size: 8 },
-                    values: arena.is_const(a).zip(arena.is_const(b)),
-                    entry_const: arena.is_const(a),
-                    incoming_const: arena.is_const(b),
-                });
+                if a != b && (arena.is_const(a).is_some() || arena.is_const(b).is_some()) {
+                    out.push(Diff {
+                        loc: SymLoc { loc: Loc::Mem { base, off: slot }, size: 8 },
+                        values: arena.is_const(a).zip(arena.is_const(b)),
+                        entry_const: arena.is_const(a),
+                        incoming_const: arena.is_const(b),
+                    });
+                }
             }
         }
         out

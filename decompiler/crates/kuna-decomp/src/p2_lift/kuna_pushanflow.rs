@@ -322,6 +322,12 @@ impl<'a> Explorer<'a> {
             let vpc_reg = node.entry_ctx.vpc_reg;
             if let Some(tr) = &self.config.trace {
                 use std::io::Write;
+                let base = self.sp0;
+                for off in (-0x40i128..0).step_by(8) {
+                    let a = entry.read_mem(&mut self.arena, self.target, base, off, 8);
+                    let b = state.read_mem(&mut self.arena, self.target, base, off, 8);
+                    let _ = writeln!(tr.borrow_mut(), "        rereach node {id} slot {off:#x}: entry {} | incoming {}", self.arena.fmt(a).chars().take(200).collect::<String>(), self.arena.fmt(b).chars().take(200).collect::<String>());
+                }
                 for d in &diffs {
                     let (a, b) = match d.loc.loc {
                         Loc::Reg { off } => (entry.read_reg(&mut self.arena, off, d.loc.size), state.read_reg(&mut self.arena, off, d.loc.size)),
