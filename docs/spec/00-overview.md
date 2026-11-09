@@ -3004,7 +3004,7 @@ in `decompiler/crates/kuna-cli/src/loadtime.rs (binding, settings)`:
 `apply_to_command` configures the console subprocess, and `apply_to_process`
 temporarily configures the in-process loader. Repeated options keep their final
 value. An omitted option leaves the inherited environment alone; an explicit
-disabled `macho-arm64e` removes its variable. `LoadtimeEnv` restores inherited
+`macho-arm64e off` exports the off-token the loader reads. `LoadtimeEnv` restores inherited
 values, including non-Unicode values, when the load returns or unwinds. The
 conversions preserve each loader's accepted tokens and fallback behavior;
 runtime option validation remains separate.
@@ -3034,7 +3034,7 @@ runtime `on_or_off` parser.
 | `KUNA_REXTHUNK` | `rexthunk` | x86-64 PE import-thunk decode drops the `FF 25` one byte into a REX-prefixed tail jump, `decompiler/crates/kuna-analysis/src/loader/kuna_rexthunk.rs (is_rex_tail)` |
 | `KUNA_PEORDINAL` | `peordinal` | PE import-by-ordinal naming from built-in `OLEAUT32`/`WS2_32`/`WSOCK32`/`MSVBVM60` export tables, `decompiler/crates/kuna-analysis/src/loader/kuna_peordinal.rs (ordinal_name)` |
 | `KUNA_MACHO_SLICE` | `--slice` | Mach-O fat-binary slice peel, `decompiler/crates/kuna-console/src/engine.rs (select_macho_slice)` |
-| `KUNA_MACHO_ARM64E` | `macho-arm64e` | arm64e spec selection, `decompiler/crates/kuna-analysis/src/loader/format/macho.rs (MACHO_ARM64E_ENV)` |
+| `KUNA_MACHO_ARM64E` | `macho-arm64e` | arm64e spec selection (on by default), `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_macho_arm64e.rs (MACHO_ARM64E_ENV)` |
 | `KUNA_ARM_ISA` | `--isa` | explicit ARM/Thumb `TMode` selection over the mapped code ranges, `decompiler/crates/kuna-console/src/engine.rs (ARM_ISA_ENV)` |
 
 The matching `option` is still applied afterwards so the run's configuration
@@ -3483,7 +3483,6 @@ and an agent writes:
   catalog or its count/tier gates). Three concrete presets ship:
   **`reliable`** (the shipped defaults, an empty-override alias),
   **`aggressive`** (every off-by-default recovery/analysis pass on, except
-  `v850indirectbranch`, which would mis-decode register-indirect calls off-V850,
   `dwarf_lines`, which annotates rather than recovers and would bury a `-g`
   binary's body in `/* src.c:NNN */` comments; the exclusion list is enforced by an invariant test in
   `decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs`, so a default-off
