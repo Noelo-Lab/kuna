@@ -5,6 +5,7 @@
 //! Getters that return a key/value *view* (`getUsedVarVersions`,
 //! `getVarNames`, `clashingNames`) return a snapshot in iteration order.
 
+use crate::kuna_trace;
 use crate::method_descriptor::MethodDescriptor;
 use crate::pair::Pair;
 use crate::root_statement::RootStatement;
@@ -129,7 +130,10 @@ impl VarProcessor {
                 Some(name) => map_names.get_cloned(name),
                 None => null_counter,
             };
-            let counter = previous.map_or(0, |counter| counter + 1);
+            let counter = match previous {
+                None => 0,
+                Some(counter) => counter + 1,
+            };
             match &name {
                 Some(name) => {
                     map_names.put(name.clone(), counter);
@@ -158,6 +162,10 @@ impl VarProcessor {
                 self.with_mut(|d| d.clashing_names.put(key, value));
             }
         }
+
+        if kuna_trace::enabled() {
+            kuna_trace::step_vars(method, "RerunClashing", root, self);
+        }
     }
 
     pub fn get_var_original_index(self, index: i32) -> Option<i32> {
@@ -172,16 +180,8 @@ impl VarProcessor {
 
     pub fn refresh_var_names(self, vc: VarNamesCollector) {
         let temp_var_names = self.with(|d| d.map_var_names.clone());
-        let mut null_used = false;
         for (key, value) in temp_var_names.entry_vec() {
-            let name = match value {
-                Some(value) => Some(vc.get_free_name(&value)),
-                None if !null_used => {
-                    null_used = true;
-                    None
-                }
-                None => Some(vc.get_free_name("nullx")),
-            };
+            let name = vc.get_free_name_opt(value.as_deref());
             self.with_mut(|d| d.map_var_names.put(key, name));
         }
     }
@@ -231,11 +231,11 @@ impl VarProcessor {
     }
 
     pub fn set_var_name(self, pair: VarVersionPair, name: impl Into<String>) {
-        self.set_var_name_nullable(pair, Some(name.into()));
+        self.set_var_name_opt(pair, Some(name.into()));
     }
 
-    /// Java: setVarName(pair, null) stores the `null`.
-    pub fn set_var_name_nullable(self, pair: VarVersionPair, name: Option<String>) {
+    /// Java `setVarName` with a possibly-null name (kept as a key with no name).
+    pub fn set_var_name_opt(self, pair: VarVersionPair, name: Option<String>) {
         self.with_mut(|d| d.map_var_names.put(pair, name));
     }
 
@@ -267,12 +267,9 @@ impl VarProcessor {
         self.with(|d| d.map_var_names.key_vec())
     }
 
-    /// `mapVarNames.values()`, in iteration order, without `null`s.
+    /// `mapVarNames.values()` without the null names, in iteration order.
     pub fn get_var_names(self) -> Vec<String> {
-        self.with(|d| d.map_var_names.value_vec())
-            .into_iter()
-            .flatten()
-            .collect()
+        self.with(|d| d.map_var_names.value_vec().into_iter().flatten().collect())
     }
 
     pub fn get_var_final(self, pair: VarVersionPair) -> FinalType {

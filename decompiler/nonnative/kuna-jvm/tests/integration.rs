@@ -142,3 +142,5 @@ mod kuna_deadline;
 mod kuna_driver;
 #[path = "kt1_metadata.rs"]
 mod kt1_metadata;
+#[path = "trace_sweep.rs"]
+mod trace_sweep;

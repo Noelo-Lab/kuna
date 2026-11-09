@@ -41,7 +41,7 @@ use crate::pattern_exprent::{PatternData, PatternExprent};
 use crate::pooled_constant::PooledConstant;
 use crate::primitive_constant::ConstValue as PrimitiveValue;
 use crate::root_statement::RootStatement;
-use crate::rt::BitSet;
+use crate::rt::{BitSet, JavaStr};
 use crate::stat_edge::StatEdge;
 use crate::statement::{LastBasicType, Statement, StatementType};
 use crate::struct_method::StructMethod;
@@ -51,6 +51,7 @@ use crate::switch_statement::SwitchStatement;
 use crate::synchronized_statement::SynchronizedStatement;
 use crate::type_family::TypeFamily;
 use crate::var_exprent::VarExprent;
+use crate::var_processor::VarProcessor;
 use crate::var_type::VarType;
 use crate::var_version_pair::VarVersionPair;
 use crate::yield_exprent::YieldExprent;
@@ -163,6 +164,15 @@ pub fn finish() -> Option<TraceSummary> {
 
 /// Records the tree after pass `name` of `mt`; a no-op unless [`enabled`].
 pub fn step(mt: StructMethod, name: &str, root: RootStatement) {
+    step_with(mt, name, root, None);
+}
+
+/// [`step`] with the method's variable table after the tree (`VarProcessor.rerunClashing`).
+pub fn step_vars(mt: StructMethod, name: &str, root: RootStatement, vp: VarProcessor) {
+    step_with(mt, name, root, Some(vp));
+}
+
+fn step_with(mt: StructMethod, name: &str, root: RootStatement, vp: Option<VarProcessor>) {
     if !enabled() {
         return;
     }
@@ -180,10 +190,18 @@ pub fn step(mt: StructMethod, name: &str, root: RootStatement) {
     if !wanted {
         return;
     }
-    let dump = match crate::rt::try_catch(|| dump(root)) {
+    let mut dump = match crate::rt::try_catch(|| dump(root)) {
         Ok(dump) => dump,
         Err(caught) => format!("! dump failed: {}\n", caught.message),
     };
+    if let Some(vp) = vp {
+        match crate::rt::try_catch(|| vars(vp)) {
+            Ok(vars) => dump.push_str(&vars),
+            Err(caught) => {
+                let _ = writeln!(dump, "! vars failed: {}", caught.message);
+            }
+        }
+    }
     TRACER.with(|t| {
         let mut guard = t.borrow_mut();
         let Some(tracer) = guard.as_mut() else {
@@ -230,6 +248,81 @@ pub fn dump(root: RootStatement) -> String {
     let mut d = Dumper::default();
     d.run(root);
     d.out
+}
+
+/// The variable table of `vp`: every pair named, a parameter, a this-var, external or inherited,
+/// sorted by (var, version).
+pub fn vars(vp: VarProcessor) -> String {
+    let params = vp.get_params();
+    let this_vars = vp.get_this_vars().borrow().clone();
+    let external = vp.get_external_vars().borrow().clone();
+    let inherited = vp.get_inherited_names().borrow().clone();
+    let mut pairs: Vec<VarVersionPair> = vp.get_used_var_versions();
+    pairs.extend(params.iter().copied());
+    pairs.extend(this_vars.key_vec());
+    pairs.extend(external.to_vec());
+    pairs.extend(inherited.key_vec());
+    pairs.sort_by_key(|p| (p.var, p.version));
+    pairs.dedup();
+    let mut s = String::from("vars");
+    if vp.nested_processed() {
+        s.push_str(" nested");
+    }
+    s.push('\n');
+    for p in pairs {
+        let name = vp.get_var_name(p).map_or("~".to_string(), |n| jstr(&n));
+        let _ = write!(
+            s,
+            "  v {}.{} {name} t={} {}",
+            p.var,
+            p.version,
+            vt(vp.get_var_type(p).as_ref()),
+            java_name(&format!("{:?}", vp.get_var_final(p)))
+        );
+        if let Some(clash) = vp.get_clashing_name(p) {
+            let _ = write!(s, " clash={}", jstr(&clash));
+        }
+        if params.contains(&p) {
+            s.push_str(" param");
+        }
+        if let Some(this_var) = this_vars.get(&p) {
+            let _ = write!(s, " this={}", jstr(this_var));
+        }
+        if external.contains(&p) {
+            s.push_str(" ext");
+        }
+        if let Some(inh) = inherited.get(&p) {
+            let _ = write!(s, " inh={}", jstr(inh));
+        }
+        if let Some(src) = vp.get_var_source(p) {
+            let _ = write!(s, " src={}:{}.{}", jstr(&src.a), src.b.var, src.b.version);
+        }
+        if let Some(lvt) = vp.get_var_lvt(p) {
+            let _ = write!(s, " lvt={}:{}", jstr(&lvt.name), lvt.descriptor);
+            if let Some(sig) = &lvt.signature {
+                let _ = write!(s, ":{sig}");
+            }
+            let _ = write!(
+                s,
+                "@{}-{}",
+                lvt.start_pc,
+                lvt.start_pc.wrapping_add(lvt.length)
+            );
+        }
+        s.push('\n');
+    }
+    let mut clashing: Vec<String> = vp.clashing_names().iter().map(|c| jstr(c)).collect();
+    if !clashing.is_empty() {
+        clashing.sort();
+        let _ = writeln!(s, "  clashing {}", clashing.join(" "));
+    }
+    let mut sem = vp.get_synthetic_semaphores().borrow().to_vec();
+    if !sem.is_empty() {
+        sem.sort();
+        let sem: Vec<String> = sem.iter().map(i32::to_string).collect();
+        let _ = writeln!(s, "  semaphores [{}]", sem.join(", "));
+    }
+    s
 }
 
 const ALL: i32 = Statement::STATEDGE_ALL;
@@ -1463,7 +1556,7 @@ fn leading_number(s: &str) -> i64 {
 
 /// `String.compareTo`: UTF-16 code unit order.
 fn utf16_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    a.encode_utf16().cmp(b.encode_utf16())
+    a.utf16().cmp(&b.utf16())
 }
 
 /// A Java enum constant name from a Rust variant's `Debug` text: `BoolNot` -> `BOOL_NOT`.
@@ -1521,7 +1614,7 @@ fn const_value(v: Option<&ConstValue>) -> String {
 
 fn jstr(v: &str) -> String {
     let mut s = String::from("\"");
-    for unit in v.encode_utf16() {
+    for unit in v.utf16() {
         match unit {
             0x22 | 0x5c => {
                 s.push('\\');

@@ -141,7 +141,7 @@ x Exit id=36
 ### exprents
 s0 Root id=3
  s1 Block id=1
-   exprents 105
+   exprents 106
    - (annotation a/Ann x=(const X 1) y=(const Ljava/lang/String; "v"))
    - (array@2 I (var 1.0 t=I) (const X 0))
    - (assert ~ (const Ljava/lang/String; "msg"))
@@ -152,6 +152,7 @@ s0 Root id=3
    - (const D d:8000000000000000)
    - (const C 65)
    - (const Ljava/lang/String; "a\"b\\c\u000a\u00e9\ud83d\ude00~" condy)
+   - (const Ljava/lang/String; "x\ud800y\udc00\udc00\ud800")
    - (const null null)
    - (exit@6 RETURN rt=I (var 3.0 t=I))
    - (exit RETURN rt=V ~)
@@ -248,3 +249,12 @@ s0 Root id=3
    - (func ADD (&0 const X 42) ^0)
    - ^0
 x Exit id=2
+### vars
+vars nested
+  v 0.0 ~ t=~ FINAL this="a.B"
+  v 1.0 "a" t=~ FINAL param lvt="a":I@4-14
+  v 3.2 "\u00e9\"q" t=~ FINAL clash="q2" src="lambda$0":2.0
+  v 5.1 ~ t=~ FINAL ext
+  v 7.0 "inh" t=~ FINAL inh="inh"
+  clashing "b" "q2"
+  semaphores [2, 4]

@@ -9,11 +9,64 @@ compared method by method; the first step whose dump differs names the pass to l
 
 | Piece | Where |
 |---|---|
-| Java tracer | `src/org/.../main/rels/DecompileRecord.java` (shadow of the released class: `add` also calls the tracer), `src/kuna/vftrace/{Dumper,Trace,TraceDriver,HashMode}.java`, `gen_shadow.py`, `build.sh`, `run.sh` |
-| Rust tracer | `src/infra/kuna_trace.rs`, called from `DecompileRecord::add` (`src/infra/decompile_record.rs`); `examples/jvmtrace.rs` |
-| Comparer | `compare.py`; `trace-diff.sh` runs both engines and the comparer |
-| Corpus runner | `corpus_trace.py` (Java side over `~/kwt/jvm/corpus/manifest.json`) |
-| Tests | `tests/trace_vectors.rs` + `tests/data/trace/` (both dumpers on the same hand-built trees), `tests/trace_file.rs` (trace file byte-identical to the Java one) |
+| Java tracer | `src/org/.../main/rels/DecompileRecord.java` and `src/org/.../modules/decompiler/vars/VarProcessor.java` (shadows of the released classes: `add` / `rerunClashing` also call the tracer), `src/kuna/vftrace/{Dumper,Trace,TraceDriver,HashMode}.java`, `gen_shadow.py`, `build.sh`, `run.sh` |
+| Rust tracer | `src/infra/kuna_trace.rs`, called from `DecompileRecord::add` (`src/infra/decompile_record.rs`) and `VarProcessor::rerun_clashing`; `examples/jvmtrace.rs` |
+| Comparer | `compare.py` (two traces); `sweep_compare.py` (two `corpus_trace.py` directories); `trace-diff.sh` runs both engines and the comparer |
+| Corpus runner | `corpus_trace.py --engine vineflower\|kuna` over `~/kwt/jvm/corpus/manifest.json` or a class directory; `sweep.sh` = both engines + `sweep_compare.py` |
+| Tests | `tests/trace_vectors.rs` + `tests/data/trace/` (both dumpers on the same hand-built trees and variable table; `gen.sh` regenerates), `tests/trace_file.rs` (trace file byte-identical to the Java one), `tests/trace_sweep.rs` (final-text regressions for bugs the sweep found) |
+
+## The sweep (one command)
+
+```sh
+tools/vftrace/sweep.sh [--corpus DIR] [--jobs N] [--out DIR] [--kuna BIN] [--strict-text]
+tools/vftrace/sweep.sh --classes DIR [--set NAME] [--opt k=v]... [--lib JAR]... [--sample N] ...
+```
+
+Traces every runnable case of the oracle corpus (or, with `--classes`, every top-level class of a
+directory together with its nested classes, run with the `--opt`/`--lib` given and no fixture) with
+both engines into `OUT/vineflower/` and `OUT/kuna/`, compares every method of every case, and prints
+the summary and the first-divergence histogram (details: `OUT/compare.txt`, `OUT/compare.json`).
+Exit status 1 when any method diverges or was traced by one engine only; final-text differences
+(vs the oracle for corpus cases, between the engines for `--classes`) are listed and fail only with
+`--strict-text` (text parity is the corpus runner's gate). A difference confined to the stack-trace
+lines of a `// $VF: Couldn't be decompiled` comment is reported as `TEXT-EXC` and never fails: kuna
+has no Java stack trace to print. The Java tracer is rebuilt when its sources are newer than
+`$BUILD/built.stamp`; the kuna binary is built (`--release`) unless `--kuna` is given.
+Vineflower runs on **JDK 21** here (`VF_JAVA`): it escapes string characters by its JVM's
+`Character` tables, and kuna's `rt::jchar` is generated from JDK 21's (Unicode 15). On JDK 17
+(the corpus oracle JVM, Unicode 13) characters added in Unicode 14/15 print raw in kuna and
+`\uXXXX` in Vineflower (seen in Guava's `CharMatcher`, `PublicSuffixPatterns`); traces are not affected.
+`--opt` on a corpus sweep overlays every case's options (the corpus under another option map).
+
+Stage-3 sweep results (after the fixes; "OK" = every step identical, variable tables included):
+
+| Input | Cases | Methods | Steps | Result |
+|---|---|---|---|---|
+| corpus, fixture options | 598 | 3,479 | 72,000 | all OK; text: the 4 known corpus failures |
+| corpus x 13 option overlays (`decompile-enums=0`, `lambda-to-anonymous-class=1`, `decompile-generics=0`, `decompile-finally=0`, `use-method-parameters=0`, `rename-members=1`, ...) | 598 each | 3,464-3,479 | 69-72 k each | all OK |
+| JDK 21 `java.base` (`include-runtime` = JDK 21) | 3,481 | 62,791 | 1.28 M | all OK (4 methods need Vineflower `VF_XMX` of 6-24 GB) |
+| Guava 33.8 (`--lib` its jar) | 594 | 15,557 | 284 k | all OK, text identical |
+| spring-boot / spring-framework (500 sampled) / elasticsearch (500 sampled) | 493 / 500 / 500 | 5,192 / 5,115 / 9,083 | 101 / 102 / 178 k | all OK |
+
+The traces are hash-stable: the corpus traced by Vineflower in `stock` and `random:1` mode equals the
+`index` trace. Commands (scratch paths are examples):
+
+```sh
+J=~/kwt/jvm/jdks/jdk21
+$J/bin/jimage extract --include 'regex:/java.base/.*\.class' --dir jdk $J/lib/modules
+VF_XMX=1g tools/vftrace/sweep.sh --classes jdk/java.base --set jdk21 --opt include-runtime=$J --jobs 8 --out OUT1
+unzip -q ~/kwt/jvm/dataset/guava/classes.jar -d guava
+tools/vftrace/sweep.sh --classes guava --set guava --opt include-runtime=$J \
+    --lib ~/kwt/jvm/dataset/guava/classes.jar --out OUT2
+tools/vftrace/sweep.sh --opt decompile-enums=0 --opt remove-synthetic=0 --out OUT3    # an overlay
+```
+
+A Vineflower `OutOfMemoryError` (its trace "ends early in A") is a heap-size artifact: re-run the case
+with a larger `VF_XMX` (`--only`). Ghidra (500 sampled groups, 6,587 methods) agrees everywhere except
+the ANTLR-generated `SleighParser`, whose `tokendef()` exceeds both engines' budgets: Vineflower
+OOMs at 2 GB and is still in its finally loop after 28 min at 12 GB (9.3 GB RSS); kuna passes the
+600 s case timeout (untraced: 17.6 GB RSS after 14 min). The 9 steps both reach agree; the class's
+other methods come after it and are never traced by kuna.
 
 ## Running
 
@@ -30,9 +83,14 @@ KUNA_JVM_TRACE=kuna.vft <anything that decompiles>      # env switch, read once 
 tools/vftrace/compare.py vf.vft kuna.vft                 # per method: OK or first divergence + diff
 tools/vftrace/trace-diff.sh Foo.class --fixture --opt ternary-in-if=1   # all of the above
 
-# a whole corpus case set, Java side only (traces stay in --out)
-python3 -I tools/vftrace/corpus_trace.py --out ~/kwt/jvm/scratch/s2-trace/corpus --hash index
+# a whole corpus case set, one engine per run (traces stay in --out), then compare the two directories
+python3 -I tools/vftrace/corpus_trace.py --out VF --hash index
+python3 -I tools/vftrace/corpus_trace.py --out KUNA --engine kuna --kuna target/release/examples/jvmtrace
+python3 -I tools/vftrace/sweep_compare.py VF KUNA --json cmp.json     # or simply: tools/vftrace/sweep.sh
 ```
+
+`jvmtrace` runs on one 512 MiB-stack engine thread (as the corpus runner does) and, like VfDriver's
+default `--save legacy`, writes each class to `-o` by file name (`--save folder` keeps the package path).
 
 `run.sh --hash` picks Vineflower's identity hashes: `stock` (released classes), `index` (default of
 `trace-diff.sh`: shadow classes hash by creation index, the way kuna's arenas do) or `random:SEED`.
@@ -63,6 +121,25 @@ tracing thread writes `<file>.1`, ...).
 Steps of a method are numbered across all of its records (the main pipeline, then the late
 record), so a method's block can appear twice in the file (`=M` repeats whenever the method changes);
 the comparer merges by key. Names carry Vineflower's own `Loop_N_` / `Merge_N_` prefixes.
+
+`RerunClashing` steps come from the end of `VarProcessor.rerunClashing`, which both engines call twice
+per decompiled method: from `setDebugVarNames` right after `codeToJava` (`RerunClashing`), and as the
+last per-method act of `ClassWriter.invokeProcessors` (`RerunClashing #2`), i.e. after
+`NestedClassProcessor`, `NestedMemberAccess`, `InitializerProcessor`, `EnumProcessor`, the record
+fix-ups and the late passes, on the tree that is then rendered. Their dump is the tree followed by the
+method's **variable table**:
+
+```
+vars nested                         ("nested": VarProcessor.nestedProcessed)
+  v 1.0 "a" t=I FINAL clash="b" param this="a/B" ext inh="x" src="lambda$0":2.0 lvt="a":I:sig@4-14
+  clashing "b" "q2"                 clashingNames() values, sorted (absent when empty)
+  semaphores [2, 4]                 syntheticSemaphores, sorted (absent when empty)
+```
+
+One `v` line per pair that is a key of `mapVarNames` (`~` = a null name), a parameter, a this-var,
+external or inherited, sorted by (var, version): name, `getVarType` (`~` = null), `getVarFinal`, then
+only what is set: clashing name, `param`, this-var class, `ext`, inherited name, var source, LVT
+(name, descriptor, signature, start-end).
 
 A dump lists the statements in pre-order over each statement's `stats` list (indent = depth), then
 the root's dummy exit `x`, then orphans:
@@ -99,7 +176,9 @@ o57 orphan Seq          a statement referenced from the tree but not in it
   const exit field func if invoke monitor new pattern switch switchhead var yield; enum values are the
   Java constant names (`BOOL_NOT`, `DYNAMIC`, ...). Variables print `index.version`, the raw `t=`
   type, the processor's `pt=` lower bound (`noproc` without a processor) and every flag; constants
-  print int / `nL` / `f:bits` / `d:bits` (raw IEEE bits) / Java-escaped UTF-16 strings / `null`. An
+  print int / `nL` / `f:bits` / `d:bits` (raw IEEE bits) / Java-escaped UTF-16 strings / `null`
+  (strings are printed, and sorted, by their Java UTF-16 units: kuna keeps an unpaired surrogate as
+  the private-use scalar `rt::jstring::SURROGATE_BASE + unit`, which `JavaStr::utf16` maps back). An
   exprent object reachable twice is printed once as `(&k ...)`, later as `^k`.
 * **Types**: descriptor text (`I`, `[[La/B;`, `TT;` for a GENVAR), other code types by name
   (`INT:Q`); a `!f=`/`!s=` suffix when family or stack size differ from what the type implies;
@@ -154,9 +233,15 @@ one thread-local flag read per `DecompileRecord::add`.
 
 ## Blind spots
 
-* Only state reachable from the root statement is dumped: no CFG (`ControlFlowGraph`) between steps,
-  no `DirectGraph`/SSA/`VarVersionsGraph`, no `VarProcessor` state except each variable's lower-bound
-  type (`pt=`), no variable names (assigned after `codeToJava`), no class-level state.
+* Only state reachable from the root statement is dumped, plus the variable table of the
+  `RerunClashing` steps: no CFG (`ControlFlowGraph`) between steps, no `DirectGraph`/SSA/
+  `VarVersionsGraph`, no `VarProcessor` state between `codeToJava`'s passes except each variable's
+  lower-bound type (`pt=`), no class-level state (field initializers moved out of `<clinit>`/`<init>`
+  show up only as their absence from the `RerunClashing #2` tree; hidden members, imports, the
+  `ClassWrapper` field-initializer lists and `MethodWrapper.setOuterVarNames` are not dumped).
+* Rendering (`toJava`, `ClassWriter`) is not traced: what it computes on the fly (cast insertion,
+  `isVarArgCall`, import shortening, parameter-name choice) is checked only by the final-text
+  comparison. `sweep_compare.py` reports that comparison next to the traces.
 * Not printed: exprent ids (`EXPRESSION_COUNTER`), `InvocationExprent.descriptor` (only the string
   descriptor), `ExitExprent.methodDescriptor`, `FieldExprent.descriptor` beyond its string,
   `AnnotationExprent.didWriteAlready`, `Statement.endpoints` (a cache), `RootStatement.mt`, the
@@ -165,7 +250,9 @@ one thread-local flag read per `DecompileRecord::add`.
 * `--hash index` emulates kuna's arena index by Java constructor-entry order; where the port
   allocates an object after the children its Java constructor builds, the two orders differ
   (harmless for the statement trace given the measurements above).
-* Traces are per JVM run; the Java side runs with `thread-count=1`.
+* Traces are per JVM run; the Java side runs with `thread-count=1`. `run.sh` builds the Java tracer
+  only when `$BUILD` has none; after editing `src/` run `build.sh` (or let `sweep.sh` do it).
 * The Rust dumper is checked against the Java one on hand-built trees covering every statement
-  type, exprent kind, `FunctionType` and the type printer (`tests/trace_vectors.rs`); real-method
-  traces could not be compared yet because the port's pipeline stops in unported pass bodies.
+  type, exprent kind, `FunctionType`, the type printer, unpaired surrogates and the variable table
+  (`tests/trace_vectors.rs`); real-method traces agree on the whole corpus, `java.base` and Guava
+  (`sweep.sh`).

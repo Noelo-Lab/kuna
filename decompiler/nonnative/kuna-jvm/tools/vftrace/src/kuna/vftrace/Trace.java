@@ -1,6 +1,7 @@
 package kuna.vftrace;
 
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
+import org.jetbrains.java.decompiler.modules.decompiler.vars.VarProcessor;
 import org.jetbrains.java.decompiler.struct.StructMethod;
 
 import java.io.BufferedWriter;
@@ -50,6 +51,15 @@ public final class Trace {
   }
 
   public static void step(StructMethod mt, String name, RootStatement root) {
+    step(mt, name, root, null);
+  }
+
+  /** A step whose dump is followed by the method's variable table (VarProcessor.rerunClashing). */
+  public static void stepVars(StructMethod mt, String name, RootStatement root, VarProcessor vp) {
+    step(mt, name, root, vp);
+  }
+
+  private static void step(StructMethod mt, String name, RootStatement root, VarProcessor vp) {
     if (!enabled) {
       return;
     }
@@ -63,6 +73,13 @@ public final class Trace {
       dump = Dumper.dump(root);
     } catch (RuntimeException e) {
       dump = "! dump failed: " + e + "\n";
+    }
+    if (vp != null) {
+      try {
+        dump += Dumper.vars(vp);
+      } catch (RuntimeException e) {
+        dump += "! vars failed: " + e + "\n";
+      }
     }
     long t1 = System.nanoTime();
     synchronized (Trace.class) {

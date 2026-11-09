@@ -161,6 +161,64 @@ public final class Dumper {
     return d.out.toString();
   }
 
+  /**
+   * The variable table of a method's VarProcessor (README "Variable table"): every pair named, a
+   * parameter, a this-var, external or inherited, sorted by (var, version).
+   */
+  public static String vars(VarProcessor vp) {
+    java.util.TreeSet<VarVersionPair> pairs = new java.util.TreeSet<>(
+      java.util.Comparator.<VarVersionPair>comparingInt(p -> p.var).thenComparingInt(p -> p.version));
+    pairs.addAll(vp.getUsedVarVersions());
+    pairs.addAll(vp.getParams());
+    pairs.addAll(vp.getThisVars().keySet());
+    pairs.addAll(vp.getExternalVars());
+    pairs.addAll(vp.getInheritedNames().keySet());
+    StringBuilder s = new StringBuilder("vars");
+    if (vp.nestedProcessed) s.append(" nested");
+    s.append('\n');
+    for (VarVersionPair p : pairs) {
+      String name = vp.getVarName(p);
+      s.append("  v ").append(p.var).append('.').append(p.version).append(' ')
+        .append(name == null ? "~" : str(name)).append(" t=").append(vt(vp.getVarType(p)))
+        .append(' ').append(vp.getVarFinal(p).name());
+      String clash = vp.getClashingName(p);
+      if (clash != null) s.append(" clash=").append(str(clash));
+      if (vp.getParams().contains(p)) s.append(" param");
+      String thisVar = vp.getThisVars().get(p);
+      if (vp.getThisVars().containsKey(p)) s.append(" this=").append(thisVar == null ? "~" : str(thisVar));
+      if (vp.getExternalVars().contains(p)) s.append(" ext");
+      if (vp.getInheritedNames().containsKey(p)) {
+        String inh = vp.getInheritedNames().get(p);
+        s.append(" inh=").append(inh == null ? "~" : str(inh));
+      }
+      org.jetbrains.java.decompiler.util.Pair<String, VarVersionPair> src = vp.getVarSource(p);
+      if (src != null) {
+        s.append(" src=").append(src.a == null ? "~" : str(src.a)).append(':')
+          .append(src.b == null ? "~" : src.b.var + "." + src.b.version);
+      }
+      LocalVariable lvt = vp.getVarLVT(p);
+      if (lvt != null) {
+        s.append(" lvt=").append(lvt.getName() == null ? "~" : str(lvt.getName())).append(':')
+          .append(lvt.getDescriptor());
+        if (lvt.getSignature() != null) s.append(':').append(lvt.getSignature());
+        s.append('@').append(lvt.getStart()).append('-').append(lvt.getEnd());
+      }
+      s.append('\n');
+    }
+    List<String> clashing = new ArrayList<>();
+    for (String c : vp.clashingNames()) clashing.add(c == null ? "~" : str(c));
+    if (!clashing.isEmpty()) {
+      java.util.Collections.sort(clashing);
+      s.append("  clashing ").append(String.join(" ", clashing)).append('\n');
+    }
+    if (!vp.getSyntheticSemaphores().isEmpty()) {
+      List<Integer> sem = new ArrayList<>(vp.getSyntheticSemaphores());
+      java.util.Collections.sort(sem);
+      s.append("  semaphores ").append(sem).append('\n');
+    }
+    return s.toString();
+  }
+
   private void run(RootStatement root) {
     number(root, null, 0);
     exit = root.getDummyExit();

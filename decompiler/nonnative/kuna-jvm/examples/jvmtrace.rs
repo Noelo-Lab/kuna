@@ -11,7 +11,9 @@
 //! (decompiled classes go to `-o` when given). `--initial-only` instead runs
 //! `MethodProcessor.codeToJava` up to `DomHelper.parseGraph` on every method of every input
 //! class and records the "Initial" step, for comparing the parts of the pipeline that are ported.
-//! `--hash`, `--shift`, `--javadoc`, `--plugins` and `--save` are accepted and ignored.
+//! `--save legacy` (default) writes each class to `-o` by file name, as Vineflower's legacy saver
+//! does; `--save folder` keeps its package path. `--hash`, `--shift`, `--javadoc` and `--plugins`
+//! are accepted and ignored. Everything runs on one engine thread with the corpus runner's stack.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -28,6 +30,7 @@ use kuna_jvm::exception_deobfuscator::ExceptionDeobfuscator;
 use kuna_jvm::fernflower::Fernflower;
 use kuna_jvm::i_fernflower_logger::PrintStreamLogger;
 use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
+use kuna_jvm::kuna_corpus;
 use kuna_jvm::kuna_trace;
 use kuna_jvm::root_statement::RootStatement;
 use kuna_jvm::rt::try_catch;
@@ -55,6 +58,7 @@ struct Args {
     libs: Vec<PathBuf>,
     inputs: Vec<PathBuf>,
     out: Option<PathBuf>,
+    flat: bool,
 }
 
 fn usage(msg: &str) -> ! {
@@ -75,6 +79,7 @@ fn parse_args() -> Args {
     let mut libs = Vec::new();
     let mut inputs = Vec::new();
     let mut out = None;
+    let mut flat = true;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         let mut value = |what: &str| {
@@ -95,7 +100,8 @@ fn parse_args() -> Args {
                 inputs.extend(text.lines().filter(|l| !l.is_empty()).map(PathBuf::from));
             }
             "-o" => out = Some(PathBuf::from(value("a directory"))),
-            "--hash" | "--shift" | "--javadoc" | "--save" => {
+            "--save" => flat = value("a mode") == "legacy",
+            "--hash" | "--shift" | "--javadoc" => {
                 value("a value");
             }
             "--plugins" | "--print-options" => {}
@@ -130,6 +136,7 @@ fn parse_args() -> Args {
         libs,
         inputs,
         out,
+        flat,
     }
 }
 
@@ -215,8 +222,12 @@ fn trace_initial(inputs: &[PathBuf]) -> (usize, usize) {
     (traced, failed)
 }
 
-fn write_class(out: &Path, path: &str, content: &str) {
-    let dest = out.join(path);
+fn write_class(out: &Path, path: &str, content: &str, flat: bool) {
+    let dest = if flat {
+        out.join(Path::new(path).file_name().unwrap_or_default())
+    } else {
+        out.join(path)
+    };
     if let Some(parent) = dest.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -227,6 +238,10 @@ fn write_class(out: &Path, path: &str, content: &str) {
 
 fn main() -> ExitCode {
     let args = parse_args();
+    kuna_corpus::with_engine_stack(move || run(args))
+}
+
+fn run(args: Args) -> ExitCode {
     let mut fernflower = Fernflower::new(&args.options, Rc::new(PrintStreamLogger::stderr()));
     for lib in &args.libs {
         fernflower.add_library_file(lib);
@@ -245,10 +260,11 @@ fn main() -> ExitCode {
         eprintln!("jvmtrace: Initial traced for {traced} methods, {failed} failed");
     } else {
         let out = args.out.clone();
+        let flat = args.flat;
         let result = try_catch(|| {
             fernflower.decompile_context(&mut |class| {
                 if let Some(out) = &out {
-                    write_class(out, &class.path, &class.content);
+                    write_class(out, &class.path, &class.content, flat);
                 }
             })
         });

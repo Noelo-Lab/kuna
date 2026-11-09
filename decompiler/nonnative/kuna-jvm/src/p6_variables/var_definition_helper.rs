@@ -44,7 +44,6 @@ use crate::switch_statement::SwitchStatement;
 use crate::type_family::TypeFamily;
 use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
-use crate::var_names_collector::VarNamesCollector;
 use crate::var_processor::VarProcessor;
 use crate::var_type::VarType;
 use crate::var_type_processor::FinalType;
@@ -126,7 +125,6 @@ impl VarDefinitionHelper {
             }
         }
 
-        let mut null_name_used = false;
         let mut varindex = 0;
         let mut param_index = 0usize;
         for i in 0..paramcount {
@@ -135,12 +133,8 @@ impl VarDefinitionHelper {
             if varindex != 0 || !thisvar {
                 match &method_parameters {
                     Some(params) if param_index < params.len() => {
-                        let name = free_name_nullable(
-                            vc,
-                            params[param_index].my_name.as_deref(),
-                            &mut null_name_used,
-                        );
-                        varproc.set_var_name_nullable(vpp, name);
+                        let name = vc.get_free_name_opt(params[param_index].my_name.as_deref());
+                        varproc.set_var_name_opt(vpp, name);
                         param_index += 1;
                     }
                     _ => {
@@ -2480,23 +2474,6 @@ fn root_class_node(type_: &VarType) -> Option<ClassNode> {
         .get_map_root_classes()
         .borrow()
         .get_cloned(&value)
-}
-
-/// `vc.getFreeName(String)` for a name that may be `null`: Java's collector
-/// stores the `null` and answers `"nullx"`-style names for later `null`s.
-fn free_name_nullable(
-    vc: VarNamesCollector,
-    proposition: Option<&str>,
-    null_used: &mut bool,
-) -> Option<String> {
-    match proposition {
-        Some(name) => Some(vc.get_free_name(name)),
-        None if !*null_used => {
-            *null_used = true;
-            None
-        }
-        None => Some(vc.get_free_name("nullx")),
-    }
 }
 
 /// Java: `VarDefinitionHelper.VarID`: a `VarExprent` compared by identity.

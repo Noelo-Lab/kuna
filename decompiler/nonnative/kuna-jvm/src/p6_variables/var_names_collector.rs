@@ -5,6 +5,7 @@ use crate::{arena_identity, arena_object};
 
 pub struct VarNamesCollectorData {
     used_names: JHashSet<String>,
+    contains_null: bool,
 }
 
 arena_object!(pub VarNamesCollector => VarNamesCollectorData, Class);
@@ -14,6 +15,7 @@ impl VarNamesCollector {
     pub fn new() -> VarNamesCollector {
         VarNamesCollector::alloc(VarNamesCollectorData {
             used_names: JHashSet::new(),
+            contains_null: false,
         })
     }
 
@@ -37,6 +39,19 @@ impl VarNamesCollector {
     /// Java: getFreeName(int)
     pub fn get_free_name_index(self, index: i32) -> String {
         self.get_free_name(&format!("var{index}"))
+    }
+
+    /// Java: getFreeName(String) with a possibly-null proposition: the first null is
+    /// returned as is and remembered, later ones grow from `"null" + "x"`.
+    pub fn get_free_name_opt(self, proposition: Option<&str>) -> Option<String> {
+        match proposition {
+            Some(proposition) => Some(self.get_free_name(proposition)),
+            None if !self.with(|d| d.contains_null) => {
+                self.with_mut(|d| d.contains_null = true);
+                None
+            }
+            None => Some(self.get_free_name("nullx")),
+        }
     }
 
     /// Java: getFreeName(String)
