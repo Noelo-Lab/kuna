@@ -184,6 +184,8 @@ pub struct Explorer<'a> {
     callees: BTreeMap<u64, Option<CalleeScan>>,
     /// The native addresses nodes start at this round (handler entries).
     node_addrs: BTreeSet<u64>,
+    /// The node being resolved left by a direct jump (a constant in the instruction).
+    direct_exit: bool,
     pub stats: Stats,
     pub log: Vec<String>,
     retaddr: Option<ExprId>,
@@ -200,6 +202,8 @@ const VPC_NEAR: u64 = 0x100;
 const MAX_SYM_VALUES: usize = 32;
 /// Distinct virtual-PC values a node may fork into.
 const MAX_VPC_FORK: usize = 4;
+/// Most instructions [`Explorer::handler_fragment`] follows.
+const FRAGMENT_INSNS: usize = 128;
 /// Bytes behind each pointer argument an external call may write.
 const CALL_POINTEE_BYTES: i128 = 16;
 /// Most instructions read from a callee in the image when summarizing it.
@@ -247,6 +251,7 @@ impl<'a> Explorer<'a> {
             pending_locs: None,
             callees: BTreeMap::new(),
             node_addrs: BTreeSet::new(),
+            direct_exit: false,
             stats: Stats::default(),
             log: Vec::new(),
             retaddr: None,
@@ -627,6 +632,7 @@ impl<'a> Explorer<'a> {
         }
         self.image_ptrs.append(&mut emu.image_loads);
         let next_ctx = self.successor_ctx(&mut state, &traces, ctx, &insns);
+        self.direct_exit = insns.last().and_then(|i| i.ops.iter().rev().find(|op| matches!(op.opc, OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))).is_some_and(|op| op.opc == OpCode::CPUI_BRANCH && classify_space_of(&op.ins[0]) == Some(super::kuna_pushanemu::Space::Ram));
         let node_exit = match self.fork_on_vpc(cfg, worklist, id, &exit, &mut state, next_ctx) {
             Some(e) => e,
             None => self.resolve_exit(cfg, worklist, id, exit, state, next_ctx, &insns),
@@ -1343,10 +1349,15 @@ impl<'a> Explorer<'a> {
         }
         // Compiled code can pass the bytecode entropy test: a known function
         // entry is native whatever its bytes look like, and so is a
-        // high-entropy target the interpreter pushed a return into itself for.
+        // high-entropy target the interpreter transferred to through a
+        // computed jump or return with a return into itself pushed.  A
+        // direct jump is the interpreter's own handler chain (VMProtect
+        // ultra lays handlers over the protected function's bytes).
         let pushed = self.pushed_return_address(&mut state);
         let native = !self.target.is_foreign_code(c)
-            && (self.target_is_function(c) || !self.target.bytecode_like(c) || pushed.is_some_and(|r| r != c && self.target.is_foreign_code(r)));
+            && (self.target_is_function(c)
+                || !self.target.bytecode_like(c)
+                || (!self.direct_exit && !self.handler_fragment(c) && pushed.is_some_and(|r| r != c && self.target.is_foreign_code(r))));
         if native {
             if let Some(tr) = &self.config.trace {
                 use std::io::Write;
@@ -1373,6 +1384,37 @@ impl<'a> Explorer<'a> {
         }
         let key = NodeKey { addr: c, ctx: ctx.ctx };
         NodeExit::Branch(self.reach(cfg, worklist, key, state, ctx, Some(id)))
+    }
+
+    /// The code at `c` is a fragment of the interpreter's handlers: its
+    /// straight-line run jumps directly into the protector's section
+    /// (VMProtect ultra lays handlers over the protected function's own
+    /// bytes, while compiled code the interpreter calls does not jump back
+    /// into the protector before its first branch or call).
+    fn handler_fragment(&mut self, c: u64) -> bool {
+        let mut a = c;
+        for _ in 0..FRAGMENT_INSNS {
+            let Ok(insn) = self.target.lift(a) else { return false };
+            let mut next = a + insn.len as u64;
+            for op in &insn.ops {
+                match op.opc {
+                    OpCode::CPUI_BRANCH if classify_space_of(&op.ins[0]) == Some(super::kuna_pushanemu::Space::Ram) => {
+                        if self.target.is_foreign_code(op.ins[0].offset) {
+                            return true;
+                        }
+                        next = op.ins[0].offset;
+                    }
+                    OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN => {
+                        if op.opc != OpCode::CPUI_CBRANCH || classify_space_of(&op.ins[0]) != Some(super::kuna_pushanemu::Space::Const) {
+                            return false;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            a = next;
+        }
+        false
     }
 
     /// A node with no instructions that only performs `exit` (a call or tail
