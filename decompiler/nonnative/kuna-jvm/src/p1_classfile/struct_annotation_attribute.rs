@@ -321,6 +321,7 @@ impl StructAnnotationAttribute {
         let source = self.d(|d| d.source.clone());
         let built: Vec<AnnotationExprent> =
             source.iter().map(AnnotationRecord::to_exprent).collect();
+        crate::infra::kuna_reclaim::note_cached_exprents(built.iter().map(|a| a.0));
         self.d_mut(|d| d.annotations = Some(built.clone()));
         built
     }

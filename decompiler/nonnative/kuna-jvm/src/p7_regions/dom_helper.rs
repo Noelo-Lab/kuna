@@ -167,6 +167,7 @@ impl DomHelper {
 
         let last_id = graph.get_last().get_id();
         for &block in &blocks {
+            CancelationManager::check_canceled();
             let stat = stats
                 .get_with_key(&block.get_id())
                 .expect("block statement");
@@ -261,6 +262,7 @@ impl DomHelper {
                 }
 
                 set_flag_nodes.remove(&stat);
+                CancelationManager::check_canceled();
 
                 let mut doms_succs = factory.create_empty_set();
 
@@ -712,6 +714,7 @@ impl DomHelper {
         }
 
         for k in 0..vb_post.len() {
+            CancelationManager::check_canceled();
             let headid = vb_post.get_key(k).expect("head id");
             let posts = vb_post.get(k);
 
@@ -895,6 +898,7 @@ impl DomHelper {
 
             let lst_stats = stat.get_post_reverse_post_order_list();
             for st in lst_stats {
+                CancelationManager::check_canceled();
                 let Some(result) = DomHelper::detect_statement(st) else {
                     continue;
                 };

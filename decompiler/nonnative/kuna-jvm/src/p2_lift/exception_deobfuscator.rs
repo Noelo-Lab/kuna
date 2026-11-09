@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 
 use crate::basic_block::BasicBlock;
 use crate::bytecode_version::BytecodeVersion;
+use crate::cancelation_manager::CancelationManager;
 use crate::code_constants::{GROUP_GENERAL, OPC_ASTORE, OPC_BIPUSH, OPC_NEW, OPC_POP};
 use crate::control_flow_graph::ControlFlowGraph;
 use crate::decompiler_context::DecompilerContext;
@@ -160,6 +161,7 @@ impl ExceptionDeobfuscator {
         let mut set_visited: JHashSet<BasicBlock> = JHashSet::new();
 
         for range in graph.get_exceptions().iter() {
+            CancelationManager::check_canceled();
             let handler = range.get_handler();
 
             if set_visited.contains(&handler) {

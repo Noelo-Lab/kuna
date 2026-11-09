@@ -184,6 +184,7 @@ impl ClassWrapper {
                     names_collector.add_name(f.get_name());
                 }
                 var_proc.refresh_var_names(names_collector);
+                names_collector.release();
 
                 if DecompilerContext::get_option(IFernflowerPreferences::USE_DEBUG_VAR_NAMES) {
                     let attr = mt.get_local_variable_attr();

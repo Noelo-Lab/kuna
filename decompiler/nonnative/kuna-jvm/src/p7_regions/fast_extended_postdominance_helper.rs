@@ -2,6 +2,7 @@
 
 use std::collections::VecDeque;
 
+use crate::cancelation_manager::CancelationManager;
 use crate::dominator_tree_exception_filter::DominatorTreeExceptionFilter;
 use crate::fast_fixed_set::FastFixedSet;
 use crate::fast_fixed_set_factory::FastFixedSetFactory;
@@ -107,6 +108,7 @@ impl FastExtendedPostdominanceHelper {
         let schelp = StrongConnectivityHelper::new(self.statement());
 
         for comp in schelp.get_components() {
+            CancelationManager::check_canceled();
             let supcomp =
                 SupportComponent::identify(comp, &self.map_support_points, filter.get_dom_engine());
 
@@ -149,6 +151,7 @@ impl FastExtendedPostdominanceHelper {
             set_visited.add(head_stat);
 
             while let Some(stat) = stack.pop_front() {
+                CancelationManager::check_canceled();
                 let mut path = stack_path.pop_front().expect("path");
                 let set_postdoms = self
                     .map_ext_postdominators
@@ -209,6 +212,7 @@ impl FastExtendedPostdominanceHelper {
     fn filter_on_exception_ranges(&mut self, filter: &DominatorTreeExceptionFilter) {
         let heads = JHashSet::from_collection(self.map_ext_postdominators.key_vec());
         for head in heads.to_vec() {
+            CancelationManager::check_canceled();
             let set = self
                 .map_ext_postdominators
                 .get_mut(&head)
@@ -412,6 +416,7 @@ impl FastExtendedPostdominanceHelper {
             map_sets.clear();
 
             for stat in self.lst_reverse_post_order_list.clone() {
+                CancelationManager::check_canceled();
                 let mut set = self.factory().create_empty_set();
                 set.add(stat.id());
 

@@ -19,6 +19,7 @@ use crate::fernflower::DecompiledClass;
 use crate::i_decompiled_data::IDecompiledData;
 use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::infra::kuna_reclaim::ClassWindow;
 use crate::kuna_partition::{self, Phase, RootSelection};
 use crate::kuna_spans::{self, ClassSpan, MethodSpan};
 use crate::rt::{rethrow, try_catch, Caught, JLinkedHashSet};
@@ -238,7 +239,9 @@ impl ContextUnit {
                 self.set_context(root_context.as_ref());
                 class_ctx.ctx = DecompilerContext::get_current_context();
                 kuna_partition::enter(Some((&qualified_name_of(class_ctx.cl), Phase::Process)));
+                let window = ClassWindow::open();
                 let processed = try_catch(|| decompiled_data.process_class(class_ctx.cl));
+                window.close();
                 kuna_partition::enter(None);
                 if let Err(thr) = processed {
                     DecompilerContext::get_logger().write_message_throwable(
@@ -273,6 +276,7 @@ impl ContextUnit {
                 DecompilerContext::set_current_context(class_ctx.ctx.clone());
                 kuna_partition::enter(Some((&qualified_name_of(class_ctx.cl), Phase::Write)));
                 kuna_spans::begin();
+                let window = ClassWindow::open();
                 class_ctx.class_content = decompiled_data.get_class_content(class_ctx.cl);
                 let recorded = kuna_spans::take();
                 kuna_partition::enter(None);
@@ -284,6 +288,10 @@ impl ContextUnit {
                         DecompilerContext::get_bytecode_source_mapper()
                             .get_original_lines_mapping(),
                     );
+                }
+                window.close();
+                if let Some(mapper) = DecompilerContext::take_bytecode_source_mapper() {
+                    mapper.release();
                 }
             }));
         }

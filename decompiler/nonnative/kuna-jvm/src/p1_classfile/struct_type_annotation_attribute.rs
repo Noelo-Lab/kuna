@@ -139,6 +139,7 @@ impl StructTypeAnnotationAttribute {
             .iter()
             .map(TypeAnnotationRecord::to_type_annotation)
             .collect();
+        crate::infra::kuna_reclaim::note_cached_exprents(built.iter().map(|a| a.get_annotation().0));
         self.d_mut(|d| d.annotations = Some(built.clone()));
         built
     }

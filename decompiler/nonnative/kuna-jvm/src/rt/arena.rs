@@ -8,7 +8,9 @@
 //! session-scope arenas live as long as the decompilation session. Objects
 //! known to be garbage earlier can be released one by one: their slot (and
 //! so their index, which is their identity hash) stays taken, only the
-//! contents are dropped, and any later use of the handle panics.
+//! contents are dropped, and any later use of the handle panics. Slots are
+//! kept in fixed-size chunks, and a full chunk whose objects have all been
+//! released is dropped as a whole.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -31,8 +33,31 @@ impl RawHandle {
     }
 }
 
+const CHUNK_BITS: u32 = 12;
+const CHUNK: usize = 1 << CHUNK_BITS;
+
+type Chunk<T> = Box<[Option<Rc<RefCell<T>>>; CHUNK]>;
+
+struct Slots<T> {
+    chunks: Vec<Option<Chunk<T>>>,
+    live: Vec<u32>,
+}
+
+impl<T> Slots<T> {
+    /// Drop chunk `c` if it is full and none of its objects is live.
+    fn drop_if_empty(&mut self, c: usize, len: u32) -> Option<Chunk<T>> {
+        let full = (c + 1) * CHUNK <= len as usize;
+        if full && self.live[c] == 0 {
+            self.chunks[c].take()
+        } else {
+            None
+        }
+    }
+}
+
 pub struct Arena<T> {
-    slots: RefCell<Vec<Option<Rc<RefCell<T>>>>>,
+    slots: RefCell<Slots<T>>,
+    len: Cell<u32>,
     epoch: Cell<u32>,
     registered: Cell<bool>,
     scope: Scope,
@@ -48,7 +73,11 @@ thread_local! {
 impl<T> Arena<T> {
     pub const fn new(scope: Scope, clear: fn(), name: &'static str) -> Self {
         Arena {
-            slots: RefCell::new(Vec::new()),
+            slots: RefCell::new(Slots {
+                chunks: Vec::new(),
+                live: Vec::new(),
+            }),
+            len: Cell::new(0),
             epoch: Cell::new(0),
             registered: Cell::new(false),
             scope,
@@ -66,8 +95,20 @@ impl<T> Arena<T> {
             list.with(|l| l.borrow_mut().push(self.clear));
         }
         let mut slots = self.slots.borrow_mut();
-        let index = u32::try_from(slots.len()).expect("arena overflow");
-        slots.push(Some(Rc::new(RefCell::new(value))));
+        let index = self.len.get();
+        self.len.set(index.checked_add(1).expect("arena overflow"));
+        let c = (index >> CHUNK_BITS) as usize;
+        if index as usize % CHUNK == 0 {
+            let chunk: Chunk<T> = vec![None; CHUNK]
+                .into_boxed_slice()
+                .try_into()
+                .unwrap_or_else(|_| unreachable!());
+            slots.chunks.push(Some(chunk));
+            slots.live.push(0);
+        }
+        slots.chunks[c].as_mut().expect("arena chunk")[index as usize % CHUNK] =
+            Some(Rc::new(RefCell::new(value)));
+        slots.live[c] += 1;
         RawHandle {
             index,
             epoch: self.epoch.get(),
@@ -81,7 +122,11 @@ impl<T> Arena<T> {
                 self.name, handle.index
             );
         }
-        match &self.slots.borrow()[handle.index as usize] {
+        let slots = self.slots.borrow();
+        let slot = slots.chunks[(handle.index >> CHUNK_BITS) as usize]
+            .as_deref()
+            .and_then(|chunk| chunk[handle.index as usize % CHUNK].as_ref());
+        match slot {
             Some(cell) => cell.clone(),
             None => released(self.name, handle.index),
         }
@@ -90,16 +135,53 @@ impl<T> Arena<T> {
     /// Drop the contents of every object allocated at or after index `mark`
     /// that `keep` (given the index; it must not touch this arena) rejects.
     pub fn release_since(&self, mark: u32, keep: impl Fn(u32) -> bool) {
-        let len = self.slots.borrow().len() as u32;
+        let len = self.len.get();
         let mut dropped = Vec::new();
-        for index in mark..len {
-            if !keep(index) {
-                if let Some(cell) = self.slots.borrow_mut()[index as usize].take() {
-                    dropped.push(cell);
+        let mut dropped_chunks = Vec::new();
+        {
+            let mut slots = self.slots.borrow_mut();
+            let slots = &mut *slots;
+            for index in mark..len {
+                let c = (index >> CHUNK_BITS) as usize;
+                let Some(chunk) = slots.chunks[c].as_mut() else {
+                    continue;
+                };
+                if !keep(index) {
+                    if let Some(cell) = chunk[index as usize % CHUNK].take() {
+                        slots.live[c] -= 1;
+                        dropped.push(cell);
+                    }
+                }
+            }
+            if mark < len {
+                for c in (mark >> CHUNK_BITS)..=((len - 1) >> CHUNK_BITS) {
+                    dropped_chunks.push(slots.drop_if_empty(c as usize, len));
                 }
             }
         }
         drop(dropped);
+        drop(dropped_chunks);
+    }
+
+    /// Drop the contents of one object.
+    pub fn release_one(&self, handle: RawHandle) {
+        if handle.epoch != self.epoch.get() {
+            return;
+        }
+        let (cell, chunk) = {
+            let mut slots = self.slots.borrow_mut();
+            let c = (handle.index >> CHUNK_BITS) as usize;
+            let Some(chunk) = slots.chunks[c].as_mut() else {
+                return;
+            };
+            let cell = chunk[handle.index as usize % CHUNK].take();
+            if cell.is_some() {
+                slots.live[c] -= 1;
+            }
+            (cell, slots.drop_if_empty(c, self.len.get()))
+        };
+        drop(cell);
+        drop(chunk);
     }
 
     pub fn is_live(&self, handle: RawHandle) -> bool {
@@ -107,13 +189,20 @@ impl<T> Arena<T> {
     }
 
     pub fn clear(&self) {
-        let dropped = std::mem::take(&mut *self.slots.borrow_mut());
+        let dropped = std::mem::replace(
+            &mut *self.slots.borrow_mut(),
+            Slots {
+                chunks: Vec::new(),
+                live: Vec::new(),
+            },
+        );
+        self.len.set(0);
         self.epoch.set(self.epoch.get().wrapping_add(1));
         drop(dropped);
     }
 
     pub fn len(&self) -> usize {
-        self.slots.borrow().len()
+        self.len.get() as usize
     }
 
     pub fn is_empty(&self) -> bool {
@@ -225,6 +314,11 @@ macro_rules! arena_object {
             /// index `keep` rejects; `keep` must not touch this arena.
             pub fn release_since(mark: u32, keep: impl Fn(u32) -> bool) {
                 Self::__arena(|a| a.release_since(mark, keep))
+            }
+
+            /// Release this object: drop its contents now; any later use panics.
+            pub fn release(self) {
+                Self::__arena(|a| a.release_one(self.0))
             }
         }
 

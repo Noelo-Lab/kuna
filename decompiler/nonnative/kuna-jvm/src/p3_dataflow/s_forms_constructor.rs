@@ -153,6 +153,7 @@ impl SFormsConstructor {
         _iteration: i32,
     ) {
         for node in dgraph.nodes() {
+            CancelationManager::check_canceled();
             let node_id = node.id_key();
             updated.remove(&node_id);
             self.merge_in_var_maps(node, dgraph);
@@ -434,6 +435,7 @@ impl SFormsConstructor {
         let mut map_new = Shared::new(SFormsFastMapDirect::new(self.factory().clone()));
 
         for pred in node.get_predecessors(DirectEdgeType::Regular).to_vec() {
+            CancelationManager::check_canceled();
             let map_out = self.get_filtered_out_map(node, pred.get_source(), dgraph);
             if map_new.borrow().is_empty() {
                 map_new = Shared::new(map_out.borrow().get_copy());
@@ -443,6 +445,7 @@ impl SFormsConstructor {
         }
 
         for pred in node.get_predecessors(DirectEdgeType::Exception).to_vec() {
+            CancelationManager::check_canceled();
             let map_out = self.catchable_versions.get_cloned(&pred.get_source().id_key());
             if let Some(map_out) = map_out {
                 if map_new.borrow().is_empty() {

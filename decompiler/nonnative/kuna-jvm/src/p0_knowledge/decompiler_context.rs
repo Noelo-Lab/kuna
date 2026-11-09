@@ -241,6 +241,11 @@ impl DecompilerContext {
         Self::current(|d| d.bytecode_source_mapper).expect("getBytecodeSourceMapper()")
     }
 
+    /// Detaches the class's source mapper once its class has been written.
+    pub(crate) fn take_bytecode_source_mapper() -> Option<BytecodeSourceMapper> {
+        Self::current_mut(|d| d.bytecode_source_mapper.take())
+    }
+
     pub fn get_current_class() -> Option<StructClass> {
         Self::current(|d| d.static_props.current_class)
     }

@@ -66,6 +66,7 @@ impl StructAnnotationParameterAttribute {
             .iter()
             .map(|param| param.iter().map(AnnotationRecord::to_exprent).collect())
             .collect();
+        crate::infra::kuna_reclaim::note_cached_exprents(built.iter().flatten().map(|a| a.0));
         self.d_mut(|d| d.param_annotations = Some(built.clone()));
         built
     }

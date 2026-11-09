@@ -58,6 +58,7 @@ impl StructAnnDefaultAttribute {
             return None;
         }
         let built = self.d(|d| d.source.clone()).map(|s| s.to_exprent());
+        crate::infra::kuna_reclaim::note_cached_exprents(built);
         self.d_mut(|d| d.default_value = built);
         built
     }
