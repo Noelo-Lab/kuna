@@ -809,7 +809,7 @@ impl ClassesProcessor {
 }
 
 /// `Collections.sort(nodes)` by [`ClassNode::compare_to`] (stable).
-fn sort_nodes(nodes: &JList<ClassNode>) {
+pub(crate) fn sort_nodes(nodes: &JList<ClassNode>) {
     let mut sorted = nodes.to_vec();
     sorted.sort_by(|a, b| a.compare_to(*b));
     nodes.set_all(sorted);
@@ -845,6 +845,7 @@ pub mod java_regex {
         Class(Class),
         Begin,
         End,
+        EndOfInput,
         WordBoundary(bool),
         Group(Vec<Vec<Node>>),
         Atomic(Vec<Vec<Node>>),
@@ -1122,7 +1123,11 @@ pub mod java_regex {
                     self.pos += 1;
                     Node::Begin
                 }
-                'z' | 'Z' => {
+                'z' => {
+                    self.pos += 1;
+                    Node::EndOfInput
+                }
+                'Z' => {
                     self.pos += 1;
                     Node::End
                 }
@@ -1314,6 +1319,7 @@ pub mod java_regex {
                             && self.input[pos + 1] == '\n');
                     at_end && k(pos)
                 }
+                Node::EndOfInput => pos == len && k(pos),
                 Node::WordBoundary(negated) => {
                     let before = pos > 0 && is_word(self.input[pos - 1]);
                     let after = pos < len && is_word(self.input[pos]);
@@ -1326,7 +1332,7 @@ pub mod java_regex {
                         end = Some(p);
                         true
                     });
-                    end.is_some_and(|p| k(p))
+                    end.is_some_and(k)
                 }
                 Node::Look(alternatives, negated) => {
                     let found = self.alternatives(alternatives, pos, &mut |_| true);

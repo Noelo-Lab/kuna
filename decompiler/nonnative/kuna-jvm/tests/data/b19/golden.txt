@@ -184,6 +184,9 @@ regex	\\t\\$	\t$	true
 regex	(a*)*	aaa	true
 regex	(a?)+b	b	true
 regex	\\Ab\\z	b	true
+regex	a\\Z\\n	a\n	true
+regex	a\\z\\n	a\n	false
+regex	a$\\n	a\n	true
 regex	a**	a	error
 regex	(a	a	error
 regex	[a	a	error

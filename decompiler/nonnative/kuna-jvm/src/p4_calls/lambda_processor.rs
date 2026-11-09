@@ -1,12 +1,12 @@
 //! Port of `org/jetbrains/java/decompiler/main/rels/LambdaProcessor.java`.
 
-use crate::classes_processor::{ClassNode, ClassNodeType};
+use crate::classes_processor::{sort_nodes, ClassNode, ClassNodeType};
 use crate::code_constants::OPC_INVOKEDYNAMIC;
 use crate::decompiler_context::DecompilerContext;
 use crate::interpreter_util::InterpreterUtil;
 use crate::jthrow;
 use crate::method_descriptor::MethodDescriptor;
-use crate::rt::{BitSet, JHashMap, JList};
+use crate::rt::{BitSet, JHashMap};
 use crate::struct_general_attribute::StructGeneralAttribute;
 
 #[derive(Default)]
@@ -170,11 +170,4 @@ impl LambdaProcessor {
             }
         }
     }
-}
-
-/// `Collections.sort(nodes)` by [`ClassNode::compare_to`] (stable).
-fn sort_nodes(nodes: &JList<ClassNode>) {
-    let mut sorted = nodes.to_vec();
-    sorted.sort_by(|a, b| a.compare_to(*b));
-    nodes.set_all(sorted);
 }
