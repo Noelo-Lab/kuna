@@ -24,6 +24,8 @@ mod n32_stack;
 #[path = "setup_commands.rs"]
 mod setup_commands;
 
+#[path = "verify_language_database.rs"]
+mod verify_language_database;
 #[path = "verify_memoryspecs.rs"]
 mod verify_memoryspecs;
 

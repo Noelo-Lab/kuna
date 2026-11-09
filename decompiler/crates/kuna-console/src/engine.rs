@@ -32,6 +32,7 @@
 
 mod lazy_inventory;
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::rc::Rc;
@@ -3669,6 +3670,40 @@ fn scan_language_database(spec_roots: &[impl IntoSpecRoot], registry: &IdRegistr
     Ok(db)
 }
 
+/// Scan `spec_roots` into a [`LanguageDatabase`] once, for the `*_with_db`
+/// bootstraps ([`bootstrap_from_object_with_db`],
+/// [`bootstrap_from_image_with_db`]) to share. Every other bootstrap scans its
+/// spec roots again: it lists their `.ldefs` and parses every one, whichever
+/// language the image needs. A bootstrap over the database builds what the
+/// same bootstrap over the roots builds.
+///
+/// A bootstrap only reads the database, and the database is `Send + Sync`, so
+/// threads may share one (behind an `Arc` or a `&'static`) and load images at
+/// once. It holds the language descriptions and the roots, not the `.sla`,
+/// `.pspec` and `.cspec` contents, which each bootstrap reads and decodes for
+/// its own language.
+pub fn language_database(spec_roots: &[impl IntoSpecRoot]) -> KunaResult<LanguageDatabase> {
+    scan_language_database(spec_roots, &build_registry())
+}
+
+/// Where a bootstrap finds its languages: spec roots it scans when it first
+/// needs a language, or a database a caller scanned once.
+trait Languages {
+    fn database(&self, registry: &IdRegistry) -> KunaResult<Cow<'_, LanguageDatabase>>;
+}
+
+impl<R: IntoSpecRoot> Languages for [R] {
+    fn database(&self, registry: &IdRegistry) -> KunaResult<Cow<'_, LanguageDatabase>> {
+        scan_language_database(self, registry).map(Cow::Owned)
+    }
+}
+
+impl Languages for LanguageDatabase {
+    fn database(&self, _registry: &IdRegistry) -> KunaResult<Cow<'_, LanguageDatabase>> {
+        Ok(Cow::Borrowed(self))
+    }
+}
+
 /// Find the `<binaryimage>` element inside a parsed document root (which may be a
 /// bare `<binaryimage>` or a `<decompilertest>` wrapping one).
 fn find_binaryimage(root: &Rc<Element>) -> Option<Rc<Element>> {
@@ -3968,12 +4003,12 @@ fn input_isa_paints_for_ranges(
 fn build_sleigh_for_loader(
     path: &str,
     target: &str,
-    spec_roots: &[impl IntoSpecRoot],
+    languages: &(impl Languages + ?Sized),
     registry: &IdRegistry,
     arch_type: &str,
     fallback_arch_id: Option<&[u8]>,
 ) -> KunaResult<SleighArchitecture> {
-    let db = scan_language_database(spec_roots, registry)?;
+    let db = languages.database(registry)?;
     let mut sleigh = SleighArchitecture::new(path, target);
     sleigh.resolve_architecture(&db, arch_type)?;
     if sleigh.language_index() < 0 && target.is_empty() {
@@ -4151,7 +4186,7 @@ fn bootstrap_raw_image(
     base: u64,
     entries: &[u64],
     isa: Option<ArmIsa>,
-    spec_roots: &[impl IntoSpecRoot],
+    languages: &(impl Languages + ?Sized),
     bytes: Option<Vec<u8>>,
 ) -> KunaResult<ConsoleProgram> {
     if target.trim().is_empty() {
@@ -4168,7 +4203,7 @@ fn bootstrap_raw_image(
     let registry = build_registry();
     let capability = RawBinaryArchitectureCapability::new();
     let mut raw = capability.build_architecture(path, target);
-    let db = scan_language_database(spec_roots, &registry)?;
+    let db = languages.database(&registry)?;
     raw.resolve_architecture(&db)?;
     if raw.sleigh().language_index() < 0 {
         return Err(KunaError::lowlevel(format!(
@@ -4317,24 +4352,36 @@ pub fn bootstrap_from_image_with_options(
     bootstrap_image(path, target, spec_roots, isa, options, false)
 }
 
-/// The image dispatch behind both image bootstraps; `from_env` as in
+/// [`bootstrap_from_image_with_options`] over a language database a caller
+/// scanned once ([`language_database`]) instead of spec roots it scans again.
+pub fn bootstrap_from_image_with_db(
+    path: &str,
+    target: &str,
+    db: &LanguageDatabase,
+    isa: Option<ArmIsa>,
+    options: &LoadOptions,
+) -> KunaResult<ConsoleProgram> {
+    bootstrap_image(path, target, db, isa, options, false)
+}
+
+/// The image dispatch behind every image bootstrap; `from_env` as in
 /// [`bootstrap_object`].
 fn bootstrap_image(
     path: &str,
     target: &str,
-    spec_roots: &[impl IntoSpecRoot],
+    languages: &(impl Languages + ?Sized),
     isa: Option<ArmIsa>,
     options: &LoadOptions,
     from_env: bool,
 ) -> KunaResult<ConsoleProgram> {
     if file_is_te_image(path) {
         let _load = enter_load(options, from_env);
-        bootstrap_from_te_with_specs(path, target, spec_roots, isa)
+        bootstrap_te(path, target, languages, isa)
     } else if let Some(bytes) = file_mz_dos_image(path) {
         let _load = enter_load(options, from_env);
-        bootstrap_from_mz_bytes_with_specs(path, &bytes, target, spec_roots, isa)
+        bootstrap_mz_bytes(path, &bytes, target, languages, isa)
     } else {
-        bootstrap_object(path, target, spec_roots, isa, options, from_env)
+        bootstrap_object(path, target, languages, isa, options, from_env)
     }
 }
 
@@ -4399,6 +4446,16 @@ pub fn bootstrap_from_mz_bytes_with_specs(
     spec_roots: &[impl IntoSpecRoot],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
+    bootstrap_mz_bytes(path, bytes, target, spec_roots, isa)
+}
+
+fn bootstrap_mz_bytes(
+    path: &str,
+    bytes: &[u8],
+    target: &str,
+    languages: &(impl Languages + ?Sized),
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
     let image = MzImage::parse(bytes)
         .map_err(|error| KunaError::lowlevel(format!("{}; {MZ_RAW_IMAGE_HINT}", error.explain())))?;
     if let Some(packer) = image.packer {
@@ -4437,7 +4494,7 @@ pub fn bootstrap_from_mz_bytes_with_specs(
         image.base,
         &[entry],
         isa,
-        spec_roots,
+        languages,
         Some(image.module.clone()),
     )?;
     if let Some(space) = program.analysis_code_space.clone() {
@@ -4535,10 +4592,19 @@ pub fn bootstrap_from_te_with_specs(
     spec_roots: &[impl IntoSpecRoot],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
+    bootstrap_te(path, target, spec_roots, isa)
+}
+
+fn bootstrap_te(
+    path: &str,
+    target: &str,
+    languages: &(impl Languages + ?Sized),
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
     let bytes = std::fs::read(path).map_err(|error| {
         KunaError::lowlevel(format!("Unable to open TE image file: {path}: {error}"))
     })?;
-    bootstrap_from_te_bytes_with_specs(path, &bytes, target, spec_roots, isa)
+    bootstrap_te_bytes(path, &bytes, target, languages, isa)
 }
 
 /// [`bootstrap_from_te`] over bytes a caller has already read.
@@ -4561,6 +4627,16 @@ pub fn bootstrap_from_te_bytes_with_specs(
     spec_roots: &[impl IntoSpecRoot],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
+    bootstrap_te_bytes(path, bytes, target, spec_roots, isa)
+}
+
+fn bootstrap_te_bytes(
+    path: &str,
+    bytes: &[u8],
+    target: &str,
+    languages: &(impl Languages + ?Sized),
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
     let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
     let registry = build_registry();
     let mut loader = TeLoadImage::from_bytes_with_target(path, bytes, target)?;
@@ -4568,7 +4644,7 @@ pub fn bootstrap_from_te_bytes_with_specs(
     let mut sleigh = build_sleigh_for_loader(
         path,
         target,
-        spec_roots,
+        languages,
         &registry,
         &arch_type,
         loader.fallback_arch_id(),
@@ -4734,6 +4810,19 @@ pub fn bootstrap_from_object_with_options(
     bootstrap_object(path, target, spec_roots, isa, options, false)
 }
 
+/// [`bootstrap_from_object_with_options`] over a language database a caller
+/// scanned once ([`language_database`]) instead of spec roots it scans again.
+/// Threads may share the database and load images at once.
+pub fn bootstrap_from_object_with_db(
+    path: &str,
+    target: &str,
+    db: &LanguageDatabase,
+    isa: Option<ArmIsa>,
+    options: &LoadOptions,
+) -> KunaResult<ConsoleProgram> {
+    bootstrap_object(path, target, db, isa, options, false)
+}
+
 /// The object bootstrap. `from_env` is set by the entry points that take no
 /// options: their load and the program it builds read the environment live, and
 /// they publish the image's Go toolchain version in
@@ -4743,7 +4832,7 @@ pub fn bootstrap_from_object_with_options(
 fn bootstrap_object(
     path: &str,
     target: &str,
-    spec_roots: &[impl IntoSpecRoot],
+    languages: &(impl Languages + ?Sized),
     isa: Option<ArmIsa>,
     options: &LoadOptions,
     from_env: bool,
@@ -4846,7 +4935,7 @@ fn bootstrap_object(
     let mut sleigh = build_sleigh_for_loader(
         path,
         target,
-        spec_roots,
+        languages,
         &registry,
         &arch_type,
         loader.fallback_arch_id(),
