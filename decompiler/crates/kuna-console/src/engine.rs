@@ -4916,6 +4916,29 @@ fn commit_analysis_output(
     prog.libctypes_glibc = out.libctypes_glibc;
     prog.libctypes_refused = out.libctypes_refused;
 
+    // 0c. (kuna `objcrefconst`) The Objective-C reference slots the `objc` pass
+    //     reported constant: painted `Varnode::readonly` like 1b below AND added to
+    //     the `dynrelocs` foldable set, so `ActionVarnodeProps` folds a load through
+    //     a selref/classref/superref without the program-wide `option readonly`.
+    //     Painted BEFORE the slots' own `selRef_`/`classRef_` symbols are mapped at
+    //     1a: `Scope::addMap` copies the range property into the SymbolEntry, and
+    //     the per-function snapshot reads the symbol's flags.
+    if prog.arch().analysis_objcrefconst && !out.const_ranges.is_empty() {
+        let mut ranges = prog.arch().dynreloc_const.as_ref().clone();
+        for &(first, last_open) in &out.const_ranges {
+            let begin = Address::new(Rc::clone(code_space), first);
+            let end = Address::new(Rc::clone(code_space), last_open);
+            prog.arch_mut().symboltab.set_property_range(
+                kuna_decomp::varnode::varnode_flags::readonly,
+                &begin,
+                &end,
+            );
+            ranges.push((first, last_open - 1));
+        }
+        ranges.sort_unstable();
+        prog.arch_mut().dynreloc_const = Rc::new(ranges);
+    }
+
     // 1. Extra symbols a pass discovered. Function symbols install like the
     //    funcsym stream (idempotent); Data symbols (typed string/data objects)
     //    land via add_symbol_mapped. (No pass emits these yet in this increment;

@@ -2719,6 +2719,15 @@ pub struct Architecture {
     /// byte-identical. x86-64, no-chained-fixups path (the arm64 +
     /// LC_DYLD_CHAINED_FIXUPS resolver is a deferred follow-on).
     pub analysis_objc: bool,
+    /// (kuna `objcrefconst`) Fold a load through an Objective-C reference slot
+    /// (`__objc_selrefs` / `__objc_classrefs` / `__objc_superrefs`) to the
+    /// selector or class it refers to; default **on**. dyld fills those slots
+    /// once before any code runs and nothing rewrites them, which is why
+    /// Ghidra's `ObjectiveC2_ClassAnalyzer` marks the three blocks read-only.
+    /// Only the rebase slots the `objc` pass reported are painted, so a
+    /// bind slot (an imported class) keeps its `classRef_<Class>` name instead.
+    /// Inert unless `objc` is on.
+    pub analysis_objcrefconst: bool,
     /// (kuna) Gate the PE PDB metadata recovery pass (`pdb`); default **off**. The
     /// kuna analog of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer;
     /// the MS-DIA `PdbAnalyzer` is Windows-native and out of scope) — the
@@ -3546,6 +3555,7 @@ impl Architecture {
             analysis_gotypes: false,
             analysis_gonoreturn: false,
             analysis_objc: false,
+            analysis_objcrefconst: true,
             analysis_pdb: true,
             macho_arm64e: false,
 
@@ -4048,6 +4058,7 @@ impl Architecture {
         self.analysis_gotypes = true; // Go runtime-type harvest default-on (Go-only pass)
         self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
+        self.analysis_objcrefconst = true; // (kuna) ObjC reference slots fold to their selector/class; inert unless objc is on
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }

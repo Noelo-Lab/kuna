@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3934,
-    3934
+    3948,
+    3948
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1107,7 +1107,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 389 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 390 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -1538,6 +1538,20 @@
     "data:O32 slot: full-register test uses the argument",
     "data:O32 slot: inferred input remains a four-byte int",
     "data:O32 slot: no undefined upper half",
+    "data:OBJCREFS #10: objcrefconst folds the super send's selector",
+    "data:OBJCREFS #11: objcrefconst folds the super class slot to the class",
+    "data:OBJCREFS #12: objcrefconst folds a classref receiver",
+    "data:OBJCREFS #13: objcrefconst folds a plain send's selref",
+    "data:OBJCREFS #14: the folded import slot keeps its name",
+    "data:OBJCREFS #1: off leaves the super send's selector slot anonymous",
+    "data:OBJCREFS #2: off leaves the super class slot anonymous",
+    "data:OBJCREFS #3: off calls the selector stub as an anonymous function",
+    "data:OBJCREFS #4: off leaves the imported class slot anonymous",
+    "data:OBJCREFS #5: on names the selref the super send loads",
+    "data:OBJCREFS #6: on names the superref slot",
+    "data:OBJCREFS #7: on names the stub after its selector, in both arms",
+    "data:OBJCREFS #8: the stub's prototype pins the argument past the selector register",
+    "data:OBJCREFS #9: a chained bind slot is named from its import, in both arms",
     "data:OCTEON #1 low_sum retains ordinary addition",
     "data:OCTEON #2 bit branch retains the tested bit",
     "data:OCTEON #3 extension instructions have ordinary semantics",
