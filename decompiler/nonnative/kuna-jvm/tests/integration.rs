@@ -132,6 +132,8 @@ mod kuna_support;
 mod kuna_input;
 #[path = "kuna_options.rs"]
 mod kuna_options;
+#[path = "kuna_fixes.rs"]
+mod kuna_fixes;
 #[path = "kuna_inventory.rs"]
 mod kuna_inventory;
 #[path = "kuna_spans.rs"]

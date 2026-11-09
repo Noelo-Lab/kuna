@@ -529,6 +529,55 @@ fn catalog_lists_jvm_rows_on_request() {
     assert_eq!(miss.status.code(), Some(1));
 }
 
+/// The kuna-fixes case of `jvm_fix_lambda_wildcard_return` (`tests/jvm/kuna-fixes/`).
+fn kuna_fix_class() -> String {
+    common::repo_root()
+        .join("tests/jvm/kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class")
+        .display()
+        .to_string()
+}
+
+#[test]
+fn kuna_fixes_are_on_by_default_and_compat_turns_them_off() {
+    let class = kuna_fix_class();
+    let method = "pkg.TestMethodRefWildcardReceiver.objects";
+    let fixed = jvm(&["decompile", &class, method]);
+    assert!(ok(&fixed).contains("return this.types.map(factory::create);"), "{}", stdout(&fixed));
+    assert!(!stderr(&fixed).contains("warning:"), "{}", stderr(&fixed));
+
+    let failed_method = |out: &Output| {
+        assert_eq!(out.status.code(), Some(1), "a failed method exits 1: {}", stderr(out));
+        stdout(out)
+    };
+    let compat = jvm(&["decompile", &class, method, "--option", "jvm_vineflower_compat", "on"]);
+    let text = failed_method(&compat);
+    assert!(text.contains("// $VF: Couldn't be decompiled"), "{text}");
+    assert!(text.contains("// Please report this to the Vineflower issue tracker"), "{text}");
+    assert!(stderr(&compat).contains("NullPointerException: returnType"), "{}", stderr(&compat));
+
+    let off = jvm(&["decompile", &class, method, "--option", "jvm_fix_lambda_wildcard_return", "off"]);
+    let text = failed_method(&off);
+    assert!(text.contains("// $VF: Couldn't be decompiled"), "{text}");
+    assert!(text.contains("// Please report this to the kuna issue tracker"), "{text}");
+
+    let note_off = jvm(&[
+        "decompile", &class, method,
+        "--option", "jvm_fix_lambda_wildcard_return", "off",
+        "--option", "jvm_fix_report_to_kuna", "off",
+    ]);
+    assert!(failed_method(&note_off).contains("// Please report this to the Vineflower issue tracker"));
+
+    let failed = |extra: &[&str]| {
+        let mut args = vec!["decompile-all", class.as_str(), "--json"];
+        args.extend(extra);
+        let doc = json(&jvm(&args));
+        doc["functions"].as_array().unwrap().iter().filter(|f| !f["error"].is_null()).count()
+    };
+    assert_eq!(failed(&[]), 0);
+    assert_eq!(failed(&["--option", "jvm_vineflower_compat", "on"]), 2);
+    assert_eq!(kuna(&["decompile", &class, method, "--option", "jvm_vineflower_compat", "maybe"]).status.code(), Some(2));
+}
+
 #[test]
 fn docs_embed_the_jvm_topics() {
     for topic in ["jvm", "options-jvm"] {

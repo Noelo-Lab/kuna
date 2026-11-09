@@ -639,10 +639,39 @@ fn vendored() -> Vec<Case> {
     load_cases(&path).expect("tests/jvm/cases.tsv loads")
 }
 
+fn is_kuna_fix(case: &Case) -> bool {
+    case.set_slug == "kuna-fixes" || case.set_slug == "kuna-fixes-compat"
+}
+
 #[test]
 fn vendored_corpus_is_complete() {
     let cases = vendored();
-    assert_eq!(cases.len(), 607);
+    assert_eq!(cases.iter().filter(|c| !is_kuna_fix(c)).count(), 607);
+    let compat: BTreeSet<&str> = cases
+        .iter()
+        .filter_map(|c| c.id.strip_prefix("kuna-fixes-compat/"))
+        .collect();
+    let fixed: BTreeSet<&str> = cases
+        .iter()
+        .filter_map(|c| c.id.strip_prefix("kuna-fixes/"))
+        .collect();
+    assert!(!fixed.is_empty());
+    assert_eq!(compat, fixed, "every kuna-fixes case runs in both modes");
+    for case in cases.iter().filter(|c| is_kuna_fix(c)) {
+        let compat = if case.set_slug == "kuna-fixes-compat" { "1" } else { "0" };
+        assert_eq!(
+            case.options.iter().find(|(k, _)| k == "jvm_vineflower_compat"),
+            Some(&("jvm_vineflower_compat".to_string(), compat.to_string())),
+            "{}",
+            case.id
+        );
+        assert!(
+            case.options
+                .contains(&("dump-exception-on-error".to_string(), "0".to_string())),
+            "{}",
+            case.id
+        );
+    }
     assert_eq!(
         cases
             .iter()
@@ -778,7 +807,7 @@ fn vendored_expected_texts_match_themselves() {
         );
         matched += 1;
     }
-    assert_eq!(matched, 607);
+    assert_eq!(matched, cases.len());
 }
 
 #[test]

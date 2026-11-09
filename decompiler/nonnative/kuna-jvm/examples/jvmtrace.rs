@@ -13,8 +13,10 @@
 //! class and records the "Initial" step, for comparing the parts of the pipeline that are ported.
 //! `--save legacy` (default) writes each class to `-o` by file name, as Vineflower's legacy saver
 //! does; `--save folder` keeps its package path. Plugins are off unless `--plugins` is given, as
-//! in the Java tracer. `--hash`, `--shift` and `--javadoc` are accepted and ignored. Everything
-//! runs on one engine thread with the corpus runner's stack.
+//! in the Java tracer, and kuna's fixes are off (`jvm_vineflower_compat` on) unless
+//! `--opt jvm_vineflower_compat=0` is given, since the trace is compared with Vineflower's.
+//! `--hash`, `--shift` and `--javadoc` are accepted and ignored. Everything runs on one engine
+//! thread with the corpus runner's stack.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -117,10 +119,16 @@ fn parse_args() -> Args {
     if inputs.is_empty() {
         usage("no inputs");
     }
-    let mut options: Vec<(String, String)> = vec![(
-        kuna_jvm::kuna_plugins::JVM_PLUGINS.to_string(),
-        if plugins { "1" } else { "0" }.to_string(),
-    )];
+    let mut options: Vec<(String, String)> = vec![
+        (
+            kuna_jvm::kuna_plugins::JVM_PLUGINS.to_string(),
+            if plugins { "1" } else { "0" }.to_string(),
+        ),
+        (
+            kuna_jvm::kuna_fixes::VINEFLOWER_COMPAT.to_string(),
+            "1".to_string(),
+        ),
+    ];
     if fixture {
         options.extend(
             FIXTURE_BASE

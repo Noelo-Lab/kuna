@@ -174,15 +174,18 @@ kuna test --jvm --baseline tests/jvm/baseline.txt      # the JVM engine's corpus
 ```
 
 `--jvm` runs the JVM engine's differential corpus (`tests/jvm/`, `docs/jvm.md`) in
-process: each case decompiles its class files with its pinned options and must print
-Vineflower's exact text. `--jvm-dir DIR` runs the manifest in another directory. Its
+process: each case decompiles its class files with its pinned options and must print its
+expected text. The Vineflower-oracle cases run with `jvm_vineflower_compat on` and expect
+Vineflower's exact text; each kuna-fixes case runs twice, in compat mode against
+Vineflower's text (failure comment included) and with the defaults against kuna's
+reviewed text. `--jvm-dir DIR` runs the manifest in another directory. Its
 results are recorded under `jvm:` keys, its baseline is the list of matching case ids in
 `tests/jvm/baseline.txt` (re-recorded with `--save-baseline`), and it needs neither the
 SLEIGH specs nor a JDK. `--name N` keeps the cases whose id contains `N`, `--jobs N|auto`
 sets how many run at once (default: the core count, at most 16), and the datatest flags
 (`--all`, `--unittests`, `--datatests`, `--datatests-dir`, `--binary`, `--sleighpath`)
 are refused next to it (exit `2`). The summary line reads
-`jvm: 607/607 cases matched (0 mismatch, 0 error, 0 unsupported) in 0.7 s`, followed by
+`jvm: 609/609 cases matched (0 mismatch, 0 error, 0 unsupported) in 0.7 s`, followed by
 `PARITY OK` under `--baseline`. `--all` stays unit tests plus datatests.
 
 `kuna test` parses the harness's two streams separately (unit results on **stderr**,
@@ -4185,7 +4188,9 @@ kuna decompile app.jar com.ex.UtilKt --language java   # a Kotlin class written 
 A class file, a jar (or war, ear, zip) or a directory of classes is decompiled to **Java**,
 and a class compiled from Kotlin to **Kotlin**, by kuna's non-native JVM engine,
 `kuna-jvm`, a Rust port of Vineflower 1.12.0 and its bundled plugins that prints the text
-Vineflower prints (`docs/jvm.md`; the algorithm is `docs/spec/10-jvm.md`). The
+Vineflower prints, except inside the methods Vineflower fails on and kuna fixes
+(`--option jvm_vineflower_compat on` turns those fixes off and gives Vineflower's exact
+text; `docs/jvm.md`, the algorithm is `docs/spec/10-jvm.md`). The
 input is recognized before any native code runs, so none of the native machinery (SLEIGH
 specs, `decomp_dbg`, the loader, the native option tables) is involved, and a native
 binary pays one `stat` and one eight-byte read for the check. The commands keep their

@@ -1,0 +1,26 @@
+{
+  "notes": "kuna-fixes cases: classes Vineflower 1.12.0 fails on that a kuna fix decompiles. Each runs in compat and in default mode on the fixture's base map plus `options`; maintained by tests/jvm/kuna_fix_case.py, read by regen.py.",
+  "options": [
+    [
+      "dump-exception-on-error",
+      "0"
+    ]
+  ],
+  "cases": [
+    {
+      "id": "pkg/TestMethodRefWildcardReceiver",
+      "fix": "jvm_fix_lambda_wildcard_return",
+      "class_files": [
+        "pkg/TestMethodRefWildcardReceiver.class",
+        "pkg/TestMethodRefWildcardReceiver$Factory.class",
+        "pkg/TestMethodRefWildcardReceiver$Fn.class",
+        "pkg/TestMethodRefWildcardReceiver$Pipe.class",
+        "pkg/TestMethodRefWildcardReceiver$Shape.class",
+        "pkg/TestMethodRefWildcardReceiver$ShapeFactory.class"
+      ],
+      "source": "src/pkg/TestMethodRefWildcardReceiver.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone"
+    }
+  ]
+}

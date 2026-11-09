@@ -1,7 +1,9 @@
 # vftrace: pass-by-pass differential tracer
 
-kuna-jvm ports Vineflower 1.12.0 and aims at byte-identical Java output. When a class comes out
-different, this tool tells you **which pass first went wrong, in which method**. Both engines call
+kuna-jvm ports Vineflower 1.12.0 and aims at byte-identical Java output (in compat mode: kuna's own
+fixes of Vineflower's failures are off, as the kuna side of this tool runs unless given
+`--opt jvm_vineflower_compat=0`). When a class comes out different, this tool tells you **which pass
+first went wrong, in which method**. Both engines call
 `decompileRecord.add("<StepName>", root)` after every pass of the per-method pipeline
 (`MethodProcessor.codeToJava`, plus `ClassWriter`'s late `FinalSimplifySwitches`/`FinalPrettifyIfs`);
 at each call the tracer writes a canonical dump of the method's statement tree. Two traces are
