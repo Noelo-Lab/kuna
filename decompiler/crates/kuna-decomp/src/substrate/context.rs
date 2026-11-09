@@ -885,9 +885,6 @@ pub struct ArchContext {
     /// container returned whole, collapse cleanup-split truncations, and stop a
     /// partial-symbol walk at a whole-struct edge. Off restores upstream.
     pub aggregate_fields: bool,
-    /// (kuna) `stubtailcall`, default-on: flow loader-proven lazy-binding stubs as
-    /// tail calls ([`crate::kuna_stubtailcall`]).
-    pub stub_tail_call: bool,
     /// (kuna) `gotimportproto`, default-on: bind type-only declarations at
     /// loader-proven MIPS GOT import calls ([`crate::kuna_gotimportproto`]).
     pub got_import_proto: bool,
@@ -1002,10 +999,6 @@ pub struct ArchContext {
     /// read by [`kuna_libcfit`](crate::p5_types::kuna_libcfit), which holds a
     /// named libc pointer vote to what the caller does through it.
     pub libctypes: bool,
-    /// (kuna) GH-8017: resolve the gcc stack-probe loop SP MULTIEQUAL to a
-    /// constant (C++ `model_stack_probe_loop`, DIV-3 default-on).  Read by
-    /// [`RuleStackProbeLoop`](crate::kuna_stackprobeloop::RuleStackProbeLoop).
-    pub model_stack_probe_loop: bool,
     /// (kuna) reconstruct a compiler-lowered comparison cascade into a switch
     /// (C++ `recover_lowered_switch`, default-on).  Read by the
     /// [`crate::kuna_loweredswitch`] detect/install actions.
@@ -1689,14 +1682,9 @@ pub struct ArchContext {
     /// architecture.  Read by `JumpBasic::recoverModel` before
     /// `kunaTryModuloBoundTable`.  `false` (default off / upstream byte-identical).
     pub switch_modulo_bound: bool,
-    /// (kuna) Cut an unguarded jump table where its rows run on into other
-    /// functions (`switchrunon`). See [`crate::kuna_switchrunon`].
-    pub switch_run_on: bool,
-    /// (kuna) Count only a guard that narrows the selector as a guard for
-    /// `switchrunon` (`switchrunonguard`). See [`crate::kuna_switchrunon`].
-    pub switch_run_on_guard: bool,
     /// (kuna `lazyfuncs`) The entry starts the commit installed as names only,
-    /// sorted, so `switchrunon` sees the same functions with the option on.
+    /// sorted, so the run-on cut (`kuna_switchrunon`) sees the same functions
+    /// with the option on.
     pub lazy_entry_starts: Rc<Vec<u64>>,
     /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
     /// addresses (`option constselectjump`, `p2_lift/kuna_constselectjump.rs`).
@@ -1997,7 +1985,6 @@ impl ArchContext {
             fold_flag_compare: false,    // GH-1276/8777 flagcompare
             add_carry_chain: false,      // GH-8913 addcarrychain
             aggregate_fields: false,     // aggregatefields
-            stub_tail_call: false,       // stubtailcall
             got_import_proto: false,     // gotimportproto
             ov_less_simplify: false,     // GH-7190 ovlesssimplify
             recover_array_stride: false, // GH-8724 arraystride
@@ -2029,7 +2016,6 @@ impl ArchContext {
             elem_ptr_ranges: std::rc::Rc::new(Vec::new()), // (kuna) elemptr
             slot_ptr: true, // (kuna) option slotptr (default on), copied from Architecture
             libctypes: false, // (kuna) option libctypes, copied from Architecture
-            model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
             lowered_switch_labels: true, // loweredswitchlabels
             lowered_switch_value_check: true, // loweredswitchvalue
@@ -2211,8 +2197,6 @@ impl ArchContext {
             // the thumb guard never fires regardless of this flag.
             preserve_thumb_funcptr: true,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
-            switch_run_on: false, // switchrunon (the ArchSeam carries the real default)
-            switch_run_on_guard: false, // switchrunonguard (the ArchSeam carries the real default)
             lazy_entry_starts: Rc::default(),
             const_select_jump: false, // (kuna) constant-select indirect branch: default off
             highslice_guard: false,

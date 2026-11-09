@@ -309,7 +309,7 @@ fn a_known_no_return_call_has_no_missing_fallthrough() {
 fn mapping_warnings_survive_failed_reloads_and_refresh_after_an_overlay() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../kuna-analysis/tests/fixtures/mapped_flow_boundary_32.elf");
-    for enabled in [true, false] {
+    {
         let mut prog = load(&path);
         let entry = address(&prog, 0x10000);
         prog.arch_mut().commentdb.add_comment_no_duplicate(
@@ -322,10 +322,6 @@ fn mapping_warnings_survive_failed_reloads_and_refresh_after_an_overlay() {
             "load addr 0x10000".to_string(),
             "decompile".to_string(),
             "print C".to_string(),
-            format!(
-                "option mappedflowboundary {}",
-                if enabled { "on" } else { "off" }
-            ),
             "option maxinstruction 1".to_string(),
             "load addr 0x10000".to_string(),
             "print C".to_string(),
@@ -432,10 +428,9 @@ fn a_known_function_bound_precedes_an_unmapped_fallthrough() {
 fn declared_boundary_policy_precedes_mapping_recovery() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../kuna-analysis/tests/fixtures/mapped_flow_boundary_32.elf");
-    for enabled in [false, true] {
+    {
         for policy in [flow_flags::error_outofbounds, 0, flow_flags::ignore_outofbounds] {
             let mut prog = load(&path);
-            prog.arch_mut().mapped_flow_boundary = enabled;
             prog.arch_mut().flowoptions |= policy;
             let entry = address(&prog, 0x10000);
             let result = build_and_follow_flow(prog.arch_mut(), "sample", entry, 15);

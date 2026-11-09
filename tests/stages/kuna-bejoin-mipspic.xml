@@ -30,10 +30,8 @@
 
     Assert #1: the default returns add64's sum high word first; evidence
       keeps it low word first, and add_hi stays an int in both passes.
-    Assert #2: c_unal joins add_hi's result $3 high (the default join) in
-      both passes, since nothing of $3 is read after the call.  It runs with
-      option mipsunaligned off, which lifts the pair as two merges reading
-      $3; on, the pair is one load and reads nothing of $3
+    Assert #2: c_unal reads add_hi's result as an int in both passes, since
+      the unaligned pair is one load and reads nothing of $3
       (kuna-mipsunaligned.xml).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
@@ -59,7 +57,6 @@
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/bejoin_mipsunal</com>
   <com>read symbols</com>
-  <com>option mipsunaligned off</com>
   <com>option bejoin callers</com>
   <com>lo fu c_unal</com>
   <com>decompile</com>
@@ -73,6 +70,6 @@
 <stringmatch name="bejoin-mipspic #1: the default returns add64's sum high word first" min="1" max="1">return CONCAT44\(\(uint4\)\(a1 \+ a3 &lt; a1\) \+ a0 \+ a2,a1 \+ a3\);</stringmatch>
 <stringmatch name="bejoin-mipspic #1b: evidence keeps add64 low word first" min="1" max="1">return CONCAT44\(a1 \+ a3,\(uint4\)\(a1 \+ a3 &lt; a1\) \+ a0 \+ a2\);</stringmatch>
 <stringmatch name="bejoin-mipspic #1c: add_hi stays an int in both passes" min="2" max="2">int4 add_hi\(int4 a0,uint4 a1,int4 a2,int4 a3\)</stringmatch>
-<stringmatch name="bejoin-mipspic #2: c_unal joins add_hi's call first register low in both passes" min="2" max="2">unsigned long long v4; // v1:v0</stringmatch>
+<stringmatch name="bejoin-mipspic #2: c_unal reads add_hi's result as an int in both passes" min="2" max="2">int4 v2; // v0</stringmatch>
 <stringmatch name="bejoin-mipspic #2b: nothing joins it v0:v1" min="0" max="0">// v0:v1</stringmatch>
 </decompilertest>

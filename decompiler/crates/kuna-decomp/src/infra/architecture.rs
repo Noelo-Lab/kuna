@@ -488,22 +488,12 @@ pub struct Architecture {
     /// (kuna `aggregatefields`) Keep structured values whole until their fields
     /// can be named; see [`crate::context::ArchContext::aggregate_fields`].
     pub aggregate_fields: bool,
-    /// (kuna `stubtailcall`) Flow loader-proven lazy-binding stubs as tail calls,
-    /// in the decompiler and the Listing; see [`crate::kuna_stubtailcall`].
-    pub stub_tail_call: bool,
     /// (kuna `gotimportproto`) Bind type-only declarations at loader-proven MIPS
     /// GOT import calls; see [`crate::kuna_gotimportproto`].
     pub got_import_proto: bool,
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
     /// (C++ `v850_indirect_branch`).
     pub v850_indirect_branch: bool,
-    /// (kuna `fastfailnoreturn`) End the flow at a Windows `int 0x29`
-    /// (`__fastfail`).  x86 SLEIGH lifts `INT imm8` to a `call` with no matching
-    /// push, so the cspec's `extrapop` raises the stack pointer by 8 at every
-    /// site; `__fastfail` never returns, so the block ends there instead.
-    /// Default on (`option fastfailnoreturn`).  See
-    /// [`kuna_fastfailnoreturn`](crate::kuna_fastfailnoreturn).
-    pub fastfail_noreturn: bool,
     /// (kuna `int3pad`) How a decoded `int3` is handled.  x86 SLEIGH lifts it to
     /// `intloc = swi(3); call [intloc]`, which the printer renders as an ordinary
     /// indirect call; `warn` (the default) buffers the `// int3-pad` warning that
@@ -571,19 +561,6 @@ pub struct Architecture {
     /// FACT, not an option: written once at `load file` and the thing `option
     /// syscallregs auto` tests.  The XML `<binaryimage>` bootstrap never sets it.
     pub image_os_userland: bool,
-    /// (kuna `decodehalt`) Does an artificial halt planted because the DECODE
-    /// failed report itself?  On (the default) renders the three decode-failure
-    /// halt types as upstream's `halt_baddata()` / `halt_unimplemented()` /
-    /// `halt_missing()` pseudo-calls instead of a bare `return;`, and buffers the
-    /// upstream truncation + header warnings at the failure.  See
-    /// [`kuna_decodehalt`](crate::kuna_decodehalt).
-    pub decode_halt: bool,
-    /// (kuna `msvcftol`) Install the synthesized MSVC `__ftol`-family call-fixup
-    /// (`p2_lift/kuna_msvcftol.rs`) so an x86-32 float-to-integer CRT helper call
-    /// lowers to a p-code truncation and its x87 (`ST0`) argument survives.
-    /// Default on; read by the analysis-tier call-fixup installer, which drops
-    /// this one fixup's targets from the install map when off.
-    pub msvc_ftol: bool,
     /// (kuna tee-O2 tail-jumps) Recover a direct `jmp` to another function's
     /// entry (e.g. `jmp setlocale@plt`) as a tail call (CALL + RETURN) instead of
     /// flowing into the callee (`option tailcalljump on|direct`).
@@ -608,26 +585,6 @@ pub struct Architecture {
     /// `call` is not read as a frame teardown (`option tailcallsaved`).  See
     /// [`crate::p2_lift::kuna_tailcallsaved`].
     pub tail_call_saved: bool,
-    /// (kuna `calltrampoline`) Flow a direct `call` through a callee that
-    /// discards the pushed return address and jumps back into the instruction
-    /// stream, instead of decoding a fall-through at the return address
-    /// (`option calltrampoline`).  See [`crate::p2_lift::kuna_calltrampoline`].
-    pub call_trampoline: bool,
-
-    /// (kuna `callpopret`) Flow a direct `call` through a callee that pops the
-    /// pushed return address off the stack and `ret`s through the word above it,
-    /// instead of decoding a fall-through at a return address control never
-    /// reaches (`option callpopret`).  See [`crate::p2_lift::kuna_callpopret`].
-    pub call_pop_ret: bool,
-    /// (kuna `entryretdispatch`) Recover an entry-point sequence of
-    /// `push <continuation>; push <callee>; ret` links as ordinary calls when
-    /// bounded raw-p-code provenance proves each RET destination and its own
-    /// fall-through slot. Explicit flow assertions retain precedence.
-    pub entry_ret_dispatch: bool,
-    /// (kuna `pushimmediateret`) Recover a proven one-store
-    /// `push <immediate>; ret` as a tail branch. The two-store call-emulation
-    /// shape remains owned by `entryretdispatch`; explicit flow assertions win.
-    pub push_immediate_ret: bool,
     /// (kuna `cleanupcode`) Delete the Rust drop/deallocate call sites (the
     /// `core::ptr::drop_in_place` / `Drop::drop` / `RawVecInner::deallocate` /
     /// `__rust_dealloc` family) from the pre-SSA op graph, so the drop glue and
@@ -661,9 +618,8 @@ pub struct Architecture {
     /// no-return), truncate flow with a no-return halt instead of decoding the
     /// next function's body into the current one (`option funcboundflow`).
     pub funcbound_flow: bool,
-    /// Recover mapped ELF x86 flow without decoding staged loader padding.
-    pub mapped_flow_boundary: bool,
-    /// Load-time container/target eligibility; XML, raw, and remote images abstain.
+    /// Mapped ELF x86 flow recovery: load-time container/target eligibility;
+    /// XML, raw, and remote images abstain.
     pub mapped_flow_boundary_image: bool,
     /// (kuna `overlapbranch`) Truncate a conditional branch's fall-through when the
     /// branch's own target lies strictly inside that fall-through instruction's
@@ -769,13 +725,10 @@ pub struct Architecture {
     pub be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode,
     /// Retain register-pair returns established by complete declared caller evidence.
     pub call_wide: bool,
-    /// (kuna) `option mipsunaligned`: lift a MIPS `lwl`/`lwr`-style pair as one
-    /// whole access ([`crate::kuna_mipsunaligned`]).
-    pub mips_unaligned: bool,
-    /// (kuna) `option mipsunaligned`: the halves of the image's unaligned
-    /// pairs, once scanned.
+    /// (kuna) The halves of the image's MIPS unaligned load/store pairs, once
+    /// scanned ([`crate::kuna_mipsunaligned`]).
     pub kuna_mips_pairs: Option<Rc<Vec<u64>>>,
-    /// (kuna) `option mipsunaligned`: whether those halves carry the pair flag.
+    /// (kuna) Whether those halves carry the pair flag.
     pub kuna_mips_pairs_painted: bool,
     /// (kuna) `option rustabi`: how hard to try to keep a rustc two-register
     /// (`ScalarPair`) return intact -- 0 off, 1 auto (only on a detected rustc
@@ -830,23 +783,12 @@ pub struct Architecture {
     /// (kuna GH-8467) Raise DynamicHash same-address collision budget 8->16
     /// (C++ `dynamic_hash_maxdup_high`).
     pub dynamic_hash_maxdup_high: bool,
-    /// (kuna GH-8017) Resolve gcc stack-probe loop SP MULTIEQUAL to a constant
-    /// (C++ `model_stack_probe_loop`).
-    pub model_stack_probe_loop: bool,
     /// (kuna GH-1276/8777) Fold flag-modelled comparison idioms
     /// (C++ `fold_flag_compare`).
     pub fold_flag_compare: bool,
     /// (kuna GH-9191) Bound a modulo/and-mask LOAD-table jumptable index
     /// (C++ `switch_modulo_bound`).
     pub switch_modulo_bound: bool,
-    /// (kuna) Cut a jump table the basic model found no guard for at the first
-    /// row of a run that leaves the function for good (option `switchrunon`).
-    /// See [`crate::kuna_switchrunon`].
-    pub switch_run_on: bool,
-    /// (kuna) Let `switchrunon` treat a table as unguarded when its recorded
-    /// guards do not narrow the selector it was sized from (option
-    /// `switchrunonguard`). See [`crate::kuna_switchrunon`].
-    pub switch_run_on_guard: bool,
     /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
     /// addresses (`p2_lift/kuna_constselectjump.rs`).
     pub const_select_jump: bool,
@@ -3206,10 +3148,8 @@ impl Architecture {
             codescalar: false, // (kuna) option codescalar; reset_defaults sets the shipped default
             add_carry_chain: false,
             aggregate_fields: false, // (kuna) option aggregatefields; reset_defaults sets the shipped default
-            stub_tail_call: false, // (kuna) option stubtailcall; reset_defaults sets the shipped default
             got_import_proto: false, // (kuna) option gotimportproto; reset_defaults sets the shipped default
             v850_indirect_branch: false,
-            fastfail_noreturn: false, // (kuna) option fastfailnoreturn; reset_defaults sets the shipped default
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
             segmentize: false, // (kuna) option segmentize; reset_defaults sets the shipped default
@@ -3226,19 +3166,12 @@ impl Architecture {
             struct_headless: crate::kuna_structheadless::StructHeadlessMode::Off, // (kuna) option structheadless; reset_defaults sets the shipped default
             field_type: false, // (kuna) option fieldtype; reset_defaults sets the shipped default
             image_windows_user: false, // (kuna) a load-time fact; set by the console's `load file`
-            decode_halt: false, // (kuna) option decodehalt; reset_defaults sets the shipped default
-            msvc_ftol: false, // (kuna) option msvcftol; reset_defaults sets the shipped default
             tail_call_jumps: false,
             tail_call_tables: false, // (kuna) option tailcalljump; reset_defaults sets the shipped default
             got_tail_call: false, // (kuna) option gottailcall; reset_defaults sets the shipped default
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
             tail_call_saved: false, // (kuna) option tailcallsaved; reset_defaults sets the shipped default
-            call_trampoline: false, // (kuna) option calltrampoline; reset_defaults sets the shipped default
-            call_pop_ret: false, // (kuna) option callpopret; reset_defaults sets the shipped default
-            entry_ret_dispatch: false, // (kuna) option entryretdispatch; reset_defaults sets the shipped default
-            push_immediate_ret: false, // (kuna) option pushimmediateret; reset_defaults sets the shipped default
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
-            mapped_flow_boundary: false,
             mapped_flow_boundary_image: false,
             overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
             remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
@@ -3271,7 +3204,6 @@ impl Architecture {
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
             be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode::Off, // (kuna) option bejoinpass; reset_defaults sets the shipped default
             call_wide: false,
-            mips_unaligned: false,
             kuna_mips_pairs: None,
             kuna_mips_pairs_painted: false,
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
@@ -3294,11 +3226,8 @@ impl Architecture {
             ptrauth_trap: false, // (kuna) option ptrauthtrap; reset_defaults sets the shipped default (on)
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
-            model_stack_probe_loop: false,
             fold_flag_compare: false,
             switch_modulo_bound: false,
-            switch_run_on: false, // (kuna) option switchrunon; reset_defaults sets the shipped default
-            switch_run_on_guard: false, // (kuna) option switchrunonguard; reset_defaults sets the shipped default
             const_select_jump: false,
             highslice_guard: false,
             switch_guard_bound: false,
@@ -3719,20 +3648,12 @@ impl Architecture {
         self.struct_merge = crate::kuna_structmerge::StructMergeMode::Off; // (kuna) structmerge default `off`: a freshly measured layout that agrees with a held record is answered with the union of the two, so a field one reader proved is kept for the others. Off because at the agreement floor two records that merely begin alike are indistinguishable; `option structmerge siblings` turns it on
         self.field_type = false; // (kuna) option fieldtype default-off: the flip moves which record the layout ledger shares between readers (fields-only layout precision .8713 -> .8693); docs/features/fieldtype/default-on-evaluation.md
         self.struct_headless = crate::kuna_structheadless::StructHeadlessMode::Off; // (kuna) structheadless default `off`: a closed function's parameter read at two or more constant offsets, none of them zero, is declared `struct_N *` with filler over the bytes before its first access; `option structheadless closed` turns it on
-        self.decode_halt = true; // (kuna) DIV-151 default-on: a `CPUI_RETURN` kuna planted because it could NOT decode the bytes renders as upstream `PrintC::opReturn`'s `halt_baddata()`/`halt_unimplemented()`/`halt_missing()` pseudo-call rather than a bare `return;`, and carries the upstream truncation + header warnings. Reachable only through the three decode-failure halt types, which no datatest function produces, so it is byte-identical there (0/675); `option decodehalt off` restores the silent `return;`
-        self.fastfail_noreturn = true; // (kuna) DIV-119 default-on: REMOVES CODE. Ends the flow at a Windows `int 0x29` (`__fastfail`), whose SLEIGH lifting is a call with no matching push and so gains 8 bytes of stack pointer from the cspec's `extrapop` at every site. Windows-cspec-gated and shape-gated on `swi(0x29:1)`, so it is structurally inert on the datatest corpus and byte-identical there (0/675); restore the unbalanced fall-through with `option fastfailnoreturn off`
-        self.msvc_ftol = true; // (kuna) DIV-74 default-on: x86-32-only, and inert unless the binary imports an `__ftol`/`__ftol2`/`__ftol2_sse` symbol. Byte-identical (0/675) — no corpus function carries one of those names. Restore the un-fixed `__ftol()` rendering with `option msvcftol off`
         self.tail_call_jumps = true; // (kuna) DIV-13 default-on (angr tail-call recovery; per-test opt-out on Long double #1/#2)
         self.tail_call_tables = true; // (kuna) GH-781 default `tailcalljump on`: a veneer whose one destination is another function's entry is a tail call when the destination is outside a declared extent, or the callee's prototype is stated and its return value (if any) reaches a stated output. 0/675 byte-identical on the datatest corpus; `option tailcalljump direct` restores the flow into the destination
         self.got_tail_call = true; // (kuna) GH-904 default-on: a one-destination computed jump to a function with no bytes, or to one a callee-first run filed as losing nothing to a call, is a tail call. 0/675 byte-identical on the datatest corpus; `option gottailcall off` restores tailcalljump's rule
         self.tail_call_frame = true; // (kuna) DIV-109 default-on: REMOVES CODE. A direct jmp preceded by a teardown of exactly the entry block's frame is a tail call even when the callee was never discovered. Byte-identical (0/675) on the datatest corpus; restore the flow-into-the-callee decode with `option tailcallframe off`
         self.tail_call_saved = true; // (kuna) DIV-157 default-on: a run that raises the stack pointer without loading a single byte back through it is cdecl argument cleanup, not a frame teardown, so `push ebx; push esi; ...; call f; add esp,8; jmp L` no longer truncates the function at an internal join. Narrows `tailcallframe` only; 0/675 byte-identical on the datatest corpus. Restore the delta-only test with `option tailcallsaved off`
-        self.call_trampoline = true; // (kuna) DIV-144 default-on: RESTORES CODE. Flows a `call` whose callee discards the pushed return address and jumps back into the stream (the Beria-family protector fragment) through as a branch, instead of decoding a fall-through at a return address control never reaches -- which on the witness lifts a junk byte into a store to a global that does not exist and puts the rest of the body one byte out of phase. Requires the callee's raw p-code to pass through `entrySP + ptrsize` and end in a direct branch to an address the symbol table does NOT know as a function entry, so an ordinary tail-call thunk (`add esp,4; jmp printf`) never matches; byte-identical (0/675) on the datatest corpus. Restore the fall-through decode with `option calltrampoline off`
-        self.call_pop_ret = true; // (kuna) DIV-163 default-on: RESTORES CODE. Flows a `call` whose callee pops the pushed return address and `ret`s through the word above it -- the call-over-inline-data idiom -- through as a branch, instead of decoding a fall-through at a return address control never reaches. On the witness (a packed PE) the bytes after the call are an embedded "kernel32.dll\0GetProcAddress\0..." table, and the fall-through lifts them as port-input operations and stores through never-set registers; flowed through, the caller prints as the one-line `return s_4f703c;` it is. The callee's raw p-code must pass through `entrySP + ptrsize` AND end in a `RETURN` through the untouched word at `entrySP + ptrsize`, so `mov ebx,[esp]; ret` (the `__x86.get_pc_thunk` family, which does return to the call site) never matches; byte-identical (0/675) on the datatest corpus. Restore the fall-through decode with `option callpopret off`
-        self.entry_ret_dispatch = true; // (kuna) DIV-168 default-on: restores an entry-point `push continuation; push callee; ret` chain as calls only when bounded, straight-line raw-p-code provenance proves the RET destination came from this run's adjacent store pair. Conditional flow, calls, aliasing writes and overwritten slots conservatively decline; explicit flow assertions win. Byte-identical (0/675) on the datatest corpus. Restore the bare-return rendering with `option entryretdispatch off`
-        self.push_immediate_ret = true; // (kuna) DIV-170 default-on: RESTORES CODE. A RETURN that bounded raw-p-code provenance proves pops the sole current-run stack store of an immediate is a terminal branch to that immediate, so `push original_entry; ret` in an unpacking stub no longer loses the transfer after the unpacker call. Any second live stack store, call boundary, stack adjustment/overwrite, computed target, conditional/indirect flow, or unsupported userop declines; explicit flow assertions win. The target is not synthesized as a function because packed-image bytes can still be encrypted on disk. Byte-identical (0/675) on the datatest corpus. Restore the bare-return rendering with `option pushimmediateret off`
         self.funcbound_flow = true; // (kuna) DIV-67 default-on: REMOVES CODE. Truncates a fall-through that reaches another known function's entry (a function ending in an unnamed static no-return `exit`/`abort`/`die()` wrapper) instead of decoding the next function's body into it. Byte-identical (0/675) on the datatest corpus; restore upstream flow-into-callee with `option funcboundflow off`
-        self.mapped_flow_boundary = true; // (kuna) DIV-176 default-on: RESTORES CODE. On a linked ELF x86 image whose SLEIGH target matches its class, a path that falls through into unmapped memory or reaches an instruction running past the mapped bytes ends in a missing halt with a warning, instead of the whole function failing on staged loader padding; the flow's own entry, in-lined callees, read failures and decode errors keep their errors. Byte-identical (0/675) on the datatest corpus; restore the staged-loader flow with `option mappedflowboundary off`
         self.overlap_branch = true; // (kuna) DIV-106 default-on: REMOVES CODE. Ends a conditional branch's fall-through in a halt when the branch's own target lies strictly inside that fall-through instruction's encoding (the anti-disassembly junk-lead-byte overlap), instead of letting the bogus decode swallow the target and desynchronise the stream. Two real instruction starts cannot sit at `next` and strictly inside `next`, so the trigger never matches well-formed code and is byte-identical (0/675) on the datatest corpus; restore the fall-through-wins decode with `option overlapbranch off`
         self.remove_cleanup_code = true; // (kuna) DIV-81 default-on: REMOVES CODE. Deletes the Rust drop/deallocate call sites (`core::ptr::drop_in_place`, `Drop::drop`, `alloc::raw_vec::RawVecInner::deallocate`, `__rust_dealloc`) and the argument setup that only feeds them. Structurally inert outside a Rust binary (no C ELF resolves a call to one of those names), so byte-identical (0/675) on the datatest corpus; keep the drop glue with `option cleanupcode off`
         self.switch_selector_guard = false; // (kuna) option switchselector, default-off: re-rolling a parameter-dispatch cascade into a switch is the better default; ON narrows `loweredswitch` to cascades whose selector the function itself computes
@@ -3760,7 +3681,6 @@ impl Architecture {
         self.exclusive_arg_use = true; // (kuna) DIV-PENDING default-on: a LOAD/STORE on a path that provably cannot co-execute with a call is not a competing use of the value the call is passed, so it no longer sinks the call's input trial. 0/675 byte-identical on the datatest corpus. Restore the upstream rejection with `option exclusivearguse off`
         self.call_ret_pair = true; // (kuna) DIV-162 default-on: the multi-trial arm of `FuncCallSpecs::buildOutputFromTrials` (fspec.cc:5777) shipped as a stub, so a CALL whose cspec output rule asked for a register pair got NO output and both halves rendered as locals the function never assigns. Completing it is upstream behaviour and is not language-specific -- a 16-byte aggregate return in RAX:RDX is ordinary System V C. 0/675 byte-identical on the datatest corpus. Restore the stub with `option callretpair off`
         self.multi_reg_args = true;
-        self.mips_unaligned = true;
         self.be_join = crate::kuna_bejoin::BeJoinMode::Callers; // (kuna) option bejoin default `callers` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart, two adjacent loads, a proven callee's pair) or a caller reads the second register after the call; `evidence` drops the callers, `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
         self.be_join_pass = crate::kuna_bejoinpass::BeJoinPassMode::Whole; // (kuna) option bejoinpass default `whole` (#904): a pair a call hands back untouched joins in the order of its proven side, and an unproven function handing back a proven callee's pair returns the callee's whole value
         self.call_wide = false;
@@ -3776,8 +3696,6 @@ impl Architecture {
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
-        self.switch_run_on = true; // (kuna) GH-1034 default-on: an unguarded table keeps only its leading rows inside the function when every later row runs on into two or more other functions; 0/675 datatest
-        self.switch_run_on_guard = true; // (kuna) GH-1034 default-on: a guard that does not narrow the selector leaves the table unguarded for switchrunon; 0/675 datatest
         self.const_select_jump = false; // (kuna) default: upstream byte-identical (constant-select indirect branch)
         self.highslice_guard = false;
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
@@ -3962,9 +3880,7 @@ impl Architecture {
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
         self.aggregate_fields = true; // (kuna) option aggregatefields default-on: 0/675 datatest assertions move; restore upstream's field-only resolution with `option aggregatefields off`
-        self.stub_tail_call = true; // (kuna) option stubtailcall default-on: only loader-proven MIPS lazy-binding stubs, which raw and XML images never have (0/675); restore the plain resolver call with `option stubtailcall off`
         self.got_import_proto = true; // (kuna) option gotimportproto default-on: only loader-proven MIPS GOT imports, which raw and XML images never have (0/675); restore the storage requirement with `option gotimportproto off`
-        self.model_stack_probe_loop = true; // (kuna) DIV-3 default-on (GH-8017)
         self.analyze_for_loops = true;
         self.present_lessequal = true; // (kuna) DIV-2 default-on (GH-558)
         self.preserve_thumb_funcptr = true; // (kuna) DIV-2 default-on (GH-8471)
@@ -4714,7 +4630,6 @@ impl Architecture {
         ctx.fold_flag_compare = self.fold_flag_compare; // GH-1276/8777 flagcompare
         ctx.add_carry_chain = self.add_carry_chain; // GH-8913 addcarrychain
         ctx.aggregate_fields = self.aggregate_fields; // aggregatefields
-        ctx.stub_tail_call = self.stub_tail_call; // stubtailcall
         ctx.got_import_proto = self.got_import_proto; // gotimportproto
         ctx.ov_less_simplify = self.ov_less_simplify; // GH-7190 ovlesssimplify
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
@@ -4744,7 +4659,6 @@ impl Architecture {
         ctx.elem_ptr_ranges = std::rc::Rc::clone(&self.globalref_ranges); // (kuna) elemptr
         ctx.slot_ptr = self.slot_ptr; // (kuna) slotptr
         ctx.libctypes = self.analysis_libctypes; // (kuna) libctypes (kuna_libcfit)
-        ctx.model_stack_probe_loop = self.model_stack_probe_loop; // GH-8017 stackprobeloop
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.lowered_switch_labels = self.lowered_switch_labels; // loweredswitchlabels
         ctx.lowered_switch_value_check = self.lowered_switch_value_check; // loweredswitchvalue
@@ -4936,8 +4850,6 @@ impl Architecture {
         // (kuna) GH-9191: carry the modulo/and-mask jump-table index-bound gate
         // (`option switchmodbound`) so `JumpBasic::recoverModel` reaches it.
         ctx.switch_modulo_bound = self.switch_modulo_bound;
-        ctx.switch_run_on = self.switch_run_on; // switchrunon
-        ctx.switch_run_on_guard = self.switch_run_on_guard; // switchrunonguard
         ctx.lazy_entry_starts = Rc::clone(&self.lazy_entry_starts);
         // (kuna) carry the constant-select indirect-branch gate
         // (`option constselectjump`) so `JumpTable::recoverModel` reaches it.
@@ -5685,16 +5597,11 @@ impl Architecture {
         Ok(())
     }
 
-    /// (kuna `msvcftol`) Register the synthesized MSVC `__ftol`-family call-fixup
+    /// (kuna) Register the synthesized MSVC `__ftol`-family call-fixup
     /// (`p2_lift::kuna_msvcftol`) alongside the cspec's own `<callfixup>`
-    /// elements, so `parse_inject_all` compiles it with the rest.
-    ///
-    /// Registration is unconditional on x86-32 rather than gated on the option:
-    /// the architecture is bootstrapped at `load file`, which the console script
-    /// runs *before* its `option` lines, so the flag is not yet readable here. A
-    /// registered payload is inert until something installs it, and the install
-    /// (the analysis-tier `callfixup` pass, which runs at `read symbols`, after
-    /// the options) is where `option msvcftol off` takes effect.
+    /// elements, so `parse_inject_all` compiles it with the rest.  A registered
+    /// payload is inert until the analysis-tier `callfixup` pass installs it at
+    /// `read symbols`.
     ///
     /// Guarded to x86-32 because the body names `ST0..ST7`/`EAX`/`EDX`/`ESP`: on
     /// a language without them the SLEIGH snippet compile would fail at

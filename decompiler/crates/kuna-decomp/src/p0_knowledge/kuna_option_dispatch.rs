@@ -110,7 +110,6 @@ kuna_options! { self, p1;
     },
     "addcarrychain" => on_off!(add_carry_chain, "Carry-chain wide-add recovery"),
     "aggregatefields" => on_off!(aggregate_fields, "Whole-aggregate field recovery"),
-    "stubtailcall" => on_off!(stub_tail_call, "Loader-proven stub tail calls"),
     "gotimportproto" => on_off!(got_import_proto, "GOT import type-only prototypes"),
     "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
     "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
@@ -163,7 +162,6 @@ kuna_options! { self, p1;
     },
     "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
     "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
-    "fastfailnoreturn" => on_off!(fastfail_noreturn, "Windows int 0x29 (__fastfail) no-return"),
     "ptrauthtrap" => on_off!(ptrauth_trap, "arm64e pointer-auth failure-check removal"),
     "int3pad" => {
         let (mode, msg) = crate::kuna_int3pad::OptionInt3Pad.apply(p1)?;
@@ -217,8 +215,6 @@ kuna_options! { self, p1;
         self.field_type = val;
         Ok(msg)
     },
-    "decodehalt" => on_off!(decode_halt, "Decode-failure halt reporting"),
-    "msvcftol" => on_off!(msvc_ftol, "MSVC __ftol-family call-fixup"),
     "tailcalljump" => {
         let (jumps, tables, msg) = crate::kuna_tailcalljump::tail_call_mode(p1)?;
         self.tail_call_jumps = jumps;
@@ -234,12 +230,7 @@ kuna_options! { self, p1;
     "tailcallsaved" => {
         on_off!(tail_call_saved, "Saved-register restore test for a frame teardown")
     },
-    "calltrampoline" => on_off!(call_trampoline, "Return-address-discarding call trampoline flow-through"),
-    "callpopret" => on_off!(call_pop_ret, "Return-address-popping call transfer flow-through"),
-    "entryretdispatch" => on_off!(entry_ret_dispatch, "Entry-point RET-dispatch call-chain recovery"),
-    "pushimmediateret" => on_off!(push_immediate_ret, "Push-immediate RET tail-transfer recovery"),
     "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
-    "mappedflowboundary" => on_off!(mapped_flow_boundary, "Mapped ELF x86 flow boundaries"),
     "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
     "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
     "linuxsyscall" => on_off!(linux_syscall, "Linux int 0x80 syscall naming"),
@@ -258,7 +249,6 @@ kuna_options! { self, p1;
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
     "callretpair" => on_off!(call_ret_pair, "Two-register CALL output completion"),
     "multiregargs" => on_off!(multi_reg_args, "Complete ABI register argument partitions"),
-    "mipsunaligned" => on_off!(mips_unaligned, "MIPS unaligned load/store pairs as one access"),
     "callwide" => {
         let enabled = on_or_off(p1)?;
         self.kuna_callwide.clear();
@@ -375,11 +365,6 @@ kuna_options! { self, p1;
         Ok(message)
     },
     "dynamichashmax" => on_off!(dynamic_hash_maxdup_high, "DynamicHash collision budget"),
-    "stackprobeloop" => {
-        let (form, msg) = crate::kuna_stackprobeloop::parse_stack_probe_loop_form(p1)?;
-        self.model_stack_probe_loop = form.model_stack_probe_loop();
-        Ok(msg)
-    },
     "memsetrecover" => {
         let (form, msg) = crate::kuna_memsetsequence::parse_memset_recover_form(p1)?;
         self.memset_recover = form.memset_recover();
@@ -391,8 +376,6 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
-    "switchrunon" => on_off!(switch_run_on, "Jump-table run-on cut"),
-    "switchrunonguard" => on_off!(switch_run_on_guard, "Jump-table run-on cut past a non-bounding guard"),
     "constselectjump" => on_off!(const_select_jump, "Constant-select indirect branch recovery"),
     "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
     "highsliceguard" => on_off!(highslice_guard, "High-byte slice jump-table guard"),

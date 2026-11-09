@@ -9332,8 +9332,8 @@ Known pass decides that by name at the stub address, and propagation draws
 nothing from the body. MIPS is where the body misleads. A `.MIPS.stubs` lazy
 stub is `lw $t9,-0x7ff0($gp); move $t7,$ra; jalr $t9; li $t8,<dynsym index>`;
 the resolver jumps to the import, which returns to the caller through `$t7`, so
-control never reaches the word after the stub. Unless `stubtailcall` ends the
-walk at the resolver (see *MIPS lazy-binding imports*), the Listing models the
+control never reaches the word after the stub. Before the stub tail-call rule
+ended the walk at the resolver (see *MIPS lazy-binding imports*), the Listing modelled the
 `jalr` as a returning call whose fall-through is the next stub's entry, and the
 reachability rule below therefore concluded every stub laid out in front of a
 Known no-return stub (`exit`, `abort`, `__stack_chk_fail`) no-return, then the
@@ -9529,13 +9529,11 @@ imports from the ELF function provenance, in the architecture; every Listing
 walk, including a resumed one, and the reference walk behind `kuna xrefs`
 (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (descend)`) take only
 the sites bootstrap installed.
-With `option stubtailcall` on (the default) the Listing models each resolver
-transfer, including the delay slot, as an opaque computed jump. The walk applies
-this when it decodes the call
+The Listing models each resolver transfer, including the delay slot, as an
+opaque computed jump. The walk applies this when it decodes the call
 (`decompiler/crates/kuna-analysis/src/listing/walk.rs (step)`), so it never
 follows the call's fall-through into the next stub, section padding or a
-following section, and files no reference along it. Both walks read the option
-when they are built. A stub's no-return status
+following section, and files no reference along it. A stub's no-return status
 still comes from its import's name, as no-return propagation above describes;
 an unknown resolver destination supplies no terminal evidence. Ordinary
 functions and unrecognized instruction sequences retain their original flow.

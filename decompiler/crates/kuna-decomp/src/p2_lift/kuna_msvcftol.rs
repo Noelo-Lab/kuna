@@ -68,9 +68,8 @@
 
 use kuna_base::error::KunaResult;
 
-/// The `<callfixup name=…>` this module registers. The installer
-/// (`kuna_analysis::analyzers::callfixup`) suppresses this one fixup — and only
-/// this one — when `option msvcftol off`.
+/// The `<callfixup name=…>` this module registers and the installer
+/// (`kuna_analysis::analyzers::callfixup`) tags onto its targets.
 pub const FIXUP_NAME: &str = "kuna_msvcftol";
 
 /// The registers the body reads or writes. Presence of all of them (at a 32-bit

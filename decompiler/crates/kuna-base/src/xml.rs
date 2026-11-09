@@ -2140,7 +2140,7 @@ mod tests {
         // and kuna-octeon-core / explicit Octeon integer variants
         // and kuna-truncptrflow / pointer flow on a truncated address space (option truncptrflow)
         // and kuna-retcopyclone / a cloned return block does not store a global a second time
-        // and kuna-switchrunon / an unguarded jump table stops where its rows leave the function (option switchrunon)
+        // and kuna-switchrunon / an unguarded jump table stops where its rows leave the function
         // and kuna-revisitrefine / refining a range a later heritage pass revisited
         // and kuna-wrapsplit + kuna-wrapsplit-be / accesses that run past the top of their space
         // and kuna-relocobj-ppc-mips / PowerPC and MIPS relocatable objects' calls and addresses
@@ -2150,7 +2150,7 @@ mod tests {
         // and kuna-bejoin-mipsclang / a proven pair whose low word feeds its high word stays whole
         // and kuna-mipsgot-local / MIPS GOT slots of what the image defines (option dynrelocs)
         // and kuna-funcstart-symbolextent / no pattern or gap start inside a sized function symbol
-        // and kuna-mipsunaligned / a MIPS unaligned pair lifts as one access (option mipsunaligned)
+        // and kuna-mipsunaligned / a MIPS unaligned pair lifts as one access
         // and ghangr-rust-null-pointer / Rust null-constructor expressions
         // and ghangr-joined-callback-return / a callback's joined return components
         // and kuna-bejoinpass / a big-endian pair a call hands back is one value (option bejoinpass)
