@@ -39,17 +39,16 @@ pub mod chained;
 pub use chained::{resolve_chained_fixups, ChainedBind, ChainedFixups};
 
 /// The environment-variable gate for arm64e Apple-Silicon spec selection
-/// (design §3.7). Off (unset/empty) by default — an arm64e Mach-O then loads
-/// with the generic `AARCH64:LE:64:v8A` spec exactly as any arm64. Turned on by
-/// the `--option macho-arm64e on` CLI flag (which exports this env var onto the
-/// `decomp_dbg` subprocess), making the gate effective at *load* time — before
-/// any console `option` command is processed. Read live so a test can toggle it
-/// in-process.
-pub const MACHO_ARM64E_ENV: &str = "KUNA_MACHO_ARM64E";
+/// (design §3.7): on unless it holds an off-token, which `--option
+/// macho-arm64e off` exports onto the `decomp_dbg` subprocess, so an arm64e
+/// Mach-O then loads with the generic `AARCH64:LE:64:v8A` spec exactly as any
+/// arm64. Effective at *load* time, before any console `option` command, and
+/// read live so a test can toggle it in-process.
+pub use kuna_decomp::kuna_macho_arm64e::MACHO_ARM64E_ENV;
 
 /// Whether the arm64e Apple-Silicon spec gate is enabled ([`MACHO_ARM64E_ENV`]).
 fn arm64e_gate_enabled() -> bool {
-    std::env::var_os(MACHO_ARM64E_ENV).map(|v| !v.is_empty()).unwrap_or(false)
+    kuna_decomp::kuna_macho_arm64e::macho_arm64e_enabled()
 }
 
 /// Whether a thin Mach-O's header reports the arm64e CPU subtype
@@ -77,7 +76,7 @@ pub fn is_arm64e(bytes: &[u8]) -> bool {
 /// the `default` compiler) when — and only when — the format is Mach-O, the arch
 /// is AArch64, the `macho-arm64e` gate is on, and the image is an arm64e thin
 /// Mach-O (design §3.7). Returns `None` (so the generic `v8A` id wins) in every
-/// other case, which is the default-off behavior. The id is the one the vendored
+/// other case. The id is the one the vendored
 /// `AppleSilicon.ldefs` declares — verified resolvable by the console gate.
 pub fn apple_silicon_id(
     fmt: &dyn ObjectFormat,
@@ -257,12 +256,12 @@ mod tests {
 
         // The env-gate toggling must be serialized: this process-global var is
         // also read by the console gate; keep the on-window tight.
-        std::env::remove_var(MACHO_ARM64E_ENV);
-        // Gate OFF (default): even an arm64e Mach-O yields None (generic v8A wins).
+        std::env::set_var(MACHO_ARM64E_ENV, "off");
+        // Gate OFF: even an arm64e Mach-O yields None (generic v8A wins).
         assert_eq!(apple_silicon_id(&macho, Architecture::Aarch64, &arm64e), None);
 
-        std::env::set_var(MACHO_ARM64E_ENV, "1");
-        // Gate ON + arm64e Mach-O + AArch64 → the AppleSilicon id.
+        std::env::remove_var(MACHO_ARM64E_ENV);
+        // Gate ON (the default) + arm64e Mach-O + AArch64 → the AppleSilicon id.
         assert_eq!(
             apple_silicon_id(&macho, Architecture::Aarch64, &arm64e).as_deref(),
             Some("AARCH64:LE:64:AppleSilicon:default")

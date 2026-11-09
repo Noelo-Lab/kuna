@@ -111,9 +111,9 @@ fn bootstrap(on: bool) -> kuna_console::engine::ConsoleProgram {
     // place; it is pinned off here for the same reason. `verify_aifpoolslide.rs`
     // gates it on this fixture.
     prog.arch_mut().set_kuna_option("aifpoolslide", "off").expect("aifpoolslide flips off");
-    if on {
-        prog.arch_mut().set_kuna_option("poolentry", "on").expect("poolentry flips on");
-    }
+    prog.arch_mut()
+        .set_kuna_option("poolentry", if on { "on" } else { "off" })
+        .expect("poolentry flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
 }
@@ -142,7 +142,7 @@ fn decompile(prog: kuna_console::engine::ConsoleProgram, func: &str) -> String {
 /// probed, and the entry that exists in its place carries a dead instruction the
 /// decompiler then folds through the body.
 #[test]
-fn default_plants_the_entry_inside_the_literal_pool() {
+fn off_plants_the_entry_inside_the_literal_pool() {
     let off = bootstrap(false);
     assert!(off.lookup_symbol(RESET).is_some(), "the reset vector is always found");
     assert!(off.lookup_symbol(A).is_some(), "the walk always follows the BL to A");
@@ -264,9 +264,9 @@ fn poolentry_is_inert_without_aif() {
         prog.arch_mut()
             .set_kuna_option("funcstart_patterns", "on")
             .expect("funcstart_patterns flips on");
-        if on {
-            prog.arch_mut().set_kuna_option("poolentry", "on").expect("poolentry flips on");
-        }
+        prog.arch_mut()
+            .set_kuna_option("poolentry", if on { "on" } else { "off" })
+            .expect("poolentry flips");
         prog.commit_pending_analysis().expect("analysis commit succeeds");
         sets.push([PHANTOM, B, UNPAIRED, F, F_PLUS_4].map(|s| prog.lookup_symbol(s).is_some()));
     }

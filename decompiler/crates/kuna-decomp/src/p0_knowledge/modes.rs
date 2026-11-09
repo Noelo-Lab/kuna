@@ -478,11 +478,6 @@ mod tests {
         /// decompile of every caller that yields a varargs override -- measured
         /// +43.7% to +77.5% on whole-binary `decompile-all`, far over the 5% speed
         /// budget, so standing requirement 4 holds it to an opt-in (DIV-66).
-        /// `ifuncfpret` is Stage A of the IFUNC FP-return chain: on its own it only
-        /// renames x86-64 IFUNC stubs to synthetic `ifunc_<resolver>` names and
-        /// recovers a tail call to them -- it does NOT yet fix the `xmm0`-return the
-        /// feature exists for (that needs the Ghidra-divergent Stage B), so it is an
-        /// explicit opt-in until the chain is complete rather than a rendering default.
         /// `aifcorroborate` (GH-313) is upstream's second AIF fingerprint test, and it
         /// was MEASURED OUT of the preset rather than left unevaluated: over the same
         /// 110 stripped non-x86-64 binaries `aifstrict` was measured on, it cuts
@@ -596,7 +591,7 @@ mod tests {
         /// `ppcapu` selects the e500 model, whose scalar call arguments are not
         /// yet recovered, so it requires an explicit option.
         const EXCLUDED_ON_PURPOSE: &[&str] =
-            &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
+            &["v850indirectbranch", "dwarf_lines",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
@@ -625,10 +620,9 @@ mod tests {
         /// `poolentry`) came OFF this list in DIV-93. The joint evaluation this entry
         /// asked for was run over the 110 stripped non-x86-64 decbench twins and all
         /// four passed it, so they are in `AGGRESSIVE_OVERRIDES` above.
-        /// `godwarfsig` and `gopairreturns` remain explicit while aggregate ABI interactions and
-        /// decompression costs across Go corpus sizes are evaluated for automatic selection.
+        /// `gopairreturns` remains explicit while aggregate ABI interactions across
+        /// Go corpus sizes are evaluated for automatic selection.
         const UNEVALUATED: &[&str] = &[
-            "godwarfsig",
             "gopairreturns",
             // Stack-address liveness can be incidental; synthetic regressions and
             // a local speed measurement do not justify a broad preset flip.
@@ -682,15 +676,6 @@ mod tests {
             // preset sweep or speed measurement needed before changing the
             // default output for every aggressive-mode decompile.
             "bytearrayc",
-            // (kuna `unwindstarts`) Mach-O `__unwind_info` function-start discovery.
-            // Inert when `LC_FUNCTION_STARTS` is present (every unwind start is
-            // already a function-starts entry, a strict subset -- 0 change measured
-            // on an 84 MB third-party iOS app), so its only gain is on a stripped Mach-O; the
-            // stripped App-Store apps it was measured on exceed the 500 KiB
-            // `auto`->`aggressive` threshold, so the default path (`auto` under
-            // 500 KiB) would exercise nothing it changes. Promote to the preset
-            // after a Mach-O-inclusive sweep and speed measurement.
-            "unwindstarts",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();

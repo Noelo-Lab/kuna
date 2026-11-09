@@ -10,7 +10,7 @@ use std::process::Command;
 
 use kuna_decomp::{
     kuna_calltargettype, kuna_dwarfstructs, kuna_dwarfvariants, kuna_dynrelocs, kuna_i386_pie_plt,
-    kuna_ifuncfpret, kuna_libctypes, kuna_ppcapu, kuna_msvcfpconst, kuna_pdatachained, kuna_peordinal,
+    kuna_ifuncfpret, kuna_libctypes, kuna_macho_arm64e, kuna_ppcapu, kuna_msvcfpconst, kuna_pdatachained, kuna_peordinal,
     kuna_goabi, kuna_goreg, kuna_gotypes, kuna_relocrebase, kuna_rexthunk, kuna_sourcelang, kuna_swiftdemangle,
     kuna_symbolnamebound, kuna_symbolnamechars,
     kuna_variantnames,
@@ -22,7 +22,6 @@ enum Encoding {
     DefaultOn,
     DefaultOff,
     RelocObjects,
-    Arm64e,
     SymbolNameChars,
     Trimmed,
     LibcTypes,
@@ -36,7 +35,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "relocobjects" => (RELOC_OBJECTS_ENV, RelocObjects),
         "ppc32picimports" => (kuna_decomp::kuna_ppc32picimports::ENV, Ppc32Pic),
         "i386_pie_plt" => (kuna_i386_pie_plt::I386_PIE_PLT_ENV, DefaultOn),
-        "ifuncfpret" => (kuna_ifuncfpret::IFUNCFPRET_ENV, DefaultOff),
+        "ifuncfpret" => (kuna_ifuncfpret::IFUNCFPRET_ENV, DefaultOn),
         "ppcapu" => (kuna_ppcapu::PPCAPU_ENV, DefaultOff),
         "relocrebase" => (kuna_relocrebase::RELOCREBASE_ENV, DefaultOn),
         "dynrelocs" => (kuna_dynrelocs::DYNRELOCS_ENV, DefaultOn),
@@ -56,7 +55,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "dwarfvariants" => (kuna_dwarfvariants::DWARFVARIANTS_ENV, DefaultOn),
         "variantnames" => (kuna_variantnames::VARIANTNAMES_ENV, DefaultOn),
         "calltargettype" => (kuna_calltargettype::CALLTARGETTYPE_ENV, DefaultOff),
-        "macho-arm64e" => ("KUNA_MACHO_ARM64E", Arm64e),
+        "macho-arm64e" => (kuna_macho_arm64e::MACHO_ARM64E_ENV, DefaultOn),
         "sourcelang" => (kuna_sourcelang::SOURCELANG_ENV, SourceLang),
         "swiftdemangle" => (kuna_swiftdemangle::SWIFTDEMANGLE_ENV, DefaultOn),
         _ => return None,
@@ -76,9 +75,6 @@ impl Encoding {
             }
             .into(),
             Self::RelocObjects => if off || token == "no" { "0" } else { "1" }.into(),
-            Self::Arm64e => {
-                return matches!(token.as_str(), "on" | "true" | "1" | "yes").then(|| "1".into());
-            }
             Self::SymbolNameChars => kuna_symbolnamechars::NameChars::parse(value)
                 .unwrap_or_default()
                 .as_str()
@@ -225,7 +221,7 @@ mod tests {
                 ],
             ),
             (
-                "ifuncfpret",
+                "ppcapu",
                 vec![
                     (" TRUE ", Some("on")),
                     ("", Some("on")),
@@ -244,11 +240,11 @@ mod tests {
             (
                 "macho-arm64e",
                 vec![
-                    (" YES ", Some("1")),
-                    ("1", Some("1")),
-                    ("", None),
-                    ("off", None),
-                    ("invalid", None),
+                    (" YES ", Some("on")),
+                    ("1", Some("on")),
+                    ("", Some("on")),
+                    ("off", Some("off")),
+                    ("0", Some("off")),
                 ],
             ),
             (
@@ -286,6 +282,7 @@ mod tests {
             ("typedepth".into(), "off".into()),
             ("macho-arm64e".into(), "off".into()),
             ("dwarfvariants".into(), "off".into()),
+            ("sourcelang".into(), "auto".into()),
             ("unrelated".into(), "on".into()),
         ];
         let mut cmd = Command::new("unused");
@@ -298,9 +295,10 @@ mod tests {
             actual,
             BTreeMap::from([
                 ("KUNA_TYPEDEPTH", Some("off")),
-                ("KUNA_MACHO_ARM64E", None),
+                ("KUNA_MACHO_ARM64E", Some("off")),
                 ("KUNA_MACHO_SLICE", Some("arm64")),
                 ("KUNA_DWARFVARIANTS", Some("off")),
+                (kuna_sourcelang::SOURCELANG_ENV, None),
             ])
         );
         assert!(settings(&[], Some("  "), 1).is_empty());

@@ -78,11 +78,9 @@ fn bootstrap(on: bool) -> kuna_console::engine::ConsoleProgram {
     prog.arch_mut()
         .set_kuna_option("funcstart_patterns", "on")
         .expect("funcstart_patterns flips on");
-    if on {
-        prog.arch_mut()
-            .set_kuna_option("tailcallentry", "on")
-            .expect("tailcallentry flips on");
-    }
+    prog.arch_mut()
+        .set_kuna_option("tailcallentry", if on { "on" } else { "off" })
+        .expect("tailcallentry flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
 }
@@ -109,7 +107,7 @@ fn decompile(prog: kuna_console::engine::ConsoleProgram, func: &str) -> String {
 /// same-function successor, so the tail-called routine is not a function at all:
 /// it has no entry, and its body is emitted as part of `_start`.
 #[test]
-fn default_absorbs_the_tail_called_routine() {
+fn off_absorbs_the_tail_called_routine() {
     let off = bootstrap(false);
     assert!(
         off.lookup_symbol(TAIL).is_none(),

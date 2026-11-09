@@ -576,7 +576,7 @@ fn option_values_live_value_present_for_189() {
         "typedepth",
         // (kuna) Itanium (GCC/Clang) RTTI + vtable recovery — an analysis-tier gate
         // read at the analysis COMMIT boundary (console-side via kuna_live_value),
-        // like the analysis-pass gates above. Default-off, ELF-only.
+        // like the analysis-pass gates above. Default-on, ELF-only.
         "itaniumrtti",
         // (kuna) DWARF aggregate-layout import — a LOAD-time gate read from the
         // `KUNA_DWARFSTRUCTS` env var (the layout is installed on the interned type

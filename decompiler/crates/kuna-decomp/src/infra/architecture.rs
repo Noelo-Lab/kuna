@@ -2218,7 +2218,7 @@ pub struct Architecture {
     /// Validated import slots. Never registered as executable FunctionSymbols.
     pub ppc32_pic_imports: std::collections::BTreeMap<u64, crate::kuna_ppc32piccalls::ImportSlot>,
     /// (kuna) Gate the x86-64 IFUNC (`R_X86_64_IRELATIVE`) `.plt.sec`/`.iplt`
-    /// stub naming (`ifuncfpret`); default off. When on, the loader
+    /// stub naming (`ifuncfpret`); default on. The loader
     /// (`kuna-analysis::loader::elf_plt::resolve_plt_imports`) names each ifunc
     /// stub `ifunc_<resolver>` so a tail `jmp` to it is recovered as a tail call
     /// (`tailcalljump`). Read through the [`crate::kuna_ifuncfpret`] **env var**
@@ -2775,16 +2775,15 @@ pub struct Architecture {
     /// Types/typed-locals/lines are the deferred PR-P2/P3 (this PR is name-level).
     pub analysis_pdb: bool,
     /// (kuna) Gate the Mach-O arm64e Apple-Silicon SLEIGH-spec selection
-    /// (`macho-arm64e`); default **off** (design §3.7, opt-in until proven). When
-    /// on, an arm64e Mach-O (`cpusubtype` CPU_SUBTYPE_ARM64E) loads with the
+    /// (`macho-arm64e`); default **on** (design §3.7). An arm64e Mach-O
+    /// (`cpusubtype` CPU_SUBTYPE_ARM64E) loads with the
     /// `AARCH64:LE:64:AppleSilicon` pointer-auth spec instead of the generic
     /// `v8A`; pointer-auth does NOT change import naming or symbols, only the
     /// spec. NB: spec selection happens at *load* (`language_id_for`), before any
     /// console `option` command runs, so the actual gate is read live from the
-    /// `KUNA_MACHO_ARM64E` env var the CLI exports for `--option macho-arm64e on`;
-    /// this field exists for catalog/registration consistency (a recognized
-    /// option name) and records the requested state. Default-off ⇒ every parity
-    /// gate is byte-identical and a non-arm64e / non-Mach-O target is untouched.
+    /// `KUNA_MACHO_ARM64E` env var ([`crate::kuna_macho_arm64e`]) that the CLI
+    /// exports and the `option` arm sets; this field records the requested state
+    /// for the catalog. A non-arm64e / non-Mach-O target is untouched.
     pub macho_arm64e: bool,
 
     // --- Owned subsystems (architecture.hh:211-233) -----------------------
@@ -3523,7 +3522,7 @@ impl Architecture {
             analysis_i386_pie_plt: false,
             analysis_ppc32picimports: Default::default(),
             ppc32_pic_imports: Default::default(),
-            analysis_ifuncfpret: false, // (kuna) option ifuncfpret, default off (opt-in)
+            analysis_ifuncfpret: true, // (kuna) option ifuncfpret, default on (x86-64 IRELATIVE slots only)
             analysis_ppcapu: false, // (kuna) option ppcapu, default off (opt-in)
             analysis_relocrebase: false,
             analysis_dynrelocs: false,
@@ -4007,7 +4006,7 @@ impl Architecture {
         self.analysis_eh_frame_full = false;
         // (kuna) Mach-O `__unwind_info` function-start discovery — default-OFF
         // (opt-in, output-changing: adds the unwind-recorded function starts).
-        self.analysis_unwindstarts = false;
+        self.analysis_unwindstarts = true; // Mach-O __unwind_info function starts (Mach-O-only pass)
         // (kuna) DIV-61 `.eh_frame` FDE-interior entry suppression — default-ON.
         self.analysis_fdeinterior = true;
         self.analysis_coldentry = true;
@@ -4018,9 +4017,9 @@ impl Architecture {
         self.analysis_funcstart_patterns = false; // full byte-pattern starts default-off (output-changing)
         self.analysis_armframes = true;
         self.analysis_armframes_full = false;
-        self.analysis_cortexmvectors = false; // (kuna) widened Cortex-M vector signature default-off (output-changing)
-        self.analysis_ptrentry = false; // (kuna) pointer-referenced ARM entries default-off (output-changing)
-        self.analysis_poolentry = false; // (kuna) ARM literal-pool inference default-off
+        self.analysis_cortexmvectors = true; // (kuna) widened Cortex-M vector signature (ARM-only)
+        self.analysis_ptrentry = true; // (kuna) pointer-referenced ARM entries (ARM-only, needs listing)
+        self.analysis_poolentry = true; // (kuna) ARM literal-pool inference (ARM-only, needs listing + aif)
         self.analysis_arm_markers = true;
         self.analysis_armfuncmode = true; // (kuna) even ARM function symbol = A32 when no mapping symbols
         self.analysis_armwalkmode = true; // (kuna) ARM walk decodes in the mode its control flow carries
@@ -4052,7 +4051,7 @@ impl Architecture {
         self.analysis_dwarfvariants = true; // (kuna) DIV-87: DWARF variant-part import default-ON (the compiler states the discriminant; real-ELF DWARF path only, so every parity gate is byte-identical)
         self.analysis_variantnames = true; // (kuna) discriminant-value naming default-ON (acts only where a variant part was imported, so the parity gates cannot see it)
         self.analysis_cppproto = true; // (kuna) DIV: DWARF C++ prototype arm default-ON (recovers ground truth the name-only walk drops; real-ELF DWARF path only, so every parity gate is byte-identical)
-        self.analysis_godwarfsig = false;
+        self.analysis_godwarfsig = true; // amd64 Go-with-DWARF signatures (inert elsewhere)
         self.analysis_gopairreturns = false;
         // (kuna) DIV: demangled C++ signatures default to the PROVEN tier — only
         // the prototypes the mangling entails (ctor/dtor/cv-qualified member/
@@ -4076,8 +4075,8 @@ impl Architecture {
         self.analysis_noreturn_error = true; // (kuna) DIV-16 default-on: REMOVES CODE (conclude error(nonzero,...) wrappers no-return, dropping the dead fall-through at every caller). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_error off`
         self.analysis_noreturn_reach = true; // (kuna) DIV-19 default-on: REMOVES CODE (CFG-reachability no-return, Ghidra's FindNoReturnFunctionsAnalyzer.targetOnlyCallsNoReturn — mid-body no-return calls, dead returns, switch-of-no-return). Sub-rule of noreturn_propagate, gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_reach off`
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
-        self.analysis_rtti = false; // MSVC RTTI / vftable recovery default-off (PE-only, output-changing)
-        self.analysis_itaniumrtti = false; // (kuna, NOVEL) Itanium RTTI / vtable recovery default-off (ELF-only, output-changing)
+        self.analysis_rtti = true; // MSVC RTTI / vftable recovery (PE-only pass)
+        self.analysis_itaniumrtti = true; // (kuna, NOVEL) Itanium RTTI / vtable recovery (ELF-only pass)
         self.analysis_aif = false; // Aggressive Instruction Finder gap-walk default-off
         // (kuna, GH-299) AIF gap-cursor aligned slide — default-OFF (it REMOVES
         // entries), carried by the `aggressive` preset.
@@ -4091,17 +4090,17 @@ impl Architecture {
         self.analysis_aifnoppad = true;
         // (kuna, GH-299) AIF literal-pool slide -- default-ON; inert without `aif`.
         self.analysis_aifpoolslide = true;
-        self.analysis_tailcallentry = false; // tail-call function-entry recovery default-off
+        self.analysis_tailcallentry = true; // tail-call function-entry recovery (ARM-only, needs listing)
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
         self.analysis_gotypes = true; // Go runtime-type harvest default-on (Go-only pass)
         self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
-        self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
+        self.analysis_objc = true; // Mach-O Objective-C metadata recovery (Mach-O-only pass)
         self.analysis_objcrefconst = true; // (kuna) ObjC reference slots fold to their selector/class; inert unless objc is on
-        self.analysis_swiftmetadata = false; // Swift runtime-metadata recovery default-off (inert without swift5_* sections)
+        self.analysis_swiftmetadata = true; // Swift runtime-metadata recovery (inert without swift5_* sections)
         self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)
         self.cfstrings_annotate = false;
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
-        self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
+        self.macho_arm64e = true; // arm64e Apple-Silicon spec selection (arm64e Mach-O only)
     }
 
 

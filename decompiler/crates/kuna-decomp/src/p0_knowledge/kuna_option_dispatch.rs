@@ -1452,5 +1452,13 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
-    "macho-arm64e" => on_off!(macho_arm64e, "Mach-O arm64e Apple-Silicon spec selection"),
+    "macho-arm64e" => {
+        let val = on_or_off(p1)?;
+        self.macho_arm64e = val;
+        crate::kuna_macho_arm64e::set_macho_arm64e_env(val);
+        Ok(format!(
+            "Mach-O arm64e Apple-Silicon spec selection turned {}",
+            if val { "on" } else { "off" }
+        ))
+    },
 }
