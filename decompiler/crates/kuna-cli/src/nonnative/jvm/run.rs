@@ -56,6 +56,7 @@ pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
         siblings: args.siblings,
     };
     let input = kuna_input::load(Path::new(&args.input), &options).map_err(|e| e.to_string())?;
+    kuna_jvm::kuna_driver::trace(|| "cli input read".into());
     let universe = Universe::new(kuna_inventory::list(&input));
     if universe.classes.is_empty() {
         return Err(format!("{}: no class file could be read", args.input));

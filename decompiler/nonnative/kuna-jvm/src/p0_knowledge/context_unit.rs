@@ -255,6 +255,7 @@ impl ContextUnit {
         }
 
         Self::wait_for_all(futures);
+        crate::kuna_driver::trace(|| format!("processed {}", to_dump.len()));
         let mut futures: Vec<Result<(), Caught>> = Vec::new();
 
         for class_ctx in to_dump.iter_mut() {

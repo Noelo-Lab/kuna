@@ -19,6 +19,7 @@ pub(crate) fn run(args: &Args) -> i32 {
         Ok(loaded) => loaded,
         Err(status) => return status,
     };
+    kuna_jvm::kuna_driver::trace(|| "cli loaded".into());
     let own = loaded.own_class();
     let mut select: Option<BTreeSet<String>> = None;
     for text in args.functions.iter().flatten() {
@@ -43,7 +44,14 @@ pub(crate) fn run(args: &Args) -> i32 {
         eprintln!("error: cannot create {}: {e}", out_dir.display());
         return 1;
     }
-    render::execute(args, &loaded, select, &|outcome, _runtime| write_tree(args, &out_dir, &outcome))
+    let status = render::execute(args, &loaded, select, &|outcome, _runtime| {
+        kuna_jvm::kuna_driver::trace(|| "cli write start".into());
+        let status = write_tree(args, &out_dir, &outcome);
+        kuna_jvm::kuna_driver::trace(|| "cli write end".into());
+        status
+    });
+    kuna_jvm::kuna_driver::trace(|| "cli end".into());
+    status
 }
 
 /// `relative` (an engine output path) as a path under the export directory:

@@ -228,7 +228,9 @@ pub fn run(
     sink: &mut dyn FnMut(ClassResult),
 ) -> Result<Report, DriverError> {
     let started = Instant::now();
+    trace(|| "driver start".into());
     let workers_wanted = worker_count(input, config);
+    trace(|| format!("workers {workers_wanted}"));
 
     let (plan_tx, plan_rx) = mpsc::channel::<Result<Plan, String>>();
     let (out_tx, out_rx) = mpsc::channel::<Outcome>();
@@ -268,6 +270,7 @@ pub fn run(
             }
         };
         report.plan_millis = started.elapsed().as_millis() as u64;
+        trace(|| format!("plan received roots={}", plan.roots.len()));
         report.roots = plan.roots.clone();
 
         let selected: Vec<usize> = match &config.select {
@@ -318,6 +321,13 @@ pub fn run(
                 break;
             };
             outstanding -= 1;
+            trace(|| {
+                format!(
+                    "outcome batch {} reads={}",
+                    outcome.batch.id,
+                    outcome.reads.len()
+                )
+            });
             report.processed += outcome.batch.process.len();
             report.runs.push(BatchRun {
                 delivered: outcome.batch.deliver.len(),
@@ -414,10 +424,12 @@ pub fn run(
                 next += 1;
             }
         }
+        trace(|| "all delivered".into());
         board.finish();
         for handle in handles {
             let _ = handle.join();
         }
+        trace(|| "joined".into());
         if next < order_of_selected.len() {
             return Err(DriverError(format!(
                 "{} root class(es) were never delivered (a worker stopped)",
@@ -532,7 +544,39 @@ fn engine_options(config: &DriverConfig) -> Vec<(String, String)> {
     options
 }
 
+/// Whether `KUNA_JVM_DRIVER_TRACE` is set: [`trace`] then prints a timeline to stderr.
+pub fn trace_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("KUNA_JVM_DRIVER_TRACE").is_some())
+}
+
+/// One timeline line (seconds since the first line, thread, resident set, event).
+pub fn trace(what: impl FnOnce() -> String) {
+    static T0: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    if trace_on() {
+        let t0 = *T0.get_or_init(Instant::now);
+        let thread = std::thread::current();
+        let rss = std::fs::read_to_string("/proc/self/statm")
+            .ok()
+            .and_then(|s| {
+                s.split_whitespace()
+                    .nth(1)
+                    .and_then(|p| p.parse::<u64>().ok())
+            })
+            .unwrap_or(0)
+            * 4096;
+        eprintln!(
+            "TRACE {:9.3} {:12} rss={:6}M {}",
+            t0.elapsed().as_secs_f64(),
+            thread.name().unwrap_or("?"),
+            rss >> 20,
+            what()
+        );
+    }
+}
+
 fn open_session(input: &InputSet, config: &DriverConfig) -> Result<Session, String> {
+    trace(|| "open start".into());
     reset_engine_thread();
     let logger = (config.logger)();
     let options = engine_options(config);
@@ -543,6 +587,7 @@ fn open_session(input: &InputSet, config: &DriverConfig) -> Result<Session, Stri
                 fernflower.add_library(source);
             }
         }
+        trace(|| "open runtime".into());
         for library in &config.libraries {
             for source in library.sources() {
                 fernflower.add_library(source);
@@ -551,6 +596,7 @@ fn open_session(input: &InputSet, config: &DriverConfig) -> Result<Session, Stri
         for source in input.sources() {
             fernflower.add_source(source);
         }
+        trace(|| "open sources".into());
         fernflower
     });
     match opened {
@@ -598,6 +644,7 @@ fn worker_main(
                 let planned = try_catch(|| plan(&mut s.fernflower, input));
                 match planned {
                     Ok(plan) => {
+                        trace(|| "plan done".into());
                         load_millis = loading.elapsed().as_millis() as u64;
                         let _ = plan_tx.send(Ok(plan));
                         session = Some(s);
@@ -631,6 +678,7 @@ fn worker_main(
                 Ok(mut s) => {
                     instances.fetch_add(1, Ordering::SeqCst);
                     let _ = try_catch(|| s.fernflower.load());
+                    trace(|| "loaded".into());
                     load_millis = loading.elapsed().as_millis() as u64;
                     session = Some(s);
                     fresh = true;
@@ -683,11 +731,23 @@ fn run_batch(session: &mut Session, batch: Batch, plan: &SharedPlan, fresh: bool
     }
     let mut units = Vec::new();
     let started = Instant::now();
+    trace(|| {
+        format!(
+            "batch {} start process={} deliver={} cost={} round={} fresh={}",
+            batch.id,
+            batch.process.len(),
+            batch.deliver.len(),
+            batch.cost,
+            batch.round,
+            fresh
+        )
+    });
     let result = try_catch(|| {
         session
             .fernflower
             .decompile_selected(&selection, &mut |unit| units.push(unit))
     });
+    trace(|| format!("batch {} end", batch.id));
     let reads = if watched {
         kuna_partition::unwatch()
     } else {
