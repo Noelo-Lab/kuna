@@ -4909,7 +4909,12 @@ every other binary's pass list is byte-identical to before the pass existed):
   across the one indirection the printer cannot follow on its own. The entries are
   marked read-only (a CFString constant is immutable), which the route requires on
   the historical writable `__DATA,__cfstring` layout (`__DATA_CONST` is already
-  read-only). The commit also records each seeded entry address
+  read-only). An entry a data symbol already holds (debug info, another pass)
+  keeps that symbol's name and type and gets no `__CFString` symbol, but its
+  string is still seeded and recorded; the symbol, mapped before the entries
+  were painted, takes the read-only flag when it lies inside the entry, so the
+  reference still renders as the literal. An entry under a function is left
+  alone. The commit also records each seeded entry address
   (`Architecture::cfstring_entries`), and the C printer wraps a literal found at one
   of them as `CFSTR("...")`
   (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_cfstr.rs (wrap)`): the value is
