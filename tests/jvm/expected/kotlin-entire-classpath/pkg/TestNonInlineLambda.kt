@@ -1,0 +1,998 @@
+package pkg
+
+import kotlin.jvm.internal.Ref.IntRef
+import kotlin.jvm.internal.Ref.ObjectRef
+
+public open class TestNonInlineLambda {
+   public final var intField: Int
+      internal set
+
+   public final var stringField: String = ""// 120
+      internal set
+
+   private final var privateIntField: Int
+   private final var privateStringField: String = ""// 132
+
+   public fun testCaptureInt(x: Int) {
+      this.execute({ // 8
+         System.out.println(`$y`)// 9
+         Unit.INSTANCE// 10
+      })
+   }// 11
+
+   public fun testCaptureObject(x: String) {
+      this.execute({ // 15
+         System.out.println(`$y`)// 16
+         Unit.INSTANCE// 17
+      })
+   }// 18
+
+   public fun testCaptureIntIterationValue(x: Iterable<Int>) {
+      val var2: java.util.Iterator = x.iterator()// 21
+
+      while (var2.hasNext()) {
+         this.execute({ // 22
+            System.out.println(`$i`)// 23
+            Unit.INSTANCE// 24
+         })
+      }
+   }// 26
+
+   public fun testCaptureObjectIterationValue(x: Iterable<String>) {
+      for (i in x) {// 29
+         this.execute({ // 30
+            System.out.println(`$i`)// 31
+            Unit.INSTANCE// 32
+         })
+      }
+   }// 34
+
+   public fun testCaptureMutableInt(x: Int) {
+      val y: IntRef = IntRef()// 37
+      y.element = x
+      this.execute({ // 38
+         System.out.println(`$y`.element)// 39
+         Unit.INSTANCE// 40
+      })
+      val var3: Int = y.element++// 41
+      this.execute({ // 42
+         System.out.println(`$y`.element)// 43
+         Unit.INSTANCE// 44
+      })
+      y.element *= 500// 45
+      this.execute({ // 46
+         System.out.println(`$y`.element)// 47
+         Unit.INSTANCE// 48
+      })
+      y.element = 100// 49
+      this.execute({ // 50
+         System.out.println(`$y`.element)// 51
+         Unit.INSTANCE// 52
+      })
+      y.element += x// 53
+      this.execute({ // 54
+         System.out.println(`$y`.element)// 55
+         Unit.INSTANCE// 56
+      })
+   }// 57
+
+   public fun testCaptureMutableObject(x: String) {
+      val y: ObjectRef = ObjectRef()// 60
+      y.element = x
+      this.execute({ // 61
+         System.out.println(`$y`.element)// 62
+         Unit.INSTANCE// 63
+      })
+      y.element = "${y.element}!!"// 64
+      this.execute({ // 65
+         System.out.println(`$y`.element)// 66
+         Unit.INSTANCE// 67
+      })
+      y.element = "${y.element}${y.element}${y.element}"// 68
+      this.execute({ // 69
+         System.out.println(`$y`.element)// 70
+         Unit.INSTANCE// 71
+      })
+      y.element = "Hello: "// 72
+      this.execute({ // 73
+         System.out.println(`$y`.element)// 74
+         Unit.INSTANCE// 75
+      })
+      y.element = "${y.element}$x"// 76
+      this.execute({ // 77
+         System.out.println(`$y`.element)// 78
+         Unit.INSTANCE// 79
+      })
+   }// 80
+
+   public fun testCaptureAndMutateInt(x: Int) {
+      val y: IntRef = IntRef()// 83
+      this.execute({ // 84
+         while (`$y`.element < 10) {// 85
+            System.out.println(`$y`.element++)// 86
+         }
+
+         Unit.INSTANCE// 88
+      })
+      y.element = 5 + x// 89
+      this.execute({ // 90
+         while (`$y`.element > 0) {// 91
+            val var1: Int = `$y`.element// 92
+            `$y`.element += -1
+            System.out.println(var1)
+         }
+
+         Unit.INSTANCE// 94
+      })
+   }// 95
+
+   public fun testCaptureAndMutateString(x: String) {
+      val y: ObjectRef = ObjectRef()// 98
+      y.element = ""
+      this.execute({ // 99
+         while ((`$y`.element as java.lang.String).length() < 10) {// 100
+            `$y`.element = " ${`$y`.element}"// 101
+            System.out.println(`$y`.element)// 102
+         }
+
+         Unit.INSTANCE// 104
+      })
+      y.element = "Hello: $x"// 105
+      this.execute({ // 106
+         while (!StringsKt.isBlank(`$y`.element as java.lang.CharSequence)) {// 107
+            System.out.println()// 108
+            `$y`.element = StringsKt.drop(`$y`.element as java.lang.String, 1)// 109
+         }
+
+         Unit.INSTANCE// 111
+      })
+   }// 112
+
+   public fun testCapturePublicMutableIntField() {
+      this.execute({ 
+         val var1: Int = `this$0`.intField++// 117
+         Unit.INSTANCE
+      })
+   }// 118
+
+   public fun testCapturePublicMutableStringField() {
+      this.execute({ 
+         `this$0`.stringField = "${`this$0`.stringField}!"// 123
+         Unit.INSTANCE
+      })
+   }// 124
+
+   public fun testCapturePrivateMutableIntField() {
+      this.execute({ 
+         val var1: Int = `this$0`.privateIntField++// 129
+         Unit.INSTANCE
+      })
+   }// 130
+
+   public fun testCapturePrivateMutableStringField() {
+      this.execute({ 
+         `this$0`.privateStringField = "${`this$0`.privateStringField}!"// 135
+         Unit.INSTANCE
+      })
+   }// 136
+
+   public open fun execute(block: () -> Unit) {
+   }// 141
+}
+
+class 'pkg/TestNonInlineLambda' {
+   method '<init> ()V' {
+      5      9
+      6      9
+      b      13
+      c      13
+   }
+
+   method 'testCaptureInt (I)V' {
+      2      16
+      9      16
+      a      16
+      b      16
+      c      20
+   }
+
+   method 'testCaptureInt$lambda$0 (I)Lkotlin/Unit;' {
+      0      17
+      1      17
+      2      17
+      3      17
+      4      17
+      5      17
+      6      17
+      7      18
+      8      18
+      9      18
+   }
+
+   method 'testCaptureObject (Ljava/lang/String;)V' {
+      8      23
+      f      23
+      10      23
+      11      23
+      12      27
+   }
+
+   method 'testCaptureObject$lambda$1 (Ljava/lang/String;)Lkotlin/Unit;' {
+      7      24
+      8      24
+      9      24
+      a      24
+      b      24
+      c      24
+      d      24
+      e      25
+      f      25
+      10      25
+   }
+
+   method 'testCaptureIntIterationValue (Ljava/lang/Iterable;)V' {
+      6      30
+      7      30
+      8      30
+      9      30
+      a      30
+      b      30
+      c      30
+      d      32
+      e      32
+      f      32
+      10      32
+      11      32
+      12      32
+      23      33
+      2a      33
+      2b      33
+      2c      33
+      30      38
+   }
+
+   method 'testCaptureIntIterationValue$lambda$2 (I)Lkotlin/Unit;' {
+      0      34
+      1      34
+      2      34
+      3      34
+      4      34
+      5      34
+      6      34
+      7      35
+      8      35
+      9      35
+   }
+
+   method 'testCaptureObjectIterationValue (Ljava/lang/Iterable;)V' {
+      6      41
+      7      41
+      8      41
+      9      41
+      a      41
+      b      41
+      c      41
+      16      41
+      17      41
+      18      41
+      19      41
+      1a      41
+      1b      41
+      1c      41
+      1d      41
+      1e      41
+      1f      41
+      20      42
+      27      42
+      28      42
+      29      42
+      2d      47
+   }
+
+   method 'testCaptureObjectIterationValue$lambda$3 (Ljava/lang/String;)Lkotlin/Unit;' {
+      7      43
+      8      43
+      9      43
+      a      43
+      b      43
+      c      43
+      d      43
+      e      44
+      f      44
+      10      44
+   }
+
+   method 'testCaptureMutableInt (I)V' {
+      7      50
+      8      51
+      9      51
+      a      51
+      b      51
+      c      51
+      d      52
+      14      52
+      15      52
+      16      52
+      17      56
+      18      56
+      19      56
+      1a      56
+      1b      56
+      1f      56
+      23      57
+      2a      57
+      2b      57
+      2c      57
+      2d      61
+      32      61
+      33      61
+      34      61
+      36      61
+      37      61
+      38      61
+      39      62
+      40      62
+      41      62
+      42      62
+      43      66
+      44      66
+      45      66
+      46      66
+      47      66
+      48      66
+      49      67
+      50      67
+      51      67
+      52      67
+      53      71
+      58      71
+      5a      71
+      5b      71
+      5c      71
+      5d      72
+      64      72
+      65      72
+      66      72
+      67      76
+   }
+
+   method 'testCaptureMutableInt$lambda$4 (Lkotlin/jvm/internal/Ref$IntRef;)Lkotlin/Unit;' {
+      7      53
+      8      53
+      9      53
+      a      53
+      c      53
+      d      53
+      e      53
+      f      53
+      10      53
+      11      53
+      12      53
+      13      54
+      14      54
+      15      54
+   }
+
+   method 'testCaptureMutableInt$lambda$5 (Lkotlin/jvm/internal/Ref$IntRef;)Lkotlin/Unit;' {
+      7      58
+      8      58
+      9      58
+      a      58
+      c      58
+      d      58
+      e      58
+      f      58
+      10      58
+      11      58
+      12      58
+      13      59
+      14      59
+      15      59
+   }
+
+   method 'testCaptureMutableInt$lambda$6 (Lkotlin/jvm/internal/Ref$IntRef;)Lkotlin/Unit;' {
+      7      63
+      8      63
+      9      63
+      a      63
+      c      63
+      d      63
+      e      63
+      f      63
+      10      63
+      11      63
+      12      63
+      13      64
+      14      64
+      15      64
+   }
+
+   method 'testCaptureMutableInt$lambda$7 (Lkotlin/jvm/internal/Ref$IntRef;)Lkotlin/Unit;' {
+      7      68
+      8      68
+      9      68
+      a      68
+      c      68
+      d      68
+      e      68
+      f      68
+      10      68
+      11      68
+      12      68
+      13      69
+      14      69
+      15      69
+   }
+
+   method 'testCaptureMutableInt$lambda$8 (Lkotlin/jvm/internal/Ref$IntRef;)Lkotlin/Unit;' {
+      7      73
+      8      73
+      9      73
+      a      73
+      c      73
+      d      73
+      e      73
+      f      73
+      10      73
+      11      73
+      12      73
+      13      74
+      14      74
+      15      74
+   }
+
+   method 'testCaptureMutableObject (Ljava/lang/String;)V' {
+      d      79
+      e      80
+      f      80
+      10      80
+      11      80
+      12      80
+      13      81
+      1a      81
+      1b      81
+      1c      81
+      1d      85
+      1e      85
+      1f      85
+      20      85
+      21      85
+      22      85
+      23      85
+      24      85
+      25      85
+      26      85
+      27      85
+      28      85
+      29      85
+      2a      86
+      31      86
+      32      86
+      33      86
+      34      90
+      35      90
+      36      90
+      37      90
+      38      90
+      39      90
+      3a      90
+      3b      90
+      3c      90
+      3d      90
+      3e      90
+      3f      90
+      40      90
+      41      90
+      42      90
+      43      90
+      44      90
+      45      90
+      46      90
+      47      90
+      48      90
+      49      91
+      50      91
+      51      91
+      52      91
+      53      95
+      54      95
+      55      95
+      56      95
+      57      95
+      58      95
+      59      96
+      60      96
+      61      96
+      62      96
+      63      100
+      64      100
+      65      100
+      66      100
+      67      100
+      68      100
+      69      100
+      6a      100
+      6b      100
+      6c      100
+      6d      100
+      6e      100
+      6f      100
+      70      100
+      71      101
+      78      101
+      79      101
+      7a      101
+      7b      105
+   }
+
+   method 'testCaptureMutableObject$lambda$9 (Lkotlin/jvm/internal/Ref$ObjectRef;)Lkotlin/Unit;' {
+      7      82
+      8      82
+      9      82
+      a      82
+      b      82
+      c      82
+      d      82
+      f      82
+      10      82
+      11      82
+      12      83
+      13      83
+      14      83
+   }
+
+   method 'testCaptureMutableObject$lambda$10 (Lkotlin/jvm/internal/Ref$ObjectRef;)Lkotlin/Unit;' {
+      7      87
+      8      87
+      9      87
+      a      87
+      b      87
+      c      87
+      d      87
+      f      87
+      10      87
+      11      87
+      12      88
+      13      88
+      14      88
+   }
+
+   method 'testCaptureMutableObject$lambda$11 (Lkotlin/jvm/internal/Ref$ObjectRef;)Lkotlin/Unit;' {
+      7      92
+      8      92
+      9      92
+      a      92
+      b      92
+      c      92
+      d      92
+      f      92
+      10      92
+      11      92
+      12      93
+      13      93
+      14      93
+   }
+
+   method 'testCaptureMutableObject$lambda$12 (Lkotlin/jvm/internal/Ref$ObjectRef;)Lkotlin/Unit;' {
+      7      97
+      8      97
+      9      97
+      a      97
+      b      97
+      c      97
+      d      97
+      f      97
+      10      97
+      11      97
+      12      98
+      13      98
+      14      98
+   }
+
+   method 'testCaptureMutableObject$lambda$13 (Lkotlin/jvm/internal/Ref$ObjectRef;)Lkotlin/Unit;' {
+      7      102
+      8      102
+      9      102
+      a      102
+      b      102
+      c      102
+      d      102
+      f      102
+      10      102
+      11      102
+      12      103
+      13      103
+      14      103
+   }
+
+   method 'testCaptureAndMutateInt (I)V' {
+      7      108
+      8      109
+      f      109
+      10      109
+      11      109
+      12      116
+      13      116
+      14      116
+      15      116
+      16      116
+      17      116
+      18      116
+      19      117
+      20      117
+      21      117
+      22      117
+      23      126
+   }
+
+   method 'testCaptureAndMutateInt$lambda$14 (Lkotlin/jvm/internal/Ref$IntRef;)Lkotlin/Unit;' {
+      7      110
+      8      110
+      9      110
+      a      110
+      b      110
+      c      110
+      d      110
+      e      110
+      f      110
+      10      111
+      11      111
+      12      111
+      13      111
+      18      111
+      1c      111
+      1e      111
+      1f      111
+      20      111
+      21      111
+      22      111
+      23      111
+      24      111
+      28      114
+      29      114
+      2a      114
+   }
+
+   method 'testCaptureAndMutateInt$lambda$15 (Lkotlin/jvm/internal/Ref$IntRef;)Lkotlin/Unit;' {
+      7      118
+      8      118
+      9      118
+      a      118
+      b      118
+      c      118
+      d      118
+      e      119
+      f      119
+      10      119
+      11      119
+      12      119
+      13      120
+      15      120
+      17      120
+      18      120
+      19      120
+      1a      121
+      1c      121
+      1d      121
+      1e      121
+      1f      121
+      20      121
+      21      121
+      22      121
+      26      124
+      27      124
+      28      124
+   }
+
+   method 'testCaptureAndMutateString (Ljava/lang/String;)V' {
+      d      129
+      e      130
+      f      130
+      10      130
+      11      130
+      12      130
+      13      130
+      14      131
+      1b      131
+      1c      131
+      1d      131
+      1e      139
+      1f      139
+      20      139
+      21      139
+      22      139
+      23      139
+      24      139
+      25      139
+      26      139
+      27      139
+      28      140
+      2f      140
+      30      140
+      31      140
+      32      148
+   }
+
+   method 'testCaptureAndMutateString$lambda$16 (Lkotlin/jvm/internal/Ref$ObjectRef;)Lkotlin/Unit;' {
+      7      132
+      8      132
+      9      132
+      a      132
+      b      132
+      c      132
+      d      132
+      e      132
+      f      132
+      10      132
+      11      132
+      12      132
+      13      132
+      14      132
+      15      132
+      16      133
+      17      133
+      18      133
+      19      133
+      1a      133
+      1b      133
+      1c      133
+      1d      133
+      1e      133
+      1f      133
+      20      133
+      21      133
+      22      133
+      23      134
+      24      134
+      25      134
+      26      134
+      27      134
+      28      134
+      29      134
+      2b      134
+      2c      134
+      2d      134
+      31      137
+      32      137
+      33      137
+   }
+
+   method 'testCaptureAndMutateString$lambda$17 (Lkotlin/jvm/internal/Ref$ObjectRef;)Lkotlin/Unit;' {
+      7      141
+      8      141
+      9      141
+      a      141
+      b      141
+      c      141
+      d      141
+      e      141
+      f      141
+      10      141
+      11      141
+      12      141
+      13      141
+      1c      142
+      1d      142
+      1e      142
+      1f      142
+      20      142
+      21      142
+      22      143
+      23      143
+      24      143
+      25      143
+      26      143
+      27      143
+      28      143
+      29      143
+      2a      143
+      2b      143
+      2c      143
+      2d      143
+      2e      143
+      2f      143
+      30      143
+      34      146
+      35      146
+      36      146
+   }
+
+   method 'testCapturePublicMutableIntField ()V' {
+      0      151
+      7      151
+      8      151
+      9      151
+      a      155
+   }
+
+   method 'testCapturePublicMutableIntField$lambda$18 (Lpkg/TestNonInlineLambda;)Lkotlin/Unit;' {
+      7      152
+      8      152
+      9      152
+      a      152
+      b      152
+      f      152
+      13      153
+      14      153
+      15      153
+   }
+
+   method 'testCapturePublicMutableStringField ()V' {
+      0      158
+      7      158
+      8      158
+      9      158
+      a      162
+   }
+
+   method 'testCapturePublicMutableStringField$lambda$19 (Lpkg/TestNonInlineLambda;)Lkotlin/Unit;' {
+      7      159
+      8      159
+      9      159
+      a      159
+      b      159
+      c      159
+      d      159
+      e      159
+      f      159
+      10      159
+      11      159
+      12      159
+      13      159
+      14      160
+      15      160
+      16      160
+   }
+
+   method 'testCapturePrivateMutableIntField ()V' {
+      0      165
+      7      165
+      8      165
+      9      165
+      a      169
+   }
+
+   method 'testCapturePrivateMutableIntField$lambda$20 (Lpkg/TestNonInlineLambda;)Lkotlin/Unit;' {
+      7      166
+      8      166
+      9      166
+      a      166
+      b      166
+      f      166
+      13      167
+      14      167
+      15      167
+   }
+
+   method 'testCapturePrivateMutableStringField ()V' {
+      0      172
+      7      172
+      8      172
+      9      172
+      a      176
+   }
+
+   method 'testCapturePrivateMutableStringField$lambda$21 (Lpkg/TestNonInlineLambda;)Lkotlin/Unit;' {
+      7      173
+      8      173
+      9      173
+      a      173
+      b      173
+      c      173
+      d      173
+      e      173
+      f      173
+      10      173
+      11      173
+      12      173
+      13      173
+      14      174
+      15      174
+      16      174
+   }
+
+   method 'execute (Lkotlin/jvm/functions/Function0;)V' {
+      7      179
+   }
+}
+
+Lines mapping:
+8 <-> 17
+9 <-> 18
+10 <-> 19
+11 <-> 21
+15 <-> 24
+16 <-> 25
+17 <-> 26
+18 <-> 28
+21 <-> 31
+22 <-> 34
+23 <-> 35
+24 <-> 36
+26 <-> 39
+29 <-> 42
+30 <-> 43
+31 <-> 44
+32 <-> 45
+34 <-> 48
+37 <-> 51
+38 <-> 53
+39 <-> 54
+40 <-> 55
+41 <-> 57
+42 <-> 58
+43 <-> 59
+44 <-> 60
+45 <-> 62
+46 <-> 63
+47 <-> 64
+48 <-> 65
+49 <-> 67
+50 <-> 68
+51 <-> 69
+52 <-> 70
+53 <-> 72
+54 <-> 73
+55 <-> 74
+56 <-> 75
+57 <-> 77
+60 <-> 80
+61 <-> 82
+62 <-> 83
+63 <-> 84
+64 <-> 86
+65 <-> 87
+66 <-> 88
+67 <-> 89
+68 <-> 91
+69 <-> 92
+70 <-> 93
+71 <-> 94
+72 <-> 96
+73 <-> 97
+74 <-> 98
+75 <-> 99
+76 <-> 101
+77 <-> 102
+78 <-> 103
+79 <-> 104
+80 <-> 106
+83 <-> 109
+84 <-> 110
+85 <-> 111
+86 <-> 112
+88 <-> 115
+89 <-> 117
+90 <-> 118
+91 <-> 119
+92 <-> 120
+94 <-> 125
+95 <-> 127
+98 <-> 130
+99 <-> 132
+100 <-> 133
+101 <-> 134
+102 <-> 135
+104 <-> 138
+105 <-> 140
+106 <-> 141
+107 <-> 142
+108 <-> 143
+109 <-> 144
+111 <-> 147
+112 <-> 149
+117 <-> 153
+118 <-> 156
+120 <-> 10
+123 <-> 160
+124 <-> 163
+129 <-> 167
+130 <-> 170
+132 <-> 14
+135 <-> 174
+136 <-> 177
+141 <-> 180
+Not mapped:
+3
+7
+14

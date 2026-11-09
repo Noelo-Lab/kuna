@@ -642,7 +642,14 @@ fn vendored() -> Vec<Case> {
 #[test]
 fn vendored_corpus_is_complete() {
     let cases = vendored();
-    assert_eq!(cases.len(), 536);
+    assert_eq!(cases.len(), 607);
+    assert_eq!(
+        cases
+            .iter()
+            .filter(|c| c.set_slug.starts_with("kotlin-"))
+            .count(),
+        71
+    );
     let ids: BTreeSet<&str> = cases.iter().map(|c| c.id.as_str()).collect();
     assert_eq!(ids.len(), cases.len());
     let base = [
@@ -669,7 +676,12 @@ fn vendored_corpus_is_complete() {
         }
         let plugin_set = matches!(
             case.set_slug.as_str(),
-            "with-idea-not-null" | "jad-naming" | "tiny-naming" | "plugin-defaults"
+            "with-idea-not-null"
+                | "jad-naming"
+                | "tiny-naming"
+                | "plugin-defaults"
+                | "kotlin-entire-classpath"
+                | "kotlin-multifile-facade"
         );
         assert_eq!(
             case.options
@@ -683,9 +695,16 @@ fn vendored_corpus_is_complete() {
             assert_eq!(case.options, [("jvm_plugins".to_string(), "1".to_string())]);
             continue;
         }
+        let kotlin = case.set_slug.starts_with("kotlin-");
+        if kotlin {
+            assert_eq!(case.options[0].0, "jvm_plugins", "{}", case.id);
+            let class = case.class_files[0].file_stem().unwrap().to_string_lossy();
+            assert_eq!(case.compare, [format!("{class}.kt"), format!("{class}.java")]);
+        }
         let keys: Vec<&str> = case
             .options
             .iter()
+            .skip(usize::from(kotlin))
             .take(base.len())
             .map(|(k, _)| k.as_str())
             .collect();
@@ -696,6 +715,8 @@ fn vendored_corpus_is_complete() {
         );
         for (k, v) in base {
             let v = if literals && k == "keep-literals" {
+                "0"
+            } else if kotlin && !case.set_slug.contains("core") && k == "remove-synthetic" {
                 "0"
             } else {
                 v
@@ -754,7 +775,7 @@ fn vendored_expected_texts_match_themselves() {
         );
         matched += 1;
     }
-    assert_eq!(matched, 536);
+    assert_eq!(matched, 607);
 }
 
 #[test]

@@ -9,9 +9,10 @@ Reads <corpus>/manifest.json and writes, under --out (default: this script's dir
   expected/...       the Vineflower 1.12.0 output each case is compared with (<corpus>/expected)
   README.md          provenance, counts and the excluded cases
 
-The cases of plugins.json (Vineflower's bundled plugins, with kuna's jvm_plugins switch on) are appended
-to cases.tsv; their class files and expected text live in this directory (written by plugin_oracle.py)
-and are copied when --out is elsewhere.
+The cases of plugins.json (Vineflower's bundled plugins, with kuna's jvm_plugins switch on) and of
+kotlin.json (the Kotlin oracle corpus) are appended to cases.tsv; their class files and expected text
+live in this directory (written by plugin_oracle.py and kotlin_corpus.py) and are copied when --out is
+elsewhere.
 
 Existing files are overwritten, nothing is deleted; regenerate into a fresh directory to drop stale
 files. --full-manifest additionally writes a manifest of all runnable cases (JDK-dependent ones
@@ -83,7 +84,7 @@ def plugin_records(pm, base):
         for f in t['class_files']:
             case_lines.append(line('class', 'classes/' + f))
         case_lines.append(line('expected', t['oracle']))
-        case_lines.append(line('compare', t['decompiled_file']))
+        case_lines.append(line('compare', t['decompiled_file'], *filter(None, [t.get('decompiled_file_fallback')])))
     return set_lines, case_lines
 
 
@@ -153,6 +154,8 @@ documents how that corpus was built and validated); do not edit by hand.
 | `regen.py` | rebuilds everything here except `baseline.txt` |
 | `plugins.json` | the plugin cases: Vineflower's bundled plugins' own tests, run with the plugins on |
 | `plugin_oracle.py` | rebuilds the plugin cases' class files (`classes/plugins/`) and expected text with the release jar |
+| `kotlin.json` | the Kotlin cases: the Kotlin plugin's own tests and core's Kotlin tests, from the Kotlin oracle corpus |
+| `kotlin_corpus.py` | vendors the Kotlin cases (`classes/kotlin/`, `expected/kotlin-*/`, `kotlin.json`) from `~/kwt/jvm/corpus-kt`, and writes the manifest of all its forms |
 
 ## Provenance
 
@@ -217,6 +220,33 @@ Line oriented, tab separated; fields escape `\\\\`, `\\t`, `\\n`, `\\r`; `#` sta
   *Plugin Defaults*, the oracle corpus's `expected-defaults`) under the fixture's comparison. Rebuild them with
   `python3 -I tests/jvm/plugin_oracle.py --corpus ~/kwt/jvm/corpus --vf-src ~/github/vineflower --work NEW_DIR`.
 
+## Kotlin cases
+
+`kotlin.json` holds **{nkotlin}** cases ({kotlin_sets}): {kt_nclasses} class files ({kt_cls_kb} KiB) and
+{nkotlin} expected files ({kt_exp_kb} KiB). They come from the Kotlin oracle corpus `~/kwt/jvm/corpus-kt`
+(its `README.md` documents the build: kotlinc 2.0.0, JVM target 17, the plugin's own Gradle setup; all 73 of
+its fixture outputs pass the fixture comparison with upstream's `.dec`). Each case replays one test of
+Vineflower's Kotlin plugin (`KotlinTests`: sets *Kotlin Entire Classpath* and *Kotlin Multifile Facade*,
+only the Kotlin plugin loaded, so here `jvm_plugins` is on; the release jar's other two bundled plugins do
+not change these outputs) or one `KOTLIN` test of core `SingleClassesTest` (*Kotlin Core Default*, no
+plugin: the Kotlin classes come out as Java). A set's pairs are the complete effective option map; the
+compared file is `<class file name>.kt`, falling back to `.java` as the fixture does, and the expected
+text is stored under the test class name like upstream's `.dec`.
+
+Not vendored, because they need the Kotlin standard library or a JDK: the core *Entire Classpath* tests
+({kt_excluded}: `include-classpath=1` with kotlin-stdlib on the oracle JVM's class path) and the corpus's
+two plain-CLI forms (`java -jar` defaults, with and without `-e=kotlin-stdlib`). Run all 73 cases in all
+three forms from the corpus itself:
+
+```sh
+python3 -I ../tests/jvm/kotlin_corpus.py --corpus-kt ~/kwt/jvm/corpus-kt --skip-vendor --full-manifest /tmp/kt-all.tsv
+cargo run -q --release -p kuna-jvm --example corpus -- --manifest /tmp/kt-all.tsv --jobs 16
+```
+
+The *Entire Classpath* cases need the current JDK to be 17 (`JAVA_HOME`); the plain-CLI forms use the
+current JDK as their runtime (JDK 17 and 21 give the same text). Refresh the vendored cases with
+`python3 -I tests/jvm/kotlin_corpus.py --corpus-kt ~/kwt/jvm/corpus-kt`, then `regen.py`.
+
 ### Not vendored
 
 {excluded_list}
@@ -266,6 +296,8 @@ def main():
 
     with open(os.path.join(here, 'plugins.json'), encoding='utf-8') as f:
         pm = json.load(f)
+    with open(os.path.join(here, 'kotlin.json'), encoding='utf-8') as f:
+        km = json.load(f)
 
     if a.full_manifest:
         write_manifest(os.path.abspath(a.full_manifest), runnable, sets, base, corpus, m['java_homes'],
@@ -280,13 +312,16 @@ def main():
         copy(os.path.join(corpus, 'classes', f), os.path.join(out, 'classes', f))
     for t in included:
         copy(os.path.join(corpus, t['oracle']), os.path.join(out, t['oracle']))
-    plugin_files = sorted({'classes/' + f for t in pm['tests'] for f in t['class_files']}
-                          | {t['oracle'] for t in pm['tests']})
+    plugin_files = sorted({'classes/' + f for t in pm['tests'] + km['tests'] for f in t['class_files']}
+                          | {t['oracle'] for t in pm['tests'] + km['tests']})
     if out != here:
         for f in plugin_files:
             copy(os.path.join(here, f), os.path.join(out, f))
+    plugin_sets, plugin_cases = plugin_records(pm, base)
+    kotlin_sets, kotlin_cases = plugin_records(km, base)
     write_manifest(os.path.join(out, 'cases.tsv'), included, sets, base, None, {},
-                   lambda f: 'classes/' + f, lambda p: p, plugin_records(pm, base))
+                   lambda f: 'classes/' + f, lambda p: p,
+                   (plugin_sets + kotlin_sets, plugin_cases + kotlin_cases))
 
     with open(os.path.join(corpus, 'reports', 'match-fixture.json'), encoding='utf-8') as f:
         match = json.load(f)
@@ -317,6 +352,11 @@ def main():
     plugin_counts = {}
     for t in pm['tests']:
         plugin_counts[t['set']] = plugin_counts.get(t['set'], 0) + 1
+    kotlin_counts = {}
+    for t in km['tests']:
+        kotlin_counts[t['set']] = kotlin_counts.get(t['set'], 0) + 1
+    kt_class = [os.path.join(out, 'classes', f) for f in sorted({f for t in km['tests'] for f in t['class_files']})]
+    kt_exp = [os.path.join(out, t['oracle']) for t in km['tests']]
     cls_paths = [os.path.join(out, 'classes', f) for f in class_files]
     exp_paths = [os.path.join(out, t['oracle']) for t in included]
     cls_b, exp_b = tree_size(cls_paths), tree_size(exp_paths)
@@ -328,7 +368,10 @@ def main():
         total_kb=(cls_b + exp_b + man_b) // 1024, runnable=len(runnable), excluded=len(excluded),
         skipped=len(skipped), unsupported_note=unsupported_note, excluded_list=excluded_list,
         nplugin=len(pm['tests']),
-        plugin_sets=', '.join(f'{n} {c}' for n, c in plugin_counts.items()))
+        plugin_sets=', '.join(f'{n} {c}' for n, c in plugin_counts.items()),
+        nkotlin=len(km['tests']), kotlin_sets=', '.join(f'{n} {c}' for n, c in kotlin_counts.items()),
+        kt_nclasses=len(kt_class), kt_cls_kb=tree_size(kt_class) // 1024, kt_exp_kb=tree_size(kt_exp) // 1024,
+        kt_excluded=', '.join(f'`{e["id"]}`' for e in km['excluded']))
     with open(os.path.join(out, 'README.md'), 'w', encoding='utf-8', newline='\n') as f:
         f.write(readme)
 

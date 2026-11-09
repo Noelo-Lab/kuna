@@ -1,0 +1,179 @@
+package pkg;
+
+import kotlin.Metadata;
+import kotlin.ResultKt;
+import kotlin.Unit;
+import kotlin.coroutines.Continuation;
+import kotlin.coroutines.intrinsics.IntrinsicsKt;
+import kotlin.coroutines.jvm.internal.DebugMetadata;
+import kotlin.coroutines.jvm.internal.SuspendLambda;
+import kotlin.jvm.functions.Function1;
+import org.jetbrains.annotations.NotNull;
+
+@Metadata(
+   mv = {2, 0, 0},
+   k = 2,
+   xi = 48,
+   d1 = "\u0000\u0016\n\u0000\n\u0002\u0018\u0002\n\u0002\u0018\u0002\n\u0002\u0010\u0002\n\u0002\u0010\u0000\n\u0002\b\u0004\")\u0010\u0000\u001a\u0018\b\u0001\u0012\n\u0012\b\u0012\u0004\u0012\u00020\u00030\u0002\u0012\u0006\u0012\u0004\u0018\u00010\u00040\u0001¢\u0006\n\n\u0002\u0010\u0007\u001a\u0004\b\u0005\u0010\u0006¨\u0006\b",
+   d2 = {
+         "sl1",
+         "Lkotlin/Function1;",
+         "Lkotlin/coroutines/Continuation;",
+         "",
+         "",
+         "getSl1",
+         "()Lkotlin/jvm/functions/Function1;",
+         "Lkotlin/jvm/functions/Function1;",
+         "vineflower_testDataKotlin"
+   }
+)
+public final class TestSuspendLambdaKt {
+   @NotNull
+   private static final Function1<Continuation<? super Unit>, Object> sl1 = new NamelessClass_1(null);
+
+   @NotNull
+   public static final Function1<Continuation<? super Unit>, Object> getSl1() {
+      return sl1;
+   }
+
+   static {
+      @DebugMetadata(f = "TestSuspendLambda.kt", l = {}, i = {}, s = {}, n = {}, m = "invokeSuspend", c = "pkg.TestSuspendLambdaKt$sl1$1")
+      @Metadata(mv = {2, 0, 0}, k = 3, xi = 48, d1 = "\u0000\u0006\n\u0000\n\u0002\u0010\u0002\u0010\u0000\u001a\u00020\u0001H\n", d2 = {"<anonymous>", ""})
+      final class NamelessClass_1 extends SuspendLambda implements Function1<Continuation<? super Unit>, Object> {
+         int label;
+
+         NamelessClass_1(Continuation<? super NamelessClass_1> $completion) {
+            super(1, $completion);
+         }
+
+         public final Object invokeSuspend(Object $result) {
+            IntrinsicsKt.getCOROUTINE_SUSPENDED();
+            switch (this.label) {// 3
+               case 0:
+                  ResultKt.throwOnFailure($result);
+                  System.out.println("SL1");// 4
+                  return Unit.INSTANCE;// 5
+               default:
+                  throw new IllegalStateException("call to 'resume' before 'invoke' with coroutine");
+            }
+         }
+
+         public final Continuation<Unit> create(Continuation<?> $completion) {
+            return (Continuation<Unit>)(new NamelessClass_1($completion));
+         }
+
+         public final Object invoke(Continuation<? super Unit> p1) {
+            return ((NamelessClass_1)this.create(p1)).invokeSuspend(Unit.INSTANCE);
+         }
+      }
+
+   }
+}
+
+class 'pkg/TestSuspendLambdaKt' {
+   method '<clinit> ()V' {
+      4      31
+      8      31
+      9      31
+      a      31
+      e      69
+   }
+
+   method 'getSl1 ()Lkotlin/jvm/functions/Function1;' {
+      0      35
+      1      35
+      2      35
+      3      35
+   }
+}
+
+class 'pkg/TestSuspendLambdaKt$sl1$1' {
+   method '<init> (Lkotlin/coroutines/Continuation;)V' {
+      1      45
+      2      45
+      3      45
+      4      45
+      5      45
+      6      46
+   }
+
+   method 'invokeSuspend (Ljava/lang/Object;)Ljava/lang/Object;' {
+      0      49
+      1      49
+      2      49
+      4      50
+      5      50
+      6      50
+      7      50
+      8      50
+      9      50
+      a      50
+      b      50
+      c      50
+      d      50
+      e      50
+      f      50
+      10      50
+      11      50
+      12      50
+      13      50
+      14      50
+      15      50
+      16      50
+      17      50
+      18      50
+      19      50
+      1a      50
+      1b      50
+      1c      52
+      1d      52
+      1e      52
+      1f      52
+      20      53
+      21      53
+      22      53
+      23      53
+      24      53
+      26      53
+      27      53
+      28      53
+      29      54
+      2a      54
+      2b      54
+      2c      54
+      31      56
+      32      56
+      36      56
+   }
+
+   method 'create (Lkotlin/coroutines/Continuation;)Lkotlin/coroutines/Continuation;' {
+      4      61
+      8      61
+      9      61
+      a      61
+      b      61
+   }
+
+   method 'invoke (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;' {
+      0      65
+      1      65
+      2      65
+      3      65
+      4      65
+      5      65
+      6      65
+      7      65
+      8      65
+      9      65
+      a      65
+      b      65
+      c      65
+      d      65
+      e      65
+   }
+}
+
+Lines mapping:
+3 <-> 51
+4 <-> 54
+5 <-> 55

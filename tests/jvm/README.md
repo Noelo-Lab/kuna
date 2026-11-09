@@ -17,6 +17,8 @@ documents how that corpus was built and validated); do not edit by hand.
 | `regen.py` | rebuilds everything here except `baseline.txt` |
 | `plugins.json` | the plugin cases: Vineflower's bundled plugins' own tests, run with the plugins on |
 | `plugin_oracle.py` | rebuilds the plugin cases' class files (`classes/plugins/`) and expected text with the release jar |
+| `kotlin.json` | the Kotlin cases: the Kotlin plugin's own tests and core's Kotlin tests, from the Kotlin oracle corpus |
+| `kotlin_corpus.py` | vendors the Kotlin cases (`classes/kotlin/`, `expected/kotlin-*/`, `kotlin.json`) from `~/kwt/jvm/corpus-kt`, and writes the manifest of all its forms |
 
 ## Provenance
 
@@ -78,7 +80,7 @@ Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a
 ## Counts
 
 - Vendored: **530 cases** (Complex Condys 1, Default 505, Javadoc 1, Lambda to Anonymous Class 2, Literals 4, LVT 5, Markdown Javadoc 1, No LVT 1, Renaming 1, Synthetics Marking 3, Ternary Constant Simplification 2, Text Tokens 4), 858 class files (890 KiB) and 530
-  expected files (1376 KiB); 2393 KiB in all with `cases.tsv`.
+  expected files (1376 KiB); 2413 KiB in all with `cases.tsv`.
 - Of the oracle corpus's 598 runnable tests, **68 are not vendored** because their
   output depends on a JDK class library on this machine; run them from the external corpus (below).
   13 registered tests are not runnable at all (Kotlin/Groovy/Scala sources, never compiled).
@@ -91,6 +93,33 @@ Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a
   (`vf-decompile --plugins`), which `plugin_oracle.py` accepts only when it matches upstream's `.dec` (for
   *Plugin Defaults*, the oracle corpus's `expected-defaults`) under the fixture's comparison. Rebuild them with
   `python3 -I tests/jvm/plugin_oracle.py --corpus ~/kwt/jvm/corpus --vf-src ~/github/vineflower --work NEW_DIR`.
+
+## Kotlin cases
+
+`kotlin.json` holds **71** cases (Kotlin Core Default 5, Kotlin Entire Classpath 63, Kotlin Multifile Facade 3): 103 class files (191 KiB) and
+71 expected files (244 KiB). They come from the Kotlin oracle corpus `~/kwt/jvm/corpus-kt`
+(its `README.md` documents the build: kotlinc 2.0.0, JVM target 17, the plugin's own Gradle setup; all 73 of
+its fixture outputs pass the fixture comparison with upstream's `.dec`). Each case replays one test of
+Vineflower's Kotlin plugin (`KotlinTests`: sets *Kotlin Entire Classpath* and *Kotlin Multifile Facade*,
+only the Kotlin plugin loaded, so here `jvm_plugins` is on; the release jar's other two bundled plugins do
+not change these outputs) or one `KOTLIN` test of core `SingleClassesTest` (*Kotlin Core Default*, no
+plugin: the Kotlin classes come out as Java). A set's pairs are the complete effective option map; the
+compared file is `<class file name>.kt`, falling back to `.java` as the fixture does, and the expected
+text is stored under the test class name like upstream's `.dec`.
+
+Not vendored, because they need the Kotlin standard library or a JDK: the core *Entire Classpath* tests
+(`kotlin-core-entire-classpath/pkg/TestKotlinConstructorKt`, `kotlin-core-entire-classpath/pkg/TestNamedSuspendFun2Kt`: `include-classpath=1` with kotlin-stdlib on the oracle JVM's class path) and the corpus's
+two plain-CLI forms (`java -jar` defaults, with and without `-e=kotlin-stdlib`). Run all 73 cases in all
+three forms from the corpus itself:
+
+```sh
+python3 -I ../tests/jvm/kotlin_corpus.py --corpus-kt ~/kwt/jvm/corpus-kt --skip-vendor --full-manifest /tmp/kt-all.tsv
+cargo run -q --release -p kuna-jvm --example corpus -- --manifest /tmp/kt-all.tsv --jobs 16
+```
+
+The *Entire Classpath* cases need the current JDK to be 17 (`JAVA_HOME`); the plain-CLI forms use the
+current JDK as their runtime (JDK 17 and 21 give the same text). Refresh the vendored cases with
+`python3 -I tests/jvm/kotlin_corpus.py --corpus-kt ~/kwt/jvm/corpus-kt`, then `regen.py`.
 
 ### Not vendored
 

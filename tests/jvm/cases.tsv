@@ -250,6 +250,58 @@ opt	dump-exception-on-error	0
 opt	variable-renaming	tiny
 set	Plugin Defaults	plugin-defaults
 opt	jvm_plugins	1
+set	Kotlin Core Default	kotlin-core-default
+opt	jvm_plugins	0
+opt	log-level	warn
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	__unit_test_mode__	1
+opt	new-line-separator	1
+opt	error-message	
+opt	include-runtime	
+opt	bytecode-source-mapping	1
+opt	__dump_original_lines__	1
+opt	dump-exception-on-error	0
+opt	ignore-invalid-bytecode	1
+opt	verify-anonymous-classes	1
+opt	include-classpath	0
+opt	ternary-in-if	1
+opt	force-jsr-inline	1
+opt	verify-pre-post-merges	1
+set	Kotlin Entire Classpath	kotlin-entire-classpath
+opt	jvm_plugins	1
+opt	log-level	warn
+opt	decompile-generics	1
+opt	remove-synthetic	0
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	__unit_test_mode__	1
+opt	new-line-separator	1
+opt	error-message	
+opt	include-runtime	
+opt	bytecode-source-mapping	1
+opt	__dump_original_lines__	1
+opt	dump-exception-on-error	0
+opt	ignore-invalid-bytecode	1
+opt	verify-anonymous-classes	1
+set	Kotlin Multifile Facade	kotlin-multifile-facade
+opt	jvm_plugins	1
+opt	log-level	warn
+opt	decompile-generics	1
+opt	remove-synthetic	0
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	__unit_test_mode__	1
+opt	new-line-separator	1
+opt	error-message	
+opt	include-runtime	
+opt	bytecode-source-mapping	1
+opt	__dump_original_lines__	1
+opt	dump-exception-on-error	0
+opt	ignore-invalid-bytecode	1
+opt	kt-decompile-facades	1
 case	complex-condys/pkg/TestComplexCondy	Complex Condys
 class	classes/jasm/pkg/TestComplexCondy.class
 expected	expected/complex-condys/pkg/TestComplexCondy.java
@@ -2739,3 +2791,319 @@ case	with-idea-not-null/TestIdeaNotNull	With Idea Not Null
 class	classes/custom/TestIdeaNotNull.class
 expected	expected/with-idea-not-null/TestIdeaNotNull.java
 compare	TestIdeaNotNull.java
+case	kotlin-core-default/pkg/TestIllegalVarName	Kotlin Core Default
+class	classes/kotlin/core-kt/pkg/TestIllegalVarName.class
+expected	expected/kotlin-core-default/pkg/TestIllegalVarName.java
+compare	TestIllegalVarName.kt	TestIllegalVarName.java
+case	kotlin-core-default/pkg/TestKotlinEnumWhen	Kotlin Core Default
+class	classes/kotlin/core-kt/pkg/TestKotlinEnumWhen.class
+class	classes/kotlin/core-kt/pkg/TestKotlinEnumWhen$WhenMappings.class
+expected	expected/kotlin-core-default/pkg/TestKotlinEnumWhen.java
+compare	TestKotlinEnumWhen.kt	TestKotlinEnumWhen.java
+case	kotlin-core-default/pkg/TestRunSuspend	Kotlin Core Default
+class	classes/kotlin/core-kt/pkg/TestRunSuspend.class
+expected	expected/kotlin-core-default/pkg/TestRunSuspend.java
+compare	TestRunSuspend.kt	TestRunSuspend.java
+case	kotlin-core-default/pkg/TestSuspendLambdaKt	Kotlin Core Default
+class	classes/kotlin/core-kt/pkg/TestSuspendLambdaKt.class
+class	classes/kotlin/core-kt/pkg/TestSuspendLambdaKt$sl1$1.class
+expected	expected/kotlin-core-default/pkg/TestSuspendLambdaKt.java
+compare	TestSuspendLambdaKt.kt	TestSuspendLambdaKt.java
+case	kotlin-core-default/pkg/TestSynchronizedUnprotected	Kotlin Core Default
+class	classes/kotlin/core-kt/pkg/TestSynchronizedUnprotected.class
+expected	expected/kotlin-core-default/pkg/TestSynchronizedUnprotected.java
+compare	TestSynchronizedUnprotected.kt	TestSynchronizedUnprotected.java
+case	kotlin-entire-classpath/pkg/TestAnnotations	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestAnnotations.class
+class	classes/kotlin/kt/pkg/TestAnnotations$RepeatableAnnotation$Container.class
+class	classes/kotlin/kt/pkg/TestAnnotations$RepeatableAnnotation.class
+class	classes/kotlin/kt/pkg/TestAnnotations$TestAnnotation.class
+expected	expected/kotlin-entire-classpath/pkg/TestAnnotations.kt
+compare	TestAnnotations.kt	TestAnnotations.java
+case	kotlin-entire-classpath/pkg/TestAnonymousEverything	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestAnonymousEverything.class
+class	classes/kotlin/kt/pkg/TestAnonymousEverything$testAnonymousObject$obj$1.class
+class	classes/kotlin/kt/pkg/TestAnonymousEverything$testConstructorReference$createAny$1.class
+class	classes/kotlin/kt/pkg/TestAnonymousEverything$testFunctionAnonymousObject$obj$1.class
+class	classes/kotlin/kt/pkg/TestAnonymousEverything$testFunctionReference$ref$1.class
+class	classes/kotlin/kt/pkg/TestAnonymousEverything$testMultipleSubtypes$obj$1.class
+class	classes/kotlin/kt/pkg/TestAnonymousEverything$testNoTypeReference$newList$1.class
+class	classes/kotlin/kt/pkg/TestAnonymousEverything$testSerializableLambda$lambda$1.class
+expected	expected/kotlin-entire-classpath/pkg/TestAnonymousEverything.kt
+compare	TestAnonymousEverything.kt	TestAnonymousEverything.java
+case	kotlin-entire-classpath/pkg/TestAnyType	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestAnyType.class
+expected	expected/kotlin-entire-classpath/pkg/TestAnyType.kt
+compare	TestAnyType.kt	TestAnyType.java
+case	kotlin-entire-classpath/pkg/TestBitwiseFunctions	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestBitwiseFunctions.class
+expected	expected/kotlin-entire-classpath/pkg/TestBitwiseFunctions.kt
+compare	TestBitwiseFunctions.kt	TestBitwiseFunctions.java
+case	kotlin-entire-classpath/pkg/TestClassDec	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestClassDec.class
+class	classes/kotlin/kt/pkg/TestClassDec$EmptyDec.class
+class	classes/kotlin/kt/pkg/TestClassDec$Vec2i.class
+class	classes/kotlin/kt/pkg/TestClassDec$Vec2iVal.class
+class	classes/kotlin/kt/pkg/TestClassDec$Vec2iVar.class
+expected	expected/kotlin-entire-classpath/pkg/TestClassDec.kt
+compare	TestClassDec.kt	TestClassDec.java
+case	kotlin-entire-classpath/pkg/TestClassicStringInterpolation	Kotlin Entire Classpath
+class	classes/kotlin/ktold/pkg/TestClassicStringInterpolation.class
+expected	expected/kotlin-entire-classpath/pkg/TestClassicStringInterpolation.kt
+compare	TestClassicStringInterpolation.kt	TestClassicStringInterpolation.java
+case	kotlin-entire-classpath/pkg/TestCompanionObject	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestCompanionObject.class
+class	classes/kotlin/kt/pkg/TestCompanionObject$Companion.class
+expected	expected/kotlin-entire-classpath/pkg/TestCompanionObject.kt
+compare	TestCompanionObject.kt	TestCompanionObject.java
+case	kotlin-entire-classpath/pkg/TestComparison	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestComparison.class
+expected	expected/kotlin-entire-classpath/pkg/TestComparison.kt
+compare	TestComparison.kt	TestComparison.java
+case	kotlin-entire-classpath/pkg/TestCompileTimeErrors	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestCompileTimeErrors.class
+class	classes/kotlin/kt/pkg/TestCompileTimeErrors$Test.class
+class	classes/kotlin/kt/pkg/TestCompileTimeErrors$test2$1.class
+expected	expected/kotlin-entire-classpath/pkg/TestCompileTimeErrors.kt
+compare	TestCompileTimeErrors.kt	TestCompileTimeErrors.java
+case	kotlin-entire-classpath/pkg/TestConstructors	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestConstructors.class
+expected	expected/kotlin-entire-classpath/pkg/TestConstructors.kt
+compare	TestConstructors.kt	TestConstructors.java
+case	kotlin-entire-classpath/pkg/TestContracts	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestContracts.class
+expected	expected/kotlin-entire-classpath/pkg/TestContracts.kt
+compare	TestContracts.kt	TestContracts.java
+case	kotlin-entire-classpath/pkg/TestConvertedK2JOps	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestConvertedK2JOps.class
+expected	expected/kotlin-entire-classpath/pkg/TestConvertedK2JOps.kt
+compare	TestConvertedK2JOps.kt	TestConvertedK2JOps.java
+case	kotlin-entire-classpath/pkg/TestDataClass	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestDataClass.class
+expected	expected/kotlin-entire-classpath/pkg/TestDataClass.kt
+compare	TestDataClass.kt	TestDataClass.java
+case	kotlin-entire-classpath/pkg/TestDestructors	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestDestructors.class
+expected	expected/kotlin-entire-classpath/pkg/TestDestructors.kt
+compare	TestDestructors.kt	TestDestructors.java
+case	kotlin-entire-classpath/pkg/TestEnumClass	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestEnumClass.class
+expected	expected/kotlin-entire-classpath/pkg/TestEnumClass.kt
+compare	TestEnumClass.kt	TestEnumClass.java
+case	kotlin-entire-classpath/pkg/TestExtensionFun	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestExtensionFun.class
+expected	expected/kotlin-entire-classpath/pkg/TestExtensionFun.kt
+compare	TestExtensionFun.kt	TestExtensionFun.java
+case	kotlin-entire-classpath/pkg/TestForRange	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestForRange.class
+expected	expected/kotlin-entire-classpath/pkg/TestForRange.kt
+compare	TestForRange.kt	TestForRange.java
+case	kotlin-entire-classpath/pkg/TestFunVarargs	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestFunVarargs.class
+expected	expected/kotlin-entire-classpath/pkg/TestFunVarargs.kt
+compare	TestFunVarargs.kt	TestFunVarargs.java
+case	kotlin-entire-classpath/pkg/TestFuncRef	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestFuncRefKt.class
+class	classes/kotlin/kt/pkg/TestFuncRefKt$test$1.class
+expected	expected/kotlin-entire-classpath/pkg/TestFuncRef.kt
+compare	TestFuncRefKt.kt	TestFuncRefKt.java
+case	kotlin-entire-classpath/pkg/TestGenerics	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestGenerics.class
+expected	expected/kotlin-entire-classpath/pkg/TestGenerics.kt
+compare	TestGenerics.kt	TestGenerics.java
+case	kotlin-entire-classpath/pkg/TestIfRange	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestIfRange.class
+expected	expected/kotlin-entire-classpath/pkg/TestIfRange.kt
+compare	TestIfRange.kt	TestIfRange.java
+case	kotlin-entire-classpath/pkg/TestInfixFun	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestInfixFun.class
+expected	expected/kotlin-entire-classpath/pkg/TestInfixFun.kt
+compare	TestInfixFun.kt	TestInfixFun.java
+case	kotlin-entire-classpath/pkg/TestKotlinTypes	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestKotlinTypes.class
+expected	expected/kotlin-entire-classpath/pkg/TestKotlinTypes.kt
+compare	TestKotlinTypes.kt	TestKotlinTypes.java
+case	kotlin-entire-classpath/pkg/TestKt	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestKt.class
+expected	expected/kotlin-entire-classpath/pkg/TestKt.kt
+compare	TestKt.kt	TestKt.java
+case	kotlin-entire-classpath/pkg/TestLabeledJumps	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestLabeledJumps.class
+expected	expected/kotlin-entire-classpath/pkg/TestLabeledJumps.kt
+compare	TestLabeledJumps.kt	TestLabeledJumps.java
+case	kotlin-entire-classpath/pkg/TestNonInlineLambda	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestNonInlineLambda.class
+expected	expected/kotlin-entire-classpath/pkg/TestNonInlineLambda.kt
+compare	TestNonInlineLambda.kt	TestNonInlineLambda.java
+case	kotlin-entire-classpath/pkg/TestNothingReturns	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestNothingReturns.class
+expected	expected/kotlin-entire-classpath/pkg/TestNothingReturns.kt
+compare	TestNothingReturns.kt	TestNothingReturns.java
+case	kotlin-entire-classpath/pkg/TestNullable	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestNullable.class
+expected	expected/kotlin-entire-classpath/pkg/TestNullable.kt
+compare	TestNullable.kt	TestNullable.java
+case	kotlin-entire-classpath/pkg/TestNullableOperator	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestNullableOperator.class
+expected	expected/kotlin-entire-classpath/pkg/TestNullableOperator.kt
+compare	TestNullableOperator.kt	TestNullableOperator.java
+case	kotlin-entire-classpath/pkg/TestObject	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestObject.class
+expected	expected/kotlin-entire-classpath/pkg/TestObject.kt
+compare	TestObject.kt	TestObject.java
+case	kotlin-entire-classpath/pkg/TestParams	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestParams.class
+expected	expected/kotlin-entire-classpath/pkg/TestParams.kt
+compare	TestParams.kt	TestParams.java
+case	kotlin-entire-classpath/pkg/TestPoorNames	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestPoorNames.class
+class	classes/kotlin/kt/pkg/TestPoorNames$Class with spaces.class
+expected	expected/kotlin-entire-classpath/pkg/TestPoorNames.kt
+compare	TestPoorNames.kt	TestPoorNames.java
+case	kotlin-entire-classpath/pkg/TestPropertyAccess	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestPropertyAccess.class
+class	classes/kotlin/kt/ext/Person.class
+expected	expected/kotlin-entire-classpath/pkg/TestPropertyAccess.kt
+compare	TestPropertyAccess.kt	TestPropertyAccess.java
+case	kotlin-entire-classpath/pkg/TestReflection	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestReflection.class
+class	classes/kotlin/kt/pkg/TestReflection$testFunctionReference$f$1.class
+expected	expected/kotlin-entire-classpath/pkg/TestReflection.kt
+compare	TestReflection.kt	TestReflection.java
+case	kotlin-entire-classpath/pkg/TestSafeCasts	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestSafeCasts.class
+expected	expected/kotlin-entire-classpath/pkg/TestSafeCasts.kt
+compare	TestSafeCasts.kt	TestSafeCasts.java
+case	kotlin-entire-classpath/pkg/TestSealedHierarchy	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestSealedHierarchy.class
+class	classes/kotlin/kt/pkg/TestSealedHierarchy$TestClass.class
+class	classes/kotlin/kt/pkg/TestSealedHierarchy$TestObject.class
+expected	expected/kotlin-entire-classpath/pkg/TestSealedHierarchy.kt
+compare	TestSealedHierarchy.kt	TestSealedHierarchy.java
+case	kotlin-entire-classpath/pkg/TestShadowParam	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestShadowParam.class
+expected	expected/kotlin-entire-classpath/pkg/TestShadowParam.kt
+compare	TestShadowParam.kt	TestShadowParam.java
+case	kotlin-entire-classpath/pkg/TestSmartCasts	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestSmartCasts.class
+class	classes/kotlin/kt/pkg/TestSmartCasts$A$B.class
+class	classes/kotlin/kt/pkg/TestSmartCasts$A$C.class
+class	classes/kotlin/kt/pkg/TestSmartCasts$A.class
+class	classes/kotlin/kt/pkg/TestSmartCasts$X$DefaultImpls.class
+class	classes/kotlin/kt/pkg/TestSmartCasts$X.class
+expected	expected/kotlin-entire-classpath/pkg/TestSmartCasts.kt
+compare	TestSmartCasts.kt	TestSmartCasts.java
+case	kotlin-entire-classpath/pkg/TestStringInterpolation	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestStringInterpolation.class
+expected	expected/kotlin-entire-classpath/pkg/TestStringInterpolation.kt
+compare	TestStringInterpolation.kt	TestStringInterpolation.java
+case	kotlin-entire-classpath/pkg/TestSynchronized	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestSynchronized.class
+expected	expected/kotlin-entire-classpath/pkg/TestSynchronized.kt
+compare	TestSynchronized.kt	TestSynchronized.java
+case	kotlin-entire-classpath/pkg/TestTailrecFunctions	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTailrecFunctions.class
+expected	expected/kotlin-entire-classpath/pkg/TestTailrecFunctions.kt
+compare	TestTailrecFunctions.kt	TestTailrecFunctions.java
+case	kotlin-entire-classpath/pkg/TestTopLevelKt	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTopLevelKt.class
+expected	expected/kotlin-entire-classpath/pkg/TestTopLevelKt.kt
+compare	TestTopLevelKt.kt	TestTopLevelKt.java
+case	kotlin-entire-classpath/pkg/TestTryCatchExpressions	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTryCatchExpressions.class
+expected	expected/kotlin-entire-classpath/pkg/TestTryCatchExpressions.kt
+compare	TestTryCatchExpressions.kt	TestTryCatchExpressions.java
+case	kotlin-entire-classpath/pkg/TestTryCatchFinally	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTryCatchFinally.class
+expected	expected/kotlin-entire-classpath/pkg/TestTryCatchFinally.kt
+compare	TestTryCatchFinally.kt	TestTryCatchFinally.java
+case	kotlin-entire-classpath/pkg/TestTryCatchNested	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTryCatchNested.class
+expected	expected/kotlin-entire-classpath/pkg/TestTryCatchNested.kt
+compare	TestTryCatchNested.kt	TestTryCatchNested.java
+case	kotlin-entire-classpath/pkg/TestTryCatchThrowable	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTryCatchThrowable.class
+expected	expected/kotlin-entire-classpath/pkg/TestTryCatchThrowable.kt
+compare	TestTryCatchThrowable.kt	TestTryCatchThrowable.java
+case	kotlin-entire-classpath/pkg/TestTryFinally	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTryFinally.class
+expected	expected/kotlin-entire-classpath/pkg/TestTryFinally.kt
+compare	TestTryFinally.kt	TestTryFinally.java
+case	kotlin-entire-classpath/pkg/TestTryFinallyExpressions	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTryFinallyExpressions.class
+expected	expected/kotlin-entire-classpath/pkg/TestTryFinallyExpressions.kt
+compare	TestTryFinallyExpressions.kt	TestTryFinallyExpressions.java
+case	kotlin-entire-classpath/pkg/TestTryLoop	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTryLoop.class
+expected	expected/kotlin-entire-classpath/pkg/TestTryLoop.kt
+compare	TestTryLoop.kt	TestTryLoop.java
+case	kotlin-entire-classpath/pkg/TestTryLoop2	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTryLoop2.class
+expected	expected/kotlin-entire-classpath/pkg/TestTryLoop2.kt
+compare	TestTryLoop2.kt	TestTryLoop2.java
+case	kotlin-entire-classpath/pkg/TestTryLoopNoCatch	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTryLoopNoCatch.class
+expected	expected/kotlin-entire-classpath/pkg/TestTryLoopNoCatch.kt
+compare	TestTryLoopNoCatch.kt	TestTryLoopNoCatch.java
+case	kotlin-entire-classpath/pkg/TestTryLoopRecompile	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTryLoopRecompile.class
+expected	expected/kotlin-entire-classpath/pkg/TestTryLoopRecompile.kt
+compare	TestTryLoopRecompile.kt	TestTryLoopRecompile.java
+case	kotlin-entire-classpath/pkg/TestTryLoopReturnFinally	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTryLoopReturnFinally.class
+expected	expected/kotlin-entire-classpath/pkg/TestTryLoopReturnFinally.kt
+compare	TestTryLoopReturnFinally.kt	TestTryLoopReturnFinally.java
+case	kotlin-entire-classpath/pkg/TestTryLoopSimpleFinally	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTryLoopSimpleFinally.class
+expected	expected/kotlin-entire-classpath/pkg/TestTryLoopSimpleFinally.kt
+compare	TestTryLoopSimpleFinally.kt	TestTryLoopSimpleFinally.java
+case	kotlin-entire-classpath/pkg/TestTryReturn	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTryReturn.class
+expected	expected/kotlin-entire-classpath/pkg/TestTryReturn.kt
+compare	TestTryReturn.kt	TestTryReturn.java
+case	kotlin-entire-classpath/pkg/TestTrySplit	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTrySplit.class
+class	classes/kotlin/kt/pkg/TestTrySplit$Companion.class
+expected	expected/kotlin-entire-classpath/pkg/TestTrySplit.kt
+compare	TestTrySplit.kt	TestTrySplit.java
+case	kotlin-entire-classpath/pkg/TestTrySynchronized	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTrySynchronized.class
+class	classes/kotlin/kt/pkg/TestTrySynchronized$Companion.class
+expected	expected/kotlin-entire-classpath/pkg/TestTrySynchronized.kt
+compare	TestTrySynchronized.kt	TestTrySynchronized.java
+case	kotlin-entire-classpath/pkg/TestTryVar	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestTryVar.class
+expected	expected/kotlin-entire-classpath/pkg/TestTryVar.kt
+compare	TestTryVar.kt	TestTryVar.java
+case	kotlin-entire-classpath/pkg/TestVarReplace	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestVarReplaceKt.class
+expected	expected/kotlin-entire-classpath/pkg/TestVarReplace.kt
+compare	TestVarReplaceKt.kt	TestVarReplaceKt.java
+case	kotlin-entire-classpath/pkg/TestVars	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestVars.class
+expected	expected/kotlin-entire-classpath/pkg/TestVars.kt
+compare	TestVars.kt	TestVars.java
+case	kotlin-entire-classpath/pkg/TestWhen	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestWhen.class
+expected	expected/kotlin-entire-classpath/pkg/TestWhen.kt
+compare	TestWhen.kt	TestWhen.java
+case	kotlin-entire-classpath/pkg/TestWhenBoolean	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestWhenBoolean.class
+expected	expected/kotlin-entire-classpath/pkg/TestWhenBoolean.kt
+compare	TestWhenBoolean.kt	TestWhenBoolean.java
+case	kotlin-entire-classpath/pkg/TestWhenControlFlow	Kotlin Entire Classpath
+class	classes/kotlin/kt/pkg/TestWhenControlFlow.class
+expected	expected/kotlin-entire-classpath/pkg/TestWhenControlFlow.kt
+compare	TestWhenControlFlow.kt	TestWhenControlFlow.java
+case	kotlin-multifile-facade/pkg/TestMultifile	Kotlin Multifile Facade
+class	classes/kotlin/kt/pkg/TestMultifile.class
+expected	expected/kotlin-multifile-facade/pkg/TestMultifile.kt
+compare	TestMultifile.kt	TestMultifile.java
+case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA	Kotlin Multifile Facade
+class	classes/kotlin/kt/pkg/TestMultifile__TestMultifileAKt.class
+expected	expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA.kt
+compare	TestMultifile__TestMultifileAKt.kt	TestMultifile__TestMultifileAKt.java
+case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB	Kotlin Multifile Facade
+class	classes/kotlin/kt/pkg/TestMultifile__TestMultifileBKt.class
+expected	expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB.kt
+compare	TestMultifile__TestMultifileBKt.kt	TestMultifile__TestMultifileBKt.java

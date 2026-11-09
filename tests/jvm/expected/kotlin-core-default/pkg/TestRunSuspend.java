@@ -1,0 +1,141 @@
+package pkg;
+
+import kotlin.Metadata;
+import kotlin.Result;
+import kotlin.ResultKt;
+import kotlin.Unit;
+import kotlin.jvm.internal.Intrinsics;
+import org.jetbrains.annotations.Nullable;
+
+@Metadata(
+   mv = {2, 0, 0},
+   k = 1,
+   xi = 48,
+   d1 = "\u0000\u0018\n\u0002\u0018\u0002\n\u0002\u0010\u0000\n\u0002\b\u0003\n\u0002\u0018\u0002\n\u0002\u0010\u0002\n\u0002\b\u0006\b\u0002\u0018\u00002\u00020\u0001B\u0007¢\u0006\u0004\b\u0002\u0010\u0003J\u0006\u0010\u000b\u001a\u00020\u0006R\"\u0010\u0004\u001a\n\u0012\u0004\u0012\u00020\u0006\u0018\u00010\u0005X\u0086\u000e¢\u0006\u000e\n\u0000\u001a\u0004\b\u0007\u0010\b\"\u0004\b\t\u0010\n¨\u0006\f",
+   d2 = {
+         "Lpkg/TestRunSuspend;",
+         "",
+         "<init>",
+         "()V",
+         "result",
+         "Lkotlin/Result;",
+         "",
+         "getResult-xLWZpok",
+         "()Lkotlin/Result;",
+         "setResult",
+         "(Lkotlin/Result;)V",
+         "await",
+         "vineflower_testDataKotlin"
+   }
+)
+final class TestRunSuspend {
+   @Nullable
+   private Result<Unit> result;
+
+   public TestRunSuspend() {
+   }// 4
+
+   @Nullable
+   public final Result<Unit> getResult_xLWZpok/* $VF was: getResult-xLWZpok */() {
+      return this.result;
+   }
+
+   public final void setResult(@Nullable Result<Unit> var1) {
+      this.result = var1/* $VF was: <set-?> */;// 5
+   }
+
+   // $VF: Extended synchronized range to monitorexit
+   public final void await() {
+      synchronized (this) {// 7
+         int var2/* $VF was: $i$a$-synchronized-TestRunSuspend$await$1 */ = 0;
+
+         while (true) {
+            Result result = this.result;// 9
+            if (result != null) {// 10
+               Object var4 = result.unbox_impl/* $VF was: unbox-impl */();// 12
+               ResultKt.throwOnFailure(var4);
+               return;
+            }
+
+            Intrinsics.checkNotNull(this, "null cannot be cast to non-null type java.lang.Object");
+            this.wait();
+         }
+      }
+   }
+}
+
+class 'pkg/TestRunSuspend' {
+   method '<init> ()V' {
+      4      35
+   }
+
+   method 'getResult-xLWZpok ()Lkotlin/Result;' {
+      0      39
+      1      39
+      2      39
+      3      39
+      4      39
+   }
+
+   method 'setResult (Lkotlin/Result;)V' {
+      0      43
+      1      43
+      2      43
+      3      43
+      4      43
+      5      44
+   }
+
+   method 'await ()V' {
+      0      48
+      2      48
+      3      48
+      5      49
+      6      49
+      8      52
+      9      52
+      a      52
+      b      52
+      c      52
+      d      53
+      e      53
+      f      53
+      10      53
+      11      59
+      12      59
+      13      59
+      14      59
+      15      59
+      16      59
+      17      60
+      18      60
+      19      60
+      1a      60
+      1b      60
+      1c      60
+      1d      60
+      21      54
+      22      54
+      23      54
+      24      54
+      25      54
+      26      54
+      27      55
+      28      55
+      29      55
+      2a      55
+      2b      55
+      2f      56
+   }
+}
+
+Lines mapping:
+4 <-> 36
+5 <-> 44
+7 <-> 49
+9 <-> 53
+10 <-> 54
+12 <-> 55
+Not mapped:
+8
+13
