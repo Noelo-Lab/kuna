@@ -11,6 +11,7 @@ methods, steps, output match, produced file).
 --classes DIR replaces the manifest by DIR's class files: each top-level class together with its nested
 classes (X.class, X$*.class) is one case "<--set>/<path of X>", run with the --opt pairs given (no fixture
 base map unless --fixture); there is no oracle, so sweep_compare.py compares the two engines' outputs.
+With the manifest, --opt pairs overlay every case's options (the oracle comparison is then meaningless).
 
 usage: corpus_trace.py --out DIR [--engine vineflower|kuna] [--kuna BIN] [--hash stock|index|random:SEED]
                        [--shift K] [--jobs 16] [--xmx 1g] [--only SUBSTR]... [--limit N]
@@ -150,6 +151,9 @@ def main():
         m = json.load(open(a.manifest or os.path.join(a.corpus, "manifest.json"), encoding="utf-8"))
         java_homes = m["java_homes"]
         tests = [t for t in m["tests"] if t["status"] == "ok"]
+        overlay = dict(kv.partition("=")[::2] for kv in a.opt or [])
+        if overlay:
+            tests = [dict(t, options={**t["options"], **overlay}) for t in tests]
     if a.only:
         tests = [t for t in tests if any(s in t["id"] for s in a.only)]
     tests.sort(key=lambda t: t["id"])

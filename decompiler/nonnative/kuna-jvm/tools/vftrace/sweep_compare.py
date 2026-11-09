@@ -135,7 +135,8 @@ def main():
                 lines.append(f"DIFF {c['id']} {key}: step {m['step']} {m['name_a']}"
                              + ("" if m["name_a"] == m["name_b"] else f" | {m['name_b']}"))
         if c["oracle_a"] is False or c["oracle_b"] is False:
-            counts["oracle_mismatch_" + ("A" if c["oracle_a"] is False else "B")] += 1
+            counts["oracle_mismatch_A"] += c["oracle_a"] is False
+            counts["oracle_mismatch_B"] += c["oracle_b"] is False
             lines.append(f"ORACLE {c['id']}: A={c['oracle_a']} B={c['oracle_b']}")
         if c["text_equal"] == "exc":
             counts["text_exc_only"] += 1
