@@ -112,3 +112,5 @@ mod b14_structure;
 mod b15_switch;
 #[path = "b16_pattern_match.rs"]
 mod b16_pattern_match;
+#[path = "b18_class_writer.rs"]
+mod b18_class_writer;

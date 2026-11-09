@@ -223,7 +223,6 @@ fn class_content_failure_is_logged_and_skipped() {
 }
 
 #[test]
-#[ignore = "ClassWriter.collectErrorLines is unported (dump-exception-on-error comment)"]
 fn class_content_failure_dumps_the_exception() {
     let mut fernflower = Fernflower::new(
         &options(&[(IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0")]),
@@ -344,7 +343,6 @@ fn unit_save_reports_failing_classes_and_keeps_going() {
 }
 
 #[test]
-#[ignore = "ClassWriter.collectErrorLines is unported (dump-exception-on-error comment)"]
 fn unit_save_dumps_the_pre_processing_exception() {
     let (out, _) = save_scripted("1");
     assert_eq!(out.len(), 3);
