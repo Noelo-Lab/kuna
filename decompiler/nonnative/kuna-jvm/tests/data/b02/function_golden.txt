@@ -1575,6 +1575,156 @@ F	(= C:VARTYPE_INT:I:1 C:VARTYPE_INT:I:2)	I	I	1 = 2	0:L1=I,	13	1 = 2	1 = 2
 F	(= FS:NAME:Ljava/lang/String; (STR_CONCAT C:VARTYPE_STRING:S:x0078 C:VARTYPE_INT:I:1))	Ljava/lang/String;	Ljava/lang/String;	NAME = "x" + 1	0:L1=Ljava/lang/String;, | 2:L3=Ljava/lang/String;,	13	NAME = "x" + 1	NAME = "x" + 1
 F	(=ADD FS:NAME:Ljava/lang/String; C:VARTYPE_STRING:S:x0078)	Ljava/lang/String;	Ljava/lang/String;	NAME += "x"	0:L1=Ljava/lang/String;,	13	NAME += "x"	NAME += "x"
 F	(= FS:missing:I C:VARTYPE_DOUBLE:D:4004000000000000)	I	I	missing = (int)2.5	0:L1=D,	13	missing = (int)2.5	missing = (int)2.5
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:function functype:eq ret:$f$| exprent type:constant consttype:string constvalue:$s$| exprent type:constant ret:$c$	true	$c$=E:5,$f$=E:"a" == 5,$s$=O:a,
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:function| exprent position:-1 type:constant ret:$last$	true	$last$=E:5,
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:function| exprent type:constant constvalue:$v$| exprent type:constant constvalue:$v$	false	$v$=O:a,
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:function| exprent ret:$x$| exprent ret:$x$	false	$x$=E:"a",
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:function functype:ternary| exprent position:0 type:constant| exprent position:2 type:constant consttype:string ret:$s$	false	$s$=N,
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:constant consttype:null ret:$n$	false	$n$=E:"a" == 5,
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:function functype:neq| exprent type:function|  exprent type:constant constvalue:$a$|  exprent type:constant constvalue:$b$| exprent type:function ret:$second$	false	$a$=N,$b$=N,$second$=N,
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:function| exprent| exprent| exprent	false	
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:function| statement type:if	false	
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:constant constvalue:5	false	
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:function| exprent position:7 type:constant ret:$p$	true	$p$=E:5,
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:function| exprent position:-3	EXC:IndexOutOfBoundsException:Index -1 out of bounds for length 2	
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:function functype:eq| exprent position:x type:constant	false	
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:assignment ret:$as$| exprent type:field ret:$lhs$| exprent type:constant constvalue:$rhs$	false	$as$=E:"a" == 5,$lhs$=N,$rhs$=N,
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_INT:I:5)	exprent type:function functype:eq| exprent type:field name:out| exprent type:constant consttype:null	false	
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:function functype:eq ret:$f$| exprent type:constant consttype:string constvalue:$s$| exprent type:constant ret:$c$	false	$c$=N,$f$=E:5 == 5,$s$=N,
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:function| exprent position:-1 type:constant ret:$last$	true	$last$=E:5,
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:function| exprent type:constant constvalue:$v$| exprent type:constant constvalue:$v$	true	$v$=O:5,
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:function| exprent ret:$x$| exprent ret:$x$	true	$x$=E:5,
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:function functype:ternary| exprent position:0 type:constant| exprent position:2 type:constant consttype:string ret:$s$	false	$s$=N,
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:constant consttype:null ret:$n$	false	$n$=E:5 == 5,
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:function functype:neq| exprent type:function|  exprent type:constant constvalue:$a$|  exprent type:constant constvalue:$b$| exprent type:function ret:$second$	false	$a$=N,$b$=N,$second$=N,
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:function| exprent| exprent| exprent	false	
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:function| statement type:if	false	
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:constant constvalue:5	false	
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:function| exprent position:7 type:constant ret:$p$	true	$p$=E:5,
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:function| exprent position:-3	EXC:IndexOutOfBoundsException:Index -1 out of bounds for length 2	
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:function functype:eq| exprent position:x type:constant	false	
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:assignment ret:$as$| exprent type:field ret:$lhs$| exprent type:constant constvalue:$rhs$	false	$as$=E:5 == 5,$lhs$=N,$rhs$=N,
+M	(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)	exprent type:function functype:eq| exprent type:field name:out| exprent type:constant consttype:null	false	
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:function functype:eq ret:$f$| exprent type:constant consttype:string constvalue:$s$| exprent type:constant ret:$c$	false	$c$=N,$f$=E:true ? null : "b",$s$=N,
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:function| exprent position:-1 type:constant ret:$last$	true	$last$=E:"b",
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:function| exprent type:constant constvalue:$v$| exprent type:constant constvalue:$v$	false	$v$=O:1,
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:function| exprent ret:$x$| exprent ret:$x$	false	$x$=E:true,
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:function functype:ternary| exprent position:0 type:constant| exprent position:2 type:constant consttype:string ret:$s$	true	$s$=E:"b",
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:constant consttype:null ret:$n$	false	$n$=E:true ? null : "b",
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:function functype:neq| exprent type:function|  exprent type:constant constvalue:$a$|  exprent type:constant constvalue:$b$| exprent type:function ret:$second$	false	$a$=N,$b$=N,$second$=N,
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:function| exprent| exprent| exprent	true	
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:function| statement type:if	false	
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:constant constvalue:5	false	
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:function| exprent position:7 type:constant ret:$p$	true	$p$=E:null,
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:function| exprent position:-3	true	
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:function functype:eq| exprent position:x type:constant	false	
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:assignment ret:$as$| exprent type:field ret:$lhs$| exprent type:constant constvalue:$rhs$	false	$as$=E:true ? null : "b",$lhs$=N,$rhs$=N,
+M	(TERNARY G1:1 C:VARTYPE_NULL:N C:VARTYPE_STRING:S:x0062)	exprent type:function functype:eq| exprent type:field name:out| exprent type:constant consttype:null	false	
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:function functype:eq ret:$f$| exprent type:constant consttype:string constvalue:$s$| exprent type:constant ret:$c$	false	$c$=N,$f$=E:1 + 2 != 1 + 2,$s$=N,
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:function| exprent position:-1 type:constant ret:$last$	false	$last$=E:1 + 2,
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:function| exprent type:constant constvalue:$v$| exprent type:constant constvalue:$v$	false	$v$=N,
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:function| exprent ret:$x$| exprent ret:$x$	true	$x$=E:1 + 2,
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:function functype:ternary| exprent position:0 type:constant| exprent position:2 type:constant consttype:string ret:$s$	false	$s$=N,
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:constant consttype:null ret:$n$	false	$n$=E:1 + 2 != 1 + 2,
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:function functype:neq| exprent type:function|  exprent type:constant constvalue:$a$|  exprent type:constant constvalue:$b$| exprent type:function ret:$second$	true	$a$=O:1,$b$=O:2,$second$=E:1 + 2,
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:function| exprent| exprent| exprent	false	
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:function| statement type:if	false	
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:constant constvalue:5	false	
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:function| exprent position:7 type:constant ret:$p$	false	$p$=E:1 + 2,
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:function| exprent position:-3	EXC:IndexOutOfBoundsException:Index -1 out of bounds for length 2	
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:function functype:eq| exprent position:x type:constant	false	
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:assignment ret:$as$| exprent type:field ret:$lhs$| exprent type:constant constvalue:$rhs$	false	$as$=E:1 + 2 != 1 + 2,$lhs$=N,$rhs$=N,
+M	(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))	exprent type:function functype:eq| exprent type:field name:out| exprent type:constant consttype:null	false	
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:function functype:eq ret:$f$| exprent type:constant consttype:string constvalue:$s$| exprent type:constant ret:$c$	false	$c$=N,$f$=E:1 + 2 != 1 - 2,$s$=N,
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:function| exprent position:-1 type:constant ret:$last$	false	$last$=E:1 - 2,
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:function| exprent type:constant constvalue:$v$| exprent type:constant constvalue:$v$	false	$v$=N,
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:function| exprent ret:$x$| exprent ret:$x$	false	$x$=E:1 + 2,
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:function functype:ternary| exprent position:0 type:constant| exprent position:2 type:constant consttype:string ret:$s$	false	$s$=N,
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:constant consttype:null ret:$n$	false	$n$=E:1 + 2 != 1 - 2,
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:function functype:neq| exprent type:function|  exprent type:constant constvalue:$a$|  exprent type:constant constvalue:$b$| exprent type:function ret:$second$	true	$a$=O:1,$b$=O:2,$second$=E:1 - 2,
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:function| exprent| exprent| exprent	false	
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:function| statement type:if	false	
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:constant constvalue:5	false	
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:function| exprent position:7 type:constant ret:$p$	false	$p$=E:1 - 2,
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:function| exprent position:-3	EXC:IndexOutOfBoundsException:Index -1 out of bounds for length 2	
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:function functype:eq| exprent position:x type:constant	false	
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:assignment ret:$as$| exprent type:field ret:$lhs$| exprent type:constant constvalue:$rhs$	false	$as$=E:1 + 2 != 1 - 2,$lhs$=N,$rhs$=N,
+M	(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))	exprent type:function functype:eq| exprent type:field name:out| exprent type:constant consttype:null	false	
+M	C:VARTYPE_NULL:N	exprent type:function functype:eq ret:$f$| exprent type:constant consttype:string constvalue:$s$| exprent type:constant ret:$c$	false	$c$=N,$f$=E:null,$s$=N,
+M	C:VARTYPE_NULL:N	exprent type:function| exprent position:-1 type:constant ret:$last$	false	$last$=N,
+M	C:VARTYPE_NULL:N	exprent type:function| exprent type:constant constvalue:$v$| exprent type:constant constvalue:$v$	false	$v$=N,
+M	C:VARTYPE_NULL:N	exprent type:function| exprent ret:$x$| exprent ret:$x$	false	$x$=N,
+M	C:VARTYPE_NULL:N	exprent type:function functype:ternary| exprent position:0 type:constant| exprent position:2 type:constant consttype:string ret:$s$	false	$s$=N,
+M	C:VARTYPE_NULL:N	exprent type:constant consttype:null ret:$n$	true	$n$=E:null,
+M	C:VARTYPE_NULL:N	exprent type:function functype:neq| exprent type:function|  exprent type:constant constvalue:$a$|  exprent type:constant constvalue:$b$| exprent type:function ret:$second$	false	$a$=N,$b$=N,$second$=N,
+M	C:VARTYPE_NULL:N	exprent type:function| exprent| exprent| exprent	false	
+M	C:VARTYPE_NULL:N	exprent type:function| statement type:if	false	
+M	C:VARTYPE_NULL:N	exprent type:constant constvalue:5	true	
+M	C:VARTYPE_NULL:N	exprent type:function| exprent position:7 type:constant ret:$p$	false	$p$=N,
+M	C:VARTYPE_NULL:N	exprent type:function| exprent position:-3	false	
+M	C:VARTYPE_NULL:N	exprent type:function functype:eq| exprent position:x type:constant	false	
+M	C:VARTYPE_NULL:N	exprent type:assignment ret:$as$| exprent type:field ret:$lhs$| exprent type:constant constvalue:$rhs$	false	$as$=E:null,$lhs$=N,$rhs$=N,
+M	C:VARTYPE_NULL:N	exprent type:function functype:eq| exprent type:field name:out| exprent type:constant consttype:null	false	
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:function functype:eq ret:$f$| exprent type:constant consttype:string constvalue:$s$| exprent type:constant ret:$c$	true	$c$=E:"a",$f$=E:"a" == "a",$s$=O:a,
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:function| exprent position:-1 type:constant ret:$last$	true	$last$=E:"a",
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:function| exprent type:constant constvalue:$v$| exprent type:constant constvalue:$v$	true	$v$=O:a,
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:function| exprent ret:$x$| exprent ret:$x$	true	$x$=E:"a",
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:function functype:ternary| exprent position:0 type:constant| exprent position:2 type:constant consttype:string ret:$s$	false	$s$=N,
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:constant consttype:null ret:$n$	false	$n$=E:"a" == "a",
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:function functype:neq| exprent type:function|  exprent type:constant constvalue:$a$|  exprent type:constant constvalue:$b$| exprent type:function ret:$second$	false	$a$=N,$b$=N,$second$=N,
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:function| exprent| exprent| exprent	false	
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:function| statement type:if	false	
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:constant constvalue:5	false	
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:function| exprent position:7 type:constant ret:$p$	true	$p$=E:"a",
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:function| exprent position:-3	EXC:IndexOutOfBoundsException:Index -1 out of bounds for length 2	
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:function functype:eq| exprent position:x type:constant	false	
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:assignment ret:$as$| exprent type:field ret:$lhs$| exprent type:constant constvalue:$rhs$	false	$as$=E:"a" == "a",$lhs$=N,$rhs$=N,
+M	(EQ C:VARTYPE_STRING:S:x0061 C:VARTYPE_STRING:S:x0061)	exprent type:function functype:eq| exprent type:field name:out| exprent type:constant consttype:null	false	
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:function functype:eq ret:$f$| exprent type:constant consttype:string constvalue:$s$| exprent type:constant ret:$c$	false	$c$=N,$f$=E:5L + 5,$s$=N,
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:function| exprent position:-1 type:constant ret:$last$	true	$last$=E:5,
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:function| exprent type:constant constvalue:$v$| exprent type:constant constvalue:$v$	false	$v$=O:5,
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:function| exprent ret:$x$| exprent ret:$x$	false	$x$=E:5L,
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:function functype:ternary| exprent position:0 type:constant| exprent position:2 type:constant consttype:string ret:$s$	false	$s$=N,
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:constant consttype:null ret:$n$	false	$n$=E:5L + 5,
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:function functype:neq| exprent type:function|  exprent type:constant constvalue:$a$|  exprent type:constant constvalue:$b$| exprent type:function ret:$second$	false	$a$=N,$b$=N,$second$=N,
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:function| exprent| exprent| exprent	false	
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:function| statement type:if	false	
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:constant constvalue:5	false	
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:function| exprent position:7 type:constant ret:$p$	true	$p$=E:5,
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:function| exprent position:-3	EXC:IndexOutOfBoundsException:Index -1 out of bounds for length 2	
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:function functype:eq| exprent position:x type:constant	false	
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:assignment ret:$as$| exprent type:field ret:$lhs$| exprent type:constant constvalue:$rhs$	false	$as$=E:5L + 5,$lhs$=N,$rhs$=N,
+M	(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)	exprent type:function functype:eq| exprent type:field name:out| exprent type:constant consttype:null	false	
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:function functype:eq ret:$f$| exprent type:constant consttype:string constvalue:$s$| exprent type:constant ret:$c$	false	$c$=N,$f$=E:System.out == null,$s$=N,
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:function| exprent position:-1 type:constant ret:$last$	true	$last$=E:null,
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:function| exprent type:constant constvalue:$v$| exprent type:constant constvalue:$v$	false	$v$=N,
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:function| exprent ret:$x$| exprent ret:$x$	false	$x$=E:System.out,
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:function functype:ternary| exprent position:0 type:constant| exprent position:2 type:constant consttype:string ret:$s$	false	$s$=N,
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:constant consttype:null ret:$n$	false	$n$=E:System.out == null,
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:function functype:neq| exprent type:function|  exprent type:constant constvalue:$a$|  exprent type:constant constvalue:$b$| exprent type:function ret:$second$	false	$a$=N,$b$=N,$second$=N,
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:function| exprent| exprent| exprent	false	
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:function| statement type:if	false	
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:constant constvalue:5	false	
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:function| exprent position:7 type:constant ret:$p$	true	$p$=E:null,
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:function| exprent position:-3	EXC:IndexOutOfBoundsException:Index -1 out of bounds for length 2	
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:function functype:eq| exprent position:x type:constant	false	
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:assignment ret:$as$| exprent type:field ret:$lhs$| exprent type:constant constvalue:$rhs$	false	$as$=E:System.out == null,$lhs$=N,$rhs$=N,
+M	(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	exprent type:function functype:eq| exprent type:field name:out| exprent type:constant consttype:null	true	
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:function functype:eq ret:$f$| exprent type:constant consttype:string constvalue:$s$| exprent type:constant ret:$c$	false	$c$=N,$f$=E:counter = 5,$s$=N,
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:function| exprent position:-1 type:constant ret:$last$	false	$last$=N,
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:function| exprent type:constant constvalue:$v$| exprent type:constant constvalue:$v$	false	$v$=N,
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:function| exprent ret:$x$| exprent ret:$x$	false	$x$=N,
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:function functype:ternary| exprent position:0 type:constant| exprent position:2 type:constant consttype:string ret:$s$	false	$s$=N,
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:constant consttype:null ret:$n$	false	$n$=E:counter = 5,
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:function functype:neq| exprent type:function|  exprent type:constant constvalue:$a$|  exprent type:constant constvalue:$b$| exprent type:function ret:$second$	false	$a$=N,$b$=N,$second$=N,
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:function| exprent| exprent| exprent	false	
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:function| statement type:if	false	
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:constant constvalue:5	false	
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:function| exprent position:7 type:constant ret:$p$	false	$p$=N,
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:function| exprent position:-3	false	
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:function functype:eq| exprent position:x type:constant	false	
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:assignment ret:$as$| exprent type:field ret:$lhs$| exprent type:constant constvalue:$rhs$	true	$as$=E:counter = 5,$lhs$=E:counter,$rhs$=O:5,
+M	(= FS:counter:I C:VARTYPE_INT:I:5)	exprent type:function functype:eq| exprent type:field name:out| exprent type:constant consttype:null	false	
 F	(=SUB FX:java/lang/System:out:Ljava/io/PrintStream; (LCMP (BOOLEAN_OR (L2D G0:0) (EQ G0:65535 C:VARTYPE_NULL:N)) (GE (BIT_NOT C:VARTYPE_DOUBLE:D:4004000000000000) (NEG G0:97))))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out -= __lcmp__(((double)0 || '\\uffff' == null), (~2.5 >= -97))	0:L2=--null--, | 2: | 3: | 4: | 6: | 9:L12=X,L10=X, | 10:L11=X, | 12:L13=X,	13	System.out -= __lcmp__(((double)0 || '\\uffff' == null), (~2.5 >= -97))	System.out -= __lcmp__((\n   (double)0 || '\\uffff' == null\n), (~2.5 >= -97))
 F	(=XOR FS:missing:I C:VARTYPE_INTEGER:I:4)	I	I	missing ^= 4	0:L1=Ljava/lang/Integer;,	13	missing ^= 4	missing ^= 4
 F	(=SHR FS:missing:I (GE (GE (GT C:VARTYPE_INTEGER:I:4 G0:97) C:VARTYPE_BOOLEAN:I:1) (XOR (INSTANCEOF G1:0 T:Ljava/util/List;) (I2D! C:VARTYPE_STRING:S:x0073))))	I	I	missing >>= 4 > 97 >= true >= (false instanceof List ^ "s")	0:L2=X, | 2:L8=X,L3=X, | 3:L7=X,L4=X, | 4:L6=X,L5=X, | 8: | 9: | 12:L13=X,U13=I,	13	missing >>= 4 > 97 >= true >= (false instanceof List ^ "s")	missing >>= 4\n   > 97\n   >= true\n   >= (false instanceof List ^ "s")

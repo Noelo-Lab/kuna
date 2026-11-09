@@ -17,6 +17,9 @@
 //     inferred/inferredText: getInferredExprType(null), then toJava of that same tree
 //     bounds: per Function/AssignmentExprent in preorder, "i:" + L<j>=type / U<j>=type pairs (or the
 //             throw), joined by " | "; i and j are preorder indices
+//   M tree pattern result variables
+//     pattern: MatchEngine description lines joined by "|"; result: engine.match(tree);
+//     variables: each $name$ of the pattern, sorted, as name=N | E:<toJava> | O:<value>,
 import org.jetbrains.java.decompiler.main.ClassesProcessor;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.Fernflower;
@@ -33,6 +36,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.vars.CheckTypesResult;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.gen.FieldDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
+import org.jetbrains.java.decompiler.struct.match.MatchEngine;
 import org.jetbrains.java.decompiler.util.DataInputFullStream;
 import org.jetbrains.java.decompiler.util.TextBuffer;
 
@@ -303,6 +307,31 @@ public class GenFunctionOracle {
     OUT.append(String.join("\t", "F", tree, exprType, inferred, inferredText, bnds, prec, text, reformatted)).append('\n');
   }
 
+  static void match(String tree, String[] pattern) {
+    fresh();
+    Exprent e = build(tree);
+    String joined = String.join("|", pattern);
+    String[] result = new String[1];
+    MatchEngine[] engine = new MatchEngine[1];
+    result[0] = run(() -> {
+      engine[0] = new MatchEngine(pattern);
+      return Boolean.toString(engine[0].match(e));
+    });
+    TreeSet<String> names = new TreeSet<>();
+    java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\$[a-z0-9]+\\$").matcher(joined);
+    while (m.find()) names.add(m.group());
+    StringBuilder vars = new StringBuilder();
+    for (String n : names) {
+      vars.append(n).append('=').append(run(() -> {
+        Object v = engine[0] == null ? null : engine[0].getVariableValue(n);
+        if (v == null) return "N";
+        if (v instanceof Exprent) return "E:" + ((Exprent) v).toJava().convertToStringAndAllowDataDiscard();
+        return "O:" + v;
+      })).append(',');
+    }
+    OUT.append(String.join("\t", "M", tree, esc(joined), result[0], esc(vars.toString()))).append('\n');
+  }
+
   public static void main(String[] args) throws Exception {
     Map<String, Object> props = new HashMap<>();
     props.put(IFernflowerPreferences.INCLUDE_JAVA_RUNTIME, "");
@@ -406,6 +435,39 @@ public class GenFunctionOracle {
       "(= FS:missing:I C:VARTYPE_DOUBLE:D:4004000000000000)",
     };
     for (String t : assigns) tree(t);
+    String sa = "C:VARTYPE_STRING:" + hexString("a"), sb = "C:VARTYPE_STRING:" + hexString("b");
+    String[] matchTrees = {
+      "(EQ " + sa + " C:VARTYPE_INT:I:5)",
+      "(EQ C:VARTYPE_INT:I:5 C:VARTYPE_INT:I:5)",
+      "(TERNARY G1:1 C:VARTYPE_NULL:N " + sb + ")",
+      "(NE (ADD G0:1 G0:2) (ADD G0:1 G0:2))",
+      "(NE (ADD G0:1 G0:2) (SUB G0:1 G0:2))",
+      "C:VARTYPE_NULL:N",
+      "(EQ " + sa + " " + sa + ")",
+      "(ADD C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:5)",
+      "(EQ FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)",
+      "(= FS:counter:I C:VARTYPE_INT:I:5)",
+    };
+    String[][] patterns = {
+      {"exprent type:function functype:eq ret:$f$", " exprent type:constant consttype:string constvalue:$s$", " exprent type:constant ret:$c$"},
+      {"exprent type:function", " exprent position:-1 type:constant ret:$last$"},
+      {"exprent type:function", " exprent type:constant constvalue:$v$", " exprent type:constant constvalue:$v$"},
+      {"exprent type:function", " exprent ret:$x$", " exprent ret:$x$"},
+      {"exprent type:function functype:ternary", " exprent position:0 type:constant", " exprent position:2 type:constant consttype:string ret:$s$"},
+      {"exprent type:constant consttype:null ret:$n$"},
+      {"exprent type:function functype:neq", " exprent type:function", "  exprent type:constant constvalue:$a$", "  exprent type:constant constvalue:$b$", " exprent type:function ret:$second$"},
+      {"exprent type:function", " exprent", " exprent", " exprent"},
+      {"exprent type:function", " statement type:if"},
+      {"exprent type:constant constvalue:5"},
+      {"exprent type:function", " exprent position:7 type:constant ret:$p$"},
+      {"exprent type:function", " exprent position:-3"},
+      {"exprent type:function functype:eq", " exprent position:x type:constant"},
+      {"exprent type:assignment ret:$as$", " exprent type:field ret:$lhs$", " exprent type:constant constvalue:$rhs$"},
+      {"exprent type:function functype:eq", " exprent type:field name:out", " exprent type:constant consttype:null"},
+    };
+    for (String t : matchTrees) {
+      for (String[] p : patterns) match(t, p);
+    }
     for (int k = 0; k < 300; k++) {
       String cond = conds[RND.nextInt(conds.length)];
       tree("(=" + cond + " " + fields[RND.nextInt(fields.length)] + " " + gen(RND.nextInt(4)) + ")");
