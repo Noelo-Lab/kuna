@@ -26,7 +26,11 @@ chapter names only the divergence record that flipped a default
 Structuring operates on a dedicated arena: `sblocks`, a `BlockCopy` mirror of
 the real basic blocks seeded by
 `decompiler/crates/kuna-decomp/src/p8_structure/blockaction.rs
-(ActionBlockStructure)`. Both engines collapse that mirror; neither mutates
+(ActionBlockStructure)`. The tree is built on the main loop's first pass and
+kept until the control-flow graph changes. A devirtualized body is the one
+exception: it is built again once dead code may be removed in every space, and
+each of its structurings first undoes the branch negations of the previous one
+(§2.11). Both engines collapse that mirror; neither mutates
 p-code, with one deliberate exception — a branch-condition orientation flip
 (`negateCondition`, needed whenever a schema requires the true edge on the
 other side) is recorded during collapse and its data-flow half (the CBRANCH

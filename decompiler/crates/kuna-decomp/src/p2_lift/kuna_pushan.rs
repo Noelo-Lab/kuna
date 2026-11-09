@@ -786,6 +786,46 @@ pub fn mark_undefined_copies(p: &PushanProgram, fd: &mut Funcdata) {
     }
 }
 
+/// Must the main loop's structuring of a devirtualized body be built again?
+/// The first structuring runs before memory is heritaged, while every block
+/// still holds the interpreter's dead stores, so a loop head that tests one
+/// comparison counts as complex and takes the `while (true)` overflow form.
+/// The structure is rebuilt once, on the first pass at which dead code may be
+/// removed in every space. Consulted by `ActionBlockStructure`.
+pub fn restructure_settled(fd: &Funcdata) -> bool {
+    fd.kuna_devirtualized() && !fd.is_high_on() && fd.get_heritage_pass() == fd.deadcode_settled_pass()
+}
+
+/// Record the blocks whose branch a structuring of a devirtualized body
+/// negated, so the next structuring can start from the emitted orientation.
+pub fn record_structure_flips(fd: &mut Funcdata, flips: &[crate::context::BlockId]) {
+    if fd.kuna_devirtualized() {
+        fd.kuna_structure_flips_mut().extend_from_slice(flips);
+    }
+}
+
+/// Negate again every branch the discarded structure of a devirtualized body
+/// negated, before the body is structured anew. Each structuring then starts
+/// from the emitted orientation, as a native function's only one does, rather
+/// than from its predecessor's choices: a rule that takes the false edge first
+/// would otherwise pick the other arm of a two-exit split on every rebuild.
+pub fn unflip_structure(fd: &mut Funcdata) {
+    let flips = std::mem::take(fd.kuna_structure_flips_mut());
+    if flips.is_empty() {
+        return;
+    }
+    let live: std::collections::BTreeSet<crate::context::BlockId> = (0..fd.bblocks_get_size()).map(|i| fd.bblocks_get_block(i)).collect();
+    for bb in flips {
+        if !live.contains(&bb) || fd.bblocks_ref().block(bb).size_out() != 2 {
+            continue;
+        }
+        let cbranch = fd.bb_op_tail(bb).and_then(|op| fd.obank().get(op)).is_some_and(|op| op.code() == OpCode::CPUI_CBRANCH);
+        if cbranch {
+            fd.block_basic_negate_lastop(bb);
+        }
+    }
+}
+
 /// Does a call inside a devirtualized body kill the register range `addr:size`
 /// beyond what its prototype model says? Consulted by `Heritage::guardCalls`.
 pub fn call_kills(fd: &Funcdata, addr: &Address, size: int4) -> bool {

@@ -1127,6 +1127,12 @@ impl Heritage {
         self.pass > self.get_info(spc).deadcodedelay
     }
 
+    /// (kuna) The first pass at which dead code may be removed in every
+    /// heritaged space.
+    pub fn deadcode_settled_pass(&self) -> int4 {
+        self.infolist.iter().filter(|info| info.space.is_some()).map(|info| info.deadcodedelay + 1).max().unwrap_or(0)
+    }
+
     /// Check dead-code removal safety and mark removal as happened (C++
     /// `deadRemovalAllowedSeen`, `heritage.cc:2847`).
     pub fn dead_removal_allowed_seen(&mut self, spc: &Rc<AddrSpace>) -> bool {

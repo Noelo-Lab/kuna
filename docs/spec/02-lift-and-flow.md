@@ -3652,6 +3652,42 @@ argument truncated to its low 16 bits). `Heritage::guard_joined_stack_input`
 registers a slot-sized trial instead, whose argument is the PIECE of the
 heritaged ranges of the pass that tile the slot.
 
+A devirtualized body is structured twice. `ActionBlockStructure` first builds
+the tree on the main loop's first pass, as for any function, and keeps it
+unless the control-flow graph changes. At that pass the stack and RAM are not
+yet heritaged, so each block still holds the interpreter's stores to its
+context, the flag words it pushed and the copies it made down the frame. The
+emission's liveness keeps them because an external call might read them, and
+only the decompiler's own dead-code pass removes them, once those spaces are
+heritaged. Until then, `Funcdata::bb_is_complex` counts them as statements. A
+loop head that only compares a counter (`4 < i` and a CBRANCH, out of 1,800
+ops in the function at that point and 16 one pass later) is then complex, and
+`rule_block_while_do` gives the loop overflow syntax:
+`while (true) { if (4 < i) break; ... }` instead of `for (i = 0; i <= 4; ...)`.
+`kuna_pushan.rs (restructure_settled)` therefore has the structure built
+again from a fresh `BlockCopy` mirror on the first pass at which dead code may
+be removed in every heritaged space (`Heritage::deadcode_settled_pass`, the
+largest dead-code delay plus one). This happens once, in the main loop, before
+the transforms that read the tree (`ActionStructureTransform`'s for-loop
+recovery, branch preference). Native functions keep the one structuring that
+upstream does.
+
+A structuring negates branches as it goes (a rule that needs its clause on the
+true edge swaps the block's out-edges and flips its CBRANCH), and those
+negations stay on the basic blocks after the tree is discarded, whether by this
+rebuild or by an ordinary reset after a control-flow change. When both arms of
+a split leave the function, `rule_block_if_no_exit` takes the false edge and
+negates, so every rebuild picked the other arm: the early `if (!p) return;` of
+a guard and the inverted `if (p) { ...rest... } return;` alternated with the
+number of rebuilds. For a devirtualized body the blocks each structuring
+negated are recorded on the `Funcdata`
+(`kuna_pushan.rs (record_structure_flips)`), and `ActionBlockStructure`
+negates them again before it builds the next tree
+(`kuna_pushan.rs (unflip_structure)`), skipping a block that no longer ends in
+a two-way CBRANCH. Every structuring then starts from the orientation the
+emitter chose, so the result depends on the program and not on how often it
+was structured.
+
 Pinned by `tests/stages/kuna-pushan.xml`. It runs two passes over the
 synthetic `pushan_vm_x86_64` fixture, a push/ret-dispatched stack-machine
 interpreter in a 64 KiB `.vmp0` whose bytecode computes `arg0 == 0 ? 7 :
