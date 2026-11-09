@@ -62,6 +62,10 @@ pub struct Selectors {
     /// The SDK headers' declarations (`objcsdk`), consulted for a selector this
     /// image declares nowhere.
     sdk: HashMap<String, Option<String>>,
+    /// Per `(class, selector)`, the class-naming spelling that class's own
+    /// property gave the selector — what its IMP is typed with, so another
+    /// class's `view` returning a different class cannot reach it.
+    by_class: HashMap<(String, String), String>,
     /// Selector strings that already carry a `sel_` symbol.
     named: HashSet<u64>,
 }
@@ -71,6 +75,42 @@ impl Selectors {
         Selectors { sdk, ..Selectors::default() }
     }
 
+    /// Record one declaration's selector and type encoding. Two spellings
+    /// agree when they match with frame offsets and class names erased; of
+    /// two that agree the one naming classes (`@"Base"`, a property's) is kept.
+    pub fn record(&mut self, selector: &str, types: Option<&str>) {
+        let Some(new) = types else {
+            self.encodings.entry(selector.to_string()).or_insert(None);
+            return;
+        };
+        match self.encodings.get(selector) {
+            None => {
+                self.encodings.insert(selector.to_string(), Some(new.to_string()));
+            }
+            Some(None) => {}
+            Some(Some(have)) => {
+                if shape(have) != shape(new) {
+                    self.encodings.insert(selector.to_string(), None);
+                } else if !have.contains('"') && new.contains('"') {
+                    self.encodings.insert(selector.to_string(), Some(new.to_string()));
+                }
+            }
+        }
+    }
+
+    /// Record a property's spelling of `selector` for its own `class`.
+    pub fn record_for_class(&mut self, class: &str, selector: &str, types: &str) {
+        self.record(selector, Some(types));
+        self.by_class.insert((class.to_string(), selector.to_string()), types.to_string());
+    }
+
+    /// The spelling `class`'s own property gives `selector`, what its IMP is
+    /// typed with; `None` when the class has no such property, whose IMP then
+    /// keeps its method encoding rather than another class's spelling.
+    pub fn encoding_for_class(&self, class: &str, selector: &str) -> Option<&str> {
+        self.by_class.get(&(class.to_string(), selector.to_string())).map(String::as_str)
+    }
+
     /// The one encoding known for `selector`: the image's own declarations
     /// first, the SDK's only when the image has none.
     pub fn encoding(&self, selector: &str) -> Option<&str> {
@@ -78,18 +118,6 @@ impl Selectors {
             Some(e) => e.as_deref(),
             None => self.sdk.get(selector).and_then(|e| e.as_deref()),
         }
-    }
-
-    /// Record one method's selector and type encoding.
-    pub fn record(&mut self, selector: &str, types: Option<&str>) {
-        self.encodings
-            .entry(selector.to_string())
-            .and_modify(|e| {
-                if e.as_deref() != types {
-                    *e = None;
-                }
-            })
-            .or_insert_with(|| types.map(str::to_string));
     }
 
     /// The `sel_<sel>` data symbol on the selector string, once per string. The
@@ -230,6 +258,30 @@ fn push_slot(ranges: &mut Vec<(u64, u64)>, va: u64, ps: u64) {
     match ranges.last_mut() {
         Some((_, end)) if *end == va => *end = va + ps,
         _ => ranges.push((va, va + ps)),
+    }
+}
+
+/// An encoding's shape: its types with frame offsets and class names erased
+/// (`@16@0:8` and `@"Base"@:` both `@@:`); the text itself when it does not parse.
+fn shape(enc: &str) -> String {
+    match encoding::split_method(enc) {
+        Some((ret, args)) => {
+            let mut s = ret;
+            for a in args {
+                s.push_str(&a);
+            }
+            let mut out = String::new();
+            let mut quoted = false;
+            for c in s.chars() {
+                if c == '"' {
+                    quoted = !quoted;
+                } else if !quoted {
+                    out.push(c);
+                }
+            }
+            out
+        }
+        None => enc.to_string(),
     }
 }
 
@@ -554,5 +606,38 @@ mod tests {
         push_slot(&mut r, 0x108, 8);
         push_slot(&mut r, 0x118, 8);
         assert_eq!(r, vec![(0x100, 0x110), (0x118, 0x120)]);
+    }
+
+    /// A hostile spelling reaches `split_method` through [`shape`]: it is
+    /// refused at the depth cap and compared as text, not recursed.
+    #[test]
+    fn record_survives_a_hostile_spelling() {
+        let deep = format!("v@:{}i", "^".repeat(1_000_000));
+        let mut sel = Selectors::default();
+        sel.record("x", Some("v16@0:8"));
+        sel.record("x", Some(&deep));
+        assert_eq!(sel.encoding("x"), None);
+        sel.record("y", Some(&deep));
+        sel.record("y", Some(&deep));
+        assert_eq!(sel.encoding("y"), Some(deep.as_str()));
+    }
+
+    #[test]
+    fn record_keeps_the_class_bearing_spelling_and_drops_disagreement() {
+        let mut sel = Selectors::default();
+        sel.record("inner", Some("@16@0:8"));
+        sel.record("inner", Some("@\"Base\"@:"));
+        assert_eq!(sel.encoding("inner"), Some("@\"Base\"@:"));
+        sel.record("inner", Some("@16@0:8"));
+        assert_eq!(sel.encoding("inner"), Some("@\"Base\"@:"), "a plain spelling does not replace a classed one");
+        sel.record("inner", Some("q16@0:8"));
+        assert_eq!(sel.encoding("inner"), None, "a different shape drops the selector");
+
+        let mut sel = Selectors::default();
+        sel.record_for_class("A", "view", "@\"UIView\"@:");
+        sel.record_for_class("B", "view", "@\"NSView\"@:");
+        assert_eq!(sel.encoding_for_class("B", "view"), Some("@\"NSView\"@:"), "each class keeps its own class");
+        assert_eq!(sel.encoding_for_class("C", "view"), None, "a class with no property takes no other class's spelling");
+        assert_eq!(sel.encoding("view"), Some("@\"UIView\"@:"), "a stub still takes the first spelling");
     }
 }

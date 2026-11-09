@@ -47,6 +47,8 @@ mod class_ro_t {
     /// variables). After `name`(0x18), `baseMethodList`(0x20), `baseProtocols`
     /// (0x28) comes `ivars`(0x30).
     pub const IVARS: u64 = 0x30;
+    /// `baseProperties` — the `property_list_t*`, after `weakIvarLayout`(0x38).
+    pub const BASE_PROPERTIES: u64 = 0x40;
 }
 
 /// `ivar_list_t` header offsets (the same `entsizeAndFlags`/`count` shape as
@@ -136,6 +138,11 @@ pub fn base_methods(img: &MachoImage, ro: u64) -> Option<u64> {
     } else {
         Some(p)
     }
+}
+
+/// The `baseProperties` (`property_list_t*`) at `class_ro_t.baseProperties`.
+pub fn base_properties(img: &MachoImage, ro: u64) -> Option<u64> {
+    img.read_ptr(ro.wrapping_add(class_ro_t::BASE_PROPERTIES)).filter(|&p| p != 0)
 }
 
 /// The metaclass `class_ro_t` reached through `class_t.isa.data`: its

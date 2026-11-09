@@ -118,7 +118,7 @@ pub fn struct_type(encoding: &str, tctx: &TypeCtx) -> Option<Rc<Datatype>> {
             return Some(t);
         }
         Some(_) => return None,
-        None => types.get_type_struct(name).ok()?,
+        None => types.kuna_declare_record(name, false).ok()?,
     };
     let members = struct_members(encoding)?;
     let names = member_names(name);
