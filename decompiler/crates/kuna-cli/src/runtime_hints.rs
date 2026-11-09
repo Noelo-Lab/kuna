@@ -64,6 +64,7 @@ fn marker_regex() -> &'static Regex {
 struct PeView {
     section_names: Vec<Vec<u8>>,
     clr: bool,
+    debug_header_export: bool,
 }
 
 fn u16_at(b: &[u8], off: usize) -> Option<u16> {
@@ -94,11 +95,47 @@ fn pe_view(b: &[u8]) -> Option<PeView> {
         && u32_at(b, dirs_at + 14 * 8).unwrap_or(0) != 0
         && u32_at(b, dirs_at + 14 * 8 + 4).unwrap_or(0) != 0;
     let table = opt + opt_size;
-    let section_names = (0..nsections.min(96))
+    let nsections = nsections.min(96);
+    let section_names = (0..nsections)
         .map_while(|i| b.get(table + i * 40..table + i * 40 + 8))
         .map(|n| n.iter().copied().take_while(|&c| c != 0).collect())
         .collect();
-    Some(PeView { section_names, clr })
+    let export_rva = (ndirs > 0).then(|| u32_at(b, dirs_at)).flatten().filter(|&rva| rva != 0);
+    let debug_header_export = export_rva
+        .and_then(|rva| pe_exports(b, table, nsections, rva, b"DotNetRuntimeDebugHeader"))
+        .unwrap_or(false);
+    Some(PeView { section_names, clr, debug_header_export })
+}
+
+/// The file offset of `rva` under the section table at `table`.
+fn pe_offset(b: &[u8], table: usize, nsections: usize, rva: u32) -> Option<usize> {
+    (0..nsections).find_map(|i| {
+        let s = table + i * 40;
+        let delta = rva.checked_sub(u32_at(b, s + 12)?)?;
+        let at = (u32_at(b, s + 20)? as usize).checked_add(delta as usize)?;
+        (delta < u32_at(b, s + 16)?).then_some(at)
+    })
+}
+
+/// Whether the export directory at `export_rva` names `name`. The name pointer
+/// table of a PE is sorted, so this is a binary search over it.
+fn pe_exports(b: &[u8], table: usize, nsections: usize, export_rva: u32, name: &[u8]) -> Option<bool> {
+    let offset = |rva: u32| pe_offset(b, table, nsections, rva);
+    let dir = offset(export_rva)?;
+    let names = offset(u32_at(b, dir.checked_add(32)?)?)?;
+    let (mut lo, mut hi) = (0usize, u32_at(b, dir.checked_add(24)?)? as usize);
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        let tail = b.get(offset(u32_at(b, names.checked_add(mid.checked_mul(4)?)?)?)?..)?;
+        let tail = &tail[..tail.len().min(name.len() + 1)];
+        let entry = tail.split(|&c| c == 0).next().unwrap_or(tail);
+        match entry.cmp(name) {
+            std::cmp::Ordering::Less => lo = mid + 1,
+            std::cmp::Ordering::Greater => hi = mid,
+            std::cmp::Ordering::Equal => return Some(true),
+        }
+    }
+    Some(false)
 }
 
 /// The Python version a PyInstaller CArchive cookie at `at` records, e.g. `3.12`.
@@ -137,15 +174,16 @@ fn ilc_version(b: &[u8]) -> Option<String> {
 
 /// Strong markers of a .NET NativeAOT image, with the ILC release its
 /// `.comment` section records. On ELF, `__managedcode` and `.dotnet_eh_table`
-/// are both section names; on a Windows PE, where the default link merges
-/// `.managedcode` into `.text`, the `.unbox` and `.modules` sections still
-/// survive. Requiring a pair of section names keeps an image that merely spells
-/// them out in its data from being labeled.
+/// are both section names. A Windows link merges the managed sections into
+/// `.text` and `.rdata`, so there the marker is the `DotNetRuntimeDebugHeader`
+/// data export the runtime publishes for debuggers; a link that keeps the
+/// `.unbox` and `.modules` sections is accepted too. Section and export names
+/// keep an image that merely spells the markers out in its data from being
+/// labeled.
 fn nativeaot_version(b: &[u8], pe: Option<&PeView>) -> Option<Option<String>> {
     let windows = pe.is_some_and(|p| {
-        !p.clr
-            && p.section_names.iter().any(|n| n.as_slice() == b".unbox")
-            && p.section_names.iter().any(|n| n.as_slice() == b".modules")
+        let named = |name: &[u8]| p.section_names.iter().any(|n| n.as_slice() == name);
+        !p.clr && (p.debug_header_export || (named(b".unbox") && named(b".modules")))
     });
     if !windows && !b.starts_with(b"\x7fELF") {
         return None;
@@ -474,6 +512,51 @@ mod tests {
 
         let only_unbox = pe(0x20b, false, &[b".text", b".unbox"], &[]);
         assert!(detect(&only_unbox, false).is_empty());
+    }
+
+    /// A PE32+ image from [`pe`] whose second section is an export directory
+    /// naming `names`, which must be sorted.
+    fn pe_exporting(names: &[&[u8]]) -> Vec<u8> {
+        let rva = 0x2000u32;
+        let strings_at = 40 + 4 * names.len() as u32;
+        let mut data = vec![0u8; 40];
+        data[24..28].copy_from_slice(&(names.len() as u32).to_le_bytes());
+        data[32..36].copy_from_slice(&(rva + 40).to_le_bytes());
+        let mut strings = Vec::new();
+        for name in names {
+            data.extend_from_slice(&(rva + strings_at + strings.len() as u32).to_le_bytes());
+            strings.extend_from_slice(name);
+            strings.push(0);
+        }
+        data.extend_from_slice(&strings);
+        let mut image = pe_section_data(pe(0x20b, false, &[b".text", b".rdata"], &[]), 1, &data);
+        let (header, dirs_at) = (0x84 + 20 + 0xf0 + 40, 0x84 + 20 + 112);
+        image[header + 12..header + 16].copy_from_slice(&rva.to_le_bytes());
+        image[dirs_at..dirs_at + 4].copy_from_slice(&rva.to_le_bytes());
+        image[dirs_at + 4..dirs_at + 8].copy_from_slice(&(data.len() as u32).to_le_bytes());
+        image
+    }
+
+    #[test]
+    fn nativeaot_windows_pe_is_named_by_its_debug_header_export() {
+        let names: &[&[u8]] = &[b"AppEntry", b"DotNetRuntimeDebugHeader", b"add", b"shutdown"];
+        for count in 2..=names.len() {
+            let hints = detect(&pe_exporting(&names[..count]), false);
+            assert_eq!(ids(&hints), ["nativeaot"]);
+            assert_eq!(hints[0].version, None);
+            assert!(hints[0].hint.starts_with("NativeAOT image:"));
+        }
+        assert_eq!(ids(&detect(&pe_exporting(&names[1..2]), false)), ["nativeaot"]);
+
+        let near: &[&[u8]] = &[b"DotNetRuntimeDebugHeade", b"DotNetRuntimeDebugHeaderV2", b"add"];
+        assert!(detect(&pe_exporting(near), false).is_empty());
+        assert!(detect(&pe_exporting(&[]), false).is_empty());
+        let spelled_out = pe(0x20b, false, &[b".text"], b"\0DotNetRuntimeDebugHeader\0");
+        assert!(detect(&spelled_out, false).is_empty());
+
+        let mut cut = pe_exporting(names);
+        cut.truncate(cut.len() - 30);
+        assert!(detect(&cut, false).is_empty());
     }
 
     #[test]
