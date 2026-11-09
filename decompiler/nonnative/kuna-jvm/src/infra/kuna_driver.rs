@@ -236,6 +236,7 @@ pub fn run(
 
     let mut report = Report::default();
     let result = std::thread::scope(|scope| -> Result<(), DriverError> {
+        let _finish = FinishOnDrop(&board);
         let mut handles = Vec::new();
         for worker in 0..workers_wanted {
             let out_tx = out_tx.clone();
@@ -305,7 +306,6 @@ pub fn run(
         board.start(shared, sorted);
 
         let mut slots: BTreeMap<usize, ClassResult> = BTreeMap::new();
-        let mut pending: BTreeSet<usize> = selected.iter().copied().collect();
         let mut next = 0usize;
         let order_of_selected: Vec<usize> = selected.clone();
         let mut done = 0usize;
@@ -396,7 +396,6 @@ pub fn run(
                 let Some(result) = slots.remove(&index) else {
                     break;
                 };
-                pending.remove(&index);
                 if result.unit.is_none() {
                     report.failed.push(result.qualified_name.clone());
                 } else {
@@ -439,6 +438,15 @@ struct SharedPlan {
     order: Arc<BTreeMap<String, RootPos>>,
     roots: Vec<String>,
     all: BTreeSet<usize>,
+}
+
+/// Ends the run for the workers however the coordinating thread leaves.
+struct FinishOnDrop<'a>(&'a Board);
+
+impl Drop for FinishOnDrop<'_> {
+    fn drop(&mut self) {
+        self.0.finish();
+    }
 }
 
 /// The work queue the workers take batches from.
@@ -894,7 +902,11 @@ pub fn estimate_memory(input: &InputSet, config: &DriverConfig, workers: usize) 
             .iter()
             .map(|l| l.class_bytes() as u64)
             .sum::<u64>();
-    let runtime = if config.runtime.is_some() { 96 << 20 } else { 0 };
+    let runtime = if config.runtime.is_some() {
+        96 << 20
+    } else {
+        0
+    };
     let per_instance = config
         .instance_memory
         .unwrap_or((128 << 20) + runtime + universe * 64);
