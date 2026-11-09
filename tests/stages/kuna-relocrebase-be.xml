@@ -1,7 +1,7 @@
 <decompilertest>
 <binaryimage arch="MIPS:BE:32:default:default">
 <!--
-    kuna analysis (option relocrebase, default on), GH-904: a big-endian
+    kuna analysis (relocrebase, always on), GH-904: a big-endian
     relocatable object's analysis facts at the addresses the loader gives it.
 
     The analysis tier reads a relocatable object through a copy patched to the
@@ -15,8 +15,8 @@
     and functions listed scale and greet twice, at 0x0 and 0x8 as well.
     The fields are now written in the object's own byte order.
 
-    Stage: P1 program prep (relocatable layout), option relocrebase.
-    Single pass: the default.
+    Stage: P1 program prep (relocatable layout).
+    Single pass.
 
     Image: decompiler/crates/kuna-analysis/tests/fixtures/relocrebase_be_mips.o
     (relocrebase_be.c); see relocrebase_be.provenance.

@@ -1,4 +1,4 @@
-//! End-to-end two-pass gate for `fdeinterior` — never start a function inside
+//! End-to-end gate for `fdeinterior` — never start a function inside
 //! another function's `.eh_frame` FDE (P1 code/data partition, DIV-61).
 //!
 //! Fixture: `eh_lsda_x86_64`, the vendored C++ try/catch ELF stripped of
@@ -36,18 +36,15 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the stripped C++ try/catch fixture with the LSDA landing-pad oracle on and
-/// `fdeinterior` in the requested state, then commit the (deferred) analysis facts.
-fn bootstrap(fdeinterior: bool) -> ConsoleProgram {
+/// Bootstrap the stripped C++ try/catch fixture with the LSDA landing-pad oracle on,
+/// then commit the (deferred) analysis facts.
+fn bootstrap() -> ConsoleProgram {
     let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/eh_lsda_x86_64");
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().set_kuna_option("eh_frame_full", "on").expect("eh_frame_full flips on");
-    prog.arch_mut()
-        .set_kuna_option("fdeinterior", if fdeinterior { "on" } else { "off" })
-        .expect("fdeinterior flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
 }
@@ -70,24 +67,11 @@ fn decompile(prog: ConsoleProgram, name: &str) -> String {
     status.optr.clone()
 }
 
-/// BEFORE (`--option fdeinterior off`): the landing pad becomes its own function.
+/// The pad is strictly inside `guarded`'s FDE, so it is not a function — while
+/// the FDE's own start still is.
 #[test]
-fn landing_pad_is_a_function_with_the_option_off() {
-    let prog = bootstrap(false);
-    assert!(
-        prog.lookup_symbol(PAD).is_some(),
-        "with fdeinterior off the LSDA landing pad 0x4012e2 must still register as \
-         {PAD} — the option must restore the previous discovery set exactly"
-    );
-    let body = decompile(prog, PAD);
-    assert!(body.contains(PAD), "expected a decompiled body for {PAD}, got:\n{body}");
-}
-
-/// AFTER (default): the pad is strictly inside `guarded`'s FDE, so it is not a
-/// function — while the FDE's own start still is.
-#[test]
-fn landing_pad_is_rejected_by_default_and_its_owner_survives() {
-    let prog = bootstrap(true);
+fn landing_pad_is_rejected_and_its_owner_survives() {
+    let prog = bootstrap();
     assert!(
         prog.lookup_symbol(PAD).is_none(),
         "0x4012e2 is 12 bytes into the FDE [0x4012d6,0x40137a) — by default it must \
@@ -105,8 +89,8 @@ fn landing_pad_is_rejected_by_default_and_its_owner_survives() {
 /// inside it is a real function. No named function may be lost.
 #[test]
 fn no_named_function_is_lost() {
-    let (off, on) = (bootstrap(false), bootstrap(true));
-    let named: Vec<String> = off
+    let prog = bootstrap();
+    let named: Vec<String> = prog
         .function_entries_canonical()
         .into_iter()
         .filter(|e| !e.name.starts_with("sub_"))
@@ -114,9 +98,6 @@ fn no_named_function_is_lost() {
         .collect();
     assert!(!named.is_empty(), "the fixture must carry named (PLT/import) functions");
     for name in &named {
-        assert!(
-            on.lookup_symbol(name).is_some(),
-            "fdeinterior must never drop a named function; {name} disappeared"
-        );
+        assert!(prog.lookup_symbol(name).is_some(), "{name} must keep its symbol");
     }
 }

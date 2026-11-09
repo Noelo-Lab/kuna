@@ -1,4 +1,4 @@
-//! End-to-end gate for DWARF aggregate-LAYOUT import (`--option dwarfstructs`).
+//! End-to-end gate for DWARF aggregate-LAYOUT import (part of `--option dwarf`).
 //!
 //! The bug: the DIE→`Datatype` mapper interned every `DW_TAG_structure_type` /
 //! `union_type` / `class_type` as a NAMED, EMPTY, ZERO-SIZE shell, and never read
@@ -15,8 +15,8 @@
 //! * every field access came out as a cast-and-offset.
 //!
 //! The fixture `dwarfstructs_x86_64` (both sources vendored alongside) is a
-//! `-g -O1` C binary carrying one function per shape. Each test is TWO-PASS:
-//! `dwarfstructs off` reproduces the bug, the default reproduces the fix.
+//! `-g -O1` C binary carrying one function per shape; each test decompiles one
+//! shape at the defaults and pins the fixed output.
 //!
 //! ## The collision case
 //!
@@ -27,35 +27,19 @@
 //! — and it is not exotic: `rustc -g` names every enum payload struct bare
 //! (`Some`, `Ok`, `Err`), and a five-function Rust witness carries four distinct
 //! `Some` DIEs of sizes 16, 24, 16 and 12. Both `Same`s must survive.
-//!
-//! ## Why the gate is set through the environment, not `set_kuna_option`
-//!
-//! The layout is installed on the interned type by `DwarfPass` during
-//! `load file`, upstream of every `option` command, so the live gate is the
-//! process env var (`kuna_dwarfstructs::DWARFSTRUCTS_ENV`) that the CLI exports
-//! before the load. The helper below therefore sets it BEFORE
-//! `bootstrap_from_object`, serialized by a mutex because the environment is
-//! process-global and `cargo test` runs the tests in this binary concurrently.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
-use kuna_decomp::kuna_dwarfstructs::DWARFSTRUCTS_ENV;
-
-/// Serializes the env-var flip + bootstrap across the concurrently-run tests.
-static GATE: Mutex<()> = Mutex::new(());
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the fixture with `dwarfstructs` on/off, decompile each of `funcs` and return
-/// the concatenated C.
-fn decompile(funcs: &[&str], structs: bool) -> String {
-    let _guard = GATE.lock().unwrap_or_else(|e| e.into_inner());
+/// Bootstrap the fixture, decompile each of `funcs` and return the concatenated C.
+fn decompile(funcs: &[&str]) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
@@ -64,10 +48,8 @@ fn decompile(funcs: &[&str], structs: bool) -> String {
         .to_str().expect("UTF-8 fixture path")
         .to_string();
 
-    std::env::set_var(DWARFSTRUCTS_ENV, if structs { "on" } else { "off" });
-    let prog = bootstrap_from_object(&path, "", &spec_roots);
-    std::env::remove_var(DWARFSTRUCTS_ENV);
-    let mut prog = prog.expect("bootstrap fixture with built processor specs");
+    let mut prog = bootstrap_from_object(&path, "", &spec_roots)
+        .expect("bootstrap fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let mut cmds: Vec<String> = Vec::new();
@@ -94,12 +76,7 @@ fn decompile(funcs: &[&str], structs: bool) -> String {
 /// register it arrives in.
 #[test]
 fn by_value_struct_parameter_keeps_its_type() {
-    let (off, on) =
-        (decompile(&["take_struct"], false), decompile(&["take_struct"], true));
-    assert!(
-        off.contains("take_struct(unsigned long p,int4 k)"),
-        "gate off should reproduce the bug, got:\n{off}"
-    );
+    let on = decompile(&["take_struct"]);
     assert!(
         on.contains("take_struct(P8 p,int4 k)") && on.contains("p.a") && on.contains("p.b"),
         "`P8 p` should keep its type and field names, got:\n{on}"
@@ -111,12 +88,7 @@ fn by_value_struct_parameter_keeps_its_type() {
 /// a phantom `rethidden` parameter appeared and the body did arithmetic on it.
 #[test]
 fn small_struct_return_loses_its_phantom_sret() {
-    let (off, on) =
-        (decompile(&["ret_struct"], false), decompile(&["ret_struct"], true));
-    assert!(
-        off.contains("rethidden") && off.contains("(int4)rethidden"),
-        "gate off should reproduce the phantom sret used in arithmetic, got:\n{off}"
-    );
+    let on = decompile(&["ret_struct"]);
     assert!(
         on.contains("P8 ret_struct(uint4 x)") && !on.contains("rethidden"),
         "an 8-byte struct return should be a register return, got:\n{on}"
@@ -127,8 +99,7 @@ fn small_struct_return_loses_its_phantom_sret() {
 /// pointer that the ABI genuinely has, only type what it points at.
 #[test]
 fn large_struct_return_keeps_its_real_sret() {
-    let (off, on) = (decompile(&["ret_big"], false), decompile(&["ret_big"], true));
-    assert!(off.contains("rethidden"), "the 24-byte sret is real off, got:\n{off}");
+    let on = decompile(&["ret_big"]);
     assert!(
         on.contains("rethidden") && on.contains("rethidden->x") && on.contains("rethidden->z"),
         "the sret must survive and be typed, got:\n{on}"
@@ -139,12 +110,7 @@ fn large_struct_return_keeps_its_real_sret() {
 /// word.
 #[test]
 fn union_members_resolve() {
-    let (off, on) =
-        (decompile(&["take_union"], false), decompile(&["take_union"], true));
-    assert!(
-        off.contains("take_union(unsigned int u)"),
-        "gate off should reproduce the bug, got:\n{off}"
-    );
+    let on = decompile(&["take_union"]);
     assert!(
         on.contains("take_union(U4 u)") && on.contains("u.i"),
         "the union parameter should keep its type and member, got:\n{on}"
@@ -156,12 +122,7 @@ fn union_members_resolve() {
 /// reads of `u->i`. (That is a bug this file caught before it shipped.)
 #[test]
 fn union_keeps_every_member_not_just_the_first() {
-    let funcs = ["union_second", "union_third"];
-    let (off, on) = (decompile(&funcs, false), decompile(&funcs, true));
-    assert!(
-        off.contains("*(float4 *)u") && off.contains("((char *)u)[2]"),
-        "gate off should reproduce the raw reads, got:\n{off}"
-    );
+    let on = decompile(&["union_second", "union_third"]);
     assert!(
         on.contains("u->f") && on.contains("u->c[2]"),
         "the second and third union members must both resolve, got:\n{on}"
@@ -171,12 +132,7 @@ fn union_keeps_every_member_not_just_the_first() {
 /// A struct whose member is itself a struct resolves both levels.
 #[test]
 fn nested_struct_members_resolve() {
-    let (off, on) =
-        (decompile(&["take_nest"], false), decompile(&["take_nest"], true));
-    assert!(
-        off.contains("((int4 *)n)[1]"),
-        "gate off should reproduce the cast-and-offset, got:\n{off}"
-    );
+    let on = decompile(&["take_nest"]);
     assert!(
         on.contains("n->tag") && on.contains(").a") && on.contains("n->tail"),
         "the nested struct's members should render by name, got:\n{on}"
@@ -187,12 +143,7 @@ fn nested_struct_members_resolve() {
 /// that holds it.
 #[test]
 fn bitfield_members_resolve() {
-    let (off, on) =
-        (decompile(&["take_bits"], false), decompile(&["take_bits"], true));
-    assert!(
-        off.contains("& 7") && off.contains(">> 3"),
-        "gate off should reproduce the mask-and-shift, got:\n{off}"
-    );
+    let on = decompile(&["take_bits"]);
     assert!(
         on.contains("b->lo") && on.contains("b->mid") && on.contains("b->hi"),
         "the three bitfields should render by name, got:\n{on}"
@@ -203,7 +154,7 @@ fn bitfield_members_resolve() {
 /// member — the recursion the shell-before-members ordering exists to survive.
 #[test]
 fn self_referential_struct_terminates() {
-    let on = decompile(&["walk_list"], true);
+    let on = decompile(&["walk_list"]);
     assert!(
         on.contains("n->val") && on.contains("n->next"),
         "a linked-list node should resolve both its members, got:\n{on}"
@@ -215,12 +166,7 @@ fn self_referential_struct_terminates() {
 /// first's layout or collapsing the whole parameter to `void *`.
 #[test]
 fn same_name_different_size_aggregates_both_survive() {
-    let funcs = ["read_same_small", "read_same_big"];
-    let (off, on) = (decompile(&funcs, false), decompile(&funcs, true));
-    assert!(
-        off.contains("((int4 *)s)[2]"),
-        "gate off should reproduce the cast-and-offset, got:\n{off}"
-    );
+    let on = decompile(&["read_same_small", "read_same_big"]);
     assert!(
         on.contains("read_same_small(Same *s)") && on.contains("s->only"),
         "the 4-byte Same should keep its single member, got:\n{on}"

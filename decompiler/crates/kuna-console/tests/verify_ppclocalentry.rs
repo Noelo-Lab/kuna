@@ -1,4 +1,4 @@
-//! End-to-end two-pass gate for `ppclocalentry` — a PPC64 ELFv2 local entry
+//! End-to-end gate for `ppclocalentry` — a PPC64 ELFv2 local entry
 //! point is a point inside a function, not a function (P1 code/data partition).
 //!
 //! Fixture: `plt_ppc64le`, an ordinary `gcc` ppc64le PIE. The OpenPOWER ELFv2
@@ -40,9 +40,8 @@ fn repo_root() -> PathBuf {
 }
 
 /// Bootstrap the fixture the way every `kuna` driver does on a non-x86-64 image
-/// (DIV-20/DIV-68: the Listing plus the discovery bundle), with `ppclocalentry` in the
-/// requested state.
-fn bootstrap(ppclocalentry: bool) -> ConsoleProgram {
+/// (DIV-20/DIV-68: the Listing plus the discovery bundle).
+fn bootstrap() -> ConsoleProgram {
     let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/plt_ppc64le");
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
@@ -52,9 +51,6 @@ fn bootstrap(ppclocalentry: bool) -> ConsoleProgram {
     prog.arch_mut()
         .set_kuna_option("funcstart_patterns", "on")
         .expect("funcstart_patterns flips on");
-    prog.arch_mut()
-        .set_kuna_option("ppclocalentry", if ppclocalentry { "on" } else { "off" })
-        .expect("ppclocalentry flips");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
 }
@@ -67,32 +63,10 @@ fn size_of(entries: &[(String, u64)], name: &str) -> Option<u64> {
     entries.iter().find(|(n, _)| n == name).map(|(_, s)| *s)
 }
 
-/// BEFORE (`--option ppclocalentry off`): every locally called routine is an
-/// 8-byte named husk plus an anonymous body 8 bytes later.
+/// The anonymous twins are gone and each named symbol spans its whole routine.
 #[test]
-fn local_entries_split_every_function_with_the_option_off() {
-    let prog = bootstrap(false);
-    let got = entries(&prog);
-    for &(named, anon, whole) in SPLIT {
-        assert_eq!(
-            size_of(&got, named),
-            Some(8),
-            "with ppclocalentry off {named} must still be the 8-byte TOC-prologue husk \
-             — the option must restore the previous discovery set exactly; got {got:?}"
-        );
-        assert_eq!(
-            size_of(&got, anon),
-            Some(whole - 8),
-            "and its body must still be filed under {anon}; got {got:?}"
-        );
-    }
-}
-
-/// AFTER (default): the anonymous twins are gone and each named symbol spans
-/// its whole routine.
-#[test]
-fn named_functions_span_their_whole_body_by_default() {
-    let prog = bootstrap(true);
+fn named_functions_span_their_whole_body() {
+    let prog = bootstrap();
     let got = entries(&prog);
     for &(named, anon, whole) in SPLIT {
         assert_eq!(
@@ -108,32 +82,3 @@ fn named_functions_span_their_whole_body_by_default() {
     }
 }
 
-/// The property that keeps the fold from losing code: it only ever withholds
-/// the duplicate second entry. Nothing is added, nothing else is removed, and
-/// no surviving function shrinks.
-#[test]
-fn the_fold_only_removes_the_duplicate_entries() {
-    let (off, on) = (bootstrap(false), bootstrap(true));
-    let before = entries(&off);
-    let after = entries(&on);
-    let mut removed: Vec<&str> = before
-        .iter()
-        .map(|(n, _)| n.as_str())
-        .filter(|n| size_of(&after, n).is_none())
-        .collect();
-    let added: Vec<&str> = after
-        .iter()
-        .map(|(n, _)| n.as_str())
-        .filter(|n| size_of(&before, n).is_none())
-        .collect();
-    let mut want: Vec<&str> = SPLIT.iter().map(|&(_, a, _)| a).collect();
-    removed.sort_unstable();
-    want.sort_unstable();
-    assert_eq!(removed, want, "exactly the local-entry twins may be withheld");
-    assert!(added.is_empty(), "the fold never adds an entry; got {added:?}");
-    for (name, size) in &before {
-        if let Some(now) = size_of(&after, name) {
-            assert!(now >= *size, "{name} must not shrink: {size} -> {now}");
-        }
-    }
-}

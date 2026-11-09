@@ -1763,16 +1763,7 @@ fn raw_image_discovers_called_functions_beyond_its_seeds() {
     let spec = PathBuf::from(&sp).join("Ghidra/Processors/Cortus/data/languages/aps3.sla");
     assert!(spec.exists(), "required processor spec missing; build specs before running integration tests");
 
-    // Off: the inventory is exactly the seed, as it was before the option.
-    let (stdout, stderr, ok) = run_kuna(&[
-        "functions", &binary, "--json", "--raw-image", "--target", target, "--base",
-        "0x80000000", "--entry", "0x80000000", "--option", "rawdiscover", "off",
-        "--sleighpath", &sp,
-    ]);
-    assert!(ok, "raw functions with rawdiscover off failed: {stderr}");
-    assert!(stdout.contains("\"count\": 1"), "{stdout}");
-
-    // On (the default): the seed, its direct callee, and the sweep-only callee.
+    // The seed, its direct callee, and the sweep-only callee.
     let (stdout, stderr, ok) = run_kuna(&[
         "functions", &binary, "--json", "--raw-image", "--target", target, "--base",
         "0x80000000", "--entry", "0x80000000", "--sleighpath", &sp,
@@ -3709,28 +3700,6 @@ fn a_return_merged_in_pieces_stays_void() {
 /// `floatret_parse_gcc_O1.o` and `floatret_parse_armel.o` (soft-float ARM):
 /// `parse`, `parse2` and `parsef` return what `strtod` and `strtof` return, and
 /// `rp` keeps `parse`'s bits as an integer, `rp2` stores `parse2`'s `double`, and
-/// `rpf` keeps `parsef`'s bits. With libc signature seeding disabled, neither
-/// callee has a declaration, so
-/// a return through them printed `unsigned long parse(..) { return strtod(..); }`,
-/// which converts the `double` by value once compiled against `<stdlib.h>`. They
-/// stay `void`, as before a caller asked for their result.
-#[test]
-fn a_return_of_an_undeclared_float_callee_stays_void() {
-    let sp = specs();
-    for name in ["floatret_parse_gcc_O1.o", "floatret_parse_armel.o"] {
-        let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "libcsigs", "off"]);
-        assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
-        let printed = printed_functions(&stdout, &["parse ", "parse2 ", "parsef ", "rp ", "rp2 ", "rpf "]);
-        for want in ["void parse(", "void parse2(", "void parsef("] {
-            assert!(printed.contains(want), "{name}: missing `{want}`:\n{printed}");
-        }
-        for bad in ["return strtod(", "return strtof("] {
-            assert!(!printed.contains(bad), "{name}: `{bad}` converts the callee's float by value:\n{printed}");
-        }
-    }
-}
-
 /// Code-proven imports receive their known floating-point contracts on x86-64;
 /// ARM retains its exclusion for incompatible floating-point ABI rows.
 #[test]

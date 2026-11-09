@@ -80,12 +80,12 @@
 //! word (GOTOFF) is an address; a plain copy of the base is a base and files
 //! nothing; a switch's cases receive the dispatch's bases.
 //!
-//! # Pointers (kuna `armderef`)
+//! # Pointers
 //!
 //! The slot's word, a PC-composed address and a GOTOFF address are a datum's
 //! address, and the program reads and writes through the register that holds
 //! it (`ldr r3,[r4,r2]; str r0,[r3,#0x20]`), as non-PIC code does with a mapped
-//! pool word (`ldr r5,=g_cfg; str r4,[r5,#0x14]`). Under `armderef` each one
+//! pool word (`ldr r5,=g_cfg; str r4,[r5,#0x14]`). Each one
 //! outside `.got` travels like a base, and a load or store through it plus
 //! constants files a `Read` or `Write` of the address. A pool word is a pointer
 //! only if no PC fold in the body consumes it as a displacement.
@@ -177,7 +177,7 @@ pub(super) struct Image<'a> {
     pub got: Option<&'a GotImage<'a>>,
     /// The callee-saved register spans, which a value survives a call in.
     pub preserved: &'a [(u64, u64)],
-    /// (kuna `armderef`) Track the addresses the walk composes as pointers and
+    /// (kuna) Track the addresses the walk composes as pointers and
     /// file each access through one.
     pub deref: bool,
 }
@@ -214,7 +214,7 @@ struct Pending {
     hops: u8,
     /// The pool load the word came from; 0 for a GOT base.
     origin: u64,
-    /// (kuna `armderef`) A pointer, not a GOT base: an address in the image the
+    /// (kuna) A pointer, not a GOT base: an address in the image the
     /// register holds, travelling every edge as a base does.
     ptr: bool,
 }
@@ -758,7 +758,7 @@ fn seed(vma: u64, ops: &[FullOp], img: &Image) -> Option<Pending> {
     None
 }
 
-/// (kuna `armderef`) Could a pool word be a pointer to data? A mapped, even
+/// (kuna) Could a pool word be a pointer to data? A mapped, even
 /// address outside the GOT, whose slots are read as slots.
 fn is_pointer(word: u64, img: &Image) -> bool {
     word & 1 == 0
@@ -816,7 +816,7 @@ struct Known {
     pc: bool,
     /// A GOT base contributed to this value.
     got: bool,
-    /// (kuna `armderef`) A tracked pointer contributed to this value.
+    /// (kuna) A tracked pointer contributed to this value.
     ptr: bool,
     /// The pointer and the pool word are one register's one word, not two
     /// values added together.
@@ -1732,7 +1732,7 @@ mod tests {
         assert!(slot_refs(&w.finish(), 0x5fc).is_empty());
     }
 
-    // --- armderef: accesses through a tracked pointer -------------------------
+    // --- accesses through a tracked pointer ----------------------------------
 
     /// `ldr rd,[rn,#off]`, or `str rd,[rn,#off]` when `store`.
     fn access(s: &Spaces, rd: u64, rn: u64, off: u64, store: bool) -> Vec<FullOp> {

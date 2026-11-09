@@ -1649,8 +1649,7 @@ pub(crate) fn load_program(
     // Load-time loader gates are read by `bootstrap_from_object` itself, so they
     // must be exported BEFORE it runs (the same gates `kuna decompile` threads to
     // the subprocess env). Keep the restoration guard alive through runtime
-    // option recording too: `relocobjects`, `i386_pie_plt`, `relocrebase`,
-    // `typedepth` and `dwarfstructs` update their env bridges again inside
+    // option recording too: the bridged options update their env again inside
     // `set_kuna_option` and must not leak into a later load.
     let _loadtime_env =
         apply_loadtime_env(&args.options, args.slice.as_deref(), jobs::decode_lanes(args));
@@ -3679,15 +3678,15 @@ mod mode_tests {
     #[test]
     fn loadtime_gates_use_the_last_named_option() {
         let options = vec![
-            ("relocobjects".into(), "on".into()),
-            ("i386_pie_plt".into(), "on".into()),
+            ("ppcapu".into(), "on".into()),
+            ("ifuncfpret".into(), "on".into()),
             ("macho-arm64e".into(), "on".into()),
-            ("relocobjects".into(), "off".into()),
-            ("i386_pie_plt".into(), "off".into()),
+            ("ppcapu".into(), "off".into()),
+            ("ifuncfpret".into(), "off".into()),
             ("macho-arm64e".into(), "off".into()),
         ];
-        assert_eq!(last_option_value(&options, "relocobjects"), Some("off"));
-        assert_eq!(last_option_value(&options, "i386_pie_plt"), Some("off"));
+        assert_eq!(last_option_value(&options, "ppcapu"), Some("off"));
+        assert_eq!(last_option_value(&options, "ifuncfpret"), Some("off"));
         assert_eq!(last_option_value(&options, "macho-arm64e"), Some("off"));
     }
 }

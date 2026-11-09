@@ -186,7 +186,6 @@ fn dwarf_wins_over_the_demangled_signature() {
         let mut prog = bootstrap_from_object(&path, "", &spec_roots)
             .expect("bootstrap fixture with built processor specs");
         prog.arch_mut().set_kuna_option("cppsig", mode).unwrap();
-        prog.arch_mut().set_kuna_option("cppproto", "on").unwrap();
         prog.commit_pending_analysis().expect("analysis commit succeeds");
         let cmds: Vec<String> = [
             "load function Account::deposit".into(),

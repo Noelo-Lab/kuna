@@ -6,9 +6,10 @@
 //! guard-failure path passes the same value to an undefined no-return function.
 //! `status_caller` consumes the result through a relocated direct call.
 //!
-//! With library prototypes disabled, the status-return half exercises the
-//! terminal no-return tolerance: the failure call's use of the same register no
-//! longer vetoes the return trial, so the helper keeps its value.
+//! The status-return half exercises the terminal no-return tolerance: the
+//! failure call's use of the same register does not veto the return trial, so
+//! the helper keeps its value (a known zero-argument failure consumes no
+//! status register).
 
 use std::path::PathBuf;
 
@@ -27,15 +28,13 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn decompile_pair(name: &str, library_prototypes: bool) -> (String, String) {
+fn decompile_pair(name: &str) -> (String, String) {
     let path = fixture(name);
     assert!(path.is_file(), "missing fixture {path:?}");
     let specs = repo_root().join("specs");
     let roots = vec![specs.to_string_lossy().into_owned()];
     let mut program = bootstrap_from_object(path.to_str().unwrap(), "", &roots)
         .unwrap_or_else(|error| panic!("{name}: bootstrap failed: {}", error.explain()));
-    program.arch_mut().analysis_libproto = library_prototypes;
-    program.arch_mut().analysis_libcsigs = library_prototypes;
     program.commit_pending_analysis().expect("analysis commit");
     let entries = program
         .function_entries_canonical()
@@ -67,7 +66,7 @@ fn arm_and_aarch64_status_helpers_keep_their_return_values() {
         && specs.join("AARCH64/data/languages/AARCH64.sla").is_file(), "required processor specs must be available");
 
     for name in ["et_rel_status_arm.o", "et_rel_status_aarch64.o"] {
-        let (helper, caller) = decompile_pair(name, false);
+        let (helper, caller) = decompile_pair(name);
         assert!(
             !helper.starts_with("void guarded_status"),
             "{name}: helper was forced to void:\n{helper}"
@@ -94,7 +93,7 @@ fn arm_and_aarch64_status_helpers_keep_their_return_values() {
 #[test]
 fn a_known_zero_argument_failure_does_not_consume_the_status_return() {
     for name in ["et_rel_status_arm.o", "et_rel_status_aarch64.o"] {
-        let (helper, caller) = decompile_pair(name, true);
+        let (helper, caller) = decompile_pair(name);
         assert!(!helper.starts_with("void guarded_status"), "{name}: {helper}");
         assert!(helper.contains("return "), "{name}: {helper}");
         assert!(helper.contains("__stack_chk_fail();"), "{name}: {helper}");

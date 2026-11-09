@@ -2342,8 +2342,8 @@ callee from DWARF or `--assert prototype`, the same limit applies.
 The authored `kuna-cli/tests/libgcc_divdi3.rs` round trips cover direct,
 saved-across-call, guarded, nontrivial-constant and one-word-replaced quotient
 returns at compiler `-O0` and `-O2`,
-both with `libgccsigs` on and with an explicit wide prototype while
-`libproto` is off. They also check single-word truncations, call effects, and
+both with `libgccsigs` on and with an explicit wide prototype. They also
+check single-word truncations, call effects, and
 that the default (`libgccsigs` off) leaves a low-word store as before.
 
 After native return trials are finalized, an otherwise unknown ten-byte scalar
@@ -4166,7 +4166,7 @@ function no longer gains `ecx` as a parameter it only pushed. `Build` becomes
 Where no builder is found, the slot is still mapped and keeps the value pushed to
 reserve it, which is what the machine code passes.
 
-Inert without `msvcsig`, and a class passed by value to a callee-pops convention
+Inert while `cppsig` is off, and a class passed by value to a callee-pops convention
 is still refused there (its pop would depend on the missing size).
 
 ### (kuna) A call's own return-address push (`kuna_callpush.rs`)

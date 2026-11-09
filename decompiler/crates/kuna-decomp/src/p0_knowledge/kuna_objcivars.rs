@@ -4,7 +4,7 @@
 //! (`Architecture::analysis_objcivars`); the pass that builds the structs runs
 //! while the loader snapshots the image, upstream of every console `option`,
 //! so the same switch also travels as a process environment variable the way
-//! `dynrelocs` does. Off, no class struct is interned at all.
+//! `sourcelang` does. Off, no class struct is interned at all.
 
 /// Environment variable carrying the `objcivars` choice into the load path.
 /// Unset means on.
