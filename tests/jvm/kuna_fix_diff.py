@@ -846,6 +846,77 @@ def local_class_anonymous_subclass(old, new):
         and moved[-1].strip() == '}'
 
 
+def x_renamed(old, new):
+    """The hunk's tokens are equal once trailing `x`s are stripped from identifiers, and differ."""
+    def norm(lines):
+        return [re.sub(r'x+$', '', t) if IDENT.match(t) else t for t in tokens(lines)]
+    return old != new and len(old) == len(new) and norm(old) == norm(new)
+
+
+def changed_lines(old, new):
+    return [o for o, n in zip(old, new) if o != n] + [n for o, n in zip(old, new) if o != n]
+
+
+def lambda_catch_var_rename(old, new):
+    """lambda_catch_var_rename: a catch clause's variable renamed (`e` -> `ex`), nothing else."""
+    return x_renamed(old, new) and all('} catch (' in line for line in changed_lines(old, new))
+
+
+def nested_param_rename(old, new):
+    """nested_param_rename: a method's parameter declared without the `x`s its uses do not have."""
+    return x_renamed(old, new) and not any('catch (' in line for line in changed_lines(old, new))
+
+
+QUALIFIER = re.compile(r'(?<![\w$.])(?:[\w$]+\.)+(?=@|[A-Z])')
+
+
+def type_annotation_qualified_name(old, new):
+    """type_annotation_qualified_name: in lines with a type annotation, qualifiers (`Map.`, `a.b.`)
+    inserted before the annotation or before a type name inside the annotated type."""
+    return old != new and len(old) == len(new) and all(
+        o == n or ('@' in n and QUALIFIER.sub('', n) == QUALIFIER.sub('', o)) for o, n in zip(old, new))
+
+
+ANNOTATION = re.compile(r'@[\w$.]+ ')
+
+
+def type_annotation_argument_scope(old, new):
+    """type_annotation_argument_scope: the same annotations, moved between the arguments of a type."""
+    return old != new and len(old) == len(new) and all(
+        ANNOTATION.sub('', o) == ANNOTATION.sub('', n) and
+        sorted(ANNOTATION.findall(o)) == sorted(ANNOTATION.findall(n)) for o, n in zip(old, new))
+
+
+def assert_throw_after_if(old, new):
+    """assert_throw_after_if: `$assertionsDisabled` (with its resugar note) replaced by an `assert`, or
+    the leftover `throw new AssertionError(..)` of such an `if` dropped."""
+    o, n = '\n'.join(old), '\n'.join(new)
+    if '$assertionsDisabled' in n:
+        return False
+    if '$assertionsDisabled' in o:
+        return 'assert ' in n
+    if 'Could not resugar all assert statements' in o and not n.strip():
+        return True
+    rest = [line.strip() for line in old if 'throw new AssertionError' not in line]
+    return 'throw new AssertionError' in o and 'throw new AssertionError' not in n and \
+        all(r in ('', '}', '} else {') or r.startswith(('return', 'continue', 'break')) for r in rest)
+
+
+def sealed_private_permits(old, new):
+    """sealed_private_permits: a sealed class header loses its `permits` clause."""
+    return len(old) == len(new) == 1 and ' sealed ' in old[0] and ' permits ' in old[0] and \
+        re.sub(r' permits [^{]+(?= \{$)', '', old[0]) == new[0]
+
+
+def switch_expression_assignments(old, new):
+    """switch_expression_assignments: a switch expression with `yield`s or arms becomes the switch
+    statement assigning a variable (`case X:`, `v = ...;`, `break;`)."""
+    o, n = '\n'.join(old), '\n'.join(new)
+    arms = ('yield ' in o or ' -> ' in o or 'switch (' in o)
+    statement = ('break;' in n or re.search(r'case [^\n]*:$', n, re.M) or re.search(r'\bvar\d+ = ', n) or 'default:' in n)
+    return bool(arms and statement) and 'yield ' not in n
+
+
 RESUGAR_NOTE = '// $VF: Unable to resugar Kotlin loop from Java for loop'
 KT_DECLARATION = re.compile(r'\s*(?:val|var) [^\s=]+: [^=]+$')
 KT_RUN_LABEL = re.compile(r'\s*run (label\d+)@\{$')
@@ -1204,6 +1275,13 @@ RECOGNISERS = {
     'local_class_anonymous_subclass': local_class_anonymous_subclass,
     'kt_for_loops': kt_for_loops,
     'var_merge_liveness': var_merge_liveness,
+    'lambda_catch_var_rename': lambda_catch_var_rename,
+    'nested_param_rename': nested_param_rename,
+    'type_annotation_qualified_name': type_annotation_qualified_name,
+    'type_annotation_argument_scope': type_annotation_argument_scope,
+    'assert_throw_after_if': assert_throw_after_if,
+    'sealed_private_permits': sealed_private_permits,
+    'switch_expression_assignments': switch_expression_assignments,
 }
 
 
