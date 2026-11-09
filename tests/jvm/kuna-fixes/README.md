@@ -31,12 +31,14 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestEnumNoConstants` | `enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
+| `pkg/TestIrreducibleTry` | `irreducible_with_exception_edges` | asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1 | `run` and `poll`, loops entered at their head and, from a resume branch, in their middle, whose body is protected by one catch-all in several ranges with an unprotected early `return` between them, decompile; the try is built inside its own region or a statement outside every range is copied, and the output recompiles and behaves as the original on 140,000 scripted runs (`run` fails earlier in Vineflower, IndexOutOfBounds, the fix `handler_copy_offsets`) |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestRecordPatternInTry` | `nested_handler_copies` | javac 21.0.12.1 (`--release 21 -g`) | `describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's |
 | `pkg/TestSamWrapperObjectKt` | `kt_synthetic_anonymous_object` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone |
 | `pkg/TestSelfReferencingLambda` | `self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
 | `pkg/TestSuspendFinallyKt` | `handler_copy_offsets` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable |
 | `pkg/TestSuspendLoopFinally` | `copied_finally` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies) |
+| `pkg/TestSuspendLoopTry` | `irreducible_with_exception_edges` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `indexOf`, `pairs` and `watch`, suspend functions whose loop inside a `try` (with `catch`/`finally`) suspends and resumes in its middle, decompile: `indexOf` and `pairs` once a try region is isolated or a statement outside every range is copied, `watch` (whose loop is resumed in three places) with both |
 | `pkg/TestSwitchExprConstLub` | `switch_yield_const_retype` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestTryCatchNotFlag` | `twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 | `pkg/TestTypeSwitchEnumLabel` | `type_switch_enum_label` | javac 21.0.12.1 -g | case Kind.CIRCLE beside type patterns in a switch on an interface: the enum label is resolved and printed qualified |
@@ -851,6 +853,434 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
  
        class Node extends TestInnerOfGenericOuter.Ref<TestInnerOfGenericOuter<E>.Itr> {
+```
+
+### `pkg/TestIrreducibleTry`
+
+```diff
+--- expected-compat/pkg/TestIrreducibleTry.java
++++ expected/pkg/TestIrreducibleTry.java
+@@ -1,103 +1,325 @@
+ package pkg;
+ 
+ public class TestIrreducibleTry {
+-   public static int run(int param0, TestIrreducibleTry.Src param1) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: iload 0
+-      // 01: ifne 22
+-      // 04: aload 1
+-      // 05: invokeinterface pkg/TestIrreducibleTry$Src.open ()V 1
+-      // 0a: aload 1
+-      // 0b: invokeinterface pkg/TestIrreducibleTry$Src.next ()I 1
+-      // 10: istore 2
+-      // 11: iload 2
+-      // 12: ifeq 31
+-      // 15: aload 1
+-      // 16: invokeinterface pkg/TestIrreducibleTry$Src.step ()I 1
+-      // 1b: istore 3
+-      // 1c: iload 3
+-      // 1d: ifne 28
+-      // 20: iload 2
+-      // 21: ireturn
+-      // 22: aload 1
+-      // 23: invokeinterface pkg/TestIrreducibleTry$Src.resume ()V 1
+-      // 28: aload 1
+-      // 29: invokeinterface pkg/TestIrreducibleTry$Src.tick ()V 1
+-      // 2e: goto 0a
+-      // 31: aload 1
+-      // 32: invokeinterface pkg/TestIrreducibleTry$Src.close ()V 1
+-      // 37: bipush -1
+-      // 38: ireturn
+-      // 39: astore 4
+-      // 3b: aload 1
+-      // 3c: invokeinterface pkg/TestIrreducibleTry$Src.close ()V 1
+-      // 41: aload 4
+-      // 43: athrow
+-      // try (2 -> 12): 25 null
+-      // try (16 -> 21): 25 null
++   // $VF: Handled exception range with multiple entry points by splitting it
++   // $VF: Duplicated exception handlers to handle obfuscated exceptions
++   // $VF: Irreducible bytecode was duplicated to produce valid code
++   // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
++   public static int run(int var0, TestIrreducibleTry.Src var1) {
++      boolean var10;
++      if (var0 == 0) {
++         boolean var28 = false /* VF: Semaphore variable */;
++
++         try {
++            var28 = true;
++            var1.open();
++            var28 = false;
++         } finally {
++            if (var28) {
++               var1.close();
++            }
++         }
++      } else {
++         boolean var22 = false /* VF: Semaphore variable */;
++
++         try {
++            var22 = true;
++            var1.resume();
++            var22 = false;
++         } finally {
++            if (var22) {
++               var1.close();
++            }
++         }
++
++         var10 = false;
++
++         try {
++            var10 = true;
++            var1.tick();
++            var10 = false;
++         } finally {
++            if (var10) {
++               var1.close();
++            }
++         }
++      }
++
++      while (true) {
++         boolean var16 = false /* VF: Semaphore variable */;
++
++         int var2;
++         int var3;
++         try {
++            var16 = true;
++            var2 = var1.next();
++            if (var2 == 0) {
++               var16 = false;
++               break;
++            }
++
++            var3 = var1.step();
++            var16 = false;
++         } finally {
++            if (var16) {
++               var1.close();
++            }
++         }
++
++         if (var3 == 0) {
++            return var2;
++         }
++
++         var10 = false;
++
++         try {
++            var10 = true;
++            var1.tick();
++            var10 = false;
++         } finally {
++            if (var10) {
++               var1.close();
++            }
++         }
++      }
++
++      var1.close();
++      return -1;
+    }
+ 
+-   public static int poll(int param0, TestIrreducibleTry.Src param1) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: iload 0
+-      // 01: tableswitch 151 0 3 31 51 84 119
+-      // 20: aload 1
+-      // 21: invokeinterface pkg/TestIrreducibleTry$Src.open ()V 1
+-      // 26: aload 1
+-      // 27: invokeinterface pkg/TestIrreducibleTry$Src.next ()I 1
+-      // 2c: istore 2
+-      // 2d: iload 2
+-      // 2e: ifne 40
+-      // 31: bipush 10
+-      // 33: ireturn
+-      // 34: aload 1
+-      // 35: invokeinterface pkg/TestIrreducibleTry$Src.resume ()V 1
+-      // 3a: aload 1
+-      // 3b: invokeinterface pkg/TestIrreducibleTry$Src.tick ()V 1
+-      // 40: aload 1
+-      // 41: invokeinterface pkg/TestIrreducibleTry$Src.step ()I 1
+-      // 46: istore 3
+-      // 47: aload 1
+-      // 48: invokeinterface pkg/TestIrreducibleTry$Src.next ()I 1
+-      // 4d: istore 2
+-      // 4e: iload 2
+-      // 4f: ifne 61
+-      // 52: bipush 20
+-      // 54: ireturn
+-      // 55: aload 1
+-      // 56: invokeinterface pkg/TestIrreducibleTry$Src.resume ()V 1
+-      // 5b: aload 1
+-      // 5c: invokeinterface pkg/TestIrreducibleTry$Src.tick ()V 1
+-      // 61: aload 1
+-      // 62: invokeinterface pkg/TestIrreducibleTry$Src.step ()I 1
+-      // 67: ifne 26
+-      // 6a: aload 1
+-      // 6b: invokeinterface pkg/TestIrreducibleTry$Src.next ()I 1
+-      // 70: istore 2
+-      // 71: iload 2
+-      // 72: ifne 84
+-      // 75: bipush 30
+-      // 77: ireturn
+-      // 78: aload 1
+-      // 79: invokeinterface pkg/TestIrreducibleTry$Src.resume ()V 1
+-      // 7e: aload 1
+-      // 7f: invokeinterface pkg/TestIrreducibleTry$Src.tick ()V 1
+-      // 84: aload 1
+-      // 85: invokeinterface pkg/TestIrreducibleTry$Src.tick ()V 1
+-      // 8a: goto 26
+-      // 8d: astore 4
+-      // 8f: aload 1
+-      // 90: invokeinterface pkg/TestIrreducibleTry$Src.close ()V 1
+-      // 95: aload 4
+-      // 97: athrow
+-      // 98: bipush -1
+-      // 99: ireturn
+-      // try (2 -> 7): 46 null
+-      // try (13 -> 21): 46 null
+-      // try (27 -> 35): 46 null
+-      // try (41 -> 46): 46 null
++   // $VF: Handled exception range with multiple entry points by splitting it
++   // $VF: Duplicated exception handlers to handle obfuscated exceptions
++   // $VF: Irreducible bytecode was duplicated to produce valid code
++   // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
++   public static int poll(int var0, TestIrreducibleTry.Src var1) {
++      boolean var34;
++      boolean var49;
++      boolean var94;
++      switch (var0) {
++         case 0:
++            boolean var124 = false /* VF: Semaphore variable */;
++
++            try {
++               var124 = true;
++               var1.open();
++               var124 = false;
++               break;
++            } finally {
++               if (var124) {
++                  var1.close();
++               }
++            }
++         case 1:
++            var1.resume();
++            boolean var64 = false /* VF: Semaphore variable */;
++
++            try {
++               var64 = true;
++               var1.tick();
++               var64 = false;
++            } finally {
++               if (var64) {
++                  var1.close();
++               }
++            }
++
++            var49 = false;
++
++            int var139;
++            try {
++               var49 = true;
++               int var3 = var1.step();
++               var139 = var1.next();
++               var49 = false;
++            } finally {
++               if (var49) {
++                  var1.close();
++               }
++            }
++
++            if (var139 == 0) {
++               return 20;
++            }
++
++            var34 = false;
++
++            try {
++               var34 = true;
++               if (var1.step() != 0) {
++                  var34 = false;
++                  break;
++               }
++
++               var139 = var1.next();
++               var34 = false;
++            } finally {
++               if (var34) {
++                  var1.close();
++               }
++            }
++
++            if (var139 == 0) {
++               return 30;
++            }
++
++            var94 = false;
++
++            try {
++               var94 = true;
++               var1.tick();
++               var94 = false;
++               break;
++            } finally {
++               if (var94) {
++                  var1.close();
++               }
++            }
++         case 2:
++            var1.resume();
++            boolean var79 = false /* VF: Semaphore variable */;
++
++            try {
++               var79 = true;
++               var1.tick();
++               var79 = false;
++            } finally {
++               if (var79) {
++                  var1.close();
++               }
++            }
++
++            var34 = false;
++
++            int var2;
++            try {
++               var34 = true;
++               if (var1.step() != 0) {
++                  var34 = false;
++                  break;
++               }
++
++               var2 = var1.next();
++               var34 = false;
++            } finally {
++               if (var34) {
++                  var1.close();
++               }
++            }
++
++            if (var2 == 0) {
++               return 30;
++            }
++
++            var94 = false;
++
++            try {
++               var94 = true;
++               var1.tick();
++               var94 = false;
++               break;
++            } finally {
++               if (var94) {
++                  var1.close();
++               }
++            }
++         case 3:
++            var1.resume();
++            boolean var109 = false /* VF: Semaphore variable */;
++
++            try {
++               var109 = true;
++               var1.tick();
++               var109 = false;
++            } finally {
++               if (var109) {
++                  var1.close();
++               }
++            }
++
++            var94 = false;
++
++            try {
++               var94 = true;
++               var1.tick();
++               var94 = false;
++               break;
++            } finally {
++               if (var94) {
++                  var1.close();
++               }
++            }
++         default:
++            return -1;
++      }
++
++      while (true) {
++         boolean var19 = false /* VF: Semaphore variable */;
++
++         int var141;
++         try {
++            var19 = true;
++            var141 = var1.next();
++            var19 = false;
++         } finally {
++            if (var19) {
++               var1.close();
++            }
++         }
++
++         if (var141 == 0) {
++            return 10;
++         }
++
++         var49 = false;
++
++         try {
++            var49 = true;
++            int var144 = var1.step();
++            var141 = var1.next();
++            var49 = false;
++         } finally {
++            if (var49) {
++               var1.close();
++            }
++         }
++
++         if (var141 == 0) {
++            return 20;
++         }
++
++         var34 = false;
++
++         try {
++            var34 = true;
++            if (var1.step() != 0) {
++               var34 = false;
++               continue;
++            }
++
++            var141 = var1.next();
++            var34 = false;
++         } finally {
++            if (var34) {
++               var1.close();
++            }
++         }
++
++         if (var141 == 0) {
++            return 30;
++         }
++
++         var94 = false;
++
++         try {
++            var94 = true;
++            var1.tick();
++            var94 = false;
++         } finally {
++            if (var94) {
++               var1.close();
++            }
++         }
++      }
+    }
+ 
+    public interface Src {
 ```
 
 ### `pkg/TestMethodRefWildcardReceiver`
@@ -2197,6 +2627,1265 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      } finally {
 +         src.close(cause);
 +      }
+    }
+ 
+    @Metadata(
+```
+
+### `pkg/TestSuspendLoopTry`
+
+```diff
+--- expected-compat/pkg/TestSuspendLoopTry.java
++++ expected/pkg/TestSuspendLoopTry.java
+@@ -2,8 +2,12 @@
+ 
+ import java.util.List;
+ import kotlin.Metadata;
++import kotlin.ResultKt;
+ import kotlin.Unit;
+ import kotlin.coroutines.Continuation;
++import kotlin.coroutines.intrinsics.IntrinsicsKt;
++import kotlin.coroutines.jvm.internal.Boxing;
++import kotlin.coroutines.jvm.internal.ContinuationImpl;
+ import org.jetbrains.annotations.NotNull;
+ import org.jetbrains.annotations.Nullable;
+ 
+@@ -36,505 +40,748 @@
+    }
+ )
+ public final class TestSuspendLoopTry {
++   // $VF: Handled exception range with multiple entry points by splitting it
++   // $VF: Duplicated exception handlers to handle obfuscated exceptions
++   // $VF: Irreducible bytecode was duplicated to produce valid code
++   // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+    @Nullable
+-   public final Object indexOf(@NotNull TestSuspendLoopTry.Source param1, int param2, @NotNull Continuation<? super Integer> param3) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 000: aload 3
+-      // 001: instanceof pkg/TestSuspendLoopTry$indexOf$1
+-      // 004: ifeq 027
+-      // 007: aload 3
+-      // 008: checkcast pkg/TestSuspendLoopTry$indexOf$1
+-      // 00b: astore 9
+-      // 00d: aload 9
+-      // 00f: getfield pkg/TestSuspendLoopTry$indexOf$1.label I
+-      // 012: ldc -2147483648
+-      // 014: iand
+-      // 015: ifeq 027
+-      // 018: aload 9
+-      // 01a: dup
+-      // 01b: getfield pkg/TestSuspendLoopTry$indexOf$1.label I
+-      // 01e: ldc -2147483648
+-      // 020: isub
+-      // 021: putfield pkg/TestSuspendLoopTry$indexOf$1.label I
+-      // 024: goto 032
+-      // 027: new pkg/TestSuspendLoopTry$indexOf$1
+-      // 02a: dup
+-      // 02b: aload 0
+-      // 02c: aload 3
+-      // 02d: invokespecial pkg/TestSuspendLoopTry$indexOf$1.<init> (Lpkg/TestSuspendLoopTry;Lkotlin/coroutines/Continuation;)V
+-      // 030: astore 9
+-      // 032: aload 9
+-      // 034: getfield pkg/TestSuspendLoopTry$indexOf$1.result Ljava/lang/Object;
+-      // 037: astore 8
+-      // 039: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
+-      // 03c: astore 10
+-      // 03e: aload 9
+-      // 040: getfield pkg/TestSuspendLoopTry$indexOf$1.label I
+-      // 043: tableswitch 197 0 1 21 76
+-      // 058: aload 8
+-      // 05a: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 05d: aconst_null
+-      // 05e: astore 4
+-      // 060: bipush 0
+-      // 061: istore 5
+-      // 063: nop
+-      // 064: nop
+-      // 065: aload 1
+-      // 066: aload 9
+-      // 068: aload 9
+-      // 06a: aload 1
+-      // 06b: putfield pkg/TestSuspendLoopTry$indexOf$1.L$0 Ljava/lang/Object;
+-      // 06e: aload 9
+-      // 070: iload 2
+-      // 071: putfield pkg/TestSuspendLoopTry$indexOf$1.I$0 I
+-      // 074: aload 9
+-      // 076: iload 5
+-      // 078: putfield pkg/TestSuspendLoopTry$indexOf$1.I$1 I
+-      // 07b: aload 9
+-      // 07d: bipush 1
+-      // 07e: putfield pkg/TestSuspendLoopTry$indexOf$1.label I
+-      // 081: invokeinterface pkg/TestSuspendLoopTry$Source.next (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-      // 086: dup
+-      // 087: aload 10
+-      // 089: if_acmpne 0b0
+-      // 08c: aload 10
+-      // 08e: areturn
+-      // 08f: aload 9
+-      // 091: getfield pkg/TestSuspendLoopTry$indexOf$1.I$1 I
+-      // 094: istore 5
+-      // 096: aload 9
+-      // 098: getfield pkg/TestSuspendLoopTry$indexOf$1.I$0 I
+-      // 09b: istore 2
+-      // 09c: aconst_null
+-      // 09d: astore 4
+-      // 09f: aload 9
+-      // 0a1: getfield pkg/TestSuspendLoopTry$indexOf$1.L$0 Ljava/lang/Object;
+-      // 0a4: checkcast pkg/TestSuspendLoopTry$Source
+-      // 0a7: astore 1
+-      // 0a8: nop
+-      // 0a9: aload 8
+-      // 0ab: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 0ae: aload 8
+-      // 0b0: checkcast java/lang/Integer
+-      // 0b3: dup
+-      // 0b4: ifnull 0bd
+-      // 0b7: invokevirtual java/lang/Integer.intValue ()I
+-      // 0ba: goto 0c1
+-      // 0bd: pop
+-      // 0be: goto 0e2
+-      // 0c1: istore 6
+-      // 0c3: iload 6
+-      // 0c5: iload 2
+-      // 0c6: if_icmpne 0db
+-      // 0c9: iload 5
+-      // 0cb: invokestatic kotlin/coroutines/jvm/internal/Boxing.boxInt (I)Ljava/lang/Integer;
+-      // 0ce: astore 7
+-      // 0d0: aload 1
+-      // 0d1: aload 4
+-      // 0d3: invokeinterface pkg/TestSuspendLoopTry$Source.close (Ljava/lang/Throwable;)V 2
+-      // 0d8: aload 7
+-      // 0da: areturn
+-      // 0db: nop
+-      // 0dc: iinc 5 1
+-      // 0df: goto 064
+-      // 0e2: aload 1
+-      // 0e3: aload 4
+-      // 0e5: invokeinterface pkg/TestSuspendLoopTry$Source.close (Ljava/lang/Throwable;)V 2
+-      // 0ea: goto 103
+-      // 0ed: astore 6
+-      // 0ef: aload 6
+-      // 0f1: astore 4
+-      // 0f3: aload 6
+-      // 0f5: athrow
+-      // 0f6: astore 6
+-      // 0f8: aload 1
+-      // 0f9: aload 4
+-      // 0fb: invokeinterface pkg/TestSuspendLoopTry$Source.close (Ljava/lang/Throwable;)V 2
+-      // 100: aload 6
+-      // 102: athrow
+-      // 103: bipush -1
+-      // 104: invokestatic kotlin/coroutines/jvm/internal/Boxing.boxInt (I)Ljava/lang/Integer;
+-      // 107: areturn
+-      // 108: new java/lang/IllegalStateException
+-      // 10b: dup
+-      // 10c: ldc "call to 'resume' before 'invoke' with coroutine"
+-      // 10e: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
+-      // 111: athrow
+-      // try (38 -> 55): 102 java/lang/Throwable
+-      // try (72 -> 90): 102 java/lang/Throwable
+-      // try (95 -> 98): 102 java/lang/Throwable
+-      // try (38 -> 55): 107 null
+-      // try (72 -> 90): 107 null
+-      // try (95 -> 98): 107 null
+-      // try (102 -> 107): 107 null
+-      // try (107 -> 108): 107 null
++   public final Object indexOf(@NotNull TestSuspendLoopTry.Source src, int x, @NotNull Continuation<? super Integer> $completion) {
++      Continuation $continuation;
++      label383: {
++         if ($completion instanceof <unrepresentable>) {
++            $continuation = (<unrepresentable>)$completion;
++            if (($continuation.label & -2147483648) != 0) {
++               $continuation.label -= -2147483648;
++               break label383;
++            }
++         }
++
++         $continuation = new ContinuationImpl($completion) {
++            Object L$0;
++            int I$0;
++            int I$1;
++            int label;
++
++            @Nullable
++            public final Object invokeSuspend(@NotNull Object $result) {
++               this.result = $result;
++               this.label |= -2147483648;
++               return TestSuspendLoopTry.this.indexOf(null, 0, (Continuation<? super Integer>)this);
++            }
++         };
++      }
++
++      Throwable cause;
++      Integer var7;
++      label392: {
++         label390: {
++            Object $result = $continuation.result;
++            Object var10 = IntrinsicsKt.getCOROUTINE_SUSPENDED();
++            int i;
++            boolean var23;
++            Object var10000;
++            switch ($continuation.label) {
++               case 0:
++                  ResultKt.throwOnFailure($result);
++                  cause = null;
++                  i = 0;
++                  boolean var62 = false /* VF: Semaphore variable */;
++
++                  try {
++                     var62 = true;
++                     var62 = false;
++                  } catch (Throwable var80) {
++                     cause = var80;
++                     throw var80;
++                  } finally {
++                     if (var62) {
++                        src.close(cause);
++                     }
++                  }
++
++                  var23 = false;
++
++                  try {
++                     var23 = true;
++                     $continuation.L$0 = src;
++                     $continuation.I$0 = x;
++                     $continuation.I$1 = i;
++                     $continuation.label = 1;
++                     var10000 = (Integer)src.next($continuation);
++                     var23 = false;
++                  } catch (Throwable var87) {
++                     cause = var87;
++                     throw var87;
++                  } finally {
++                     if (var23) {
++                        src.close(cause);
++                     }
++                  }
++
++                  if (var10000 == var10) {
++                     return var10;
++                  }
++                  break;
++               case 1:
++                  i = $continuation.I$1;
++                  x = $continuation.I$0;
++                  cause = null;
++                  src = (TestSuspendLoopTry.Source)$continuation.L$0;
++                  boolean var75 = false /* VF: Semaphore variable */;
++
++                  try {
++                     var75 = true;
++                     ResultKt.throwOnFailure($result);
++                     var10000 = (Integer)$result;
++                     var75 = false;
++                     break;
++                  } catch (Throwable var76) {
++                     cause = var76;
++                     throw var76;
++                  } finally {
++                     if (var75) {
++                        src.close(cause);
++                     }
++                  }
++               default:
++                  throw new IllegalStateException("call to 'resume' before 'invoke' with coroutine");
++            }
++
++            do {
++               boolean var49 = false /* VF: Semaphore variable */;
++
++               try {
++                  var49 = true;
++                  var10000 = var10000;
++                  if (var10000 == null) {
++                     var49 = false;
++                     break label390;
++                  }
++
++                  int v = var10000;
++                  if (v == x) {
++                     var7 = Boxing.boxInt(i);
++                     var49 = false;
++                     break label392;
++                  }
++
++                  var49 = false;
++               } catch (Throwable var84) {
++                  cause = var84;
++                  throw var84;
++               } finally {
++                  if (var49) {
++                     src.close(cause);
++                  }
++               }
++
++               boolean var36 = false /* VF: Semaphore variable */;
++
++               try {
++                  var36 = true;
++                  i++;
++                  var36 = false;
++               } catch (Throwable var82) {
++                  cause = var82;
++                  throw var82;
++               } finally {
++                  if (var36) {
++                     src.close(cause);
++                  }
++               }
++
++               var23 = false;
++
++               try {
++                  var23 = true;
++                  $continuation.L$0 = src;
++                  $continuation.I$0 = x;
++                  $continuation.I$1 = i;
++                  $continuation.label = 1;
++                  var10000 = (Integer)src.next($continuation);
++                  var23 = false;
++               } catch (Throwable e) {
++                  cause = e;
++                  throw e;
++               } finally {
++                  if (var23) {
++                     src.close(cause);
++                  }
++               }
++            } while (var10000 != var10);
++
++            return var10;
++         }
++
++         src.close(cause);
++         return Boxing.boxInt(-1);
++      }
++
++      src.close(cause);
++      return var7;
+    }
+ 
++   // $VF: Handled exception range with multiple entry points by splitting it
++   // $VF: Duplicated exception handlers to handle obfuscated exceptions
++   // $VF: Irreducible bytecode was duplicated to produce valid code
++   // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+    @Nullable
+    public final Object pairs(
+-      @NotNull TestSuspendLoopTry.Source param1,
+-      @NotNull TestSuspendLoopTry.Source param2,
+-      @NotNull List<Integer> param3,
+-      @NotNull Continuation<? super Unit> param4
++      @NotNull TestSuspendLoopTry.Source src,
++      @NotNull TestSuspendLoopTry.Source other,
++      @NotNull List<Integer> out,
++      @NotNull Continuation<? super Unit> $completion
+    ) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 000: aload 4
+-      // 002: instanceof pkg/TestSuspendLoopTry$pairs$1
+-      // 005: ifeq 029
+-      // 008: aload 4
+-      // 00a: checkcast pkg/TestSuspendLoopTry$pairs$1
+-      // 00d: astore 8
+-      // 00f: aload 8
+-      // 011: getfield pkg/TestSuspendLoopTry$pairs$1.label I
+-      // 014: ldc -2147483648
+-      // 016: iand
+-      // 017: ifeq 029
+-      // 01a: aload 8
+-      // 01c: dup
+-      // 01d: getfield pkg/TestSuspendLoopTry$pairs$1.label I
+-      // 020: ldc -2147483648
+-      // 022: isub
+-      // 023: putfield pkg/TestSuspendLoopTry$pairs$1.label I
+-      // 026: goto 035
+-      // 029: new pkg/TestSuspendLoopTry$pairs$1
+-      // 02c: dup
+-      // 02d: aload 0
+-      // 02e: aload 4
+-      // 030: invokespecial pkg/TestSuspendLoopTry$pairs$1.<init> (Lpkg/TestSuspendLoopTry;Lkotlin/coroutines/Continuation;)V
+-      // 033: astore 8
+-      // 035: aload 8
+-      // 037: getfield pkg/TestSuspendLoopTry$pairs$1.result Ljava/lang/Object;
+-      // 03a: astore 7
+-      // 03c: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
+-      // 03f: astore 9
+-      // 041: aload 8
+-      // 043: getfield pkg/TestSuspendLoopTry$pairs$1.label I
+-      // 046: tableswitch 288 0 2 26 77 182
+-      // 060: aload 7
+-      // 062: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 065: aconst_null
+-      // 066: astore 5
+-      // 068: nop
+-      // 069: nop
+-      // 06a: aload 1
+-      // 06b: aload 8
+-      // 06d: aload 8
+-      // 06f: aload 1
+-      // 070: putfield pkg/TestSuspendLoopTry$pairs$1.L$0 Ljava/lang/Object;
+-      // 073: aload 8
+-      // 075: aload 2
+-      // 076: putfield pkg/TestSuspendLoopTry$pairs$1.L$1 Ljava/lang/Object;
+-      // 079: aload 8
+-      // 07b: aload 3
+-      // 07c: putfield pkg/TestSuspendLoopTry$pairs$1.L$2 Ljava/lang/Object;
+-      // 07f: aload 8
+-      // 081: bipush 1
+-      // 082: putfield pkg/TestSuspendLoopTry$pairs$1.label I
+-      // 085: invokeinterface pkg/TestSuspendLoopTry$Source.next (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-      // 08a: dup
+-      // 08b: aload 9
+-      // 08d: if_acmpne 0b9
+-      // 090: aload 9
+-      // 092: areturn
+-      // 093: aconst_null
+-      // 094: astore 5
+-      // 096: aload 8
+-      // 098: getfield pkg/TestSuspendLoopTry$pairs$1.L$2 Ljava/lang/Object;
+-      // 09b: checkcast java/util/List
+-      // 09e: astore 3
+-      // 09f: aload 8
+-      // 0a1: getfield pkg/TestSuspendLoopTry$pairs$1.L$1 Ljava/lang/Object;
+-      // 0a4: checkcast pkg/TestSuspendLoopTry$Source
+-      // 0a7: astore 2
+-      // 0a8: aload 8
+-      // 0aa: getfield pkg/TestSuspendLoopTry$pairs$1.L$0 Ljava/lang/Object;
+-      // 0ad: checkcast pkg/TestSuspendLoopTry$Source
+-      // 0b0: astore 1
+-      // 0b1: nop
+-      // 0b2: aload 7
+-      // 0b4: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 0b7: aload 7
+-      // 0b9: checkcast java/lang/Integer
+-      // 0bc: dup
+-      // 0bd: ifnull 0c6
+-      // 0c0: invokevirtual java/lang/Integer.intValue ()I
+-      // 0c3: goto 0ca
+-      // 0c6: pop
+-      // 0c7: goto 141
+-      // 0ca: istore 6
+-      // 0cc: aload 2
+-      // 0cd: aload 8
+-      // 0cf: aload 8
+-      // 0d1: aload 1
+-      // 0d2: putfield pkg/TestSuspendLoopTry$pairs$1.L$0 Ljava/lang/Object;
+-      // 0d5: aload 8
+-      // 0d7: aload 2
+-      // 0d8: putfield pkg/TestSuspendLoopTry$pairs$1.L$1 Ljava/lang/Object;
+-      // 0db: aload 8
+-      // 0dd: aload 3
+-      // 0de: putfield pkg/TestSuspendLoopTry$pairs$1.L$2 Ljava/lang/Object;
+-      // 0e1: aload 8
+-      // 0e3: iload 6
+-      // 0e5: putfield pkg/TestSuspendLoopTry$pairs$1.I$0 I
+-      // 0e8: aload 8
+-      // 0ea: bipush 2
+-      // 0eb: putfield pkg/TestSuspendLoopTry$pairs$1.label I
+-      // 0ee: invokeinterface pkg/TestSuspendLoopTry$Source.ready (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-      // 0f3: dup
+-      // 0f4: aload 9
+-      // 0f6: if_acmpne 129
+-      // 0f9: aload 9
+-      // 0fb: areturn
+-      // 0fc: aload 8
+-      // 0fe: getfield pkg/TestSuspendLoopTry$pairs$1.I$0 I
+-      // 101: istore 6
+-      // 103: aconst_null
+-      // 104: astore 5
+-      // 106: aload 8
+-      // 108: getfield pkg/TestSuspendLoopTry$pairs$1.L$2 Ljava/lang/Object;
+-      // 10b: checkcast java/util/List
+-      // 10e: astore 3
+-      // 10f: aload 8
+-      // 111: getfield pkg/TestSuspendLoopTry$pairs$1.L$1 Ljava/lang/Object;
+-      // 114: checkcast pkg/TestSuspendLoopTry$Source
+-      // 117: astore 2
+-      // 118: aload 8
+-      // 11a: getfield pkg/TestSuspendLoopTry$pairs$1.L$0 Ljava/lang/Object;
+-      // 11d: checkcast pkg/TestSuspendLoopTry$Source
+-      // 120: astore 1
+-      // 121: nop
+-      // 122: aload 7
+-      // 124: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 127: aload 7
+-      // 129: checkcast java/lang/Boolean
+-      // 12c: invokevirtual java/lang/Boolean.booleanValue ()Z
+-      // 12f: ifeq 069
+-      // 132: aload 3
+-      // 133: iload 6
+-      // 135: invokestatic kotlin/coroutines/jvm/internal/Boxing.boxInt (I)Ljava/lang/Integer;
+-      // 138: invokeinterface java/util/List.add (Ljava/lang/Object;)Z 2
+-      // 13d: pop
+-      // 13e: goto 069
+-      // 141: aload 1
+-      // 142: aload 5
+-      // 144: invokeinterface pkg/TestSuspendLoopTry$Source.close (Ljava/lang/Throwable;)V 2
+-      // 149: goto 162
+-      // 14c: astore 6
+-      // 14e: aload 6
+-      // 150: astore 5
+-      // 152: aload 6
+-      // 154: athrow
+-      // 155: astore 6
+-      // 157: aload 1
+-      // 158: aload 5
+-      // 15a: invokeinterface pkg/TestSuspendLoopTry$Source.close (Ljava/lang/Throwable;)V 2
+-      // 15f: aload 6
+-      // 161: athrow
+-      // 162: getstatic kotlin/Unit.INSTANCE Lkotlin/Unit;
+-      // 165: areturn
+-      // 166: new java/lang/IllegalStateException
+-      // 169: dup
+-      // 16a: ldc "call to 'resume' before 'invoke' with coroutine"
+-      // 16c: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
+-      // 16f: athrow
+-      // try (36 -> 53): 141 java/lang/Throwable
+-      // try (72 -> 102): 141 java/lang/Throwable
+-      // try (124 -> 137): 141 java/lang/Throwable
+-      // try (36 -> 53): 146 null
+-      // try (72 -> 102): 146 null
+-      // try (124 -> 137): 146 null
+-      // try (141 -> 146): 146 null
+-      // try (146 -> 147): 146 null
++      Continuation $continuation;
++      label623: {
++         if ($completion instanceof <unrepresentable>) {
++            $continuation = (<unrepresentable>)$completion;
++            if (($continuation.label & -2147483648) != 0) {
++               $continuation.label -= -2147483648;
++               break label623;
++            }
++         }
++
++         $continuation = new ContinuationImpl($completion) {
++            Object L$0;
++            Object L$1;
++            Object L$2;
++            int I$0;
++            int label;
++
++            @Nullable
++            public final Object invokeSuspend(@NotNull Object $result) {
++               this.result = $result;
++               this.label |= -2147483648;
++               return TestSuspendLoopTry.this.pairs(null, null, null, (Continuation<? super Unit>)this);
++            }
++         };
++      }
++
++      Throwable cause;
++      label617: {
++         Object $result = $continuation.result;
++         Object var9 = IntrinsicsKt.getCOROUTINE_SUSPENDED();
++         boolean var28;
++         boolean var47;
++         switch ($continuation.label) {
++            case 0:
++               ResultKt.throwOnFailure($result);
++               cause = null;
++               boolean var123 = false /* VF: Semaphore variable */;
++
++               try {
++                  var123 = true;
++                  var123 = false;
++                  break;
++               } catch (Throwable var128) {
++                  cause = var128;
++                  throw var128;
++               } finally {
++                  if (var123) {
++                     src.close(cause);
++                  }
++               }
++            case 1:
++               cause = null;
++               out = (List)$continuation.L$2;
++               other = (TestSuspendLoopTry.Source)$continuation.L$1;
++               src = (TestSuspendLoopTry.Source)$continuation.L$0;
++               boolean var85 = false /* VF: Semaphore variable */;
++
++               Object var170;
++               try {
++                  var85 = true;
++                  ResultKt.throwOnFailure($result);
++                  var170 = (Integer)$result;
++                  var85 = false;
++               } catch (Throwable var124) {
++                  cause = var124;
++                  throw var124;
++               } finally {
++                  if (var85) {
++                     src.close(cause);
++                  }
++               }
++
++               var47 = false;
++
++               int var142;
++               try {
++                  var47 = true;
++                  var170 = var170;
++                  if (var170 == null) {
++                     var47 = false;
++                     break label617;
++                  }
++
++                  var142 = var170;
++                  $continuation.L$0 = src;
++                  $continuation.L$1 = other;
++                  $continuation.L$2 = out;
++                  $continuation.I$0 = var142;
++                  $continuation.label = 2;
++                  var170 = other.ready($continuation);
++                  var47 = false;
++               } catch (Throwable var139) {
++                  cause = var139;
++                  throw var139;
++               } finally {
++                  if (var47) {
++                     src.close(cause);
++                  }
++               }
++
++               if (var170 == var9) {
++                  return var9;
++               }
++
++               var28 = false;
++
++               try {
++                  var28 = true;
++                  if ((Boolean)var170) {
++                     out.add(Boxing.boxInt(var142));
++                     var28 = false;
++                  } else {
++                     var28 = false;
++                  }
++                  break;
++               } catch (Throwable var141) {
++                  cause = var141;
++                  throw var141;
++               } finally {
++                  if (var28) {
++                     src.close(cause);
++                  }
++               }
++            case 2:
++               int v = $continuation.I$0;
++               cause = null;
++               out = (List)$continuation.L$2;
++               other = (TestSuspendLoopTry.Source)$continuation.L$1;
++               src = (TestSuspendLoopTry.Source)$continuation.L$0;
++               boolean var104 = false /* VF: Semaphore variable */;
++
++               Object var10000;
++               try {
++                  var104 = true;
++                  ResultKt.throwOnFailure($result);
++                  var10000 = $result;
++                  var104 = false;
++               } catch (Throwable var132) {
++                  cause = var132;
++                  throw var132;
++               } finally {
++                  if (var104) {
++                     src.close(cause);
++                  }
++               }
++
++               var28 = false;
++
++               try {
++                  var28 = true;
++                  if ((Boolean)var10000) {
++                     out.add(Boxing.boxInt(v));
++                     var28 = false;
++                  } else {
++                     var28 = false;
++                  }
++                  break;
++               } catch (Throwable var137) {
++                  cause = var137;
++                  throw var137;
++               } finally {
++                  if (var28) {
++                     src.close(cause);
++                  }
++               }
++            default:
++               throw new IllegalStateException("call to 'resume' before 'invoke' with coroutine");
++         }
++
++         while (true) {
++            boolean var66 = false /* VF: Semaphore variable */;
++
++            Object var173;
++            try {
++               var66 = true;
++               $continuation.L$0 = src;
++               $continuation.L$1 = other;
++               $continuation.L$2 = out;
++               $continuation.label = 1;
++               var173 = (Integer)src.next($continuation);
++               var66 = false;
++            } catch (Throwable e) {
++               cause = e;
++               throw e;
++            } finally {
++               if (var66) {
++                  src.close(cause);
++               }
++            }
++
++            if (var173 == var9) {
++               return var9;
++            }
++
++            var47 = false;
++
++            int var143;
++            try {
++               var47 = true;
++               var173 = var173;
++               if (var173 == null) {
++                  var47 = false;
++                  break;
++               }
++
++               var143 = var173;
++               $continuation.L$0 = src;
++               $continuation.L$1 = other;
++               $continuation.L$2 = out;
++               $continuation.I$0 = var143;
++               $continuation.label = 2;
++               var173 = other.ready($continuation);
++               var47 = false;
++            } catch (Throwable var134) {
++               cause = var134;
++               throw var134;
++            } finally {
++               if (var47) {
++                  src.close(cause);
++               }
++            }
++
++            if (var173 == var9) {
++               return var9;
++            }
++
++            var28 = false;
++
++            try {
++               var28 = true;
++               if ((Boolean)var173) {
++                  out.add(Boxing.boxInt(var143));
++                  var28 = false;
++               } else {
++                  var28 = false;
++               }
++            } catch (Throwable var130) {
++               cause = var130;
++               throw var130;
++            } finally {
++               if (var28) {
++                  src.close(cause);
++               }
++            }
++         }
++      }
++
++      src.close(cause);
++      return Unit.INSTANCE;
+    }
+ 
++   // $VF: Handled exception range with multiple entry points by splitting it
++   // $VF: Duplicated exception handlers to handle obfuscated exceptions
++   // $VF: Irreducible bytecode was duplicated to produce valid code
++   // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+    @Nullable
+-   public final Object watch(@NotNull TestSuspendLoopTry.Source param1, @NotNull List<Integer> param2, @NotNull Continuation<?> param3) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 000: aload 3
+-      // 001: instanceof pkg/TestSuspendLoopTry$watch$1
+-      // 004: ifeq 027
+-      // 007: aload 3
+-      // 008: checkcast pkg/TestSuspendLoopTry$watch$1
+-      // 00b: astore 7
+-      // 00d: aload 7
+-      // 00f: getfield pkg/TestSuspendLoopTry$watch$1.label I
+-      // 012: ldc -2147483648
+-      // 014: iand
+-      // 015: ifeq 027
+-      // 018: aload 7
+-      // 01a: dup
+-      // 01b: getfield pkg/TestSuspendLoopTry$watch$1.label I
+-      // 01e: ldc -2147483648
+-      // 020: isub
+-      // 021: putfield pkg/TestSuspendLoopTry$watch$1.label I
+-      // 024: goto 032
+-      // 027: new pkg/TestSuspendLoopTry$watch$1
+-      // 02a: dup
+-      // 02b: aload 0
+-      // 02c: aload 3
+-      // 02d: invokespecial pkg/TestSuspendLoopTry$watch$1.<init> (Lpkg/TestSuspendLoopTry;Lkotlin/coroutines/Continuation;)V
+-      // 030: astore 7
+-      // 032: aload 7
+-      // 034: getfield pkg/TestSuspendLoopTry$watch$1.result Ljava/lang/Object;
+-      // 037: astore 6
+-      // 039: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
+-      // 03c: astore 8
+-      // 03e: aload 7
+-      // 040: getfield pkg/TestSuspendLoopTry$watch$1.label I
+-      // 043: tableswitch 329 0 3 29 81 196 280
+-      // 060: aload 6
+-      // 062: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 065: nop
+-      // 066: bipush -1
+-      // 067: istore 4
+-      // 069: nop
+-      // 06a: aload 1
+-      // 06b: aload 7
+-      // 06d: aload 7
+-      // 06f: aload 1
+-      // 070: putfield pkg/TestSuspendLoopTry$watch$1.L$0 Ljava/lang/Object;
+-      // 073: aload 7
+-      // 075: aload 2
+-      // 076: putfield pkg/TestSuspendLoopTry$watch$1.L$1 Ljava/lang/Object;
+-      // 079: aload 7
+-      // 07b: iload 4
+-      // 07d: putfield pkg/TestSuspendLoopTry$watch$1.I$0 I
+-      // 080: aload 7
+-      // 082: bipush 1
+-      // 083: putfield pkg/TestSuspendLoopTry$watch$1.label I
+-      // 086: invokeinterface pkg/TestSuspendLoopTry$Source.next (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-      // 08b: dup
+-      // 08c: aload 8
+-      // 08e: if_acmpne 0b5
+-      // 091: aload 8
+-      // 093: areturn
+-      // 094: aload 7
+-      // 096: getfield pkg/TestSuspendLoopTry$watch$1.I$0 I
+-      // 099: istore 4
+-      // 09b: aload 7
+-      // 09d: getfield pkg/TestSuspendLoopTry$watch$1.L$1 Ljava/lang/Object;
+-      // 0a0: checkcast java/util/List
+-      // 0a3: astore 2
+-      // 0a4: aload 7
+-      // 0a6: getfield pkg/TestSuspendLoopTry$watch$1.L$0 Ljava/lang/Object;
+-      // 0a9: checkcast pkg/TestSuspendLoopTry$Source
+-      // 0ac: astore 1
+-      // 0ad: nop
+-      // 0ae: aload 6
+-      // 0b0: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 0b3: aload 6
+-      // 0b5: checkcast java/lang/Integer
+-      // 0b8: dup
+-      // 0b9: ifnull 0c2
+-      // 0bc: invokevirtual java/lang/Integer.intValue ()I
+-      // 0bf: goto 0c4
+-      // 0c2: pop
+-      // 0c3: bipush -1
+-      // 0c4: istore 5
+-      // 0c6: iload 5
+-      // 0c8: iload 4
+-      // 0ca: if_icmpeq 0dd
+-      // 0cd: aload 2
+-      // 0ce: iload 5
+-      // 0d0: invokestatic kotlin/coroutines/jvm/internal/Boxing.boxInt (I)Ljava/lang/Integer;
+-      // 0d3: invokeinterface java/util/List.add (Ljava/lang/Object;)Z 2
+-      // 0d8: pop
+-      // 0d9: iload 5
+-      // 0db: istore 4
+-      // 0dd: aload 1
+-      // 0de: aload 7
+-      // 0e0: aload 7
+-      // 0e2: aload 1
+-      // 0e3: putfield pkg/TestSuspendLoopTry$watch$1.L$0 Ljava/lang/Object;
+-      // 0e6: aload 7
+-      // 0e8: aload 2
+-      // 0e9: putfield pkg/TestSuspendLoopTry$watch$1.L$1 Ljava/lang/Object;
+-      // 0ec: aload 7
+-      // 0ee: iload 4
+-      // 0f0: putfield pkg/TestSuspendLoopTry$watch$1.I$0 I
+-      // 0f3: aload 7
+-      // 0f5: bipush 2
+-      // 0f6: putfield pkg/TestSuspendLoopTry$watch$1.label I
+-      // 0f9: invokeinterface pkg/TestSuspendLoopTry$Source.ready (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-      // 0fe: dup
+-      // 0ff: aload 8
+-      // 101: if_acmpne 128
+-      // 104: aload 8
+-      // 106: areturn
+-      // 107: aload 7
+-      // 109: getfield pkg/TestSuspendLoopTry$watch$1.I$0 I
+-      // 10c: istore 4
+-      // 10e: aload 7
+-      // 110: getfield pkg/TestSuspendLoopTry$watch$1.L$1 Ljava/lang/Object;
+-      // 113: checkcast java/util/List
+-      // 116: astore 2
+-      // 117: aload 7
+-      // 119: getfield pkg/TestSuspendLoopTry$watch$1.L$0 Ljava/lang/Object;
+-      // 11c: checkcast pkg/TestSuspendLoopTry$Source
+-      // 11f: astore 1
+-      // 120: nop
+-      // 121: aload 6
+-      // 123: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 126: aload 6
+-      // 128: checkcast java/lang/Boolean
+-      // 12b: invokevirtual java/lang/Boolean.booleanValue ()Z
+-      // 12e: ifne 069
+-      // 131: aload 1
+-      // 132: aload 7
+-      // 134: aload 7
+-      // 136: aload 1
+-      // 137: putfield pkg/TestSuspendLoopTry$watch$1.L$0 Ljava/lang/Object;
+-      // 13a: aload 7
+-      // 13c: aload 2
+-      // 13d: putfield pkg/TestSuspendLoopTry$watch$1.L$1 Ljava/lang/Object;
+-      // 140: aload 7
+-      // 142: iload 4
+-      // 144: putfield pkg/TestSuspendLoopTry$watch$1.I$0 I
+-      // 147: aload 7
+-      // 149: bipush 3
+-      // 14a: putfield pkg/TestSuspendLoopTry$watch$1.label I
+-      // 14d: invokeinterface pkg/TestSuspendLoopTry$Source.next (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
+-      // 152: dup
+-      // 153: aload 8
+-      // 155: if_acmpne 17c
+-      // 158: aload 8
+-      // 15a: areturn
+-      // 15b: aload 7
+-      // 15d: getfield pkg/TestSuspendLoopTry$watch$1.I$0 I
+-      // 160: istore 4
+-      // 162: aload 7
+-      // 164: getfield pkg/TestSuspendLoopTry$watch$1.L$1 Ljava/lang/Object;
+-      // 167: checkcast java/util/List
+-      // 16a: astore 2
+-      // 16b: aload 7
+-      // 16d: getfield pkg/TestSuspendLoopTry$watch$1.L$0 Ljava/lang/Object;
+-      // 170: checkcast pkg/TestSuspendLoopTry$Source
+-      // 173: astore 1
+-      // 174: nop
+-      // 175: aload 6
+-      // 177: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
+-      // 17a: aload 6
+-      // 17c: pop
+-      // 17d: goto 069
+-      // 180: astore 4
+-      // 182: aload 1
+-      // 183: aconst_null
+-      // 184: invokeinterface pkg/TestSuspendLoopTry$Source.close (Ljava/lang/Throwable;)V 2
+-      // 189: aload 4
+-      // 18b: athrow
+-      // 18c: new java/lang/IllegalStateException
+-      // 18f: dup
+-      // 190: ldc "call to 'resume' before 'invoke' with coroutine"
+-      // 192: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
+-      // 195: athrow
+-      // try (34 -> 53): 166 null
+-      // try (69 -> 106): 166 null
+-      // try (122 -> 144): 166 null
+-      // try (160 -> 166): 166 null
+-      // try (166 -> 167): 166 null
++   public final Object watch(@NotNull TestSuspendLoopTry.Source src, @NotNull List<Integer> out, @NotNull Continuation<?> $completion) {
++      Continuation $continuation;
++      label1050: {
++         if ($completion instanceof <unrepresentable>) {
++            $continuation = (<unrepresentable>)$completion;
++            if (($continuation.label & -2147483648) != 0) {
++               $continuation.label -= -2147483648;
++               break label1050;
++            }
++         }
++
++         $continuation = new ContinuationImpl($completion) {
++            Object L$0;
++            Object L$1;
++            int I$0;
++            int label;
++
++            @Nullable
++            public final Object invokeSuspend(@NotNull Object $result) {
++               this.result = $result;
++               this.label |= -2147483648;
++               return TestSuspendLoopTry.this.watch(null, null, (Continuation<?>)this);
++            }
++         };
++      }
++
++      Object $result = $continuation.result;
++      Object var8 = IntrinsicsKt.getCOROUTINE_SUSPENDED();
++      int old;
++      boolean var23;
++      boolean var38;
++      boolean var98;
++      Object var10000;
++      switch ($continuation.label) {
++         case 0:
++            ResultKt.throwOnFailure($result);
++            boolean var128 = false /* VF: Semaphore variable */;
++
++            try {
++               var128 = true;
++               old = -1;
++               var128 = false;
++            } finally {
++               if (var128) {
++                  src.close(null);
++               }
++            }
++
++            var23 = false;
++
++            try {
++               var23 = true;
++               $continuation.L$0 = src;
++               $continuation.L$1 = out;
++               $continuation.I$0 = old;
++               $continuation.label = 1;
++               var10000 = src.next($continuation);
++               var23 = false;
++            } finally {
++               if (var23) {
++                  src.close(null);
++               }
++            }
++
++            if (var10000 == var8) {
++               return var8;
++            }
++            break;
++         case 1:
++            old = $continuation.I$0;
++            out = (List)$continuation.L$1;
++            src = (TestSuspendLoopTry.Source)$continuation.L$0;
++            boolean var68 = false /* VF: Semaphore variable */;
++
++            try {
++               var68 = true;
++               ResultKt.throwOnFailure($result);
++               var10000 = $result;
++               var68 = false;
++               break;
++            } finally {
++               if (var68) {
++                  src.close(null);
++               }
++            }
++         case 2:
++            old = $continuation.I$0;
++            out = (List)$continuation.L$1;
++            src = (TestSuspendLoopTry.Source)$continuation.L$0;
++            boolean var83 = false /* VF: Semaphore variable */;
++
++            try {
++               var83 = true;
++               ResultKt.throwOnFailure($result);
++               var10000 = $result;
++               var83 = false;
++            } finally {
++               if (var83) {
++                  src.close(null);
++               }
++            }
++
++            var38 = false;
++
++            label1056: {
++               try {
++                  var38 = true;
++                  if ((Boolean)var10000) {
++                     var38 = false;
++                     break label1056;
++                  }
++
++                  $continuation.L$0 = src;
++                  $continuation.L$1 = out;
++                  $continuation.I$0 = old;
++                  $continuation.label = 3;
++                  var10000 = src.next($continuation);
++                  var38 = false;
++               } finally {
++                  if (var38) {
++                     src.close(null);
++                  }
++               }
++
++               if (var10000 == var8) {
++                  return var8;
++               }
++
++               var98 = false;
++
++               try {
++                  var98 = true;
++                  var98 = false;
++               } finally {
++                  if (var98) {
++                     src.close(null);
++                  }
++               }
++            }
++
++            var23 = false;
++
++            try {
++               var23 = true;
++               $continuation.L$0 = src;
++               $continuation.L$1 = out;
++               $continuation.I$0 = old;
++               $continuation.label = 1;
++               var10000 = src.next($continuation);
++               var23 = false;
++            } finally {
++               if (var23) {
++                  src.close(null);
++               }
++            }
++
++            if (var10000 == var8) {
++               return var8;
++            }
++            break;
++         case 3:
++            old = $continuation.I$0;
++            out = (List)$continuation.L$1;
++            src = (TestSuspendLoopTry.Source)$continuation.L$0;
++            boolean var113 = false /* VF: Semaphore variable */;
++
++            try {
++               var113 = true;
++               ResultKt.throwOnFailure($result);
++               var113 = false;
++            } finally {
++               if (var113) {
++                  src.close(null);
++               }
++            }
++
++            var98 = false;
++
++            try {
++               var98 = true;
++               var98 = false;
++            } finally {
++               if (var98) {
++                  src.close(null);
++               }
++            }
++
++            var23 = false;
++
++            try {
++               var23 = true;
++               $continuation.L$0 = src;
++               $continuation.L$1 = out;
++               $continuation.I$0 = old;
++               $continuation.label = 1;
++               var10000 = src.next($continuation);
++               var23 = false;
++            } finally {
++               if (var23) {
++                  src.close(null);
++               }
++            }
++
++            if (var10000 == var8) {
++               return var8;
++            }
++            break;
++         default:
++            throw new IllegalStateException("call to 'resume' before 'invoke' with coroutine");
++      }
++
++      do {
++         boolean var53 = false /* VF: Semaphore variable */;
++
++         try {
++            var53 = true;
++            int v = (Integer)var10000 != null ? (Integer)var10000 : -1;
++            if (v != old) {
++               out.add(Boxing.boxInt(v));
++               old = v;
++            }
++
++            $continuation.L$0 = src;
++            $continuation.L$1 = out;
++            $continuation.I$0 = old;
++            $continuation.label = 2;
++            var10000 = src.ready($continuation);
++            var53 = false;
++         } finally {
++            if (var53) {
++               src.close(null);
++            }
++         }
++
++         if (var10000 == var8) {
++            return var8;
++         }
++
++         var38 = false;
++
++         label1059: {
++            try {
++               var38 = true;
++               if ((Boolean)var10000) {
++                  var38 = false;
++                  break label1059;
++               }
++
++               $continuation.L$0 = src;
++               $continuation.L$1 = out;
++               $continuation.I$0 = old;
++               $continuation.label = 3;
++               var10000 = src.next($continuation);
++               var38 = false;
++            } finally {
++               if (var38) {
++                  src.close(null);
++               }
++            }
++
++            if (var10000 == var8) {
++               return var8;
++            }
++
++            var98 = false;
++
++            try {
++               var98 = true;
++               var98 = false;
++            } finally {
++               if (var98) {
++                  src.close(null);
++               }
++            }
++         }
++
++         var23 = false;
++
++         try {
++            var23 = true;
++            $continuation.L$0 = src;
++            $continuation.L$1 = out;
++            $continuation.I$0 = old;
++            $continuation.label = 1;
++            var10000 = src.next($continuation);
++            var23 = false;
++         } finally {
++            if (var23) {
++               src.close(null);
++            }
++         }
++      } while (var10000 != var8);
++
++      return var8;
     }
  
     @Metadata(

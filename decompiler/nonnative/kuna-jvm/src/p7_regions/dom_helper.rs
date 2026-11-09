@@ -1,6 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/decompose/DomHelper.java`.
 //!
 //! `GraphParser` is not ported (plugin API), so `createStatement` is inherent.
+//! kuna fix `irreducible_with_exception_edges`: where Vineflower gives up on an
+//! irreducible level with exception edges, a try region is isolated or an
+//! unprotected statement split (`kuna_fix_irreducible_with_exception_edges.rs`).
 
 use std::collections::VecDeque;
 
@@ -21,8 +24,10 @@ use crate::i_fernflower_logger::Severity;
 use crate::if_statement::IfStatement;
 use crate::irreducible_cfg_deobfuscator::IrreducibleCFGDeobfuscator;
 use crate::jthrow;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
 use crate::method_processor::MethodProcessor;
+use crate::p7_regions::kuna_fix_irreducible_with_exception_edges::IrreducibleWithExceptionEdges;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JLinkedHashSet, JavaEq, Shared};
 use crate::sequence_helper::SequenceHelper;
@@ -558,6 +563,18 @@ impl DomHelper {
                                 "$VF: Irreducible bytecode was duplicated to produce valid code",
                             );
                         }
+                    } else if kuna_fixes::enabled(KunaFix::IrreducibleWithExceptionEdges)
+                        && (mapstage == 1 || map_refreshed)
+                        && IrreducibleWithExceptionEdges::split(general)
+                    {
+                        tracer.warn(general, &format!("Split irreducible flow: {reducibility}"));
+                        if reducibility == 4 {
+                            tracer.error(general, "Flow too complex to be decomposed!");
+                            root.add_comment_error("$VF: Irreducible bytecode has more than 5 nodes in sequence and was not entirely decomposed", true);
+                        }
+                        root.add_comment(
+                            "$VF: Irreducible bytecode was duplicated to produce valid code",
+                        );
                     } else {
                         tracer.error(general, "Flow not irreducible, but could not decompose");
                         if mapstage == 1 || map_refreshed {
@@ -596,8 +613,17 @@ impl DomHelper {
                             return true;
                         }
 
-                        let stat =
+                        let mut stat =
                             DomHelper::find_general_statement(general, forceall, &map_ext_post);
+                        let mut isolated = false;
+                        if stat.is_none()
+                            && forceall
+                            && (mapstage == 1 || map_refreshed)
+                            && kuna_fixes::enabled(KunaFix::IrreducibleWithExceptionEdges)
+                        {
+                            stat = IrreducibleWithExceptionEdges::isolate(general);
+                            isolated = stat.is_some();
+                        }
 
                         if let Some(stat) = stat {
                             tracer.success_created(
@@ -605,7 +631,7 @@ impl DomHelper {
                                 &format!("Found general statement: {stat} ({})", stats_text(stat)),
                                 stat,
                             );
-                            let child_map = if general.get_first() == Some(stat) {
+                            let child_map = if !isolated && general.get_first() == Some(stat) {
                                 map_ext_post.clone()
                             } else {
                                 ExtPostMap::new_hash()
@@ -745,101 +771,116 @@ impl DomHelper {
 
                 let same = post == head;
 
-                let mut set_nodes: JLinkedHashSet<Statement> = JLinkedHashSet::new();
-                let mut set_preds: JHashSet<Statement> = JHashSet::new();
+                if let Some(set_nodes) = DomHelper::collect_region(stat, head, post) {
+                    let res = GeneralStatement::new(
+                        head,
+                        set_nodes,
+                        if same { None } else { Some(post) },
+                    );
+                    stat.collapse_nodes_to_statement(res.0);
 
-                let mut set_handlers: JLinkedHashSet<Statement> = JLinkedHashSet::new();
-                set_handlers.add(head);
-                loop {
-                    let mut handler_found = false;
-                    for handler in set_handlers.to_vec() {
-                        if set_nodes.contains(&handler) {
-                            continue;
-                        }
+                    return Some(res.0);
+                }
+            }
+        }
 
-                        let mut add_handler = set_nodes.is_empty();
-                        if !add_handler {
-                            let hdsupp = handler
-                                .get_neighbours(StatEdge::TYPE_EXCEPTION, EdgeDirection::Backward);
-                            add_handler = hdsupp.iter().all(|s| set_nodes.contains(s))
-                                && (set_nodes.len() > hdsupp.len() || set_nodes.len() == 1);
-                        }
+        None
+    }
 
-                        if add_handler {
-                            let mut lst_stack: VecDeque<Statement> = VecDeque::new();
-                            lst_stack.push_back(handler);
+    /// The body of `findGeneralStatement`'s loop over `(head, post)`: the
+    /// nodes of the general statement it would build, if the region is valid
+    /// (also used by fix `irreducible_with_exception_edges`).
+    pub(crate) fn collect_region(
+        stat: Statement,
+        head: Statement,
+        post: Statement,
+    ) -> Option<Vec<Statement>> {
+        let stats = stat.get_stats();
+        let same = post == head;
 
-                            while let Some(st) = lst_stack.pop_front() {
-                                if !(set_nodes.contains(&st) || (!same && st == post)) {
-                                    set_nodes.add(st);
-                                    if st != head {
-                                        set_preds.add_all(st.get_neighbours(
-                                            StatEdge::TYPE_REGULAR,
-                                            EdgeDirection::Backward,
-                                        ));
-                                    }
+        let mut set_nodes: JLinkedHashSet<Statement> = JLinkedHashSet::new();
+        let mut set_preds: JHashSet<Statement> = JHashSet::new();
 
-                                    lst_stack.extend(st.get_neighbours(
-                                        StatEdge::TYPE_REGULAR,
-                                        EdgeDirection::Forward,
-                                    ));
+        let mut set_handlers: JLinkedHashSet<Statement> = JLinkedHashSet::new();
+        set_handlers.add(head);
+        loop {
+            let mut handler_found = false;
+            for handler in set_handlers.to_vec() {
+                if set_nodes.contains(&handler) {
+                    continue;
+                }
 
-                                    set_handlers.add_all(st.get_neighbours(
-                                        StatEdge::TYPE_EXCEPTION,
-                                        EdgeDirection::Forward,
-                                    ));
-                                }
+                let mut add_handler = set_nodes.is_empty();
+                if !add_handler {
+                    let hdsupp =
+                        handler.get_neighbours(StatEdge::TYPE_EXCEPTION, EdgeDirection::Backward);
+                    add_handler = hdsupp.iter().all(|s| set_nodes.contains(s))
+                        && (set_nodes.len() > hdsupp.len() || set_nodes.len() == 1);
+                }
+
+                if add_handler {
+                    let mut lst_stack: VecDeque<Statement> = VecDeque::new();
+                    lst_stack.push_back(handler);
+
+                    while let Some(st) = lst_stack.pop_front() {
+                        if !(set_nodes.contains(&st) || (!same && st == post)) {
+                            set_nodes.add(st);
+                            if st != head {
+                                set_preds.add_all(st.get_neighbours(
+                                    StatEdge::TYPE_REGULAR,
+                                    EdgeDirection::Backward,
+                                ));
                             }
 
-                            handler_found = true;
-                            set_handlers.remove(&handler);
-                            break;
+                            lst_stack.extend(
+                                st.get_neighbours(StatEdge::TYPE_REGULAR, EdgeDirection::Forward),
+                            );
+
+                            set_handlers.add_all(
+                                st.get_neighbours(StatEdge::TYPE_EXCEPTION, EdgeDirection::Forward),
+                            );
                         }
                     }
 
-                    if !handler_found {
-                        break;
-                    }
+                    handler_found = true;
+                    set_handlers.remove(&handler);
+                    break;
                 }
+            }
 
-                set_handlers.clear();
-                for st in set_nodes.to_vec() {
-                    set_handlers.add_all(
-                        st.get_neighbours(StatEdge::TYPE_EXCEPTION, EdgeDirection::Forward),
-                    );
-                }
-                set_handlers.retain(|h| !set_nodes.contains(h));
+            if !handler_found {
+                break;
+            }
+        }
 
-                let mut exceptions_ok = true;
-                for handler in set_handlers.to_vec() {
-                    let exception_range =
-                        handler.get_neighbours(StatEdge::TYPE_EXCEPTION, EdgeDirection::Backward);
-                    if !set_nodes.iter().all(|n| exception_range.contains(n)) {
-                        exceptions_ok = false;
-                        break;
-                    }
-                }
+        set_handlers.clear();
+        for st in set_nodes.to_vec() {
+            set_handlers
+                .add_all(st.get_neighbours(StatEdge::TYPE_EXCEPTION, EdgeDirection::Forward));
+        }
+        set_handlers.retain(|h| !set_nodes.contains(h));
 
-                if exceptions_ok {
-                    set_preds.retain(|p| !set_nodes.contains(p));
-                    if set_preds.is_empty()
-                        && (set_nodes.len() > 1
-                            || head
-                                .get_neighbours(StatEdge::TYPE_REGULAR, EdgeDirection::Backward)
-                                .contains(&head))
-                        && set_nodes.len() < stats.borrow().len()
-                        && DomHelper::check_synchronized_completeness(&set_nodes)
-                    {
-                        let res = GeneralStatement::new(
-                            head,
-                            set_nodes.to_vec(),
-                            if same { None } else { Some(post) },
-                        );
-                        stat.collapse_nodes_to_statement(res.0);
+        let mut exceptions_ok = true;
+        for handler in set_handlers.to_vec() {
+            let exception_range =
+                handler.get_neighbours(StatEdge::TYPE_EXCEPTION, EdgeDirection::Backward);
+            if !set_nodes.iter().all(|n| exception_range.contains(n)) {
+                exceptions_ok = false;
+                break;
+            }
+        }
 
-                        return Some(res.0);
-                    }
-                }
+        if exceptions_ok {
+            set_preds.retain(|p| !set_nodes.contains(p));
+            if set_preds.is_empty()
+                && (set_nodes.len() > 1
+                    || head
+                        .get_neighbours(StatEdge::TYPE_REGULAR, EdgeDirection::Backward)
+                        .contains(&head))
+                && set_nodes.len() < stats.borrow().len()
+                && DomHelper::check_synchronized_completeness(&set_nodes)
+            {
+                return Some(set_nodes.to_vec());
             }
         }
 

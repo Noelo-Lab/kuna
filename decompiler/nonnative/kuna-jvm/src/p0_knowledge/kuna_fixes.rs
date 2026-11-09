@@ -95,6 +95,9 @@ pub enum KunaFix {
     /// by its own index constant, so labels after the first of a case and
     /// labels whose index equals an integer label's value are resolved.
     TypeSwitchLabelLookup,
+    /// `irreducible_with_exception_edges`: an irreducible level of the
+    /// statement graph that holds exception edges is split like one without.
+    IrreducibleWithExceptionEdges,
 }
 
 impl KunaFix {
@@ -123,6 +126,7 @@ impl KunaFix {
         KunaFix::TypeSwitchEnumLabel,
         KunaFix::TypeSwitchPatternType,
         KunaFix::TypeSwitchLabelLookup,
+        KunaFix::IrreducibleWithExceptionEdges,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -151,6 +155,7 @@ impl KunaFix {
             KunaFix::TypeSwitchEnumLabel => "type_switch_enum_label",
             KunaFix::TypeSwitchPatternType => "type_switch_pattern_type",
             KunaFix::TypeSwitchLabelLookup => "type_switch_label_lookup",
+            KunaFix::IrreducibleWithExceptionEdges => "irreducible_with_exception_edges",
         }
     }
 

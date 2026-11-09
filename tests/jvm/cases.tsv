@@ -3212,6 +3212,11 @@ class	kuna-fixes/classes/pkg/TestInnerOfGenericOuter$Itrs.class
 class	kuna-fixes/classes/pkg/TestInnerOfGenericOuter$Ref.class
 expected	kuna-fixes/expected-compat/pkg/TestInnerOfGenericOuter.java
 compare	TestInnerOfGenericOuter.java
+case	kuna-fixes-compat/pkg/TestIrreducibleTry	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestIrreducibleTry.class
+class	kuna-fixes/classes/pkg/TestIrreducibleTry$Src.class
+expected	kuna-fixes/expected-compat/pkg/TestIrreducibleTry.java
+compare	TestIrreducibleTry.java
 case	kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Factory.class
@@ -3256,6 +3261,14 @@ class	kuna-fixes/classes/pkg/TestSuspendLoopFinally$drain$1.class
 class	kuna-fixes/classes/pkg/TestSuspendLoopFinally$first$1.class
 expected	kuna-fixes/expected-compat/pkg/TestSuspendLoopFinally.java
 compare	TestSuspendLoopFinally.java
+case	kuna-fixes-compat/pkg/TestSuspendLoopTry	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSuspendLoopTry.class
+class	kuna-fixes/classes/pkg/TestSuspendLoopTry$Source.class
+class	kuna-fixes/classes/pkg/TestSuspendLoopTry$indexOf$1.class
+class	kuna-fixes/classes/pkg/TestSuspendLoopTry$pairs$1.class
+class	kuna-fixes/classes/pkg/TestSuspendLoopTry$watch$1.class
+expected	kuna-fixes/expected-compat/pkg/TestSuspendLoopTry.java
+compare	TestSuspendLoopTry.java
 case	kuna-fixes-compat/pkg/TestSwitchExprConstLub	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub.class
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub$IntSink.class
@@ -3367,6 +3380,11 @@ class	kuna-fixes/classes/pkg/TestInnerOfGenericOuter$Itrs.class
 class	kuna-fixes/classes/pkg/TestInnerOfGenericOuter$Ref.class
 expected	kuna-fixes/expected/pkg/TestInnerOfGenericOuter.java
 compare	TestInnerOfGenericOuter.java
+case	kuna-fixes/pkg/TestIrreducibleTry	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestIrreducibleTry.class
+class	kuna-fixes/classes/pkg/TestIrreducibleTry$Src.class
+expected	kuna-fixes/expected/pkg/TestIrreducibleTry.java
+compare	TestIrreducibleTry.java
 case	kuna-fixes/pkg/TestMethodRefWildcardReceiver	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Factory.class
@@ -3411,6 +3429,14 @@ class	kuna-fixes/classes/pkg/TestSuspendLoopFinally$drain$1.class
 class	kuna-fixes/classes/pkg/TestSuspendLoopFinally$first$1.class
 expected	kuna-fixes/expected/pkg/TestSuspendLoopFinally.java
 compare	TestSuspendLoopFinally.java
+case	kuna-fixes/pkg/TestSuspendLoopTry	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSuspendLoopTry.class
+class	kuna-fixes/classes/pkg/TestSuspendLoopTry$Source.class
+class	kuna-fixes/classes/pkg/TestSuspendLoopTry$indexOf$1.class
+class	kuna-fixes/classes/pkg/TestSuspendLoopTry$pairs$1.class
+class	kuna-fixes/classes/pkg/TestSuspendLoopTry$watch$1.class
+expected	kuna-fixes/expected/pkg/TestSuspendLoopTry.java
+compare	TestSuspendLoopTry.java
 case	kuna-fixes/pkg/TestSwitchExprConstLub	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub.class
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub$IntSink.class

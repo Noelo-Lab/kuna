@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/deobfuscator/IrreducibleCFGDeobfuscator.java`.
+//!
+//! kuna fix `irreducible_with_exception_edges` reuses the candidate choice and
+//! the split (`kuna_fix_irreducible_with_exception_edges.rs`).
 
 use crate::cancelation_manager::CancelationManager;
 use crate::rt::{JHashMap, JHashSet};
@@ -101,12 +104,24 @@ impl IrreducibleCFGDeobfuscator {
     }
 
     fn get_candidate_for_splitting(statement: Statement) -> Option<Statement> {
+        Self::get_candidate_for_splitting_among(statement, |_| true)
+    }
+
+    /// Java's candidate choice over the statements `accept` admits (fix
+    /// `irreducible_with_exception_edges` admits only unprotected ones).
+    pub(crate) fn get_candidate_for_splitting_among(
+        statement: Statement,
+        accept: impl Fn(Statement) -> bool,
+    ) -> Option<Statement> {
         let mut candidate_for_splitting: Option<Statement> = None;
         let mut size_candidate_for_splitting = i32::MAX;
         let mut succs_candidate_for_splitting = i32::MAX;
 
         let stats: Vec<Statement> = statement.get_stats().borrow().iter().copied().collect();
         for stat in stats {
+            if !accept(stat) {
+                continue;
+            }
             let set_preds =
                 stat.get_neighbours_set(StatEdge::TYPE_REGULAR, EdgeDirection::Backward);
 
@@ -137,6 +152,12 @@ impl IrreducibleCFGDeobfuscator {
             return false;
         };
 
+        Self::split_node(statement, splitnode);
+        true
+    }
+
+    /// The body of `splitIrreducibleNode` after the candidate is chosen.
+    pub(crate) fn split_node(statement: Statement, splitnode: Statement) {
         let enteredge = *splitnode
             .get_predecessor_edges(StatEdge::TYPE_REGULAR)
             .first()
@@ -174,8 +195,6 @@ impl IrreducibleCFGDeobfuscator {
                 closure,
             ));
         }
-
-        true
     }
 
     fn get_statement_size(statement: Statement) -> i32 {
