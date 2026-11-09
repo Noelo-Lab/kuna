@@ -148,3 +148,5 @@ mod trace_sweep;
 mod kt0_hooks;
 #[path = "kt3_elements.rs"]
 mod kt3_elements;
+#[path = "kt7_kotlin_writer.rs"]
+mod kt7_kotlin_writer;
