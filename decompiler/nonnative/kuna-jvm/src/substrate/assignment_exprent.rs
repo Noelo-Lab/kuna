@@ -13,17 +13,9 @@ use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
 use crate::text_buffer::TextBuffer;
 use crate::var_map_holder::VarMapHolder;
-use crate::var_type::{instance_of, VarType};
+use crate::var_type::{instance_of, str_equals, VarType};
 use crate::var_version_pair::VarVersionPair;
 use crate::{java_subclass, jthrow};
-
-/// Java `a.equals(b)` on two nullable strings where `a` is dereferenced.
-fn str_equals(a: &Option<std::rc::Rc<str>>, b: &Option<std::rc::Rc<str>>) -> bool {
-    match a {
-        Some(a) => b.as_deref() == Some(&**a),
-        None => jthrow!(NullPointerException; "String.equals on null"),
-    }
-}
 
 pub struct AssignmentExprentData {
     pub left: Exprent,
