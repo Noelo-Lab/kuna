@@ -219,3 +219,38 @@ fn cancelation_checker_throws_where_installed() {
     CancelationManager::clear_cancelation_checker();
     CancelationManager::check_canceled();
 }
+
+#[test]
+fn shared_test_context_sets_up_like_the_driver() {
+    let guard = crate::common::install_context_with(&[
+        (IFernflowerPreferences::RENAME_ENTITIES, "1"),
+        (IFernflowerPreferences::LOG_LEVEL, "warn"),
+    ]);
+    assert!(DecompilerContext::get_current_context()
+        .unwrap()
+        .ptr_eq(guard.context()));
+    assert!(DecompilerContext::get_pool_interceptor().is_some());
+    assert_eq!(guard.logger().severity().get(), Severity::Warn);
+    assert_eq!(
+        DecompilerContext::get_struct_context(),
+        guard.struct_context()
+    );
+    assert_eq!(
+        DecompilerContext::get_class_processor(),
+        guard.class_processor()
+    );
+    let _ = DecompilerContext::get_naming_factory();
+    DecompilerContext::get_logger().write_message("dropped", Severity::Info);
+    DecompilerContext::get_logger().write_message("kept", Severity::Warn);
+    assert_eq!(guard.logger().messages(), vec!["kept".to_string()]);
+    let struct_context = guard.struct_context();
+    drop(guard);
+    assert!(DecompilerContext::get_current_context().is_none());
+    assert!(!struct_context.is_live());
+
+    let _guard = crate::common::install_default_context();
+    assert!(DecompilerContext::get_option(
+        IFernflowerPreferences::DECOMPILE_INNER
+    ));
+    assert!(DecompilerContext::get_pool_interceptor().is_none());
+}
