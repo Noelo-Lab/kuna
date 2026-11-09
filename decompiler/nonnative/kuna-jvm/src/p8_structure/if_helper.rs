@@ -231,16 +231,15 @@ impl IfHelper {
 
                         let statexpr = ifparent.get_headexprent();
 
-                        let mut lst_operands: Vec<Exprent> = Vec::new();
-                        lst_operands.push(statexpr.get_condition());
-                        lst_operands.push(
+                        let lst_operands: Vec<Exprent> = vec![
+                            statexpr.get_condition(),
                             FunctionExprent::new_single(
                                 FunctionType::BoolNot,
                                 ifchild.get_headexprent().get_condition(),
                                 None,
                             )
                             .0,
-                        );
+                        ];
                         statexpr.set_condition(
                             FunctionExprent::new(FunctionType::BooleanAnd, lst_operands, None).0,
                         );
@@ -563,9 +562,7 @@ impl IfHelper {
         }
 
         let ifdirect;
-        let elsedirect;
         let mut noifstat = false;
-        let noelsestat;
         let mut ifdirectpath = false;
         let mut elsedirectpath = false;
 
@@ -602,10 +599,10 @@ impl IfHelper {
         } else {
             ifstat.0
         };
-        noelsestat = last == ifstat.0;
+        let noelsestat = last == ifstat.0;
 
         let last_succs = last.get_all_successor_edges();
-        elsedirect = !last_succs.is_empty()
+        let elsedirect = !last_succs.is_empty()
             && last_succs[0].get_type() == StatEdge::TYPE_FINALLYEXIT
             || Self::has_direct_end_edge(last, from);
 

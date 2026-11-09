@@ -1,0 +1,73 @@
+pretty.iftype = 1
+pretty.changed = true
+pretty.iftype2 = 0
+pretty.root = [{Seq}:8]
+pretty.seq = [{If}:6, {Block}:3]
+pretty.seq.parent = {Root}:7
+pretty.ifs = [{Block}:1, {Block}:2]
+pretty.ifs.parent = {Seq}:8
+pretty.e.parent = {Seq}:8
+pretty.h.succs = [1: {Block}:1 -> {Block}:2]
+pretty.ifs.succs = [1: {If}:6 -> {Block}:3]
+pretty.e.preds = [1: {If}:6 -> {Block}:3]
+pretty.elsestat = null
+pretty.elseedge = null
+labels.h0 = [1: {Block}:2 -> {If}:7 explicit=true labeled=true]
+labels.outer = [1: {If}:8 -> {Block}:1 explicit=false labeled=true]
+labels.h1 = [1: {Block}:3 -> {Block}:5 explicit=true labeled=true, 1: {Block}:3 -> {Block}:4 explicit=true labeled=true]
+labels.t = [4: {Block}:4 -> {Block}:1 ({Seq}:9) explicit=false labeled=true]
+labels.e = [4: {Block}:5 -> {Block}:1 ({Seq}:9) explicit=false labeled=true]
+labels.inner = [4: {If}:7 -> {Block}:1 ({Seq}:9) explicit=false labeled=true]
+labels.c = [4: {Block}:1 -> {Exit}:10 ({Root}:11) explicit=false labeled=false]
+labels.c.preds = [1: {If}:8 -> {Block}:1, 4: {Block}:4 -> {Block}:1 ({Seq}:9), 4: {Block}:5 -> {Block}:1 ({Seq}:9), 4: {If}:7 -> {Block}:1 ({Seq}:9)]
+labels.seq.labels = [4: {Block}:4 -> {Block}:1 ({Seq}:9), 4: {Block}:5 -> {Block}:1 ({Seq}:9), 4: {If}:7 -> {Block}:1 ({Seq}:9)]
+labels.root.labels = [4: {Block}:1 -> {Exit}:10 ({Root}:11)]
+labels.outer.labels = []
+merge.before = #4 #2
+merge.changed = true
+merge.stats = [{Block}:1]
+merge.ifstat = null
+merge.ifedge = 32: {Block}:1 -> {Block}:4
+merge.iftype = 0
+merge.h1.succs = [32: {Block}:1 -> {Block}:4]
+merge.parent.succs = [32: {If}:6 -> {Block}:3]
+merge.h2.succs = []
+merge.child.succs = []
+merge.a.preds = [32: {If}:6 -> {Block}:3]
+merge.b.preds = [32: {Block}:1 -> {Block}:4]
+merge.cond = BOOLEAN_AND#6(#3, BOOL_NOT#5(#1))
+merge.root = [{If}:6]
+or.changed = true
+or.seq = [{If}:5]
+or.seq.first = {If}:5
+or.second = [{Block}:1]
+or.second.first = {Block}:1
+or.ifedge = 32: {Block}:1 -> {Block}:3
+or.elseedge = null
+or.h1.parent = {If}:5
+or.h1.succs = [32: {Block}:1 -> {Block}:3]
+or.h2.succs = []
+or.first.succs = []
+or.second.succs = [32: {If}:5 -> {Block}:4]
+or.a.preds = [32: {Block}:1 -> {Block}:3]
+or.b.preds = [32: {If}:5 -> {Block}:4]
+or.cond = BOOLEAN_OR#6(#4, #2)
+or.root = [{Seq}:7]
+ternary.iftype = 1
+ternary.changed = true
+ternary.iftype2 = 0
+ternary.stats = [{Block}:1]
+ternary.ifstat = null
+ternary.elsestat = null
+ternary.ifedge = 32: {Block}:1 -> {Block}:4
+ternary.elseedge = null
+ternary.h0.succs = [32: {Block}:1 -> {Block}:4]
+ternary.main.succs = [32: {If}:9 -> {Block}:5]
+ternary.h1.succs = []
+ternary.h2.succs = []
+ternary.first.succs = []
+ternary.second.succs = []
+ternary.a.preds = [32: {Block}:1 -> {Block}:4]
+ternary.b.preds = [32: {If}:9 -> {Block}:5]
+ternary.cond = TERNARY#7(#5, #1, #3)
+ternary.root = [{If}:9]
