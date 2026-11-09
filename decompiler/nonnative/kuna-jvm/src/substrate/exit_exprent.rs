@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/ExitExprent.java`.
+//!
+//! kuna fix `lambda_type_variable_target`: a returned call is told the
+//! declared type it is returned as (`kuna_fix_lambda_type_variable_target`).
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -6,6 +9,8 @@ use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::{ExprProcessor, NullCastType};
 use crate::exprent::{Exprent, ExprentKind};
 use crate::i_matchable::MatchProperties;
+use crate::kuna_fix_lambda_type_variable_target;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::java_subclass;
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
@@ -158,14 +163,23 @@ impl ExitExprent {
             let ret_type = ret_type.expect("NullPointerException");
             if ret_type.type_ != CodeType::Void {
                 let mut ret = ret_type;
+                let mut generic = false;
                 if let Some(generic_ret) = method_descriptor
                     .as_ref()
                     .and_then(|md| md.generic_info())
                     .and_then(|gi| gi.return_type())
                 {
                     ret = generic_ret;
+                    generic = true;
                 }
                 buf.append_char(' ');
+
+                if kuna_fixes::enabled(KunaFix::LambdaTypeVariableTarget) {
+                    if let Some(inv) = value.and_then(|v| v.try_as_invocation()) {
+                        let target = kuna_fix_lambda_type_variable_target::return_target(&ret, generic);
+                        inv.d_mut(|d| d.kuna_target = target);
+                    }
+                }
 
                 ExprProcessor::get_casted_exprent_full(
                     value.expect("NullPointerException"),

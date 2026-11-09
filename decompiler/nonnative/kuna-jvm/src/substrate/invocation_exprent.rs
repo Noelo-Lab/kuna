@@ -22,6 +22,14 @@
 //! kuna fix `lambda_argument_overload`: in `append_param_list`, a lambda
 //! argument another overload's functional interface also accepts is
 //! ambiguous (`kuna_fix_lambda_argument_overload`).
+//!
+//! kuna fix `lambda_pertinence`: in `get_inferred_expr_type`, a type
+//! variable only lambdas and inexact method references map is missing, so a
+//! qualifier call gets explicit type arguments (`kuna_fix_lambda_pertinence`).
+//!
+//! kuna fix `lambda_type_variable_target`: in `append_param_list`, the
+//! lambdas an argument call takes for a bare type variable that javac
+//! resolves to another type are cast (`kuna_fix_lambda_type_variable_target`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -42,6 +50,8 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::i_matchable::MatchProperties;
 use crate::interpreter_util::InterpreterUtil;
 use crate::kuna_fix_lambda_argument_overload;
+use crate::kuna_fix_lambda_pertinence;
+use crate::kuna_fix_lambda_type_variable_target;
 use crate::kuna_fix_raw_receiver_erasure;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::link_constant::LinkConstant;
@@ -170,6 +180,16 @@ pub struct InvocationExprentData {
     /// kuna fix `kt_default_args_super_call`: per argument, the name it is
     /// written with (`name = arg`), or `None` to leave it out.
     pub kuna_arg_names: Option<Rc<[Option<String>]>>,
+    /// kuna fix `lambda_pertinence`: `generic_args` are the explicit type
+    /// arguments javac needs for this call, written even where the call has
+    /// no qualifier.
+    pub kuna_needs_type_args: bool,
+    /// kuna fix `lambda_type_variable_target`: the declared type the call's
+    /// value is returned as, when the writer knows one.
+    pub kuna_target: Option<VarType>,
+    /// kuna fix `lambda_type_variable_target`: the lambdas this call takes
+    /// for a bare type variable are cast to their interfaces.
+    pub kuna_cast_lambdas: bool,
 }
 
 impl InvocationExprentData {
@@ -193,6 +213,9 @@ impl InvocationExprentData {
             remapped_inst_type: None,
             force_generic_qualfication: false,
             generics_map: JHashMap::new(),
+            kuna_needs_type_args: false,
+            kuna_target: None,
+            kuna_cast_lambdas: false,
             is_invocation_instance: false,
             is_qualifier: false,
             boxing: BoxState::default(),
@@ -448,6 +471,7 @@ impl InvocationExprent {
 
         self.d_mut(|d| {
             d.generic_args.clear();
+            d.kuna_needs_type_args = false;
             d.generics_map.clear();
             d.remapped_inst_type = None;
         });
@@ -689,6 +713,8 @@ impl InvocationExprent {
                 }
 
                 let mut param_generics: JHashSet<VarType> = JHashSet::new();
+                let mut pertinent_generics: JHashSet<VarType> = JHashSet::new();
+                let pertinence = kuna_fixes::enabled(KunaFix::LambdaPertinence);
                 let lst_parameters = self.get_lst_parameters();
                 if !lst_parameters.is_empty() && desc.get_signature().is_some() {
                     let mut mask: Option<Vec<Option<VarVersionPair>>> = None;
@@ -790,6 +816,15 @@ impl InvocationExprent {
                                 );
                             }
                         }
+                        let non_pertinent: JHashSet<VarType> = if pertinence {
+                            JHashSet::from_collection(kuna_fix_lambda_pertinence::excluded_vars(
+                                parameter,
+                                &param_type,
+                                &fparams,
+                            ))
+                        } else {
+                            JHashSet::new()
+                        };
 
                         let mut combined = self.d(|d| d.generics_map.clone());
                         for (k, v) in upper_bounds_map.iter() {
@@ -862,6 +897,9 @@ impl InvocationExprent {
                                 for (from, to) in temp_map.entry_vec() {
                                     if !excluded.contains(&from) {
                                         param_generics.add(from.clone());
+                                        if !non_pertinent.contains(&from) {
+                                            pertinent_generics.add(from.clone());
+                                        }
                                     }
                                     if own_type_parameters_only
                                         && !contains_value(&fparams, &from.value)
@@ -900,6 +938,9 @@ impl InvocationExprent {
                             }
                             if !excluded.contains(&param_type) {
                                 param_generics.add(param_type.clone());
+                                if !non_pertinent.contains(&param_type) {
+                                    pertinent_generics.add(param_type.clone());
+                                }
                             }
                             if !own_type_parameters_only
                                 || contains_value(&fparams, &param_type.value)
@@ -962,6 +1003,13 @@ impl InvocationExprent {
                                 }
                             }
                         }
+                        let pertinence_missing = pertinence
+                            && !missing
+                            && fparams.iter().any(|param| {
+                                !pertinent_generics
+                                    .contains(&GenericType::parse(&format!("T{param};")))
+                            });
+                        missing |= pertinence_missing;
 
                         let is_invocation_instance = self.d(|d| d.is_invocation_instance);
                         let mut suppress = (!missing || !is_invocation_instance)
@@ -988,7 +1036,19 @@ impl InvocationExprent {
                                 &generics_map,
                                 &mut generic_args,
                             );
-                            self.d_mut(|d| d.generic_args = generic_args);
+                            if pertinence_missing
+                                && !kuna_fix_lambda_pertinence::writable(
+                                    &generic_args,
+                                    &JHashSet::from_collection(named.key_vec()),
+                                )
+                            {
+                                generic_args.clear();
+                            }
+                            let needs = pertinence_missing && !generic_args.is_empty();
+                            self.d_mut(|d| {
+                                d.generic_args = generic_args;
+                                d.kuna_needs_type_args = needs;
+                            });
                         } else if is_gen_new {
                             self.d_mut(|d| d.generic_args.push(GenericType::DUMMY_VAR().0));
                         }
@@ -1368,6 +1428,10 @@ impl InvocationExprent {
                     buf.append(".");
                     let generic_args = self.get_generic_args();
                     self.0.append_parameters(&mut buf, &generic_args);
+                } else if self.d(|d| d.kuna_needs_type_args) {
+                    kuna_fix_lambda_pertinence::append_qualifier(&mut buf, is_static, &classname);
+                    let generic_args = self.get_generic_args();
+                    self.0.append_parameters(&mut buf, &generic_args);
                 }
 
                 buf.add_bytecode_mapping(self.get_bytecode().as_ref());
@@ -1566,6 +1630,9 @@ impl InvocationExprent {
                 self, &matches,
             ));
         }
+        if kuna_fixes::enabled(KunaFix::LambdaTypeVariableTarget) {
+            set_ambiguous_parameters.or(&kuna_fix_lambda_type_variable_target::cast_arguments(self));
+        }
 
         if lst_parameters.len() == descriptor.params.len()
             && self.is_var_arg_call()
@@ -1579,6 +1646,10 @@ impl InvocationExprent {
                     last_new.set_var_arg_param(true);
                 }
             }
+        }
+
+        if kuna_fixes::enabled(KunaFix::LambdaTypeVariableTarget) {
+            kuna_fix_lambda_type_variable_target::mark(self);
         }
 
         let start: usize = if is_enum { 2 } else { 0 };

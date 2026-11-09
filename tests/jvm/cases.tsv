@@ -3338,6 +3338,19 @@ class	kuna-fixes/classes/pkg/TestLambdaCatchVarRename$Each.class
 class	kuna-fixes/classes/pkg/TestLambdaCatchVarRename$Task.class
 expected	kuna-fixes/expected-compat/pkg/TestLambdaCatchVarRename.java
 compare	TestLambdaCatchVarRename.java
+case	kuna-fixes-compat/pkg/TestLambdaPertinence	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestLambdaPertinence.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$Action.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$Box.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$Flow.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$Fn.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$It.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$Name.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$Order.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$Task.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$ToInt.class
+expected	kuna-fixes/expected-compat/pkg/TestLambdaPertinence.java
+compare	TestLambdaPertinence.java
 case	kuna-fixes-compat/pkg/TestLambdaSingletonReturnsKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestLambdaSingletonReturnsKt.class
@@ -3347,6 +3360,15 @@ class	kuna-fixes/classes/pkg/TestLambdaSingletonReturnsKt$search$1.class
 class	kuna-fixes/classes/pkg/TestLambdaSingletonReturnsKt$sign$1.class
 expected	kuna-fixes/expected-compat/pkg/TestLambdaSingletonReturnsKt.kt
 compare	TestLambdaSingletonReturnsKt.kt	TestLambdaSingletonReturnsKt.java
+case	kuna-fixes-compat/pkg/TestLambdaTypeVariableTarget	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget.class
+class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget$Chunk.class
+class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget$Chunked.class
+class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget$It.class
+class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget$Leaf.class
+class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget$Out.class
+expected	kuna-fixes/expected-compat/pkg/TestLambdaTypeVariableTarget.java
+compare	TestLambdaTypeVariableTarget.java
 case	kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass.class
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1.class
@@ -3590,6 +3612,15 @@ case	kuna-fixes-compat/pkg/TestTypeSwitchPatternType	Kuna Fixes, Vineflower comp
 class	kuna-fixes/classes/pkg/TestTypeSwitchPatternType.class
 expected	kuna-fixes/expected-compat/pkg/TestTypeSwitchPatternType.java
 compare	TestTypeSwitchPatternType.java
+case	kuna-fixes-compat/pkg/TestUncheckedCallResultCast	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestUncheckedCallResultCast.class
+class	kuna-fixes/classes/pkg/TestUncheckedCallResultCast$Box.class
+class	kuna-fixes/classes/pkg/TestUncheckedCallResultCast$Factory.class
+class	kuna-fixes/classes/pkg/TestUncheckedCallResultCast$Kind.class
+class	kuna-fixes/classes/pkg/TestUncheckedCallResultCast$Shape.class
+class	kuna-fixes/classes/pkg/TestUncheckedCallResultCast$Shelf.class
+expected	kuna-fixes/expected-compat/pkg/TestUncheckedCallResultCast.java
+compare	TestUncheckedCallResultCast.java
 case	kuna-fixes-compat/pkg/TestUncheckedGenericCast	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestUncheckedGenericCast.class
 class	kuna-fixes/classes/pkg/TestUncheckedGenericCast$Entry.class
@@ -3843,6 +3874,19 @@ class	kuna-fixes/classes/pkg/TestLambdaCatchVarRename$Each.class
 class	kuna-fixes/classes/pkg/TestLambdaCatchVarRename$Task.class
 expected	kuna-fixes/expected/pkg/TestLambdaCatchVarRename.java
 compare	TestLambdaCatchVarRename.java
+case	kuna-fixes/pkg/TestLambdaPertinence	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestLambdaPertinence.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$Action.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$Box.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$Flow.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$Fn.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$It.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$Name.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$Order.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$Task.class
+class	kuna-fixes/classes/pkg/TestLambdaPertinence$ToInt.class
+expected	kuna-fixes/expected/pkg/TestLambdaPertinence.java
+compare	TestLambdaPertinence.java
 case	kuna-fixes/pkg/TestLambdaSingletonReturnsKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestLambdaSingletonReturnsKt.class
@@ -3852,6 +3896,15 @@ class	kuna-fixes/classes/pkg/TestLambdaSingletonReturnsKt$search$1.class
 class	kuna-fixes/classes/pkg/TestLambdaSingletonReturnsKt$sign$1.class
 expected	kuna-fixes/expected/pkg/TestLambdaSingletonReturnsKt.kt
 compare	TestLambdaSingletonReturnsKt.kt	TestLambdaSingletonReturnsKt.java
+case	kuna-fixes/pkg/TestLambdaTypeVariableTarget	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget.class
+class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget$Chunk.class
+class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget$Chunked.class
+class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget$It.class
+class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget$Leaf.class
+class	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget$Out.class
+expected	kuna-fixes/expected/pkg/TestLambdaTypeVariableTarget.java
+compare	TestLambdaTypeVariableTarget.java
 case	kuna-fixes/pkg/TestLocalClassAnonymousSubclass	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass.class
 class	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass$1.class
@@ -4095,6 +4148,15 @@ case	kuna-fixes/pkg/TestTypeSwitchPatternType	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestTypeSwitchPatternType.class
 expected	kuna-fixes/expected/pkg/TestTypeSwitchPatternType.java
 compare	TestTypeSwitchPatternType.java
+case	kuna-fixes/pkg/TestUncheckedCallResultCast	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestUncheckedCallResultCast.class
+class	kuna-fixes/classes/pkg/TestUncheckedCallResultCast$Box.class
+class	kuna-fixes/classes/pkg/TestUncheckedCallResultCast$Factory.class
+class	kuna-fixes/classes/pkg/TestUncheckedCallResultCast$Kind.class
+class	kuna-fixes/classes/pkg/TestUncheckedCallResultCast$Shape.class
+class	kuna-fixes/classes/pkg/TestUncheckedCallResultCast$Shelf.class
+expected	kuna-fixes/expected/pkg/TestUncheckedCallResultCast.java
+compare	TestUncheckedCallResultCast.java
 case	kuna-fixes/pkg/TestUncheckedGenericCast	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestUncheckedGenericCast.class
 class	kuna-fixes/classes/pkg/TestUncheckedGenericCast$Entry.class

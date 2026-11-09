@@ -1960,6 +1960,62 @@ FIX_GROUPS = {
 }
 
 
+def without_type_arguments(toks, qualifiers):
+    """The tokens without the explicit type arguments of method calls (`.<T>m(` to `.m(`), and, with
+    `qualifiers`, without the `C.` or `this.` written before them (`C.<T>m(` to `m(`)."""
+    out, i, found = [], 0, False
+    while i < len(toks):
+        if toks[i] == '<' and out and out[-1] == '.':
+            depth, j = 0, i
+            while j < len(toks):
+                depth += {'<': 1, '>': -1}.get(toks[j], 0)
+                j += 1
+                if depth == 0:
+                    break
+            if j + 1 < len(toks) and IDENT.match(toks[j]) and toks[j + 1] == '(':
+                found = True
+                if qualifiers and len(out) >= 2 and IDENT.match(out[-2]) and (len(out) < 3 or out[-3] != '.'):
+                    out = out[:-2]
+                i = j
+                continue
+        out.append(toks[i])
+        i += 1
+    return out if found else None
+
+
+def lambda_pertinence(old, new):
+    """lambda_pertinence: calls got explicit type arguments, `x.<T>m(` (or `C.<T>m(` / `this.<T>m(`
+    for an unqualified `m(`), the lines possibly reflowed."""
+    a, b = tokens(old), tokens(new)
+    return a != b and a in (without_type_arguments(b, False), without_type_arguments(b, True))
+
+
+def lambda_type_variable_target(old, new):
+    """lambda_type_variable_target: a lambda argument of a call that is itself an argument became
+    `(Interface)(lambda)`, the lines possibly reflowed."""
+    return lambda_argument_overload(old, new)
+
+
+RECOGNISERS['lambda_pertinence'] = lambda_pertinence
+
+
+def unchecked_call_result_cast(old, new):
+    """unchecked_call_result_cast: casts added (none dropped) to returned or assigned values, nothing
+    else changed (the operand a call, which unchecked_generic_cast's recogniser leaves alone)."""
+    if not cast_only(old, new):
+        return False
+    a, b = tokens(old), tokens(new)
+    casts = [i for i in range(len(b)) if cast_at(b, i) is not None]
+    if len(casts) <= sum(cast_at(a, i) is not None for i in range(len(a))):
+        return False
+    old_casts = [a[j:cast_at(a, j) + 1] for j in range(len(a)) if cast_at(a, j) is not None]
+    return all(i > 0 and b[i - 1] in ('return', '=') for i in casts if b[i:cast_at(b, i) + 1] not in old_casts)
+
+
+RECOGNISERS['unchecked_call_result_cast'] = unchecked_call_result_cast
+RECOGNISERS['lambda_type_variable_target'] = lambda_type_variable_target
+
+
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)
     if kind != 'other':
