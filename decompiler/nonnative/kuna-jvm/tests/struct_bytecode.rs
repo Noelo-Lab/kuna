@@ -679,6 +679,7 @@ fn members_share_the_base_api() {
     let ctor = cl
         .get_methods()
         .iter()
+        .copied()
         .find(|m| m.get_name() == "<init>")
         .unwrap();
     let members: Vec<StructMember> = vec![cl.0, field.0, ctor.0, rc.into()];
@@ -708,6 +709,7 @@ fn members_share_the_base_api() {
     let lambda = cl
         .get_methods()
         .iter()
+        .copied()
         .find(|m| m.get_name() == "describe")
         .unwrap();
     assert!(!lambda.is_synthetic());
@@ -743,6 +745,7 @@ fn annotations_become_exprents_per_class_scope() {
     let method = cl
         .get_methods()
         .iter()
+        .copied()
         .find(|m| m.get_name() == "method")
         .unwrap();
     let params = method

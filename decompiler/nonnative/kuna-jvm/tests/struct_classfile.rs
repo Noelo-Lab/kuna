@@ -376,7 +376,7 @@ fn attribute_lines(out: &mut String, member: StructMember, pool: ConstantPool, p
                     let path: Vec<String> = t
                         .path
                         .iter()
-                        .map(|p| format!("{}:{}", p.kind as i32, p.type_arg))
+                        .map(|p| format!("{}:{}", p.kind() as i32, p.type_arg()))
                         .collect();
                     writeln!(
                         out,
@@ -634,7 +634,7 @@ pub fn render_class(cl: StructClass) -> String {
         writeln!(out, " flags 0x{:04x}", fd.get_access_flags()).unwrap();
         attribute_lines(&mut out, fd.0, pool, " ");
     }
-    for mt in cl.get_methods().iter() {
+    for &mt in cl.get_methods().iter() {
         writeln!(out, "method {} {}", mt.get_name(), mt.get_descriptor()).unwrap();
         writeln!(out, " flags 0x{:04x}", mt.get_access_flags()).unwrap();
         attribute_lines(&mut out, mt.0, pool, " ");
