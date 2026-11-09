@@ -72,7 +72,7 @@ impl PrintC {
     fn rust_integer_declared_type(
         &self,
         fd: &Funcdata,
-        arch: &Architecture,
+        _arch: &Architecture,
         value: VarnodeId,
     ) -> Option<Rc<Datatype>> {
         let node = fd.vbank().get(value)?;

@@ -83,5 +83,3 @@ fn an_unresolvable_member_is_skipped() {
     let m = vec![None, member(5, false, ty(4, type_metatype::TYPE_INT)), None];
     assert_eq!(pick_representative(m.into_iter()), Some(vid(5)));
 }
-
-/// The option parses `on`/`off` and refuses anything else.

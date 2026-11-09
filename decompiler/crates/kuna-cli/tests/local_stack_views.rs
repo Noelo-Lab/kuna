@@ -372,12 +372,8 @@ fn escaped_scalar_writes_reach_every_observer_and_readback() {
         let enabled = decompile(&image, function, &contracts);
         assert_eq!(escaped_publications(&enabled), publications, "{enabled}");
         execute_emitted(&compilers, &image, function, cases, &enabled);
-        let disabled = decompile(&image, function, false, &contracts);
-        assert!(!disabled.contains("union stack_views_"), "{disabled}");
         if function == "escaped_loop" {
-            let full = decompile_with_views(&image, function, true, &contracts, true);
-            let prior = decompile_with_views(&image, function, false, &contracts, true);
-            assert_eq!(full, prior);
+            let full = decompile_with_views(&image, function, &contracts, true);
             execute_emitted(&compilers, &image, function, cases, &full);
         }
     }

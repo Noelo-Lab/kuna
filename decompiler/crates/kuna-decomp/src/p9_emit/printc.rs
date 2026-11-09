@@ -7053,7 +7053,7 @@ impl PrintC {
 
     /// Opens the union that stores a float result's bits in the explicit word variable
     /// `op` assigns ([`crate::kuna_bitcast::word_result`]); the result expression closes it.
-    fn push_word_result_open(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+    fn push_word_result_open(&mut self, fd: &Funcdata, _arch: &Architecture, op: OpId) {
         if self.out_lang != crate::kuna_lang::OutLang::C {
             return;
         }
@@ -13751,7 +13751,7 @@ fn lowered_switch_label_form(
 /// representative.
 pub(crate) fn decl_type_representative(
     fd: &Funcdata,
-    arch: &Architecture,
+    _arch: &Architecture,
     high: crate::context::HighVariableId,
 ) -> Option<crate::context::VarnodeId> {
     let rep = decl_rep_varnode(fd, high)?;
@@ -13767,7 +13767,7 @@ pub(crate) fn decl_type_representative(
 
 /// The declared type of the variable a `BRANCHIND` reads: a parameter's prototype
 /// type, or a local's declaration type. `None` for an expression.
-fn switch_variable_type(fd: &Funcdata, arch: &Architecture, op: OpId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+fn switch_variable_type(fd: &Funcdata, _arch: &Architecture, op: OpId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
     let vid = fd.obank().get(op)?.get_in(0)?;
     declared_variable_type(fd, vid)
 }

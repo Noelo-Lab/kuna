@@ -32,19 +32,19 @@ fn subphase_count_is_48() {
 }
 
 #[test]
-fn surface_count_is_121() {
-    assert_eq!(kuna_num_surfaces(), 121);
-    assert_eq!(SURFACE_TABLE.len(), 121);
+fn surface_count_is_113() {
+    assert_eq!(kuna_num_surfaces(), 113);
+    assert_eq!(SURFACE_TABLE.len(), 113);
 }
 
 #[test]
-fn settable_count_is_395() {
-    assert_eq!(kuna_num_settables(), 395);
-    assert_eq!(SETTABLE_TABLE.len(), 395);
+fn settable_count_is_361() {
+    assert_eq!(kuna_num_settables(), 361);
+    assert_eq!(SETTABLE_TABLE.len(), 361);
 }
 
 #[test]
-fn tier_counts_are_136_core_158_transform_101_analysis() {
+fn tier_counts_are_110_core_150_transform_101_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_136_core_158_transform_101_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (136, 158, 101));
+    assert_eq!((core, transform, analysis), (110, 150, 101));
 }
 
 #[test]
@@ -627,10 +627,6 @@ fn option_values_live_value_present_for_189() {
                             | "branchflip"
                             | "namestyle"
                             | "foldcallret"
-                            // (kuna) `foldcallretphi` extends `foldcallret`'s
-                            // decision and shares its seam, so it reports its
-                            // live state the same way its sibling does.
-                            | "foldcallretphi"
                             // (kuna) `indirectonly` gates an engine-side
                             // Varnode flag read by `HighVariable::has_name` and
                             // `Merge::merge_test_adjacent`, not a printer flag;
@@ -645,9 +641,7 @@ fn option_values_live_value_present_for_189() {
                             | "iteregion"
                             | "iteexpr"
                             | "iteboolean"
-                            | "itecondlist"
                             | "returndup"
-                            | "orchain"
                             | "rettriangle"
                             | "earlyreturn"
                             | "switchreturn"
@@ -830,7 +824,6 @@ fn option_values_live_value_present_for_189() {
     // live reader (a bool `live_true`/`live_false` pair) cannot express -- the
     // same reason `warnstyle` and `namestyle` are there.
     // 28 -> 29: +1 for `peimportcall` (live_field = analysis_peimportcall);
-    // `itecondlist` declares no live_field, so it does not move this count.
     // 29 -> 30: +1 for `funcboundflow` (live_field = funcbound_flow).
     // 30 -> 31: +1 for `evalcurrentproto` (live_field = evalcurrentproto).
     // 31 -> 32: +1 for `msvcftol` (live_field = msvc_ftol).
@@ -973,7 +966,7 @@ fn option_values_live_value_present_for_189() {
     // 179 -> 181: +1 for `copywaves` (pool_copy_waves), +1 for `armderef` (analysis_armderef).
     // 178 -> 179: +1 for `ptrauthtrap` (live_field = ptrauth_trap).
     // 179 -> 180: +1 for `authptrcall` (live_field = analysis_authptrcall).
-    assert_eq!(with_live, 189);
+    assert_eq!(with_live, 162);
 }
 
 #[test]
@@ -1213,7 +1206,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `ptrauthtrap`; its P2 row sits beside `gowritebarrier`.
     // +1 for `authptrcall`; its P1 row sits beside `peimportcall`.
     // +1 for `swiftmetadata`; its P1 row sits beside `objc`.
-    assert_eq!(json.matches("},\n").count(), 394);
+    assert_eq!(json.matches("},\n").count(), 360);
 }
 
 #[test]

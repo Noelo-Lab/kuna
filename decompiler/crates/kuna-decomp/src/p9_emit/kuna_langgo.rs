@@ -879,7 +879,7 @@ impl PrintC {
     pub(crate) fn go_value_type(
         &self,
         fd: &Funcdata,
-        arch: &Architecture,
+        _arch: &Architecture,
         vn: VarnodeId,
         op: OpId,
     ) -> Rc<Datatype> {
