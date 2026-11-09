@@ -1,17 +1,21 @@
-// Golden vectors for FunctionExprent over constant leaves, from Vineflower 1.12.0
-// itself. Regenerate with `sh gen.sh <vineflower-1.12.0.jar>`.
+// Golden vectors for FunctionExprent and AssignmentExprent over constant and static
+// field leaves, from Vineflower 1.12.0 itself. Regenerate with `sh gen.sh <jar>`.
 //
 // The context is the one GenConstOracle makes, with preferred-line-length 40 so that
-// reformat() exercises the newline groups. Each tree is written in prefix form and
-// every column is computed on a tree freshly built from that text:
-//   tree   (FUNC[!][@TYPE] operand...) | C:TYPE:value | G0:int | G1:int | T:signature
+// reformat() exercises the newline groups, and with b02/B02Fields (args[0]) as the
+// current class. Each tree is written in prefix form and every column is computed on a
+// tree freshly built from that text:
+//   tree   (FUNC[!][@TYPE] operand...) | (=[FUNC] left right) | C:TYPE:value | G0:int |
+//          G1:int | T:signature | FS:name:descriptor | FX:class:name:descriptor
 //          ! = setNeedsCast(false), @TYPE = setImplicitType(VarType.TYPE),
+//          = = AssignmentExprent(left, right, FUNC or null, null),
+//          FS / FX = a static FieldExprent of B02Fields / of another class,
 //          C = ConstExprent(VarType.TYPE, value, null), G = ConstExprent(int, boolPermitted, null),
 //          T = ConstExprent(new VarType(signature), null, null); values as in GenConstOracle,
 //          strings as S:x followed by hex UTF-16 units
 //   F tree exprType inferred inferredText bounds precedence toJava reformatted
 //     inferred/inferredText: getInferredExprType(null), then toJava of that same tree
-//     bounds: per FunctionExprent in preorder, "i:" + L<j>=type / U<j>=type pairs (or the
+//     bounds: per Function/AssignmentExprent in preorder, "i:" + L<j>=type / U<j>=type pairs (or the
 //             throw), joined by " | "; i and j are preorder indices
 import org.jetbrains.java.decompiler.main.ClassesProcessor;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
@@ -19,12 +23,15 @@ import org.jetbrains.java.decompiler.main.Fernflower;
 import org.jetbrains.java.decompiler.main.collectors.ImportCollector;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.AssignmentExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.ConstExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.FieldExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent.FunctionType;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.CheckTypesResult;
 import org.jetbrains.java.decompiler.struct.StructClass;
+import org.jetbrains.java.decompiler.struct.gen.FieldDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
 import org.jetbrains.java.decompiler.util.DataInputFullStream;
 import org.jetbrains.java.decompiler.util.TextBuffer;
@@ -102,6 +109,13 @@ public class GenFunctionOracle {
     String t = toks[pos++];
     if (t.equals("(")) {
       String head = toks[pos++];
+      if (head.startsWith("=")) {
+        Exprent left = parse();
+        Exprent right = parse();
+        pos++;
+        FunctionType cond = head.length() > 1 ? FunctionType.valueOf(head.substring(1)) : null;
+        return new AssignmentExprent(left, right, cond, null);
+      }
       String implicit = null;
       int at = head.indexOf('@');
       if (at >= 0) {
@@ -123,6 +137,13 @@ public class GenFunctionOracle {
     }
     if (t.startsWith("T:")) {
       return new ConstExprent(new VarType(t.substring(2)), null, null);
+    }
+    if (t.startsWith("FS:") || t.startsWith("FX:")) {
+      String[] p = t.split(":");
+      String cls = t.startsWith("FS:") ? "b02/B02Fields" : p[1];
+      String name = p[p.length - 2];
+      String desc = p[p.length - 1];
+      return new FieldExprent(name, cls, true, null, FieldDescriptor.parseDescriptor(desc), null);
     }
     int colon = t.indexOf(':', 2);
     return new ConstExprent(type(t.substring(2, colon)), value(t.substring(colon + 1)), null);
@@ -236,7 +257,7 @@ public class GenFunctionOracle {
     pre(root, all);
     StringBuilder sb = new StringBuilder();
     for (int i = 0; i < all.size(); i++) {
-      if (!(all.get(i) instanceof FunctionExprent)) continue;
+      if (!(all.get(i) instanceof FunctionExprent) && !(all.get(i) instanceof AssignmentExprent)) continue;
       Exprent e = all.get(i);
       String one = run(() -> {
         CheckTypesResult r = e.checkExprTypeBounds();
@@ -357,6 +378,38 @@ public class GenFunctionOracle {
     };
     for (String t : fixed) tree(t);
     for (int k = 0; k < 1500; k++) tree(gen(1 + RND.nextInt(5)));
+
+    String[] fields = {"FS:CONST:I", "FS:LETTER:C", "FS:counter:I", "FS:BIG:J", "FS:NAME:Ljava/lang/String;",
+      "FS:missing:I", "FX:java/lang/System:out:Ljava/io/PrintStream;", "FX:java/lang/Integer:MAX_VALUE:I"};
+    String[] conds = {"", "ADD", "SUB", "MUL", "DIV", "AND", "OR", "XOR", "REM", "SHL", "SHR", "USHR"};
+    String[] assigns = {
+      "(= FS:CONST:I C:VARTYPE_INT:I:5)",
+      "(= FS:counter:I G0:65)",
+      "(= FS:LETTER:C G0:98)",
+      "(= FS:LETTER:C G0:10)",
+      "(= FS:LETTER:C G0:300)",
+      "(=ADD FS:counter:I C:VARTYPE_INT:I:1)",
+      "(=SHL FS:counter:I G0:2)",
+      "(=USHR FS:BIG:J G0:3)",
+      "(= FS:CONST:I C:VARTYPE_LONG:J:5)",
+      "(= FS:BIG:J G0:3)",
+      "(= FS:NAME:Ljava/lang/String; C:VARTYPE_NULL:N)",
+      "(= FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)",
+      "(= FS:counter:I (TERNARY G1:1 G0:1 G0:2))",
+      "(= FS:LETTER:C (TERNARY G1:1 G0:1 G0:2))",
+      "(= FS:counter:I (CAST C:VARTYPE_LONG:J:7 T:I))",
+      "(= FS:counter:I (CAST! C:VARTYPE_LONG:J:7 T:I))",
+      "(= FS:counter:I (= FS:CONST:I G0:3))",
+      "(= C:VARTYPE_INT:I:1 C:VARTYPE_INT:I:2)",
+      "(= FS:NAME:Ljava/lang/String; (STR_CONCAT " + s1 + " " + i1 + "))",
+      "(=ADD FS:NAME:Ljava/lang/String; " + s1 + ")",
+      "(= FS:missing:I C:VARTYPE_DOUBLE:D:4004000000000000)",
+    };
+    for (String t : assigns) tree(t);
+    for (int k = 0; k < 300; k++) {
+      String cond = conds[RND.nextInt(conds.length)];
+      tree("(=" + cond + " " + fields[RND.nextInt(fields.length)] + " " + gen(RND.nextInt(4)) + ")");
+    }
 
     System.out.print(OUT);
   }

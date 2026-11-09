@@ -1554,3 +1554,324 @@ F	G0:65535	C	C	'\\uffff'		0	'\\uffff'	EXC:IndexOutOfBoundsException:Index 1 out 
 F	G0:3	X	X	3		0	3	3
 F	C:VARTYPE_BOOLEAN:I:0	Z	Z	false		0	false	false
 F	(REM (L2I (I2C G0:65535)) (XOR (GE (CAST (BOOLEAN_OR C:VARTYPE_INT:I:-1 C:VARTYPE_BOOLEAN:I:0) T:[I) (REM (I2S G0:3) (I2D! C:VARTYPE_INT:I:65280))) (LT (REM (L2F C:VARTYPE_CHAR:I:10) C:VARTYPE_NULL:N) C:VARTYPE_STRING:S:x0073)))	I	I	(int)((char)'\\uffff') % ((int[])(-1 || false) >= (short)3 % 65280 ^ (float)'\\n' % null < "s")	0:L4=X,L1=X, | 1: | 2:L3=X,U3=I, | 4: | 5:L11=X,L6=X, | 6:L7=--null--,U7=[I, | 7: | 11:L14=X,L12=X, | 12:L13=X,U13=I, | 14:L15=X,U15=I, | 16:L21=X,L17=X, | 17:L20=X,L18=X, | 18:	2	(int)((char)'\\uffff') % ((int[])(-1 || false) >= (short)3 % 65280 ^ (float)'\\n' % null < "s")	(int)((char)'\\uffff')\n   % (\n      (int[])(-1 || false)\n            >= (short)3 % 65280\n         ^ (float)'\\n' % null < "s"\n   )
+F	(= FS:CONST:I C:VARTYPE_INT:I:5)	I	I	CONST = 5	0:L1=I,	13	CONST = 5	CONST = 5
+F	(= FS:counter:I G0:65)	I	I	counter = 65	0:L1=I,	13	counter = 65	counter = 65
+F	(= FS:LETTER:C G0:98)	C	C	LETTER = 'b'	0:L1=C,	13	LETTER = 'b'	LETTER = 'b'
+F	(= FS:LETTER:C G0:10)	C	C	LETTER = '\\n'	0:L1=C,	13	LETTER = '\\n'	LETTER = '\\n'
+F	(= FS:LETTER:C G0:300)	C	C	LETTER = 300	0:L1=C,	13	LETTER = 300	LETTER = 300
+F	(=ADD FS:counter:I C:VARTYPE_INT:I:1)	I	I	counter += 1	0:L1=I,	13	counter += 1	counter += 1
+F	(=SHL FS:counter:I G0:2)	I	I	counter <<= 2	0:L1=I,	13	counter <<= 2	counter <<= 2
+F	(=USHR FS:BIG:J G0:3)	J	J	BIG >>>= 3	0:L2=J,	13	BIG >>>= 3	BIG >>>= 3
+F	(= FS:CONST:I C:VARTYPE_LONG:J:5)	I	I	CONST = (int)5L	0:L1=J,	13	CONST = (int)5L	CONST = (int)5L
+F	(= FS:BIG:J G0:3)	J	J	BIG = (long)3	0:L2=J,	13	BIG = (long)3	BIG = (long)3
+F	(= FS:NAME:Ljava/lang/String; C:VARTYPE_NULL:N)	Ljava/lang/String;	Ljava/lang/String;	NAME = null	0:L1=Ljava/lang/String;,	13	NAME = null	NAME = null
+F	(= FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_NULL:N)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out = null	0:L1=Ljava/io/PrintStream;,	13	System.out = null	System.out = null
+F	(= FS:counter:I (TERNARY G1:1 G0:1 G0:2))	I	I	counter = true ? 1 : 2	0:L1=I, | 2:L3=Z,L4=X,L5=X,U3=Z,U4=I,U5=I,	13	counter = true ? 1 : 2	counter = true ? 1 : 2
+F	(= FS:LETTER:C (TERNARY G1:1 G0:1 G0:2))	I	C	LETTER = (char)(true ? 1 : 2)	0:L1=C, | 2:L3=Z,L4=X,L5=X,U3=Z,U4=I,U5=I,	13	LETTER = (char)(true ? 1 : 2)	LETTER = (char)(true ? 1 : 2)
+F	(= FS:counter:I (CAST C:VARTYPE_LONG:J:7 T:I))	I	I	counter = (int)7L	0:L1=I, | 2:L3=X,U3=I,	13	counter = (int)7L	counter = (int)7L
+F	(= FS:counter:I (CAST! C:VARTYPE_LONG:J:7 T:I))	I	I	counter = (int)7L	0:L1=I, | 2:L3=X,U3=I,	13	counter = (int)7L	counter = (int)7L
+F	(= FS:counter:I (= FS:CONST:I G0:3))	I	I	counter = CONST = 3	0:L1=I, | 2:L3=I,	13	counter = CONST = 3	counter = CONST = 3
+F	(= C:VARTYPE_INT:I:1 C:VARTYPE_INT:I:2)	I	I	1 = 2	0:L1=I,	13	1 = 2	1 = 2
+F	(= FS:NAME:Ljava/lang/String; (STR_CONCAT C:VARTYPE_STRING:S:x0078 C:VARTYPE_INT:I:1))	Ljava/lang/String;	Ljava/lang/String;	NAME = "x" + 1	0:L1=Ljava/lang/String;, | 2:L3=Ljava/lang/String;,	13	NAME = "x" + 1	NAME = "x" + 1
+F	(=ADD FS:NAME:Ljava/lang/String; C:VARTYPE_STRING:S:x0078)	Ljava/lang/String;	Ljava/lang/String;	NAME += "x"	0:L1=Ljava/lang/String;,	13	NAME += "x"	NAME += "x"
+F	(= FS:missing:I C:VARTYPE_DOUBLE:D:4004000000000000)	I	I	missing = (int)2.5	0:L1=D,	13	missing = (int)2.5	missing = (int)2.5
+F	(=SUB FX:java/lang/System:out:Ljava/io/PrintStream; (LCMP (BOOLEAN_OR (L2D G0:0) (EQ G0:65535 C:VARTYPE_NULL:N)) (GE (BIT_NOT C:VARTYPE_DOUBLE:D:4004000000000000) (NEG G0:97))))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out -= __lcmp__(((double)0 || '\\uffff' == null), (~2.5 >= -97))	0:L2=--null--, | 2: | 3: | 4: | 6: | 9:L12=X,L10=X, | 10:L11=X, | 12:L13=X,	13	System.out -= __lcmp__(((double)0 || '\\uffff' == null), (~2.5 >= -97))	System.out -= __lcmp__((\n   (double)0 || '\\uffff' == null\n), (~2.5 >= -97))
+F	(=XOR FS:missing:I C:VARTYPE_INTEGER:I:4)	I	I	missing ^= 4	0:L1=Ljava/lang/Integer;,	13	missing ^= 4	missing ^= 4
+F	(=SHR FS:missing:I (GE (GE (GT C:VARTYPE_INTEGER:I:4 G0:97) C:VARTYPE_BOOLEAN:I:1) (XOR (INSTANCEOF G1:0 T:Ljava/util/List;) (I2D! C:VARTYPE_STRING:S:x0073))))	I	I	missing >>= 4 > 97 >= true >= (false instanceof List ^ "s")	0:L2=X, | 2:L8=X,L3=X, | 3:L7=X,L4=X, | 4:L6=X,L5=X, | 8: | 9: | 12:L13=X,U13=I,	13	missing >>= 4 > 97 >= true >= (false instanceof List ^ "s")	missing >>= 4\n   > 97\n   >= true\n   >= (false instanceof List ^ "s")
+F	(=SHL FS:counter:I C:VARTYPE_INT:I:-1)	I	I	counter <<= -1	0:L1=I,	13	counter <<= -1	counter <<= -1
+F	(= FS:missing:I G0:127)	I	I	missing = 127	0:L1=I,	13	missing = 127	missing = 127
+F	(=ADD FS:missing:I (MMI@VARTYPE_LONG C:VARTYPE_INT:I:7))	I	I	missing += --7	0:L1=J, | 2:L3=J,U3=J,	13	missing += --7	missing += --7
+F	(=MUL FS:BIG:J C:VARTYPE_LONG:J:5)	J	J	BIG *= 5L	0:L1=J,	13	BIG *= 5L	BIG *= 5L
+F	(=AND FS:BIG:J G1:1)	J	J	BIG &= true	0:L2=J,	13	BIG &= true	BIG &= true
+F	(=MUL FS:missing:I C:VARTYPE_FLOAT:F:3fc00000)	I	I	missing *= 1.5F	0:L1=F,	13	missing *= 1.5F	missing *= 1.5F
+F	(=AND FS:counter:I (EQ (GE C:VARTYPE_INT:I:7 C:VARTYPE_INT:I:65535) (TERNARY G0:2 C:VARTYPE_INT:I:100000 G0:255)))	I	I	counter &= 7 >= 65535 == (2 ? 100000 : 255)	0:L2=X, | 2:L3=X, | 3:L5=X,L4=X, | 6:L7=Z,L8=X,L9=X,U7=Z,U8=I,U9=I,	13	counter &= 7 >= 65535 == (2 ? 100000 : 255)	counter &= 7 >= 65535\n   == (2 ? 100000 : 255)
+F	(=AND FS:BIG:J (BOOLEAN_AND G0:255 C:VARTYPE_LONG:J:-1))	J	J	BIG &= 255 && -1L	0:L2=J, | 2:	13	BIG &= 255 && -1L	BIG &= 255 && -1L
+F	(=DIV FX:java/lang/System:out:Ljava/io/PrintStream; (MMI@VARTYPE_INT (DCMPG (NEG G0:0) (DCMPG C:VARTYPE_FLOAT:F:3fc00000 G0:255))))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out /= --__dcmpg__((-0), (__dcmpg__((1.5F), (255))))	0:L2=--null--, | 2:L3=I,U3=I, | 3: | 4:L5=X, | 6:	13	System.out /= --__dcmpg__((-0), (__dcmpg__((1.5F), (255))))	System.out /= --__dcmpg__((-0), (\n   __dcmpg__((1.5F), (255))\n))
+F	(=ADD FS:LETTER:C (TERNARY G0:65535 (EQ (NEG C:VARTYPE_FLOAT:F:3dcccccd) (F2D! C:VARTYPE_INT:I:100000)) (ADD (L2I C:VARTYPE_INT:I:65280) (DCMPG C:VARTYPE_DOUBLE:D:bfe8000000000000 G0:1))))	I	C	LETTER += '\\uffff' ? -0.1F == 100000 : (int)65280 + __dcmpg__((-0.75), (1))	0:L1=C, | 2:L3=Z,L4=X,L9=X,U3=Z,U4=I,U9=I, | 4: | 5:L6=X, | 7: | 9:L12=X,L10=X, | 10: | 12:	13	LETTER += '\\uffff' ? -0.1F == 100000 : (int)65280 + __dcmpg__((-0.75), (1))	LETTER += '\\uffff'\n   ? -0.1F == 100000\n   : (int)65280\n      + __dcmpg__((-0.75), (1))
+F	(=USHR FS:LETTER:C (SHL C:VARTYPE_INT:I:3 C:VARTYPE_STRING:S:x0073))	I	C	LETTER >>>= 3 << "s"	0:L1=I, | 2:L4=X,L3=X,	13	LETTER >>>= 3 << "s"	LETTER >>>= 3 << "s"
+F	(=SUB FS:BIG:J (I2L (L2I C:VARTYPE_SHORT:I:-300)))	J	J	BIG -= (long)((int)-300)	0:L1=J, | 2:L3=X,U3=I, | 3:	13	BIG -= (long)((int)-300)	BIG -= (long)((int)-300)
+F	(=AND FS:missing:I (L2I G0:2))	I	I	missing &= (int)2	0:L1=I, | 2:	13	missing &= (int)2	missing &= (int)2
+F	(=SHR FS:missing:I (REM G1:0 C:VARTYPE_STRING:S:x0073))	I	I	missing >>= false % "s"	0:L1=I, | 2:L4=X,L3=X,	13	missing >>= false % "s"	missing >>= false % "s"
+F	(=ADD FX:java/lang/System:out:Ljava/io/PrintStream; (GT (ADD (ADD C:VARTYPE_STRING:S:x0073 G0:10) (SHR C:VARTYPE_BOOLEAN:I:1 G0:65535)) G1:0))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out += "s" + 10 + (true >> '\\uffff') > false	0:L2=--null--, | 2:L10=X,L3=X, | 3:L7=X,L4=X, | 4:L6=X,L5=X, | 7:L9=X,L8=X,	13	System.out += "s" + 10 + (true >> '\\uffff') > false	System.out += "s"\n      + 10\n      + (true >> '\\uffff')\n   > false
+F	(= FS:LETTER:C (IPP (SHL C:VARTYPE_NULL:N C:VARTYPE_INT:I:1)))	EXC:NullPointerException:Cannot read field "type" because "other" is null	C	EXC:NullPointerException:Cannot read field "type" because "other" is null	0:EXC:NullPointerException:Cannot read field "typeFamily" because "typeRight" is null | 2:EXC:NullPointerException:Null not expected here | 3:L5=X,L4=X,	13	EXC:NullPointerException:Cannot read field "type" because "other" is null	EXC:NullPointerException:Cannot read field "type" because "other" is null
+F	(=SUB FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_STRING:S:x0073)	Ljava/lang/Object;	Ljava/io/PrintStream;	System.out -= "s"	0:L1=Ljava/lang/Object;,	13	System.out -= "s"	System.out -= "s"
+F	(=SHR FS:counter:I C:VARTYPE_FLOAT:F:3fc00000)	I	I	counter >>= 1.5F	0:L1=F,	13	counter >>= 1.5F	counter >>= 1.5F
+F	(=MUL FS:BIG:J C:VARTYPE_INT:I:7)	J	J	BIG *= 7	0:L2=J,	13	BIG *= 7	BIG *= 7
+F	(=MUL FS:NAME:Ljava/lang/String; (CAST G0:65535 T:Ljava/lang/Runnable;))	Ljava/lang/Object;	Ljava/lang/String;	NAME *= (Runnable)'\\uffff'	0:L1=Ljava/lang/Object;, | 2:L3=--null--,U3=Ljava/lang/Runnable;,	13	NAME *= (Runnable)'\\uffff'	NAME *= (Runnable)'\\uffff'
+F	(=ADD FS:NAME:Ljava/lang/String; C:VARTYPE_FLOAT:F:3dcccccd)	Ljava/lang/String;	Ljava/lang/String;	NAME += 0.1F	0:L2=--null--,	13	NAME += 0.1F	NAME += 0.1F
+F	(=SHL FS:CONST:I (STR_CONCAT C:VARTYPE_LONG:J:-1 C:VARTYPE_INT:I:100000))	I	I	CONST <<= -1L + 100000	0:L1=Ljava/lang/String;, | 2:	13	CONST <<= -1L + 100000	CONST <<= -1L + 100000
+F	(=OR FS:NAME:Ljava/lang/String; (LE C:VARTYPE_INT:I:255 (DCMPG G0:3 C:VARTYPE_INT:I:-5)))	Ljava/lang/String;	Ljava/lang/String;	NAME |= 255 <= __dcmpg__((3), (-5))	0:L2=--null--, | 2:L4=X,L3=X, | 4:	13	NAME |= 255 <= __dcmpg__((3), (-5))	NAME |= 255 <= __dcmpg__((3), (-5))
+F	(=MUL FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_INT:I:-5)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out *= -5	0:L2=--null--,	13	System.out *= -5	System.out *= -5
+F	(=MUL FS:missing:I C:VARTYPE_INT:I:7)	I	I	missing *= 7	0:L1=I,	13	missing *= 7	missing *= 7
+F	(=AND FS:counter:I (LCMP C:VARTYPE_CHAR:I:65 (LT C:VARTYPE_DOUBLE:D:4004000000000000 C:VARTYPE_STRING:S:x0073)))	I	I	counter &= __lcmp__(('A'), (2.5 < "s"))	0:L2=X, | 2: | 4:L6=X,L5=X,	13	counter &= __lcmp__(('A'), (2.5 < "s"))	counter &= __lcmp__(('A'), (2.5 < "s"))
+F	(=DIV FS:NAME:Ljava/lang/String; (L2I (ARRAY_LENGTH (MUL C:VARTYPE_INT:I:7 C:VARTYPE_INT:I:7))))	Ljava/lang/String;	Ljava/lang/String;	NAME /= (int)((Object[])(7 * 7)).length	0:L2=--null--, | 2: | 3: | 4:L6=X,L5=X,	13	NAME /= (int)((Object[])(7 * 7)).length	NAME /= (int)((Object[])(7 * 7)).length
+F	(=SHR FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_INT:I:1)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out >>= 1	0:L2=--null--,	13	System.out >>= 1	System.out >>= 1
+F	(=SHL FX:java/lang/System:out:Ljava/io/PrintStream; G0:127)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out <<= 127	0:L2=--null--,	13	System.out <<= 127	System.out <<= 127
+F	(=SHL FX:java/lang/System:out:Ljava/io/PrintStream; G0:7)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out <<= 7	0:L2=--null--,	13	System.out <<= 7	System.out <<= 7
+F	(=OR FS:NAME:Ljava/lang/String; G0:255)	Ljava/lang/String;	Ljava/lang/String;	NAME |= 255	0:L2=--null--,	13	NAME |= 255	NAME |= 255
+F	(=DIV FS:missing:I G0:65535)	I	I	missing /= 65535	0:L1=I,	13	missing /= 65535	missing /= 65535
+F	(=SHL FS:missing:I C:VARTYPE_INT:I:65535)	I	I	missing <<= 65535	0:L1=I,	13	missing <<= 65535	missing <<= 65535
+F	(=AND FS:LETTER:C (BIT_NOT (I2D (CAST C:VARTYPE_LONG:J:5 T:J))))	C	C	LETTER &= ~((double)((long)5L))	0:L1=D, | 2:L3=X, | 3:L4=X,U4=I, | 4:L5=J,U5=J,	13	LETTER &= ~((double)((long)5L))	LETTER &= ~((double)((long)5L))
+F	(=XOR FX:java/lang/System:out:Ljava/io/PrintStream; (L2I! C:VARTYPE_INT:I:65))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out ^= 65	0:L2=--null--, | 2:	13	System.out ^= 65	System.out ^= 65
+F	(=ADD FS:counter:I (L2F C:VARTYPE_INT:I:255))	I	I	counter += (float)255	0:L1=F, | 2:	13	counter += (float)255	counter += (float)255
+F	(=MUL FS:BIG:J (IMM C:VARTYPE_LONG:J:-1))	EXC:NullPointerException:Cannot read field "type" because "other" is null	J	BIG *= -1L--	0:EXC:NullPointerException:Cannot read field "typeFamily" because "typeRight" is null | 2:EXC:NullPointerException:Null not expected here	13	BIG *= -1L--	BIG *= -1L--
+F	(=SHR FX:java/lang/Integer:MAX_VALUE:I (ARRAY_LENGTH C:VARTYPE_BOOLEAN:I:0))	I	I	Integer.MAX_VALUE >>= ((Object[])false).length	0:L1=I, | 2:	13	Integer.MAX_VALUE >>= ((Object[])false).length	Integer.MAX_VALUE >>= ((Object[])false).length
+F	(=DIV FS:counter:I G0:65)	I	I	counter /= 65	0:L1=I,	13	counter /= 65	counter /= 65
+F	(=USHR FX:java/lang/System:out:Ljava/io/PrintStream; (D2I (PPI@VARTYPE_CHAR C:VARTYPE_INT:I:65280)))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out >>>= (int)(++65280)	0:L2=--null--, | 2: | 3:L4=C,U4=C,	13	System.out >>>= (int)(++65280)	System.out >>>= (int)(++65280)
+F	(=OR FS:NAME:Ljava/lang/String; C:VARTYPE_DOUBLE:D:4022d97c7f3321d2)	Ljava/lang/String;	Ljava/lang/String;	NAME |= Math.PI * 3	0:L2=--null--,	13	NAME |= Math.PI * 3	NAME |= Math.PI * 3
+F	(=AND FS:missing:I (F2I C:VARTYPE_INT:I:1))	I	I	missing &= (int)1	0:L1=I, | 2:	13	missing &= (int)1	missing &= (int)1
+F	(=SHL FS:counter:I C:VARTYPE_CHAR:I:65)	I	I	counter <<= 65	0:L1=I,	13	counter <<= 65	counter <<= 65
+F	(=AND FS:CONST:I (SHR G0:1 C:VARTYPE_BYTECHAR:I:66))	I	I	CONST &= 1 >> 66	0:L1=I, | 2:L4=X,L3=X,	13	CONST &= 1 >> 66	CONST &= 1 >> 66
+F	(=DIV FX:java/lang/Integer:MAX_VALUE:I (DCMPG (OR (F2L G0:3) (I2B! C:VARTYPE_INTEGER:I:4)) (NEG (BOOLEAN_OR C:VARTYPE_STRING:S:x006100200062000a C:VARTYPE_FLOAT:F:40490fdb))))	I	I	Integer.MAX_VALUE /= __dcmpg__(((long)3 | 4), (-("a b\\n" || (float) Math.PI)))	0:L2=X, | 2: | 3: | 4: | 6:L7=X,U7=I, | 8:L9=X, | 9:	13	Integer.MAX_VALUE /= __dcmpg__(((long)3 | 4), (-("a b\\n" || (float) Math.PI)))	Integer.MAX_VALUE /= __dcmpg__((\n   (long)3 | 4\n), (-("a b\\n" || (float) Math.PI)))
+F	(=REM FS:NAME:Ljava/lang/String; C:VARTYPE_INT:I:127)	Ljava/lang/String;	Ljava/lang/String;	NAME %= 127	0:L2=--null--,	13	NAME %= 127	NAME %= 127
+F	(=REM FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_SHORT:I:-300)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out %= -300	0:L2=--null--,	13	System.out %= -300	System.out %= -300
+F	(=DIV FX:java/lang/System:out:Ljava/io/PrintStream; (LCMP (CAST G0:1 T:Z T:I) (AND C:VARTYPE_DOUBLE:D:7ff8000000000000 C:VARTYPE_INT:I:-1)))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out /= __lcmp__(((boolean & int)1), (Double.NaN & -1))	0:L2=--null--, | 2: | 3:L4=Z,U4=Z, | 7:	13	System.out /= __lcmp__(((boolean & int)1), (Double.NaN & -1))	System.out /= __lcmp__(((boolean & int)1), (\n   Double.NaN & -1\n))
+F	(=MUL FS:BIG:J (FCMPG C:VARTYPE_DOUBLE:D:4004000000000000 (F2I C:VARTYPE_INT:I:65)))	J	J	BIG *= __fcmpg__((2.5), ((int)65))	0:L2=J, | 2: | 4:	13	BIG *= __fcmpg__((2.5), ((int)65))	BIG *= __fcmpg__((2.5), ((int)65))
+F	(=OR FS:missing:I C:VARTYPE_DOUBLE:D:4004000000000000)	I	I	missing |= 2.5	0:L1=D,	13	missing |= 2.5	missing |= 2.5
+F	(=USHR FS:BIG:J G0:65535)	J	J	BIG >>>= '\\uffff'	0:L2=J,	13	BIG >>>= '\\uffff'	BIG >>>= '\\uffff'
+F	(=DIV FS:BIG:J (CAST (I2B! C:VARTYPE_INT:I:97) T:I T:Ljava/lang/Runnable;))	J	J	BIG /= (int & Runnable)97	0:L2=J, | 2:L3=X,U3=I, | 3:L4=X,U4=I,	13	BIG /= (int & Runnable)97	BIG /= (int & Runnable)97
+F	(=MUL FS:BIG:J (PPI@VARTYPE_LONG C:VARTYPE_INT:I:-5))	J	J	BIG *= ++-5	0:L1=J, | 2:L3=J,U3=J,	13	BIG *= ++-5	BIG *= ++-5
+F	(=SHR FS:NAME:Ljava/lang/String; (STR_CONCAT@VARTYPE_INT (ARRAY_LENGTH C:VARTYPE_INT:I:-5) C:VARTYPE_INT:I:65280))	Ljava/lang/String;	Ljava/lang/String;	NAME >>= ((Object[])-5).length + 65280	0:L1=Ljava/lang/String;, | 2:L3=I,L5=I, | 3:	13	NAME >>= ((Object[])-5).length + 65280	NAME >>= ((Object[])-5).length + 65280
+F	(=XOR FS:BIG:J (MUL G0:65 G0:1))	J	J	BIG ^= 65 * 1	0:L2=J, | 2:L4=X,L3=X,	13	BIG ^= 65 * 1	BIG ^= 65 * 1
+F	(=ADD FX:java/lang/Integer:MAX_VALUE:I (F2I! (F2D! (TERNARY G0:0 C:VARTYPE_INT:I:3 C:VARTYPE_BOOLEAN:I:0))))	I	I	Integer.MAX_VALUE += 0 ? 3 : false	0:L1=I, | 2: | 3: | 4:L5=Z,L6=X,L7=X,U5=Z,U6=I,U7=I,	13	Integer.MAX_VALUE += 0 ? 3 : false	Integer.MAX_VALUE += 0 ? 3 : false
+F	(=DIV FS:missing:I (NEG (PPI@VARTYPE_CHAR C:VARTYPE_DOUBLE:D:bfe8000000000000)))	I	I	missing /= -(++-0.75)	0:L1=I, | 2:L3=X, | 3:L4=C,U4=C,	13	missing /= -(++-0.75)	missing /= -(++-0.75)
+F	(=XOR FS:missing:I C:VARTYPE_FLOAT:F:3dcccccd)	I	I	missing ^= 0.1F	0:L1=F,	13	missing ^= 0.1F	missing ^= 0.1F
+F	(=SHL FS:counter:I C:VARTYPE_INT:I:10)	I	I	counter <<= 10	0:L1=I,	13	counter <<= 10	counter <<= 10
+F	(=MUL FS:missing:I (EQ C:VARTYPE_INT:I:0 C:VARTYPE_INT:I:65280))	I	I	missing *= 0 == 65280	0:L2=X, | 2:	13	missing *= 0 == 65280	missing *= 0 == 65280
+F	(= FS:counter:I (I2D! C:VARTYPE_INT:I:10))	I	I	counter = (int)10	0:L1=D, | 2:L3=X,U3=I,	13	counter = (int)10	counter = (int)10
+F	(=SHR FS:counter:I C:VARTYPE_INT:I:-5)	I	I	counter >>= -5	0:L1=I,	13	counter >>= -5	counter >>= -5
+F	(=SHL FS:BIG:J (ARRAY_LENGTH C:VARTYPE_CHAR:I:10))	J	J	BIG <<= ((Object[])'\\n').length	0:L2=J, | 2:	13	BIG <<= ((Object[])'\\n').length	BIG <<= ((Object[])'\\n').length
+F	(=OR FS:LETTER:C G1:1)	C	C	LETTER |= true	0:L2=X,	13	LETTER |= true	LETTER |= true
+F	(=SHL FS:CONST:I (I2L! G0:7))	I	I	CONST <<= 7	0:L1=J, | 2:L3=X,U3=I,	13	CONST <<= 7	CONST <<= 7
+F	(=REM FS:LETTER:C (I2F (I2B! C:VARTYPE_SHORT:I:-300)))	C	C	LETTER %= (float)-300	0:L1=F, | 2:L3=X,U3=I, | 3:L4=X,U4=I,	13	LETTER %= (float)-300	LETTER %= (float)-300
+F	(=REM FX:java/lang/System:out:Ljava/io/PrintStream; (DIV (CAST! C:VARTYPE_BOOLEAN:I:1 T:Z) (IMM@VARTYPE_CHAR G0:10)))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out %= true / 10--	0:L2=--null--, | 2:L6=X,L3=X, | 3:L4=Z,U4=Z, | 6:L7=C,U7=C,	13	System.out %= true / 10--	System.out %= true / 10--
+F	(=SHR FS:LETTER:C G0:255)	C	C	LETTER >>= 255	0:L1=C,	13	LETTER >>= 255	LETTER >>= 255
+F	(= FS:NAME:Ljava/lang/String; C:VARTYPE_INT:I:2)	Ljava/lang/String;	Ljava/lang/String;	NAME = 2	0:L2=--null--,	13	NAME = 2	NAME = 2
+F	(=XOR FS:missing:I C:VARTYPE_INT:I:100000)	I	I	missing ^= 100000	0:L1=I,	13	missing ^= 100000	missing ^= 100000
+F	(=AND FS:counter:I (LT (PPI@VARTYPE_INT (L2D! G0:255)) (F2D! (BOOLEAN_AND G0:7 C:VARTYPE_INT:I:-5))))	I	I	counter &= ++255 < (7 && -5)	0:L2=X, | 2:L6=X,L3=X, | 3:L4=I,U4=I, | 4: | 6: | 7:	13	counter &= ++255 < (7 && -5)	counter &= ++255 < (7 && -5)
+F	(=ADD FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_INT:I:10)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out += 10	0:L2=--null--,	13	System.out += 10	System.out += 10
+F	(=SUB FS:LETTER:C G1:0)	C	C	LETTER -= false	0:L2=X,	13	LETTER -= false	LETTER -= false
+F	(=OR FS:BIG:J (XOR (ARRAY_LENGTH (TERNARY G0:-5 C:VARTYPE_FLOAT:F:3fc00000 C:VARTYPE_INT:I:127)) (D2F! (D2L C:VARTYPE_BYTECHAR:I:66))))	J	J	EXC:IllegalStateException:No common supertype for ternary expression	0:L2=J, | 2: | 3:EXC:IllegalStateException:No common supertype for ternary expression | 4:EXC:IllegalStateException:No common supertype for ternary expression | 8: | 9:	13	EXC:IllegalStateException:No common supertype for ternary expression	EXC:IllegalStateException:No common supertype for ternary expression
+F	(=MUL FX:java/lang/Integer:MAX_VALUE:I (AND G0:65 (I2L! (DCMPL C:VARTYPE_BOOLEAN:I:0 G0:3))))	I	I	Integer.MAX_VALUE *= 65 & __dcmpl__((false), (3))	0:L1=J, | 2: | 4:L5=X,U5=I, | 5:	13	Integer.MAX_VALUE *= 65 & __dcmpl__((false), (3))	Integer.MAX_VALUE *= 65\n   & __dcmpl__((false), (3))
+F	(=REM FS:NAME:Ljava/lang/String; C:VARTYPE_INT:I:-1)	Ljava/lang/String;	Ljava/lang/String;	NAME %= -1	0:L2=--null--,	13	NAME %= -1	NAME %= -1
+F	(=AND FS:missing:I (SUB (L2D (I2L! C:VARTYPE_INT:I:3)) (L2I C:VARTYPE_DOUBLE:D:4004000000000000)))	I	I	missing &= (double)3 - (int)2.5	0:L1=D, | 2:L6=X,L3=X, | 3: | 4:L5=X,U5=I, | 6:	13	missing &= (double)3 - (int)2.5	missing &= (double)3 - (int)2.5
+F	(=USHR FS:NAME:Ljava/lang/String; C:VARTYPE_INT:I:2)	Ljava/lang/String;	Ljava/lang/String;	NAME >>>= 2	0:L2=--null--,	13	NAME >>>= 2	NAME >>>= 2
+F	(=ADD FS:CONST:I (BOOL_NOT (MUL C:VARTYPE_DOUBLE:D:3ff921fb54442d18 G0:65535)))	I	I	CONST += !((Math.PI / 2) * '\\uffff')	0:L2=X, | 2: | 3:L5=X,L4=X,	13	CONST += !((Math.PI / 2) * '\\uffff')	CONST += !((Math.PI / 2) * '\\uffff')
+F	(=MUL FS:NAME:Ljava/lang/String; (ARRAY_LENGTH C:VARTYPE_LONG:J:-1))	Ljava/lang/String;	Ljava/lang/String;	NAME *= ((Object[])-1L).length	0:L2=--null--, | 2:	13	NAME *= ((Object[])-1L).length	NAME *= ((Object[])-1L).length
+F	(=XOR FS:NAME:Ljava/lang/String; (DIV (LCMP C:VARTYPE_INT:I:65535 G0:-5) (REM C:VARTYPE_INT:I:65 C:VARTYPE_STRING:S:x006100200062000a)))	Ljava/lang/String;	Ljava/lang/String;	NAME ^= __lcmp__((65535), (-5)) / (65 % "a b\\n")	0:L2=--null--, | 2:L6=X,L3=X, | 3: | 6:L8=X,L7=X,	13	NAME ^= __lcmp__((65535), (-5)) / (65 % "a b\\n")	NAME ^= __lcmp__((65535), (-5))\n   / (65 % "a b\\n")
+F	(=USHR FX:java/lang/System:out:Ljava/io/PrintStream; (LT G0:65535 C:VARTYPE_INT:I:-5))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out >>>= '\\uffff' < -5	0:L2=--null--, | 2:L4=X,L3=X,	13	System.out >>>= '\\uffff' < -5	System.out >>>= '\\uffff' < -5
+F	(=MUL FS:NAME:Ljava/lang/String; C:VARTYPE_BOOLEAN:I:0)	Ljava/lang/String;	Ljava/lang/String;	NAME *= false	0:L2=--null--,	13	NAME *= false	NAME *= false
+F	(=SUB FS:NAME:Ljava/lang/String; (MUL (SHR (F2L C:VARTYPE_INT:I:65535) (F2D G0:7)) (ADD (I2D C:VARTYPE_SHORT:I:-300) (I2C C:VARTYPE_INT:I:65))))	Ljava/lang/String;	Ljava/lang/String;	NAME -= ((long)65535 >> (double)7) * ((double)-300 + (char)65)	0:L2=--null--, | 2:L8=X,L3=X, | 3:L6=X,L4=X, | 4: | 6: | 8:L11=X,L9=X, | 9:L10=X,U10=I, | 11:L12=X,U12=I,	13	NAME -= ((long)65535 >> (double)7) * ((double)-300 + (char)65)	NAME -= ((long)65535 >> (double)7)\n   * ((double)-300 + (char)65)
+F	(=SHL FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_BOOLEAN:I:1)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out <<= true	0:L2=--null--,	13	System.out <<= true	System.out <<= true
+F	(=DIV FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_DOUBLE:D:4022d97c7f3321d2)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out /= Math.PI * 3	0:L2=--null--,	13	System.out /= Math.PI * 3	System.out /= Math.PI * 3
+F	(=ADD FS:LETTER:C C:VARTYPE_DOUBLE:D:bfe8000000000000)	C	C	LETTER += -0.75	0:L1=D,	13	LETTER += -0.75	LETTER += -0.75
+F	(=OR FS:NAME:Ljava/lang/String; (DCMPL (BIT_NOT C:VARTYPE_INT:I:127) C:VARTYPE_INT:I:65280))	Ljava/lang/String;	Ljava/lang/String;	NAME |= __dcmpl__((~127), (65280))	0:L2=--null--, | 2: | 3:L4=X,	13	NAME |= __dcmpl__((~127), (65280))	NAME |= __dcmpl__((~127), (65280))
+F	(= FS:CONST:I (BOOL_NOT (FCMPL (BOOLEAN_OR C:VARTYPE_BOOLEAN:I:0 G1:0) G0:65535)))	I	I	CONST = !__fcmpl__((false || false), ('\\uffff'))	0:L2=X, | 2: | 3: | 4:	13	CONST = !__fcmpl__((false || false), ('\\uffff'))	CONST = !__fcmpl__((false || false), (\n   '\\uffff'\n))
+F	(=XOR FS:counter:I C:VARTYPE_INT:I:65280)	I	I	counter ^= 65280	0:L1=I,	13	counter ^= 65280	counter ^= 65280
+F	(=DIV FS:counter:I (I2S (GE C:VARTYPE_INT:I:10 G0:65535)))	I	I	counter /= (short)(10 >= 65535)	0:L1=I, | 2:L3=X,U3=I, | 3:L5=X,L4=X,	13	counter /= (short)(10 >= 65535)	counter /= (short)(10 >= 65535)
+F	(=AND FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_SHORT:I:-300)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out &= -300	0:L2=--null--,	13	System.out &= -300	System.out &= -300
+F	(=OR FX:java/lang/Integer:MAX_VALUE:I (IMM (DCMPG G0:3 C:VARTYPE_DOUBLE:D:4004000000000000)))	EXC:NullPointerException:Cannot read field "type" because "other" is null	I	Integer.MAX_VALUE |= __dcmpg__((3), (2.5))--	0:EXC:NullPointerException:Cannot read field "typeFamily" because "typeRight" is null | 2:EXC:NullPointerException:Null not expected here | 3:	13	Integer.MAX_VALUE |= __dcmpg__((3), (2.5))--	Integer.MAX_VALUE |= __dcmpg__((3), (2.5))--
+F	(=REM FS:missing:I G0:65280)	I	I	missing %= 65280	0:L1=I,	13	missing %= 65280	missing %= 65280
+F	(=DIV FS:CONST:I (I2D (ARRAY_LENGTH G0:65280)))	I	I	CONST /= (double)((Object[])'\\uff00').length	0:L1=D, | 2:L3=X,U3=I, | 3:	13	CONST /= (double)((Object[])'\\uff00').length	CONST /= (double)((Object[])'\\uff00').length
+F	(=ADD FS:NAME:Ljava/lang/String; G0:3)	Ljava/lang/String;	Ljava/lang/String;	NAME += 3	0:L2=--null--,	13	NAME += 3	NAME += 3
+F	(=ADD FS:CONST:I C:VARTYPE_DOUBLE:D:4004000000000000)	I	I	CONST += 2.5	0:L1=D,	13	CONST += 2.5	CONST += 2.5
+F	(=ADD FS:BIG:J (BOOL_NOT (XOR C:VARTYPE_INT:I:3 (I2C C:VARTYPE_DOUBLE:D:3ff921fb54442d18))))	J	J	BIG += !(3 ^ (char)(Math.PI / 2))	0:L2=J, | 2: | 3: | 5:L6=X,U6=I,	13	BIG += !(3 ^ (char)(Math.PI / 2))	BIG += !(3 ^ (char)(Math.PI / 2))
+F	(=USHR FS:NAME:Ljava/lang/String; (USHR (USHR C:VARTYPE_INT:I:100000 G0:3) (GT C:VARTYPE_INT:I:-5 G0:100000)))	Ljava/lang/String;	Ljava/lang/String;	NAME >>>= 100000 >>> 3 >>> (-5 > 100000)	0:L2=--null--, | 2:L6=X,L3=X, | 3:L5=X,L4=X, | 6:L8=X,L7=X,	13	NAME >>>= 100000 >>> 3 >>> (-5 > 100000)	NAME >>>= 100000 >>> 3 >>> (-5 > 100000)
+F	(=REM FS:missing:I C:VARTYPE_INT:I:127)	I	I	missing %= 127	0:L1=I,	13	missing %= 127	missing %= 127
+F	(=REM FS:BIG:J (MUL (L2F! (BOOL_NOT C:VARTYPE_DOUBLE:D:4022d97c7f3321d2)) C:VARTYPE_INT:I:-5))	J	J	BIG %= !(Math.PI * 3) * -5	0:L2=J, | 2:L6=X,L3=X, | 3: | 4:	13	BIG %= !(Math.PI * 3) * -5	BIG %= !(Math.PI * 3) * -5
+F	(=AND FX:java/lang/System:out:Ljava/io/PrintStream; (L2I (F2D C:VARTYPE_LONG:J:5)))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out &= (int)((double)5L)	0:L2=--null--, | 2: | 3:	13	System.out &= (int)((double)5L)	System.out &= (int)((double)5L)
+F	(=SUB FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_FLOAT:F:3dcccccd)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out -= 0.1F	0:L2=--null--,	13	System.out -= 0.1F	System.out -= 0.1F
+F	(= FS:counter:I C:VARTYPE_INT:I:0)	I	I	counter = 0	0:L1=I,	13	counter = 0	counter = 0
+F	(=SHL FS:LETTER:C C:VARTYPE_FLOAT:F:3fc00000)	C	C	LETTER <<= 1.5F	0:L1=F,	13	LETTER <<= 1.5F	LETTER <<= 1.5F
+F	(=REM FX:java/lang/System:out:Ljava/io/PrintStream; G0:65280)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out %= '\\uff00'	0:L2=--null--,	13	System.out %= '\\uff00'	System.out %= '\\uff00'
+F	(=ADD FS:BIG:J C:VARTYPE_INT:I:7)	J	J	BIG += 7	0:L2=J,	13	BIG += 7	BIG += 7
+F	(=SUB FS:CONST:I G0:3)	I	I	CONST -= 3	0:L1=I,	13	CONST -= 3	CONST -= 3
+F	(=REM FX:java/lang/Integer:MAX_VALUE:I (REM C:VARTYPE_INT:I:100000 C:VARTYPE_FLOAT:F:3dcccccd))	I	I	Integer.MAX_VALUE %= 100000 % 0.1F	0:L1=F, | 2:L4=X,L3=X,	13	Integer.MAX_VALUE %= 100000 % 0.1F	Integer.MAX_VALUE %= 100000 % 0.1F
+F	(=DIV FS:counter:I C:VARTYPE_INT:I:65535)	I	I	counter /= 65535	0:L1=I,	13	counter /= 65535	counter /= 65535
+F	(=USHR FX:java/lang/Integer:MAX_VALUE:I G0:65280)	I	I	Integer.MAX_VALUE >>>= 65280	0:L1=I,	13	Integer.MAX_VALUE >>>= 65280	Integer.MAX_VALUE >>>= 65280
+F	(=OR FS:NAME:Ljava/lang/String; C:VARTYPE_INT:I:100000)	Ljava/lang/String;	Ljava/lang/String;	NAME |= 100000	0:L2=--null--,	13	NAME |= 100000	NAME |= 100000
+F	(=SHR FS:NAME:Ljava/lang/String; (PPI (INSTANCEOF (BOOLEAN_OR G0:3 G0:255) T:Ljava/lang/Runnable;)))	EXC:NullPointerException:Cannot read field "type" because "other" is null	Ljava/lang/String;	NAME >>= ++((3 || 255) instanceof Runnable)	0:EXC:NullPointerException:Cannot read field "typeFamily" because "typeRight" is null | 2:EXC:NullPointerException:Null not expected here | 3: | 4:	13	NAME >>= ++((3 || 255) instanceof Runnable)	NAME >>= ++(\n   (3 || 255) instanceof Runnable\n)
+F	(=AND FX:java/lang/Integer:MAX_VALUE:I (D2L C:VARTYPE_LONG:J:-1))	I	I	Integer.MAX_VALUE &= (long)-1L	0:L1=J, | 2:	13	Integer.MAX_VALUE &= (long)-1L	Integer.MAX_VALUE &= (long)-1L
+F	(= FX:java/lang/Integer:MAX_VALUE:I G0:127)	I	I	Integer.MAX_VALUE = 127	0:L1=I,	13	Integer.MAX_VALUE = 127	Integer.MAX_VALUE = 127
+F	(=SHR FS:CONST:I C:VARTYPE_INT:I:100000)	I	I	CONST >>= 100000	0:L1=I,	13	CONST >>= 100000	CONST >>= 100000
+F	(= FS:missing:I G0:65280)	I	I	missing = 65280	0:L1=I,	13	missing = 65280	missing = 65280
+F	(=OR FS:counter:I (SHL (DCMPL G0:-5 C:VARTYPE_INT:I:-1) (L2F! C:VARTYPE_LONG:J:-1)))	I	I	counter |= __dcmpl__((-5), (-1)) << -1L	0:L1=I, | 2:L6=X,L3=X, | 3: | 6:	13	counter |= __dcmpl__((-5), (-1)) << -1L	counter |= __dcmpl__((-5), (-1)) << -1L
+F	(=ADD FS:counter:I C:VARTYPE_SHORT:I:-300)	I	I	counter += -300	0:L1=I,	13	counter += -300	counter += -300
+F	(= FS:BIG:J (PPI@VARTYPE_DOUBLE (F2L (I2B C:VARTYPE_FLOAT:F:3fc00000))))	J	J	BIG = (long)(++((long)((byte)1.5F)))	0:L1=D, | 2:L3=D,U3=D, | 3: | 4:L5=X,U5=I,	13	BIG = (long)(++((long)((byte)1.5F)))	BIG = (long)(++((long)((byte)1.5F)))
+F	(= FS:missing:I C:VARTYPE_INT:I:97)	I	I	missing = 97	0:L1=I,	13	missing = 97	missing = 97
+F	(=MUL FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_INT:I:100000)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out *= 100000	0:L2=--null--,	13	System.out *= 100000	System.out *= 100000
+F	(= FS:BIG:J G0:65535)	J	J	BIG = (long)'\\uffff'	0:L2=J,	13	BIG = (long)'\\uffff'	BIG = (long)'\\uffff'
+F	(=SHL FS:missing:I (NEG G0:3))	I	I	missing <<= -3	0:L1=I, | 2:L3=X,	13	missing <<= -3	missing <<= -3
+F	(=XOR FS:LETTER:C C:VARTYPE_INT:I:-5)	I	C	LETTER ^= -5	0:L1=I,	13	LETTER ^= -5	LETTER ^= -5
+F	(= FX:java/lang/System:out:Ljava/io/PrintStream; (REM (GE (BOOLEAN_AND C:VARTYPE_NULL:N C:VARTYPE_INT:I:10) (ARRAY_LENGTH G1:1)) G0:3))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out = ((null && 10) >= ((Object[])true).length) % 3	0:L2=--null--, | 2:L9=X,L3=X, | 3:L7=X,L4=X, | 4: | 7:	13	System.out = ((null && 10) >= ((Object[])true).length) % 3	System.out = (\n      (null && 10)\n         >= ((Object[])true).length\n   )\n   % 3
+F	(=MUL FX:java/lang/Integer:MAX_VALUE:I (F2L! C:VARTYPE_INT:I:97))	I	I	Integer.MAX_VALUE *= 97	0:L1=J, | 2:	13	Integer.MAX_VALUE *= 97	Integer.MAX_VALUE *= 97
+F	(=SHL FX:java/lang/Integer:MAX_VALUE:I (XOR G0:97 C:VARTYPE_INT:I:0))	I	I	Integer.MAX_VALUE <<= 97 ^ 0	0:L1=I, | 2:	13	Integer.MAX_VALUE <<= 97 ^ 0	Integer.MAX_VALUE <<= 97 ^ 0
+F	(=USHR FS:LETTER:C (BOOL_NOT (GE C:VARTYPE_INT:I:1 C:VARTYPE_STRING:S:x006100200062000a)))	C	C	LETTER >>>= !(1 >= "a b\\n")	0:L2=X, | 2: | 3:L5=X,L4=X,	13	LETTER >>>= !(1 >= "a b\\n")	LETTER >>>= !(1 >= "a b\\n")
+F	(=AND FS:BIG:J (BOOLEAN_OR (LE C:VARTYPE_DOUBLE:D:bfe8000000000000 C:VARTYPE_LONG:J:5) (BIT_NOT G0:255)))	J	J	BIG &= -0.75 <= 5L || ~255	0:L2=J, | 2: | 3:L5=X,L4=X, | 6:L7=X,	13	BIG &= -0.75 <= 5L || ~255	BIG &= -0.75 <= 5L || ~255
+F	(= FS:BIG:J C:VARTYPE_INT:I:127)	J	J	BIG = (long)127	0:L2=J,	13	BIG = (long)127	BIG = (long)127
+F	(=REM FX:java/lang/Integer:MAX_VALUE:I C:VARTYPE_INT:I:-5)	I	I	Integer.MAX_VALUE %= -5	0:L1=I,	13	Integer.MAX_VALUE %= -5	Integer.MAX_VALUE %= -5
+F	(=USHR FS:NAME:Ljava/lang/String; C:VARTYPE_BOOLEAN:I:0)	Ljava/lang/String;	Ljava/lang/String;	NAME >>>= false	0:L2=--null--,	13	NAME >>>= false	NAME >>>= false
+F	(=ADD FS:NAME:Ljava/lang/String; (BIT_NOT C:VARTYPE_DOUBLE:D:4004000000000000))	Ljava/lang/String;	Ljava/lang/String;	NAME += ~2.5	0:L2=--null--, | 2:L3=X,	13	NAME += ~2.5	NAME += ~2.5
+F	(=SHR FS:BIG:J (BOOL_NOT (L2D! C:VARTYPE_INT:I:10)))	J	J	BIG >>= !10	0:L2=J, | 2: | 3:	13	BIG >>= !10	BIG >>= !10
+F	(=SHL FS:NAME:Ljava/lang/String; (F2I C:VARTYPE_INT:I:3))	Ljava/lang/String;	Ljava/lang/String;	NAME <<= (int)3	0:L2=--null--, | 2:	13	NAME <<= (int)3	NAME <<= (int)3
+F	(= FS:BIG:J C:VARTYPE_INT:I:7)	J	J	BIG = (long)7	0:L2=J,	13	BIG = (long)7	BIG = (long)7
+F	(=MUL FX:java/lang/Integer:MAX_VALUE:I C:VARTYPE_INT:I:-1)	I	I	Integer.MAX_VALUE *= -1	0:L1=I,	13	Integer.MAX_VALUE *= -1	Integer.MAX_VALUE *= -1
+F	(=SHL FS:BIG:J C:VARTYPE_NULL:N)	J	J	BIG <<= null	0:L1=--null--,	13	BIG <<= null	BIG <<= null
+F	(=SUB FS:missing:I (FCMPL (BOOLEAN_AND C:VARTYPE_INT:I:127 G0:7) (F2D! G0:65)))	I	I	missing -= __fcmpl__((127 && 7), (65))	0:L2=X, | 2: | 3: | 6:	13	missing -= __fcmpl__((127 && 7), (65))	missing -= __fcmpl__((127 && 7), (65))
+F	(=SHL FX:java/lang/System:out:Ljava/io/PrintStream; (GE (MUL C:VARTYPE_DOUBLE:D:bfe8000000000000 (IMM@VARTYPE_LONG C:VARTYPE_DOUBLE:D:bfe8000000000000)) C:VARTYPE_INT:I:65280))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out <<= -0.75 * -0.75-- >= 65280	0:L2=--null--, | 2:L7=X,L3=X, | 3:L5=X,L4=X, | 5:L6=J,U6=J,	13	System.out <<= -0.75 * -0.75-- >= 65280	System.out <<= -0.75 * -0.75-- >= 65280
+F	(=AND FS:missing:I (BOOL_NOT (TERNARY C:VARTYPE_BOOLEAN:I:1 C:VARTYPE_INT:I:-5 C:VARTYPE_CHAR:I:10)))	I	I	missing &= !(true ? -5 : '\\n')	0:L2=X, | 2: | 3:L4=Z,L5=X,L6=X,U4=Z,U5=I,U6=I,	13	missing &= !(true ? -5 : '\\n')	missing &= !(true ? -5 : '\\n')
+F	(=OR FS:counter:I (REM (SUB (IMM@VARTYPE_LONG G0:7) (L2I! C:VARTYPE_INT:I:7)) (I2B (LCMP G1:0 C:VARTYPE_DOUBLE:D:3ff921fb54442d18))))	I	I	counter |= (7-- - 7) % (byte)__lcmp__((false), (Math.PI / 2))	0:L1=J, | 2:L8=X,L3=X, | 3:L6=X,L4=X, | 4:L5=J,U5=J, | 6: | 8:L9=X,U9=I, | 9:	13	counter |= (7-- - 7) % (byte)__lcmp__((false), (Math.PI / 2))	counter |= (7-- - 7)\n   % (byte)__lcmp__((false), (\n      Math.PI / 2\n   ))
+F	(=XOR FS:counter:I (SHR G0:65280 G0:7))	I	I	counter ^= '\\uff00' >> 7	0:L1=I, | 2:L4=X,L3=X,	13	counter ^= '\\uff00' >> 7	counter ^= '\\uff00' >> 7
+F	(=MUL FS:CONST:I (IPP@VARTYPE_DOUBLE G0:127))	I	I	CONST *= 127++	0:L1=D, | 2:L3=D,U3=D,	13	CONST *= 127++	CONST *= 127++
+F	(=OR FS:NAME:Ljava/lang/String; C:VARTYPE_INT:I:100000)	Ljava/lang/String;	Ljava/lang/String;	NAME |= 100000	0:L2=--null--,	13	NAME |= 100000	NAME |= 100000
+F	(=SUB FS:missing:I (I2S C:VARTYPE_INT:I:0))	I	I	missing -= (short)0	0:L1=I, | 2:L3=X,U3=I,	13	missing -= (short)0	missing -= (short)0
+F	(=REM FX:java/lang/System:out:Ljava/io/PrintStream; (SUB (SHR (F2I G0:65535) (SHR G0:65535 C:VARTYPE_INTEGER:I:4)) G0:1))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out %= ((int)'\\uffff' >> ('\\uffff' >> 4)) - 1	0:L2=--null--, | 2:L9=X,L3=X, | 3:L6=X,L4=X, | 4: | 6:L8=X,L7=X,	13	System.out %= ((int)'\\uffff' >> ('\\uffff' >> 4)) - 1	System.out %= (\n      (int)'\\uffff' >> ('\\uffff' >> 4)\n   )\n   - 1
+F	(=MUL FS:BIG:J (LCMP (IPP (DCMPL G0:0 G0:65535)) C:VARTYPE_CHAR:I:65))	J	J	BIG *= __lcmp__((__dcmpl__((0), ('\\uffff'))++), ('A'))	0:L2=J, | 2: | 3:EXC:NullPointerException:Null not expected here | 4:	13	BIG *= __lcmp__((__dcmpl__((0), ('\\uffff'))++), ('A'))	BIG *= __lcmp__((\n   __dcmpl__((0), ('\\uffff'))++\n), ('A'))
+F	(=MUL FS:CONST:I (NE (XOR (SHL G0:65280 C:VARTYPE_INTEGER:I:4) (SHR C:VARTYPE_INT:I:65 G0:0)) (SHR (I2S C:VARTYPE_INT:I:255) (LE C:VARTYPE_INT:I:-1 G0:127))))	I	I	CONST *= ('\\uff00' << 4 ^ 65 >> 0) != (short)255 >> (-1 <= 127)	0:L2=X, | 2: | 3: | 4:L6=X,L5=X, | 7:L9=X,L8=X, | 10:L13=X,L11=X, | 11:L12=X,U12=I, | 13:L15=X,L14=X,	13	CONST *= ('\\uff00' << 4 ^ 65 >> 0) != (short)255 >> (-1 <= 127)	CONST *= ('\\uff00' << 4 ^ 65 >> 0)\n   != (short)255 >> (-1 <= 127)
+F	(=DIV FS:CONST:I (DCMPL (F2D (AND C:VARTYPE_BYTECHAR:I:66 C:VARTYPE_CHAR:I:65)) C:VARTYPE_BYTECHAR:I:66))	I	I	CONST /= __dcmpl__(((double)(66 & 'A')), (66))	0:L2=X, | 2: | 3: | 4:	13	CONST /= __dcmpl__(((double)(66 & 'A')), (66))	CONST /= __dcmpl__(((double)(66 & 'A')), (\n   66\n))
+F	(=SHL FS:BIG:J (MUL C:VARTYPE_NULL:N G0:65535))	J	J	BIG <<= null * '\\uffff'	0:L2=J, | 2:L4=X,L3=X,	13	BIG <<= null * '\\uffff'	BIG <<= null * '\\uffff'
+F	(=XOR FX:java/lang/Integer:MAX_VALUE:I (LT (ARRAY_LENGTH (I2B G0:0)) (I2B! (NEG G0:65))))	I	I	Integer.MAX_VALUE ^= ((Object[])((byte)0)).length < -65	0:L2=X, | 2:L6=X,L3=X, | 3: | 4:L5=X,U5=I, | 6:L7=X,U7=I, | 7:L8=X,	13	Integer.MAX_VALUE ^= ((Object[])((byte)0)).length < -65	Integer.MAX_VALUE ^= ((Object[])((byte)0)).length\n   < -65
+F	(=OR FX:java/lang/Integer:MAX_VALUE:I (IPP (NEG C:VARTYPE_INT:I:7)))	EXC:NullPointerException:Cannot read field "type" because "other" is null	I	Integer.MAX_VALUE |= (-7)++	0:EXC:NullPointerException:Cannot read field "typeFamily" because "typeRight" is null | 2:EXC:NullPointerException:Null not expected here | 3:L4=X,	13	Integer.MAX_VALUE |= (-7)++	Integer.MAX_VALUE |= (-7)++
+F	(=ADD FS:LETTER:C C:VARTYPE_BYTECHAR:I:66)	C	C	LETTER += 'B'	0:L1=C,	13	LETTER += 'B'	LETTER += 'B'
+F	(=DIV FS:CONST:I (USHR C:VARTYPE_INT:I:3 C:VARTYPE_INT:I:1))	I	I	CONST /= 3 >>> 1	0:L1=I, | 2:L4=X,L3=X,	13	CONST /= 3 >>> 1	CONST /= 3 >>> 1
+F	(=OR FS:LETTER:C G0:7)	C	C	LETTER |= 7	0:L1=C,	13	LETTER |= 7	LETTER |= 7
+F	(=USHR FS:CONST:I G0:1)	I	I	CONST >>>= 1	0:L1=I,	13	CONST >>>= 1	CONST >>>= 1
+F	(=XOR FS:CONST:I G0:65535)	I	I	CONST ^= 65535	0:L1=I,	13	CONST ^= 65535	CONST ^= 65535
+F	(=MUL FX:java/lang/System:out:Ljava/io/PrintStream; (GT (D2F! G0:-5) (NE (DIV C:VARTYPE_INT:I:97 C:VARTYPE_INT:I:65535) (IMM@VARTYPE_LONG C:VARTYPE_INT:I:65))))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out *= -5 > (97 / 65535 != 65--)	0:L2=--null--, | 2:L5=X,L3=X, | 3: | 5: | 6:L8=X,L7=X, | 9:L10=J,U10=J,	13	System.out *= -5 > (97 / 65535 != 65--)	System.out *= -5 > (97 / 65535 != 65--)
+F	(=SHR FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_CHAR:I:65)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out >>= 'A'	0:L2=--null--,	13	System.out >>= 'A'	System.out >>= 'A'
+F	(=SHR FS:LETTER:C G0:1)	C	C	LETTER >>= 1	0:L1=C,	13	LETTER >>= 1	LETTER >>= 1
+F	(=OR FS:LETTER:C (F2L G0:100000))	C	C	LETTER |= (long)100000	0:L1=J, | 2:	13	LETTER |= (long)100000	LETTER |= (long)100000
+F	(= FS:NAME:Ljava/lang/String; (F2L C:VARTYPE_LONG:J:-1))	Ljava/lang/String;	Ljava/lang/String;	NAME = (long)-1L	0:L2=--null--, | 2:	13	NAME = (long)-1L	NAME = (long)-1L
+F	(= FS:counter:I (EQ (D2L C:VARTYPE_INTEGER:I:4) (NEG C:VARTYPE_LONG:J:-1)))	I	I	counter = (long)4 == --1L	0:L2=X, | 2: | 3: | 5:L6=X,	13	counter = (long)4 == --1L	counter = (long)4 == --1L
+F	(=SUB FS:CONST:I C:VARTYPE_LONG:J:-1)	I	I	CONST -= -1L	0:L1=J,	13	CONST -= -1L	CONST -= -1L
+F	(=USHR FS:missing:I (I2F! (I2D! (L2I C:VARTYPE_DOUBLE:D:7ff8000000000000))))	I	I	missing >>>= (int)Double.NaN	0:L1=F, | 2:L3=X,U3=I, | 3:L4=X,U4=I, | 4:	13	missing >>>= (int)Double.NaN	missing >>>= (int)Double.NaN
+F	(= FS:CONST:I (GT C:VARTYPE_INT:I:7 C:VARTYPE_BOOLEAN:I:0))	I	I	CONST = 7 > false	0:L2=X, | 2:L4=X,L3=X,	13	CONST = 7 > false	CONST = 7 > false
+F	(=DIV FS:CONST:I (NEG (NE C:VARTYPE_INT:I:65535 C:VARTYPE_INT:I:3)))	I	I	CONST /= -(65535 != 3)	0:L1=I, | 2:L3=X, | 3:	13	CONST /= -(65535 != 3)	CONST /= -(65535 != 3)
+F	(=AND FS:BIG:J (I2D C:VARTYPE_INTEGER:I:4))	J	J	BIG &= (double)4	0:L1=D, | 2:L3=X,U3=I,	13	BIG &= (double)4	BIG &= (double)4
+F	(=SUB FS:BIG:J (DCMPG (STR_CONCAT@VARTYPE_STRING (INSTANCEOF C:VARTYPE_BOOLEAN:I:1 T:Ljava/lang/Object;) C:VARTYPE_DOUBLE:D:bfe8000000000000) (OR C:VARTYPE_INT:I:2 (MUL G0:7 C:VARTYPE_INT:I:2))))	J	J	BIG -= __dcmpg__(((true instanceof Object) + -0.75), (2 | 7 * 2))	0:L2=J, | 2: | 3: | 4: | 8: | 10:L12=X,L11=X,	13	BIG -= __dcmpg__(((true instanceof Object) + -0.75), (2 | 7 * 2))	BIG -= __dcmpg__((\n   (true instanceof Object) + -0.75\n), (2 | 7 * 2))
+F	(=AND FX:java/lang/Integer:MAX_VALUE:I (I2L! C:VARTYPE_FLOAT:F:3fc00000))	I	I	Integer.MAX_VALUE &= 1.5F	0:L1=J, | 2:L3=X,U3=I,	13	Integer.MAX_VALUE &= 1.5F	Integer.MAX_VALUE &= 1.5F
+F	(=USHR FX:java/lang/Integer:MAX_VALUE:I (BOOL_NOT (STR_CONCAT C:VARTYPE_INT:I:2 G0:-1)))	I	I	Integer.MAX_VALUE >>>= !(2 + -1)	0:L2=X, | 2: | 3:	13	Integer.MAX_VALUE >>>= !(2 + -1)	Integer.MAX_VALUE >>>= !(2 + -1)
+F	(=ADD FS:CONST:I (USHR (SHL C:VARTYPE_INT:I:7 C:VARTYPE_INT:I:255) (SHL C:VARTYPE_FLOAT:F:3fc00000 C:VARTYPE_BOOLEAN:I:0)))	I	I	CONST += 7 << 255 >>> (1.5F << false)	0:L1=I, | 2:L6=X,L3=X, | 3:L5=X,L4=X, | 6:L8=X,L7=X,	13	CONST += 7 << 255 >>> (1.5F << false)	CONST += 7 << 255 >>> (1.5F << false)
+F	(=ADD FS:LETTER:C G0:3)	C	C	LETTER += 3	0:L1=C,	13	LETTER += 3	LETTER += 3
+F	(=REM FS:LETTER:C (BOOLEAN_OR C:VARTYPE_BOOLEAN:I:1 (TERNARY G0:65535 C:VARTYPE_INT:I:10 G0:65280)))	C	C	LETTER %= true || ('\\uffff' ? 10 : '\\uff00')	0:L2=X, | 2: | 4:L5=Z,L6=X,L7=X,U5=Z,U6=I,U7=I,	13	LETTER %= true || ('\\uffff' ? 10 : '\\uff00')	LETTER %= true\n   || ('\\uffff' ? 10 : '\\uff00')
+F	(=SHR FS:BIG:J (D2I (BOOL_NOT (MMI@VARTYPE_LONG G0:7))))	J	J	BIG >>= (int)(!(--7))	0:L2=J, | 2: | 3: | 4:L5=J,U5=J,	13	BIG >>= (int)(!(--7))	BIG >>= (int)(!(--7))
+F	(=ADD FS:CONST:I (DCMPL C:VARTYPE_FLOAT:F:3dcccccd C:VARTYPE_INTEGER:I:4))	I	I	CONST += __dcmpl__((0.1F), (4))	0:L2=X, | 2:	13	CONST += __dcmpl__((0.1F), (4))	CONST += __dcmpl__((0.1F), (4))
+F	(=USHR FS:LETTER:C G0:3)	C	C	LETTER >>>= 3	0:L1=C,	13	LETTER >>>= 3	LETTER >>>= 3
+F	(=SHL FS:counter:I G0:7)	I	I	counter <<= 7	0:L1=I,	13	counter <<= 7	counter <<= 7
+F	(= FX:java/lang/Integer:MAX_VALUE:I C:VARTYPE_BOOLEAN:I:0)	I	I	Integer.MAX_VALUE = false	0:L2=X,	13	Integer.MAX_VALUE = false	Integer.MAX_VALUE = false
+F	(=OR FS:BIG:J (BOOLEAN_AND (GE (NE G0:1 C:VARTYPE_CHAR:I:10) C:VARTYPE_LONG:J:-1) (MMI@VARTYPE_STRING (REM C:VARTYPE_DOUBLE:D:bfe8000000000000 C:VARTYPE_INT:I:100000))))	J	J	BIG |= (1 != '\\n') >= -1L && --(-0.75 % 100000)	0:L2=J, | 2: | 3:L7=X,L4=X, | 4: | 8:L9=Ljava/lang/String;,U9=Ljava/lang/String;, | 9:L11=X,L10=X,	13	BIG |= (1 != '\\n') >= -1L && --(-0.75 % 100000)	BIG |= (1 != '\\n') >= -1L\n   && --(-0.75 % 100000)
+F	(=REM FS:missing:I C:VARTYPE_INT:I:97)	I	I	missing %= 97	0:L1=I,	13	missing %= 97	missing %= 97
+F	(=OR FS:NAME:Ljava/lang/String; C:VARTYPE_SHORT:I:-300)	Ljava/lang/String;	Ljava/lang/String;	NAME |= -300	0:L2=--null--,	13	NAME |= -300	NAME |= -300
+F	(=SHR FS:BIG:J G0:-5)	J	J	BIG >>= -5	0:L2=J,	13	BIG >>= -5	BIG >>= -5
+F	(=OR FS:LETTER:C (F2I! G0:65280))	I	C	LETTER |= '\\uff00'	0:L1=I, | 2:	13	LETTER |= '\\uff00'	LETTER |= '\\uff00'
+F	(=MUL FS:BIG:J (AND (L2D! C:VARTYPE_INT:I:-1) (TERNARY (EQ C:VARTYPE_DOUBLE:D:7ff8000000000000 C:VARTYPE_INT:I:2) (MUL C:VARTYPE_STRING:S:x006100200062000a C:VARTYPE_NULL:N) (GE G0:2 C:VARTYPE_BOOLEAN:I:1))))	J	J	BIG *= -1 & (Double.NaN == 2 ? "a b\\n" * null : 2 >= true)	0:L1=D, | 2: | 3: | 5:L6=Z,L9=X,L12=X,U6=Z,U9=I,U12=I, | 6: | 9:L11=X,L10=X, | 12:L14=X,L13=X,	13	BIG *= -1 & (Double.NaN == 2 ? "a b\\n" * null : 2 >= true)	BIG *= -1\n   & (\n      Double.NaN == 2\n         ? "a b\\n" * null\n         : 2 >= true\n   )
+F	(=ADD FS:missing:I C:VARTYPE_INT:I:-5)	I	I	missing += -5	0:L1=I,	13	missing += -5	missing += -5
+F	(=OR FS:CONST:I (OR (MUL (OR C:VARTYPE_SHORT:I:-300 C:VARTYPE_INT:I:97) (LT C:VARTYPE_NULL:N C:VARTYPE_INT:I:7)) G0:7))	I	I	CONST |= (-300 | 97) * (null < 7) | 7	0:L1=I, | 2: | 3:L7=X,L4=X, | 4: | 7:L9=X,L8=X,	13	CONST |= (-300 | 97) * (null < 7) | 7	CONST |= (-300 | 97) * (null < 7) | 7
+F	(=ADD FX:java/lang/Integer:MAX_VALUE:I (MUL (BOOLEAN_AND (IMM@VARTYPE_DOUBLE C:VARTYPE_INT:I:65) C:VARTYPE_INT:I:3) (SHL G0:7 (PPI C:VARTYPE_INT:I:127))))	I	I	EXC:NullPointerException:Cannot invoke "org.jetbrains.java.decompiler.struct.gen.VarType.equals(Object)" because "expectedType" is null	0:L1=I, | 2:L7=X,L3=X, | 3: | 4:L5=D,U5=D, | 7:L9=X,L8=X, | 9:EXC:NullPointerException:Null not expected here	13	EXC:NullPointerException:Cannot invoke "org.jetbrains.java.decompiler.struct.gen.VarType.equals(Object)" because "expectedType" is null	EXC:NullPointerException:Cannot invoke "org.jetbrains.java.decompiler.struct.gen.VarType.equals(Object)" because "expectedType" is null
+F	(=USHR FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_LONG:J:5)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out >>>= 5L	0:L2=--null--,	13	System.out >>>= 5L	System.out >>>= 5L
+F	(= FS:counter:I (I2C (PPI@VARTYPE_LONG (SUB C:VARTYPE_NULL:N C:VARTYPE_INT:I:-1))))	I	I	counter = (char)(++(null - -1))	0:L1=I, | 2:L3=X,U3=I, | 3:L4=J,U4=J, | 4:L6=X,L5=X,	13	counter = (char)(++(null - -1))	counter = (char)(++(null - -1))
+F	(=OR FS:LETTER:C (D2I! G1:0))	I	C	LETTER |= false	0:L1=I, | 2:	13	LETTER |= false	LETTER |= false
+F	(=OR FS:LETTER:C G0:100000)	I	C	LETTER |= 100000	0:L1=I,	13	LETTER |= 100000	LETTER |= 100000
+F	(=USHR FS:NAME:Ljava/lang/String; (AND (BOOLEAN_AND G0:127 C:VARTYPE_INT:I:-5) (BOOLEAN_OR (D2F G0:2) (BIT_NOT C:VARTYPE_INT:I:65535))))	Ljava/lang/String;	Ljava/lang/String;	NAME >>>= (127 && -5) & ((float)2 || ~65535)	0:L2=--null--, | 2: | 3: | 6: | 7: | 9:L10=X,	13	NAME >>>= (127 && -5) & ((float)2 || ~65535)	NAME >>>= (127 && -5)\n   & ((float)2 || ~65535)
+F	(=SUB FS:BIG:J (LT (IMM@VARTYPE_STRING C:VARTYPE_LONG:J:-1) (OR C:VARTYPE_BYTECHAR:I:66 C:VARTYPE_NULL:N)))	J	J	BIG -= -1L-- < (66 | null)	0:L2=J, | 2:L5=X,L3=X, | 3:L4=Ljava/lang/String;,U4=Ljava/lang/String;, | 5:	13	BIG -= -1L-- < (66 | null)	BIG -= -1L-- < (66 | null)
+F	(=REM FS:missing:I (FCMPG (SUB G0:127 G0:-1) (BOOL_NOT G0:65)))	I	I	missing %= __fcmpg__((127 - -1), (!65))	0:L2=X, | 2: | 3:L5=X,L4=X, | 6:	13	missing %= __fcmpg__((127 - -1), (!65))	missing %= __fcmpg__((127 - -1), (!65))
+F	(=MUL FS:missing:I G0:255)	I	I	missing *= 255	0:L1=I,	13	missing *= 255	missing *= 255
+F	(=SUB FX:java/lang/System:out:Ljava/io/PrintStream; (PPI C:VARTYPE_INT:I:255))	EXC:NullPointerException:Cannot read field "type" because "other" is null	Ljava/io/PrintStream;	System.out -= ++255	0:EXC:NullPointerException:Cannot read field "typeFamily" because "typeRight" is null | 2:EXC:NullPointerException:Null not expected here	13	System.out -= ++255	System.out -= ++255
+F	(=SHL FS:counter:I (FCMPG (IMM (XOR C:VARTYPE_INT:I:65280 C:VARTYPE_BOOLEAN:I:0)) (I2C (BIT_NOT C:VARTYPE_INT:I:97))))	I	I	counter <<= __fcmpg__(((65280 ^ false)--), ((char)(~97)))	0:L2=X, | 2: | 3:EXC:NullPointerException:Null not expected here | 4:L6=X, | 7:L8=X,U8=I, | 8:L9=X,	13	counter <<= __fcmpg__(((65280 ^ false)--), ((char)(~97)))	counter <<= __fcmpg__(((65280 ^ false)--), (\n   (char)(~97)\n))
+F	(=SUB FX:java/lang/System:out:Ljava/io/PrintStream; (IMM@VARTYPE_STRING (L2D (DCMPG C:VARTYPE_FLOAT:F:3fc00000 G0:0))))	Ljava/lang/Object;	Ljava/io/PrintStream;	System.out -= ((double)__dcmpg__((1.5F), (0)))--	0:L1=Ljava/lang/Object;, | 2:L3=Ljava/lang/String;,U3=Ljava/lang/String;, | 3: | 4:	13	System.out -= ((double)__dcmpg__((1.5F), (0)))--	System.out -= (\n   (double)__dcmpg__((1.5F), (0))\n)--
+F	(=DIV FS:NAME:Ljava/lang/String; C:VARTYPE_BYTECHAR:I:66)	Ljava/lang/String;	Ljava/lang/String;	NAME /= 66	0:L2=--null--,	13	NAME /= 66	NAME /= 66
+F	(=REM FS:CONST:I (NEG C:VARTYPE_LONG:J:-1))	I	I	CONST %= --1L	0:L1=J, | 2:L3=X,	13	CONST %= --1L	CONST %= --1L
+F	(=DIV FX:java/lang/Integer:MAX_VALUE:I (F2L G0:97))	I	I	Integer.MAX_VALUE /= (long)97	0:L1=J, | 2:	13	Integer.MAX_VALUE /= (long)97	Integer.MAX_VALUE /= (long)97
+F	(=AND FS:CONST:I (F2L (D2L C:VARTYPE_INT:I:7)))	I	I	CONST &= (long)((long)7)	0:L1=J, | 2: | 3:	13	CONST &= (long)((long)7)	CONST &= (long)((long)7)
+F	(= FX:java/lang/Integer:MAX_VALUE:I C:VARTYPE_FLOAT:F:40490fdb)	I	I	Integer.MAX_VALUE = (int)(float) Math.PI	0:L1=F,	13	Integer.MAX_VALUE = (int)(float) Math.PI	Integer.MAX_VALUE = (int)(float) Math.PI
+F	(=USHR FX:java/lang/System:out:Ljava/io/PrintStream; (OR C:VARTYPE_DOUBLE:D:7ff8000000000000 G1:1))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out >>>= Double.NaN | true	0:L2=--null--, | 2:	13	System.out >>>= Double.NaN | true	System.out >>>= Double.NaN | true
+F	(=SHR FS:CONST:I G0:65280)	I	I	CONST >>= 65280	0:L1=I,	13	CONST >>= 65280	CONST >>= 65280
+F	(=SHR FS:missing:I (CAST C:VARTYPE_NULL:N T:Ljava/lang/Runnable;))	I	I	missing >>= (Runnable)null	0:L1=Ljava/lang/Runnable;, | 2:L3=--null--,U3=Ljava/lang/Runnable;,	13	missing >>= (Runnable)null	missing >>= (Runnable)null
+F	(=SUB FS:CONST:I (IPP@VARTYPE_STRING C:VARTYPE_INT:I:255))	I	I	CONST -= 255++	0:L1=Ljava/lang/String;, | 2:L3=Ljava/lang/String;,U3=Ljava/lang/String;,	13	CONST -= 255++	CONST -= 255++
+F	(=SHL FS:NAME:Ljava/lang/String; (SHR (USHR C:VARTYPE_NULL:N C:VARTYPE_INT:I:65535) (I2D G1:0)))	Ljava/lang/String;	Ljava/lang/String;	NAME <<= null >>> 65535 >> (double)false	0:L2=--null--, | 2:L6=X,L3=X, | 3:L5=X,L4=X, | 6:L7=X,U7=I,	13	NAME <<= null >>> 65535 >> (double)false	NAME <<= null >>> 65535 >> (double)false
+F	(=ADD FS:NAME:Ljava/lang/String; C:VARTYPE_FLOAT:F:3dcccccd)	Ljava/lang/String;	Ljava/lang/String;	NAME += 0.1F	0:L2=--null--,	13	NAME += 0.1F	NAME += 0.1F
+F	(=OR FX:java/lang/Integer:MAX_VALUE:I G0:65280)	I	I	Integer.MAX_VALUE |= 65280	0:L1=I,	13	Integer.MAX_VALUE |= 65280	Integer.MAX_VALUE |= 65280
+F	(=OR FX:java/lang/Integer:MAX_VALUE:I (L2D G0:100000))	I	I	Integer.MAX_VALUE |= (double)100000	0:L1=D, | 2:	13	Integer.MAX_VALUE |= (double)100000	Integer.MAX_VALUE |= (double)100000
+F	(=REM FS:BIG:J C:VARTYPE_INT:I:97)	J	J	BIG %= 97	0:L2=J,	13	BIG %= 97	BIG %= 97
+F	(=AND FS:BIG:J C:VARTYPE_CHAR:I:10)	J	J	BIG &= '\\n'	0:L2=J,	13	BIG &= '\\n'	BIG &= '\\n'
+F	(=SHL FX:java/lang/Integer:MAX_VALUE:I (REM (I2L (TERNARY G0:65535 G0:3 G0:-1)) (LCMP (LT C:VARTYPE_INT:I:0 C:VARTYPE_BYTECHAR:I:66) (OR C:VARTYPE_FLOAT:F:3dcccccd C:VARTYPE_INT:I:65535))))	I	I	Integer.MAX_VALUE <<= (long)('\\uffff' ? 3 : -1) % __lcmp__((0 < 66), (0.1F | 65535))	0:L1=J, | 2:L8=X,L3=X, | 3:L4=X,U4=I, | 4:L5=Z,L6=X,L7=X,U5=Z,U6=I,U7=I, | 8: | 9:L11=X,L10=X, | 12:	13	Integer.MAX_VALUE <<= (long)('\\uffff' ? 3 : -1) % __lcmp__((0 < 66), (0.1F | 65535))	Integer.MAX_VALUE <<= (long)(\n      '\\uffff' ? 3 : -1\n   )\n   % __lcmp__((0 < 66), (0.1F | 65535))
+F	(=REM FS:CONST:I G0:65535)	I	I	CONST %= 65535	0:L1=I,	13	CONST %= 65535	CONST %= 65535
+F	(=SHR FS:CONST:I C:VARTYPE_INT:I:255)	I	I	CONST >>= 255	0:L1=I,	13	CONST >>= 255	CONST >>= 255
+F	(=MUL FS:LETTER:C C:VARTYPE_BYTECHAR:I:66)	C	C	LETTER *= 'B'	0:L1=C,	13	LETTER *= 'B'	LETTER *= 'B'
+F	(=REM FS:BIG:J (BOOLEAN_AND (MMI@VARTYPE_STRING C:VARTYPE_CHAR:I:65) (ADD G1:0 G0:97)))	J	J	BIG %= --'A' && false + 97	0:L2=J, | 2: | 3:L4=Ljava/lang/String;,U4=Ljava/lang/String;, | 5:L7=X,L6=X,	13	BIG %= --'A' && false + 97	BIG %= --'A' && false + 97
+F	(=SHL FS:BIG:J (FCMPL (I2C! (D2I C:VARTYPE_STRING:S:x006100200062000a)) C:VARTYPE_INT:I:65280))	J	J	BIG <<= __fcmpl__(((int)"a b\\n"), (65280))	0:L2=J, | 2: | 3:L4=X,U4=I, | 4:	13	BIG <<= __fcmpl__(((int)"a b\\n"), (65280))	BIG <<= __fcmpl__(((int)"a b\\n"), (65280))
+F	(=USHR FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_BYTECHAR:I:66)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out >>>= 66	0:L2=--null--,	13	System.out >>>= 66	System.out >>>= 66
+F	(=AND FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_INT:I:3)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out &= 3	0:L2=--null--,	13	System.out &= 3	System.out &= 3
+F	(=DIV FX:java/lang/System:out:Ljava/io/PrintStream; G0:65280)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out /= '\\uff00'	0:L2=--null--,	13	System.out /= '\\uff00'	System.out /= '\\uff00'
+F	(=SUB FX:java/lang/Integer:MAX_VALUE:I C:VARTYPE_BOOLEAN:I:1)	I	I	Integer.MAX_VALUE -= true	0:L2=X,	13	Integer.MAX_VALUE -= true	Integer.MAX_VALUE -= true
+F	(=USHR FS:missing:I G0:2)	I	I	missing >>>= 2	0:L1=I,	13	missing >>>= 2	missing >>>= 2
+F	(=USHR FX:java/lang/Integer:MAX_VALUE:I (BOOL_NOT (BOOLEAN_OR (F2D G0:65) G0:65280)))	I	I	Integer.MAX_VALUE >>>= !((double)65 || '\\uff00')	0:L2=X, | 2: | 3: | 4:	13	Integer.MAX_VALUE >>>= !((double)65 || '\\uff00')	Integer.MAX_VALUE >>>= !(\n   (double)65 || '\\uff00'\n)
+F	(=USHR FX:java/lang/Integer:MAX_VALUE:I (I2F (F2D (I2B! G0:65))))	I	I	Integer.MAX_VALUE >>>= (float)((double)65)	0:L1=F, | 2:L3=X,U3=I, | 3: | 4:L5=X,U5=I,	13	Integer.MAX_VALUE >>>= (float)((double)65)	Integer.MAX_VALUE >>>= (float)(\n   (double)65\n)
+F	(=SUB FS:LETTER:C (IMM C:VARTYPE_INT:I:-5))	EXC:NullPointerException:Cannot read field "type" because "other" is null	C	LETTER -= -5--	0:EXC:NullPointerException:Cannot read field "typeFamily" because "typeRight" is null | 2:EXC:NullPointerException:Null not expected here	13	LETTER -= -5--	LETTER -= -5--
+F	(=SUB FS:LETTER:C (D2L G0:97))	C	C	LETTER -= (long)97	0:L1=J, | 2:	13	LETTER -= (long)97	LETTER -= (long)97
+F	(=XOR FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_STRING:S:x006100200062000a)	Ljava/lang/Object;	Ljava/io/PrintStream;	System.out ^= "a b\\n"	0:L1=Ljava/lang/Object;,	13	System.out ^= "a b\\n"	System.out ^= "a b\\n"
+F	(=USHR FS:NAME:Ljava/lang/String; (D2L (MUL C:VARTYPE_STRING:S:x0073 C:VARTYPE_INTEGER:I:4)))	Ljava/lang/String;	Ljava/lang/String;	NAME >>>= (long)("s" * 4)	0:L2=--null--, | 2: | 3:L5=X,L4=X,	13	NAME >>>= (long)("s" * 4)	NAME >>>= (long)("s" * 4)
+F	(=USHR FS:LETTER:C C:VARTYPE_INT:I:-5)	I	C	LETTER >>>= -5	0:L1=I,	13	LETTER >>>= -5	LETTER >>>= -5
+F	(=SHR FS:NAME:Ljava/lang/String; (SUB (I2D C:VARTYPE_LONG:J:5) (I2F (LCMP C:VARTYPE_INT:I:97 C:VARTYPE_FLOAT:F:3fc00000))))	Ljava/lang/String;	Ljava/lang/String;	NAME >>= (double)5L - (float)__lcmp__((97), (1.5F))	0:L2=--null--, | 2:L5=X,L3=X, | 3:L4=X,U4=I, | 5:L6=X,U6=I, | 6:	13	NAME >>= (double)5L - (float)__lcmp__((97), (1.5F))	NAME >>= (double)5L\n   - (float)__lcmp__((97), (1.5F))
+F	(=DIV FS:counter:I (ARRAY_LENGTH C:VARTYPE_INT:I:1))	I	I	counter /= ((Object[])1).length	0:L1=I, | 2:	13	counter /= ((Object[])1).length	counter /= ((Object[])1).length
+F	(=ADD FS:CONST:I (F2I (BOOLEAN_AND (I2L G0:97) (AND C:VARTYPE_LONG:J:5 C:VARTYPE_INT:I:97))))	I	I	CONST += (int)((long)97 && 5L & 97)	0:L1=I, | 2: | 3: | 4:L5=X,U5=I, | 6:	13	CONST += (int)((long)97 && 5L & 97)	CONST += (int)((long)97 && 5L & 97)
+F	(= FX:java/lang/Integer:MAX_VALUE:I (MMI@VARTYPE_LONG (I2D C:VARTYPE_BOOLEAN:I:0)))	I	I	Integer.MAX_VALUE = (int)(--((double)false))	0:L1=J, | 2:L3=J,U3=J, | 3:L4=X,U4=I,	13	Integer.MAX_VALUE = (int)(--((double)false))	Integer.MAX_VALUE = (int)(--(\n   (double)false\n))
+F	(=DIV FS:CONST:I C:VARTYPE_INT:I:65280)	I	I	CONST /= 65280	0:L1=I,	13	CONST /= 65280	CONST /= 65280
+F	(=USHR FS:NAME:Ljava/lang/String; (STR_CONCAT@VARTYPE_LONG (NEG (NEG C:VARTYPE_LONG:J:-1)) (L2D C:VARTYPE_SHORT:I:-300)))	Ljava/lang/String;	Ljava/lang/String;	NAME >>>= -(--1L) + (double)-300	0:L1=Ljava/lang/String;, | 2:L3=J, | 3:L4=X, | 4:L5=X, | 6:	13	NAME >>>= -(--1L) + (double)-300	NAME >>>= -(--1L) + (double)-300
+F	(=MUL FX:java/lang/System:out:Ljava/io/PrintStream; (IMM@VARTYPE_INT (STR_CONCAT@VARTYPE_DOUBLE (CAST C:VARTYPE_INT:I:65 T:C T:Ljava/util/List;) (AND G0:65535 C:VARTYPE_INT:I:2))))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out *= ((char & List)65 + ('\\uffff' & 2))--	0:L2=--null--, | 2:L3=I,U3=I, | 3: | 4:L5=X,U5=C, | 8:	13	System.out *= ((char & List)65 + ('\\uffff' & 2))--	System.out *= (\n   (char & List)65 + ('\\uffff' & 2)\n)--
+F	(=ADD FX:java/lang/Integer:MAX_VALUE:I (BIT_NOT C:VARTYPE_INT:I:65535))	I	I	Integer.MAX_VALUE += ~65535	0:L1=I, | 2:L3=X,	13	Integer.MAX_VALUE += ~65535	Integer.MAX_VALUE += ~65535
+F	(=ADD FS:BIG:J (OR (IMM (D2L C:VARTYPE_INT:I:255)) (BIT_NOT (IMM@VARTYPE_LONG C:VARTYPE_DOUBLE:D:7ff8000000000000))))	EXC:NullPointerException:Cannot read field "type" because "type1" is null	J	BIG += ((long)255)-- | ~(Double.NaN--)	0:EXC:NullPointerException:Cannot read field "type" because "type1" is null | 2:EXC:NullPointerException:Cannot read field "type" because "type1" is null | 3:EXC:NullPointerException:Null not expected here | 4: | 6:L7=X, | 7:L8=J,U8=J,	13	BIG += ((long)255)-- | ~(Double.NaN--)	BIG += ((long)255)-- | ~(Double.NaN--)
+F	(=SHR FX:java/lang/Integer:MAX_VALUE:I (NE C:VARTYPE_INT:I:65535 C:VARTYPE_INT:I:65280))	I	I	Integer.MAX_VALUE >>= 65535 != 65280	0:L2=X, | 2:	13	Integer.MAX_VALUE >>= 65535 != 65280	Integer.MAX_VALUE >>= 65535 != 65280
+F	(=SHL FS:LETTER:C G0:65535)	C	C	LETTER <<= '\\uffff'	0:L1=C,	13	LETTER <<= '\\uffff'	LETTER <<= '\\uffff'
+F	(=SUB FX:java/lang/System:out:Ljava/io/PrintStream; (FCMPL C:VARTYPE_BYTECHAR:I:66 C:VARTYPE_INT:I:65535))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out -= __fcmpl__((66), (65535))	0:L2=--null--, | 2:	13	System.out -= __fcmpl__((66), (65535))	System.out -= __fcmpl__((66), (65535))
+F	(=SUB FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_INT:I:-5)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out -= -5	0:L2=--null--,	13	System.out -= -5	System.out -= -5
+F	(=AND FX:java/lang/System:out:Ljava/io/PrintStream; (XOR (PPI@VARTYPE_STRING G0:65535) (BOOL_NOT G0:-1)))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out &= ++'\\uffff' ^ !-1	0:L2=--null--, | 2: | 3:L4=Ljava/lang/String;,U4=Ljava/lang/String;, | 5:	13	System.out &= ++'\\uffff' ^ !-1	System.out &= ++'\\uffff' ^ !-1
+F	(=USHR FX:java/lang/System:out:Ljava/io/PrintStream; (LT G0:65535 (SHR C:VARTYPE_LONG:J:-1 G0:2)))	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out >>>= '\\uffff' < -1L >> 2	0:L2=--null--, | 2:L4=X,L3=X, | 4:L6=X,L5=X,	13	System.out >>>= '\\uffff' < -1L >> 2	System.out >>>= '\\uffff' < -1L >> 2
+F	(=ADD FX:java/lang/Integer:MAX_VALUE:I (CAST (SHR G0:65535 C:VARTYPE_INT:I:255) T:Ljava/lang/Object;))	Ljava/lang/Object;	I	Integer.MAX_VALUE += (Object)('\\uffff' >> 255)	0:L1=Ljava/lang/Object;, | 2:L3=--null--,U3=Ljava/lang/Object;, | 3:L5=X,L4=X,	13	Integer.MAX_VALUE += (Object)('\\uffff' >> 255)	Integer.MAX_VALUE += (Object)(\n   '\\uffff' >> 255\n)
+F	(=USHR FX:java/lang/Integer:MAX_VALUE:I G0:7)	I	I	Integer.MAX_VALUE >>>= 7	0:L1=I,	13	Integer.MAX_VALUE >>>= 7	Integer.MAX_VALUE >>>= 7
+F	(=MUL FS:CONST:I C:VARTYPE_INT:I:1)	I	I	CONST *= 1	0:L1=I,	13	CONST *= 1	CONST *= 1
+F	(=XOR FS:LETTER:C C:VARTYPE_INT:I:2147483647)	I	C	LETTER ^= Integer.MAX_VALUE	0:L1=I,	13	LETTER ^= Integer.MAX_VALUE	LETTER ^= Integer.MAX_VALUE
+F	(=SHL FS:LETTER:C (BOOLEAN_OR (OR (SHL C:VARTYPE_INT:I:255 C:VARTYPE_DOUBLE:D:4004000000000000) (D2F G0:-5)) (BOOLEAN_OR (F2L C:VARTYPE_SHORT:I:-300) (LT C:VARTYPE_CHAR:I:65 C:VARTYPE_CHAR:I:10))))	C	C	LETTER <<= 255 << 2.5 | (float)-5 || (long)-300 || 'A' < '\\n'	0:L2=X, | 2: | 3: | 4:L6=X,L5=X, | 7: | 9: | 10: | 12:L14=X,L13=X,	13	LETTER <<= 255 << 2.5 | (float)-5 || (long)-300 || 'A' < '\\n'	LETTER <<= 255 << 2.5 | (float)-5\n   || (long)-300\n   || 'A' < '\\n'
+F	(= FS:NAME:Ljava/lang/String; (D2L G0:255))	Ljava/lang/String;	Ljava/lang/String;	NAME = (long)255	0:L2=--null--, | 2:	13	NAME = (long)255	NAME = (long)255
+F	(=SHL FS:LETTER:C (IMM@VARTYPE_DOUBLE C:VARTYPE_STRING:S:x0073))	C	C	LETTER <<= "s"--	0:L1=D, | 2:L3=D,U3=D,	13	LETTER <<= "s"--	LETTER <<= "s"--
+F	(=OR FX:java/lang/Integer:MAX_VALUE:I C:VARTYPE_INT:I:65)	I	I	Integer.MAX_VALUE |= 65	0:L1=I,	13	Integer.MAX_VALUE |= 65	Integer.MAX_VALUE |= 65
+F	(=DIV FX:java/lang/Integer:MAX_VALUE:I (XOR (SUB (L2D C:VARTYPE_LONG:J:-1) G0:3) (I2L! C:VARTYPE_INT:I:100000)))	I	I	Integer.MAX_VALUE /= (double)-1L - 3 ^ 100000	0:L1=D, | 2: | 3:L6=X,L4=X, | 4: | 7:L8=X,U8=I,	13	Integer.MAX_VALUE /= (double)-1L - 3 ^ 100000	Integer.MAX_VALUE /= (double)-1L - 3\n   ^ 100000
+F	(=MUL FS:BIG:J C:VARTYPE_DOUBLE:D:4022d97c7f3321d2)	J	J	BIG *= Math.PI * 3	0:L1=D,	13	BIG *= Math.PI * 3	BIG *= Math.PI * 3
+F	(=OR FS:missing:I (L2F (CAST G0:97 T:[I)))	I	I	missing |= (float)((int[])97)	0:L1=F, | 2: | 3:L4=--null--,U4=[I,	13	missing |= (float)((int[])97)	missing |= (float)((int[])97)
+F	(=SHR FS:missing:I (FCMPG (USHR C:VARTYPE_BOOLEAN:I:1 (EQ C:VARTYPE_INT:I:3 C:VARTYPE_STRING:S:x0073)) C:VARTYPE_INT:I:127))	I	I	missing >>= __fcmpg__((true >>> (3 == "s")), (127))	0:L2=X, | 2: | 3:L5=X,L4=X, | 5:	13	missing >>= __fcmpg__((true >>> (3 == "s")), (127))	missing >>= __fcmpg__((\n   true >>> (3 == "s")\n), (127))
+F	(=REM FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_INT:I:0)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out %= 0	0:L2=--null--,	13	System.out %= 0	System.out %= 0
+F	(=ADD FX:java/lang/Integer:MAX_VALUE:I (NEG C:VARTYPE_BYTECHAR:I:66))	I	I	Integer.MAX_VALUE += -66	0:L1=I, | 2:L3=X,	13	Integer.MAX_VALUE += -66	Integer.MAX_VALUE += -66
+F	(=AND FS:LETTER:C C:VARTYPE_INTEGER:I:4)	C	C	LETTER &= 4	0:L1=Ljava/lang/Integer;,	13	LETTER &= 4	LETTER &= 4
+F	(=SHL FS:CONST:I (PPI@VARTYPE_LONG C:VARTYPE_STRING:S:x006100200062000a))	I	I	CONST <<= ++"a b\\n"	0:L1=J, | 2:L3=J,U3=J,	13	CONST <<= ++"a b\\n"	CONST <<= ++"a b\\n"
+F	(=SUB FS:counter:I C:VARTYPE_CHAR:I:65)	I	I	counter -= 65	0:L1=I,	13	counter -= 65	counter -= 65
+F	(=AND FS:BIG:J (OR (F2I! C:VARTYPE_BOOLEAN:I:1) (LT C:VARTYPE_INT:I:100000 C:VARTYPE_BOOLEAN:I:1)))	J	J	BIG &= true | 100000 < true	0:L2=J, | 2:L5=X, | 3: | 5:L7=X,L6=X,	13	BIG &= true | 100000 < true	BIG &= true | 100000 < true
+F	(=OR FX:java/lang/System:out:Ljava/io/PrintStream; C:VARTYPE_INT:I:127)	Ljava/io/PrintStream;	Ljava/io/PrintStream;	System.out |= 127	0:L2=--null--,	13	System.out |= 127	System.out |= 127
+F	(=DIV FS:CONST:I C:VARTYPE_CHAR:I:65)	I	I	CONST /= 65	0:L1=I,	13	CONST /= 65	CONST /= 65
+F	(=MUL FS:counter:I C:VARTYPE_FLOAT:F:3fc00000)	I	I	counter *= 1.5F	0:L1=F,	13	counter *= 1.5F	counter *= 1.5F
+F	(=SHR FS:missing:I (SUB (DCMPG (I2L C:VARTYPE_INT:I:97) (FCMPL C:VARTYPE_INT:I:65535 G0:65535)) (F2D! (USHR C:VARTYPE_INT:I:65535 C:VARTYPE_INT:I:-5))))	I	I	missing >>= __dcmpg__(((long)97), (__fcmpl__((65535), ('\\uffff')))) - (65535 >>> -5)	0:L1=D, | 2:L9=X,L3=X, | 3: | 4:L5=X,U5=I, | 6: | 9: | 10:L12=X,L11=X,	13	missing >>= __dcmpg__(((long)97), (__fcmpl__((65535), ('\\uffff')))) - (65535 >>> -5)	missing >>= __dcmpg__(((long)97), (\n      __fcmpl__((65535), ('\\uffff'))\n   ))\n   - (65535 >>> -5)
+F	(=SHR FS:counter:I C:VARTYPE_INT:I:10)	I	I	counter >>= 10	0:L1=I,	13	counter >>= 10	counter >>= 10
+F	(=XOR FS:NAME:Ljava/lang/String; C:VARTYPE_STRING:S:x0073)	Ljava/lang/String;	Ljava/lang/String;	NAME ^= "s"	0:L1=Ljava/lang/String;,	13	NAME ^= "s"	NAME ^= "s"
+F	(=SUB FS:counter:I G0:65280)	I	I	counter -= 65280	0:L1=I,	13	counter -= 65280	counter -= 65280
+F	(=OR FS:NAME:Ljava/lang/String; C:VARTYPE_CHAR:I:10)	Ljava/lang/String;	Ljava/lang/String;	NAME |= '\\n'	0:L2=--null--,	13	NAME |= '\\n'	NAME |= '\\n'
+F	(=ADD FS:missing:I (I2F! (GT C:VARTYPE_INTEGER:I:4 C:VARTYPE_INT:I:65280)))	I	I	missing += 4 > 65280	0:L1=F, | 2:L3=X,U3=I, | 3:L5=X,L4=X,	13	missing += 4 > 65280	missing += 4 > 65280
+F	(=ADD FS:LETTER:C (F2I (BOOLEAN_AND (D2I G0:100000) C:VARTYPE_INT:I:10)))	I	C	LETTER += (int)((int)100000 && 10)	0:L1=I, | 2: | 3: | 4:	13	LETTER += (int)((int)100000 && 10)	LETTER += (int)((int)100000 && 10)
+F	(=SUB FS:NAME:Ljava/lang/String; (L2D (F2I (NE G0:65280 G0:65))))	Ljava/lang/String;	Ljava/lang/String;	NAME -= (double)((int)('\\uff00' != 'A'))	0:L2=--null--, | 2: | 3: | 4:	13	NAME -= (double)((int)('\\uff00' != 'A'))	NAME -= (double)((int)('\\uff00' != 'A'))
+F	(=AND FS:missing:I (F2D (EQ (D2I! C:VARTYPE_FLOAT:F:3dcccccd) (BIT_NOT C:VARTYPE_INT:I:7))))	I	I	missing &= (double)(0.1F == ~7)	0:L1=D, | 2: | 3: | 4: | 6:L7=X,	13	missing &= (double)(0.1F == ~7)	missing &= (double)(0.1F == ~7)
+F	(=MUL FS:NAME:Ljava/lang/String; (NEG (BOOL_NOT C:VARTYPE_FLOAT:F:3fc00000)))	Ljava/lang/String;	Ljava/lang/String;	NAME *= -(!1.5F)	0:L2=--null--, | 2:L3=X, | 3:	13	NAME *= -(!1.5F)	NAME *= -(!1.5F)
+F	(=SHR FS:BIG:J C:VARTYPE_INT:I:97)	J	J	BIG >>= 97	0:L2=J,	13	BIG >>= 97	BIG >>= 97
+F	(=SHL FS:CONST:I (L2F! (D2I C:VARTYPE_INT:I:2147483647)))	I	I	CONST <<= (int)Integer.MAX_VALUE	0:L1=F, | 2: | 3:	13	CONST <<= (int)Integer.MAX_VALUE	CONST <<= (int)Integer.MAX_VALUE
+F	(=SUB FS:CONST:I C:VARTYPE_INT:I:-5)	I	I	CONST -= -5	0:L1=I,	13	CONST -= -5	CONST -= -5
+F	(=OR FS:CONST:I G1:0)	I	I	CONST |= false	0:L2=X,	13	CONST |= false	CONST |= false
+F	(=USHR FS:missing:I G0:2)	I	I	missing >>>= 2	0:L1=I,	13	missing >>>= 2	missing >>>= 2
+F	(=SHR FS:NAME:Ljava/lang/String; G0:2)	Ljava/lang/String;	Ljava/lang/String;	NAME >>= 2	0:L2=--null--,	13	NAME >>= 2	NAME >>= 2
+F	(= FX:java/lang/Integer:MAX_VALUE:I (REM C:VARTYPE_BOOLEAN:I:0 G1:0))	I	I	Integer.MAX_VALUE = false % false	0:L1=I, | 2:L4=X,L3=X,	13	Integer.MAX_VALUE = false % false	Integer.MAX_VALUE = false % false
+F	(= FS:counter:I (SHR (I2F C:VARTYPE_BOOLEAN:I:1) (INSTANCEOF C:VARTYPE_CHAR:I:10 T:J)))	I	I	counter = (int)((float)true >> ('\\n' instanceof long))	0:L1=F, | 2:L5=X,L3=X, | 3:L4=X,U4=I, | 5:	13	counter = (int)((float)true >> ('\\n' instanceof long))	counter = (int)((float)true\n   >> ('\\n' instanceof long))
+F	(=REM FS:counter:I C:VARTYPE_LONG:J:-1)	I	I	counter %= -1L	0:L1=J,	13	counter %= -1L	counter %= -1L
+F	(=DIV FS:BIG:J (USHR (I2F! G0:65535) C:VARTYPE_INT:I:255))	J	J	BIG /= '\\uffff' >>> 255	0:L2=J, | 2:L5=X,L3=X, | 3:L4=X,U4=I,	13	BIG /= '\\uffff' >>> 255	BIG /= '\\uffff' >>> 255
+F	(=MUL FS:CONST:I G0:127)	I	I	CONST *= 127	0:L1=I,	13	CONST *= 127	CONST *= 127
+F	(=AND FS:BIG:J (F2L (MUL (DIV C:VARTYPE_INT:I:65535 C:VARTYPE_INT:I:3) C:VARTYPE_INT:I:3)))	J	J	BIG &= (long)(65535 / 3 * 3)	0:L1=J, | 2: | 3:L7=X,L4=X, | 4:L6=X,L5=X,	13	BIG &= (long)(65535 / 3 * 3)	BIG &= (long)(65535 / 3 * 3)
+F	(=ADD FS:missing:I G0:65535)	I	I	missing += 65535	0:L1=I,	13	missing += 65535	missing += 65535
+F	(=SHR FS:CONST:I (D2F! C:VARTYPE_INT:I:65))	I	I	CONST >>= 65	0:L1=F, | 2:	13	CONST >>= 65	CONST >>= 65
+F	(=SHR FX:java/lang/Integer:MAX_VALUE:I (AND C:VARTYPE_BOOLEAN:I:0 C:VARTYPE_INT:I:100000))	I	I	Integer.MAX_VALUE >>= false & 100000	0:L1=I, | 2:L3=X,	13	Integer.MAX_VALUE >>= false & 100000	Integer.MAX_VALUE >>= false & 100000
+F	(=MUL FS:counter:I G0:127)	I	I	counter *= 127	0:L1=I,	13	counter *= 127	counter *= 127
+F	(=XOR FS:LETTER:C C:VARTYPE_CHAR:I:65)	C	C	LETTER ^= 'A'	0:L1=C,	13	LETTER ^= 'A'	LETTER ^= 'A'
