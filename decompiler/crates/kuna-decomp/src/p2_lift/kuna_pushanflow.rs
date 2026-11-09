@@ -395,7 +395,7 @@ impl<'a> Explorer<'a> {
                 }
                 return id;
             }
-            let diffs = entry.diff_constants(&mut state, &mut self.arena, self.target);
+            let diffs = entry.diff_constants(&mut state, &mut self.arena, self.target, self.abi.ptr_size);
             let vpc_reg = node.entry_ctx.vpc_reg;
             let vpc_cell = node.entry_ctx.vpc_cell;
             if let Some(tr) = &self.config.trace {

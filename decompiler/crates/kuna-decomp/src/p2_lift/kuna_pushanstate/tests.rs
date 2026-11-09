@@ -87,7 +87,7 @@ fn diff_and_symbolize() {
     s2.write_reg(0x30, c2, 8);
     s1.write_reg(0x38, c1, 8);
     s2.write_reg(0x38, c1, 8);
-    let d = s1.diff_constants(&mut s2, &mut a, &img);
+    let d = s1.diff_constants(&mut s2, &mut a, &img, 8);
     assert_eq!(d.len(), 1);
     assert_eq!(d[0].loc, SymLoc { loc: Loc::Reg { off: 0x30 }, size: 8 });
     // a differing byte inside an otherwise symbolic register is found narrowly
@@ -97,7 +97,7 @@ fn diff_and_symbolize() {
     let b2 = a.cst(1, 2);
     s5.write_reg(0x41, b1, 1);
     s6.write_reg(0x41, b2, 1);
-    let d2 = s5.diff_constants(&mut s6, &mut a, &img);
+    let d2 = s5.diff_constants(&mut s6, &mut a, &img, 8);
     assert!(
         d2.iter().any(|d| matches!(d.loc.loc, Loc::Reg { off } if off <= 0x41 && 0x41 < off + d.loc.size as u64)),
         "{d2:?}"

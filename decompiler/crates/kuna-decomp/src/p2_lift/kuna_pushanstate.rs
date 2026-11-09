@@ -362,24 +362,25 @@ impl State {
         self.mem.get(&base).is_some_and(|r| r.has_any(off, size))
     }
 
-    /// Locations where `self` (the recorded entry state) and `other` (a new
-    /// incoming state) disagree and at least one side is a constant.
-    /// Every location whose value differs between the two states, as angr's
-    /// merge reports it.  A location is an aligned 8-byte slot; a slot
-    /// symbolic on both sides whose difference sits in one half only is
-    /// narrowed to that half (down to a byte), so a narrow variable sharing a
-    /// slot with an unchanged neighbour does not take the neighbour with it.
-    pub fn diff_constants(&mut self, other: &mut State, arena: &mut ExprArena, image: &dyn PushanImage) -> Vec<Diff> {
+    /// Every location whose value differs between `self` (the recorded
+    /// entry state) and `other` (a new incoming state), as angr's merge
+    /// reports it.  A location is an aligned slot of `word` bytes (the
+    /// target's register and stack-word size); a slot symbolic on both sides
+    /// whose difference sits in one half only is narrowed to that half (down
+    /// to a byte), so a narrow variable sharing a slot with an unchanged
+    /// neighbour does not take the neighbour with it.
+    pub fn diff_constants(&mut self, other: &mut State, arena: &mut ExprArena, image: &dyn PushanImage, word: u8) -> Vec<Diff> {
         let mut out = Vec::new();
+        let w = word.max(1) as i128;
         let slots_of = |runs: Vec<(i128, u8)>| {
             let mut slots: Vec<i128> = Vec::new();
             for (o, len) in runs {
-                let mut s = o.div_euclid(8) * 8;
+                let mut s = o.div_euclid(w) * w;
                 while s < o + len as i128 {
                     if !slots.contains(&s) {
                         slots.push(s);
                     }
-                    s += 8;
+                    s += w;
                 }
             }
             slots.sort_unstable();
@@ -397,7 +398,7 @@ impl State {
             }
         };
         for slot in slots_of(self.regs.diff_bytes(&other.regs)) {
-            let mut todo = vec![(slot, 8u8)];
+            let mut todo = vec![(slot, word)];
             while let Some((off, size)) = todo.pop() {
                 let a = self.read_reg(arena, off as u64, size);
                 let b = other.read_reg(arena, off as u64, size);
@@ -423,7 +424,7 @@ impl State {
         for base in bases {
             let runs = self.mem.get(&base).unwrap_or(&empty).diff_bytes(other.mem.get(&base).unwrap_or(&empty));
             for slot in slots_of(runs) {
-                let mut todo = vec![(slot, 8u8)];
+                let mut todo = vec![(slot, word)];
                 while let Some((off, size)) = todo.pop() {
                     let a = self.read_mem(arena, image, base, off, size);
                     let b = other.read_mem(arena, image, base, off, size);
