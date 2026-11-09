@@ -385,6 +385,12 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         live_at_exit,
         call_args,
         eliminate_dead: std::env::var("KUNA_PUSHAN_NO_DCE").is_err(),
+        slot_base: {
+            let mut regs = std::collections::BTreeMap::new();
+            arch.translate().get_all_registers(&mut regs);
+            let top = regs.keys().map(|v| v.offset + v.size as u64).max().unwrap_or(0x1000);
+            (top + 0xfff) & !0xfff
+        },
         pure_userops: target
             .userops
             .iter()
@@ -393,7 +399,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
             .map(|(i, _)| i as u64)
             .collect(),
     };
-    let (overlay, emit_stats) = emit(&cfg, &explorer.arena, &target, &conf, entry);
+    let (overlay, emit_stats) = emit(&cfg, &mut explorer.arena, &target, &conf, entry);
     let mut log = std::mem::take(&mut explorer.log);
     for s in &target.sections {
         log.push(format!("section {:#x}-{:#x} flags={:#x}{}", s.start, s.end, s.flags, if Some((s.start, s.end)) == target.entry_section { " (entry)" } else { "" }));
@@ -505,8 +511,8 @@ fn describe_exit(e: &NodeExit) -> String {
     match e {
         NodeExit::Branch(s) => format!("branch -> {s}"),
         NodeExit::CondBranch { arms, fall } => format!("cbranch -> {:?} / {fall}", arms.iter().map(|(_, t)| *t).collect::<Vec<_>>()),
-        NodeExit::Select { targets, .. } => {
-            format!("select -> {:?}", targets.iter().map(|(_, s)| *s).collect::<Vec<_>>())
+        NodeExit::Select { targets, by_atoms, .. } => {
+            format!("select{} -> {:?}", if *by_atoms { "" } else { "(symbol)" }, targets.iter().map(|(_, s)| *s).collect::<Vec<_>>())
         }
         NodeExit::Call { target, ret } => format!("call {:?} -> {ret}", target.map(|t| format!("{t:#x}"))),
         NodeExit::Return => "return".into(),

@@ -22,6 +22,8 @@ pub type VarId = u32;
 
 /// Largest value size the arena models (bytes); wider values become unknowns.
 pub const MAX_SIZE: u8 = 16;
+/// Tag base of unknowns produced by a division by zero.
+pub const DIV_ZERO_TAG: u64 = 0x1000_0000;
 /// Most boolean atoms a case split enumerates (2^N substitutions).
 pub const MAX_SPLIT_ATOMS: usize = 10;
 const MAX_DEPTH: u32 = 900;
@@ -519,7 +521,10 @@ impl ExprArena {
                 return self.cst(out, v);
             }
             if matches!(opc, CPUI_INT_DIV | CPUI_INT_REM | CPUI_INT_SDIV | CPUI_INT_SREM) {
-                return self.unknown(out);
+                // Division by zero: an unknown tagged so diagnostics can tell.
+                self.unknown_tag += 1;
+                let tag = DIV_ZERO_TAG + self.unknown_tag;
+                return self.var(VarInfo::new(VarKind::Unknown { tag }, out, false));
             }
         }
         match opc {
@@ -1380,6 +1385,29 @@ impl ExprArena {
 
     fn build_linear(&mut self, l: Lin, size: u8) -> ExprId {
         let m = mask(size);
+        // A 0/1-valued term with a "negative" coefficient is rewritten on its
+        // complement with a positive one (-k*b == k*(1-b) - k), so masks see a
+        // sum of disjoint positive bits.
+        let mut l = l;
+        let flips: Vec<(ExprId, i128)> = l
+            .terms
+            .iter()
+            .filter(|(t, k)| {
+                let kk = (**k as u128) & m;
+                kk != 0 && sign(kk, size) && !sign(neg(kk, size), size) && self.possible_bits(**t) == 1
+            })
+            .map(|(t, k)| (*t, *k))
+            .collect();
+        for (t, k) in flips {
+            l.terms.remove(&t);
+            let b = self.resize(t, 1);
+            let one = self.cst(1, 1);
+            let nb = self.mk_bin(CPUI_INT_XOR, b, one, 1);
+            let nt = self.resize(nb, size);
+            let pos = (neg(k as u128, size)) as i128;
+            *l.terms.entry(nt).or_insert(0) += pos;
+            l.c = l.c.wrapping_add(k);
+        }
         let c = (l.c as u128) & m;
         let terms: Vec<(ExprId, u128)> =
             l.terms.into_iter().map(|(t, k)| (t, (k as u128) & m)).filter(|(_, k)| *k != 0).collect();

@@ -105,6 +105,8 @@ pub fn classify_space(sp: &Rc<AddrSpace>) -> Space {
 pub struct AccessRecord {
     /// Index of the LOAD/STORE op within the instruction.
     pub op_index: usize,
+    /// The address as the emulator saw it.
+    pub addr_expr: ExprId,
     /// The register (offset) and constant displacement the address was built from.
     pub via: Option<(u64, i128)>,
     /// The concrete address, when known.
@@ -486,6 +488,7 @@ impl<'a> Emulator<'a> {
                     trace.userops.push(name);
                     if let Some(out) = &op.out {
                         let u = arena.unknown(out.size.min(MAX_SIZE as u32) as u8);
+                        trace.op_out[pc] = Some(u);
                         self.write_vn(state, arena, out, u);
                     }
                 }
@@ -500,6 +503,7 @@ impl<'a> Emulator<'a> {
                     let size = out.size.min(MAX_SIZE as u32) as u8;
                     trace.accesses.push(AccessRecord {
                         op_index: pc,
+                        addr_expr: addr,
                         via: self.address_provenance(&op.ins[1]),
                         addr: arena.is_const(addr).map(|c| c as u64),
                         size,
@@ -519,6 +523,7 @@ impl<'a> Emulator<'a> {
                     let val = self.read_vn(state, arena, &op.ins[2]);
                     trace.accesses.push(AccessRecord {
                         op_index: pc,
+                        addr_expr: addr,
                         via: self.address_provenance(&op.ins[1]),
                         addr: arena.is_const(addr).map(|c| c as u64),
                         size: op.ins[2].size.min(MAX_SIZE as u32) as u8,

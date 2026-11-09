@@ -52,8 +52,9 @@ pub enum NodeExit {
     /// The native conditional branch(es) kept: arms in program order, then the fall-through.
     CondBranch { arms: Vec<(ExprId, NodeId)>, fall: NodeId },
     /// A computed target enumerated into several successors; each carries the
-    /// boolean assignment that selects it.
-    Select { atoms: Vec<ExprId>, targets: Vec<(Vec<(ExprId, bool)>, NodeId)> },
+    /// boolean assignments that select it.  `by_atoms` is false when the
+    /// enumeration ran over a symbolized location's recorded constants.
+    Select { atoms: Vec<ExprId>, targets: Vec<(Vec<Vec<(ExprId, bool)>>, NodeId)>, by_atoms: bool },
     /// A call that leaves the interpreter; emulation continued at the return address.
     Call { target: Option<u64>, ret: NodeId },
     /// The protected function returns to its caller.
@@ -105,7 +106,8 @@ impl Default for Config {
             .and_then(|p| std::fs::File::create(p).ok())
             .map(|f| std::rc::Rc::new(std::cell::RefCell::new(f)));
         let max_seconds = std::env::var("KUNA_PUSHAN_SECONDS").ok().and_then(|v| v.parse().ok()).unwrap_or(120);
-        Config { max_nodes: 200_000, max_block_insns: 4096, max_rounds: 40, max_select_targets: 16, max_seconds, trace }
+        let max_nodes = std::env::var("KUNA_PUSHAN_MAX_NODES").ok().and_then(|v| v.parse().ok()).unwrap_or(200_000);
+        Config { max_nodes, max_block_insns: 4096, max_rounds: 40, max_select_targets: 16, max_seconds, trace }
     }
 }
 
@@ -721,7 +723,7 @@ impl<'a> Explorer<'a> {
                 NodeExit::Halt(_) => continue,
                 other => self.trampoline(cfg, id, c, other),
             };
-            targets.push((assigns[0].clone(), succ));
+            targets.push((assigns.clone(), succ));
         }
         if targets.is_empty() {
             self.stats.unresolved += 1;
@@ -730,7 +732,7 @@ impl<'a> Explorer<'a> {
         if targets.len() == 1 {
             return NodeExit::Branch(targets[0].1);
         }
-        NodeExit::Select { atoms, targets }
+        NodeExit::Select { atoms, targets, by_atoms: !symbol_pins }
     }
 
     /// A target `sym + k` over one symbolized location: one case per constant

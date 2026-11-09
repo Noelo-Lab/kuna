@@ -15,6 +15,7 @@
 //! `sp + k`, which undoes the obfuscated stack arithmetic the paper's stage 3
 //! has to repair downstream.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use kuna_base::space::AddrSpace;
@@ -24,7 +25,7 @@ use kuna_sleigh::kuna_pcodeoverlay::{OverlayInsn, OverlayOp, PcodeOverlay};
 use OpCode::*;
 
 use super::kuna_pushanemu::{classify_space, LiftedInsn, PushanTarget, RawOp, Space};
-use super::kuna_pushanexpr::ExprArena;
+use super::kuna_pushanexpr::{ExprArena, ExprId};
 use super::kuna_pushanflow::{FlatCfg, NodeExit, NodeId};
 
 pub struct EmitConfig {
@@ -48,6 +49,8 @@ pub struct EmitConfig {
     pub eliminate_dead: bool,
     /// User-op indices with no effect beyond their outputs (rdtsc, pause, fences).
     pub pure_userops: Vec<u64>,
+    /// Register-space offset where the emitter's boolean witness slots start.
+    pub slot_base: u64,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -250,10 +253,18 @@ fn mark_dead(cfg: &FlatCfg, conf: &EmitConfig, code: &[Vec<Vec<OverlayOp>>], dea
 
 struct Emitter<'a> {
     cfg: &'a FlatCfg,
-    arena: &'a ExprArena,
+    arena: &'a mut ExprArena,
     target: &'a dyn PushanTarget,
     conf: &'a EmitConfig,
     stats: EmitStats,
+    /// Deciding booleans of multi-way selects, each with its witness slot.
+    slots: BTreeMap<ExprId, u64>,
+    /// The negation of a witnessed boolean, mapped back to it.
+    negated: BTreeMap<ExprId, ExprId>,
+    /// Booleans some emitted op actually witnessed.
+    witnessed: BTreeSet<ExprId>,
+    /// The scratch holding the rematerialized address of the access being emitted.
+    last_addr_scratch: Option<VarnodeData>,
 }
 
 pub fn syn_addr(conf: &EmitConfig, node: NodeId) -> u64 {
@@ -261,8 +272,19 @@ pub fn syn_addr(conf: &EmitConfig, node: NodeId) -> u64 {
 }
 
 /// Build the overlay for a recovered graph; `entry_addr` maps to the entry node.
-pub fn emit(cfg: &FlatCfg, arena: &ExprArena, target: &dyn PushanTarget, conf: &EmitConfig, entry_addr: u64) -> (PcodeOverlay, EmitStats) {
-    let mut em = Emitter { cfg, arena, target, conf, stats: EmitStats::default() };
+pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, conf: &EmitConfig, entry_addr: u64) -> (PcodeOverlay, EmitStats) {
+    let mut em = Emitter {
+        cfg,
+        arena,
+        target,
+        conf,
+        stats: EmitStats::default(),
+        slots: BTreeMap::new(),
+        negated: BTreeMap::new(),
+        witnessed: BTreeSet::new(),
+        last_addr_scratch: None,
+    };
+    em.assign_slots();
     let mut overlay = PcodeOverlay::new(conf.ram.get_index());
     overlay.insns.insert(
         entry_addr,
@@ -280,6 +302,14 @@ pub fn emit(cfg: &FlatCfg, arena: &ExprArena, target: &dyn PushanTarget, conf: &
             insns.push(em.rewrite_insn(node, k, insn));
         }
         code.push(insns);
+    }
+    // Exits go in once every witness is known.
+    for (idx, node) in cfg.nodes.iter().enumerate() {
+        if let (Some(last), Some(insn)) = (code[idx].last_mut(), node.insns.last()) {
+            let kept_flow = last.iter().any(|op| matches!(op.opc, CPUI_CALL | CPUI_CALLIND | CPUI_RETURN | CPUI_BRANCHIND)
+                || (op.opc == CPUI_CBRANCH && op.ins[0].space.as_ref().map(classify_space) == Some(Space::Ram)));
+            em.append_exit(node, insn, last, kept_flow);
+        }
     }
     let mut dead: Vec<Vec<bool>> = code.iter().map(|n| vec![false; n.len()]).collect();
     if conf.eliminate_dead {
@@ -337,6 +367,33 @@ impl<'a> Emitter<'a> {
     fn scratch(&self, slot: u64, size: u32) -> VarnodeData {
         self.vn(&self.conf.unique, self.conf.scratch + slot * 16, size)
     }
+    /// One witness slot per deciding boolean of every atom-based select.
+    fn assign_slots(&mut self) {
+        if std::env::var("KUNA_PUSHAN_NO_WITNESS").is_ok() {
+            return;
+        }
+        let mut atoms: Vec<ExprId> = Vec::new();
+        for node in &self.cfg.nodes {
+            if let NodeExit::Select { atoms: a, by_atoms: true, .. } = &node.exit {
+                for x in a {
+                    if !atoms.contains(x) {
+                        atoms.push(*x);
+                    }
+                }
+            }
+        }
+        for (i, a) in atoms.iter().enumerate() {
+            self.slots.insert(*a, self.conf.slot_base + 8 * i as u64);
+            let one = self.arena.cst(1, 1);
+            let na = self.arena.mk_bin(CPUI_INT_XOR, *a, one, 1);
+            self.negated.insert(na, *a);
+        }
+    }
+
+    fn slot_vn(&self, slot: u64) -> VarnodeData {
+        self.vn(&self.conf.register, slot, 1)
+    }
+
     fn branch_op(&self, target: u64) -> OverlayOp {
         OverlayOp { opc: CPUI_BRANCH, out: None, ins: vec![self.code(target)] }
     }
@@ -440,11 +497,42 @@ impl<'a> Emitter<'a> {
                 }
                 continue;
             }
-            out.push(self.rewrite_data(op, i, trace));
+            // A stack access addresses its slot as `sp + k` directly, instead
+            // of through the interpreter's register chains.
+            if linear && matches!(op.opc, CPUI_LOAD | CPUI_STORE) {
+                if let Some(a) = self.stack_address(op, i, trace) {
+                    out.push(a);
+                }
+            }
+            let mut rewritten = self.rewrite_data(op, i, trace);
+            if let Some(scratch) = self.last_addr_scratch.take() {
+                // A folded load no longer has an address operand.
+                if rewritten.opc == op.opc && rewritten.ins.len() > 1 {
+                    rewritten.ins[1] = scratch;
+                }
+            }
+            out.push(rewritten);
+            // Witness a deciding boolean the moment an op computes it.
+            if let (Some(trace), Some(out_vn)) = (trace, &op.out) {
+                if !trace.forked && out_vn.size == 1 {
+                    if let Some(Some(v)) = trace.op_out.get(i).copied() {
+                        let direct = self.slots.get(&v).copied().map(|s| (s, false));
+                        let negated = self.negated.get(&v).and_then(|a| self.slots.get(a).copied()).map(|s| (s, true));
+                        if let Some((slot, neg)) = direct.or(negated) {
+                            let sv = self.slot_vn(slot);
+                            if neg {
+                                out.push(OverlayOp { opc: CPUI_BOOL_NEGATE, out: Some(sv), ins: vec![out_vn.clone()] });
+                            } else {
+                                out.push(OverlayOp { opc: CPUI_COPY, out: Some(sv), ins: vec![out_vn.clone()] });
+                            }
+                            let atom = if neg { self.negated[&v] } else { v };
+                            self.witnessed.insert(atom);
+                        }
+                    }
+                }
+            }
         }
-        if is_last {
-            self.append_exit(node, insn, &mut out, kept_flow);
-        }
+        let _ = (is_last, kept_flow);
         out
     }
 
@@ -452,8 +540,48 @@ impl<'a> Emitter<'a> {
         match &node.exit {
             NodeExit::Branch(s) => out.push(self.branch_op(syn_addr(self.conf, *s))),
             NodeExit::CondBranch { fall, .. } => out.push(self.branch_op(syn_addr(self.conf, *fall))),
-            NodeExit::Select { targets, .. } => {
-                // Compare the computed target against each destination's native address.
+            NodeExit::Select { targets, atoms, by_atoms } => {
+                // Branch on the witnessed booleans when every deciding atom
+                // was computed by some emitted op; otherwise compare the
+                // computed target against each destination's native address.
+                let total: usize = targets.iter().map(|(a, _)| a.len()).sum();
+                if *by_atoms && total <= 16 && atoms.iter().all(|a| self.witnessed.contains(a)) {
+                    let n = targets.len();
+                    let mut scratch = 2u64;
+                    for (i, (assigns, succ)) in targets.iter().enumerate() {
+                        if i + 1 == n {
+                            out.push(self.branch_op(syn_addr(self.conf, *succ)));
+                            break;
+                        }
+                        for assign in assigns {
+                            let mut acc: Option<VarnodeData> = None;
+                            for (atom, v) in assign {
+                                let sv = self.slot_vn(self.slots[atom]);
+                                let lit = if *v {
+                                    sv
+                                } else {
+                                    let t = self.scratch(scratch, 1);
+                                    scratch += 1;
+                                    out.push(OverlayOp { opc: CPUI_BOOL_NEGATE, out: Some(t.clone()), ins: vec![sv] });
+                                    t
+                                };
+                                acc = Some(match acc {
+                                    None => lit,
+                                    Some(prev) => {
+                                        let t = self.scratch(scratch, 1);
+                                        scratch += 1;
+                                        out.push(OverlayOp { opc: CPUI_BOOL_AND, out: Some(t.clone()), ins: vec![prev, lit] });
+                                        t
+                                    }
+                                });
+                            }
+                            if let Some(c) = acc {
+                                out.push(OverlayOp { opc: CPUI_CBRANCH, out: None, ins: vec![self.code(syn_addr(self.conf, *succ)), c] });
+                            }
+                        }
+                    }
+                    return;
+                }
                 let tv = insn.ops.iter().rev().find(|op| Self::is_flow(op)).and_then(|op| match op.opc {
                     CPUI_BRANCHIND | CPUI_RETURN | CPUI_CALLIND => op.ins.first().cloned(),
                     _ => None,
@@ -525,6 +653,38 @@ impl<'a> Emitter<'a> {
         let out_vn = self.scratch(1, ptr);
         out.push(OverlayOp { opc: CPUI_COPY, out: Some(out_vn.clone()), ins: vec![self.cst(0, ptr)] });
         out.push(OverlayOp { opc: CPUI_RETURN, out: None, ins: vec![out_vn] });
+    }
+
+    /// `scratch = sp + k` for a memory access whose address is stack-relative.
+    fn stack_address(&mut self, op: &RawOp, i: usize, trace: Option<&super::kuna_pushanemu::InsnTrace>) -> Option<OverlayOp> {
+        if !self.conf.remat_sp {
+            return None;
+        }
+        let trace = trace?;
+        let acc = trace.accesses.iter().find(|a| a.op_index == i)?;
+        let (Some(base), k) = self.arena.affine(acc.addr_expr)? else { return None };
+        if Some(base) != self.conf.sp0 {
+            return None;
+        }
+        let spb = (*trace.sp_before.get(i)?)?;
+        let (Some(b2), k1) = self.arena.affine(spb)? else { return None };
+        if b2 != base {
+            return None;
+        }
+        let ptr = self.conf.ptr_size as u32;
+        if op.ins[1].size != ptr {
+            return None;
+        }
+        let delta = k.wrapping_sub(k1);
+        let scratch = self.scratch(32 + (i as u64 % 8), ptr);
+        let sp_vn = self.sp_varnode();
+        self.last_addr_scratch = Some(scratch.clone());
+        self.stats.remat += 1;
+        if delta == 0 {
+            return Some(OverlayOp { opc: CPUI_COPY, out: Some(scratch), ins: vec![sp_vn] });
+        }
+        let mask = if ptr >= 8 { u64::MAX as u128 } else { (1u128 << (8 * ptr)) - 1 };
+        Some(OverlayOp { opc: CPUI_INT_ADD, out: Some(scratch), ins: vec![sp_vn, self.cst((delta as u128 & mask) as u64, ptr)] })
     }
 
     /// Fold a data op to its emulated constant or stack-relative form.

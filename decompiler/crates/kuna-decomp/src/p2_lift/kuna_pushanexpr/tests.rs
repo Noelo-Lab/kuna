@@ -346,3 +346,27 @@ fn de_morgan_over_a_flags_word_prunes_to_one_flag() {
     let expect2 = a.mk_bin(CPUI_INT_MULT, znzf, m40, 8);
     assert_eq!(bit2, expect2, "{}", a.fmt(bit2));
 }
+
+#[test]
+fn negated_flag_terms_do_not_hide_mask_pruning() {
+    // word = 0x280 - 0x80 * !SF + other bits; (word & 0x4000) == 0 is decided.
+    let mut a = ExprArena::new();
+    let sf = a.var_of(VarKind::InitReg { offset: 0x207 }, 1, true);
+    let cf = a.var_of(VarKind::InitReg { offset: 0x200 }, 1, true);
+    let one = a.cst(1, 1);
+    let nsf = a.mk_bin(CPUI_INT_XOR, sf, one, 1);
+    let znsf = a.mk_un(CPUI_INT_ZEXT, nsf, 8);
+    let neg80 = a.cst(8, (-0x80i64) as u64 as u128);
+    let t1 = a.mk_bin(CPUI_INT_MULT, znsf, neg80, 8);
+    let zcf = a.mk_un(CPUI_INT_ZEXT, cf, 8);
+    let s = a.mk_bin(CPUI_INT_ADD, t1, zcf, 8);
+    let k = a.cst(8, 0x280);
+    let word = a.mk_bin(CPUI_INT_ADD, s, k, 8);
+    let m = a.cst(8, 0x4000);
+    let masked = a.mk_bin(CPUI_INT_AND, word, m, 8);
+    assert_eq!(a.is_const(masked), Some(0), "{}", a.fmt(masked));
+    let m80 = a.cst(8, 0x80);
+    let sfbit = a.mk_bin(CPUI_INT_AND, word, m80, 8);
+    let zsf = a.mk_un(CPUI_INT_ZEXT, sf, 8);
+    assert_eq!(sfbit, a.mk_bin(CPUI_INT_MULT, zsf, m80, 8), "{}", a.fmt(sfbit));
+}
