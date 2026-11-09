@@ -804,6 +804,10 @@ fn option_values_live_value_present_for_189() {
                             // (kuna) `gowritebarrier`: the same MODE shape;
                             // its live value is `Architecture::go_write_barrier`.
                             | "gowritebarrier"
+                            // (kuna) `pushan`: the same MODE shape
+                            // (`off|auto|on`); its live value is
+                            // `Architecture::pushan_mode`.
+                            | "pushan"
                             // (kuna) `impliedrefs`/`termdup` take an INTEGER
                             // (`2|3|4|<n>`), which the codegen live reader (a
                             // bool `live_true`/`live_false` pair) cannot
