@@ -62,6 +62,9 @@ pub(crate) fn call_projection(fd: &Funcdata, arch: &Architecture, op: OpId) -> O
     }
     let value = fd.vbank().get(fd.obank().get(op)?.get_out()?)?;
     let proto = fd.get_call_specs(fd.get_call_specs_index(op)?).proto();
+    if !proto.has_store() {
+        return None;
+    }
     let ty = proto.get_output_type()?;
     arch.types()
         .kuna_lang_facet(ty.get_name())?

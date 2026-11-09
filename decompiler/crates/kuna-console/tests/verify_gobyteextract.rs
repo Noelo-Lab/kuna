@@ -71,6 +71,19 @@ fn print_commands(program: ConsoleProgram, commands: Vec<String>) -> String {
     status.optr[start..].trim().to_string()
 }
 
+/// The import block a Go file needs: `unsafe` only when an emitted body reads through
+/// it, plus the harness's own packages.
+fn go_imports(bodies: &[&str], harness: &[&str]) -> String {
+    let mut packages: Vec<&str> = harness.to_vec();
+    if bodies.iter().any(|b| b.contains("unsafe.")) {
+        packages.push("unsafe");
+    }
+    if packages.is_empty() {
+        return String::new();
+    }
+    format!("import ({})\n", packages.iter().map(|p| format!("\"{p}\"")).collect::<Vec<_>>().join("; "))
+}
+
 fn native_body(binary: &Path, name: &str) -> String {
     let mut program = bootstrap_from_object(
         binary.to_str().unwrap(),
@@ -109,7 +122,7 @@ fn native_caller_and_callee_execute_with_both_result_words() {
     let output = common::scratch_file("gobyteextract-execute", "go");
     std::fs::write(
         &output,
-        format!("package main\nimport \"unsafe\"\n{pair}\n{combine}\n{support}\n"),
+        format!("package main\n{}{pair}\n{combine}\n{support}\n", go_imports(&[&pair, &combine], &[])),
     )
     .unwrap();
     run(Command::new("go").arg("run").arg(output));

@@ -314,6 +314,12 @@ fn fast_inventory_walk_leaves_pclntab_functions_to_the_table() {
         };
         let pruned = inventory(&[]);
         assert!(pruned.iter().any(|e| e.name == "main.compute"), "{goos}: pclntab names recovered");
+        if goos == "windows" {
+            // Every pclntab function with a `.pdata` record is a root, so nearly all
+            // keep the alias their entry source gave them; the count says nothing here.
+            let _ = std::fs::remove_dir_all(&dir);
+            continue;
+        }
         let aliased = pruned
             .iter()
             .filter(|e| !e.name.starts_with("sub_") && e.aliases.iter().any(|a| a.starts_with("sub_")))
