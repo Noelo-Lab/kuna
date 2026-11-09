@@ -22,8 +22,7 @@ fn fixture() -> (Funcdata, OpId) {
         1,
     ));
     manager.insert_space(ram.clone()).unwrap();
-    let mut arch = ArchContext::new(manager);
-    arch.wide_slice_reduce = true;
+    let arch = ArchContext::new(manager);
     let mut fd = Funcdata::new(
         "wide_slice",
         "wide_slice",

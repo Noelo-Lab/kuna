@@ -355,8 +355,8 @@ assertion. Locked models retain priority. Compiler-mechanism templates that
 reference instruction-specific placeholders such as `inst_next` are rejected;
 these boundaries do not supply an instruction-length context.
 
-When a stack register is wider than its logical stack address (`option
-truncptrflow`, default on, chapter 03), prototype setup
+When a stack register is wider than its logical stack address (chapter 03),
+prototype setup
 seeds the narrow input register and the remaining physical upper bytes as
 separate inputs, reconstructing the full register with PIECE at function entry.
 This links lifted full-register arithmetic to the modeled stack base before

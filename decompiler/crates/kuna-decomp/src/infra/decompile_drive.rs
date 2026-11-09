@@ -1117,7 +1117,6 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
     // root is current, and the caller's tree is paused mid-pass.
     let mut contract_root: Option<Box<dyn Action>> = None;
     let mut contract_budget = MAX_CONTRACT_CALLEES;
-    let restart_early = arch.early_restart;
     loop {
         let res = {
             let deadline = arch.kuna_fn_deadline;
@@ -1132,7 +1131,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             // (kuna decompile-all watchdog) thread the per-function deadline
             // into the action loop (`None` = no budget, the parity default).
             ctx.deadline = deadline;
-            ctx.restart_early = restart_early && reflows < MAX_REFLOW;
+            ctx.restart_early = reflows < MAX_REFLOW;
             let r = root.perform(fd, &mut ctx);
             if let Some(error) = ctx.error {
                 return Err(error);
@@ -1970,7 +1969,7 @@ fn decompile_func_full_with_objects_inner(
     let mut elfmain = elfmain_rt.as_ref();
     let result = loop {
         // (kuna `stackstoreguard`) A function whose final layout spoiled what the
-        // guard needs is analyzed again from scratch, as `stackstoreguard off` would.
+        // guard needs is analyzed again from scratch without it.
         let mut seed = std::collections::BTreeSet::new();
         let mut unguarded = false;
         let mut result = match attempt(prefollowed.take(), false, &seed, elfmain) {

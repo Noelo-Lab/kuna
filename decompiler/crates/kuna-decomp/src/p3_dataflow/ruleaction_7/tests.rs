@@ -60,7 +60,6 @@ fn build_fd_nan(ignore_nan: bool) -> Funcdata {
     let mut context = ArchContext::new(manage);
     context.floatformats = [4, 8].into_iter().map(kuna_num::float::FloatFormat::new).collect();
     context.nan_ignore_all = ignore_nan;
-    context.trunc_ptr_flow = true;
     let glb = Rc::new(context);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);

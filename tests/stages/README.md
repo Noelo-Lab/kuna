@@ -29,7 +29,7 @@ Its CLI companion executes the original bytes and untouched emitted C/header
 under MIPS QEMU at O0/O2, including selected exports, workers and streaming.
 
 `kuna-stack-byte-copy.xml` checks pushed scratch bytes, partial reads and a
-saved snapshot with `stackstoreguard` off and on. Its CLI companion compiles
+saved snapshot under the stack store guard. Its CLI companion compiles
 and executes the exact C at O2 in default, stackviews and stackalias modes, and checks
 that larger and data-dependent loops retain their control flow. The authored
 assembly also includes a sequential overlapping-copy control.
@@ -155,7 +155,7 @@ writeup, not here.
 | `kuna-aifpoolslide.xml` | [Kuna #299](https://github.com/Noelo-Lab/kuna/issues/299) | P1 code/data partition (an AIF gap candidate on a word a PC-relative load reads is pool data: its accept moves to the code after the pool) | `option aifpoolslide on\|off` |
 | `kuna-pushimmediateret.xml` | RE-friction duplicate needs `entry-point-push-return` + `push-immediate-ret-transfer` | S2 flow classification (a proven one-store `push immediate; ret` becomes a terminal branch; no target function is synthesized) | `option pushimmediateret on\|off` |
 | `kuna-subcommuteshift.xml` | RE-friction need `cancelling-byte-arithmetic-splits` | S3 simplification quiescence (exact modulo-256 multiply/shift cancellation) | always on |
-| `kuna-wideslice.xml` | clang x86-64 `-O3` byte-sum regression | P3 SSA reduction (push demanded slices through 9..15-byte `PIECE`, byte shifts, and bitwise operations; the artificial aggregates heritage and the rule pool leave behind, without recognizing the source algorithm) | `option wideslice on\|off` |
+| `kuna-wideslice.xml` | clang x86-64 `-O3` byte-sum regression | P3 SSA reduction (push demanded slices through 9..15-byte `PIECE`, byte shifts, and bitwise operations; the artificial aggregates heritage and the rule pool leave behind, without recognizing the source algorithm) | always on |
 | `kuna-devectorize.xml` | clang x86-64 `-O3` byte-sum regression (follow-up to `kuna-wideslice.xml`) | P3 SSA reduction (a proven vectorized integer reduction: guard, stride loop with one accumulator per lane, fold and scalar remainder loop, re-rolled into its scalar loop by removing the guard's vector edge) | `option devectorize on\|off` |
 | `kuna-devectorize-effects.xml` | hand-written x86-64 byte sums whose exits disagree on a global store | P3 SSA reduction (`devectorize` refuses a reduction whose arm, remainder loop or exits write global storage) | `option devectorize off\|on` |
 | `re-checker-stack-aggregate.xml` | RE-friction need `checker-uses-stack-aggregate` | P9 declaration emission (constant address-reference highs are not whole storage representatives) | default correctness fix (no option) |

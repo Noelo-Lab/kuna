@@ -2022,7 +2022,7 @@ impl Rule for RulePropagateCopy {
                         continue; // We must not allow merging of different addrtieds
                     }
                 }
-                // (kuna) `option tiedstorekeep on` widens the addrforce refusal
+                // (kuna) The address-tied store brake widens the addrforce refusal
                 // just above: decline when this marker is the LAST reader of an
                 // address-tied COPY output, which would otherwise strand the frame
                 // store for dead-code elimination.  See

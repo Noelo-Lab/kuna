@@ -2438,7 +2438,7 @@ impl Funcdata {
 
     /// (kuna `stackstoreguard`) Is the guard on for this function?
     pub fn stack_store_guard(&self) -> bool {
-        self.get_arch().stack_store_guard && !self.stack_store_guard_withdrawn.get()
+        !self.stack_store_guard_withdrawn.get()
     }
 
     pub(crate) fn note_stack_byte_copy_op(&mut self, op: OpId) {

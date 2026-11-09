@@ -291,9 +291,8 @@ secondary test:
   (`cover.rs (Cover::intersect_op_set)`) steps through the cover's blocks and
   the set's blocks together but keeps the index of the block it just tested,
   so after every block the two share it skips the set's next block, and a
-  call or STORE there is never tested. kuna keeps that walk and, under option
-  `stackstoreguard` (on by default; off, the set's STOREs are walked as
-  upstream), adds a second one that reads each block's index and tests only
+  call or STORE there is never tested. kuna keeps that walk and adds a second
+  one that reads each block's index and tests only
   the guarded STOREs (`cover.rs (Cover::walk_op_set)`): iproute2 `ip` -O2 builds two netlink
   requests on its frame, zeroing each with a `rep stos` loop before storing
   its fields, and once `stackstoreguard` guards the fields against the loop's
@@ -2141,8 +2140,8 @@ the alias gather still hands later layouts an open hint there and the rewrite
 never changes the layout that justified it. `option endptrbound off` restores
 the neighbour-bound layout.
 
-**An indexed store's slots are one local (kuna `stackstoreguard`, default
-on).** The stack STORE guard of chapter 03 (`stackstoreguard`) keeps an
+**An indexed store's slots are one local (kuna `stackstoreguard`).** The
+stack STORE guard of chapter 03 (`stackstoreguard`) keeps an
 indexed byte store such as `u.b[i & 7] = j` from being folded past: every
 constant-initialized or written slot it may write keeps the store's effect, and
 the C prints the store through the local at its base address. That is only right
@@ -2382,11 +2381,9 @@ function (`Funcdata::spoil_stack_store_guard`) again from a freshly built copy
 with the guard off for it, not by a restart in place: kuna's `clear()` keeps
 the first analysis's local symbols (upstream's `clearUnlocked` is not ported),
 which could survive into the second. The second analysis therefore prints
-exactly what `option stackstoreguard off` prints. Another example is a buffer written only by a walk through a
+the unguarded analysis. Another example is a buffer written only by a walk through a
 pointer kept in memory, which no guard covers, while the guard keeps its
 initializer (clang `-O0` `p = (j & 1) ? u.b : v.b; *p++ = j;`).
-
-`option stackstoreguard off` turns all of this off along with the guard.
 
 **An out-parameter takes the callee's declaration (kuna `castobject`, default
 on).** When two hints for the same bytes differ only in signedness, the ordering

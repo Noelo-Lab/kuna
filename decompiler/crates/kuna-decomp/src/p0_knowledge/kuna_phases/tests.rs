@@ -974,7 +974,7 @@ fn option_values_live_value_present_for_189() {
     // 179 -> 181: +1 for `copywaves` (pool_copy_waves), +1 for `armderef` (analysis_armderef).
     // 178 -> 179: +1 for `ptrauthtrap` (live_field = ptrauth_trap).
     // 179 -> 180: +1 for `authptrcall` (live_field = analysis_authptrcall).
-    assert_eq!(with_live, 189);
+    assert_eq!(with_live, 161);
 }
 
 #[test]

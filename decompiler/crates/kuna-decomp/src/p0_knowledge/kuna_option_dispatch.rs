@@ -297,7 +297,6 @@ kuna_options! { self, p1;
     "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
     "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
     "stackalias" => on_off!(stack_alias_deadstore, "Stack-pointer-alias dead-store hold"),
-    "globalcallranges" => on_off!(global_call_ranges, "Global call access ranges"),
     "readonlycalls" => {
         let field = p1.trim();
         let (val, msg) = match field {
@@ -332,8 +331,6 @@ kuna_options! { self, p1;
         self.persist_calls = val;
         Ok(msg)
     },
-    "prunedssa" => on_off!(pruned_ssa, "Pruned SSA heritage markers"),
-    "loadguardreads" => on_off!(load_guard_reads, "LOAD guards read at renaming"),
     "localstackviews" => on_off!(local_stack_views, "Bounded local stack views"),
     "stackviews" => {
         let (value, message) = crate::kuna_stackviews::OptionStackViews.apply(p1)?;
@@ -366,9 +363,6 @@ kuna_options! { self, p1;
     "switchmultipred" => on_off!(switch_multi_pred, "Switch multi-predecessor unrolled-guard table"),
     "unrolledguard" => on_off!(unrolled_guard, "Interleaved unrolled-guard jump-table partial-flow recovery"),
     "jtsharepartial" => on_off!(jumptable_share_partial, "Shared jump-table partial sub-decompilation"),
-    "earlyrestart" => on_off!(early_restart, "Early restart after a dead-code delay bump"),
-    "truncptrflow" => on_off!(trunc_ptr_flow, "Truncated-space pointer flow"),
-    "deadwaves" => on_off!(pool_dead_waves, "Rule-pool dead-removal waves"),
     "deadcascade" => {
         let field = p1.trim();
         let (val, msg) = match field {
@@ -386,7 +380,6 @@ kuna_options! { self, p1;
         self.dead_cascade = val;
         Ok(msg)
     },
-    "copywaves" => on_off!(pool_copy_waves, "Rule-pool copy-propagation waves"),
     "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
     "loweredswitch" => {
         let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
@@ -624,7 +617,6 @@ kuna_options! { self, p1;
     },
     "condexeret" => on_off!(cond_exe_ret, "return-trial retry after conditional-execution removal"),
     "condexeretuse" => on_off!(cond_exe_ret_use, "return-value uses ruled out by a re-tested condition"),
-    "stackstoreguard" => on_off!(stack_store_guard, "Stack-derived store heritage guards"),
     "indexaliasguard" => {
         let (val, msg) =
             crate::p3_dataflow::kuna_indexaliasguard::OptionIndexAliasGuard.apply(p1)?;
@@ -644,13 +636,9 @@ kuna_options! { self, p1;
         self.array_size = val;
         Ok(msg)
     },
-    "tiedstorekeep" => {
-        on_off!(tied_store_keep, "Address-tied store copy-propagation brake")
-    },
     "tiedphitrim" => {
         on_off!(tied_phi_trim, "Loop-head address-tied input trim")
     },
-    "wideslice" => on_off!(wide_slice_reduce, "Wide SSA slice reduction"),
     "devectorize" => on_off!(devectorize_reduction, "Vectorized reduction re-roll"),
     "strlenscan" => on_off!(strlen_scan, "inline repnz scasb string length as strlen"),
     "regionstructure" => {

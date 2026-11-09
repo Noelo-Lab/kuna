@@ -200,7 +200,7 @@ heritage pass kuna's guards of one call or store share one
 (`kuna_renamereads.rs (new_indirect)`): readers only decode the guarded op from
 the annotation's offset, and annotations get no cover or HighVariable. An iop
 annotation is the one free Varnode that may have several descendants
-(`varnode.rs (Varnode::add_descend)`). A `deadwaves` wave does not count the
+(`varnode.rs (Varnode::add_descend)`). A rule-pool wave does not count the
 other readers of a removed guard's annotation as its neighbours
 (`action.rs (add_wave_ops)`), so it offers the rules the ops it offered when
 every guard had its own. A guard that reuses the annotation still
@@ -209,7 +209,7 @@ numbered as before. libpython3.11 0x3b72c0 guards 1,725 writable globals at each
 of 4,060 calls, and its 7 million annotations were 7 million of the 15.3 million
 Varnodes alive at the first full pass.
 
-**Pruned joins.** Under `option prunedssa` (default on) phi placement is
+**Pruned joins.** Phi placement is
 pruned by liveness for a range that is neither persistent nor address-tied,
 in the unique and stack spaces (`kuna_prunedssa.rs (prune_merges)`). After
 `guard` the range's free reads and writes are all in the IR; a backward walk
@@ -441,7 +441,7 @@ call has on the (callee-translated) range (`decompiler/crates/kuna-decomp/src/p4
   delayed CALL output and SUBPIECEs/PIECEs it into the range
   (`heritage.rs (Heritage::try_output_stack_guard)`).
 
-Under `option globalcallranges` (default on), a persistent RAM range needs no
+A persistent RAM range needs no
 call guard when the callee's complete memory-effect summary proves every read
 and write disjoint from it. The bounded `kuna_calleememory` walker and its cache
 are shared with frame analysis, but the global proof excludes absolute memory
@@ -581,7 +581,7 @@ partials cannot restart and always keep every guard, and below the threshold
 every call keeps upstream's guard; `persistcalls on` places the sparse guards
 in every pass with a call and `off` restores upstream's placement.
 
-Under `option prunedssa` (default on) a stack range that is neither persistent
+A stack range that is neither persistent
 nor address-tied gets the unknown-effect INDIRECT only at a call after which a
 read of the range can follow (`kuna_prunedssa.rs (live_calls)`), the same
 liveness walk as the pruned joins, computed before the guards exist. The reads
@@ -1042,7 +1042,7 @@ address-forcing boundary ops, marks those outputs `addrforce` when they fall
 inside a guarded window, and propagates every load-guard COPY away again —
 so what reaches the output is the mark the COPY earned, not the COPY.
 
-Under `option loadguardreads` (default on) the pass does not build those
+The pass does not build those
 COPYs while it places guards. A guard discovered in this pass still covers the
 whole stack, because the value-set analysis that narrows it runs after
 renaming, so upstream's pass builds a COPY and two Varnodes for every indexed
@@ -1208,7 +1208,7 @@ already holds. The global LOAD guard runs at `full` too.
 
 At `off` none of them runs, which is what kuna shipped before the option.
 
-`option stackstoreguard` (default on) also enables STORE guards at
+The stack store guard (always on) also enables STORE guards at
 `indexaliasguard load` and `global` for constant-initialized stack slots. Before normalizing
 partial reads, it checks for a constant write (through COPY, SUBPIECE or
 integer extension) and the processor's stack space. For this family only byte
@@ -1243,7 +1243,7 @@ partial overwrite retains the untouched bytes, and an earlier snapshot remains
 independent. No physical store is deleted by the rewrite. Each expanded loop
 increments the action's change count so the enclosing scheduler observes the
 control-flow rewrite. It is disabled by
-`stackstoreguard off` or `indexaliasguard off`; `stackviews` is not required.
+`indexaliasguard off`; `stackviews` is not required.
 
 The expanded memory operations retain a function-local identity until analysis
 is cleared. Heritage refines a stack range containing one of these writes into
@@ -1263,11 +1263,10 @@ indices, or chooses between more than eight stack addresses or ones more than
 pass): the stack layout of chapter 06 cannot keep such a frame's guarded slots
 in the one local the store writes through. Typical cases are an OR-formed
 address (`(&v1 | 4) + i`) and a pointer walk with a variable step. When no
-earlier pass guarded the frame, the option is turned off for the whole function
-(`heritage.rs (store_frame_resolves)`), which then decompiles exactly as with
-`stackstoreguard off`.
+earlier pass guarded the frame, the guard is withdrawn for the whole function
+(`heritage.rs (store_frame_resolves)`), which then decompiles unguarded.
 
-The option's second family guards a slot the function writes with any value,
+The guard's second family guards a slot the function writes with any value,
 against indexed STOREs of any width. A stack range whose writes include one
 that is not an `INDIRECT` or `MULTIEQUAL` (`kuna_stackstoreguard.rs
 (indexed_enabled)`) gets an `indirect_store` `INDIRECT` at each STORE that
@@ -1323,9 +1322,8 @@ guarding every slot at every store changes parameter and aggregate recovery
 in existing cases, so the option guards only stack slots an indexed stack
 STORE may reach.
 
-Turning `stackstoreguard off` restores the previous load-only behavior without
-changing the explicit `full` policy. `indexaliasguard off` suppresses both
-families, including the narrow stack-store guard.
+`indexaliasguard off` suppresses both families, including the narrow
+stack-store guard.
 
 Spilled pointers to fixed stack offsets also need a temporary STORE guard: the
 stack read can acquire its initializer during renaming, while the pointer
@@ -1388,7 +1386,7 @@ exists but is an unwired stub (`kuna-console/src/ifacedecomp.rs
 (IfcDeadcodedelay)` returns engine-unavailable); the only live writer of the
 Override is `Heritage::bump_deadcode_delay`.
 
-(kuna `earlyrestart`, default on) Upstream finishes the pass that asked for
+(kuna early restart) Upstream finishes the pass that asked for
 the restart: every later mainloop iteration, the merges and the structuring of
 IR known to be missing data flow, all of which the restart throws away. A bump
 also marks the function (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
@@ -1419,8 +1417,7 @@ result as eight byte stores each (the form it already prints at 136 other such
 stores, and the one the off order prints too once the unlocked output is
 cleared as well) and swaps base and index in 12 pointer additions. An Override a later pass would have recorded is
 recorded by the restarted run itself, at the cost of another restart. A
-jump-table sub-decompilation never restarts, and with `earlyrestart off` the
-pass finishes first.
+jump-table sub-decompilation never restarts.
 
 **Free-varnode failure mode.** After `remove_revisited_markers`, a free read
 being guarded must have exactly one reader; a free varnode with multiple reads
@@ -1493,7 +1490,7 @@ is the (kuna) cooperative deadline probed every 1024 op-visits
 occurred in kuna's history (the lowered-switch repair, §3.1), and it presented
 as mainloop reporting one change per iteration for good.
 
-(kuna `deadwaves`, default on) Dead-op removal (`RuleEarlyRemoval`, first in
+(kuna dead-removal waves) Dead-op removal (`RuleEarlyRemoval`, first in
 every opcode's list) takes out an op only when the cursor reaches it, and the
 op that defined what it read usually sits earlier in sequence order, so a chain
 of values nothing reads dies one link per sweep: the call-guard `INDIRECT` and
@@ -1516,17 +1513,16 @@ wave itself removes. Removals are recorded as they happen
 turns the rest of the pass back into the ordinary sweep, and a pool with a
 breakpoint set always sweeps. A rule whose test reads two or more ops away from
 the op it fires on without walking a web can see a removal the wave does not
-offer it; that rule then fires at the next full sweep instead. With
-`deadwaves off` every pass sweeps every op.
+offer it; that rule then fires at the next full sweep instead.
 
-(kuna `copywaves`, default on) `RulePropagateCopy` replaces one input of an op
+(kuna copy-propagation waves) `RulePropagateCopy` replaces one input of an op
 with the input of the COPY defining it and stops (upstream's "propagate just a
 single copy"), and a rule applies at most once per op per pass, so a join with
 hundreds of copied inputs takes hundreds of passes. serde-hkx's hkxc.exe
 0x1406198f0 has one: the stack pointer at its shared exit block reads the COPY
 each path's last call left, 626 to 674 of them. Each of those passes also
 removes the COPY the pass before freed, and every one swept the whole
-function. With `copywaves` an input replacement is a change a wave can follow:
+function. An input replacement is a change a wave can follow:
 the rule records the op and the Varnodes it touches before and after
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
 (Funcdata::note_wave_input_change)`; `action.rs (Rule::replaces_inputs_only)`
@@ -1539,7 +1535,7 @@ far-walking rule fires on its opcode is offered just the far-walking rules
 (`action.rs (ActionPool::wave_wants)`), since the others test only what lies
 next to the op and the previous pass changed nothing there; once a rule
 applies to it the rest of its rules are tested as usual. The same limit as
-`deadwaves` applies: a rule reading two or more ops away without walking a web
+for dead-removal waves applies: a rule reading two or more ops away without walking a web
 can see a change the wave does not offer it, and `RulePropagateCopy`'s own
 `kuna_globalstorekeep` refusal is one, since it reads the readers of the COPY's
 input and walks the blocks after the store
@@ -1550,7 +1546,7 @@ caught by the schedule around oppool1, the only pool holding `RuleEarlyRemoval`
 and `RulePropagateCopy`: the `stackstall` group repeats oppool1 while it
 changed anything, and the first pass of every pool run is a full sweep (a wave
 needs an earlier change in the same run), so the rule fires one stackstall
-iteration later. With `copywaves off`, `deadwaves` behaves as described above.
+iteration later.
 
 (kuna `deadcascade`, default 32) A wave is cheaper than a sweep but still
 walks the whole function, and the far-walking rules still run on every op of
@@ -1566,7 +1562,7 @@ in the order the following passes would have removed them: one batch per
 pass, each batch in sequence order; a definition that dies behind the op
 removing it joins the next batch and one ahead of it the same batch. A
 definition at or ahead of the cursor is left to the running pass, which
-removes it when it gets there. Each removal is recorded for `deadwaves` like
+removes it when it gets there. Each removal is recorded for the waves like
 any other, and the checks are `RuleEarlyRemoval`'s own
 (`ruleaction_1.rs (RuleEarlyRemoval::removable)`). What changes is when a
 removal happens relative to the other rules' tests: a rule that counts a
@@ -1738,7 +1734,7 @@ read bytes. The stack STORE guards of §3.1 (`stackstoreguard`) are the common
 source of such INDIRECTs: two direct byte reads of an initialized buffer after
 an indexed byte store.
 
-With `stackstoreguard` on, the rule leaves a stack STORE INDIRECT whole when one
+The rule leaves a stack STORE INDIRECT whole when one
 of its SUBPIECE readers reads more than one byte (a SUBPIECE that only feeds
 another INDIRECT, left behind by an earlier narrowing, does not count). The
 narrowed piece would be a separate stack location from the slot the store
@@ -1751,7 +1747,7 @@ v1._1_2_;`). Byte readers still narrow, because a byte piece maps as an element
 of the byte array the store indexes. The check is `keeps_store_indirect_whole`
 in `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackstoreguard.rs`.
 Keeping the slot whole does not by itself make the slot, its neighbours and the
-read one local; the stack layout decides that, and with the option on it maps
+read one local; the stack layout decides that, and it maps
 every slot a bounded store may reach as one array and does not end an open range
 inside a slot it absorbed (chapter 06, §6.2, "An indexed store's slots are one
 local").
@@ -1895,8 +1891,8 @@ propagation, including correct outputs whose storage comments or variable
 merging the retained COPY also changes. The option is enabled in every mode;
 existing type and memory-order guards remain in force.
 
-**Keeping a frame store that only a marker still reads** (`option tiedstorekeep`,
-default on). `RulePropagateCopy` rewrites a reader of a `COPY` output to read the
+**Keeping a frame store that only a marker still reads** (always on).
+`RulePropagateCopy` rewrites a reader of a `COPY` output to read the
 `COPY`'s input instead. When the reader is an ordinary op that is pure gain: the
 value is the same, and the `COPY` stays alive for whoever else reads its
 location. When the reader is a **marker** — an `INDIRECT` guarding an
@@ -1921,8 +1917,7 @@ marker is invisible either way, and costs the store. Every other propagation is
 untouched, including into a marker that is not the last reader, out of a
 constant, out of a same-location copy, and into any marker over a `persist`
 global — a global already has heritage's persist `RETURN-COPY` (§3.1) keeping
-its last store printed, so the brake has nothing to add there. `option
-tiedstorekeep off` restores upstream's behavior exactly.
+its last store printed, so the brake has nothing to add there.
 
 **Keeping a pointer stored to a global out of the global's markers**
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pointeestorekeep.rs
@@ -2383,8 +2378,8 @@ ops are not decoded and the CALLOTHER stays.
 
 ## 3.3 Sub-variable flow
 
-**Pointer flow on a truncated address space** (`option truncptrflow`, default
-on). A truncated default data space has addresses narrower than the registers
+**Pointer flow on a truncated address space** (always on). A truncated
+default data space has addresses narrower than the registers
 that hold them: MIPS 64-32addr and N32, PowerPC e500 and the 32addr variants,
 AArch64 ilp32. On such an architecture `RulePtrFlow`
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs (RulePtrFlow)`)
@@ -2982,17 +2977,20 @@ Kuna-added transforms live beside the upstream rules, each resolving an
 open upstream issue (the sanctioned `(kuna)`-tag exception: their
 `phases.toml` rows record `ghidra-upstream` as lineage because an upstream
 *issue*, not upstream code, specified them — the GH number is the row's
-`issue`). All share one wiring pattern: the rule is registered with its own baked-in
-enable flag off (the pool still dispatches it), so each `apply_op` defers
-per-op to the live gate on the per-function architecture snapshot (e.g. `kuna_booleanmask.rs (RuleBoolSignShift::apply_op)` testing
-`fold_boolean_mask`) — which makes them subject to the flag-copy hazard of
-§0.5 — and every gate's engine default is set in
+`issue`). The ones that are still options share one wiring pattern: the rule
+is registered with its own baked-in enable flag off (the pool still dispatches
+it), so each `apply_op` defers per-op to the live gate on the per-function
+architecture snapshot (e.g. `kuna_addcarrychain.rs (RuleAddCarryChain::apply_op)`
+testing `add_carry_chain`) — which makes them subject to the flag-copy hazard
+of §0.5 — and every gate's engine default is set in
 `decompiler/crates/kuna-decomp/src/infra/architecture.rs
 (reset_defaults_internal)`, mirrored by the `default` column of
 `decompiler/crates/kuna-decomp/phases.toml` (the source quoted below; the
 DIV-2/DIV-3 rows of `docs/history.md` carry the ablation evidence). With a
 gate off, the rule returns 0 unconditionally and output is byte-identical to
-upstream. Full option metadata: [docs/options.md](../options.md).
+upstream. The rules marked *always on* below carry no gate: their off value
+only reproduced an unfolded idiom, so they run unconditionally. Full option
+metadata: [docs/options.md](../options.md).
 
 **globalarrayanchor** —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_globalarrayanchor.rs
@@ -3106,7 +3104,7 @@ lanes and not another SUBPIECE. A mask wider than eight bytes does not fit a
 value and every lane byte is provably zero — the broadcast mask, and the only
 wide constant mask the engine constructs. Always on.
 
-**Wide-slice SSA reduction** (`option wideslice`, default **on**) —
+**Wide-slice SSA reduction** (always on) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_wideslice.rs
 (RuleWideSlice)`, in the repeated analysis pool. Heritage widens each partial
 lane write of a vector register by joining it with the bytes below it
@@ -3127,11 +3125,10 @@ refused.
 Power-of-two widths stay with `ActionLaneDivide`, `simdlane` and
 `constspaceload` to preserve their view of register lanes. The rule runs during
 simplification because other rules can recreate the odd widths after heritage.
-The default leaves all 675 datatest assertions unchanged; `option wideslice off`
-leaves the wide intermediates to upstream's rules.
+It leaves all 675 datatest assertions unchanged.
 `tests/stages/kuna-wideslice.xml` pins clang
-`-O3` SSE byte-unpacking in both passes (off: six 13-byte locals and ten lines of
-`SUB13x` reads; on: eight direct lane additions);
+`-O3` SSE byte-unpacking (eight direct lane additions, no 13-byte locals and
+no `SUB13x` reads);
 `gh275-spillargtrial.xml` independently exercises a 12-byte packed-double tree.
 
 **De-vectorized reductions** (`option devectorize`, default **off**) —

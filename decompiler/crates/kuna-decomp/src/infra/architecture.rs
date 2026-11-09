@@ -870,23 +870,10 @@ pub struct Architecture {
     /// `option unrolledguard` needs to see an already-recovered sibling table
     /// (C++ has no equivalent flag — this is the upstream shape vs kuna's).
     pub jumptable_share_partial: bool,
-    /// (kuna `earlyrestart`) Stop a pass as soon as heritage bumps a space's
-    /// dead-code delay, and re-follow flow at once
-    /// (`infra/decompile_drive.rs (run_pipeline)`).
-    pub early_restart: bool,
-    /// (kuna `deadwaves`) After a rule-pool pass whose only change was dead-op
-    /// removal, the next pass revisits only the ops next to what it removed
-    /// (`infra/action.rs (ActionPool::apply_wave)`).
-    pub pool_dead_waves: bool,
     /// (kuna `deadcascade`) After this many passes of one run of a rule pool
     /// (`None` = never), dead-op removal also removes the dead chain of joins
     /// and guards behind the removed op (`p3_dataflow/kuna_deadcascade.rs`).
     pub dead_cascade: Option<u32>,
-    /// (kuna `copywaves`) A pass whose only changes were dead-op removals and
-    /// copy propagations is followed by a wave too, and a wave offers an op it
-    /// reaches only for its opcode just the far-walking rules
-    /// (`infra/action.rs (ActionPool::wave_wants)`).
-    pub pool_copy_waves: bool,
     /// (kuna, angr `test_decompiling_incorrect_duplication_chcon_main`) Treat a
     /// direct CALL to a function whose *name* matches the vendored ELF
     /// known-no-return list as no-return at the `query_call_no_return` flow hook,
@@ -1026,7 +1013,6 @@ pub struct Architecture {
     /// the return value (option `zerocallregs`).  See
     /// [`crate::p4_calls::kuna_zerocallregs`].
     pub zero_call_regs: bool,
-    pub global_call_ranges: bool,
     /// (kuna) Give a call no guard over read-only memory once a pass would build
     /// this many such guards, `None` to keep them all (option `readonlycalls`).
     pub readonly_calls: Option<u64>,
@@ -1034,10 +1020,6 @@ pub struct Architecture {
     /// once a pass would build this many guards, `None` to keep them all
     /// (option `persistcalls`).
     pub persist_calls: Option<u64>,
-    /// (kuna) Place heritage markers only where the range is live (option `prunedssa`).
-    pub pruned_ssa: bool,
-    /// (kuna) Read LOAD guards at renaming instead of through COPY ops (option `loadguardreads`).
-    pub load_guard_reads: bool,
     /// (kuna) In the function's OWN input recovery, do not let a run of unused
     /// argument REGISTERS veto a later register the body reads before writing
     /// (option `inputparamgap`).  See [`crate::p4_calls::kuna_inputparamgap`].
@@ -1154,27 +1136,13 @@ pub struct Architecture {
     /// (kuna `stackstruct`) Lay out an address-taken frame record as one
     /// structure. See [`crate::p6_variables::kuna_stackstruct`].
     pub stack_struct: bool,
-    /// (kuna) Refuse the `RulePropagateCopy` marker propagation that would
-    /// orphan an address-tied `COPY` output holding a call's return value,
-    /// keeping a `local = f();` frame store in the emitted C (option
-    /// `tiedstorekeep`, default-on, DIV-105).  See
-    /// [`crate::p3_dataflow::kuna_tiedstorekeep`].
-    pub tied_store_keep: bool,
     /// Preserve guarded stack-read scope when inserting merge trims.
     pub guarded_read_trim: bool,
-    /// (kuna `truncptrflow`) Narrow address operands to their space's width
-    /// and seed a wide stack register as `PIECE(upper, low)` on a truncated
-    /// default data space (`RulePtrFlow`, `ActionPrototypeTypes`).
-    pub trunc_ptr_flow: bool,
     /// (kuna) `Merge::mergeOp` trims a loop head's direct read of an aliased
     /// location out of the forced merge, so the values the loop loads do not
     /// print as stores into that location (option `tiedphitrim`, default-on,
     /// DIV-182).  See [`crate::p6_variables::kuna_tiedphitrim`].
     pub tied_phi_trim: bool,
-    /// (kuna) Push a demanded SUBPIECE through 9..15-byte (and wider
-    /// non-power-of-two) PIECE/shift/bitwise trees (option `wideslice`,
-    /// default-on).  See [`crate::p3_dataflow::kuna_wideslice`].
-    pub wide_slice_reduce: bool,
     /// (kuna) Re-roll a vectorized integer reduction (guard, stride loop with
     /// one accumulator per lane, fold, scalar remainder loop) into its scalar
     /// loop (option `devectorize`, opt-in default-off).  See
@@ -1183,8 +1151,6 @@ pub struct Architecture {
     /// (kuna) Collapse an inline `repnz scasb` string length into `strlen`
     /// (option `strlenscan`).  See [`crate::p3_dataflow::kuna_strlenscan`].
     pub strlen_scan: bool,
-    /// Guard stack slots against stores through stack-derived pointers.
-    pub stack_store_guard: bool,
     /// (kuna) Region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -3175,10 +3141,7 @@ impl Architecture {
             switch_multi_pred: false,
             unrolled_guard: false,
             jumptable_share_partial: true,
-            early_restart: true,
-            pool_dead_waves: true,
             dead_cascade: Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES),
-            pool_copy_waves: true,
             noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
             local_stack_views: true,
@@ -3218,11 +3181,8 @@ impl Architecture {
             push_pad_read: true,
             zero_fill_return: true,
             zero_call_regs: true,
-            global_call_ranges: true,
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             persist_calls: Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT),
-            pruned_ssa: true,
-            load_guard_reads: true,
             input_param_gap: true,
             narrow_args: true,
             narrow_args_callers: true,
@@ -3249,13 +3209,9 @@ impl Architecture {
             array_extent: 0, // (kuna) option arrayextent; reset_defaults sets the shipped default
             array_size: 0, // (kuna) option arraysize; reset_defaults sets the shipped default
             guarded_read_trim: false,
-            tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
-            trunc_ptr_flow: false, // (kuna) option truncptrflow; reset_defaults sets the shipped default (on)
             tied_phi_trim: false, // (kuna) option tiedphitrim; reset_defaults sets the shipped default (on)
-            wide_slice_reduce: false, // (kuna) option wideslice; reset_defaults sets the shipped default (on)
             devectorize_reduction: false, // (kuna) option devectorize (opt-in default-off)
             strlen_scan: false, // (kuna) option strlenscan; reset_defaults sets the shipped default
-            stack_store_guard: false,
             region_structure: true,
             guard_arm: false,
             loop_continue: true,
@@ -3626,10 +3582,7 @@ impl Architecture {
         self.switch_multi_pred = true; // (kuna) DIV-13 default-on (angr multi-predecessor unrolled-guard jump-table; 0/675 ablation)
         self.unrolled_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
-        self.early_restart = true;
-        self.pool_dead_waves = true;
         self.dead_cascade = Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES);
-        self.pool_copy_waves = true;
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_views = false;
         self.local_stack_views = true;
@@ -3658,11 +3611,8 @@ impl Architecture {
         self.push_pad_read = true; // (kuna) default-on: a register a callee only pushes for its next call, with nothing reading the slot back, is no calleereadarg evidence
         self.zero_fill_return = true; // (kuna) default-on (0/675 ablation): the zero a narrow write leaves in a returned q register's upper half is no part of the value
         self.zero_call_regs = true; // (kuna) default-on (0/675 ablation): a register a -fzero-call-used-regs epilogue clears before the return is no part of the value
-        self.global_call_ranges = true;
         self.readonly_calls = Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT);
         self.persist_calls = Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT);
-        self.pruned_ssa = true;
-        self.load_guard_reads = true;
         self.stack_arg_gap = true; // (kuna) DIV-140 default-on: at a call site an argument register the caller never wrote ends the argument list when the next slot is on the stack, so a body-less import stops acquiring the caller's own untouched parameter plus a stack leftover as arguments (0/675 ablation)
         self.input_param_gap = true; // (kuna) DIV-114 default-on: an unused argument-register run in the function's OWN input recovery no longer vetoes a later live-in register, so a pointer-table-only callback recovers its full signature instead of reading undefined locals. Byte-identical (0/675) on the datatest corpus; restore upstream's forceInactiveChain veto with `option inputparamgap off`
         self.narrow_args_callers = true; // (kuna) option narrowargs default `callers`: also narrow a 32-bit ARM parameter every caller of a closed function passes narrow, one of them extending it itself
@@ -3688,12 +3638,8 @@ impl Architecture {
         self.stack_struct = false;
         self.array_extent = crate::p6_variables::kuna_arrayextent::LEVEL_ON; // (kuna) GH-867 default-on: an indexed stack array covers the slots its known-bits bound reaches and, unbounded, the contiguous write-only slots after it (0/675 datatest)
         self.array_size = crate::p6_variables::kuna_arraysize::LEVEL_ON; // (kuna) option arraysize default-on: an escaped stack buffer ends at the byte count a library call states for it when that count lies within the alignment padding below the gap (0/675 datatest)
-        self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
-        self.trunc_ptr_flow = true; // (kuna) option truncptrflow default-on: RulePtrFlow narrows address operands and the entry stack register is PIECE(upper, low) on a truncated default data space (0/675 datatest; untruncated targets byte-identical); `option truncptrflow off` restores the stubbed-out pass
         self.hide_shadow = true; // (kuna) default-on: the upstream ActionHideShadow body, which kuna carried as an inert stub. Consolidates two copies of one value into one chain so ActionCopyMarker can hide the repeated assignment (0/675 ablation, stages PARITY OK; 434 of 444 stripped ELFs byte-identical and the other 10 each lose a duplicated assignment); `option hideshadow off` restores the stub's behaviour exactly
         self.tied_phi_trim = true; // (kuna) DIV-182 default-on: Merge::mergeOp trims a loop head's direct read of an aliased location, so the values the loop loads do not print as stores into it (0/675 ablation); `option tiedphitrim off` restores upstream's merge
-        self.wide_slice_reduce = true; // (kuna) default-on: every rewrite is a bitvector identity on a synthetic 9..15-byte intermediate that no upstream rule can take apart; byte-identical (0/675) on the datatest corpus, and the power-of-two widths ActionLaneDivide owns are refused; `option wideslice off` leaves the wide intermediates to upstream's rules
-        self.stack_store_guard = true;
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
         self.loop_continue = true;
         self.region_loop_refine = true; // (kuna) DIV-13 default-on (region structurer multi-exit/irreducible loop-successor refinement; 0/675 ablation)
@@ -4587,11 +4533,8 @@ impl Architecture {
         ctx.push_pad_read = self.push_pad_read; // pushpadread
         ctx.zero_fill_return = self.zero_fill_return; // zerofillreturn
         ctx.zero_call_regs = self.zero_call_regs; // zerocallregs
-        ctx.global_call_ranges = self.global_call_ranges;
         ctx.readonly_calls = self.readonly_calls;
         ctx.persist_calls = self.persist_calls;
-        ctx.pruned_ssa = self.pruned_ssa;
-        ctx.load_guard_reads = self.load_guard_reads;
         ctx.input_param_gap = self.input_param_gap; // inputparamgap
         ctx.narrow_args = self.narrow_args; // narrowargs
         ctx.narrow_locals = self.narrow_locals; // regnarrow
@@ -4621,13 +4564,9 @@ impl Architecture {
         ctx.local_stack_views = self.local_stack_views;
         ctx.libc_names = self.libc_names; // libcnames
         ctx.guarded_read_trim = self.guarded_read_trim;
-        ctx.tied_store_keep = self.tied_store_keep; // tiedstorekeep
-        ctx.trunc_ptr_flow = self.trunc_ptr_flow; // truncptrflow
         ctx.tied_phi_trim = self.tied_phi_trim; // tiedphitrim
-        ctx.wide_slice_reduce = self.wide_slice_reduce; // wideslice
         ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
         ctx.strlen_scan = self.strlen_scan; // strlenscan
-        ctx.stack_store_guard = self.stack_store_guard;
         ctx.region_structure = self.region_structure; // regionstructure
         ctx.guard_arm = self.guard_arm; // guardarm
         ctx.loop_continue = self.loop_continue;
@@ -4757,9 +4696,7 @@ impl Architecture {
         // (kuna) carry the shared-partial gate (`option jtsharepartial`) so
         // `Funcdata::stage_jump_table` reaches it.
         ctx.jumptable_share_partial = self.jumptable_share_partial;
-        ctx.pool_dead_waves = self.pool_dead_waves;
         ctx.dead_cascade = self.dead_cascade;
-        ctx.pool_copy_waves = self.pool_copy_waves;
         ctx.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate

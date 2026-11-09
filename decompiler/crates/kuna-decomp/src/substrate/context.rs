@@ -1125,7 +1125,6 @@ pub struct ArchContext {
     /// from the return value (`zerocallregs`).  Read by
     /// [`crate::p4_calls::kuna_zerocallregs::drop_epilogue_zeros`].
     pub zero_call_regs: bool,
-    pub global_call_ranges: bool,
     /// (kuna) `readonlycalls`, read by `Heritage::guard_calls`: the guard count
     /// at which a pass leaves read-only ranges unguarded, `None` when off.
     pub readonly_calls: Option<u64>,
@@ -1133,10 +1132,6 @@ pub struct ArchContext {
     /// which a pass guards a persistent global only next to its accesses, `None`
     /// when off.
     pub persist_calls: Option<u64>,
-    /// (kuna) `prunedssa`, read by `Heritage::guard_calls` and `Heritage::place_multiequals`.
-    pub pruned_ssa: bool,
-    /// (kuna) `loadguardreads`, read by `Heritage::guard_loads` and `Heritage::guard_global_loads`.
-    pub load_guard_reads: bool,
     /// (kuna) in the function's OWN input recovery, tolerate a run of unused
     /// argument REGISTERS before a live-in register (`inputparamgap`).  Read by
     /// `ActionInputPrototype`, which stamps it onto the
@@ -1275,31 +1270,16 @@ pub struct ArchContext {
     pub call_array_extent: bool,
     /// (kuna `stackstruct`) Lay out an address-taken frame record as one structure.
     pub stack_struct: bool,
-    /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
-    /// `RulePropagateCopy` marker propagation that would leave an address-tied
-    /// `COPY` output holding a call's return value with no readers, so a
-    /// `local = f();` frame store survives dead-code elimination instead of
-    /// vanishing from the emitted C.  Read by
-    /// [`crate::p3_dataflow::kuna_tiedstorekeep::declines`].
-    pub tied_store_keep: bool,
     /// Preserve guarded stack-read scope when inserting merge trims.
     pub guarded_read_trim: bool,
-    /// (kuna) `option truncptrflow` (default-on): on a truncated default data
-    /// space, narrow address operands and seed a wide stack register as
-    /// `PIECE(upper, low)`. Read by `RulePtrFlow` and `ActionPrototypeTypes`.
-    pub trunc_ptr_flow: bool,
     /// (kuna) `option tiedphitrim` (default-on, DIV-182): `Merge::mergeOp` trims a
     /// loop head's direct read of an aliased location out of the forced merge.
     /// Read through `MergeContext::kuna_tied_phi_trim`.
     pub tied_phi_trim: bool,
-    /// (kuna) `wideslice` — slice reduction through synthetic-width SSA trees.
-    pub wide_slice_reduce: bool,
     /// (kuna) `devectorize` — re-roll a vectorized reduction into its scalar loop.
     pub devectorize_reduction: bool,
     /// (kuna) `strlenscan` — collapse an inline `repnz scasb` length into `strlen`.
     pub strlen_scan: bool,
-    /// Guard stack slots against stores through stack-derived pointers.
-    pub stack_store_guard: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1655,18 +1635,10 @@ pub struct ArchContext {
     /// guard), flipped by `option jtsharepartial`, shared from the real
     /// architecture.  Read by `Funcdata::stage_jump_table`.
     pub jumptable_share_partial: bool,
-    /// (kuna `deadwaves`) Revisit only the neighbours of what the previous
-    /// pool pass removed when removal was its only change, shared from the
-    /// real architecture. Read by `ActionPool::apply`.
-    pub pool_dead_waves: bool,
     /// (kuna `deadcascade`) After this many passes of one run of a rule pool
     /// (`None` = never), dead-op removal also removes the dead chain behind the
     /// removed op; shared from the real architecture. Read by `ActionPool`.
     pub dead_cascade: Option<u32>,
-    /// (kuna `copywaves`) Copy propagations seed a wave too, and a wave offers
-    /// an op reached only for its opcode just the far-walking rules; shared
-    /// from the real architecture. Read by `ActionPool`.
-    pub pool_copy_waves: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -1978,11 +1950,8 @@ impl ArchContext {
             push_pad_read: true,         // pushpadread (default-on)
             zero_fill_return: true,
             zero_call_regs: true,
-            global_call_ranges: true,
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             persist_calls: Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT),
-            pruned_ssa: true,
-            load_guard_reads: true,
             input_param_gap: true,
             narrow_args: true,
             narrow_locals: true,
@@ -2012,13 +1981,9 @@ impl ArchContext {
             stack_views: false, // stackviews (opt-in)
             libc_names: false, // libcnames (opt-in)
             guarded_read_trim: false,
-            tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
-            trunc_ptr_flow: false,       // truncptrflow (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)
-            wide_slice_reduce: false,    // wideslice (Architecture::reset_defaults sets the shipped default: on)
             devectorize_reduction: false, // devectorize (opt-in default-off)
             strlen_scan: false, // strlenscan (live value copied from the Architecture)
-            stack_store_guard: false,
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_continue: true,
@@ -2096,9 +2061,7 @@ impl ArchContext {
             switch_multi_pred: false, // (kuna) angr opt-in default off (upstream byte-identical)
             unrolled_guard: false, // (kuna) angr opt-in default off (upstream byte-identical)
             jumptable_share_partial: true, // (kuna) DIV: upstream stageJumpTable shape
-            pool_dead_waves: true,
             dead_cascade: Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES),
-            pool_copy_waves: true,
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.

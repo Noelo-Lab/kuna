@@ -1711,7 +1711,7 @@ impl Heritage {
     /// with properties `fl`?
     fn prunes(&self, fd: &crate::funcdata::Funcdata, fl: uint4, addr: &Address) -> bool {
         addr.get_space().is_some_and(|spc| {
-            super::kuna_prunedssa::applies(fd, fl, addr, self.pass, self.get_info(spc).deadcodedelay)
+            super::kuna_prunedssa::applies(fl, addr, self.pass, self.get_info(spc).deadcodedelay)
         })
     }
 
@@ -3245,7 +3245,6 @@ impl Heritage {
         if (fl & varnode_flags::addrtied) == 0 {
             return; // If not address tied, don't consider for index alias
         }
-        let reads = super::kuna_loadguardreads::Reads::enabled(fd);
         let mut range = None;
         let mut kept: Vec<LoadGuard> = Vec::with_capacity(self.load_guard.len());
         let guards = std::mem::take(&mut self.load_guard);
@@ -3262,29 +3261,9 @@ impl Heritage {
                 kept.push(guard);
                 continue;
             }
-            if reads {
-                let index = *range.get_or_insert_with(|| self.load_reads.add_range(addr, size));
-                self.load_reads.guard(guard.op, index);
-                crate::p3_dataflow::kuna_stackreadscope::mark_guarded_read(fd, guard.op, addr, size);
-                kept.push(guard);
-                continue;
-            }
-            let guard_addr =
-                fd.obank().get(guard.op).expect("guard_loads: live guard op").get_addr().clone();
-            let copyop = fd.new_op(1, guard_addr);
-            let vn = fd.new_varnode_out(size, addr, copyop).expect("guard_loads: COPY out");
-            {
-                let v = fd.vbank_mut().get_mut(vn).expect("guard_loads: COPY out vn");
-                v.set_active_heritage();
-                v.set_addr_force();
-            }
-            fd.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
-            let invn = fd.new_varnode(size, addr, None);
-            fd.vbank_mut().get_mut(invn).expect("guard_loads: COPY in vn").set_active_heritage();
-            let _ = fd.op_set_input(copyop, invn, 0);
-            fd.op_insert_before(copyop, guard.op);
-            crate::p3_dataflow::kuna_stackreadscope::mark_stack_read(fd, copyop);
-            self.load_copy_ops.push(copyop);
+            let index = *range.get_or_insert_with(|| self.load_reads.add_range(addr, size));
+            self.load_reads.guard(guard.op, index);
+            crate::p3_dataflow::kuna_stackreadscope::mark_guarded_read(fd, guard.op, addr, size);
             kept.push(guard);
         }
         self.load_guard = kept;
@@ -3351,29 +3330,9 @@ impl Heritage {
             });
             return;
         }
-        if super::kuna_loadguardreads::Reads::enabled(fd) {
-            let index = self.load_reads.add_range(addr, size);
-            for op in loads {
-                self.load_reads.guard(op, index);
-            }
-            self.global_load_ranges.push((spc, lo, hi.wrapping_sub(1)));
-            return;
-        }
+        let index = self.load_reads.add_range(addr, size);
         for op in loads {
-            let op_addr = fd.obank().get(op).expect("guard_global_loads: live LOAD").get_addr().clone();
-            let copyop = fd.new_op(1, op_addr);
-            let vn = fd.new_varnode_out(size, addr, copyop).expect("guard_global_loads: COPY out");
-            {
-                let v = fd.vbank_mut().get_mut(vn).expect("guard_global_loads: COPY out vn");
-                v.set_active_heritage();
-                v.set_addr_force();
-            }
-            fd.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
-            let invn = fd.new_varnode(size, addr, None);
-            fd.vbank_mut().get_mut(invn).expect("guard_global_loads: COPY in vn").set_active_heritage();
-            let _ = fd.op_set_input(copyop, invn, 0);
-            fd.op_insert_before(copyop, op);
-            self.load_copy_ops.push(copyop);
+            self.load_reads.guard(op, index);
         }
         self.global_load_ranges.push((spc, lo, hi.wrapping_sub(1)));
     }
@@ -6221,9 +6180,7 @@ impl Heritage {
         super::kuna_renamereads::finish(fd, &mut self.rename_reads);
         self.guard_iops.clear();
         renamed?;
-        if super::kuna_loadguardreads::Reads::enabled(fd) {
-            self.place_load_guard_reads(fd);
-        }
+        self.place_load_guard_reads(fd);
         // (kuna w10-chainb-gap1) reprocessFreeStores: re-derive the STORE guards
         // now that this pass completed, dropping spurious INDIRECTs on STOREs
         // that turned out not to need a guard (only reached when discovery saw
