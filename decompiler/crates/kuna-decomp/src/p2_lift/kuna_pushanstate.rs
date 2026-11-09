@@ -243,7 +243,13 @@ pub struct State {
     /// Memory bytes the state wrote at a concrete address (never re-read from the image).
     pub unknown_stores: u32,
     pub unknown_loads: u32,
+    /// The 4-byte granules of the entry-stack region the program stored to
+    /// since the last external call, sorted: the words a call's arguments can be.
+    pub stack_stores: Vec<i32>,
 }
+
+/// Most granules [`State::stack_stores`] records between two calls.
+const MAX_STACK_STORES: usize = 4096;
 
 impl State {
     pub fn new(big_endian: bool, flag_regs: (u64, u64)) -> State {
@@ -255,6 +261,36 @@ impl State {
             flag_regs,
             unknown_stores: 0,
             unknown_loads: 0,
+            stack_stores: Vec::new(),
+        }
+    }
+
+    /// Record a store of `size` bytes at entry-stack offset `off`.
+    pub fn note_store(&mut self, off: i128, size: u8) {
+        for g in off.div_euclid(4)..=(off + size.max(1) as i128 - 1).div_euclid(4) {
+            let Ok(g) = i32::try_from(g) else { continue };
+            if let Err(i) = self.stack_stores.binary_search(&g) {
+                if self.stack_stores.len() < MAX_STACK_STORES {
+                    self.stack_stores.insert(i, g);
+                }
+            }
+        }
+    }
+
+    /// Whether the program stored to the 4-byte granule holding entry-stack
+    /// offset `off` since the last external call.
+    pub fn stored_since_call(&self, off: i128) -> bool {
+        i32::try_from(off.div_euclid(4)).is_ok_and(|g| self.stack_stores.binary_search(&g).is_ok())
+    }
+
+    /// Union in the stores `other` recorded (the two sides of a merged select).
+    pub fn merge_stores(&mut self, other: &State) {
+        for &g in &other.stack_stores {
+            if let Err(i) = self.stack_stores.binary_search(&g) {
+                if self.stack_stores.len() < MAX_STACK_STORES {
+                    self.stack_stores.insert(i, g);
+                }
+            }
         }
     }
 

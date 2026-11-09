@@ -196,6 +196,8 @@ const MAX_VPC_FORK: usize = 4;
 const CALL_POINTEE_BYTES: i128 = 16;
 /// Most instructions read from a callee in the image when summarizing it.
 const MAX_CALLEE_SCAN: usize = 512;
+/// Most stack words a call's pushed arguments are counted over.
+const MAX_PUSHED_WORDS: i128 = 16;
 
 /// A call leaving the interpreter: where it goes and where it comes back.
 #[derive(Clone, Copy, Debug)]
@@ -328,6 +330,7 @@ impl<'a> Explorer<'a> {
         emu.sym_values = Rc::clone(&self.sym_values);
         emu.track_sp = Some((self.abi.sp, self.abi.ptr_size));
         emu.watch_base = if self.config.trace.is_some() { self.sp0 } else { None };
+        emu.stack_base = if self.abi.stack_args > 0 { self.sp0 } else { None };
         while let Some(id) = worklist.pop_front() {
             if cfg.nodes.len() > self.config.max_nodes {
                 self.log.push("node limit reached".into());
@@ -1352,10 +1355,11 @@ impl<'a> Explorer<'a> {
         }
         let args: Vec<(u64, u8)> = self.abi.args.iter().copied().filter(|(o, _)| *o != self.abi.sp).collect();
         let mut values: Vec<ExprId> = args.iter().map(|&(off, size)| state.read_reg(&mut self.arena, off, size)).collect();
-        // Stack-passed arguments sit above the return address.
+        // Stack-passed arguments sit above the return address: the ABI's
+        // window, and every word a callee-cleanup callee pops.
         let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
         if let Some((sb, so)) = self.arena.affine_probe(sp) {
-            for k in 1..=self.abi.stack_args as i128 {
+            for k in 1..=(self.abi.stack_args as i128).max(pop as i128 / ps as i128) {
                 values.push(state.read_mem(&mut self.arena, self.target, sb, so + k * ps as i128, ps));
             }
         }
@@ -1399,6 +1403,7 @@ impl<'a> Explorer<'a> {
             let u = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallClobber { site, offset: off }, size, boolean));
             state.write_reg(off, u, size);
         }
+        state.stack_stores.clear();
         let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
         let k = self.arena.cst(ps, ps as u128 + pop as u128);
         let nsp = self.arena.mk_bin(OpCode::CPUI_INT_ADD, sp, k, ps);
@@ -1409,9 +1414,9 @@ impl<'a> Explorer<'a> {
     /// cleans up after itself (32-bit Windows `__stdcall`), this is read from
     /// the callee's own `ret imm16`, else from the caller restoring the stack
     /// at the return address (`__cdecl`), else from its declared prototype,
-    /// else from the arguments pushed for it: the stack slots above the return
-    /// address up to the caller's saved registers.  angr gets the same number
-    /// by executing the callee or its calling-convention-aware SimProcedure.
+    /// else from the arguments pushed for it ([`Self::pushed_arg_bytes`]).
+    /// angr gets the same number by executing the callee or its
+    /// calling-convention-aware SimProcedure.
     fn callee_pop(&mut self, state: &mut State, callee: &Callee, scan: Option<&CalleeScan>) -> u32 {
         if !self.target.callee_cleans() || (callee.target.is_some() && callee.target == callee.ret) {
             return 0;
@@ -1456,10 +1461,12 @@ impl<'a> Explorer<'a> {
         raises
     }
 
-    /// The pointer-sized stack slots above the return address that hold
-    /// written values, up to the first holding a callee-saved register's
-    /// entry value (the caller's register saves); 0 when no such boundary
-    /// is found within the argument window.
+    /// The arguments pushed for a call: the stack words above the return
+    /// address the program stored to since the previous external call
+    /// ([`State::stack_stores`]), up to the first it did not (the caller's
+    /// frame) or the first holding a callee-saved register's entry value (the
+    /// prologue's saves, before the first call). 0 when the run reaches
+    /// [`MAX_PUSHED_WORDS`] without such an end.
     fn pushed_arg_bytes(&mut self, state: &mut State) -> u32 {
         let ps = self.abi.ptr_size;
         let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
@@ -1468,10 +1475,10 @@ impl<'a> Explorer<'a> {
             return 0;
         }
         let saved: Vec<u64> = self.abi.callee_saved.iter().map(|(o, _)| *o).filter(|o| *o != self.abi.sp).collect();
-        for k in 1..=self.abi.stack_args as i128 {
+        for k in 1..=MAX_PUSHED_WORDS {
             let o = off + k * ps as i128;
-            if o >= 0 || !state.has_mem(base, o, ps) {
-                return 0;
+            if o >= 0 || !state.stored_since_call(o) || !state.stored_since_call(o + ps as i128 - 1) {
+                return ((k - 1) * ps as i128) as u32;
             }
             let v = state.read_mem(&mut self.arena, self.target, base, o, ps);
             if matches!(self.arena.var_kind(v), Some(VarKind::InitReg { offset }) if saved.contains(&offset)) {

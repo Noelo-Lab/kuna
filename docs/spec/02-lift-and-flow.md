@@ -3482,17 +3482,58 @@ image is a call through that slot (an import or GOT entry). It is a call when
 the interpreter pushed a return address, and a tail call through the slot otherwise. `Explorer::apply_call_summary` models a call that is not followed. The return
 register gets a fresh call-result symbol. Each ABI scratch register (RCX,
 RDX, R8-R11 and the arithmetic flags on x86-64, ECX/EDX on x86) gets a
-call-clobber symbol. The return address is popped. The 16 bytes behind
+call-clobber symbol, except a register that a callee in the image never
+writes, when its code was read to every return without calling out. The
+return address is popped, together with the arguments the callee removes
+itself (the stack purge below). The 16 bytes behind
 every pointer argument become unknown, because a `scanf("%d", &v)` writes
 `v`, and `v`'s old constant must not decide the branch that tests it.
 On x86 the eight stack words above the return address are treated as
-possible pointer arguments too. Every entry-stack offset handed to a call this
+possible pointer arguments too, and so is every word the callee pops
+(`CreateProcessA` pops ten, the last its `PROCESS_INFORMATION` pointer). Every entry-stack offset handed to a call this
 way is recorded as escaped, over all rounds. Emulation continues at the return address. On a Windows image
 (`ThreadBlock`) the segment register that addresses the thread block is
 fixed to a synthetic TEB, with a PEB, process heap and image base behind it,
 holding the values an ordinary undebugged process sees. The protector's TEB
 and PEB checks (debugger flags, heap flags, OS version, the block's own
 address) then fold instead of forking the exploration on an unknown.
+
+**Stack purge.** A 32-bit `__stdcall` callee (nearly every Win32 API outside
+the C runtime) removes its own arguments when it returns. The interpreter
+re-enters with the real stack pointer, so a summary that popped only the
+return address would leave the emulated stack pointer short by the callee's
+purge, and every stack address computed after the call would land at the
+wrong entry-stack offset: the buffer `recv` filled would be passed to `strcmp`
+16 bytes away, a store and a load of one local would miss each other, and a
+loop around an API call would come back to its head deeper than it left.
+`Explorer::callee_pop` decides the purge where the default model leaves
+cleanup to the callee (x86 Windows, `__stdcall` with an unknown extrapop;
+everywhere else, x86-64 included, a callee pops nothing), the way angr's
+`SimCC.teardown_callsite` pops the arguments of a callee-cleanup convention:
+
+- Code in the image pops what its `ret imm16` says (`Explorer::scan_callee`).
+  Its direct flow is read from the entry, and every return reached must pop
+  the same amount.
+- A native call whose return address holds an instruction that takes the
+  arguments back (`add esp, n`, or a pop into a scratch register) is
+  `__cdecl` and pops nothing (`Explorer::caller_cleans`).
+- Otherwise what is declared about the target or slot decides
+  (`ArchTarget::declared_pop`): the model its name was declared under (a C
+  runtime import is `__cdecl`), or the parameters of its parked prototype (the
+  built-in Win32 and libc tables). A variadic prototype pops nothing, and so
+  does code in the image whose returns were not found.
+- Otherwise the callee pops the arguments pushed for it
+  (`Explorer::pushed_arg_bytes`). The emulator records in the state every
+  store relative to the entry stack pointer (`State::note_store`), and each
+  external call clears the record. The arguments are the stack words above
+  the return address that the program stored to since the previous call, up
+  to the first word it did not store to, which is the caller's own frame. A
+  word holding a callee-saved register's entry value is the caller's too (the
+  prologue's saves, before the first call) and also ends the count. A run of
+  16 stored words with no such end counts as none. An argument pushed for an
+  outer call before an inner call (`push b; call g; push eax; call f`) is
+  counted for the inner one, and the outer call then counts one fewer, so the
+  error ends at the outer call.
 
 **Emission.** `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanemit.rs
 (emit)` turns the graph into a

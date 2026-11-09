@@ -167,6 +167,9 @@ pub struct Emulator<'a> {
     pub image_loads: BTreeMap<u64, u64>,
     /// Diagnostics: report accesses to this base variable within +-0x40.
     pub watch_base: Option<u32>,
+    /// The entry stack pointer: stores relative to it are noted in the state
+    /// until the next external call ([`State::note_store`]).
+    pub stack_base: Option<u32>,
     notes: Vec<String>,
     /// The constants each symbolized location was seen to hold (shared with the explorer).
     pub sym_values: SymValues,
@@ -185,6 +188,7 @@ impl<'a> Emulator<'a> {
             prov: BTreeMap::new(),
             track_sp: None,
             watch_base: None,
+            stack_base: None,
             notes: Vec::new(),
             image_loads: BTreeMap::new(),
             sym_values: Default::default(),
@@ -475,6 +479,9 @@ impl<'a> Emulator<'a> {
             if base.is_some() && base == self.watch_base && (-0x40..0x40).contains(&off) {
                 self.note(format!("watch store [{off:#x}] size {size} = {}", arena.fmt(val)));
             }
+            if base.is_some() && base == self.stack_base {
+                state.note_store(off, size);
+            }
             state.write_mem(base, off, val, size);
             return;
         }
@@ -500,6 +507,9 @@ impl<'a> Emulator<'a> {
                     }
                     let old = state.read_mem(arena, self.target, *base, *off, size);
                     let new = arena.mk_ite(cond, val, old);
+                    if base.is_some() && *base == self.stack_base {
+                        state.note_store(*off, size);
+                    }
                     state.write_mem(*base, *off, new, size);
                 }
                 return;
@@ -800,4 +810,5 @@ pub fn merge_ite(state: &mut State, taken: &mut State, arena: &mut ExprArena, im
     }
     state.unknown_loads = state.unknown_loads.max(taken.unknown_loads);
     state.unknown_stores = state.unknown_stores.max(taken.unknown_stores);
+    state.merge_stores(taken);
 }
