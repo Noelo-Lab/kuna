@@ -33,12 +33,13 @@ use crate::inline_single_block_helper::InlineSingleBlockHelper;
 use crate::intersection_cast_processor::IntersectionCastProcessor;
 use crate::java_pass_location::JavaPassLocation;
 use crate::label_helper::LabelHelper;
+use crate::language_spec::LanguageSpec;
 use crate::loop_extract_helper::LoopExtractHelper;
 use crate::merge_helper::MergeHelper;
 use crate::method_descriptor::MethodDescriptor;
 use crate::p_pand_mm_helper::PPandMMHelper;
 use crate::pass_context::PassContext;
-use crate::plugin_context::{LanguageSpec, PluginContext};
+use crate::plugin_context::PluginContext;
 use crate::root_statement::RootStatement;
 use crate::secondary_functions_helper::SecondaryFunctionsHelper;
 use crate::sequence_helper::SequenceHelper;
@@ -133,7 +134,15 @@ impl MethodProcessor {
         let decompile_record = DecompileRecord::new(mt);
 
         if let Some(spec) = spec {
-            match *spec {}
+            let mut pctx = PassContext::new(None, Some(graph), mt, cl, var_proc, decompile_record);
+            spec.cfg_pass.run(&mut pctx);
+
+            let root = spec.graph_parser.create_statement(graph, mt);
+
+            pctx.set_root(Some(root));
+            spec.pass.run(&mut pctx);
+
+            return Self::pass_root(&pctx);
         }
 
         let mut pctx = PassContext::new(None, Some(graph), mt, cl, var_proc, decompile_record);

@@ -298,7 +298,7 @@ impl SecondaryFunctionsHelper {
                             fexpr.get_lst_operands(),
                             fexpr.get_bytecode().as_ref(),
                         );
-                        func.set_implicit_type(Some(fexpr.get_expr_type()));
+                        func.set_implicit_type(Some(fexpr.0.get_expr_type()));
                         return Some(func.0);
                     }
                 }
@@ -309,7 +309,7 @@ impl SecondaryFunctionsHelper {
                             fexpr.get_lst_operands(),
                             fexpr.get_bytecode().as_ref(),
                         );
-                        func.set_implicit_type(Some(fexpr.get_expr_type()));
+                        func.set_implicit_type(Some(fexpr.0.get_expr_type()));
                         return Some(func.0);
                     }
                 }

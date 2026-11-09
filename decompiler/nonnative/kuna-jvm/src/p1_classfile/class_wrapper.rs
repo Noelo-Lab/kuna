@@ -24,7 +24,7 @@ use crate::method_processor::MethodProcessor;
 use crate::method_properties::MethodProperties;
 use crate::method_properties_processor::MethodPropertiesProcessor;
 use crate::method_wrapper::MethodWrapper;
-use crate::plugin_context::LanguageSpec;
+use crate::language_spec::LanguageSpec;
 use crate::root_statement::RootStatement;
 use crate::rt::{rethrow, try_catch, Caught, JHashMap, JHashSet, Shared};
 use crate::struct_class::StructClass;

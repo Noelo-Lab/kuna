@@ -140,7 +140,7 @@ impl CatchAllStatement {
             buf.append(" finally");
         } else {
             buf.append(" catch (")
-                .append_buffer(&self.get_vars().get(0).to_java(indent))
+                .append_buffer(&self.get_vars().get(0).0.to_java(indent))
                 .append(")");
         }
         buf.append(" {").append_line_separator();
@@ -148,7 +148,7 @@ impl CatchAllStatement {
         if let Some(monitor) = monitor {
             buf.append_indent(indent + 1)
                 .append("if (")
-                .append_buffer(&monitor.to_java(indent))
+                .append_buffer(&monitor.0.to_java(indent))
                 .append(") {")
                 .append_line_separator();
         }

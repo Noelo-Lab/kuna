@@ -24,6 +24,7 @@ use crate::generic_type::GenericType;
 use crate::i_matchable::{IMatchable, MatchProperties};
 use crate::if_exprent::{IfExprent, IfExprentData};
 use crate::invocation_exprent::{InvocationExprent, InvocationExprentData};
+use crate::k_dispatch::{self, KExprentExt};
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
 use crate::method_wrapper::MethodWrapper;
@@ -53,6 +54,8 @@ pub struct ExprentData {
     pub id: i32,
     pub bytecode: Option<BitSet>,
     pub kind: ExprentKind,
+    /// Present exactly when the object is an instance of a Kotlin class (see `k_dispatch`).
+    pub kt: Option<Box<KExprentExt>>,
 }
 
 pub enum ExprentKind {
@@ -230,6 +233,7 @@ impl Exprent {
             id,
             bytecode: None,
             kind,
+            kt: None,
         })
     }
 
@@ -258,7 +262,13 @@ impl Exprent {
     }
 
     pub fn get_precedence(self) -> i32 {
-        match self.get_type() {
+        let (type_, kt) = self.get_type_kt();
+        if kt {
+            if let Some(precedence) = k_dispatch::exprent_get_precedence(self) {
+                return precedence;
+            }
+        }
+        match type_ {
             ExprentType::Assignment => AssignmentExprent::get_precedence(self.as_assignment()),
             ExprentType::Const => ConstExprent::get_precedence(self.as_const()),
             ExprentType::Function => FunctionExprent::get_precedence(self.as_function()),
@@ -273,7 +283,13 @@ impl Exprent {
     }
 
     pub fn get_expr_type(self) -> VarType {
-        match self.get_type() {
+        let (type_, kt) = self.get_type_kt();
+        if kt {
+            if let Some(expr_type) = k_dispatch::exprent_get_expr_type(self) {
+                return expr_type;
+            }
+        }
+        match type_ {
             ExprentType::Array => ArrayExprent::get_expr_type(self.as_array()),
             ExprentType::Assignment => AssignmentExprent::get_expr_type(self.as_assignment()),
             ExprentType::Const => ConstExprent::get_expr_type(self.as_const()),
@@ -298,7 +314,13 @@ impl Exprent {
     /// implicit type (directly or as a switch selector). [`Exprent::get_expr_type`]
     /// throws `NullPointerException` there instead.
     pub fn get_expr_type_opt(self) -> Option<VarType> {
-        match self.get_type() {
+        let (type_, kt) = self.get_type_kt();
+        if kt {
+            if let Some(expr_type) = k_dispatch::exprent_get_expr_type_opt(self) {
+                return expr_type;
+            }
+        }
+        match type_ {
             ExprentType::Function => FunctionExprent::get_expr_type_opt(self.as_function()),
             ExprentType::SwitchHead => self.as_switch_head().get_value().get_expr_type_opt(),
             _ => Some(self.get_expr_type()),
@@ -364,7 +386,13 @@ impl Exprent {
     }
 
     pub fn check_expr_type_bounds(self) -> Option<CheckTypesResult> {
-        match self.get_type() {
+        let (type_, kt) = self.get_type_kt();
+        if kt {
+            if let Some(result) = k_dispatch::exprent_check_expr_type_bounds(self) {
+                return result;
+            }
+        }
+        match type_ {
             ExprentType::Array => ArrayExprent::check_expr_type_bounds(self.as_array()),
             ExprentType::Assert => AssertExprent::check_expr_type_bounds(self.as_assert()),
             ExprentType::Assignment => {
@@ -503,7 +531,13 @@ impl Exprent {
     }
 
     pub fn copy(self) -> Exprent {
-        match self.get_type() {
+        let (type_, kt) = self.get_type_kt();
+        if kt {
+            if let Some(copy) = k_dispatch::exprent_copy(self) {
+                return copy;
+            }
+        }
+        match type_ {
             ExprentType::Annotation => AnnotationExprent::copy(self.as_annotation()),
             ExprentType::Array => ArrayExprent::copy(self.as_array()),
             ExprentType::Assert => AssertExprent::copy(self.as_assert()),
@@ -531,7 +565,11 @@ impl Exprent {
     }
 
     pub fn to_java(self, indent: i32) -> TextBuffer {
-        match self.get_type() {
+        let (type_, kt) = self.get_type_kt();
+        if kt {
+            return k_dispatch::exprent_to_java(self, indent);
+        }
+        match type_ {
             ExprentType::Annotation => AnnotationExprent::to_java(self.as_annotation(), indent),
             ExprentType::Array => ArrayExprent::to_java(self.as_array(), indent),
             ExprentType::Assert => AssertExprent::to_java(self.as_assert(), indent),

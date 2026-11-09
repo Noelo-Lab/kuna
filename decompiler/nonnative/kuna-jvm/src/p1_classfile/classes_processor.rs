@@ -6,6 +6,7 @@
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::fmt;
+use std::rc::Rc;
 
 use crate::cancelation_manager::CanceledException;
 use crate::class_pass_location::ClassPassLocation;
@@ -24,12 +25,14 @@ use crate::import_collector::ImportCollector;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
 use crate::lambda_processor::LambdaProcessor;
+use crate::language_spec::LanguageSpec;
 use crate::nested_class_processor::NestedClassProcessor;
 use crate::nested_member_access::NestedMemberAccess;
-use crate::plugin_context::{LanguageSpec, PluginContext};
+use crate::plugin_context::PluginContext;
 use crate::rt::{
     rethrow, try_catch, Caught, JHashMap, JHashSet, JLinkedHashSet, JList, JavaStr, Shared,
 };
+use crate::statement_writer::StatementWriter;
 use crate::struct_class::StructClass;
 use crate::struct_context::{is_io_exception, StructContext};
 use crate::struct_general_attribute::StructGeneralAttribute;
@@ -611,7 +614,7 @@ impl ClassesProcessor {
 
                 let spec = PluginContext::get_current_context().get_language_spec(cl);
 
-                Self::init_wrappers(root, spec.as_ref());
+                Self::init_wrappers(root, spec.as_deref());
 
                 match spec {
                     None => {
@@ -619,7 +622,9 @@ impl ClassesProcessor {
 
                         NestedMemberAccess::new().propagate_member_access(root);
                     }
-                    Some(spec) => match spec {},
+                    Some(spec) => {
+                        spec.root_processor.run(root);
+                    }
                 }
 
                 DecompilerContext::get_struct_context()
@@ -668,9 +673,9 @@ impl ClassesProcessor {
             } else {
                 let spec = PluginContext::get_current_context().get_language_spec(cl);
                 let mut class_buffer = TextBuffer::with_capacity(Self::AVERAGE_CLASS_SIZE);
-                let writer = match spec {
-                    Some(spec) => match spec {},
-                    None => ClassWriter::new(),
+                let writer: Rc<dyn StatementWriter> = match spec {
+                    Some(spec) => spec.writer.clone(),
+                    None => Rc::new(ClassWriter::new()),
                 };
 
                 DecompilerContext::get_struct_context()

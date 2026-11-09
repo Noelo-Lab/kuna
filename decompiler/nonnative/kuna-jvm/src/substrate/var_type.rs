@@ -10,6 +10,7 @@ use std::rc::Rc;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::generic_type::GenericType;
+use crate::k_type::KTypeData;
 use crate::rt::jstring::java_string_hash;
 use crate::rt::{JHashMap, JLinkedHashMap, JavaEq, JavaHash, JavaStr};
 use crate::type_family::TypeFamily;
@@ -28,6 +29,8 @@ pub struct VarTypeData {
     pub stack_size: i32,
     /// Present exactly when the object is a `GenericType`.
     pub generic: Option<GenericData>,
+    /// Present exactly when the object is a Kotlin `KType` (see `k_type`).
+    pub kotlin: Option<Rc<KTypeData>>,
 }
 
 /// The fields `GenericType` adds to `VarType`.
@@ -466,6 +469,7 @@ impl VarType {
             type_family,
             stack_size,
             generic,
+            kotlin: None,
         })
     }
 
@@ -511,6 +515,7 @@ impl VarType {
             type_family: VarType::get_family(type_, array_dim),
             stack_size: VarType::get_stack_size(type_, array_dim),
             generic: None,
+            kotlin: None,
         })
     }
 

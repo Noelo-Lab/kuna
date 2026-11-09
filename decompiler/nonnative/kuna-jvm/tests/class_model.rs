@@ -601,6 +601,7 @@ fn collector(
         current_package_slash: format!("{}/", package.replace('.', "/")),
         current_package_point: package.to_string(),
         write_locked: false,
+        kotlin: false,
     })
 }
 

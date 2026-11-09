@@ -2,7 +2,8 @@
 //! option map and the Java text expected for the main class.
 //!
 //! A case is run the way Vineflower's `SingleClassesTest` fixture runs it: the option pairs go to
-//! [`Fernflower::new`] (which overlays them on the defaults), every class file is added as a source
+//! [`Fernflower::new`] (which overlays them on the defaults) with no plugin loaded (`jvm_plugins`
+//! off unless the case sets it, see [`engine_options`]), every class file is added as a source
 //! in manifest order, the context is decompiled and then cleared. The fixture's saver writes every
 //! class of a class-file source flat into one directory, so the compared text is the *last*
 //! delivered unit whose file name is the case's `compare` name; it is compared with the expected
@@ -20,6 +21,7 @@ use crate::decompiler_context::DecompilerContext;
 use crate::fernflower::{DecompiledClass, Fernflower};
 use crate::i_fernflower_logger::{IFernflowerLogger, Severity};
 use crate::jdk_runtime::JdkRuntime;
+use crate::kuna_plugins::JVM_PLUGINS;
 use crate::rt::{self, try_catch, Caught};
 use crate::struct_class::StructClass;
 use crate::struct_field::StructField;
@@ -110,6 +112,16 @@ struct RawCase {
     libs: Vec<String>,
     expected: Option<String>,
     compare: Vec<String>,
+}
+
+/// The option pairs the engine runs `case` with: the fixture registers no plugin, so
+/// `jvm_plugins` is off unless the case sets it.
+pub fn engine_options(case: &Case) -> Vec<(String, String)> {
+    let mut options = vec![(JVM_PLUGINS.to_string(), "0".to_string())];
+    for (key, value) in &case.options {
+        overlay_option(&mut options, key, value);
+    }
+    options
 }
 
 /// Puts `key=value` into `options`, replacing an earlier value of `key` in place.
@@ -547,7 +559,7 @@ pub fn execute(case: &Case) -> EngineRun {
     let mut units = Vec::new();
     let start = Instant::now();
     let outcome = try_catch(|| {
-        let mut fernflower = Fernflower::new(&case.options, logger.clone());
+        let mut fernflower = Fernflower::new(&engine_options(case), logger.clone());
         if let Some(provider) = case
             .javadoc
             .as_deref()
@@ -836,7 +848,7 @@ pub fn effective_options(case: &Case) -> Result<Vec<(String, String)>, Thrown> {
     reset_engine_thread();
     let result = try_catch(|| {
         let logger: Rc<dyn IFernflowerLogger> = <dyn IFernflowerLogger>::NO_OP();
-        let mut fernflower = Fernflower::new(&case.options, logger);
+        let mut fernflower = Fernflower::new(&engine_options(case), logger);
         let mut entries = DecompilerContext::get_current_context()
             .expect("Fernflower installs a context")
             .with(|d| d.properties.entry_vec());

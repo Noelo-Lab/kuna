@@ -1271,7 +1271,7 @@ impl ConstExprent {
         let _lock = DecompilerContext::get_import_collector().lock();
         format!(
             "const({})",
-            self.to_java(0).convert_to_string_and_allow_data_discard()
+            self.0.to_java(0).convert_to_string_and_allow_data_discard()
         )
     }
 

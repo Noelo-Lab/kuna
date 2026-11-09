@@ -5,10 +5,12 @@ use std::path::Path;
 
 use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
 use kuna_jvm::kuna_options::{self, driver_owned, find, resolve, rows, ValueKind};
+use kuna_jvm::kuna_plugins;
 
 #[test]
 fn table_is_one_to_one_with_vineflower_options() {
     let defaults = IFernflowerPreferences::DEFAULTS();
+    let plugin_options = kuna_plugins::bundled_plugin_options();
     let mut claimed: BTreeMap<&str, &str> = BTreeMap::new();
     for row in rows() {
         if row.is_kuna() {
@@ -30,24 +32,47 @@ fn table_is_one_to_one_with_vineflower_options() {
             owned.vineflower
         );
     }
-    let all: BTreeSet<&str> = IFernflowerPreferences::all_options()
+    let core: BTreeSet<&str> = IFernflowerPreferences::all_options()
         .iter()
         .map(|o| o.key)
         .collect();
+    let mut all = core.clone();
+    for plugin_option in &plugin_options {
+        assert!(
+            !core.contains(plugin_option.option.key),
+            "{} of plugin {} is also a core option",
+            plugin_option.option.key,
+            plugin_option.plugin
+        );
+        assert!(
+            all.insert(plugin_option.option.key),
+            "{} declared twice",
+            plugin_option.option.key
+        );
+    }
     let covered: BTreeSet<&str> = claimed.keys().copied().collect();
     assert_eq!(
         covered, all,
-        "rows + driver-owned must be exactly all_options()"
+        "rows + driver-owned must be exactly all_options() and the bundled plugins' options"
     );
 
     for row in rows().iter().filter(|r| !r.is_kuna()) {
-        let option = IFernflowerPreferences::find_option(row.vineflower).unwrap();
+        let (option, default) = match IFernflowerPreferences::find_option(row.vineflower) {
+            Some(option) => (option, defaults.get_cloned(&row.vineflower.to_string())),
+            None => {
+                let plugin_option = plugin_options
+                    .iter()
+                    .find(|o| o.option.key == row.vineflower)
+                    .unwrap_or_else(|| panic!("{}: no such option", row.option));
+                (plugin_option.option, plugin_option.default.clone())
+            }
+        };
         assert_eq!(row.short, option.short_name.unwrap_or(""), "{}", row.option);
         let (key, value) = resolve(row.option, row.default).unwrap();
         assert_eq!(key, row.vineflower);
         assert_eq!(
             Some(&value),
-            defaults.get(&row.vineflower.to_string()),
+            default.as_ref(),
             "{}: default {:?} disagrees with Vineflower's",
             row.option,
             row.default
@@ -170,6 +195,10 @@ fn resolution_and_aliases() {
     assert_eq!(
         resolve("jvm_siblings", "off").unwrap(),
         ("jvm_siblings", "0".to_string())
+    );
+    assert_eq!(
+        resolve("jvm_plugins", "off").unwrap(),
+        (kuna_plugins::JVM_PLUGINS, "0".to_string())
     );
     assert_eq!(resolve("old-try-dedup", "1").unwrap().0, "old-try-dedup");
 }

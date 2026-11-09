@@ -19,6 +19,7 @@ use crate::function_exprent::FunctionType;
 use crate::general_statement::{GeneralStatement, GeneralStatementData};
 use crate::i_matchable::{IMatchable, MatchProperties};
 use crate::if_statement::{IfStatement, IfStatementData};
+use crate::k_dispatch;
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
 use crate::pattern::Pattern;
@@ -131,6 +132,8 @@ pub struct StatementData {
     pub phantom: bool,
     pub endpoints: Option<StartEndPair>,
     pub kind: StatementKind,
+    /// Whether the statement is an instance of the Kotlin class of its type (see `k_dispatch`).
+    pub kt: bool,
 }
 
 arena_object!(pub Statement => StatementData, Class);
@@ -211,6 +214,7 @@ impl Statement {
             phantom: false,
             endpoints: None,
             kind,
+            kt: false,
         })
     }
 
@@ -606,7 +610,11 @@ impl Statement {
 
     /// Java: toJava(int)
     pub fn to_java(self, indent: i32) -> TextBuffer {
-        match self.type_() {
+        let (type_, kt) = self.with(|d| (d.type_, d.kt));
+        if kt {
+            return k_dispatch::statement_to_java(self, indent);
+        }
+        match type_ {
             StatementType::Root => RootStatement::to_java(RootStatement(self), indent),
             StatementType::BasicBlock => {
                 BasicBlockStatement::to_java(BasicBlockStatement(self), indent)

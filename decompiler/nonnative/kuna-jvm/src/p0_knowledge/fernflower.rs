@@ -1,9 +1,10 @@
 //! Port of `org/jetbrains/java/decompiler/main/Fernflower.java`, adapted to
 //! kuna: finished classes are handed to a callback instead of an
-//! `IResultSaver`; the plugin API and renamer class loading have no Rust
-//! counterpart, and `include-classpath` adds the current JDK runtime (the
-//! system-module half of `ClasspathScanner`; the JVM's own class path has no
-//! analogue here).
+//! `IResultSaver`; plugins come from the bundled list (`kuna_plugins`, chosen
+//! by the custom property `jvm_plugins`) instead of the class path, renamer
+//! class loading has no Rust counterpart, and `include-classpath` adds the
+//! current JDK runtime (the system-module half of `ClasspathScanner`; the
+//! JVM's own class path has no analogue here).
 //!
 //! Class-scope arenas are reset at the end of [`Fernflower::decompile_context`],
 //! once every class of every unit has been delivered: Vineflower emits all
@@ -29,7 +30,10 @@ use crate::identifier_converter::IdentifierConverter;
 use crate::identity_renamer_factory::IdentityRenamerFactory;
 use crate::jdk_runtime::JdkRuntime;
 use crate::kuna_partition::RootSelection;
+use crate::kuna_plugins;
 use crate::kuna_spans::{ClassSpan, MethodSpan};
+use crate::plugin_context::PluginContext;
+use crate::plugin_source::PluginSource;
 use crate::pool_interceptor::PoolInterceptor;
 use crate::rt::{try_catch, Caught, JHashMap, JavaException, JavaStr, Shared};
 use crate::struct_class::StructClass;
@@ -79,12 +83,29 @@ struct FernflowerDecompiledData {
 impl Fernflower {
     /// Java: Fernflower(IResultSaver, Map<String, Object>, IFernflowerLogger).
     /// `custom_properties` overlay the defaults in order; three-letter keys are short names.
+    /// The bundled plugins are loaded unless `jvm_plugins` is `0`.
     pub fn new(
         custom_properties: &[(String, String)],
         logger: Rc<dyn IFernflowerLogger>,
     ) -> Fernflower {
+        let (plugins, custom_properties) = kuna_plugins::take_switch(custom_properties);
+        Fernflower::new_with_plugin_sources(
+            &custom_properties,
+            logger,
+            kuna_plugins::plugin_sources(plugins),
+        )
+    }
+
+    /// [`Fernflower::new`] with `plugin_sources` as `PluginSources.PLUGIN_SOURCES`
+    /// (`jvm_plugins` is ignored).
+    pub fn new_with_plugin_sources(
+        custom_properties: &[(String, String)],
+        logger: Rc<dyn IFernflowerLogger>,
+        plugin_sources: Vec<Rc<dyn PluginSource>>,
+    ) -> Fernflower {
+        let (_, custom_properties) = kuna_plugins::take_switch(custom_properties);
         let mut properties = IFernflowerPreferences::DEFAULTS();
-        for (key, value) in custom_properties {
+        for (key, value) in &custom_properties {
             if key.jlen() == 3 {
                 OptionParser::parse_short(&format!("-{key}={value}"), &mut properties);
             } else {
@@ -142,6 +163,7 @@ impl Fernflower {
         DecompilerContext::set_current_context(Some(context.clone()));
 
         let plugins = struct_context.get_plugin_context();
+        plugins.set_plugin_sources(plugin_sources);
         let plugin_count = plugins.find_plugins();
 
         logger.write_message(&format!("Loaded {plugin_count} plugins"), Severity::Info);
@@ -244,13 +266,18 @@ impl Fernflower {
         self.loaded = false;
     }
 
-    /// Renames (when enabled) and loads every own class into class nodes, once
-    /// per run; [`Fernflower::decompile_context`] does it itself when needed.
+    /// Tells the plugins decompilation starts, renames (when enabled) and loads
+    /// every own class into class nodes, once per run;
+    /// [`Fernflower::decompile_context`] does it itself when needed.
     pub fn load(&mut self) {
         if self.loaded {
             return;
         }
         self.loaded = true;
+
+        for plugin in self.struct_context.get_plugin_context().get_plugins() {
+            plugin.before_decompile();
+        }
 
         if let Some(converter) = &mut self.converter {
             converter.rename();
@@ -364,9 +391,9 @@ impl FernflowerDecompiledData {
 }
 
 impl IDecompiledData for FernflowerDecompiledData {
-    /// Language plugins are not ported, so every class is written as Java.
     fn get_class_entry_name(&self, cl: StructClass, entry_name: &str) -> Option<String> {
-        let extension = "java";
+        let spec = PluginContext::get_current_context().get_language_spec(cl);
+        let extension = spec.as_ref().map_or("java", |spec| spec.extension.as_str());
 
         let qualified_name = qualified_name_of(cl);
         let node = root_class_node(self.class_processor(), &qualified_name);
