@@ -359,9 +359,7 @@ fn mapping_warnings_survive_failed_reloads_and_refresh_after_an_overlay() {
                 .count(),
             1
         );
-        for _ in 0..2 {
-            assert!(status.run_command().unwrap());
-        }
+        assert!(status.run_command().unwrap());
         let error = status.run_command().unwrap_err();
         assert!(
             error

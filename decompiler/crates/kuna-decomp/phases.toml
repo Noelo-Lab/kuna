@@ -1034,40 +1034,10 @@ subphase = "flow-classification"
 note = "(kuna tee-O2 tail-jumps) recover a direct jmp or a bounded conditional jump to another function's entry (e.g. jmp setlocale@plt), and under `on` a veneer's computed jump to a callee outside the declared extent or whose stated prototype loses nothing, as a tail call (CALL + RETURN) instead of inlining the callee"
 
 [[surface]]
-surface = "option gottailcall"
-phase = "P2"
-subphase = "flow-classification"
-note = "(kuna GH-904) take a one-destination computed jump to a function with no bytes, or to one a callee-first run filed as losing nothing to a call, as a tail call instead of following the table into the callee"
-
-[[surface]]
 surface = "option tailcallframe"
 phase = "P2"
 subphase = "flow-classification"
 note = "(kuna) recover a direct jmp whose target no discovery oracle found as a tail call, from the frame teardown that precedes it, instead of decoding the callee into the caller"
-
-[[surface]]
-surface = "option tailcallsaved"
-phase = "P2"
-subphase = "flow-classification"
-note = "(kuna) require a frame teardown to give back what the entry block saved, so cdecl argument cleanup after a call is not read as a teardown"
-
-[[surface]]
-surface = "option calltrampoline"
-phase = "P2"
-subphase = "flow-classification"
-note = "(kuna) flow a `call` through a callee that discards the pushed return address and jumps back into the stream, instead of decoding a fall-through at a return address control never reaches"
-
-[[surface]]
-surface = "option callpopret"
-phase = "P2"
-subphase = "flow-classification"
-note = "(kuna) flow a `call` through a callee that pops the pushed return address and `ret`s through the word above it, instead of decoding the inline data the call jumped over as instructions"
-
-[[surface]]
-surface = "option mappedflowboundary"
-phase = "P2"
-subphase = "flow-classification"
-note = "(kuna) retain decoded ELF x86 paths when fall-through leaves mapped memory or reaches an instruction that runs past it; never lift unmapped padding"
 
 [[surface]]
 surface = "option funcboundflow"
@@ -1110,12 +1080,6 @@ surface = "option arraystride"
 phase = "P3"
 subphase = "simplification-quiescence"
 note = "(kuna GH-8724) re-express a strided-induction offset accumulator as counter*stride to recover the array index"
-
-[[surface]]
-surface = "option stackprobeloop"
-phase = "P2"
-subphase = "stack-pointer-normalization"
-note = "(kuna GH-8017/6858) resolve gcc stack-probe loop's stack-pointer MULTIEQUAL to a constant offset"
 
 [[surface]]
 surface = "option flagcompare"
@@ -1392,12 +1356,6 @@ surface = "option unrolledguard"
 phase = "P2"
 subphase = "switch-model"
 note = "(kuna, angr) recover the interleaved jump tables of an MSVC optimized memcpy/memmove (Duff's device): skip a recovered sibling table's undecoded case-target edge in the partial-flow collect_edges instead of throwing"
-
-[[surface]]
-surface = "option noreturn_externmatch"
-phase = "P2"
-subphase = "flow-follow"
-note = "(kuna, angr) treat a name-matched known-no-return extern as no-return at the flow query seam (closes the ET_REL `.o` __stack_chk_fail dead-padding gap)"
 
 [[surface]]
 surface = "option dynamichashmax"
