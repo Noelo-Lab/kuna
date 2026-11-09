@@ -143,7 +143,7 @@ fn replay(
             BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB => {
                 let count = uleb(program, &mut p)?;
                 let skip = uleb(program, &mut p)?;
-                for _ in 0..count.min(0x10000) {
+                for _ in 0..count {
                     bind(&mut addr, &symbol, out, left)?;
                     addr = addr.map(|a| a.wrapping_add(skip));
                 }
@@ -263,6 +263,26 @@ mod tests {
         replay(&program, &[0x1000], 8, &mut out, &mut MAX_BINDS.clone());
         assert_eq!(out.len(), 0x800);
         assert!(out.values().all(|n| Rc::ptr_eq(n, out.values().next().unwrap())));
+    }
+
+    /// A run longer than 65,536 slots (ld64 folds every same-symbol, same-stride
+    /// run into one opcode, e.g. a large app's `__objc_empty_cache` slots) is
+    /// replayed whole, so the binds after it land on their own slots.
+    #[test]
+    fn a_long_uniform_run_is_replayed_whole() {
+        let program = [
+            BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM, b'_', b'a', 0,
+            BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB, 0,
+            BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB, 0xf0, 0xa2, 0x04, 0x18,
+            BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM, b'_', b'b', 0,
+            BIND_OPCODE_DO_BIND,
+            BIND_OPCODE_DONE,
+        ];
+        let mut out = HashMap::new();
+        assert_eq!(replay(&program, &[0x1000], 8, &mut out, &mut MAX_BINDS.clone()), Some(()));
+        assert_eq!(out.len(), 70_001);
+        assert_eq!(out.get(&(0x1000 + 69_999 * 32)).map(Rc::as_ref), Some("_a"));
+        assert_eq!(out.get(&(0x1000 + 70_000 * 32)).map(Rc::as_ref), Some("_b"));
     }
 
     /// A program that rebinds one slot over and over spends the budget though
