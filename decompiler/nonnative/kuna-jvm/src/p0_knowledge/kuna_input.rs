@@ -617,6 +617,13 @@ impl IContextSource for View {
         Entries::new_with_children(classes, directories, others, children)
     }
 
+    fn get_class_bytes_shared(&self, class_name: &str) -> Option<Arc<[u8]>> {
+        match self.unit.bytes.get(&format!("{class_name}{CLASS_SUFFIX}")) {
+            Some(Ok(bytes)) => Some(bytes.clone()),
+            _ => self.get_class_bytes(class_name).map(Arc::from),
+        }
+    }
+
     fn get_input_stream(&self, resource: &str) -> Option<Vec<u8>> {
         if let Some(read) = self.unit.bytes.get(resource) {
             return match read {

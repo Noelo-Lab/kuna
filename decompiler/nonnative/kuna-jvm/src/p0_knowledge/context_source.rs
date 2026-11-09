@@ -45,6 +45,11 @@ pub trait IContextSource {
         self.get_input_stream(&format!("{class_name}{CLASS_SUFFIX}"))
     }
 
+    /// [`IContextSource::get_class_bytes`] as bytes a class may keep (kuna).
+    fn get_class_bytes_shared(&self, class_name: &str) -> Option<std::sync::Arc<[u8]>> {
+        self.get_class_bytes(class_name).map(std::sync::Arc::from)
+    }
+
     /// Java: getInputStream(Entry)
     fn get_input_stream_entry(&self, resource: &Entry) -> Option<Vec<u8>> {
         self.get_input_stream(&resource.path())

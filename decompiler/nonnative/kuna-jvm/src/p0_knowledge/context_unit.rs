@@ -134,10 +134,10 @@ impl ContextUnit {
     }
 
     pub fn try_load_class(self, class_name: &str) -> Option<StructClass> {
-        let data = self.get_class_bytes(class_name)?;
+        let data = self.source().get_class_bytes_shared(class_name)?;
 
         Some(StructClass::create(
-            &mut ByteCursor::new(data),
+            &mut ByteCursor::from_arc(data),
             self.is_own(),
         ))
     }

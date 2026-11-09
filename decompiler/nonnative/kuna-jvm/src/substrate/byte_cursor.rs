@@ -3,19 +3,36 @@
 //! `IOException`, as `EOFException` does in Java.
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::jthrow;
 use crate::rt::jstring::decode_modified_utf8;
 
 pub struct ByteCursor {
-    data: Rc<[u8]>,
+    data: Bytes,
     pos: usize,
+}
+
+#[derive(Clone)]
+enum Bytes {
+    Local(Rc<[u8]>),
+    Shared(Arc<[u8]>),
+}
+
+impl std::ops::Deref for Bytes {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        match self {
+            Bytes::Local(b) => b,
+            Bytes::Shared(b) => b,
+        }
+    }
 }
 
 impl ByteCursor {
     pub fn new(bytes: Vec<u8>) -> ByteCursor {
         ByteCursor {
-            data: Rc::from(bytes),
+            data: Bytes::Local(Rc::from(bytes)),
             pos: 0,
         }
     }
@@ -23,9 +40,30 @@ impl ByteCursor {
     /// A cursor over bytes shared with their owner, without copying them.
     pub fn from_shared(bytes: Rc<[u8]>) -> ByteCursor {
         ByteCursor {
-            data: bytes,
+            data: Bytes::Local(bytes),
             pos: 0,
         }
+    }
+
+    /// A cursor over bytes other threads share, without copying them.
+    pub fn from_arc(bytes: Arc<[u8]>) -> ByteCursor {
+        ByteCursor {
+            data: Bytes::Shared(bytes),
+            pos: 0,
+        }
+    }
+
+    /// Another cursor over the same bytes, at `pos`.
+    pub fn share_at(&self, pos: usize) -> ByteCursor {
+        ByteCursor {
+            data: self.data.clone(),
+            pos,
+        }
+    }
+
+    /// Every byte, wherever the cursor is.
+    pub fn data(&self) -> &[u8] {
+        &self.data
     }
 
     fn take(&mut self, n: usize) -> &[u8] {

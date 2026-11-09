@@ -1,4 +1,8 @@
 //! Port of `org/jetbrains/java/decompiler/struct/StructClass.java`.
+//!
+//! kuna reads a class's fields and methods when they are first asked for,
+//! unless a pool interceptor (renaming) is set: construction only steps over
+//! them (failing where Java's reading would on a truncated class).
 
 use std::rc::Rc;
 
@@ -33,12 +37,17 @@ pub struct StructClassData {
     pub version: BytecodeVersion,
     pub interfaces: Vec<i32>,
     pub interface_names: Vec<String>,
-    pub fields: Rc<VBStyleCollection<StructField, String>>,
-    pub methods: Rc<VBStyleCollection<StructMethod, String>>,
+    pub fields: Option<Rc<VBStyleCollection<StructField, String>>>,
+    pub methods: Option<Rc<VBStyleCollection<StructMethod, String>>>,
     pub signature: Option<GenericClassDescriptor>,
     pub pool: Option<ConstantPool>,
     pub generic_hiarachy: Option<Rc<JHashMap<String, GenericMap>>>,
+    /// Where the fields begin, while they and the methods are unread.
+    members: Option<ByteCursor>,
 }
+
+type Fields = VBStyleCollection<StructField, String>;
+type Methods = VBStyleCollection<StructMethod, String>;
 
 java_subclass!(pub StructClass: StructMember, StructMemberKind::Class(StructClassData), is_class, as_class, try_as_class);
 
@@ -73,7 +82,7 @@ impl StructClass {
             .to_string();
         let super_class = pool.get_primitive_constant(super_class_idx);
 
-        let mut length = in_.read_unsigned_short();
+        let length = in_.read_unsigned_short();
         let mut interfaces = vec![0; length as usize];
         let mut interface_names = vec![String::new(); length as usize];
         for i in 0..length as usize {
@@ -85,34 +94,20 @@ impl StructClass {
                 .to_string();
         }
 
-        length = in_.read_unsigned_short();
-        let mut fields: VBStyleCollection<StructField, String> =
-            VBStyleCollection::with_capacity(length);
-        for _ in 0..length {
-            let field = StructField::create(in_, pool, &qualified_name, bytecode_version);
-            let key = InterpreterUtil::make_unique_key(&field.get_name(), &field.get_descriptor());
-            fields.add_with_key(field, key);
-        }
-
-        length = in_.read_unsigned_short();
-        let mut methods: VBStyleCollection<StructMethod, String> =
-            VBStyleCollection::with_capacity(length);
-        for _ in 0..length {
-            let method = StructMethod::create(in_, pool, &qualified_name, bytecode_version, own);
-            let key =
-                InterpreterUtil::make_unique_key(&method.get_name(), &method.get_descriptor());
-            if methods.contains_key(&key) {
-                let full_name = format!(
-                    "{}.{}{}",
-                    qualified_name,
-                    method.get_name(),
-                    method.get_descriptor()
-                );
-                DecompilerContext::get_logger()
-                    .write_message(&format!("Duplicate method {}", full_name), Severity::Warn);
-            }
-            methods.add_with_key(method, key);
-        }
+        let members_at = in_.position();
+        let members = if DecompilerContext::get_pool_interceptor().is_none() {
+            Self::skip_members(in_);
+            None
+        } else {
+            Some(Self::read_members(
+                in_,
+                pool,
+                &qualified_name,
+                bytecode_version,
+                own,
+            ))
+        };
+        let lazy = members.is_none();
 
         let attributes = StructMember::read_attributes(in_, pool, bytecode_version);
 
@@ -139,12 +134,91 @@ impl StructClass {
             major_version,
             interfaces,
             interface_names,
-            fields,
-            methods,
+            members,
             signature,
         );
-        cl.d_mut(|d| d.pool = Some(pool));
+        cl.d_mut(|d| {
+            d.pool = Some(pool);
+            if lazy {
+                d.members = Some(in_.share_at(members_at));
+            }
+        });
         cl
+    }
+
+    fn read_members(
+        in_: &mut ByteCursor,
+        pool: ConstantPool,
+        qualified_name: &str,
+        bytecode_version: BytecodeVersion,
+        own: bool,
+    ) -> (Fields, Methods) {
+        let mut length = in_.read_unsigned_short();
+        let mut fields: Fields = VBStyleCollection::with_capacity(length);
+        for _ in 0..length {
+            let field = StructField::create(in_, pool, qualified_name, bytecode_version);
+            let key = InterpreterUtil::make_unique_key(&field.get_name(), &field.get_descriptor());
+            fields.add_with_key(field, key);
+        }
+
+        length = in_.read_unsigned_short();
+        let mut methods: Methods = VBStyleCollection::with_capacity(length);
+        for _ in 0..length {
+            let method = StructMethod::create(in_, pool, qualified_name, bytecode_version, own);
+            let key =
+                InterpreterUtil::make_unique_key(&method.get_name(), &method.get_descriptor());
+            if methods.contains_key(&key) {
+                let full_name = format!(
+                    "{}.{}{}",
+                    qualified_name,
+                    method.get_name(),
+                    method.get_descriptor()
+                );
+                DecompilerContext::get_logger()
+                    .write_message(&format!("Duplicate method {}", full_name), Severity::Warn);
+            }
+            methods.add_with_key(method, key);
+        }
+        (fields, methods)
+    }
+
+    /// Steps over the fields and methods as reading them would.
+    fn skip_members(in_: &mut ByteCursor) {
+        for _ in 0..2 {
+            let count = in_.read_unsigned_short();
+            for _ in 0..count {
+                in_.read_unsigned_short();
+                in_.read_unsigned_short();
+                in_.read_unsigned_short();
+                let attributes = in_.read_unsigned_short();
+                for _ in 0..attributes {
+                    in_.read_unsigned_short();
+                    let length = in_.read_int();
+                    in_.discard(length as usize);
+                }
+            }
+        }
+    }
+
+    /// Reads the fields and methods of a class built without them.
+    fn read_lazy_members(self) {
+        let Some(mut in_) = self.d(|d| d.members.as_ref().map(|c| c.share_at(c.position()))) else {
+            return;
+        };
+        let (pool, qualified_name, version, own) = self.d(|d| {
+            (
+                d.pool.expect("pool"),
+                d.qualified_name.clone(),
+                d.version,
+                d.own,
+            )
+        });
+        let (fields, methods) = Self::read_members(&mut in_, pool, &qualified_name, version, own);
+        self.d_mut(|d| {
+            d.fields = Some(Rc::new(fields));
+            d.methods = Some(Rc::new(methods));
+            d.members = None;
+        });
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -158,10 +232,13 @@ impl StructClass {
         major_version: i32,
         interfaces: Vec<i32>,
         interface_names: Vec<String>,
-        fields: VBStyleCollection<StructField, String>,
-        methods: VBStyleCollection<StructMethod, String>,
+        members: Option<(Fields, Methods)>,
         signature: Option<GenericClassDescriptor>,
     ) -> StructClass {
+        let (fields, methods) = match members {
+            Some((fields, methods)) => (Some(Rc::new(fields)), Some(Rc::new(methods))),
+            None => (None, None),
+        };
         StructClass(StructMember::new_member(
             access_flags,
             attributes,
@@ -172,11 +249,12 @@ impl StructClass {
                 version: BytecodeVersion::new(major_version, minor_version),
                 interfaces,
                 interface_names,
-                fields: Rc::new(fields),
-                methods: Rc::new(methods),
+                fields,
+                methods,
                 signature,
                 pool: None,
                 generic_hiarachy: None,
+                members: None,
             }),
         ))
     }
@@ -279,11 +357,19 @@ impl StructClass {
     }
 
     pub fn get_methods(self) -> Rc<VBStyleCollection<StructMethod, String>> {
-        self.d(|d| d.methods.clone())
+        if let Some(methods) = self.d(|d| d.methods.clone()) {
+            return methods;
+        }
+        self.read_lazy_members();
+        self.d(|d| d.methods.clone()).expect("methods")
     }
 
     pub fn get_fields(self) -> Rc<VBStyleCollection<StructField, String>> {
-        self.d(|d| d.fields.clone())
+        if let Some(fields) = self.d(|d| d.fields.clone()) {
+            return fields;
+        }
+        self.read_lazy_members();
+        self.d(|d| d.fields.clone()).expect("fields")
     }
 
     pub fn is_own(self) -> bool {
