@@ -22,6 +22,9 @@ pub mod kuna_ppcapu;
 pub mod kuna_relocrebase;
 // (kuna) Linked-image dynamic-relocation application option gate (load-time, env-bridged).
 pub mod kuna_dynrelocs;
+// (kuna) Apple firmware container / kernel-collection entry selection (load-time,
+// env-bridged).
+pub mod kuna_kernelcache;
 // (kuna) PE chained-`UNWIND_INFO` `.pdata` entry suppression option gate
 // (load-time, env-bridged).
 pub mod kuna_pdatachained;

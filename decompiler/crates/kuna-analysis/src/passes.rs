@@ -126,6 +126,17 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // instructions are NOT recovered — kuna's S5/S7 frame analysis already
         // recovers the stack frame from the code, so CFI is inherited, not rebuilt.
         Box::new(crate::entry::EhFrameLsdaPass),
+        // (kuna `unwindstarts`) S1 Mach-O `__unwind_info` function-start discovery:
+        // the linker-built second-level pages of `__TEXT,__unwind_info` list every
+        // function the unwinder can describe, by start offset. The section survives
+        // the `strip` that drops `LC_FUNCTION_STARTS`, so on a stripped App-Store app
+        // whose only starts are `LC_MAIN`/exports it recovers the whole `__text`.
+        // Registered always (the facts are cheap and stashed at load), COMMIT gated
+        // by `--option unwindstarts on|off` (default-OFF, output-changing: it ADDS
+        // entries) via `engine.rs::analysis_pass_enabled`, so a default run is
+        // byte-identical and an image carrying `LC_FUNCTION_STARTS` gains nothing
+        // (unwind starts are a strict subset there). After EntryDiscoveryPass.
+        Box::new(crate::entry::kuna_unwindinfo::UnwindInfoStartsPass),
         // (kuna `entrymainproto`) S1 PE CRT entry-function prototype recovery: the
         // function `__scrt_common_main_seh` calls immediately after the named
         // argc/argv/envp CRT accessors gets the prototype that call site
@@ -441,6 +452,14 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::loader::kuna_peimportcall::PeImportCallPass));
     }
 
+    // S1 arm64e `__auth_ptr` call binding (AuthPtrCallPass): name each chained
+    // bind slot of `__auth_ptr` after its import and paint it `externref`, the
+    // `peimportcall` facts for the one Mach-O import table the indirect-symbol
+    // walk does not cover. Committed only when `authptrcall` is on.
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::loader::kuna_authptrcall::AuthPtrCallPass));
+    }
+
     // S1 MSVC RTTI / vftable recovery (RttiPass): on a Windows PE, parse the
     // CompleteObjectLocator → RTTI3/2/1 → RTTI0 graph in `.rdata`/`.data`, demangle
     // each `.?A…@@` class name, and emit `<Class>::vftable` / `<Class>::RTTI_*`
@@ -457,6 +476,17 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     }
 
 
+    // S1 Mach-O Core Foundation constant strings (CFStringPass): when the binary
+    // is a Mach-O, read each `__cfstring` entry's resolved char pointer and emit
+    // the string so a `CFSTR("...")` reference renders the literal instead of
+    // `dat_<addr>`. Registered ONLY for a Mach-O target (structural no-op
+    // elsewhere). Default-on (`--option cfstrings`): the output is committed only
+    // when the gate is on (`engine.rs::analysis_pass_enabled`), so `off` is
+    // byte-identical to a build without the pass.
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::cfstring::CFStringPass));
+    }
+
     // S1 Mach-O Objective-C metadata recovery (ObjcMetadataPass): when the binary
     // is a Mach-O, walk the `__objc_*` metadata (classlist → class_t → class_ro_t
     // → method_list_t) and rename each IMP function `-[Class sel]` / `+[Class sel]`
@@ -471,6 +501,17 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // path (the arm64 + LC_DYLD_CHAINED_FIXUPS resolver is the deferred PR-O0/O2).
     if format == object::BinaryFormat::MachO {
         passes.push(Box::new(crate::objc::ObjcMetadataPass));
+    }
+
+    // (kuna) Swift runtime-metadata recovery (SwiftMetadataPass): on a Swift
+    // image (the `sourcelang` detector saw its `swift5_*` sections, mangled
+    // symbols or runtime imports) in one of the two formats Swift ships in,
+    // read the reflection sections and name the metadata accessors, vtable and
+    // override implementations, protocol witnesses and the descriptor records
+    // themselves. Default-OFF (`--option swiftmetadata`, the objc precedent);
+    // an image without the sections produces nothing.
+    if compiler == Compiler::Swift && matches!(format, object::BinaryFormat::MachO | object::BinaryFormat::Elf) {
+        passes.push(Box::new(crate::swift::SwiftMetadataPass));
     }
 
     // S1 PE PDB metadata recovery (PdbPass): on a Windows PE, read the CodeView
@@ -1685,9 +1726,12 @@ mod tests {
     #[test]
     fn non_go_compilers_have_same_pass_ids() {
         let base = ids(&passes_for(Compiler::Gcc, NON_PE));
-        for c in [Compiler::Clang, Compiler::Swift, Compiler::Unknown] {
+        for c in [Compiler::Clang, Compiler::Unknown] {
             assert_eq!(ids(&passes_for(c, NON_PE)), base, "{c:?} pass ids must match the base set");
         }
+        // Swift adds its metadata pass after the base (the next test but one).
+        let swift = ids(&passes_for(Compiler::Swift, NON_PE));
+        assert_eq!(&swift[..base.len()], &base[..], "Swift set is the base set + extras");
         let rust = ids(&passes_for(Compiler::Rustc, NON_PE));
         assert_eq!(&rust[..base.len()], &base[..], "Rust set is the base set + extras");
         assert_eq!(rust.last(), Some(&"fatstrrecords"), "Rust appends the record pass");
@@ -1842,14 +1886,14 @@ mod tests {
         assert!(!elf.contains(&"objc"), "ELF must not carry the objc pass");
         assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
         // Compare the format-neutral base after dropping each format's gated
-        // additions: `itaniumrtti` for ELF and `peimportcall` plus `objc` for
-        // Mach-O.
+        // additions: `itaniumrtti` for ELF and `peimportcall`, `authptrcall`,
+        // `cfstrings` and `objc` for Mach-O.
         let elf_neutral: Vec<&str> =
             elf.iter().copied().filter(|&p| p != "itaniumrtti").collect();
         let macho_neutral: Vec<&str> = macho
             .iter()
             .copied()
-            .filter(|&p| !matches!(p, "peimportcall" | "objc"))
+            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "cfstrings" | "objc"))
             .collect();
         assert!(!elf_neutral.contains(&"itaniumrtti"));
         assert_eq!(
@@ -1860,6 +1904,26 @@ mod tests {
         // No non-Mach-O format carries it.
         for f in [object::BinaryFormat::Elf, object::BinaryFormat::Pe, object::BinaryFormat::Coff] {
             assert!(!ids(&passes_for(Compiler::Clang, f)).contains(&"objc"), "{f:?} must not carry objc");
+        }
+    }
+
+    /// The Swift metadata pass is registered only for a Swift image in one of
+    /// the two formats Swift ships in (Mach-O, ELF), after every format block,
+    /// and for no other compiler or format.
+    #[test]
+    fn swiftmetadata_pass_registered_for_swift_macho_and_elf_only() {
+        for f in [object::BinaryFormat::MachO, object::BinaryFormat::Elf] {
+            let swift = ids(&passes_for(Compiler::Swift, f));
+            assert_eq!(swift.last(), Some(&"swiftmetadata"), "{f:?}: swiftmetadata is appended last");
+            let base = ids(&passes_for(Compiler::Clang, f));
+            assert_eq!(&swift[..base.len()], &base[..], "{f:?}: the Swift set is the base set + swiftmetadata");
+            assert_eq!(swift.len(), base.len() + 1);
+        }
+        for f in [object::BinaryFormat::Pe, object::BinaryFormat::Coff] {
+            assert!(!ids(&passes_for(Compiler::Swift, f)).contains(&"swiftmetadata"), "{f:?} must not carry swiftmetadata");
+        }
+        for c in [Compiler::Gcc, Compiler::Clang, Compiler::Rustc, Compiler::Go, Compiler::Unknown] {
+            assert!(!ids(&passes_for(c, NON_PE)).contains(&"swiftmetadata"), "{c:?} must not carry swiftmetadata");
         }
     }
 

@@ -8894,6 +8894,16 @@ impl PrintC {
             Some(v) => v,
             None => return,
         };
+        if let Some(name) = arch.import_data.then(|| import_slot_name(fd, ptr)).flatten() {
+            self.push_atom(&Atom::with_op_vn(
+                name,
+                TagType::VarToken,
+                crate::printlanguage::SyntaxHighlight::global_color,
+                op_key(op),
+                vn_key(ptr),
+            ));
+            return;
+        }
         let usearray = self.check_array_deref(fd, ptr) || self.is_value_indirect_input(fd, ptr);
         let mut m = self.context.mods();
         if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {
@@ -10623,7 +10633,9 @@ impl PrintC {
                 // are indexed, never that they end at a zero byte.
                 if off != 0 && !crate::kuna_elemptr::reaches_element_pointer(fd, vn) {
                     if let Some(sub) = ct.get_ptr_to() {
-                        if sub.is_char_print() {
+                        // (kuna `cfstrings`) An entry reads as its string whatever its type.
+                        let sub = if sub.is_char_print() { Some(sub) } else { cfstring_char(arch, off) };
+                        if let Some(sub) = sub {
                             // point = op->getAddr() (the using op's address; used only
                             // by a segmented resolver — flat spaces ignore it).
                             let point = fd
@@ -11493,8 +11505,10 @@ impl PrintC {
             // with a readonly char-array spacebase symbol.
             if sym_off == 0 && !arrayvalue {
                 if let Some(st) = &sym_type {
-                    if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
-                        if let Some(elem) = st.get_array_base() {
+                    // (kuna `cfstrings`) A `__cfstring` entry reads as its string.
+                    let cfstr = if valueon { None } else { cfstring_char(arch, in1const) };
+                    if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY || cfstr.is_some() {
+                        if let Some(elem) = cfstr.or_else(|| st.get_array_base()) {
                             if elem.is_char_print() {
                                 let point = fd
                                     .obank()
@@ -12163,6 +12177,11 @@ impl PrintC {
             let Ok(pointer) = arch.types().get_type_pointer(ptr_size, subct.clone(), 1) else { return false };
             if !self.push_go_string_pointer(&mut s, &pointer, op) { return false; }
         }
+        if self.out_lang == crate::kuna_lang::OutLang::C
+            && arch.cfstring_entries.contains(&stringaddr.get_offset())
+        {
+            s = crate::kuna_cfstr::wrap(&s, stringaddr.get_offset(), arch.cfstrings_annotate);
+        }
         self.push_atom(&Atom::with_op_vn(
             s,
             TagType::VarToken,
@@ -12236,6 +12255,51 @@ impl PrintC {
         }
         true
     }
+}
+
+/// The import a `LOAD` reads through when its pointer is a loader-marked
+/// external-reference slot. The slot holds the import's address, so `*slot` is
+/// the import itself. Resolved like `ActionDeindirect` resolves a call through
+/// the same slot: `query_function` on the externref persist address. A pointer
+/// held in a named local resolves only while another statement still reads that
+/// local, so naming the import never leaves the local's assignment dead.
+fn import_slot_name(fd: &Funcdata, mut vn: VarnodeId) -> Option<String> {
+    let mut named = None;
+    while let Some(v) = fd.vbank().get(vn).filter(|v| v.is_written()) {
+        if named.is_none() && !v.is_implied() {
+            named = Some(vn);
+        }
+        let o = fd.obank().get(v.get_def()?)?;
+        if o.code() != OpCode::CPUI_COPY {
+            break;
+        }
+        vn = o.get_in(0)?;
+    }
+    let v = fd.vbank().get(vn)?;
+    if !(v.is_persist() && v.is_external_ref()) {
+        return None;
+    }
+    if named.is_some_and(|local| local != vn && !read_beyond_loads(fd, local, 4)) {
+        return None;
+    }
+    fd.get_arch().query_function(v.get_addr()).map(|(name, _, _)| name)
+}
+
+/// Does a printed op other than a `LOAD` through `vn` (directly or through
+/// inline COPYs) read `vn`?
+fn read_beyond_loads(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    fd.vbank().get(vn).is_some_and(|v| {
+        v.descend_iter().any(|d| {
+            fd.obank().get(d).is_some_and(|o| {
+                if o.not_printed() || (o.code() == OpCode::CPUI_LOAD && o.get_in(1) == Some(vn)) {
+                    return false;
+                }
+                let inline_copy = o.code() == OpCode::CPUI_COPY
+                    && o.get_out().and_then(|out| fd.vbank().get(out)).is_some_and(|out| out.is_implied());
+                !inline_copy || depth == 0 || o.get_out().is_some_and(|out| read_beyond_loads(fd, out, depth - 1))
+            })
+        })
+    })
 }
 
 /// A same-width scalar a byte-copy helper can copy into or out of without conversion.
@@ -13114,6 +13178,15 @@ fn ptrsub_value_access(fd: &Funcdata, op: OpId, value: bool) -> Option<(VarnodeI
             _ => None,
         }
     })
+}
+
+/// (kuna `cfstrings`) The character type a `__cfstring` entry's seeded string is
+/// read with, when `val` is the address of one.
+fn cfstring_char(arch: &Architecture, val: uintb) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+    if !arch.cfstring_entries.contains(&val) {
+        return None;
+    }
+    arch.types().get_type_char(1).ok()
 }
 
 /// C++ `TypeSpacebase::getAddress` (type.cc:3542): the storage a

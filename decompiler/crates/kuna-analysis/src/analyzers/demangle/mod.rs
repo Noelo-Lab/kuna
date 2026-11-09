@@ -80,7 +80,7 @@
 //! intermediate `::` scopes are created, not correctness of the base name.
 
 pub mod kuna_cppsig;
-// (kuna) Swift name-only demangling, a bounded parse-or-passthrough subset.
+// (kuna) Swift demangling (`$s` stable mangling + the ObjC runtime's `_Tt` names).
 pub mod kuna_swift;
 mod kuna_msvcsig;
 
@@ -191,12 +191,12 @@ pub fn demangle_raw(raw: &str) -> Option<String> {
     }
 
     // Swift (kuna, docs/multilang.md): the prefixes exist in no other scheme,
-    // so a Swift-shaped name either demangles here (the bounded name-only
-    // subset — the full-signature form is a later Swift-pack item) or passes
-    // through; it is never fed to the Itanium/Rust/MSVC arms.
+    // so a Swift-shaped name either demangles here (the `swift-demangle` full
+    // form, types included) or passes through; it is never fed to the
+    // Itanium/Rust/MSVC arms.
     if crate::sourcelang::is_swift_mangled(raw) {
         if kuna_decomp::kuna_swiftdemangle::swiftdemangle_enabled() {
-            return kuna_swift::demangle_swift_name(raw);
+            return kuna_swift::demangle_swift_full(raw);
         }
         return None;
     }
@@ -354,8 +354,8 @@ pub fn demangle_name(raw: &str) -> Option<String> {
     }
 
     // Swift (kuna): see `demangle_raw` — Swift shapes never reach the other
-    // arms, and the subset is name-only by construction (no signature text to
-    // strip; the label form `f(a:b:)` survives the default `safe` sanitizer).
+    // arms, and the name-only printer emits no signature text to strip (the
+    // label form `f(a:b:)` survives the default `safe` sanitizer).
     if crate::sourcelang::is_swift_mangled(raw) {
         if kuna_decomp::kuna_swiftdemangle::swiftdemangle_enabled() {
             return kuna_swift::demangle_swift_name(raw);
