@@ -8324,7 +8324,7 @@ impl PrintC {
     }
 
     pub(crate) fn op_call_raw_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_io {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.writers() {
             if let Some(plan) = super::kuna_rustfmtio::recover(fd, arch, op) {
                 let result = if plan.signed_result {
                     &super::kuna_rustfmtio::WITH_SIGNED_RESULT
@@ -8339,7 +8339,7 @@ impl PrintC {
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_write {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.writers() {
             if let Some(plan) = super::kuna_rustfmtwrite::recover(fd, arch, op) {
                 if plan.result_type.is_some() {
                     self.push_op(self.lang().tok_typecast, Some(op_key(op)));
@@ -8362,19 +8362,19 @@ impl PrintC {
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_pieces {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some(plan) = super::kuna_rustfmtpieces::recover(fd, arch, op) {
                 self.push_rust_format_plan(fd, arch, op, plan);
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_panic {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some(plan) = super::kuna_rustfmtpanic::recover(fd, arch, op) {
                 self.push_rust_format_plan(fd, arch, op, plan);
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_result {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some(plan) = super::kuna_rustfmtresult::recover(fd, arch, op) {
                 self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
                 self.push_atom(&Atom::with_op("std::ptr::write", TagType::OpToken,
@@ -8395,13 +8395,13 @@ impl PrintC {
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_args {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some(plan) = super::kuna_rustfmtargs::recover(fd, arch, op) {
                 self.push_rust_format_plan(fd, arch, op, plan);
                 return;
             }
         }
-        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_literal {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt.recovers() {
             if let Some((name, literal)) = super::kuna_rustfmtliteral::recover(fd, arch, op) {
                 self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
                 self.push_atom(&Atom::with_op(name, TagType::OpToken,

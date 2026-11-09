@@ -6,6 +6,7 @@ use kuna_console::ifacedecomp::{
 };
 use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_decomp::architecture::Architecture;
+use kuna_decomp::kuna_rustfmt::RustFmtMode;
 use std::path::PathBuf;
 
 fn root() -> PathBuf {
@@ -35,7 +36,11 @@ fn decompile(
     .unwrap();
     assert_eq!(program.arch().rustc_stable_version, Some((1, 93, 1)));
     assert!(!program.arch().rust_integer_formatters.is_empty());
-    program.arch_mut().rust_fmt_result = enabled;
+    program.arch_mut().rust_fmt = if enabled {
+        RustFmtMode::On
+    } else {
+        RustFmtMode::Off
+    };
     configure(program.arch_mut());
     program.commit_pending_analysis().unwrap();
     let commands = vec![
@@ -118,7 +123,7 @@ fn local_or_unknown_storage_and_unsupported_arguments_stay_explicit() {
 }
 
 #[test]
-fn result_recovery_retains_version_language_and_option_boundaries() {
+fn result_recovery_retains_version_and_language_boundaries() {
     for version in [None, Some((1, 92, 0)), Some((1, 93, 2))] {
         let run = |enabled| {
             decompile(true, "hex_width", enabled, "rust", |arch| {
@@ -127,23 +132,6 @@ fn result_recovery_retains_version_language_and_option_boundaries() {
         };
         assert_eq!(run(true), run(false));
     }
-    let no_parent = |enabled| {
-        decompile(true, "hex_width", enabled, "rust", |arch| {
-            arch.rust_fmt_args = false
-        })
-    };
-    assert_eq!(no_parent(true), no_parent(false));
-    let no_flags = |enabled| {
-        decompile(true, "hex_width", enabled, "rust", |arch| {
-            arch.rust_fmt_flags = false
-        })
-    };
-    assert_eq!(no_flags(true), no_flags(false));
-    assert!(
-        decompile(true, "decimal", true, "rust", |arch| arch.rust_fmt_flags =
-            false)
-        .contains("format!(")
-    );
     let no_identity = |enabled| {
         decompile(true, "hex_width", enabled, "rust", |arch| {
             arch.rust_integer_formatters.clear()

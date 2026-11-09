@@ -82,6 +82,7 @@ pub mod kuna_lang; // (kuna) the output-language plane: profile + capabilities
 pub mod kuna_langtypes; // (kuna) the type-spelling seam (TypeSpeller + SpellCtx)
 pub(crate) mod kuna_gopairreturns;
 pub mod kuna_langc; // (kuna) the c-language policy objects (CSpeller)
+pub mod kuna_rustfmt;
 pub(crate) mod kuna_rustfmtliteral;
 pub mod kuna_rustfmtargs;
 pub mod kuna_rustfmtstr;
