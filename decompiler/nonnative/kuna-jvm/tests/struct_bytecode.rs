@@ -7,7 +7,9 @@ use kuna_jvm::code_type::CodeType;
 use kuna_jvm::data_point::DataPoint;
 use kuna_jvm::instruction::Instruction;
 use kuna_jvm::instruction_impact::InstructionImpact;
-use kuna_jvm::rt::{reset_class_scope, try_catch, JavaHash};
+use kuna_jvm::rt::{try_catch, JavaHash};
+
+use crate::struct_classfile::end_class_scope;
 use kuna_jvm::struct_class::StructClass;
 use kuna_jvm::struct_general_attribute::StructGeneralAttribute;
 use kuna_jvm::struct_member::StructMember;
@@ -650,7 +652,7 @@ fn expand_data_rebuilds_a_stale_sequence() {
     mt.expand_data(cl);
     assert_eq!(mt.get_instruction_sequence(), Some(first));
     let length = first.length();
-    reset_class_scope();
+    end_class_scope();
     assert!(!first.is_live());
     mt.expand_data(cl);
     let second = mt.get_instruction_sequence().unwrap();
@@ -732,7 +734,7 @@ fn annotations_become_exprents_per_class_scope() {
     assert_eq!(first[0].get_class_name(), "Everything");
     assert_eq!(first[0].get_par_names(), vec!["i", "str", "ints", "en"]);
     assert_eq!(attr.get_annotations(), first);
-    reset_class_scope();
+    end_class_scope();
     assert!(!first[0].is_live());
     let second = attr.get_annotations();
     assert!(second[0].is_live());
@@ -830,7 +832,7 @@ fn instruction_impact_tracks_stack_types() {
     let mut types = Vec::new();
     while stack.len() > 0 {
         let t = stack.pop();
-        types.push((t.type_, t.array_dim, t.value.clone()));
+        types.push((t.type_, t.array_dim, t.value.as_deref().map(str::to_string)));
     }
     types.reverse();
     let s = |v: &str| Some(v.to_string());

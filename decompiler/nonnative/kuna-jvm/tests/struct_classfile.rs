@@ -14,8 +14,11 @@ use std::path::{Path, PathBuf};
 use kuna_jvm::byte_cursor::ByteCursor;
 use kuna_jvm::code_constants::*;
 use kuna_jvm::constant_pool::ConstantPool;
+use kuna_jvm::decompiler_context::DecompilerContext;
 use kuna_jvm::full_instruction_sequence::FullInstructionSequence;
 use kuna_jvm::rt::{reset_class_scope, reset_session_scope, try_catch};
+
+use crate::common;
 use kuna_jvm::struct_annotation_attribute::{AnnotationElement, AnnotationRecord};
 use kuna_jvm::struct_class::StructClass;
 use kuna_jvm::struct_general_attribute::StructGeneralAttribute;
@@ -551,7 +554,8 @@ fn code_lines(out: &mut String, mt: StructMethod, cl: StructClass, prefix: &str)
                     extra.push(
                         pool.get_primitive_constant(instr.operand(0))
                             .unwrap()
-                            .get_string(),
+                            .get_string()
+                            .to_string(),
                     )
                 }
                 _ => {}
@@ -618,7 +622,7 @@ pub fn render_class(cl: StructClass) -> String {
     writeln!(out, "flags 0x{:04x}", cl.get_access_flags()).unwrap();
     let sup = cl
         .super_class()
-        .map(|s| s.get_string())
+        .map(|s| s.get_string().to_string())
         .unwrap_or_else(|| "-".to_string());
     writeln!(out, "super {}", sup).unwrap();
     let ifaces = cl.get_interface_names();
@@ -641,9 +645,33 @@ pub fn render_class(cl: StructClass) -> String {
     out
 }
 
-/// `StructClass.create` as the tests call it; the one place a decompilation
-/// context would be installed for class reading.
+/// Vineflower's default context on this thread, installed unless one is
+/// current; it stays until [`end_session`].
+pub fn ensure_context() {
+    if DecompilerContext::get_current_context().is_none() {
+        std::mem::forget(common::install_default_context());
+    }
+}
+
+/// `rt::reset_class_scope()` keeping the installed context usable.
+pub fn end_class_scope() {
+    let context = DecompilerContext::get_current_context();
+    let counters = context.as_ref().map(DecompilerContext::counter_values);
+    reset_class_scope();
+    if let (Some(context), Some(counters)) = (context, counters) {
+        context.survive_class_scope_reset(counters);
+    }
+}
+
+/// Drops the context and every arena object of this thread.
+pub fn end_session() {
+    DecompilerContext::set_current_context(None);
+    reset_session_scope();
+}
+
+/// `StructClass.create` as the tests call it, under the installed context.
 pub fn create(bytes: Vec<u8>, own: bool) -> StructClass {
+    ensure_context();
     StructClass::create(&mut ByteCursor::new(bytes), own)
 }
 
@@ -719,9 +747,9 @@ fn compare_tree(classes: &Path, golden_root: &Path) -> (usize, Vec<String>) {
                 caught.location
             )),
         }
-        reset_class_scope();
+        end_class_scope();
         if n % 500 == 499 {
-            reset_session_scope();
+            end_session();
         }
     }
     (checked, failures)
@@ -802,9 +830,9 @@ fn parse_sweep() {
                 caught.location
             )),
         }
-        reset_class_scope();
+        end_class_scope();
         if n % 500 == 499 {
-            reset_session_scope();
+            end_session();
         }
     }
     for f in failures.iter().take(20) {
