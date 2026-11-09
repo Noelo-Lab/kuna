@@ -1996,7 +1996,6 @@ funcsym stream:
   image (`LC_DYLD_INFO` rebase and bind opcodes) needs no write: its rebased words
   are already the unslid pointers, and its bound slots are already zero or a
   stub-helper address.
-  stub-helper address.
 - **Data-held pointers** (kuna,
   `decompiler/crates/kuna-analysis/src/loader/kuna_dataptrs.rs (data_pointers)`):
   the read-only twin of the two writers above, for `kuna xrefs`. A word in data
