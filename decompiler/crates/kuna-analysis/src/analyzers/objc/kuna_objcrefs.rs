@@ -374,7 +374,7 @@ fn stub_prototype(
             match struct_passing(machine, &members) {
                 StructPass::Spread => {
                     for (k, c) in members.iter().enumerate() {
-                        let ty = encoding::decode_ivar_type(&c.to_string(), tctx)?;
+                        let ty = encoding::decode_ivar_type(c, tctx)?;
                         let member = names.get(k).map(|n| n.to_string()).unwrap_or_else(|| k.to_string());
                         push(&mut pieces, ty, format!("{pname}_{member}"))?;
                     }
@@ -404,9 +404,9 @@ enum StructPass {
 /// registers and at most two words over `x` registers, and passes a larger
 /// aggregate by reference. System V x86-64 spreads at most two eightbytes of
 /// one class and passes anything larger on the stack.
-fn struct_passing(machine: object::Architecture, members: &[char]) -> StructPass {
-    let all_doubles = members.iter().all(|&c| c == 'd');
-    let all_words = members.iter().all(|&c| c == 'q' || c == 'Q');
+fn struct_passing(machine: object::Architecture, members: &[String]) -> StructPass {
+    let all_doubles = members.iter().all(|c| c == "d");
+    let all_words = members.iter().all(|c| c == "q" || c == "Q");
     let max_doubles = if machine == object::Architecture::X86_64 { 2 } else { 4 };
     if (all_doubles && members.len() <= max_doubles) || (all_words && members.len() <= 2) {
         StructPass::Spread
@@ -574,19 +574,20 @@ mod tests {
     #[test]
     fn struct_passing_follows_each_convention() {
         use object::Architecture::{Aarch64, X86_64};
-        let rect = ['d'; 4];
-        let size = ['d'; 2];
-        let transform = ['d'; 6];
-        let range = ['Q'; 2];
+        let codes = |c: &str, n: usize| vec![c.to_string(); n];
+        let rect = codes("d", 4);
+        let size = codes("d", 2);
+        let transform = codes("d", 6);
+        let range = codes("Q", 2);
         assert!(matches!(struct_passing(Aarch64, &rect), StructPass::Spread));
         assert!(matches!(struct_passing(Aarch64, &transform), StructPass::ByReference));
         assert!(matches!(struct_passing(Aarch64, &range), StructPass::Spread));
-        assert!(matches!(struct_passing(Aarch64, &['f', 'f']), StructPass::Unmodelled));
+        assert!(matches!(struct_passing(Aarch64, &codes("f", 2)), StructPass::Unmodelled));
         assert!(matches!(struct_passing(X86_64, &rect), StructPass::Unmodelled));
         assert!(matches!(struct_passing(X86_64, &transform), StructPass::Unmodelled));
         assert!(matches!(struct_passing(X86_64, &size), StructPass::Spread));
         assert!(matches!(struct_passing(X86_64, &range), StructPass::Spread));
-        assert!(matches!(struct_passing(X86_64, &['q'; 3]), StructPass::Unmodelled));
+        assert!(matches!(struct_passing(X86_64, &codes("q", 3)), StructPass::Unmodelled));
     }
 
     /// A stub section mapped at the top of the address space wraps instead of

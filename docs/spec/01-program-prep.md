@@ -4788,6 +4788,9 @@ every other binary's pass list is byte-identical to before the pass existed):
     (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (struct_type)`,
     `CGRect {x, y, width, height}`) the model places in `d0..d3`, so
     `v = objc_msgSend$bounds(view); objc_msgSend$setFrame:(view, v.x, v.y, v.width, v.height)`.
+    Only nested by-value structs are flattened into their leaf members; a
+    pointer member is one pointer-sized field whatever it points to
+    (`{S=^{T=ii}q}` has two members, a pointer and a `q`).
     System V x86-64 has no such registers past two eightbytes (it passes a
     larger struct on the stack), so a selector with such an argument or return
     gets no prototype there
