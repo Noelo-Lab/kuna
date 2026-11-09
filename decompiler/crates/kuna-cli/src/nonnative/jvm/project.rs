@@ -1,10 +1,12 @@
-//! `kuna decompile-project` for a JVM input: a Java source tree.
+//! `kuna decompile-project` for a JVM input: a Java and Kotlin source tree.
 //!
-//! Each top-level class is written to `DIR/<package path>/<Class>.java` (the
-//! engine's own output path; nested classes stay inside). A class the engine
-//! produced no text for gets a stub at the path its name implies, holding
-//! `// kuna: could not decompile <class>: <reason>`. The command exits 0 when
-//! at least one class was produced.
+//! Each top-level class is written to the engine's own output path,
+//! `DIR/<package path>/<Class>.java`, or `<Class>.kt` for a class the Kotlin
+//! plugin wrote (nested classes stay inside). A class the engine produced no
+//! text for gets a `.java` stub at the path its name implies, holding
+//! `// kuna: could not decompile <class>: <reason>`. The summary line counts
+//! the files of each extension. The command exits 0 when at least one class
+//! was produced.
 
 use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
@@ -61,7 +63,7 @@ fn safe_relative(relative: &str) -> PathBuf {
 
 fn write_tree(args: &Args, out_dir: &Path, outcome: &Outcome) -> i32 {
     let mut written: BTreeSet<PathBuf> = BTreeSet::new();
-    let (mut files, mut bytes) = (0usize, 0usize);
+    let (mut java_files, mut kotlin_files, mut bytes) = (0usize, 0usize, 0usize);
     let (mut classes_ok, mut classes_failed) = (0usize, 0usize);
     let (mut methods_ok, mut methods_failed) = (0usize, 0usize);
     let mut write = |relative: PathBuf, text: &str| -> Result<(), String> {
@@ -74,7 +76,11 @@ fn write_tree(args: &Args, out_dir: &Path, outcome: &Outcome) -> i32 {
             std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
         }
         std::fs::write(&path, text).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-        files += 1;
+        if relative.extension().is_some_and(|e| e == "kt") {
+            kotlin_files += 1;
+        } else {
+            java_files += 1;
+        }
         bytes += text.len();
         Ok(())
     };
@@ -130,8 +136,13 @@ fn write_tree(args: &Args, out_dir: &Path, outcome: &Outcome) -> i32 {
     for (name, why) in &failures {
         eprintln!("warning: could not decompile {}: {why}", java_name(name));
     }
+    let files = match (java_files, kotlin_files) {
+        (java, 0) => format!("{java} .java files"),
+        (0, kotlin) => format!("{kotlin} .kt files"),
+        (java, kotlin) => format!("{java} .java files, {kotlin} .kt files"),
+    };
     let summary = format!(
-        "wrote {}: {files} .java files ({bytes} bytes); classes: {classes_ok} ok, {classes_failed} failed; \
+        "wrote {}: {files} ({bytes} bytes); classes: {classes_ok} ok, {classes_failed} failed; \
          methods: {methods_ok} ok, {methods_failed} failed\n",
         out_dir.display()
     );
