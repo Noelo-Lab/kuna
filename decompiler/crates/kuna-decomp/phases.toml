@@ -5532,6 +5532,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "importdata"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P9"
+subphase = "naming-policy"
+strength = "HARD"
+rewind = "P9"
+issue = "kuna-importdata"
+summary = "Render a data read through a loader-marked import slot as the import itself. A data import (Mach-O __got / __auth_got, a dyld-cache coalesced GOT slot, a PE IAT entry) is reached through a slot the dynamic loader fills with the import's address: `ldr x8,[slot]; ldr w8,[x8]`. The slot is already named for the import and painted `externref` (peimportcall), which is what lets ActionDeindirect resolve a CALL through it to the import; a DATA read is not a call, so it printed as a dereference of the anonymous slot, `*dat_<slot>`. On: a LOAD whose pointer is such a slot renders as the import (`imported_counter`, `__stack_chk_guard`), resolved exactly as ActionDeindirect resolves a call through the same slot (query_function on the externref persist address). Calls are unaffected (deindirect consumes them first), and a read through anything that is not an externref import slot is untouched. Needs the slot painted externref, so it is a no-op when peimportcall is off and on every format whose import slots are not painted (ELF GOT data imports today)."
+use_when = "Off in the shipped catalog (a data read through an import slot renders *dat_<slot>), but ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB, so below that size it is the default rendering of `kuna decompile`, `decompile-all` and `decompile-project`. Flip on for a larger binary to name data imports read through a GOT/IAT slot -- the stack-protector guard, XPC type objects, global counters -- e.g. `if (*dat_1041cc6c8 == ...)` becomes `if (__stack_chk_guard == ...)`; flip off to keep the slot dereference on a small one."
+example = "option importdata on"
+source_decompiler = "kuna"
+inspiration = "Ghidra ActionDeindirect / ExternRefSymbol (the call side kuna already models with peimportcall); IDA renders a GOT data import by name"
+change_kind = "presentation-default"
+tier = "core"
+live_field = "import_data"
+live_true = "on"
+live_false = "off"
+symptoms = "a data import read through __got renders *dat_<slot>|__stack_chk_guard shows as a dereferenced dat_ address|imported globals are anonymous even though their GOT slot is named"
+
+[[settable]]
 option = "castimplied"
 values = "on|off"
 default = "on"
