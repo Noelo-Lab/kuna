@@ -95,13 +95,13 @@ fn compiled_rust_keeps_formatter_traits_distinct() {
         ("print_one", "println!(\"value = {}\""),
         ("reorder", "println!(\"{0} {1} {0}\""),
         ("signed", "eprintln!(\"signed {}\""),
+        ("exponent", "println!(\"scientific {:e}\""),
+        ("debug", "println!(\"debug {:?}\""),
+        ("width", "println!(\"width {:08}\""),
     ] {
         let on = output(name, true);
         assert!(on.contains(expected), "{name}: {on}");
         assert!(!output(name, false).contains(expected));
-    }
-    for name in ["exponent", "debug", "width"] {
-        assert_eq!(output(name, true), output(name, false), "{name}");
     }
 }
 
@@ -133,11 +133,9 @@ fn unsupported_callbacks_and_incomplete_descriptors_keep_runtime_calls() {
     for function in [
         "reject_utf8",
         "reject_head",
-        "reject_flags",
         "reject_index",
         "reject_unterminated",
         "reject_mutable",
-        "reject_trait",
         "reject_unknown",
         "reject_callback",
         "reject_sink",

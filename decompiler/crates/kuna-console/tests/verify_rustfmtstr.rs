@@ -107,17 +107,16 @@ fn proven_string_views_recover_print_result_and_panic_macros() {
 
 #[test]
 fn unknown_wrappers_and_dynamic_formats_remain_explicit() {
-    for name in [
-        "str_custom",
-        "str_debug",
-        "str_dynamic",
-        "str_reference",
-        "str_owned",
-    ] {
+    for name in ["str_custom", "str_debug", "str_reference", "str_owned"] {
         let on = output(NATIVE, name, true);
         assert_eq!(on, output(NATIVE, name, false), "{name}: {on}");
         assert!(!on.contains("from_utf8_unchecked"), "{name}: {on}");
     }
+    let dynamic = output(NATIVE, "str_dynamic", true);
+    assert!(
+        dynamic.contains("_print(") && !dynamic.contains("from_utf8_unchecked"),
+        "{dynamic}"
+    );
 }
 
 #[test]

@@ -95,11 +95,16 @@ fn native_result_macros_keep_initialization_returns_and_newlines() {
 
 #[test]
 fn local_or_unknown_storage_and_unsupported_arguments_stay_explicit() {
-    for name in ["local", "constant_value", "generic", "dynamic", "floating"] {
+    for name in ["local", "constant_value", "generic", "floating"] {
         let on = output(true, name, true);
         assert_eq!(on, output(true, name, false), "{name}");
         assert!(on.contains("format_inner("), "{name}: {on}");
     }
+    let dynamic = output(true, "dynamic", true);
+    assert!(
+        dynamic.contains("format_inner(") && !dynamic.contains("format!("),
+        "{dynamic}"
+    );
     for name in [
         "reject_root",
         "reject_missing",
