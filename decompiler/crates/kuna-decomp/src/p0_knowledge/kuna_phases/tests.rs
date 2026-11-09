@@ -32,9 +32,9 @@ fn subphase_count_is_48() {
 }
 
 #[test]
-fn surface_count_is_121() {
-    assert_eq!(kuna_num_surfaces(), 121);
-    assert_eq!(SURFACE_TABLE.len(), 121);
+fn surface_count_is_113() {
+    assert_eq!(kuna_num_surfaces(), 113);
+    assert_eq!(SURFACE_TABLE.len(), 113);
 }
 
 #[test]
@@ -646,7 +646,6 @@ fn option_values_live_value_present_for_141() {
                             // (kuna) `foldcallretphi` extends `foldcallret`'s
                             // decision and shares its seam, so it reports its
                             // live state the same way its sibling does.
-                            | "foldcallretphi"
                             // (kuna) `indirectonly` gates an engine-side
                             // Varnode flag read by `HighVariable::has_name` and
                             // `Merge::merge_test_adjacent`, not a printer flag;
@@ -661,11 +660,8 @@ fn option_values_live_value_present_for_141() {
                             | "iteregion"
                             | "iteexpr"
                             | "iteboolean"
-                            | "itecondlist"
                             | "returndup"
-                            | "orchain"
                             | "rettriangle"
-                            | "clonephiorder"
                             | "earlyreturn"
                             | "switchreturn"
                             | "loopbreak_recovery"
@@ -757,9 +753,7 @@ fn option_values_live_value_present_for_141() {
                             // (kuna) `bejoinpass` likewise (`off|whole|high`);
                             // its live value is `Architecture::be_join_pass`.
                             | "bejoinpass"
-                            | "arraycoverwidth"
                             | "bytearrayc"
-                            | "emptystrconst"
                             // (kuna) `structdefs` is a PrintC option like
                             // `arraycoverwidth`/`emptystrconst` above: its live
                             // state is `PrintC::options.struct_defs`, which the
@@ -770,7 +764,6 @@ fn option_values_live_value_present_for_141() {
                             // `PrintC::options.global_ref`.
                             | "globalref"
                             | "callsitestackargs"
-                            | "protoranges"
                             | "varargstackargs"
                             | "varargforward"
                             | "calleearity"
@@ -1014,8 +1007,8 @@ fn live_from_arch_matches_cpp_ternaries() {
     assert_eq!(OptionValues::live_from_arch("returnpair", on), Some("single"));
     assert_eq!(OptionValues::live_from_arch("returnpair", off), Some("pair"));
     // a plain on/off option
-    assert_eq!(OptionValues::live_from_arch("thumbfuncptr", on), Some("on"));
-    assert_eq!(OptionValues::live_from_arch("thumbfuncptr", off), Some("off"));
+    assert_eq!(OptionValues::live_from_arch("memsetrecover", on), Some("on"));
+    assert_eq!(OptionValues::live_from_arch("memsetrecover", off), Some("off"));
     // no live reader -> None even with a value-producing closure
     assert_eq!(OptionValues::live_from_arch("namestyle", on), None);
     assert_eq!(OptionValues::live_from_arch("stackguard", on), None);
