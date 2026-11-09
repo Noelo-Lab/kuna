@@ -21,6 +21,17 @@
       "source": "src/pkg/TestMethodRefWildcardReceiver.java",
       "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
       "summary": "`objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone"
+    },
+    {
+      "id": "pkg/TestSwitchExprConstLub",
+      "fix": "jvm_fix_switch_yield_const_retype",
+      "class_files": [
+        "pkg/TestSwitchExprConstLub.class",
+        "pkg/TestSwitchExprConstLub$IntSink.class"
+      ],
+      "source": "src/pkg/TestSwitchExprConstLub.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone"
     }
   ]
 }

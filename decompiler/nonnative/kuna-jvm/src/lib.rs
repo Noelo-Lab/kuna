@@ -147,6 +147,7 @@ pub use substrate::{
     exprent, fast_fixed_set, fast_fixed_set_factory, fast_sparse_set_factory, field_descriptor,
     field_exprent, function_exprent, general_statement, i_matchable, if_exprent, if_statement,
     int_helper, interpreter_util, invocation_exprent, key, list_stack, long_fast_fixed_set_factory,
+    kuna_fix_switch_yield_const_retype,
     match_engine, match_node, method_descriptor, monitor_exprent, new_class_name_builder,
     new_exprent, packed_map, pair, pattern, pattern_exprent, root_statement,
     s_forms_fast_map_direct, sequence_statement, short_fast_fixed_set_factory, start_end_pair,
