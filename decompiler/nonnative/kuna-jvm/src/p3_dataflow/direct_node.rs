@@ -2,7 +2,9 @@
 //!
 //! Handle `==` is Java identity; `equals`/`JavaEq`/`JavaHash` are the Java
 //! overrides (node type and id). `exprents` aliases the list of the statement
-//! the node was flattened from.
+//! the node was flattened from. The edge maps are keyed by the two
+//! `DirectEdgeType`s and never iterated, so they are a two-slot array; the
+//! hash is fixed at construction because type and id never change.
 
 use crate::arena_object;
 use crate::basic_block_statement::BasicBlockStatement;
@@ -10,7 +12,7 @@ use crate::direct_edge::DirectEdge;
 use crate::direct_edge_type::DirectEdgeType;
 use crate::direct_node_type::DirectNodeType;
 use crate::exprent::Exprent;
-use crate::rt::{objects_hash, JHashMap, JList, JavaEq, JavaHash};
+use crate::rt::{objects_hash, JList, JavaEq, JavaHash};
 use crate::statement::Statement;
 use crate::validation_helper::ValidationHelper;
 
@@ -20,9 +22,10 @@ pub struct DirectNodeData {
     pub block: Option<BasicBlockStatement>,
     pub statement: Statement,
     pub exprents: JList<Exprent>,
-    successors: JHashMap<DirectEdgeType, JList<DirectEdge>>,
-    predecessors: JHashMap<DirectEdgeType, JList<DirectEdge>>,
+    successors: [Option<JList<DirectEdge>>; 2],
+    predecessors: [Option<JList<DirectEdge>>; 2],
     pub try_finally: Option<DirectNode>,
+    hash: i32,
 }
 
 arena_object!(pub DirectNode => DirectNodeData, Class);
@@ -34,15 +37,17 @@ impl DirectNode {
         try_finally: Option<DirectNode>,
     ) -> DirectNode {
         let id = type_.make_id(statement.with(|d| d.id));
+        let hash = objects_hash(&[type_.java_hash(), id.java_hash()]);
         DirectNode::alloc(DirectNodeData {
             type_,
             id,
             block: None,
             statement,
             exprents: JList::new(),
-            successors: JHashMap::new(),
-            predecessors: JHashMap::new(),
+            successors: [None, None],
+            predecessors: [None, None],
             try_finally,
+            hash,
         })
     }
 
@@ -88,19 +93,19 @@ impl DirectNode {
     }
 
     pub fn has_successors(self, type_: DirectEdgeType) -> bool {
-        self.with(|d| d.successors.get(&type_).is_some_and(|l| !l.is_empty()))
+        self.with(|d| d.successors[type_ as usize].as_ref().is_some_and(|l| !l.is_empty()))
     }
 
     pub fn get_successors(self, type_: DirectEdgeType) -> JList<DirectEdge> {
-        self.with_mut(|d| d.successors.compute_if_absent(type_, JList::new).clone())
+        self.with_mut(|d| d.successors[type_ as usize].get_or_insert_with(JList::new).clone())
     }
 
     pub fn has_predecessors(self, type_: DirectEdgeType) -> bool {
-        self.with(|d| d.predecessors.get(&type_).is_some_and(|l| !l.is_empty()))
+        self.with(|d| d.predecessors[type_ as usize].as_ref().is_some_and(|l| !l.is_empty()))
     }
 
     pub fn get_predecessors(self, type_: DirectEdgeType) -> JList<DirectEdge> {
-        self.with_mut(|d| d.predecessors.compute_if_absent(type_, JList::new).clone())
+        self.with_mut(|d| d.predecessors[type_ as usize].get_or_insert_with(JList::new).clone())
     }
 
     pub fn add_successor(self, edge: DirectEdge) {
@@ -124,7 +129,7 @@ impl DirectNode {
     pub(crate) fn linked_nodes(self) -> Vec<DirectNode> {
         self.with(|d| {
             let mut out: Vec<DirectNode> = d.try_finally.into_iter().collect();
-            for edges in d.successors.values().chain(d.predecessors.values()) {
+            for edges in d.successors.iter().chain(&d.predecessors).flatten() {
                 for edge in edges.borrow().iter() {
                     out.push(edge.get_source());
                     out.push(edge.get_destination());
@@ -138,12 +143,11 @@ impl DirectNode {
         if self == that {
             return true;
         }
-        let (type_, id) = that.with(|d| (d.type_, d.id.clone()));
-        self.with(|d| d.type_ == type_ && d.id == id)
+        that.with(|t| self.with(|d| d.type_ == t.type_ && d.id == t.id))
     }
 
     pub fn hash_code(self) -> i32 {
-        self.with(|d| objects_hash(&[d.type_.java_hash(), d.id.java_hash()]))
+        self.with(|d| d.hash)
     }
 }
 
