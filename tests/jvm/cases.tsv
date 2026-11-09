@@ -3328,6 +3328,12 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected-compat/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes-compat/pkg/TestNestedParamRename	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestNestedParamRename.class
+class	kuna-fixes/classes/pkg/TestNestedParamRename$1.class
+class	kuna-fixes/classes/pkg/TestNestedParamRename$Handler.class
+expected	kuna-fixes/expected-compat/pkg/TestNestedParamRename.java
+compare	TestNestedParamRename.java
 case	kuna-fixes-compat/pkg/TestNonPublicNestedImport	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestNonPublicNestedImport.class
 class	kuna-fixes/classes/pkg/TestNonPublicNestedImport$1.class
@@ -3726,6 +3732,12 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes/pkg/TestNestedParamRename	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestNestedParamRename.class
+class	kuna-fixes/classes/pkg/TestNestedParamRename$1.class
+class	kuna-fixes/classes/pkg/TestNestedParamRename$Handler.class
+expected	kuna-fixes/expected/pkg/TestNestedParamRename.java
+compare	TestNestedParamRename.java
 case	kuna-fixes/pkg/TestNonPublicNestedImport	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestNonPublicNestedImport.class
 class	kuna-fixes/classes/pkg/TestNonPublicNestedImport$1.class

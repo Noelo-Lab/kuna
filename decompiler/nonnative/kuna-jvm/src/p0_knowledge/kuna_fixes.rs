@@ -209,6 +209,9 @@ pub enum KunaFix {
     /// `switch_expression_assignments`: a switch statement becomes a switch
     /// expression only when each assignment made a `yield` ends its case.
     SwitchExpressionAssignments,
+    /// `nested_param_rename`: a parameter whose uses are written by its
+    /// local-variable-table name is declared under that name.
+    NestedParamRename,
 }
 
 impl KunaFix {
@@ -272,6 +275,7 @@ impl KunaFix {
         KunaFix::AssertThrowAfterIf,
         KunaFix::SealedPrivatePermits,
         KunaFix::SwitchExpressionAssignments,
+        KunaFix::NestedParamRename,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -335,6 +339,7 @@ impl KunaFix {
             KunaFix::AssertThrowAfterIf => "assert_throw_after_if",
             KunaFix::SealedPrivatePermits => "sealed_private_permits",
             KunaFix::SwitchExpressionAssignments => "switch_expression_assignments",
+            KunaFix::NestedParamRename => "nested_param_rename",
         }
     }
 

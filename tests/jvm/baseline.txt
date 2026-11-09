@@ -609,6 +609,7 @@ kuna-fixes-compat/pkg/TestLambdaCatchVarRename
 kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes-compat/pkg/TestLocalVisibilityComment
 kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver
+kuna-fixes-compat/pkg/TestNestedParamRename
 kuna-fixes-compat/pkg/TestNonPublicNestedImport
 kuna-fixes-compat/pkg/TestObjectSuperCall
 kuna-fixes-compat/pkg/TestOverrideInaccessible
@@ -668,6 +669,7 @@ kuna-fixes/pkg/TestLambdaCatchVarRename
 kuna-fixes/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes/pkg/TestLocalVisibilityComment
 kuna-fixes/pkg/TestMethodRefWildcardReceiver
+kuna-fixes/pkg/TestNestedParamRename
 kuna-fixes/pkg/TestNonPublicNestedImport
 kuna-fixes/pkg/TestObjectSuperCall
 kuna-fixes/pkg/TestOverrideInaccessible

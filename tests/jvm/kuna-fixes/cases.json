@@ -379,6 +379,18 @@
       "summary": "`objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone"
     },
     {
+      "id": "pkg/TestNestedParamRename",
+      "fix": "nested_param_rename",
+      "class_files": [
+        "pkg/TestNestedParamRename.class",
+        "pkg/TestNestedParamRename$1.class",
+        "pkg/TestNestedParamRename$Handler.class"
+      ],
+      "source": "src/pkg/TestNestedParamRename.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "an anonymous class's method parameter e, whose uses are written e, is declared e instead of ex (the name the rename for a captured variable whose slot the enclosing catch variable e reuses gave it)"
+    },
+    {
       "id": "pkg/TestNonPublicNestedImport",
       "fix": "nonpublic_nested_import",
       "class_files": [

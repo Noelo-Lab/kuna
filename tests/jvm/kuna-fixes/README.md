@@ -49,6 +49,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestLocalClassAnonymousSubclass` | `local_class_anonymous_subclass` | javac 17.0.20.1 (`-g`) | the local class is declared before new LocalClass<String>() {} instead of inside the later loop that uses LocalClass.class |
 | `pkg/TestLocalVisibilityComment` | `kt_local_visibility_comment` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0 |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
+| `pkg/TestNestedParamRename` | `nested_param_rename` | javac 17.0.20.1 (`-g`) | an anonymous class's method parameter e, whose uses are written e, is declared e instead of ex (the name the rename for a captured variable whose slot the enclosing catch variable e reuses gave it) |
 | `pkg/TestNonPublicNestedImport` | `nonpublic_nested_import` | javac 17.0.20.1 (`-g`, against a `lib.Base` that is not in the input) | protected member classes of a library class used in a subclass (Base.Helper, Base.Holder.Deep, an enum switched on, one inside an anonymous subclass) are written Base.Helper, not imported |
 | `pkg/TestObjectSuperCall` | `kt_object_super_call` | kotlinc 2.0.0 | an object expression's superclass is written with its constructor arguments, object : Base(k + 1, s) (Vineflower prints object : Base) |
 | `pkg/TestOverrideInaccessible` | `override_inaccessible_method` | javac 17.0.20.1 (`-g`) (with ext/TestOverrideInaccessibleBase.java, vendored as a second input class) | methods matching a package-private superclass method of another package or a private one get no @Override; true overrides keep it |
@@ -1988,6 +1989,22 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     TestMethodRefWildcardReceiver.Pipe<Object> objectsOf(TestMethodRefWildcardReceiver.Factory<String> factory) {
+```
+
+### `pkg/TestNestedParamRename`
+
+```diff
+--- expected-compat/pkg/TestNestedParamRename.java
++++ expected/pkg/TestNestedParamRename.java
+@@ -16,7 +16,7 @@
+          final Object reg = lookup(action);
+          run(new TestNestedParamRename.Handler() {
+             @Override
+-            public void onFailure(Exception ex) {
++            public void onFailure(Exception e) {
+                TestNestedParamRename.log(e, reg);
+             }
+          });
 ```
 
 ### `pkg/TestNonPublicNestedImport`
