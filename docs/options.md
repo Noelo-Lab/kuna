@@ -493,24 +493,12 @@ Three tiers:
 | a PPC32 PIC no-return call flows into padding | [`ppc32picimports`](#ppc32picimports) |
 | PPC32 PIC imports are missing from named cross-reference queries | [`ppc32picimports`](#ppc32picimports) |
 | every import call in a PPC32 shared library linked with the start files prints as sub_ | [`ppc32picimports`](#ppc32picimports) |
-| Rust literal printing exposes std::io::stdio::_print with a pointer and odd integer | [`rustfmtliteral`](#rustfmtliteral) |
-| Rust literal output remains a runtime formatting call | [`rustfmtliteral`](#rustfmtliteral) |
-| Rust primitive decimal output exposes a runtime template pointer | [`rustfmtargs`](#rustfmtargs) |
-| Rust print calls retain stack formatter descriptor arrays | [`rustfmtargs`](#rustfmtargs) |
-| Rust hexadecimal or padded integer printing retains runtime descriptors | [`rustfmtflags`](#rustfmtflags) |
-| Rust static format specifications remain opaque template bytes | [`rustfmtflags`](#rustfmtflags) |
-| Rust integer String construction retains format_inner with an output pointer | [`rustfmtresult`](#rustfmtresult) |
-| Rust format! results remain runtime calls despite recovered templates | [`rustfmtresult`](#rustfmtresult) |
-| Rust panic messages remain core::panicking::panic_fmt calls with opaque pointers | [`rustfmtpanic`](#rustfmtpanic) |
-| Rust primitive panic arguments retain runtime formatter descriptors | [`rustfmtpanic`](#rustfmtpanic) |
-| Older Rust print calls retain a stack fmt::Arguments descriptor | [`rustfmtpieces`](#rustfmtpieces) |
-| Rust literal output remains _print with opaque piece-array addresses | [`rustfmtpieces`](#rustfmtpieces) |
-| Rust string formatting remains a runtime descriptor call | [`rustfmtstr`](#rustfmtstr) |
-| format! with mixed integer and string arguments remains format_inner | [`rustfmtstr`](#rustfmtstr) |
-| Rust String writes remain opaque core::fmt::write calls | [`rustfmtwrite`](#rustfmtwrite) |
-| write! formatting arguments remain stack descriptors and vtable addresses | [`rustfmtwrite`](#rustfmtwrite) |
-| Rust Stdout writes remain opaque runtime write_fmt calls | [`rustfmtio`](#rustfmtio) |
-| stdout write! errors lose their owned result representation | [`rustfmtio`](#rustfmtio) |
+| Rust printing exposes std::io::stdio::_print with a pointer and odd integer | [`rustfmt`](#rustfmt) |
+| Rust print calls retain a runtime template pointer and stack formatter descriptor arrays | [`rustfmt`](#rustfmt) |
+| Rust integer or string String construction retains format_inner with an output pointer | [`rustfmt`](#rustfmt) |
+| Rust panic messages remain core::panicking::panic_fmt calls with opaque pointers | [`rustfmt`](#rustfmt) |
+| older Rust print calls retain a piece-array fmt::Arguments descriptor | [`rustfmt`](#rustfmt) |
+| Rust String or Stdout writes remain opaque core::fmt::write or write_fmt calls (set all) | [`rustfmt`](#rustfmt) |
 | Go output language is unavailable | [`outlang`](#outlang) |
 | Go functions retain C declarations and control-flow syntax | [`outlang`](#outlang) |
 | Rust large-frame functions retain __rust_probestack calls | [`rustprobestack`](#rustprobestack) |
@@ -2202,77 +2190,13 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P1/external-refinement · kuna · correctness-fix · PPC32 secure-PLT caller bases
 - **Example:** `option ppc32picimports on`
 
-### `rustfmtliteral` -- on | off, default `on`
+### `rustfmt` -- off | on | all, default `on`
 
-- **Symptoms:** Rust literal printing exposes std::io::stdio::_print with a pointer and odd integer; Rust literal output remains a runtime formatting call.
-- **What it does:** Recover print!, println!, eprint! and eprintln! from literal-only standard-library formatting calls in Rust output. Require an unambiguous stable Rust 1.93.0 or 1.93.1 compiler record, a little-endian 64-bit image, exact std::io::stdio sink identity, two constant arguments and readonly UTF-8 bytes. Decode the odd tagged length, escape format braces, and remove exactly one final newline for the ln macro. Calls with placeholders, unknown versions, mutable text, unreadable bytes or return values stay explicit. C output is unchanged.
-- **When to flip:** Leave on to read verified Rust literal printing as source macros. Turn off to inspect the runtime sink and encoded fmt::Arguments words. This does not recover templates containing dynamic arguments.
-- **Where / provenance:** P9/literal-format · angr · opt-in-tool · angr-rust-format-literals
-- **Example:** `option rustfmtliteral off`
-
-### `rustfmtargs` -- on | off, default `on`
-
-- **Symptoms:** Rust primitive decimal output exposes a runtime template pointer; Rust print calls retain stack formatter descriptor arrays.
-- **What it does:** Recover primitive integer Display arguments in Rust print!, println!, eprint! and eprintln! for stable Rust 1.93.0/1.93.1 little-endian 64-bit images. Decode bounded readonly UTF-8 template pieces, default placeholders and explicit indices. Require exact full formatter trait identities and unambiguous stack descriptor cells at the exact runtime call. Preserve typed value references, descriptor setup and surrounding IR. Unknown callbacks, incomplete arrays and other layouts remain explicit. Static integer specifications require the separate rustfmtflags extension. C output is unchanged.
-- **When to flip:** Leave on to read verified primitive decimal printing as source macros. Turn off to inspect the runtime template and descriptor array. The rustfmtflags extension adds static integer specifications; generic reference callbacks and format!/write! remain outside this feature.
-- **Where / provenance:** P9/primitive-format · angr · opt-in-tool · angr-rust-format-arguments
-- **Example:** `option rustfmtargs off`
-
-### `rustfmtflags` -- on | off, default `on`
-
-- **Symptoms:** Rust hexadecimal or padded integer printing retains runtime descriptors; Rust static format specifications remain opaque template bytes.
-- **What it does:** Extend rustfmtargs to static integer format specifications in stable Rust 1.93.0/1.93.1 little-endian 64-bit print templates. Recover width, precision, alignment, Unicode fill, sign, alternate and zero-padding flags with exact Display, Debug, hexadecimal, octal, binary and exponent formatter identities for 8/16/32/64-bit integers. Reject dynamic counts, conflicting aliases, malformed flags, unknown callbacks and unsupported layouts. Preserve typed reads, descriptor setup and surrounding IR; C output is unchanged.
-- **When to flip:** Leave on with rustfmtargs to read verified static integer formatting as source macros. Turn off to keep the primitive default-Display boundary. This does not recover generic callbacks, floating-point or pointer formatting, format!/write!, or specialized sinks.
-- **Where / provenance:** P9/integer-format · angr · opt-in-tool · angr-rust-format-specifications
-- **Example:** `option rustfmtflags off`
-
-### `rustfmtresult` -- on | off, default `on`
-
-- **Symptoms:** Rust integer String construction retains format_inner with an output pointer; Rust format! results remain runtime calls despite recovered templates.
-- **What it does:** Recover format! at exact alloc::fmt::format::format_inner calls in stable Rust 1.93.0/1.93.1 little-endian 64-bit Rust output. Reuse rustfmtargs template, descriptor and primitive integer proofs, including static specifications when rustfmtflags is on. Preserve the hidden String destination with std::ptr::write, all descriptor setup, existing returns and terminal newlines. Require an entry-value destination and no call result. Local output storage remains explicit until its complete String allocation is recovered. Unknown sinks, destinations, callbacks and layouts remain explicit; C output is unchanged.
-- **When to flip:** Leave on with rustfmtargs to read verified integer String construction as format!. Turn off to inspect the runtime call and hidden output buffer. This does not change function signatures, infer generic formatter types or recover write!/writeln! sinks.
-- **Where / provenance:** P9/format-result · angr · opt-in-tool · angr-rust-format-result
-- **Example:** `option rustfmtresult off`
-
-### `rustfmtpanic` -- on | off, default `on`
-
-- **Symptoms:** Rust panic messages remain core::panicking::panic_fmt calls with opaque pointers; Rust primitive panic arguments retain runtime formatter descriptors.
-- **What it does:** Recover panic! from exact core::panicking::panic_fmt calls in stable Rust 1.93.0/1.93.1 little-endian 64-bit images. Require a non-returning direct call with a constant mapped nonvolatile caller-location address and verified literal or primitive integer formatting arguments. Preserve message bytes including trailing newlines, descriptor setup and surrounding IR. Primitive arguments require rustfmtargs and static specifications require rustfmtflags. Other versions, callbacks, dynamic locations and ambiguous call shapes remain explicit. C and Go output are unchanged.
-- **When to flip:** On by default to expose verified Rust panic messages and integer arguments. Turn off to retain the runtime panic_fmt call. Literal panic messages are independent of rustfmtliteral and rustfmtargs; integer arguments use rustfmtargs and rustfmtflags checks. Recompiled panic! uses the recovered source location, not the original binary's file and line.
-- **Where / provenance:** P9/panic-format · angr · opt-in-tool · angr-rust-panic-format
-- **Example:** `option rustfmtpanic off`
-
-### `rustfmtpieces` -- on | off, default `on`
-
-- **Symptoms:** Older Rust print calls retain a stack fmt::Arguments descriptor; Rust literal output remains _print with opaque piece-array addresses.
-- **What it does:** Recover print!, println!, eprint! and eprintln! from the verified piece-array fmt::Arguments layout in x86-64 ELF images built by stable Rust 1.89.0/1.90.0 or nightly 1.89.0 bf64d66bd (2025-05-21). Require exact output-sink identity, a complete stack descriptor, absent format specifications, immutable UTF-8 pieces and exact primitive Display identities. Preserve descriptor setup, typed reads and surrounding IR. Unknown compiler builds, mutable data, generic callbacks and non-default specifications remain explicit; C and Go output are unchanged.
-- **When to flip:** On by default to expose older Rust literal and integer printing. Literal recovery also requires rustfmtliteral; primitive arguments require rustfmtargs. Turn off to retain the piece-array runtime call. This does not recover format!, panic!, write!, generic arguments or older compiler builds without verified layout evidence.
-- **Where / provenance:** P9/piece-format · angr · opt-in-tool · angr-rust-piece-format
-- **Example:** `option rustfmtpieces off`
-
-### `rustfmtstr` -- on | off, default `on`
-
-- **Symptoms:** Rust string formatting remains a runtime descriptor call; format! with mixed integer and string arguments remains format_inner.
-- **What it does:** Recover string Display arguments in verified Rust 1.93.0/1.93.1 formatting calls. Require an exact x86-64 ELF forwarding body to core::fmt::Formatter::pad and two complete live aligned stack words for the string data and length. Construct a string view from those words without changing descriptor setup, IR, types or prototypes. Generic names alone, derived Debug callbacks, unknown wrappers and unsupported layouts remain explicit. C and Go output are unchanged.
-- **When to flip:** On by default to expose proven string arguments in print!, format! and panic! recovery. Requires rustfmtargs and the corresponding sink option; explicit format specifications also require rustfmtflags. Turn off to retain runtime calls containing string arguments. The original formatter contract requires valid UTF-8 storage for the recorded length.
-- **Where / provenance:** P9/string-format · angr · opt-in-tool · angr-rust-string-format
-- **Example:** `option rustfmtstr off`
-
-### `rustfmtwrite` -- on | off, default `off`
-
-- **Symptoms:** Rust String writes remain opaque core::fmt::write calls; write! formatting arguments remain stack descriptors and vtable addresses.
-- **What it does:** Recover write!/writeln! into a verified String writer for Rust 1.93.0/1.93.1. Require exact core::fmt::write identity, four runtime arguments, an entry-derived writer, a complete immutable String fmt::Write vtable and a one-byte result. Preserve the original result as the macro's is_err() byte while retaining descriptor setup, surrounding branches and all IR. Custom writers, unknown vtables and unsupported result layouts remain explicit.
-- **When to flip:** Off by default because the declared speed study did not clear the small-C wall-time confidence bound. Enable to expose proven String mutation through Rust write! macros. Literal calls also require rustfmtliteral; argument calls require rustfmtargs and their formatter options. The scoped fmt::Write import and byte-result bridge preserve the known String writer contract without changing function prototypes.
-- **Where / provenance:** P9/string-writer-format · angr · opt-in-tool · angr-rust-write-format
-- **Example:** `option rustfmtwrite on`
-
-### `rustfmtio` -- on | off, default `off`
-
-- **Symptoms:** Rust Stdout writes remain opaque runtime write_fmt calls; stdout write! errors lose their owned result representation.
-- **What it does:** Recover write!/writeln! for exact Rust 1.93.1 x86-64 ELF Stdout writer bodies and adapter callbacks. Preserve the original reference-cell or promoted-inner receiver and the owned eight-byte I/O result. Require complete immutable byte profiles, all symbol aliases, relocation roles and supported static formatting descriptors. Empty literals, unknown writers, producer layouts and result shapes remain explicit.
-- **When to flip:** Off by default because the declared speed study did not clear the Go-control CPU and wall-time confidence bounds. Enable to expose verified Stdout formatting while preserving its original receiver and error word. A scoped io::Write import and Result match keep success zero and consume the original Error into its pointer representation. Literal calls require rustfmtliteral; argument calls require rustfmtargs and their formatter options.
-- **Where / provenance:** P9/stdout-writer-format · angr · opt-in-tool · angr-rust-io-format
-- **Example:** `option rustfmtio on`
+- **Symptoms:** Rust printing exposes std::io::stdio::_print with a pointer and odd integer; Rust print calls retain a runtime template pointer and stack formatter descriptor arrays; Rust integer or string String construction retains format_inner with an output pointer; Rust panic messages remain core::panicking::panic_fmt calls with opaque pointers; older Rust print calls retain a piece-array fmt::Arguments descriptor; Rust String or Stdout writes remain opaque core::fmt::write or write_fmt calls (set all).
+- **What it does:** On a rustc-built little-endian 64-bit image, render the standard library's formatting runtime calls as the source macros that produced them. `on` recovers print!, println!, eprint! and eprintln! at the exact std::io::stdio sinks, format! at alloc::fmt::format::format_inner (the hidden String destination is kept as std::ptr::write) and panic! at a non-returning core::panicking::panic_fmt with a constant caller location, for stable Rust 1.93.0/1.93.1 templates and for the piece-array fmt::Arguments layout of x86-64 ELF images built by stable Rust 1.89.0/1.90.0 or nightly 1.89.0 bf64d66bd. Arguments are literal-only messages (format braces escaped, exactly one final newline removed for the ln macros), primitive 8/16/32/64-bit integers under exact Display, Debug, hexadecimal, octal, binary and exponent formatter identities with static width, precision, alignment, Unicode fill, sign, alternate and zero-padding specifications, and string Display arguments proven by an exact forwarding body to core::fmt::Formatter::pad and two live stack words. `all` adds write!/writeln! into a verified String writer (exact core::fmt::write, a complete immutable String fmt::Write vtable; the one-byte result is kept as is_err()) and into Stdout (exact Rust 1.93.1 x86-64 ELF writer bodies and adapter callbacks; the reference-cell or promoted-inner receiver and the owned eight-byte io::Result word are kept). `off` keeps every runtime call. Template bytes must be readonly UTF-8 and descriptor cells complete; unknown compiler builds, sinks, callbacks and writers, dynamic counts, conflicting formatter aliases and unsupported layouts stay explicit. Descriptor setup, typed reads and surrounding IR are preserved. C and Go output are unchanged.
+- **When to flip:** Leave `on` (default) to read verified Rust printing, format! and panic! as source macros. Set `off` to inspect the runtime sinks, encoded fmt::Arguments templates and stack descriptor arrays. Set `all` to also recover write!/writeln! into String and Stdout writers; it is not the default for speed: the String writer's study did not clear the small-C wall-time confidence bound and the Stdout writer's did not clear the Go-control CPU and wall-time confidence bounds. The scoped fmt::Write/io::Write imports and result bridges keep the writer contracts without changing function prototypes. Recompiled panic! uses the recovered source location, not the original binary's file and line; a recovered string argument assumes valid UTF-8 storage for its recorded length. Generic reference callbacks, floating-point and pointer formatting, and custom writers are not recovered.
+- **Where / provenance:** P9/literal-format · angr · opt-in-tool · angr-rust-format-macros
+- **Example:** `option rustfmt all`
 
 ### `outlang` -- c | rust | go, default `c`
 
