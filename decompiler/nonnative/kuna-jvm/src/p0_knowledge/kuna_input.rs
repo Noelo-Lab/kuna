@@ -248,8 +248,8 @@ impl Default for LoadOptions {
     }
 }
 
-/// One input's class universe, shareable across threads.
-#[derive(Debug)]
+/// One input's class universe, shareable across threads (a clone shares the bytes).
+#[derive(Clone, Debug)]
 pub struct InputSet {
     path: PathBuf,
     kind: InputKind,

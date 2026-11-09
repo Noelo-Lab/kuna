@@ -1,8 +1,9 @@
 //! The parallel driver: one input's root classes decompiled on N threads, one
 //! engine instance per thread, with output identical to a single instance's.
 //!
-//! A planning instance loads the input and lists its root classes in the
-//! order a single run visits them; it also reads, from the class files, which
+//! Every worker loads its engine as soon as it starts; the first one also
+//! plans: it lists the root classes in the
+//! order a single run visits them and reads, from the class files, which
 //! other roots a root needs pre-processed (the roots whose nested classes'
 //! constructors it calls, see `kuna_partition`). The roots are then grouped
 //! into batches ([`Strategy`]); worker threads take batches from a shared
@@ -14,7 +15,8 @@
 //! watches every run; a batch that read the state of a root it did not process
 //! is run again with that root added (and, after a few rounds, with every root),
 //! so its results are delivered only once clean. Results reach the sink on
-//! the calling thread in root order, whatever the number of workers.
+//! the calling thread in root order, whatever the number of workers; the
+//! call returns after the last delivery, while the workers drop their engines.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::Rc;
@@ -236,24 +238,22 @@ pub fn run(
     let (out_tx, out_rx) = mpsc::channel::<Outcome>();
     let instances = Arc::new(AtomicUsize::new(0));
     let board = Arc::new(Board::default());
+    let env = Arc::new(WorkerEnv::new(input, config));
 
     let mut report = Report::default();
-    let result = std::thread::scope(|scope| -> Result<(), DriverError> {
+    let result = (|| -> Result<(), DriverError> {
         let _finish = FinishOnDrop(&board);
-        let mut handles = Vec::new();
         for worker in 0..workers_wanted {
             let out_tx = out_tx.clone();
             let plan_tx = (worker == 0).then(|| plan_tx.clone());
             let instances = instances.clone();
             let board = board.clone();
-            let handle = std::thread::Builder::new()
+            let env = env.clone();
+            std::thread::Builder::new()
                 .name(format!("kuna-jvm-{worker}"))
                 .stack_size(config.stack_size)
-                .spawn_scoped(scope, move || {
-                    worker_main(input, config, plan_tx, &board, &out_tx, &instances)
-                })
+                .spawn(move || worker_main(&env, plan_tx, &board, &out_tx, &instances))
                 .map_err(|e| DriverError(format!("cannot start a worker thread: {e}")))?;
-            handles.push(handle);
         }
         drop(plan_tx);
         drop(out_tx);
@@ -426,10 +426,6 @@ pub fn run(
         }
         trace(|| "all delivered".into());
         board.finish();
-        for handle in handles {
-            let _ = handle.join();
-        }
-        trace(|| "joined".into());
         if next < order_of_selected.len() {
             return Err(DriverError(format!(
                 "{} root class(es) were never delivered (a worker stopped)",
@@ -437,7 +433,7 @@ pub fn run(
             )));
         }
         Ok(())
-    });
+    })();
     result?;
     report.instances = report.instances.max(instances.load(Ordering::SeqCst));
     report.millis = started.elapsed().as_millis() as u64;
@@ -454,7 +450,7 @@ struct SharedPlan {
 }
 
 /// Ends the run for the workers however the coordinating thread leaves.
-struct FinishOnDrop<'a>(&'a Board);
+struct FinishOnDrop<'a>(&'a Arc<Board>);
 
 impl Drop for FinishOnDrop<'_> {
     fn drop(&mut self) {
@@ -575,25 +571,49 @@ pub fn trace(what: impl FnOnce() -> String) {
     }
 }
 
-fn open_session(input: &InputSet, config: &DriverConfig) -> Result<Session, String> {
+/// What every worker thread reads, owned so that workers can outlive the
+/// call: a worker tears its engine down after the last delivery, off the
+/// caller's path.
+struct WorkerEnv {
+    input: InputSet,
+    options: Vec<(String, String)>,
+    runtime: Option<Arc<SharedRuntime>>,
+    libraries: Vec<Arc<InputSet>>,
+    logger: LoggerFactory,
+    method_guard: Option<GuardFactory>,
+}
+
+impl WorkerEnv {
+    fn new(input: &InputSet, config: &DriverConfig) -> WorkerEnv {
+        WorkerEnv {
+            input: input.clone(),
+            options: engine_options(config),
+            runtime: config.runtime.clone(),
+            libraries: config.libraries.clone(),
+            logger: config.logger.clone(),
+            method_guard: config.method_guard.clone(),
+        }
+    }
+}
+
+fn open_session(env: &WorkerEnv) -> Result<Session, String> {
     trace(|| "open start".into());
     reset_engine_thread();
-    let logger = (config.logger)();
-    let options = engine_options(config);
+    let logger = (env.logger)();
     let opened = try_catch(|| {
-        let fernflower = Fernflower::new(&options, logger);
-        if let Some(runtime) = &config.runtime {
+        let fernflower = Fernflower::new(&env.options, logger);
+        if let Some(runtime) = &env.runtime {
             for source in runtime.sources() {
                 fernflower.add_library(source);
             }
         }
         trace(|| "open runtime".into());
-        for library in &config.libraries {
+        for library in &env.libraries {
             for source in library.sources() {
                 fernflower.add_library(source);
             }
         }
-        for source in input.sources() {
+        for source in env.input.sources() {
             fernflower.add_source(source);
         }
         trace(|| "open sources".into());
@@ -608,7 +628,7 @@ fn open_session(input: &InputSet, config: &DriverConfig) -> Result<Session, Stri
             let _ = try_catch(reset_engine_thread);
             Err(format!(
                 "cannot load {}: {}",
-                input.path().display(),
+                env.input.path().display(),
                 e.message
             ))
         }
@@ -623,49 +643,54 @@ fn close_session(session: Option<Session>) {
 }
 
 fn worker_main(
-    input: &InputSet,
-    config: &DriverConfig,
+    env: &WorkerEnv,
     plan_tx: Option<mpsc::Sender<Result<Plan, String>>>,
     board: &Board,
     out_tx: &mpsc::Sender<Outcome>,
     instances: &AtomicUsize,
 ) {
-    if let Some(guard) = &config.method_guard {
+    if let Some(guard) = &env.method_guard {
         crate::cancelation_manager::CancelationManager::set_method_guard(Some(guard()));
     }
     let mut session: Option<Session> = None;
     let mut fresh = false;
     let mut load_millis = 0u64;
-    if let Some(plan_tx) = plan_tx {
-        let loading = Instant::now();
-        match open_session(input, config) {
-            Ok(mut s) => {
-                instances.fetch_add(1, Ordering::SeqCst);
-                let planned = try_catch(|| plan(&mut s.fernflower, input));
-                match planned {
-                    Ok(plan) => {
-                        trace(|| "plan done".into());
-                        load_millis = loading.elapsed().as_millis() as u64;
-                        let _ = plan_tx.send(Ok(plan));
-                        session = Some(s);
-                        fresh = true;
-                    }
-                    Err(e) => {
-                        let _ = plan_tx.send(Err(format!(
-                            "cannot plan {}: {}",
-                            input.path().display(),
-                            e.message
-                        )));
-                        close_session(Some(s));
-                        return;
-                    }
+    let loading = Instant::now();
+    match (plan_tx, open_session(env)) {
+        (Some(plan_tx), Ok(mut s)) => {
+            instances.fetch_add(1, Ordering::SeqCst);
+            match try_catch(|| plan(&mut s.fernflower, &env.input)) {
+                Ok(plan) => {
+                    trace(|| "plan done".into());
+                    load_millis = loading.elapsed().as_millis() as u64;
+                    let _ = plan_tx.send(Ok(plan));
+                    session = Some(s);
+                    fresh = true;
+                }
+                Err(e) => {
+                    let _ = plan_tx.send(Err(format!(
+                        "cannot plan {}: {}",
+                        env.input.path().display(),
+                        e.message
+                    )));
+                    close_session(Some(s));
+                    return;
                 }
             }
-            Err(e) => {
-                let _ = plan_tx.send(Err(e));
-                return;
-            }
         }
+        (Some(plan_tx), Err(e)) => {
+            let _ = plan_tx.send(Err(e));
+            return;
+        }
+        (None, Ok(mut s)) => {
+            instances.fetch_add(1, Ordering::SeqCst);
+            let _ = try_catch(|| s.fernflower.load());
+            trace(|| "loaded".into());
+            load_millis = loading.elapsed().as_millis() as u64;
+            session = Some(s);
+            fresh = true;
+        }
+        (None, Err(_)) => close_session(None),
     }
     while let Some((batch, shared)) = board.take() {
         let reuse = session
@@ -674,7 +699,7 @@ fn worker_main(
         if !reuse {
             close_session(session.take());
             let loading = Instant::now();
-            match open_session(input, config) {
+            match open_session(env) {
                 Ok(mut s) => {
                     instances.fetch_add(1, Ordering::SeqCst);
                     let _ = try_catch(|| s.fernflower.load());
@@ -931,6 +956,14 @@ fn make_batches(plan: &Plan, selected: &[usize], workers: usize, strategy: Strat
 }
 
 fn worker_count(input: &InputSet, config: &DriverConfig) -> usize {
+    let most = config
+        .select
+        .as_ref()
+        .map_or(usize::MAX, |s| s.len().max(1));
+    worker_count_unselected(input, config).min(most)
+}
+
+fn worker_count_unselected(input: &InputSet, config: &DriverConfig) -> usize {
     match config.jobs {
         Jobs::Exactly(n) => n.max(1),
         Jobs::Auto => {
