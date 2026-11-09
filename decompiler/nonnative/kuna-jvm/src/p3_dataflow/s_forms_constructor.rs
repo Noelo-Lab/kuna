@@ -7,22 +7,25 @@
 //! Var maps are `Shared`: the same map sits in a holder, a node's slot in these
 //! tables and `currentCatchableMap`, and is compared by identity. The set
 //! factory is an aliasing handle shared by every map and set it makes.
-#![allow(dead_code, unused_variables)]
-
+use crate::code_constants::ACC_STATIC;
+use crate::code_type::CodeType;
+use crate::direct_edge_type::DirectEdgeType;
 use crate::direct_graph::DirectGraph;
 use crate::direct_node::DirectNode;
-use crate::exprent::Exprent;
+use crate::direct_node_type::DirectNodeType;
+use crate::exprent::{Exprent, ExprentType};
 use crate::fast_sparse_set_factory::FastSparseSetFactory;
 use crate::field_exprent::FieldExprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
+use crate::method_descriptor::MethodDescriptor;
 use crate::root_statement::RootStatement;
-use crate::rt::{JHashMap, JHashSet, Shared};
+use crate::rt::{JHashMap, JHashSet, JavaListExt, Shared};
 use crate::s_forms_fast_map_direct::{SFormsFastMapDirect, VersionSet};
 use crate::ssa_constructor_sparse_ex::{SSAConstructorSparseEx, SSAConstructorSparseExData};
 use crate::ssau_constructor_sparse_ex::{SSAUConstructorSparseEx, SSAUConstructorSparseExData};
-use crate::statement::Statement;
+use crate::statement::{Statement, StatementType};
 use crate::struct_method::StructMethod;
-use crate::unported;
+use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
 use crate::var_map_holder::VarMapHolder;
 use crate::var_version_node::VarVersionNode;
@@ -101,7 +104,41 @@ impl SFormsConstructor {
 
     /// `SFormsConstructor.splitVariables` itself (the `super` body).
     pub fn split_variables_base(&mut self, root: RootStatement, mt: StructMethod) {
-        unported!("SFormsConstructor.splitVariables")
+        self.root = Some(root);
+        self.mt = Some(mt);
+
+        let mut flatthelper = FlattenStatementsHelper::new();
+        let dgraph = flatthelper.build_direct_graph(root);
+        self.dgraph = Some(dgraph);
+        ValidationHelper::validate_d_graph(dgraph, root);
+        ValidationHelper::validate_vars(
+            dgraph,
+            root,
+            |var: VarExprent| var.get_version() == 0,
+            "Var version is not zero",
+        );
+
+        let mut set_init: Vec<i32> = Vec::new();
+        for i in 0..64 {
+            set_init.push(i);
+        }
+        self.factory = Some(FastSparseSetFactory::new(set_init));
+
+        let first_id = dgraph.first().expect("DirectGraph.first").id();
+        let first_map = self.create_first_map();
+        self.extra_var_versions.put(first_id, first_map);
+
+        self.set_catch_maps(root.into(), dgraph, &flatthelper);
+
+        let mut iteration = 1;
+        let mut updated: JHashSet<String> = JHashSet::new();
+        loop {
+            self.ssa_statements(dgraph, &mut updated, false, mt, iteration);
+            iteration += 1;
+            if updated.is_empty() {
+                break;
+            }
+        }
     }
 
     pub fn ssa_statements(
@@ -109,10 +146,64 @@ impl SFormsConstructor {
         dgraph: DirectGraph,
         updated: &mut JHashSet<String>,
         calc_live_vars: bool,
-        mt: StructMethod,
-        iteration: i32,
+        _mt: StructMethod,
+        _iteration: i32,
     ) {
-        unported!("SFormsConstructor.ssaStatements")
+        for node in dgraph.nodes() {
+            let node_id = node.id();
+            updated.remove(&node_id);
+            self.merge_in_var_maps(node, dgraph);
+
+            let varmap = self
+                .in_var_versions
+                .get_cloned(&node_id)
+                .expect("NullPointerException");
+            let mut varmaps = VarMapHolder::of_normal(&varmap);
+            self.current_catchable_map = None;
+
+            if node.has_successors(DirectEdgeType::Exception) {
+                let catchable = Shared::new(varmap.borrow().get_copy());
+                catchable.borrow_mut().remove_all_stacks();
+                catchable.borrow_mut().remove_all_fields();
+                self.current_catchable_map = Some(catchable.clone());
+                self.catchable_versions.put(node_id.clone(), catchable);
+            }
+
+            let exprents = node.exprents();
+            let foreach_var = if node.type_() == DirectNodeType::ForeachVardef {
+                exprents.first().and_then(|e| e.try_as_var())
+            } else {
+                None
+            };
+            if let Some(var) = foreach_var {
+                let normal = varmaps.get_normal();
+                self.update_var_exprent(var, node.statement(), &normal, calc_live_vars);
+            } else {
+                for expr in exprents.to_vec() {
+                    varmaps.to_normal();
+                    expr.process_sforms(self, &mut varmaps, node.statement(), calc_live_vars);
+                }
+            }
+
+            if self.has_updated(node, &varmaps) {
+                self.out_var_versions
+                    .put(node_id.clone(), varmaps.get_if_true());
+                if dgraph.with(|d| d.map_neg_if_branch.contains_key(&node_id)) {
+                    self.out_neg_var_versions
+                        .put(node_id.clone(), varmaps.get_if_false());
+                }
+
+                if !dgraph.extra_nodes().j_contains(&node) {
+                    for nd in node.get_successors(DirectEdgeType::Regular).to_vec() {
+                        updated.add(nd.get_destination().id());
+                    }
+
+                    for nd in node.get_successors(DirectEdgeType::Exception).to_vec() {
+                        updated.add(nd.get_destination().id());
+                    }
+                }
+            }
+        }
     }
 
     pub fn get_or_create_phantom(&mut self, var: VarVersionPair) -> VarVersionPair {
@@ -133,7 +224,53 @@ impl SFormsConstructor {
         calc_live_vars: bool,
         var_exprent: VarExprent,
     ) {
-        unported!("SFormsConstructor.varRead")
+        let varmap = var_maps.get_normal();
+
+        let versions = varmap.borrow().get_var_exprent(var_exprent);
+
+        let cardinality = versions
+            .as_ref()
+            .map_or(0, |versions| versions.borrow().get_cardinality());
+        match cardinality {
+            0 => {
+                self.update_var_exprent(var_exprent, stat, &varmap, calc_live_vars);
+                let message = format!(
+                    "Variable read before assignment: {}",
+                    var_exprent.to_string()
+                );
+                ValidationHelper::validate_true(false, &message);
+            }
+            1 => {
+                let versions = versions.expect("versions");
+                let last_version = versions
+                    .borrow()
+                    .iter()
+                    .next()
+                    .expect("NoSuchElementException");
+                self.var_read_single_version(
+                    stat,
+                    calc_live_vars,
+                    var_exprent,
+                    &varmap,
+                    last_version,
+                );
+            }
+            2 => {
+                let versions = versions.expect("versions");
+                self.var_read_multiple_versions(
+                    stat,
+                    calc_live_vars,
+                    var_exprent,
+                    &varmap,
+                    versions,
+                );
+            }
+            _ => {}
+        }
+
+        let pair = var_exprent.get_var_version_pair();
+        let count = self.read_count.get(&pair).map_or(1, |v| v + 1);
+        self.read_count.put(pair, count);
     }
 
     pub fn var_read_single_version(
@@ -207,8 +344,18 @@ impl SFormsConstructor {
         }
     }
 
+    #[allow(dead_code)]
     fn makes_fields_dirty(expr: Exprent) -> bool {
-        unported!("SFormsConstructor.makesFieldsDirty")
+        match expr.get_type() {
+            ExprentType::Invocation => return true,
+            ExprentType::New => {
+                if expr.as_new().get_new_type().type_ == CodeType::Object {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+        false
     }
 
     pub fn init_version(&mut self, var_exprent: VarExprent, stat: Statement) {
@@ -229,7 +376,27 @@ impl SFormsConstructor {
         varmap: &Shared<SFormsFastMapDirect>,
         calc_live_vars: bool,
     ) {
-        unported!("SFormsConstructor.updateVarExprent")
+        let var_index = varassign.get_index();
+
+        self.init_version(varassign, stat);
+
+        self.on_assignment(varassign.get_var_version_pair(), varmap, calc_live_vars);
+
+        self.set_current_var(varmap, var_index, varassign.get_version());
+
+        if let Some(current_catchable_map) = self.current_catchable_map.clone() {
+            if var_index < VarExprent::STACK_BASE && var_index >= 0 {
+                let existing = current_catchable_map.borrow().get(var_index);
+                match existing {
+                    Some(set) => set.borrow_mut().add(varassign.get_version()),
+                    None => {
+                        let mut set = self.factory().create_empty_set();
+                        set.add(varassign.get_version());
+                        varmap.borrow_mut().put(var_index, Shared::new(set));
+                    }
+                }
+            }
+        }
     }
 
     pub fn on_assignment(
@@ -261,7 +428,42 @@ impl SFormsConstructor {
     }
 
     fn merge_in_var_maps(&mut self, node: DirectNode, dgraph: DirectGraph) {
-        unported!("SFormsConstructor.mergeInVarMaps")
+        let mut map_new = Shared::new(SFormsFastMapDirect::new(self.factory().clone()));
+
+        for pred in node.get_predecessors(DirectEdgeType::Regular).to_vec() {
+            let map_out = self.get_filtered_out_map(node, pred.get_source(), dgraph);
+            if map_new.borrow().is_empty() {
+                map_new = Shared::new(map_out.borrow().get_copy());
+            } else {
+                VarMapHolder::merge_maps(&map_new, Some(&map_out));
+            }
+        }
+
+        for pred in node.get_predecessors(DirectEdgeType::Exception).to_vec() {
+            let map_out = self.catchable_versions.get_cloned(&pred.get_source().id());
+            if let Some(map_out) = map_out {
+                if map_new.borrow().is_empty() {
+                    map_new = Shared::new(map_out.borrow().get_copy());
+                } else {
+                    VarMapHolder::merge_maps(&map_new, Some(&map_out));
+                }
+            }
+        }
+
+        let node_id = node.id();
+        if self.extra_var_versions.contains_key(&node_id) {
+            let map_extra = self
+                .extra_var_versions
+                .get_cloned(&node_id)
+                .expect("extraVarVersions");
+            if map_new.borrow().is_empty() {
+                map_new = Shared::new(map_extra.borrow().get_copy());
+            } else {
+                VarMapHolder::merge_maps(&map_new, Some(&map_extra));
+            }
+        }
+
+        self.in_var_versions.put(node_id, map_new);
     }
 
     fn get_filtered_out_map(
@@ -270,7 +472,44 @@ impl SFormsConstructor {
         pred: DirectNode,
         dgraph: DirectGraph,
     ) -> Shared<SFormsFastMapDirect> {
-        unported!("SFormsConstructor.getFilteredOutMap")
+        let mut map_new = Shared::new(SFormsFastMapDirect::new(self.factory().clone()));
+
+        let (node_id, pred_id) = (node.id(), pred.id());
+        let neg_dest = dgraph.with(|d| d.map_neg_if_branch.get_cloned(&pred_id));
+        if neg_dest.as_ref() == Some(&node_id) {
+            if let Some(out) = self.out_neg_var_versions.get(&pred_id) {
+                map_new = Shared::new(out.borrow().get_copy());
+            }
+        } else if let Some(out) = self.out_var_versions.get(&pred_id) {
+            map_new = Shared::new(out.borrow().get_copy());
+        }
+
+        let node_try_finally = node.try_finally();
+        let pred_try_finally = pred.try_finally();
+        if node_try_finally != pred_try_finally {
+            if node_try_finally.is_some_and(|tf| {
+                tf.type_() == DirectNodeType::Finally && tf.try_finally() == pred_try_finally
+            }) {
+            } else if pred.type_() == DirectNodeType::Finally {
+            } else {
+                let mut finally_node = pred_try_finally;
+                while finally_node != node_try_finally {
+                    ValidationHelper::not_null(finally_node.as_ref());
+                    let fnode = finally_node.expect("NullPointerException");
+                    if fnode.type_() == DirectNodeType::Finally {
+                        let input_key = format!("{}_FINALLY", fnode.statement().id());
+                        Self::get_and_apply_diff(
+                            self.in_var_versions.get(&input_key),
+                            self.out_var_versions.get(&fnode.id()),
+                            &map_new,
+                        );
+                    }
+                    finally_node = fnode.try_finally();
+                }
+            }
+        }
+
+        map_new
     }
 
     fn get_and_apply_diff(
@@ -278,7 +517,59 @@ impl SFormsConstructor {
         output: Option<&Shared<SFormsFastMapDirect>>,
         target: &Shared<SFormsFastMapDirect>,
     ) {
-        unported!("SFormsConstructor.getAndApplyDiff")
+        let (Some(input), Some(output)) = (input, output) else {
+            return;
+        };
+
+        let input_entries = input.borrow().entry_list();
+        for (key, value) in input_entries {
+            if key >= VarExprent::STACK_BASE {
+                continue;
+            }
+
+            if value.borrow().is_empty() {
+                continue;
+            }
+
+            let first = value
+                .borrow()
+                .iter()
+                .next()
+                .expect("NoSuchElementException");
+            let out_set = output.borrow().get(key);
+            if let Some(out_set) = out_set {
+                if out_set.borrow().contains(&first) {
+                    let mut check = out_set.borrow().get_copy();
+                    check.complement(&value.borrow());
+                    if !check.is_empty() {
+                        let target_set = target.borrow().get(key).expect("NullPointerException");
+                        target_set.borrow_mut().union(&check);
+                    }
+                } else {
+                    let copy = value.borrow().get_copy();
+                    target.borrow_mut().put(key, Shared::new(copy));
+                }
+            }
+        }
+
+        let output_entries = output.borrow().entry_list();
+        for (key, value) in output_entries {
+            if key >= VarExprent::STACK_BASE {
+                continue;
+            }
+
+            if value.borrow().is_empty() {
+                continue;
+            }
+
+            let in_set = input.borrow().get(key);
+            if in_set.is_some_and(|set| !set.borrow().is_empty()) {
+                continue;
+            }
+
+            let copy = value.borrow().get_copy();
+            target.borrow_mut().put(key, Shared::new(copy));
+        }
     }
 
     pub fn get_first_protected_range(stat: Statement) -> Option<Statement> {
@@ -291,7 +582,7 @@ impl SFormsConstructor {
                     return Some(parent);
                 }
             } else if let Some(sync) = parent.try_as_synchronized() {
-                if sync.get_body() == stat {
+                if sync.d(|d| d.body) == Some(stat) {
                     return Some(parent);
                 }
             }
@@ -306,11 +597,61 @@ impl SFormsConstructor {
         dgraph: DirectGraph,
         flatthelper: &FlattenStatementsHelper,
     ) {
-        unported!("SFormsConstructor.setCatchMaps")
+        if let StatementType::CatchAll | StatementType::TryCatch = stat.type_() {
+            let lst_vars = match stat.try_as_catch_all() {
+                Some(catch_all) => catch_all.get_vars(),
+                None => stat.as_catch().get_vars(),
+            };
+
+            let mut i = 1;
+            while i < stat.get_stats().borrow().size() {
+                let varindex = lst_vars.get(i - 1).get_index();
+                let map = Shared::new(SFormsFastMapDirect::new(self.factory().clone()));
+
+                self.init_parameter(varindex, &map, true);
+
+                let st = stat.get_stats().borrow().get(i);
+                let id = flatthelper
+                    .get_direct_node(st)
+                    .expect("NullPointerException")
+                    .id();
+                self.extra_var_versions.put(id, map);
+
+                i += 1;
+            }
+        }
+
+        let stats = stat.get_stats().borrow().to_vec();
+        for st in stats {
+            self.set_catch_maps(st, dgraph, flatthelper);
+        }
     }
 
     fn create_first_map(&mut self) -> Shared<SFormsFastMapDirect> {
-        unported!("SFormsConstructor.createFirstMap")
+        let mt = self.mt.expect("SFormsConstructor.mt");
+        let has_this = !mt.has_modifier(ACC_STATIC);
+
+        let md = MethodDescriptor::parse_descriptor(&mt.get_descriptor());
+
+        let param_count = md.params.len() as i32 + if has_this { 1 } else { 0 };
+
+        let var_map = Shared::new(SFormsFastMapDirect::new(self.factory().clone()));
+        let mut var_index = 0;
+        for i in 0..param_count {
+            self.init_parameter(var_index, &var_map, false);
+
+            if has_this {
+                if i == 0 {
+                    var_index += 1;
+                } else {
+                    var_index += md.params[(i - 1) as usize].stack_size;
+                }
+            } else {
+                var_index += md.params[i as usize].stack_size;
+            }
+        }
+
+        var_map
     }
 
     pub fn init_parameter(
@@ -338,7 +679,29 @@ impl SFormsConstructor {
         map1: Option<&Shared<SFormsFastMapDirect>>,
         map2: Option<&Shared<SFormsFastMapDirect>>,
     ) -> bool {
-        unported!("SFormsConstructor.mapsEqual")
+        let (map1, map2) = match (map1, map2) {
+            (None, map2) => return map2.is_none(),
+            (Some(_), None) => return false,
+            (Some(map1), Some(map2)) => (map1, map2),
+        };
+
+        if map1.borrow().size() != map2.borrow().size() {
+            return false;
+        }
+
+        let entries = map2.borrow().entry_list();
+        for (key, value) in entries {
+            let first = map1.borrow().get(key);
+            let equal = match first {
+                None => false,
+                Some(first) => first.borrow().equals(&value.borrow()),
+            };
+            if !equal {
+                return false;
+            }
+        }
+
+        true
     }
 
     pub fn field_read(&mut self, field: FieldExprent, varmap: &Shared<SFormsFastMapDirect>) {
