@@ -271,8 +271,9 @@ pub(crate) fn parse(sub: Sub, argv: &[String], input: &str, kind: InputKind) -> 
                 return Err(Refusal::Usage(format!("{a} is not a decompile-project option")));
             }
             _ if NATIVE_ONLY.contains(&a) || a.starts_with("--image=") => {
+                let flag = a.split_once('=').map_or(a, |(flag, _)| flag);
                 return Err(Refusal::Usage(format!(
-                    "{a} is a native-engine flag; {input} is a {}, decompiled by the JVM engine ({DOCS_POINTER})",
+                    "{flag} is a native-engine flag; {input} is a {}, decompiled by the JVM engine ({DOCS_POINTER})",
                     super::input_label(kind)
                 )));
             }

@@ -1,10 +1,12 @@
-//! kuna's JVM engine: a class-file decompiler that emits Java.
+//! kuna's JVM engine: a class-file decompiler that emits Java, and Kotlin for
+//! the classes the Kotlin compiler emitted.
 //!
 //! This is a **non-native** engine. Nothing here is lifted to p-code or passes
 //! through `kuna-decomp`: JVM bytecode is typed, stack-based and carries its own
 //! class, exception and generic metadata, so it is decompiled over a Java-level
-//! IR. The engine is a Rust port of Vineflower 1.12.0 (Apache-2.0); each file
-//! cites the Java class it ports.
+//! IR. The engine is a Rust port of Vineflower 1.12.0 (Apache-2.0) and the three
+//! plugins its release bundles: Kotlin (`kotlin/`), variable renaming and IDEA
+//! not-null (`plugins/`). Each file cites the Java class it ports.
 //!
 //! Source folders follow kuna's phase taxonomy; the real pass order is the
 //! schedule in `infra/method_processor.rs`. Module names are flat

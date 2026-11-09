@@ -406,7 +406,8 @@ fn the_global_image_flag_is_refused_in_both_spellings() {
         let out = jvm(args);
         assert_eq!(out.status.code(), Some(2), "{args:?}: {}", stderr(&out));
         let err = stderr(&out);
-        assert!(err.contains("--image") && err.contains("is a native-engine flag"), "{args:?}: {err}");
+        assert!(err.contains("--image is a native-engine flag"), "{args:?}: {err}");
+        assert!(!err.contains("--image="), "{args:?}: {err}");
         assert!(err.contains("JVM input (jar)"), "{args:?}: {err}");
         assert!(out.stdout.is_empty(), "{args:?}");
     }
