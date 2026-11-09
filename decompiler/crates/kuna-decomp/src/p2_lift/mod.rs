@@ -22,6 +22,9 @@ pub mod kuna_constselectjump; // (kuna) recover a BRANCHIND whose destination is
 pub mod kuna_sparcstructret;
 pub mod kuna_stackprobeloop;
 pub mod kuna_loweredswitch;
+pub mod kuna_pushanexpr; // (kuna pushan) symbolic expression arena for the VM devirtualizer
+pub mod kuna_pushanstate; // (kuna pushan) byte-granular abstract registers and memory
+pub mod kuna_pushanemu; // (kuna pushan) symbolic p-code emulator
 pub mod kuna_loweredswitchlabels;
 pub mod kuna_loweredswitchvalue; // (kuna) prove a re-rolled lowered switch reads the value its cascade compared
 pub mod kuna_loweredswitchexact; // (kuna) keep a re-rolled lowered switch only when it is its compare tree
