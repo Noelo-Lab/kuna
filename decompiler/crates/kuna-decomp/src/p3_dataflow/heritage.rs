@@ -101,6 +101,15 @@ use crate::varnode::varnode_flags;
 /// Varnode stack (C++ `typedef map<Address,vector<Varnode *> > VariableStack`).
 pub type VariableStack = BTreeMap<Address, Vec<crate::context::VarnodeId>>;
 
+/// A block [`Heritage::rename_recurse`] has entered and not yet left: its
+/// dom-children (`next` is the first not yet walked) and what it pops on exit.
+struct RenameFrame {
+    children: Vec<BlockId>,
+    next: usize,
+    writelist: Vec<crate::context::VarnodeId>,
+    guarded: Vec<Address>,
+}
+
 // =============================================================================
 // LocationMap (heritage.hh:38, heritage.cc:34)
 // =============================================================================
@@ -4242,12 +4251,46 @@ impl Heritage {
     /// The heart of the renaming algorithm (C++ `Heritage::renameRecurse`,
     /// `heritage.cc:2480`).
     ///
-    /// Recursively walks the dominance tree from `bl`; at each block, visits
-    /// ops in execution order, replacing free reads with the top of the
-    /// per-address [`VariableStack`] (creating an input Varnode if the stack is
-    /// empty), pushing writes, threading the INDIRECT "same time" special case,
-    /// filling successor MULTIEQUAL inputs by `getOutRevIndex`, recursing into
-    /// dom-children, then popping this block's writes.
+    /// Walks the dominance tree from `bl` in preorder ([`Self::rename_block`]
+    /// at each block), visiting dom-children in order and popping a block's
+    /// writes once its subtree is done. The walk keeps its own stack of open
+    /// blocks rather than recursing: a large function's dominator tree can be
+    /// tens of thousands of blocks deep.
+    #[allow(clippy::mutable_key_type)]
+    pub fn rename_recurse(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        bl: BlockId,
+        varstack: &mut VariableStack,
+    ) -> KunaResult<()> {
+        let mut open = vec![self.rename_block(fd, bl, varstack)?];
+        while let Some(top) = open.last_mut() {
+            if let Some(&child) = top.children.get(top.next) {
+                top.next += 1;
+                let frame = self.rename_block(fd, child, varstack)?;
+                open.push(frame);
+                continue;
+            }
+            let done = open.pop().expect("rename_recurse: open block");
+            for vnout in done.writelist {
+                let key = fd.vbank().get(vnout).expect("rename_recurse: pop out").get_addr().clone();
+                if let Some(stack) = varstack.get_mut(&key) {
+                    stack.pop();
+                }
+            }
+            for key in done.guarded.iter().rev() {
+                self.load_reads.pop(key);
+            }
+        }
+        Ok(())
+    }
+
+    /// One block of [`Self::rename_recurse`]: visits its ops in execution
+    /// order, replacing free reads with the top of the per-address
+    /// [`VariableStack`] (creating an input Varnode if the stack is empty),
+    /// pushing writes, threading the INDIRECT "same time" special case, and
+    /// filling successor MULTIEQUAL inputs by `getOutRevIndex`. Returns what
+    /// the walk pops after the block's dom-children.
     ///
     /// The input-creation sites use `new_entry_input` for complete ABI slots,
     /// then [`kuna_inputtile::new_tiled_input`](crate::p3_dataflow::kuna_inputtile::new_tiled_input)
@@ -4262,12 +4305,12 @@ impl Heritage {
     // and the offset, neither of which mutates after the key is inserted, so
     // the key ordering is stable — a justified false positive.
     #[allow(clippy::mutable_key_type)]
-    pub fn rename_recurse(
+    fn rename_block(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         bl: BlockId,
         varstack: &mut VariableStack,
-    ) -> KunaResult<()> {
+    ) -> KunaResult<RenameFrame> {
         use kuna_num::opcodes::OpCode;
         let mut writelist: Vec<crate::context::VarnodeId> = Vec::new();
         let mut guarded: Vec<Address> = Vec::new();
@@ -4450,24 +4493,9 @@ impl Heritage {
             }
         }
 
-        // Recurse into dom-children.
         let i = fd.bblocks_ref().block(bl).get_index() as usize;
         let children: Vec<BlockId> = self.domchild[i].clone();
-        for child in children {
-            self.rename_recurse(fd, child, varstack)?;
-        }
-
-        // Pop this block's writes off the stack.
-        for vnout in writelist {
-            let key = fd.vbank().get(vnout).expect("rename_recurse: pop out").get_addr().clone();
-            if let Some(stack) = varstack.get_mut(&key) {
-                stack.pop();
-            }
-        }
-        for key in guarded.iter().rev() {
-            self.load_reads.pop(key);
-        }
-        Ok(())
+        Ok(RenameFrame { children, next: 0, writelist, guarded })
     }
 
     /// (kuna `loadguardreads`) Read each range guarded at the LOAD `op` as
@@ -4567,7 +4595,7 @@ impl Heritage {
     /// Perform the renaming algorithm for the current address ranges (C++
     /// `Heritage::rename`, `heritage.cc:2591`).  Phi placement must already have
     /// happened.
-    // `mutable_key_type`: see the note on [`rename_recurse`](Heritage::rename_recurse).
+    // `mutable_key_type`: see the note on [`rename_block`](Heritage::rename_block).
     #[allow(clippy::mutable_key_type)]
     pub fn rename(&mut self, fd: &mut crate::funcdata::Funcdata) -> KunaResult<()> {
         let bblocks = fd.bblocks_ref();

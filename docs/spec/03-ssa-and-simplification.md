@@ -159,7 +159,9 @@ MULTIEQUAL placement order and is therefore observable output — and
 input per in-edge at the head of every merge block. Renaming is the classic
 Cytron et al. dominator-tree stack walk
 (`heritage.rs (Heritage::rename_recurse)`): reads take the top of the
-per-address `VariableStack`, writes push, and the walk pops on exit. A read
+per-address `VariableStack`, writes push, and the walk pops on exit. The walk
+keeps an explicit stack of open blocks instead of recursing, since the dominator
+tree of a large function can be tens of thousands of blocks deep. A read
 whose stack is *empty* has no reaching definition — it is materialized as a
 formal **input varnode** of the function; this is how registers read before
 being written become parameters-in-waiting for phase 04. One carve-out: an
