@@ -29,7 +29,7 @@ pub enum KunaFix {
     /// `jvm_fix_lambda_wildcard_return`: a method reference on a receiver
     /// whose type argument is `?` no longer fails type inference.
     LambdaWildcardReturn,
-    /// Fix `handler_copy_offsets`: the finally processing accepts a
+    /// `jvm_fix_handler_copy_offsets`: the `finally` processing strips a
     /// duplicated exception handler, which has no instruction offsets.
     HandlerCopyOffsets,
     /// Fix `nested_handler_copies`: a duplicated exception handler is

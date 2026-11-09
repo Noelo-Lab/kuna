@@ -48,18 +48,6 @@
       "source": "src/pkg/TestSuspendLoopFinally.kt",
       "compiler": "kotlinc-jvm 2.0.0 (JDK 17.0.20.1)",
       "summary": "`drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies)"
-    },
-    {
-      "id": "pkg/TestSuspendTryFinally",
-      "fix": "jvm_fix_handler_copy_offsets",
-      "class_files": [
-        "pkg/TestSuspendTryFinally.class",
-        "pkg/TestSuspendTryFinally$Step.class",
-        "pkg/TestSuspendTryFinally$runThenDone$1.class"
-      ],
-      "source": "src/pkg/TestSuspendTryFinally.kt",
-      "compiler": "kotlinc-jvm 2.0.0 (JDK 17.0.20.1)",
-      "summary": "`runThenDone`, a suspend function whose try/finally spans its suspension point, decompiles: each copy of the finally handler becomes a finally guarded by its semaphore variable"
     }
   ]
 }

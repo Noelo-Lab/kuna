@@ -1,9 +1,12 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/FinallyProcessor.java`.
 //!
-//! kuna fixes (spec 10.16): `iterate_graph` marks the copies irreducible-flow
-//! splitting made of a processed `finally` as `finally` (fix `copied_finally`);
-//! `remove_exception_instructions_ex` skips the offsets a block does not have,
-//! as a duplicated handler has none (fix `handler_copy_offsets`).
+//! kuna fix `handler_copy_offsets` (`kuna_fixes`): on a handler copy made by
+//! `ExceptionDeobfuscator::insert_dummy_exception_handler_blocks` that holds the
+//! whole handler, `remove_exception_instructions_ex` removes only the instruction
+//! offsets the copy has (none).
+//!
+//! kuna fix `copied_finally` (spec 10.16): `iterate_graph` marks the copies
+//! irreducible-flow splitting made of a processed `finally` as `finally`.
 
 use std::collections::VecDeque;
 
@@ -542,10 +545,10 @@ impl FinallyProcessor {
         let finallytype = information.first_code;
         let map_last = &information.map_last;
 
-        Self::remove_exception_instructions_ex(handler, 1, finallytype);
+        Self::remove_exception_instructions_ex(graph, handler, 1, finallytype);
         for (last, value) in map_last.entry_vec() {
             if value {
-                Self::remove_exception_instructions_ex(last, 2, finallytype);
+                Self::remove_exception_instructions_ex(graph, last, 2, finallytype);
                 graph.get_finally_exits().borrow_mut().add(last);
             }
         }
@@ -709,7 +712,7 @@ impl FinallyProcessor {
         let mut skipped_first = false;
 
         if finallytype == 3 {
-            Self::remove_exception_instructions_ex(first, 3, finallytype);
+            Self::remove_exception_instructions_ex(graph, first, 3, finallytype);
 
             if map_last.contains_key(&first) {
                 graph.get_finally_exits().borrow_mut().add(first);
@@ -765,7 +768,7 @@ impl FinallyProcessor {
         let mut true_exit: Option<BasicBlock> = None;
         for (last, value) in map_last.entry_vec() {
             if value {
-                Self::remove_exception_instructions_ex(last, 2, finallytype);
+                Self::remove_exception_instructions_ex(graph, last, 2, finallytype);
                 graph.get_finally_exits().borrow_mut().add(last);
                 ValidationHelper::validate_true(true_exit.is_none(), "More than one true exit");
                 true_exit = Some(last);
@@ -773,6 +776,7 @@ impl FinallyProcessor {
         }
 
         Self::remove_exception_instructions_ex(
+            graph,
             fstat.get_handler().get_basichead().get_block(),
             1,
             finallytype,
@@ -1271,12 +1275,31 @@ impl FinallyProcessor {
         }
     }
 
-    fn remove_exception_instructions_ex(block: BasicBlock, blocktype: i32, finallytype: i32) {
+    /// kuna: whether `block` is a handler copy (no offsets) that holds the whole
+    /// handler, i.e. it leaves the method only by throwing. A copy of the first
+    /// block of a longer handler shares the rest with the other copies.
+    fn is_whole_handler_copy(graph: ControlFlowGraph, block: BasicBlock) -> bool {
+        let last = graph.get_last();
+        block.get_instr_old_offsets().is_empty()
+            && block.get_succs().iter().all(|succ| succ == last)
+    }
+
+    fn remove_exception_instructions_ex(
+        graph: ControlFlowGraph,
+        block: BasicBlock,
+        blocktype: i32,
+        finallytype: i32,
+    ) {
         let seq = block.get_seq();
         let instr_old_offsets = block.get_instr_old_offsets();
-        let tolerant = kuna_fixes::enabled(KunaFix::HandlerCopyOffsets);
+        let missing_ok = kuna_fixes::enabled(KunaFix::HandlerCopyOffsets)
+            && Self::is_whole_handler_copy(graph, block);
         let remove_offset = |index: i32| {
-            if !tolerant || (0..instr_old_offsets.len() as i32).contains(&index) {
+            if missing_ok {
+                if (0..instr_old_offsets.len() as i32).contains(&index) {
+                    instr_old_offsets.remove_at(index as usize);
+                }
+            } else {
                 instr_old_offsets.remove_at(index as usize);
             }
         };

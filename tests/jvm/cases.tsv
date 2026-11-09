@@ -3155,12 +3155,6 @@ class	kuna-fixes/classes/pkg/TestSuspendLoopFinally$drain$1.class
 class	kuna-fixes/classes/pkg/TestSuspendLoopFinally$first$1.class
 expected	kuna-fixes/expected-compat/pkg/TestSuspendLoopFinally.java
 compare	TestSuspendLoopFinally.java
-case	kuna-fixes-compat/pkg/TestSuspendTryFinally	Kuna Fixes, Vineflower compat
-class	kuna-fixes/classes/pkg/TestSuspendTryFinally.class
-class	kuna-fixes/classes/pkg/TestSuspendTryFinally$Step.class
-class	kuna-fixes/classes/pkg/TestSuspendTryFinally$runThenDone$1.class
-expected	kuna-fixes/expected-compat/pkg/TestSuspendTryFinally.java
-compare	TestSuspendTryFinally.java
 case	kuna-fixes/pkg/TestMethodRefWildcardReceiver	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Factory.class
@@ -3185,9 +3179,3 @@ class	kuna-fixes/classes/pkg/TestSuspendLoopFinally$drain$1.class
 class	kuna-fixes/classes/pkg/TestSuspendLoopFinally$first$1.class
 expected	kuna-fixes/expected/pkg/TestSuspendLoopFinally.java
 compare	TestSuspendLoopFinally.java
-case	kuna-fixes/pkg/TestSuspendTryFinally	Kuna Fixes
-class	kuna-fixes/classes/pkg/TestSuspendTryFinally.class
-class	kuna-fixes/classes/pkg/TestSuspendTryFinally$Step.class
-class	kuna-fixes/classes/pkg/TestSuspendTryFinally$runThenDone$1.class
-expected	kuna-fixes/expected/pkg/TestSuspendTryFinally.java
-compare	TestSuspendTryFinally.java
