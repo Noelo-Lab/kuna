@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4004,
-    4004
+    4010,
+    4010
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3800,12 +3800,18 @@
     "data:swiftdemangle default: the Swift 5 symbol demangles to its reference path",
     "data:swiftdemangle off: the ObjC method label carries the runtime class name",
     "data:swiftdemangle off: the Swift 5 symbol stays mangled",
+    "data:swiftmetadata off: the folded getter is a placeholder",
+    "data:swiftmetadata off: the folded pair is a placeholder",
     "data:swiftmetadata off: the metadata accessor is a placeholder",
     "data:swiftmetadata off: the protocol witness is a placeholder",
     "data:swiftmetadata off: the vtable method is a placeholder",
+    "data:swiftmetadata on: a member two types share is named without a type and takes no self",
+    "data:swiftmetadata on: an unshared witness getter keeps its name and typed self",
+    "data:swiftmetadata on: no type's self is pretended on folded code",
     "data:swiftmetadata on: the metadata accessor is named after its type",
     "data:swiftmetadata on: the vtable slot is named by class, position and kind",
     "data:swiftmetadata on: the witness is named by conformance and requirement",
+    "data:swiftmetadata on: two members of one type sharing a body are named after the first with the count",
     "data:swifttypes off: the accessor returns a bare constant",
     "data:swifttypes off: the field is an offset off an unnamed register",
     "data:swifttypes off: the getter takes no self and reads a raw offset",

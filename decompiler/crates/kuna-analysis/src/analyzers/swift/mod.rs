@@ -132,6 +132,7 @@ impl AnalysisPass for SwiftMetadataPass {
             imports: &imports,
             memo: Default::default(),
             code,
+            claims: Default::default(),
             budget: std::cell::Cell::new(NAME_BYTES.saturating_add(ctx.bytes.len())),
         };
         namer.emit(&mut out);
@@ -220,11 +221,23 @@ fn member_after_protocol(name: &str) -> Option<String> {
 /// crafted one whose long paths repeat across many records.
 const NAME_BYTES: usize = 16 << 20;
 
+/// One metadata record's claim on a function: the name it would give it,
+/// the owning type and, for a witness, the protocol member it implements.
+#[derive(Clone, Debug)]
+pub struct Claim {
+    pub name: String,
+    pub owner: String,
+    pub requirement: Option<(String, String)>,
+    pub getter: bool,
+}
+
 pub struct Namer<'a> {
     md: &'a Metadata,
     imports: &'a HashMap<u64, String>,
     memo: std::cell::RefCell<HashMap<u64, Option<String>>>,
     code: Vec<(u64, u64)>,
+    /// Every claim on each function address, in record order.
+    claims: std::cell::RefCell<std::collections::BTreeMap<u64, Vec<Claim>>>,
     /// Name bytes left to build ([`NAME_BYTES`] plus the image length).
     budget: std::cell::Cell<usize>,
 }
@@ -285,13 +298,14 @@ impl Namer<'_> {
         }
     }
 
-    fn conformance_name(&self, c: &Conformance) -> Option<String> {
+    /// The conforming type's path and the protocol's path.
+    fn conformance_parts(&self, c: &Conformance) -> Option<(String, String)> {
         let ty = match c.type_ref {
             TypeRef::Descriptor(t) => self.target_path(t, "nominal_type_descriptor")?,
             TypeRef::ObjCClassName(_) | TypeRef::ObjCClass(_) => return None,
         };
         let proto = self.target_path(c.protocol, "protocol_descriptor")?;
-        Some(format!("<{ty}:{proto}>"))
+        Some((ty, proto))
     }
 
     pub fn is_code(&self, addr: u64) -> bool {
@@ -313,19 +327,49 @@ impl Namer<'_> {
         }
     }
 
-    fn emit(&self, out: &mut AnalysisOutput) {
-        let code = &self.code;
-        let mut function = |addr: u64, name: String| {
-            if !code.iter().any(|&(lo, hi)| addr >= lo && addr < hi) || !self.spend(&name) {
-                return;
-            }
-            out.symbols.push(SymFact {
-                addr,
-                name: name.clone(),
-                kind: SymKind::Function,
+    /// Record a metadata record's claim on the code at `addr`.
+    fn claim(
+        &self,
+        addr: u64,
+        name: String,
+        owner: &str,
+        requirement: Option<(String, String)>,
+        getter: bool,
+    ) {
+        if !self.is_code(addr)
+            || !self.spend(&name)
+            || !self.spend(owner)
+            || requirement
+                .as_ref()
+                .is_some_and(|(p, m)| !self.spend(p) || !self.spend(m))
+        {
+            return;
+        }
+        self.claims
+            .borrow_mut()
+            .entry(addr)
+            .or_default()
+            .push(Claim {
+                name,
+                owner: owner.to_string(),
+                requirement,
+                getter,
             });
-            out.fid_names.push(FidMatch { addr, name });
+    }
+
+    /// Whether the function at `addr` cannot take one type's `self`: the
+    /// linker folded it with code of another type, or with a member that is
+    /// not a getter.
+    pub fn ambiguous_self(&self, addr: u64) -> bool {
+        let claims = self.claims.borrow();
+        let Some(claims) = claims.get(&addr) else {
+            return false;
         };
+        let owner = &claims[0].owner;
+        claims.iter().any(|c| &c.owner != owner || !c.getter)
+    }
+
+    fn emit(&self, out: &mut AnalysisOutput) {
         let mut data: Vec<SymFact> = Vec::new();
         let mut contexts: Vec<&Context> = self.md.contexts.values().collect();
         contexts.sort_by_key(|c| c.addr);
@@ -347,7 +391,13 @@ impl Namer<'_> {
                     });
                     for (k, (_, default_impl)) in ctx.requirements.iter().enumerate() {
                         if let Some(f) = default_impl {
-                            function(*f, format!("{path}.requirement#{k}.default"));
+                            self.claim(
+                                *f,
+                                format!("{path}.requirement#{k}.default"),
+                                &path,
+                                None,
+                                false,
+                            );
                         }
                     }
                 }
@@ -358,7 +408,13 @@ impl Namer<'_> {
                         kind: SymKind::Data,
                     });
                     if let Some(a) = ctx.accessor {
-                        function(a, format!("{path}.type_metadata_accessor"));
+                        self.claim(
+                            a,
+                            format!("{path}.type_metadata_accessor"),
+                            &path,
+                            None,
+                            false,
+                        );
                     }
                     if let Some(f) = ctx.fields {
                         data.push(SymFact {
@@ -369,13 +425,21 @@ impl Namer<'_> {
                     }
                     for e in &ctx.vtable {
                         if let Some(f) = e.impl_addr {
-                            function(f, format!("{path}.vtable#{}.{}", e.index, e.kind.tag()));
+                            let getter = e.kind == descriptors::MethodKind::Getter && e.instance;
+                            self.claim(
+                                f,
+                                format!("{path}.vtable#{}.{}", e.index, e.kind.tag()),
+                                &path,
+                                None,
+                                getter,
+                            );
                         }
                     }
                     for o in &ctx.overrides {
                         let Some(f) = o.impl_addr else { continue };
                         if let Some(name) = self.override_name(&path, o) {
-                            function(f, name);
+                            let getter = name.ends_with(".getter");
+                            self.claim(f, name, &path, None, getter);
                         }
                     }
                 }
@@ -383,9 +447,13 @@ impl Namer<'_> {
             }
         }
         for c in &self.md.conformances {
-            let Some(cn) = self.conformance_name(c).filter(|n| self.spend(n)) else {
+            let Some((ty, proto)) = self.conformance_parts(c) else {
                 continue;
             };
+            let cn = format!("<{ty}:{proto}>");
+            if !self.spend(&cn) {
+                continue;
+            }
             data.push(SymFact {
                 addr: c.addr,
                 name: format!("{cn}.protocol_conformance_descriptor"),
@@ -398,19 +466,28 @@ impl Namer<'_> {
                     kind: SymKind::Data,
                 });
             }
+            let witness = |addr: u64, member: String, getter: bool| {
+                let name = format!("{cn}.{member}");
+                self.claim(addr, name, &ty, Some((proto.clone(), member)), getter);
+            };
             // A local, non-resilient conformance's witness table is a plain
             // pointer table: the descriptor, then one word per requirement.
             if c.witnesses.is_empty() && c.flags & (1 << 17) == 0 {
                 if let (Some(w), Target::Direct(p)) = (c.witness_table, c.protocol) {
-                    if let Some(proto) = self.md.contexts.get(&p) {
-                        for (k, (req, _)) in proto.requirements.iter().enumerate() {
-                            let kind = self.md.requirement_kind(*req);
+                    if let Some(proto_ctx) = self.md.contexts.get(&p) {
+                        for (k, (req, _)) in proto_ctx.requirements.iter().enumerate() {
+                            let flags = self.md.requirement_flags.get(req).copied().unwrap_or(0xff);
+                            let kind = flags & 0xf;
                             if !matches!(kind, 1..=6 | 8) {
                                 continue;
                             }
                             let slot = w.wrapping_add(self.md.ptr_size * (1 + k as u64));
                             if let Some(f) = self.md.words.get(&slot) {
-                                function(*f, format!("{cn}.requirement#{k}"));
+                                witness(
+                                    *f,
+                                    format!("requirement#{k}"),
+                                    kind == 3 && flags & 0x10 != 0,
+                                );
                             }
                         }
                     }
@@ -438,15 +515,70 @@ impl Namer<'_> {
                         .map(|i| format!("requirement#{i}")),
                 };
                 let member = member.unwrap_or_else(|| format!("witness#{k}"));
-                function(*f, format!("{cn}.{member}"));
+                let getter = match *req {
+                    Target::Slot(_) => member.ends_with(".getter"),
+                    Target::Direct(r) => {
+                        let flags = self.md.requirement_flags.get(&r).copied().unwrap_or(0xff);
+                        flags & 0xf == 3 && flags & 0x10 != 0
+                    }
+                };
+                witness(*f, member, getter);
             }
         }
+        self.resolve_claims(out);
         // Dedup by address: the first (lowest-addressed descriptor) wins.
         let mut seen = std::collections::HashSet::new();
         for d in data {
             if seen.insert(d.addr) && self.spend(&d.name) {
                 out.symbols.push(d);
             }
+        }
+    }
+
+    /// One name per claimed function. A function several records claim is
+    /// code the linker folded (identical code folding): claims of one type
+    /// name it after the first member with the count of members it serves
+    /// (`<T:P>.requirement#10.merged#4`); witnesses of one protocol member
+    /// from different types name it after the member alone
+    /// (`<*:Swift.RawRepresentable>.init(rawValue:)`, a later such body
+    /// `.2`, `.3`, …); anything else keeps the engine placeholder.
+    fn resolve_claims(&self, out: &mut AnalysisOutput) {
+        let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut next: HashMap<String, usize> = HashMap::new();
+        for (&addr, claims) in self.claims.borrow().iter() {
+            let mut names: Vec<&str> = claims.iter().map(|c| c.name.as_str()).collect();
+            names.sort_unstable();
+            names.dedup();
+            let mut name = if names.len() == 1 {
+                names[0].to_string()
+            } else if claims.iter().all(|c| c.owner == claims[0].owner) {
+                format!("{}.merged#{}", names[0], names.len())
+            } else if let Some((proto, member)) = claims[0]
+                .requirement
+                .as_ref()
+                .filter(|r| claims.iter().all(|c| c.requirement.as_ref() == Some(r)))
+            {
+                format!("<*:{proto}>.{member}")
+            } else {
+                continue;
+            };
+            if !used.insert(name.clone()) {
+                let k = next.entry(name.clone()).or_insert(2);
+                let base = std::mem::take(&mut name);
+                loop {
+                    name = format!("{base}.{k}");
+                    *k += 1;
+                    if used.insert(name.clone()) {
+                        break;
+                    }
+                }
+            }
+            out.symbols.push(SymFact {
+                addr,
+                name: name.clone(),
+                kind: SymKind::Function,
+            });
+            out.fid_names.push(FidMatch { addr, name });
         }
     }
 
