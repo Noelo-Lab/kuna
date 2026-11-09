@@ -1380,15 +1380,6 @@ pub struct Architecture {
     /// A runtime choice like [`iteregion`](Self::iteregion): the source may have
     /// written the explicit `if/else`, which compiles identically.  Print-only.
     pub iteboolean: bool,
-    /// (kuna) `itecondlist`: let [`iteregion`](Self::iteregion) and
-    /// [`iteboolean`](Self::iteboolean) descend a multi-component `BlockList` in the
-    /// diamond's **condition** position to its last component.  Without it a diamond
-    /// whose predecessor was concatenated onto its condition block declines, which is
-    /// why a run of N identical diamonds folds only `ceil(N/2)` of them.  Print-only
-    /// and sound because the printer already renders the leading components as
-    /// statements before the `if` header.  Read by
-    /// [`crate::p8_structure::kuna_itecondlist::cond_list_tail`].
-    pub itecondlist: bool,
     /// (kuna) `paramcopyhoist`: anchor the trim COPY of an **unmodified incoming
     /// parameter** in the function's entry block instead of at the tail of the
     /// MULTIEQUAL slot's predecessor, so a guarded parameter's copy-shadow
@@ -1405,12 +1396,6 @@ pub struct Architecture {
     /// complement to `ActionReturnSplit` (the goto-driven `ReturnDuplicatorLow`)
     /// (`duplicate_shared_returns`, DIV-54 default-on, superseding the DIV-18 revert).
     pub duplicate_shared_returns: bool,
-    /// (kuna) `orchain`: decline a `duplicate_shared_returns` split whose shared
-    /// RETURN block is the out-target two conditionals must keep in common for
-    /// `CollapseStructure::rule_block_or` to fuse them — the operand chain of a
-    /// short-circuit expression.  Read by
-    /// [`crate::p8_structure::kuna_orchain::shortcircuit_shared_targets`].
-    pub returndup_orchain: bool,
     /// (kuna) `rettriangle`: decline a `duplicate_shared_returns` split whose
     /// shared RETURN block is the join of a one-block `if`.  Read by
     /// [`crate::p8_structure::kuna_rettriangle::is_triangle_join`].
@@ -1434,10 +1419,6 @@ pub struct Architecture {
     /// (`fold_call_returns`, DIV-14 default-on; angr "call return variable
     /// folding").
     pub fold_call_returns: bool,
-    /// (kuna) Discount `Merge::inflate_test` rejections that a foldable call
-    /// causes itself, so its result folds past the merge phalanx
-    /// (`fold_call_ret_phi`, option `foldcallretphi`, default-on).
-    pub fold_call_ret_phi: bool,
     /// (kuna) Run `Funcdata::markIndirectOnly` in `ActionMarkIndirectOnly`
     /// instead of the inert stub, so an illegal input read only through
     /// INDIRECTs is flagged `indirectonly` (`mark_indirect_only`, option
@@ -3234,16 +3215,13 @@ impl Architecture {
             iteregion: false,
             iteexpr: false,
             iteboolean: false,
-            itecondlist: false,
             param_copy_hoist: false,
             duplicate_shared_returns: false,
-            returndup_orchain: false,
             returndup_triangle: false, // (kuna) option rettriangle; reset_defaults sets the shipped default
             early_return: false,
             switch_return: false,
             recover_loop_break: false,
             fold_call_returns: false,
-            fold_call_ret_phi: false,
             mark_indirect_only: false,
             strip_stack_guard: false,
             strip_msvc_stack_guard: false,
@@ -3666,16 +3644,13 @@ impl Architecture {
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
         self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
-        self.itecondlist = true; // (kuna) DIV-56 default-on (iteregion/iteboolean match through a concatenated condition BlockList: a run of N identical diamonds folds N, not ceil(N/2); 0/675 ablation).
         self.iteboolean = true; // (kuna) DIV-51 default-on (short-circuit 0/1 select -> boolean assignment; 0/675 ablation). Per-test opt-out (`option iteboolean off`) on the one stage test it changes keeps the corpus byte-identical.
-        self.returndup_orchain = true; // (kuna) DIV-69 default-on: the returndup narrowing. `returndup` splits a shared epilogue whose predecessors are the operand blocks of a short-circuit chain, which permanently blocks `rule_block_or` and turns one source boolean expression into a cascade of constant-return guards. Measured over the whole decbench corpus (85,195 functions, three optimisation levels): +611 GED-perfect at O0 for -13 / -15 at O2 / O2-noinline, +583 net and -967 aggregate GED. Default-ON rather than preset-only because `returndup` is itself a shipped default: 45% of the corpus is over the 500 KiB `auto` threshold and runs `reliable`, where a preset-only gate would leave the split unnarrowed
         self.returndup_triangle = false; // (kuna) option rettriangle default-off: decbench sample O0 -163 GED / +56 perfect, O2 +60 GED / +1 perfect; on in the aggressive preset
         self.duplicate_shared_returns = true; // (kuna) DIV-54 default-on, superseding the DIV-18 revert (angr SAILR gotoless ReturnDuplicatorHigh). The -976 GED-perfect regression that reverted it was measured before #137 added the const-return gate (`returndup_is_const_ret`); re-ablated on 52,862 decbench functions the selective pass is +417 GED-perfect / -7,756 aggregate GED, net-positive in every one of nine tested partitions. Per-test opt-out (`option returndup off`) on the datatests it changes keeps the corpus byte-identical.
         self.early_return = true; // (kuna) DIV-23 default-on (angr SAILR ReturnDuplicatorHigh PER-EDGE const-guard early-return hoisting: peel only the CONSTANT arm of a mixed return phi). The const-only narrowing of returndup that returndup's whole-block gate cannot reach; unlike broad returndup (DIV-18, -976 regression), the decbench ablation measured this NET-POSITIVE (+47 perfect matches, -576 summed GED, 158:54 improved:regressed across 508 sailr binaries) because it only recovers genuine source early-return guards. Per-test opt-out (`option earlyreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.switch_return = true; // (kuna) DIV-25 default-on. The continuation of earlyreturn (DIV-23) to WIDE multi-way switch-phi returns (`switch { case: v=K; break; } return v` above earlyreturn's 16-in-edge cap -> per-case `return K`); same per-edge const-peel machinery so it inherits earlyreturn's safety (peels only CONSTANT arms, so it cannot cause returndup's variable-return regression). The decbench ablation of the wide-switch delta on top of default earlyreturn-on measured NET-POSITIVE (+2 perfect matches, -107 summed GED, 3:0 improved:regressed across 17 sailr binaries, zero regressions). Per-test opt-out (`option switchreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = true; // (kuna) DIV-14 default-on (angr call-return folding; per-test opt-out on the datatests it changes)
-        self.fold_call_ret_phi = true; // (kuna) default-on: a call result foldcallret already proved order-safe folds even when the call reads a global it may also write (0/675 ablation, stages PARITY OK); `option foldcallretphi off` restores the spill
         self.go_bounds = true;
         self.go_jump_chain = true;
         self.rust_fmt_literal = true;
@@ -4615,16 +4590,13 @@ impl Architecture {
         ctx.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
         ctx.iteexpr = self.iteexpr; // iteexpr (computed-arm ?: extension, runtime-choice)
         ctx.iteboolean = self.iteboolean; // iteboolean (0/1 select -> boolean assignment)
-        ctx.itecondlist = self.itecondlist; // itecondlist (condition-list tolerance for iteregion/iteboolean)
         ctx.param_copy_hoist = self.param_copy_hoist; // paramcopyhoist (parameter copy-shadow -> entry block)
         ctx.duplicate_shared_returns = self.duplicate_shared_returns; // returndup
-        ctx.returndup_orchain = self.returndup_orchain; // orchain (short-circuit chain protection)
         ctx.returndup_triangle = self.returndup_triangle; // rettriangle (one-block-if join)
         ctx.early_return = self.early_return; // earlyreturn
         ctx.switch_return = self.switch_return; // switchreturn
         ctx.recover_loop_break = self.recover_loop_break; // loopbreak_recovery
         ctx.fold_call_returns = self.fold_call_returns; // foldcallret
-        ctx.fold_call_ret_phi = self.fold_call_ret_phi; // foldcallretphi
         ctx.mark_indirect_only = self.mark_indirect_only; // indirectonly
         ctx.strip_stack_guard = self.strip_stack_guard; // stackguard
         ctx.strip_msvc_stack_guard = self.strip_msvc_stack_guard; // msvcstackguard

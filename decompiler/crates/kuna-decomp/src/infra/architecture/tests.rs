@@ -134,7 +134,6 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.dedup_ite_tail);
     assert!(arch.fold_call_returns);
     // (kuna) foldcallretphi default-on (docs/features/foldcallretphi/flip.md).
-    assert!(arch.fold_call_ret_phi);
     assert!(arch.branch_flip);
     // (kuna) DIV-14 default-on sweep: 4 more flags default-on (3 of them REMOVE
     // CODE — stackguard/noreturn_extern/noreturn_propagate). Per-test opt-out

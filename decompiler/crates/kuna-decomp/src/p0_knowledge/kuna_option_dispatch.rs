@@ -763,12 +763,6 @@ kuna_options! { self, p1;
         self.iteboolean = val;
         Ok(msg)
     },
-    "itecondlist" => {
-        let (val, msg) =
-            crate::p8_structure::kuna_itecondlist::OptionIteCondList.apply(p1)?;
-        self.itecondlist = val;
-        Ok(msg)
-    },
     "paramcopyhoist" => {
         let (val, msg) =
             crate::p6_variables::kuna_paramcopyhoist::OptionParamCopyHoist.apply(p1)?;
@@ -779,11 +773,6 @@ kuna_options! { self, p1;
         let (val, msg) =
             crate::p8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;
         self.duplicate_shared_returns = val;
-        Ok(msg)
-    },
-    "orchain" => {
-        let (val, msg) = crate::p8_structure::kuna_orchain::OptionOrChain.apply(p1)?;
-        self.returndup_orchain = val;
         Ok(msg)
     },
     "rettriangle" => {
@@ -806,12 +795,6 @@ kuna_options! { self, p1;
     "foldcallret" => {
         let (val, msg) = crate::kuna_callretfold::OptionFoldCallRet.apply(p1)?;
         self.fold_call_returns = val;
-        Ok(msg)
-    },
-    "foldcallretphi" => {
-        let (val, msg) =
-            crate::kuna_foldcallretphi::OptionFoldCallRetPhi.apply(p1)?;
-        self.fold_call_ret_phi = val;
         Ok(msg)
     },
     "indirectonly" => {

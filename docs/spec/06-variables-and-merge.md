@@ -2814,7 +2814,7 @@ files pin that form via per-test opt-outs (DIV-14, `docs/history.md`).
 Provenance: `docs/features/call-return-variable-folding-dcde82/record.json`
 (ablation: 5 upstream assertions change; measured speed delta −3.2%).
 
-**(angr) `option foldcallretphi` — folding past the merge phalanx**
+**(angr) `foldcallret` past the merge phalanx**
 (default **on**). `foldcallret` relaxes only the first of two gates. A call
 output it lets through is re-examined by `ActionMarkImplied` in
 `coreaction_cleanup.rs (check_implied_cover)`, whose third arm
@@ -2901,8 +2901,8 @@ slot the binary reloads at `0x4fe98` — GH-181's shape — and adds one such fo
 
 This guard is deliberately wider than the two `foldcallret` runs, and stays as it
 shipped: the folds it releases are ones the merge machinery was holding, so what
-`--option foldcallretphi on` renders differently from `off` is decided exactly as
-it was before GH-657. The only thing the option inherits from that fix is what
+the self-effect discount renders differently is decided exactly as it was before
+GH-657. The only thing the option inherits from that fix is what
 the fix changes in the default rendering — measured per function on `ssh` O2,
 `dpkg` O2, `bash` O2, `tar` O0 and `grep` O0 in `docs/features/gh657/`.
 
@@ -2938,7 +2938,8 @@ whose caller spilled its result into a `long` loses that conversion when folded.
 It only matters under a relational comparison, a shift or a division, and over
 the 32 binaries no folded call of an undeclared callee feeds one; every such use
 is a declared library call or already prints a cast (`(long)lseek(..) < 0`).
-`--option foldcallretphi off` restores the spilled form byte-for-byte.
+`--option foldcallret off` restores the spilled form byte-for-byte, along with
+every other call spill.
 Provenance and the corpus sweep:
 `docs/features/foldcallretphi/`.
 

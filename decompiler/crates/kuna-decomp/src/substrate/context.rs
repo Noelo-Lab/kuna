@@ -1477,17 +1477,6 @@ pub struct ArchContext {
     /// single boolean assignment (`x = a && b;`) — see `Architecture::iteboolean`.
     /// Read by [`crate::p8_structure::kuna_iteboolean`]'s `ActionIteBoolean`.
     pub iteboolean: bool,
-    /// (kuna) `itecondlist`: let the `iteregion`/`iteboolean` diamond matchers descend
-    /// a multi-component `BlockList` in the condition position to its last component —
-    /// see `Architecture::itecondlist`.  Read by
-    /// `kuna_itecondlist::cond_list_tail`.
-    pub itecondlist: bool,
-    /// (kuna) `orchain`: decline a `returndup` split whose shared RETURN block is the
-    /// out-target two conditionals must keep in common for
-    /// `CollapseStructure::rule_block_or` to fuse them — see
-    /// `Architecture::returndup_orchain`.  Read by
-    /// `kuna_orchain::shortcircuit_shared_targets`.
-    pub returndup_orchain: bool,
     /// (kuna) `rettriangle`: decline a `returndup` split at the join of a
     /// one-block `if` -- see `Architecture::returndup_triangle`.  Read by
     /// `Funcdata::returndup_apply`.
@@ -1521,10 +1510,6 @@ pub struct ArchContext {
     /// (`fold_call_returns`, DIV-14 default-on).  Read by `base_explicit`
     /// (`ActionMarkExplicit`) via [`crate::kuna_callretfold::call_output_foldable`].
     pub fold_call_returns: bool,
-    /// (kuna) Discount a foldable call's own INDIRECT effect in
-    /// `check_implied_cover`'s inflate arm (option `foldcallretphi`,
-    /// default-on).  Read by `check_implied_cover`.
-    pub fold_call_ret_phi: bool,
     /// (kuna) Run `Funcdata::markIndirectOnly` instead of the inert stub
     /// (option `indirectonly`, opt-in default-off).  Read by
     /// `ActionMarkIndirectOnly`.
@@ -2051,16 +2036,13 @@ impl ArchContext {
             iteregion: false,             // iteregion (opt-in default-off, runtime-choice)
             iteexpr: false,               // iteexpr (computed-arm ?: extension, default-off)
             iteboolean: false,            // iteboolean (0/1 select -> boolean assignment)
-            itecondlist: false,           // itecondlist (condition-list tolerance, default-off)
             param_copy_hoist: false,      // paramcopyhoist (parameter copy-shadow -> entry block)
-            returndup_orchain: false,     // orchain (short-circuit chain protection, default-off)
             returndup_triangle: false,    // rettriangle (one-block-if join, copied from the Architecture)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             early_return: false, // earlyreturn (opt-in default-off)
             switch_return: false, // switchreturn (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (Architecture::reset_defaults sets the shipped default: on)
-            fold_call_ret_phi: false, // foldcallretphi (Architecture::reset_defaults sets the shipped default: on)
             mark_indirect_only: false, // indirectonly (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             strip_msvc_stack_guard: false, // msvcstackguard (fixture default-off; the live gate rides build_arch_handle)

@@ -1715,8 +1715,8 @@ mod tests {
         // and ghdec-returncopysplit / the read-only output gate on a datatype
         // copy split (a cloned heritage return-copy printed per-element stores
         // into a .rodata string literal)
-        // and ghdec-itecondlist / the ITE condition-list tolerance (option off
-        // re-rolls only ceil(N/2) of a run of N identical assignment diamonds)
+        // and ghdec-itecondlist / the ITE condition-list tolerance (a run of N
+        // identical assignment diamonds re-rolls N, not ceil(N/2))
         // and ghdec-peimportcall / PE import-call binding (option off leaves a
         // `call [IAT slot]` as an unnamed `(*dat_...)()` with no no-return effect)
         // and ghdec-undefname / no `$$undef` placeholder survives the naming pass
@@ -1734,7 +1734,7 @@ mod tests {
         // and ghdec-calloverlap / the two partial-range call-overlap guards
         // (a whole-width PXOR write hides the SysV entry inside the XMM0 range)
         // and ghdec-orchain / returndup must not split the operand chain of a
-        // short-circuit (option off = the guard cascade, on = the folded condition)
+        // short-circuit (the folded condition, not the guard cascade)
         // and kuna-evalcurrentproto / the compiler spec's <eval_current_prototype>
         // model recovers a __fastcall function's ECX/EDX arguments
         // and kuna-msvcftol / the MSVC __ftol call-fixup recovers the x87 (ST0)

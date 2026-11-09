@@ -1125,9 +1125,8 @@ and emits every component — descending one would make the emitters print the
 whole graph twice.
 
 *Failure:* everything the two matchers already decline, unchanged. It is a
-strictly narrower match than `iteregion`/`iteboolean` themselves, so
-`option itecondlist off` can only ever fold **fewer** diamonds, never different
-ones. Flipped on by DIV-56.
+strictly narrower match than `iteregion`/`iteboolean` themselves and runs
+whenever they do (DIV-56), so their options are the only ones that reach it.
 
 ### earlyreturn — per-edge const-guard peeling (angr `ReturnDuplicatorHigh`, narrowed)
 
@@ -1292,10 +1291,11 @@ functions moved to an exact structural match against 198 moved off, which is
 92% of the post-hoc ceiling at a *smaller* optimized-level cost than the
 ceiling itself. **DIV-69 makes it a default** (rather than a preset member:
 `returndup` is a shipped default in every mode, and 45% of the corpus sits over
-the 500 KiB `auto` threshold where a preset-only gate would never run). It stays
-a per-run choice — `option orchain off` restores the pre-DIV-69 cascade — because
-the merged and split forms compile to the same object code, and where the source
-did write the cascade the gate is wrong (`coreutils factor`, GED 0 → 12).
+the 500 KiB `auto` threshold where a preset-only gate would never run). It is
+part of `returndup` itself: the merged and split forms compile to the same
+object code, and where the source did write the cascade the gate is wrong
+(`coreutils factor`, GED 0 → 12), which `option returndup off` leaves merged as
+upstream does.
 `docs/decbench/returndup-o0-measurement.md` and
 `docs/decbench/returndup-regression-triage.md` hold the corpus tables.
 
