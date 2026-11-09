@@ -70,13 +70,17 @@ fn table_is_one_to_one_with_vineflower_options() {
         assert_eq!(row.short, option.short_name.unwrap_or(""), "{}", row.option);
         let (key, value) = resolve(row.option, row.default).unwrap();
         assert_eq!(key, row.vineflower);
-        assert_eq!(
-            Some(&value),
-            default.as_ref(),
-            "{}: default {:?} disagrees with Vineflower's",
-            row.option,
-            row.default
-        );
+        if default.is_none() {
+            assert_eq!(row.default, "", "{}: Vineflower has no default", row.option);
+        } else {
+            assert_eq!(
+                Some(&value),
+                default.as_ref(),
+                "{}: default {:?} disagrees with Vineflower's",
+                row.option,
+                row.default
+            );
+        }
         assert!(
             row.inspiration.contains(option.field),
             "{}: inspiration must name IFernflowerPreferences.{}",

@@ -37,6 +37,7 @@ pub mod p6_variables;
 pub mod p7_regions;
 pub mod p8_structure;
 pub mod p9_emit;
+pub mod plugins;
 pub mod rt;
 pub mod substrate;
 
@@ -129,6 +130,10 @@ pub use p9_emit::{
     bytecode_mapping_tracer, bytecode_source_mapper, class_text_token, class_writer,
     field_text_token, import_collector, method_text_token, text_buffer, text_range, text_token,
     text_token_dump_visitor, text_token_visitor, variable_text_token,
+};
+pub use plugins::{
+    idea_not_null_options, idea_not_null_pass, idea_not_null_plugin, jad_name_provider, renamers,
+    tiny_name_provider, variable_renaming_options, variable_renaming_plugin,
 };
 pub use substrate::{
     annotation_exprent, array_exprent, array_helper, assert_exprent, assignment_exprent,

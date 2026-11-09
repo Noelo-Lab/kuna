@@ -505,6 +505,9 @@ default/pkg/TestWhileTernaryFake
 default/pkg/TypeAnnotations
 default/pkg/package-info
 default/v11/TestInnerClassConstructor
+jad-naming/TestJadLvtCollision
+jad-naming/pkg/TestJADLocalClasses
+jad-naming/pkg/TestJADNaming
 javadoc/pkg/TestJavadoc
 lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass
 lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass2
@@ -519,6 +522,7 @@ lvt/pkg/TestLoopMerging
 lvt/pkg/TestVarType
 markdown-javadoc/pkg/TestMarkdownJavadoc
 no-lvt/pkg/TestNoLvt
+plugin-defaults/TestIdeaNotNull
 renaming/pkg/TestRenameEntities
 synthetics-marking/pkg/TestAnonymousClassNaming
 synthetics-marking/pkg/TestLambdaNaming
@@ -529,3 +533,5 @@ text-tokens/pkg/TestTextTokens
 text-tokens/pkg/TestTextTokens2
 text-tokens/pkg/TestTextTokens3
 text-tokens/pkg/TestTypeAnnotationsTokens
+tiny-naming/pkg/TestTinyNaming
+with-idea-not-null/TestIdeaNotNull

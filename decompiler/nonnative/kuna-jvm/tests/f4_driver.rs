@@ -118,7 +118,10 @@ fn constructor_logs_plugins_jvm_and_renamer() {
     assert_eq!(
         info,
         vec![
-            "Loaded 0 plugins".to_string(),
+            format!(
+                "Loaded {} plugins",
+                kuna_jvm::kuna_plugins::bundled_plugins().len()
+            ),
             "JVM info: missing vendor - missing java version - missing jvm version".to_string(),
         ]
     );

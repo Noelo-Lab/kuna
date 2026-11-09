@@ -74,13 +74,38 @@ Vineflower's plugin API is ported: the pass locations (`CfgConstruction`, `Befor
 `InLoopDecomp`, `MainLoop`, `AfterMain`, `AtEnd`, `LateProcessing`) are kept in the
 schedule, and `decompiler/nonnative/kuna-jvm/src/infra/plugin_context.rs (PluginContext)`
 registers each plugin's passes there and asks it for a language spec, which takes over the
-method pipeline and the class writer for the classes it claims. (kuna) Plugins are not
-found on a class path: `decompiler/nonnative/kuna-jvm/src/infra/kuna_plugins.rs (plugin_sources)`
-gives each engine instance the plugins bundled with kuna-jvm, as `java -jar
-vineflower.jar` loads its own, unless `jvm_plugins` is off (the corpus runner turns it off,
-as Vineflower's test fixture loads none). The bundled list is still empty, so no pass is
-registered at those locations and every class, Kotlin and Scala included, is written as
-Java.
+method pipeline and the class writer for the classes it claims. Plugins are
+not discovered on a class path: the engine carries the plugins `java -jar vineflower.jar`
+bundles, in its registration order, in
+`decompiler/nonnative/kuna-jvm/src/infra/kuna_plugins.rs`, and `jvm_plugins` (on by
+default, as with `java -jar`; off is Vineflower's test fixture, which loads none) decides
+whether they load. Each plugin's options join the option map with the plugin's defaults
+when the plugins initialize, and an option a caller set keeps its value. Two are ported, in
+`decompiler/nonnative/kuna-jvm/src/plugins`. **VariableRenaming** registers no pass; it
+supplies the variable naming factory, which every method's local names pass through when
+`VarDefinitionHelper` settles them and every parameter name passes through when it is
+written. `jvm_variable_renaming` picks a renamer by name: `jad` names a variable after its
+type (`i`, `j`, `k`, `l`, `i1`... for `int` and `long`, `flag`, `s`, `file1`, the lowercased
+class name, `a` + the element type for arrays), counting each name per method; `tiny` gives
+primitives one letter and steps through `a`..`z`, `ba`... on a clash, and an object the
+class name with a lowercase first letter (plural for arrays), numbered on a clash, with `_`
+after a keyword. A lambda body's method, an anonymous class's methods and a local class's
+methods take over the enclosing method's naming state (`jad`'s counters, `tiny`'s used
+names) once the enclosing method has been renamed. With no renamer named, the deprecated
+`jvm_jad_style_variable_naming` selects `jad`; an unknown name selects none, and the names
+stay as Vineflower's own pipeline gives them. `jvm_rename_parameters` (and, for `jad` only,
+the deprecated `jvm_jad_style_parameter_naming`) renames parameters too; with a
+LocalVariableTable, a parameter's entry carries no type at that point, so `tiny`, which
+needs one, fails the method as Vineflower's provider does. **IdeaNotNull** registers one
+`MainLoop` pass that, while `jvm_resugar_idea_notnull` is on (the default), removes the
+null checks IntelliJ IDEA's compiler instruments: an `if (p == null) $$$reportNull$$$0(n);`
+heading the method body for a parameter whose invisible parameter annotations carry
+`org/jetbrains/annotations/NotNull` (the annotation lists counted from the last parameter
+when javac recorded fewer lists than parameters) is replaced, head block and all, by an
+empty block; and, in a method annotated `@NotNull`, an `if (v == null) $$$reportNull$$$0(n);`
+right before `return v;` is removed, its head block's expressions moving into the return's
+block, as is the older `if (v == null) <exit>; else return v;` shape. Language plugins (Vineflower's Kotlin and Scala support) are not
+bundled yet: every class is written as Java.
 
 ## 10.2 The class universe and nesting
 

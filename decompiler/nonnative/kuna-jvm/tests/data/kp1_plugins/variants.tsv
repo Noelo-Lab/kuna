@@ -1,0 +1,13 @@
+# variant	classes dir	main class	option pairs (k=v, ';'-separated) over the test fixture's base map, plugins on
+notnull	classes	NotNullChecks	dump-exception-on-error=0
+notnull-off	classes	NotNullChecks	dump-exception-on-error=0;resugar-idea-notnull=0
+notnull-nodebug	classes_nodebug	NotNullChecks	dump-exception-on-error=0
+jad	classes	Naming	dump-exception-on-error=0;variable-renaming=jad
+jad-params	classes	Naming	dump-exception-on-error=0;variable-renaming=jad;rename-parameters=1
+jad-legacy	classes	Naming	dump-exception-on-error=0;jad-style-variable-naming=1;jad-style-parameter-naming=1
+jad-params-nodebug	classes_nodebug	Naming	dump-exception-on-error=0;variable-renaming=jad;rename-parameters=1
+tiny	classes	Naming	dump-exception-on-error=0;variable-renaming=tiny
+tiny-params	classes	Naming	dump-exception-on-error=0;variable-renaming=tiny;rename-parameters=1
+tiny-params-nodebug	classes_nodebug	Naming	dump-exception-on-error=0;variable-renaming=tiny;rename-parameters=1
+tiny-jad-params	classes	Naming	dump-exception-on-error=0;variable-renaming=tiny;jad-style-parameter-naming=1
+unknown-renamer	classes	Naming	dump-exception-on-error=0;variable-renaming=nosuch;jad-style-variable-naming=1

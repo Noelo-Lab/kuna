@@ -9,6 +9,10 @@ Reads <corpus>/manifest.json and writes, under --out (default: this script's dir
   expected/...       the Vineflower 1.12.0 output each case is compared with (<corpus>/expected)
   README.md          provenance, counts and the excluded cases
 
+The cases of plugins.json (Vineflower's bundled plugins, with kuna's jvm_plugins switch on) are appended
+to cases.tsv; their class files and expected text live in this directory (written by plugin_oracle.py)
+and are copied when --out is elsewhere.
+
 Existing files are overwritten, nothing is deleted; regenerate into a fresh directory to drop stale
 files. --full-manifest additionally writes a manifest of all runnable cases (JDK-dependent ones
 included) whose paths point into <corpus> itself.
@@ -64,7 +68,26 @@ def check_effective(t, sets, base):
         sys.exit(f'{t["id"]}: manifest options differ from base + set pairs')
 
 
-def write_manifest(path, tests, sets, base, root, java_homes, rel_class, rel_expected):
+def plugin_records(pm, base):
+    """The set and case records of the plugin manifest: a fixture set starts from the fixture's base map."""
+    set_lines, case_lines = [], []
+    for s in pm['sets']:
+        opts = dict(base) if s['fixture'] else {}
+        for k, v in s['option_pairs']:
+            opts[k] = v
+        set_lines.append(line('set', s['name'], s['slug']))
+        for k, v in opts.items():
+            set_lines.append(line('opt', k, v))
+    for t in sorted(pm['tests'], key=lambda t: t['id']):
+        case_lines.append(line('case', t['id'], t['set']))
+        for f in t['class_files']:
+            case_lines.append(line('class', 'classes/' + f))
+        case_lines.append(line('expected', t['oracle']))
+        case_lines.append(line('compare', t['decompiled_file']))
+    return set_lines, case_lines
+
+
+def write_manifest(path, tests, sets, base, root, java_homes, rel_class, rel_expected, extra=([], [])):
     used_sets = []
     for t in tests:
         if t['set'] not in used_sets:
@@ -85,6 +108,7 @@ def write_manifest(path, tests, sets, base, root, java_homes, rel_class, rel_exp
             out.append(line('javadoc', javadoc))
         if opts.get('include-classpath') == '1':
             out.append(line('current_jdk', '17'))
+    out.extend(extra[0])
     for t in tests:
         out.append(line('case', t['id'], t['set']))
         if t['runtime_injected'] is not None:
@@ -94,6 +118,7 @@ def write_manifest(path, tests, sets, base, root, java_homes, rel_class, rel_exp
         out.append(line('expected', rel_expected(t['oracle'])))
         names = [t['decompiled_file']] + ([t['decompiled_file_fallback']] if t.get('decompiled_file_fallback') else [])
         out.append(line('compare', *names))
+    out.extend(extra[1])
     tmp = path + '.tmp'
     with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
         f.writelines(out)
@@ -126,6 +151,8 @@ documents how that corpus was built and validated); do not edit by hand.
 | `expected/<set slug>/<test class>.java` | Vineflower's output for each case, raw bytes |
 | `baseline.txt` | the regression gate: ids of the cases kuna-jvm matches today; refresh it with `corpus --save-baseline ../tests/jvm/baseline.txt` when a change makes more cases match |
 | `regen.py` | rebuilds everything here except `baseline.txt` |
+| `plugins.json` | the plugin cases: Vineflower's bundled plugins' own tests, run with the plugins on |
+| `plugin_oracle.py` | rebuilds the plugin cases' class files (`classes/plugins/`) and expected text with the release jar |
 
 ## Provenance
 
@@ -148,7 +175,8 @@ keep-literals=1 __unit_test_mode__=1 new-line-separator=1 error-message="" inclu
 overlaid by the set's pairs), the class files in the exact `addSource` order (the test class, its
 `Name$*.class` siblings in name order, then each companion the same way, duplicates kept), and the
 output file the test compares. The runner (`kuna_jvm::kuna_corpus`) hands the pairs to `Fernflower`
-(which overlays them on Vineflower's defaults), adds each class file as a source, decompiles, takes
+(which overlays them on Vineflower's defaults; no plugin is loaded unless the pairs turn kuna's
+`jvm_plugins` on, as the plugin sets do), adds each class file as a source, decompiles, takes
 the last delivered unit whose file name is the compared one (the fixture's saver flattens every
 class into one directory), and compares it with the expected text after the fixture's normalization
 (`\\r\\n` -> `\\n`, then Java `String.trim()`).
@@ -180,6 +208,14 @@ Line oriented, tab separated; fields escape `\\\\`, `\\t`, `\\n`, `\\r`; `#` sta
   output depends on a JDK class library on this machine; run them from the external corpus (below).
   {skipped} registered tests are not runnable at all (Kotlin/Groovy/Scala sources, never compiled).
 - {unsupported_note}
+- Plugin cases (`plugins.json`): **{nplugin}** ({plugin_sets}). The fixture sets replay the tests of
+  Vineflower's bundled plugins (`plugins/idea-not-null`, `plugins/variable-renaming`: the plugin's
+  `testData/classes/custom` binaries and its `testData/src/java8` compiled with javac 1.8 like the corpus's
+  `java8` set) on the fixture's base map; *Plugin Defaults* is `java -jar` with no options. Each set turns
+  `jvm_plugins` on; the expected text is the release jar with its bundled plugins loaded
+  (`vf-decompile --plugins`), which `plugin_oracle.py` accepts only when it matches upstream's `.dec` (for
+  *Plugin Defaults*, the oracle corpus's `expected-defaults`) under the fixture's comparison. Rebuild them with
+  `python3 -I tests/jvm/plugin_oracle.py --corpus ~/kwt/jvm/corpus --vf-src ~/github/vineflower --work NEW_DIR`.
 
 ### Not vendored
 
@@ -228,6 +264,9 @@ def main():
     included = [t for t in runnable if exclusion(t) is None]
     excluded = [t for t in runnable if exclusion(t) is not None]
 
+    with open(os.path.join(here, 'plugins.json'), encoding='utf-8') as f:
+        pm = json.load(f)
+
     if a.full_manifest:
         write_manifest(os.path.abspath(a.full_manifest), runnable, sets, base, corpus, m['java_homes'],
                        lambda f: 'classes/' + f, lambda p: p)
@@ -241,8 +280,13 @@ def main():
         copy(os.path.join(corpus, 'classes', f), os.path.join(out, 'classes', f))
     for t in included:
         copy(os.path.join(corpus, t['oracle']), os.path.join(out, t['oracle']))
+    plugin_files = sorted({'classes/' + f for t in pm['tests'] for f in t['class_files']}
+                          | {t['oracle'] for t in pm['tests']})
+    if out != here:
+        for f in plugin_files:
+            copy(os.path.join(here, f), os.path.join(out, f))
     write_manifest(os.path.join(out, 'cases.tsv'), included, sets, base, None, {},
-                   lambda f: 'classes/' + f, lambda p: p)
+                   lambda f: 'classes/' + f, lambda p: p, plugin_records(pm, base))
 
     with open(os.path.join(corpus, 'reports', 'match-fixture.json'), encoding='utf-8') as f:
         match = json.load(f)
@@ -270,6 +314,9 @@ def main():
     set_counts = {}
     for t in included:
         set_counts[t['set']] = set_counts.get(t['set'], 0) + 1
+    plugin_counts = {}
+    for t in pm['tests']:
+        plugin_counts[t['set']] = plugin_counts.get(t['set'], 0) + 1
     cls_paths = [os.path.join(out, 'classes', f) for f in class_files]
     exp_paths = [os.path.join(out, t['oracle']) for t in included]
     cls_b, exp_b = tree_size(cls_paths), tree_size(exp_paths)
@@ -279,7 +326,9 @@ def main():
         included=len(included), sets=', '.join(f'{n} {c}' for n, c in set_counts.items()),
         nclasses=len(class_files), cls_kb=cls_b // 1024, exp_kb=exp_b // 1024,
         total_kb=(cls_b + exp_b + man_b) // 1024, runnable=len(runnable), excluded=len(excluded),
-        skipped=len(skipped), unsupported_note=unsupported_note, excluded_list=excluded_list)
+        skipped=len(skipped), unsupported_note=unsupported_note, excluded_list=excluded_list,
+        nplugin=len(pm['tests']),
+        plugin_sets=', '.join(f'{n} {c}' for n, c in plugin_counts.items()))
     with open(os.path.join(out, 'README.md'), 'w', encoding='utf-8', newline='\n') as f:
         f.write(readme)
 

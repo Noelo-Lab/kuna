@@ -15,6 +15,8 @@ documents how that corpus was built and validated); do not edit by hand.
 | `expected/<set slug>/<test class>.java` | Vineflower's output for each case, raw bytes |
 | `baseline.txt` | the regression gate: ids of the cases kuna-jvm matches today; refresh it with `corpus --save-baseline ../tests/jvm/baseline.txt` when a change makes more cases match |
 | `regen.py` | rebuilds everything here except `baseline.txt` |
+| `plugins.json` | the plugin cases: Vineflower's bundled plugins' own tests, run with the plugins on |
+| `plugin_oracle.py` | rebuilds the plugin cases' class files (`classes/plugins/`) and expected text with the release jar |
 
 ## Provenance
 
@@ -48,7 +50,8 @@ keep-literals=1 __unit_test_mode__=1 new-line-separator=1 error-message="" inclu
 overlaid by the set's pairs), the class files in the exact `addSource` order (the test class, its
 `Name$*.class` siblings in name order, then each companion the same way, duplicates kept), and the
 output file the test compares. The runner (`kuna_jvm::kuna_corpus`) hands the pairs to `Fernflower`
-(which overlays them on Vineflower's defaults), adds each class file as a source, decompiles, takes
+(which overlays them on Vineflower's defaults; no plugin is loaded unless the pairs turn kuna's
+`jvm_plugins` on, as the plugin sets do), adds each class file as a source, decompiles, takes
 the last delivered unit whose file name is the compared one (the fixture's saver flattens every
 class into one directory), and compares it with the expected text after the fixture's normalization
 (`\r\n` -> `\n`, then Java `String.trim()`).
@@ -75,11 +78,19 @@ Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a
 ## Counts
 
 - Vendored: **530 cases** (Complex Condys 1, Default 505, Javadoc 1, Lambda to Anonymous Class 2, Literals 4, LVT 5, Markdown Javadoc 1, No LVT 1, Renaming 1, Synthetics Marking 3, Ternary Constant Simplification 2, Text Tokens 4), 858 class files (890 KiB) and 530
-  expected files (1376 KiB); 2390 KiB in all with `cases.tsv`.
+  expected files (1376 KiB); 2393 KiB in all with `cases.tsv`.
 - Of the oracle corpus's 598 runnable tests, **68 are not vendored** because their
   output depends on a JDK class library on this machine; run them from the external corpus (below).
   13 registered tests are not runnable at all (Kotlin/Groovy/Scala sources, never compiled).
 - The runner installs the test's `fabric:javadoc` provider (`FixtureJavadocProvider`) for `javadoc/pkg/TestJavadoc`, `markdown-javadoc/pkg/TestMarkdownJavadoc`.
+- Plugin cases (`plugins.json`): **6** (With Idea Not Null 1, JAD Naming 3, Tiny Naming 1, Plugin Defaults 1). The fixture sets replay the tests of
+  Vineflower's bundled plugins (`plugins/idea-not-null`, `plugins/variable-renaming`: the plugin's
+  `testData/classes/custom` binaries and its `testData/src/java8` compiled with javac 1.8 like the corpus's
+  `java8` set) on the fixture's base map; *Plugin Defaults* is `java -jar` with no options. Each set turns
+  `jvm_plugins` on; the expected text is the release jar with its bundled plugins loaded
+  (`vf-decompile --plugins`), which `plugin_oracle.py` accepts only when it matches upstream's `.dec` (for
+  *Plugin Defaults*, the oracle corpus's `expected-defaults`) under the fixture's comparison. Rebuild them with
+  `python3 -I tests/jvm/plugin_oracle.py --corpus ~/kwt/jvm/corpus --vf-src ~/github/vineflower --work NEW_DIR`.
 
 ### Not vendored
 

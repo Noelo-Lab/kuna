@@ -1,5 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/main/extern/IVariableNameProvider.java`.
 
+use std::any::Any;
 use std::rc::Rc;
 
 use crate::code_constants::{ACC_ABSTRACT, ACC_NATIVE};
@@ -8,7 +9,8 @@ use crate::rt::{JHashMap, JLinkedHashMap};
 use crate::var_type::VarType;
 use crate::var_version_pair::VarVersionPair;
 
-pub trait IVariableNameProvider {
+/// `Any` lets a provider's `addParentContext` cast its argument back to its own class.
+pub trait IVariableNameProvider: Any {
     /// `None` keeps every name (Java returns `null`).
     fn rename(
         &self,

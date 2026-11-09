@@ -1,0 +1,1636 @@
+op	jad	ints	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	0
+op	jad	ints	next	a	I	int	i
+op	jad	ints	next	a	I	int	j
+op	jad	ints	next	a	I	int	k
+op	jad	ints	next	a	I	int	l
+op	jad	ints	next	a	I	int	i1
+op	jad	ints	next	a	I	int	j1
+op	jad	ints	next	a	I	int	k1
+op	jad	ints	next	a	I	int	l1
+op	jad	ints	next	a	I	int	i2
+op	jad	ints	next	a	I	int	j2
+op	jad	ints	next	a	I	int	k2
+op	jad	ints	next	a	I	int	l2
+op	jad	ints	next	a	I	int	i3
+op	jad	ints	next	a	I	int	j3
+op	jad	ints	next	a	I	int	k3
+op	jad	ints	next	a	I	int	l3
+op	jad	ints	next	a	I	int	i4
+op	jad	ints	next	a	I	int	j4
+op	jad	ints	next	a	I	int	k4
+op	jad	ints	next	a	I	int	l4
+op	jad	ints	next	a	I	int	i5
+op	jad	ints	next	a	I	int	j5
+op	jad	ints	next	a	I	int	k5
+op	jad	ints	next	a	I	int	l5
+op	jad	ints	next	a	I	int	i6
+op	jad	ints	next	a	I	int	j6
+op	jad	ints	next	a	I	int	k6
+op	jad	ints	next	a	I	int	l6
+op	jad	ints	next	a	I	int	i7
+op	jad	ints	next	a	I	int	j7
+op	jad	ints	next	a	J	long	k7
+op	jad	ints	next	a	J	long	l7
+op	jad	ints	next	a	J	long	i8
+op	jad	ints	next	a	@BYTECHAR:0:	int	j8
+op	jad	ints	next	a	@BYTECHAR:0:	int	k8
+op	jad	ints	next	a	@BYTECHAR:0:	int	l8
+op	jad	ints	next	a	@SHORTCHAR:0:	int	i9
+op	jad	ints	next	a	[I	int[]	aint
+op	jad	ints	next	a	[I	int[]	aint1
+op	jad	ints	next	a	[[I	int[][]	aint2
+op	jad	ints	next	a	[[[I	int[][][]	aint3
+op	jad	primitives	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	0
+op	jad	primitives	next	a	B	byte	b0
+op	jad	primitives	next	a	B	byte	b1
+op	jad	primitives	next	a	B	byte	b2
+op	jad	primitives	next	a	C	char	c0
+op	jad	primitives	next	a	C	char	c1
+op	jad	primitives	next	a	C	char	c2
+op	jad	primitives	next	a	S	short	short1
+op	jad	primitives	next	a	S	short	short2
+op	jad	primitives	next	a	S	short	short3
+op	jad	primitives	next	a	Z	boolean	flag
+op	jad	primitives	next	a	Z	boolean	flag1
+op	jad	primitives	next	a	Z	boolean	flag2
+op	jad	primitives	next	a	D	double	d0
+op	jad	primitives	next	a	D	double	d1
+op	jad	primitives	next	a	D	double	d2
+op	jad	primitives	next	a	F	float	f
+op	jad	primitives	next	a	F	float	f1
+op	jad	primitives	next	a	F	float	f2
+op	jad	primitives	next	a	J	long	i
+op	jad	primitives	next	a	J	long	j
+op	jad	primitives	next	a	J	long	k
+op	jad	primitives	next	a	@NULL:0:	null	null
+op	jad	primitives	next	a	@VOID:0:	void	void
+op	jad	primitives	next	a	@UNKNOWN:0:	<unknown>	<unknown>
+op	jad	objects	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	0
+op	jad	objects	next	a	Ljava/lang/String;	String	s
+op	jad	objects	next	a	Ljava/lang/String;	String	s1
+op	jad	objects	next	a	Ljava/lang/String;	String	s2
+op	jad	objects	next	a	Ljava/io/File;	File	file1
+op	jad	objects	next	a	Ljava/io/File;	File	file2
+op	jad	objects	next	a	Ljava/io/File;	File	file3
+op	jad	objects	next	a	Ljava/lang/Class;	Class	oclass
+op	jad	objects	next	a	Ljava/lang/Class;	Class	oclass1
+op	jad	objects	next	a	Ljava/lang/Long;	Long	olong
+op	jad	objects	next	a	Ljava/lang/Byte;	Byte	obyte
+op	jad	objects	next	a	Ljava/lang/Short;	Short	oshort
+op	jad	objects	next	a	Ljava/lang/Boolean;	Boolean	obool
+op	jad	objects	next	a	Ljava/lang/Boolean;	Boolean	obool1
+op	jad	objects	next	a	Ljava/lang/Package;	Package	opackage
+op	jad	objects	next	a	Ljava/lang/Enum;	Enum	oenum
+op	jad	objects	next	a	Ljava/lang/Enum;	Enum	oenum1
+op	jad	objects	next	a	Ljava/lang/Object;	Object	object
+op	jad	objects	next	a	Ljava/lang/Object;	Object	object1
+op	jad	objects	next	a	Ljava/lang/Object;	Object	object2
+op	jad	objects	next	a	[Ljava/lang/Object;	Object[]	aobject
+op	jad	objects	next	a	[Ljava/lang/Object;	Object[]	aobject1
+op	jad	objects	next	a	[Ljava/lang/Object;	Object...	aobject
+op	jad	objects	next	a	[Ljava/lang/Object;	Object...	aobject
+op	jad	objects	next	a	[[Ljava/lang/String;	String[][]	astring
+op	jad	objects	next	a	[[Ljava/lang/String;	String[][]	astring1
+op	jad	objects	next	a	[Ljava/lang/String;	Strings	strings
+op	jad	objects	next	a	[Ljava/lang/String;	Strings	strings1
+op	jad	objects	next	a	Ljava/util/Map$Entry;	Map.Entry	mapentry
+op	jad	objects	next	a	Ljava/util/Map$Entry;	Map.Entry	mapentry1
+op	jad	objects	next	a	Ljava/util/Map$Entry;	Outer$Inner	outer$inner
+op	jad	objects	next	a	Ljava/lang/String;	string	string
+op	jad	objects	next	a	Ljava/lang/String;	string	string
+op	jad	objects	next	a	Lp/foo;	foo	foo
+op	jad	objects	next	a	Lp/foo;	foo	foo
+op	jad	objects	next	a	Lp/X;		
+op	jad	objects	next	a	Lp/Int;	Int	i
+op	jad	objects	next	a	Lp/Int;	Int	j
+op	jad	objects	next	a	Lp/New;	New	new
+op	jad	objects	next	a	Lp/This;	This	this
+op	jad	objects	next	a	Lp/Var;	Var	var
+op	jad	objects	next	a	Lp/Record;	Record	record
+op	jad	objects	next	a	Ljava/lang/Long;	List<String>	list<string>
+op	jad	objects	next	a	Ljava/util/List;	List	list
+op	jad	objects	next	a	Ljava/util/List;	List	list1
+op	jad	objects	next	a	[Ljava/util/List;	List[]	alist
+op	jad	objects	next	a	[[Ljava/util/List;	List[][]	alist1
+op	jad	objects	next	a	@GENVAR:0:T	T	t
+op	jad	objects	next	a	@GENVAR:0:T	T	t1
+op	jad	objects	next	a	@GENVAR:1:T	T[]	at
+op	jad	objects	next	a	@GENVAR:1:T	Ts	ts
+op	jad	unicode	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	0
+op	jad	unicode	next	a	Lp/U;	\u00c4rger	\u00e4rger
+op	jad	unicode	next	a	Lp/U;	\u00c4rger	\u00e4rger
+op	jad	unicode	next	a	Lp/U;	\u00c4RGER[]	a\u00e4rger
+op	jad	unicode	next	a	Lp/U;	\u03a9mega	\u03c9mega
+op	jad	unicode	next	a	Lp/U;	\u03a3\u0391\u03a3	\u03c3\u03b1\u03c2
+op	jad	unicode	next	a	Lp/U;	\u0130stanbul	i\u0307stanbul
+op	jad	unicode	next	a	Lp/U;	\u0130x	i\u0307x
+op	jad	unicode	next	a	Lp/U;	\u2160V	\u2170v
+op	jad	unicode	next	a	Lp/U;	\u24b6b	\u24d0b
+op	jad	unicode	next	a	Lp/U;	\u00df	\u00df
+op	jad	unicode	next	a	Lp/U;	\u01c5ab	\u01c6ab
+op	jad	unicode	next	a	Lp/U;	\u1e9e	\u00df
+op	jad	unicode	next	a	Lp/U;	A\u00c4	a\u00e4
+op	jad	unicode	next	a	Lp/U;	Z	z
+op	jad	static-this	new	a	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	0
+op	jad	static-this	next	a	Lp/This;	This	this
+op	jad	static-this	next	a	Lp/This;	This	this1
+op	jad	static-this	next	a	Ljava/lang/Enum;	Enum	oenum
+op	jad	static-this	new	b	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	0
+op	jad	static-this	next	b	Lp/This;	This	this
+op	jad	static-this	next	b	Ljava/lang/Enum;	Enum	oenum
+op	jad	static-this	next	b	N	Null	null
+op	tiny	ints	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	0
+op	tiny	ints	next	a	I	int	i
+op	tiny	ints	next	a	I	int	j
+op	tiny	ints	next	a	I	int	k
+op	tiny	ints	next	a	I	int	l
+op	tiny	ints	next	a	I	int	m
+op	tiny	ints	next	a	I	int	n
+op	tiny	ints	next	a	I	int	o
+op	tiny	ints	next	a	I	int	p
+op	tiny	ints	next	a	I	int	q
+op	tiny	ints	next	a	I	int	r
+op	tiny	ints	next	a	I	int	s
+op	tiny	ints	next	a	I	int	t
+op	tiny	ints	next	a	I	int	u
+op	tiny	ints	next	a	I	int	v
+op	tiny	ints	next	a	I	int	w
+op	tiny	ints	next	a	I	int	x
+op	tiny	ints	next	a	I	int	y
+op	tiny	ints	next	a	I	int	z
+op	tiny	ints	next	a	I	int	ba
+op	tiny	ints	next	a	I	int	bb
+op	tiny	ints	next	a	I	int	bc
+op	tiny	ints	next	a	I	int	bd
+op	tiny	ints	next	a	I	int	be
+op	tiny	ints	next	a	I	int	bf
+op	tiny	ints	next	a	I	int	bg
+op	tiny	ints	next	a	I	int	bh
+op	tiny	ints	next	a	I	int	bi
+op	tiny	ints	next	a	I	int	bj
+op	tiny	ints	next	a	I	int	bk
+op	tiny	ints	next	a	I	int	bl
+op	tiny	ints	next	a	J	long	bm
+op	tiny	ints	next	a	J	long	bn
+op	tiny	ints	next	a	J	long	bo
+op	tiny	ints	next	a	@BYTECHAR:0:	int	bp
+op	tiny	ints	next	a	@BYTECHAR:0:	int	bq
+op	tiny	ints	next	a	@BYTECHAR:0:	int	br
+op	tiny	ints	next	a	@SHORTCHAR:0:	int	bs
+op	tiny	ints	next	a	[I	int[]	bt
+op	tiny	ints	next	a	[I	int[]	bu
+op	tiny	ints	next	a	[[I	int[][]	bv
+op	tiny	ints	next	a	[[[I	int[][][]	bw
+op	tiny	primitives	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	0
+op	tiny	primitives	next	a	B	byte	b
+op	tiny	primitives	next	a	B	byte	c
+op	tiny	primitives	next	a	B	byte	d
+op	tiny	primitives	next	a	C	char	e
+op	tiny	primitives	next	a	C	char	f
+op	tiny	primitives	next	a	C	char	g
+op	tiny	primitives	next	a	S	short	s
+op	tiny	primitives	next	a	S	short	t
+op	tiny	primitives	next	a	S	short	u
+op	tiny	primitives	next	a	Z	boolean	bl
+op	tiny	primitives	next	a	Z	boolean	bl1
+op	tiny	primitives	next	a	Z	boolean	bl2
+op	tiny	primitives	next	a	D	double	h
+op	tiny	primitives	next	a	D	double	i
+op	tiny	primitives	next	a	D	double	j
+op	tiny	primitives	next	a	F	float	k
+op	tiny	primitives	next	a	F	float	l
+op	tiny	primitives	next	a	F	float	m
+op	tiny	primitives	next	a	J	long	n
+op	tiny	primitives	next	a	J	long	o
+op	tiny	primitives	next	a	J	long	p
+op	tiny	primitives	next	a	@NULL:0:	null	\N
+op	tiny	primitives	next	a	@VOID:0:	void	\N
+op	tiny	primitives	next	a	@UNKNOWN:0:	<unknown>	\N
+op	tiny	objects	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	0
+op	tiny	objects	next	a	Ljava/lang/String;	String	string
+op	tiny	objects	next	a	Ljava/lang/String;	String	string1
+op	tiny	objects	next	a	Ljava/lang/String;	String	string2
+op	tiny	objects	next	a	Ljava/io/File;	File	file
+op	tiny	objects	next	a	Ljava/io/File;	File	file1
+op	tiny	objects	next	a	Ljava/io/File;	File	file2
+op	tiny	objects	next	a	Ljava/lang/Class;	Class	class_
+op	tiny	objects	next	a	Ljava/lang/Class;	Class	class_
+op	tiny	objects	next	a	Ljava/lang/Long;	Long	long_
+op	tiny	objects	next	a	Ljava/lang/Byte;	Byte	byte_
+op	tiny	objects	next	a	Ljava/lang/Short;	Short	short_
+op	tiny	objects	next	a	Ljava/lang/Boolean;	Boolean	boolean_
+op	tiny	objects	next	a	Ljava/lang/Boolean;	Boolean	boolean_
+op	tiny	objects	next	a	Ljava/lang/Package;	Package	package_
+op	tiny	objects	next	a	Ljava/lang/Enum;	Enum	enum_
+op	tiny	objects	next	a	Ljava/lang/Enum;	Enum	enum_
+op	tiny	objects	next	a	Ljava/lang/Object;	Object	object
+op	tiny	objects	next	a	Ljava/lang/Object;	Object	object1
+op	tiny	objects	next	a	Ljava/lang/Object;	Object	object2
+op	tiny	objects	next	a	[Ljava/lang/Object;	Object[]	object[]s
+op	tiny	objects	next	a	[Ljava/lang/Object;	Object[]	object[]s1
+op	tiny	objects	next	a	[Ljava/lang/Object;	Object...	object...s
+op	tiny	objects	next	a	[Ljava/lang/Object;	Object...	object...s1
+op	tiny	objects	next	a	[[Ljava/lang/String;	String[][]	string[][]s
+op	tiny	objects	next	a	[[Ljava/lang/String;	String[][]	string[][]s1
+op	tiny	objects	next	a	[Ljava/lang/String;	Strings	strings
+op	tiny	objects	next	a	[Ljava/lang/String;	Strings	strings1
+op	tiny	objects	next	a	Ljava/util/Map$Entry;	Map.Entry	map.Entry
+op	tiny	objects	next	a	Ljava/util/Map$Entry;	Map.Entry	map.Entry1
+op	tiny	objects	next	a	Ljava/util/Map$Entry;	Outer$Inner	outer$Inner
+op	tiny	objects	next	a	Ljava/lang/String;	string	string3
+op	tiny	objects	next	a	Ljava/lang/String;	string	string4
+op	tiny	objects	next	a	Lp/foo;	foo	foo1
+op	tiny	objects	next	a	Lp/foo;	foo	foo2
+op	tiny	objects	next	a	Lp/X;		!StringIndexOutOfBoundsException
+op	tiny	objects	next	a	Lp/Int;	Int	int_
+op	tiny	objects	next	a	Lp/Int;	Int	int_
+op	tiny	objects	next	a	Lp/New;	New	new_
+op	tiny	objects	next	a	Lp/This;	This	this_
+op	tiny	objects	next	a	Lp/Var;	Var	var
+op	tiny	objects	next	a	Lp/Record;	Record	record
+op	tiny	objects	next	a	Ljava/lang/Long;	List<String>	list<String>
+op	tiny	objects	next	a	Ljava/util/List;	List	list
+op	tiny	objects	next	a	Ljava/util/List;	List	list1
+op	tiny	objects	next	a	[Ljava/util/List;	List[]	list[]s
+op	tiny	objects	next	a	[[Ljava/util/List;	List[][]	list[][]s
+op	tiny	objects	next	a	@GENVAR:0:T	T	t
+op	tiny	objects	next	a	@GENVAR:0:T	T	t1
+op	tiny	objects	next	a	@GENVAR:1:T	T[]	t[]s
+op	tiny	objects	next	a	@GENVAR:1:T	Ts	ts
+op	tiny	unicode	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	0
+op	tiny	unicode	next	a	Lp/U;	\u00c4rger	\u00e4rger
+op	tiny	unicode	next	a	Lp/U;	\u00c4rger	\u00e4rger1
+op	tiny	unicode	next	a	Lp/U;	\u00c4RGER[]	\u00e4RGER[]
+op	tiny	unicode	next	a	Lp/U;	\u03a9mega	\u03c9mega
+op	tiny	unicode	next	a	Lp/U;	\u03a3\u0391\u03a3	\u03c3\u0391\u03a3
+op	tiny	unicode	next	a	Lp/U;	\u0130stanbul	istanbul
+op	tiny	unicode	next	a	Lp/U;	\u0130x	ix
+op	tiny	unicode	next	a	Lp/U;	\u2160V	\u2170V
+op	tiny	unicode	next	a	Lp/U;	\u24b6b	\u24d0b
+op	tiny	unicode	next	a	Lp/U;	\u00df	\u00df1
+op	tiny	unicode	next	a	Lp/U;	\u01c5ab	\u01c5ab1
+op	tiny	unicode	next	a	Lp/U;	\u1e9e	\u00df2
+op	tiny	unicode	next	a	Lp/U;	A\u00c4	a\u00c4
+op	tiny	unicode	next	a	Lp/U;	Z	z
+op	tiny	static-this	new	a	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	0
+op	tiny	static-this	next	a	Lp/This;	This	this_
+op	tiny	static-this	next	a	Lp/This;	This	this_
+op	tiny	static-this	next	a	Ljava/lang/Enum;	Enum	enum_
+op	tiny	static-this	new	b	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	0
+op	tiny	static-this	next	b	Lp/This;	This	this_
+op	tiny	static-this	next	b	Ljava/lang/Enum;	Enum	enum_
+op	tiny	static-this	next	b	N	Null	!NullPointerException
+op	jad	st	new	a	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	0
+op	jad	st	rename	a	0.0~J~long|2.0~D~double|4.0~I~int|5.0~Ljava/lang/String;~String|6.0~Ljava/io/File;~java.io.File|7.0~Ljava/lang/Class;~Class<?>|8.0~I~int|9.0~J~long|11.0~Z~boolean|12.0~Ljava/lang/String;~String|13.0~Ljava/io/File;~File|8.1~I~int|14.0~[I~int[]	8.0=i|8.1=j|9.0=k|11.0=flag|12.0=s|13.0=file1|14.0=aint
+op	jad	st	rename	a	0.0~J~long|2.0~D~double|4.0~I~int|5.0~Ljava/lang/String;~String|6.0~Ljava/io/File;~java.io.File|7.0~Ljava/lang/Class;~Class<?>|8.0~I~int|9.0~J~long|11.0~Z~boolean|12.0~Ljava/lang/String;~String|13.0~Ljava/io/File;~File|8.1~I~int|14.0~[I~int[]	8.0=l|8.1=i1|9.0=j1|11.0=flag1|12.0=s1|13.0=file2|14.0=aint1
+op	jad	st-lvt	new	a	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	0
+op	jad	st-lvt	rename	a	0.0~N~long|2.0~N~double|4.0~N~int|5.0~N~String|6.0~N~File|7.0~N~Class<?>|8.0~I~int|9.0~J~long	8.0=i|9.0=j
+op	jad	inst	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	0
+op	jad	inst	rename	a	0.0~N~Naming|1.0~[I~int[]|2.0~[[Ljava/lang/String;~String[][]|3.0~[Ljava/lang/Object;~Object[]|4.0~I~int|5.0~I~int|6.0~I~int|7.0~I~int|8.0~I~int|9.0~Ljava/util/List;~List<String>|10.0~Ljava/util/Map$Entry;~Map.Entry<String, Integer>|11.0~Ljava/util/Map;~java.util.Map<String, List<Integer>>|12.0~C~char|13.0~B~byte|14.0~S~short|15.0~S~short|16.0~F~float|17.0~D~double|19.0~Ljava/lang/Character;~Character|20.0~Ljava/lang/Long;~Long|21.0~Ljava/lang/Byte;~Byte|22.0~Ljava/lang/Short;~Short|23.0~Ljava/lang/Boolean;~Boolean|24.0~Ljava/lang/Package;~Package|25.0~Ljava/lang/Enum;~Enum<?>|26.0~Ljava/lang/Class;~Class<?>|27.0~[Ljava/lang/Integer;~Integer[]|28.0~[[I~int[][]|29.0~Ljava/lang/StringBuilder;~StringBuilder|30.0~Lp/Naming$Inner;~Naming.Inner|31.0~Lp/Naming$Inner;~Naming$Inner	4.0=i|5.0=j|6.0=k|7.0=l|8.0=i1|9.0=list|10.0=entry|11.0=map|12.0=c0|13.0=b0|14.0=short1|15.0=short2|16.0=f|17.0=d0|19.0=character|20.0=olong|21.0=obyte|22.0=oshort|23.0=obool|24.0=opackage|25.0=oenum|26.0=oclass|27.0=ainteger|28.0=aint|29.0=stringbuilder|30.0=inner|31.0=naming$inner
+op	jad	inst	rename	a	9.2~I~int|9.0~I~int|3.1~Ljava/lang/String;~String|3.0~Ljava/lang/String;~String|1.0~I~int|7.0~Z~boolean	7.0=flag|9.0=j1|9.2=k1
+op	jad	this	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	0
+op	jad	this	rename	a	0.0~N~this|1.0~[I~int[]|4.0~I~int	4.0=i
+op	jad	st-params	new	a	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	1
+op	jad	st-params	rename	a	0.0~J~long|2.0~D~double|4.0~I~int|5.0~Ljava/lang/String;~String|6.0~Ljava/io/File;~java.io.File|7.0~Ljava/lang/Class;~Class<?>|8.0~I~int|9.0~J~long|11.0~Z~boolean|12.0~Ljava/lang/String;~String|13.0~Ljava/io/File;~File|8.1~I~int|14.0~[I~int[]	0.0=i|2.0=d0|4.0=j|5.0=s|6.0=file1|7.0=oclass|8.0=k|8.1=l|9.0=i1|11.0=flag|12.0=s1|13.0=file2|14.0=aint
+op	jad	st-params	rename	a	0.0~J~long|2.0~D~double|4.0~I~int|5.0~Ljava/lang/String;~String|6.0~Ljava/io/File;~java.io.File|7.0~Ljava/lang/Class;~Class<?>|8.0~I~int|9.0~J~long|11.0~Z~boolean|12.0~Ljava/lang/String;~String|13.0~Ljava/io/File;~File|8.1~I~int|14.0~[I~int[]	0.0=i|2.0=d0|4.0=j|5.0=s|6.0=file1|7.0=oclass|8.0=j1|8.1=k1|9.0=l1|11.0=flag1|12.0=s2|13.0=file3|14.0=aint1
+op	jad	st-lvt-params	new	a	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	1
+op	jad	st-lvt-params	rename	a	0.0~N~long|2.0~N~double|4.0~N~int|5.0~N~String|6.0~N~File|7.0~N~Class<?>|8.0~I~int|9.0~J~long	0.0=i|2.0=d0|4.0=j|5.0=s|6.0=file1|7.0=oclass|8.0=k|9.0=l
+op	jad	inst-params	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	1
+op	jad	inst-params	rename	a	0.0~N~Naming|1.0~[I~int[]|2.0~[[Ljava/lang/String;~String[][]|3.0~[Ljava/lang/Object;~Object[]|4.0~I~int|5.0~I~int|6.0~I~int|7.0~I~int|8.0~I~int|9.0~Ljava/util/List;~List<String>|10.0~Ljava/util/Map$Entry;~Map.Entry<String, Integer>|11.0~Ljava/util/Map;~java.util.Map<String, List<Integer>>|12.0~C~char|13.0~B~byte|14.0~S~short|15.0~S~short|16.0~F~float|17.0~D~double|19.0~Ljava/lang/Character;~Character|20.0~Ljava/lang/Long;~Long|21.0~Ljava/lang/Byte;~Byte|22.0~Ljava/lang/Short;~Short|23.0~Ljava/lang/Boolean;~Boolean|24.0~Ljava/lang/Package;~Package|25.0~Ljava/lang/Enum;~Enum<?>|26.0~Ljava/lang/Class;~Class<?>|27.0~[Ljava/lang/Integer;~Integer[]|28.0~[[I~int[][]|29.0~Ljava/lang/StringBuilder;~StringBuilder|30.0~Lp/Naming$Inner;~Naming.Inner|31.0~Lp/Naming$Inner;~Naming$Inner	0.0=naming|1.0=aint|2.0=astring|3.0=aobject|4.0=i|5.0=j|6.0=k|7.0=l|8.0=i1|9.0=list|10.0=entry|11.0=map|12.0=c0|13.0=b0|14.0=short1|15.0=short2|16.0=f|17.0=d0|19.0=character|20.0=olong|21.0=obyte|22.0=oshort|23.0=obool|24.0=opackage|25.0=oenum|26.0=oclass|27.0=ainteger|28.0=aint1|29.0=stringbuilder|30.0=inner|31.0=naming$inner
+op	jad	inst-params	rename	a	9.2~I~int|9.0~I~int|3.1~Ljava/lang/String;~String|3.0~Ljava/lang/String;~String|1.0~I~int|7.0~Z~boolean	1.0=aint|3.0=aobject|3.1=aobject|7.0=flag|9.0=j1|9.2=k1
+op	jad	this-params	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	1
+op	jad	this-params	rename	a	0.0~N~this|1.0~[I~int[]|4.0~I~int	1.0=aint|4.0=i
+op	jad	parent	new	p	lambdas (Ljava/lang/String;I)V	0
+op	jad	parent	rename	p	3.0~I~int|4.0~Ljava/lang/String;~String|5.0~Ljava/lang/Runnable;~Runnable|6.0~Ljava/lang/Object;~Object	3.0=i|4.0=s|5.0=runnable|6.0=object
+op	jad	parent	new	c	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	0
+op	jad	parent	parent	c	p	ok
+op	jad	parent	rename	c	8.0~I~int|9.0~Ljava/lang/String;~String|10.0~Ljava/lang/Object;~Object|11.0~Ljava/lang/Runnable;~Runnable	8.0=j|9.0=s1|10.0=object1|11.0=runnable1
+op	jad	parent	rename	p	7.0~I~int|8.0~Ljava/lang/String;~String	7.0=j|8.0=s1
+op	jad	parent	new	d	keywords (Ljava/lang/Class;Ljava/lang/Package;)V	0
+op	jad	parent	parent	d	c	ok
+op	jad	parent	parent	d	d	ok
+op	jad	parent	rename	d	2.0~I~int|3.0~Ljava/lang/Object;~Object|4.0~Ljava/lang/Class;~Class<?>	2.0=k|3.0=object2|4.0=oclass
+op	jad	parameters	new	off	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	0
+op	jad	parameters	param	off	9	J	a	0	a
+op	jad	parameters	param	off	9	D	b	2	b
+op	jad	parameters	param	off	9	I	c	4	c
+op	jad	parameters	param	off	9	Ljava/lang/String;	d	5	d
+op	jad	parameters	param	off	9	Ljava/io/File;	f	6	f
+op	jad	parameters	param	off	9	Ljava/lang/Class;	k	7	k
+op	jad	parameters	param	off	9	I	again	4	again
+op	jad	parameters	param	off	9	Ljava/lang/String;	\N	8	\N
+op	jad	parameters	rename	off	0.0~J~long|8.0~I~int|9.0~J~long|11.0~Z~boolean|12.0~Ljava/lang/String;~String	8.0=i|9.0=j|11.0=flag|12.0=s
+op	jad	parameters	param	off	1033	I	c	4	c
+op	jad	parameters	param	off	1033	[Ljava/util/Map$Entry;	es	9	es
+op	jad	parameters	param	off	257	Ljava/lang/Object;	o	10	o
+op	jad	parameters	param	off	257	[[I	\N	11	\N
+op	jad	parameters	param	off	1	Lp/Naming$Inner;	in	12	in
+op	jad	parameters	param	off	1	@GENVAR:0:T	t	13	!RuntimeException
+op	jad	parameters	new	on	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	1
+op	jad	parameters	param	on	9	J	a	0	i
+op	jad	parameters	param	on	9	D	b	2	d0
+op	jad	parameters	param	on	9	I	c	4	j
+op	jad	parameters	param	on	9	Ljava/lang/String;	d	5	s
+op	jad	parameters	param	on	9	Ljava/io/File;	f	6	file1
+op	jad	parameters	param	on	9	Ljava/lang/Class;	k	7	oclass
+op	jad	parameters	param	on	9	I	again	4	j
+op	jad	parameters	param	on	9	Ljava/lang/String;	\N	8	s1
+op	jad	parameters	rename	on	0.0~J~long|8.0~I~int|9.0~J~long|11.0~Z~boolean|12.0~Ljava/lang/String;~String	0.0=i|8.0=k|9.0=l|11.0=flag|12.0=s2
+op	jad	parameters	param	on	1033	I	c	4	j
+op	jad	parameters	param	on	1033	[Ljava/util/Map$Entry;	es	9	aentry
+op	jad	parameters	param	on	257	Ljava/lang/Object;	o	10	object
+op	jad	parameters	param	on	257	[[I	\N	11	aint
+op	jad	parameters	param	on	1	Lp/Naming$Inner;	in	12	inner
+op	jad	parameters	param	on	1	@GENVAR:0:T	t	13	!RuntimeException
+op	jad	parameters	new	abs	abs (Ljava/lang/String;I)V	0
+op	jad	parameters	param	abs	1025	Ljava/lang/String;	name	1	name
+op	jad	parameters	param	abs	1025	I	\N	2	\N
+op	tiny	st	new	a	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	0
+op	tiny	st	rename	a	0.0~J~long|2.0~D~double|4.0~I~int|5.0~Ljava/lang/String;~String|6.0~Ljava/io/File;~java.io.File|7.0~Ljava/lang/Class;~Class<?>|8.0~I~int|9.0~J~long|11.0~Z~boolean|12.0~Ljava/lang/String;~String|13.0~Ljava/io/File;~File|8.1~I~int|14.0~[I~int[]	8.0=i|8.1=j|9.0=l|11.0=bl|12.0=string|13.0=file|14.0=k
+op	tiny	st	rename	a	0.0~J~long|2.0~D~double|4.0~I~int|5.0~Ljava/lang/String;~String|6.0~Ljava/io/File;~java.io.File|7.0~Ljava/lang/Class;~Class<?>|8.0~I~int|9.0~J~long|11.0~Z~boolean|12.0~Ljava/lang/String;~String|13.0~Ljava/io/File;~File|8.1~I~int|14.0~[I~int[]	8.0=m|8.1=n|9.0=o|11.0=bl1|12.0=string1|13.0=file1|14.0=p
+op	tiny	st-lvt	new	a	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	0
+op	tiny	st-lvt	rename	a	0.0~N~long|2.0~N~double|4.0~N~int|5.0~N~String|6.0~N~File|7.0~N~Class<?>|8.0~I~int|9.0~J~long	8.0=i|9.0=l
+op	tiny	inst	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	0
+op	tiny	inst	rename	a	0.0~N~Naming|1.0~[I~int[]|2.0~[[Ljava/lang/String;~String[][]|3.0~[Ljava/lang/Object;~Object[]|4.0~I~int|5.0~I~int|6.0~I~int|7.0~I~int|8.0~I~int|9.0~Ljava/util/List;~List<String>|10.0~Ljava/util/Map$Entry;~Map.Entry<String, Integer>|11.0~Ljava/util/Map;~java.util.Map<String, List<Integer>>|12.0~C~char|13.0~B~byte|14.0~S~short|15.0~S~short|16.0~F~float|17.0~D~double|19.0~Ljava/lang/Character;~Character|20.0~Ljava/lang/Long;~Long|21.0~Ljava/lang/Byte;~Byte|22.0~Ljava/lang/Short;~Short|23.0~Ljava/lang/Boolean;~Boolean|24.0~Ljava/lang/Package;~Package|25.0~Ljava/lang/Enum;~Enum<?>|26.0~Ljava/lang/Class;~Class<?>|27.0~[Ljava/lang/Integer;~Integer[]|28.0~[[I~int[][]|29.0~Ljava/lang/StringBuilder;~StringBuilder|30.0~Lp/Naming$Inner;~Naming.Inner|31.0~Lp/Naming$Inner;~Naming$Inner	4.0=i|5.0=j|6.0=k|7.0=l|8.0=m|9.0=list|10.0=entry|11.0=map|12.0=c|13.0=b|14.0=s|15.0=t|16.0=f|17.0=d|19.0=character|20.0=long_|21.0=byte1|22.0=short1|23.0=boolean_|24.0=package_|25.0=enum_|26.0=class_|27.0=integers|28.0=n|29.0=stringBuilder|30.0=inner|31.0=inner1
+op	tiny	inst	rename	a	9.2~I~int|9.0~I~int|3.1~Ljava/lang/String;~String|3.0~Ljava/lang/String;~String|1.0~I~int|7.0~Z~boolean	7.0=bl|9.0=o|9.2=p
+op	tiny	this	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	0
+op	tiny	this	rename	a	0.0~N~this|1.0~[I~int[]|4.0~I~int	4.0=i
+op	tiny	st-params	new	a	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	1
+op	tiny	st-params	rename	a	0.0~J~long|2.0~D~double|4.0~I~int|5.0~Ljava/lang/String;~String|6.0~Ljava/io/File;~java.io.File|7.0~Ljava/lang/Class;~Class<?>|8.0~I~int|9.0~J~long|11.0~Z~boolean|12.0~Ljava/lang/String;~String|13.0~Ljava/io/File;~File|8.1~I~int|14.0~[I~int[]	0.0=l|2.0=d|4.0=i|5.0=string|6.0=file|7.0=class_|8.0=j|8.1=k|9.0=m|11.0=bl|12.0=string1|13.0=file1|14.0=n
+op	tiny	st-params	rename	a	0.0~J~long|2.0~D~double|4.0~I~int|5.0~Ljava/lang/String;~String|6.0~Ljava/io/File;~java.io.File|7.0~Ljava/lang/Class;~Class<?>|8.0~I~int|9.0~J~long|11.0~Z~boolean|12.0~Ljava/lang/String;~String|13.0~Ljava/io/File;~File|8.1~I~int|14.0~[I~int[]	0.0=l|2.0=d|4.0=i|5.0=string|6.0=file|7.0=class_|8.0=o|8.1=p|9.0=q|11.0=bl1|12.0=string2|13.0=file2|14.0=r
+op	tiny	st-lvt-params	new	a	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	1
+op	tiny	st-lvt-params	rename	a	0.0~N~long|2.0~N~double|4.0~N~int|5.0~N~String|6.0~N~File|7.0~N~Class<?>|8.0~I~int|9.0~J~long	!NullPointerException
+op	tiny	inst-params	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	1
+op	tiny	inst-params	rename	a	0.0~N~Naming|1.0~[I~int[]|2.0~[[Ljava/lang/String;~String[][]|3.0~[Ljava/lang/Object;~Object[]|4.0~I~int|5.0~I~int|6.0~I~int|7.0~I~int|8.0~I~int|9.0~Ljava/util/List;~List<String>|10.0~Ljava/util/Map$Entry;~Map.Entry<String, Integer>|11.0~Ljava/util/Map;~java.util.Map<String, List<Integer>>|12.0~C~char|13.0~B~byte|14.0~S~short|15.0~S~short|16.0~F~float|17.0~D~double|19.0~Ljava/lang/Character;~Character|20.0~Ljava/lang/Long;~Long|21.0~Ljava/lang/Byte;~Byte|22.0~Ljava/lang/Short;~Short|23.0~Ljava/lang/Boolean;~Boolean|24.0~Ljava/lang/Package;~Package|25.0~Ljava/lang/Enum;~Enum<?>|26.0~Ljava/lang/Class;~Class<?>|27.0~[Ljava/lang/Integer;~Integer[]|28.0~[[I~int[][]|29.0~Ljava/lang/StringBuilder;~StringBuilder|30.0~Lp/Naming$Inner;~Naming.Inner|31.0~Lp/Naming$Inner;~Naming$Inner	!NullPointerException
+op	tiny	inst-params	rename	a	9.2~I~int|9.0~I~int|3.1~Ljava/lang/String;~String|3.0~Ljava/lang/String;~String|1.0~I~int|7.0~Z~boolean	1.0=i|3.0=string|3.1=string|7.0=bl|9.0=j|9.2=k
+op	tiny	this-params	new	a	inst ([I[[Ljava/lang/String;[Ljava/lang/Object;)V	1
+op	tiny	this-params	rename	a	0.0~N~this|1.0~[I~int[]|4.0~I~int	!NullPointerException
+op	tiny	parent	new	p	lambdas (Ljava/lang/String;I)V	0
+op	tiny	parent	rename	p	3.0~I~int|4.0~Ljava/lang/String;~String|5.0~Ljava/lang/Runnable;~Runnable|6.0~Ljava/lang/Object;~Object	3.0=i|4.0=string|5.0=runnable|6.0=object
+op	tiny	parent	new	c	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	0
+op	tiny	parent	parent	c	p	ok
+op	tiny	parent	rename	c	8.0~I~int|9.0~Ljava/lang/String;~String|10.0~Ljava/lang/Object;~Object|11.0~Ljava/lang/Runnable;~Runnable	8.0=j|9.0=string1|10.0=object1|11.0=runnable1
+op	tiny	parent	rename	p	7.0~I~int|8.0~Ljava/lang/String;~String	7.0=j|8.0=string1
+op	tiny	parent	new	d	keywords (Ljava/lang/Class;Ljava/lang/Package;)V	0
+op	tiny	parent	parent	d	c	ok
+op	tiny	parent	parent	d	d	ok
+op	tiny	parent	rename	d	2.0~I~int|3.0~Ljava/lang/Object;~Object|4.0~Ljava/lang/Class;~Class<?>	2.0=k|3.0=object2|4.0=class_
+op	tiny	parameters	new	off	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	0
+op	tiny	parameters	param	off	9	J	a	0	a
+op	tiny	parameters	param	off	9	D	b	2	b
+op	tiny	parameters	param	off	9	I	c	4	c
+op	tiny	parameters	param	off	9	Ljava/lang/String;	d	5	d
+op	tiny	parameters	param	off	9	Ljava/io/File;	f	6	f
+op	tiny	parameters	param	off	9	Ljava/lang/Class;	k	7	k
+op	tiny	parameters	param	off	9	I	again	4	again
+op	tiny	parameters	param	off	9	Ljava/lang/String;	\N	8	\N
+op	tiny	parameters	rename	off	0.0~J~long|8.0~I~int|9.0~J~long|11.0~Z~boolean|12.0~Ljava/lang/String;~String	8.0=i|9.0=l|11.0=bl|12.0=string
+op	tiny	parameters	param	off	1033	I	c	4	c
+op	tiny	parameters	param	off	1033	[Ljava/util/Map$Entry;	es	9	es
+op	tiny	parameters	param	off	257	Ljava/lang/Object;	o	10	o
+op	tiny	parameters	param	off	257	[[I	\N	11	\N
+op	tiny	parameters	param	off	1	Lp/Naming$Inner;	in	12	in
+op	tiny	parameters	param	off	1	@GENVAR:0:T	t	13	!RuntimeException
+op	tiny	parameters	new	on	st (JDILjava/lang/String;Ljava/io/File;Ljava/lang/Class;)I	1
+op	tiny	parameters	param	on	9	J	a	0	l
+op	tiny	parameters	param	on	9	D	b	2	d
+op	tiny	parameters	param	on	9	I	c	4	i
+op	tiny	parameters	param	on	9	Ljava/lang/String;	d	5	string
+op	tiny	parameters	param	on	9	Ljava/io/File;	f	6	file
+op	tiny	parameters	param	on	9	Ljava/lang/Class;	k	7	class_
+op	tiny	parameters	param	on	9	I	again	4	i
+op	tiny	parameters	param	on	9	Ljava/lang/String;	\N	8	string1
+op	tiny	parameters	rename	on	0.0~J~long|8.0~I~int|9.0~J~long|11.0~Z~boolean|12.0~Ljava/lang/String;~String	0.0=l|8.0=j|9.0=m|11.0=bl|12.0=string2
+op	tiny	parameters	param	on	1033	I	c	4	i
+op	tiny	parameters	param	on	1033	[Ljava/util/Map$Entry;	es	9	entrys
+op	tiny	parameters	param	on	257	Ljava/lang/Object;	o	10	object
+op	tiny	parameters	param	on	257	[[I	\N	11	k
+op	tiny	parameters	param	on	1	Lp/Naming$Inner;	in	12	inner
+op	tiny	parameters	param	on	1	@GENVAR:0:T	t	13	!RuntimeException
+op	tiny	parameters	new	abs	abs (Ljava/lang/String;I)V	0
+op	tiny	parameters	param	abs	1025	Ljava/lang/String;	name	1	name
+op	tiny	parameters	param	abs	1025	I	\N	2	\N
+convert	-30	^be
+convert	-27	^bb
+convert	-26	^ba
+convert	-25	^z
+convert	-1	^b
+convert	0	a
+convert	1	b
+convert	7	h
+convert	8	i
+convert	11	l
+convert	25	z
+convert	26	ba
+convert	27	bb
+convert	51	bz
+convert	52	ca
+convert	675	zz
+convert	676	baa
+convert	677	bab
+convert	17575	zzz
+convert	17576	baaa
+convert	456975	zzzz
+convert	456976	baaaa
+convert	2147483647	gytisyx
+convert	-2147483648	^gytisyy
+char	0041	1	0061
+char	0042	1	0062
+char	0043	1	0063
+char	0044	1	0064
+char	0045	1	0065
+char	0046	1	0066
+char	0047	1	0067
+char	0048	1	0068
+char	0049	1	0069
+char	004a	1	006a
+char	004b	1	006b
+char	004c	1	006c
+char	004d	1	006d
+char	004e	1	006e
+char	004f	1	006f
+char	0050	1	0070
+char	0051	1	0071
+char	0052	1	0072
+char	0053	1	0073
+char	0054	1	0074
+char	0055	1	0075
+char	0056	1	0076
+char	0057	1	0077
+char	0058	1	0078
+char	0059	1	0079
+char	005a	1	007a
+char	00c0	1	00e0
+char	00c1	1	00e1
+char	00c2	1	00e2
+char	00c3	1	00e3
+char	00c4	1	00e4
+char	00c5	1	00e5
+char	00c6	1	00e6
+char	00c7	1	00e7
+char	00c8	1	00e8
+char	00c9	1	00e9
+char	00ca	1	00ea
+char	00cb	1	00eb
+char	00cc	1	00ec
+char	00cd	1	00ed
+char	00ce	1	00ee
+char	00cf	1	00ef
+char	00d0	1	00f0
+char	00d1	1	00f1
+char	00d2	1	00f2
+char	00d3	1	00f3
+char	00d4	1	00f4
+char	00d5	1	00f5
+char	00d6	1	00f6
+char	00d8	1	00f8
+char	00d9	1	00f9
+char	00da	1	00fa
+char	00db	1	00fb
+char	00dc	1	00fc
+char	00dd	1	00fd
+char	00de	1	00fe
+char	0100	1	0101
+char	0102	1	0103
+char	0104	1	0105
+char	0106	1	0107
+char	0108	1	0109
+char	010a	1	010b
+char	010c	1	010d
+char	010e	1	010f
+char	0110	1	0111
+char	0112	1	0113
+char	0114	1	0115
+char	0116	1	0117
+char	0118	1	0119
+char	011a	1	011b
+char	011c	1	011d
+char	011e	1	011f
+char	0120	1	0121
+char	0122	1	0123
+char	0124	1	0125
+char	0126	1	0127
+char	0128	1	0129
+char	012a	1	012b
+char	012c	1	012d
+char	012e	1	012f
+char	0130	1	0069
+char	0132	1	0133
+char	0134	1	0135
+char	0136	1	0137
+char	0139	1	013a
+char	013b	1	013c
+char	013d	1	013e
+char	013f	1	0140
+char	0141	1	0142
+char	0143	1	0144
+char	0145	1	0146
+char	0147	1	0148
+char	014a	1	014b
+char	014c	1	014d
+char	014e	1	014f
+char	0150	1	0151
+char	0152	1	0153
+char	0154	1	0155
+char	0156	1	0157
+char	0158	1	0159
+char	015a	1	015b
+char	015c	1	015d
+char	015e	1	015f
+char	0160	1	0161
+char	0162	1	0163
+char	0164	1	0165
+char	0166	1	0167
+char	0168	1	0169
+char	016a	1	016b
+char	016c	1	016d
+char	016e	1	016f
+char	0170	1	0171
+char	0172	1	0173
+char	0174	1	0175
+char	0176	1	0177
+char	0178	1	00ff
+char	0179	1	017a
+char	017b	1	017c
+char	017d	1	017e
+char	0181	1	0253
+char	0182	1	0183
+char	0184	1	0185
+char	0186	1	0254
+char	0187	1	0188
+char	0189	1	0256
+char	018a	1	0257
+char	018b	1	018c
+char	018e	1	01dd
+char	018f	1	0259
+char	0190	1	025b
+char	0191	1	0192
+char	0193	1	0260
+char	0194	1	0263
+char	0196	1	0269
+char	0197	1	0268
+char	0198	1	0199
+char	019c	1	026f
+char	019d	1	0272
+char	019f	1	0275
+char	01a0	1	01a1
+char	01a2	1	01a3
+char	01a4	1	01a5
+char	01a6	1	0280
+char	01a7	1	01a8
+char	01a9	1	0283
+char	01ac	1	01ad
+char	01ae	1	0288
+char	01af	1	01b0
+char	01b1	1	028a
+char	01b2	1	028b
+char	01b3	1	01b4
+char	01b5	1	01b6
+char	01b7	1	0292
+char	01b8	1	01b9
+char	01bc	1	01bd
+char	01c4	1	01c6
+char	01c5	0	01c6
+char	01c7	1	01c9
+char	01c8	0	01c9
+char	01ca	1	01cc
+char	01cb	0	01cc
+char	01cd	1	01ce
+char	01cf	1	01d0
+char	01d1	1	01d2
+char	01d3	1	01d4
+char	01d5	1	01d6
+char	01d7	1	01d8
+char	01d9	1	01da
+char	01db	1	01dc
+char	01de	1	01df
+char	01e0	1	01e1
+char	01e2	1	01e3
+char	01e4	1	01e5
+char	01e6	1	01e7
+char	01e8	1	01e9
+char	01ea	1	01eb
+char	01ec	1	01ed
+char	01ee	1	01ef
+char	01f1	1	01f3
+char	01f2	0	01f3
+char	01f4	1	01f5
+char	01f6	1	0195
+char	01f7	1	01bf
+char	01f8	1	01f9
+char	01fa	1	01fb
+char	01fc	1	01fd
+char	01fe	1	01ff
+char	0200	1	0201
+char	0202	1	0203
+char	0204	1	0205
+char	0206	1	0207
+char	0208	1	0209
+char	020a	1	020b
+char	020c	1	020d
+char	020e	1	020f
+char	0210	1	0211
+char	0212	1	0213
+char	0214	1	0215
+char	0216	1	0217
+char	0218	1	0219
+char	021a	1	021b
+char	021c	1	021d
+char	021e	1	021f
+char	0220	1	019e
+char	0222	1	0223
+char	0224	1	0225
+char	0226	1	0227
+char	0228	1	0229
+char	022a	1	022b
+char	022c	1	022d
+char	022e	1	022f
+char	0230	1	0231
+char	0232	1	0233
+char	023a	1	2c65
+char	023b	1	023c
+char	023d	1	019a
+char	023e	1	2c66
+char	0241	1	0242
+char	0243	1	0180
+char	0244	1	0289
+char	0245	1	028c
+char	0246	1	0247
+char	0248	1	0249
+char	024a	1	024b
+char	024c	1	024d
+char	024e	1	024f
+char	0370	1	0371
+char	0372	1	0373
+char	0376	1	0377
+char	037f	1	03f3
+char	0386	1	03ac
+char	0388	1	03ad
+char	0389	1	03ae
+char	038a	1	03af
+char	038c	1	03cc
+char	038e	1	03cd
+char	038f	1	03ce
+char	0391	1	03b1
+char	0392	1	03b2
+char	0393	1	03b3
+char	0394	1	03b4
+char	0395	1	03b5
+char	0396	1	03b6
+char	0397	1	03b7
+char	0398	1	03b8
+char	0399	1	03b9
+char	039a	1	03ba
+char	039b	1	03bb
+char	039c	1	03bc
+char	039d	1	03bd
+char	039e	1	03be
+char	039f	1	03bf
+char	03a0	1	03c0
+char	03a1	1	03c1
+char	03a3	1	03c3
+char	03a4	1	03c4
+char	03a5	1	03c5
+char	03a6	1	03c6
+char	03a7	1	03c7
+char	03a8	1	03c8
+char	03a9	1	03c9
+char	03aa	1	03ca
+char	03ab	1	03cb
+char	03cf	1	03d7
+char	03d2	1	03d2
+char	03d3	1	03d3
+char	03d4	1	03d4
+char	03d8	1	03d9
+char	03da	1	03db
+char	03dc	1	03dd
+char	03de	1	03df
+char	03e0	1	03e1
+char	03e2	1	03e3
+char	03e4	1	03e5
+char	03e6	1	03e7
+char	03e8	1	03e9
+char	03ea	1	03eb
+char	03ec	1	03ed
+char	03ee	1	03ef
+char	03f4	1	03b8
+char	03f7	1	03f8
+char	03f9	1	03f2
+char	03fa	1	03fb
+char	03fd	1	037b
+char	03fe	1	037c
+char	03ff	1	037d
+char	0400	1	0450
+char	0401	1	0451
+char	0402	1	0452
+char	0403	1	0453
+char	0404	1	0454
+char	0405	1	0455
+char	0406	1	0456
+char	0407	1	0457
+char	0408	1	0458
+char	0409	1	0459
+char	040a	1	045a
+char	040b	1	045b
+char	040c	1	045c
+char	040d	1	045d
+char	040e	1	045e
+char	040f	1	045f
+char	0410	1	0430
+char	0411	1	0431
+char	0412	1	0432
+char	0413	1	0433
+char	0414	1	0434
+char	0415	1	0435
+char	0416	1	0436
+char	0417	1	0437
+char	0418	1	0438
+char	0419	1	0439
+char	041a	1	043a
+char	041b	1	043b
+char	041c	1	043c
+char	041d	1	043d
+char	041e	1	043e
+char	041f	1	043f
+char	0420	1	0440
+char	0421	1	0441
+char	0422	1	0442
+char	0423	1	0443
+char	0424	1	0444
+char	0425	1	0445
+char	0426	1	0446
+char	0427	1	0447
+char	0428	1	0448
+char	0429	1	0449
+char	042a	1	044a
+char	042b	1	044b
+char	042c	1	044c
+char	042d	1	044d
+char	042e	1	044e
+char	042f	1	044f
+char	0460	1	0461
+char	0462	1	0463
+char	0464	1	0465
+char	0466	1	0467
+char	0468	1	0469
+char	046a	1	046b
+char	046c	1	046d
+char	046e	1	046f
+char	0470	1	0471
+char	0472	1	0473
+char	0474	1	0475
+char	0476	1	0477
+char	0478	1	0479
+char	047a	1	047b
+char	047c	1	047d
+char	047e	1	047f
+char	0480	1	0481
+char	048a	1	048b
+char	048c	1	048d
+char	048e	1	048f
+char	0490	1	0491
+char	0492	1	0493
+char	0494	1	0495
+char	0496	1	0497
+char	0498	1	0499
+char	049a	1	049b
+char	049c	1	049d
+char	049e	1	049f
+char	04a0	1	04a1
+char	04a2	1	04a3
+char	04a4	1	04a5
+char	04a6	1	04a7
+char	04a8	1	04a9
+char	04aa	1	04ab
+char	04ac	1	04ad
+char	04ae	1	04af
+char	04b0	1	04b1
+char	04b2	1	04b3
+char	04b4	1	04b5
+char	04b6	1	04b7
+char	04b8	1	04b9
+char	04ba	1	04bb
+char	04bc	1	04bd
+char	04be	1	04bf
+char	04c0	1	04cf
+char	04c1	1	04c2
+char	04c3	1	04c4
+char	04c5	1	04c6
+char	04c7	1	04c8
+char	04c9	1	04ca
+char	04cb	1	04cc
+char	04cd	1	04ce
+char	04d0	1	04d1
+char	04d2	1	04d3
+char	04d4	1	04d5
+char	04d6	1	04d7
+char	04d8	1	04d9
+char	04da	1	04db
+char	04dc	1	04dd
+char	04de	1	04df
+char	04e0	1	04e1
+char	04e2	1	04e3
+char	04e4	1	04e5
+char	04e6	1	04e7
+char	04e8	1	04e9
+char	04ea	1	04eb
+char	04ec	1	04ed
+char	04ee	1	04ef
+char	04f0	1	04f1
+char	04f2	1	04f3
+char	04f4	1	04f5
+char	04f6	1	04f7
+char	04f8	1	04f9
+char	04fa	1	04fb
+char	04fc	1	04fd
+char	04fe	1	04ff
+char	0500	1	0501
+char	0502	1	0503
+char	0504	1	0505
+char	0506	1	0507
+char	0508	1	0509
+char	050a	1	050b
+char	050c	1	050d
+char	050e	1	050f
+char	0510	1	0511
+char	0512	1	0513
+char	0514	1	0515
+char	0516	1	0517
+char	0518	1	0519
+char	051a	1	051b
+char	051c	1	051d
+char	051e	1	051f
+char	0520	1	0521
+char	0522	1	0523
+char	0524	1	0525
+char	0526	1	0527
+char	0528	1	0529
+char	052a	1	052b
+char	052c	1	052d
+char	052e	1	052f
+char	0531	1	0561
+char	0532	1	0562
+char	0533	1	0563
+char	0534	1	0564
+char	0535	1	0565
+char	0536	1	0566
+char	0537	1	0567
+char	0538	1	0568
+char	0539	1	0569
+char	053a	1	056a
+char	053b	1	056b
+char	053c	1	056c
+char	053d	1	056d
+char	053e	1	056e
+char	053f	1	056f
+char	0540	1	0570
+char	0541	1	0571
+char	0542	1	0572
+char	0543	1	0573
+char	0544	1	0574
+char	0545	1	0575
+char	0546	1	0576
+char	0547	1	0577
+char	0548	1	0578
+char	0549	1	0579
+char	054a	1	057a
+char	054b	1	057b
+char	054c	1	057c
+char	054d	1	057d
+char	054e	1	057e
+char	054f	1	057f
+char	0550	1	0580
+char	0551	1	0581
+char	0552	1	0582
+char	0553	1	0583
+char	0554	1	0584
+char	0555	1	0585
+char	0556	1	0586
+char	10a0	1	2d00
+char	10a1	1	2d01
+char	10a2	1	2d02
+char	10a3	1	2d03
+char	10a4	1	2d04
+char	10a5	1	2d05
+char	10a6	1	2d06
+char	10a7	1	2d07
+char	10a8	1	2d08
+char	10a9	1	2d09
+char	10aa	1	2d0a
+char	10ab	1	2d0b
+char	10ac	1	2d0c
+char	10ad	1	2d0d
+char	10ae	1	2d0e
+char	10af	1	2d0f
+char	10b0	1	2d10
+char	10b1	1	2d11
+char	10b2	1	2d12
+char	10b3	1	2d13
+char	10b4	1	2d14
+char	10b5	1	2d15
+char	10b6	1	2d16
+char	10b7	1	2d17
+char	10b8	1	2d18
+char	10b9	1	2d19
+char	10ba	1	2d1a
+char	10bb	1	2d1b
+char	10bc	1	2d1c
+char	10bd	1	2d1d
+char	10be	1	2d1e
+char	10bf	1	2d1f
+char	10c0	1	2d20
+char	10c1	1	2d21
+char	10c2	1	2d22
+char	10c3	1	2d23
+char	10c4	1	2d24
+char	10c5	1	2d25
+char	10c7	1	2d27
+char	10cd	1	2d2d
+char	13a0	1	ab70
+char	13a1	1	ab71
+char	13a2	1	ab72
+char	13a3	1	ab73
+char	13a4	1	ab74
+char	13a5	1	ab75
+char	13a6	1	ab76
+char	13a7	1	ab77
+char	13a8	1	ab78
+char	13a9	1	ab79
+char	13aa	1	ab7a
+char	13ab	1	ab7b
+char	13ac	1	ab7c
+char	13ad	1	ab7d
+char	13ae	1	ab7e
+char	13af	1	ab7f
+char	13b0	1	ab80
+char	13b1	1	ab81
+char	13b2	1	ab82
+char	13b3	1	ab83
+char	13b4	1	ab84
+char	13b5	1	ab85
+char	13b6	1	ab86
+char	13b7	1	ab87
+char	13b8	1	ab88
+char	13b9	1	ab89
+char	13ba	1	ab8a
+char	13bb	1	ab8b
+char	13bc	1	ab8c
+char	13bd	1	ab8d
+char	13be	1	ab8e
+char	13bf	1	ab8f
+char	13c0	1	ab90
+char	13c1	1	ab91
+char	13c2	1	ab92
+char	13c3	1	ab93
+char	13c4	1	ab94
+char	13c5	1	ab95
+char	13c6	1	ab96
+char	13c7	1	ab97
+char	13c8	1	ab98
+char	13c9	1	ab99
+char	13ca	1	ab9a
+char	13cb	1	ab9b
+char	13cc	1	ab9c
+char	13cd	1	ab9d
+char	13ce	1	ab9e
+char	13cf	1	ab9f
+char	13d0	1	aba0
+char	13d1	1	aba1
+char	13d2	1	aba2
+char	13d3	1	aba3
+char	13d4	1	aba4
+char	13d5	1	aba5
+char	13d6	1	aba6
+char	13d7	1	aba7
+char	13d8	1	aba8
+char	13d9	1	aba9
+char	13da	1	abaa
+char	13db	1	abab
+char	13dc	1	abac
+char	13dd	1	abad
+char	13de	1	abae
+char	13df	1	abaf
+char	13e0	1	abb0
+char	13e1	1	abb1
+char	13e2	1	abb2
+char	13e3	1	abb3
+char	13e4	1	abb4
+char	13e5	1	abb5
+char	13e6	1	abb6
+char	13e7	1	abb7
+char	13e8	1	abb8
+char	13e9	1	abb9
+char	13ea	1	abba
+char	13eb	1	abbb
+char	13ec	1	abbc
+char	13ed	1	abbd
+char	13ee	1	abbe
+char	13ef	1	abbf
+char	13f0	1	13f8
+char	13f1	1	13f9
+char	13f2	1	13fa
+char	13f3	1	13fb
+char	13f4	1	13fc
+char	13f5	1	13fd
+char	1c90	1	10d0
+char	1c91	1	10d1
+char	1c92	1	10d2
+char	1c93	1	10d3
+char	1c94	1	10d4
+char	1c95	1	10d5
+char	1c96	1	10d6
+char	1c97	1	10d7
+char	1c98	1	10d8
+char	1c99	1	10d9
+char	1c9a	1	10da
+char	1c9b	1	10db
+char	1c9c	1	10dc
+char	1c9d	1	10dd
+char	1c9e	1	10de
+char	1c9f	1	10df
+char	1ca0	1	10e0
+char	1ca1	1	10e1
+char	1ca2	1	10e2
+char	1ca3	1	10e3
+char	1ca4	1	10e4
+char	1ca5	1	10e5
+char	1ca6	1	10e6
+char	1ca7	1	10e7
+char	1ca8	1	10e8
+char	1ca9	1	10e9
+char	1caa	1	10ea
+char	1cab	1	10eb
+char	1cac	1	10ec
+char	1cad	1	10ed
+char	1cae	1	10ee
+char	1caf	1	10ef
+char	1cb0	1	10f0
+char	1cb1	1	10f1
+char	1cb2	1	10f2
+char	1cb3	1	10f3
+char	1cb4	1	10f4
+char	1cb5	1	10f5
+char	1cb6	1	10f6
+char	1cb7	1	10f7
+char	1cb8	1	10f8
+char	1cb9	1	10f9
+char	1cba	1	10fa
+char	1cbd	1	10fd
+char	1cbe	1	10fe
+char	1cbf	1	10ff
+char	1e00	1	1e01
+char	1e02	1	1e03
+char	1e04	1	1e05
+char	1e06	1	1e07
+char	1e08	1	1e09
+char	1e0a	1	1e0b
+char	1e0c	1	1e0d
+char	1e0e	1	1e0f
+char	1e10	1	1e11
+char	1e12	1	1e13
+char	1e14	1	1e15
+char	1e16	1	1e17
+char	1e18	1	1e19
+char	1e1a	1	1e1b
+char	1e1c	1	1e1d
+char	1e1e	1	1e1f
+char	1e20	1	1e21
+char	1e22	1	1e23
+char	1e24	1	1e25
+char	1e26	1	1e27
+char	1e28	1	1e29
+char	1e2a	1	1e2b
+char	1e2c	1	1e2d
+char	1e2e	1	1e2f
+char	1e30	1	1e31
+char	1e32	1	1e33
+char	1e34	1	1e35
+char	1e36	1	1e37
+char	1e38	1	1e39
+char	1e3a	1	1e3b
+char	1e3c	1	1e3d
+char	1e3e	1	1e3f
+char	1e40	1	1e41
+char	1e42	1	1e43
+char	1e44	1	1e45
+char	1e46	1	1e47
+char	1e48	1	1e49
+char	1e4a	1	1e4b
+char	1e4c	1	1e4d
+char	1e4e	1	1e4f
+char	1e50	1	1e51
+char	1e52	1	1e53
+char	1e54	1	1e55
+char	1e56	1	1e57
+char	1e58	1	1e59
+char	1e5a	1	1e5b
+char	1e5c	1	1e5d
+char	1e5e	1	1e5f
+char	1e60	1	1e61
+char	1e62	1	1e63
+char	1e64	1	1e65
+char	1e66	1	1e67
+char	1e68	1	1e69
+char	1e6a	1	1e6b
+char	1e6c	1	1e6d
+char	1e6e	1	1e6f
+char	1e70	1	1e71
+char	1e72	1	1e73
+char	1e74	1	1e75
+char	1e76	1	1e77
+char	1e78	1	1e79
+char	1e7a	1	1e7b
+char	1e7c	1	1e7d
+char	1e7e	1	1e7f
+char	1e80	1	1e81
+char	1e82	1	1e83
+char	1e84	1	1e85
+char	1e86	1	1e87
+char	1e88	1	1e89
+char	1e8a	1	1e8b
+char	1e8c	1	1e8d
+char	1e8e	1	1e8f
+char	1e90	1	1e91
+char	1e92	1	1e93
+char	1e94	1	1e95
+char	1e9e	1	00df
+char	1ea0	1	1ea1
+char	1ea2	1	1ea3
+char	1ea4	1	1ea5
+char	1ea6	1	1ea7
+char	1ea8	1	1ea9
+char	1eaa	1	1eab
+char	1eac	1	1ead
+char	1eae	1	1eaf
+char	1eb0	1	1eb1
+char	1eb2	1	1eb3
+char	1eb4	1	1eb5
+char	1eb6	1	1eb7
+char	1eb8	1	1eb9
+char	1eba	1	1ebb
+char	1ebc	1	1ebd
+char	1ebe	1	1ebf
+char	1ec0	1	1ec1
+char	1ec2	1	1ec3
+char	1ec4	1	1ec5
+char	1ec6	1	1ec7
+char	1ec8	1	1ec9
+char	1eca	1	1ecb
+char	1ecc	1	1ecd
+char	1ece	1	1ecf
+char	1ed0	1	1ed1
+char	1ed2	1	1ed3
+char	1ed4	1	1ed5
+char	1ed6	1	1ed7
+char	1ed8	1	1ed9
+char	1eda	1	1edb
+char	1edc	1	1edd
+char	1ede	1	1edf
+char	1ee0	1	1ee1
+char	1ee2	1	1ee3
+char	1ee4	1	1ee5
+char	1ee6	1	1ee7
+char	1ee8	1	1ee9
+char	1eea	1	1eeb
+char	1eec	1	1eed
+char	1eee	1	1eef
+char	1ef0	1	1ef1
+char	1ef2	1	1ef3
+char	1ef4	1	1ef5
+char	1ef6	1	1ef7
+char	1ef8	1	1ef9
+char	1efa	1	1efb
+char	1efc	1	1efd
+char	1efe	1	1eff
+char	1f08	1	1f00
+char	1f09	1	1f01
+char	1f0a	1	1f02
+char	1f0b	1	1f03
+char	1f0c	1	1f04
+char	1f0d	1	1f05
+char	1f0e	1	1f06
+char	1f0f	1	1f07
+char	1f18	1	1f10
+char	1f19	1	1f11
+char	1f1a	1	1f12
+char	1f1b	1	1f13
+char	1f1c	1	1f14
+char	1f1d	1	1f15
+char	1f28	1	1f20
+char	1f29	1	1f21
+char	1f2a	1	1f22
+char	1f2b	1	1f23
+char	1f2c	1	1f24
+char	1f2d	1	1f25
+char	1f2e	1	1f26
+char	1f2f	1	1f27
+char	1f38	1	1f30
+char	1f39	1	1f31
+char	1f3a	1	1f32
+char	1f3b	1	1f33
+char	1f3c	1	1f34
+char	1f3d	1	1f35
+char	1f3e	1	1f36
+char	1f3f	1	1f37
+char	1f48	1	1f40
+char	1f49	1	1f41
+char	1f4a	1	1f42
+char	1f4b	1	1f43
+char	1f4c	1	1f44
+char	1f4d	1	1f45
+char	1f59	1	1f51
+char	1f5b	1	1f53
+char	1f5d	1	1f55
+char	1f5f	1	1f57
+char	1f68	1	1f60
+char	1f69	1	1f61
+char	1f6a	1	1f62
+char	1f6b	1	1f63
+char	1f6c	1	1f64
+char	1f6d	1	1f65
+char	1f6e	1	1f66
+char	1f6f	1	1f67
+char	1f88	0	1f80
+char	1f89	0	1f81
+char	1f8a	0	1f82
+char	1f8b	0	1f83
+char	1f8c	0	1f84
+char	1f8d	0	1f85
+char	1f8e	0	1f86
+char	1f8f	0	1f87
+char	1f98	0	1f90
+char	1f99	0	1f91
+char	1f9a	0	1f92
+char	1f9b	0	1f93
+char	1f9c	0	1f94
+char	1f9d	0	1f95
+char	1f9e	0	1f96
+char	1f9f	0	1f97
+char	1fa8	0	1fa0
+char	1fa9	0	1fa1
+char	1faa	0	1fa2
+char	1fab	0	1fa3
+char	1fac	0	1fa4
+char	1fad	0	1fa5
+char	1fae	0	1fa6
+char	1faf	0	1fa7
+char	1fb8	1	1fb0
+char	1fb9	1	1fb1
+char	1fba	1	1f70
+char	1fbb	1	1f71
+char	1fbc	0	1fb3
+char	1fc8	1	1f72
+char	1fc9	1	1f73
+char	1fca	1	1f74
+char	1fcb	1	1f75
+char	1fcc	0	1fc3
+char	1fd8	1	1fd0
+char	1fd9	1	1fd1
+char	1fda	1	1f76
+char	1fdb	1	1f77
+char	1fe8	1	1fe0
+char	1fe9	1	1fe1
+char	1fea	1	1f7a
+char	1feb	1	1f7b
+char	1fec	1	1fe5
+char	1ff8	1	1f78
+char	1ff9	1	1f79
+char	1ffa	1	1f7c
+char	1ffb	1	1f7d
+char	1ffc	0	1ff3
+char	2102	1	2102
+char	2107	1	2107
+char	210b	1	210b
+char	210c	1	210c
+char	210d	1	210d
+char	2110	1	2110
+char	2111	1	2111
+char	2112	1	2112
+char	2115	1	2115
+char	2119	1	2119
+char	211a	1	211a
+char	211b	1	211b
+char	211c	1	211c
+char	211d	1	211d
+char	2124	1	2124
+char	2126	1	03c9
+char	2128	1	2128
+char	212a	1	006b
+char	212b	1	00e5
+char	212c	1	212c
+char	212d	1	212d
+char	2130	1	2130
+char	2131	1	2131
+char	2132	1	214e
+char	2133	1	2133
+char	213e	1	213e
+char	213f	1	213f
+char	2145	1	2145
+char	2160	1	2170
+char	2161	1	2171
+char	2162	1	2172
+char	2163	1	2173
+char	2164	1	2174
+char	2165	1	2175
+char	2166	1	2176
+char	2167	1	2177
+char	2168	1	2178
+char	2169	1	2179
+char	216a	1	217a
+char	216b	1	217b
+char	216c	1	217c
+char	216d	1	217d
+char	216e	1	217e
+char	216f	1	217f
+char	2183	1	2184
+char	24b6	1	24d0
+char	24b7	1	24d1
+char	24b8	1	24d2
+char	24b9	1	24d3
+char	24ba	1	24d4
+char	24bb	1	24d5
+char	24bc	1	24d6
+char	24bd	1	24d7
+char	24be	1	24d8
+char	24bf	1	24d9
+char	24c0	1	24da
+char	24c1	1	24db
+char	24c2	1	24dc
+char	24c3	1	24dd
+char	24c4	1	24de
+char	24c5	1	24df
+char	24c6	1	24e0
+char	24c7	1	24e1
+char	24c8	1	24e2
+char	24c9	1	24e3
+char	24ca	1	24e4
+char	24cb	1	24e5
+char	24cc	1	24e6
+char	24cd	1	24e7
+char	24ce	1	24e8
+char	24cf	1	24e9
+char	2c00	1	2c30
+char	2c01	1	2c31
+char	2c02	1	2c32
+char	2c03	1	2c33
+char	2c04	1	2c34
+char	2c05	1	2c35
+char	2c06	1	2c36
+char	2c07	1	2c37
+char	2c08	1	2c38
+char	2c09	1	2c39
+char	2c0a	1	2c3a
+char	2c0b	1	2c3b
+char	2c0c	1	2c3c
+char	2c0d	1	2c3d
+char	2c0e	1	2c3e
+char	2c0f	1	2c3f
+char	2c10	1	2c40
+char	2c11	1	2c41
+char	2c12	1	2c42
+char	2c13	1	2c43
+char	2c14	1	2c44
+char	2c15	1	2c45
+char	2c16	1	2c46
+char	2c17	1	2c47
+char	2c18	1	2c48
+char	2c19	1	2c49
+char	2c1a	1	2c4a
+char	2c1b	1	2c4b
+char	2c1c	1	2c4c
+char	2c1d	1	2c4d
+char	2c1e	1	2c4e
+char	2c1f	1	2c4f
+char	2c20	1	2c50
+char	2c21	1	2c51
+char	2c22	1	2c52
+char	2c23	1	2c53
+char	2c24	1	2c54
+char	2c25	1	2c55
+char	2c26	1	2c56
+char	2c27	1	2c57
+char	2c28	1	2c58
+char	2c29	1	2c59
+char	2c2a	1	2c5a
+char	2c2b	1	2c5b
+char	2c2c	1	2c5c
+char	2c2d	1	2c5d
+char	2c2e	1	2c5e
+char	2c2f	1	2c5f
+char	2c60	1	2c61
+char	2c62	1	026b
+char	2c63	1	1d7d
+char	2c64	1	027d
+char	2c67	1	2c68
+char	2c69	1	2c6a
+char	2c6b	1	2c6c
+char	2c6d	1	0251
+char	2c6e	1	0271
+char	2c6f	1	0250
+char	2c70	1	0252
+char	2c72	1	2c73
+char	2c75	1	2c76
+char	2c7e	1	023f
+char	2c7f	1	0240
+char	2c80	1	2c81
+char	2c82	1	2c83
+char	2c84	1	2c85
+char	2c86	1	2c87
+char	2c88	1	2c89
+char	2c8a	1	2c8b
+char	2c8c	1	2c8d
+char	2c8e	1	2c8f
+char	2c90	1	2c91
+char	2c92	1	2c93
+char	2c94	1	2c95
+char	2c96	1	2c97
+char	2c98	1	2c99
+char	2c9a	1	2c9b
+char	2c9c	1	2c9d
+char	2c9e	1	2c9f
+char	2ca0	1	2ca1
+char	2ca2	1	2ca3
+char	2ca4	1	2ca5
+char	2ca6	1	2ca7
+char	2ca8	1	2ca9
+char	2caa	1	2cab
+char	2cac	1	2cad
+char	2cae	1	2caf
+char	2cb0	1	2cb1
+char	2cb2	1	2cb3
+char	2cb4	1	2cb5
+char	2cb6	1	2cb7
+char	2cb8	1	2cb9
+char	2cba	1	2cbb
+char	2cbc	1	2cbd
+char	2cbe	1	2cbf
+char	2cc0	1	2cc1
+char	2cc2	1	2cc3
+char	2cc4	1	2cc5
+char	2cc6	1	2cc7
+char	2cc8	1	2cc9
+char	2cca	1	2ccb
+char	2ccc	1	2ccd
+char	2cce	1	2ccf
+char	2cd0	1	2cd1
+char	2cd2	1	2cd3
+char	2cd4	1	2cd5
+char	2cd6	1	2cd7
+char	2cd8	1	2cd9
+char	2cda	1	2cdb
+char	2cdc	1	2cdd
+char	2cde	1	2cdf
+char	2ce0	1	2ce1
+char	2ce2	1	2ce3
+char	2ceb	1	2cec
+char	2ced	1	2cee
+char	2cf2	1	2cf3
+char	a640	1	a641
+char	a642	1	a643
+char	a644	1	a645
+char	a646	1	a647
+char	a648	1	a649
+char	a64a	1	a64b
+char	a64c	1	a64d
+char	a64e	1	a64f
+char	a650	1	a651
+char	a652	1	a653
+char	a654	1	a655
+char	a656	1	a657
+char	a658	1	a659
+char	a65a	1	a65b
+char	a65c	1	a65d
+char	a65e	1	a65f
+char	a660	1	a661
+char	a662	1	a663
+char	a664	1	a665
+char	a666	1	a667
+char	a668	1	a669
+char	a66a	1	a66b
+char	a66c	1	a66d
+char	a680	1	a681
+char	a682	1	a683
+char	a684	1	a685
+char	a686	1	a687
+char	a688	1	a689
+char	a68a	1	a68b
+char	a68c	1	a68d
+char	a68e	1	a68f
+char	a690	1	a691
+char	a692	1	a693
+char	a694	1	a695
+char	a696	1	a697
+char	a698	1	a699
+char	a69a	1	a69b
+char	a722	1	a723
+char	a724	1	a725
+char	a726	1	a727
+char	a728	1	a729
+char	a72a	1	a72b
+char	a72c	1	a72d
+char	a72e	1	a72f
+char	a732	1	a733
+char	a734	1	a735
+char	a736	1	a737
+char	a738	1	a739
+char	a73a	1	a73b
+char	a73c	1	a73d
+char	a73e	1	a73f
+char	a740	1	a741
+char	a742	1	a743
+char	a744	1	a745
+char	a746	1	a747
+char	a748	1	a749
+char	a74a	1	a74b
+char	a74c	1	a74d
+char	a74e	1	a74f
+char	a750	1	a751
+char	a752	1	a753
+char	a754	1	a755
+char	a756	1	a757
+char	a758	1	a759
+char	a75a	1	a75b
+char	a75c	1	a75d
+char	a75e	1	a75f
+char	a760	1	a761
+char	a762	1	a763
+char	a764	1	a765
+char	a766	1	a767
+char	a768	1	a769
+char	a76a	1	a76b
+char	a76c	1	a76d
+char	a76e	1	a76f
+char	a779	1	a77a
+char	a77b	1	a77c
+char	a77d	1	1d79
+char	a77e	1	a77f
+char	a780	1	a781
+char	a782	1	a783
+char	a784	1	a785
+char	a786	1	a787
+char	a78b	1	a78c
+char	a78d	1	0265
+char	a790	1	a791
+char	a792	1	a793
+char	a796	1	a797
+char	a798	1	a799
+char	a79a	1	a79b
+char	a79c	1	a79d
+char	a79e	1	a79f
+char	a7a0	1	a7a1
+char	a7a2	1	a7a3
+char	a7a4	1	a7a5
+char	a7a6	1	a7a7
+char	a7a8	1	a7a9
+char	a7aa	1	0266
+char	a7ab	1	025c
+char	a7ac	1	0261
+char	a7ad	1	026c
+char	a7ae	1	026a
+char	a7b0	1	029e
+char	a7b1	1	0287
+char	a7b2	1	029d
+char	a7b3	1	ab53
+char	a7b4	1	a7b5
+char	a7b6	1	a7b7
+char	a7b8	1	a7b9
+char	a7ba	1	a7bb
+char	a7bc	1	a7bd
+char	a7be	1	a7bf
+char	a7c0	1	a7c1
+char	a7c2	1	a7c3
+char	a7c4	1	a794
+char	a7c5	1	0282
+char	a7c6	1	1d8e
+char	a7c7	1	a7c8
+char	a7c9	1	a7ca
+char	a7d0	1	a7d1
+char	a7d6	1	a7d7
+char	a7d8	1	a7d9
+char	a7f5	1	a7f6
+char	ff21	1	ff41
+char	ff22	1	ff42
+char	ff23	1	ff43
+char	ff24	1	ff44
+char	ff25	1	ff45
+char	ff26	1	ff46
+char	ff27	1	ff47
+char	ff28	1	ff48
+char	ff29	1	ff49
+char	ff2a	1	ff4a
+char	ff2b	1	ff4b
+char	ff2c	1	ff4c
+char	ff2d	1	ff4d
+char	ff2e	1	ff4e
+char	ff2f	1	ff4f
+char	ff30	1	ff50
+char	ff31	1	ff51
+char	ff32	1	ff52
+char	ff33	1	ff53
+char	ff34	1	ff54
+char	ff35	1	ff55
+char	ff36	1	ff56
+char	ff37	1	ff57
+char	ff38	1	ff58
+char	ff39	1	ff59
+char	ff3a	1	ff5a

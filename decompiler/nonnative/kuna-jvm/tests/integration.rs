@@ -156,3 +156,5 @@ mod kt4_members;
 mod kt6_passes;
 #[path = "kt6_render.rs"]
 mod kt6_render;
+#[path = "kp1_plugins.rs"]
+mod kp1_plugins;
