@@ -1,0 +1,48 @@
+inv <init>@1 183 7 <init> java/util/ArrayList 0 INIT SPECIAL null ()V VOID:0:V v5 - 5 N N 1
+bnd <init>@1 v5=NULL:0:N v5=OBJECT:0:java/util/List
+cpy <init>@1 8 v5 - 0 null 1 1
+inv <init>@1 183 7 <init> B01Calls 0 INIT SPECIAL null ()V VOID:0:V v5 - 5 N N 1
+bnd <init>@1 v5=NULL:0:N v5=OBJECT:0:java/util/List
+cpy <init>@1 8 v5 - 0 null 1 1
+inv calls@5 182 7 priv B01Calls 0 GENERAL VIRTUAL null (IJ)I INT:0:I v3 v4,v5 3 N N 5
+bnd calls@5 v3=DOUBLE:0:D,v4=BYTECHAR:0:X,v5=LONG:0:J v3=DOUBLE:0:D,v4=INT:0:I,v5=LONG:0:J
+cpy calls@5 8 v3 v4,v5 0 null 5 1
+inv calls@12 184 7 stat B01Calls 1 GENERAL STATIC null (Ljava/lang/Object;DZ)Ljava/lang/String; OBJECT:0:java/lang/String N v3,v4,v5 3 N N 12
+bnd calls@12 v3=NULL:0:N,v4=DOUBLE:0:D,v5=BOOLEAN:0:Z v3=OBJECT:0:java/lang/Object,v4=DOUBLE:0:D,v5=BOOLEAN:0:Z
+cpy calls@12 8 N v3,v4,v5 0 null 12 1
+inv calls@18 185 7 add java/util/List 0 GENERAL INTERFACE null (Ljava/lang/Object;)Z BOOLEAN:0:Z v4 v5 4 N N 18
+bnd calls@18 v4=BOOLEAN:0:Z,v5=NULL:0:N v4=BOOLEAN:0:Z,v5=OBJECT:0:java/lang/Object
+cpy calls@18 8 v4 v5 0 null 18 1
+inv calls@25 182 7 length java/lang/String 0 GENERAL VIRTUAL null ()I INT:0:I v5 - 5 N N 25
+bnd calls@25 v5=NULL:0:N v5=OBJECT:0:java/util/List
+cpy calls@25 8 v5 - 0 null 25 1
+inv calls@30 183 7 size java/util/ArrayList 0 GENERAL SPECIAL null ()I INT:0:I v5 - 5 N N 30
+bnd calls@30 v5=NULL:0:N v5=OBJECT:0:java/util/List
+cpy calls@30 8 v5 - 0 null 30 1
+inv calls@34 186 7 run java/lang/invoke/LambdaMetafactory 1 GENERAL DYNAMIC ##Lambda_0_40 ()Ljava/lang/Runnable; OBJECT:0:java/lang/Runnable N - 6 metafactory P16,L6,P16 34
+bnd calls@34 - -
+cpy calls@34 8 N - 0 ##Lambda_0_40 34 1
+inv calls@43 184 7 requireNonNull java/util/Objects 1 GENERAL STATIC null (Ljava/lang/Object;)Ljava/lang/Object; OBJECT:0:java/lang/Object N v5 5 N N 43
+bnd calls@43 v5=NULL:0:N v5=OBJECT:0:java/lang/Object
+cpy calls@43 8 N v5 0 null 43 1
+inv calls@47 186 7 get java/lang/invoke/LambdaMetafactory 0 GENERAL DYNAMIC ##Lambda_1_50 (Ljava/lang/String;)Ljava/util/function/Supplier; OBJECT:0:java/util/function/Supplier v5 v5 5 metafactory P16,L5,P16 47
+bnd calls@47 v5=NULL:0:N,v5=NULL:0:N v5=OBJECT:0:java/util/List,v5=OBJECT:0:java/lang/String
+cpy calls@47 8 v5 v5 1 ##Lambda_1_50 47 1
+inv calls@54 186 7 apply java/lang/invoke/LambdaMetafactory 0 GENERAL DYNAMIC ##Lambda_2_54 ()Ljava/util/function/Function; OBJECT:0:java/util/function/Function N - 6 metafactory P16,L5,P16 54
+bnd calls@54 - -
+cpy calls@54 8 N - 0 ##Lambda_2_54 54 1
+inv calls@62 186 7 getAsInt java/lang/invoke/LambdaMetafactory 0 GENERAL DYNAMIC ##Lambda_3_58 (LB01Calls;)Ljava/util/function/IntSupplier; OBJECT:0:java/util/function/IntSupplier v5 v5 5 metafactory P16,L5,P16 62
+bnd calls@62 v5=NULL:0:N,v5=NULL:0:N v5=OBJECT:0:java/util/List,v5=OBJECT:0:B01Calls
+cpy calls@62 8 v5 v5 1 ##Lambda_3_58 62 1
+inv calls@71 186 7 makeConcatWithConstants java/lang/invoke/StringConcatFactory 1 GENERAL DYNAMIC ##Lambda_4_62 (Ljava/lang/String;I)Ljava/lang/String; OBJECT:0:java/lang/String N v4,v5 4 makeConcatWithConstants P8 71
+bnd calls@71 v4=NULL:0:N,v5=BYTECHAR:0:X v4=OBJECT:0:java/lang/String,v5=INT:0:I
+cpy calls@71 8 N v4,v5 0 ##Lambda_4_62 71 1
+inv calls@83 183 7 <init> B01Calls 0 INIT SPECIAL null (I)V VOID:0:V v4 v5 4 N N 83
+bnd calls@83 v4=BOOLEAN:0:Z,v5=BYTECHAR:0:X v4=BOOLEAN:0:Z,v5=INT:0:I
+cpy calls@83 8 v4 v5 0 null 83 1
+inv calls@88 184 7 valueOf java/lang/Integer 1 GENERAL STATIC null (I)Ljava/lang/Integer; OBJECT:0:java/lang/Integer N v5 5 N N 88
+bnd calls@88 v5=BYTECHAR:0:X v5=INT:0:I
+cpy calls@88 8 N v5 0 null 88 1
+inv calls@91 182 7 intValue java/lang/Integer 0 GENERAL VIRTUAL null ()I INT:0:I v5 - 5 N N 91
+bnd calls@91 v5=NULL:0:N v5=OBJECT:0:java/util/List
+cpy calls@91 8 v5 - 0 null 91 1
