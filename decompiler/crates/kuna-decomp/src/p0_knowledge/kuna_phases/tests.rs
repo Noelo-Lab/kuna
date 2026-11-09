@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_391() {
-    assert_eq!(kuna_num_settables(), 391);
-    assert_eq!(SETTABLE_TABLE.len(), 391);
+fn settable_count_is_395() {
+    assert_eq!(kuna_num_settables(), 395);
+    assert_eq!(SETTABLE_TABLE.len(), 395);
 }
 
 #[test]
-fn tier_counts_are_136_core_156_transform_99_analysis() {
+fn tier_counts_are_136_core_158_transform_101_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_136_core_156_transform_99_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (136, 156, 99));
+    assert_eq!((core, transform, analysis), (136, 158, 101));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_187() {
+fn option_values_live_value_present_for_189() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -512,6 +512,12 @@ fn option_values_live_value_present_for_187() {
         // the `objc` facts (read via kuna_live_value), like `objc` above.
         // Default-on, inert unless `objc` is on.
         "objcrefconst",
+        // (kuna) The Swift runtime-metadata pass gate, the objc precedent.
+        "swiftmetadata",
+        // (kuna) Mach-O __cfstring constant-string recovery — an analysis-pass gate
+        // with no codegen live reader (read console-side via kuna_live_value), like
+        // the gates around it. Default-on, Mach-O-only.
+        "cfstrings",
         // (kuna) PE PDB metadata recovery — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), like the gates around
         // it. Default-on (DIV-129), PE-only, `.pdb`-sidecar-gated.
@@ -970,7 +976,9 @@ fn option_values_live_value_present_for_187() {
     // 179 -> 178: `callmechanisms` takes `off|auto|on` and has no live_field.
     // 179 -> 182: +1 for `copywaves` (pool_copy_waves), +2 for `armpltslot` and `armcondskip` (analysis_armpltslot, analysis_armcondskip).
     // 179 -> 181: +1 for `copywaves` (pool_copy_waves), +1 for `armderef` (analysis_armderef).
-    assert_eq!(with_live, 187);
+    // 178 -> 179: +1 for `ptrauthtrap` (live_field = ptrauth_trap).
+    // 179 -> 180: +1 for `authptrcall` (live_field = analysis_authptrcall).
+    assert_eq!(with_live, 189);
 }
 
 #[test]
@@ -1207,7 +1215,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `armderef`, its P1 row after `armwalkmode`.
     // +1 for `unwindstarts`; its P1 row sits beside `eh_frame_full`.
     // +1 for `objcrefconst`; its P1 row sits beside `objc`.
-    assert_eq!(json.matches("},\n").count(), 390);
+    // +1 for `ptrauthtrap`; its P2 row sits beside `gowritebarrier`.
+    // +1 for `authptrcall`; its P1 row sits beside `peimportcall`.
+    // +1 for `swiftmetadata`; its P1 row sits beside `objc`.
+    assert_eq!(json.matches("},\n").count(), 394);
 }
 
 #[test]

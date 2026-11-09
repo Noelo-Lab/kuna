@@ -3141,6 +3141,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "peimportcall" => arch.analysis_peimportcall,
         // Metadata alone has no output effect; the live flow option gates its use.
         "ppc32_pic_slots" => true,
+        "authptrcall" => arch.analysis_authptrcall,
         // (kuna) ELF GOT data imports: the slot names + externref paint exist only
         // to let `importdata` render a read through the slot, so they share its gate.
         "elfgotimports" => arch.import_data,
@@ -3311,6 +3312,14 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // renames IMP functions + adds class/selector symbols). Registered here so it
         // is gated by `analysis_objc` rather than running by the fail-open default.
         "objc" => arch.analysis_objc,
+        // (kuna) Swift runtime-metadata recovery — default-OFF (output-changing:
+        // names stripped functions and descriptor records).
+        "swiftmetadata" => arch.analysis_swiftmetadata,
+        // (kuna) Mach-O `__cfstring` constant-string recovery — default-on,
+        // output-changing (renders CFString constants as `CFSTR("...")` typed
+        // `CFStringRef`). Registered here so `off` really skips it; `off`
+        // renders the entry exactly as before.
+        "cfstrings" => arch.analysis_cfstrings,
         // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
         // stripped functions to their real PDB names). PE-only + externally gated on
         // a fingerprint-matching `.pdb` (the `kuna_pdb_path` env var). Registered
@@ -5392,6 +5401,64 @@ fn commit_analysis_output(
             arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
         let (sid, _) =
             arch.symboltab.add_symbol_mapped(scope, &base, arr, &addr, &Address::new_invalid())?;
+        arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
+    }
+
+    // 4a'. (kuna `cfstrings`) Mach-O Core Foundation constant strings. Each
+    //     `__cfstring` entry is typed a typelocked opaque `struct __CFString`
+    //     symbol, whose pointer the factory spells `CFStringRef`, so a reference
+    //     to the entry is a `CFStringRef`; AND the StringManager is seeded at the
+    //     entry address with the string its char pointer resolved to, so the
+    //     printer renders the literal (`CFSTR("launch-report")`) instead of
+    //     `dat_<addr>`, across the CFString struct indirection it cannot follow
+    //     on its own. The type spans the entry, never the string: a string-sized
+    //     type would overrun the next entry and hide it behind this one's symbol.
+    //     The seed goes in before the symbol, at char width 1, the width the
+    //     printer reads an entry's string with. The entry ranges were marked
+    //     read-only by the pass (arm 1b), which the route requires. Empty under
+    //     `--option cfstrings off`.
+    let cfstring_record = match out.cfstrings.first() {
+        Some(fact) => kuna_decomp::kuna_cfstr::declare_types(
+            prog.arch().types(),
+            fact.size as i32,
+            code_space.get_word_size(),
+        )?,
+        None => None,
+    };
+    for fact in &out.cfstrings {
+        let addr = Address::new(Rc::clone(code_space), fact.addr);
+        let occupied = {
+            let arch = prog.arch();
+            match arch.symboltab.get_global_scope() {
+                Some(global) => {
+                    arch.symboltab.find_function(global, &addr).is_some()
+                        || arch.is_lazy_entry(addr.get_offset())
+                        || arch
+                            .symboltab
+                            .find_container(global, &addr, 1, &Address::new_invalid())
+                            .is_some()
+                }
+                None => false,
+            }
+        };
+        if occupied {
+            continue;
+        }
+        let ty = match &cfstring_record {
+            Some(record) if record.get_size() == fact.size as i32 => Rc::clone(record),
+            _ => {
+                let ch = prog.arch().types().get_type_char(prog.arch().types().get_size_of_char())?;
+                prog.arch().types().get_type_array(fact.size as i32, ch)?
+            }
+        };
+        let name = format!("s_{:x}", fact.addr);
+        prog.arch().string_manager.borrow_mut().base.register_string_at(&addr, &fact.bytes, 1);
+        let arch = prog.arch_mut();
+        arch.cfstring_entries.insert(fact.addr);
+        let (scope, base) =
+            arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
+        let (sid, _) =
+            arch.symboltab.add_symbol_mapped(scope, &base, ty, &addr, &Address::new_invalid())?;
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
     }
 

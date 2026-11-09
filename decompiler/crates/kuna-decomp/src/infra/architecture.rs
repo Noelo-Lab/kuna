@@ -820,6 +820,10 @@ pub struct Architecture {
     /// the Go GC write-barrier diamond.  Default auto (fold when `source_lang`
     /// is Go).
     pub go_write_barrier: u8,
+    /// (kuna) `option ptrauthtrap`: cut the branch into each arm64e
+    /// pointer-auth failure trap whose guard is the return-address bit test.
+    /// Default on.
+    pub ptrauth_trap: bool,
     /// (kuna GH-9203) Decline placing a const COPY in a loop block
     /// (C++ `condexe_block_placement`).
     pub condexe_block_placement: bool,
@@ -1863,6 +1867,9 @@ pub struct Architecture {
     /// `Architecture::query_function`, whose no-return carry is the flow half of
     /// the same binding.
     pub analysis_peimportcall: bool,
+    /// (kuna) Gate the arm64e `__auth_ptr` call binding (`authptrcall`).
+    /// Default on.
+    pub analysis_authptrcall: bool,
     /// (kuna) Gate the library-prototype pass (`libproto`); default on.
     pub analysis_libproto: bool,
     /// (kuna) Gate the measured libc signature extension (`libcsigs`); default on.
@@ -2733,6 +2740,22 @@ pub struct Architecture {
     /// bind slot (an imported class) keeps its `classRef_<Class>` name instead.
     /// Inert unless `objc` is on.
     pub analysis_objcrefconst: bool,
+    /// (kuna) `option swiftmetadata` — the Swift runtime-metadata recovery pass
+    /// (`kuna-analysis::analyzers::swift`): names metadata accessors, vtable and
+    /// override implementations, protocol witnesses and descriptor records from
+    /// the `swift5_*` reflection sections. Default-off, output-changing; inert on
+    /// an image without the sections.
+    pub analysis_swiftmetadata: bool,
+    /// (kuna) Gate the Mach-O `__cfstring` constant-string recovery pass
+    /// (`cfstrings`); default **on** (renders CFString constants as
+    /// `CFSTR("...")` typed `CFStringRef`). Mach-O-only pass.
+    pub analysis_cfstrings: bool,
+    /// (kuna `cfstrings annotate`) Follow each rendered `CFSTR("...")` with a
+    /// comment naming its `__cfstring` entry address. Default **off**.
+    pub cfstrings_annotate: bool,
+    /// (kuna `cfstrings`) The `__cfstring` entry addresses the commit seeded, so
+    /// the printer renders a literal at one of them as `CFSTR("...")`.
+    pub cfstring_entries: std::collections::BTreeSet<u64>,
     /// (kuna) Gate the PE PDB metadata recovery pass (`pdb`); default **off**. The
     /// kuna analog of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer;
     /// the MS-DIA `PdbAnalyzer` is Windows-native and out of scope) — the
@@ -3235,6 +3258,7 @@ impl Architecture {
             rust_probestack: crate::kuna_rustprobestack::RustProbestackMode::Off,
             go_bool: 0, // (kuna) option gobool; reset_defaults sets the shipped default (auto)
             go_write_barrier: 0, // (kuna) option gowritebarrier; reset_defaults sets the shipped default (auto)
+            ptrauth_trap: false, // (kuna) option ptrauthtrap; reset_defaults sets the shipped default (on)
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
             model_stack_probe_loop: false,
@@ -3448,6 +3472,7 @@ impl Architecture {
             // asserted equal by kuna_phases/tests.rs `live_value` parity).
             analysis_noreturn_known: false,
             analysis_peimportcall: false,
+            analysis_authptrcall: false,
             analysis_libproto: false,
             analysis_libcsigs: false,
             analysis_libgccsigs: false,
@@ -3562,6 +3587,10 @@ impl Architecture {
             analysis_gonoreturn: false,
             analysis_objc: false,
             analysis_objcrefconst: true,
+            analysis_swiftmetadata: false,
+            analysis_cfstrings: false,
+            cfstrings_annotate: false,
+            cfstring_entries: std::collections::BTreeSet::new(),
             analysis_pdb: true,
             macho_arm64e: false,
 
@@ -3703,6 +3732,7 @@ impl Architecture {
         self.rust_probestack = crate::kuna_rustprobestack::RustProbestackMode::Off;
         self.go_bool = crate::kuna_gobool::GoBoolMode::Auto.as_u8(); // (kuna) narrow Go boolean returns on Go images
         self.go_write_barrier = crate::kuna_gowritebarrier::GoWriteBarrierMode::Auto.as_u8(); // (kuna) fold the Go write barrier on Go images
+        self.ptrauth_trap = true; // (kuna) drop arm64e pointer-auth failure checks; inert unless a brk #0xc47x trap's guard is the return-address bit test, 0/675 datatests
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
@@ -3912,6 +3942,7 @@ impl Architecture {
         // real-ELF analysis tier; inert on the XML datatest path.
         self.analysis_noreturn_known = true;
         self.analysis_peimportcall = true; // (kuna) DIV-57/DIV-171 import-slot binding default-on
+        self.analysis_authptrcall = true; // (kuna) arm64e __auth_ptr call binding; Mach-O only, 0/675 datatests
         self.analysis_libproto = true;
         // (kuna) DIV-65 measured libc signature extension — default-ON.
         self.analysis_libcsigs = true;
@@ -4066,6 +4097,9 @@ impl Architecture {
         self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
         self.analysis_objcrefconst = true; // (kuna) ObjC reference slots fold to their selector/class; inert unless objc is on
+        self.analysis_swiftmetadata = false; // Swift runtime-metadata recovery default-off (inert without swift5_* sections)
+        self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)
+        self.cfstrings_annotate = false;
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
@@ -4580,6 +4614,11 @@ impl Architecture {
         ctx.rust_probestack = self.rust_probestack;
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
+        ctx.ptrauth_trap_userop = self
+            .ptrauth_trap
+            .then(|| self.userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP))
+            .flatten()
+            .map(|u| u.get_index() as kuna_base::types::uint4);
         ctx.reload_arg = self.reload_arg;
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;

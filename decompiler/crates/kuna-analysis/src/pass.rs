@@ -90,6 +90,26 @@ pub struct StringFact {
     pub len: u32,
 }
 
+/// A Mach-O Core Foundation constant string (`__cfstring` entry). The entry is a
+/// `CFString` struct (isa, flags, char pointer, length); `bytes` is the UTF-8 of
+/// the string its char pointer targets, already resolved through chained fixups
+/// and UTF-16-decoded when the flags say so. The commit seam types the entry an
+/// opaque `struct __CFString` (whose pointer is `CFStringRef`) and pre-seeds the
+/// `StringManager` at `addr` with `bytes`, so a reference to the entry renders the
+/// string literal instead of `dat_<addr>`.
+/// Produced by [`crate::analyzers::cfstring`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CFStringFact {
+    /// Virtual address of the `__cfstring` entry (the struct, not its char data).
+    pub addr: u64,
+    /// The UTF-8 string bytes (no trailing NUL), the entry's char pointer resolved.
+    pub bytes: Vec<u8>,
+    /// Byte span of the entry (four pointer words). The type the commit plants
+    /// covers exactly this span: sized from the string, a long one would overrun
+    /// the next entry and hide it.
+    pub size: u32,
+}
+
 /// A processor-context decode-mode paint: set context variable `var` to `value`
 /// starting at `addr` (up to the next change point, or — if `end` is set — over
 /// the explicit `[addr, end)` range). Produced by [`crate::loader::arm_markers`]
@@ -411,6 +431,11 @@ pub struct AnalysisOutput {
     /// count `len / 4`). Produced by [`crate::strings::kuna_widestrings32`] at the
     /// deferred scalar-operand commit, where the operand targets it weighs are known.
     pub wide_strings32: Vec<StringFact>,
+    /// (kuna `cfstrings`) Mach-O Core Foundation constant strings (`__cfstring`):
+    /// one per entry whose char pointer resolved to a string. The commit seam
+    /// types each entry an opaque `struct __CFString` and pre-seeds the
+    /// `StringManager`, so a reference renders the literal. Produced by [`crate::analyzers::cfstring`].
+    pub cfstrings: Vec<CFStringFact>,
     /// Library-function prototypes to seed onto matching FunctionSymbols (the kuna
     /// analog of Ghidra's `ApplyDataArchiveAnalyzer` / `.gdt` archives). Each is
     /// parked on its named callee via `set_function_prototype_pieces`, so a caller
@@ -687,6 +712,7 @@ impl AnalysisOutput {
         self.bounded_strings.extend(other.bounded_strings);
         self.wide_strings.extend(other.wide_strings);
         self.wide_strings32.extend(other.wide_strings32);
+        self.cfstrings.extend(other.cfstrings);
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
         self.arm_float_prototypes.extend(other.arm_float_prototypes);

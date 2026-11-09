@@ -164,6 +164,7 @@ kuna_options! { self, p1;
     "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
     "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
     "fastfailnoreturn" => on_off!(fastfail_noreturn, "Windows int 0x29 (__fastfail) no-return"),
+    "ptrauthtrap" => on_off!(ptrauth_trap, "arm64e pointer-auth failure-check removal"),
     "int3pad" => {
         let (mode, msg) = crate::kuna_int3pad::OptionInt3Pad.apply(p1)?;
         self.int3_pad = mode;
@@ -1018,6 +1019,7 @@ kuna_options! { self, p1;
     "paramrefdecl" => on_off!(param_ref_decl, "address-taken parameter re-declaration guard"),
     "noreturn_known" => on_off!(analysis_noreturn_known, "No-return-known analysis pass"),
     "peimportcall" => on_off!(analysis_peimportcall, "PE/Mach-O import-slot call binding"),
+    "authptrcall" => on_off!(analysis_authptrcall, "arm64e __auth_ptr call binding"),
     "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
     "libcsigs" => on_off!(analysis_libcsigs, "Measured libc signature extension"),
     "libgccsigs" => on_off!(analysis_libgccsigs, "libgcc __divdi3 DI-mode contract"),
@@ -1427,6 +1429,17 @@ kuna_options! { self, p1;
     },
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
     "objcrefconst" => on_off!(analysis_objcrefconst, "Objective-C reference-slot folding"),
+    "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),
+    "cfstrings" => {
+        let (pass, annotate) = match p1 {
+            "annotate" => (true, true),
+            other => (on_or_off(other)?, false),
+        };
+        self.analysis_cfstrings = pass;
+        self.cfstrings_annotate = annotate;
+        let state = if annotate { "on, annotated" } else if pass { "on" } else { "off" };
+        Ok(format!("Mach-O __cfstring constant-string recovery pass turned {state}"))
+    },
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
     "relocobjects" => {
         let val = on_or_off(p1)?;

@@ -1128,7 +1128,60 @@ and falls back, never a wrong address). The container's in-tree `ld64.lld` emits
 `DYLD_CHAINED_PTR_64` (format 2) arm64 fixture; the arm64e auth-rebase path is
 covered by the resolver's synthetic-bit-pattern unit tests
 (`decode_arm64e_auth_rebase_strips_pac` et al.) since the in-container linker does
-not emit an arm64e auth-fixup slice.
+not emit an arm64e auth-fixup slice; `macho_arm64e_auth` below converts an arm64
+link into one.
+
+### `macho_arm64e_auth` — arm64e authenticated fixups and pointer-auth code
+
+`macho_arm64e_auth` (~49 KB) is a real `CPU_SUBTYPE_ARM64E | PTRAUTH_ABI` image
+(`llvm-objdump` prints `E PAC00`) with `DYLD_CHAINED_PTR_ARM64E_USERLAND24`
+fixups. `ld64.lld` cannot link arm64e, so `macho_arm64e_auth.s` is linked as arm64
+and `macho_arm64e_auth.py` converts the result: it flips the cpusubtype and
+re-encodes every `DYLD_CHAINED_PTR_64` chain entry in the arm64e layout (8-byte
+stride) in place. The code is the assembler's own pointer-auth instructions.
+
+```bash
+clang -target arm64-apple-macos11 -march=armv8.5-a -c macho_arm64e_auth.s -o a.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+         -undefined dynamic_lookup -e _main -o a_arm64 a.o
+python3 macho_arm64e_auth.py a_arm64 macho_arm64e_auth
+```
+
+ImageBase `0x100000000`, `SG_READ_ONLY` on `__DATA_CONST`, no `LC_DYSYMTAB`
+indirect entries (nothing goes through a stub). **Pinned VMAs:** `_helper`
+`0x100000410`, `_helper2` `0x100000418`, `_tail_auth` `0x100000420` (an
+`autibsp; eor x16,x30,x30,lsl #1; tbz x16,#62; brk #0xc471` check before its
+tail call), `_call_auth_ptr` `0x100000448` (`blraaz` through `__auth_ptr`),
+`_call_table` `0x100000468` (`blraa x8, x9` through `__const[0]`),
+`_strip_check` `0x10000048c` (`autda; xpacd; cmp; b.eq; brk #0xc472`), `_main`
+`0x1000004b0`. Fixups: `__const[0]`@`0x100004000` an authenticated rebase to
+`_helper` (key IA, address-diversified, diversifier `0x1234`),
+`__const[1]`@`0x100004008` an authenticated bind of `_ext_func`,
+`__const[2]`@`0x100004010` a plain bind of `_ext_data` with addend 16,
+`__auth_ptr[0]`@`0x100004018` an authenticated bind of `_ext_func`,
+`__data[0]`@`0x100008000` a plain rebase to `_helper2`.
+
+### `macho_arm64e_brk` — pointer-auth trap immediates behind ordinary guards
+
+`macho_arm64e_brk` (16,912 bytes) is an arm64e image whose `brk #0xc47x` traps
+are NOT pointer-auth checks: `_check` (`0x100000290`) is `cmp w0, #0x2a; b.ne;
+mov w0, #1; ret; brk #0xc470`, `_check_x0` (`0x1000002a4`) is the bit test of
+`x0` rather than `x30` (`eor x16, x0, x0, lsl #1; tbz x16, #62; brk #0xc472`),
+and `_main` (`0x1000002b8`) returns 0. `ptrauthtrap` must leave both guards
+(stage test `tests/stages/kuna-ptrauthtrap.xml`). It has no fixups, so only the
+header's cpusubtype is flipped to `CPU_SUBTYPE_ARM64E | CPU_SUBTYPE_PTRAUTH_ABI`
+after an arm64 link (Ubuntu clang 14.0.0, the rustup toolchain's `rust-lld`
+20.1.8 in its `darwin` flavor standing in for `ld64.lld`):
+
+```bash
+clang -target arm64-apple-macos11 -c macho_arm64e_brk.s -o b.o
+rust-lld -flavor darwin -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+         -undefined dynamic_lookup -e _main -o b_arm64 b.o
+python3 -c "import struct; d = bytearray(open('b_arm64', 'rb').read()); \
+struct.pack_into('<I', d, 8, 0x80000002); open('macho_arm64e_brk', 'wb').write(d)"
+```
+
+SHA-256 `3a7043abd1cdf6452a49b7fd82877aa7bb9b195c9dd9ec01cba3aa5ef9eca9d2`.
 
 `macho_ptrslots_arm64` and `macho_ptrslots_offset_arm64` (arm64, 33 KB each)
 are GH #1333's source plus one imported pointer, so their `__DATA,__data` holds
@@ -1255,6 +1308,67 @@ clang -target arm64-apple-macos11 -O1 -c macho_gotdata_local.c -o m.o
 "$LLD" -arch arm64 -platform_version macos 11.0 11.0 -undefined dynamic_lookup \
        -e _main -o macho_gotdata_local m.o
 ```
+
+### `swift_metadata_elf` — a stripped Swift executable (`swiftmetadata`)
+
+`swift_metadata_elf` (x86-64 ELF, 14 KB) is the Swift runtime-metadata fixture
+(`tests/stages/kuna-swiftmetadata.xml`, `kuna-console/tests/verify_swiftmetadata.rs`).
+Its source `swift_metadata_elf.swift` declares a struct, an enum, a protocol
+with a default, a class hierarchy with an override, and a struct conforming
+to a local protocol and to `Hashable`, and a `main` that uses them all (so
+`-O` keeps them). Built with the swiftly 6.3 toolchain and stripped of every
+symbol, so only the `swift5_*` sections can name its functions:
+
+```bash
+swiftc -O -module-name metafix swift_metadata_elf.swift -o metafix
+llvm-strip --strip-all -o swift_metadata_elf metafix
+```
+
+The build records the toolchain's library directory as `DT_RUNPATH`. After the
+build that `.dynstr` string was overwritten in place with `$ORIGIN` padded with
+NULs, so no offset or section size moved.
+
+**Pinned VMAs** (the unstripped `metafix` symbol table, the oracle the tests
+hold the pass to): `$s7metafix5PointVMa` (Point's metadata accessor)@`0x30b0`,
+`$s7metafix6AnimalCMa`@`0x30d0`, `$s7metafix6AnimalC4legsSivg` (vtable slot 0,
+a getter)@`0x2f60`, `$s7metafix6AnimalCACycfC` (slot 3, init)@`0x3100`,
+`$s7metafix6AnimalC5soundSSyF` (slot 4)@`0x2fe0`, `$s7metafix3DogC5soundSSyF`
+(Dog's slot 4)@`0x3000`, the `Square: Hashable` witnesses `hash(into:)`@`0x2ab0`
+and `==`@`0x2b00`. With `--option swiftmetadata on` they decompile as
+`metafix.Point.type_metadata_accessor`, `metafix.Animal.vtable#4.method`,
+`<metafix.Square:Swift.Hashable>.hash(into:)`, …; off, they are `sub_<addr>`.
+The `Square: Shape` (local protocol) witness table is a relocated pointer table,
+which an ELF file carries as addends, so its slots are not named here — the
+Mach-O form (chained fixups) is.
+
+### `macho_cfstring` — Core Foundation constant strings (`cfstrings`)
+
+`macho_cfstring` (arm64, ~50 KB) is a self-contained Mach-O carrying three
+`__builtin_CFString` constants in `__DATA_CONST,__cfstring`, for the `cfstrings`
+pass (`kuna-console/tests/verify_cfstring.rs`, `tests/stages/kuna-cfstrings.xml`).
+Source `macho_cfstring.c` hand-builds each struct `{ ___CFConstantStringClassReference,
+0x7c8 (8-bit), "<text>", <length> }` and a getter returning its address. The second
+string (39 characters) is longer than one 32-byte entry and the third entry sits
+right behind it: the guard that a long string never hides its neighbour. It was
+built with `zig cc`, which bundles its own Mach-O linker and needs no macOS SDK
+(the devcontainer does not ship zig), then `llvm-strip -S` from LLVM 20 to drop
+the STABS debug map, which named the build directories (LLVM 14's `-S` leaves
+Mach-O STABS in place):
+
+```
+zig cc -target aarch64-macos -O0 -Wl,-undefined,dynamic_lookup \
+       -o macho_cfstring macho_cfstring.c
+llvm-strip -S macho_cfstring
+```
+
+`zig cc` links a classic `LC_DYLD_INFO` image, so each entry's `char *` (into
+`__TEXT,__cstring`) is a raw word (the chained path has no fixture here; it was
+checked on arm64 and arm64e iOS binaries). **Pinned VMAs:** `_get_greeting`@`0x100000538` → entry@`0x100004008`
+("cfstring hello"), `_get_long`@`0x100000544` → entry@`0x100004028` ("a constant
+string longer than one entry"), `_get_after`@`0x100000550` → entry@`0x100004048`
+("after the long one"). With `--option cfstrings on` each getter returns
+`CFSTR("...")` of its string (`annotate` adds `/* cfstring@0x<entry> */`); off, it
+returns the entry by its data symbol (`&_kGreeting`).
 
 ### `elf_gotdata_x86_64.so` / `elf_gotdata_aarch64.so` — ELF GOT data imports
 

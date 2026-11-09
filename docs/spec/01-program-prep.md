@@ -1066,7 +1066,12 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   A bind's ordinal also names the symbol it binds
   (`decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (bind_name)`),
   which is what lets a `__objc_classrefs` slot bound to `_OBJC_CLASS_$_UIView`
-  be named without an address. The resolver also records which segments the
+  be named without an address. The bind also keeps its addend: the import
+  record's (`DYLD_CHAINED_IMPORT_ADDEND*`) plus the entry's own (eight bits in
+  `PTR_64`, a signed 19 bits in a plain arm64e bind; an authenticated bind spends
+  those bits on its signing context and has none). A C++ RTTI record points at
+  `vtable for __si_class_type_info + 16` this way, so a slot whose addend is not
+  zero holds an address inside the import, not the import itself. The resolver also records which segments the
   linker flagged `SG_READ_ONLY`, the Mach-O statement that dyld maps the segment
   read-only once its fixups are in (`__DATA_CONST`); `dynrelocs` (§1.3) reads
   it as the `PT_GNU_RELRO` of a Mach-O.
@@ -2214,6 +2219,20 @@ unaffected either way.
 The `externref` mark also protects the slot until that resolution: P3 read-only
 folding cannot replace it with an on-disk thunk/name RVA, even if a hostile or
 single-section PE mapped the IAT executable and non-writable.
+
+An arm64e Mach-O has one import table the indirect-symbol walk cannot see.
+`__auth_got` backs the `__auth_stubs` and is an indirect-symbol section like
+`__got`, so `peimportcall` covers it. `__auth_ptr` holds the signed pointers
+code loads itself, for instance clang's `adrp; ldr x16; blraaz x16` call of
+`___chkstk_darwin`. It is a plain `S_REGULAR` section with no indirect-symbol
+entries; only its `LC_DYLD_CHAINED_FIXUPS` bind says which import a slot
+holds. `decompiler/crates/kuna-analysis/src/loader/kuna_authptrcall.rs (AuthPtrCallPass)`
+(`authptrcall`, Mach-O only, default on) gives each `__auth_ptr` bind slot a
+`FunctionSymbol` named after its import, with one leading `_` stripped as the
+indirect-symbol walk does, and reports the slot as an `externref` range. The
+commit and `ActionDeindirect` then treat the slot exactly like a `__got` slot.
+A bind with a nonzero addend points inside the import rather than at it, so it
+is skipped. Off, such a call renders `(*dat_<slot>)(...)` as before.
 
 Two arch-marker passes paint **decode context** rather than names, because a wrong
 decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/loader/arm_markers.rs
@@ -4458,6 +4477,117 @@ every other binary's pass list is byte-identical to before the pass existed):
   so on a chained image the pass reports no constant slot while `dynrelocs` is
   off (the names stay). Like every analysis gate, `objcrefconst` is read at the
   `read symbols` commit; flipping it afterwards does not re-paint.
+- **Swift metadata** (`swiftmetadata`, Mach-O and ELF, Swift images only,
+  default-off but ON in the `aggressive` preset, which `auto` selects for any
+  binary under 500 KiB; `decompiler/crates/kuna-analysis/src/analyzers/swift/mod.rs`, the
+  record layouts in `decompiler/crates/kuna-analysis/src/analyzers/swift/descriptors.rs`):
+  a stripped Swift binary keeps its reflection sections, and they name much of
+  its code. The pass reads `__swift5_types` / `swift5_type_metadata` (the nominal
+  type context descriptors: kind, parent chain, name, metadata accessor, field
+  descriptor, and for a class the trailing vtable and override table),
+  `__swift5_protos` (protocol descriptors with their requirement rows),
+  `__swift5_proto` (conformance descriptors: protocol, conforming type, witness
+  table pattern, resilient witnesses) and `__swift5_fieldmd` (field descriptors),
+  per the ABI's `Metadata.h`. Everything there is a 32-bit self-relative pointer,
+  so no fixup resolution is needed; an *indirectable* pointer (low bit set)
+  names a pointer-sized slot, which is a rebase (resolved through the
+  chained-fixup overlay, §1.2) or a bind to another image — and the overlay
+  records each bind slot's import name (`ChainedFixups::binds`), which is
+  how a conformance to `Swift.Hashable` or an override of a UIKit initializer
+  learns the other image's descriptor name. Names follow the demangler's
+  name-only conventions so they read like symbol-table names and agree with the
+  real symbol where one survives (the fixture's unstripped build is the oracle):
+  `Module.Type.type_metadata_accessor`; `Module.Class.vtable#3.getter` for a
+  vtable slot's implementation by position and kind (a slot carries no selector;
+  the optimizer leaves a removed method's slot null, which is skipped);
+  `Module.Sub.init(coder:rootView:)` for an override whose overridden method
+  descriptor is an import (`…Tq`), the real member name; `Module.Sub.vtable#3.init`
+  for an override of a local base; `<Module.Type:Swift.Hashable>.hash(into:)`
+  for a resilient witness whose requirement descriptor is an import,
+  `<T:P>.requirement#2` for a local protocol's witness (the witness-table words
+  on a chained-fixup Mach-O; an ELF carries them as relocation addends, so they
+  are not named there), `Module.P.requirement#2.default` for a default
+  implementation; and the records: `….nominal_type_descriptor`,
+  `….protocol_descriptor`, `….module_descriptor`,
+  `<T:P>.protocol_conformance_descriptor`, `<T:P>.protocol_witness_table`,
+  `….reflection_field_descriptor`. A type path follows the parent chain
+  (`Module.Outer.Inner`; an anonymous context is transparent, an extension
+  context demangles its extended type, a parent in another image is named
+  through its module-descriptor import). Only a code address is ever named as a
+  function (a base-protocol or associated-type witness row points at data), and
+  function names use the FID-precedent placeholder gate. On a large
+  third-party iOS app (314,038 functions, 304,309 of them `sub_<addr>`) the
+  pass names 57,147 stripped functions — 14,615 metadata accessors, 15,204 vtable slots, 27,322
+  witnesses, 6 overrides — every one at an address function discovery already
+  found, in about 0.3 s and 135 MB over the baseline decompile. The work is
+  bounded by the image: a conformance descriptor several section entries name
+  is read once, every record row (a descriptor, a vtable, override,
+  requirement or witness row, a witness-table word) is charged against one row
+  per four bytes of the image, which a real image never exceeds since each row
+  occupies at least that much of it, and the names built (type paths included)
+  stop at 16 MiB plus the image's length, so repeated or overlapping records
+  in a crafted file cannot multiply into millions of names. The pass is
+  registered only for `Compiler::Swift` (§1.3's detector) in Mach-O or ELF, so
+  every other image's pass set is unchanged; the stage test
+  `tests/stages/kuna-swiftmetadata.xml` runs the fully stripped swiftc-built
+  `swift_metadata_elf` off and on.
+- **Core Foundation constant strings** (`cfstrings`, Mach-O-only, default-on;
+  `decompiler/crates/kuna-analysis/src/analyzers/cfstring/mod.rs`): a `CFSTR("x")`
+  compiles to a four-word `CFString` struct in `__cfstring` (`isa`, `flags`, a
+  `char *` into `__cstring`/`__ustring`, and a character `length`). Code references
+  the struct address, not the characters, so the constant-string route — which
+  reads the bytes *at* the referenced address — sees the struct and prints
+  `dat_<addr>`. The pass reads each entry, resolves its `char *` through the
+  chained-fixup overlay (§1.2) on an arm64(e) image or as a raw word on a classic
+  `LC_DYLD_INFO` image, and decodes the string (8-bit when the `flags` unicode bit
+  `0x10` is clear, UTF-16 otherwise). The walk stops at the end of the file, not at
+  the section header's size, and the string bytes it reads over all entries are
+  capped at the file's length: an entry is 32 bytes, but every entry may name the
+  same 64 KiB run, and each fact owns a copy of its string (as does the
+  `StringManager` seed), so an uncapped crafted section would grow memory about
+  4096-fold. A real image's strings are distinct bytes of the file and never reach
+  the cap. The walk also stops after a fixed budget of section-span checks, because
+  each read scans the image's section spans and a crafted file can size both the
+  entry count and the section count. An 8-bit string that is not UTF-8, invalid
+  UTF-16, and a string holding a NUL (a trailing one included) are skipped, since
+  the C literal would stop at that NUL and silently drop the rest. The commit seam then types the entry an
+  opaque `struct __CFString` spanning the entry's own four words (never the
+  string's length, which would overrun the next entry and hide it) and seeds the `StringManager` at the
+  entry address with the resolved bytes, so a reference renders the string
+  across the one indirection the printer cannot follow on its own. The entries are
+  marked read-only (a CFString constant is immutable), which the route requires on
+  the historical writable `__DATA,__cfstring` layout (`__DATA_CONST` is already
+  read-only). The commit also records each seeded entry address
+  (`Architecture::cfstring_entries`), and the C printer wraps a literal found at one
+  of them as `CFSTR("...")`
+  (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_cfstr.rs (wrap)`): the value is
+  the entry, a `CFStringRef`, not the characters, so
+  `NSLog(CFSTR("Reachability Flag Status: …"))` is what was written. The printer
+  reads an entry's seeded string through a `char` element whatever the
+  reference's type (`cfstring_char` in
+  `decompiler/crates/kuna-decomp/src/p9_emit/printc.rs`), at both the constant
+  arm and the global-symbol arm, so the entry's own type is free to say what the
+  value is: the commit declares `struct __CFString` at the entry size and a
+  pointer to it named `CFStringRef`
+  (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_cfstr.rs (declare_types)`),
+  reusing a `CFStringRef` and `__CFString` the type factory already holds (an
+  opaque one is completed to the entry size), and registers that pointer as the
+  one the factory returns for any later pointer to the struct
+  (`TypeFactory::kuna_prefer_named_pointer`). Type inference therefore types a
+  reference to an entry `CFStringRef`, and the type propagates to the returns,
+  parameters and locals that carry it: a getter is
+  `CFStringRef get_greeting(void) { return CFSTR("cfstring hello"); }`. When an
+  existing `__CFString` has another size, or an existing `CFStringRef` is not a
+  pointer to it, the entry falls back to a `char[N]` and the reference to
+  `char *`. The Rust and Go back-ends keep the plain literal, with the pointer to
+  the struct as its type. `cfstrings annotate` runs the same pass and
+  also follows each `CFSTR` with `/* cfstring@0x<entry> */`, the address a
+  disassembler or hex view shows for the entry, which the literal otherwise
+  replaces. The pass is on by default: it runs only on a Mach-O and only on the
+  real-binary path, so the XML datatest corpus never reaches it, and on an 80 MB
+  third-party arm64 iOS app one decompile is within run-to-run noise of `off`. `off`
+  renders each reference as the entry itself: its symbol (`&_kGreeting`) where the
+  image names it, its address on a stripped image.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

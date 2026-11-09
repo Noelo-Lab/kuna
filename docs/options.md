@@ -465,6 +465,8 @@ Three tiers:
 | a Mach-O objc_msgSend import renders as (*dat_100004038)() through __got | [`peimportcall`](#peimportcall) |
 | a PE function runs past ExitProcess or ExitThread and absorbs the next function's body | [`peimportcall`](#peimportcall) |
 | no Win32 API names anywhere in a decompiled PE | [`peimportcall`](#peimportcall) |
+| an arm64e call renders as (*dat_<addr>)(...) through an __auth_ptr slot | [`authptrcall`](#authptrcall) |
+| ___chkstk_darwin call unnamed in an arm64e function with a large frame | [`authptrcall`](#authptrcall) |
 | heavily-called custom die()/fatal() wrapper still treated as returning | [`noreturn_disc`](#noreturn_disc) |
 | dead code after a stripped sub_ wrapper that never falls through at 3+ call sites | [`noreturn_disc`](#noreturn_disc) |
 | caller swallows the next function after a wrapper call | [`noreturn_disc`](#noreturn_disc) |
@@ -492,6 +494,10 @@ Three tiers:
 | every pointer store in a go function wrapped in if (writeBarrier flag) with a gcWriteBarrier call | [`gowritebarrier`](#gowritebarrier) |
 | stores through an undefined local after a gcWriteBarrier call because the thunk's buffer register is not modeled | [`gowritebarrier`](#gowritebarrier) |
 | go output doubled in size by GC bookkeeping diamonds | [`gowritebarrier`](#gowritebarrier) |
+| if ((v ^ v << 1) >> 0x3e & 1) before a tail call in an arm64e function | [`ptrauthtrap`](#ptrauthtrap) |
+| (*SoftwareBreakpoint(0xc471,..))() // jump-as-call | [`ptrauthtrap`](#ptrauthtrap) |
+| a stack - 0x8  | [`ptrauthtrap`](#ptrauthtrap) |
+|  x30 variable declared only for a pointer-auth check | [`ptrauthtrap`](#ptrauthtrap) |
 | go function returning bool prints v = CONCAT71((undefined7)(v >> 8), a == b) instead of returning the comparison | [`gobool`](#gobool) |
 | return value masked with 0xffffffff around a boolean | [`gobool`](#gobool) |
 | undefined7 casts feeding a concatenation at every boolean return | [`gobool`](#gobool) |
@@ -922,6 +928,11 @@ Three tiers:
 | __objc_ metadata present but classes and selectors unnamed in a mach-o | [`objc`](#objc) |
 | a message send renders as sub_<addr>(obj) through an __objc_stubs entry | [`objc`](#objc) |
 | objc_msgSend selector argument renders as dat_<addr> | [`objc`](#objc) |
+| swift binary functions render as sub_<addr> although swift5 metadata sections are present | [`swiftmetadata`](#swiftmetadata) |
+| type metadata accessors unnamed in a stripped swift mach-o | [`swiftmetadata`](#swiftmetadata) |
+| protocol witnesses and class methods of a stripped swift app have no names | [`swiftmetadata`](#swiftmetadata) |
+| core-foundation / objc string constants render as dat_<addr> instead of their text | [`cfstrings`](#cfstrings) |
+| a CFSTR(...) argument shows an address in a mach-o | [`cfstrings`](#cfstrings) |
 | stripped windows pe functions stay FUN_<addr> although a matching .pdb exists | [`pdb`](#pdb) |
 | pdb symbol names not applied to a pe | [`pdb`](#pdb) |
 | a .pdb beside the exe is ignored | [`pdb`](#pdb) |
@@ -2492,6 +2503,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P1/external-refinement · kuna · correctness-fix · decbench-O0-mydoom-mmsender_th
 - **Example:** `option peimportcall on`
 
+### `authptrcall` -- on | off, default `on`
+
+- **Symptoms:** an arm64e call renders as (*dat_<addr>)(...) through an __auth_ptr slot; ___chkstk_darwin call unnamed in an arm64e function with a large frame.
+- **What it does:** Bind a call through an arm64e __auth_ptr slot to the import its chained bind names. An arm64e link keeps two tables of pointers to imported functions: __auth_got backs the __auth_stubs a direct bl reaches and is listed in the LC_DYSYMTAB indirect-symbol table, so peimportcall already binds a call through it; __auth_ptr holds the signed pointers code loads itself (clang's adrp/ldr/blraaz call of ___chkstk_darwin) and is a plain S_REGULAR section with no indirect-symbol entries, so its slots are named only by their LC_DYLD_CHAINED_FIXUPS bind and such a call rendered (*dat_1000716c0)(...). On: every addend-free bind slot of __auth_ptr gets a FunctionSymbol named after its import (one leading _ stripped) and the slot is painted Varnode::externref, so ActionDeindirect resolves the call as it does through __auth_got. A bind with an addend points inside the import and is skipped.
+- **When to flip:** On by default: an arm64e call through __auth_ptr renders by name (___chkstk_darwin(...)) instead of (*dat_<addr>)(...). Flip off to restore the anonymous slot call. Inert on any image without an __auth_ptr bind.
+- **Where / provenance:** P1/external-refinement · kuna · correctness-fix · kuna-apple-authptrcall
+- **Example:** `option authptrcall off`
+
 ### `noreturn_disc` -- on | off, default `on`
 
 - **Symptoms:** heavily-called custom die()/fatal() wrapper still treated as returning; dead code after a stripped sub_ wrapper that never falls through at 3+ call sites; caller swallows the next function after a wrapper call.
@@ -2555,6 +2574,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave auto: on a Go binary every guarded pointer store sheds its if (runtime_writeBarrier) { gcWriteBarrierN(); buffer writes } wrapper and renders as the plain store; off only to audit the GC's barrier placement. Use always on a Go function carved into a bytechunk where detection has no buildinfo section to find.
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-multilang-gowritebarrier
 - **Example:** `option gowritebarrier off`
+
+### `ptrauthtrap` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** if ((v ^ v << 1) >> 0x3e & 1) before a tail call in an arm64e function; (*SoftwareBreakpoint(0xc471,..))() // jump-as-call; a stack - 0x8 ;  x30 variable declared only for a pointer-auth check.
+- **What it does:** Drop the pointer-authentication failure checks an arm64e compiler plants after an aut* instruction. Without FEAT_FPAC a failed aut* does not trap; it leaves an error code in the pointer's top bits, so Apple's clang checks the result inline and branches to brk #0xc470+key when it is bad: before a tail call it tests that bits 62 and 61 of the authenticated x30 agree (eor x16, x30, x30, lsl #1; tbz x16, #62), after a data aut* it compares the result with its xpac-stripped copy. SLEIGH hides the aut* itself (ShowPAC is off), so statically every pointer authenticates and the check is noise; the xpac form folds away on its own, but the bit test reads the incoming return address and renders as if ((x30 ^ x30 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); return; } before nearly every tail call of an Apple binary. The trap block is the anchor: a block lifted entirely from one brk whose SoftwareBreakpoint immediate is 0xc470-0xc473, the codes LLVM reserves for this trap. A CBRANCH edge into it is removed pre-SSA (the gomorestack window) only when the guard's condition is that bit test of the return address, ((x30 ^ x30 << 1) >> 62) & 1, the edge is the arm taken when the two bits disagree, and x30 was reloaded from the frame (an sp- or x29-based load) or is unwritten anywhere in the function: the brk immediate alone is not evidence, since any AArch64 code can branch to a brk #0xc470 on a condition of its own, and a value the code put in x30 (mov x30, x0; ldr x30, [x0]) is not the authenticated return address. The condition then dies to dead-code elimination.
+- **When to flip:** Leave on: an arm64e function's tail call reads as the call alone. Flip off to audit where the compiler checks an authenticated pointer. Inert on any guard other than the return-address bit test before a brk #0xc470-0xc473 trap, whatever the image format.
+- **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-apple-ptrauthtrap
+- **Example:** `option ptrauthtrap off`
 
 ### `gobool` -- off | auto | always, default `auto` (destructive opt-in)
 
@@ -3487,6 +3514,22 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off in the shipped catalog (no IMP is renamed and there is zero behavior change), but ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB, so it is the default rendering of `kuna decompile`, `decompile-all`, `decompile-project` and the web front-end for a Mach-O image of that size. Flip on for a larger Mach-O Objective-C binary to recover method names — a stripped IMP renders -[Greeter greet:] instead of sub_<addr>, the class/selector strings and the selector/class reference slots are named, and a send through an `__objc_stubs` entry renders `objc_msgSend$<sel>(obj, ...)`. `objcrefconst` (on by default) then folds the reference slots to what they hold.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-objc
 - **Example:** `option objc on`
+
+### `swiftmetadata` -- on | off, default `off`
+
+- **Symptoms:** swift binary functions render as sub_<addr> although swift5 metadata sections are present; type metadata accessors unnamed in a stripped swift mach-o; protocol witnesses and class methods of a stripped swift app have no names.
+- **What it does:** Run the Swift runtime-metadata recovery pass: on a Mach-O or ELF image, read the swift5_* reflection sections a stripped Swift binary keeps (__swift5_types / swift5_type_metadata, the nominal type context descriptors; __swift5_protos, the protocol descriptors; __swift5_proto, the conformance descriptors; __swift5_fieldmd, the field descriptors) and name what they point at, in the demangler's name-only conventions so the names read like symbol-table names: each type's metadata accessor (Module.Type.type_metadata_accessor), each class vtable slot's implementation by position and kind (Module.Class.vtable#3.getter - the slot carries no selector), each override whose overridden method descriptor is an import (Module.Sub.viewDidLoad(), the real member name, read from the …Tq import the override table points at), each resilient protocol witness (<Module.Type:Swift.Hashable>.hash(into:) when the requirement descriptor is an import, <T:P>.requirement#2 for a local protocol, Module.P.requirement#2.default for a default implementation), and the records themselves (….nominal_type_descriptor, ….protocol_descriptor, ….module_descriptor, <T:P>.protocol_conformance_descriptor, <T:P>.protocol_witness_table, ….reflection_field_descriptor). Type paths follow the parent chain (Module.Outer.Inner; a private/anonymous context is transparent; an extension context demangles its extended type; a parent in another image is named through its module-descriptor import). Function names use the FID-precedent label-gated rename: a real symbol is never overwritten, only an engine sub_*/FUN_* placeholder. Everything in the sections is 32-bit self-relative, so no fixup resolution is needed except for indirect references, which go through the chained-fixup overlay (rebases) or the import table (binds); a record the reader cannot follow is skipped, never guessed. Registered for Mach-O and ELF (the formats Swift ships in); an image without the sections produces nothing, so every other binary is byte-identical. DISABLED by default (output-changing: names stripped functions and descriptor records; real-binary-path only, so every parity gate is byte-identical); ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB, so a small Swift binary gets it with no flags.
+- **When to flip:** Off (the default at 500 KiB and above; nothing is named and there is zero behavior change). `--mode auto` turns it on below 500 KiB through the `aggressive` preset, so flip it on for a larger stripped Swift binary: metadata accessors, class vtable implementations, overrides of imported methods and protocol witnesses render under their type's path instead of sub_<addr>, and the descriptor records are named.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-swiftmetadata
+- **Example:** `option swiftmetadata on`
+
+### `cfstrings` -- on | off | annotate, default `on`
+
+- **Symptoms:** core-foundation / objc string constants render as dat_<addr> instead of their text; a CFSTR(...) argument shows an address in a mach-o.
+- **What it does:** Run the Mach-O Core Foundation constant-string recovery pass: when the binary is a Mach-O, read each __cfstring entry (the four-word CFString struct isa/flags/data-pointer/length), resolve its data pointer through the LC_DYLD_CHAINED_FIXUPS overlay on an arm64(e) image (a raw word on a classic LC_DYLD_INFO image), read the string (8-bit when the flags unicode bit 0x10 is clear, UTF-16 decoded to UTF-8 when set), and render a reference to the entry as the string literal. The commit seam types each entry a typelocked opaque struct __CFString symbol, whose pointer the type factory spells CFStringRef (so a function returning or passing the entry is typed CFStringRef), and pre-seeds the StringManager at the entry address with the resolved bytes, so a CFSTR argument renders as CFSTR("text") instead of dat_<addr> (the C printer wraps the literal in CFSTR(...) because the value is the CFStringRef entry, not its characters; annotate also follows it with a /* cfstring@0x<entry> */ comment naming the entry address a listing or hex view shows) -- the same route that renders a __cstring literal, carried across the CFString struct indirection the printer cannot follow on its own. The entry structs are marked read-only (a CFString constant is immutable), which the constant-string route requires on the historical writable __DATA,__cfstring layout (__DATA_CONST is already read-only). Registered ONLY for a Mach-O binary, so it is a structural no-op on every non-Mach-O target. ENABLED by default: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675 assertions moved); on an 80 MB third-party arm64 iOS app a decompile is within noise of off (min 2.324 s off vs 2.359 s on, medians 2.442 / 2.372 s over 6 interleaved runs).
+- **When to flip:** On (default): a Mach-O (Core Foundation / Objective-C / Swift) binary renders its CFString constants -- a call that passed dat_<addr> renders CFSTR("cfstring hello"). Flip off to see each reference as the __cfstring entry itself (its symbol, or its address on a stripped image). Use annotate when cross-checking against a disassembler or hex view: the entry address stays in the output as a comment.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-cfstrings
+- **Example:** `option cfstrings annotate`
 
 ### `pdb` -- on | off, default `on`
 

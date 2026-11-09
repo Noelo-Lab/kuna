@@ -63,6 +63,7 @@ pub(crate) mod kuna_bytearrayslice;
 pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled LSL
 mod kuna_armconstantshift;
 pub mod kuna_emptystrconst;
+pub mod kuna_cfstr; // (kuna) CFSTR("...") for a Mach-O __cfstring entry
 pub mod kuna_renderfault; // (kuna) test-only: panic one function's render partway through
 pub mod kuna_truncarg;
 pub mod kuna_pointerargs; // (kuna) a scalar's address passed to a character-pointer parameter
