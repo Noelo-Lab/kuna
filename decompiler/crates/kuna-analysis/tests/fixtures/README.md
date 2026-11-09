@@ -2104,6 +2104,27 @@ typefix.Point.type_metadata_accessor(long request) { return
 &typefix.Point.type_metadata; }`; with `swifttypes off` the getter takes no
 parameter and reads `*(long *)(v2 + 0x60)`.
 
+### `swift_ext_types_elf` — a struct nested in an extension (`swifttypes`)
+
+`swift_ext_types_elf` (x86-64 ELF, 9.5 KB, stripped) is the fixture for a type
+whose context descriptor's parent is an extension context
+(`kuna-console/tests/verify_swifttypes.rs`). Its source
+`swift_ext_types_elf.swift` declares `extension Int { struct Pair { lo, hi } }`
+and a struct `Holder { pair: Int.Pair; count: Int }`:
+
+```bash
+swiftc -O -module-name extfix swift_ext_types_elf.swift -o swift_ext_types_elf
+llvm-strip --strip-all swift_ext_types_elf
+```
+
+SHA-256: `6935ca9260321b3ed56912a451185edb29091c5e3c9c87e56cc821b3c21eec1e`.
+
+**Expected layouts:** `Swift.Int.Pair {lo@0, hi@8}` 16 bytes and
+`extfix.Holder {pair@0: Swift.Int.Pair, count@16}` 24 bytes; before the
+extension context resolved, `pair` was untyped. `Holder`'s metadata accessor
+(`0x2300`, `lea; xor %edx,%edx; ret`) is the last instruction of `.text`, so
+only ten bytes follow its entry.
+
 ### `swift_icf_elf` — a stripped Swift executable with folded code (`swiftmetadata`)
 
 `swift_icf_elf` (x86-64 ELF, 12 KB) is the identical-code-folding fixture

@@ -93,8 +93,8 @@ pub fn locate_metadata(img: &MachoImage, arch: object::Architecture, accessor: u
 }
 
 fn locate_arm64(img: &MachoImage, accessor: u64) -> Option<u64> {
-    let bytes = img.read(accessor, 20)?;
-    let word = |i: usize| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().ok()?).into();
+    let bytes = [20usize, 16, 12].iter().find_map(|&n| img.read(accessor, n))?;
+    let word = |i: usize| bytes.get(i * 4..i * 4 + 4).and_then(|b| b.try_into().ok()).map(u32::from_le_bytes);
     let words: Vec<Option<u32>> = (0..5).map(word).collect();
     let mut i = 0;
     // `stp x29, x30, [sp, #-16]!; mov x29, sp` opens the accessor that
@@ -139,7 +139,7 @@ fn locate_arm64(img: &MachoImage, accessor: u64) -> Option<u64> {
 }
 
 fn locate_x86_64(img: &MachoImage, accessor: u64) -> Option<u64> {
-    let bytes = img.read(accessor, 16)?;
+    let bytes = [16usize, 12, 10].iter().find_map(|&n| img.read(accessor, n))?;
     let mut i = 0;
     if bytes.starts_with(&[0x55, 0x48, 0x89, 0xe5]) {
         i = 4;

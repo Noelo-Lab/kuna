@@ -13,7 +13,6 @@
 //! installed; on, every expected one is.
 
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_console::engine::{ConsoleProgram, bootstrap_from_object};
@@ -99,11 +98,15 @@ fn repo_root() -> PathBuf {
 }
 
 fn load(types_on: bool) -> ConsoleProgram {
+    load_fixture(FIXTURE, types_on)
+}
+
+fn load_fixture(fixture: &str, types_on: bool) -> ConsoleProgram {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = root
         .join("decompiler/crates/kuna-analysis/tests/fixtures")
-        .join(FIXTURE);
+        .join(fixture);
     assert!(bin.exists(), "missing fixture {bin:?}");
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
@@ -223,4 +226,14 @@ fn swifttypes_off_installs_nothing() {
             });
         assert_ne!(found.as_deref(), Some(name), "no record at 0x{vma:x}");
     }
+}
+
+/// `swift_ext_types_elf`: `Holder`'s metadata accessor is the last
+/// instruction of `.text`, so fewer than sixteen bytes follow its entry; it
+/// is still read and `Holder` laid out.
+#[test]
+fn an_accessor_at_the_end_of_its_section_is_located() {
+    let prog = load_fixture("swift_ext_types_elf", true);
+    let holder = prog.arch().types().find_by_name("extfix.Holder").unwrap().expect("extfix.Holder is interned");
+    assert_eq!(holder.get_size(), 24);
 }

@@ -4956,7 +4956,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   x0, …; add x0, x0, …; mov x1, #0; ret` on arm64 (or the `adr x0, …; nop` a
   linker relaxes the pair to), `lea rax, [rip + …]; xor
   edx, edx; ret` on x86-64, a class with Objective-C heritage tail-calling the
-  runtime with the same address — which the pass decodes and checks: the
+  runtime with the same address; one that is the last instruction of its
+  section is read only as far as the section goes — which the pass decodes and checks: the
   metadata's descriptor word must point back at the descriptor (through the
   chained-fixup overlay on a Mach-O; through the `R_*_RELATIVE` addends on an
   ELF, which the pass now also feeds the reader, so an ELF's local witness
