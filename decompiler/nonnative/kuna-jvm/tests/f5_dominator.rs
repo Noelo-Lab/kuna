@@ -15,7 +15,7 @@ arena_object!(Node => NodeData, Class);
 arena_identity!(Node);
 
 impl IGraphNode for Node {
-    fn get_predecessors(self) -> Vec<Node> {
+    fn get_predecessors(&self) -> Vec<Node> {
         self.with(|d| d.preds.clone())
     }
 }

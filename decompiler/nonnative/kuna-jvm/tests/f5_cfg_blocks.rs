@@ -77,6 +77,7 @@ fn branch() -> FullInstructionSequence {
 
 #[test]
 fn construction_splits_at_jumps_and_orders_successors() {
+    let _context = crate::common::install_default_context();
     reset_class_scope();
     let graph = ControlFlowGraph::new(branch());
     assert_eq!(graph.get_blocks().borrow().len(), 3);
@@ -117,6 +118,7 @@ fn construction_splits_at_jumps_and_orders_successors() {
 
 #[test]
 fn switch_successors_put_default_first() {
+    let _context = crate::common::install_default_context();
     reset_class_scope();
     let graph = ControlFlowGraph::new(sequence(
         &[
@@ -139,6 +141,7 @@ fn switch_successors_put_default_first() {
 
 #[test]
 fn gotos_and_empty_blocks_are_removed() {
+    let _context = crate::common::install_default_context();
     reset_class_scope();
     let graph = ControlFlowGraph::new(sequence(
         &[
@@ -169,6 +172,7 @@ fn gotos_and_empty_blocks_are_removed() {
 
 #[test]
 fn circular_goto_is_kept() {
+    let _context = crate::common::install_default_context();
     reset_class_scope();
     let graph = ControlFlowGraph::new(sequence(&[(OPC_GOTO, GROUP_JUMP, &[0], 3)], &[]));
     DeadCodeHelper::connect_dummy_exit_block(graph);
@@ -181,6 +185,7 @@ fn circular_goto_is_kept() {
 
 #[test]
 fn merge_joins_a_straight_chain() {
+    let _context = crate::common::install_default_context();
     reset_class_scope();
     let graph = ControlFlowGraph::new(sequence(
         &[
@@ -229,6 +234,7 @@ fn merge_joins_a_straight_chain() {
 
 #[test]
 fn exception_ranges_and_handler_blocks() {
+    let _context = crate::common::install_default_context();
     reset_class_scope();
     let graph = ControlFlowGraph::new(sequence(
         &[
@@ -298,6 +304,7 @@ fn exception_ranges_and_handler_blocks() {
 
 #[test]
 fn block_edge_operations() {
+    let _context = crate::common::install_default_context();
     reset_class_scope();
     let (a, b, c) = (BasicBlock::new(1), BasicBlock::new(2), BasicBlock::new(3));
     a.add_successor(b);
@@ -372,6 +379,7 @@ fn block_edge_operations() {
 
 #[test]
 fn exception_range_types() {
+    let _context = crate::common::install_default_context();
     reset_class_scope();
     let (h, b) = (BasicBlock::new(5), BasicBlock::new(2));
     let range = ExceptionRangeCFG::new_single(JList::from(vec![b]), h, Some("a/X".to_string()));
@@ -413,6 +421,7 @@ fn exception_range_types() {
 
 #[test]
 fn empty_block_with_two_successors_is_an_error() {
+    let _context = crate::common::install_default_context();
     reset_class_scope();
     let graph = ControlFlowGraph::new(branch());
     let b2 = block(graph, 2);

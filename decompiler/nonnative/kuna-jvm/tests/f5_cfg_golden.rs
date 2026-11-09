@@ -545,6 +545,7 @@ fn check_options(header: &str) {
 
 /// Replays one golden file; returns (replayed, emulated-jsr, skipped) counts.
 fn replay(file: &str) -> (usize, usize, usize) {
+    let _context = crate::common::install_default_context();
     let (options, cases) = parse(&read_golden(file));
     check_options(&options);
     let (mut replayed, mut emulated, mut skipped) = (0, 0, 0);
@@ -628,8 +629,8 @@ fn method_key(class: &str, name: &str, descriptor: &str, version: BytecodeVersio
 /// The committed class files through the real parser and the real `inlineJsr`, against the same
 /// oracle dumps; this also covers the methods the replay above has to skip.
 #[test]
-#[ignore = "needs class-file parser (integration)"]
 fn cfg_matches_vineflower_from_class_files() {
+    let _context = crate::common::install_default_context();
     let (options, cases) = parse(&read_golden("cases.cfg"));
     check_options(&options);
     let mut by_key: JHashMap<String, usize> = JHashMap::new();
@@ -659,8 +660,8 @@ fn cfg_matches_vineflower_from_class_files() {
             let bytes = std::fs::read(&path).expect("class file");
             let cl = StructClass::create(&mut ByteCursor::new(bytes), true);
             DecompilerContext::set_current_class(Some(cl));
-            let class = cl.with(|d| d.qualified_name.clone());
-            let methods: Vec<StructMethod> = cl.get_methods().borrow().iter().copied().collect();
+            let class = cl.qualified_name();
+            let methods: Vec<StructMethod> = cl.get_methods().iter().copied().collect();
             for mt in methods {
                 if !mt.contains_code() {
                     continue;

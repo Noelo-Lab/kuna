@@ -12,20 +12,28 @@ VF_TESTDATA=${VF_TESTDATA:-$HOME/github/vineflower/testData}
 VF_CORPUS=${VF_CORPUS:-$HOME/kwt/jvm/corpus/classes}
 ASMTOOLS=${ASMTOOLS:-$HOME/kwt/jvm/corpus/tools/asmtools/asmtools-core-7.0.b10-ea.jar}
 BUILD=${BUILD:-$(mktemp -d)}
-mkdir -p "$BUILD/driver" "$HERE/classes/r8" "$HERE/classes/r21" "$HERE/classes/jasm" "$HERE/classes/legacy" "$HERE/golden"
+mkdir -p "$BUILD/driver" "$HERE/classes/r8" "$HERE/classes/r21" "$HERE/classes/jasm" "$HERE/classes/legacy" \
+  "$HERE/classes/props8" "$HERE/classes/props21" "$HERE/golden"
 
 javac -nowarn -d "$BUILD/driver" -cp "$VF_JAR" \
-  "$HERE/patch/org/jetbrains/java/decompiler/code/cfg/BasicBlock.java" "$HERE/CfgDump.java"
+  "$HERE/patch/org/jetbrains/java/decompiler/code/cfg/BasicBlock.java" "$HERE/CfgDump.java" \
+  "$HERE/IrreducibleDump.java" "$HERE/PropsDump.java"
 
 javac -nowarn --release 8 -g -d "$HERE/classes/r8" "$HERE/inputs/CfgCases.java"
 javac -nowarn --release 21 -g -d "$HERE/classes/r21" "$HERE/inputs/CfgCases.java" "$HERE/inputs/CfgCases21.java"
 java -cp "$ASMTOOLS" org.openjdk.asmtools.jasm.Main -d "$HERE/classes/jasm" "$HERE/inputs/CfgOddities.jasm"
+javac -nowarn --release 8 -g -d "$HERE/classes/props8" "$HERE/inputs/PropCases.java"
+javac -nowarn --release 21 -g -d "$HERE/classes/props21" "$HERE/inputs/PropCases.java"
 for c in TestJsr TestJsr2 TestJava1Synchronized TestHotjava; do
   cp "$VF_TESTDATA/classes/custom/$c.class" "$HERE/classes/legacy/"
 done
 
 CP="$BUILD/driver:$VF_JAR"
 java -cp "$CP" CfgDump "$HERE/golden/cases.cfg" "$HERE/classes/r8" "$HERE/classes/r21" "$HERE/classes/jasm" "$HERE/classes/legacy"
+java -cp "$CP" PropsDump "$HERE/golden/props.txt" "$HERE/classes/props8" "$HERE/classes/props21" \
+  "$HERE/classes/r8" "$HERE/classes/r21" "$HERE/classes/jasm" "$HERE/classes/legacy"
+java -cp "$CP" IrreducibleDump "$BUILD/irreducible.txt"
+gzip -9 -n -c "$BUILD/irreducible.txt" > "$HERE/golden/irreducible.txt.gz"
 
 JDK_CLASSES=(
   java.base/java/util/ArrayList.class
