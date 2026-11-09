@@ -497,8 +497,7 @@ pub struct Funcdata {
     /// `(space index, entry offset)`.  Seeded by the driver after the flow build
     /// — the only place the disassembly engine is still reachable — and read at
     /// the input-trial scoring seam
-    /// ([`crate::kuna_calleedeadarg::trial_is_dead_in_callee`]).  Empty unless
-    /// `option calleedeadarg` is live for this function.
+    /// ([`crate::kuna_calleedeadarg::trial_is_dead_in_callee`]).
     kuna_callee_entry_dead: std::collections::HashMap<
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
@@ -679,8 +678,7 @@ pub struct Funcdata {
     /// (kuna `retpushedhalf`) Registers this function only ever pushed, gathered
     /// during the flow build while the store and the load still exist and read at
     /// the return-half placement test
-    /// ([`crate::kuna_retpushedhalf::PushedRegisters`]).  Empty unless
-    /// `option retpushedhalf` is live for this function.
+    /// ([`crate::kuna_retpushedhalf::PushedRegisters`]).
     kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters,
 }
 

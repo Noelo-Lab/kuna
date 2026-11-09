@@ -9,10 +9,9 @@
     returns its callee's eax printed `double put(..)` with `return 0.0;`, a
     double returner `return 0` from the cleared rax, a void function
     `return 0`, and a long an undefined16 whose upper half is the cleared rdx.
-    Stage / sub-stage: P4 "output-prototype".  The P0 assertion
-    `option zerocallregs on|off` decides whether an output trial whose value
+    Stage / sub-stage: P4 "output-prototype".  An output trial whose value
     at the RETURN is a zero the clearing run before the return wrote is
-    retired before the output fill-in.
+    retired before the output fill-in (kuna_zerocallregs.rs, always on).
     Chunk 0x100000: gcc 11.4 -O2 -fno-inline -fzero-call-used-regs=all
     -fcf-protection=none -c, all functions static noinline:
       int check(int *p) { return *p > 10 ? -5 : 0; }
@@ -27,13 +26,11 @@
             { struct pr p = {0, 0}; return p; }
             (control: xor %eax,%eax; xor %edx,%edx; ret clears no register
             outside the output entries, so it is no epilogue)
-    Pass 1 (`option zerocallregs off`) reproduces the BUG: put returns the
-    cleared xmm0, scale and scaleg the cleared rax, setg returns 0, and addg
-    joins the cleared rdx above its long.
-    Pass 2 (`option zerocallregs on`, the shipped default) is the FIX: put
-    returns nothing (its result is an unresolved call's, as without the
-    epilogue), scale and scaleg return their double, setg is void and addg
-    returns its long; zero and zpair print the same in both passes.
+    Without the rule put returns the cleared xmm0, scale and scaleg the
+    cleared rax, setg returns 0, and addg joins the cleared rdx above its
+    long.  With it put returns nothing (its result is an unresolved call's, as
+    without the epilogue), scale and scaleg return their double, setg is void
+    and addg returns its long; zero and zpair are unchanged.
 -->
 <bytechunk space="ram" offset="0x100000">
 31c0833f0a0f9ec08d4480fbd9eed9ee
@@ -99,29 +96,6 @@ ffc366662e0f1f8400000000000f1f00
 <symbol space="ram" offset="0x100330" name="zpair"/>
 </binaryimage>
 <script>
-  <com>option zerocallregs off</com>
-  <com>lo fu put</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu scale</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu setg</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu zero</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu addg</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu scaleg</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu zpair</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option zerocallregs on</com>
   <com>lo fu put</com>
   <com>decompile</com>
   <com>print C</com>
@@ -144,15 +118,15 @@ ffc366662e0f1f8400000000000f1f00
   <com>decompile</com>
   <com>print C</com>
 </script>
-<stringmatch name="zerocallregs #1: option off returns the cleared xmm0 from put (bug reproduced)" min="1" max="1">float8 put\(</stringmatch>
-<stringmatch name="zerocallregs #2: option off prints return 0.0 on both paths of put (bug reproduced)" min="2" max="2">return 0\.0;</stringmatch>
-<stringmatch name="zerocallregs #3: option off returns the cleared rax from scale and scaleg (bug reproduced)" min="2" max="2">unsigned long scaleg?\(void\)</stringmatch>
-<stringmatch name="zerocallregs #4: option off returns 0 from the void setg (bug reproduced)" min="1" max="1">unsigned long setg\(</stringmatch>
-<stringmatch name="zerocallregs #5: option off joins the cleared rdx above the long of addg (bug reproduced)" min="1" max="1">undefined16 addg\(</stringmatch>
-<stringmatch name="zerocallregs #6: option on returns nothing from put" min="1" max="1">void put\(</stringmatch>
-<stringmatch name="zerocallregs #7: option on returns the double of scale and scaleg" min="2" max="2">float8 scaleg?\(int4 a0\)</stringmatch>
-<stringmatch name="zerocallregs #8: option on makes setg void" min="1" max="1">void setg\(</stringmatch>
-<stringmatch name="zerocallregs #9: option on returns the long of addg" min="1" max="1">int8 addg\(int8 a0,int8 a1\)</stringmatch>
-<stringmatch name="zerocallregs #10: the return 0 before the x87 block of zero is kept in both passes" min="2" max="2">unsigned long zero\(</stringmatch>
-<stringmatch name="zerocallregs #11: a zero pair returned without the epilogue is kept in both passes" min="2" max="2">undefined16 zpair\(void\)</stringmatch>
+<stringmatch name="zerocallregs #1: put never returns the cleared xmm0" min="0" max="0">float8 put\(</stringmatch>
+<stringmatch name="zerocallregs #2: put never prints return 0.0" min="0" max="0">return 0\.0;</stringmatch>
+<stringmatch name="zerocallregs #3: scale and scaleg never return the cleared rax" min="0" max="0">unsigned long scaleg?\(void\)</stringmatch>
+<stringmatch name="zerocallregs #4: the void setg never returns 0" min="0" max="0">unsigned long setg\(</stringmatch>
+<stringmatch name="zerocallregs #5: the cleared rdx is never joined above the long of addg" min="0" max="0">undefined16 addg\(</stringmatch>
+<stringmatch name="zerocallregs #6: put returns nothing" min="1" max="1">void put\(</stringmatch>
+<stringmatch name="zerocallregs #7: scale and scaleg return their double" min="2" max="2">float8 scaleg?\(int4 a0\)</stringmatch>
+<stringmatch name="zerocallregs #8: setg is void" min="1" max="1">void setg\(</stringmatch>
+<stringmatch name="zerocallregs #9: addg returns its long" min="1" max="1">int8 addg\(int8 a0,int8 a1\)</stringmatch>
+<stringmatch name="zerocallregs #10: the return 0 before the x87 block of zero is kept" min="1" max="1">unsigned long zero\(</stringmatch>
+<stringmatch name="zerocallregs #11: a zero pair returned without the epilogue is kept" min="1" max="1">undefined16 zpair\(void\)</stringmatch>
 </decompilertest>

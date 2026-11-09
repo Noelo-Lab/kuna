@@ -217,7 +217,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "nulterminator" => on_off(conf.nul_terminator),
         "retsplitglobal" => on_off(conf.ret_split_global),
         "inputvarnodeadjust" => on_off(conf.input_varnode_adjust),
-        "retinputhalf" => on_off(conf.ret_input_half),
         // (kuna `protoorder`) Three-valued, so it reports its own token.
         "protoorder" => conf.protoorder.as_str(),
         // (kuna `calleevote`) Three-valued, so it reports its own token.
@@ -233,8 +232,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "syscallregs" => conf.syscall_regs.as_str(),
         // (kuna `callmechanisms`) Three-valued, so it reports its own token.
         "callmechanisms" => conf.call_mechanism_mode.as_str(),
-        "retpushedhalf" => on_off(conf.ret_pushed_half),
-        "inputparamgap" => on_off(conf.input_param_gap),
         // (kuna `rustabi`) Three-valued, so it reports its own token.
         "rustabi" => kuna_decomp::kuna_rustabi::RustAbiMode::from_u8(conf.rust_abi).as_str(),
         // (kuna `fatstr`) Three-valued, so it reports its own token.
@@ -265,7 +262,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "stackviews" => on_off(conf.stack_views),
         "dynamichashmax" => on_off(conf.dynamic_hash_maxdup_high),
         "stackprobeloop" => on_off(conf.model_stack_probe_loop),
-        "callpush" => on_off(conf.drop_call_push),
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
         "constselectjump" => on_off(conf.const_select_jump),

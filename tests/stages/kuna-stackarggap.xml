@@ -34,22 +34,19 @@
     conclusion upstream already draws one slot to the right, where an
     unreferenced STACK trial at a call site sets `seenchain`.
 
-    Stage / sub-stage: P4 "active-input-trial-scoring".  The P0 assertion
-    `option stackarggap on|off` decides whether an unreferenced argument
-    REGISTER may end a CALL SITE's argument list when its next slot is on the
-    stack.  The function's own input recovery is untouched (that is
-    `inputparamgap`'s territory), and a call whose register file IS fully
-    written keeps its stack argument.
+    Stage / sub-stage: P4 "active-input-trial-scoring".  An unreferenced
+    argument REGISTER ends a CALL SITE's argument list when its next slot is
+    on the stack (kuna_stackarggap.rs, always on).  The function's own input
+    recovery is untouched (that is the own-input gap tolerance's territory),
+    and a call whose register file IS fully written keeps its stack argument.
 
     The fixture is the same construct, hand assembled: `caller` loads RCX, RDX
     and R8 from the pointer it is handed, never touches R9, leaves a 1 in the
     fifth-argument slot, and calls through a memory slot, the IAT shape, so
     the callee has no body to answer for its own arity.
 
-    Pass 1 (`option stackarggap off`) reproduces the BUG: the call takes five
-    arguments, the last two invented.
-    Pass 2 (`option stackarggap on`) is the FIX: the call takes the three the
-    disassembly passes.
+    Without the veto the call takes five arguments, the last two invented;
+    with it the call takes the three the disassembly passes.
 -->
 <bytechunk space="ram" offset="0x100000">
 4883ec38c7442420010000004c8b01488b5108488b4910ff150b0000004883c4
@@ -58,15 +55,11 @@
 <symbol space="ram" offset="0x100000" name="caller"/>
 </binaryimage>
 <script>
-  <com>option stackarggap off</com>
   <com>lo fu caller</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option stackarggap on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="stackarggap #1: option off invents a fourth and fifth argument to reach a stack slot (bug reproduced)" min="1" max="1">\(\*dat_100028\)\(a0\[2\],a0\[1\],\*a0,a3,1\);</stringmatch>
-<stringmatch name="stackarggap #2: option on ends the argument list at the register the caller never wrote" min="1" max="1">\(\*dat_100028\)\(a0\[2\],a0\[1\],\*a0\);</stringmatch>
+<stringmatch name="stackarggap #1: a fourth and fifth argument are never invented to reach a stack slot" min="0" max="0">\(\*dat_100028\)\(a0\[2\],a0\[1\],\*a0,a3,1\);</stringmatch>
+<stringmatch name="stackarggap #2: the argument list ends at the register the caller never wrote" min="1" max="1">\(\*dat_100028\)\(a0\[2\],a0\[1\],\*a0\);</stringmatch>
 </decompilertest>

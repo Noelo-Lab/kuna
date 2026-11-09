@@ -102,26 +102,6 @@ fn the_producer_keeps_the_whole_pair() {
     );
 }
 
-/// The bug on the consumer side: the payload register is a local with no
-/// definition anywhere in the function.
-#[test]
-fn by_default_the_consumer_reads_an_unassigned_payload() {
-    // `option callretpair` (DIV-162) reaches the same call-output arm with the
-    // language test dropped and ships ON, so the pre-fix rendering this test
-    // describes is only visible with it held off.
-    let code = decompile("rust_scalarpair_x86_64", "cons", &["option callretpair off"]);
-    assert!(
-        code.contains("// edx"),
-        "the payload register must show up as a bare register-commented local; got:\n{code}",
-    );
-    let declared = declared_locals(&code);
-    let phantoms: Vec<&String> = declared.iter().filter(|v| !assigned(&code, v)).collect();
-    assert!(
-        !phantoms.is_empty(),
-        "the pre-fix rendering has at least one never-assigned local; got:\n{code}",
-    );
-}
-
 /// The fix: the call has an output, and every local the body reads is assigned.
 #[test]
 fn the_consumer_reads_the_payload_out_of_the_call() {
