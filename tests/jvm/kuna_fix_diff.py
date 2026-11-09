@@ -647,6 +647,12 @@ def explicit_type_args_dropped(toks):
                     break
             if j + 1 < len(toks) and IDENT.match(toks[j]) and toks[j + 1] == '(':
                 i = j
+                continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
 CAST_BEFORE = {'(', ',', '=', 'return', ':', '?', '&', '|', '!', '+', '-', '*', '/', '%', '<', '>', '{', ';', '['}
 BOXES = {'Boolean', 'Byte', 'Character', 'Short', 'Integer', 'Long', 'Float', 'Double'}
 
@@ -836,6 +842,12 @@ def ternary_numeric_arms(old, new):
                     b = b[:end] + b[end + 1:]
                     j += 1
                 i, found = j + 1, True
+                continue
+        out.append(b[i])
+        i += 1
+    return found and out == a
+
+
 def boxed_type_variable_cast(old, new):
     """boxed_type_variable_cast: a cast's operand `X` became `Box.valueOf(X)`, nothing else changed."""
     a, b = tokens(old), tokens(new)
