@@ -440,6 +440,23 @@ fn a_directory_without_classes_says_so() {
 }
 
 #[test]
+fn a_library_without_classes_adds_nothing_and_fails_nothing() {
+    let dir = scratch_dir("jvm-classless-lib");
+    let empty_jar = dir.join("kmp-root.jar");
+    let mut eocd = b"PK\x05\x06".to_vec();
+    eocd.resize(22, 0);
+    std::fs::write(&empty_jar, &eocd).unwrap();
+    let empty_dir = scratch_dir("jvm-classless-lib-dir");
+    let plain = ok(&jvm(&["decompile", &jar(), "com.ex.Main"]));
+    for lib in [&empty_jar, &empty_dir] {
+        let with = ok(&jvm(&["decompile", &jar(), "com.ex.Main", "--lib", lib.to_str().unwrap()]));
+        assert_eq!(with, plain, "{}", lib.display());
+    }
+    let out = jvm(&["decompile-all", empty_jar.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(1), "as an input it has nothing to decompile");
+}
+
+#[test]
 fn help_on_a_jvm_input_is_the_jvm_usage() {
     for sub in ["decompile", "decompile-all", "decompile-project", "functions"] {
         let out = kuna(&[sub, &jar(), "--help"]);

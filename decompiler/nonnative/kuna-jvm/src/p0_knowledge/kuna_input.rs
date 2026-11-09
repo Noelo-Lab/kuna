@@ -321,6 +321,22 @@ pub fn load(path: &Path, options: &LoadOptions) -> Result<InputSet, InputError> 
     })
 }
 
+/// Reads a library (`Fernflower::add_library`): as [`load`], except that an
+/// archive or directory without class files is an empty set, which Vineflower
+/// adds without complaint (a Kotlin Multiplatform root jar holds none).
+pub fn load_library(path: &Path) -> Result<InputSet, InputError> {
+    let kind = match load(path, &LoadOptions { siblings: false }) {
+        Err(InputError::NoClasses(_)) => InputKind::Directory,
+        Err(InputError::Unsupported(_, InputKind::NoJvmClasses)) => InputKind::NoJvmClasses,
+        other => return other,
+    };
+    Ok(InputSet {
+        path: path.to_path_buf(),
+        kind,
+        units: Vec::new(),
+    })
+}
+
 impl InputSet {
     pub fn path(&self) -> &Path {
         &self.path

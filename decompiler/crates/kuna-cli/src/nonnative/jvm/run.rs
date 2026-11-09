@@ -183,8 +183,7 @@ pub(crate) fn config(
     config.available_memory = kuna_decomp::kuna_hostmem::available().map(|a| a.bytes);
     config.runtime = runtime;
     for lib in &args.libs {
-        let set = kuna_input::load(Path::new(lib), &LoadOptions { siblings: false })
-            .map_err(|e| format!("--lib {lib}: {e}"))?;
+        let set = kuna_input::load_library(Path::new(lib)).map_err(|e| format!("--lib {lib}: {e}"))?;
         config.libraries.push(Arc::new(set));
     }
     config.select = select;

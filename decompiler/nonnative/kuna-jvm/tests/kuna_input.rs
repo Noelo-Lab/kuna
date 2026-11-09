@@ -282,3 +282,30 @@ fn load_errors() {
         Err(InputError::Unsupported(_, InputKind::Other))
     ));
 }
+
+#[test]
+fn a_library_without_classes_is_empty_and_an_input_without_classes_fails() {
+    let dir = scratch("input-classless-library");
+    let jar = write(
+        &dir,
+        "kmp-root.jar",
+        &make_zip(&[
+            ("META-INF/MANIFEST.MF", b"Manifest-Version: 1.0\n"),
+            ("commonMain/default/manifest", b"unique_name=x\n"),
+        ]),
+    );
+    let empty = scratch("input-classless-library/empty-dir");
+    for path in [&jar, &empty] {
+        let set = kuna_input::load_library(path).unwrap();
+        assert!(set.classes().is_empty(), "{}", path.display());
+        assert!(set.sources().is_empty(), "{}", path.display());
+        assert!(kuna_input::load(path, &LoadOptions::default()).is_err(), "{}", path.display());
+    }
+    let library = write(&dir, "lib.jar", &make_zip(&[("a/B.class", &class_bytes())]));
+    assert_eq!(kuna_input::load_library(&library).unwrap().classes().len(), 1);
+    let elf = write(&dir, "tool", b"\x7fELF\x02\x01\x01\x00");
+    assert!(matches!(
+        kuna_input::load_library(&elf),
+        Err(InputError::Unsupported(_, InputKind::Other))
+    ));
+}
