@@ -12,10 +12,15 @@ comment (fix `report_to_kuna`), or import lines, or a hunk a fix of wrong output
 same tokens (`layout`, which such a fix causes where a line grows past the wrap width). Anything else
 is printed as collateral and the exit status is 1. The counts it prints are the evidence a fix's commit quotes
 (docs/jvm.md, "Fixing a Vineflower bug").
+
+A recogniser's table key is its fix's `KunaFix` id, or a FIX_GROUPS key listing the ids it stands for. The
+tool checks itself before it runs (kuna_fix_check.py: no name defined twice, every table entry a function
+of this file naming a fix); `make test-tools` runs that check and every recogniser on small hunks.
 """
 import collections
 import difflib
 import functools
+import importlib.util
 import os
 import re
 import sys
@@ -926,7 +931,6 @@ def kt_callable_reference(old, new):
         return False
     pattern = CALLABLE_REFERENCE.join(re.escape(p) for p in o.split(UNREPRESENTABLE_INSTANCE))
     return re.fullmatch(pattern, n) is not None
-IDENT = re.compile(r'[A-Za-z_$][\w$]*$')
 PRIMITIVES = {'boolean', 'byte', 'char', 'short', 'int', 'long', 'float', 'double'}
 
 
@@ -1948,6 +1952,13 @@ RECOGNISERS = {
 RECOGNISERS.update((fix, ktprint_recogniser(fix)) for fix in KTPRINT_ORDER[:-1])
 RECOGNISERS['kt_secondary_constructor_line'] = kt_secondary_constructor_line
 
+# A table key that is not one fix's id names the fixes its recogniser stands for.
+FIX_GROUPS = {
+    'kt_callable_reference': ('kt_reference_anonymous_super_call', 'kt_property_reference'),
+    'kt_for_loops': ('kt_for_loop_exit_condition', 'kt_for_range_counter', 'kt_for_range_exclusive_bound',
+                     'kt_for_range_unmatched_bound', 'kt_for_loop_definitions', 'kt_for_loop_continue_update'),
+}
+
 
 def classify(a, b, i1, i2, j1, j2, marked):
     kind = classify_base(a, b, i1, i2, j1, j2, marked)
@@ -2009,9 +2020,26 @@ def reflowed(a, b, hunks):
     return out
 
 
+def self_check():
+    """The problems kuna_fix_check.py finds in this file (two functions of one name, a table entry with no
+    recogniser or naming no KunaFix id)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    spec = importlib.util.spec_from_file_location('kuna_fix_check', os.path.join(here, 'kuna_fix_check.py'))
+    check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(check)
+    with open(os.path.abspath(__file__), encoding='utf-8') as f:
+        return check.problems(f.read(), check.fix_ids())
+
+
 def main():
+    if sys.argv[1:] in (['-h'], ['--help']):
+        print(__doc__)
+        return
     if len(sys.argv) != 3:
         sys.exit(__doc__)
+    broken = self_check()
+    if broken:
+        sys.exit('kuna_fix_diff.py fails its self-check:\n  ' + '\n  '.join(broken))
     compat, default = tree(sys.argv[1]), tree(sys.argv[2])
     counts = {'files': 0, 'differing': 0, 'import': 0, 'note': 0, 'fixed hunks': 0, 'other': 0}
     counts.update((fix, 0) for fix in list(RECOGNISERS) + list(CONTEXT_RECOGNISERS) + ['layout'])
