@@ -8,6 +8,19 @@
   ],
   "cases": [
     {
+      "id": "pkg/TestDiamondExternalClass",
+      "fix": "jvm_fix_external_class_diamond",
+      "class_files": [
+        "pkg/TestDiamondExternalClass.class",
+        "pkg/TestDiamondExternalClass$Fn.class",
+        "pkg/TestDiamondExternalClass$Fn2.class",
+        "pkg/TestDiamondExternalClass$Holder.class"
+      ],
+      "source": "src/pkg/TestDiamondExternalClass.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are"
+    },
+    {
       "id": "pkg/TestMethodRefWildcardReceiver",
       "fix": "jvm_fix_lambda_wildcard_return",
       "class_files": [

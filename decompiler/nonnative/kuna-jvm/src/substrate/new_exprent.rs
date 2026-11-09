@@ -4,6 +4,11 @@
 //! `get_inferred_expr_type`, a method reference whose return type is the
 //! receiver's `?` type argument keeps the generic mapping already inferred,
 //! where Vineflower dereferences the missing return type.
+//!
+//! kuna fix `external_class_diamond`: in `get_inferred_expr_type`,
+//! `new C(..)` of a class outside the class universe whose expected type is a
+//! parameterization of `C` gets the diamond (`kuna_fix_external_class_diamond`),
+//! where Vineflower writes it raw.
 
 use std::collections::VecDeque;
 
@@ -25,6 +30,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
 use crate::java_subclass;
 use crate::kuna_fixes::{self, KunaFix};
+use crate::substrate::kuna_fix_external_class_diamond;
 use crate::list_stack::ListStack;
 use crate::method_descriptor::MethodDescriptor;
 use crate::rt::{BitSet, JHashMap, JHashSet, JList, JavaEq, JavaHash};
@@ -179,6 +185,12 @@ impl NewExprent {
             self.d(|d| (d.lambda, d.anonymous, d.new_type.clone(), d.constructor));
         if !lambda && new_type.type_ == CodeType::Object {
             let node = struct_class(new_type.value.as_deref());
+
+            if node.is_none() && kuna_fixes::enabled(KunaFix::ExternalClassDiamond) {
+                if let Some(type_) = kuna_fix_external_class_diamond::infer(self, upper_bound) {
+                    return type_;
+                }
+            }
 
             match node.and_then(|n| n.get_signature()) {
                 Some(sig) => {

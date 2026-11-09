@@ -32,6 +32,9 @@ pub enum KunaFix {
     /// `jvm_fix_twr_unary_condition`: a `catch (Throwable)` handler that starts
     /// with `if (!flag)` is not taken for a try-with-resources null check.
     TwrUnaryCondition,
+    /// The fix `external_class_diamond`: `new C(..)` of a class outside the
+    /// input whose expected type is a parameterization of `C` keeps its diamond.
+    ExternalClassDiamond,
 }
 
 impl KunaFix {
@@ -40,6 +43,7 @@ impl KunaFix {
         KunaFix::ReportToKuna,
         KunaFix::LambdaWildcardReturn,
         KunaFix::TwrUnaryCondition,
+        KunaFix::ExternalClassDiamond,
     ];
 
     /// The option row that turns this fix on or off.
@@ -48,6 +52,7 @@ impl KunaFix {
             KunaFix::ReportToKuna => "jvm_fix_report_to_kuna",
             KunaFix::LambdaWildcardReturn => "jvm_fix_lambda_wildcard_return",
             KunaFix::TwrUnaryCondition => "jvm_fix_twr_unary_condition",
+            KunaFix::ExternalClassDiamond => "jvm_fix_external_class_diamond",
         }
     }
 

@@ -1092,3 +1092,31 @@ that a negation does not have and fails the method with an index out of bounds (
 `develop/1.13.0`). With the fix, a condition with fewer than two operands is not a null
 check: the handler is not a try-with-resources, and the matcher leaves the statement alone,
 as it does when the operand is not a variable; the `try`/`catch` is written as it is.
+
+**The fix `external_class_diamond`** (`KunaFix::ExternalClassDiamond`, named
+`jvm_fix_external_class_diamond` in `kuna_fixes.rs`) corrects output that Vineflower prints
+wrongly without failing. Vineflower prints `new C<>(..)` only when the inference of
+`decompiler/nonnative/kuna-jvm/src/substrate/new_exprent.rs (NewExprent::get_inferred_expr_type)`
+finds `C` in the class universe with a `Signature` that declares type parameters; it then
+infers the instance's type arguments from the expected type (the upper bound that a field
+initializer, a declaration, an assignment, a `return` or a parameter of a known method
+passes down) and gives the constructor the diamond. A class that is not in the universe,
+such as a library that was not given to the decompiler, is taken to be non-generic, and
+`new C(..)` is printed raw even where the expected type is `C<A, B>`. Raw, a lambda
+argument loses its parameter types and the class does not recompile (Elasticsearch's
+`PARSER = new ConstructingObjectParser("task_info", true, objs -> … (String)objs[i++] …)`,
+which javac rejects with `array required, but java.lang.Object found`; in the benchmark this
+keeps 106 Elasticsearch classes from recompiling). The expected type itself proves the class
+generic when it is a parameterization of `C` itself (`C<..>` with type arguments, not a
+supertype of `C`, not an array, not a wildcard). With the fix,
+`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_external_class_diamond.rs (infer)`
+takes the step that `InvocationExprent::get_inferred_expr_type` takes for a known generic
+class, with the class's formal parameters read off that type: each type argument that
+names a type usable at the site (not `?`, not a type variable out of scope) maps its
+parameter; when at least one does, the constructor gets the diamond, and the expression's
+type is the expected type when every argument mapped (otherwise the raw type, as for a
+known class). Anonymous classes (written from their own signature), arrays, a class in
+the universe (generic or not), and Kotlin output (where Kotlin has no diamond) are left
+to Vineflower's code. In the benchmark's output the change is only `new C(` becoming
+`new C<>(` (with a reflow where the longer line wraps): 3 sites in spring-boot, 133 in
+Ghidra and 353 in Elasticsearch, none in Guava, spring-framework or the Kotlin libraries.

@@ -18,10 +18,81 @@ source they were compiled from.
 
 | Case | Fix | Compiled with | With the fix |
 |---|---|---|---|
+| `pkg/TestDiamondExternalClass` | `jvm_fix_external_class_diamond` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are |
 | `pkg/TestMethodRefWildcardReceiver` | `jvm_fix_lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestTryCatchNotFlag` | `jvm_fix_twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 
 ## Diffs (compat -> default)
+
+### `pkg/TestDiamondExternalClass`
+
+```diff
+--- expected-compat/pkg/TestDiamondExternalClass.java
++++ expected/pkg/TestDiamondExternalClass.java
+@@ -1,26 +1,26 @@
+ package pkg;
+ 
+ public class TestDiamondExternalClass {
+-   static final DiamondLib<String, Void> PARSER = new DiamondLib("p", true, objs -> (String)objs[0]);
+-   private final DiamondLib<Integer, String> parser = new DiamondLib("q", (objs, c) -> objs.length + c.length());
+-   static final DiamondLib<?, Void> WILD = new DiamondLib("w", true, objs -> objs.length);
+-   static final DiamondBox<String> BOX = new DiamondBox();
++   static final DiamondLib<String, Void> PARSER = new DiamondLib<>("p", true, objs -> (String)objs[0]);
++   private final DiamondLib<Integer, String> parser = new DiamondLib<>("q", (objs, c) -> objs.length + c.length());
++   static final DiamondLib<?, Void> WILD = new DiamondLib<>("w", true, objs -> objs.length);
++   static final DiamondBox<String> BOX = new DiamondBox<>();
+    static final Object OBJECT = new DiamondBox();
+    static final DiamondPlain PLAIN = new DiamondPlain();
+    static DiamondLib<String, Void> assigned;
+ 
+    static DiamondLib<String, Void> local() {
+-      DiamondLib<String, Void> p = new DiamondLib("p", true, objs -> (String)objs[0]);
++      DiamondLib<String, Void> p = new DiamondLib<>("p", true, objs -> (String)objs[0]);
+       p.use();
+       return p;
+    }
+ 
+    static DiamondLib<String, Void> ret() {
+-      return new DiamondLib("p", true, objs -> (String)objs[0]);
++      return new DiamondLib<>("p", true, objs -> (String)objs[0]);
+    }
+ 
+    static void assign() {
+-      assigned = new DiamondLib("p", true, objs -> (String)objs[0]);
++      assigned = new DiamondLib<>("p", true, objs -> (String)objs[0]);
+    }
+ 
+    static void take(DiamondLib<String, Void> p) {
+@@ -30,12 +30,12 @@
+    }
+ 
+    static void arg() {
+-      take(new DiamondLib("p", true, objs -> (String)objs[0]));
+-      takeAny(new DiamondLib("p", true, objs -> (String)objs[0]));
++      take(new DiamondLib<>("p", true, objs -> (String)objs[0]));
++      takeAny(new DiamondLib<>("p", true, objs -> (String)objs[0]));
+    }
+ 
+    static DiamondBox<String> pick(boolean b, DiamondBox<String> other) {
+-      return b ? new DiamondBox() : other;
++      return b ? new DiamondBox<>() : other;
+    }
+ 
+    interface Fn<A, R> {
+@@ -47,10 +47,10 @@
+    }
+ 
+    static class Holder<T> {
+-      final DiamondBox<T> box = new DiamondBox();
++      final DiamondBox<T> box = new DiamondBox<>();
+ 
+       DiamondLib<T, Void> parser(T value) {
+-         return new DiamondLib("h", true, objs -> objs.length > 0 ? value : null);
++         return new DiamondLib<>("h", true, objs -> objs.length > 0 ? value : null);
+       }
+    }
+ }
+```
 
 ### `pkg/TestMethodRefWildcardReceiver`
 

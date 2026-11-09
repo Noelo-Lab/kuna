@@ -1397,6 +1397,28 @@ tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with index out of bounds: the len is 1 but the index is 1 (IndexOutOfBoundsException: Index 1 out of bounds for length 1 in Vineflower)|a try/catch (Throwable) whose handler starts with if (!flag) fails to decompile"
 
 [[option]]
+option = "jvm_fix_external_class_diamond"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "substrate"
+subphase = "new_exprent, kuna_fix_external_class_diamond"
+strength = "HARD"
+rewind = "substrate"
+issue = ""
+summary = "Write new C<>(..) for a class C outside the input (a library not given to the decompiler) when the expected type is a parameterization of C itself (a field, local, return or parameter typed C<A, B>): that type proves C generic, where Vineflower, which learns genericity only from C's own signature, writes new C(..) raw. The default differs from Vineflower's output on code Vineflower prints wrongly: written raw, a lambda argument loses its parameter types and the class does not recompile (PARSER = new ConstructingObjectParser(\"x\", true, args -> (String)args[0]) is array required, but Object found)."
+use_when = "Always on; jvm_vineflower_compat on reproduces Vineflower's raw constructor calls of library classes."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_external_class_diamond off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 NewExprent.getInferredExprType / InvocationExprent.getInferredExprType: the diamond (GenericType.DUMMY_VAR generic argument) is inferred only when StructContext.getClass(newType) has a Signature with type parameters; a class missing from the context is taken as non-generic whatever the upper bound says; still so on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "new C(..) written raw for a library class although the field or variable is typed C<A, B>|the decompiled class does not recompile: array required, but java.lang.Object found / cannot find symbol in a lambda passed to a raw constructor (javac array.req.but.found, cant.resolve.location)"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""

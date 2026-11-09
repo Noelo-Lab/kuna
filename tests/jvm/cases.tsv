@@ -3131,6 +3131,13 @@ case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB	Kotlin Multifile 
 class	classes/kotlin/kt/pkg/TestMultifile__TestMultifileBKt.class
 expected	expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB.kt
 compare	TestMultifile__TestMultifileBKt.kt	TestMultifile__TestMultifileBKt.java
+case	kuna-fixes-compat/pkg/TestDiamondExternalClass	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestDiamondExternalClass.class
+class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Fn.class
+class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Fn2.class
+class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Holder.class
+expected	kuna-fixes/expected-compat/pkg/TestDiamondExternalClass.java
+compare	TestDiamondExternalClass.java
 case	kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Factory.class
@@ -3145,6 +3152,13 @@ class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class
 expected	kuna-fixes/expected-compat/pkg/TestTryCatchNotFlag.java
 compare	TestTryCatchNotFlag.java
+case	kuna-fixes/pkg/TestDiamondExternalClass	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestDiamondExternalClass.class
+class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Fn.class
+class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Fn2.class
+class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Holder.class
+expected	kuna-fixes/expected/pkg/TestDiamondExternalClass.java
+compare	TestDiamondExternalClass.java
 case	kuna-fixes/pkg/TestMethodRefWildcardReceiver	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Factory.class

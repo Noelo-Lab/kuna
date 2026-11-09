@@ -3,6 +3,7 @@
 
   python3 -I tests/jvm/kuna_fix_case.py --fix jvm_fix_<slug> --class path/to/pkg/TestFoo.class \\
       [--source path/to/pkg/TestFoo.java] [--compiler "javac 17.0.20.1"] [--summary TEXT] [--opt k=v]...
+      [--wrong-output]
 
 The class's `Name$*.class` siblings in the same directory come with it, in name order (the corpus
 fixture's `addSource` order). Steps, all under tests/jvm/kuna-fixes/ (README.md there has the layout):
@@ -10,7 +11,8 @@ fixture's `addSource` order). Steps, all under tests/jvm/kuna-fixes/ (README.md 
   1. copies the class files to classes/<package>/ and the source to src/<package>/;
   2. runs the released Vineflower jar through the oracle (`vf-decompile --fixture`, plus the options of
      cases.json, dump-exception-on-error=0, and every --opt) and stores its text as
-     expected-compat/<id>.java; the text must contain Vineflower's failure comment;
+     expected-compat/<id>.java; the text must contain Vineflower's failure comment, unless --wrong-output
+     says the fix corrects code Vineflower prints wrongly;
   3. records the case in cases.json and rebuilds cases.tsv and the READMEs with regen.py;
   4. runs the corpus runner on both passes: the compat pass must match Vineflower's text, and kuna's
      default output becomes expected/<id>.java (printed as a diff against the compat text, for review);
@@ -116,6 +118,8 @@ def main():
     ap.add_argument('--compiler', default='', help='the compiler that produced the class, e.g. "javac 17.0.20.1"')
     ap.add_argument('--summary', default='', help='one line: what the default output does instead of failing')
     ap.add_argument('--opt', action='append', default=[], help='an extra option pair k=v for both passes')
+    ap.add_argument('--wrong-output', action='store_true',
+                    help='the fix corrects output Vineflower prints wrongly: no failure comment is required')
     a = ap.parse_args()
     if not os.environ.get('KUNA_JVM_ORACLE'):
         sys.exit('KUNA_JVM_ORACLE is not set: set it to the JVM oracle workspace '
@@ -166,7 +170,7 @@ def add_case(a, extra, work):
         sys.exit(f'vf-decompile failed ({code}):\n{out}{err}')
     with open(produced, encoding='utf-8') as f:
         compat_text = f.read()
-    if MARKER not in compat_text:
+    if MARKER not in compat_text and not a.wrong_output:
         sys.exit(f'Vineflower decompiles {name} without a failure comment: there is nothing for a fix to change')
     for sub in ('expected-compat', 'expected'):
         os.makedirs(os.path.dirname(os.path.join(FIXES, sub, case_id + '.java')), exist_ok=True)
@@ -207,7 +211,10 @@ def add_case(a, extra, work):
     print('\n'.join(diff))
     before, after = compat_text.count(MARKER), default_text.count(MARKER)
     print(f'\nfailed methods: {before} with jvm_vineflower_compat on, {after} with the defaults')
-    if after >= before:
+    if a.wrong_output:
+        if default_text == compat_text:
+            print('warning: the fix does not change the output of this class')
+    elif after >= before:
         print('warning: the fix does not decompile any method Vineflower fails on in this class')
 
     statuses, out = corpus([compat_id, default_id], os.path.join(work, 'run2'),
