@@ -4382,7 +4382,8 @@ kuna catalog --json              # the flippable assertion list, for an agent
 kuna catalog --markdown          # regenerate docs/options.md
 kuna catalog --check             # fail on catalog/registration drift (CI)
 kuna catalog --tier transform    # filter to the transform-tier control surface
-kuna catalog --engine jvm        # only the JVM engine's jvm_* options
+kuna catalog --engine jvm        # only the JVM engine's jvm_* options (--engine all: both)
+kuna catalog --option fdi        # a JVM option by name or Vineflower alias, no --engine needed
 kuna catalog --markdown --engine jvm   # regenerate docs/options-jvm.md
 ```
 
@@ -4401,15 +4402,20 @@ every other subcommand's `--json` is an object (`{binary,...}`, `{modes:[...]}`)
 cross-checks the selected catalog against this `kuna` build's
 `kuna_decomp::options::KUNA_OPTION_NAMES` in-process.
 
-The catalog holds two engines' options. The text and `--json` listings give the native
-rows, then the JVM engine's `jvm_*` rows (generated from
-`decompiler/nonnative/kuna-jvm/options.toml`), and every JSON row carries
-`"engine": "native"` or `"engine": "jvm"`; a JVM row also carries `aliases`, Vineflower's
-long and three-letter names for it. `--engine native|jvm` keeps one engine's rows (the
-older spellings `cpp` and `rust` mean `native`), and `--option NAME` also resolves a JVM
-name or alias. `--markdown` alone renders the native catalog, `docs/options.md`;
-`--markdown --engine jvm` renders `docs/options-jvm.md`. `--check` checks the JVM table
-too.
+The catalog holds two engines' options, and lists the native ones by default: without
+`--engine` (or with the older spellings `--engine cpp|rust`) the text and `--json`
+listings are the native catalog exactly as above. `--engine jvm` lists the JVM engine's
+`jvm_*` rows instead (generated from `decompiler/nonnative/kuna-jvm/options.toml`),
+`--engine all` the native rows followed by the JVM rows, and `--engine native` the native
+rows. With any of these three, every JSON row ends with `aliases` and `engine`
+(`"native"` or `"jvm"`); a JVM row's `aliases` are Vineflower's long and three-letter
+names for it (`aliases:` in the text table), a native row's are empty. `--option NAME`
+resolves a JVM name or alias without `--engine` (`kuna catalog --option fdi` prints
+`jvm_decompile_finally`, tagged the same way); under `--engine native` it is an unknown
+option. `--markdown` alone, or with `--engine native`, renders the native catalog,
+`docs/options.md`; `--markdown --engine jvm` renders `docs/options-jvm.md`; `--markdown
+--engine all` is refused (exit `2`). `--check` always checks both tables and prints a
+second `catalog OK` line with the JVM row count.
 
 `--decomp-dbg PATH`, or a non-empty `KUNA_DECOMP_DBG` when that flag is absent, opts
 text, JSON and check modes into the existing external console query. The flag takes
