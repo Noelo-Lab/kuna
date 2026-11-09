@@ -123,15 +123,16 @@ fn exc_class(s: &str) -> &str {
     s.split(':').nth(1).unwrap_or("")
 }
 
-/// Java and Rust results agree; a Rust panic stands for any Java exception, and
-/// messages are compared for the exceptions both sides build by hand.
+/// Java and Rust results agree; a Rust panic stands for any Java exception
+/// (`ByteCursor`'s `IOException` for `EOFException`), and messages are
+/// compared for the exceptions both sides build by hand.
 pub fn same(java: &str, rust: &str) -> bool {
     if java == rust {
         return true;
     }
     if java.starts_with("EXC:") && rust.starts_with("EXC:") {
         let (jc, rc) = (exc_class(java), exc_class(rust));
-        if rc == "Panic" {
+        if rc == "Panic" || (jc == "EOFException" && rc == "IOException") {
             return true;
         }
         if jc != rc {

@@ -1,0 +1,1131 @@
+IS	   	0	
+IS	   	1	   
+IS	   	2	      
+IS	   	5	               
+IS	   	-1	
+IS	\t	0	
+IS	\t	1	\t
+IS	\t	2	\t\t
+IS	\t	5	\t\t\t\t\t
+IS	\t	-1	
+IS		0	
+IS		1	
+IS		2	
+IS		5	
+IS		-1	
+IS	ab	0	
+IS	ab	1	ab
+IS	ab	2	abab
+IS	ab	5	ababababab
+IS	ab	-1	
+IS	  \u00e9	0	
+IS	  \u00e9	1	  \u00e9
+IS	  \u00e9	2	  \u00e9  \u00e9
+IS	  \u00e9	5	  \u00e9  \u00e9  \u00e9  \u00e9  \u00e9
+IS	  \u00e9	-1	
+KW	abstract	45	1	true	false
+KW	abstract	45	0	true	false
+KW	abstract	48	1	true	false
+KW	abstract	48	0	true	false
+KW	abstract	49	1	true	false
+KW	abstract	49	0	true	false
+KW	abstract	52	1	true	false
+KW	abstract	52	0	true	false
+KW	abstract	65	1	true	false
+KW	abstract	65	0	true	false
+KW	default	45	1	true	false
+KW	default	45	0	true	false
+KW	default	48	1	true	false
+KW	default	48	0	true	false
+KW	default	49	1	true	false
+KW	default	49	0	true	false
+KW	default	52	1	true	false
+KW	default	52	0	true	false
+KW	default	65	1	true	false
+KW	default	65	0	true	false
+KW	if	45	1	true	false
+KW	if	45	0	true	false
+KW	if	48	1	true	false
+KW	if	48	0	true	false
+KW	if	49	1	true	false
+KW	if	49	0	true	false
+KW	if	52	1	true	false
+KW	if	52	0	true	false
+KW	if	65	1	true	false
+KW	if	65	0	true	false
+KW	private	45	1	true	false
+KW	private	45	0	true	false
+KW	private	48	1	true	false
+KW	private	48	0	true	false
+KW	private	49	1	true	false
+KW	private	49	0	true	false
+KW	private	52	1	true	false
+KW	private	52	0	true	false
+KW	private	65	1	true	false
+KW	private	65	0	true	false
+KW	this	45	1	true	false
+KW	this	45	0	true	false
+KW	this	48	1	true	false
+KW	this	48	0	true	false
+KW	this	49	1	true	false
+KW	this	49	0	true	false
+KW	this	52	1	true	false
+KW	this	52	0	true	false
+KW	this	65	1	true	false
+KW	this	65	0	true	false
+KW	boolean	45	1	true	false
+KW	boolean	45	0	true	false
+KW	boolean	48	1	true	false
+KW	boolean	48	0	true	false
+KW	boolean	49	1	true	false
+KW	boolean	49	0	true	false
+KW	boolean	52	1	true	false
+KW	boolean	52	0	true	false
+KW	boolean	65	1	true	false
+KW	boolean	65	0	true	false
+KW	do	45	1	true	false
+KW	do	45	0	true	false
+KW	do	48	1	true	false
+KW	do	48	0	true	false
+KW	do	49	1	true	false
+KW	do	49	0	true	false
+KW	do	52	1	true	false
+KW	do	52	0	true	false
+KW	do	65	1	true	false
+KW	do	65	0	true	false
+KW	implements	45	1	true	false
+KW	implements	45	0	true	false
+KW	implements	48	1	true	false
+KW	implements	48	0	true	false
+KW	implements	49	1	true	false
+KW	implements	49	0	true	false
+KW	implements	52	1	true	false
+KW	implements	52	0	true	false
+KW	implements	65	1	true	false
+KW	implements	65	0	true	false
+KW	protected	45	1	true	false
+KW	protected	45	0	true	false
+KW	protected	48	1	true	false
+KW	protected	48	0	true	false
+KW	protected	49	1	true	false
+KW	protected	49	0	true	false
+KW	protected	52	1	true	false
+KW	protected	52	0	true	false
+KW	protected	65	1	true	false
+KW	protected	65	0	true	false
+KW	throw	45	1	true	false
+KW	throw	45	0	true	false
+KW	throw	48	1	true	false
+KW	throw	48	0	true	false
+KW	throw	49	1	true	false
+KW	throw	49	0	true	false
+KW	throw	52	1	true	false
+KW	throw	52	0	true	false
+KW	throw	65	1	true	false
+KW	throw	65	0	true	false
+KW	break	45	1	true	false
+KW	break	45	0	true	false
+KW	break	48	1	true	false
+KW	break	48	0	true	false
+KW	break	49	1	true	false
+KW	break	49	0	true	false
+KW	break	52	1	true	false
+KW	break	52	0	true	false
+KW	break	65	1	true	false
+KW	break	65	0	true	false
+KW	double	45	1	true	false
+KW	double	45	0	true	false
+KW	double	48	1	true	false
+KW	double	48	0	true	false
+KW	double	49	1	true	false
+KW	double	49	0	true	false
+KW	double	52	1	true	false
+KW	double	52	0	true	false
+KW	double	65	1	true	false
+KW	double	65	0	true	false
+KW	import	45	1	true	false
+KW	import	45	0	true	false
+KW	import	48	1	true	false
+KW	import	48	0	true	false
+KW	import	49	1	true	false
+KW	import	49	0	true	false
+KW	import	52	1	true	false
+KW	import	52	0	true	false
+KW	import	65	1	true	false
+KW	import	65	0	true	false
+KW	public	45	1	true	false
+KW	public	45	0	true	false
+KW	public	48	1	true	false
+KW	public	48	0	true	false
+KW	public	49	1	true	false
+KW	public	49	0	true	false
+KW	public	52	1	true	false
+KW	public	52	0	true	false
+KW	public	65	1	true	false
+KW	public	65	0	true	false
+KW	throws	45	1	true	false
+KW	throws	45	0	true	false
+KW	throws	48	1	true	false
+KW	throws	48	0	true	false
+KW	throws	49	1	true	false
+KW	throws	49	0	true	false
+KW	throws	52	1	true	false
+KW	throws	52	0	true	false
+KW	throws	65	1	true	false
+KW	throws	65	0	true	false
+KW	byte	45	1	true	false
+KW	byte	45	0	true	false
+KW	byte	48	1	true	false
+KW	byte	48	0	true	false
+KW	byte	49	1	true	false
+KW	byte	49	0	true	false
+KW	byte	52	1	true	false
+KW	byte	52	0	true	false
+KW	byte	65	1	true	false
+KW	byte	65	0	true	false
+KW	else	45	1	true	false
+KW	else	45	0	true	false
+KW	else	48	1	true	false
+KW	else	48	0	true	false
+KW	else	49	1	true	false
+KW	else	49	0	true	false
+KW	else	52	1	true	false
+KW	else	52	0	true	false
+KW	else	65	1	true	false
+KW	else	65	0	true	false
+KW	instanceof	45	1	true	false
+KW	instanceof	45	0	true	false
+KW	instanceof	48	1	true	false
+KW	instanceof	48	0	true	false
+KW	instanceof	49	1	true	false
+KW	instanceof	49	0	true	false
+KW	instanceof	52	1	true	false
+KW	instanceof	52	0	true	false
+KW	instanceof	65	1	true	false
+KW	instanceof	65	0	true	false
+KW	return	45	1	true	false
+KW	return	45	0	true	false
+KW	return	48	1	true	false
+KW	return	48	0	true	false
+KW	return	49	1	true	false
+KW	return	49	0	true	false
+KW	return	52	1	true	false
+KW	return	52	0	true	false
+KW	return	65	1	true	false
+KW	return	65	0	true	false
+KW	transient	45	1	true	false
+KW	transient	45	0	true	false
+KW	transient	48	1	true	false
+KW	transient	48	0	true	false
+KW	transient	49	1	true	false
+KW	transient	49	0	true	false
+KW	transient	52	1	true	false
+KW	transient	52	0	true	false
+KW	transient	65	1	true	false
+KW	transient	65	0	true	false
+KW	case	45	1	true	false
+KW	case	45	0	true	false
+KW	case	48	1	true	false
+KW	case	48	0	true	false
+KW	case	49	1	true	false
+KW	case	49	0	true	false
+KW	case	52	1	true	false
+KW	case	52	0	true	false
+KW	case	65	1	true	false
+KW	case	65	0	true	false
+KW	extends	45	1	true	false
+KW	extends	45	0	true	false
+KW	extends	48	1	true	false
+KW	extends	48	0	true	false
+KW	extends	49	1	true	false
+KW	extends	49	0	true	false
+KW	extends	52	1	true	false
+KW	extends	52	0	true	false
+KW	extends	65	1	true	false
+KW	extends	65	0	true	false
+KW	int	45	1	true	false
+KW	int	45	0	true	false
+KW	int	48	1	true	false
+KW	int	48	0	true	false
+KW	int	49	1	true	false
+KW	int	49	0	true	false
+KW	int	52	1	true	false
+KW	int	52	0	true	false
+KW	int	65	1	true	false
+KW	int	65	0	true	false
+KW	short	45	1	true	false
+KW	short	45	0	true	false
+KW	short	48	1	true	false
+KW	short	48	0	true	false
+KW	short	49	1	true	false
+KW	short	49	0	true	false
+KW	short	52	1	true	false
+KW	short	52	0	true	false
+KW	short	65	1	true	false
+KW	short	65	0	true	false
+KW	try	45	1	true	false
+KW	try	45	0	true	false
+KW	try	48	1	true	false
+KW	try	48	0	true	false
+KW	try	49	1	true	false
+KW	try	49	0	true	false
+KW	try	52	1	true	false
+KW	try	52	0	true	false
+KW	try	65	1	true	false
+KW	try	65	0	true	false
+KW	catch	45	1	true	false
+KW	catch	45	0	true	false
+KW	catch	48	1	true	false
+KW	catch	48	0	true	false
+KW	catch	49	1	true	false
+KW	catch	49	0	true	false
+KW	catch	52	1	true	false
+KW	catch	52	0	true	false
+KW	catch	65	1	true	false
+KW	catch	65	0	true	false
+KW	final	45	1	true	false
+KW	final	45	0	true	false
+KW	final	48	1	true	false
+KW	final	48	0	true	false
+KW	final	49	1	true	false
+KW	final	49	0	true	false
+KW	final	52	1	true	false
+KW	final	52	0	true	false
+KW	final	65	1	true	false
+KW	final	65	0	true	false
+KW	interface	45	1	true	false
+KW	interface	45	0	true	false
+KW	interface	48	1	true	false
+KW	interface	48	0	true	false
+KW	interface	49	1	true	false
+KW	interface	49	0	true	false
+KW	interface	52	1	true	false
+KW	interface	52	0	true	false
+KW	interface	65	1	true	false
+KW	interface	65	0	true	false
+KW	static	45	1	true	false
+KW	static	45	0	true	false
+KW	static	48	1	true	false
+KW	static	48	0	true	false
+KW	static	49	1	true	false
+KW	static	49	0	true	false
+KW	static	52	1	true	false
+KW	static	52	0	true	false
+KW	static	65	1	true	false
+KW	static	65	0	true	false
+KW	void	45	1	true	false
+KW	void	45	0	true	false
+KW	void	48	1	true	false
+KW	void	48	0	true	false
+KW	void	49	1	true	false
+KW	void	49	0	true	false
+KW	void	52	1	true	false
+KW	void	52	0	true	false
+KW	void	65	1	true	false
+KW	void	65	0	true	false
+KW	char	45	1	true	false
+KW	char	45	0	true	false
+KW	char	48	1	true	false
+KW	char	48	0	true	false
+KW	char	49	1	true	false
+KW	char	49	0	true	false
+KW	char	52	1	true	false
+KW	char	52	0	true	false
+KW	char	65	1	true	false
+KW	char	65	0	true	false
+KW	finally	45	1	true	false
+KW	finally	45	0	true	false
+KW	finally	48	1	true	false
+KW	finally	48	0	true	false
+KW	finally	49	1	true	false
+KW	finally	49	0	true	false
+KW	finally	52	1	true	false
+KW	finally	52	0	true	false
+KW	finally	65	1	true	false
+KW	finally	65	0	true	false
+KW	long	45	1	true	false
+KW	long	45	0	true	false
+KW	long	48	1	true	false
+KW	long	48	0	true	false
+KW	long	49	1	true	false
+KW	long	49	0	true	false
+KW	long	52	1	true	false
+KW	long	52	0	true	false
+KW	long	65	1	true	false
+KW	long	65	0	true	false
+KW	strictfp	45	1	true	false
+KW	strictfp	45	0	true	false
+KW	strictfp	48	1	true	false
+KW	strictfp	48	0	true	false
+KW	strictfp	49	1	true	false
+KW	strictfp	49	0	true	false
+KW	strictfp	52	1	true	false
+KW	strictfp	52	0	true	false
+KW	strictfp	65	1	true	false
+KW	strictfp	65	0	true	false
+KW	volatile	45	1	true	false
+KW	volatile	45	0	true	false
+KW	volatile	48	1	true	false
+KW	volatile	48	0	true	false
+KW	volatile	49	1	true	false
+KW	volatile	49	0	true	false
+KW	volatile	52	1	true	false
+KW	volatile	52	0	true	false
+KW	volatile	65	1	true	false
+KW	volatile	65	0	true	false
+KW	class	45	1	true	false
+KW	class	45	0	true	false
+KW	class	48	1	true	false
+KW	class	48	0	true	false
+KW	class	49	1	true	false
+KW	class	49	0	true	false
+KW	class	52	1	true	false
+KW	class	52	0	true	false
+KW	class	65	1	true	false
+KW	class	65	0	true	false
+KW	float	45	1	true	false
+KW	float	45	0	true	false
+KW	float	48	1	true	false
+KW	float	48	0	true	false
+KW	float	49	1	true	false
+KW	float	49	0	true	false
+KW	float	52	1	true	false
+KW	float	52	0	true	false
+KW	float	65	1	true	false
+KW	float	65	0	true	false
+KW	native	45	1	true	false
+KW	native	45	0	true	false
+KW	native	48	1	true	false
+KW	native	48	0	true	false
+KW	native	49	1	true	false
+KW	native	49	0	true	false
+KW	native	52	1	true	false
+KW	native	52	0	true	false
+KW	native	65	1	true	false
+KW	native	65	0	true	false
+KW	super	45	1	true	false
+KW	super	45	0	true	false
+KW	super	48	1	true	false
+KW	super	48	0	true	false
+KW	super	49	1	true	false
+KW	super	49	0	true	false
+KW	super	52	1	true	false
+KW	super	52	0	true	false
+KW	super	65	1	true	false
+KW	super	65	0	true	false
+KW	while	45	1	true	false
+KW	while	45	0	true	false
+KW	while	48	1	true	false
+KW	while	48	0	true	false
+KW	while	49	1	true	false
+KW	while	49	0	true	false
+KW	while	52	1	true	false
+KW	while	52	0	true	false
+KW	while	65	1	true	false
+KW	while	65	0	true	false
+KW	const	45	1	true	false
+KW	const	45	0	true	false
+KW	const	48	1	true	false
+KW	const	48	0	true	false
+KW	const	49	1	true	false
+KW	const	49	0	true	false
+KW	const	52	1	true	false
+KW	const	52	0	true	false
+KW	const	65	1	true	false
+KW	const	65	0	true	false
+KW	for	45	1	true	false
+KW	for	45	0	true	false
+KW	for	48	1	true	false
+KW	for	48	0	true	false
+KW	for	49	1	true	false
+KW	for	49	0	true	false
+KW	for	52	1	true	false
+KW	for	52	0	true	false
+KW	for	65	1	true	false
+KW	for	65	0	true	false
+KW	new	45	1	true	false
+KW	new	45	0	true	false
+KW	new	48	1	true	false
+KW	new	48	0	true	false
+KW	new	49	1	true	false
+KW	new	49	0	true	false
+KW	new	52	1	true	false
+KW	new	52	0	true	false
+KW	new	65	1	true	false
+KW	new	65	0	true	false
+KW	switch	45	1	true	false
+KW	switch	45	0	true	false
+KW	switch	48	1	true	false
+KW	switch	48	0	true	false
+KW	switch	49	1	true	false
+KW	switch	49	0	true	false
+KW	switch	52	1	true	false
+KW	switch	52	0	true	false
+KW	switch	65	1	true	false
+KW	switch	65	0	true	false
+KW	continue	45	1	true	false
+KW	continue	45	0	true	false
+KW	continue	48	1	true	false
+KW	continue	48	0	true	false
+KW	continue	49	1	true	false
+KW	continue	49	0	true	false
+KW	continue	52	1	true	false
+KW	continue	52	0	true	false
+KW	continue	65	1	true	false
+KW	continue	65	0	true	false
+KW	goto	45	1	true	false
+KW	goto	45	0	true	false
+KW	goto	48	1	true	false
+KW	goto	48	0	true	false
+KW	goto	49	1	true	false
+KW	goto	49	0	true	false
+KW	goto	52	1	true	false
+KW	goto	52	0	true	false
+KW	goto	65	1	true	false
+KW	goto	65	0	true	false
+KW	package	45	1	true	false
+KW	package	45	0	true	false
+KW	package	48	1	true	false
+KW	package	48	0	true	false
+KW	package	49	1	true	false
+KW	package	49	0	true	false
+KW	package	52	1	true	false
+KW	package	52	0	true	false
+KW	package	65	1	true	false
+KW	package	65	0	true	false
+KW	synchronized	45	1	true	false
+KW	synchronized	45	0	true	false
+KW	synchronized	48	1	true	false
+KW	synchronized	48	0	true	false
+KW	synchronized	49	1	true	false
+KW	synchronized	49	0	true	false
+KW	synchronized	52	1	true	false
+KW	synchronized	52	0	true	false
+KW	synchronized	65	1	true	false
+KW	synchronized	65	0	true	false
+KW	true	45	1	true	false
+KW	true	45	0	true	false
+KW	true	48	1	true	false
+KW	true	48	0	true	false
+KW	true	49	1	true	false
+KW	true	49	0	true	false
+KW	true	52	1	true	false
+KW	true	52	0	true	false
+KW	true	65	1	true	false
+KW	true	65	0	true	false
+KW	false	45	1	true	false
+KW	false	45	0	true	false
+KW	false	48	1	true	false
+KW	false	48	0	true	false
+KW	false	49	1	true	false
+KW	false	49	0	true	false
+KW	false	52	1	true	false
+KW	false	52	0	true	false
+KW	false	65	1	true	false
+KW	false	65	0	true	false
+KW	null	45	1	true	false
+KW	null	45	0	true	false
+KW	null	48	1	true	false
+KW	null	48	0	true	false
+KW	null	49	1	true	false
+KW	null	49	0	true	false
+KW	null	52	1	true	false
+KW	null	52	0	true	false
+KW	null	65	1	true	false
+KW	null	65	0	true	false
+KW	assert	45	1	true	false
+KW	assert	45	0	true	false
+KW	assert	48	1	true	false
+KW	assert	48	0	true	false
+KW	assert	49	1	true	false
+KW	assert	49	0	true	false
+KW	assert	52	1	true	false
+KW	assert	52	0	true	false
+KW	assert	65	1	true	false
+KW	assert	65	0	true	false
+KW	enum	45	1	false	true
+KW	enum	45	0	false	true
+KW	enum	48	1	false	true
+KW	enum	48	0	false	true
+KW	enum	49	1	true	false
+KW	enum	49	0	true	false
+KW	enum	52	1	true	false
+KW	enum	52	0	true	false
+KW	enum	65	1	true	false
+KW	enum	65	0	true	false
+KW	var	45	1	false	true
+KW	var	45	0	false	true
+KW	var	48	1	false	true
+KW	var	48	0	false	true
+KW	var	49	1	false	true
+KW	var	49	0	false	true
+KW	var	52	1	false	true
+KW	var	52	0	false	true
+KW	var	65	1	false	true
+KW	var	65	0	false	true
+KW	record	45	1	false	true
+KW	record	45	0	false	true
+KW	record	48	1	false	true
+KW	record	48	0	false	true
+KW	record	49	1	false	true
+KW	record	49	0	false	true
+KW	record	52	1	false	true
+KW	record	52	0	false	true
+KW	record	65	1	false	true
+KW	record	65	0	false	true
+KW	yield	45	1	false	true
+KW	yield	45	0	false	true
+KW	yield	48	1	false	true
+KW	yield	48	0	false	true
+KW	yield	49	1	false	true
+KW	yield	49	0	false	true
+KW	yield	52	1	false	true
+KW	yield	52	0	false	true
+KW	yield	65	1	false	true
+KW	yield	65	0	false	true
+KW	sealed	45	1	false	true
+KW	sealed	45	0	false	true
+KW	sealed	48	1	false	true
+KW	sealed	48	0	false	true
+KW	sealed	49	1	false	true
+KW	sealed	49	0	false	true
+KW	sealed	52	1	false	true
+KW	sealed	52	0	false	true
+KW	sealed	65	1	false	true
+KW	sealed	65	0	false	true
+KW	permits	45	1	false	true
+KW	permits	45	0	false	true
+KW	permits	48	1	false	true
+KW	permits	48	0	false	true
+KW	permits	49	1	false	true
+KW	permits	49	0	false	true
+KW	permits	52	1	false	true
+KW	permits	52	0	false	true
+KW	permits	65	1	false	true
+KW	permits	65	0	false	true
+KW	module	45	1	false	true
+KW	module	45	0	false	true
+KW	module	48	1	false	true
+KW	module	48	0	false	true
+KW	module	49	1	false	true
+KW	module	49	0	false	true
+KW	module	52	1	false	true
+KW	module	52	0	false	true
+KW	module	65	1	false	true
+KW	module	65	0	false	true
+KW	non-sealed	45	1	false	false
+KW	non-sealed	45	0	false	false
+KW	non-sealed	48	1	false	false
+KW	non-sealed	48	0	false	false
+KW	non-sealed	49	1	false	false
+KW	non-sealed	49	0	false	false
+KW	non-sealed	52	1	false	false
+KW	non-sealed	52	0	false	false
+KW	non-sealed	65	1	false	false
+KW	non-sealed	65	0	false	false
+KW	_	45	1	false	true
+KW	_	45	0	false	true
+KW	_	48	1	false	true
+KW	_	48	0	false	true
+KW	_	49	1	false	true
+KW	_	49	0	false	true
+KW	_	52	1	false	true
+KW	_	52	0	false	true
+KW	_	65	1	false	true
+KW	_	65	0	false	true
+KW	$	45	1	false	true
+KW	$	45	0	false	true
+KW	$	48	1	false	true
+KW	$	48	0	false	true
+KW	$	49	1	false	true
+KW	$	49	0	false	true
+KW	$	52	1	false	true
+KW	$	52	0	false	true
+KW	$	65	1	false	true
+KW	$	65	0	false	true
+KW	$x	45	1	false	true
+KW	$x	45	0	false	true
+KW	$x	48	1	false	true
+KW	$x	48	0	false	true
+KW	$x	49	1	false	true
+KW	$x	49	0	false	true
+KW	$x	52	1	false	true
+KW	$x	52	0	false	true
+KW	$x	65	1	false	true
+KW	$x	65	0	false	true
+KW	x$	45	1	false	true
+KW	x$	45	0	false	true
+KW	x$	48	1	false	true
+KW	x$	48	0	false	true
+KW	x$	49	1	false	true
+KW	x$	49	0	false	true
+KW	x$	52	1	false	true
+KW	x$	52	0	false	true
+KW	x$	65	1	false	true
+KW	x$	65	0	false	true
+KW	Foo	45	1	false	true
+KW	Foo	45	0	false	true
+KW	Foo	48	1	false	true
+KW	Foo	48	0	false	true
+KW	Foo	49	1	false	true
+KW	Foo	49	0	false	true
+KW	Foo	52	1	false	true
+KW	Foo	52	0	false	true
+KW	Foo	65	1	false	true
+KW	Foo	65	0	false	true
+KW	foo1	45	1	false	true
+KW	foo1	45	0	false	true
+KW	foo1	48	1	false	true
+KW	foo1	48	0	false	true
+KW	foo1	49	1	false	true
+KW	foo1	49	0	false	true
+KW	foo1	52	1	false	true
+KW	foo1	52	0	false	true
+KW	foo1	65	1	false	true
+KW	foo1	65	0	false	true
+KW	1foo	45	1	false	false
+KW	1foo	45	0	false	false
+KW	1foo	48	1	false	false
+KW	1foo	48	0	false	false
+KW	1foo	49	1	false	false
+KW	1foo	49	0	false	false
+KW	1foo	52	1	false	false
+KW	1foo	52	0	false	false
+KW	1foo	65	1	false	false
+KW	1foo	65	0	false	false
+KW		45	1	false	false
+KW		45	0	false	false
+KW		48	1	false	false
+KW		48	0	false	false
+KW		49	1	false	false
+KW		49	0	false	false
+KW		52	1	false	false
+KW		52	0	false	false
+KW		65	1	false	false
+KW		65	0	false	false
+KW	 	45	1	false	false
+KW	 	45	0	false	false
+KW	 	48	1	false	false
+KW	 	48	0	false	false
+KW	 	49	1	false	false
+KW	 	49	0	false	false
+KW	 	52	1	false	false
+KW	 	52	0	false	false
+KW	 	65	1	false	false
+KW	 	65	0	false	false
+KW	a b	45	1	false	false
+KW	a b	45	0	false	false
+KW	a b	48	1	false	false
+KW	a b	48	0	false	false
+KW	a b	49	1	false	false
+KW	a b	49	0	false	false
+KW	a b	52	1	false	false
+KW	a b	52	0	false	false
+KW	a b	65	1	false	false
+KW	a b	65	0	false	false
+KW	a-b	45	1	false	false
+KW	a-b	45	0	false	false
+KW	a-b	48	1	false	false
+KW	a-b	48	0	false	false
+KW	a-b	49	1	false	false
+KW	a-b	49	0	false	false
+KW	a-b	52	1	false	false
+KW	a-b	52	0	false	false
+KW	a-b	65	1	false	false
+KW	a-b	65	0	false	false
+KW	a.b	45	1	false	false
+KW	a.b	45	0	false	false
+KW	a.b	48	1	false	false
+KW	a.b	48	0	false	false
+KW	a.b	49	1	false	false
+KW	a.b	49	0	false	false
+KW	a.b	52	1	false	false
+KW	a.b	52	0	false	false
+KW	a.b	65	1	false	false
+KW	a.b	65	0	false	false
+KW	caf\u00e9	45	1	false	true
+KW	caf\u00e9	45	0	false	true
+KW	caf\u00e9	48	1	false	true
+KW	caf\u00e9	48	0	false	true
+KW	caf\u00e9	49	1	false	true
+KW	caf\u00e9	49	0	false	true
+KW	caf\u00e9	52	1	false	true
+KW	caf\u00e9	52	0	false	true
+KW	caf\u00e9	65	1	false	true
+KW	caf\u00e9	65	0	false	true
+KW	\u65e5\u672c	45	1	false	true
+KW	\u65e5\u672c	45	0	false	true
+KW	\u65e5\u672c	48	1	false	true
+KW	\u65e5\u672c	48	0	false	true
+KW	\u65e5\u672c	49	1	false	true
+KW	\u65e5\u672c	49	0	false	true
+KW	\u65e5\u672c	52	1	false	true
+KW	\u65e5\u672c	52	0	false	true
+KW	\u65e5\u672c	65	1	false	true
+KW	\u65e5\u672c	65	0	false	true
+KW	\u0000a	45	1	false	false
+KW	\u0000a	45	0	false	false
+KW	\u0000a	48	1	false	false
+KW	\u0000a	48	0	false	false
+KW	\u0000a	49	1	false	false
+KW	\u0000a	49	0	false	false
+KW	\u0000a	52	1	false	false
+KW	\u0000a	52	0	false	false
+KW	\u0000a	65	1	false	false
+KW	\u0000a	65	0	false	false
+KW	a\u0000	45	1	false	true
+KW	a\u0000	45	0	false	true
+KW	a\u0000	48	1	false	true
+KW	a\u0000	48	0	false	true
+KW	a\u0000	49	1	false	true
+KW	a\u0000	49	0	false	true
+KW	a\u0000	52	1	false	true
+KW	a\u0000	52	0	false	true
+KW	a\u0000	65	1	false	true
+KW	a\u0000	65	0	false	true
+KW	a\u200b	45	1	false	true
+KW	a\u200b	45	0	false	true
+KW	a\u200b	48	1	false	true
+KW	a\u200b	48	0	false	true
+KW	a\u200b	49	1	false	true
+KW	a\u200b	49	0	false	true
+KW	a\u200b	52	1	false	true
+KW	a\u200b	52	0	false	true
+KW	a\u200b	65	1	false	true
+KW	a\u200b	65	0	false	true
+KW	\u00b2x	45	1	false	false
+KW	\u00b2x	45	0	false	false
+KW	\u00b2x	48	1	false	false
+KW	\u00b2x	48	0	false	false
+KW	\u00b2x	49	1	false	false
+KW	\u00b2x	49	0	false	false
+KW	\u00b2x	52	1	false	false
+KW	\u00b2x	52	0	false	false
+KW	\u00b2x	65	1	false	false
+KW	\u00b2x	65	0	false	false
+KW	x\u00b2	45	1	false	false
+KW	x\u00b2	45	0	false	false
+KW	x\u00b2	48	1	false	false
+KW	x\u00b2	48	0	false	false
+KW	x\u00b2	49	1	false	false
+KW	x\u00b2	49	0	false	false
+KW	x\u00b2	52	1	false	false
+KW	x\u00b2	52	0	false	false
+KW	x\u00b2	65	1	false	false
+KW	x\u00b2	65	0	false	false
+KW	\u20acsym	45	1	false	true
+KW	\u20acsym	45	0	false	true
+KW	\u20acsym	48	1	false	true
+KW	\u20acsym	48	0	false	true
+KW	\u20acsym	49	1	false	true
+KW	\u20acsym	49	0	false	true
+KW	\u20acsym	52	1	false	true
+KW	\u20acsym	52	0	false	true
+KW	\u20acsym	65	1	false	true
+KW	\u20acsym	65	0	false	true
+KW	\ud835\udc00	45	1	false	false
+KW	\ud835\udc00	45	0	false	false
+KW	\ud835\udc00	48	1	false	false
+KW	\ud835\udc00	48	0	false	false
+KW	\ud835\udc00	49	1	false	false
+KW	\ud835\udc00	49	0	false	false
+KW	\ud835\udc00	52	1	false	false
+KW	\ud835\udc00	52	0	false	false
+KW	\ud835\udc00	65	1	false	false
+KW	\ud835\udc00	65	0	false	false
+KW	This	45	1	false	true
+KW	This	45	0	false	true
+KW	This	48	1	false	true
+KW	This	48	0	false	true
+KW	This	49	1	false	true
+KW	This	49	0	false	true
+KW	This	52	1	false	true
+KW	This	52	0	false	true
+KW	This	65	1	false	true
+KW	This	65	0	false	true
+KW	ENUM	45	1	false	true
+KW	ENUM	45	0	false	true
+KW	ENUM	48	1	false	true
+KW	ENUM	48	0	false	true
+KW	ENUM	49	1	false	true
+KW	ENUM	49	0	false	true
+KW	ENUM	52	1	false	true
+KW	ENUM	52	0	false	true
+KW	ENUM	65	1	false	true
+KW	ENUM	65	0	false	true
+KW	Enum	45	1	false	true
+KW	Enum	45	0	false	true
+KW	Enum	48	1	false	true
+KW	Enum	48	0	false	true
+KW	Enum	49	1	false	true
+KW	Enum	49	0	false	true
+KW	Enum	52	1	false	true
+KW	Enum	52	0	false	true
+KW	Enum	65	1	false	true
+KW	Enum	65	0	false	true
+QS	pkg/Hello	super\n/*\nTokens:\n*/\n
+QS	java/lang/Object	Object.super\n/*\nTokens:\n(1:1, 1:7) class [reference] java/lang/Object\n*/\n
+QS	pkg/Other	Other.super\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Other\n*/\n
+QS	a/b/Outer$Inner	Inner.super\n/*\nTokens:\n(1:1, 1:6) class [reference] a/b/Outer$Inner\n*/\n
+QS	TopLevel	TopLevel.super\n/*\nTokens:\n(1:1, 1:9) class [reference] TopLevel\n*/\n
+QS	pkg/Hello$1	1.super\n/*\nTokens:\n(1:1, 1:2) class [reference] pkg/Hello$1\n*/\n
+TS	I	I
+CT	I	int	int\n/*\nTokens:\n*/\n
+TN	I	int	int\n/*\nTokens:\n*/\n
+CT0	I	int\n/*\nTokens:\n*/\n
+TN0	I	int\n/*\nTokens:\n*/\n
+TT	I	= int\n/*\nTokens:\n*/\n
+TS	[[J	[[J
+CT	[[J	long[][]	long[][]\n/*\nTokens:\n*/\n
+TN	[[J	long	long\n/*\nTokens:\n*/\n
+CT0	[[J	long[][]\n/*\nTokens:\n*/\n
+TN0	[[J	long\n/*\nTokens:\n*/\n
+TT	[[J	= long\n/*\nTokens:\n*/\n
+TS	Z	Z
+CT	Z	boolean	boolean\n/*\nTokens:\n*/\n
+TN	Z	boolean	boolean\n/*\nTokens:\n*/\n
+CT0	Z	boolean\n/*\nTokens:\n*/\n
+TN0	Z	boolean\n/*\nTokens:\n*/\n
+TT	Z	= boolean\n/*\nTokens:\n*/\n
+TS	Ljava/lang/String;	Ljava/lang/String;
+CT	Ljava/lang/String;	String	String\n/*\nTokens:\n(1:1, 1:7) class [reference] java/lang/String\n*/\n
+TN	Ljava/lang/String;	String	String\n/*\nTokens:\n(1:1, 1:7) class [reference] java/lang/String\n*/\n
+CT0	Ljava/lang/String;	String\n/*\nTokens:\n(1:1, 1:7) class [reference] java/lang/String\n*/\n
+TN0	Ljava/lang/String;	String\n/*\nTokens:\n(1:1, 1:7) class [reference] java/lang/String\n*/\n
+TT	Ljava/lang/String;	= String\n/*\nTokens:\n(1:3, 1:9) class [reference] java/lang/String\n*/\n
+TS	[Ljava/lang/String;	[Ljava/lang/String;
+CT	[Ljava/lang/String;	String[]	String[]\n/*\nTokens:\n(1:1, 1:7) class [reference] java/lang/String\n*/\n
+TN	[Ljava/lang/String;	String	String\n/*\nTokens:\n(1:1, 1:7) class [reference] java/lang/String\n*/\n
+CT0	[Ljava/lang/String;	String[]\n/*\nTokens:\n(1:1, 1:7) class [reference] java/lang/String\n*/\n
+TN0	[Ljava/lang/String;	String\n/*\nTokens:\n(1:1, 1:7) class [reference] java/lang/String\n*/\n
+TT	[Ljava/lang/String;	= String\n/*\nTokens:\n(1:3, 1:9) class [reference] java/lang/String\n*/\n
+TS	Ljava/util/Map$Entry;	Ljava/util/Map$Entry;
+CT	Ljava/util/Map$Entry;	Entry	Entry\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+TN	Ljava/util/Map$Entry;	Entry	Entry\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+CT0	Ljava/util/Map$Entry;	Entry\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+TN0	Ljava/util/Map$Entry;	Entry\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+TT	Ljava/util/Map$Entry;	= Entry\n/*\nTokens:\n(1:3, 1:8) class [reference] java/util/Map$Entry\n*/\n
+TS	[[Ljava/util/Map$Entry;	[[Ljava/util/Map$Entry;
+CT	[[Ljava/util/Map$Entry;	Entry[][]	Entry[][]\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+TN	[[Ljava/util/Map$Entry;	Entry	Entry\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+CT0	[[Ljava/util/Map$Entry;	Entry[][]\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+TN0	[[Ljava/util/Map$Entry;	Entry\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+TT	[[Ljava/util/Map$Entry;	= Entry\n/*\nTokens:\n(1:3, 1:8) class [reference] java/util/Map$Entry\n*/\n
+TS	La/b/Outer$Inner$Deep;	La/b/Outer$Inner$Deep;
+CT	La/b/Outer$Inner$Deep;	Deep	Deep\n/*\nTokens:\n(1:1, 1:5) class [reference] a/b/Outer$Inner$Deep\n*/\n
+TN	La/b/Outer$Inner$Deep;	Deep	Deep\n/*\nTokens:\n(1:1, 1:5) class [reference] a/b/Outer$Inner$Deep\n*/\n
+CT0	La/b/Outer$Inner$Deep;	Deep\n/*\nTokens:\n(1:1, 1:5) class [reference] a/b/Outer$Inner$Deep\n*/\n
+TN0	La/b/Outer$Inner$Deep;	Deep\n/*\nTokens:\n(1:1, 1:5) class [reference] a/b/Outer$Inner$Deep\n*/\n
+TT	La/b/Outer$Inner$Deep;	= Deep\n/*\nTokens:\n(1:3, 1:7) class [reference] a/b/Outer$Inner$Deep\n*/\n
+TS	Lpkg/Hello;	Lpkg/Hello;
+CT	Lpkg/Hello;	Hello	Hello\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Hello\n*/\n
+TN	Lpkg/Hello;	Hello	Hello\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Hello\n*/\n
+CT0	Lpkg/Hello;	Hello\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Hello\n*/\n
+TN0	Lpkg/Hello;	Hello\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Hello\n*/\n
+TT	Lpkg/Hello;	= Hello\n/*\nTokens:\n(1:3, 1:8) class [reference] pkg/Hello\n*/\n
+TS	Lpkg/Hello$1;	Lpkg/Hello$1;
+CT	Lpkg/Hello$1;	1	1\n/*\nTokens:\n(1:1, 1:2) class [reference] pkg/Hello$1\n*/\n
+TN	Lpkg/Hello$1;	1	1\n/*\nTokens:\n(1:1, 1:2) class [reference] pkg/Hello$1\n*/\n
+CT0	Lpkg/Hello$1;	1\n/*\nTokens:\n(1:1, 1:2) class [reference] pkg/Hello$1\n*/\n
+TN0	Lpkg/Hello$1;	1\n/*\nTokens:\n(1:1, 1:2) class [reference] pkg/Hello$1\n*/\n
+TT	Lpkg/Hello$1;	= 1\n/*\nTokens:\n(1:3, 1:4) class [reference] pkg/Hello$1\n*/\n
+TS	LTopLevel;	LTopLevel;
+CT	LTopLevel;	TopLevel	TopLevel\n/*\nTokens:\n(1:1, 1:9) class [reference] TopLevel\n*/\n
+TN	LTopLevel;	TopLevel	TopLevel\n/*\nTokens:\n(1:1, 1:9) class [reference] TopLevel\n*/\n
+CT0	LTopLevel;	TopLevel\n/*\nTokens:\n(1:1, 1:9) class [reference] TopLevel\n*/\n
+TN0	LTopLevel;	TopLevel\n/*\nTokens:\n(1:1, 1:9) class [reference] TopLevel\n*/\n
+TT	LTopLevel;	= TopLevel\n/*\nTokens:\n(1:3, 1:11) class [reference] TopLevel\n*/\n
+CN	TT;	T
+TS	TT;	T
+CT	TT;	T	T\n/*\nTokens:\n*/\n
+TN	TT;	T	T\n/*\nTokens:\n*/\n
+CT0	TT;	T\n/*\nTokens:\n*/\n
+TN0	TT;	T\n/*\nTokens:\n*/\n
+TT	TT;	= T\n/*\nTokens:\n*/\n
+CN	[TT;	T
+TS	[TT;	[T
+CT	[TT;	T[]	T[]\n/*\nTokens:\n*/\n
+TN	[TT;	T	T\n/*\nTokens:\n*/\n
+CT0	[TT;	T[]\n/*\nTokens:\n*/\n
+TN0	[TT;	T\n/*\nTokens:\n*/\n
+TT	[TT;	= T\n/*\nTokens:\n*/\n
+CN	Ljava/util/List<TT;>;	List<T>
+TS	Ljava/util/List<TT;>;	Ljava/util/List;<T>
+CT	Ljava/util/List<TT;>;	List<T>	List<T>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN	Ljava/util/List<TT;>;	List<T>	List<T>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+CT0	Ljava/util/List<TT;>;	List<T>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN0	Ljava/util/List<TT;>;	List<T>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TT	Ljava/util/List<TT;>;	= List<T>\n/*\nTokens:\n(1:3, 1:7) class [reference] java/util/List\n*/\n
+CN	Ljava/util/Map<TK;TV;>;	Map<K, V>
+TS	Ljava/util/Map<TK;TV;>;	Ljava/util/Map;<K, V>
+CT	Ljava/util/Map<TK;TV;>;	Map<K, V>	Map<K, V>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n*/\n
+TN	Ljava/util/Map<TK;TV;>;	Map<K, V>	Map<K, V>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n*/\n
+CT0	Ljava/util/Map<TK;TV;>;	Map<K, V>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n*/\n
+TN0	Ljava/util/Map<TK;TV;>;	Map<K, V>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n*/\n
+TT	Ljava/util/Map<TK;TV;>;	= Map<K, V>\n/*\nTokens:\n(1:3, 1:6) class [reference] java/util/Map\n*/\n
+CN	Ljava/util/List<*>;	List<?>
+TS	Ljava/util/List<*>;	Ljava/util/List;<?>
+CT	Ljava/util/List<*>;	List<?>	List<?>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN	Ljava/util/List<*>;	List<?>	List<?>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+CT0	Ljava/util/List<*>;	List<?>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN0	Ljava/util/List<*>;	List<?>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TT	Ljava/util/List<*>;	= List<?>\n/*\nTokens:\n(1:3, 1:7) class [reference] java/util/List\n*/\n
+CN	Ljava/util/List<+TT;>;	List<? extends T>
+TS	Ljava/util/List<+TT;>;	Ljava/util/List;<? extends T>
+CT	Ljava/util/List<+TT;>;	List<? extends T>	List<? extends T>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN	Ljava/util/List<+TT;>;	List<? extends T>	List<? extends T>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+CT0	Ljava/util/List<+TT;>;	List<? extends T>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN0	Ljava/util/List<+TT;>;	List<? extends T>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TT	Ljava/util/List<+TT;>;	= List<? extends T>\n/*\nTokens:\n(1:3, 1:7) class [reference] java/util/List\n*/\n
+CN	Ljava/util/List<-TT;>;	List<? super T>
+TS	Ljava/util/List<-TT;>;	Ljava/util/List;<? super T>
+CT	Ljava/util/List<-TT;>;	List<? super T>	List<? super T>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN	Ljava/util/List<-TT;>;	List<? super T>	List<? super T>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+CT0	Ljava/util/List<-TT;>;	List<? super T>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN0	Ljava/util/List<-TT;>;	List<? super T>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TT	Ljava/util/List<-TT;>;	= List<? super T>\n/*\nTokens:\n(1:3, 1:7) class [reference] java/util/List\n*/\n
+CN	Ljava/util/List<+Ljava/lang/Number;>;	List<? extends Number>
+TS	Ljava/util/List<+Ljava/lang/Number;>;	Ljava/util/List;<? extends Number>
+CT	Ljava/util/List<+Ljava/lang/Number;>;	List<? extends Number>	List<? extends Number>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:16, 1:22) class [reference] java/lang/Number\n*/\n
+TN	Ljava/util/List<+Ljava/lang/Number;>;	List<? extends Number>	List<? extends Number>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:16, 1:22) class [reference] java/lang/Number\n*/\n
+CT0	Ljava/util/List<+Ljava/lang/Number;>;	List<? extends Number>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:16, 1:22) class [reference] java/lang/Number\n*/\n
+TN0	Ljava/util/List<+Ljava/lang/Number;>;	List<? extends Number>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:16, 1:22) class [reference] java/lang/Number\n*/\n
+TT	Ljava/util/List<+Ljava/lang/Number;>;	= List<? extends Number>\n/*\nTokens:\n(1:3, 1:7) class [reference] java/util/List\n(1:18, 1:24) class [reference] java/lang/Number\n*/\n
+CN	Ljava/util/List<-Ljava/lang/Integer;>;	List<? super Integer>
+TS	Ljava/util/List<-Ljava/lang/Integer;>;	Ljava/util/List;<? super Integer>
+CT	Ljava/util/List<-Ljava/lang/Integer;>;	List<? super Integer>	List<? super Integer>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:14, 1:21) class [reference] java/lang/Integer\n*/\n
+TN	Ljava/util/List<-Ljava/lang/Integer;>;	List<? super Integer>	List<? super Integer>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:14, 1:21) class [reference] java/lang/Integer\n*/\n
+CT0	Ljava/util/List<-Ljava/lang/Integer;>;	List<? super Integer>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:14, 1:21) class [reference] java/lang/Integer\n*/\n
+TN0	Ljava/util/List<-Ljava/lang/Integer;>;	List<? super Integer>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:14, 1:21) class [reference] java/lang/Integer\n*/\n
+TT	Ljava/util/List<-Ljava/lang/Integer;>;	= List<? super Integer>\n/*\nTokens:\n(1:3, 1:7) class [reference] java/util/List\n(1:16, 1:23) class [reference] java/lang/Integer\n*/\n
+CN	Ljava/util/Map<TK;Ljava/util/List<TV;>;>;	Map<K, List<V>>
+TS	Ljava/util/Map<TK;Ljava/util/List<TV;>;>;	Ljava/util/Map;<K, List<V>>
+CT	Ljava/util/Map<TK;Ljava/util/List<TV;>;>;	Map<K, List<V>>	Map<K, List<V>>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n(1:8, 1:12) class [reference] java/util/List\n*/\n
+TN	Ljava/util/Map<TK;Ljava/util/List<TV;>;>;	Map<K, List<V>>	Map<K, List<V>>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n(1:8, 1:12) class [reference] java/util/List\n*/\n
+CT0	Ljava/util/Map<TK;Ljava/util/List<TV;>;>;	Map<K, List<V>>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n(1:8, 1:12) class [reference] java/util/List\n*/\n
+TN0	Ljava/util/Map<TK;Ljava/util/List<TV;>;>;	Map<K, List<V>>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n(1:8, 1:12) class [reference] java/util/List\n*/\n
+TT	Ljava/util/Map<TK;Ljava/util/List<TV;>;>;	= Map<K, List<V>>\n/*\nTokens:\n(1:3, 1:6) class [reference] java/util/Map\n(1:10, 1:14) class [reference] java/util/List\n*/\n
+CN	Ljava/util/List<Ljava/util/List<-Ljava/lang/Integer;>;>;	List<List<? super Integer>>
+TS	Ljava/util/List<Ljava/util/List<-Ljava/lang/Integer;>;>;	Ljava/util/List;<List<? super Integer>>
+CT	Ljava/util/List<Ljava/util/List<-Ljava/lang/Integer;>;>;	List<List<? super Integer>>	List<List<? super Integer>>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:6, 1:10) class [reference] java/util/List\n(1:19, 1:26) class [reference] java/lang/Integer\n*/\n
+TN	Ljava/util/List<Ljava/util/List<-Ljava/lang/Integer;>;>;	List<List<? super Integer>>	List<List<? super Integer>>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:6, 1:10) class [reference] java/util/List\n(1:19, 1:26) class [reference] java/lang/Integer\n*/\n
+CT0	Ljava/util/List<Ljava/util/List<-Ljava/lang/Integer;>;>;	List<List<? super Integer>>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:6, 1:10) class [reference] java/util/List\n(1:19, 1:26) class [reference] java/lang/Integer\n*/\n
+TN0	Ljava/util/List<Ljava/util/List<-Ljava/lang/Integer;>;>;	List<List<? super Integer>>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:6, 1:10) class [reference] java/util/List\n(1:19, 1:26) class [reference] java/lang/Integer\n*/\n
+TT	Ljava/util/List<Ljava/util/List<-Ljava/lang/Integer;>;>;	= List<List<? super Integer>>\n/*\nTokens:\n(1:3, 1:7) class [reference] java/util/List\n(1:8, 1:12) class [reference] java/util/List\n(1:21, 1:28) class [reference] java/lang/Integer\n*/\n
+CN	Ljava/util/Map$Entry<TK;*>;	Entry<K, ?>
+TS	Ljava/util/Map$Entry<TK;*>;	Ljava/util/Map$Entry;<K, ?>
+CT	Ljava/util/Map$Entry<TK;*>;	Entry<K, ?>	Entry<K, ?>\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+TN	Ljava/util/Map$Entry<TK;*>;	Entry<K, ?>	Entry<K, ?>\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+CT0	Ljava/util/Map$Entry<TK;*>;	Entry<K, ?>\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+TN0	Ljava/util/Map$Entry<TK;*>;	Entry<K, ?>\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+TT	Ljava/util/Map$Entry<TK;*>;	= Entry<K, ?>\n/*\nTokens:\n(1:3, 1:8) class [reference] java/util/Map$Entry\n*/\n
+CN	Lpkg/Outer<TT;>.Inner<TU;>;	Outer<T>.Inner<U>
+TS	Lpkg/Outer<TT;>.Inner<TU;>;	Lpkg/Outer$Inner;<U>
+CT	Lpkg/Outer<TT;>.Inner<TU;>;	Outer<T>.Inner<U>	Outer<T>.Inner<U>\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Outer$Inner\n*/\n
+TN	Lpkg/Outer<TT;>.Inner<TU;>;	Outer<T>.Inner<U>	Outer<T>.Inner<U>\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Outer$Inner\n*/\n
+CT0	Lpkg/Outer<TT;>.Inner<TU;>;	Outer<T>.Inner<U>\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Outer$Inner\n*/\n
+TN0	Lpkg/Outer<TT;>.Inner<TU;>;	Outer<T>.Inner<U>\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Outer$Inner\n*/\n
+TT	Lpkg/Outer<TT;>.Inner<TU;>;	= Outer<T>.Inner<U>\n/*\nTokens:\n(1:3, 1:8) class [reference] pkg/Outer$Inner\n*/\n
+CN	Lpkg/Outer<TT;>.Inner;	Outer<T>.Inner
+TS	Lpkg/Outer<TT;>.Inner;	Lpkg/Outer$Inner;
+CT	Lpkg/Outer<TT;>.Inner;	Outer<T>.Inner	Outer<T>.Inner\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Outer$Inner\n*/\n
+TN	Lpkg/Outer<TT;>.Inner;	Outer<T>.Inner	Outer<T>.Inner\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Outer$Inner\n*/\n
+CT0	Lpkg/Outer<TT;>.Inner;	Outer<T>.Inner\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Outer$Inner\n*/\n
+TN0	Lpkg/Outer<TT;>.Inner;	Outer<T>.Inner\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Outer$Inner\n*/\n
+TT	Lpkg/Outer<TT;>.Inner;	= Outer<T>.Inner\n/*\nTokens:\n(1:3, 1:8) class [reference] pkg/Outer$Inner\n*/\n
+CN	Lpkg/Outer.Inner<TU;>;	Outer.pkg/Outer$Inner<U>
+TS	Lpkg/Outer.Inner<TU;>;	Lpkg/Outer$Inner;<U>
+CT	Lpkg/Outer.Inner<TU;>;	Outer.pkg/Outer$Inner<U>	Outer.pkg/Outer$Inner<U>\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Outer\n(1:7, 1:22) class [reference] pkg/Outer$Inner\n*/\n
+TN	Lpkg/Outer.Inner<TU;>;	Outer.pkg/Outer$Inner<U>	Outer.pkg/Outer$Inner<U>\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Outer\n(1:7, 1:22) class [reference] pkg/Outer$Inner\n*/\n
+CT0	Lpkg/Outer.Inner<TU;>;	Outer.pkg/Outer$Inner<U>\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Outer\n(1:7, 1:22) class [reference] pkg/Outer$Inner\n*/\n
+TN0	Lpkg/Outer.Inner<TU;>;	Outer.pkg/Outer$Inner<U>\n/*\nTokens:\n(1:1, 1:6) class [reference] pkg/Outer\n(1:7, 1:22) class [reference] pkg/Outer$Inner\n*/\n
+TT	Lpkg/Outer.Inner<TU;>;	= Outer.pkg/Outer$Inner<U>\n/*\nTokens:\n(1:3, 1:8) class [reference] pkg/Outer\n(1:9, 1:24) class [reference] pkg/Outer$Inner\n*/\n
+CN	[Ljava/util/List<TT;>;	List<T>
+TS	[Ljava/util/List<TT;>;	[Ljava/util/List;<T>
+CT	[Ljava/util/List<TT;>;	List<T>[]	List<T>[]\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN	[Ljava/util/List<TT;>;	List<T>	List<T>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+CT0	[Ljava/util/List<TT;>;	List<T>[]\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN0	[Ljava/util/List<TT;>;	List<T>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TT	[Ljava/util/List<TT;>;	= List<T>\n/*\nTokens:\n(1:3, 1:7) class [reference] java/util/List\n*/\n
+CN	[[Ljava/util/Map$Entry<TK;+TV;>;	Entry<K, ? extends V>
+TS	[[Ljava/util/Map$Entry<TK;+TV;>;	[[Ljava/util/Map$Entry;<K, ? extends V>
+CT	[[Ljava/util/Map$Entry<TK;+TV;>;	Entry<K, ? extends V>[][]	Entry<K, ? extends V>[][]\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+TN	[[Ljava/util/Map$Entry<TK;+TV;>;	Entry<K, ? extends V>	Entry<K, ? extends V>\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+CT0	[[Ljava/util/Map$Entry<TK;+TV;>;	Entry<K, ? extends V>[][]\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+TN0	[[Ljava/util/Map$Entry<TK;+TV;>;	Entry<K, ? extends V>\n/*\nTokens:\n(1:1, 1:6) class [reference] java/util/Map$Entry\n*/\n
+TT	[[Ljava/util/Map$Entry<TK;+TV;>;	= Entry<K, ? extends V>\n/*\nTokens:\n(1:3, 1:8) class [reference] java/util/Map$Entry\n*/\n
+CN	Ljava/util/List<[TT;>;	List<T[]>
+TS	Ljava/util/List<[TT;>;	Ljava/util/List;<T[]>
+CT	Ljava/util/List<[TT;>;	List<T[]>	List<T[]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN	Ljava/util/List<[TT;>;	List<T[]>	List<T[]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+CT0	Ljava/util/List<[TT;>;	List<T[]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN0	Ljava/util/List<[TT;>;	List<T[]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TT	Ljava/util/List<[TT;>;	= List<T[]>\n/*\nTokens:\n(1:3, 1:7) class [reference] java/util/List\n*/\n
+CN	Ljava/util/List<[[TT;>;	List<T[][]>
+TS	Ljava/util/List<[[TT;>;	Ljava/util/List;<T[][]>
+CT	Ljava/util/List<[[TT;>;	List<T[][]>	List<T[][]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN	Ljava/util/List<[[TT;>;	List<T[][]>	List<T[][]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+CT0	Ljava/util/List<[[TT;>;	List<T[][]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN0	Ljava/util/List<[[TT;>;	List<T[][]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TT	Ljava/util/List<[[TT;>;	= List<T[][]>\n/*\nTokens:\n(1:3, 1:7) class [reference] java/util/List\n*/\n
+CN	Ljava/util/Map<+Ljava/util/List<*>;-Ljava/awt/List;>;	Map<? extends List<?>, ? super java.awt.List>
+TS	Ljava/util/Map<+Ljava/util/List<*>;-Ljava/awt/List;>;	Ljava/util/Map;<? extends List<?>, ? super java.awt.List>
+CT	Ljava/util/Map<+Ljava/util/List<*>;-Ljava/awt/List;>;	Map<? extends List<?>, ? super java.awt.List>	Map<? extends List<?>, ? super java.awt.List>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n(1:15, 1:19) class [reference] java/util/List\n(1:32, 1:45) class [reference] java/awt/List\n*/\n
+TN	Ljava/util/Map<+Ljava/util/List<*>;-Ljava/awt/List;>;	Map<? extends List<?>, ? super java.awt.List>	Map<? extends List<?>, ? super java.awt.List>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n(1:15, 1:19) class [reference] java/util/List\n(1:32, 1:45) class [reference] java/awt/List\n*/\n
+CT0	Ljava/util/Map<+Ljava/util/List<*>;-Ljava/awt/List;>;	Map<? extends List<?>, ? super java.awt.List>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n(1:15, 1:19) class [reference] java/util/List\n(1:32, 1:45) class [reference] java/awt/List\n*/\n
+TN0	Ljava/util/Map<+Ljava/util/List<*>;-Ljava/awt/List;>;	Map<? extends List<?>, ? super java.awt.List>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n(1:15, 1:19) class [reference] java/util/List\n(1:32, 1:45) class [reference] java/awt/List\n*/\n
+TT	Ljava/util/Map<+Ljava/util/List<*>;-Ljava/awt/List;>;	= Map<? extends List<?>, ? super java.awt.List>\n/*\nTokens:\n(1:3, 1:6) class [reference] java/util/Map\n(1:17, 1:21) class [reference] java/util/List\n(1:34, 1:47) class [reference] java/awt/List\n*/\n
+CN	Ljava/util/List<Ljava/lang/String;>;	List<String>
+TS	Ljava/util/List<Ljava/lang/String;>;	Ljava/util/List;<String>
+CT	Ljava/util/List<Ljava/lang/String;>;	List<String>	List<String>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:6, 1:12) class [reference] java/lang/String\n*/\n
+TN	Ljava/util/List<Ljava/lang/String;>;	List<String>	List<String>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:6, 1:12) class [reference] java/lang/String\n*/\n
+CT0	Ljava/util/List<Ljava/lang/String;>;	List<String>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:6, 1:12) class [reference] java/lang/String\n*/\n
+TN0	Ljava/util/List<Ljava/lang/String;>;	List<String>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:6, 1:12) class [reference] java/lang/String\n*/\n
+TT	Ljava/util/List<Ljava/lang/String;>;	= List<String>\n/*\nTokens:\n(1:3, 1:7) class [reference] java/util/List\n(1:8, 1:14) class [reference] java/lang/String\n*/\n
+CN	Ljava/util/Map<Ljava/util/List;Ljava/awt/List;>;	Map<List, java.awt.List>
+TS	Ljava/util/Map<Ljava/util/List;Ljava/awt/List;>;	Ljava/util/Map;<List, java.awt.List>
+CT	Ljava/util/Map<Ljava/util/List;Ljava/awt/List;>;	Map<List, java.awt.List>	Map<List, java.awt.List>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n(1:5, 1:9) class [reference] java/util/List\n(1:11, 1:24) class [reference] java/awt/List\n*/\n
+TN	Ljava/util/Map<Ljava/util/List;Ljava/awt/List;>;	Map<List, java.awt.List>	Map<List, java.awt.List>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n(1:5, 1:9) class [reference] java/util/List\n(1:11, 1:24) class [reference] java/awt/List\n*/\n
+CT0	Ljava/util/Map<Ljava/util/List;Ljava/awt/List;>;	Map<List, java.awt.List>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n(1:5, 1:9) class [reference] java/util/List\n(1:11, 1:24) class [reference] java/awt/List\n*/\n
+TN0	Ljava/util/Map<Ljava/util/List;Ljava/awt/List;>;	Map<List, java.awt.List>\n/*\nTokens:\n(1:1, 1:4) class [reference] java/util/Map\n(1:5, 1:9) class [reference] java/util/List\n(1:11, 1:24) class [reference] java/awt/List\n*/\n
+TT	Ljava/util/Map<Ljava/util/List;Ljava/awt/List;>;	= Map<List, java.awt.List>\n/*\nTokens:\n(1:3, 1:6) class [reference] java/util/Map\n(1:7, 1:11) class [reference] java/util/List\n(1:13, 1:26) class [reference] java/awt/List\n*/\n
+CN	Ljava/util/List<[I>;	List<int[]>
+TS	Ljava/util/List<[I>;	Ljava/util/List;<int[]>
+CT	Ljava/util/List<[I>;	List<int[]>	List<int[]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN	Ljava/util/List<[I>;	List<int[]>	List<int[]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+CT0	Ljava/util/List<[I>;	List<int[]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TN0	Ljava/util/List<[I>;	List<int[]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n*/\n
+TT	Ljava/util/List<[I>;	= List<int[]>\n/*\nTokens:\n(1:3, 1:7) class [reference] java/util/List\n*/\n
+CN	Ljava/util/List<+[Ljava/lang/String;>;	List<? extends String[]>
+TS	Ljava/util/List<+[Ljava/lang/String;>;	Ljava/util/List;<? extends String[]>
+CT	Ljava/util/List<+[Ljava/lang/String;>;	List<? extends String[]>	List<? extends String[]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:16, 1:24) class [reference] java/lang/String\n*/\n
+TN	Ljava/util/List<+[Ljava/lang/String;>;	List<? extends String[]>	List<? extends String[]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:16, 1:24) class [reference] java/lang/String\n*/\n
+CT0	Ljava/util/List<+[Ljava/lang/String;>;	List<? extends String[]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:16, 1:24) class [reference] java/lang/String\n*/\n
+TN0	Ljava/util/List<+[Ljava/lang/String;>;	List<? extends String[]>\n/*\nTokens:\n(1:1, 1:5) class [reference] java/util/List\n(1:16, 1:24) class [reference] java/lang/String\n*/\n
+TT	Ljava/util/List<+[Ljava/lang/String;>;	= List<? extends String[]>\n/*\nTokens:\n(1:3, 1:7) class [reference] java/util/List\n(1:18, 1:26) class [reference] java/lang/String\n*/\n
+CN	Lx/Caf\u00e9<T\u00c9t\u00e9;>;	Caf\u00e9<\u00c9t\u00e9>
+TS	Lx/Caf\u00e9<T\u00c9t\u00e9;>;	Lx/Caf\u00e9;<\u00c9t\u00e9>
+CT	Lx/Caf\u00e9<T\u00c9t\u00e9;>;	Caf\u00e9<\u00c9t\u00e9>	Caf\u00e9<\u00c9t\u00e9>\n/*\nTokens:\n(1:1, 1:5) class [reference] x/Caf\u00e9\n*/\n
+TN	Lx/Caf\u00e9<T\u00c9t\u00e9;>;	Caf\u00e9<\u00c9t\u00e9>	Caf\u00e9<\u00c9t\u00e9>\n/*\nTokens:\n(1:1, 1:5) class [reference] x/Caf\u00e9\n*/\n
+CT0	Lx/Caf\u00e9<T\u00c9t\u00e9;>;	Caf\u00e9<\u00c9t\u00e9>\n/*\nTokens:\n(1:1, 1:5) class [reference] x/Caf\u00e9\n*/\n
+TN0	Lx/Caf\u00e9<T\u00c9t\u00e9;>;	Caf\u00e9<\u00c9t\u00e9>\n/*\nTokens:\n(1:1, 1:5) class [reference] x/Caf\u00e9\n*/\n
+TT	Lx/Caf\u00e9<T\u00c9t\u00e9;>;	= Caf\u00e9<\u00c9t\u00e9>\n/*\nTokens:\n(1:3, 1:7) class [reference] x/Caf\u00e9\n*/\n
+CN	Ljava/util/function/Function<-TT;+TR;>;	Function<? super T, ? extends R>
+TS	Ljava/util/function/Function<-TT;+TR;>;	Ljava/util/function/Function;<? super T, ? extends R>
+CT	Ljava/util/function/Function<-TT;+TR;>;	Function<? super T, ? extends R>	Function<? super T, ? extends R>\n/*\nTokens:\n(1:1, 1:9) class [reference] java/util/function/Function\n*/\n
+TN	Ljava/util/function/Function<-TT;+TR;>;	Function<? super T, ? extends R>	Function<? super T, ? extends R>\n/*\nTokens:\n(1:1, 1:9) class [reference] java/util/function/Function\n*/\n
+CT0	Ljava/util/function/Function<-TT;+TR;>;	Function<? super T, ? extends R>\n/*\nTokens:\n(1:1, 1:9) class [reference] java/util/function/Function\n*/\n
+TN0	Ljava/util/function/Function<-TT;+TR;>;	Function<? super T, ? extends R>\n/*\nTokens:\n(1:1, 1:9) class [reference] java/util/function/Function\n*/\n
+TT	Ljava/util/function/Function<-TT;+TR;>;	= Function<? super T, ? extends R>\n/*\nTokens:\n(1:3, 1:11) class [reference] java/util/function/Function\n*/\n
+TK	F	count	1	pkg/Hello	count	I				int a;\n   x = count;\n\n/*\nTokens:\n(2:8, 2:13) field [declaration] pkg/Hello#count:I\n*/\n
+TK	F	names	0	pkg/Hello	names	[Ljava/lang/String;				int a;\n   x = names;\n\n/*\nTokens:\n(2:8, 2:13) field [reference] pkg/Hello#names:[Ljava/lang/String;\n*/\n
+TK	F	Map.EMPTY	0	java/util/Map	EMPTY	Ljava/util/Map$Entry;				int a;\n   x = Map.EMPTY;\n\n/*\nTokens:\n(2:8, 2:17) field [reference] java/util/Map#EMPTY:Ljava/util/Map$Entry;\n*/\n
+TK	F	caf\u00e9	1	x/Caf\u00e9	caf\u00e9	[[D				int a;\n   x = caf\u00e9;\n\n/*\nTokens:\n(2:8, 2:12) field [declaration] x/Caf\u00e9#caf\u00e9:[[D\n*/\n
+TK	M	main	1	pkg/Hello	main	([Ljava/lang/String;)V				int a;\n   x = main;\n\n/*\nTokens:\n(2:8, 2:12) method [declaration] pkg/Hello#main([Ljava/lang/String;)V\n*/\n
+TK	M	get	0	java/util/Map	get	(Ljava/lang/Object;)Ljava/lang/Object;				int a;\n   x = get;\n\n/*\nTokens:\n(2:8, 2:11) method [reference] java/util/Map#get(Ljava/lang/Object;)Ljava/lang/Object;\n*/\n
+TK	M	<init>	1	pkg/Hello	<init>	()V				int a;\n   x = <init>;\n\n/*\nTokens:\n(2:8, 2:14) method [declaration] pkg/Hello#<init>()V\n*/\n
+TK	M	mix	0	a/B	mix	(IJ[ZLjava/util/List;D)[[Ljava/lang/String;				int a;\n   x = mix;\n\n/*\nTokens:\n(2:8, 2:11) method [reference] a/B#mix(IJ[ZLjava/util/List;D)[[Ljava/lang/String;\n*/\n
+TK	V	args	1	pkg/Hello	main	([Ljava/lang/String;)V	1	0	args	int a;\n   x = args;\n\n/*\nTokens:\n(2:8, 2:12) parameter [declaration] pkg/Hello#main([Ljava/lang/String;)V(0:args)\n*/\n
+TK	V	var1	0	pkg/Hello	main	([Ljava/lang/String;)V	0	1	var1	int a;\n   x = var1;\n\n/*\nTokens:\n(2:8, 2:12) local [reference] pkg/Hello#main([Ljava/lang/String;)V(1:var1)\n*/\n
+TK	V	x	1	a/B	mix	(IJ[ZLjava/util/List;D)[[Ljava/lang/String;	0	7	x	int a;\n   x = x;\n\n/*\nTokens:\n(2:8, 2:9) local [declaration] a/B#mix(IJ[ZLjava/util/List;D)[[Ljava/lang/String;(7:x)\n*/\n
+TK	V	\u00e9t\u00e9	0	a/B	f	(I)I	1	1	\u00e9t\u00e9	int a;\n   x = \u00e9t\u00e9;\n\n/*\nTokens:\n(2:8, 2:11) parameter [reference] a/B#f(I)I(1:\u00e9t\u00e9)\n*/\n

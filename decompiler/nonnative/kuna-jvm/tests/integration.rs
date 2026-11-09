@@ -64,3 +64,11 @@ mod struct_bytecode;
 pub mod common;
 #[path = "k2_dom_helper.rs"]
 mod k2_dom_helper;
+#[path = "f5_irreducible.rs"]
+mod f5_irreducible;
+#[path = "f5_method_properties.rs"]
+mod f5_method_properties;
+#[path = "f1_context.rs"]
+mod f1_context;
+#[path = "f2_context.rs"]
+mod f2_context;

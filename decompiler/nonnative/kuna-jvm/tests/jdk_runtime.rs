@@ -7,8 +7,13 @@ use std::rc::Rc;
 use std::time::Instant;
 
 use kuna_jvm::context_source::{java_absolute_path, IContextSource};
+use kuna_jvm::i_fernflower_logger::Severity;
 use kuna_jvm::jdk_runtime::{JImage, JavaRuntimeContextSource, JdkRuntime};
+use kuna_jvm::rt::try_catch;
+use kuna_jvm::struct_context::StructContext;
 use kuna_jvm::zip_reader::ZipReader;
+
+use crate::common;
 
 use crate::f6_support::{data, dump_units, jdk_home, run, skip, tmp_dir, tool, vineflower_jar};
 
@@ -37,22 +42,22 @@ fn locate_maps_include_runtime_values() {
     eprintln!("include-runtime=current -> {}", home.display());
 }
 
-#[test]
-fn runtime_matches_vineflower_jrt_view() {
-    let (Some(home), Some(vf)) = (jdk_home(), vineflower_jar()) else {
-        return skip(
-            "runtime_matches_vineflower_jrt_view",
-            "no JDK or vineflower jar",
-        );
+/// What `VfDump runtime <home>` prints (Vineflower's own `include-runtime=<home>`
+/// struct context), compiling the oracle into `tmp_dir(out)`.
+fn vfdump_runtime(test: &str, out: &str, home: &Path) -> Option<Vec<String>> {
+    let Some(vf) = vineflower_jar() else {
+        skip(test, "no vineflower jar");
+        return None;
     };
     let runner = JdkRuntime::locate("current");
     let (Some(javac), Some(java)) = (
         tool(runner.as_deref(), "javac"),
         tool(runner.as_deref(), "java"),
     ) else {
-        return skip("runtime_matches_vineflower_jrt_view", "no javac/java");
+        skip(test, "no javac/java");
+        return None;
     };
-    let out = tmp_dir("vfdump");
+    let out = tmp_dir(out);
     let compiled = run(
         &javac,
         &[
@@ -84,27 +89,147 @@ fn runtime_matches_vineflower_jrt_view() {
         "{}",
         String::from_utf8_lossy(&dumped.stderr)
     );
-    let theirs: Vec<String> = String::from_utf8(dumped.stdout)
-        .unwrap()
-        .lines()
-        .map(str::to_string)
-        .collect();
-    let mine = dump_units(vec![Rc::new(root(&home))]);
-    let units = mine.iter().filter(|l| l.starts_with("UNIT ")).count();
-    let classes = mine.iter().filter(|l| l.starts_with("C ")).count();
-    if let Some(i) = mine.iter().zip(&theirs).position(|(a, b)| a != b) {
+    Some(
+        String::from_utf8(dumped.stdout)
+            .unwrap()
+            .lines()
+            .map(str::to_string)
+            .collect(),
+    )
+}
+
+fn assert_same_dump(mine: &[String], theirs: &[String]) {
+    if let Some(i) = mine.iter().zip(theirs).position(|(a, b)| a != b) {
         let around = |v: &[String]| v[i.saturating_sub(3)..(i + 3).min(v.len())].join("\n");
         panic!(
             "first difference at line {i}:\nmine:\n{}\nvineflower:\n{}",
-            around(&mine),
-            around(&theirs)
+            around(mine),
+            around(theirs)
         );
     }
     assert_eq!(mine.len(), theirs.len());
+}
+
+#[test]
+fn runtime_matches_vineflower_jrt_view() {
+    let Some(home) = jdk_home() else {
+        return skip("runtime_matches_vineflower_jrt_view", "no JDK");
+    };
+    let Some(theirs) = vfdump_runtime("runtime_matches_vineflower_jrt_view", "vfdump", &home)
+    else {
+        return;
+    };
+    let mine = dump_units(vec![Rc::new(root(&home))]);
+    let units = mine.iter().filter(|l| l.starts_with("UNIT ")).count();
+    let classes = mine.iter().filter(|l| l.starts_with("C ")).count();
+    assert_same_dump(&mine, &theirs);
     eprintln!(
         "{}: {units} units, {classes} classes, {} lines identical to Vineflower's jrt view",
         home.display(),
         mine.len()
+    );
+}
+
+/// `VfDump`'s listing of a real struct context's units.
+fn dump_struct_context(struct_context: StructContext) -> Vec<String> {
+    let mut out = Vec::new();
+    for unit in struct_context.get_units() {
+        let source = unit.with(|d| d.source.clone());
+        out.push(format!("UNIT {}", source.get_name()));
+        let entries = match try_catch(|| source.get_entries()) {
+            Ok(entries) => entries,
+            Err(caught) => {
+                out.push(format!(
+                    "THROW {}",
+                    caught
+                        .exception
+                        .map_or("RustPanic".into(), |e| e.class.to_string())
+                ));
+                continue;
+            }
+        };
+        out.push(format!("R {} {}", unit.is_root(), source.is_lazy()));
+        for e in entries.classes() {
+            out.push(format!("C {} {}", e.multirelease(), e.base_path()));
+        }
+        for d in entries.directories() {
+            out.push(format!("D {d}"));
+        }
+        for e in entries.others() {
+            out.push(format!("O {} {}", e.multirelease(), e.base_path()));
+        }
+        out.push(format!("K {}", entries.child_contexts().len()));
+    }
+    out
+}
+
+#[test]
+fn add_runtime_registers_the_jdk_in_the_struct_context() {
+    let test = "add_runtime_registers_the_jdk_in_the_struct_context";
+    {
+        let guard = common::install_default_context();
+        let sc = guard.struct_context();
+        assert!(!JdkRuntime::add_runtime(sc, ""));
+        assert!(!JdkRuntime::add_runtime(sc, "0"));
+        let missing = tmp_dir("add-runtime").join("no-such-jdk");
+        assert!(!JdkRuntime::add_runtime(sc, &missing.to_string_lossy()));
+        assert!(sc.get_units().is_empty());
+        let messages = guard.logger().messages();
+        assert_eq!(messages.len(), 1, "{messages:?}");
+        assert!(
+            messages[0].starts_with("Unable to detect a java runtime at "),
+            "{messages:?}"
+        );
+    }
+    let Some(home) = jdk_home() else {
+        return skip(test, "no JDK");
+    };
+    let mine = {
+        let guard = common::install_default_context();
+        let sc = guard.struct_context();
+        let started = Instant::now();
+        assert!(JdkRuntime::add_runtime(sc, &home.to_string_lossy()));
+        let added = started.elapsed();
+        let units = sc.get_units();
+        assert!(units.len() > 1);
+        assert!(units[0].is_root() && !units[0].is_own());
+        assert!(units[1..].iter().all(|u| !u.is_root() && !u.is_own()));
+        assert!(sc.has_class("java/lang/Object"));
+        let object = sc.get_class("java/lang/Object").expect("java/lang/Object");
+        assert_eq!(object.qualified_name(), "java/lang/Object");
+        assert!(!object.is_own());
+        assert!(sc.instance_of("java/util/ArrayList", "java/util/Collection"));
+        assert!(!sc.instance_of("java/lang/String", "java/util/Collection"));
+        assert!(sc.get_own_classes().is_empty());
+        let problems: Vec<String> = guard
+            .logger()
+            .records()
+            .borrow()
+            .iter()
+            .filter(|r| matches!(r.severity, Severity::Warn | Severity::Error))
+            .map(|r| r.message.clone())
+            .collect();
+        assert!(problems.is_empty(), "{problems:?}");
+        eprintln!(
+            "add_runtime({}): {} units in {added:?}",
+            home.display(),
+            units.len()
+        );
+        dump_struct_context(sc)
+    };
+    if JdkRuntime::locate("current").is_some() {
+        let guard = common::install_default_context();
+        assert!(JdkRuntime::add_runtime(guard.struct_context(), "current"));
+        assert!(guard.struct_context().has_class("java/lang/String"));
+    }
+    let Some(theirs) = vfdump_runtime(test, "vfdump-context", &home) else {
+        return;
+    };
+    assert_same_dump(&mine, &theirs);
+    eprintln!(
+        "{test}: {} lines identical to Vineflower's include-runtime={}",
+        mine.len(),
+        home.display()
     );
 }
 
