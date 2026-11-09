@@ -88,3 +88,5 @@ mod b03_exprents;
 mod b04_render;
 #[path = "b06_sforms.rs"]
 mod b06_sforms;
+#[path = "b07a_var_definition.rs"]
+mod b07a_var_definition;

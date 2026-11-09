@@ -23,7 +23,7 @@ impl IVariableNamingFactory for IdentityRenamerFactory {
 impl IVariableNameProvider for IdentityRenamerFactory {
     fn rename(
         &self,
-        _variables: &JLinkedHashMap<VarVersionPair, Pair<VarType, Option<String>>>,
+        _variables: &JLinkedHashMap<VarVersionPair, Pair<Option<VarType>, Option<String>>>,
     ) -> Option<JHashMap<VarVersionPair, String>> {
         None
     }
