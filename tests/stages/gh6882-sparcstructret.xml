@@ -88,6 +88,7 @@
   <com>option tailcalljump off</com>
   <com>option foldcallret off</com>
   <com>option branchflip off</com>
+  <com>option sparcstructret off</com>
   <com>lo fu p</com>
   <com>decompile</com>
   <com>print C</com>

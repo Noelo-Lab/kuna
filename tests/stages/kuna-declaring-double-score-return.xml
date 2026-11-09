@@ -63,6 +63,7 @@ efcdab8967452301000000000000f83f0000000000000040
 <symbol space="ram" offset="0x11a0" name="refined_score"/>
 </binaryimage>
 <script>
+  <com>option msvcstackguard off</com>
   <com>read symbols</com>
   <com>lo fu log_helper</com>
   <com>parse line extern float8 log_helper(float8 x);</com>

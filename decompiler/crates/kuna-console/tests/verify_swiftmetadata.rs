@@ -95,11 +95,9 @@ fn run(on: bool) -> Vec<String> {
     assert!(bin.exists(), "missing fixture {bin:?}");
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    if on {
-        prog.arch_mut()
-            .set_kuna_option("swiftmetadata", "on")
-            .expect("swiftmetadata flips on");
-    }
+    prog.arch_mut()
+        .set_kuna_option("swiftmetadata", if on { "on" } else { "off" })
+        .expect("swiftmetadata flips");
     prog.commit_pending_analysis()
         .expect("analysis commit succeeds");
     PINNED
@@ -118,7 +116,7 @@ fn stripped_swift_functions_are_named_from_metadata() {
     for (i, &(vma, want, symbol)) in PINNED.iter().enumerate() {
         assert!(
             off[i].starts_with("sub_") || off[i].starts_with("FUN_"),
-            "default leaves 0x{vma:x} a placeholder, got `{}`",
+            "swiftmetadata off leaves 0x{vma:x} a placeholder, got `{}`",
             off[i]
         );
         assert_eq!(on[i], want, "swiftmetadata on names 0x{vma:x} ({symbol})");
