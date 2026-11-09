@@ -204,6 +204,8 @@ const MAX_SYM_VALUES: usize = 32;
 const MAX_VPC_FORK: usize = 4;
 /// Most instructions [`Explorer::handler_fragment`] follows.
 const FRAGMENT_INSNS: usize = 128;
+/// Most instructions [`Explorer::probe_stack_effect`] emulates.
+const PROBE_INSNS: usize = 4096;
 /// Bytes behind each pointer argument an external call may write.
 const CALL_POINTEE_BYTES: i128 = 16;
 /// Most instructions read from a callee in the image when summarizing it.
@@ -1453,6 +1455,7 @@ impl<'a> Explorer<'a> {
         let ps = self.abi.ptr_size;
         let scan = callee.target.filter(|c| Some(*c) != callee.ret).and_then(|c| self.scan_callee(c));
         let pop = self.callee_pop(state, &callee, scan.as_ref());
+        let probed = callee.target.filter(|c| Some(*c) != callee.ret && self.target.is_executable(*c)).and_then(|c| self.probe_stack_effect(state, c));
         if self.config.trace.is_some() {
             self.log.push(format!("call at {site:#x}: pops {pop}"));
         }
@@ -1507,10 +1510,44 @@ impl<'a> Explorer<'a> {
             state.write_reg(off, u, size);
         }
         state.stack_stores.clear();
-        let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
-        let k = self.arena.cst(ps, ps as u128 + pop as u128);
-        let nsp = self.arena.mk_bin(OpCode::CPUI_INT_ADD, sp, k, ps);
+        let nsp = match probed {
+            Some(p) => p,
+            None => {
+                let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
+                let k = self.arena.cst(ps, ps as u128 + pop as u128);
+                self.arena.mk_bin(OpCode::CPUI_INT_ADD, sp, k, ps)
+            }
+        };
         state.write_reg(self.abi.sp, nsp, ps);
+    }
+
+    /// The stack pointer a callee in the image returns with, when emulating
+    /// it from the call's state decides every branch on the way to its
+    /// return: a stack probe such as 32-bit `__chkstk` moves the stack by
+    /// EAX, not by its `ret` (angr follows native calls and sees the same).
+    fn probe_stack_effect(&mut self, state: &State, entry: u64) -> Option<ExprId> {
+        let ps = self.abi.ptr_size;
+        let mut st = state.clone();
+        let ret = self.pushed_return_address(&mut st)?;
+        let mut emu = Emulator::new(self.target);
+        emu.track_sp = Some((self.abi.sp, ps));
+        let mut addr = entry;
+        for _ in 0..PROBE_INSNS {
+            let insn = self.target.lift(addr).ok()?;
+            let mut trace = InsnTrace::default();
+            addr = match emu.exec_insn(&mut st, &mut self.arena, &insn, &mut trace) {
+                Exit::Fallthrough(next) => next,
+                Exit::Jump(t) => self.arena.is_const(t)? as u64,
+                Exit::Return(t) if self.arena.is_const(t) == Some(ret as u128) => {
+                    return Some(st.read_reg(&mut self.arena, self.abi.sp, ps));
+                }
+                _ => return None,
+            };
+            if !self.target.is_executable(addr) {
+                return None;
+            }
+        }
+        None
     }
 
     /// Bytes a callee pops beyond its return address.  Where each callee
