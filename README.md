@@ -31,7 +31,7 @@ kuna decompile ./stripped.bin 0x401040 --addr
 kuna decompile-project ./a.out
 # flip a feature internal to the decompiler (useful for LLMs)
 kuna decompile ./a.out main --option compareform canonical
-# JVM class files, jars and directories decompile to Java
+# JVM class files, jars and directories decompile to Java (Kotlin classes to Kotlin)
 kuna decompile app.jar com.ex.Main
 ```
 
@@ -156,7 +156,7 @@ corpus (`tests/datatests/`, 83 files / 675 assertions) with the Rust decompiler.
 | Path | What it is |
 |---|---|
 | `decompiler/` | The engine — a cargo workspace. `kuna-decomp` (the decompiler, phase-foldered `p0_knowledge/`…`p9_emit/`), `kuna-analysis` (the loader/analyzer tier), `kuna-sleigh`/`kuna-slacomp` (SLEIGH runtime + compiler, binary `slacomp`), `kuna-console` (the `decomp_dbg`/`decomp_test_dbg` binaries), `kuna-cli` (the `kuna` binary), `kuna-ghidra`/`kuna-wasm` (the Ghidra and browser front-ends), plus support crates |
-| `decompiler/nonnative/` | Non-native engines: `kuna-jvm`, a Rust port of [Vineflower](https://github.com/Vineflower/vineflower) 1.12.0 that decompiles JVM class files and jars to Java (`docs/jvm.md`) |
+| `decompiler/nonnative/` | Non-native engines: `kuna-jvm`, a Rust port of [Vineflower](https://github.com/Vineflower/vineflower) 1.12.0 and its bundled plugins that decompiles JVM class files and jars to Java, and Kotlin classes to Kotlin (`docs/jvm.md`) |
 | `tests/datatests/` | Upstream XML decompilation regression tests (83 files → 675 assertions); the corpus `make test` runs |
 | `tests/stages/` | kuna-owned issue testcases; the corpus `make test-stages` runs |
 | `tests/golden/` | Differential golden vectors for the workspace suite (`make rust-test`) |

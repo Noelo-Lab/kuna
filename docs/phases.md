@@ -66,8 +66,8 @@ discovery, …) live in their own crate, `kuna-analysis` (P0/P1), organized as `
 ## Non-native engines
 
 `decompiler/nonnative/` holds engines for managed bytecode, which never becomes p-code.
-The one today is `kuna-jvm` (JVM class files and jars to Java, a port of Vineflower;
-`docs/jvm.md`). It **shares the taxonomy, not the schedule**: its source folders carry
+The one today is `kuna-jvm` (JVM class files and jars to Java, Kotlin classes to Kotlin, a
+port of Vineflower and its bundled plugins; `docs/jvm.md`). It **shares the taxonomy, not the schedule**: its source folders carry
 the same phase names, so a stage is found by its phase, but the order its passes run in
 is its own (`infra/method_processor.rs` per method, `p0_knowledge/context_unit.rs` per
 class; `docs/spec/10-jvm.md` section 10.1), and none of the Band B, feedback-edge or registry
@@ -87,7 +87,9 @@ machinery above applies to it. Its decision points are the `jvm_*` options of
 | `p7_regions/` | `DomHelper`, `FastExtendedPostdominanceHelper`, `IrreducibleCFGDeobfuscator`, `FinallyProcessor` |
 | `p8_structure/` | `MergeHelper`, `IfHelper`, `LabelHelper`, `SwitchHelper`, pattern matching, try-with-resources, `NestedClassProcessor`, initializers, enums, records |
 | `p9_emit/` | `ClassWriter`, `ImportCollector`, `TextBuffer`, bytecode-to-line mapping |
-| `infra/` | `MethodProcessor.codeToJava` (the schedule), pass hooks, and kuna's parallel driver, spans and tracer |
+| `infra/` | `MethodProcessor.codeToJava` (the schedule), pass hooks and the plugin API, and kuna's parallel driver, spans, tracer and plugin bundle |
+| `plugins/` | the VariableRenaming and IdeaNotNull plugins |
+| `kotlin/` | the Kotlin plugin: `KotlinChooser` and the metadata decoder, its pass schedule, the `K*` expressions and statements, `KotlinWriter` |
 | `rt/` | (kuna) the Java-runtime kernel the port stands on: arenas, JDK-order hash collections, UTF-16 strings, exceptions |
 
 ## Sub-phases

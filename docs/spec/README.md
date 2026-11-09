@@ -20,7 +20,7 @@ chapter is anchored to the code that implements it.
 | [07 — Region identification](07-regions.md) | (angr) the region graph & identifier |
 | [08 — Structuring](08-structuring.md) | collapse structuring, (angr) region structurer, goto quality |
 | [09 — Emission](09-emission.md) | casts, PrintC, naming, strings |
-| [10 — The JVM engine](10-jvm.md) | (vineflower) the non-native engine: class files and jars to Java, from class loading to the Java writer |
+| [10 — The JVM engine](10-jvm.md) | (vineflower) the non-native engine: class files and jars to Java (and Kotlin classes to Kotlin), from class loading to the Java and Kotlin writers |
 
 ## Rules (read before editing)
 
