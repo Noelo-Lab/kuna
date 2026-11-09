@@ -7,8 +7,6 @@
 //! Var maps are `Shared`: the same map sits in a holder, a node's slot in these
 //! tables and `currentCatchableMap`, and is compared by identity. The set
 //! factory is an aliasing handle shared by every map and set it makes.
-use std::rc::Rc;
-
 use crate::code_constants::ACC_STATIC;
 use crate::code_type::CodeType;
 use crate::direct_edge_type::DirectEdgeType;
@@ -33,14 +31,19 @@ use crate::var_map_holder::VarMapHolder;
 use crate::var_version_node::VarVersionNode;
 use crate::var_version_pair::VarVersionPair;
 
+thread_local! {
+    /// `new FastSparseSetFactory<>(0..63)`, which every `splitVariables` builds.
+    static INITIAL_FACTORY: FastSparseSetFactory<i32> = FastSparseSetFactory::new(0..64);
+}
+
 pub struct SFormsConstructor {
     pub track_field_vars: bool,
     pub track_direct_assignments: bool,
-    in_var_versions: JHashMap<Rc<str>, Shared<SFormsFastMapDirect>>,
-    out_var_versions: JHashMap<Rc<str>, Shared<SFormsFastMapDirect>>,
-    out_neg_var_versions: JHashMap<Rc<str>, Shared<SFormsFastMapDirect>>,
-    extra_var_versions: JHashMap<Rc<str>, Shared<SFormsFastMapDirect>>,
-    catchable_versions: JHashMap<Rc<str>, Shared<SFormsFastMapDirect>>,
+    in_var_versions: JHashMap<std::rc::Rc<str>, Shared<SFormsFastMapDirect>>,
+    out_var_versions: JHashMap<std::rc::Rc<str>, Shared<SFormsFastMapDirect>>,
+    out_neg_var_versions: JHashMap<std::rc::Rc<str>, Shared<SFormsFastMapDirect>>,
+    extra_var_versions: JHashMap<std::rc::Rc<str>, Shared<SFormsFastMapDirect>>,
+    catchable_versions: JHashMap<std::rc::Rc<str>, Shared<SFormsFastMapDirect>>,
     lastversion: JHashMap<i32, i32>,
     pub factory: Option<FastSparseSetFactory<i32>>,
     read_count: JHashMap<VarVersionPair, i32>,
@@ -120,11 +123,7 @@ impl SFormsConstructor {
             "Var version is not zero",
         );
 
-        let mut set_init: Vec<i32> = Vec::new();
-        for i in 0..64 {
-            set_init.push(i);
-        }
-        self.factory = Some(FastSparseSetFactory::new(set_init));
+        self.factory = Some(INITIAL_FACTORY.with(FastSparseSetFactory::duplicate));
 
         let first_id = dgraph.first().expect("DirectGraph.first").id_key();
         let first_map = self.create_first_map();
@@ -133,7 +132,7 @@ impl SFormsConstructor {
         self.set_catch_maps(root.into(), dgraph, &flatthelper);
 
         let mut iteration = 1;
-        let mut updated: JHashSet<Rc<str>> = JHashSet::new();
+        let mut updated: JHashSet<std::rc::Rc<str>> = JHashSet::new();
         loop {
             self.ssa_statements(dgraph, &mut updated, false, mt, iteration);
             iteration += 1;
@@ -146,7 +145,7 @@ impl SFormsConstructor {
     pub fn ssa_statements(
         &mut self,
         dgraph: DirectGraph,
-        updated: &mut JHashSet<Rc<str>>,
+        updated: &mut JHashSet<std::rc::Rc<str>>,
         calc_live_vars: bool,
         _mt: StructMethod,
         _iteration: i32,
@@ -499,7 +498,7 @@ impl SFormsConstructor {
                     ValidationHelper::not_null(finally_node.as_ref());
                     let fnode = finally_node.expect("NullPointerException");
                     if fnode.type_() == DirectNodeType::Finally {
-                        let input_key: Rc<str> =
+                        let input_key: std::rc::Rc<str> =
                             format!("{}_FINALLY", fnode.statement().id()).into();
                         Self::get_and_apply_diff(
                             self.in_var_versions.get(&input_key),

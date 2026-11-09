@@ -66,6 +66,17 @@ impl<E: JavaHash + JavaEq + Clone> FastSparseSetFactory<E> {
             .put_with_key_packed(mask, block, element)
     }
 
+    /// A new factory in exactly this factory's current state: what building
+    /// it again from the same elements would give, without the rebuild.
+    pub fn duplicate(&self) -> Self {
+        let st = self.0.borrow();
+        FastSparseSetFactory(Rc::new(RefCell::new(FactoryState {
+            col_values_internal: st.col_values_internal.duplicate(),
+            last_block: st.last_block,
+            last_mask: st.last_mask,
+        })))
+    }
+
     pub fn create_empty_set(&self) -> FastSparseSet<E> {
         FastSparseSet::new(self.clone())
     }

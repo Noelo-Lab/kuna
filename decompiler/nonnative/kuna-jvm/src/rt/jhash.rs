@@ -175,6 +175,7 @@ struct Node<K, V> {
     after: u32,
 }
 
+#[derive(Clone)]
 struct Core<K, V> {
     table: Vec<u32>,
     nodes: Vec<Option<Node<K, V>>>,
@@ -629,6 +630,13 @@ macro_rules! define_map {
 
             pub fn key_vec(&self) -> Vec<K> {
                 self.keys().cloned().collect()
+            }
+
+            /// An exact copy of the table -- the state the same sequence of
+            /// operations would have built -- unlike `clone`, which is Java's
+            /// re-inserting copy constructor.
+            pub fn duplicate(&self) -> Self {
+                $name { core: self.core.clone() }
             }
 
             pub fn value_vec(&self) -> Vec<V> {
