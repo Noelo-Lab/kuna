@@ -1582,11 +1582,10 @@ option is on (chapter 01): diffutils' `hash_table.hasher` is
 The option takes effect only with
 `ctypes` on (`ArchContext::call_target_type` is set from both): without C's own
 spelling the target prints the upstream `code *`, which the option leaves
-alone. Shipped OFF in the catalog, because the XML datatest corpus pins the
-upstream `code *` spellings and applies no mode; ON in the `aggressive` preset,
-which `auto` selects under 500 KiB, so it is the default rendering of every real
-binary. The Ghidra front-end, which otherwise applies that preset, leaves it off
-(`decompiler/crates/kuna-ghidra/src/process.rs
+alone. It is on by default, so wherever `ctypes` is on (`auto` at every size,
+`aggressive`, `fast`) the call's type prints, and an explicit `--mode reliable`,
+which leaves `ctypes` off, prints `code *`. The Ghidra front-end sets it off after applying
+the `aggressive` preset (`decompiler/crates/kuna-ghidra/src/process.rs
 (apply_ghidra_mode_defaults)`): Java's
 `PcodeDataTypeManager` reads an anonymous code type back as `undefined1`, so a
 retyped local would reach the program database as `undefined1 *`. Over the

@@ -512,7 +512,7 @@ impl PrintCOptions {
             inf_loop_top: true,
             warn_inline: true, // (kuna) DIV-39; no upstream equivalent
             bytearray_c: false,
-            partial_access: false,
+            partial_access: true, // (kuna) `option partialaccess off` restores `name._<off>_<size>_`
             header_carries_types: false,
             struct_defs: false,      // (kuna) no upstream equivalent; opt-in
             global_ref: true,        // (kuna) no upstream equivalent

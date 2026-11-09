@@ -112,7 +112,7 @@ fn comments_describe_value_homes_without_borrowing_arithmetic_inputs() {
         ("merged_homes", &["v1; // eax | ebx"]),
         ("arithmetic_home", &["v1; // eax", "v2; // ecx"]),
         ("constant_home", &["v1; // eax | ebx"]),
-        ("joined_home", &["v1 [16]; // rdx:rax"]),
+        ("joined_home", &["unsigned __int128 v1; // rdx:rax"]),
         ("joined_helper", &["v1 [16]; // rdx:rax"]),
         (
             "byte_source",

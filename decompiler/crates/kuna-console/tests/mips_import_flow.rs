@@ -64,6 +64,7 @@ fn resolver_transfers_are_bounded_and_explicit_flow_takes_precedence() {
                 root.join("tests/fixtures/mips-import-flow").join(image).to_str().unwrap(),
                 "", &[root.join("specs").to_string_lossy().into_owned()],
             ).unwrap();
+            prog.arch_mut().set_kuna_option("voidtailreturn", "off").unwrap();
             let sites: Vec<_> = prog.arch().loader_transfer_sites.iter().cloned().collect();
             assert!(sites.len() >= 4, "{image}");
             prog.commit_pending_analysis().unwrap();

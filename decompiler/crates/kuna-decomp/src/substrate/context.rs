@@ -1671,7 +1671,7 @@ impl ArchContext {
             array_size: 0,               // arraysize (Architecture::reset_defaults sets the shipped default)
             stack_alias_deadstore: false,
             stack_views: false, // stackviews (opt-in)
-            libc_names: false, // libcnames (opt-in)
+            libc_names: false, // libcnames; set from the Architecture
             devectorize_reduction: false, // devectorize (opt-in default-off)
             strlen_scan: false, // strlenscan (live value copied from the Architecture)
             region_structure: false,     // regionstructure (opt-in default-off)

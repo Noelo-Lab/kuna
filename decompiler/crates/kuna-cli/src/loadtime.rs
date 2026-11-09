@@ -57,7 +57,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "gotypes" => (kuna_gotypes::GOTYPES_ENV, DefaultOn),
         "dwarfvariants" => (kuna_dwarfvariants::DWARFVARIANTS_ENV, DefaultOn),
         "variantnames" => (kuna_variantnames::VARIANTNAMES_ENV, DefaultOn),
-        "calltargettype" => (kuna_calltargettype::CALLTARGETTYPE_ENV, DefaultOff),
+        "calltargettype" => (kuna_calltargettype::CALLTARGETTYPE_ENV, DefaultOn),
         "macho-arm64e" => ("KUNA_MACHO_ARM64E", Arm64e),
         "sourcelang" => (kuna_sourcelang::SOURCELANG_ENV, SourceLang),
         "swiftdemangle" => (kuna_swiftdemangle::SWIFTDEMANGLE_ENV, DefaultOn),

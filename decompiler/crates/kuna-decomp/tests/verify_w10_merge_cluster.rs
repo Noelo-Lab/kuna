@@ -85,6 +85,23 @@ fn rust_oracle() -> Option<PathBuf> {
 /// Drive the Rust engine over one datatest file and slice the first KUNA_DUMP
 /// `print C` block.  `None` when the binary/specs are unavailable (test skips).
 fn rust_print_c_for(file: &str) -> Option<String> {
+    rust_print_c_in(&datatests_root(), file)
+}
+
+/// [`rust_print_c_for`] over a copy of `file` whose script first sets `option`,
+/// for a comparison against the C++ oracle's spelling of an option kuna ships on.
+fn rust_print_c_with(file: &str, option: &str) -> Option<String> {
+    let dir = std::env::temp_dir().join(format!("kuna-w10-{}-{file}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("create the pinned datatest dir");
+    let text = std::fs::read_to_string(datatests_root().join(file)).expect("read the datatest");
+    let pinned = text.replacen("<script>", &format!("<script>\n  <com>option {option}</com>"), 1);
+    std::fs::write(dir.join(file), pinned).expect("write the pinned datatest");
+    let block = rust_print_c_in(&dir, file);
+    let _ = std::fs::remove_dir_all(&dir);
+    block
+}
+
+fn rust_print_c_in(dir: &std::path::Path, file: &str) -> Option<String> {
     let bin = rust_oracle()?;
     if !specs_root().exists() {
         return None;
@@ -93,7 +110,7 @@ fn rust_print_c_for(file: &str) -> Option<String> {
         .arg("-sleighpath")
         .arg(specs_root())
         .arg("-path")
-        .arg(datatests_root())
+        .arg(dir)
         .arg("datatests")
         .arg(file)
         .env("KUNA_DUMP", "1")
@@ -242,7 +259,7 @@ fn w10_mc_a3a_readstruct_pointer_return_byte_identical() {
 /// persist-RETURN-VALUE) misread.
 #[test]
 fn w10_mc_a3b_condconst_stack_and_void_persist_untouched() {
-    let Some(block) = rust_print_c_for("condconst.xml") else {
+    let Some(block) = rust_print_c_with("condconst.xml", "voidtailreturn off") else {
         eprintln!("SKIP: rust decomp_test_dbg / specs unavailable");
         return;
     };

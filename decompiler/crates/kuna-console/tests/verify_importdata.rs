@@ -9,9 +9,9 @@
 //!
 //! ## The two-state proof
 //!
-//! - **`--option importdata off`** (default): each read is a dereference of the
+//! - **`--option importdata off`**: each read is a dereference of the
 //!   anonymous slot, `*dat_100004000` / `*dat_100004008`.
-//! - **`--option importdata on`**: the SAME reads are `imported_counter` /
+//! - **`--option importdata on`** (default): the SAME reads are `imported_counter` /
 //!   `imported_name` — `*slot` where the slot holds `&import` is the import.
 
 use std::path::PathBuf;
@@ -95,14 +95,14 @@ fn run_at(fixture: &str, vma: u64, on: bool) -> String {
 }
 
 /// The two-state proof: a data read through an import slot is the slot's
-/// dereference by default and the import itself only when `importdata` is on.
+/// dereference with `importdata` off and the import itself only when it is on.
 #[test]
 fn import_slot_data_read_renders_the_import_only_when_on() {
     let off = run(false);
     let on = run(true);
 
-    eprintln!("---- importdata OFF (default) ----\n{off}");
-    eprintln!("---- importdata ON ----\n{on}");
+    eprintln!("---- importdata OFF ----\n{off}");
+    eprintln!("---- importdata ON (default) ----\n{on}");
 
     for slot in ["*dat_100004000", "*dat_100004008"] {
         assert!(off.contains(slot), "importdata off must read through the slot {slot}:\n{off}");
