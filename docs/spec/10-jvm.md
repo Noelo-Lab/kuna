@@ -1758,3 +1758,78 @@ of lower precedence is parenthesized. On the benchmark inputs this changes 9 con
 runs as the original (`TestTernaryNumericArms.intOrLong` gains a `checkcast Number` without the
 JDK, from the outer cast); the compat texts recompile to code that differs: `Long` 1, `Character`
 `'\u0001'`, `NullPointerException`, `ClassCastException` on the marker.
+**`kt_reference_anonymous_super_call`.** kotlinc compiles a function reference it does not
+leave to `invokedynamic` (one used as a `KFunction`, or in a library compiled with class-based
+lambdas) to a synthetic class with synthetic-class metadata and no data, extending
+`kotlin.jvm.internal.FunctionReferenceImpl`, whose constructor calls `super(arity, [receiver,]
+Owner.class, "name", "signature", flags)`; the Kotlin plugin recognises such a class
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_chooser.rs`) and writes its `new` (bound,
+`receiver::name`) or its `INSTANCE` (unbound, `Owner::name`, `::name`) as the reference, reading
+owner, name and signature from the constants of that super call, which
+`decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_writer.rs (KotlinWriter::stringify_reference)`
+expects as the only exprent of the constructor's first statement. That holds only while the
+class is not an anonymous class. The class's `InnerClasses` entry has no name, so with
+`verify-anonymous-classes` off (the default; the plugin's own tests turn it on, which makes such
+a class a local class) it is one, and
+`decompiler/nonnative/kuna-jvm/src/p8_structure/nested_class_processor.rs` takes the super call
+of an anonymous class's constructor out of the body and keeps it on the class node
+(`superInvocation`, which the Java writer prints as `new Super(..) { }`). The constructor then
+reads empty, the reference is not recognised, and the class falls through to the
+anonymous-object path: a bound reference's method fails with `IllegalStateException: Anonymous
+class does not have Class Kotlin metadata`, and an unbound one prints
+`<unrepresentable>.INSTANCE` (unchanged on `develop/1.13.0`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_reference_anonymous_super_call.rs`) an
+empty first statement of an anonymous class's constructor stands for the super call its node
+keeps. Five failed methods now decompile (kotlinx-coroutines 1.10.2's
+`JobKt.invokeOnCompletion` and `BufferedChannel.bindCancellationFun`, kotlin-reflect's
+`ReflectKCallableImpl` constructor, spring-framework's `BeanDefinitionDsl.environment`, and the
+plugin's own `TestAnonymousEverything.testFunctionReference` under default options), and the
+`<unrepresentable>.INSTANCE` of unbound references in the Kotlin output (7 in kotlin-stdlib,
+19 in each of kotlinx-coroutines 1.8.0 and 1.10.2, 2 in kotlin-reflect) become the references of
+their sources (`MatchResult::next`,
+`BufferedChannel::registerSelectForSend`, `::createSegment`). The references keep Vineflower's
+spelling: a class owner without type arguments (`Class::getComponentType` for
+`Class<*>::getComponentType`) and a top-level owner other than a single-file facade by its
+class name.
+
+**`kt_property_reference`.** kotlinc compiles a property reference to a synthetic class of the
+same kind, extending `PropertyReference0Impl`, `PropertyReference1Impl` or
+`PropertyReference2Impl` (or their `MutablePropertyReference` counterparts), whose constructor
+calls `super([receiver,] Owner.class, "name", "getterSignature", flags)`. `KotlinChooser`
+recognises only `FunctionReferenceImpl` subclasses, so a property reference reaches the writer as
+an anonymous object without Class metadata: a bound one (`this::size`) fails its method, an
+unbound one prints `<unrepresentable>.INSTANCE` (unchanged on `develop/1.13.0`). With the fix,
+`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_property_reference.rs`, called from
+`decompiler/nonnative/kuna-jvm/src/kotlin/k_new_exprent.rs` and
+`decompiler/nonnative/kuna-jvm/src/kotlin/k_field_exprent.rs` for a Kotlin class without parsed
+metadata, writes such a class as the reference its super call describes (the super call found as
+for `kt_reference_anonymous_super_call`): `receiver::name` when bound; unbound, the digit in the
+superclass name counts the receivers `get` takes and bit 0 of `flags` is kotlin's
+`CallableReference.isTopLevel`, so it is `::name` (top-level, no receiver), `Receiver::name` (a
+top-level extension property, the receiver being the getter's first parameter type) or
+`Owner::name` (a member). A member extension property (two receivers) has no reference syntax and
+any other constructor shape (kotlinc 1.3's `KDeclarationContainer` owner) is left as before.
+kotlinx-coroutines' `LockFreeLinkedListNode.toString` now prints its source,
+`"${this::classSimpleName}@${hexAddress}"`, and kotlin-reflect's `KClass<*>::superclasses` comes
+out as `KClass::superclasses`.
+
+**`kt_anonymous_class_failure_reason`.** What the three fixes above and
+`kt_synthetic_anonymous_object` leave of `IllegalStateException: Anonymous class does not have
+Class Kotlin metadata` is a structural limit, and the message says which
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_anonymous_class_failure_reason.rs`,
+thrown at the same place in `KotlinWriter::write_class_definition`), naming the class. A suspend
+function's continuation (`ContinuationImpl`; 54 failure comments in kotlinx-coroutines 1.8.0, 49
+in 1.10.2, 2 in kotlin-reflect) means the method is the coroutine state machine kotlinc compiled the
+function to: the plugin prints that machine, whose `instanceof` and casts of its own continuation
+class an `object` expression cannot express and which Kotlin source never writes, so the honest
+output is the failure until the state machine is turned back into the suspend body. A reference
+class whose constructor takes captured variables is a reference to a local function that
+captures them (kotlin-stdlib's `copyToRecursively`, `onPreVisitDirectory(::copy)`): the plugin
+prints the local function hoisted, its captures as parameters, so `::copy` would name nothing. An
+object created in another top-level class than the one whose method declares it (kotlinc copies
+an inline function's body, with the `new` of a SAM-converted lambda in it, into the `$$inlined$`
+class of each caller; 12 in kotlinx-coroutines 1.10.2, such as `drop$2$1` created in
+`FlowKt__LimitKt$drop$$inlined$unsafeFlow$1.collect`) had its body decompiled by
+`NestedClassProcessor` against the declaring method's variables, which do not exist where it is
+created. Anything else is an object whose superclass constructor arguments or captured values an
+`object` expression cannot pass. The message is printed only with `dump-exception-on-error` on.

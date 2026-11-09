@@ -140,6 +140,8 @@ mod kuna_fix_kt_writer;
 mod kuna_fix_kt_exits;
 #[path = "kuna_fix_kt_ctors.rs"]
 mod kuna_fix_kt_ctors;
+#[path = "kuna_fix_kt_references.rs"]
+mod kuna_fix_kt_references;
 #[path = "kuna_fix_handler_copies.rs"]
 mod kuna_fix_handler_copies;
 #[path = "kuna_fix_type_switch.rs"]

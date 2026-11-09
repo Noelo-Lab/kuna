@@ -130,6 +130,16 @@ pub enum KunaFix {
     /// `ternary_numeric_arms`: a reference conditional whose arms print as
     /// different numeric types keeps its first arm cast to its type.
     TernaryNumericArms,
+    /// `kt_reference_anonymous_super_call`: a function reference whose
+    /// class is an anonymous class is read from the super call
+    /// `NestedClassProcessor` took out of its constructor.
+    KtReferenceAnonymousSuperCall,
+    /// `kt_property_reference`: a property-reference class is written as
+    /// the reference it stands for.
+    KtPropertyReference,
+    /// `kt_anonymous_class_failure_reason`: an anonymous class the Kotlin
+    /// writer cannot write fails with a message naming it and why.
+    KtAnonymousClassFailureReason,
 }
 
 impl KunaFix {
@@ -169,6 +179,9 @@ impl KunaFix {
         KunaFix::VarMergeNarrowing,
         KunaFix::SwitchExpressionPolyCast,
         KunaFix::TernaryNumericArms,
+        KunaFix::KtReferenceAnonymousSuperCall,
+        KunaFix::KtPropertyReference,
+        KunaFix::KtAnonymousClassFailureReason,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -208,6 +221,9 @@ impl KunaFix {
             KunaFix::VarMergeNarrowing => "var_merge_narrowing",
             KunaFix::SwitchExpressionPolyCast => "switch_expression_poly_cast",
             KunaFix::TernaryNumericArms => "ternary_numeric_arms",
+            KunaFix::KtReferenceAnonymousSuperCall => "kt_reference_anonymous_super_call",
+            KunaFix::KtPropertyReference => "kt_property_reference",
+            KunaFix::KtAnonymousClassFailureReason => "kt_anonymous_class_failure_reason",
         }
     }
 

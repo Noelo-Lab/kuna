@@ -3280,6 +3280,17 @@ class	kuna-fixes/classes/pkg/TestObjectSuperCall$make$1.class
 class	kuna-fixes/classes/pkg/TestObjectSuperCall$plain$1.class
 expected	kuna-fixes/expected-compat/pkg/TestObjectSuperCall.kt
 compare	TestObjectSuperCall.kt	TestObjectSuperCall.java
+case	kuna-fixes-compat/pkg/TestPropertyReferencesKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestPropertyReferencesKt.class
+class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$bound$1.class
+class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$boundMutable$ref$1.class
+class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$extension$ref$1.class
+class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$member$ref$1.class
+class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$mutableMember$ref$1.class
+class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$topLevel$ref$1.class
+expected	kuna-fixes/expected-compat/pkg/TestPropertyReferencesKt.kt
+compare	TestPropertyReferencesKt.kt	TestPropertyReferencesKt.java
 case	kuna-fixes-compat/pkg/TestRecordPatternInTry	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry.class
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry$Circle.class
@@ -3288,6 +3299,15 @@ class	kuna-fixes/classes/pkg/TestRecordPatternInTry$Missing.class
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry$Shape.class
 expected	kuna-fixes/expected-compat/pkg/TestRecordPatternInTry.java
 compare	TestRecordPatternInTry.java
+case	kuna-fixes-compat/pkg/TestReferenceClassesKt	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestReferenceClassesKt.class
+class	kuna-fixes/classes/pkg/TestReferenceClassesKt$bound$ref$1.class
+class	kuna-fixes/classes/pkg/TestReferenceClassesKt$constructor$ref$1.class
+class	kuna-fixes/classes/pkg/TestReferenceClassesKt$topLevel$ref$1.class
+class	kuna-fixes/classes/pkg/TestReferenceClassesKt$unbound$ref$1.class
+expected	kuna-fixes/expected-compat/pkg/TestReferenceClassesKt.kt
+compare	TestReferenceClassesKt.kt	TestReferenceClassesKt.java
 case	kuna-fixes-compat/pkg/TestReturnOutsideLambdaKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestReturnOutsideLambdaKt.class
@@ -3525,6 +3545,17 @@ class	kuna-fixes/classes/pkg/TestObjectSuperCall$make$1.class
 class	kuna-fixes/classes/pkg/TestObjectSuperCall$plain$1.class
 expected	kuna-fixes/expected/pkg/TestObjectSuperCall.kt
 compare	TestObjectSuperCall.kt	TestObjectSuperCall.java
+case	kuna-fixes/pkg/TestPropertyReferencesKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestPropertyReferencesKt.class
+class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$bound$1.class
+class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$boundMutable$ref$1.class
+class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$extension$ref$1.class
+class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$member$ref$1.class
+class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$mutableMember$ref$1.class
+class	kuna-fixes/classes/pkg/TestPropertyReferencesKt$topLevel$ref$1.class
+expected	kuna-fixes/expected/pkg/TestPropertyReferencesKt.kt
+compare	TestPropertyReferencesKt.kt	TestPropertyReferencesKt.java
 case	kuna-fixes/pkg/TestRecordPatternInTry	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry.class
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry$Circle.class
@@ -3533,6 +3564,15 @@ class	kuna-fixes/classes/pkg/TestRecordPatternInTry$Missing.class
 class	kuna-fixes/classes/pkg/TestRecordPatternInTry$Shape.class
 expected	kuna-fixes/expected/pkg/TestRecordPatternInTry.java
 compare	TestRecordPatternInTry.java
+case	kuna-fixes/pkg/TestReferenceClassesKt	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestReferenceClassesKt.class
+class	kuna-fixes/classes/pkg/TestReferenceClassesKt$bound$ref$1.class
+class	kuna-fixes/classes/pkg/TestReferenceClassesKt$constructor$ref$1.class
+class	kuna-fixes/classes/pkg/TestReferenceClassesKt$topLevel$ref$1.class
+class	kuna-fixes/classes/pkg/TestReferenceClassesKt$unbound$ref$1.class
+expected	kuna-fixes/expected/pkg/TestReferenceClassesKt.kt
+compare	TestReferenceClassesKt.kt	TestReferenceClassesKt.java
 case	kuna-fixes/pkg/TestReturnOutsideLambdaKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestReturnOutsideLambdaKt.class

@@ -39,7 +39,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestLocalVisibilityComment` | `kt_local_visibility_comment` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0 |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestObjectSuperCall` | `kt_object_super_call` | kotlinc 2.0.0 | an object expression's superclass is written with its constructor arguments, object : Base(k + 1, s) (Vineflower prints object : Base) |
+| `pkg/TestPropertyReferencesKt` | `kt_property_reference` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled` |
 | `pkg/TestRecordPatternInTry` | `nested_handler_copies` | javac 21.0.12.1 (`--release 21 -g`) | `describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's |
+| `pkg/TestReferenceClassesKt` | `kt_reference_anonymous_super_call` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` (`adder::add`, which failed) and `unbound`, `constructor` and `topLevel` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their function references: `NestedClassProcessor` took the reference classes' `super(..)` calls out of their constructors, and they are read from the class node |
 | `pkg/TestReturnOutsideLambdaKt` | `kt_return_outside_lambda` | kotlinc 2.0.0 | a @JvmOverloads overload and the function of an object written inside a lambda return their values (Vineflower prints the values as bare expression statements) |
 | `pkg/TestSamWrapperObjectKt` | `kt_synthetic_anonymous_object` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone |
 | `pkg/TestSelfReferencingLambda` | `self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
@@ -1224,6 +1226,77 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           }
 ```
 
+### `pkg/TestPropertyReferencesKt`
+
+```diff
+--- expected-compat/pkg/TestPropertyReferencesKt.kt
++++ expected/pkg/TestPropertyReferencesKt.kt
+@@ -1,5 +1,6 @@
+ package pkg
+ 
++import kotlin.reflect.KMutableProperty0
+ import kotlin.reflect.KMutableProperty1
+ import kotlin.reflect.KProperty0
+ import kotlin.reflect.KProperty1
+@@ -13,50 +14,25 @@
+ 
+ 
+ public fun bound(box: Box): String {
+-   // $VF: Couldn't be decompiled
+-   // Bytecode:
+-   // 00: aload 0
+-   // 01: ldc "box"
+-   // 03: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-   // 06: new pkg/TestPropertyReferencesKt$bound$1
+-   // 09: dup
+-   // 0a: aload 0
+-   // 0b: invokespecial pkg/TestPropertyReferencesKt$bound$1.<init> (Ljava/lang/Object;)V
+-   // 0e: invokestatic java/lang/String.valueOf (Ljava/lang/Object;)Ljava/lang/String;
+-   // 11: areturn
++   return java.lang.String.valueOf(box::size)
+ }
+ 
+ public fun boundMutable(box: Box): Int {
+-   // $VF: Couldn't be decompiled
+-   // Bytecode:
+-   // 00: aload 0
+-   // 01: ldc "box"
+-   // 03: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-   // 06: new pkg/TestPropertyReferencesKt$boundMutable$ref$1
+-   // 09: dup
+-   // 0a: aload 0
+-   // 0b: invokespecial pkg/TestPropertyReferencesKt$boundMutable$ref$1.<init> (Ljava/lang/Object;)V
+-   // 0e: checkcast kotlin/reflect/KMutableProperty0
+-   // 11: astore 1
+-   // 12: aload 1
+-   // 13: invokeinterface kotlin/reflect/KMutableProperty0.get ()Ljava/lang/Object; 1
+-   // 18: checkcast java/lang/Number
+-   // 1b: invokevirtual java/lang/Number.intValue ()I
+-   // 1e: ireturn
++   return ((box::count as KMutableProperty0).get() as java.lang.Number).intValue()
+ }
+ 
+ public fun member(box: Box): Int {
+-   return ((<unrepresentable>.INSTANCE as KProperty1).get(box) as java.lang.Number).intValue()
++   return ((Box::size as KProperty1).get(box) as java.lang.Number).intValue()
+ }
+ 
+ public fun mutableMember(box: Box) {
+-   (<unrepresentable>.INSTANCE as KMutableProperty1).set(box, 1)
++   (Box::count as KMutableProperty1).set(box, 1)
+ }
+ 
+ public fun topLevel(): Int {
+-   return ((<unrepresentable>.INSTANCE as KProperty0).get() as java.lang.Number).intValue()
++   return ((::answer as KProperty0).get() as java.lang.Number).intValue()
+ }
+ 
+ public fun extension(box: Box): Int {
+-   return ((<unrepresentable>.INSTANCE as KProperty1).get(box) as java.lang.Number).intValue()
++   return ((Box::doubled as KProperty1).get(box) as java.lang.Number).intValue()
+ }
+```
+
 ### `pkg/TestRecordPatternInTry`
 
 ```diff
@@ -1302,6 +1375,63 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public int measure(String key) {
+```
+
+### `pkg/TestReferenceClassesKt`
+
+```diff
+--- expected-compat/pkg/TestReferenceClassesKt.kt
++++ expected/pkg/TestReferenceClassesKt.kt
+@@ -1,6 +1,7 @@
+ package pkg
+ 
+ import kotlin.jvm.functions.Function1
++import kotlin.jvm.functions.Function2
+ import kotlin.jvm.functions.Function3
+ import kotlin.reflect.KFunction
+ 
+@@ -9,37 +10,17 @@
+ }
+ 
+ public fun bound(adder: Adder): Int {
+-   // $VF: Couldn't be decompiled
+-   // Bytecode:
+-   // 00: aload 0
+-   // 01: ldc "adder"
+-   // 03: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-   // 06: new pkg/TestReferenceClassesKt$bound$ref$1
+-   // 09: dup
+-   // 0a: aload 0
+-   // 0b: invokespecial pkg/TestReferenceClassesKt$bound$ref$1.<init> (Ljava/lang/Object;)V
+-   // 0e: checkcast kotlin/reflect/KFunction
+-   // 11: astore 1
+-   // 12: aload 1
+-   // 13: checkcast kotlin/jvm/functions/Function2
+-   // 16: bipush 1
+-   // 17: invokestatic java/lang/Integer.valueOf (I)Ljava/lang/Integer;
+-   // 1a: bipush 2
+-   // 1b: invokestatic java/lang/Integer.valueOf (I)Ljava/lang/Integer;
+-   // 1e: invokeinterface kotlin/jvm/functions/Function2.invoke (Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object; 3
+-   // 23: checkcast java/lang/Number
+-   // 26: invokevirtual java/lang/Number.intValue ()I
+-   // 29: ireturn
++   return (((adder::add as KFunction) as Function2)(1, 2) as java.lang.Number).intValue()
+ }
+ 
+ public fun unbound(adder: Adder): Int {
+-   return (((<unrepresentable>.INSTANCE as KFunction) as Function3)(adder, 1, 2) as java.lang.Number).intValue()
++   return (((Adder::add as KFunction) as Function3)(adder, 1, 2) as java.lang.Number).intValue()
+ }
+ 
+ public fun constructor(): Int {
+-   return (((<unrepresentable>.INSTANCE as KFunction) as Function1)(3) as Adder).getK()
++   return (((::Adder as KFunction) as Function1)(3) as Adder).getK()
+ }
+ 
+ public fun topLevel(x: Int): Int {
+-   return (((<unrepresentable>.INSTANCE as KFunction) as Function1)(x) as java.lang.Number).intValue()
++   return (((::twice as KFunction) as Function1)(x) as java.lang.Number).intValue()
+ }
 ```
 
 ### `pkg/TestReturnOutsideLambdaKt`

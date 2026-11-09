@@ -712,6 +712,19 @@ def switch_expression_poly_cast(old, new):
         out.append(a[i])
         i += 1
     return found and out == b
+UNREPRESENTABLE_INSTANCE = '<unrepresentable>.INSTANCE'
+CALLABLE_REFERENCE = r'(?:[\w$.`]+)?::[\w$`]+'
+
+
+def kt_callable_reference(old, new):
+    """kt_reference_anonymous_super_call and kt_property_reference: the `INSTANCE` of a function- or
+    property-reference class, printed `<unrepresentable>.INSTANCE`, became the reference (`Owner::name`,
+    `::name`, `Receiver::name`) and nothing else changed, the lines possibly reflowed."""
+    o, n = re.sub(r'\s+', '', ''.join(old)), re.sub(r'\s+', '', ''.join(new))
+    if UNREPRESENTABLE_INSTANCE not in o:
+        return False
+    pattern = CALLABLE_REFERENCE.join(re.escape(p) for p in o.split(UNREPRESENTABLE_INSTANCE))
+    return re.fullmatch(pattern, n) is not None
 
 
 CONTEXT_RECOGNISERS = {'enum_body_separator': enum_body_separator,
@@ -735,6 +748,7 @@ RECOGNISERS = {
     'switch_expression_poly_cast': switch_expression_poly_cast,
     'ternary_numeric_arms': ternary_numeric_arms,
     'var_merge_narrowing': var_merge_narrowing,
+    'kt_callable_reference': kt_callable_reference,
 }
 
 

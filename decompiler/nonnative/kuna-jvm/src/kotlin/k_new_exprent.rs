@@ -1,5 +1,8 @@
 //! Port of `org/vineflower/kotlin/expr/KNewExprent.java`.
 //!
+//! kuna fix `kt_property_reference`: a property-reference class is
+//! written as the reference (`kuna_fix_kt_property_reference`).
+//!
 //! kuna fix `kt_synthetic_anonymous_object` (`kuna_fixes`): an
 //! anonymous class is written with its `new`'s constructor at hand, so the
 //! fix can tell whether the object's captured names mean what this `new`
@@ -34,6 +37,7 @@ use crate::kotlin_exprent;
 use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
 use crate::kt_attrs::KtAttrs;
 use crate::kuna_fix_kt_object_super_call;
+use crate::kuna_fix_kt_property_reference;
 use crate::kuna_fix_kt_synthetic_anonymous_object;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
@@ -123,6 +127,21 @@ impl KNewExprent {
                         node,
                         self.get_bytecode().as_ref(),
                         Some(receiver),
+                    );
+                    if let Some(reference) = reference {
+                        return reference;
+                    }
+                }
+
+                if kt_data.is_none() && kuna_fixes::enabled(KunaFix::KtPropertyReference) {
+                    let receiver = self
+                        .get_constructor()
+                        .and_then(|c| c.get_lst_parameters().to_vec().into_iter().next());
+                    let reference = kuna_fix_kt_property_reference::stringify(
+                        indent,
+                        node,
+                        self.get_bytecode().as_ref(),
+                        receiver,
                     );
                     if let Some(reference) = reference {
                         return reference;

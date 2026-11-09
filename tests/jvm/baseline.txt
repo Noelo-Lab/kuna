@@ -599,7 +599,9 @@ kuna-fixes-compat/pkg/TestInnerOfGenericOuter
 kuna-fixes-compat/pkg/TestLocalVisibilityComment
 kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver
 kuna-fixes-compat/pkg/TestObjectSuperCall
+kuna-fixes-compat/pkg/TestPropertyReferencesKt
 kuna-fixes-compat/pkg/TestRecordPatternInTry
+kuna-fixes-compat/pkg/TestReferenceClassesKt
 kuna-fixes-compat/pkg/TestReturnOutsideLambdaKt
 kuna-fixes-compat/pkg/TestSamWrapperObjectKt
 kuna-fixes-compat/pkg/TestSelfReferencingLambda
@@ -634,7 +636,9 @@ kuna-fixes/pkg/TestInnerOfGenericOuter
 kuna-fixes/pkg/TestLocalVisibilityComment
 kuna-fixes/pkg/TestMethodRefWildcardReceiver
 kuna-fixes/pkg/TestObjectSuperCall
+kuna-fixes/pkg/TestPropertyReferencesKt
 kuna-fixes/pkg/TestRecordPatternInTry
+kuna-fixes/pkg/TestReferenceClassesKt
 kuna-fixes/pkg/TestReturnOutsideLambdaKt
 kuna-fixes/pkg/TestSamWrapperObjectKt
 kuna-fixes/pkg/TestSelfReferencingLambda
