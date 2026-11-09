@@ -66,6 +66,9 @@ pub struct PushanProgram {
     pub call_kills: Vec<(u64, u8)>,
     /// The placeholder registers the emitter reads for "never defined" values.
     pub placeholders: Vec<(u64, u8)>,
+    /// Registers (offset, size) every external call leaves untouched: the
+    /// interpreter's own memory, privatized by the emitter.
+    pub call_preserves: Vec<(u64, u32)>,
     pub overlay: Rc<PcodeOverlay>,
     pub stats: Stats,
     pub emit_stats: EmitStats,
@@ -504,9 +507,10 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
             .userops
             .iter()
             .enumerate()
-            .filter(|(_, n)| matches!(n.as_str(), "rdtsc" | "rdtscp" | "pause" | "lfence" | "mfence" | "sfence" | "prefetch" | "prefetchw" | "nop"))
+            .filter(|(_, n)| matches!(n.as_str(), "rdtsc" | "rdtscp" | "pause" | "lfence" | "mfence" | "sfence" | "prefetch" | "prefetchw" | "nop" | "LOCK" | "UNLOCK"))
             .map(|(i, _)| i as u64)
             .collect(),
+        lock_userops: target.userops.iter().enumerate().filter(|(_, n)| matches!(n.as_str(), "LOCK" | "UNLOCK")).map(|(i, _)| i as u64).collect(),
     };
     // The placeholders the emitter reads for "never defined" registers are
     // killed by every call too, so no call guard lets a value flow through one.
@@ -524,7 +528,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         log.push(format!("section {:#x}-{:#x} flags={:#x}{}", s.start, s.end, s.flags, if Some((s.start, s.end)) == target.entry_section { " (entry)" } else { "" }));
     }
     log.push(format!(
-        "{} nodes ({} in VM), {} instructions, {} symbolized, {} unresolved, {} halts, {} rounds; emitted {} insns/{} ops, {} folded, {} sp-rematerialized, {} dead",
+        "{} nodes ({} in VM), {} instructions, {} symbolized, {} unresolved, {} halts, {} rounds; emitted {} insns/{} ops, {} folded, {} sp-rematerialized, {} dead, {} privatized",
         explorer.stats.nodes,
         explorer.stats.vm_nodes,
         explorer.stats.insns,
@@ -536,7 +540,8 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         emit_stats.ops,
         emit_stats.folded,
         emit_stats.remat,
-        emit_stats.dead
+        emit_stats.dead,
+        emit_stats.privatized
     ));
     if let Ok(path) = std::env::var("KUNA_PUSHAN_DUMP") {
         if let Ok(mut f) = std::fs::File::create(&path) {
@@ -624,7 +629,8 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
             }
         }
     }
-    Ok(PushanProgram { entry, call_kills, placeholders, overlay: Rc::new(overlay), stats: explorer.stats.clone(), emit_stats, log })
+    let call_preserves = emit_stats.private_regs.into_iter().collect();
+    Ok(PushanProgram { entry, call_kills, placeholders, call_preserves, overlay: Rc::new(overlay), stats: explorer.stats.clone(), emit_stats, log })
 }
 
 fn describe_exit(e: &NodeExit) -> String {
@@ -697,6 +703,7 @@ pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<Pus
 fn adopt(p: &PushanProgram, fd: &mut Funcdata) {
     fd.kuna_set_size(0);
     fd.kuna_set_call_kills(p.call_kills.iter().map(|&(o, s)| (o, s as int4)).collect());
+    fd.kuna_set_call_preserves(p.call_preserves.iter().map(|&(o, s)| (o, s as int4)).collect());
 }
 
 /// Mark every COPY out of a placeholder register as incidental, once the flow
@@ -739,6 +746,22 @@ pub fn call_kills(fd: &Funcdata, addr: &Address, size: int4) -> bool {
     let lo = addr.get_offset();
     let hi = lo.saturating_add(size.max(0) as u64);
     kills.iter().any(|&(o, s)| o <= lo && hi <= o.saturating_add(s.max(0) as u64))
+}
+
+/// Does every call inside a devirtualized body leave `addr:size` untouched?
+/// True for the registers standing for the interpreter's own memory.
+pub fn call_preserves(fd: &Funcdata, addr: &Address, size: int4) -> bool {
+    let keep = fd.kuna_call_preserves();
+    if keep.is_empty() {
+        return false;
+    }
+    let Some(spc) = addr.get_space() else { return false };
+    if spc.get_name() != "register" {
+        return false;
+    }
+    let lo = addr.get_offset();
+    let hi = lo.saturating_add(size.max(0) as u64);
+    keep.iter().any(|&(o, s)| o <= lo && hi <= o.saturating_add(s.max(0) as u64))
 }
 
 /// Point the translator at `overlay`. Through the shared handle: taking the

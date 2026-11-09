@@ -458,6 +458,8 @@ pub struct Funcdata {
     /// (kuna pushan) Register ranges every external call of this devirtualized
     /// function kills, over and above the prototype model's own effect list.
     kuna_call_kills: Vec<(uintb, int4)>,
+    /// (kuna pushan) Register ranges every external call preserves.
+    kuna_call_preserves: Vec<(uintb, int4)>,
     /// The numbering the naming pass handed out, by instance identity; see
     /// `kuna_stablenames::snapshot`.
     kuna_name_snapshot: Vec<(String, crate::kuna_stablenames::Keys)>,
@@ -844,6 +846,7 @@ impl Funcdata {
             kuna_default_name_end: 1,
             kuna_record_names: false,
             kuna_call_kills: Vec::new(),
+            kuna_call_preserves: Vec::new(),
             kuna_name_snapshot: Vec::new(),
             kuna_directive_targets: std::collections::BTreeMap::new(),
             kuna_library_aliases: Vec::new(),
@@ -1129,6 +1132,12 @@ impl Funcdata {
     }
     pub fn kuna_set_call_kills(&mut self, kills: Vec<(uintb, int4)>) {
         self.kuna_call_kills = kills;
+    }
+    pub fn kuna_call_preserves(&self) -> &[(uintb, int4)] {
+        &self.kuna_call_preserves
+    }
+    pub fn kuna_set_call_preserves(&mut self, keep: Vec<(uintb, int4)>) {
+        self.kuna_call_preserves = keep;
     }
 
     /// The numbering the naming pass recorded (empty unless asked to).

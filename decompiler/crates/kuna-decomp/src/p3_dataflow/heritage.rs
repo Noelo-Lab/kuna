@@ -1861,6 +1861,11 @@ impl Heritage {
                 effecttype = effect_type::KILLEDBYCALL;
             }
             if effecttype == effect_type::UNKNOWN_EFFECT
+                && crate::p2_lift::kuna_pushan::call_preserves(fd, addr, size)
+            {
+                effecttype = effect_type::UNAFFECTED;
+            }
+            if effecttype == effect_type::UNKNOWN_EFFECT
                 && ((super::kuna_leafmemory::preserves(fd, fc, addr, size)
                         && !self.protostack_is_aliased(fd, &spc, addr.get_offset(), 1)
                         && !self.protostack_is_aliased(fd, &spc,

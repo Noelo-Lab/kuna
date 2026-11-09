@@ -55,6 +55,8 @@ pub struct EmitConfig {
     pub eliminate_dead: bool,
     /// User-op indices with no effect beyond their outputs (rdtsc, pause, fences).
     pub pure_userops: Vec<u64>,
+    /// The LOCK/UNLOCK markers of a locked instruction.
+    pub lock_userops: Vec<u64>,
     /// Register-space offset where the emitter's boolean witness slots start.
     pub slot_base: u64,
 }
@@ -73,11 +75,19 @@ pub struct EmitStats {
     pub remat_conditions: usize,
     /// Argument and return registers rewritten as undefined at a call or return.
     pub undefined: usize,
+    /// Loads and stores of the interpreter's own memory turned into register copies.
+    pub privatized: usize,
+    /// The register range standing for the interpreter's memory, which calls preserve.
+    pub private_regs: Option<(u64, u32)>,
 }
 
 /// Register-space offset, past the witness slots, of the placeholder registers
 /// that stand for "never defined by the program".
 pub const UNDEF_BASE: u64 = 0x10000;
+
+/// Register-space offset, past the witness slots, of the registers standing
+/// for the interpreter's own memory.
+const PRIVATE_BASE: u64 = 0x1000;
 
 /// The placeholder register standing in for an undefined `reg`.
 pub fn undef_register(conf: &EmitConfig, reg: u64) -> u64 {
@@ -275,7 +285,7 @@ fn mark_dead(
             for op in insn {
                 for v in op.out.iter().chain(op.ins.iter()) {
                     if let Some((o, s)) = reg_vn(v) {
-                        if o < UNDEF_BASE {
+                        if o < conf.slot_base + UNDEF_BASE {
                             extent = extent.max(o + s as u64);
                         }
                     }
@@ -286,7 +296,7 @@ fn mark_dead(
     for (o, s) in conf.live_at_exit.iter().chain(conf.call_args.iter()) {
         extent = extent.max(o + *s as u64);
     }
-    let bytes = (extent as usize).min(0x10000).max(64);
+    let bytes = (extent as usize).min((conf.slot_base + UNDEF_BASE) as usize).max(64);
     let n = cfg.nodes.len();
     let set_of = |regs: &[(u64, u8)]| {
         let mut s = RegSet::new(bytes);
@@ -518,6 +528,10 @@ struct Emitter<'a> {
     witnessed: BTreeSet<ExprId>,
     /// The scratch holding the rematerialized address of the access being emitted.
     last_addr_scratch: Option<VarnodeData>,
+    /// Byte address of the interpreter's own memory -> its register offset.
+    private: BTreeMap<u64, u64>,
+    /// The distinct private accesses, loaded into their registers at entry.
+    private_accesses: BTreeSet<(u64, u32)>,
 }
 
 /// How many times the emitted path executes op `i` of `insn`.
@@ -547,17 +561,17 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
         negated: BTreeMap::new(),
         witnessed: BTreeSet::new(),
         last_addr_scratch: None,
+        private: BTreeMap::new(),
+        private_accesses: BTreeSet::new(),
     };
     em.assign_slots();
+    em.plan_private();
     let mut overlay = PcodeOverlay::new(conf.ram.get_index());
+    let mut entry_ops = em.private_entry_loads();
+    entry_ops.push(em.branch_op(syn_addr(conf, cfg.entry)));
     overlay.insns.insert(
         entry_addr,
-        OverlayInsn {
-            ops: vec![em.branch_op(syn_addr(conf, cfg.entry))],
-            length: 1,
-            mnemonic: "VM".into(),
-            body: format!("entry -> node {}", cfg.entry),
-        },
+        OverlayInsn { ops: entry_ops, length: 1, mnemonic: "VM".into(), body: format!("entry -> node {}", cfg.entry) },
     );
     let mut code: Vec<Vec<Vec<OverlayOp>>> = Vec::with_capacity(cfg.nodes.len());
     let mut refs: Vec<Vec<Vec<Option<MemRef>>>> = Vec::with_capacity(cfg.nodes.len());
@@ -614,12 +628,26 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
             continue;
         }
         for (k, insn) in node.insns.iter().enumerate() {
-            let mut ops = if dead[idx][k] {
+            let mut shared = false;
+            let mut ops: Vec<OverlayOp> = if dead[idx][k] {
                 vec![em.nop_op()]
             } else {
                 let all = std::mem::take(&mut code[idx][k]);
-                all.into_iter().enumerate().filter(|(x, _)| !dead_ops[idx][k][*x]).map(|(_, op)| op).collect()
+                let r = &refs[idx][k];
+                all.into_iter()
+                    .enumerate()
+                    .filter(|(x, _)| !dead_ops[idx][k][*x])
+                    .inspect(|(x, op)| {
+                        shared |= matches!(op.opc, CPUI_LOAD | CPUI_STORE) && !matches!(r.get(*x), Some(Some(MemRef::Stack { .. })));
+                    })
+                    .map(|(_, op)| op)
+                    .collect()
             };
+            // A lock prefix guards nothing once the instruction's shared
+            // memory access was folded, privatized or found dead.
+            if !shared {
+                ops.retain(|op| !(op.opc == CPUI_CALLOTHER && conf.lock_userops.contains(&op.ins[0].offset)));
+            }
             if ops.is_empty() {
                 ops.push(em.nop_op());
             }
@@ -673,6 +701,96 @@ impl<'a> Emitter<'a> {
             let na = self.arena.mk_bin(CPUI_INT_XOR, *a, one, 1);
             self.negated.insert(na, *a);
         }
+    }
+
+    /// The interpreter's own memory: concrete addresses inside the
+    /// protector's code sections (Themida keeps its VM context there).  Every
+    /// emitted access to such a byte becomes a copy through a register past
+    /// the witness slots, so the decompiler sees the context as locals it can
+    /// forward and kill, not as global stores.  A byte some emitted op reaches
+    /// as real memory (a forked or repeated access) stays memory, along with
+    /// every access overlapping it, so the two views never mix.
+    fn plan_private(&mut self) {
+        let mut ok: BTreeSet<(u64, u32)> = BTreeSet::new();
+        let mut blocked: BTreeSet<u64> = BTreeSet::new();
+        for node in &self.cfg.nodes {
+            for (k, insn) in node.insns.iter().enumerate() {
+                let Some(tr) = node.traces.get(k) else { continue };
+                for a in &tr.accesses {
+                    let Some(addr) = a.addr else { continue };
+                    let n = a.size as u64;
+                    let foreign = (0..n).filter(|b| self.target.is_foreign_code(addr.wrapping_add(*b))).count() as u64;
+                    if foreign == 0 {
+                        continue;
+                    }
+                    let linear = !tr.forked && !tr.path.is_empty();
+                    if foreign == n && linear && order_count(Some(tr), insn, a.op_index) == 1 {
+                        ok.insert((addr, a.size as u32));
+                    } else {
+                        blocked.extend((0..n).map(|b| addr.wrapping_add(b)));
+                    }
+                }
+            }
+        }
+        loop {
+            let before = blocked.len();
+            ok.retain(|&(a, s)| {
+                if (0..s as u64).any(|b| blocked.contains(&a.wrapping_add(b))) {
+                    blocked.extend((0..s as u64).map(|b| a.wrapping_add(b)));
+                    false
+                } else {
+                    true
+                }
+            });
+            if blocked.len() == before {
+                break;
+            }
+        }
+        let bytes: BTreeSet<u64> = ok.iter().flat_map(|&(a, s)| (0..s as u64).map(move |b| a.wrapping_add(b))).collect();
+        let base = self.private_base();
+        if bytes.is_empty() || base + bytes.len() as u64 > self.conf.slot_base + UNDEF_BASE {
+            return;
+        }
+        for (rank, b) in bytes.iter().enumerate() {
+            self.private.insert(*b, base + rank as u64);
+        }
+        self.private_accesses = ok;
+        self.stats.private_regs = Some((base, bytes.len() as u32));
+    }
+
+    fn private_base(&self) -> u64 {
+        self.conf.slot_base + PRIVATE_BASE.max((8 * self.slots.len() as u64 + 0xff) & !0xff)
+    }
+
+    /// The register standing for the private access of op `i`, if it is one.
+    fn private_vn(&self, tr: &super::kuna_pushanemu::InsnTrace, insn: &LiftedInsn, i: usize) -> Option<VarnodeData> {
+        if self.private.is_empty() || tr.forked || tr.path.is_empty() || order_count(Some(tr), insn, i) != 1 {
+            return None;
+        }
+        let acc = tr.accesses.iter().find(|a| a.op_index == i)?;
+        let addr = acc.addr?;
+        if !self.private_accesses.contains(&(addr, acc.size as u32)) {
+            return None;
+        }
+        let off = *self.private.get(&addr)?;
+        Some(self.vn(&self.conf.register, off, acc.size as u32))
+    }
+
+    /// At entry each private register takes its memory's value, for a path
+    /// that reads a cell before the interpreter writes it.
+    fn private_entry_loads(&self) -> Vec<OverlayOp> {
+        let ptr = self.conf.ptr_size as u32;
+        self.private_accesses
+            .iter()
+            .filter_map(|&(a, s)| {
+                let off = *self.private.get(&a)?;
+                Some(OverlayOp {
+                    opc: CPUI_LOAD,
+                    out: Some(self.vn(&self.conf.register, off, s)),
+                    ins: vec![self.cst(self.conf.ram.get_index() as u64, ptr), self.cst(a, ptr)],
+                })
+            })
+            .collect()
     }
 
     fn slot_vn(&self, slot: u64) -> VarnodeData {
@@ -804,6 +922,15 @@ impl<'a> Emitter<'a> {
                 // A folded load no longer has an address operand.
                 if rewritten.opc == op.opc && rewritten.ins.len() > 1 {
                     rewritten.ins[1] = scratch;
+                }
+            }
+            if matches!(rewritten.opc, CPUI_LOAD | CPUI_STORE) {
+                if let Some(p) = trace.and_then(|t| self.private_vn(t, insn, i)) {
+                    rewritten = match rewritten.opc {
+                        CPUI_LOAD => OverlayOp { opc: CPUI_COPY, out: rewritten.out.take(), ins: vec![p] },
+                        _ => OverlayOp { opc: CPUI_COPY, out: Some(p), ins: vec![rewritten.ins[2].clone()] },
+                    };
+                    self.stats.privatized += 1;
                 }
             }
             if matches!(rewritten.opc, CPUI_LOAD | CPUI_STORE) {
