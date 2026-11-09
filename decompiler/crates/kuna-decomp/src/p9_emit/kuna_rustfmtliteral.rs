@@ -14,7 +14,7 @@ pub(crate) fn recover(
     arch: &Architecture,
     op: OpId,
 ) -> Option<(&'static str, String)> {
-    if !arch.rust_fmt_literal
+    if !arch.rust_fmt.recovers()
         || arch.source_lang() != crate::kuna_sourcelang::SourceLang::Rust
         || !matches!(arch.rustc_stable_version, Some((1, 93, 0 | 1)))
     {

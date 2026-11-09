@@ -8,12 +8,11 @@
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_args_x86_64</com>
   <com>read symbols</com>
   <com>option setlanguage rust-language</com>
-  <com>option rustfmtflags off</com>
-  <com>option rustfmtargs off</com>
+  <com>option rustfmt off</com>
   <com>load function decimal_lf</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option rustfmtargs on</com>
+  <com>option rustfmt on</com>
   <com>print C</com>
   <com>load function reorder</com>
   <com>decompile</com>
@@ -28,7 +27,8 @@
   <com>decompile</com>
   <com>print C</com>
 </script>
-<stringmatch name="primitive print off and unsupported descriptors keep runtime sink" min="3" max="3">std::io::stdio::_print\(</stringmatch>
+<stringmatch name="primitive print off and clobbered descriptors keep runtime sink" min="2" max="2">std::io::stdio::_print\(</stringmatch>
+<stringmatch name="exponent trait recovers with its static specification" min="1" max="1">\bprint!\("\{:e\}".*\*const u64</stringmatch>
 <stringmatch name="primitive decimal recovers newline" min="1" max="1">\bprintln!\("\{\}"</stringmatch>
 <stringmatch name="primitive repeated indices preserve order" min="1" max="1">\bprintln!\("\{0\} \{1\} \{0\}"</stringmatch>
 <stringmatch name="primitive signed stderr retains signed type" min="1" max="1">eprintln!\("\{\}".*\*const i64</stringmatch>

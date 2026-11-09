@@ -815,14 +815,11 @@ pub fn universal_sched(
             act!(crate::kuna_calltargettype::ActionCallTargetType::boxed("typerecovery")),
             act!(ActionSetCasts::boxed("casts")),
             act!(ActionFinalStructure::boxed("blockrecovery")),
-            // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`,
-            // default-OFF).  Runs after the tree is final + goto targets labelled.
+            // (kuna) angr SAILR return-tail goto-reduction (option `gotoreduce`):
+            // call-free return tails at `return`, then return tails with a call
+            // (`free(p); return;`) at `on`.  Runs after the tree is final + goto
+            // targets labelled.
             act!(crate::p8_structure::kuna_gotoreduce::ActionGotoReduce::boxed("blockrecovery")),
-            // (kuna) angr SAILR `ReturnDuplicatorLow` return-tail-with-calls
-            // duplication (option `taildup`, default-OFF).  Sibling of gotoreduce
-            // for the return tail that *contains a call* (e.g. `free(p); return;`),
-            // which gotoreduce rejects and crossjumprevert (non-return) declines.
-            // Runs right after gotoreduce — same return-tail family.
             act!(crate::p8_structure::kuna_taildup::ActionTailDup::boxed("blockrecovery")),
             // (kuna) angr `IfElseFlattener`: after the tree is final + goto
             // targets labelled (and after gotoreduce), drop the `else` arm of a

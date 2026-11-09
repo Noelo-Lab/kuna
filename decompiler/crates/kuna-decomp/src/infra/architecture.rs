@@ -970,10 +970,10 @@ pub struct Architecture {
     /// (kuna) `condstmts` statement cap for folded condition operands; negative =
     /// off.  See [`crate::p8_structure::kuna_condstmts`].
     pub cond_stmts: int4,
-    /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
-    /// `goto` source so the cross-edge becomes a structured early return
-    /// (`reduce_return_gotos`).
-    pub reduce_return_gotos: bool,
+    /// (kuna `gotoreduce`) angr SAILR goto-reduction: which small return tails are
+    /// duplicated into a `goto` source so the cross-edge becomes a structured early
+    /// return (call-free tails at `return`, also tails with a call at `on`).
+    pub goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode,
     /// (kuna) angr `IfElseFlattener`: drop the `else` arm of a 3-component `if`
     /// whose true-clause is statement-terminating, re-parenting the else body as
     /// the `if`'s follower (`flatten_ifelse`).
@@ -982,18 +982,11 @@ pub struct Architecture {
     /// duplicating a small *non-return* cross-jump tail into the `goto` source so
     /// both paths fall straight through (`revert_cross_jumps`, opt-in default-off).
     pub revert_cross_jumps: bool,
-    /// (kuna) angr SAILR `ReturnDuplicatorLow`: duplicate a small **return tail that
-    /// contains a call** (e.g. `free(p); return;`) into a `goto` source so the
-    /// cross-edge becomes a structured early return.  Fills the gap between
-    /// `gotoreduce` (return tail, no calls) and `crossjumprevert` (non-return tail,
-    /// calls allowed) — angr's `max_calls_in_regions` budget (`dup_return_call_tails`,
-    /// opt-in default-off).
-    pub dup_return_call_tails: bool,
     /// (kuna) angr structurer ITE region-dedup: merge a duplicated `if/else` tail
     /// (a maximal common prefix/suffix of statement-equivalent leaves shared by both
     /// arms) by hoisting the shared blocks out of the `if` — emitting one copy
     /// instead of two.  The inverse of the SAILR duplication passes
-    /// (`gotoreduce`/`crossjumprevert`/`taildup`) (`dedup_ite_tail`, opt-in
+    /// (`gotoreduce`/`crossjumprevert`) (`dedup_ite_tail`, opt-in
     /// default-off).
     pub dedup_ite_tail: bool,
     /// (kuna) angr `ITERegionConverter`: rewrite a two-arm assignment *diamond*
@@ -1081,20 +1074,8 @@ pub struct Architecture {
     pub strip_security_check: bool,
     /// Fold Go compiler bounds/division panic arms (option gobounds).
     pub go_bounds: bool,
-    /// Render verified Rust literal formatting calls as print macros.
-    pub rust_fmt_literal: bool,
-    /// Render verified primitive Rust formatting arguments as print macros.
-    pub rust_fmt_args: bool,
-    /// Extend primitive Rust print recovery to static integer format specifications.
-    pub rust_fmt_flags: bool,
-    /// Render verified Rust format_inner initialization as a String-producing macro.
-    pub rust_fmt_result: bool,
-    /// Render verified Rust panic formatting as a panic macro.
-    pub rust_fmt_panic: bool,
-    pub rust_fmt_pieces: bool,
-    pub rust_fmt_str: bool,
-    pub rust_fmt_write: bool,
-    pub rust_fmt_io: bool,
+    /// Which verified Rust formatting calls render as macros (option rustfmt).
+    pub rust_fmt: crate::kuna_rustfmt::RustFmtMode,
     /// (kuna) Flip negated-guard if/else branches for linearity: when an
     /// `if (x == 0) {A} else {B}` (equality-to-zero / negated guard) can be flipped
     /// in place, rewrite it to the positive `if (x) {B} else {A}` so the common
@@ -2336,10 +2317,9 @@ impl Architecture {
             outline_spec: String::new(),
             cond_fold: 0,
             cond_stmts: -1,
-            reduce_return_gotos: false,
+            goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode::Off,
             flatten_ifelse: false,
             revert_cross_jumps: false,
-            dup_return_call_tails: false,
             dedup_ite_tail: false,
             iteregion: false,
             iteexpr: false,
@@ -2355,15 +2335,7 @@ impl Architecture {
             strip_stack_guard: false,
             strip_msvc_stack_guard: true, // (kuna) option msvcstackguard; shape-gated on the MSVC /GS cookie
             go_bounds: true,
-            rust_fmt_literal: true,
-            rust_fmt_args: true,
-            rust_fmt_flags: true,
-            rust_fmt_result: true,
-            rust_fmt_panic: true,
-            rust_fmt_pieces: true,
-            rust_fmt_str: true,
-            rust_fmt_write: false,
-            rust_fmt_io: false,
+            rust_fmt: crate::kuna_rustfmt::RustFmtMode::On,
             strip_security_check: false,
             branch_flip: false,
             name_style_angr: false,
@@ -2630,10 +2602,9 @@ impl Architecture {
         self.outline_spec = String::new(); // (kuna) default-OFF opt-in (excise a supplied single-entry region into a synthesized pseudofunction call; destructive, and inert with no region supplied)
         self.cond_stmts = crate::p8_structure::kuna_condstmts::DEFAULT_CAP; // (kuna) condstmts default-on: a folded condition operand prints at most 3 statements before its test (0/675 ablation)
         self.cond_fold = 0; // (kuna) default-OFF opt-in (angr Phoenix MultiStatementExpression short-circuit relaxation: fold `A || B` across a sibling carrying a bounded prefix, rendered as a comma expression; OFF is byte-identical)
-        self.reduce_return_gotos = true; // (kuna) DIV-13 default-on (angr SAILR goto-reduction; 0/675 ablation)
+        self.goto_reduce = crate::p8_structure::kuna_gotoreduce::GotoReduceMode::On; // (kuna) gotoreduce default `on`: call-free return tails and return tails with a call (angr SAILR ReturnDuplicator/ReturnDuplicatorLow; 0/675 ablation)
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
-        self.dup_return_call_tails = true; // (kuna) DIV-13 default-on (angr SAILR ReturnDuplicatorLow return-call-tail dup; 0/675 ablation)
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
         self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
@@ -2645,15 +2616,7 @@ impl Architecture {
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = true; // (kuna) DIV-14 default-on (angr call-return folding; per-test opt-out on the datatests it changes)
         self.go_bounds = true;
-        self.rust_fmt_literal = true;
-        self.rust_fmt_args = true;
-        self.rust_fmt_flags = true;
-        self.rust_fmt_result = true;
-        self.rust_fmt_panic = true;
-        self.rust_fmt_pieces = true;
-        self.rust_fmt_str = true;
-        self.rust_fmt_write = false;
-        self.rust_fmt_io = false;
+        self.rust_fmt = crate::kuna_rustfmt::RustFmtMode::On;
         self.strip_security_check = true; // (kuna) DIV-82 default-on: REMOVES CODE (strips rustc's bounds/slice/divide-by-zero panic branches, the SEFCOM Oxidizer SecurityCheckRemover port). Name-triggered on seven Rust-only `core::panicking`/`core::slice::index`/`core::str` helpers, so it is structurally inert on a C binary: 0/675 datatests and 0 changed lines over the C fixtures
         self.strip_stack_guard = true; // (kuna) DIV-14 default-on: REMOVES CODE (strips the -fstack-protector canary epilogue). Per-test opt-out (`option stackguard off`) on the 2 Partial-splitting datatests keeps the corpus byte-identical
         self.branch_flip = true; // (kuna) DIV-13 default-on (angr negated-guard branch flipping; per-test opt-out on the datatests it changes)
@@ -3430,10 +3393,9 @@ impl Architecture {
         ctx.switch_selector_guard = self.switch_selector_guard; // switchselector
         ctx.cond_fold = self.cond_fold; // condfold
         ctx.cond_stmts = self.cond_stmts; // condstmts
-        ctx.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
+        ctx.goto_reduce = self.goto_reduce; // gotoreduce
         ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
         ctx.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
-        ctx.dup_return_call_tails = self.dup_return_call_tails; // taildup
         ctx.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
         ctx.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
         ctx.iteexpr = self.iteexpr; // iteexpr (computed-arm ?: extension, runtime-choice)
