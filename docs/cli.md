@@ -177,7 +177,12 @@ process: each case decompiles its class files with its pinned options and must p
 Vineflower's exact text. `--jvm-dir DIR` runs the manifest in another directory. Its
 results are recorded under `jvm:` keys, its baseline is the list of matching case ids in
 `tests/jvm/baseline.txt` (re-recorded with `--save-baseline`), and it needs neither the
-SLEIGH specs nor a JDK. `--all` stays unit tests plus datatests.
+SLEIGH specs nor a JDK. `--name N` keeps the cases whose id contains `N`, `--jobs N|auto`
+sets how many run at once (default: the core count, at most 16), and the datatest flags
+(`--all`, `--unittests`, `--datatests`, `--datatests-dir`, `--binary`, `--sleighpath`)
+are refused next to it (exit `2`). The summary line reads
+`jvm: 530/530 cases matched (0 mismatch, 0 error, 0 unsupported) in 0.5 s`, followed by
+`PARITY OK` under `--baseline`. `--all` stays unit tests plus datatests.
 
 `kuna test` parses the harness's two streams separately (unit results on **stderr**,
 datatest results on **stdout**) and exits nonzero on any failure or baseline regression.
@@ -4176,20 +4181,21 @@ a JVM input when:
 |---|---|---|
 | class file | `CA FE BA BE` and a class-file major version (45-255) at bytes 6-7 | decompiled |
 | jar, war, ear, zip | a zip local or empty-archive header (`PK\x03\x04`, `PK\x05\x06`), or a `.jar`/`.war`/`.ear`/`.zip` name with a zip end record in its last KiB (an executable jar behind a launcher script) | decompiled; classes are placed by their class name whatever the entry prefix (`BOOT-INF/classes/`, `WEB-INF/classes/`), multi-release variants under `META-INF/versions/` are skipped, nested jars are not opened |
-| directory | any directory (no native command takes one) | every class file and archive under it; `no .class files under DIR` (exit `1`) when there is none |
-| `.jmod`, jimage | `JM 01 00`, `DA DA FE CA` | `error: PATH: jmod inputs are not supported yet` (`jimage` likewise), exit `1` |
-| DEX, APK | `dex\n`, or a zip without `.class` entries | `error: PATH: no JVM classes (DEX bytecode is not JVM bytecode)`, exit `1` |
+| directory | any directory (no native command takes one) | every class file, jar and zip under it; `error: no .class files under DIR` (exit `1`) when there is none |
+| `.jmod`, jimage | `JM 01 00`, `DA DA FE CA` | `error: PATH: jmod inputs are not supported yet (kuna docs jvm)` (`jimage` likewise), exit `1` |
+| DEX, APK | `dex\n`, or a zip without `.class` entries | `error: PATH: no JVM classes (DEX bytecode is not JVM bytecode) (kuna docs jvm)`, exit `1` |
 | fat Mach-O | `CA FE BA BE` whose bytes 6-7 (the low half of its architecture count) are below 45, or `CA FE BA BF` | native, as before (`--slice` below) |
 
-`--raw-image` always keeps an input native. The commands that take no input (`test`,
-`catalog`, `docs`, `modes`, `specs`, `install-skill`) are not affected.
+`--raw-image` (and the internal `--jobs-worker`) always keeps an input native. The
+commands that take no input (`test`, `catalog`, `docs`, `modes`, `specs`,
+`install-skill`) are not affected.
 
 ### What each command does with one
 
 | Command | On a JVM input |
 |---|---|
 | `decompile` | a class: its whole compilation unit (package, imports, the class and everything nested in it); a nested class: its part of that unit; a method: just the method, with the common indentation removed. A single `.class` input may omit the target. |
-| `decompile-all` | every class, or the `--functions` selection. Text: one compilation unit per root class, each under a `// Class: com.ex.Main  (com/ex/Main.java)` header. `--json`: one record per method (below). Triage flags as on native inputs: `--functions`, `--filter`, `--min-size`/`--max-size` (bytecode length), `--sort addr\|size\|name` (`addr` is class-file order), `--limit`; plus `--jobs`, `--omit line_mappings,classes` |
+| `decompile-all` | every class, or the `--functions` selection. Text: one compilation unit per root class, each under a `// Class: com.ex.Main  (com/ex/Main.java)` header. `--json`: one record per method (below). Triage flags as on native inputs: `--functions`, `--filter` (a regex over `com.ex.Main.check(Ljava/lang/String;)Z`), `--min-size`/`--max-size` (bytecode length), `--sort addr\|size\|name` (`addr` is class-file order, `size` largest first), `--limit` (which skips synthetic and bridge methods); plus `--jobs`, `--omit line_mappings,classes`. A method selection or a triage flag prints each method under a `// Method: com.ex.Main.check(Ljava/lang/String;)Z  (com/ex/Main.java:25)` header instead (a class named in `--functions` still prints whole) |
 | `decompile-project` | a javac-ready source tree: `DIR/<package path>/<Class>.java` for each root class, nested classes inside their outer class's file, nothing else in the folder; default `DIR` is `<input>.kuna/` next to the input |
 | `functions` | the class and method inventory, read from the class files without decompiling |
 | `strings`, `xrefs`, `disassemble`, `read`, `decompile-graph`, `crypto` | not available yet: an error naming the commands that are, exit `1` |
@@ -4197,12 +4203,18 @@ a JVM input when:
 
 ```
 $ kuna functions app.jar
-com.ex.Main.<init>()V
-com.ex.Main.toString()Ljava/lang/String;
-com.ex.Main.check(Ljava/lang/String;)Z
+com.ex.Main.<init>(I)V
 com.ex.Main.main([Ljava/lang/String;)V
+com.ex.Main.check(Ljava/lang/String;)Z
+com.ex.Main.add(II)I
+com.ex.Main.add(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+com.ex.Main$1.<init>()V
+com.ex.Main$1.run()V
 com.ex.Main$Checker.<init>()V
 com.ex.Main$Checker.verify(Ljava/lang/String;)Z
+com.ex.util.Helper.<init>()V
+com.ex.util.Helper.twice(I)I
+com.ex.util.Helper.loop(I)I
 $ kuna decompile app.jar com.ex.Main.check
 public static boolean check(String key) {
    return key.length() == 16 && Main.Checker.verify(key);
@@ -4210,13 +4222,20 @@ public static boolean check(String key) {
 $ kuna strings app.jar ; echo $?
 error: app.jar: JVM input (jar) is decompiled by the non-native JVM engine, which has no string inventory yet; JVM support covers decompile, decompile-all, decompile-project and functions (kuna docs jvm)
 1
+$ kuna decompile-project app.jar -o out
+wrote out: 2 .java files (1380 bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 failed
 ```
+
+(`app.jar` is `tests/fixtures/jvm/app.jar`, built from `tests/fixtures/jvm/src/`.)
 
 `decompile-project` prints one summary line,
 `wrote DIR: N .java files (B bytes); classes: K ok, F failed; methods: M ok, G failed`,
-and exits `0` when at least one class was written. A class or method the engine could not
+and exits `0` when at least one class was decompiled. A method the engine could not
 decompile is still written, with a `// $VF: Couldn't be decompiled` comment in place of
-its body (`docs/jvm.md`), and counts as failed.
+its body (`docs/jvm.md`), and counts as a failed method. A class the engine produced no
+text for gets a one-line stub at the path its name implies,
+`// kuna: could not decompile com.ex.Broken: <reason>`, and counts as a failed class,
+with a `warning:` line on stderr.
 
 ### Naming a class or a method
 
@@ -4228,10 +4247,31 @@ its body (`docs/jvm.md`), and counts as failed.
 | `com.ex.Main.check`, `com.ex.Main#check` | every method `check` of the class, each overload printed, with a note on stderr when there are several |
 | `com.ex.Main.check(Ljava/lang/String;)Z` | one overload, by its JVM descriptor |
 | `com.ex.Main.<init>`, `com.ex.Main.<clinit>` | constructors and the static initializer, literally |
+| `check` | on a single `.class` input, a method of that class |
 
-An exact class name wins; otherwise the name is split at its last dot into class and
-method. A name that matches nothing is an error that suggests the nearest class or method
-name.
+An exact class name wins; otherwise the name is split at its last `#` or dot into class and
+method. A simple name two classes share is an error that lists them. A name that matches
+nothing is an error (exit `1`) that suggests the nearest class or method name, or points at
+`kuna functions`:
+
+```
+$ kuna decompile app.jar com.ex.Main.chek
+error: no method "com.ex.Main.chek" in com.ex.Main; did you mean "com.ex.Main.check"?
+$ kuna decompile app.jar com.ex.Main.add
+public int add(int a, int b) {
+   return this.base + a + b;
+}
+
+public String add(String a, String b) {
+   return a + b;
+}
+```
+
+The second prints `note: com.ex.Main.add has 2 overloads, printed in source order; add a
+descriptor such as "com.ex.Main.add(II)I" to pick one` on stderr. A method the engine does
+not write (a default constructor, a synthetic accessor or bridge it folds into its users) is
+not in the source, and naming it is an error (exit `1`) that says which `jvm_*` option
+prints it.
 
 ### The JSON documents
 
@@ -4239,25 +4279,37 @@ name.
 documents* under `decompile-all`) with these differences: `engine: "jvm"` after `binary`;
 `language: "java"`; `runtime` after `error`, the JDK used for context (`{path, version}`,
 or `null` for none); a `classes` array before `assertions`; and `omitted` always lists
-`variables`, `types` and `stack_objects`, which the JVM engine does not produce. Each
-method record keeps the native keys, with `address`, `address_hex` and `object_location`
+`variables`, `types` and `stack_objects`, which the JVM engine does not produce. `total`
+(every method of the input) follows `count` only when `--functions` names a method or a
+triage flag narrows the selection. `classes` holds one record per class printed whole,
+`{name, path, size, code, error}`, where `size` is the bytes of the class files the unit
+is written from; it is empty for a method selection. A method the engine does not write (a
+default constructor javac added, a synthetic or bridge method it folds into its users) has
+no record, so `count` can be below what `functions` lists. Each method record keeps the
+native keys, with `address`, `address_hex` and `object_location`
 `null`, `aliases` empty, `size` the method's bytecode length, `unstructured_gotos` `0`,
 and `line_mappings` addresses that are **bytecode offsets** within the method; and adds
 `class`, `method`, `descriptor`, `access` (the modifier words), `path` (the compilation
 unit) and `line` (where the method starts in that unit).
 
 ```json
+$ kuna decompile app.jar com.ex.Main.check --json    # re-wrapped; the real output is indented
 {"binary": "app.jar", "engine": "jvm", "language": "java",
  "omitted": ["variables", "types", "stack_objects"], "count": 1, "error": null,
  "runtime": {"path": "/usr/lib/jvm/java-21-openjdk-amd64", "version": "21.0.12.1"},
  "functions": [{"name": "com.ex.Main.check", "address": null, "address_hex": null,
    "aliases": [], "object_location": null, "size": 22,
    "code": "public static boolean check(String key) {\n   return key.length() == 16 && Main.Checker.verify(key);\n}",
-   "error": null, "unstructured_gotos": 0, "line_mappings": [...],
+   "error": null, "unstructured_gotos": 0,
+   "line_mappings": [{"line_number": 2, "addresses": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 21]}],
    "class": "com.ex.Main", "method": "check", "descriptor": "(Ljava/lang/String;)Z",
-   "access": ["public", "static"], "path": "com/ex/Main.java", "line": 14}],
- "classes": [...], "assertions": []}
+   "access": ["public", "static"], "path": "com/ex/Main.java", "line": 25}],
+ "classes": [], "assertions": []}
 ```
+
+(`line` is 25 because the JDK lets the engine add an `@Override` to the anonymous
+`Runnable` above it; with `--option jvm_include_runtime off` it is 24 and `runtime` is
+`null`.)
 
 `functions --json` is
 `{binary, engine, count, total, error, functions: [{name, address, address_hex, aliases,
@@ -4284,7 +4336,8 @@ is refused with what sets it instead. All of these exit `2` before anything is d
 inform types, overrides and varargs but are not decompiled. The JDK class library is
 context too: `--option jvm_include_runtime on` (the default) uses `JAVA_HOME`, then the
 `java` on `PATH`, then the usual install directories; a path names a JDK home and `off`
-uses none. When no JDK is found, one note on stderr says so and decompilation continues;
+uses none; a path that holds no JDK is an error (exit `1`). When no JDK is found, one note
+on stderr says so and decompilation continues;
 the output can then lack `@Override` on methods that override JDK methods and some generic
 arguments (`docs/jvm.md`). Output depends on the JDK used, so pin one with a path when it
 must be reproducible.
@@ -4294,7 +4347,8 @@ must be reproducible.
 `--jobs N|auto` (default `auto`) runs N engine instances on N threads of one process. The
 output is byte-identical at every N. `auto` is the core count, at most 16, reduced to what
 the available memory fits: each instance holds the whole input's class universe, roughly
-128 MiB plus 64 bytes per byte of class files (`docs/jvm.md`).
+128 MiB (96 MiB more with a JDK) plus 64 bytes per byte of input and library class files
+(`docs/jvm.md`).
 
 `--max-fn-seconds N` (default 120, `0` disables) bounds each method: the engine polls a
 deadline inside its loops, and a method past it is written as `// $VF: Couldn't be
@@ -4305,10 +4359,18 @@ to the whole process, since the instances share it.
 
 ### Flags refused on JVM inputs
 
-The flags that describe native images exit `2` on a JVM input: `--isa`, `--slice`,
-`--target`, `--base`, `--entry`, `--addr`, `--define-function`, `--assert` and its
-variants, `--kassert`, `--raw`, `--regions`, `--sleighpath`, `--decomp-dbg`, `--summary`,
-`--reachable-from`, `--stream`, `--progress` and the `--jobs-*` worker flags.
+The flags that describe native images exit `2` on a JVM input, naming the flag:
+`--isa`, `--slice`, `--target`, `--base`, `--entry`, `--addr`, `--define-function`,
+`--assert`, `--assert-strict`, `--kassert`, `--raw`, `--regions`, `--sleighpath`,
+`--decomp-dbg`, `--engine`, `--timeout`, `--stream`, `--progress` and the `--jobs-*`
+tuning flags; `functions --summary` and `--reachable-from` likewise, since the JVM engine
+has no call graph yet. Any other flag a subcommand does not take is an `unknown option`,
+also exit `2`:
+
+```
+$ kuna decompile app.jar com.ex.Main --isa arm
+error: --isa is a native-engine flag; app.jar is a JVM input (jar), decompiled by the JVM engine (kuna docs jvm)
+```
 
 ### Exit codes
 

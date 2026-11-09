@@ -62,7 +62,7 @@ a `.class`, a jar (also war, ear, zip) or a directory wherever a binary goes:
 kuna functions app.jar --json                    # classes and methods; nothing is decompiled
 kuna decompile app.jar com.ex.Main               # one class, as its whole .java file
 kuna decompile app.jar com.ex.Main.check         # one method (all overloads, or add a descriptor)
-kuna decompile-project app.jar -o ./app.kuna     # DIR/com/ex/Main.java, one file per class
+kuna decompile-project app.jar -o ./app.kuna     # DIR/com/ex/Main.java, one file per top-level class
 kuna decompile-all app.jar --json --filter '^com\.ex\.'
 ```
 
@@ -73,12 +73,13 @@ Name classes as `com.ex.Main`, `com/ex/Main` or `com.ex.Main$Inner`, and methods
 A method kuna cannot decompile is written as `// $VF: Couldn't be decompiled` followed by
 its bytecode, so read that listing rather than retrying.
 
-Kuna reads the JDK's classes as context (`JAVA_HOME`, else `java` on `PATH`); without
-one it notes that on stderr and may omit `@Override` and some generic arguments. Extra
+Kuna reads the JDK's classes as context (`JAVA_HOME`, else `java` on `PATH`, else the usual
+install directories such as `/usr/lib/jvm`); without one it notes that on stderr and may omit `@Override` and some generic arguments. Extra
 dependency jars go in with `--lib other.jar`. Engine options are `jvm_*`: list them with
 `kuna catalog --engine jvm --json` and set them with `--option jvm_NAME VALUE`
 (Vineflower's own option names also work, e.g. `--option rsy off` to show synthetic
-members). Native options and `--mode` presets do not change Java output.
+members). Native options are refused on JVM inputs, and `--mode` presets do not change
+Java output.
 
 ## Navigate the export
 

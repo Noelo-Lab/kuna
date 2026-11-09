@@ -252,8 +252,9 @@ Vineflower decompiles with the JDK's classes as context, and so does kuna by def
 JDK is only read, never run: kuna needs a JDK home on disk, not a working `java`.
 
 **Discovery.** `--option jvm_include_runtime` takes `on` (the default; also `current` or
-`1`), a JDK home path, or `off`. With `on`, the first of these that holds a readable
-runtime is used: `JAVA_HOME`; the `java` on `PATH`, followed through symlinks to its home;
+`1`), a JDK home path (one that holds no JDK is an error), or `off` (also `0`). With `on`,
+the first of these that holds a readable runtime is used: `JAVA_HOME`; the `java` on
+`PATH`, followed through symlinks to its home;
 then the usual install directories (`/usr/lib/jvm`, `/usr/lib64/jvm`, `/usr/java`,
 `/opt/java`, `/Library/Java/JavaVirtualMachines`, `~/Library/Java/JavaVirtualMachines`,
 `~/.sdkman/candidates/java`), newest `JAVA_VERSION` first. A home is readable when it has
@@ -263,14 +264,13 @@ used (`runtime: {path, version}`); when none is found, one note on stderr says s
 run continues without one.
 
 **What changes without one.** Every class is still decompiled, but whatever needs a JDK
-class's members or hierarchy degrades. The same jar, with and without a JDK 21:
+class's members or hierarchy degrades. `kuna decompile tests/fixtures/jvm/app.jar
+com.ex.Main` with `--option jvm_include_runtime off`, then with a JDK 21:
 
 ```diff
--   private final List<String> names = new ArrayList();
-+   private final List<String> names = new ArrayList<>();
-
-+   @Override
-    public String toString() {
+       Runnable r = new Runnable() {
++         @Override
+          public void run() {
 ```
 
 Casts and generic arguments that depend on JDK signatures can also differ. Output
