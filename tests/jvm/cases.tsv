@@ -3145,6 +3145,27 @@ class	kuna-fixes/classes/pkg/TestCatchLoopBack$Source.class
 class	kuna-fixes/classes/pkg/TestCatchLoopBack$StateError.class
 expected	kuna-fixes/expected-compat/pkg/TestCatchLoopBack.java
 compare	TestCatchLoopBack.java
+case	kuna-fixes-compat/pkg/TestDefaultArgCompoundBranch	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch.class
+class	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch$make$1$Box.class
+class	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch$make$1.class
+expected	kuna-fixes/expected-compat/pkg/TestDefaultArgCompoundBranch.kt
+compare	TestDefaultArgCompoundBranch.kt	TestDefaultArgCompoundBranch.java
+case	kuna-fixes-compat/pkg/TestDefaultArgsSuperCall	Kuna Fixes, Vineflower compat
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$Overloaded.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$noDefault$1$Sub.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$noDefault$1.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$oneDefault$1$Sub.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$oneDefault$1.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$otherConstructor$1$Sub.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$otherConstructor$1.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$twoDefaults$1$Sub.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$twoDefaults$1.class
+expected	kuna-fixes/expected-compat/pkg/TestDefaultArgsSuperCall.kt
+compare	TestDefaultArgsSuperCall.kt	TestDefaultArgsSuperCall.java
 case	kuna-fixes-compat/pkg/TestIfDenestFallthrough	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected-compat/pkg/TestIfDenestFallthrough.java
@@ -3190,6 +3211,27 @@ class	kuna-fixes/classes/pkg/TestCatchLoopBack$Source.class
 class	kuna-fixes/classes/pkg/TestCatchLoopBack$StateError.class
 expected	kuna-fixes/expected/pkg/TestCatchLoopBack.java
 compare	TestCatchLoopBack.java
+case	kuna-fixes/pkg/TestDefaultArgCompoundBranch	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch.class
+class	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch$make$1$Box.class
+class	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch$make$1.class
+expected	kuna-fixes/expected/pkg/TestDefaultArgCompoundBranch.kt
+compare	TestDefaultArgCompoundBranch.kt	TestDefaultArgCompoundBranch.java
+case	kuna-fixes/pkg/TestDefaultArgsSuperCall	Kuna Fixes
+opt	jvm_plugins	1
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$Overloaded.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$noDefault$1$Sub.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$noDefault$1.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$oneDefault$1$Sub.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$oneDefault$1.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$otherConstructor$1$Sub.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$otherConstructor$1.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$twoDefaults$1$Sub.class
+class	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall$twoDefaults$1.class
+expected	kuna-fixes/expected/pkg/TestDefaultArgsSuperCall.kt
+compare	TestDefaultArgsSuperCall.kt	TestDefaultArgsSuperCall.java
 case	kuna-fixes/pkg/TestIfDenestFallthrough	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected/pkg/TestIfDenestFallthrough.java

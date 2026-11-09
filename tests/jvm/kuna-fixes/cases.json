@@ -93,6 +93,39 @@
       "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
       "summary": "`byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDefaultArgCompoundBranch",
+      "fix": "jvm_fix_kt_default_arg_compound_branch",
+      "class_files": [
+        "pkg/TestDefaultArgCompoundBranch.class",
+        "pkg/TestDefaultArgCompoundBranch$make$1$Box.class",
+        "pkg/TestDefaultArgCompoundBranch$make$1.class"
+      ],
+      "source": "src/pkg/TestDefaultArgCompoundBranch.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "`make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestDefaultArgsSuperCall",
+      "fix": "jvm_fix_kt_default_args_super_call",
+      "class_files": [
+        "pkg/TestDefaultArgsSuperCall.class",
+        "pkg/TestDefaultArgsSuperCall$Overloaded.class",
+        "pkg/TestDefaultArgsSuperCall$noDefault$1$Sub.class",
+        "pkg/TestDefaultArgsSuperCall$noDefault$1.class",
+        "pkg/TestDefaultArgsSuperCall$oneDefault$1$Sub.class",
+        "pkg/TestDefaultArgsSuperCall$oneDefault$1.class",
+        "pkg/TestDefaultArgsSuperCall$otherConstructor$1$Sub.class",
+        "pkg/TestDefaultArgsSuperCall$otherConstructor$1.class",
+        "pkg/TestDefaultArgsSuperCall$twoDefaults$1$Sub.class",
+        "pkg/TestDefaultArgsSuperCall$twoDefaults$1.class"
+      ],
+      "source": "src/pkg/TestDefaultArgsSuperCall.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "`twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call",
+      "language": "kotlin"
     }
   ]
 }

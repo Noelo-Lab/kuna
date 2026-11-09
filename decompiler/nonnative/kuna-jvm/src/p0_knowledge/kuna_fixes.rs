@@ -49,6 +49,13 @@ pub enum KunaFix {
     /// `jvm_fix_kt_local_as_extension_receiver`: a `$this$` local of a
     /// method without parameters is not taken for an extension receiver.
     KtLocalAsExtensionReceiver,
+    /// `jvm_fix_kt_default_args_super_call`: a Kotlin primary constructor's
+    /// supertype call through a default-arguments constructor names the
+    /// constructor it stands for.
+    KtDefaultArgsSuperCall,
+    /// `jvm_fix_kt_default_arg_compound_branch`: a default value computed by
+    /// more than one statement is left unrecovered instead of failing the class.
+    KtDefaultArgCompoundBranch,
 }
 
 impl KunaFix {
@@ -62,6 +69,8 @@ impl KunaFix {
         KunaFix::CatchLoopBackSuccessor,
         KunaFix::KtSyntheticAnonymousObject,
         KunaFix::KtLocalAsExtensionReceiver,
+        KunaFix::KtDefaultArgsSuperCall,
+        KunaFix::KtDefaultArgCompoundBranch,
     ];
 
     /// The option row that turns this fix on or off.
@@ -75,6 +84,8 @@ impl KunaFix {
             KunaFix::CatchLoopBackSuccessor => "jvm_fix_catch_loop_back_successor",
             KunaFix::KtSyntheticAnonymousObject => "jvm_fix_kt_synthetic_anonymous_object",
             KunaFix::KtLocalAsExtensionReceiver => "jvm_fix_kt_local_as_extension_receiver",
+            KunaFix::KtDefaultArgsSuperCall => "jvm_fix_kt_default_args_super_call",
+            KunaFix::KtDefaultArgCompoundBranch => "jvm_fix_kt_default_arg_compound_branch",
         }
     }
 

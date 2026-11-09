@@ -1223,3 +1223,55 @@ classes (a `Supplier` whose `get()` runs an inlined `BeanSupplierContext.() -> T
 with `ArrayIndexOutOfBoundsException` (kuna: `index out of bounds`; unchanged on
 `develop/1.13.0`). With the fix only a method with a parameter can be an extension function;
 the others are written as plain methods.
+**`jvm_fix_kt_default_args_super_call`.** For a constructor with default arguments the Kotlin
+compiler also emits a synthetic default-arguments constructor `<init>(P1..Pn, int mask..,
+DefaultConstructorMarker)`: a caller passes a placeholder (null or zero) for each argument it
+leaves out and sets bit `i % 32` of mask `i / 32` for it, and that constructor computes the
+defaults and delegates. A subclass whose supertype call leaves arguments out (`class Sub(a: Int) :
+Base(a)` with `Base(a: Int, b: String = "b")`) calls it. When the Kotlin writer prints the primary
+constructor's supertype call,
+`decompiler/nonnative/kuna-jvm/src/kotlin/k_constructor.rs (KConstructor::write_primary_constructor)`
+removes the marker argument and its type from the descriptor (`KUtils::remove_arguments`) but
+keeps the placeholders and the masks, so the call names `<init>(P1..Pn, int)`, a constructor the
+superclass does not have. `InvocationExprent::append_param_list` asks the class processor for
+that constructor's synthetic-parameter mask; when the superclass is decompiled in the same run
+and its wrapper is still alive (it is nested in the same top-level class, or its own top-level
+class has not been written yet), `ExprUtil::get_synthetic_parameters_mask` throws
+`RuntimeException: Constructor ... not found` outside any method's guard, and the whole
+top-level class fails (kotlinx-coroutines' `BroadcastChannelImpl`, kotlin-reflect's `CallerImpl`).
+Otherwise the call is printed with its placeholders and masks, `: Base(a, null, 2)`, which is not
+the call the bytecode makes. With the fix,
+`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_default_args_super_call.rs (resugar)`
+rewrites such a call into the call it stands for when all of these hold: the descriptor has the
+default-arguments shape (n >= 1 parameters, n / 32 + 1 `int` masks, the marker); the masks are
+`int` constants that default only parameters of the constructor, at least one and only trailing
+ones; each left-out argument is a constant placeholder; the superclass has the synthetic
+default-arguments constructor and `<init>(P1..Pn)`, and its Kotlin metadata declares
+`<init>(P1..Pn)` with n value parameters and a default for each left-out one; and no other
+constructor of the superclass could take the arguments that remain (one with that many
+parameters, a varargs one, or one with defaults of its own). The call then keeps its leading
+arguments and the descriptor of `<init>(P1..Pn)`, and is printed `: Base(a)`, which Kotlin resolves
+to that constructor with the same defaults. Every other shape keeps Vineflower's code: a call that
+leaves out an argument before one it passes needs named arguments, which the parameter-list
+printer cannot write, and with a competing constructor the shorter call could select it. As the
+defect is the rewriting and not the lookup, the fix also changes the supertype calls Vineflower
+prints with placeholders without failing: okhttp 4.7.2's `RealWebSocket.WriterTask` and
+kotlin-stdlib 2.2.20's `TerminateException` lose their `false, 2` and `null, null, 6` and read
+`: Task("${...} writer")` and `: FileSystemException(file)`, as in their sources. It also takes
+the write order out of the result, which with Vineflower's code decides between failing and
+printing the placeholders (and so differs between kuna's single-instance and parallel runs).
+
+**`jvm_fix_kt_default_arg_compound_branch`.** To print default values,
+`decompiler/nonnative/kuna-jvm/src/kotlin/default_args_map.rs (DefaultArgsMap::from)` reads them
+back from the default-arguments method or constructor: for each `if ((mask & bit) != 0)` test it
+takes the first expression of the branch and, when that is an assignment, records its right-hand
+side as the default of the parameter the bit names; any other test or branch records nothing, and
+the parameter is printed with `jvm_kt_unknown_defaults` (`= ...`). Vineflower takes the branch's
+expression list without checking that the branch is a basic block. When a default is computed by
+several statements (`names.map { ... }`, which the compiler inlines into a loop), the branch is a
+sequence, which has no expression list, and the `NullPointerException` fails the whole top-level
+class, because the defaults are read while the member headers are written (kotlin-reflect's
+`AnnotationConstructorCaller` and `AnnotationConstructorCallerKt`). With the fix, a branch that is
+not a basic block with at least one expression records nothing, as a branch that is not an
+assignment does, and the parameter is printed `= ...`. Reading the sequence's first statement
+instead would take the first temporary of the inlined code for the default value.

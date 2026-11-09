@@ -50,6 +50,7 @@ pub mod kotlin_object_processors;
 pub mod kotlin_options;
 pub mod kotlin_plugin;
 pub mod kotlin_writer;
+pub mod kuna_fix_kt_default_args_super_call;
 pub mod kuna_fix_kt_synthetic_anonymous_object;
 pub mod obfuscated_exceptions_pass;
 pub mod replace_exprents_pass;

@@ -22,6 +22,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 |---|---|---|---|
 | `pkg/TestCapturedReceiverKt` | `jvm_fix_kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
 | `pkg/TestCatchLoopBack` | `jvm_fix_catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
+| `pkg/TestDefaultArgCompoundBranch` | `jvm_fix_kt_default_arg_compound_branch` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7` |
+| `pkg/TestDefaultArgsSuperCall` | `jvm_fix_kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call |
 | `pkg/TestIfDenestFallthrough` | `jvm_fix_if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestMethodRefWildcardReceiver` | `jvm_fix_lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestSamWrapperObjectKt` | `jvm_fix_kt_synthetic_anonymous_object` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone |
@@ -321,6 +323,98 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public int readOneCatch() throws TestCatchLoopBack.IoError {
+```
+
+### `pkg/TestDefaultArgCompoundBranch`
+
+```diff
+--- expected-compat/pkg/TestDefaultArgCompoundBranch.kt
++++ expected/pkg/TestDefaultArgCompoundBranch.kt
+@@ -1,16 +1,27 @@
+ package pkg
++
++import kotlin.jvm.internal.SourceDebugExtension
+ 
+ public class TestDefaultArgCompoundBranch {
+    public fun make(names: List<String>): Any {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: aload 1
+-      // 1: ldc "names"
+-      // 3: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-      // 6: new pkg/TestDefaultArgCompoundBranch$make$1
+-      // 9: dup
+-      // a: aload 1
+-      // b: invokespecial pkg/TestDefaultArgCompoundBranch$make$1.<init> (Ljava/util/List;)V
+-      // e: areturn
++      return object {
++         public fun total(lengths: List<Int> = ...): Int {
++            return CollectionsKt.sumOfInt(lengths as java.lang.Iterable)
++         }
++
++         public fun simple(n: Int = 7): Int {
++            return n + 1
++         }
++
++         @SourceDebugExtension(["SMAP\nTestDefaultArgCompoundBranch.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestDefaultArgCompoundBranch.kt\npkg/TestDefaultArgCompoundBranch$make$1$Box\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n*L\n1#1,12:1\n1557#2:13\n1628#2,3:14\n*S KotlinDebug\n*F\n+ 1 TestDefaultArgCompoundBranch.kt\npkg/TestDefaultArgCompoundBranch$make$1$Box\n*L\n7#1:13\n7#1:14,3\n*E\n"])
++         // $VF: local visibility outside of methodSupplier
++internal inner class Box(sizes: List<Int> = ...) {
++            public final val sizes: List<Int>
++
++            init {
++               this.sizes = sizes
++            }
++         }
++      }
+    }
+ }
+```
+
+### `pkg/TestDefaultArgsSuperCall`
+
+```diff
+--- expected-compat/pkg/TestDefaultArgsSuperCall.kt
++++ expected/pkg/TestDefaultArgsSuperCall.kt
+@@ -12,27 +12,21 @@
+    }
+ 
+    public fun twoDefaults(x: Int): Any {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: new pkg/TestDefaultArgsSuperCall$twoDefaults$1
+-      // 3: dup
+-      // 4: iload 1
+-      // 5: invokespecial pkg/TestDefaultArgsSuperCall$twoDefaults$1.<init> (I)V
+-      // 8: areturn
++      return object {
++         public final val sub: pkg.TestDefaultArgsSuperCall.twoDefaults.1.Sub = Sub()
++
++         // $VF: local visibility outside of methodSupplier
++internal inner class Sub : TestDefaultArgsSuperCall(x)
++      }
+    }
+ 
+    public fun oneDefault(x: Int, y: String): Any {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: aload 2
+-      // 1: ldc "y"
+-      // 3: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-      // 6: new pkg/TestDefaultArgsSuperCall$oneDefault$1
+-      // 9: dup
+-      // a: iload 1
+-      // b: aload 2
+-      // c: invokespecial pkg/TestDefaultArgsSuperCall$oneDefault$1.<init> (ILjava/lang/String;)V
+-      // f: areturn
++      return object {
++         public final val sub: pkg.TestDefaultArgsSuperCall.oneDefault.1.Sub = Sub()
++
++         // $VF: local visibility outside of methodSupplier
++internal inner class Sub : TestDefaultArgsSuperCall(x, y)
++      }
+    }
+ 
+    public fun noDefault(x: Int): Any {
 ```
 
 ### `pkg/TestIfDenestFallthrough`
