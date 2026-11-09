@@ -3020,7 +3020,7 @@ runtime `on_or_off` parser.
 |---|---|---|
 | `KUNA_IFUNCFPRET` | `ifuncfpret` | x86-64 IFUNC (`R_X86_64_IRELATIVE`) stub naming, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ifuncfpret.rs (IFUNCFPRET_ENV)` |
 | `KUNA_PPCAPU` | `ppcapu` | PowerPC32 e500 selection from an SPE APU note, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ppcapu.rs (PPCAPU_ENV)` |
-| `KUNA_CALLTARGETTYPE` | `calltargettype` | DWARF `DW_TAG_subroutine_type` import as a function prototype (off unless the option, or the `aggressive` preset, is on, and never for Rust output), `decompiler/crates/kuna-decomp/src/p5_types/kuna_calltargettype.rs (CALLTARGETTYPE_ENV)` |
+| `KUNA_CALLTARGETTYPE` | `calltargettype` | DWARF `DW_TAG_subroutine_type` import as a function prototype (on unless the option is set off, and never for Rust output), `decompiler/crates/kuna-decomp/src/p5_types/kuna_calltargettype.rs (CALLTARGETTYPE_ENV)` |
 | `KUNA_MACHO_SLICE` | `--slice` | Mach-O fat-binary slice peel, `decompiler/crates/kuna-console/src/engine.rs (select_macho_slice)` |
 | `KUNA_MACHO_ARM64E` | `macho-arm64e` | arm64e spec selection (on by default), `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_macho_arm64e.rs (MACHO_ARM64E_ENV)` |
 | `KUNA_ARM_ISA` | `--isa` | explicit ARM/Thumb `TMode` selection over the mapped code ranges, `decompiler/crates/kuna-console/src/engine.rs (ARM_ISA_ENV)` |
@@ -3467,14 +3467,13 @@ and an agent writes:
   `decompiler/crates/kuna-decomp/src/p0_knowledge/modes.rs`, so a default-off
   option is either in the preset or listed there with its reason),
   and **`fast`** (`listing`, `funcstart_patterns`, and `aif` off to avoid
-  program-wide decode and speculative discovery, `ctypes` and `partialaccess`
-  on). A fourth frontend
+  program-wide decode and speculative discovery, `ctypes` on). A fourth frontend
   policy, **`auto`**, resolves from the raw input length before the Architecture
   is built: `<500 KiB` selects `aggressive`, `500 KiB–<2 MiB` selects `reliable`,
   and `>=2 MiB` selects `fast`. `auto` also carries its own override list,
-  applied before the selected preset's: `ctypes=on` and `partialaccess=on`, so
-  the C spelling of the core types and of a partial access (chapter
-  [09](09-emission.md) §9.2) does not change with input size.
+  applied before the selected preset's: `ctypes=on`, so the C spelling of the
+  core types (chapter [09](09-emission.md) §9.2) does not change with input
+  size.
   Size selects how much discovery and recovery a run can afford; spelling costs
   nothing and is not part of that trade. An explicit `--mode reliable` stays the
   catalog defaults. One function,

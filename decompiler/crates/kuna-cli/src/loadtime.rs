@@ -34,7 +34,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "goabi" => (kuna_goabi::GOABI_ENV, DefaultOn),
         "symbolnamechars" => (kuna_symbolnamechars::SYMBOLNAMECHARS_ENV, SymbolNameChars),
         "libctypes" => (kuna_libctypes::LIBCTYPES_ENV, LibcTypes),
-        "calltargettype" => (kuna_calltargettype::CALLTARGETTYPE_ENV, DefaultOff),
+        "calltargettype" => (kuna_calltargettype::CALLTARGETTYPE_ENV, DefaultOn),
         "macho-arm64e" => (kuna_macho_arm64e::MACHO_ARM64E_ENV, DefaultOn),
         "sourcelang" => (kuna_sourcelang::SOURCELANG_ENV, SourceLang),
         "objcivars" => (kuna_objcivars::OBJCIVARS_ENV, DefaultOn),

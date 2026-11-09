@@ -57,8 +57,7 @@ pub const MODE_TABLE: &[Mode] = &[
         name: "auto",
         summary: "Select aggressive below 500 KiB, reliable from 500 KiB up to \
                   2 MiB, and fast at 2 MiB or larger, using the input file size; \
-                  every size spells core types and partial accesses as C \
-                  (ctypes, partialaccess on).",
+                  every size spells core types as C (ctypes on).",
         automatic: true,
         overrides: AUTO_OVERRIDES,
     },
@@ -84,8 +83,7 @@ pub const MODE_TABLE: &[Mode] = &[
         summary: "Speed-first whole-binary analysis: replace exhaustive Listing, \
                   prologue-pattern, and AIF discovery with rooted recursive \
                   function discovery plus conservative pointer validation; core \
-                  types and partial accesses spell as C (ctypes, partialaccess \
-                  on).",
+                  types spell as C (ctypes on).",
         automatic: false,
         overrides: FAST_OVERRIDES,
     },
@@ -100,8 +98,10 @@ const RELIABLE_OVERRIDES: &[(&str, &str)] = &[];
 
 /// `aggressive` = every off-by-default option flipped ON, **except**
 /// `dwarf_lines`. The options that became shipped defaults stay listed
-/// (`returndup` since DIV-54, `pdb` since DIV-129, and the target-gated passes
-/// -- `rtti`=PE, `itaniumrtti`=ELF-with-RTTI, `objc`/`macho-arm64e`=Mach-O,
+/// (`returndup` since DIV-54, `pdb` since DIV-129, the presentation defaults
+/// `partialaccess`, `voidtailreturn`, `importdata`, `calltargettype` and
+/// `libcnames`, and the target-gated passes -- `rtti`=PE,
+/// `itaniumrtti`=ELF-with-RTTI, `objc`/`macho-arm64e`=Mach-O,
 /// `sparcstructret`=SPARC, `v850indirectbranch`=V850, the ARM entry and
 /// hard-float passes -- all inert off their target): the preset owns the option
 /// outright, so a user `--option returndup off` earlier on the command line is
@@ -161,9 +161,8 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // real binary without touching the corpus.
     ("ctypes", "on"),
     // (kuna) Print a partial access no member names as a typed pointer access
-    // instead of Ghidra's `name._<off>_<size>_`. Shipped default OFF for the
-    // same reason as `ctypes`: two XML datatest assertions pin the Ghidra
-    // spelling and the parity harness applies no mode.
+    // instead of Ghidra's `name._<off>_<size>_`. A shipped default; kept so the
+    // preset owns it.
     ("partialaccess", "on"),
     // (kuna) Lay out an address-taken frame record read at several widths as
     // one synthesized structure. Shipped OFF because the structure is a layout
@@ -171,16 +170,10 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // structures; 0/675 datatest assertions move with it on.
     ("stackstruct", "on"),
     // (kuna DIV-98) Elide a void function's trailing bare `return;`, the statement
-    // the C source it came from does not have. The shipped catalog default is OFF
-    // because the XML datatest corpus pins the upstream rendering and applies no
-    // mode; preset membership is what makes the elision the default output for
-    // every real binary. Measured bidirectionally over the whole O0 decbench slice
-    // (32,329 functions, 265 slices): GED-perfect 15,308 -> 15,933 (+625), 687
-    // moved TO perfect against 62 moved OFF (11.08 : 1, McNemar z = +22.84),
-    // aggregate GED -5,344, and every architecture net-positive. Speed +0.17%
-    // (coreutils/ls O0, interleaved min-of-5).
+    // the C source it came from does not have. A shipped default; kept so the
+    // preset owns it.
     ("voidtailreturn", "on"),
-    ("importdata", "on"),
+    ("importdata", "on"), // a shipped default; kept so the preset owns it
     // (kuna, DIV-99) Fold the Cortex-M `isCurrentModePrivileged()` guard the
     // vendored ARM SLEIGH wraps around every VERSION_7M MRS/MSR. A shipped
     // default, kept so the preset owns it. Structurally inert everywhere else --
@@ -204,15 +197,11 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // arms, +5.3% on the witness binary where 1 of 144 functions changes.
     ("ptrdepthcap", "on"),
     // (kuna, GH-869) Give an indirect call's target the function-pointer type
-    // the call states. Shipped default OFF because the XML datatest corpus pins
-    // the upstream `code *` spellings and applies no mode; preset membership is
-    // what makes a call through a table entry or a local compile as C by default.
+    // the call states. A shipped default; kept so the preset owns it.
     ("calltargettype", "on"),
     // (kuna) Name a local after the library call that returns it or takes it
-    // whole (`fd = open(...)`, `read(fd, ...)`). Shipped default OFF because six
-    // stage assertions of other features spell the `vN` it names; preset
-    // membership is what makes it the default rendering for the web page and for
-    // every binary `auto` decompiles under 500 KiB.
+    // whole (`fd = open(...)`, `read(fd, ...)`). A shipped default; kept so the
+    // preset owns it.
     ("libcnames", "on"),
     // (kuna) ARM hard-float scalar VFP contracts: a double returned whole in d0
     // and float/double parameters in their s/d registers on both sides of a
@@ -291,7 +280,6 @@ const FAST_OVERRIDES: &[(&str, &str)] = &[
     ("aif", "off"),
     ("fast_funcdisc", "on"),
     ("ctypes", "on"),
-    ("partialaccess", "on"),
 ];
 
 /// `auto`'s own overrides, applied under every preset it selects. The size
@@ -299,7 +287,7 @@ const FAST_OVERRIDES: &[(&str, &str)] = &[
 /// emitted C is not part of that trade, so `ctypes` holds at every size,
 /// including the `reliable` tier between 500 KiB and 2 MiB. An explicit
 /// `--mode reliable` stays the catalog defaults.
-const AUTO_OVERRIDES: &[(&str, &str)] = &[("ctypes", "on"), ("partialaccess", "on")];
+const AUTO_OVERRIDES: &[(&str, &str)] = &[("ctypes", "on")];
 
 /// Select the concrete preset for `size_bytes` under the `auto` policy.
 pub fn auto_mode_for_size(size_bytes: u64) -> &'static str {
@@ -705,8 +693,7 @@ mod tests {
                 ("funcstart_patterns", "off"),
                 ("aif", "off"),
                 ("fast_funcdisc", "on"),
-                ("ctypes", "on"),
-                ("partialaccess", "on")
+                ("ctypes", "on")
             ]
         );
     }
@@ -718,8 +705,9 @@ mod tests {
                 let (concrete, overrides) =
                     resolve_overrides_for_size(requested, size).unwrap();
                 assert_eq!(concrete, auto_mode_for_size(size));
-                assert_eq!(&overrides[..2], AUTO_OVERRIDES, "auto at {size}");
-                assert_eq!(&overrides[2..], mode_overrides(concrete).unwrap());
+                let own = AUTO_OVERRIDES.len();
+                assert_eq!(&overrides[..own], AUTO_OVERRIDES, "auto at {size}");
+                assert_eq!(&overrides[own..], mode_overrides(concrete).unwrap());
             }
         }
         for name in ["reliable", "aggressive", "fast"] {

@@ -1061,7 +1061,7 @@ fn bounded_word_and_byte_indices_use_the_whole_eight_byte_object() {
         ("bounded_byte_store", [28, 26]),
         ("bounded_reverse_store", [26, 28]),
     ] {
-        let baseline = decompile(function, false);
+        let baseline = decompile_options(function, false, &[("partialaccess", "off")]);
         assert!(
             baseline.contains("[3]") || baseline.contains("._0_4_"),
             "{baseline}"

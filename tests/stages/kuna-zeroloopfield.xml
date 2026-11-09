@@ -62,6 +62,7 @@ e5ebfe
 <symbol space="ram" offset="0x4011dd" name="__stack_chk_fail"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>lo fu nl</com>
   <com>decompile</com>
   <com>print C</com>

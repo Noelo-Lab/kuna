@@ -194,6 +194,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_so_x86_64.so</com>
+  <com>option importdata off</com>
   <com>read symbols</com>
   <com>load function 0x11b9</com>
   <com>decompile</com>
@@ -225,6 +226,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_so_x86_64.so</com>
+  <com>option importdata off</com>
   <com>read symbols</com>
   <com>load function 0x11b9</com>
   <com>decompile</com>

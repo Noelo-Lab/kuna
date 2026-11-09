@@ -136,6 +136,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elemptr_gcc_O0_x86_64</com>
+  <com>option libcnames off</com>
   <com>option elemptr on</com>
   <com>option iteexpr on</com>
   <com>option castternary on</com>

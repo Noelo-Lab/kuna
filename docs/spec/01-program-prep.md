@@ -2048,7 +2048,7 @@ funcsym stream:
   reader compares the loaded bytes with the file's
   to learn what was applied. Any other image lists none, under coverage `none`.
 - **ELF GOT data imports** (kuna, `elfgotimports`, committed under `importdata`,
-  default off; `decompiler/crates/kuna-analysis/src/loader/kuna_elfgotimports.rs`):
+  default on; `decompiler/crates/kuna-analysis/src/loader/kuna_elfgotimports.rs`):
   the complement of the `dynrelocs` walk above. A `GLOB_DAT` slot whose symbol is *undefined*
   is skipped there because its value lives in another object, and the PLT/import
   naming covers a *call* to it. A `-fPIC` *data* read is not a call: it loads the
@@ -3874,8 +3874,8 @@ moves.
   and `DW_AT_discr_value` remain on the side table. Picking the facet from the tag
   needs a dominating-guard analysis; that is what the side table is recorded for,
   and it is not attempted here.
-- **Function-pointer types** (`calltargettype`, off in the catalog, on in the
-  `aggressive` preset) keep what a `DW_TAG_subroutine_type` says. The mapper used
+- **Function-pointer types** (`calltargettype`, on by default, off for Rust
+  output) keep what a `DW_TAG_subroutine_type` says. The mapper used
   to give up on the tag, so a pointer to one became a pointer to `void`: a
   parameter, a record field or a local declared `int (*f)(int, long)` came out
   `void *`, and every call through it was a call of a `void *` that no C compiler

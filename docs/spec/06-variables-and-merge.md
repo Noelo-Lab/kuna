@@ -880,8 +880,8 @@ well as the scope (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 ... sequence. Two highs that denote one object are unaffected: they share a
 name through their shared Symbol, never through a recommendation.
 
-**A library call names the locals it meets (`libcnames`, default off, on
-under `--mode aggressive`).** A prototype a built-in libc table parks carries
+**A library call names the locals it meets (`libcnames`, default on;
+`option libcnames off` keeps every `vN`).** A prototype a built-in libc table parks carries
 the library's names for its parameters and result (chapter 01), which the
 recommendation above never sees: they are not `innames` and lock nothing. The
 library name is a second name for a numbered local, never a replacement for
