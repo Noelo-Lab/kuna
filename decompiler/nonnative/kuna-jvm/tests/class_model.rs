@@ -1,93 +1,536 @@
 //! The class model, pass hooks and collectors of slice K3.
 //!
-//! Only `dummy_class`, `dummy_method` and `dummy_var_proc` build objects owned
-//! by other slices.
+//! Classes come from `tests/data/class_model` (own `classes/`, library `lib/`);
+//! `golden.txt` is Vineflower 1.12.0's view of the same fixture (`gen.sh`).
+//! `loadClasses` is not ported yet, so [`load_nodes`] builds the node tree it
+//! produces and the golden `nodes` section checks it.
 
 use std::cell::Cell;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use kuna_jvm::bytecode_mapping_tracer::BytecodeMappingTracer;
 use kuna_jvm::bytecode_source_mapper::BytecodeSourceMapper;
 use kuna_jvm::class_wrapper::ClassWrapper;
 use kuna_jvm::class_writer::ClassWriter;
-use kuna_jvm::classes_processor::{
-    string_compare_to, ClassNode, ClassNodeData, ClassNodeType, LambdaInformation,
-};
+use kuna_jvm::classes_processor::{string_compare_to, ClassNode, ClassNodeType};
+use kuna_jvm::counter_container::CounterContainer;
 use kuna_jvm::decompile_record::DecompileRecord;
+use kuna_jvm::decompiler_context::DecompilerContext;
+use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
 use kuna_jvm::import_collector::{ImportCollector, ImportCollectorData};
+use kuna_jvm::interpreter_util::InterpreterUtil;
 use kuna_jvm::java_pass_location::JavaPassLocation;
 use kuna_jvm::java_pass_registrar::JavaPassRegistrar;
 use kuna_jvm::looping_pass_builder::LoopingPassBuilder;
 use kuna_jvm::main_pass_builder::MainPassBuilder;
+use kuna_jvm::method_descriptor::MethodDescriptor;
+use kuna_jvm::method_wrapper::MethodWrapper;
 use kuna_jvm::named_pass::NamedPass;
 use kuna_jvm::pass::{Pass, NO_OP};
 use kuna_jvm::pass_context::PassContext;
 use kuna_jvm::plugin_context::{Plugin, PluginContext};
-use kuna_jvm::rt::{reset_class_scope, try_catch, BitSet, JHashMap, JHashSet, JList, Shared};
-use kuna_jvm::struct_class::{StructClass, StructClassData};
-use kuna_jvm::struct_method::{StructMethod, StructMethodData};
-use kuna_jvm::var_processor::{VarProcessor, VarProcessorData};
+use kuna_jvm::rt::{reset_class_scope, throw, try_catch, BitSet, JHashMap, JHashSet};
+use kuna_jvm::struct_class::StructClass;
+use kuna_jvm::struct_context::StructContext;
+use kuna_jvm::struct_general_attribute::StructGeneralAttribute;
+use kuna_jvm::struct_method::StructMethod;
+use kuna_jvm::text_buffer::TextBuffer;
+use kuna_jvm::var_processor::VarProcessor;
+use kuna_jvm::var_type::VarType;
 use kuna_jvm::wrapped_pass::WrappedPass;
 
-fn dummy_class(name: &str) -> StructClass {
-    StructClass::alloc(StructClassData {
-        qualified_name: name.to_string(),
-        super_class: None,
-    })
+use crate::common::{self, ContextGuard};
+
+fn fixture_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/class_model")
 }
 
-fn dummy_method() -> StructMethod {
-    StructMethod::alloc(StructMethodData {
-        name: "run".to_string(),
-    })
+/// The default context, minus exception dumps, over the fixture classes.
+fn fixture() -> (ContextGuard, StructContext) {
+    let guard = common::install_context_with(&[
+        (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
+        (IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR, "0"),
+    ]);
+    let sc = guard.struct_context();
+    sc.add_space_file(&fixture_dir().join("classes"), true);
+    sc.add_space_file(&fixture_dir().join("lib"), false);
+    (guard, sc)
 }
 
-fn dummy_var_proc() -> VarProcessor {
-    VarProcessor::alloc(VarProcessorData {})
+fn class(sc: StructContext, name: &str) -> StructClass {
+    sc.get_class(name)
+        .unwrap_or_else(|| panic!("fixture class {name}"))
 }
 
-fn node(name: &str, type_: ClassNodeType) -> ClassNode {
-    ClassNode::alloc(ClassNodeData {
-        type_,
-        access: 0,
-        simple_name: Some(name.rsplit('/').next().unwrap().to_string()),
-        class_struct: dummy_class(name),
-        wrapper: None,
-        enclosing_method: None,
-        super_invocation: None,
-        map_fields_to_vars: JHashMap::new(),
-        anonymous_class_type: None,
-        nested: JList::new(),
-        enclosing_classes: Shared::new(JHashSet::new()),
-        parent: None,
-        lambda_information: None,
-    })
+fn run_method(sc: StructContext) -> StructMethod {
+    class(sc, "p/Outer").get_method("run", "()V").unwrap()
 }
 
-fn qualified_names<'a>(nodes: impl IntoIterator<Item = &'a ClassNode>) -> Vec<String> {
-    nodes
-        .into_iter()
-        .map(|n| {
-            n.with(|d| d.class_struct)
-                .with(|d| d.qualified_name.clone())
-        })
-        .collect()
-}
-
-fn pass_context(rec: DecompileRecord) -> PassContext {
+fn pass_context(sc: StructContext, rec: DecompileRecord) -> PassContext {
+    let mt = run_method(sc);
+    let md = MethodDescriptor::parse_descriptor_struct(mt, None);
     PassContext::new(
         None,
         None,
-        dummy_method(),
-        dummy_class("a/A"),
-        dummy_var_proc(),
+        mt,
+        class(sc, "p/Outer"),
+        VarProcessor::new(mt, &md),
         rec,
     )
 }
 
+/// `ClassesProcessor.loadClasses` over the fixture, as Vineflower builds it.
+fn load_nodes(guard: &ContextGuard, sc: StructContext) -> ClassNode {
+    let roots = guard.class_processor().get_map_root_classes();
+    let mut nodes = Vec::new();
+    for name in [
+        "p/Outer",
+        "p/Outer$1Local",
+        "p/Outer$A",
+        "p/Outer$A$1",
+        "p/Outer$B",
+    ] {
+        let cl = class(sc, name);
+        let node = ClassNode::new(ClassNodeType::Root, cl);
+        node.with_mut(|d| d.access = cl.get_access_flags());
+        roots.borrow_mut().put(name.to_string(), node);
+        nodes.push(node);
+    }
+    let [outer, local, a, a1, b] = nodes[..] else {
+        unreachable!()
+    };
+
+    let nest = |parent: ClassNode,
+                child: ClassNode,
+                type_: ClassNodeType,
+                simple_name: Option<&str>,
+                access: i32,
+                enclosing: &[&str]| {
+        child.with_mut(|d| {
+            d.simple_name = simple_name.map(str::to_string);
+            d.type_ = type_;
+            if type_ == ClassNodeType::Anonymous {
+                d.enclosing_method = None;
+            }
+            d.access = access;
+            d.parent = Some(parent);
+        });
+        if type_ == ClassNodeType::Anonymous {
+            let cl = child.with(|d| d.class_struct);
+            let type_ = VarType::new_signature_cl(&cl.get_interface(0), true);
+            child.with_mut(|d| d.anonymous_class_type = Some(type_));
+        }
+        parent.with(|d| d.nested.clone()).add(child);
+        let set = child.with(|d| d.enclosing_classes.clone());
+        for name in enclosing {
+            set.borrow_mut().add(name.to_string());
+        }
+    };
+    nest(
+        outer,
+        local,
+        ClassNodeType::Local,
+        Some("Local"),
+        0,
+        &["p/Outer"],
+    );
+    nest(
+        outer,
+        a,
+        ClassNodeType::Member,
+        Some("A"),
+        0x0001,
+        &["p/Outer"],
+    );
+    nest(
+        outer,
+        b,
+        ClassNodeType::Member,
+        Some("B"),
+        0x0009,
+        &["p/Outer"],
+    );
+    nest(
+        a,
+        a1,
+        ClassNodeType::Anonymous,
+        None,
+        0,
+        &["p/Outer", "p/Outer$A"],
+    );
+    for node in [outer, a] {
+        let nested = node.with(|d| d.nested.clone());
+        let mut sorted = nested.to_vec();
+        sorted.sort_by(|x, y| x.compare_to(*y));
+        nested.set_all(sorted);
+    }
+    outer
+}
+
+fn esc(s: Option<&str>) -> String {
+    match s {
+        None => "\\N".to_string(),
+        Some(s) => s
+            .replace('\\', "\\\\")
+            .replace('\t', "\\t")
+            .replace('\n', "\\n"),
+    }
+}
+
+fn qualified_name(node: ClassNode) -> String {
+    node.with(|d| d.class_struct).qualified_name()
+}
+
+fn node_line(n: ClassNode) -> String {
+    let (type_, simple_name, access, parent, nested, enclosing_method, enclosing, anonymous) = n
+        .with(|d| {
+            (
+                d.type_,
+                d.simple_name.clone(),
+                d.access,
+                d.parent,
+                d.nested.to_vec(),
+                d.enclosing_method.clone(),
+                d.enclosing_classes.borrow().to_vec(),
+                d.anonymous_class_type.clone(),
+            )
+        });
+    let mut enclosing = enclosing;
+    enclosing.sort();
+    [
+        qualified_name(n),
+        type_.name().to_string(),
+        esc(simple_name.as_deref()),
+        access.to_string(),
+        parent.map_or("\\N".to_string(), qualified_name),
+        nested
+            .into_iter()
+            .map(qualified_name)
+            .collect::<Vec<_>>()
+            .join(","),
+        esc(enclosing_method.as_deref()),
+        enclosing.join(","),
+        anonymous.map_or("\\N".to_string(), |t| t.value_str().to_string()),
+        n.to_string(),
+    ]
+    .join("\t")
+}
+
+fn lambda_line(n: ClassNode) -> String {
+    let (type_, simple_name, l, anonymous) = n.with(|d| {
+        (
+            d.type_,
+            d.simple_name.clone(),
+            d.lambda_information.clone().unwrap(),
+            d.anonymous_class_type.clone().unwrap(),
+        )
+    });
+    [
+        type_.name().to_string(),
+        esc(simple_name.as_deref()),
+        l.method_name,
+        l.method_descriptor,
+        l.content_class_name,
+        l.content_method_name,
+        l.content_method_descriptor,
+        l.content_method_invocation_type.to_string(),
+        l.content_method_key,
+        l.is_method_reference.to_string(),
+        l.is_content_method_static.to_string(),
+        anonymous.value_str().to_string(),
+        n.to_string(),
+    ]
+    .join("\t")
+}
+
+fn text(buffer: &TextBuffer) -> String {
+    esc(Some(&buffer.convert_to_string_and_allow_data_discard()))
+}
+
+#[test]
+fn class_model_matches_vineflower() {
+    let (guard, sc) = fixture();
+    let outer = load_nodes(&guard, sc);
+    let mut out: Vec<String> = Vec::new();
+
+    out.push("== nodes".to_string());
+    let roots = guard.class_processor().get_map_root_classes();
+    let mut names = roots.borrow().key_vec();
+    names.sort_by(|a, b| string_compare_to(a, b));
+    for name in &names {
+        let node = roots.borrow().get_cloned(name).unwrap();
+        out.push(node_line(node));
+    }
+    let all: Vec<String> = outer
+        .get_all_nested()
+        .to_vec()
+        .into_iter()
+        .map(qualified_name)
+        .collect();
+    out.push(format!("all\t{}", all.join(",")));
+
+    out.push("== lambdas".to_string());
+    let cl = class(sc, "p/Outer");
+    for (content_class, content_name, content_desc, kind, lambda_class, name, desc) in [
+        (
+            "p/Outer",
+            "lambda$new$0",
+            "()V",
+            6,
+            "java/lang/Runnable",
+            "run",
+            "()V",
+        ),
+        (
+            "java/lang/Object",
+            "toString",
+            "()Ljava/lang/String;",
+            5,
+            "java/util/function/Supplier",
+            "get",
+            "()Ljava/lang/Object;",
+        ),
+        (
+            "p/Outer",
+            "run",
+            "()V",
+            5,
+            "java/lang/Runnable",
+            "run",
+            "()V",
+        ),
+    ] {
+        let node = ClassNode::new_lambda(
+            content_class,
+            content_name,
+            content_desc,
+            kind,
+            lambda_class,
+            name,
+            desc,
+            cl,
+        );
+        out.push(lambda_line(node));
+    }
+
+    out.push("== short names".to_string());
+    let imports = ImportCollector::new(outer);
+    DecompilerContext::set_current_class_node(Some(outer));
+    for q in [
+        "java.util.List",
+        "java.awt.List",
+        "java.lang.String",
+        "p.Outer",
+        "p.Outer$A",
+        "p.Outer$A$1",
+        "p.Outer$1Local",
+        "q.Outer",
+        "x.y.A",
+        "p.Outer.B",
+        "q.Other$A",
+        "java.util.concurrent.Future",
+        "a.b.Zed",
+        "Default",
+        "java.util.List",
+        "x.field",
+    ] {
+        out.push(format!(
+            "short\t{q}\t{}",
+            esc(imports.get_short_name(q).as_deref())
+        ));
+    }
+    out.push(format!(
+        "short\tjava.util.Map\tnot-imported\t{}",
+        esc(imports
+            .get_short_name_imported("java.util.Map", false)
+            .as_deref())
+    ));
+    {
+        let _lock = imports.lock();
+        out.push(format!(
+            "short\tjava.util.Set\tlocked\t{}",
+            esc(imports.get_short_name("java.util.Set").as_deref())
+        ));
+    }
+    out.push(format!(
+        "short\tjava.awt.Set\t{}",
+        esc(imports.get_short_name("java.awt.Set").as_deref())
+    ));
+    for q in ["x.field", "java.util.List", "p.Outer$A$1"] {
+        out.push(format!(
+            "context\t{q}\t{}",
+            esc(Some(&imports.get_short_name_in_class_context(q)))
+        ));
+    }
+    let mut buffer = TextBuffer::new();
+    imports.write_imports(&mut buffer, true);
+    out.push(format!("imports\t{}", text(&buffer)));
+    let mut header = TextBuffer::new();
+    ClassWriter::new().write_class_header(cl, &mut header, imports);
+    out.push(format!("header\t{}", text(&header)));
+    let b = roots.borrow().get_cloned(&"p/Outer$B".to_string()).unwrap();
+    let empty = ImportCollector::new(b);
+    let mut header = TextBuffer::new();
+    ClassWriter::new().write_class_header(b.with(|d| d.class_struct), &mut header, empty);
+    out.push(format!("header-empty\t{}", text(&header)));
+
+    out.push("== mapper".to_string());
+    let run = run_method(sc);
+    let tracer = BytecodeMappingTracer::new_line(3);
+    tracer.set_line_number_table(
+        run.get_attribute(StructGeneralAttribute::ATTRIBUTE_LINE_NUMBER_TABLE),
+    );
+    tracer.add_mapping(0);
+    tracer.increment_current_source_line();
+    tracer.add_mapping(8);
+    let mapper = BytecodeSourceMapper::new();
+    let mut none = TextBuffer::new();
+    mapper.dump_mapping(&mut none, false);
+    out.push(format!("empty\t{}", text(&none)));
+    mapper.add_tracer("p/Outer", "run ()V", tracer);
+    mapper.add_mapping("p/Outer", "<init> ()V", 4, 7);
+    mapper.add_mapping("p/Outer", "run ()V", 8, 99);
+    mapper.add_mapping("q/Other", "x ()V", 255, 5);
+    mapper.add_total_offset(2);
+    for hex in [false, true] {
+        let mut dump = TextBuffer::new();
+        mapper.dump_mapping(&mut dump, hex);
+        out.push(format!("dump\t{hex}\t{}", text(&dump)));
+    }
+    let lines: Vec<String> = mapper
+        .get_original_lines_mapping()
+        .iter()
+        .map(i32::to_string)
+        .collect();
+    out.push(format!("lines\t{}", lines.join(",")));
+    let mut after = TextBuffer::new();
+    mapper.dump_mapping(&mut after, false);
+    out.push(format!("dump\tafter\t{}", text(&after)));
+
+    out.push("== writer".to_string());
+    let caught = try_catch(|| {
+        throw("RuntimeException", "boom");
+    })
+    .unwrap_err();
+    let mut exception = TextBuffer::new();
+    ClassWriter::write_exception(&mut exception, &caught);
+    out.push(format!("exception\t{}", text(&exception)));
+    out.push(format!(
+        "error-comment\t{}",
+        esc(Some(&ClassWriter::get_error_comment().join("\n")))
+    ));
+
+    let golden = std::fs::read_to_string(fixture_dir().join("golden.txt")).unwrap();
+    let expected: Vec<&str> = golden.lines().collect();
+    for (i, (want, got)) in expected.iter().zip(&out).enumerate() {
+        assert_eq!(want, got, "golden line {}", i + 1);
+    }
+    assert_eq!(expected.len(), out.len());
+}
+
+#[test]
+fn class_nodes_answer_like_vineflower() {
+    let (guard, sc) = fixture();
+    let outer = load_nodes(&guard, sc);
+    let a = outer.get_class_node("p/Outer$A").unwrap();
+    assert_eq!(qualified_name(a), "p/Outer$A");
+    assert_eq!(outer.get_class_node("p/Outer$A$1"), None);
+    assert!(a.compare_to(outer).is_gt());
+    assert!(outer.has_modifier(0x0001) && outer.has_modifier(0x0021));
+    assert!(!outer.has_modifier(0x0008));
+    let local = outer.get_class_node("p/Outer$1Local").unwrap();
+    let enclosing = class(sc, "p/Outer$1Local");
+    assert_eq!(
+        ClassNode::new(ClassNodeType::Local, enclosing).with(|d| d.enclosing_method.clone()),
+        Some("run ()V".to_string())
+    );
+    assert_eq!(local.with(|d| d.type_), ClassNodeType::Local);
+
+    let cp = guard.class_processor();
+    assert!(cp.is_whitelisted("q/Other"));
+    cp.add_whitelist("p/");
+    assert!(cp.is_whitelisted("p/Outer"));
+    assert!(!cp.is_whitelisted("q/Other"));
+}
+
+#[test]
+fn string_order_is_utf16_order() {
+    assert!(string_compare_to("a/B", "a/b").is_lt());
+    assert!(string_compare_to("a/b", "a/b$1").is_lt());
+    // U+FF21 sorts before U+1F600 by code point but after its surrogate 0xD83D in UTF-16.
+    assert!(string_compare_to("\u{FF21}", "\u{1F600}").is_gt());
+}
+
+#[test]
+fn wrappers_live_for_the_run_and_lambdas_use_the_parent() {
+    let (guard, sc) = fixture();
+    let outer = load_nodes(&guard, sc);
+    let cl = class(sc, "p/Outer");
+    let lambda = ClassNode::new_lambda(
+        "p/Outer",
+        "lambda$new$0",
+        "()V",
+        6,
+        "java/lang/Runnable",
+        "run",
+        "()V",
+        cl,
+    );
+    lambda.with_mut(|d| d.parent = Some(outer));
+    assert_eq!(lambda.get_wrapper(), None);
+    let wrapper = ClassWrapper::new(outer);
+    outer.with_mut(|d| d.wrapper = Some(wrapper));
+    assert_eq!(lambda.get_wrapper(), Some(wrapper));
+    assert_eq!(wrapper.get_class_struct(), cl);
+    assert_eq!(wrapper.to_string(), "p/Outer");
+    wrapper
+        .get_hidden_members()
+        .borrow_mut()
+        .add("field I".to_string());
+    assert!(outer
+        .get_wrapper()
+        .unwrap()
+        .get_hidden_members()
+        .borrow()
+        .contains(&"field I".to_string()));
+
+    let mt = run_method(sc);
+    let md = MethodDescriptor::parse_descriptor_struct(mt, None);
+    let mw = MethodWrapper::new(
+        None,
+        VarProcessor::new(mt, &md),
+        mt,
+        cl,
+        CounterContainer::new(),
+    );
+    mw.add_comment("first");
+    mw.add_comment("second");
+    mw.add_comment("first");
+    assert_eq!(
+        mw.with(|d| d.comment_lines.as_ref().unwrap().to_vec()),
+        vec!["first", "second"]
+    );
+    assert_eq!(mw.to_string(), "{p/Outer: run}");
+    assert!(mw.desc().params.is_empty());
+    assert!(mw.get_or_build_graph().is_none());
+    wrapper
+        .get_methods()
+        .borrow_mut()
+        .add_with_key(mw, InterpreterUtil::make_unique_key("run", "()V"));
+    assert_eq!(wrapper.get_method_wrapper("run", "()V"), Some(mw));
+    assert_eq!(wrapper.get_method_wrapper("run", "(I)V"), None);
+    assert_eq!(wrapper.get_method_wrapper_index(0), mw);
+
+    reset_class_scope();
+    assert!(outer.is_live());
+    assert_eq!(lambda.get_wrapper(), None);
+}
+
 #[test]
 fn decompile_record_prefixes_loop_iterations() {
-    let rec = DecompileRecord::new(dummy_method());
+    let (_guard, sc) = fixture();
+    let rec = DecompileRecord::new(run_method(sc));
     rec.add("Initial", None);
     rec.increment_main_loop();
     rec.add("Start", None);
@@ -111,70 +554,6 @@ fn decompile_record_prefixes_loop_iterations() {
 }
 
 #[test]
-fn class_nodes_sort_and_collect_nested_in_java_order() {
-    let root = node("p/Outer", ClassNodeType::Root);
-    let b = node("p/Outer$B", ClassNodeType::Member);
-    let a = node("p/Outer$A", ClassNodeType::Member);
-    let a1 = node("p/Outer$A$1", ClassNodeType::Anonymous);
-    let nested = root.with(|d| d.nested.clone());
-    nested.add(b);
-    nested.add(a);
-    a.with(|d| d.nested.clone()).add(a1);
-    let mut sorted = nested.to_vec();
-    sorted.sort_by(|x, y| x.compare_to(*y));
-    nested.set_all(sorted);
-    assert_eq!(
-        qualified_names(&nested.to_vec()),
-        vec!["p/Outer$A", "p/Outer$B"]
-    );
-    assert_eq!(
-        qualified_names(root.get_all_nested().iter()),
-        vec!["p/Outer$A", "p/Outer$B", "p/Outer$A$1"]
-    );
-    assert_eq!(root.get_class_node("p/Outer$B"), Some(b));
-    assert_eq!(root.get_class_node("p/Outer$A$1"), None);
-    assert_eq!(root.to_string(), "ROOT class p/Outer");
-    root.with_mut(|d| d.access = 0x0011);
-    assert!(root.has_modifier(0x0001) && root.has_modifier(0x0011) && !root.has_modifier(0x0008));
-}
-
-#[test]
-fn string_order_is_utf16_order() {
-    assert!(string_compare_to("a/B", "a/b").is_lt());
-    assert!(string_compare_to("a/b", "a/b$1").is_lt());
-    // U+FF21 sorts before U+1F600 by code point but after its surrogate 0xD83D in UTF-16.
-    assert!(string_compare_to("\u{FF21}", "\u{1F600}").is_gt());
-}
-
-#[test]
-fn wrapper_lookup_skips_lambdas_and_drops_finished_classes() {
-    let root = node("p/Outer", ClassNodeType::Root);
-    let lambda = node("p/Outer##Lambda_0_1", ClassNodeType::Lambda);
-    lambda.with_mut(|d| {
-        d.parent = Some(root);
-        d.lambda_information = Some(LambdaInformation::default());
-    });
-    assert_eq!(lambda.get_wrapper(), None);
-    let wrapper = ClassWrapper::new(root);
-    root.with_mut(|d| d.wrapper = Some(wrapper));
-    assert_eq!(lambda.get_wrapper(), Some(wrapper));
-    assert_eq!(wrapper.get_class_struct(), root.with(|d| d.class_struct));
-    wrapper
-        .get_hidden_members()
-        .borrow_mut()
-        .add("f I".to_string());
-    assert!(root
-        .get_wrapper()
-        .unwrap()
-        .get_hidden_members()
-        .borrow()
-        .contains(&"f I".to_string()));
-    reset_class_scope();
-    assert!(root.is_live());
-    assert_eq!(root.get_wrapper(), None);
-}
-
-#[test]
 fn modifiers_print_in_declaration_order() {
     assert_eq!(
         ClassWriter::get_modifiers(0x0001 | 0x0008 | 0x0010),
@@ -185,6 +564,20 @@ fn modifiers_print_in_declaration_order() {
         "private abstract strictfp"
     );
     assert_eq!(ClassWriter::get_modifiers(0x1000), "");
+}
+
+#[test]
+fn removed_imports_write_nothing() {
+    let (_guard, sc) = fixture();
+    DecompilerContext::set_property(IFernflowerPreferences::REMOVE_IMPORTS, "1");
+    let imports = ImportCollector::new(ClassNode::new(ClassNodeType::Root, class(sc, "p/Outer")));
+    assert_eq!(
+        imports.get_short_name("java.util.List").as_deref(),
+        Some("List")
+    );
+    let mut buffer = TextBuffer::new();
+    imports.write_imports(&mut buffer, true);
+    assert_eq!(buffer.convert_to_string_and_allow_data_discard(), "");
 }
 
 fn collector(
@@ -376,6 +769,7 @@ impl Plugin for CountingPlugin {
 
 #[test]
 fn plugin_passes_run_per_location() {
+    let (_guard, sc) = fixture();
     let runs = Rc::new(Cell::new(0));
     let plugins = PluginContext::new();
     plugins.register_plugin(Rc::new(CountingPlugin {
@@ -386,17 +780,21 @@ fn plugin_passes_run_per_location() {
     plugins.initialize();
     plugins.initialize();
 
-    let rec = DecompileRecord::new(dummy_method());
-    let mut ctx = pass_context(rec);
+    let rec = DecompileRecord::new(run_method(sc));
+    let mut ctx = pass_context(sc, rec);
     assert!(plugins.run_passes(JavaPassLocation::MainLoop, &mut ctx));
     assert_eq!(runs.get(), 1);
     assert!(!plugins.run_passes(JavaPassLocation::AtEnd, &mut ctx));
     assert_eq!(runs.get(), 2);
     assert!(!plugins.run_passes(JavaPassLocation::BeforeMain, &mut ctx));
     assert_eq!(rec.get_names(), vec!["First", "End"]);
-    assert!(plugins.get_language_spec(dummy_class("a/A")).is_none());
+    assert!(plugins.get_language_spec(class(sc, "p/Outer")).is_none());
     assert!(plugins.get_variable_renamer().is_none());
     assert_eq!(plugins.get_plugins().len(), 1);
+    assert_eq!(
+        PluginContext::get_current_context(),
+        sc.get_plugin_context()
+    );
 }
 
 #[test]
@@ -419,8 +817,10 @@ fn duplicate_plugin_ids_are_rejected() {
 
 #[test]
 fn pass_builders_compose_like_vineflower() {
-    let rec = DecompileRecord::new(dummy_method());
-    let mut ctx = pass_context(rec);
+    let (_guard, sc) = fixture();
+    let rec = DecompileRecord::new(run_method(sc));
+    let mut ctx = pass_context(sc, rec);
+    assert_eq!(ctx.get_method_descriptor().params.len(), 0);
 
     let budget = Rc::new(Cell::new(2));
     let looped = Rc::new(Cell::new(0));

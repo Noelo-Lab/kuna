@@ -1,0 +1,46 @@
+== nodes
+p/Outer	ROOT	Outer	33	\N	p/Outer$1Local,p/Outer$A,p/Outer$B	\N		\N	ROOT class p/Outer
+p/Outer$1Local	LOCAL	Local	0	p/Outer		run ()V	p/Outer	\N	LOCAL class p/Outer$1Local
+p/Outer$A	MEMBER	A	1	p/Outer	p/Outer$A$1	\N	p/Outer	\N	MEMBER class p/Outer$A
+p/Outer$A$1	ANONYMOUS	\N	0	p/Outer$A		\N	p/Outer,p/Outer$A	java/lang/Runnable	ANONYMOUS class p/Outer$A$1
+p/Outer$B	MEMBER	B	9	p/Outer		\N	p/Outer	\N	MEMBER class p/Outer$B
+all	p/Outer$1Local,p/Outer$A,p/Outer$B,p/Outer$A$1
+== lambdas
+LAMBDA	\N	run	()V	p/Outer	lambda$new$0	()V	6	lambda$new$0 ()V	false	true	java/lang/Runnable	LAMBDA class p/Outer
+LAMBDA	\N	get	()Ljava/lang/Object;	java/lang/Object	toString	()Ljava/lang/String;	5	toString ()Ljava/lang/String;	true	false	java/util/function/Supplier	LAMBDA class p/Outer
+LAMBDA	\N	run	()V	p/Outer	run	()V	5	run ()V	true	false	java/lang/Runnable	LAMBDA class p/Outer
+== short names
+short	java.util.List	List
+short	java.awt.List	java.awt.List
+short	java.lang.String	String
+short	p.Outer	Outer
+short	p.Outer$A	Outer.A
+short	p.Outer$A$1	<unrepresentable>
+short	p.Outer$1Local	Local
+short	q.Outer	q.Outer
+short	x.y.A	x.y.A
+short	p.Outer.B	B
+short	q.Other$A	Other.A
+short	java.util.concurrent.Future	Future
+short	a.b.Zed	Zed
+short	Default	Default
+short	java.util.List	List
+short	x.field	field
+short	java.util.Map	not-imported	Map
+short	java.util.Set	locked	Set
+short	java.awt.Set	Set
+context	x.field	x.field
+context	java.util.List	List
+context	p.Outer$A$1	<unrepresentable>
+imports	import a.b.Zed;\nimport java.awt.Set;\nimport java.util.List;\nimport java.util.concurrent.Future;\nimport p.Outer.B;\nimport q.Other;\nimport x.field;\n\n
+header	package p;\n\nimport a.b.Zed;\nimport java.awt.Set;\nimport java.util.List;\nimport java.util.concurrent.Future;\nimport p.Outer.B;\nimport q.Other;\nimport x.field;\n\n
+header-empty	package p;\n\n
+== mapper
+empty	
+dump	false	class 'p/Outer' {\n   method 'run ()V' {\n      3      5\n      4      6\n   }\n\n   method '<init> ()V' {\n      7      9\n   }\n}\n\nclass 'q/Other' {\n   method 'x ()V' {\n      5      7\n   }\n}\n\nLines mapping:\n12 <-> 6\nNot mapped:\n13\n
+dump	true	class 'p/Outer' {\n   method 'run ()V' {\n      0      5\n      8      6\n   }\n\n   method '<init> ()V' {\n      4      9\n   }\n}\n\nclass 'q/Other' {\n   method 'x ()V' {\n      ff      7\n   }\n}\n\nLines mapping:\n12 <-> 6\nNot mapped:\n13\n
+lines	12,6
+dump	after	class 'p/Outer' {\n   method 'run ()V' {\n      3      5\n      4      6\n   }\n\n   method '<init> ()V' {\n      7      9\n   }\n}\n\nclass 'q/Other' {\n   method 'x ()V' {\n      5      7\n   }\n}\n\nLines mapping:\n12 <-> 6\nNot mapped:\n13\n
+== writer
+exception	// $VF: Couldn't be decompiled\n
+error-comment	Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)

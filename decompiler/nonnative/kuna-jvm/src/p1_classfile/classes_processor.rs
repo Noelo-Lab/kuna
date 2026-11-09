@@ -210,10 +210,11 @@ pub struct ClassNodeData {
     pub access: i32,
     pub simple_name: Option<String>,
     pub class_struct: StructClass,
-    /// Class scope: read it through [`ClassNode::get_wrapper`], which drops a stale handle.
+    /// Class scope, alive until the run's class-scope reset; read it through
+    /// [`ClassNode::get_wrapper`].
     pub wrapper: Option<ClassWrapper>,
     pub enclosing_method: Option<String>,
-    /// Class scope; only meaningful while its root class is being decompiled.
+    /// Class scope; stale once the run has finished.
     pub super_invocation: Option<InvocationExprent>,
     pub map_fields_to_vars: JHashMap<String, VarVersionPair>,
     pub anonymous_class_type: Option<VarType>,
@@ -337,8 +338,10 @@ impl ClassNode {
         None
     }
 
-    /// The wrapper of this node, or of its nearest non-lambda ancestor; `None`
-    /// before the wrapper is built and once its root class has been finished.
+    /// The wrapper of this node, or of its nearest non-lambda ancestor: `None`
+    /// before `initWrappers` and, for a root node, after `destroyWrappers`
+    /// (nested wrappers stay for the whole run, as in Java). A wrapper left from
+    /// a finished run (class scope reset) also reads as `None`.
     pub fn get_wrapper(self) -> Option<ClassWrapper> {
         let mut node = self;
         while node.with(|d| d.type_) == ClassNodeType::Lambda {
