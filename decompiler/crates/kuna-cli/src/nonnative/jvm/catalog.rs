@@ -91,8 +91,8 @@ pub(crate) fn markdown() -> String {
          to Vineflower's long and three-letter names (its `aliases`). Booleans take \
          `on|off` (also `1|0|true|false`). Defaults are Vineflower 1.12.0's, its \
          bundled plugins' included. kuna's own rows have no Vineflower name; among them, \
-         each `jvm_fix_*` option fixes methods Vineflower fails on, and \
-         `jvm_vineflower_compat on` turns every fix off for Vineflower's exact text.\n\n",
+         `jvm_vineflower_compat on` turns off kuna's fixes of Vineflower's defects (which \
+         have no options of their own) for Vineflower's exact text.\n\n",
     );
     preamble.push_str("Vineflower keys kuna sets itself, so they are not options:\n\n");
     for owned in kuna_options::driver_owned() {

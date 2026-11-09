@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/TryWithResourcesProcessor.java`.
 //!
-//! kuna fix `jvm_fix_twr_unary_condition` (`kuna_fixes`): in
+//! kuna fix `twr_unary_condition` (`kuna_fixes`): in
 //! `make_try_with_resource_j11`, a handler whose first `if` tests a unary
 //! condition (`!flag`) is not a resource's null check, where Vineflower reads
 //! the condition's missing second operand.

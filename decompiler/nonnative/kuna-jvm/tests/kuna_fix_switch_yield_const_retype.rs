@@ -1,4 +1,4 @@
-//! `jvm_fix_switch_yield_const_retype`: `ConstExprent::can_be_written_as`
+//! Fix `switch_yield_const_retype`: `ConstExprent::can_be_written_as`
 //! accepts exactly the types Vineflower's `ConstExprent.toJava` writes, per
 //! the b02 golden rows, and rejects the common supertypes a switch
 //! expression's arms can join to.

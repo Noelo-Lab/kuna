@@ -1,6 +1,6 @@
 //! Port of `org/vineflower/kotlin/struct/KConstructor.java`.
 //!
-//! kuna fix `jvm_fix_kt_default_args_super_call` (`kuna_fixes`): in
+//! kuna fix `kt_default_args_super_call` (`kuna_fixes`): in
 //! `write_primary_constructor`, a supertype call through a default-arguments
 //! constructor is written as a call of the constructor it stands for
 //! (`kuna_fix_kt_default_args_super_call`), where Vineflower removes only the

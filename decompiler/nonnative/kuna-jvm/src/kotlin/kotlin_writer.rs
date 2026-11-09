@@ -4,14 +4,14 @@
 //! `ClassWriter::collect_error_lines` (its throw location is the only frame),
 //! so `ERROR_DUMP_STOP_POINTS` is never consulted.
 //!
-//! kuna fix `jvm_fix_kt_synthetic_anonymous_object` (`kuna_fixes`): an
+//! kuna fix `kt_synthetic_anonymous_object` (`kuna_fixes`): an
 //! anonymous class without Class metadata that needs no constructor
 //! arguments is written as an `object` whose supertypes come from the class
 //! file, with no flags comment, where Vineflower throws; its methods keep
 //! their `return`s and failure comments
 //! (`kuna_fix_kt_synthetic_anonymous_object`).
 //!
-//! kuna fix `jvm_fix_kt_local_as_extension_receiver`: in `write_method`,
+//! kuna fix `kt_local_as_extension_receiver`: in `write_method`,
 //! only a method with a parameter can be an extension function, where
 //! Vineflower takes a `$this$` local in the first free slot of a
 //! parameterless method (a captured receiver's alias, an inlined lambda's

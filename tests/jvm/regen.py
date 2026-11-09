@@ -26,6 +26,7 @@ import difflib
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 
@@ -99,6 +100,24 @@ FIX_SETS = (('Kuna Fixes, Vineflower compat', 'kuna-fixes-compat', '1', 'expecte
             ('Kuna Fixes', 'kuna-fixes', '0', 'expected'))
 
 
+KUNA_FIXES_RS = 'decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_fixes.rs'
+
+
+def fix_ids(repo):
+    """The ids of the kuna fixes: the strings `KunaFix::id` returns in kuna_fixes.rs."""
+    with open(os.path.join(repo, KUNA_FIXES_RS), encoding='utf-8') as f:
+        return re.findall(r'KunaFix::\w+ => "([a-z0-9_]+)"', f.read())
+
+
+def check_fixes(fm, repo):
+    """Every kuna-fixes case names an existing fix by its id."""
+    ids = set(fix_ids(repo))
+    bad = [f'{c["id"]}: {c["fix"]}' for c in fm['cases'] if c['fix'] not in ids]
+    if bad:
+        sys.exit('kuna-fixes/cases.json: no such fix id (KunaFix::id in ' + KUNA_FIXES_RS + '): '
+                 + ', '.join(bad))
+
+
 def fix_ext(c):
     """The extension of a kuna-fixes case's text: `.kt` for a Kotlin case (`"language": "kotlin"`), else `.java`."""
     return '.kt' if c.get('language') == 'kotlin' else '.java'
@@ -161,7 +180,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 (`vf-decompile --plugins`), and its expected texts are `<id>.kt`. `classes/` holds the class files,
 `src/` the source they were compiled from.
 
-| Case | Fix | Compiled with | With the fix |
+| Case | Fix id | Compiled with | With the fix |
 |---|---|---|---|
 {rows}
 
@@ -362,13 +381,13 @@ core options) with the oracle and writes `NEW_DIR/cases.tsv`. Refresh the vendor
 ## kuna-fixes cases
 
 `kuna-fixes/cases.json` holds **{nfix}** cases of kuna's own fixes (`docs/jvm.md`, "Fixing a Vineflower bug"):
-a small class Vineflower 1.12.0 fails on, the fix (`jvm_fix_*`) that decompiles it, and the source it was
+a small class Vineflower 1.12.0 fails on, the fix (its `KunaFix` id) that decompiles it, and the source it was
 compiled from. Each runs twice, on the fixture's base map plus `dump-exception-on-error=0`: as
 `kuna-fixes-compat/<id>` with `jvm_vineflower_compat` on, against what the release jar prints
 (`kuna-fixes/expected-compat/`, failure comment included), and as `kuna-fixes/<id>` with kuna's defaults,
 against kuna's reviewed output (`kuna-fixes/expected/`). `kuna-fixes/README.md` lists them with the diff
 between the two. Add one with
-`python3 -I tests/jvm/kuna_fix_case.py --fix jvm_fix_<slug> --class Foo.class --source Foo.java --summary TEXT`.
+`python3 -I tests/jvm/kuna_fix_case.py --fix <id> --class Foo.class --source Foo.java --summary TEXT`.
 
 ## Running
 
@@ -421,6 +440,7 @@ def main():
         km = json.load(f)
     with open(os.path.join(here, FIXES_DIR, 'cases.json'), encoding='utf-8') as f:
         fm = json.load(f)
+    check_fixes(fm, os.path.dirname(os.path.dirname(here)))
 
     if a.full_manifest:
         write_manifest(os.path.abspath(a.full_manifest), runnable, sets, base, corpus, m['java_homes'],

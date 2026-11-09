@@ -9,7 +9,7 @@
   "cases": [
     {
       "id": "pkg/TestMethodRefWildcardReceiver",
-      "fix": "jvm_fix_lambda_wildcard_return",
+      "fix": "lambda_wildcard_return",
       "class_files": [
         "pkg/TestMethodRefWildcardReceiver.class",
         "pkg/TestMethodRefWildcardReceiver$Factory.class",
@@ -24,7 +24,7 @@
     },
     {
       "id": "pkg/TestTryCatchNotFlag",
-      "fix": "jvm_fix_twr_unary_condition",
+      "fix": "twr_unary_condition",
       "class_files": [
         "pkg/TestTryCatchNotFlag.class",
         "pkg/TestTryCatchNotFlag$Res.class"
@@ -35,7 +35,7 @@
     },
     {
       "id": "pkg/TestIfDenestFallthrough",
-      "fix": "jvm_fix_if_denest_fallthrough",
+      "fix": "if_denest_fallthrough",
       "class_files": [
         "pkg/TestIfDenestFallthrough.class"
       ],
@@ -45,7 +45,7 @@
     },
     {
       "id": "pkg/TestSwitchExprConstLub",
-      "fix": "jvm_fix_switch_yield_const_retype",
+      "fix": "switch_yield_const_retype",
       "class_files": [
         "pkg/TestSwitchExprConstLub.class",
         "pkg/TestSwitchExprConstLub$IntSink.class"
@@ -56,7 +56,7 @@
     },
     {
       "id": "pkg/TestCatchLoopBack",
-      "fix": "jvm_fix_catch_loop_back_successor",
+      "fix": "catch_loop_back_successor",
       "class_files": [
         "pkg/TestCatchLoopBack.class",
         "pkg/TestCatchLoopBack$IoError.class",
@@ -70,7 +70,7 @@
     },
     {
       "id": "pkg/TestCapturedReceiverKt",
-      "fix": "jvm_fix_kt_local_as_extension_receiver",
+      "fix": "kt_local_as_extension_receiver",
       "class_files": [
         "pkg/TestCapturedReceiverKt.class",
         "pkg/TestCapturedReceiverKt$iterator$1.class"
@@ -82,7 +82,7 @@
     },
     {
       "id": "pkg/TestSamWrapperObjectKt",
-      "fix": "jvm_fix_kt_synthetic_anonymous_object",
+      "fix": "kt_synthetic_anonymous_object",
       "class_files": [
         "pkg/TestSamWrapperObjectKt.class",
         "pkg/TestSamWrapperObjectKt$byLength$1.class",
@@ -96,7 +96,7 @@
     },
     {
       "id": "pkg/TestDefaultArgCompoundBranch",
-      "fix": "jvm_fix_kt_default_arg_compound_branch",
+      "fix": "kt_default_arg_compound_branch",
       "class_files": [
         "pkg/TestDefaultArgCompoundBranch.class",
         "pkg/TestDefaultArgCompoundBranch$make$1$Box.class",
@@ -109,7 +109,7 @@
     },
     {
       "id": "pkg/TestDefaultArgsSuperCall",
-      "fix": "jvm_fix_kt_default_args_super_call",
+      "fix": "kt_default_args_super_call",
       "class_files": [
         "pkg/TestDefaultArgsSuperCall.class",
         "pkg/TestDefaultArgsSuperCall$Overloaded.class",

@@ -1,4 +1,4 @@
-//! kuna fix `jvm_fix_kt_default_args_super_call` (`kuna_fixes`): a primary
+//! kuna fix `kt_default_args_super_call` (`kuna_fixes`): a primary
 //! constructor's supertype call that goes through the superclass's
 //! default-arguments constructor (`<init>(P1..Pn, int mask.., DefaultConstructorMarker)`)
 //! becomes a call of the constructor it stands for, `<init>(P1..Pn)`, with the

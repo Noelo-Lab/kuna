@@ -1,6 +1,6 @@
 //! Port of `org/vineflower/kotlin/struct/DefaultArgsMap.java`.
 //!
-//! kuna fix `jvm_fix_kt_default_arg_compound_branch` (`kuna_fixes`): in
+//! kuna fix `kt_default_arg_compound_branch` (`kuna_fixes`): in
 //! `from`, a mask test whose branch is not a basic block (a default value
 //! computed by several statements) recovers no default, as any other branch
 //! that is not a simple assignment; Vineflower reads the branch's expression

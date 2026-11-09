@@ -1,6 +1,6 @@
 //! Port of `org/vineflower/kotlin/expr/KExitExprent.java`.
 //!
-//! kuna fix `jvm_fix_kt_synthetic_anonymous_object` (`kuna_fixes`): in a
+//! kuna fix `kt_synthetic_anonymous_object` (`kuna_fixes`): in a
 //! method of an object that fix writes, the current method wrapper is the
 //! method itself, not a lambda's, and a `return` is printed.
 

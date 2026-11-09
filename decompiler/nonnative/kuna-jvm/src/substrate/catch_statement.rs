@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/stats/CatchStatement.java`.
 //!
-//! kuna fix `jvm_fix_catch_loop_back_successor` (`kuna_fixes`): `is_head`
+//! kuna fix `catch_loop_back_successor` (`kuna_fixes`): `is_head`
 //! builds no try/catch whose successor would be one of its own members (the
 //! try block, when the handlers jump back to it as a loop's continue); the
 //! loop is then isolated first, as Vineflower already does for one handler.

@@ -23,7 +23,7 @@ use crate::decompiler_context::DecompilerContext;
 use crate::fernflower::{DecompiledClass, Fernflower};
 use crate::i_fernflower_logger::{IFernflowerLogger, Severity};
 use crate::jdk_runtime::JdkRuntime;
-use crate::kuna_fixes::VINEFLOWER_COMPAT;
+use crate::kuna_fixes::{KunaFixes, VINEFLOWER_COMPAT};
 use crate::kuna_plugins::JVM_PLUGINS;
 use crate::rt::{self, try_catch, Caught};
 use crate::struct_class::StructClass;
@@ -97,6 +97,10 @@ pub struct Case {
     pub compare: Vec<String>,
     pub javadoc: Option<String>,
     pub jdks: Vec<JdkNeed>,
+    /// The fix set to run with instead of the one the options give: a test
+    /// hook for isolating one fix (`KunaFixes::without`).
+    #[doc(hidden)]
+    pub fixes: Option<KunaFixes>,
 }
 
 #[derive(Default)]
@@ -359,6 +363,7 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
             compare: raw.compare,
             javadoc: raw.scoped.javadoc.or_else(|| set.javadoc.clone()),
             jdks,
+            fixes: None,
         });
     }
     Ok(out)
@@ -566,7 +571,10 @@ pub fn execute(case: &Case) -> EngineRun {
     let mut units = Vec::new();
     let start = Instant::now();
     let outcome = try_catch(|| {
-        let mut fernflower = Fernflower::new(&engine_options(case), logger.clone());
+        let mut fernflower = match case.fixes {
+            Some(fixes) => Fernflower::new_with_fixes(&engine_options(case), logger.clone(), fixes),
+            None => Fernflower::new(&engine_options(case), logger.clone()),
+        };
         if let Some(provider) = case
             .javadoc
             .as_deref()

@@ -1,4 +1,4 @@
-//! The kuna-only fixes: the gate, its options, and the two-pass kuna-fixes corpus cases.
+//! The kuna-only fixes: the gate, the compat switch, and the two-pass kuna-fixes corpus cases.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -16,9 +16,7 @@ use kuna_jvm::if_statement::IfStatement;
 use kuna_jvm::kuna_corpus::{
     count_failed_methods, load_cases, reset_engine_thread, run_case, with_engine_stack, CaseStatus,
 };
-use kuna_jvm::kuna_fixes::{
-    self, enabled, take_switches, KunaFix, KunaFixes, FIX_PREFIX, VINEFLOWER_COMPAT,
-};
+use kuna_jvm::kuna_fixes::{self, enabled, take_switches, KunaFix, KunaFixes, VINEFLOWER_COMPAT};
 use kuna_jvm::kuna_options::{resolve, rows};
 use kuna_jvm::list_stack::ListStack;
 use kuna_jvm::root_statement::RootStatement;
@@ -46,62 +44,68 @@ fn the_default_turns_every_fix_on() {
 }
 
 #[test]
-fn compat_turns_every_fix_off_whatever_the_fix_options_say() {
+fn compat_turns_every_fix_off() {
     for value in ["1", "on", "true", "ON"] {
-        let mut options = vec![(VINEFLOWER_COMPAT, value)];
-        options.extend(KunaFix::ALL.iter().map(|f| (f.option(), "on")));
-        let fixes = KunaFixes::from_options(options);
+        let fixes = KunaFixes::from_options([(VINEFLOWER_COMPAT, value)]);
         assert_eq!(fixes, KunaFixes::COMPAT, "{value}");
         assert!(KunaFix::ALL.iter().all(|f| !fixes.contains(*f)));
     }
-}
-
-#[test]
-fn one_fix_off_leaves_the_others_on() {
-    for fix in KunaFix::ALL {
-        for value in ["0", "off", "false", "OFF"] {
-            let fixes = KunaFixes::from_options([(fix.option(), value)]);
-            assert!(!fixes.contains(*fix), "{fix:?} {value}");
-            for other in KunaFix::ALL.iter().filter(|f| *f != fix) {
-                assert!(fixes.contains(*other), "{other:?} with {fix:?} off");
-            }
-        }
-    }
-    let fix = KunaFix::LambdaWildcardReturn;
-    let later_wins = KunaFixes::from_options([(fix.option(), "0"), (fix.option(), "1")]);
-    assert!(later_wins.contains(fix));
     let compat_later_off =
         KunaFixes::from_options([(VINEFLOWER_COMPAT, "1"), (VINEFLOWER_COMPAT, "0")]);
     assert_eq!(compat_later_off, KunaFixes::DEFAULT);
+    let compat_later_on =
+        KunaFixes::from_options([(VINEFLOWER_COMPAT, "0"), (VINEFLOWER_COMPAT, "on")]);
+    assert_eq!(compat_later_on, KunaFixes::COMPAT);
 }
 
 #[test]
-fn the_switches_leave_the_property_list() {
+fn every_fix_has_its_own_id() {
+    let ids: BTreeSet<&str> = KunaFix::ALL.iter().map(|f| f.id()).collect();
+    assert_eq!(ids.len(), KunaFix::ALL.len());
+    for fix in KunaFix::ALL {
+        assert_eq!(KunaFix::from_id(fix.id()), Some(*fix));
+        assert!(!fix.id().starts_with("jvm_"), "{}", fix.id());
+        let without = KunaFixes::DEFAULT.without(*fix);
+        assert!(!without.contains(*fix));
+        assert_eq!(without.list().len(), KunaFix::ALL.len() - 1);
+    }
+}
+
+#[test]
+fn only_the_compat_switch_leaves_the_property_list() {
     let (fixes, rest) = take_switches(&pairs(&[
         ("log-level", "warn"),
-        (VINEFLOWER_COMPAT, "0"),
+        (VINEFLOWER_COMPAT, "1"),
         ("jvm_fix_lambda_wildcard_return", "off"),
-        ("jvm_fix_no_such_fix", "off"),
         ("decompile-generics", "1"),
     ]));
-    assert!(!fixes.contains(KunaFix::LambdaWildcardReturn));
-    assert!(fixes.contains(KunaFix::ReportToKuna));
+    assert_eq!(fixes, KunaFixes::COMPAT);
     assert_eq!(
         rest,
         pairs(&[
             ("log-level", "warn"),
-            ("jvm_fix_no_such_fix", "off"),
+            ("jvm_fix_lambda_wildcard_return", "off"),
             ("decompile-generics", "1"),
         ])
     );
+    let (fixes, _) = take_switches(&pairs(&[("jvm_fix_lambda_wildcard_return", "off")]));
+    assert_eq!(fixes, KunaFixes::DEFAULT);
 }
 
-/// The fixes and `error-message` of the context `Fernflower::new` installs for `options`.
-fn engine_state(options: &[(&'static str, &'static str)]) -> (KunaFixes, String, bool) {
+/// The fixes and `error-message` of the context `Fernflower::new` installs for `options`, or
+/// `Fernflower::new_with_fixes` for `options` and `fixes`.
+fn engine_state(
+    options: &[(&'static str, &'static str)],
+    fixes: Option<KunaFixes>,
+) -> (KunaFixes, String, bool) {
     let options = pairs(options);
     with_engine_stack(move || {
         reset_engine_thread();
-        let mut fernflower = Fernflower::new(&options, <dyn IFernflowerLogger>::NO_OP());
+        let logger = <dyn IFernflowerLogger>::NO_OP();
+        let mut fernflower = match fixes {
+            Some(fixes) => Fernflower::new_with_fixes(&options, logger, fixes),
+            None => Fernflower::new(&options, logger),
+        };
         let active = kuna_fixes::active();
         let context = DecompilerContext::get_current_context().unwrap();
         assert_eq!(context.with(|d| d.kuna_fixes), active);
@@ -110,7 +114,7 @@ fn engine_state(options: &[(&'static str, &'static str)]) -> (KunaFixes, String,
             d.properties
                 .entry_vec()
                 .iter()
-                .any(|(k, _)| k == VINEFLOWER_COMPAT || k.starts_with(FIX_PREFIX))
+                .any(|(k, _)| k == VINEFLOWER_COMPAT)
         });
         fernflower.clear_context();
         reset_engine_thread();
@@ -125,24 +129,31 @@ fn fernflower_installs_the_set_the_gate_answers_from() {
         .get_cloned(&IFernflowerPreferences::ERROR_MESSAGE.to_string())
         .unwrap();
 
-    let (fixes, message, leaked) = engine_state(&[]);
+    let (fixes, message, leaked) = engine_state(&[], None);
     assert_eq!(fixes, KunaFixes::DEFAULT);
     assert_eq!(message, KUNA_ERROR_MESSAGE);
     assert!(!leaked, "the switches stay out of Vineflower's option map");
 
-    let (fixes, message, leaked) = engine_state(&[(VINEFLOWER_COMPAT, "1")]);
+    let (fixes, message, leaked) = engine_state(&[(VINEFLOWER_COMPAT, "1")], None);
     assert_eq!(fixes, KunaFixes::COMPAT);
     assert_eq!(message, vineflower_message);
     assert!(!leaked);
 
-    let (fixes, message, _) = engine_state(&[("jvm_fix_report_to_kuna", "0")]);
-    assert!(!fixes.contains(KunaFix::ReportToKuna));
+    let without_note = KunaFixes::DEFAULT.without(KunaFix::ReportToKuna);
+    let (fixes, message, leaked) =
+        engine_state(&[(VINEFLOWER_COMPAT, "1")], Some(without_note));
+    assert_eq!(fixes, without_note);
     assert!(fixes.contains(KunaFix::LambdaWildcardReturn));
     assert_eq!(message, vineflower_message);
+    assert!(!leaked);
 
-    let (_, message, _) = engine_state(&[("error-message", "see the docs")]);
+    let (fixes, message, _) = engine_state(&[("jvm_fix_report_to_kuna", "0")], None);
+    assert_eq!(fixes, KunaFixes::DEFAULT, "a jvm_fix_ key is no switch");
+    assert_eq!(message, KUNA_ERROR_MESSAGE);
+
+    let (_, message, _) = engine_state(&[("error-message", "see the docs")], None);
     assert_eq!(message, "see the docs");
-    let (_, message, _) = engine_state(&[("erm", "")]);
+    let (_, message, _) = engine_state(&[("erm", "")], None);
     assert_eq!(message, "");
 }
 
@@ -150,10 +161,10 @@ fn fernflower_installs_the_set_the_gate_answers_from() {
 fn the_gate_reads_the_installed_context() {
     with_engine_stack(|| {
         reset_engine_thread();
-        let options = pairs(&[("jvm_fix_lambda_wildcard_return", "off")]);
+        let options = pairs(&[(VINEFLOWER_COMPAT, "on")]);
         let mut fernflower = Fernflower::new(&options, <dyn IFernflowerLogger>::NO_OP());
         assert!(!enabled(KunaFix::LambdaWildcardReturn));
-        assert!(enabled(KunaFix::ReportToKuna));
+        assert!(!enabled(KunaFix::ReportToKuna));
         let context = DecompilerContext::get_current_context();
         DecompilerContext::set_current_context(None);
         assert!(enabled(KunaFix::LambdaWildcardReturn));
@@ -165,23 +176,8 @@ fn the_gate_reads_the_installed_context() {
 }
 
 #[test]
-fn every_fix_has_a_row_and_every_fix_row_a_fix() {
-    let fix_rows: BTreeSet<&str> = rows()
-        .iter()
-        .filter(|r| r.option.starts_with(FIX_PREFIX))
-        .map(|r| r.option)
-        .collect();
-    let fixes: BTreeSet<&str> = KunaFix::ALL.iter().map(|f| f.option()).collect();
-    assert_eq!(fix_rows, fixes);
-    for fix in KunaFix::ALL {
-        assert_eq!(KunaFix::from_option(fix.option()), Some(*fix));
-        let row = rows().iter().find(|r| r.option == fix.option()).unwrap();
-        assert!(row.is_kuna(), "{}", row.option);
-        assert_eq!(row.source_decompiler, "kuna", "{}", row.option);
-        assert_eq!(row.change_kind, "kuna-fix", "{}", row.option);
-        assert_eq!((row.values, row.default), ("on|off", "on"), "{}", row.option);
-        assert_eq!(resolve(row.option, "off").unwrap(), (row.option, "0".to_string()));
-    }
+fn the_compat_row_is_the_only_fix_switch() {
+    assert!(rows().iter().all(|r| !r.option.starts_with("jvm_fix_")));
     let compat = rows().iter().find(|r| r.option == VINEFLOWER_COMPAT).unwrap();
     assert!(compat.is_kuna());
     assert_eq!((compat.values, compat.default), ("on|off", "off"));
@@ -190,6 +186,11 @@ fn every_fix_has_a_row_and_every_fix_row_a_fix() {
         resolve("jvm_vineflower_compat", "on").unwrap(),
         (VINEFLOWER_COMPAT, "1".to_string())
     );
+    for fix in KunaFix::ALL {
+        let name = format!("jvm_fix_{}", fix.id());
+        let err = resolve(&name, "off").unwrap_err();
+        assert!(err.starts_with(&format!("unknown JVM option {name}")), "{err}");
+    }
 }
 
 #[test]
@@ -222,7 +223,7 @@ fn every_kuna_fixes_case_matches_in_both_modes() {
 
 /// `if (a) { if (b) throw; if (c) return; else e(); } z; return;` as IfHelper sees it after
 /// `ExprProcessor`: the else branch `e` falls through to `z`, so `ifElseChainDenesting` must not
-/// move `z` into the then-branch (`jvm_fix_if_denest_fallthrough`); Vineflower does, and `e`'s
+/// move `z` into the then-branch (fix `if_denest_fallthrough`); Vineflower does, and `e`'s
 /// break then targets a statement inside the if it is no longer in.
 fn denest_shape(fixes: KunaFixes) -> (bool, Statement, Statement, Statement, Statement) {
     reset_class_scope();

@@ -1,4 +1,4 @@
-//! kuna fix `jvm_fix_switch_yield_const_retype` (`kuna_fixes`): the types a
+//! kuna fix `switch_yield_const_retype` (`kuna_fixes`): the types a
 //! constant can be written with. `SwitchExprent::to_java` gives a constant
 //! yielded by a single-expression arm the switch expression's type; when the
 //! arms have unrelated reference types that type is their common supertype

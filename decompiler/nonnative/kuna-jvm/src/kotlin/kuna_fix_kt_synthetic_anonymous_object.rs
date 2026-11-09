@@ -1,4 +1,4 @@
-//! kuna fix `jvm_fix_kt_synthetic_anonymous_object`: writing an anonymous
+//! kuna fix `kt_synthetic_anonymous_object`: writing an anonymous
 //! class whose Kotlin metadata is not a Class.
 //!
 //! kotlinc gives some anonymous classes only synthetic-class metadata

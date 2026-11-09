@@ -4,9 +4,10 @@
 directories of classes to Java, and the classes the Kotlin compiler emitted to Kotlin. It
 is a Rust port of [Vineflower](https://github.com/Vineflower/vineflower) 1.12.0 with the
 three plugins Vineflower bundles (Kotlin, variable renaming, IDEA not-null). On the same
-class files and options it prints the text Vineflower prints, byte for byte, except inside
-the methods Vineflower fails on and kuna fixes (*Kuna-only fixes*, below);
-`--option jvm_vineflower_compat on` turns those fixes off. It is reached through the
+class files and options it prints the text Vineflower prints, byte for byte, except where
+kuna fixes a Vineflower defect: a method Vineflower fails on, or code it prints wrong
+(*Kuna-only fixes*, below). The fixes are always on; `--option jvm_vineflower_compat on`
+turns them all off. It is reached through the
 ordinary `kuna` CLI: give a command a `.class`, a jar or a directory where it would take a
 binary.
 
@@ -29,6 +30,33 @@ kuna catalog --engine jvm                     # the jvm_* options
 | `decompiler/nonnative/kuna-jvm/tools/oracle/README.md` | the Vineflower oracle the corpus is cut from: what it downloads, how to rebuild it |
 | `decompiler/nonnative/kuna-jvm/tools/vftrace/README.md` | the pass-by-pass trace differ |
 | `docs/jvm-benchmark.md` | the benchmark against Vineflower on five large Java projects: what it scores, how to run it, the result |
+
+## How it relates to the native engine and p-code
+
+```
+                         kuna <command> <input>
+                                  |
+          kuna-cli: sniff the input (magic bytes, or a directory)
+                   /                                \
+      ELF / PE / Mach-O / raw              .class / jar / directory
+                 |                                   |
+        NATIVE ENGINE                        NON-NATIVE ENGINE
+   kuna-sleigh: bytes -> p-code       decompiler/nonnative/kuna-jvm
+   kuna-decomp: P1..P9 on p-code      (Vineflower port, own Java-level IR)
+                 |                                   |
+            C (or Rust)                       Java or Kotlin
+                   \                                /
+       shared: CLI commands and flags, option catalog (jvm_* rows),
+               text/JSON output shapes, phase-folder naming, docs/spec
+```
+
+The two engines meet only in `kuna-cli`, which picks one per input before any engine code
+runs (`kuna_input::sniff`: a class-file, zip, jmod, jimage or DEX header, a directory, or a
+jar with a launcher stub in front). The JVM engine does not lower bytecode to p-code: a
+class file already states its types, exception tables, generic signatures, lambdas and
+Kotlin metadata, and p-code would discard all of them. It also has an exact correctness
+oracle, Vineflower's text, which only a faithful port of Vineflower's own IR can match byte
+for byte.
 
 ## Why a separate engine
 
@@ -228,13 +256,15 @@ objects by creation in the arena; see the fidelity contract below.
   failures included, apart from the deliberate differences listed below. Everything this
   section claims about matching Vineflower is measured in this mode, and the regression
   corpus's Vineflower-oracle cases run in it.
-- **Default mode** (the switch off): the same text, except that each `jvm_fix_*` option that
-  is on (all are, by default) changes what Vineflower does wrong. Today that means two
-  things: a method Vineflower fails on and a fix covers is decompiled instead of written
-  as its `// $VF: Couldn't be decompiled` comment (with any imports its body needs), and
-  the note under a failure comment that remains asks for reports to kuna's tracker instead
-  of Vineflower's. Nothing else may differ; that is the evidence each fix ships with
-  (*Fixing a Vineflower bug*, below).
+- **Default mode** (the switch off): the same text, except where a kuna fix (*Kuna-only
+  fixes*, below) corrects what Vineflower does wrong. Every fix is always on in this mode;
+  none has an option of its own. Today that means three things: a method Vineflower fails
+  on and a fix covers is decompiled instead of written as its `// $VF: Couldn't be
+  decompiled` comment (with any imports its body needs); code Vineflower prints wrong (a
+  statement skipped after a denested `if`, a Kotlin supertype call with default-argument
+  placeholders) is printed as the program has it; and the note under a failure comment
+  that remains asks for reports to kuna's tracker instead of Vineflower's. Nothing else
+  may differ; that is the evidence each fix ships with (*Fixing a Vineflower bug*, below).
 
 **The test oracle is Vineflower's text.** In compat mode, on the same class files and
 options, kuna-jvm prints exactly what Vineflower 1.12.0 prints. Every Vineflower-oracle case
@@ -272,8 +302,8 @@ named kuna option that is off by default.
       ...
    ```
 
-   (That is compat mode; by default the second line names kuna's tracker,
-   `jvm_fix_report_to_kuna`.) With `jvm_dump_exception_on_error off` neither decompiler
+   (That is compat mode; by default the second line names kuna's tracker, fix
+   `report_to_kuna`.) With `jvm_dump_exception_on_error off` neither decompiler
    writes the exception. Run in compat mode with the command-line defaults of both
    decompilers, 11 of the 598 Java corpus cases and
    2 of the 73 Kotlin ones differ only in this, and so do every difference on the Kotlin
@@ -310,33 +340,37 @@ named kuna option that is off by default.
 ## Kuna-only fixes
 
 Where Vineflower 1.12.0 throws on a method, the port throws too and writes the method as
-`// $VF: Couldn't be decompiled`. kuna fixes such defects in its own engine, one named
-option per fix, each on by default and each turned off, all at once, by
-`--option jvm_vineflower_compat on`:
+`// $VF: Couldn't be decompiled`. kuna fixes such defects, and code Vineflower prints wrong,
+in its own engine. A fix is a correction, not a judgement call, so it has no option: every
+fix is always on, and the only way to turn them off is all at once, with `--option
+jvm_vineflower_compat on`, which gives Vineflower's exact text. Each fix has an id, used in
+the docs, the spec and `tests/jvm/kuna-fixes/cases.json`:
 
-| Option | Vineflower 1.12.0 | With the fix |
+| Fix id | Vineflower 1.12.0 defect | What kuna does |
 |---|---|---|
-| `jvm_fix_report_to_kuna` | the note under every error comment asks readers to report the class to Vineflower's tracker | it asks for reports to kuna's tracker (a `jvm_error_message` you set still wins) |
-| `jvm_fix_lambda_wildcard_return` | fails a method that passes `x::m` on a receiver typed `Foo<?>` to a generic call, when `m` returns `Foo`'s type variable (`NullPointerException: returnType`; spring-boot's `StructuredLoggingJsonProperties.customizers`) | the method decompiles; the lambda keeps the type its call's context gives it |
-| `jvm_fix_twr_unary_condition` | fails a method of a Java 11+ class whose `catch (Throwable)` handler starts with `if (!flag)` on a boolean local, taking the condition for a try-with-resources null check (`index out of bounds`; spring-framework's `ConfigurationClassEnhancer.createClass`) | the method decompiles; the `try`/`catch` is written as it is |
-| `jvm_fix_if_denest_fallthrough` | turns `if (a) { ...; try { ... } ... } Z` into `if (!a) { Z } else { ... }` although the `try` falls through to `Z`: prints a `break` past `Z` on that path (a skipped statement or a missing `return`), or fails the method (`IllegalStateException: Could not find destination nodes for stat id`; Elasticsearch's `InternalEngine.closeNoLock`) | the `if` keeps its shape when its body reaches the code after it; the method decompiles to its source |
-| `jvm_fix_switch_yield_const_retype` | fails a method whose switch expression yields a string or class literal next to an arm of an unrelated reference type, such as a boxed `char` (`RuntimeException: invalid constant type: Ljava/io/Serializable;`; spring-framework's `BasicJsonWriter.escape`) | the method decompiles; the literal keeps its own type, which the switch's context widens |
-| `jvm_fix_catch_loop_back_successor` | fails a `while (true)` loop after other code whose body is a `try` with two or more `catch` blocks that all go back to the loop (`RuntimeException: computing post reverse post order failed!`; Elasticsearch's `RetryingInputStream.read`) | the method decompiles; the loop is isolated before its `try`/`catch` is built, as for a single `catch` |
-| `jvm_fix_kt_synthetic_anonymous_object` | in Kotlin output, fails a method that creates an anonymous class kotlinc gave only synthetic-class metadata: a `Comparator { .. }`, `fun interface` or function-type lambda in an inline function with a `crossinline` parameter (`IllegalStateException: Anonymous class does not have Class Kotlin metadata`; 37 methods of kotlin-stdlib: `compareBy`, `thenBy`, `sortedBy`, `sortBy`, `binarySearchBy`, `AutoCloseable { }`) | the method decompiles, the class written as an `object` expression from the class file; a continuation or local function reference (superclass not `Object`) still fails |
-| `jvm_fix_kt_local_as_extension_receiver` | in Kotlin output, takes a method without parameters and metadata whose first local is named `$this$..` (a captured extension receiver, or an inlined lambda's receiver) for an extension function and fails (`ArrayIndexOutOfBoundsException`; kotlin-stdlib's `Enumeration<T>.iterator()` with the `remove()` kotlinc adds to its `Iterator`, and 22 whole classes `BeanDefinitionDsl$bean$$inlined$bean$N` of spring-framework) | the method or class decompiles; such a method is written as a plain method |
-| `jvm_fix_kt_default_args_super_call` | fails a whole Kotlin class whose primary constructor calls its superclass through the superclass's default-arguments constructor when the superclass is decompiled in the same run (`RuntimeException: Constructor X.<init>(...I)V not found`; kotlinx-coroutines' `BroadcastChannelImpl`), and otherwise prints the placeholders and bit mask, `: Base(a, null, 2)` | the call is the constructor it stands for, `: Base(a)`, when only trailing arguments are defaulted and no other constructor could take the rest |
-| `jvm_fix_kt_default_arg_compound_branch` | fails a whole Kotlin class with a default argument computed by several statements, such as an inlined `map` (`NullPointerException`; kotlin-reflect's `AnnotationConstructorCaller`) | the class decompiles; that default is printed as unknown, `= ...`, like any default the plugin cannot read back |
+| `report_to_kuna` | the note under every error comment asks readers to report the class to Vineflower's tracker | it asks for reports to kuna's tracker (a `jvm_error_message` you set still wins) |
+| `lambda_wildcard_return` | fails a method that passes `x::m` on a receiver typed `Foo<?>` to a generic call, when `m` returns `Foo`'s type variable (`NullPointerException: returnType`; spring-boot's `StructuredLoggingJsonProperties.customizers`) | the method decompiles; the lambda keeps the type its call's context gives it |
+| `twr_unary_condition` | fails a method of a Java 11+ class whose `catch (Throwable)` handler starts with `if (!flag)` on a boolean local, taking the condition for a try-with-resources null check (`index out of bounds`; spring-framework's `ConfigurationClassEnhancer.createClass`) | the method decompiles; the `try`/`catch` is written as it is |
+| `if_denest_fallthrough` | turns `if (a) { ...; try { ... } ... } Z` into `if (!a) { Z } else { ... }` although the `try` falls through to `Z`: prints a `break` past `Z` on that path (a skipped statement or a missing `return`), or fails the method (`IllegalStateException: Could not find destination nodes for stat id`; Elasticsearch's `InternalEngine.closeNoLock`) | the `if` keeps its shape when its body reaches the code after it; the method decompiles to its source |
+| `switch_yield_const_retype` | fails a method whose switch expression yields a string or class literal next to an arm of an unrelated reference type, such as a boxed `char` (`RuntimeException: invalid constant type: Ljava/io/Serializable;`; spring-framework's `BasicJsonWriter.escape`) | the method decompiles; the literal keeps its own type, which the switch's context widens |
+| `catch_loop_back_successor` | fails a `while (true)` loop after other code whose body is a `try` with two or more `catch` blocks that all go back to the loop (`RuntimeException: computing post reverse post order failed!`; Elasticsearch's `RetryingInputStream.read`) | the method decompiles; the loop is isolated before its `try`/`catch` is built, as for a single `catch` |
+| `kt_synthetic_anonymous_object` | in Kotlin output, fails a method that creates an anonymous class kotlinc gave only synthetic-class metadata: a `Comparator { .. }`, `fun interface` or function-type lambda in an inline function with a `crossinline` parameter (`IllegalStateException: Anonymous class does not have Class Kotlin metadata`; 37 methods of kotlin-stdlib: `compareBy`, `thenBy`, `sortedBy`, `sortBy`, `binarySearchBy`, `AutoCloseable { }`) | the method decompiles, the class written as an `object` expression from the class file; a continuation or local function reference (superclass not `Object`) still fails |
+| `kt_local_as_extension_receiver` | in Kotlin output, takes a method without parameters and metadata whose first local is named `$this$..` (a captured extension receiver, or an inlined lambda's receiver) for an extension function and fails (`ArrayIndexOutOfBoundsException`; kotlin-stdlib's `Enumeration<T>.iterator()` with the `remove()` kotlinc adds to its `Iterator`, and 22 whole classes `BeanDefinitionDsl$bean$$inlined$bean$N` of spring-framework) | the method or class decompiles; such a method is written as a plain method |
+| `kt_default_args_super_call` | fails a whole Kotlin class whose primary constructor calls its superclass through the superclass's default-arguments constructor when the superclass is decompiled in the same run (`RuntimeException: Constructor X.<init>(...I)V not found`; kotlinx-coroutines' `BroadcastChannelImpl`), and otherwise prints the placeholders and bit mask, `: Base(a, null, 2)` | the call is the constructor it stands for, `: Base(a)`, when only trailing arguments are defaulted and no other constructor could take the rest |
+| `kt_default_arg_compound_branch` | fails a whole Kotlin class with a default argument computed by several statements, such as an inlined `map` (`NullPointerException`; kotlin-reflect's `AnnotationConstructorCaller`) | the class decompiles; that default is printed as unknown, `= ...`, like any default the plugin cannot read back |
 
-Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs` and a row in
-`options.toml`; each site where kuna departs from the Java asks
+Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs`, whose
+`KunaFix::id` is the id above; each site where kuna departs from the Java asks
 `kuna_fixes::enabled(KunaFix::..)` and keeps Vineflower's code verbatim in the other
-branch. Spec section 10.16 describes each defect and what kuna does instead, and
-`tests/jvm/kuna-fixes/README.md` shows each fix's diff on its case.
+branch, which compat mode takes. A unit test that must isolate one fix runs with
+`KunaFixes::DEFAULT.without(KunaFix::X)` (through `Fernflower::new_with_fixes`, or a corpus
+`Case`'s `fixes`); users cannot. Spec section 10.16 describes each defect and what kuna
+does instead, and `tests/jvm/kuna-fixes/README.md` shows each fix's diff on its case.
 
 ### Fixing a Vineflower bug
 
-The recipe, the same for every fix (the first, `jvm_fix_lambda_wildcard_return`, is the
-worked example):
+The recipe, the same for every fix (the first, `lambda_wildcard_return`, is the worked
+example):
 
 1. **Reproduce.** Take a failing method: its comment names the exception and the Rust
    line that threw it (`//   at nonnative/kuna-jvm/src/...`). Check that Vineflower
@@ -358,28 +392,26 @@ worked example):
    --all -S'<code>'` for the commit that introduced the defect. Port upstream's fix when there is one. The fix goes
    to the root cause, in the terms of Vineflower's algorithm: never a catch-and-continue,
    never keyed on a class or method name.
-3. **Add the fix.** A variant in `KunaFix` (and in `KunaFix::ALL` and `option()`), and
-   a row in `options.toml`: `option = "jvm_fix_<slug>"`, `vineflower = ""`, `short = ""`,
-   `aliases = []`, `values = "on|off"`, `default = "on"`, `source_decompiler = "kuna"`,
-   `change_kind = "kuna-fix"`, `phase`/`subphase` the folder and module of the gated
-   site, `tier = "transform"`, the Vineflower method and the upstream state in
-   `inspiration`, and the exception text among the `symptoms`. At the site: `if
-   kuna_fixes::enabled(KunaFix::X) { ... } else { <the Java, unchanged> }`, and a line in
-   the ported file's header naming the fix. A fix longer than a few lines goes in a
-   `kuna_fix_<slug>.rs` module next to the ported file, called from the gated branch. Code
-   that runs before `Fernflower::new` installs the context reads the set it is building
-   (`fixes.contains(..)`), as `jvm_fix_report_to_kuna` does.
+3. **Add the fix.** A variant in `KunaFix`, added to `KunaFix::ALL`, and its id in
+   `KunaFix::id` (`KunaFix::X => "<id>"`, lower snake case, no `jvm_` prefix). There is no
+   option row: a fix is not a user option, and `jvm_vineflower_compat` already turns it
+   off with the others. At the site: `if kuna_fixes::enabled(KunaFix::X) { ... } else {
+   <the Java, unchanged> }`, and a line in the ported file's header naming the fix by its
+   id. A fix longer than a few lines goes in a `kuna_fix_<id>.rs` module next to the
+   ported file, called from the gated branch. Code that runs before `Fernflower::new`
+   installs the context reads the set it is building (`fixes.contains(..)`), as
+   `report_to_kuna` does.
 4. **Add the case.** Compile the reproducer and run `python3 -I
-   tests/jvm/kuna_fix_case.py --fix jvm_fix_<slug> --class DIR/pkg/TestFoo.class --source
+   tests/jvm/kuna_fix_case.py --fix <id> --class DIR/pkg/TestFoo.class --source
    pkg/TestFoo.java --compiler "javac 17.0.20.1" --summary "<what decompiles now>"`. It
    vendors the class and its `TestFoo$*.class` siblings into `tests/jvm/kuna-fixes/`,
    stores what the release jar prints (the compat expectation, which must contain the
    failure comment), checks that kuna in compat mode prints exactly that, stores kuna's
    default output, prints the diff for review, rebuilds `cases.tsv` and the READMEs with
    `regen.py`, and adds both runs to `tests/jvm/baseline.txt`.
-5. **Describe it.** A paragraph in `docs/spec/10-jvm.md` section 10.16 (the defect in
-   Vineflower's algorithm, what kuna does instead), a row in the table above, and
-   `docs/options-jvm.md` regenerated.
+5. **Describe it.** A paragraph in `docs/spec/10-jvm.md` section 10.16 headed by the
+   fix's id (the defect in Vineflower's algorithm, what kuna does instead) and a row in
+   the table above.
 6. **Evidence**, quoted in the commit: (a) the root cause, as above; (b) the reproducer's
    default output recompiles with javac and every method's `javap -c -p` matches the
    original class's; (c) no collateral change: `kuna decompile-project IN -o COMPAT
@@ -391,10 +423,10 @@ worked example):
 7. **Gates**: `cargo test -p kuna-jvm`, `make test-jvm`, `kuna catalog --check`, `make
    check-spec` and `python3 tools/check_spec.py --strict`, `make lint`.
 
-Fixes made in parallel meet in the same files. Keep both sides of `KunaFix`,
-`options.toml` and `tests/jvm/kuna-fixes/cases.json`, then rerun `regen.py` (it rewrites
-`cases.tsv` and both READMEs) and regenerate `docs/options-jvm.md`; `baseline.txt` is
-sorted, so keep both sides' lines.
+Fixes made in parallel meet in the same files. Keep both sides of `KunaFix` (the enum,
+`ALL` and `id`) and of `tests/jvm/kuna-fixes/cases.json`, then rerun `regen.py` (it rewrites
+`cases.tsv` and both READMEs, and refuses a case whose `fix` is not a `KunaFix` id);
+`baseline.txt` is sorted, so keep both sides' lines.
 
 ## The JDK runtime library
 
@@ -750,8 +782,8 @@ option counts to bump, unlike the native catalog. After touching the table, rege
 catalog page: `decompiler/target/release/kuna catalog --markdown --engine jvm >
 docs/options-jvm.md` (CI checks it is fresh).
 
-**A kuna improvement is a named option.** Anything that changes the emitted Java or Kotlin beyond
-what Vineflower prints ships behind a `jvm_*` row of its own: `vineflower = ""`,
+**A kuna improvement is a named option.** A judgement call that changes the emitted Java or
+Kotlin beyond what Vineflower prints ships behind a `jvm_*` row of its own: `vineflower = ""`,
 `short = ""`, `aliases = []`, `source_decompiler = "kuna"`, a `change_kind` of its own, and
 every other field filled in. Its code goes in a `kuna_<slug>.rs` module in the owning phase
 folder, with a minimal seam in the ported code; a kuna row resolves to its own name, so it
@@ -759,15 +791,17 @@ cannot collide with a Vineflower key. Describe it in `docs/spec/10-jvm.md` (tagg
 `(kuna)`, checked by `make check-spec`, whose strict mode requires every row to be
 mentioned). A destructive row also updates the pinned destructive list in
 `tests/kuna_options.rs`. A strict bug fix that makes kuna match Vineflower needs no
-option. A fix of a defect Vineflower itself has is a `jvm_fix_*` row and follows the
-recipe of *Fixing a Vineflower bug*; `tests/kuna_fixes.rs` checks that every `KunaFix` has
-its row and every `jvm_fix_*` row its `KunaFix`.
+option. Neither does a fix of a defect Vineflower itself has: it is a `KunaFix` with an id,
+always on and off only in compat mode, and follows the recipe of *Fixing a Vineflower bug*;
+`tests/kuna_fixes.rs` checks that no `jvm_fix_*` row exists and that such a name is an
+unknown option. An option is for a judgement call (a readability trade, a heuristic), the
+same rule as the native engine's (`docs/agents.md`).
 
 **Default-on needs corpus evidence.** The corpus gate compares against Vineflower's text,
 so a kuna improvement that changes any baseline case stays off by default. It may default
 on only when `make test-jvm` still matches every baseline case with it on, and when it
 passes the speed budget (the same rule as the native engine's: a default-on feature must
-not majorly slow kuna down). The `jvm_fix_*` rows are the exception by construction: the
+not majorly slow kuna down). Fixes are the exception by construction: the
 Vineflower-oracle cases run in compat mode, where every fix is off, and a fix's evidence is
 its two-pass case and the whole-output diffs of step 6 of the recipe.
 

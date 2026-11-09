@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/NewExprent.java`.
 //!
-//! kuna fix `jvm_fix_lambda_wildcard_return` (`kuna_fixes`): in
+//! kuna fix `lambda_wildcard_return` (`kuna_fixes`): in
 //! `get_inferred_expr_type`, a method reference whose return type is the
 //! receiver's `?` type argument keeps the generic mapping already inferred,
 //! where Vineflower dereferences the missing return type.

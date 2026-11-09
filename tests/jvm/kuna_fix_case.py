@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Add (or refresh) a kuna-fixes case: a class Vineflower 1.12.0 fails on that a kuna fix decompiles.
 
-  python3 -I tests/jvm/kuna_fix_case.py --fix jvm_fix_<slug> --class path/to/pkg/TestFoo.class \\
+  python3 -I tests/jvm/kuna_fix_case.py --fix <id> --class path/to/pkg/TestFoo.class \\
       [--source path/to/pkg/TestFoo.java] [--compiler "javac 17.0.20.1"] [--summary TEXT] [--opt k=v]...
       [--language java|kotlin]
 
+<id> is the fix's id, the string `KunaFix::id` returns for it in kuna_fixes.rs (e.g. lambda_wildcard_return).
 The class's `Name$*.class` siblings in the same directory come with it, in name order (the corpus
 fixture's `addSource` order). --language defaults to kotlin when the class carries `kotlin.Metadata`, else
 java. A Kotlin case (`"language": "kotlin"` in cases.json) is decompiled with Vineflower's bundled plugins
@@ -28,6 +29,7 @@ import difflib
 import glob
 import json
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -38,7 +40,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 FIXES = os.path.join(HERE, 'kuna-fixes')
 VF_DECOMPILE = os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/tools/oracle/java/bin/vf-decompile')
-OPTIONS_TOML = os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/options.toml')
+KUNA_FIXES_RS = os.path.join(REPO, 'decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_fixes.rs')
 MARKER = "$VF: Couldn't be decompiled"
 # The fixture's leak check (unit-test mode) fails after the output is saved when a method fails
 # while it is written; the saved text is still Vineflower's.
@@ -84,10 +86,10 @@ def class_name(path):
     return utf8[classes[this_class]]
 
 
-def fix_options():
-    """The jvm_fix_* rows of options.toml."""
-    with open(OPTIONS_TOML, encoding='utf-8') as f:
-        return {line.split('"')[1] for line in f if line.startswith('option = "jvm_fix_')}
+def fix_ids():
+    """The ids of the kuna fixes: the strings `KunaFix::id` returns in kuna_fixes.rs."""
+    with open(KUNA_FIXES_RS, encoding='utf-8') as f:
+        return re.findall(r'KunaFix::\w+ => "([a-z0-9_]+)"', f.read())
 
 
 def run(cmd, cwd=None, env=None):
@@ -120,7 +122,7 @@ def regen():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--fix', required=True, help='the jvm_fix_* option the case demonstrates')
+    ap.add_argument('--fix', required=True, help='the id of the fix the case demonstrates (KunaFix::id)')
     ap.add_argument('--class', dest='cls', required=True, help='the class file (its Name$*.class siblings come along)')
     ap.add_argument('--source', help='the Java source the class was compiled from (vendored under src/)')
     ap.add_argument('--compiler', default='', help='the compiler that produced the class, e.g. "javac 17.0.20.1"')
@@ -132,8 +134,10 @@ def main():
     if not os.environ.get('KUNA_JVM_ORACLE'):
         sys.exit('KUNA_JVM_ORACLE is not set: set it to the JVM oracle workspace '
                  '(decompiler/nonnative/kuna-jvm/tools/oracle/README.md)')
-    if a.fix not in fix_options():
-        sys.exit(f'{a.fix}: no such jvm_fix_* row in options.toml (add the row first)')
+    ids = fix_ids()
+    if a.fix not in ids:
+        sys.exit(f'{a.fix}: no such fix id (add the KunaFix variant and its id first); the ids are: '
+                 + ', '.join(ids))
     extra = []
     for kv in a.opt:
         if '=' not in kv:

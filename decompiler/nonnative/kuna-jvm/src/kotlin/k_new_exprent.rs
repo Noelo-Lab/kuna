@@ -1,6 +1,6 @@
 //! Port of `org/vineflower/kotlin/expr/KNewExprent.java`.
 //!
-//! kuna fix `jvm_fix_kt_synthetic_anonymous_object` (`kuna_fixes`): an
+//! kuna fix `kt_synthetic_anonymous_object` (`kuna_fixes`): an
 //! anonymous class is written with its `new`'s constructor at hand, so the
 //! fix can tell whether the object's captured names mean what this `new`
 //! passes.

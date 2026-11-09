@@ -2,7 +2,7 @@
 
 **Generated** by `kuna catalog --markdown --engine jvm` from `decompiler/nonnative/kuna-jvm/options.toml` -- do not edit by hand; edit the table row and regenerate.
 
-These options steer the JVM engine (`kuna-jvm`, a port of Vineflower 1.12.0), which decompiles class files, jars and directories of classes to Java, and classes compiled from Kotlin to Kotlin. They apply to those inputs only, as the options of `docs/options.md` apply to native inputs only. Set any of them per run on `decompile`, `decompile-all`, `decompile-project` and `functions`: `kuna decompile app.jar com.ex.Main --option <name> <value>` (repeatable). Every Vineflower option also answers to Vineflower's long and three-letter names (its `aliases`). Booleans take `on|off` (also `1|0|true|false`). Defaults are Vineflower 1.12.0's, its bundled plugins' included. kuna's own rows have no Vineflower name; among them, each `jvm_fix_*` option fixes methods Vineflower fails on, and `jvm_vineflower_compat on` turns every fix off for Vineflower's exact text.
+These options steer the JVM engine (`kuna-jvm`, a port of Vineflower 1.12.0), which decompiles class files, jars and directories of classes to Java, and classes compiled from Kotlin to Kotlin. They apply to those inputs only, as the options of `docs/options.md` apply to native inputs only. Set any of them per run on `decompile`, `decompile-all`, `decompile-project` and `functions`: `kuna decompile app.jar com.ex.Main --option <name> <value>` (repeatable). Every Vineflower option also answers to Vineflower's long and three-letter names (its `aliases`). Booleans take `on|off` (also `1|0|true|false`). Defaults are Vineflower 1.12.0's, its bundled plugins' included. kuna's own rows have no Vineflower name; among them, `jvm_vineflower_compat on` turns off kuna's fixes of Vineflower's defects (which have no options of their own) for Vineflower's exact text.
 
 Vineflower keys kuna sets itself, so they are not options:
 
@@ -97,8 +97,6 @@ Three tiers:
 | finally logic of a modern class built from subroutines | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline) |
 | else branch missing after an if that returns | [`jvm_prettify_ifs`](#jvm_prettify_ifs) |
 | deep else chains after returns (option is off) | [`jvm_prettify_ifs`](#jvm_prettify_ifs) |
-| // $VF: Couldn't be decompiled with NullPointerException: returnType | [`jvm_fix_lambda_wildcard_return`](#jvm_fix_lambda_wildcard_return) |
-| a method using ::method on a Foo<?> receiver fails to decompile | [`jvm_fix_lambda_wildcard_return`](#jvm_fix_lambda_wildcard_return) |
 | locals named var1 var2 var3 with no hint of their type | [`jvm_variable_renaming`](#jvm_variable_renaming) |
 | obfuscated or meaningless local names from a forged LocalVariableTable | [`jvm_variable_renaming`](#jvm_variable_renaming) |
 | names differ from a Vineflower run with --variable-renaming=jad or tiny | [`jvm_variable_renaming`](#jvm_variable_renaming) |
@@ -193,11 +191,11 @@ Three tiers:
 | output differs from Vineflower's test fixture but matches java -jar | [`jvm_plugins`](#jvm_plugins) |
 | a class is written in a plugin's language instead of Java | [`jvm_plugins`](#jvm_plugins) |
 | a bundled plugin's pass changes the Java output | [`jvm_plugins`](#jvm_plugins) |
-| output differs from Vineflower 1.12.0 inside a method Vineflower fails | [`jvm_vineflower_compat`](#jvm_vineflower_compat) |
+| output differs from Vineflower 1.12.0 | [`jvm_vineflower_compat`](#jvm_vineflower_compat) |
 | need Vineflower's exact text, failure comments included | [`jvm_vineflower_compat`](#jvm_vineflower_compat) |
-| a jvm_fix_* option is suspected of changing a method | [`jvm_vineflower_compat`](#jvm_vineflower_compat) |
-| failure comment asks to report to the Vineflower issue tracker | [`jvm_fix_report_to_kuna`](#jvm_fix_report_to_kuna) |
-| failure comment names the kuna issue tracker | [`jvm_fix_report_to_kuna`](#jvm_fix_report_to_kuna) |
+| a method decompiles in kuna but fails in Vineflower | [`jvm_vineflower_compat`](#jvm_vineflower_compat) |
+| failure comment names the kuna issue tracker instead of Vineflower's | [`jvm_vineflower_compat`](#jvm_vineflower_compat) |
+| a kuna fix is suspected of changing a method | [`jvm_vineflower_compat`](#jvm_vineflower_compat) |
 | Kotlin classes come out as Java with @Metadata(mv = ..., d1 = ...) | [`jvm_kt_enable`](#jvm_kt_enable) |
 | a Kotlin class is written as .kt but Java output is wanted | [`jvm_kt_enable`](#jvm_kt_enable) |
 | Kotlin output of a class is wrong or failed | [`jvm_kt_enable`](#jvm_kt_enable) |
@@ -448,14 +446,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p9_emit/class_writer, if_helper · vineflower · vineflower-option
 - **Also spelled:** `prettify-ifs`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_prettify_ifs off`
-
-### `jvm_fix_lambda_wildcard_return` -- on | off, default `on`
-
-- **Symptoms:** // $VF: Couldn't be decompiled with NullPointerException: returnType; a method using ::method on a Foo<?> receiver fails to decompile.
-- **What it does:** Decompile a method that passes a method reference on a receiver with a ? type argument (Instantiator<?> i; ... map(i::instantiateType)) to a generic call: its unknown return type keeps the type the call's context gives the lambda, where Vineflower fails the method with NullPointerException: returnType.
-- **When to flip:** Leave on; turn off only to reproduce Vineflower's failure on such a method.
-- **Where / provenance:** substrate/new_exprent · kuna · kuna-fix
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_fix_lambda_wildcard_return off`
 
 ### `jvm_variable_renaming` -- jad | tiny | <name>, default ``
 
@@ -764,7 +754,7 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 ### `jvm_error_message` -- <text>, default `Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)`
 
 - **Symptoms:** failure comment asks to report to an issue tracker; failure comment should carry a project-specific note.
-- **What it does:** The note (one comment line per text line) written after $VF: Couldn't be decompiled when exception dumps are on; unset, it points to kuna's issue tracker (jvm_fix_report_to_kuna), or with jvm_vineflower_compat on to Vineflower's (the default shown, Vineflower's own).
+- **What it does:** The note (one comment line per text line) written after $VF: Couldn't be decompiled when exception dumps are on; unset, it points to kuna's issue tracker, or with jvm_vineflower_compat on to Vineflower's (the default shown, Vineflower's own).
 - **When to flip:** Replace it with your own text (it then wins over both trackers), or set it empty to drop the note.
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `error-message`, `erm`
@@ -843,19 +833,11 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 
 ### `jvm_vineflower_compat` -- on | off, default `off`
 
-- **Symptoms:** output differs from Vineflower 1.12.0 inside a method Vineflower fails; need Vineflower's exact text, failure comments included; a jvm_fix_* option is suspected of changing a method.
-- **What it does:** Turn off every kuna-only fix (the jvm_fix_* options) and print exactly what Vineflower 1.12.0 prints, its failures included: a method Vineflower cannot decompile is written as its // $VF: Couldn't be decompiled comment, which asks for reports to Vineflower's tracker.
-- **When to flip:** Turn on to compare with Vineflower byte for byte, to check whether a difference comes from a kuna fix, or to reproduce a Vineflower failure for an upstream report; the regression corpus's Vineflower cases run this way.
+- **Symptoms:** output differs from Vineflower 1.12.0; need Vineflower's exact text, failure comments included; a method decompiles in kuna but fails in Vineflower; failure comment names the kuna issue tracker instead of Vineflower's; a kuna fix is suspected of changing a method.
+- **What it does:** Turn off every kuna-only fix and print exactly what Vineflower 1.12.0 prints, its failures included: a method Vineflower fails on is written as its // $VF: Couldn't be decompiled comment instead of being decompiled, code Vineflower prints wrong (such as a statement skipped after a denested if, or a Kotlin supertype call with default-argument placeholders) is printed as Vineflower prints it, and the note under a failure comment asks for reports to Vineflower's tracker instead of kuna's. The fixes have no options of their own (docs/jvm.md lists them).
+- **When to flip:** Turn on to compare with Vineflower byte for byte, to check whether a difference from Vineflower comes from a kuna fix, or to reproduce a Vineflower failure for an upstream report; the regression corpus's Vineflower cases run this way. Off, every fix is on; each only replaces a failure or code Vineflower gets wrong.
 - **Where / provenance:** p0_knowledge/kuna_fixes, fernflower · kuna · kuna-compat
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_vineflower_compat on`
-
-### `jvm_fix_report_to_kuna` -- on | off, default `on`
-
-- **Symptoms:** failure comment asks to report to the Vineflower issue tracker; failure comment names the kuna issue tracker.
-- **What it does:** The note under the error comments (// $VF: Couldn't be decompiled, and the other $VF: errors such as Could not resugar all assert statements!) asks for reports to kuna's issue tracker instead of Vineflower's: the default of jvm_error_message, unless that option is set. Off, or with jvm_vineflower_compat on, it names Vineflower's tracker as Vineflower does.
-- **When to flip:** Turn off to keep Vineflower's wording of the failure comment while the other kuna fixes stay on, e.g. when a tool matches that line.
-- **Where / provenance:** p0_knowledge/fernflower · kuna · kuna-fix
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_fix_report_to_kuna off`
 
 ### `jvm_kt_enable` -- on | off, default `on`
 

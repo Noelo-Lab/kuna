@@ -7,7 +7,7 @@
 
 Every difference between the trees must be one of: a method that failed in compat mode (its
 `// $VF: Couldn't be decompiled` comment block replaced by code), the tracker note of a failure
-comment (`jvm_fix_report_to_kuna`), or import lines. Anything else is printed as collateral and the
+comment (fix `report_to_kuna`), or import lines. Anything else is printed as collateral and the
 exit status is 1. The counts it prints are the evidence a fix's commit quotes (docs/jvm.md, "Fixing a
 Vineflower bug").
 """

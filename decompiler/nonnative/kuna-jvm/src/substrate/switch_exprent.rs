@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/SwitchExprent.java`.
 //!
-//! kuna fix `jvm_fix_switch_yield_const_retype` (`kuna_fixes`): in `to_java`,
+//! kuna fix `switch_yield_const_retype` (`kuna_fixes`): in `to_java`,
 //! a constant yielded by a single-expression arm takes the switch's type only
 //! when a constant can have that type, where Vineflower retypes it to any
 //! common supertype of the arms and fails to write it.

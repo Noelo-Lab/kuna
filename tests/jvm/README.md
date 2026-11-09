@@ -144,13 +144,13 @@ core options) with the oracle and writes `NEW_DIR/cases.tsv`. Refresh the vendor
 ## kuna-fixes cases
 
 `kuna-fixes/cases.json` holds **9** cases of kuna's own fixes (`docs/jvm.md`, "Fixing a Vineflower bug"):
-a small class Vineflower 1.12.0 fails on, the fix (`jvm_fix_*`) that decompiles it, and the source it was
+a small class Vineflower 1.12.0 fails on, the fix (its `KunaFix` id) that decompiles it, and the source it was
 compiled from. Each runs twice, on the fixture's base map plus `dump-exception-on-error=0`: as
 `kuna-fixes-compat/<id>` with `jvm_vineflower_compat` on, against what the release jar prints
 (`kuna-fixes/expected-compat/`, failure comment included), and as `kuna-fixes/<id>` with kuna's defaults,
 against kuna's reviewed output (`kuna-fixes/expected/`). `kuna-fixes/README.md` lists them with the diff
 between the two. Add one with
-`python3 -I tests/jvm/kuna_fix_case.py --fix jvm_fix_<slug> --class Foo.class --source Foo.java --summary TEXT`.
+`python3 -I tests/jvm/kuna_fix_case.py --fix <id> --class Foo.class --source Foo.java --summary TEXT`.
 
 ## Running
 

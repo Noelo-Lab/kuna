@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/IfHelper.java`.
 //!
-//! kuna fix `jvm_fix_if_denest_fallthrough` (`kuna_fixes`): `ifElseChainDenesting`
+//! kuna fix `if_denest_fallthrough` (`kuna_fixes`): `ifElseChainDenesting`
 //! leaves an if alone when its body still reaches the statements it would move
 //! into the then-branch.
 

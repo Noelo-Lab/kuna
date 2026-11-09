@@ -801,9 +801,11 @@ writes it into the Vineflower key and value; the table is generated from `option
 the crate's build script. Keys the front end sets itself (thread count, time limit, method
 selection, logging, line separator, line mapping, class-path keys a JVM would serve) are
 listed there as `[[driver_owned]]` and refused as user options. kuna's own rows resolve to
-their own names; `Fernflower::new` takes `jvm_plugins`, `jvm_vineflower_compat` and the
-`jvm_fix_*` switches off the property list before the rest becomes Vineflower's option map
-(section 10.16), so that map is the one Vineflower would build.
+their own names; `Fernflower::new` takes `jvm_plugins` and `jvm_vineflower_compat` off the
+property list before the rest becomes Vineflower's option map (section 10.16), so that map
+is the one Vineflower would build. Any other key, a `jvm_fix_*` name included, is not a
+switch: `resolve` refuses it as an unknown option, and given to the engine directly it
+stays in Vineflower's option map like any key Vineflower does not read.
 
 **Tracing.** With `KUNA_JVM_TRACE=<file>`,
 `decompiler/nonnative/kuna-jvm/src/infra/kuna_trace.rs` writes a canonical dump of each
@@ -1024,28 +1026,35 @@ initial stack-variable loop.
 
 Vineflower 1.12.0 throws on some methods, and the port, which keeps its failure behaviour,
 throws there too and writes the method as `// $VF: Couldn't be decompiled` (section 10.12).
-A *fix* is a deliberate departure from the Java at the place of such a defect.
+A *fix* is a deliberate departure from the Java at the place of such a defect, or of code
+Vineflower prints wrong.
 
 **The gate.** `decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_fixes.rs (KunaFix)`
-names each fix, and each has an option row `jvm_fix_<slug>`, on by default.
-`jvm_vineflower_compat` (off by default) turns every fix off at once; with it on, the
-engine is the plain port and prints Vineflower's text, failures included. Every site
-where a fix changes behaviour asks `kuna_fixes::enabled(KunaFix::..)` and keeps the
-Java's behaviour verbatim in the other branch. `Fernflower::new`
-(`decompiler/nonnative/kuna-jvm/src/p0_knowledge/fernflower.rs`) takes the switches off the
-custom property list, resolves them into the set of active fixes (later pairs win; compat
-on means none) and stores it in the decompilation context; installing a context
-(`DecompilerContext::set_current_context`) makes its set the one `enabled` answers from on
-that thread, which costs one thread-local read per question. The per-class contexts of
-`ContextUnit::set_context` copy the set from the root context, and no context means every
-fix on. The regression corpus's runner
+names each fix; `KunaFix::id` gives its id (the name each paragraph below is headed by, and
+the `fix` field of `tests/jvm/kuna-fixes/cases.json`). A fix is a correction, not a
+judgement call, so it has no option of its own and is always on. The one switch is
+`jvm_vineflower_compat` (off by default), which turns every fix off at once; with it on,
+the engine is the plain port and prints Vineflower's text, failures included: methods
+Vineflower fails on are written as its failure comment, code it prints wrong is printed as
+it prints it, and the failure note names Vineflower's tracker. Every site where a fix
+changes behaviour asks `kuna_fixes::enabled(KunaFix::..)` and keeps the Java's behaviour
+verbatim in the other branch. `Fernflower::new`
+(`decompiler/nonnative/kuna-jvm/src/p0_knowledge/fernflower.rs`) takes the switch off the
+custom property list, resolves it into the set of active fixes (every fix, or none when
+the last `jvm_vineflower_compat` pair is on) and stores it in the decompilation context;
+installing a context (`DecompilerContext::set_current_context`) makes its set the one
+`enabled` answers from on that thread, which costs one thread-local read per question. The
+per-class contexts of `ContextUnit::set_context` copy the set from the root context, and no
+context means every fix on. Unit tests that must isolate one fix build the set
+`KunaFixes::DEFAULT.without(KunaFix::X)` and run with it through `Fernflower::new_with_fixes`
+(or a corpus `Case`'s `fixes`); no option reaches that set. The regression corpus's runner
 (`decompiler/nonnative/kuna-jvm/src/infra/kuna_corpus.rs (engine_options)`) turns compat
 on unless a case says otherwise, so its Vineflower-oracle cases test the plain port, and
 each fix has a case that runs in both modes (`tests/jvm/kuna-fixes/`): in compat mode it
 must print the released Vineflower jar's text, failure comment included, and by default
 kuna's reviewed text.
 
-**`jvm_fix_report_to_kuna`.** Vineflower's error comments (`$VF: Couldn't be decompiled`,
+**`report_to_kuna`.** Vineflower's error comments (`$VF: Couldn't be decompiled`,
 and the other `$VF:` errors a method collects, such as an `assert` that could not be
 resugared) carry the `error-message` note, whose default asks the reader to report the
 class to Vineflower's issue tracker. With this fix, `Fernflower::new` puts kuna's request
@@ -1055,7 +1064,7 @@ fix is read from the set being built, since no context is installed yet at that 
 The marker line itself never changes: the CLI and the benchmark count failed methods by
 it.
 
-**`jvm_fix_lambda_wildcard_return`.** When a lambda or method reference is an argument of
+**`lambda_wildcard_return`.** When a lambda or method reference is an argument of
 a generic call, `decompiler/nonnative/kuna-jvm/src/substrate/new_exprent.rs
 (NewExprent::get_inferred_expr_type)` infers the type arguments of its functional
 interface: from the call's expected type (the upper bound) it gathers a first mapping of
@@ -1077,7 +1086,7 @@ showed it; with the fix it prints `this.customizer().stream().map(instantiator::
 the source without its raw `(List)` cast, which javac does not record, exactly as Vineflower
 prints the same call on a receiver without a wildcard.
 
-**`jvm_fix_twr_unary_condition`.** In a Java 11+ class, javac compiles a try-with-resources
+**`twr_unary_condition`.** In a Java 11+ class, javac compiles a try-with-resources
 to a plain `try` with a `catch (Throwable t)` handler that closes the resource and rethrows,
 and the close sits inside `if (r != null)` when the resource may be null.
 `decompiler/nonnative/kuna-jvm/src/p8_structure/try_with_resources_processor.rs (TryWithResourcesProcessor::make_try_with_resource_j11)`
@@ -1092,7 +1101,7 @@ that a negation does not have and fails the method with an index out of bounds (
 `develop/1.13.0`). With the fix, a condition with fewer than two operands is not a null
 check: the handler is not a try-with-resources, and the matcher leaves the statement alone,
 as it does when the operand is not a variable; the `try`/`catch` is written as it is.
-**`jvm_fix_if_denest_fallthrough`.** `IfHelper::merge_ifs`
+**`if_denest_fallthrough`.** `IfHelper::merge_ifs`
 (`decompiler/nonnative/kuna-jvm/src/p8_structure/if_helper.rs (IfHelper::if_else_chain_denesting)`)
 rewrites `if (a) { if (b) X; ...; Y } Z`, where the body and `Z` both jump to the end of
 the enclosing sequence, as `if (!a) { Z } else { if (b) X; ...; Y }`: it negates the
@@ -1119,7 +1128,7 @@ sequence, and the method keeps its source shape. On the benchmark inputs it deco
 Elasticsearch's `InternalEngine.closeNoLock` and changes two methods that Vineflower prints
 correctly through the healed path (Ghidra's `DataTypeManagerDB.resolveBuiltIn`, Spring's
 `AnnotationTypeFilter.hasAnnotation`); all three recompile to the original bytecode.
-**`jvm_fix_switch_yield_const_retype`.** A switch expression replaces a switch statement
+**`switch_yield_const_retype`.** A switch expression replaces a switch statement
 whose arms all store one stack variable, and takes that variable's type, which type
 inference computes as the join of the values stored in it: for two unrelated classes their
 nearest common ancestor (`Serializable` for `String` and `Character`), or `Object` when the
@@ -1147,7 +1156,7 @@ written as before, so only methods Vineflower fails change. spring-framework's
 Case labels, which `to_java` gives the selector's type, are left alone: the one failure
 seen there (Vineflower's own `TestUnnamedVar1.patternSwitch3`) is a pattern switch whose
 labels were never turned into patterns, and writing them would print wrong code.
-**`jvm_fix_catch_loop_back_successor`.** `CatchStatement::is_head`
+**`catch_loop_back_successor`.** `CatchStatement::is_head`
 (`decompiler/nonnative/kuna-jvm/src/substrate/catch_statement.rs (CatchStatement::is_head)`)
 turns a node and the handlers only it reaches into a `try`/`catch` (section 10.5) and
 chooses the statement that follows it, `next`: the node's own regular successor, else the
@@ -1174,7 +1183,7 @@ path. On the benchmark's five inputs, okio, okhttp and kotlin-stdlib, `next` is 
 declines to build the statement, and the other two are Elasticsearch's
 `RetryingInputStream.read()` and `read(byte[], int, int)`, retry loops of this shape, which
 Vineflower fails and which now print their source.
-**`jvm_fix_kt_synthetic_anonymous_object`.** The Kotlin writer prints an anonymous class
+**`kt_synthetic_anonymous_object`.** The Kotlin writer prints an anonymous class
 where its `new` stands, as an `object` expression
 (`decompiler/nonnative/kuna-jvm/src/kotlin/k_new_exprent.rs` calls
 `KotlinWriter::write_class`), and takes the object's supertypes from its Kotlin Class
@@ -1208,7 +1217,7 @@ function reference or a class created with other arguments still fails as in Vin
 The 37 kotlin-stdlib methods of this failure now print `object : Comparator { fun compare(a: T,
 b: T): Int { return .. } }` (or `AutoCloseable`, `Function1<T, Integer>`).
 
-**`jvm_fix_kt_local_as_extension_receiver`.** For a method without metadata,
+**`kt_local_as_extension_receiver`.** For a method without metadata,
 `decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_writer.rs (KotlinWriter::write_method)`
 decides that it is an extension function when the variable in its first parameter slot is
 named `$this$..`, and then reads the first parameter's type. In a method without
@@ -1223,7 +1232,7 @@ classes (a `Supplier` whose `get()` runs an inlined `BeanSupplierContext.() -> T
 with `ArrayIndexOutOfBoundsException` (kuna: `index out of bounds`; unchanged on
 `develop/1.13.0`). With the fix only a method with a parameter can be an extension function;
 the others are written as plain methods.
-**`jvm_fix_kt_default_args_super_call`.** For a constructor with default arguments the Kotlin
+**`kt_default_args_super_call`.** For a constructor with default arguments the Kotlin
 compiler also emits a synthetic default-arguments constructor `<init>(P1..Pn, int mask..,
 DefaultConstructorMarker)`: a caller passes a placeholder (null or zero) for each argument it
 leaves out and sets bit `i % 32` of mask `i / 32` for it, and that constructor computes the
@@ -1261,7 +1270,7 @@ kotlin-stdlib 2.2.20's `TerminateException` lose their `false, 2` and `null, nul
 the write order out of the result, which with Vineflower's code decides between failing and
 printing the placeholders (and so differs between kuna's single-instance and parallel runs).
 
-**`jvm_fix_kt_default_arg_compound_branch`.** To print default values,
+**`kt_default_arg_compound_branch`.** To print default values,
 `decompiler/nonnative/kuna-jvm/src/kotlin/default_args_map.rs (DefaultArgsMap::from)` reads them
 back from the default-arguments method or constructor: for each `if ((mask & bit) != 0)` test it
 takes the first expression of the branch and, when that is an assignment, records its right-hand

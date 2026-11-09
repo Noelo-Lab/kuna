@@ -4187,9 +4187,10 @@ kuna decompile app.jar com.ex.UtilKt --language java   # a Kotlin class written 
 A class file, a jar (or war, ear, zip) or a directory of classes is decompiled to **Java**,
 and a class compiled from Kotlin to **Kotlin**, by kuna's non-native JVM engine,
 `kuna-jvm`, a Rust port of Vineflower 1.12.0 and its bundled plugins that prints the text
-Vineflower prints, except inside the methods Vineflower fails on and kuna fixes
-(`--option jvm_vineflower_compat on` turns those fixes off and gives Vineflower's exact
-text; `docs/jvm.md`, the algorithm is `docs/spec/10-jvm.md`). The
+Vineflower prints, except where kuna fixes a Vineflower defect: a method Vineflower fails
+on, or code it prints wrong. The fixes are always on and have no options of their own;
+`--option jvm_vineflower_compat on` turns them all off and gives Vineflower's exact text
+(`docs/jvm.md`, the algorithm is `docs/spec/10-jvm.md`). The
 input is recognized before any native code runs, so none of the native machinery (SLEIGH
 specs, `decomp_dbg`, the loader, the native option tables) is involved, and a native
 binary pays one `stat` and one eight-byte read for the check. The commands keep their

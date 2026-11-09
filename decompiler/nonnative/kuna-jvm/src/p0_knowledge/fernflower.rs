@@ -2,10 +2,10 @@
 //! kuna: finished classes are handed to a callback instead of an
 //! `IResultSaver`; plugins come from the bundled list (`kuna_plugins`, chosen
 //! by the custom property `jvm_plugins`) instead of the class path; the
-//! kuna-only fixes (`kuna_fixes`: `jvm_vineflower_compat`, `jvm_fix_*`) are
-//! taken off the property list into the context, and with
-//! `jvm_fix_report_to_kuna` an `error-message` the caller did not set names
-//! kuna's tracker; renamer
+//! switch of the kuna-only fixes (`kuna_fixes`: `jvm_vineflower_compat`) is
+//! taken off the property list and the resulting set stored in the context,
+//! and with fix `report_to_kuna` an `error-message` the caller did not set
+//! names kuna's tracker; renamer
 //! class loading has no Rust counterpart, and `include-classpath` adds the
 //! current JDK runtime (the system-module half of `ClasspathScanner`; the
 //! JVM's own class path has no analogue here).
@@ -33,7 +33,7 @@ use crate::i_identifier_renamer::IIdentifierRenamer;
 use crate::identifier_converter::IdentifierConverter;
 use crate::identity_renamer_factory::IdentityRenamerFactory;
 use crate::jdk_runtime::JdkRuntime;
-use crate::kuna_fixes::{self, KunaFix};
+use crate::kuna_fixes::{self, KunaFix, KunaFixes};
 use crate::kuna_partition::RootSelection;
 use crate::kuna_plugins;
 use crate::kuna_spans::{ClassSpan, MethodSpan};
@@ -69,7 +69,7 @@ pub struct DecompiledClass {
 /// `JrtFinder.CURRENT`.
 const JRT_CURRENT: &str = "current";
 
-/// The `error-message` default under `jvm_fix_report_to_kuna` (kuna).
+/// The `error-message` default under fix `report_to_kuna` (kuna).
 pub const KUNA_ERROR_MESSAGE: &str = "Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)";
 
 pub struct Fernflower {
@@ -113,6 +113,33 @@ impl Fernflower {
     ) -> Fernflower {
         let (_, custom_properties) = kuna_plugins::take_switch(custom_properties);
         let (fixes, custom_properties) = kuna_fixes::take_switches(&custom_properties);
+        Fernflower::build(&custom_properties, logger, plugin_sources, fixes)
+    }
+
+    /// [`Fernflower::new`] with `fixes` as the active set, whatever
+    /// `jvm_vineflower_compat` says: a test hook for isolating one fix.
+    #[doc(hidden)]
+    pub fn new_with_fixes(
+        custom_properties: &[(String, String)],
+        logger: Rc<dyn IFernflowerLogger>,
+        fixes: KunaFixes,
+    ) -> Fernflower {
+        let (plugins, custom_properties) = kuna_plugins::take_switch(custom_properties);
+        let (_, custom_properties) = kuna_fixes::take_switches(&custom_properties);
+        Fernflower::build(
+            &custom_properties,
+            logger,
+            kuna_plugins::plugin_sources(plugins),
+            fixes,
+        )
+    }
+
+    fn build(
+        custom_properties: &[(String, String)],
+        logger: Rc<dyn IFernflowerLogger>,
+        plugin_sources: Vec<Rc<dyn PluginSource>>,
+        fixes: KunaFixes,
+    ) -> Fernflower {
         let mut properties = IFernflowerPreferences::DEFAULTS();
         if fixes.contains(KunaFix::ReportToKuna) {
             properties.put(
@@ -120,7 +147,7 @@ impl Fernflower {
                 KUNA_ERROR_MESSAGE.to_string(),
             );
         }
-        for (key, value) in &custom_properties {
+        for (key, value) in custom_properties {
             if key.jlen() == 3 {
                 OptionParser::parse_short(&format!("-{key}={value}"), &mut properties);
             } else {
