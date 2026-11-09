@@ -4508,6 +4508,63 @@ every other binary's pass list is byte-identical to before the pass existed):
   every other image's pass set is unchanged; the stage test
   `tests/stages/kuna-swiftmetadata.xml` runs the fully stripped swiftc-built
   `swift_metadata_elf` off and on.
+- **Core Foundation constant strings** (`cfstrings`, Mach-O-only, default-on;
+  `decompiler/crates/kuna-analysis/src/analyzers/cfstring/mod.rs`): a `CFSTR("x")`
+  compiles to a four-word `CFString` struct in `__cfstring` (`isa`, `flags`, a
+  `char *` into `__cstring`/`__ustring`, and a character `length`). Code references
+  the struct address, not the characters, so the constant-string route — which
+  reads the bytes *at* the referenced address — sees the struct and prints
+  `dat_<addr>`. The pass reads each entry, resolves its `char *` through the
+  chained-fixup overlay (§1.2) on an arm64(e) image or as a raw word on a classic
+  `LC_DYLD_INFO` image, and decodes the string (8-bit when the `flags` unicode bit
+  `0x10` is clear, UTF-16 otherwise). The walk stops at the end of the file, not at
+  the section header's size, and the string bytes it reads over all entries are
+  capped at the file's length: an entry is 32 bytes, but every entry may name the
+  same 64 KiB run, and each fact owns a copy of its string (as does the
+  `StringManager` seed), so an uncapped crafted section would grow memory about
+  4096-fold. A real image's strings are distinct bytes of the file and never reach
+  the cap. The walk also stops after a fixed budget of section-span checks, because
+  each read scans the image's section spans and a crafted file can size both the
+  entry count and the section count. An 8-bit string that is not UTF-8, invalid
+  UTF-16, and a string holding a NUL (a trailing one included) are skipped, since
+  the C literal would stop at that NUL and silently drop the rest. The commit seam then types the entry an
+  opaque `struct __CFString` spanning the entry's own four words (never the
+  string's length, which would overrun the next entry and hide it) and seeds the `StringManager` at the
+  entry address with the resolved bytes, so a reference renders the string
+  across the one indirection the printer cannot follow on its own. The entries are
+  marked read-only (a CFString constant is immutable), which the route requires on
+  the historical writable `__DATA,__cfstring` layout (`__DATA_CONST` is already
+  read-only). The commit also records each seeded entry address
+  (`Architecture::cfstring_entries`), and the C printer wraps a literal found at one
+  of them as `CFSTR("...")`
+  (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_cfstr.rs (wrap)`): the value is
+  the entry, a `CFStringRef`, not the characters, so
+  `NSLog(CFSTR("Reachability Flag Status: …"))` is what was written. The printer
+  reads an entry's seeded string through a `char` element whatever the
+  reference's type (`cfstring_char` in
+  `decompiler/crates/kuna-decomp/src/p9_emit/printc.rs`), at both the constant
+  arm and the global-symbol arm, so the entry's own type is free to say what the
+  value is: the commit declares `struct __CFString` at the entry size and a
+  pointer to it named `CFStringRef`
+  (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_cfstr.rs (declare_types)`),
+  reusing a `CFStringRef` and `__CFString` the type factory already holds (an
+  opaque one is completed to the entry size), and registers that pointer as the
+  one the factory returns for any later pointer to the struct
+  (`TypeFactory::kuna_prefer_named_pointer`). Type inference therefore types a
+  reference to an entry `CFStringRef`, and the type propagates to the returns,
+  parameters and locals that carry it: a getter is
+  `CFStringRef get_greeting(void) { return CFSTR("cfstring hello"); }`. When an
+  existing `__CFString` has another size, or an existing `CFStringRef` is not a
+  pointer to it, the entry falls back to a `char[N]` and the reference to
+  `char *`. The Rust and Go back-ends keep the plain literal, with the pointer to
+  the struct as its type. `cfstrings annotate` runs the same pass and
+  also follows each `CFSTR` with `/* cfstring@0x<entry> */`, the address a
+  disassembler or hex view shows for the entry, which the literal otherwise
+  replaces. The pass is on by default: it runs only on a Mach-O and only on the
+  real-binary path, so the XML datatest corpus never reaches it, and on an 80 MB
+  third-party arm64 iOS app one decompile is within run-to-run noise of `off`. `off`
+  renders each reference as the entry itself: its symbol (`&_kGreeting`) where the
+  image names it, its address on a stripped image.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

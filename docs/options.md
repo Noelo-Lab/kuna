@@ -931,6 +931,8 @@ Three tiers:
 | swift binary functions render as sub_<addr> although swift5 metadata sections are present | [`swiftmetadata`](#swiftmetadata) |
 | type metadata accessors unnamed in a stripped swift mach-o | [`swiftmetadata`](#swiftmetadata) |
 | protocol witnesses and class methods of a stripped swift app have no names | [`swiftmetadata`](#swiftmetadata) |
+| core-foundation / objc string constants render as dat_<addr> instead of their text | [`cfstrings`](#cfstrings) |
+| a CFSTR(...) argument shows an address in a mach-o | [`cfstrings`](#cfstrings) |
 | stripped windows pe functions stay FUN_<addr> although a matching .pdb exists | [`pdb`](#pdb) |
 | pdb symbol names not applied to a pe | [`pdb`](#pdb) |
 | a .pdb beside the exe is ignored | [`pdb`](#pdb) |
@@ -3519,6 +3521,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off (the default at 500 KiB and above; nothing is named and there is zero behavior change). `--mode auto` turns it on below 500 KiB through the `aggressive` preset, so flip it on for a larger stripped Swift binary: metadata accessors, class vtable implementations, overrides of imported methods and protocol witnesses render under their type's path instead of sub_<addr>, and the descriptor records are named.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-swiftmetadata
 - **Example:** `option swiftmetadata on`
+
+### `cfstrings` -- on | off | annotate, default `on`
+
+- **Symptoms:** core-foundation / objc string constants render as dat_<addr> instead of their text; a CFSTR(...) argument shows an address in a mach-o.
+- **What it does:** Run the Mach-O Core Foundation constant-string recovery pass: when the binary is a Mach-O, read each __cfstring entry (the four-word CFString struct isa/flags/data-pointer/length), resolve its data pointer through the LC_DYLD_CHAINED_FIXUPS overlay on an arm64(e) image (a raw word on a classic LC_DYLD_INFO image), read the string (8-bit when the flags unicode bit 0x10 is clear, UTF-16 decoded to UTF-8 when set), and render a reference to the entry as the string literal. The commit seam types each entry a typelocked opaque struct __CFString symbol, whose pointer the type factory spells CFStringRef (so a function returning or passing the entry is typed CFStringRef), and pre-seeds the StringManager at the entry address with the resolved bytes, so a CFSTR argument renders as CFSTR("text") instead of dat_<addr> (the C printer wraps the literal in CFSTR(...) because the value is the CFStringRef entry, not its characters; annotate also follows it with a /* cfstring@0x<entry> */ comment naming the entry address a listing or hex view shows) -- the same route that renders a __cstring literal, carried across the CFString struct indirection the printer cannot follow on its own. The entry structs are marked read-only (a CFString constant is immutable), which the constant-string route requires on the historical writable __DATA,__cfstring layout (__DATA_CONST is already read-only). Registered ONLY for a Mach-O binary, so it is a structural no-op on every non-Mach-O target. ENABLED by default: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675 assertions moved); on an 80 MB third-party arm64 iOS app a decompile is within noise of off (min 2.324 s off vs 2.359 s on, medians 2.442 / 2.372 s over 6 interleaved runs).
+- **When to flip:** On (default): a Mach-O (Core Foundation / Objective-C / Swift) binary renders its CFString constants -- a call that passed dat_<addr> renders CFSTR("cfstring hello"). Flip off to see each reference as the __cfstring entry itself (its symbol, or its address on a stripped image). Use annotate when cross-checking against a disassembler or hex view: the entry address stays in the output as a comment.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-cfstrings
+- **Example:** `option cfstrings annotate`
 
 ### `pdb` -- on | off, default `on`
 
