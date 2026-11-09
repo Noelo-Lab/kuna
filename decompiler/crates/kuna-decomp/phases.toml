@@ -968,8 +968,6 @@ subphase = "trial-budget"
 note = "(kuna GH-6990) keep multi-register returns single"
 
 [[surface]]
-
-[[surface]]
 surface = "option memsetrecover"
 phase = "P5"
 subphase = "constsequence"
@@ -1046,8 +1044,6 @@ surface = "option sparcstructret"
 phase = "P2"
 subphase = "flow-classification"
 note = "(kuna GH-6882) SPARC struct-return post-call unimp falls through instead of becoming a non-returning CALLIND"
-
-[[surface]]
 
 [[surface]]
 surface = "option arraystride"
