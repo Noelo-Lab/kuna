@@ -11,6 +11,7 @@
 //! (`kuna_jvm::if_helper`) through the re-exports below.
 
 pub mod infra;
+pub mod kotlin;
 pub mod p0_knowledge;
 pub mod p1_classfile;
 pub mod p2_lift;
@@ -29,6 +30,7 @@ pub use infra::{
     java_pass_registrar, kuna_corpus, kuna_trace, looping_pass_builder, main_pass_builder, method_processor, named_pass,
     pass, pass_context, plugin_context, validation_helper, wrapped_pass,
 };
+pub use kotlin::{bit_encoding, kt_flags, kt_metadata, kt_proto, metadata_name_resolver};
 pub use p0_knowledge::{
     class_wrapper_node, context_source, context_unit, converter_helper, counter_container,
     decompiler_context, fernflower, i_decompiled_data, i_fernflower_logger,
