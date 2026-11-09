@@ -113,14 +113,9 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.fold_flag_compare);
     assert!(arch.recover_array_stride);
     assert!(arch.recover_lowered_switch);
-    assert!(arch.lowered_switch_labels);
-    assert!(arch.lowered_switch_value_check);
-    assert!(arch.lowered_switch_exact);
-    assert!(arch.lowered_switch_every_head);
     assert!(arch.name_style_angr);
     assert!(arch.condexe_block_placement);
     assert!(arch.add_carry_chain);
-    assert!(arch.model_stack_probe_loop);
     assert!(arch.present_lessequal);
     assert!(arch.preserve_thumb_funcptr);
     // (kuna) signedness ships `auto` -- a declaration is re-signed when every

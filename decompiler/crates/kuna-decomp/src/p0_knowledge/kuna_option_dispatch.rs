@@ -411,14 +411,6 @@ kuna_options! { self, p1;
         self.recover_lowered_switch = val;
         Ok(msg)
     },
-    "loweredswitchlabels" => {
-        let (val, msg) = crate::kuna_loweredswitchlabels::OptionLowerSwitchLabels.apply(p1)?;
-        self.lowered_switch_labels = val;
-        Ok(msg)
-    },
-    "loweredswitchvalue" => on_off!(lowered_switch_value_check, "Lowered-switch dispatch value check"),
-    "loweredswitchexact" => on_off!(lowered_switch_exact, "Exact lowered-switch recovery"),
-    "loweredswitchheads" => on_off!(lowered_switch_every_head, "Lowered-switch detection from every cascade head"),
     "protoranges" => on_off!(proto_ranges, "Compiler-spec prototype stack ranges"),
     "callsitestackargs" => {
         let (val, msg) =

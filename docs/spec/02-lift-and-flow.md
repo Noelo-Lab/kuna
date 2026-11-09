@@ -2265,9 +2265,9 @@ strand phi state:
   restart-surviving side record. Mixed signed/unsigned evidence, or a range
   without a supported interpretation, declines recovery instead of guessing.
   Equality constants never participate: `0xffffffff` can be either unsigned or
-  signed -1, and the case bit pattern alone cannot decide. The default-on
-  `loweredswitchlabels` policy carries this proof to the installed jump table;
-  its explicit off arm exists only to reproduce the historical top-bit guess.
+  signed -1, and the case bit pattern alone cannot decide. The
+  `kuna_loweredswitchlabels.rs` policy carries this proof to the installed jump
+  table.
   The generic P9 numeric printer is unchanged.
 
   The synthetic BRANCHIND is inserted through `Funcdata::op_insert`, not the
@@ -2331,7 +2331,7 @@ every cascade over a value the function computes still re-rolls, so this is the
 per-cascade form of the whole-pass escape hatch. Measured byte-identical on the
 675-assertion datatest corpus with the guard forced on.
 
-### The value the switch dispatches on — `option loweredswitchvalue`, default on (DIV-181)
+### The value the switch dispatches on (DIV-181, part of `loweredswitch`)
 
 Detection sees the simplified SSA graph, where every compare in the cascade reads
 one value, and records that value's home storage; the install re-lifts raw p-code
@@ -2393,9 +2393,9 @@ check can only replace a switch over a provably wrong value, never lose one it
 cannot judge. A withdrawal or retry takes effect on the restart it requests, so a
 function that has already spent the pipeline's cross-flow restart budget
 (`run_pipeline`, eight re-flows) keeps the switch it last installed. Measured
-byte-identical on the 675-assertion datatest corpus with the value check off.
+byte-identical on the 675-assertion datatest corpus when the check was introduced.
 
-### The switch is the compare tree — `option loweredswitchexact`, default on (DIV-183)
+### The switch is the compare tree (DIV-183, part of `loweredswitch`)
 
 Three things made a re-rolled switch a different program from the cascade it
 replaced. The install gave each case body one table entry and kept the first
@@ -2408,7 +2408,7 @@ removes every block that the new head edges make unreachable, with whatever thos
 blocks compute for the code after the cascade (a `v = 0x8a;` on one arm before a
 shared join).
 
-With the option on, `funcdata_block.rs (Funcdata::kuna_install_lowered_switch)`
+`funcdata_block.rs (Funcdata::kuna_install_lowered_switch)`
 pushes one table entry per case value, so shared bodies keep every label, and
 detection keeps a recovered record only when
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitchexact.rs (record_is_exact)`
@@ -2449,9 +2449,9 @@ set names different values signed and unsigned once C promotes the selector
 prints such labels with the signedness of the selector's declared type when it is
 an integer of the switch size, and otherwise casts the selector to the recorded
 signedness (`switch((unsigned char)a0)`). Measured
-byte-identical on the 675-assertion datatest corpus with the option off.
+byte-identical on the 675-assertion datatest corpus when the check was introduced.
 
-### Every cascade head — `option loweredswitchheads`, default on (DIV-184)
+### Every cascade head (DIV-184, part of `loweredswitch`)
 
 A head is any compare on the switch variable that no other compare on it
 continues into, and a variable is compared outside its switch as often as inside
@@ -2461,24 +2461,19 @@ that single test finds no case, and the fifteen-case tree behind it rendered as 
 goto ladder into the shared join, because detection only ever tried the first
 head.
 
-With the option on,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitchheads.rs (cascade_heads)`
 lists every head in block order and detection tries each (past its leading
-all-ones sentinel guards), recording the first cascade that recovers. The first
-head keeps exactly the acceptance `loweredswitchexact` gives it. A cascade behind
-any later head is recorded only when `kuna_loweredswitchexact.rs (record_is_exact)`
-holds for it, whether or not `loweredswitchexact` is on, modelled on the install
-the current options will perform, and its install runs
-`kuna_loweredswitchexact.rs (raw_install_keeps_values)` either way (the record is
-marked as coming from a later head); when its head block has a single
-predecessor;
+all-ones sentinel guards), recording the first cascade that recovers. Every
+cascade is recorded only when `kuna_loweredswitchexact.rs (record_is_exact)`
+holds for it (the exactness check above); a cascade behind a later head is
+additionally recorded only when its head block has a single predecessor,
 and when `kuna_loweredswitchheads.rs (case_body_entered_elsewhere)` finds no case
 body or default entered from outside the compare tree (another case's body falling
 into it, or code after the switch jumping to it). The structurer renders a switch
 of either shape with a `goto` to a label it never declares, which is tolerated for
 the first head, as before, but never introduced by a later one. A record's
-dispatch value is then subject to `loweredswitchvalue` like any other. Measured byte-identical on the 675-assertion
-datatest corpus with the option off.
+dispatch value is then subject to the value check like any other. Measured
+byte-identical on the 675-assertion datatest corpus when the check was introduced.
 
 ### Bound extensions: rescuing an unboundable table
 

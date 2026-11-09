@@ -883,19 +883,6 @@ pub struct Architecture {
     /// (kuna) Reconstruct a compiler-lowered comparison cascade into a switch
     /// (C++ `recover_lowered_switch`).
     pub recover_lowered_switch: bool,
-    /// (kuna `loweredswitchlabels`) Preserve range-comparison signedness across
-    /// lowered-switch restart and installation.
-    pub lowered_switch_labels: bool,
-    /// (kuna `loweredswitchvalue`) Withdraw a re-rolled lowered switch unless it is
-    /// shown to dispatch on the value its cascade compared.
-    pub lowered_switch_value_check: bool,
-    /// (kuna `loweredswitchexact`) Label every case value of a re-rolled lowered
-    /// switch and keep the switch only when it routes and computes as its compare
-    /// tree.
-    pub lowered_switch_exact: bool,
-    /// (kuna `loweredswitchheads`) Try a lowered-switch cascade behind every head on
-    /// the switch variable, not only the first.
-    pub lowered_switch_every_head: bool,
     /// (kuna) Recover stack-passed call arguments at call sites with an unlocked
     /// callee prototype (default-on; restores upstream `fspec.cc:5618`).
     pub callsite_stack_args: bool,
@@ -3246,10 +3233,6 @@ impl Architecture {
             libc_names: false, // (kuna) option libcnames; reset_defaults sets the shipped default
             recover_array_stride: false,
             recover_lowered_switch: false,
-            lowered_switch_labels: false,
-            lowered_switch_value_check: false,
-            lowered_switch_exact: false,
-            lowered_switch_every_head: false,
             callsite_stack_args: true,
             proto_ranges: true,
             cookie_scramble: true,
@@ -3714,10 +3697,6 @@ impl Architecture {
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
-        self.lowered_switch_labels = true; // (kuna) default-on correctness fix: the cascade's range opcode, not a case's sign bit, determines label interpretation
-        self.lowered_switch_value_check = true; // (kuna) DIV-181 default-on correctness fix: a re-rolled lowered switch reads what its head compare reads and is withdrawn unless its BRANCHIND input is the value the cascade compared
-        self.lowered_switch_every_head = true; // (kuna) DIV-184 default-on: a compare on the switch variable in front of an inlined switch no longer hides the cascade behind it; a cascade behind a later head must match its compare tree exactly
-        self.lowered_switch_exact = true; // (kuna) DIV-183 default-on correctness fix: a re-rolled lowered switch labels every case value and is kept only when it routes every value and keeps every statement as its compare tree does
         self.callsite_stack_args = true; // (kuna) default-on: restores upstream fspec.cc:5618 (0/675 ablation)
         self.proto_ranges = true; // (kuna) protoranges default-on: the cspec's <localrange>/<input> stack ranges, as upstream ProtoModel::decode reads them (0/675 moved)
         self.mul_blob = true; // (kuna) mulblob default-on: an unsigned wide-multiply operand prints as the value it is, matching the signed form kuna already renders
@@ -4660,10 +4639,6 @@ impl Architecture {
         ctx.slot_ptr = self.slot_ptr; // (kuna) slotptr
         ctx.libctypes = self.analysis_libctypes; // (kuna) libctypes (kuna_libcfit)
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
-        ctx.lowered_switch_labels = self.lowered_switch_labels; // loweredswitchlabels
-        ctx.lowered_switch_value_check = self.lowered_switch_value_check; // loweredswitchvalue
-        ctx.lowered_switch_exact = self.lowered_switch_exact; // loweredswitchexact
-        ctx.lowered_switch_every_head = self.lowered_switch_every_head; // loweredswitchheads
         ctx.callsite_stack_args = self.callsite_stack_args; // callsitestackargs
         ctx.proto_ranges = self.proto_ranges; // protoranges
         ctx.cookie_scramble = self.cookie_scramble; // cookiescramble

@@ -6,15 +6,10 @@
 //! canonical selector path independently prove unsigned and signed widening.
 //! Equality-case bit patterns do not vote, but their widening paths must agree.
 //! Recovery therefore accepts one consistent interpretation and declines mixed,
-//! conflicting, or missing evidence. The option-off path bypasses these checks
-//! and retains the historical case-bit behavior exactly.
+//! conflicting, or missing evidence.
 
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
-use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
-
-use crate::options::on_or_off;
 
 /// Marshaling element `<loweredswitchlabels>` (kuna 4000+ range).
 pub const ELEM_LOWEREDSWITCHLABELS: ElementId = ElementId::new("loweredswitchlabels", 4093);
@@ -53,31 +48,6 @@ pub fn reconcile_range_signedness(
     }
 }
 
-/// The historical case-bit guess retained only for explicit option ablation.
-pub fn legacy_signed_labels(var_size: int4, case_vals: &[uintb]) -> bool {
-    let signbit = if var_size >= 8 {
-        1u64 << 63
-    } else {
-        1u64 << (var_size * 8 - 1)
-    };
-    case_vals.iter().any(|&v| (v & signbit) != 0)
-}
-
-/// Toggle comparison-derived signedness for recovered lowered-switch labels.
-pub struct OptionLowerSwitchLabels;
-
-impl OptionLowerSwitchLabels {
-    pub const NAME: &'static str = "loweredswitchlabels";
-
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((
-            val,
-            format!("Lowered-switch comparison-derived label signedness turned {prop}"),
-        ))
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -108,13 +78,5 @@ mod tests {
             None
         );
         assert_eq!(reconcile_range_signedness(signed, None), None);
-    }
-
-    #[test]
-    fn option_parses_on_and_off() {
-        assert_eq!(OptionLowerSwitchLabels::NAME, "loweredswitchlabels");
-        assert!(OptionLowerSwitchLabels.apply("on").unwrap().0);
-        assert!(!OptionLowerSwitchLabels.apply("off").unwrap().0);
-        assert!(OptionLowerSwitchLabels.apply("maybe").is_err());
     }
 }

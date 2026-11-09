@@ -13757,9 +13757,6 @@ fn lowered_switch_label_form(
     signed_text_byte: bool,
 ) -> Option<(bool, Option<std::rc::Rc<crate::dtype::Datatype>>)> {
     use crate::dtype::type_metatype::{TYPE_INT, TYPE_UINT};
-    if !arch.lowered_switch_exact {
-        return None;
-    }
     let jt = (0..fd.num_jump_tables()).map(|i| fd.get_jump_table(i)).find(|jt| jt.get_indirect_op() == Some(op))?;
     jt.kuna_lowered_var()?;
     let sz = fd.vbank().get(fd.obank().get(op)?.get_in(0)?)?.get_size();

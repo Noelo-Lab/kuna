@@ -17,14 +17,9 @@
     into callee-saved EBX at entry; each case arm is `MOV EDX,c; JMP join` and the
     default is `MOV EDX,-1`, and the join prints EDX.
 
-    Pass 1 (option loweredswitchheads off): only the TEST head is tried, recovers
-    no case, and the tree renders as a goto ladder into the join.
-    Pass 2 (default, on): the cascade behind the later head is re-rolled into a
-    switch over argc with all fifteen cases and the default, each arm still
-    assigning the value the join prints.
-
-    The off pass runs first: the lowered-switch store is sticky across clear(), so
-    a declined detection leaves no record behind.
+    The cascade behind the later head is re-rolled into a switch over argc with
+    all fifteen cases and the default, each arm still assigning the value the join
+    prints; the goto ladder the TEST-only recovery left is pinned to zero.
 -->
 <binaryimage arch="x86:LE:64:default:windows">
 <bytechunk space="ram" offset="0x1400011e0" readonly="true">
@@ -52,18 +47,14 @@ ffcfe8895d0300eb048b7c2430488bcee87b5d03008bc7488b8c24800000004833cce8d90100004c
 </binaryimage>
 <script>
   <com>lo fu main</com>
-  <com>option loweredswitchheads off</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option loweredswitchheads on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="LOWEREDSWITCHHEADS #1: the inlined cascade re-rolls into a switch over argc, in pass 2 only" min="1" max="1">switch\(a0\)</stringmatch>
-<stringmatch name="LOWEREDSWITCHHEADS #2: all fifteen case labels, in pass 2 only" min="15" max="15">case 0x[0-9a-f]+:</stringmatch>
-<stringmatch name="LOWEREDSWITCHHEADS #3: the default arm, in pass 2 only" min="1" max="1">    default:</stringmatch>
-<stringmatch name="LOWEREDSWITCHHEADS #4: pass 1 keeps the fifteen gotos into the join" min="15" max="15">goto label_1400013da;</stringmatch>
-<stringmatch name="LOWEREDSWITCHHEADS #5: the last case value is assigned in both passes" min="2" max="2">0x2a5;</stringmatch>
-<stringmatch name="LOWEREDSWITCHHEADS #6: the default value is assigned in both passes" min="2" max="2">0xffffffff;</stringmatch>
+<stringmatch name="LOWEREDSWITCHHEADS #1: the inlined cascade re-rolls into a switch over argc" min="1" max="1">switch\(a0\)</stringmatch>
+<stringmatch name="LOWEREDSWITCHHEADS #2: all fifteen case labels" min="15" max="15">case 0x[0-9a-f]+:</stringmatch>
+<stringmatch name="LOWEREDSWITCHHEADS #3: the default arm" min="1" max="1">    default:</stringmatch>
+<stringmatch name="LOWEREDSWITCHHEADS #4: no goto ladder into the join remains" min="0" max="0">goto label_1400013da;</stringmatch>
+<stringmatch name="LOWEREDSWITCHHEADS #5: the last case value is assigned" min="1" max="1">0x2a5;</stringmatch>
+<stringmatch name="LOWEREDSWITCHHEADS #6: the default value is assigned" min="1" max="1">0xffffffff;</stringmatch>
 </decompilertest>
