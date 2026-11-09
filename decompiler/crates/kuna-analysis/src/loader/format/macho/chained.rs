@@ -72,6 +72,11 @@ mod ptr_format {
     pub const ARM64E_USERLAND24: u16 = 12;
 }
 
+/// `SG_READ_ONLY` (`mach-o/loader.h`): dyld maps the segment read-only once its
+/// fixups are applied. The modern linker sets it on `__DATA_CONST`, which makes
+/// it the Mach-O analog of ELF's `PT_GNU_RELRO`.
+const SG_READ_ONLY: u32 = 0x10;
+
 /// One bind fixup: the import a slot is bound to at load time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChainedBind {
@@ -101,6 +106,11 @@ enum Fixup {
 /// strict no-op.
 #[derive(Default, Debug, Clone)]
 pub struct ChainedFixups {
+    /// Whether the image carries `LC_DYLD_CHAINED_FIXUPS` at all. A chained
+    /// image's pointer slots are packed entries even when every one of them is
+    /// a bind, so this, not the rebase count, says whether a raw slot word may
+    /// be read as a pointer.
+    chained: bool,
     /// `(slot_vma, resolved_pointer)` for every plain/auth **rebase** fixup,
     /// sorted by slot.
     rebases: Vec<(u64, u64)>,
@@ -108,6 +118,8 @@ pub struct ChainedFixups {
     binds: Vec<(u64, ChainedBind)>,
     /// The slot width in bytes: 4 for `DYLD_CHAINED_PTR_32`, else 8.
     width: u8,
+    /// `[vmaddr, vmaddr + vmsize)` of every segment flagged `SG_READ_ONLY`.
+    readonly_segments: Vec<(u64, u64)>,
 }
 
 impl ChainedFixups {
@@ -126,6 +138,12 @@ impl ChainedFixups {
     /// chained-fixup binary" probe; `false` ⇒ the resolver is a no-op).
     pub fn is_empty(&self) -> bool {
         self.rebases.is_empty()
+    }
+
+    /// Whether the image carries `LC_DYLD_CHAINED_FIXUPS`, bind-only images
+    /// included.
+    pub fn is_chained(&self) -> bool {
+        self.chained
     }
 
     /// The resolved pointer at slot `va`, if `va` was a rebase fixup. `None` for a
@@ -154,6 +172,17 @@ impl ChainedFixups {
     pub fn bind_at(&self, va: u64) -> Option<&ChainedBind> {
         let at = self.binds.binary_search_by_key(&va, |(slot, _)| *slot).ok()?;
         Some(&self.binds[at].1)
+    }
+
+    /// The imported symbol a bind slot `va` names, when the name is UTF-8.
+    pub fn bind_name(&self, va: u64) -> Option<&str> {
+        self.bind_at(va).and_then(|b| std::str::from_utf8(&b.name).ok()).filter(|n| !n.is_empty())
+    }
+
+    /// Whether `va` lies in a segment dyld maps read-only after fixups
+    /// (`SG_READ_ONLY`, the `__DATA_CONST` convention).
+    pub fn in_readonly_segment(&self, va: u64) -> bool {
+        self.readonly_segments.iter().any(|&(lo, hi)| va >= lo && va < hi)
     }
 
     /// Sort both lists by slot, keeping one entry per slot (a hostile header
@@ -219,6 +248,7 @@ where
     // (for VMA↔fileoff arithmetic), harvested in one load-command pass.
     let mut fixups_range: Option<(u64, u64)> = None;
     let mut segs: Vec<SegInfo> = Vec::new();
+    let mut readonly_segments: Vec<(u64, u64)> = Vec::new();
     // The lowest segment vmaddr that maps file content is the image preferred
     // base (the imagebase the OFFSET formats add). __PAGEZERO (filesize 0) is
     // skipped so it does not win as the minimum.
@@ -233,6 +263,10 @@ where
             if filesize > 0 {
                 segs.push(SegInfo { vmaddr, fileoff, filesize });
                 imagebase = imagebase.min(vmaddr);
+            }
+            if segment.flags(endian) & SG_READ_ONLY != 0 {
+                let vmsize: u64 = segment.vmsize(endian).into();
+                readonly_segments.push((vmaddr, vmaddr.wrapping_add(vmsize)));
             }
             continue;
         }
@@ -256,7 +290,7 @@ where
         return empty;
     };
 
-    let mut out = ChainedFixups::default();
+    let mut out = ChainedFixups { chained: true, readonly_segments, ..ChainedFixups::default() };
     let mut walk = Walk::new(&segs, bytes, blob);
     walk_fixups(blob, imagebase, &mut walk, &mut out);
     out.sort_slots();
@@ -943,6 +977,43 @@ mod tests {
         walk_fixups(&blob, BASE, &mut walk, &mut out);
         assert!(out.rebases.is_empty());
         assert_eq!(va_to_fileoff(&segs, u64::MAX - 2), None);
+    }
+
+    /// `macho_bind_only_arm64` has `LC_DYLD_CHAINED_FIXUPS` with a single bind
+    /// and no rebase: the overlay is empty, but the image is still chained, so a
+    /// consumer must not read the packed bind word as a pointer.
+    #[test]
+    fn bind_only_image_is_chained() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_bind_only_arm64");
+        let bytes = std::fs::read(path).expect("read fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse Mach-O");
+        let fixups = resolve_chained_fixups(&file, &bytes);
+        assert!(fixups.is_chained());
+        assert!(fixups.is_empty(), "no rebase in the image");
+        assert_eq!(fixups.bind_name(0x100004000), Some("_ext"));
+        assert_eq!(fixups.resolved_ptr(0x100004000), None);
+
+        let classic = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_objc")).unwrap();
+        let classic_file = object::File::parse(classic.as_slice()).unwrap();
+        assert!(!resolve_chained_fixups(&classic_file, &classic).is_chained());
+    }
+
+    /// `macho_arm64e_auth` (`ARM64E_USERLAND24`): an authenticated rebase strips
+    /// its signing context, authenticated binds name their import with no
+    /// addend, and a plain bind keeps its addend.
+    #[test]
+    fn fixture_arm64e_auth_entries() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_arm64e_auth");
+        let bytes = std::fs::read(path).expect("read fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse Mach-O");
+        let fixups = resolve_chained_fixups(&file, &bytes);
+        let bind = |va| fixups.bind_at(va).map(|b| (std::str::from_utf8(&b.name).unwrap(), b.addend));
+        assert_eq!(fixups.resolved_ptr(0x100004000), Some(0x100000410));
+        assert_eq!(bind(0x100004008), Some(("_ext_func", 0)));
+        assert_eq!(bind(0x100004010), Some(("_ext_data", 16)));
+        assert_eq!(bind(0x100004018), Some(("_ext_func", 0)));
+        assert_eq!(fixups.resolved_ptr(0x100008000), Some(0x100000418));
+        assert!(fixups.in_readonly_segment(0x100004018));
     }
 
     /// `resolve_chained_fixups` is a strict no-op on a non-Mach-O input.

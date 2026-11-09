@@ -820,6 +820,10 @@ pub struct Architecture {
     /// the Go GC write-barrier diamond.  Default auto (fold when `source_lang`
     /// is Go).
     pub go_write_barrier: u8,
+    /// (kuna) `option ptrauthtrap`: cut the branch into each arm64e
+    /// pointer-auth failure trap whose guard is the return-address bit test.
+    /// Default on.
+    pub ptrauth_trap: bool,
     /// (kuna GH-9203) Decline placing a const COPY in a loop block
     /// (C++ `condexe_block_placement`).
     pub condexe_block_placement: bool,
@@ -1658,6 +1662,11 @@ pub struct Architecture {
     /// one op across several leaves, and suppressing by identity would delete
     /// genuine mid-body early returns).
     pub voidtailreturn: bool,
+    /// (kuna `importdata`) Render a data read through a loader-marked import slot
+    /// (a GOT / `__got` / `__auth_got` / IAT entry holding an import's address) as
+    /// the import itself, instead of a dereference of the anonymous slot. Default
+    /// **off**.
+    pub import_data: bool,
     /// (kuna `castimplied`) Leave out a cast C's own conversion rules already
     /// perform: a value-preserving integer widening passed to a trusted
     /// parameter, assigned to or returned as exactly its type, or stacked under
@@ -1858,6 +1867,9 @@ pub struct Architecture {
     /// `Architecture::query_function`, whose no-return carry is the flow half of
     /// the same binding.
     pub analysis_peimportcall: bool,
+    /// (kuna) Gate the arm64e `__auth_ptr` call binding (`authptrcall`).
+    /// Default on.
+    pub analysis_authptrcall: bool,
     /// (kuna) Gate the library-prototype pass (`libproto`); default on.
     pub analysis_libproto: bool,
     /// (kuna) Gate the measured libc signature extension (`libcsigs`); default on.
@@ -1901,6 +1913,11 @@ pub struct Architecture {
     /// `.gcc_except_table` markup); default **off** (output-changing: adds the
     /// discovered exception-handler landing pads as function entries).
     pub analysis_eh_frame_full: bool,
+    /// (kuna) Gate the Mach-O `__unwind_info` function-start discovery pass
+    /// (`unwindstarts`); default **off** (output-changing: adds the function
+    /// starts the linker recorded in `__TEXT,__unwind_info`, which matter only on
+    /// an image whose `LC_FUNCTION_STARTS` was stripped).
+    pub analysis_unwindstarts: bool,
     /// (kuna) Refuse a function entry at a direct CALL target the Listing walk's
     /// own out-of-bounds gate forbids it to decode (`unmappedentry`); default
     /// **on**. The recursive-descent walk gates every instruction address on the
@@ -2714,12 +2731,31 @@ pub struct Architecture {
     /// byte-identical. x86-64, no-chained-fixups path (the arm64 +
     /// LC_DYLD_CHAINED_FIXUPS resolver is a deferred follow-on).
     pub analysis_objc: bool,
+    /// (kuna `objcrefconst`) Fold a load through an Objective-C reference slot
+    /// (`__objc_selrefs` / `__objc_classrefs` / `__objc_superrefs`) to the
+    /// selector or class it refers to; default **on**. dyld fills those slots
+    /// once before any code runs and nothing rewrites them, which is why
+    /// Ghidra's `ObjectiveC2_ClassAnalyzer` marks the three blocks read-only.
+    /// Only the rebase slots the `objc` pass reported are painted, so a
+    /// bind slot (an imported class) keeps its `classRef_<Class>` name instead.
+    /// Inert unless `objc` is on.
+    pub analysis_objcrefconst: bool,
     /// (kuna) `option swiftmetadata` — the Swift runtime-metadata recovery pass
     /// (`kuna-analysis::analyzers::swift`): names metadata accessors, vtable and
     /// override implementations, protocol witnesses and descriptor records from
     /// the `swift5_*` reflection sections. Default-off, output-changing; inert on
     /// an image without the sections.
     pub analysis_swiftmetadata: bool,
+    /// (kuna) Gate the Mach-O `__cfstring` constant-string recovery pass
+    /// (`cfstrings`); default **on** (renders CFString constants as
+    /// `CFSTR("...")` typed `CFStringRef`). Mach-O-only pass.
+    pub analysis_cfstrings: bool,
+    /// (kuna `cfstrings annotate`) Follow each rendered `CFSTR("...")` with a
+    /// comment naming its `__cfstring` entry address. Default **off**.
+    pub cfstrings_annotate: bool,
+    /// (kuna `cfstrings`) The `__cfstring` entry addresses the commit seeded, so
+    /// the printer renders a literal at one of them as `CFSTR("...")`.
+    pub cfstring_entries: std::collections::BTreeSet<u64>,
     /// (kuna) Gate the Swift type-layout arm of the metadata pass
     /// (`swifttypes`): struct and class layouts from static type metadata,
     /// typed metadata records, accessor prototypes and the register-pinned
@@ -3232,6 +3268,7 @@ impl Architecture {
             rust_probestack: crate::kuna_rustprobestack::RustProbestackMode::Off,
             go_bool: 0, // (kuna) option gobool; reset_defaults sets the shipped default (auto)
             go_write_barrier: 0, // (kuna) option gowritebarrier; reset_defaults sets the shipped default (auto)
+            ptrauth_trap: false, // (kuna) option ptrauthtrap; reset_defaults sets the shipped default (on)
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
             model_stack_probe_loop: false,
@@ -3402,6 +3439,7 @@ impl Architecture {
             slot_report: false, // (kuna) option slotreport; reset_defaults sets the shipped default
             slot_split: false, // (kuna) option slotsplit; reset_defaults sets the shipped default
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
+            import_data: false,
             cast_implied: false, // (kuna) option castimplied; reset_defaults sets the shipped default
             cast_sign: false, // (kuna) option castsign; reset_defaults sets the shipped default
             cast_ternary: false, // (kuna) option castternary; reset_defaults sets the shipped default
@@ -3444,6 +3482,7 @@ impl Architecture {
             // asserted equal by kuna_phases/tests.rs `live_value` parity).
             analysis_noreturn_known: false,
             analysis_peimportcall: false,
+            analysis_authptrcall: false,
             analysis_libproto: false,
             analysis_libcsigs: false,
             analysis_libgccsigs: false,
@@ -3472,6 +3511,7 @@ impl Architecture {
             analysis_widestrings32: false,
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
+            analysis_unwindstarts: false,
             analysis_fdeinterior: false,
             analysis_coldentry: false,
             analysis_pdatainterior: false,
@@ -3556,7 +3596,11 @@ impl Architecture {
             analysis_gotypes: false,
             analysis_gonoreturn: false,
             analysis_objc: false,
+            analysis_objcrefconst: true,
             analysis_swiftmetadata: false,
+            analysis_cfstrings: false,
+            cfstrings_annotate: false,
+            cfstring_entries: std::collections::BTreeSet::new(),
             analysis_swifttypes: true,
             loader_param_locks: std::collections::BTreeMap::new(),
             analysis_pdb: true,
@@ -3700,6 +3744,7 @@ impl Architecture {
         self.rust_probestack = crate::kuna_rustprobestack::RustProbestackMode::Off;
         self.go_bool = crate::kuna_gobool::GoBoolMode::Auto.as_u8(); // (kuna) narrow Go boolean returns on Go images
         self.go_write_barrier = crate::kuna_gowritebarrier::GoWriteBarrierMode::Auto.as_u8(); // (kuna) fold the Go write barrier on Go images
+        self.ptrauth_trap = true; // (kuna) drop arm64e pointer-auth failure checks; inert unless a brk #0xc47x trap's guard is the return-address bit test, 0/675 datatests
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
@@ -3848,6 +3893,7 @@ impl Architecture {
         self.reg_locals = true; // (kuna) option reglocals default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +205 type_match-perfect / 0 lost, 2,207 improved / 10 worse over 10,748 scored functions of the 444 decbench slices
         self.byte_honest = true; // (kuna) default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +10 type_match-perfect / 121 improved / 0 worse over 5,298 scored decbench functions
         self.voidtailreturn = false; // (kuna) option voidtailreturn; default-OFF until its corpus bidirectional sweep is recorded in a DIV row
+        self.import_data = false; // (kuna) option importdata; default-off
         self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md
         self.cast_sign = true; // (kuna) option castsign default-on: a frame local or pointer index only ever compared signed, never an operand of + - * <<, and never met by a top-bit constant in == != & | ^, is declared signed; 0/675 datatest assertions and 0 stage assertions moved, test-cli unchanged, the 444-slice typesweep identical, casts 38,703 -> 38,602 on the census corpus, 41 functions fewer and 0 more; docs/features/castsign/default-on-evaluation.md
         self.cast_ternary = true; // (kuna) option castternary default-on (provisional; see docs/features/castternary)
@@ -3908,6 +3954,7 @@ impl Architecture {
         // real-ELF analysis tier; inert on the XML datatest path.
         self.analysis_noreturn_known = true;
         self.analysis_peimportcall = true; // (kuna) DIV-57/DIV-171 import-slot binding default-on
+        self.analysis_authptrcall = true; // (kuna) arm64e __auth_ptr call binding; Mach-O only, 0/675 datatests
         self.analysis_libproto = true;
         // (kuna) DIV-65 measured libc signature extension — default-ON.
         self.analysis_libcsigs = true;
@@ -3970,6 +4017,9 @@ impl Architecture {
         // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
         // output-changing: adds the discovered exception landing pads as entries).
         self.analysis_eh_frame_full = false;
+        // (kuna) Mach-O `__unwind_info` function-start discovery — default-OFF
+        // (opt-in, output-changing: adds the unwind-recorded function starts).
+        self.analysis_unwindstarts = false;
         // (kuna) DIV-61 `.eh_frame` FDE-interior entry suppression — default-ON.
         self.analysis_fdeinterior = true;
         self.analysis_coldentry = true;
@@ -4058,7 +4108,10 @@ impl Architecture {
         self.analysis_gotypes = true; // Go runtime-type harvest default-on (Go-only pass)
         self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
+        self.analysis_objcrefconst = true; // (kuna) ObjC reference slots fold to their selector/class; inert unless objc is on
         self.analysis_swiftmetadata = false; // Swift runtime-metadata recovery default-off (inert without swift5_* sections)
+        self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)
+        self.cfstrings_annotate = false;
         self.analysis_swifttypes = true; // Swift type layouts default-on, inert unless swiftmetadata is on
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
@@ -4574,6 +4627,11 @@ impl Architecture {
         ctx.rust_probestack = self.rust_probestack;
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
+        ctx.ptrauth_trap_userop = self
+            .ptrauth_trap
+            .then(|| self.userops.get_op_by_name(crate::kuna_ptrauthtrap::BREAKPOINT_USEROP))
+            .flatten()
+            .map(|u| u.get_index() as kuna_base::types::uint4);
         ctx.reload_arg = self.reload_arg;
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;

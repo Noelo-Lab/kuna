@@ -3141,6 +3141,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "peimportcall" => arch.analysis_peimportcall,
         // Metadata alone has no output effect; the live flow option gates its use.
         "ppc32_pic_slots" => true,
+        "authptrcall" => arch.analysis_authptrcall,
         "libproto" => arch.analysis_libproto,
         // (kuna) The measured libc signature extension — the ~200 prototypes the
         // 27-entry base table does not carry, seeded onto IMPORTED names only. The
@@ -3170,6 +3171,11 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (output-changing: adds entries), so a default run never commits them and
         // the discovery set is byte-identical to FDE-pcBegin-only.
         "eh_frame_full" => arch.analysis_eh_frame_full,
+        // (kuna) Mach-O `__unwind_info` function-start discovery — facts computed
+        // at LOAD, COMMITTED only when this gate is on. Default-off (output-
+        // changing: adds entries), so a default run is byte-identical and an image
+        // carrying `LC_FUNCTION_STARTS` gains nothing (the starts are a subset).
+        "unwindstarts" => arch.analysis_unwindstarts,
         // (kuna) PE CRT entry-function prototype recovery — a standalone stashed pass
         // whose one prototype is computed at LOAD but COMMITTED only when this gate
         // is on. Default-ON; off renders the `void(void)` form exactly.
@@ -3306,6 +3312,11 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (kuna) Swift runtime-metadata recovery — default-OFF (output-changing:
         // names stripped functions and descriptor records).
         "swiftmetadata" => arch.analysis_swiftmetadata,
+        // (kuna) Mach-O `__cfstring` constant-string recovery — default-on,
+        // output-changing (renders CFString constants as `CFSTR("...")` typed
+        // `CFStringRef`). Registered here so `off` really skips it; `off`
+        // renders the entry exactly as before.
+        "cfstrings" => arch.analysis_cfstrings,
         // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
         // stripped functions to their real PDB names). PE-only + externally gated on
         // a fingerprint-matching `.pdb` (the `kuna_pdb_path` env var). Registered
@@ -4926,6 +4937,29 @@ fn commit_analysis_output(
     prog.libctypes_glibc = out.libctypes_glibc;
     prog.libctypes_refused = out.libctypes_refused;
 
+    // 0c. (kuna `objcrefconst`) The Objective-C reference slots the `objc` pass
+    //     reported constant: painted `Varnode::readonly` like 1b below AND added to
+    //     the `dynrelocs` foldable set, so `ActionVarnodeProps` folds a load through
+    //     a selref/classref/superref without the program-wide `option readonly`.
+    //     Painted BEFORE the slots' own `selRef_`/`classRef_` symbols are mapped at
+    //     1a: `Scope::addMap` copies the range property into the SymbolEntry, and
+    //     the per-function snapshot reads the symbol's flags.
+    if prog.arch().analysis_objcrefconst && !out.const_ranges.is_empty() {
+        let mut ranges = prog.arch().dynreloc_const.as_ref().clone();
+        for &(first, last_open) in &out.const_ranges {
+            let begin = Address::new(Rc::clone(code_space), first);
+            let end = Address::new(Rc::clone(code_space), last_open);
+            prog.arch_mut().symboltab.set_property_range(
+                kuna_decomp::varnode::varnode_flags::readonly,
+                &begin,
+                &end,
+            );
+            ranges.push((first, last_open - 1));
+        }
+        ranges.sort_unstable();
+        prog.arch_mut().dynreloc_const = Rc::new(ranges);
+    }
+
     // 1. Extra symbols a pass discovered. Function symbols install like the
     //    funcsym stream (idempotent); Data symbols (typed string/data objects)
     //    land via add_symbol_mapped. (No pass emits these yet in this increment;
@@ -5360,6 +5394,64 @@ fn commit_analysis_output(
             arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
         let (sid, _) =
             arch.symboltab.add_symbol_mapped(scope, &base, arr, &addr, &Address::new_invalid())?;
+        arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
+    }
+
+    // 4a'. (kuna `cfstrings`) Mach-O Core Foundation constant strings. Each
+    //     `__cfstring` entry is typed a typelocked opaque `struct __CFString`
+    //     symbol, whose pointer the factory spells `CFStringRef`, so a reference
+    //     to the entry is a `CFStringRef`; AND the StringManager is seeded at the
+    //     entry address with the string its char pointer resolved to, so the
+    //     printer renders the literal (`CFSTR("launch-report")`) instead of
+    //     `dat_<addr>`, across the CFString struct indirection it cannot follow
+    //     on its own. The type spans the entry, never the string: a string-sized
+    //     type would overrun the next entry and hide it behind this one's symbol.
+    //     The seed goes in before the symbol, at char width 1, the width the
+    //     printer reads an entry's string with. The entry ranges were marked
+    //     read-only by the pass (arm 1b), which the route requires. Empty under
+    //     `--option cfstrings off`.
+    let cfstring_record = match out.cfstrings.first() {
+        Some(fact) => kuna_decomp::kuna_cfstr::declare_types(
+            prog.arch().types(),
+            fact.size as i32,
+            code_space.get_word_size(),
+        )?,
+        None => None,
+    };
+    for fact in &out.cfstrings {
+        let addr = Address::new(Rc::clone(code_space), fact.addr);
+        let occupied = {
+            let arch = prog.arch();
+            match arch.symboltab.get_global_scope() {
+                Some(global) => {
+                    arch.symboltab.find_function(global, &addr).is_some()
+                        || arch.is_lazy_entry(addr.get_offset())
+                        || arch
+                            .symboltab
+                            .find_container(global, &addr, 1, &Address::new_invalid())
+                            .is_some()
+                }
+                None => false,
+            }
+        };
+        if occupied {
+            continue;
+        }
+        let ty = match &cfstring_record {
+            Some(record) if record.get_size() == fact.size as i32 => Rc::clone(record),
+            _ => {
+                let ch = prog.arch().types().get_type_char(prog.arch().types().get_size_of_char())?;
+                prog.arch().types().get_type_array(fact.size as i32, ch)?
+            }
+        };
+        let name = format!("s_{:x}", fact.addr);
+        prog.arch().string_manager.borrow_mut().base.register_string_at(&addr, &fact.bytes, 1);
+        let arch = prog.arch_mut();
+        arch.cfstring_entries.insert(fact.addr);
+        let (scope, base) =
+            arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
+        let (sid, _) =
+            arch.symboltab.add_symbol_mapped(scope, &base, ty, &addr, &Address::new_invalid())?;
         arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
     }
 

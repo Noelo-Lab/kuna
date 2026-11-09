@@ -465,6 +465,8 @@ Three tiers:
 | a Mach-O objc_msgSend import renders as (*dat_100004038)() through __got | [`peimportcall`](#peimportcall) |
 | a PE function runs past ExitProcess or ExitThread and absorbs the next function's body | [`peimportcall`](#peimportcall) |
 | no Win32 API names anywhere in a decompiled PE | [`peimportcall`](#peimportcall) |
+| an arm64e call renders as (*dat_<addr>)(...) through an __auth_ptr slot | [`authptrcall`](#authptrcall) |
+| ___chkstk_darwin call unnamed in an arm64e function with a large frame | [`authptrcall`](#authptrcall) |
 | heavily-called custom die()/fatal() wrapper still treated as returning | [`noreturn_disc`](#noreturn_disc) |
 | dead code after a stripped sub_ wrapper that never falls through at 3+ call sites | [`noreturn_disc`](#noreturn_disc) |
 | caller swallows the next function after a wrapper call | [`noreturn_disc`](#noreturn_disc) |
@@ -492,9 +494,16 @@ Three tiers:
 | every pointer store in a go function wrapped in if (writeBarrier flag) with a gcWriteBarrier call | [`gowritebarrier`](#gowritebarrier) |
 | stores through an undefined local after a gcWriteBarrier call because the thunk's buffer register is not modeled | [`gowritebarrier`](#gowritebarrier) |
 | go output doubled in size by GC bookkeeping diamonds | [`gowritebarrier`](#gowritebarrier) |
+| if ((v ^ v << 1) >> 0x3e & 1) before a tail call in an arm64e function | [`ptrauthtrap`](#ptrauthtrap) |
+| (*SoftwareBreakpoint(0xc471,..))() // jump-as-call | [`ptrauthtrap`](#ptrauthtrap) |
+| a stack - 0x8  | [`ptrauthtrap`](#ptrauthtrap) |
+|  x30 variable declared only for a pointer-auth check | [`ptrauthtrap`](#ptrauthtrap) |
 | go function returning bool prints v = CONCAT71((undefined7)(v >> 8), a == b) instead of returning the comparison | [`gobool`](#gobool) |
 | return value masked with 0xffffffff around a boolean | [`gobool`](#gobool) |
 | undefined7 casts feeding a concatenation at every boolean return | [`gobool`](#gobool) |
+| objc_msgSend renders its selector as dat_<addr> or selRef_<sel> instead of the selector | [`objcrefconst`](#objcrefconst) |
+| objc_msgSendSuper2 shows the super struct filled from a data global instead of the class | [`objcrefconst`](#objcrefconst) |
+| a class-method receiver renders as dat_<addr> instead of _OBJC_CLASS_$_<Class> | [`objcrefconst`](#objcrefconst) |
 | the same value is assigned to one variable twice in a row with nothing in between | [`hideshadow`](#hideshadow) |
 | a comma-expression condition repeats an assignment: (v3 = a2, v4 = a0, v4 = a0, ...) | [`hideshadow`](#hideshadow) |
 | a repeated vN = dat_XXXX; around a conditional goto | [`hideshadow`](#hideshadow) |
@@ -605,6 +614,10 @@ Three tiers:
 | c++ catch/cleanup landing pads missing from a stripped binary's function list | [`eh_frame_full`](#eh_frame_full) |
 | exception-handler code never discovered as entries | [`eh_frame_full`](#eh_frame_full) |
 | gcc_except_table call-site targets left unexplored | [`eh_frame_full`](#eh_frame_full) |
+| a stripped mach-o yields almost no functions although __text is large | [`unwindstarts`](#unwindstarts) |
+| an ios app function list is only __mh_execute_header, main, exports and import stubs | [`unwindstarts`](#unwindstarts) |
+| LC_FUNCTION_STARTS absent and the arm64 gap walk cannot reach the body | [`unwindstarts`](#unwindstarts) |
+| functions the unwinder describes in __unwind_info missing from the inventory | [`unwindstarts`](#unwindstarts) |
 | functions ghidra finds in a stripped gcc binary's .cold region missing from kuna's function list | [`coldentry`](#coldentry) |
 | a hot function's decompile inlines an abort or error tail reached by a jump into another function's fde | [`coldentry`](#coldentry) |
 | gaps between consecutive sub_<addr> cold fragments that hold code | [`coldentry`](#coldentry) |
@@ -913,9 +926,13 @@ Three tiers:
 | read symbols dominates a single-function run on an entry-dense image | [`lazyfuncs`](#lazyfuncs) |
 | objective-c methods render as sub_<addr> instead of -[Class sel] | [`objc`](#objc) |
 | __objc_ metadata present but classes and selectors unnamed in a mach-o | [`objc`](#objc) |
+| a message send renders as sub_<addr>(obj) through an __objc_stubs entry | [`objc`](#objc) |
+| objc_msgSend selector argument renders as dat_<addr> | [`objc`](#objc) |
 | swift binary functions render as sub_<addr> although swift5 metadata sections are present | [`swiftmetadata`](#swiftmetadata) |
 | type metadata accessors unnamed in a stripped swift mach-o | [`swiftmetadata`](#swiftmetadata) |
 | protocol witnesses and class methods of a stripped swift app have no names | [`swiftmetadata`](#swiftmetadata) |
+| core-foundation / objc string constants render as dat_<addr> instead of their text | [`cfstrings`](#cfstrings) |
+| a CFSTR(...) argument shows an address in a mach-o | [`cfstrings`](#cfstrings) |
 | swift struct and class fields render as raw offsets off self | [`swifttypes`](#swifttypes) |
 | swift getters named by swiftmetadata take no self parameter | [`swifttypes`](#swifttypes) |
 | type metadata accessors return undefined16 | [`swifttypes`](#swifttypes) |
@@ -1319,6 +1336,9 @@ Three tiers:
 | a void function ends with a redundant return; the source does not have | [`voidtailreturn`](#voidtailreturn) |
 | GED counts one extra exit node against an otherwise perfect function | [`voidtailreturn`](#voidtailreturn) |
 | the last statement of a void function is a bare return | [`voidtailreturn`](#voidtailreturn) |
+| a data import read through __got renders *dat_<slot> | [`importdata`](#importdata) |
+| __stack_chk_guard shows as a dereferenced dat_ address | [`importdata`](#importdata) |
+| imported globals are anonymous even though their GOT slot is named | [`importdata`](#importdata) |
 | a libc argument is cast to the very type the parameter declares, memchr(v10,(int)v4,n) | [`castimplied`](#castimplied) |
 | a widening cast assigned to a variable already declared that type, v2 = (long)v1; with long v2 | [`castimplied`](#castimplied) |
 | return (unsigned long)v1; from a function declared unsigned long | [`castimplied`](#castimplied) |
@@ -2485,6 +2505,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P1/external-refinement · kuna · correctness-fix · decbench-O0-mydoom-mmsender_th
 - **Example:** `option peimportcall on`
 
+### `authptrcall` -- on | off, default `on`
+
+- **Symptoms:** an arm64e call renders as (*dat_<addr>)(...) through an __auth_ptr slot; ___chkstk_darwin call unnamed in an arm64e function with a large frame.
+- **What it does:** Bind a call through an arm64e __auth_ptr slot to the import its chained bind names. An arm64e link keeps two tables of pointers to imported functions: __auth_got backs the __auth_stubs a direct bl reaches and is listed in the LC_DYSYMTAB indirect-symbol table, so peimportcall already binds a call through it; __auth_ptr holds the signed pointers code loads itself (clang's adrp/ldr/blraaz call of ___chkstk_darwin) and is a plain S_REGULAR section with no indirect-symbol entries, so its slots are named only by their LC_DYLD_CHAINED_FIXUPS bind and such a call rendered (*dat_1000716c0)(...). On: every addend-free bind slot of __auth_ptr gets a FunctionSymbol named after its import (one leading _ stripped) and the slot is painted Varnode::externref, so ActionDeindirect resolves the call as it does through __auth_got. A bind with an addend points inside the import and is skipped.
+- **When to flip:** On by default: an arm64e call through __auth_ptr renders by name (___chkstk_darwin(...)) instead of (*dat_<addr>)(...). Flip off to restore the anonymous slot call. Inert on any image without an __auth_ptr bind.
+- **Where / provenance:** P1/external-refinement · kuna · correctness-fix · kuna-apple-authptrcall
+- **Example:** `option authptrcall off`
+
 ### `noreturn_disc` -- on | off, default `on`
 
 - **Symptoms:** heavily-called custom die()/fatal() wrapper still treated as returning; dead code after a stripped sub_ wrapper that never falls through at 3+ call sites; caller swallows the next function after a wrapper call.
@@ -2549,6 +2577,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-multilang-gowritebarrier
 - **Example:** `option gowritebarrier off`
 
+### `ptrauthtrap` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** if ((v ^ v << 1) >> 0x3e & 1) before a tail call in an arm64e function; (*SoftwareBreakpoint(0xc471,..))() // jump-as-call; a stack - 0x8 ;  x30 variable declared only for a pointer-auth check.
+- **What it does:** Drop the pointer-authentication failure checks an arm64e compiler plants after an aut* instruction. Without FEAT_FPAC a failed aut* does not trap; it leaves an error code in the pointer's top bits, so Apple's clang checks the result inline and branches to brk #0xc470+key when it is bad: before a tail call it tests that bits 62 and 61 of the authenticated x30 agree (eor x16, x30, x30, lsl #1; tbz x16, #62), after a data aut* it compares the result with its xpac-stripped copy. SLEIGH hides the aut* itself (ShowPAC is off), so statically every pointer authenticates and the check is noise; the xpac form folds away on its own, but the bit test reads the incoming return address and renders as if ((x30 ^ x30 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); return; } before nearly every tail call of an Apple binary. The trap block is the anchor: a block lifted entirely from one brk whose SoftwareBreakpoint immediate is 0xc470-0xc473, the codes LLVM reserves for this trap. A CBRANCH edge into it is removed pre-SSA (the gomorestack window) only when the guard's condition is that bit test of the return address, ((x30 ^ x30 << 1) >> 62) & 1, the edge is the arm taken when the two bits disagree, and x30 was reloaded from the frame (an sp- or x29-based load) or is unwritten anywhere in the function: the brk immediate alone is not evidence, since any AArch64 code can branch to a brk #0xc470 on a condition of its own, and a value the code put in x30 (mov x30, x0; ldr x30, [x0]) is not the authenticated return address. The condition then dies to dead-code elimination.
+- **When to flip:** Leave on: an arm64e function's tail call reads as the call alone. Flip off to audit where the compiler checks an authenticated pointer. Inert on any guard other than the return-address bit test before a brk #0xc470-0xc473 trap, whatever the image format.
+- **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-apple-ptrauthtrap
+- **Example:** `option ptrauthtrap off`
+
 ### `gobool` -- off | auto | always, default `auto` (destructive opt-in)
 
 - **Symptoms:** go function returning bool prints v = CONCAT71((undefined7)(v >> 8), a == b) instead of returning the comparison; return value masked with 0xffffffff around a boolean; undefined7 casts feeding a concatenation at every boolean return.
@@ -2556,6 +2592,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave auto: Go functions returning bool stop printing CONCAT71 noise and return their comparison directly. Use always on a Go function carved into a bytechunk where detection has nothing to read; off only to audit the raw register dataflow.
 - **Where / provenance:** P4/output-prototype · kuna · correctness-fix · kuna-multilang-gobool
 - **Example:** `option gobool off`
+
+### `objcrefconst` -- on | off, default `on`
+
+- **Symptoms:** objc_msgSend renders its selector as dat_<addr> or selRef_<sel> instead of the selector; objc_msgSendSuper2 shows the super struct filled from a data global instead of the class; a class-method receiver renders as dat_<addr> instead of _OBJC_CLASS_$_<Class>.
+- **What it does:** Fold a load through an Objective-C reference slot to the thing it refers to. A message send never names its selector or class directly: `objc_msgSend(obj, sel)` loads `sel` from a `__objc_selrefs` slot, a class-method receiver comes from `__objc_classrefs`, and `[super init]` fills `objc_super.class` from `__objc_superrefs`. dyld writes those slots once, before any code runs, and nothing rewrites them, so their contents are constant by construction; Ghidra's ObjectiveC2_ClassAnalyzer marks the three blocks read-only for the same reason. On: the rebase slots the `objc` pass named (`selRef_<sel>`, `classRef_<Class>`, `superRef_<Class>`) are painted read-only and foldable without the program-wide `option readonly` (the `dynrelocs` RELRO mechanism), so the send reads `objc_msgSend(obj, sel_init)` and the super call `objc_msgSendSuper2(&super, sel_init)` with `super.class = _OBJC_CLASS_$_Derived`. A bind slot (a class imported from another image) has no static value and keeps its `classRef_<Class>` name. The `objc_msgSend$<sel>` stubs of `__objc_stubs` are named by the `objc` pass itself and need no fold. Off: the slots keep their names and every load through them stays a load. Inert unless `objc` is on, and a structural no-op on every non-Mach-O image.
+- **When to flip:** On by default: a selector read through its slot is the selector, and the folded form is what IDA and Ghidra both print. Flip off to see each reference as the named global it loads from (`objc_msgSend(obj, selRef_init)`), which is the shape to read when a slot is patched at run time or when the data flow through the slot itself is the question. Inert unless `objc` is on; `objc` is on for a Mach-O image under 500 KiB, where `auto` selects the `aggressive` preset.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-objc
+- **Example:** `option objcrefconst off`
 
 ### `hideshadow` -- on | off, default `on`
 
@@ -2833,6 +2877,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-ehframe-lsda
 - **Example:** `--option eh_frame_full on`
 
+### `unwindstarts` -- on | off, default `off`
+
+- **Symptoms:** a stripped mach-o yields almost no functions although __text is large; an ios app function list is only __mh_execute_header, main, exports and import stubs; LC_FUNCTION_STARTS absent and the arm64 gap walk cannot reach the body; functions the unwinder describes in __unwind_info missing from the inventory.
+- **What it does:** Extend Mach-O function discovery with the function starts the linker recorded in __TEXT,__unwind_info. The second-level pages (regular and compressed) list in ascending order the start offset of every function the unwinder can describe - one per .cfi_startproc the compiler emitted - relative to the image base. The section lives in the mapped __TEXT segment, so it survives the strip that removes LC_FUNCTION_STARTS from __LINKEDIT. On an image that still carries LC_FUNCTION_STARTS every unwind start is already a function-starts entry (the linker folds runs of adjacent same-encoding functions into one entry, so the set is a strict subset) and this oracle adds nothing. Its value is the stripped App-Store app: with LC_FUNCTION_STARTS gone, the symbol stream, LC_MAIN, exports and __mod_init_func seed only a handful of starts and the arm64 gap walk cannot reach the body, so the inventory collapses to the entry and the import stubs - measured on a 249 MB arm64 third-party iOS app with no LC_FUNCTION_STARTS, kuna discovered 23 of the 204,800 real __text functions __unwind_info records. With this on, those 204,800 starts are recovered. Only the function starts are read; the compact encodings (frame size, saved registers, frameless stack size) are ignored because kuna S5/S7 frame analysis recovers the stack frame from the code. Output-changing (adds entries), so default-OFF: a default run is byte-identical to before.
+- **When to flip:** Off (default) keeps Mach-O function starts from LC_FUNCTION_STARTS, LC_MAIN, exports and __mod_init_func. Flip on for a Mach-O whose LC_FUNCTION_STARTS was stripped (a common App-Store app) and whose function list is almost empty - the tell-tale is an inventory of a few named entries and many __stubs/__got slots over a large __text that holds real code. Inert on any image that still carries LC_FUNCTION_STARTS, where the unwind starts are already a subset of what is discovered.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-unwindstarts
+- **Example:** `--option unwindstarts on`
+
 ### `coldentry` -- on | off, default `on`
 
 - **Symptoms:** functions ghidra finds in a stripped gcc binary's .cold region missing from kuna's function list; a hot function's decompile inlines an abort or error tail reached by a jump into another function's fde; gaps between consecutive sub_<addr> cold fragments that hold code.
@@ -3068,8 +3120,8 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 ### `dynrelocs` -- on | off, default `on`
 
 - **Symptoms:** a call in a pie binary renders as (*dat_<addr>)(...) with no name although the callee is a named function in the same image; a got slot reads back as 0 in the decompiled output; reading a relocated function-pointer table in a pie binary yields all zeroes; kuna read of a mach-o pointer slot shows a chained-fixup word such as 1004000000000000 instead of the pointer; a mips pic shared object calls its own function as (*dat_<addr>)() through the got; a mips pic function reads a static or global as *(int *)(dat_<got slot> + 0x...).
-- **What it does:** Apply a LINKED image's dynamic relocations (.rela.dyn / .rel.dyn / .rela.plt) when the loader snapshots it, and mark the slots PT_GNU_RELRO freezes as constant. kuna maps the PT_LOAD bytes the linker wrote, but a PIE (ET_DYN) or dynamically linked ET_EXEC leaves every R_*_RELATIVE / GLOB_DAT / JUMP_SLOT slot at 0 for the run-time loader, so the whole .got reads back null and a call through a function pointer the linker itself resolved renders (*dat_<addr>)(...). This fills the slots in (RELATIVE = load bias + addend; GLOB_DAT/JUMP_SLOT only when the symbol is DEFINED in this same image, so imports and the PLT naming path are untouched) and reports the written slots that PT_GNU_RELRO covers as constant, which is what lets the engine fold the load and resolve the call to its name. x86-64, AArch64, i386 and ARM; both RELA and REL (in-place addend) tables. A Mach-O image's LC_DYLD_CHAINED_FIXUPS chains are applied the same way: each pointer slot on disk is a packed chain entry, not the pointer, so a rebase is written as its resolved target and a bind (an import) as 0; no Mach-O slot is reported constant. MIPS has no records for its primary GOT: the run-time loader adds the load bias to the local entries and stores each defined dynamic symbol's address in its global entry, so those slots already hold their run-time values at kuna's zero bias and are reported constant as they stand (kuna_mipsgot), which names a PIC call or data access to what the same image defines. Distinct from relocobjects/relocrebase, which own the pre-link ET_REL .o path. Loader-tier: read via the kuna_dynrelocs env var (the image bytes are snapshotted at load file).
-- **When to flip:** On (default) names calls made through a relocated GOT slot in any PIE or MIPS PIC image, and gives the relocated value to anything that reads that memory; an unrelocated slot holds 0, which the run-time image never holds, so this is a correctness fix rather than a judgement call. Flip off to restore the pre-fix bytes exactly - every GOT slot back to 0 and every such call back to (*dat_<addr>)(...).
+- **What it does:** Apply a LINKED image's dynamic relocations (.rela.dyn / .rel.dyn / .rela.plt) when the loader snapshots it, and mark the slots PT_GNU_RELRO freezes as constant. kuna maps the PT_LOAD bytes the linker wrote, but a PIE (ET_DYN) or dynamically linked ET_EXEC leaves every R_*_RELATIVE / GLOB_DAT / JUMP_SLOT slot at 0 for the run-time loader, so the whole .got reads back null and a call through a function pointer the linker itself resolved renders (*dat_<addr>)(...). This fills the slots in (RELATIVE = load bias + addend; GLOB_DAT/JUMP_SLOT only when the symbol is DEFINED in this same image, so imports and the PLT naming path are untouched) and reports the written slots that PT_GNU_RELRO covers as constant, which is what lets the engine fold the load and resolve the call to its name. x86-64, AArch64, i386 and ARM; both RELA and REL (in-place addend) tables. A Mach-O image's LC_DYLD_CHAINED_FIXUPS chains are applied the same way: each pointer slot on disk is a packed chain entry, not the pointer, so a rebase is written as its resolved target and a bind (an import) as 0; the rebase slots of an SG_READ_ONLY segment (__DATA_CONST, which dyld maps read-only once fixed up) are reported constant, a __DATA slot is not. MIPS has no records for its primary GOT: the run-time loader adds the load bias to the local entries and stores each defined dynamic symbol's address in its global entry, so those slots already hold their run-time values at kuna's zero bias and are reported constant as they stand (kuna_mipsgot), which names a PIC call or data access to what the same image defines. Distinct from relocobjects/relocrebase, which own the pre-link ET_REL .o path. Loader-tier: read via the kuna_dynrelocs env var (the image bytes are snapshotted at load file).
+- **When to flip:** On (default) names calls made through a relocated GOT slot in any PIE or MIPS PIC image, and gives the relocated value to anything that reads that memory; an unrelocated slot holds 0, which the run-time image never holds, so this is a correctness fix rather than a judgement call. On an arm64 Mach-O it is what makes a chained-fixup pointer slot read as a pointer at all. Flip off to restore the pre-fix bytes exactly - every GOT slot back to 0, every chained slot back to its packed entry, and every such call back to (*dat_<addr>)(...).
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-analysis-dynrelocs
 - **Example:** `option dynrelocs off`
 
@@ -3459,9 +3511,9 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 
 ### `objc` -- on | off, default `off`
 
-- **Symptoms:** objective-c methods render as sub_<addr> instead of -[Class sel]; __objc_ metadata present but classes and selectors unnamed in a mach-o.
-- **What it does:** Run the Mach-O Objective-C metadata recovery pass: when the binary is a Mach-O, walk the __objc_* ObjC 2.0 metadata web (the kuna analog of Ghidra's ObjcTypeMetadataAnalyzer, name-recovery half). From __objc_classlist (array of class_t*), per class follow data & FAST_DATA_MASK (~0x7) to the class_ro_t, read .name (class name) and .baseMethods (the - instance method_list_t), and follow class_t.isa to the metaclass baseMethods (the + class methods). Walk method_list_t handling BOTH the large absolute-pointer form and the small/relative form (entsizeAndFlags & 0x80000000), per method_t resolving the selector (ASCII), type encoding, and IMP (function VA). RENAME each IMP function -[Class sel] / +[Class sel] — but only when it still carries an engine FUN_*/sub_* placeholder (the label gate, the FID precedent; a real symbol is never overwritten) — plus emit _OBJC_CLASS_$_<name> + selector symbols. Selectors are plain ASCII, so no demangler is needed. Registered ONLY for a Mach-O binary, so it is a structural no-op on every non-Mach-O target. x86-64, no-chained-fixups path (the arm64 + LC_DYLD_CHAINED_FIXUPS resolver is a deferred follow-on). DISABLED by default (output-changing: renames IMP functions + adds symbols; real-binary-path only, so every parity gate is byte-identical).
-- **When to flip:** Off (default; no IMP is renamed and there is zero behavior change). Flip on for a Mach-O Objective-C binary to recover method names — a stripped IMP renders -[Greeter greet:] instead of sub_<addr>, and the class/selector strings are named.
+- **Symptoms:** objective-c methods render as sub_<addr> instead of -[Class sel]; __objc_ metadata present but classes and selectors unnamed in a mach-o; a message send renders as sub_<addr>(obj) through an __objc_stubs entry; objc_msgSend selector argument renders as dat_<addr>.
+- **What it does:** Run the Mach-O Objective-C metadata recovery pass: when the binary is a Mach-O, walk the __objc_* ObjC 2.0 metadata web (the kuna analog of Ghidra's ObjcTypeMetadataAnalyzer, name-recovery half). From __objc_classlist (array of class_t*), per class follow data & FAST_DATA_MASK (~0x7) to the class_ro_t, read .name (class name) and .baseMethods (the - instance method_list_t), and follow class_t.isa to the metaclass baseMethods (the + class methods). Walk method_list_t handling BOTH the large absolute-pointer form and the small/relative form (entsizeAndFlags & 0x80000000), per method_t resolving the selector (ASCII), type encoding, and IMP (function VA). RENAME each IMP function -[Class sel] / +[Class sel] — but only when it still carries an engine FUN_*/sub_* placeholder (the label gate, the FID precedent; a real symbol is never overwritten) — plus emit _OBJC_CLASS_$_<name> + selector symbols. Selectors are plain ASCII, so no demangler is needed. Also names the reference slots code actually loads from — `selRef_<sel>` for __objc_selrefs, `classRef_<Class>` / `superRef_<Class>` for __objc_classrefs / __objc_superrefs (a bind slot is named from its import) — and each `__objc_stubs` entry as the function `objc_msgSend$<sel>` it is the linker's stub for, so a send through a stub renders `objc_msgSend$init(obj)` instead of `sub_<addr>(obj)`. Registered ONLY for a Mach-O binary, so it is a structural no-op on every non-Mach-O target. arm64 and x86-64; chained fixups (LC_DYLD_CHAINED_FIXUPS) are resolved. DISABLED in the shipped catalog (output-changing: renames IMP functions + adds symbols; real-binary-path only, so every parity gate is byte-identical), but ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB, so on a Mach-O image of that size it runs without being asked for.
+- **When to flip:** Off in the shipped catalog (no IMP is renamed and there is zero behavior change), but ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB, so it is the default rendering of `kuna decompile`, `decompile-all`, `decompile-project` and the web front-end for a Mach-O image of that size. Flip on for a larger Mach-O Objective-C binary to recover method names — a stripped IMP renders -[Greeter greet:] instead of sub_<addr>, the class/selector strings and the selector/class reference slots are named, and a send through an `__objc_stubs` entry renders `objc_msgSend$<sel>(obj, ...)`. `objcrefconst` (on by default) then folds the reference slots to what they hold.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-objc
 - **Example:** `option objc on`
 
@@ -3472,6 +3524,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off (the default at 500 KiB and above; nothing is named and there is zero behavior change). `--mode auto` turns it on below 500 KiB through the `aggressive` preset, so flip it on for a larger stripped Swift binary: metadata accessors, class vtable implementations, overrides of imported methods and protocol witnesses render under their type's path instead of sub_<addr>, and the descriptor records are named.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-swiftmetadata
 - **Example:** `option swiftmetadata on`
+
+### `cfstrings` -- on | off | annotate, default `on`
+
+- **Symptoms:** core-foundation / objc string constants render as dat_<addr> instead of their text; a CFSTR(...) argument shows an address in a mach-o.
+- **What it does:** Run the Mach-O Core Foundation constant-string recovery pass: when the binary is a Mach-O, read each __cfstring entry (the four-word CFString struct isa/flags/data-pointer/length), resolve its data pointer through the LC_DYLD_CHAINED_FIXUPS overlay on an arm64(e) image (a raw word on a classic LC_DYLD_INFO image), read the string (8-bit when the flags unicode bit 0x10 is clear, UTF-16 decoded to UTF-8 when set), and render a reference to the entry as the string literal. The commit seam types each entry a typelocked opaque struct __CFString symbol, whose pointer the type factory spells CFStringRef (so a function returning or passing the entry is typed CFStringRef), and pre-seeds the StringManager at the entry address with the resolved bytes, so a CFSTR argument renders as CFSTR("text") instead of dat_<addr> (the C printer wraps the literal in CFSTR(...) because the value is the CFStringRef entry, not its characters; annotate also follows it with a /* cfstring@0x<entry> */ comment naming the entry address a listing or hex view shows) -- the same route that renders a __cstring literal, carried across the CFString struct indirection the printer cannot follow on its own. The entry structs are marked read-only (a CFString constant is immutable), which the constant-string route requires on the historical writable __DATA,__cfstring layout (__DATA_CONST is already read-only). Registered ONLY for a Mach-O binary, so it is a structural no-op on every non-Mach-O target. ENABLED by default: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675 assertions moved); on an 80 MB third-party arm64 iOS app a decompile is within noise of off (min 2.324 s off vs 2.359 s on, medians 2.442 / 2.372 s over 6 interleaved runs).
+- **When to flip:** On (default): a Mach-O (Core Foundation / Objective-C / Swift) binary renders its CFString constants -- a call that passed dat_<addr> renders CFSTR("cfstring hello"). Flip off to see each reference as the __cfstring entry itself (its symbol, or its address on a stripped image). Use annotate when cross-checking against a disassembler or hex view: the entry address stays in the output as a comment.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-cfstrings
+- **Example:** `option cfstrings annotate`
 
 ### `swifttypes` -- on | off, default `on`
 
@@ -4268,6 +4328,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** The emitted C ends a void function with a redundant `return;` that the source does not have. The shipped catalog default is OFF (the XML datatest corpus pins the upstream rendering and applies no mode); it is ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB -- so the elision is the default rendering of `kuna decompile`, `decompile-all`, `decompile-project` and the web front-end (DIV-98). Flip OFF to restore upstream Ghidra's trailing `return;`. Measured bidirectionally over the whole O0 decbench slice (32,329 functions / 265 slices, `scripts.decbench.optsweep`): GED-perfect 15,308 -> 15,933 (**+625** for the option in isolation), 687 moved TO perfect against 62 moved OFF (11.08 : 1, McNemar z = +22.84) -- of which **preset membership delivers +439**; the residual +186 is on binaries >= 500 KiB, where `auto` selects `reliable` and its override list is empty, so only a catalog-default flip reaches them, aggregate GED 259,329 -> 253,985, improved 1,561 / worsened 186, and EVERY architecture net-positive (x86-64 +282, ARM +338, PE-x86 +5) with no net-negative project. Controls: 21,478 unchanged bodies score identically, 0 slug-only diffs, baseline arm agrees with the tree's published verdict on 31,584/32,329. Speed +0.17% (coreutils/ls O0, interleaved min-of-5). The 62 regressions are the shape where the SOURCE itself ends with an explicit `return;` (concentrated in betaflight 24 / cleanflight 21 register-poke helpers), which the binary cannot distinguish. The measured motivation is structural: pyjoern merges FUNCTION_END into its predecessor only when that predecessor's sole successor is FUNCTION_END, so when a function's tail is an `if` or a loop the source CFG has NO node there -- and kuna's printed `return;` re-materialises one (+1 node, +1..2 edges, and an is_exitpoint role flip that alone breaks GED's isomorphism test). 68 of the 250 decbench sample-set outputs carry exactly one bare trailing `return;`.
 - **Where / provenance:** P9/brace-form · kuna · presentation-default · kuna-voidtailreturn
 - **Example:** `option voidtailreturn on`
+
+### `importdata` -- on | off, default `off`
+
+- **Symptoms:** a data import read through __got renders *dat_<slot>; __stack_chk_guard shows as a dereferenced dat_ address; imported globals are anonymous even though their GOT slot is named.
+- **What it does:** Render a data read through a loader-marked import slot as the import itself. A data import (Mach-O __got / __auth_got, a dyld-cache coalesced GOT slot, a PE IAT entry) is reached through a slot the dynamic loader fills with the import's address: `ldr x8,[slot]; ldr w8,[x8]`. The slot is already named for the import and painted `externref` (peimportcall), which is what lets ActionDeindirect resolve a CALL through it to the import; a DATA read is not a call, so it printed as a dereference of the anonymous slot, `*dat_<slot>`. On: a LOAD whose pointer is such a slot renders as the import (`imported_counter`, `__stack_chk_guard`), resolved exactly as ActionDeindirect resolves a call through the same slot (query_function on the externref persist address). Calls are unaffected (deindirect consumes them first), and a read through anything that is not an externref import slot is untouched. Needs the slot painted externref, so it is a no-op when peimportcall is off and on every format whose import slots are not painted (ELF GOT data imports today).
+- **When to flip:** Off in the shipped catalog (a data read through an import slot renders *dat_<slot>), but ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB, so below that size it is the default rendering of `kuna decompile`, `decompile-all` and `decompile-project`. Flip on for a larger binary to name data imports read through a GOT/IAT slot -- the stack-protector guard, XPC type objects, global counters -- e.g. `if (*dat_1041cc6c8 == ...)` becomes `if (__stack_chk_guard == ...)`; flip off to keep the slot dereference on a small one.
+- **Where / provenance:** P9/naming-policy · kuna · presentation-default · kuna-importdata
+- **Example:** `option importdata on`
 
 ### `castimplied` -- on | off, default `on`
 
