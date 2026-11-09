@@ -50,10 +50,11 @@ pub(super) fn is_lzfse(bytes: &[u8]) -> bool {
 
 /// Decode a whole LZFSE stream. `limit` caps the decoded size; the declared
 /// `size_hint` only sizes the first allocation, never past what the input could
-/// plausibly expand to. Every literal and match of a valid block produces
-/// output (the encoder pads at most 3 literals), so the symbols a block claims
-/// beyond its raw size are charged to the input length: an all-header block
-/// decoding 50,000 symbols to nothing would otherwise cost 1,500 steps per byte.
+/// plausibly expand to. A valid block claims more symbols than raw bytes only
+/// by its padding literals and literal-only (M = 0) triples, at most 50 per block
+/// in two real 20 MB kernelcache streams, so the symbols a block claims beyond
+/// its raw size are charged to the input length: an all-header block decoding
+/// 50,000 symbols to nothing would otherwise cost 1,500 steps per byte.
 pub(super) fn decode(src: &[u8], size_hint: usize, limit: usize) -> Result<Vec<u8>, Error> {
     let mut out = Vec::with_capacity(size_hint.min(limit).min(src.len().saturating_mul(8)));
     let mut pos = 0usize;
@@ -497,8 +498,6 @@ fn rd_u64(b: &[u8], off: usize) -> Option<u64> {
 mod tests {
     use super::*;
 
-    /// Bits loaded from before the payload's start read as zero but cannot be
-    /// consumed: a stream that needs them is truncated, not zero-padded.
     /// Blocks that claim symbols but decode nothing stop at the input length
     /// instead of decoding every block: 100,000 32-byte headers, each claiming
     /// 50,000 symbols, are refused at once.
@@ -518,6 +517,8 @@ mod tests {
         assert!(start.elapsed() < std::time::Duration::from_secs(1), "took {:?}", start.elapsed());
     }
 
+    /// Bits loaded from before the payload's start read as zero but cannot be
+    /// consumed: a stream that needs them is truncated, not zero-padded.
     #[test]
     fn bits_from_before_the_payload_cannot_be_pulled() {
         let mut bits = BitIn::new(&[0xa5], 0).unwrap();

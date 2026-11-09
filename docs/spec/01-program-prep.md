@@ -1083,7 +1083,8 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   claim a gigabyte. An FSE bit stream may preload bytes from
   before its payload, as the reference encoder's does, but consuming them is
   a truncation error rather than a read of zeros. Symbols a block claims beyond
-  its raw size (a valid block wastes at most 3 padding literals) are charged
+  its raw size (a valid block exceeds it only by padding literals and literal-only
+  triples, at most 50 per block in two real kernelcache streams) are charged
   to the input's length, so all-header blocks that decode to nothing stop
   quickly. Then, for an
   `MH_FILESET`, every rebase of the collection's fixup table is written into
