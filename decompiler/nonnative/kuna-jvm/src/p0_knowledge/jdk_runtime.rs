@@ -1198,7 +1198,9 @@ impl JImage {
     fn children(&self, dir: &ImageLocation) -> io::Result<Vec<ImageLocation>> {
         let content = self.get_resource(dir)?;
         content
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| self.get_location(self.order_u32(c)))
             .collect()
     }

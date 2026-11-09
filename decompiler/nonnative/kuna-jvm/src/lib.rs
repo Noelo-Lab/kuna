@@ -15,6 +15,9 @@
 // These lints fight a line-by-line port: the Java control flow is kept as written.
 #![allow(
     clippy::collapsible_if,
+    clippy::collapsible_match,
+    clippy::while_let_loop,
+    clippy::question_mark,
     clippy::needless_range_loop,
     clippy::new_without_default,
     clippy::only_used_in_recursion,
