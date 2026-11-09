@@ -12,6 +12,7 @@ pub mod generic_dominator_engine;
 pub mod i_graph;
 pub mod i_graph_node;
 pub mod irreducible_cfg_deobfuscator;
+pub mod kuna_fix_irreducible_with_exception_edges;
 pub mod sequence_helper;
 pub mod strong_connectivity_helper;
 pub mod support_component;

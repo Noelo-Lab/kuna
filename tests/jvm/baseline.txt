@@ -603,6 +603,7 @@ kuna-fixes-compat/pkg/TestForRangeExclusiveBound
 kuna-fixes-compat/pkg/TestForRangeUnmatchedBound
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestInnerOfGenericOuter
+kuna-fixes-compat/pkg/TestIrreducibleTry
 kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes-compat/pkg/TestLocalVisibilityComment
 kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver
@@ -618,6 +619,7 @@ kuna-fixes-compat/pkg/TestSamWrapperObjectKt
 kuna-fixes-compat/pkg/TestSelfReferencingLambda
 kuna-fixes-compat/pkg/TestSuspendFinallyKt
 kuna-fixes-compat/pkg/TestSuspendLoopFinally
+kuna-fixes-compat/pkg/TestSuspendLoopTry
 kuna-fixes-compat/pkg/TestSuspendResultCast
 kuna-fixes-compat/pkg/TestSwitchCaseScope
 kuna-fixes-compat/pkg/TestSwitchExprConstLub
@@ -654,6 +656,7 @@ kuna-fixes/pkg/TestForRangeExclusiveBound
 kuna-fixes/pkg/TestForRangeUnmatchedBound
 kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestInnerOfGenericOuter
+kuna-fixes/pkg/TestIrreducibleTry
 kuna-fixes/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes/pkg/TestLocalVisibilityComment
 kuna-fixes/pkg/TestMethodRefWildcardReceiver
@@ -669,6 +672,7 @@ kuna-fixes/pkg/TestSamWrapperObjectKt
 kuna-fixes/pkg/TestSelfReferencingLambda
 kuna-fixes/pkg/TestSuspendFinallyKt
 kuna-fixes/pkg/TestSuspendLoopFinally
+kuna-fixes/pkg/TestSuspendLoopTry
 kuna-fixes/pkg/TestSuspendResultCast
 kuna-fixes/pkg/TestSwitchCaseScope
 kuna-fixes/pkg/TestSwitchExprConstLub

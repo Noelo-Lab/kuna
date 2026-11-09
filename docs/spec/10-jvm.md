@@ -2021,3 +2021,44 @@ one. With the fix
 (`decompiler/nonnative/kuna-jvm/src/kotlin/k_new_exprent.rs (KNewExprent::partial_dims_to_java)`),
 a creation with fewer lengths than dimensions is written `Array(d0) { .. arrayOfNulls(dk) }`,
 its innermost sized level holding null arrays. Upstream leaves the case as a TODO.
+**Fix `irreducible_with_exception_edges`**. `DomHelper.processStatement` reduces a region in three
+ways: simple statements, a sub-region found by `findGeneralStatement` between a head and one of
+its extended postdominators, and, when neither applies, node splitting
+(`IrreducibleCFGDeobfuscator.splitIrreducibleNode`) if the region's flow is irreducible. Its
+`isStatementIrreducible` answers "reducible" for any region in which a statement has an exception
+edge, so a region holding a `try` is never split; and where the flow is irreducible no statement
+dominates the loop, so `FastExtendedPostdominanceHelper`'s dominance filter drops exactly the
+postdominators that would let `findGeneralStatement` isolate a `try` inside it (its body cannot
+become one statement while its successor is outside the range and has a single predecessor). Such
+a region is never reduced and the method fails with `parsing failure!`. kotlinc produces it for a
+suspend function whose loop holds a `try` (`try`/`finally`, `consume { }`, `consumeEach`): the
+state machine enters the loop at its head and at each resume point in its middle, and the range is
+cut around each suspension's early `return`, which the `finally` does not run (kotlinx-coroutines
+1.8.0 and 1.10.2: `ChannelsKt__DeprecatedKt`'s `elementAtOrNull`, `filterNotNullTo`, `indexOf`,
+`lastOrNull`, `maxWith`, `minWith`, `toChannel` and its `map`, `zip` lambdas,
+`SharedFlowImpl.collect`, `StateFlowImpl.collect`, `StreamFlow.collect`; unchanged on
+`develop/1.13.0`, whose only change to these classes is nullability). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p7_regions/kuna_fix_irreducible_with_exception_edges.rs`),
+at the two points where Vineflower gives the region up for good (the map of extended
+postdominators fresh or refreshed) and only when the region is irreducible over its regular and
+exception edges together (a handler entered from its range), `DomHelper` goes on in two ways.
+After the force-all search finds nothing, `IrreducibleWithExceptionEdges::isolate` takes, for each
+handler whose range has a single entry, every exit candidate and the region
+`DomHelper::collect_region` (the body of `findGeneralStatement`'s loop, with all its checks: one
+entry, handlers whose range it holds, consistent exception edges) would build from that entry to
+it, keeps the smallest that holds the whole range, and collapses it into a sub-region processed as
+any other; the `try` is built inside it and its exception edges leave the region. Where no such
+region exists (a range with two exits that rejoin only past another entry), instead of "not
+irreducible", `IrreducibleWithExceptionEdges::split` chooses the node to copy as Java does, among
+the statements no exception edge touches, and splits it with Java's
+`IrreducibleCFGDeobfuscator::split_node`. Once the region's tries are built it holds no exception
+edges and Vineflower's own splitting finishes it. Both steps keep what the method does: a sub-region
+with one entry and one regular exit is structured like any other, and a copied statement runs the
+same code under the same protection, none at that level. The method gets Vineflower's comment
+"Irreducible bytecode was duplicated". The twelve methods decompile as Java; as Kotlin, seven of
+them then fail like other suspend functions whose `finally` needs a semaphore variable
+(`Var types not processed!`: the Kotlin pipeline gives semaphore variables no type), and
+`StreamFlow.collect` on its continuation class (`Anonymous class does not have Class Kotlin
+metadata`). The fix does not touch `return` inside `finally`
+(`TestTryReturn.testParsingFailure`) or a catch range covering the inlined `finally` (kotlinc 1.3,
+okhttp's `PublicSuffixDatabase.readTheListUninterruptibly`), which fail before any split could help.

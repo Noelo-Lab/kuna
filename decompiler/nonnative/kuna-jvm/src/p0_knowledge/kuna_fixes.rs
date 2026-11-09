@@ -187,6 +187,9 @@ pub enum KunaFix {
     /// `kt_partial_array_dims`: a Kotlin array creation that sizes fewer
     /// dimensions than its type (`arrayOfNulls<ByteArray>(n)`) is written.
     KtPartialArrayDims,
+    /// `irreducible_with_exception_edges`: an irreducible level of the
+    /// statement graph that holds exception edges is split like one without.
+    IrreducibleWithExceptionEdges,
 }
 
 impl KunaFix {
@@ -243,6 +246,7 @@ impl KunaFix {
         KunaFix::KtForLoopContinueUpdate,
         KunaFix::VarMergeLiveness,
         KunaFix::KtPartialArrayDims,
+        KunaFix::IrreducibleWithExceptionEdges,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -299,6 +303,7 @@ impl KunaFix {
             KunaFix::KtForLoopContinueUpdate => "kt_for_loop_continue_update",
             KunaFix::VarMergeLiveness => "var_merge_liveness",
             KunaFix::KtPartialArrayDims => "kt_partial_array_dims",
+            KunaFix::IrreducibleWithExceptionEdges => "irreducible_with_exception_edges",
         }
     }
 

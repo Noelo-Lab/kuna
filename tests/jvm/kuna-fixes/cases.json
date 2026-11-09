@@ -657,6 +657,31 @@
       "compiler": "kotlinc 2.0.0",
       "summary": "`rows`, `grid` and `table`, which create an array of arrays with only its outer length, decompile (`arrayOfNulls(n)`)",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestIrreducibleTry",
+      "fix": "irreducible_with_exception_edges",
+      "class_files": [
+        "pkg/TestIrreducibleTry.class",
+        "pkg/TestIrreducibleTry$Src.class"
+      ],
+      "source": "src/pkg/TestIrreducibleTry.jasm",
+      "compiler": "asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1",
+      "summary": "`run` and `poll`, loops entered at their head and, from a resume branch, in their middle, whose body is protected by one catch-all in several ranges with an unprotected early `return` between them, decompile; the try is built inside its own region or a statement outside every range is copied, and the output recompiles and behaves as the original on 140,000 scripted runs (`run` fails earlier in Vineflower, IndexOutOfBounds, the fix `handler_copy_offsets`)"
+    },
+    {
+      "id": "pkg/TestSuspendLoopTry",
+      "fix": "irreducible_with_exception_edges",
+      "class_files": [
+        "pkg/TestSuspendLoopTry.class",
+        "pkg/TestSuspendLoopTry$Source.class",
+        "pkg/TestSuspendLoopTry$indexOf$1.class",
+        "pkg/TestSuspendLoopTry$pairs$1.class",
+        "pkg/TestSuspendLoopTry$watch$1.class"
+      ],
+      "source": "src/pkg/TestSuspendLoopTry.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
+      "summary": "`indexOf`, `pairs` and `watch`, suspend functions whose loop inside a `try` (with `catch`/`finally`) suspends and resumes in its middle, decompile: `indexOf` and `pairs` once a try region is isolated or a statement outside every range is copied, `watch` (whose loop is resumed in three places) with both"
     }
   ]
 }

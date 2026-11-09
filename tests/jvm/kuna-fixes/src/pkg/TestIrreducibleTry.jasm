@@ -1,0 +1,147 @@
+package pkg;
+
+super public class TestIrreducibleTry
+	version 50:0
+{
+
+  public Method "<init>":"()V"
+	stack 1 locals 1
+  {
+		aload_0;
+		invokespecial	Method java/lang/Object."<init>":"()V";
+		return;
+  }
+
+  public static Method run:"(ILpkg/TestIrreducibleTry$Src;)I"
+	stack 2 locals 5
+  {
+		iload_0;
+		ifne	RESUME;
+		try t0;
+	T0:	aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.open:"()V", 1;
+	LOOP:	aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.next:"()I", 1;
+		istore_2;
+		iload_2;
+		ifeq	DONE;
+		aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.step:"()I", 1;
+		istore_3;
+		endtry t0;
+	S:	iload_3;
+		ifne	BACK;
+		iload_2;
+		ireturn;
+	RESUME:	try t1;
+		aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.resume:"()V", 1;
+	BACK:	aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.tick:"()V", 1;
+		goto	LOOP;
+		endtry t1;
+	DONE:	aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.close:"()V", 1;
+		iconst_m1;
+		ireturn;
+		catch t0 #0;
+		catch t1 #0;
+	H:	astore	4;
+		aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.close:"()V", 1;
+		aload	4;
+		athrow;
+  }
+
+  public static Method poll:"(ILpkg/TestIrreducibleTry$Src;)I"
+	stack 2 locals 5
+  {
+		iload_0;
+		tableswitch{ //0 to 3
+		0: S0;
+		1: S1;
+		2: S2;
+		3: S3;
+		default: DEF };
+	S0:	try p1;
+		aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.open:"()V", 1;
+	TOP:	aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.next:"()I", 1;
+		istore_2;
+		endtry p1;
+		iload_2;
+		ifne	A;
+		bipush	10;
+		ireturn;
+	S1:	aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.resume:"()V", 1;
+		try p2;
+		aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.tick:"()V", 1;
+	A:	aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.step:"()I", 1;
+		istore_3;
+		aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.next:"()I", 1;
+		istore_2;
+		endtry p2;
+		iload_2;
+		ifne	B;
+		bipush	20;
+		ireturn;
+	S2:	aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.resume:"()V", 1;
+		try p3;
+		aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.tick:"()V", 1;
+	B:	aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.step:"()I", 1;
+		ifne	TOP;
+		aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.next:"()I", 1;
+		istore_2;
+		endtry p3;
+		iload_2;
+		ifne	C;
+		bipush	30;
+		ireturn;
+	S3:	aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.resume:"()V", 1;
+		try p4;
+		aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.tick:"()V", 1;
+	C:	aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.tick:"()V", 1;
+		goto	TOP;
+		endtry p4;
+		catch p1 #0;
+		catch p2 #0;
+		catch p3 #0;
+		catch p4 #0;
+		astore	4;
+		aload_1;
+		invokeinterface	InterfaceMethod pkg/TestIrreducibleTry$Src.close:"()V", 1;
+		aload	4;
+		athrow;
+	DEF:	iconst_m1;
+		ireturn;
+  }
+
+  public static interface abstract InnerClass Src=class pkg/TestIrreducibleTry$Src of class pkg/TestIrreducibleTry;
+
+} // end Class TestIrreducibleTry
+
+interface public abstract class TestIrreducibleTry$Src
+	version 50:0
+{
+  public abstract Method open:"()V";
+  public abstract Method next:"()I";
+  public abstract Method step:"()I";
+  public abstract Method resume:"()V";
+  public abstract Method close:"()V";
+  public abstract Method tick:"()V";
+
+  public static interface abstract InnerClass Src=class pkg/TestIrreducibleTry$Src of class pkg/TestIrreducibleTry;
+
+} // end Class TestIrreducibleTry$Src

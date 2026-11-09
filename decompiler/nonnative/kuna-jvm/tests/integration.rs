@@ -148,6 +148,8 @@ mod kuna_fix_kt_loops;
 mod kuna_fix_handler_copies;
 #[path = "kuna_fix_type_switch.rs"]
 mod kuna_fix_type_switch;
+#[path = "kuna_fix_irreducible_try.rs"]
+mod kuna_fix_irreducible_try;
 #[path = "kuna_inventory.rs"]
 mod kuna_inventory;
 #[path = "kuna_spans.rs"]
