@@ -110,6 +110,12 @@ impl FlowEnvironment for ArchFlowEnv {
     /// target the walk is about to queue.  A loader already borrowed elsewhere
     /// reports `true` (queue it), which is the behaviour that predates the probe.
     fn code_bytes_mapped(&self, addr: &Address) -> bool {
+        // (kuna pushan) A synthetic instruction has no bytes but is lifted.
+        if let Some(ov) = self.arch().translate().as_sleigh().and_then(|s| s.pcode_overlay()) {
+            if ov.contains(addr) {
+                return true;
+            }
+        }
         let loader_rc = self.arch().translate().loader_rc();
         let Ok(mut loader) = loader_rc.try_borrow_mut() else {
             return true;
@@ -900,6 +906,10 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
 #[allow(clippy::mutable_key_type)]
 fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
     crate::kuna_mipsunaligned::paint(arch);
+    let mut fd = fd;
+    // (kuna pushan) A VM-protected function is lifted from its devirtualized
+    // synthetic program instead of its bytes.
+    let pushan = crate::kuna_pushan::prepare_flow(arch, &mut fd);
     // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
     // extent restricts flow to it; size 0 keeps the unbounded default the whole
     // engine has used until now (`kuna_console::engine::UNBOUNDED_SIZE`), so this
@@ -912,7 +922,7 @@ fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> 
         Some((start.clone(), Address::new(space, last)))
     });
     let env = ArchFlowEnv {
-        mapped_image: if arch.mapped_flow_boundary && arch.mapped_flow_boundary_image {
+        mapped_image: if pushan.is_none() && arch.mapped_flow_boundary && arch.mapped_flow_boundary_image {
             arch.translate().loader_rc().borrow().shared_bytes()
         } else {
             None
@@ -920,6 +930,12 @@ fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> 
         arch: arch as *const Architecture,
         return_discard_memo: Default::default(),
     };
+    if let Some(p) = &pushan {
+        fd.warning_header(&format!(
+            "pushan: devirtualized VM-protected function ({} nodes, {} instructions, {} rounds)",
+            p.stats.nodes, p.stats.insns, p.stats.rounds
+        ));
+    }
     let mut flow = FlowInfo::new(fd, &env);
     if let Some((baddr, eaddr)) = range {
         flow.set_range(baddr, eaddr);
@@ -932,7 +948,11 @@ fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> 
     // options `maxinstruction` / `errortoomanyinstructions` / `unimplemented` /
     // `jumpload` mutate them (options.cc ports in `p0_knowledge/options.rs`).
     flow.set_flags(arch.flowoptions);
-    flow.set_maximum_instructions(arch.max_instructions);
+    flow.set_maximum_instructions(if pushan.is_some() {
+        arch.max_instructions.max(4_000_000)
+    } else {
+        arch.max_instructions
+    });
     // C++ followFlow: generateOps() then generateBlocks().  The jump-table
     // recovery loop runs inside generateOps (via the action sub-pipeline).
     // A panic in one recovery is the function's error, as it is in the main

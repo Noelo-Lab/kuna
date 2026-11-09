@@ -49,6 +49,30 @@ pub trait PushanTarget: PushanImage {
     fn is_mapped(&self, addr: u64) -> bool;
     /// The name of the user-defined op (CALLOTHER) with this index.
     fn userop_name(&self, index: u64) -> Option<String>;
+    /// A known function starts here (symbol table, exports, unwind data).
+    fn is_function_entry(&self, addr: u64) -> bool;
+    /// Bytes a callee pops from the stack beyond its return address (stdcall).
+    fn callee_extra_pop(&self, site: u64) -> Option<i64>;
+    /// `addr` lies in a mapped region that looks like VM bytecode: the paper's
+    /// test, a 256-byte window with Shannon entropy above 5 bits per byte.
+    fn bytecode_like(&self, addr: u64) -> bool;
+}
+
+/// Shannon entropy (bits per byte) of a window.
+pub fn entropy(buf: &[u8]) -> f64 {
+    let mut counts = [0u32; 256];
+    for b in buf {
+        counts[*b as usize] += 1;
+    }
+    let n = buf.len() as f64;
+    let mut h = 0.0;
+    for c in counts {
+        if c > 0 {
+            let p = c as f64 / n;
+            h -= p * p.log2();
+        }
+    }
+    h
 }
 
 /// Storage class of a varnode.
@@ -79,6 +103,8 @@ pub fn classify_space(sp: &Rc<AddrSpace>) -> Space {
 /// A memory access the instruction performed.
 #[derive(Clone, Debug)]
 pub struct AccessRecord {
+    /// Index of the LOAD/STORE op within the instruction.
+    pub op_index: usize,
     /// The register (offset) and constant displacement the address was built from.
     pub via: Option<(u64, i128)>,
     /// The concrete address, when known.
@@ -92,9 +118,10 @@ pub struct AccessRecord {
 pub enum Exit {
     Fallthrough(u64),
     Jump(ExprId),
-    /// Symbolic guard: `taken_state` is the state on the taken side; the
-    /// caller's state is the fall-through side.
-    CondJump { cond: ExprId, target: ExprId, taken_state: Box<State>, fallthrough: u64 },
+    /// Symbolic guards, in program order: arm `k` is taken when its guard
+    /// holds and no earlier guard did; the caller's state is the fall-through
+    /// side after every guard failed.
+    CondJump { arms: Vec<(ExprId, ExprId, Box<State>)>, fallthrough: u64 },
     Call { target: ExprId, fallthrough: u64 },
     Return(ExprId),
     Halt(String),
@@ -104,6 +131,18 @@ pub enum Exit {
 pub struct InsnTrace {
     pub accesses: Vec<AccessRecord>,
     pub userops: Vec<String>,
+    /// Diagnostics: why a value became an unknown symbol.
+    pub notes: Vec<String>,
+    /// The value each op wrote (by op index), along the path taken.
+    pub op_out: Vec<Option<ExprId>>,
+    /// The stack pointer before each op, when the emulator tracks one.
+    pub sp_before: Vec<Option<ExprId>>,
+    /// The instruction forked on a symbolic internal branch; per-op values are
+    /// not path-unique.
+    pub forked: bool,
+    /// The op indices executed, in order (internal loops unrolled).  Empty
+    /// when the instruction forked.
+    pub path: Vec<usize>,
 }
 
 const MAX_SPLIT_CASES: usize = 4;
@@ -113,11 +152,16 @@ pub struct Emulator<'a> {
     pub target: &'a dyn PushanTarget,
     /// Per-instruction provenance: unique offset -> (register offset, displacement).
     prov: BTreeMap<u64, (u64, i128)>,
+    /// Stack pointer register (offset, size) to snapshot before every op.
+    pub track_sp: Option<(u64, u8)>,
+    /// Diagnostics: report accesses to this base variable within +-0x40.
+    pub watch_base: Option<u32>,
+    notes: Vec<String>,
 }
 
 impl<'a> Emulator<'a> {
     pub fn new(target: &'a dyn PushanTarget) -> Self {
-        Emulator { target, prov: BTreeMap::new() }
+        Emulator { target, prov: BTreeMap::new(), track_sp: None, watch_base: None, notes: Vec::new() }
     }
 
     fn vn_space(&self, vn: &VarnodeData) -> Space {
@@ -243,7 +287,11 @@ impl<'a> Emulator<'a> {
             }
         }
         if let Some((base, off)) = arena.affine(addr) {
-            return state.read_mem(arena, self.target, base, off, size);
+            let v = state.read_mem(arena, self.target, base, off, size);
+            if base.is_some() && base == self.watch_base && (-0x40..0x40).contains(&off) {
+                self.note(format!("watch load [{off:#x}] size {size} = {}", arena.fmt(v)));
+            }
+            return v;
         }
         if let Some(cases) = arena.case_split(addr) {
             if cases.len() <= MAX_SPLIT_CASES && cases.iter().all(|(_, a)| arena.affine(*a).is_some()) {
@@ -260,7 +308,14 @@ impl<'a> Emulator<'a> {
             }
         }
         state.unknown_loads += 1;
+        self.note(format!("unknown load address {}", arena.fmt(addr)));
         arena.unknown(size)
+    }
+
+    fn note(&mut self, s: String) {
+        if self.notes.len() < 64 {
+            self.notes.push(s);
+        }
     }
 
     /// Store `val` at a symbolic address in `space`.
@@ -282,6 +337,9 @@ impl<'a> Emulator<'a> {
             }
         }
         if let Some((base, off)) = arena.affine(addr) {
+            if base.is_some() && base == self.watch_base && (-0x40..0x40).contains(&off) {
+                self.note(format!("watch store [{off:#x}] size {size} = {}", arena.fmt(val)));
+            }
             state.write_mem(base, off, val, size);
             return;
         }
@@ -298,14 +356,25 @@ impl<'a> Emulator<'a> {
             }
         }
         state.unknown_stores += 1;
+        self.note(format!("unknown store address {}", arena.fmt(addr)));
     }
 
     /// Execute one instruction; the state is left as the fall-through side.
     pub fn exec_insn(&mut self, state: &mut State, arena: &mut ExprArena, insn: &LiftedInsn, trace: &mut InsnTrace) -> Exit {
         state.clear_uniques();
         self.prov.clear();
+        trace.op_out = vec![None; insn.ops.len()];
+        trace.sp_before = vec![None; insn.ops.len()];
+        trace.forked = false;
+        trace.path.clear();
+        self.notes.clear();
         let mut visited = vec![false; insn.ops.len() + 1];
-        self.run_from(state, arena, insn, 0, trace, &mut visited, 0)
+        let r = self.run_from(state, arena, insn, 0, trace, &mut visited, 0);
+        trace.notes = std::mem::take(&mut self.notes);
+        if trace.forked {
+            trace.path.clear();
+        }
+        r
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -327,6 +396,11 @@ impl<'a> Emulator<'a> {
                 return Exit::Halt(format!("p-code loop inside instruction at {:#x}", insn.addr));
             }
             let op = &insn.ops[pc];
+            trace.path.push(pc);
+            if let Some((sp, sps)) = self.track_sp {
+                let v = state.read_reg(arena, sp, sps);
+                trace.sp_before[pc] = Some(v);
+            }
             match op.opc {
                 CPUI_BRANCH => {
                     let t = &op.ins[0];
@@ -340,6 +414,8 @@ impl<'a> Emulator<'a> {
                     let t = op.ins[0].clone();
                     let raw = self.read_vn(state, arena, &op.ins[1]);
                     let c = self.as_bool(arena, raw);
+                    // A CBRANCH has no output: its slot records the decision.
+                    trace.op_out[pc] = Some(c);
                     let relative = self.vn_space(&t) == Space::Const;
                     if let Some(v) = arena.is_const(c) {
                         if v & 1 == 1 {
@@ -358,13 +434,27 @@ impl<'a> Emulator<'a> {
                         // Ops after an external conditional branch run on the fall-through side.
                         let rest = self.run_from(state, arena, insn, pc + 1, trace, visited, depth);
                         return match rest {
-                            Exit::Fallthrough(_) => Exit::CondJump { cond: c, target, taken_state: taken, fallthrough: next },
+                            Exit::Fallthrough(_) => Exit::CondJump { arms: vec![(c, target, taken)], fallthrough: next },
+                            Exit::CondJump { mut arms, fallthrough } => {
+                                arms.insert(0, (c, target, taken));
+                                Exit::CondJump { arms, fallthrough }
+                            }
+                            Exit::Jump(t2) => {
+                                // `if c goto T; goto T2`: a two-way select.
+                                let one = arena.cst(1, 1);
+                                let nc = arena.mk_bin(CPUI_INT_XOR, c, one, 1);
+                                let _ = nc;
+                                let sel = arena.mk_ite(c, target, t2);
+                                merge_ite(state, &mut taken.clone(), arena, self.target, c);
+                                Exit::Jump(sel)
+                            }
                             other => other,
                         };
                     }
                     if depth >= MAX_FORK_DEPTH {
                         return Exit::Halt(format!("deep p-code fork inside instruction at {:#x}", insn.addr));
                     }
+                    trace.forked = true;
                     let mut taken_state = state.clone();
                     let saved_prov = self.prov.clone();
                     let tpc = (pc as i64 + t.offset as i64) as usize;
@@ -409,12 +499,14 @@ impl<'a> Emulator<'a> {
                     let out = op.out.clone().expect("LOAD without output");
                     let size = out.size.min(MAX_SIZE as u32) as u8;
                     trace.accesses.push(AccessRecord {
+                        op_index: pc,
                         via: self.address_provenance(&op.ins[1]),
                         addr: arena.is_const(addr).map(|c| c as u64),
                         size,
                         is_store: false,
                     });
                     let v = if out.size > MAX_SIZE as u32 { arena.unknown(size) } else { self.load(state, arena, space, addr, size) };
+                    trace.op_out[pc] = Some(v);
                     self.write_vn(state, arena, &out, v);
                 }
                 CPUI_STORE => {
@@ -426,6 +518,7 @@ impl<'a> Emulator<'a> {
                     let addr = self.read_vn(state, arena, &op.ins[1]);
                     let val = self.read_vn(state, arena, &op.ins[2]);
                     trace.accesses.push(AccessRecord {
+                        op_index: pc,
                         via: self.address_provenance(&op.ins[1]),
                         addr: arena.is_const(addr).map(|c| c as u64),
                         size: op.ins[2].size.min(MAX_SIZE as u32) as u8,
@@ -455,8 +548,12 @@ impl<'a> Emulator<'a> {
                     }
                     let v = match arena.mk_op(op.opc, out.size as u8, &ins) {
                         Some(v) => v,
-                        None => arena.unknown(out.size as u8),
+                        None => {
+                            self.note(format!("unmodelled op {:?}", op.opc));
+                            arena.unknown(out.size as u8)
+                        }
                     };
+                    trace.op_out[pc] = Some(v);
                     self.write_vn(state, arena, out, v);
                 }
             }
@@ -483,13 +580,13 @@ impl<'a> Emulator<'a> {
                 Exit::Fallthrough(next)
             }
             (Exit::Jump(t), Exit::Fallthrough(_)) => {
-                Exit::CondJump { cond: c, target: t, taken_state: Box::new(taken), fallthrough: next }
+                Exit::CondJump { arms: vec![(c, t, Box::new(taken))], fallthrough: next }
             }
             (Exit::Fallthrough(_), Exit::Jump(t)) => {
                 let one = arena.cst(1, 1);
                 let nc = arena.mk_bin(CPUI_INT_XOR, c, one, 1);
                 let fall_state = std::mem::replace(state, taken);
-                Exit::CondJump { cond: nc, target: t, taken_state: Box::new(fall_state), fallthrough: next }
+                Exit::CondJump { arms: vec![(nc, t, Box::new(fall_state))], fallthrough: next }
             }
             (Exit::Jump(t1), Exit::Jump(t2)) => {
                 merge_ite(state, &mut taken, arena, self.target, c);

@@ -25,6 +25,9 @@ pub mod kuna_loweredswitch;
 pub mod kuna_pushanexpr; // (kuna pushan) symbolic expression arena for the VM devirtualizer
 pub mod kuna_pushanstate; // (kuna pushan) byte-granular abstract registers and memory
 pub mod kuna_pushanemu; // (kuna pushan) symbolic p-code emulator
+pub mod kuna_pushanflow; // (kuna pushan) VPC-sensitive flat-CFG exploration
+pub mod kuna_pushanemit; // (kuna pushan) flat CFG -> synthetic p-code overlay
+pub mod kuna_pushan; // (kuna pushan) option `pushan`: devirtualize VM-protected functions
 pub mod kuna_loweredswitchlabels;
 pub mod kuna_loweredswitchvalue; // (kuna) prove a re-rolled lowered switch reads the value its cascade compared
 pub mod kuna_loweredswitchexact; // (kuna) keep a re-rolled lowered switch only when it is its compare tree

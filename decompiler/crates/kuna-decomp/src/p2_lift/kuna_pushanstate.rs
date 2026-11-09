@@ -145,8 +145,8 @@ impl ByteStore {
         acc
     }
 
-    /// Byte offsets where the two stores disagree, as ranges.
-    pub fn diff_ranges(&self, other: &ByteStore) -> Vec<(i128, u8)> {
+    /// Byte offsets where the two stores disagree, as maximal runs.
+    pub fn diff_bytes(&self, other: &ByteStore) -> Vec<(i128, u8)> {
         let mut offs: Vec<i128> = Vec::new();
         for (o, v) in &self.bytes {
             if other.bytes.get(o) != Some(v) {
@@ -173,6 +173,29 @@ impl ByteStore {
         out
     }
 
+    /// Byte offsets where the two stores disagree, as ranges.
+    pub fn diff_ranges(&self, other: &ByteStore) -> Vec<(i128, u8)> {
+        let mut offs: Vec<i128> = Vec::new();
+        for (o, v) in &self.bytes {
+            if other.bytes.get(o) != Some(v) {
+                offs.push(*o);
+            }
+        }
+        for o in other.bytes.keys() {
+            if !self.bytes.contains_key(o) {
+                offs.push(*o);
+            }
+        }
+        offs.sort_unstable();
+        offs.dedup();
+        // A differing byte marks its whole 8-byte-aligned slot (one register,
+        // one stack word), so a location is always compared as a whole and a
+        // code address in it is seen as such.
+        let mut slots: Vec<i128> = offs.iter().map(|o| o.div_euclid(8) * 8).collect();
+        slots.dedup();
+        slots.into_iter().map(|s| (s, 8)).collect()
+    }
+
     pub fn offsets(&self) -> impl Iterator<Item = &i128> {
         self.bytes.keys()
     }
@@ -189,6 +212,18 @@ pub enum Loc {
 pub struct SymLoc {
     pub loc: Loc,
     pub size: u8,
+}
+
+/// A differing location found when a path re-reaches a node.
+#[derive(Clone, Copy, Debug)]
+pub struct Diff {
+    pub loc: SymLoc,
+    /// The two constants when both sides were constant.
+    pub values: Option<(u128, u128)>,
+    /// The recorded entry value, when constant.
+    pub entry_const: Option<u128>,
+    /// The incoming value, when constant.
+    pub incoming_const: Option<u128>,
 }
 
 #[derive(Clone, Debug)]
@@ -287,40 +322,78 @@ impl State {
 
     /// Locations where `self` (the recorded entry state) and `other` (a new
     /// incoming state) disagree and at least one side is a constant.
-    pub fn diff_constants(&mut self, other: &mut State, arena: &mut ExprArena, image: &dyn PushanImage) -> Vec<SymLoc> {
+    pub fn diff_constants(&mut self, other: &mut State, arena: &mut ExprArena, image: &dyn PushanImage) -> Vec<Diff> {
         let mut out = Vec::new();
-        for (o, len) in self.regs.diff_ranges(&other.regs) {
+        // A location is its 8-byte slot, but the constant test looks at the
+        // bytes that actually differ (a byte register write inside a slot).
+        let mut reg_slots: Vec<i128> = Vec::new();
+        for (o, len) in self.regs.diff_bytes(&other.regs) {
             let a = self.read_reg(arena, o as u64, len);
             let b = other.read_reg(arena, o as u64, len);
             if a != b && (arena.is_const(a).is_some() || arena.is_const(b).is_some()) {
-                out.push(SymLoc { loc: Loc::Reg { off: o as u64 }, size: len });
+                let slot = o.div_euclid(8) * 8;
+                if !reg_slots.contains(&slot) {
+                    reg_slots.push(slot);
+                }
             }
+        }
+        for slot in reg_slots {
+            let a = self.read_reg(arena, slot as u64, 8);
+            let b = other.read_reg(arena, slot as u64, 8);
+            out.push(Diff {
+                loc: SymLoc { loc: Loc::Reg { off: slot as u64 }, size: 8 },
+                values: arena.is_const(a).zip(arena.is_const(b)),
+                entry_const: arena.is_const(a),
+                incoming_const: arena.is_const(b),
+            });
         }
         let bases: Vec<Option<VarId>> = self.mem.keys().chain(other.mem.keys()).copied().collect::<std::collections::BTreeSet<_>>().into_iter().collect();
         let empty = ByteStore::default();
         for base in bases {
-            let ranges = self.mem.get(&base).unwrap_or(&empty).diff_ranges(other.mem.get(&base).unwrap_or(&empty));
-            for (o, len) in ranges {
+            let runs = self.mem.get(&base).unwrap_or(&empty).diff_bytes(other.mem.get(&base).unwrap_or(&empty));
+            let mut slots: Vec<i128> = Vec::new();
+            for (o, len) in runs {
                 let a = self.read_mem(arena, image, base, o, len);
                 let b = other.read_mem(arena, image, base, o, len);
                 if a != b && (arena.is_const(a).is_some() || arena.is_const(b).is_some()) {
-                    out.push(SymLoc { loc: Loc::Mem { base, off: o }, size: len });
+                    let slot = o.div_euclid(8) * 8;
+                    if !slots.contains(&slot) {
+                        slots.push(slot);
+                    }
+                    let last = (o + len as i128 - 1).div_euclid(8) * 8;
+                    if last != slot && !slots.contains(&last) {
+                        slots.push(last);
+                    }
                 }
+            }
+            for slot in slots {
+                let a = self.read_mem(arena, image, base, slot, 8);
+                let b = other.read_mem(arena, image, base, slot, 8);
+                out.push(Diff {
+                    loc: SymLoc { loc: Loc::Mem { base, off: slot }, size: 8 },
+                    values: arena.is_const(a).zip(arena.is_const(b)),
+                    entry_const: arena.is_const(a),
+                    incoming_const: arena.is_const(b),
+                });
             }
         }
         out
     }
 
-    /// Replace each location by a stable fresh symbol.
-    pub fn symbolize(&mut self, arena: &mut ExprArena, node_tag: u64, locs: &[SymLoc]) {
-        for (i, l) in locs.iter().enumerate() {
-            let tag = node_tag.wrapping_mul(0x9E3779B97F4A7C15).wrapping_add(i as u64);
-            let v = arena.var_of(VarKind::Merged { node: (node_tag & 0xffff_ffff) as u32, tag }, l.size, false);
+    /// Replace each location by a stable fresh symbol; returns the symbols.
+    pub fn symbolize(&mut self, arena: &mut ExprArena, node_tag: u64, locs: &[SymLoc]) -> Vec<(SymLoc, ExprId)> {
+        let mut out = Vec::with_capacity(locs.len());
+        for l in locs.iter() {
+            let tag = node_tag.wrapping_mul(0x9E3779B97F4A7C15) ^ loc_tag(&l.loc).rotate_left(7) ^ l.size as u64;
+            let node = (node_tag & 0xffff_ffff) as u32;
+            let v = arena.var_of(VarKind::Merged { node, tag }, l.size, false);
             match l.loc {
                 Loc::Reg { off } => self.write_reg(off, v, l.size),
                 Loc::Mem { base, off } => self.write_mem(base, off, v, l.size),
             }
+            out.push((*l, v));
         }
+        out
     }
 
     /// Rewrite every stored value through `f` (used to pin a boolean atom).
@@ -353,6 +426,13 @@ impl State {
 
     pub fn mem_bytes(&self) -> usize {
         self.mem.values().map(|r| r.len()).sum()
+    }
+}
+
+fn loc_tag(l: &Loc) -> u64 {
+    match l {
+        Loc::Reg { off } => off.wrapping_mul(0x100000001b3),
+        Loc::Mem { base, off } => (*off as u64).wrapping_mul(0x9E3779B97F4A7C15) ^ base.map(|b| b as u64 + 1).unwrap_or(0).rotate_left(40),
     }
 }
 

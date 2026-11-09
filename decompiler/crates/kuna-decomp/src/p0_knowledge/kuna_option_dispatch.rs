@@ -423,6 +423,12 @@ kuna_options! { self, p1;
     },
     "copywaves" => on_off!(pool_copy_waves, "Rule-pool copy-propagation waves"),
     "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
+    "pushan" => {
+        let (mode, msg) = crate::kuna_pushan::OptionPushan.apply(p1)?;
+        self.pushan_mode = mode;
+        self.pushan_cache.clear();
+        Ok(msg)
+    },
     "loweredswitch" => {
         let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
         self.recover_lowered_switch = val;

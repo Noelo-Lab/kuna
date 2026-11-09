@@ -1875,6 +1875,10 @@ impl Funcdata {
     pub fn get_size(&self) -> int4 {
         self.size
     }
+    /// (kuna pushan) Override the declared body size; 0 lifts the flow range.
+    pub fn kuna_set_size(&mut self, size: int4) {
+        self.size = size;
+    }
     /// Get the program/architecture owning \b this function (C++ `getArch`).
     pub fn get_arch(&self) -> &ArchHandle {
         &self.glb

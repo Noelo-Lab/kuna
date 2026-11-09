@@ -1,7 +1,7 @@
 use super::*;
 
 fn reg(a: &mut ExprArena, off: u64, size: u8) -> ExprId {
-    a.var(VarInfo { kind: VarKind::InitReg { offset: off }, size, boolean: false })
+    a.var(VarInfo::new(VarKind::InitReg { offset: off }, size, false))
 }
 
 #[test]
@@ -92,9 +92,9 @@ fn bitwise_identities_and_known_bits() {
 fn flag_word_bit_extraction() {
     // flags = zext(CF) | zext(PF)<<2 | zext(ZF)<<6 ; (flags >> 6) & 1 == zext(ZF)
     let mut a = ExprArena::new();
-    let cf = a.var(VarInfo { kind: VarKind::InitReg { offset: 0x200 }, size: 1, boolean: true });
-    let pf = a.var(VarInfo { kind: VarKind::InitReg { offset: 0x202 }, size: 1, boolean: true });
-    let zf = a.var(VarInfo { kind: VarKind::InitReg { offset: 0x206 }, size: 1, boolean: true });
+    let cf = a.var(VarInfo::new(VarKind::InitReg { offset: 0x200 }, 1, true));
+    let pf = a.var(VarInfo::new(VarKind::InitReg { offset: 0x202 }, 1, true));
+    let zf = a.var(VarInfo::new(VarKind::InitReg { offset: 0x206 }, 1, true));
     let zcf = a.mk_un(CPUI_INT_ZEXT, cf, 8);
     let zpf = a.mk_un(CPUI_INT_ZEXT, pf, 8);
     let zzf = a.mk_un(CPUI_INT_ZEXT, zf, 8);
@@ -193,4 +193,156 @@ fn subpiece_distributes_over_low_arithmetic() {
     // piece of the two halves of x is x
     let hi = a.mk_subpiece(x, 4, 4);
     assert_eq!(a.mk_piece(hi, lx), x);
+}
+
+#[test]
+fn direct_entry_points_fold_two_constants() {
+    let mut a = ExprArena::new();
+    let x = a.cst(1, 0xf0);
+    let y = a.cst(1, 0x0f);
+    // mk_bin dispatches to the direct builders; every pair must fold, not loop.
+    for opc in [CPUI_INT_XOR, CPUI_INT_AND, CPUI_INT_OR, CPUI_INT_LEFT, CPUI_INT_RIGHT, CPUI_INT_EQUAL, CPUI_INT_LESS, CPUI_INT_SLESS] {
+        let r = a.mk_bin(opc, x, y, if matches!(opc, CPUI_INT_EQUAL | CPUI_INT_LESS | CPUI_INT_SLESS) { 1 } else { 1 });
+        assert!(a.is_const(r).is_some(), "{opc:?}");
+    }
+    // the route that hung: and-with-constant folding its operand to a constant, then xor
+    let v = reg(&mut a, 0, 1);
+    let k = a.cst(1, 0x0f);
+    let t = a.mk_bin(CPUI_INT_XOR, v, k, 1); // v ^ 0x0f
+    let m = a.cst(1, 0xf0);
+    let r = a.mk_bin(CPUI_INT_AND, t, m, 1); // (v ^ 0x0f) & 0xf0 == v & 0xf0
+    let expect = a.mk_bin(CPUI_INT_AND, v, m, 1);
+    assert_eq!(r, expect);
+}
+
+#[test]
+fn known_bits_fold_and_alignment_is_affine() {
+    let mut a = ExprArena::new();
+    // the entry stack pointer: low 16 bits known 0xfff8
+    let sp = a.var_of_known(VarKind::InitReg { offset: 0x20 }, 8, false, (0xFFFF & !0xFFF8, 0xFFF8));
+    let sp_var = a.as_var(sp);
+    let c = a.cst(8, (-0x250i64) as u64 as u128);
+    let x = a.mk_bin(CPUI_INT_ADD, sp, c, 8);
+    let m = a.cst(8, (-0x10i64) as u64 as u128);
+    let aligned = a.mk_bin(CPUI_INT_AND, x, m, 8);
+    assert_eq!(a.affine(aligned), Some((sp_var, -0x258)), "{}", a.fmt(aligned));
+    // a fully determined slice is a constant
+    let low = a.mk_subpiece(x, 0, 2);
+    assert_eq!(a.is_const(low), Some(0xFDA8));
+    let zero = a.cst(2, 0);
+    let eq = a.mk_bin(CPUI_INT_EQUAL, low, zero, 1);
+    assert_eq!(a.is_const(eq), Some(0));
+}
+
+#[test]
+fn stack_pointer_never_equals_a_small_constant() {
+    let mut a = ExprArena::new();
+    let sp = a.var_of_known(VarKind::InitReg { offset: 0x20 }, 8, false, (0xFFFF & !0xFFF8, 0xFFF8));
+    a.mark_pointer(sp);
+    let c = a.cst(8, (-0x218i64) as u64 as u128);
+    let x = a.mk_bin(CPUI_INT_ADD, sp, c, 8);
+    let zero = a.cst(8, 0);
+    let eq = a.mk_bin(CPUI_INT_EQUAL, x, zero, 1);
+    assert_eq!(a.is_const(eq), Some(0));
+    let ne = a.mk_bin(CPUI_INT_NOTEQUAL, x, zero, 1);
+    assert_eq!(a.is_const(ne), Some(1));
+}
+
+#[test]
+fn pointer_relative_compares_fold() {
+    let mut a = ExprArena::new();
+    let sp = a.var_of_known(VarKind::InitReg { offset: 0x20 }, 8, false, (0xFFFF & !0xFFF8, 0xFFF8));
+    a.mark_pointer(sp);
+    let c1 = a.cst(8, (-0x40i64) as u64 as u128);
+    let c2 = a.cst(8, (-0x18i64) as u64 as u128);
+    let x = a.mk_bin(CPUI_INT_ADD, sp, c1, 8);
+    let y = a.mk_bin(CPUI_INT_ADD, sp, c2, 8);
+    let lt = a.mk_bin(CPUI_INT_LESS, x, y, 1);
+    assert_eq!(a.is_const(lt), Some(1));
+    let gt = a.mk_bin(CPUI_INT_LESS, y, x, 1);
+    assert_eq!(a.is_const(gt), Some(0));
+    let le = a.mk_bin(CPUI_INT_LESSEQUAL, y, x, 1);
+    assert_eq!(a.is_const(le), Some(0));
+}
+
+#[test]
+fn sleigh_pushfq_word_keeps_a_symbolic_zero_flag() {
+    // The exact shape SLEIGH emits for PUSHFQ: (flag & 1) zext'ed, scaled by a
+    // power of two, OR-ed together; the zero flag is a comparison of unknown data.
+    let mut a = ExprArena::new();
+    let v = a.var(VarInfo::new(VarKind::Unknown { tag: 1 }, 4, false));
+    let five = a.cst(4, 5);
+    let zf = a.mk_bin(CPUI_INT_EQUAL, v, five, 1);
+    let mut word = a.cst(8, 0);
+    let one1 = a.cst(1, 1);
+    for (off, bit) in [(0x200u64, 0u32), (0x202, 2), (0x204, 4), (0x206, 6), (0x207, 7), (0x208, 8), (0x209, 9), (0x20a, 10), (0x20b, 11)] {
+        let flag = if off == 0x206 { zf } else { a.var_of(VarKind::InitReg { offset: off }, 1, true) };
+        let masked = a.mk_bin(CPUI_INT_AND, flag, one1, 1);
+        let z = a.mk_un(CPUI_INT_ZEXT, masked, 8);
+        let k = a.cst(8, 1u128 << bit);
+        let scaled = a.mk_bin(CPUI_INT_MULT, k, z, 8);
+        word = a.mk_bin(CPUI_INT_OR, word, scaled, 8);
+    }
+    // (word >> 6) & 1 == zext(zf)
+    let six = a.cst(8, 6);
+    let sh = a.mk_bin(CPUI_INT_RIGHT, word, six, 8);
+    let one8 = a.cst(8, 1);
+    let bit = a.mk_bin(CPUI_INT_AND, sh, one8, 8);
+    assert_eq!(bit, a.mk_un(CPUI_INT_ZEXT, zf, 8), "{}", a.fmt(bit));
+    // (word & 0x40) == 0  ==  !zf
+    let m40 = a.cst(8, 0x40);
+    let masked = a.mk_bin(CPUI_INT_AND, word, m40, 8);
+    let zero8 = a.cst(8, 0);
+    let test = a.mk_bin(CPUI_INT_EQUAL, masked, zero8, 1);
+    let nzf = a.mk_un(CPUI_BOOL_NEGATE, zf, 1);
+    assert_eq!(test, nzf, "{}", a.fmt(test));
+    // (word << 57) >> 63 == zext(zf)
+    let k57 = a.cst(8, 57);
+    let k63 = a.cst(8, 63);
+    let l = a.mk_bin(CPUI_INT_LEFT, word, k57, 8);
+    let r = a.mk_bin(CPUI_INT_RIGHT, l, k63, 8);
+    assert_eq!(r, a.mk_un(CPUI_INT_ZEXT, zf, 8), "{}", a.fmt(r));
+    // NOR-style subtraction keeps the comparison symbolic: ~(~v + 5) == 0  <=>  v == 5
+    let nv = a.mk_un(CPUI_INT_NEGATE, v, 4);
+    let s = a.mk_bin(CPUI_INT_ADD, nv, five, 4);
+    let ns = a.mk_un(CPUI_INT_NEGATE, s, 4);
+    let zero4 = a.cst(4, 0);
+    let eq = a.mk_bin(CPUI_INT_EQUAL, ns, zero4, 1);
+    assert_eq!(eq, zf, "{}", a.fmt(eq));
+    assert_eq!(a.possible_values(zf), Some(vec![0, 1]));
+}
+
+#[test]
+fn de_morgan_over_a_flags_word_prunes_to_one_flag() {
+    // ~(~flags | 0x815) & 0x40  == flags & 0x40 (VMProtect's NOR-style masking)
+    let mut a = ExprArena::new();
+    let v = a.var(VarInfo::new(VarKind::Unknown { tag: 1 }, 4, false));
+    let five = a.cst(4, 5);
+    let zf = a.mk_bin(CPUI_INT_EQUAL, v, five, 1);
+    let mut word = a.cst(8, 0);
+    for (off, bit) in [(0x200u64, 0u32), (0x202, 2), (0x204, 4), (0x206, 6), (0x207, 7), (0x20b, 11)] {
+        let flag = if off == 0x206 { zf } else { a.var_of(VarKind::InitReg { offset: off }, 1, true) };
+        let z = a.mk_un(CPUI_INT_ZEXT, flag, 8);
+        let k = a.cst(8, 1u128 << bit);
+        let scaled = a.mk_bin(CPUI_INT_MULT, k, z, 8);
+        word = a.mk_bin(CPUI_INT_OR, word, scaled, 8);
+    }
+    let nw = a.mk_un(CPUI_INT_NEGATE, word, 8);
+    let k815 = a.cst(8, 0x815);
+    let or = a.mk_bin(CPUI_INT_OR, nw, k815, 8);
+    let nor = a.mk_un(CPUI_INT_NEGATE, or, 8);
+    let m40 = a.cst(8, 0x40);
+    let bit = a.mk_bin(CPUI_INT_AND, nor, m40, 8);
+    let zzf = a.mk_un(CPUI_INT_ZEXT, zf, 8);
+    let expect = a.mk_bin(CPUI_INT_MULT, zzf, m40, 8);
+    assert_eq!(bit, expect, "{}", a.fmt(bit));
+    assert_eq!(a.bool_atoms(bit), vec![zf]);
+    // the xor-with-constant form reduces the same way
+    let kff = a.cst(8, 0x8d5);
+    let x = a.mk_bin(CPUI_INT_XOR, word, kff, 8);
+    let bit2 = a.mk_bin(CPUI_INT_AND, x, m40, 8);
+    let nzf = a.mk_un(CPUI_BOOL_NEGATE, zf, 1);
+    let znzf = a.mk_un(CPUI_INT_ZEXT, nzf, 8);
+    let expect2 = a.mk_bin(CPUI_INT_MULT, znzf, m40, 8);
+    assert_eq!(bit2, expect2, "{}", a.fmt(bit2));
 }

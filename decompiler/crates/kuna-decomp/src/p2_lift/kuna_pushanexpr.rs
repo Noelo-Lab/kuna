@@ -23,7 +23,7 @@ pub type VarId = u32;
 /// Largest value size the arena models (bytes); wider values become unknowns.
 pub const MAX_SIZE: u8 = 16;
 /// Most boolean atoms a case split enumerates (2^N substitutions).
-pub const MAX_SPLIT_ATOMS: usize = 6;
+pub const MAX_SPLIT_ATOMS: usize = 10;
 const MAX_DEPTH: u32 = 900;
 
 #[inline]
@@ -69,6 +69,17 @@ pub struct VarInfo {
     pub size: u8,
     /// Only 0 or 1 (a flag register, a call's boolean result).
     pub boolean: bool,
+    /// Bits known in advance: (known-zero mask, known-one mask).  The entry
+    /// stack pointer's alignment is the main user.
+    pub known: (u128, u128),
+    /// A valid pointer: `var + c` never equals a small constant (the stack pointer).
+    pub pointer: bool,
+}
+
+impl VarInfo {
+    pub fn new(kind: VarKind, size: u8, boolean: bool) -> Self {
+        VarInfo { kind, size, boolean, known: (0, 0), pointer: false }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -202,6 +213,10 @@ impl ExprArena {
             return id;
         }
         let kb = self.compute_known(&key.0, size);
+        // Every bit determined: the value is that constant.
+        if !matches!(key.0, ExprKind::Const(_)) && (kb.0 | kb.1) & mask(size) == mask(size) {
+            return self.cst(size, kb.1);
+        }
         let id = self.nodes.len() as ExprId;
         self.nodes.push(Expr { kind: key.0.clone(), size });
         self.known.push(kb);
@@ -221,18 +236,30 @@ impl ExprArena {
 
     /// The variable for a stable location kind, created once per (kind, size).
     pub fn var_of(&mut self, kind: VarKind, size: u8, boolean: bool) -> ExprId {
+        self.var_of_known(kind, size, boolean, (0, 0))
+    }
+
+    /// [`var_of`](Self::var_of) with bits known in advance (first creation wins).
+    pub fn var_of_known(&mut self, kind: VarKind, size: u8, boolean: bool, known: (u128, u128)) -> ExprId {
         if let Some(&e) = self.var_memo.get(&(kind, size)) {
             return e;
         }
-        let e = self.var(VarInfo { kind, size, boolean });
+        let e = self.var(VarInfo { kind, size, boolean, known, pointer: false });
         self.var_memo.insert((kind, size), e);
         e
+    }
+
+    /// Mark a variable as a valid pointer (see [`VarInfo::pointer`]).
+    pub fn mark_pointer(&mut self, e: ExprId) {
+        if let Some(v) = self.as_var(e) {
+            self.vars[v as usize].pointer = true;
+        }
     }
 
     pub fn unknown(&mut self, size: u8) -> ExprId {
         self.unknown_tag += 1;
         let tag = self.unknown_tag;
-        self.var(VarInfo { kind: VarKind::Unknown { tag }, size, boolean: false })
+        self.var(VarInfo::new(VarKind::Unknown { tag }, size, false))
     }
 
     /// Build any data-flow p-code op; `None` for ops the arena does not model.
@@ -557,6 +584,14 @@ impl ExprArena {
         }
     }
 
+    /// Fold a binary op over two constants (the direct `mk_*` entry points must
+    /// never see two constants unfolded: several rules swap operands).
+    fn fold2(&mut self, opc: OpCode, a: ExprId, b: ExprId, out: u8) -> Option<ExprId> {
+        let (x, y) = (self.is_const(a)?, self.is_const(b)?);
+        let v = fold_bin(opc, out, x, self.size(a), y, self.size(b))?;
+        Some(self.cst(out, v))
+    }
+
     /// `op(Ite(c,x,y), k)` with constant `k` selects between the two folded arms.
     fn ite_distribute(&mut self, opc: OpCode, a: ExprId, b: ExprId, out: u8) -> Option<ExprId> {
         if let ExprKind::Ite(c, x, y) = self.kind(a).clone() {
@@ -586,6 +621,9 @@ impl ExprArena {
     fn mk_and(&mut self, a: ExprId, b: ExprId, out: u8) -> ExprId {
         let a = self.resize(a, out);
         let b = self.resize(b, out);
+        if let Some(r) = self.fold2(CPUI_INT_AND, a, b, out) {
+            return r;
+        }
         if a == b {
             return a;
         }
@@ -623,6 +661,9 @@ impl ExprArena {
     }
 
     fn mk_and_const(&mut self, x: ExprId, c: u128, out: u8) -> ExprId {
+        if let Some(v) = self.is_const(x) {
+            return self.cst(out, v & c);
+        }
         let px = self.possible_bits(x);
         if px & c == 0 {
             return self.cst(out, 0);
@@ -630,7 +671,18 @@ impl ExprArena {
         if px & !c == 0 {
             return x;
         }
+        // Clearing bits whose values are known is a subtraction (stack alignment).
+        let cleared = !c & mask(out);
+        let (kz, ko) = self.known[x as usize];
+        if (kz | ko) & cleared == cleared {
+            let mut l = self.lin(x);
+            l.c = l.c.wrapping_sub((ko & cleared) as i128);
+            return self.build_linear(l, out);
+        }
         if let Some(r) = self.and_disjoint_sum(x, c, out) {
+            return r;
+        }
+        if let Some(r) = self.and_complement_sum(x, c, out) {
             return r;
         }
         match self.kind(x).clone() {
@@ -703,7 +755,7 @@ impl ExprArena {
                     return self.mk_un(CPUI_INT_ZEXT, y2, out);
                 }
             }
-            ExprKind::Piece(hi, lo) => {
+            ExprKind::Piece(_hi, lo) => {
                 let ls = self.size(lo);
                 if c & !mask(ls) == 0 {
                     let lo2 = self.mk_and_const(lo, c, ls);
@@ -724,6 +776,9 @@ impl ExprArena {
     fn mk_or(&mut self, a: ExprId, b: ExprId, out: u8) -> ExprId {
         let a = self.resize(a, out);
         let b = self.resize(b, out);
+        if let Some(r) = self.fold2(CPUI_INT_OR, a, b, out) {
+            return r;
+        }
         if a == b {
             return a;
         }
@@ -745,18 +800,17 @@ impl ExprArena {
             return self.mk_or(b, a, out);
         }
         if let Some(c) = self.is_const(b) {
-            match self.kind(a).clone() {
-                ExprKind::Bin(CPUI_INT_OR, y, k) if self.is_const(k).is_some() => {
-                    let k2 = self.cst(out, self.is_const(k).unwrap() | c);
-                    return self.mk_or(y, k2, out);
-                }
-                ExprKind::Ite(cond, p, q) => {
-                    let p2 = self.mk_or(p, b, out);
-                    let q2 = self.mk_or(q, b, out);
-                    return self.mk_ite(cond, p2, q2);
-                }
-                _ => {}
+            if let ExprKind::Ite(cond, p, q) = self.kind(a).clone() {
+                let p2 = self.mk_or(p, b, out);
+                let q2 = self.mk_or(q, b, out);
+                return self.mk_ite(cond, p2, q2);
             }
+            // x | c == (x & ~c) + c: the set bits leave the linear form, so a
+            // later mask sees through De Morgan shapes like ~(~x | c).
+            let masked = self.mk_and_const(a, !c & m, out);
+            let mut l = self.lin(masked);
+            l.c = l.c.wrapping_add(c as i128);
+            return self.build_linear(l, out);
         } else if let Some(r) = self.ite_distribute(CPUI_INT_OR, a, b, out) {
             return r;
         }
@@ -775,6 +829,9 @@ impl ExprArena {
     fn mk_xor(&mut self, a: ExprId, b: ExprId, out: u8) -> ExprId {
         let a = self.resize(a, out);
         let b = self.resize(b, out);
+        if let Some(r) = self.fold2(CPUI_INT_XOR, a, b, out) {
+            return r;
+        }
         if a == b {
             return self.cst(out, 0);
         }
@@ -804,6 +861,15 @@ impl ExprArena {
             // Flipping a bit the operand never sets is an OR (hence an ADD).
             if self.possible_bits(a) & c == 0 {
                 return self.mk_or(a, b, out);
+            }
+            // A boolean's negation stays `b ^ 1` (the canonical form the
+            // comparison and select rules key on); anything else is the
+            // disjoint sum x ^ c == (x & ~c) + (~x & c).
+            if !(self.is_bool(a) && c == 1) {
+                let keep = self.mk_and_const(a, !c & m, out);
+                let na = self.mk_un(CPUI_INT_NEGATE, a, out);
+                let flip = self.mk_and_const(na, c, out);
+                return self.mk_or(keep, flip, out);
             }
             return self.intern(ExprKind::Bin(CPUI_INT_XOR, a, b), out);
         }
@@ -847,6 +913,9 @@ impl ExprArena {
 
     fn mk_shift(&mut self, opc: OpCode, a: ExprId, b: ExprId, out: u8) -> ExprId {
         let a = self.resize(a, out);
+        if let Some(r) = self.fold2(opc, a, b, out) {
+            return r;
+        }
         let nbits = bits(out) as u128;
         if let Some(sh) = self.is_const(b) {
             if sh == 0 {
@@ -955,6 +1024,55 @@ impl ExprArena {
         Some(self.build_linear(scaled, size))
     }
 
+    /// `~y & c` where `x = ~y` and `y` is a sum of pairwise disjoint terms:
+    /// each term inside the mask is complemented in place, so a De Morgan
+    /// shape over a flags word stays a prunable disjoint sum.
+    fn and_complement_sum(&mut self, x: ExprId, c: u128, out: u8) -> Option<ExprId> {
+        let m = mask(out);
+        let mut ly = self.lin(x).negate();
+        ly.c = ly.c.wrapping_sub(1);
+        let terms: Vec<(ExprId, u128)> =
+            ly.terms.iter().map(|(t, k)| (*t, (*k as u128) & m)).filter(|(_, k)| *k != 0).collect();
+        if terms.is_empty() {
+            return None;
+        }
+        let c0 = (ly.c as u128) & m;
+        let mut masks = Vec::with_capacity(terms.len());
+        let mut seen = c0;
+        for (t, k) in &terms {
+            let pm = self.scaled_possible(*t, *k, out)?;
+            if seen & pm != 0 {
+                return None;
+            }
+            seen |= pm;
+            masks.push(pm);
+        }
+        let mut l = Lin::default();
+        // Bits the sum never sets are one in its complement.
+        l.c = (c & !seen) as i128;
+        for ((t, k), pm) in terms.iter().zip(masks.iter()) {
+            if pm & c == 0 {
+                continue;
+            }
+            if pm & !c != 0 {
+                return None;
+            }
+            let s = k.trailing_zeros();
+            let inner = if self.possible_bits(*t) == 1 {
+                // k * (1 - b) for a 0/1 term.
+                let b = self.resize(*t, 1);
+                let one = self.cst(1, 1);
+                let nb = self.mk_bin(CPUI_INT_XOR, b, one, 1);
+                self.mk_un(CPUI_INT_ZEXT, nb, out)
+            } else {
+                let nt = self.mk_un(CPUI_INT_NEGATE, *t, out);
+                self.mk_and_const(nt, pm >> s, out)
+            };
+            *l.terms.entry(inner).or_insert(0) += *k as i128;
+        }
+        Some(self.build_linear(l, out))
+    }
+
     /// `zext(sum of pairwise disjoint terms)`: no carry leaves the narrow
     /// width, so the extension distributes over the terms.
     fn zext_disjoint_sum(&mut self, a: ExprId, out: u8) -> Option<ExprId> {
@@ -1061,6 +1179,9 @@ impl ExprArena {
         if a == b {
             return self.cst(1, 1);
         }
+        if let Some(r) = self.fold2(CPUI_INT_EQUAL, a, b, 1) {
+            return r;
+        }
         let size = self.size(a);
         let d = self.lin(a).add(&self.lin(b).negate());
         let m = mask(size);
@@ -1069,9 +1190,29 @@ impl ExprArena {
         if nz.is_empty() {
             return self.cst(1, ((d.c as u128) & m == 0) as u128);
         }
+        // k * b == c for a 0/1-valued b: decided by whether c is 0 or k.
+        if nz.len() == 1 && self.possible_bits(nz[0].0) == 1 {
+            let (t, k) = (nz[0].0, (nz[0].1 as u128) & m);
+            let c = neg(d.c as u128, size);
+            let b = self.resize(t, 1);
+            if c == 0 {
+                let one = self.cst(1, 1);
+                return self.mk_bin(CPUI_INT_XOR, b, one, 1);
+            }
+            if c == k {
+                return b;
+            }
+            return self.cst(1, 0);
+        }
         if nz.len() == 1 && ((nz[0].1 as u128) & m == 1 || (nz[0].1 as u128) & m == m) {
             let t = nz[0].0;
             let c = if (nz[0].1 as u128) & m == 1 { neg(d.c as u128, size) } else { (d.c as u128) & m };
+            // A pointer offset by a constant never lands on a small constant.
+            if let Some(v) = self.as_var(t) {
+                if self.vars[v as usize].pointer && c < (1u128 << 32) {
+                    return self.cst(1, 0);
+                }
+            }
             // Bits set in the constant the term can never produce.
             if c & !self.possible_bits(t) != 0 {
                 return self.cst(1, 0);
@@ -1118,7 +1259,28 @@ impl ExprArena {
         self.intern(ExprKind::Bin(CPUI_INT_EQUAL, lhs, zero), 1)
     }
 
+    /// `base + c1 <op> base + c2` for a pointer base that cannot wrap: the
+    /// constants decide (the interpreter's stack-bound checks).
+    fn pointer_relative_compare(&mut self, a: ExprId, b: ExprId, signed: bool) -> Option<ExprId> {
+        let (Some(va), ca) = self.affine(a)? else { return None };
+        let (Some(vb), cb) = self.affine(b)? else { return None };
+        if va != vb || !self.vars[va as usize].pointer {
+            return None;
+        }
+        if ca.abs() >= (1i128 << 32) || cb.abs() >= (1i128 << 32) {
+            return None;
+        }
+        let _ = signed;
+        Some(self.cst(1, (ca < cb) as u128))
+    }
+
     fn mk_less(&mut self, a: ExprId, b: ExprId) -> ExprId {
+        if let Some(r) = self.fold2(CPUI_INT_LESS, a, b, 1) {
+            return r;
+        }
+        if let Some(r) = self.pointer_relative_compare(a, b, false) {
+            return r;
+        }
         let size = self.size(a);
         let (ka0, ka1) = self.known[a as usize];
         let (kb0, kb1) = self.known[b as usize];
@@ -1157,6 +1319,12 @@ impl ExprArena {
     }
 
     fn mk_sless(&mut self, a: ExprId, b: ExprId) -> ExprId {
+        if let Some(r) = self.fold2(CPUI_INT_SLESS, a, b, 1) {
+            return r;
+        }
+        if let Some(r) = self.pointer_relative_compare(a, b, true) {
+            return r;
+        }
         let size = self.size(a);
         if let Some(r) = self.ite_distribute(CPUI_INT_SLESS, a, b, 1) {
             return r;
@@ -1269,7 +1437,8 @@ impl ExprArena {
         match kind {
             ExprKind::Const(c) => (!c & m, c & m),
             ExprKind::Var(v) => {
-                if self.vars[*v as usize].boolean { (0xFE, 0) } else { unknown }
+                let info = &self.vars[*v as usize];
+                if info.boolean { (0xFE, 0) } else { (info.known.0 & m, info.known.1 & m) }
             }
             ExprKind::Un(opc, a) => {
                 let (az, ao) = self.known[*a as usize];

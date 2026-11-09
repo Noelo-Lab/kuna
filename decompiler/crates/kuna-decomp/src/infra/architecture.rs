@@ -947,6 +947,10 @@ pub struct Architecture {
     /// (kuna `loweredswitchvalue`) Withdraw a re-rolled lowered switch unless it is
     /// shown to dispatch on the value its cascade compared.
     pub lowered_switch_value_check: bool,
+    /// (kuna `pushan`) Devirtualize VM-protected functions: 0 off, 1 auto, 2 on.
+    pub pushan_mode: u8,
+    /// (kuna `pushan`) Devirtualized programs by entry offset (restarts re-flow).
+    pub pushan_cache: std::collections::BTreeMap<u64, Rc<crate::kuna_pushan::PushanProgram>>,
     /// (kuna `loweredswitchexact`) Label every case value of a re-rolled lowered
     /// switch and keep the switch only when it routes and computes as its compare
     /// tree.
@@ -3286,6 +3290,8 @@ impl Architecture {
             recover_lowered_switch: false,
             lowered_switch_labels: false,
             lowered_switch_value_check: false,
+            pushan_mode: 0, // (kuna) option pushan; reset_defaults sets the shipped default
+            pushan_cache: std::collections::BTreeMap::new(),
             lowered_switch_exact: false,
             lowered_switch_every_head: false,
             callsite_stack_args: true,
@@ -3757,6 +3763,7 @@ impl Architecture {
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
         self.lowered_switch_labels = true; // (kuna) default-on correctness fix: the cascade's range opcode, not a case's sign bit, determines label interpretation
+        self.pushan_mode = crate::kuna_pushan::MODE_AUTO; // (kuna) option pushan default auto: a function whose entry transfers into another executable section is devirtualized
         self.lowered_switch_value_check = true; // (kuna) DIV-181 default-on correctness fix: a re-rolled lowered switch reads what its head compare reads and is withdrawn unless its BRANCHIND input is the value the cascade compared
         self.lowered_switch_every_head = true; // (kuna) DIV-184 default-on: a compare on the switch variable in front of an inlined switch no longer hides the cascade behind it; a cascade behind a later head must match its compare tree exactly
         self.lowered_switch_exact = true; // (kuna) DIV-183 default-on correctness fix: a re-rolled lowered switch labels every case value and is kept only when it routes every value and keeps every statement as its compare tree does

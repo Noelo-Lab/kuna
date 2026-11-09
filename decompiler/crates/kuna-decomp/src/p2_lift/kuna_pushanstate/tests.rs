@@ -88,11 +88,24 @@ fn diff_and_symbolize() {
     s1.write_reg(0x38, c1, 8);
     s2.write_reg(0x38, c1, 8);
     let d = s1.diff_constants(&mut s2, &mut a, &img);
-    assert_eq!(d, vec![SymLoc { loc: Loc::Reg { off: 0x30 }, size: 8 }]);
-    s1.symbolize(&mut a, 7, &d);
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].loc, SymLoc { loc: Loc::Reg { off: 0x30 }, size: 8 });
+    // a differing byte widens to its register
+    let mut s5 = s1.clone();
+    let mut s6 = s1.clone();
+    let b1 = a.cst(1, 1);
+    let b2 = a.cst(1, 2);
+    s5.write_reg(0x41, b1, 1);
+    s6.write_reg(0x41, b2, 1);
+    let d2 = s5.diff_constants(&mut s6, &mut a, &img);
+    assert!(d2.iter().any(|d| d.loc == SymLoc { loc: Loc::Reg { off: 0x40 }, size: 8 }), "{d2:?}");
+    assert_eq!(d[0].values, Some((1, 2)));
+    let locs = vec![d[0].loc];
+    let made = s1.symbolize(&mut a, 7, &locs);
     let v = s1.read_reg(&mut a, 0x30, 8);
     assert!(a.is_const(v).is_none());
+    assert_eq!(made[0].1, v);
     let mut s3 = s1.clone();
-    s3.symbolize(&mut a, 7, &d);
+    s3.symbolize(&mut a, 7, &locs);
     assert_eq!(s3.read_reg(&mut a, 0x30, 8), v);
 }
