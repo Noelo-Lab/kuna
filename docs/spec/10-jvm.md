@@ -718,17 +718,24 @@ whose writing throws is written, with `jvm_dump_exception_on_error`, as a
 `/* $VF: Unable to decompile class ... */` comment, and without it not at all. Nothing
 else stops the run: the other classes of the input are still written. A Java
 `RuntimeException` and an ordinary Rust panic (an index out of bounds, an `unwrap` on
-`None`) are caught at these boundaries alike (section 10.13); a stack overflow or an
-allocation failure is not, and ends the process.
+`None`) are caught at these boundaries alike (section 10.13), and so is recursion deeper
+than the engine thread's guarded stack, as a `StackOverflowError` (section 10.13), which
+fails the method or class it unwinds to as Vineflower's JVM fails it; an allocation
+failure is not caught, and ends the process.
 
 **Time limit (kuna).** Vineflower enforces `max-time-per-method` by running each method on a
-watchdog thread and killing it. kuna instead arms a per-thread deadline
+watchdog thread and killing it. kuna instead arms a per-thread budget
 (`decompiler/nonnative/kuna-jvm/src/infra/cancelation_manager.rs (CancelationManager)`)
 that the schedule polls at the heads of its fixed-point loops - the `finally` loop, the
 stack-variable loop, the main and merge loops, the SSA fixed point, statement recovery and
-irreducible-node splitting. A method past its deadline fails like a killed one: an error
-log and a `$VF: Couldn't be decompiled` body whose exception is a `TimeoutException`
-(`decompiler/nonnative/kuna-jvm/src/p1_classfile/class_wrapper.rs
+irreducible-node splitting. The budget is a count of polls, `ClassWrapper::POLLS_PER_SECOND`
+(200,000, the rate measured on the slowest methods, Ghidra's ANTLR-generated parsers) per
+second of the limit, so whether a method runs out depends only on its input and options,
+not on the machine or how loaded it is; Vineflower's wall-clock limit, and kuna's before
+it, stopped more methods on a busy machine than on an idle one. A wall-clock deadline at
+twice the limit backs the count up for a method whose polls are rare. A method that runs
+out fails like a killed one: an error log and a `$VF: Couldn't be decompiled` body whose
+exception is a `TimeoutException` (`decompiler/nonnative/kuna-jvm/src/p1_classfile/class_wrapper.rs
 (ClassWrapper::code_to_java_on_watchdog)`). A method stuck between two polls is not
 interrupted.
 
@@ -772,6 +779,20 @@ port depends on one faithful Rust shape:
 - **Exceptions** (`decompiler/nonnative/kuna-jvm/src/rt/exception.rs`). A Java `throw`
   unwinds as a panic carrying the exception, and `try_catch` is the
   `catch (Throwable)` that receives it at the method and class boundaries of section 10.12.
+- **Stack overflow** (`decompiler/nonnative/kuna-jvm/src/rt/stack.rs`). The port recurses
+  where Vineflower does, and a JVM turns a recursion that outgrows its stack into a
+  `StackOverflowError` that those boundaries catch; a Rust stack overflow aborts the
+  process and cannot be caught. So every engine thread declares its stack when it starts
+  (the driver's workers, `with_engine_stack`), and a guard on every arena access and at the
+  expression and statement writers compares the stack pointer with a limit:
+  `rt::stack::DEPTH_LIMIT` (32 MiB) below the thread's start, or all but an eighth of a
+  smaller stack. Past it the guard throws `StackOverflowError`, which unwinds like any
+  other exception (never while the thread is already unwinding). Every recursion in the
+  engine touches the arenas at each level, so none can pass the limit unseen by more than
+  a few frames. The deepest real input measured used 150 KiB; the limit only stops
+  adversarial nesting (expressions thousands deep, or lambdas whose bodies create each
+  other, which nest without end under `jvm_vineflower_compat`). The guard costs nothing
+  measurable (Guava, single instance, paired runs).
 
 ## 10.14 Front-end support (kuna)
 
@@ -802,7 +823,9 @@ single run's (*a divergent read*) makes the driver repeat that batch with the mi
 added, so results are delivered only once clean. Results reach the caller in root order,
 whatever the number of workers, and the call returns after the last delivery while the
 workers drop their engines. Each engine instance runs on a thread with a 512 MiB
-stack, since the port recurses as deeply as Vineflower does on the JVM.
+stack, of which the recursion guard (section 10.13) lets it use 32 MiB. The driver reads
+Vineflower's three-letter option names as their long names (`mpm` is
+`max-time-per-method`) before setting the keys it owns.
 
 **Options.** `decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_options.rs (resolve)`
 turns a `jvm_*` name, or Vineflower's long or three-letter name, and a value as a user
@@ -1326,7 +1349,8 @@ compiler does this; obfuscators and hand-written bytecode do, as Vineflower's
 Vineflower throws `Lambda X is recursive?!` for the whole class when the lookup returns the
 lambda itself, which happens for one ordering of the one-method cycle only (upstream
 `bfa4a794`, unchanged on `develop/1.13.0`), and overflows the stack for every other ordering
-and for longer cycles, where kuna, whose stack overflow is not recoverable, aborts. With the
+and for longer cycles, where kuna's recursion guard fails the class with the same
+`StackOverflowError` (section 10.13). With the
 fix, `decompiler/nonnative/kuna-jvm/src/p4_calls/kuna_fix_self_referencing_lambda.rs (write_recursive_lambdas_as_method_references)`
 runs before the nesting is built: it finds the implementation methods that reach themselves
 through the lambdas they create, writes every lambda one of them implements as a method

@@ -64,6 +64,10 @@ impl ClassWrapper {
         })
     }
 
+    /// Deadline polls a second of `max-time-per-method` buys: what the slowest
+    /// methods measured (Ghidra's ANTLR parsers, 180,000 to 250,000 a second).
+    pub const POLLS_PER_SECOND: u64 = 200_000;
+
     /// Decompiles every method of the class into a [`MethodWrapper`].
     pub fn init(self, spec: Option<&LanguageSpec>) {
         let (class_struct, node) = self.with(|d| (d.class_struct, d.node));
@@ -206,9 +210,12 @@ impl ClassWrapper {
     /// thread, waking every 200 ms; past `maxSec` seconds it logs "Processing
     /// time limit exceeded for method …", kills the thread and records a new
     /// `TimeoutException` as the method's error, leaving it without a body.
-    /// Here the deadline is armed for the schedule's polls; `Err` is that
-    /// `TimeoutException`. Anything else the schedule throws passes through
-    /// untouched (with its original location), as the Java rethrows it.
+    /// Here the schedule's polls count down a budget of
+    /// [`Self::POLLS_PER_SECOND`] per second, so the same methods stop on any
+    /// machine under any load, and a deadline at twice the time stops a method
+    /// whose polls are rare; `Err` is that `TimeoutException`. Anything else
+    /// the schedule throws passes through untouched (with its original
+    /// location), as the Java rethrows it.
     fn code_to_java_on_watchdog(
         cl: StructClass,
         mt: StructMethod,
@@ -217,11 +224,15 @@ impl ClassWrapper {
         spec: Option<&LanguageSpec>,
         max_sec: i32,
     ) -> Result<RootStatement, Caught> {
-        let budget = Duration::from_millis((max_sec as i64 * 1000).max(200) as u64);
-        let previous = CancelationManager::set_method_deadline(Some(Instant::now() + budget));
+        let backstop = Duration::from_millis((max_sec as i64 * 2000).max(200) as u64);
+        let previous = CancelationManager::set_method_deadline(Some(Instant::now() + backstop));
+        let previous_polls = CancelationManager::set_method_poll_budget(Some(
+            (max_sec.max(0) as u64).saturating_mul(Self::POLLS_PER_SECOND),
+        ));
         let result = panic::catch_unwind(AssertUnwindSafe(|| {
             MethodProcessor::code_to_java(cl, mt, md, var_proc, spec)
         }));
+        CancelationManager::set_method_poll_budget(previous_polls);
         CancelationManager::set_method_deadline(previous);
         match result {
             Ok(root) => Ok(root),

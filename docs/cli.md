@@ -4548,9 +4548,13 @@ per 16 class files, reduced to what the available memory fits: each instance rea
 the classes it uses, roughly 32 MiB plus 4 bytes per byte of input class files, and the
 decompiled state adds about 90 bytes per input byte (`docs/jvm.md`).
 
-`--max-fn-seconds N` (default 120, `0` disables) bounds each method: the engine polls a
-deadline inside its loops, and a method past it is written as `// $VF: Couldn't be
-decompiled` with a `TimeoutException`, the class around it normally. As a last resort,
+`--max-fn-seconds N` (default 120, `0` disables) bounds each method: the engine counts
+the polls of its loops against a budget of 200,000 per second of N (the rate its slowest
+methods poll at), so the same methods stop on any machine under any load, with a
+wall-clock deadline at `2N` seconds behind it; a method that runs out is written as `//
+$VF: Couldn't be decompiled` with a `TimeoutException`, the class around it normally.
+Recursion deeper than the engine's stack fails the method or class it is in the same way,
+with a `StackOverflowError`, instead of ending the process (`docs/jvm.md`). As a last resort,
 after `2N+30` seconds the run writes the classes that finished, gives each stuck class a
 stub comment and exits. `--max-fn-memory MiB` is the native per-function limit, applied
 to the whole process, since the instances share it.

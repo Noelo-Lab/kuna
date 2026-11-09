@@ -31,7 +31,7 @@ use crate::exprent::Exprent;
 use crate::fernflower::{DecompiledClass, Fernflower};
 use crate::i_fernflower_logger::IFernflowerLogger;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
-use crate::kuna_corpus::{reset_engine_thread, ENGINE_STACK_BYTES};
+use crate::kuna_corpus::{engine_stack_bytes, reset_engine_thread};
 use crate::kuna_input::{InputSet, SharedRuntime};
 use crate::kuna_inventory;
 use crate::kuna_partition::{self, DivergentRead, RootPos, RootSelection};
@@ -114,7 +114,7 @@ impl DriverConfig {
             logger,
             method_guard: None,
             progress: None,
-            stack_size: ENGINE_STACK_BYTES,
+            stack_size: engine_stack_bytes(),
             available_memory: None,
             instance_memory: None,
         }
@@ -255,10 +255,14 @@ pub fn run(
             let instances = instances.clone();
             let board = board.clone();
             let env = env.clone();
+            let stack = config.stack_size;
             std::thread::Builder::new()
                 .name(format!("kuna-jvm-{worker}"))
-                .stack_size(config.stack_size)
-                .spawn(move || worker_main(&env, plan_tx, &board, &out_tx, &instances))
+                .stack_size(stack)
+                .spawn(move || {
+                    crate::rt::stack::enter(stack);
+                    worker_main(&env, plan_tx, &board, &out_tx, &instances)
+                })
                 .map_err(|e| DriverError(format!("cannot start a worker thread: {e}")))?;
         }
         drop(plan_tx);
@@ -535,7 +539,11 @@ struct Session {
 }
 
 fn engine_options(config: &DriverConfig) -> Vec<(String, String)> {
-    let mut options = config.options.clone();
+    let mut options: Vec<(String, String)> = config
+        .options
+        .iter()
+        .map(|(k, v)| crate::fernflower::canonical_option(k, v))
+        .collect();
     let mut set = |key: &str, value: String| {
         options.retain(|(k, _)| k != key);
         options.push((key.to_string(), value));
