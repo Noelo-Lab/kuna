@@ -1289,7 +1289,7 @@ impl MergeHelper {
         let extract_start = Self::extractable_from_loop(first.as_sequence(), stat);
 
         let first_stats = first.get_stats();
-        if first_stats.borrow().len() < 1 || extract_start <= 0 {
+        if first_stats.borrow().is_empty() || extract_start <= 0 {
             return false;
         }
 
