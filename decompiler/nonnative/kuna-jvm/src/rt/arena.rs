@@ -98,7 +98,7 @@ impl<T> Arena<T> {
         let index = self.len.get();
         self.len.set(index.checked_add(1).expect("arena overflow"));
         let c = (index >> CHUNK_BITS) as usize;
-        if index as usize % CHUNK == 0 {
+        if (index as usize).is_multiple_of(CHUNK) {
             let chunk: Chunk<T> = vec![None; CHUNK]
                 .into_boxed_slice()
                 .try_into()

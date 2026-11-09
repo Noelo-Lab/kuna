@@ -157,8 +157,7 @@ impl KTypes {
                 return format!("L{};", java);
             } else if let Some(java) = KTypes::lookup(KTypes::KOTLIN_TO_JAVA_UTIL, &kotlin_type) {
                 return format!("L{};", java);
-            } else if kotlin_type.starts_with("kotlin/Function") {
-                let arity = &kotlin_type["kotlin/Function".len()..];
+            } else if let Some(arity) = kotlin_type.strip_prefix("kotlin/Function") {
                 match try_catch(|| jnum::parse_int(arity)) {
                     Ok(arity) => {
                         if arity > KTypes::MAX_KOTLIN_FUNCTION_ARITY {
