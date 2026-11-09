@@ -4850,9 +4850,16 @@ every other binary's pass list is byte-identical to before the pass existed):
   `….reflection_field_descriptor`. A type path follows the parent chain
   (`Module.Outer.Inner`; an anonymous context is transparent, an extension
   context demangles its extended type, a parent in another image is named
-  through its module-descriptor import). Only a code address is ever named as a
-  function (a base-protocol or associated-type witness row points at data), and
-  function names use the FID-precedent placeholder gate. Every record's claim
+  through its module-descriptor import). Only a code address where a function
+  can start is ever named as a function: not data (a base-protocol or
+  associated-type witness row points at data), not a misaligned arm64 address,
+  and not a point strictly inside a body the image states — a sized function
+  symbol or a single-function `.eh_frame` FDE
+  (`decompiler/crates/kuna-analysis/src/analyzers/entry/mod.rs (stated_function_bodies)`),
+  since a name there would become a function splitting that body. A stated
+  start is not required: swiftc emits no FDE for a function that keeps no
+  frame, so the stripped `swift_metadata_elf`'s `.eh_frame` states 13 starts,
+  fewer than the functions its records name. Function names use the FID-precedent placeholder gate. Every record's claim
   on a function is collected before any name is given, because the linker
   folds functions with identical bodies (identical code folding) and one
   address is then the target of records of unrelated types — on a large

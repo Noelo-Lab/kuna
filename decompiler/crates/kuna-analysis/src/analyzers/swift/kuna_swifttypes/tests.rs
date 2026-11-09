@@ -64,6 +64,8 @@ fn with_edited_types<R>(edit: impl FnOnce(&mut Metadata), f: impl FnOnce(&Types)
             .filter(|s| s.kind() == object::SectionKind::Text)
             .map(|s| (s.address(), s.address().saturating_add(s.size())))
             .collect(),
+        bodies: crate::analyzers::entry::stated_function_bodies(&file, &bytes),
+        insn_align: 1,
         claims: Default::default(),
         budget: std::cell::Cell::new(usize::MAX),
     };
