@@ -808,13 +808,13 @@ impl<'a> Emitter<'a> {
     }
 
     /// Where the LOAD/STORE at op index `i` went, from the emulated address.
-    fn mem_ref(&self, trace: Option<&super::kuna_pushanemu::InsnTrace>, i: usize) -> MemRef {
+    fn mem_ref(&mut self, trace: Option<&super::kuna_pushanemu::InsnTrace>, i: usize) -> MemRef {
         let Some(tr) = trace else { return MemRef::Unknown };
         if tr.forked {
             return MemRef::Unknown;
         }
         let Some(acc) = tr.accesses.iter().find(|a| a.op_index == i) else { return MemRef::Unknown };
-        match self.arena.affine(acc.addr_expr) {
+        match self.arena.affine_probe(acc.addr_expr) {
             Some((Some(b), k)) if Some(b) == self.conf.sp0 => MemRef::Stack { off: k, size: acc.size as u32 },
             Some((None, _)) => MemRef::Global,
             _ => MemRef::Unknown,
@@ -897,7 +897,7 @@ impl<'a> Emitter<'a> {
             return info;
         }
         if let Some(sp) = self.exit_value(node, self.conf.sp_reg, ptr) {
-            if let Some((Some(b), k)) = self.arena.affine(sp) {
+            if let Some((Some(b), k)) = self.arena.affine_probe(sp) {
                 if Some(b) == self.conf.sp0 {
                     info.sp_off = Some(k);
                 }
@@ -1044,12 +1044,12 @@ impl<'a> Emitter<'a> {
         }
         let trace = trace?;
         let acc = trace.accesses.iter().find(|a| a.op_index == i)?;
-        let (Some(base), k) = self.arena.affine(acc.addr_expr)? else { return None };
+        let (Some(base), k) = self.arena.affine_probe(acc.addr_expr)? else { return None };
         if Some(base) != self.conf.sp0 {
             return None;
         }
         let spb = (*trace.sp_before.get(i)?)?;
-        let (Some(b2), k1) = self.arena.affine(spb)? else { return None };
+        let (Some(b2), k1) = self.arena.affine_probe(spb)? else { return None };
         if b2 != base {
             return None;
         }
@@ -1104,10 +1104,10 @@ impl<'a> Emitter<'a> {
             }
         }
         if self.conf.remat_sp && out_vn.size == self.conf.ptr_size as u32 {
-            if let (Some(sp0), Some((Some(base), k))) = (self.conf.sp0, self.arena.affine(v)) {
+            if let (Some(sp0), Some((Some(base), k))) = (self.conf.sp0, self.arena.affine_probe(v)) {
                 if base == sp0 {
                     if let Some(Some(spb)) = trace.sp_before.get(i).copied() {
-                        if let Some((Some(b2), k1)) = self.arena.affine(spb) {
+                        if let Some((Some(b2), k1)) = self.arena.affine_probe(spb) {
                             if b2 == sp0 {
                                 let delta = k.wrapping_sub(k1);
                                 let already = matches!(op.opc, CPUI_INT_ADD | CPUI_INT_SUB | CPUI_COPY)

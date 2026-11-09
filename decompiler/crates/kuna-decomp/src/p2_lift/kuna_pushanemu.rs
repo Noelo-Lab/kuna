@@ -205,6 +205,22 @@ impl<'a> Emulator<'a> {
         }
         let size = vn.size as u8;
         let e = arena.resize(e, size);
+        // A stack pointer rebuilt through boolean-arithmetic noise is stored
+        // in its plain `sp0 + d` form.
+        let e = match self.track_sp {
+            Some((sp, sps)) if self.vn_space(vn) == Space::Register && vn.offset == sp && size == sps && arena.affine(e).is_none() => {
+                match arena.affine_probe(e) {
+                    Some((Some(v), d)) => {
+                        let info = *arena.var_info(v);
+                        let base = arena.var_of_known(info.kind, info.size, info.boolean, info.known);
+                        let k = arena.cst(size, d as u128);
+                        arena.mk_bin(CPUI_INT_ADD, base, k, size)
+                    }
+                    _ => e,
+                }
+            }
+            _ => e,
+        };
         match self.vn_space(vn) {
             Space::Register => state.write_reg(vn.offset, e, size),
             Space::Unique => state.write_unique(vn.offset, e, size),
@@ -290,7 +306,7 @@ impl<'a> Emulator<'a> {
                 return self.unknown(arena, size, "load from an unmodelled space");
             }
         }
-        if let Some((base, off)) = arena.affine(addr) {
+        if let Some((base, off)) = arena.affine_probe(addr) {
             let v = state.read_mem(arena, self.target, base, off, size);
             if base.is_some() && base == self.watch_base && (-0x40..0x40).contains(&off) {
                 self.note(format!("watch load [{off:#x}] size {size} = {}", arena.fmt(v)));
@@ -304,7 +320,7 @@ impl<'a> Emulator<'a> {
             let mut groups: Vec<((Option<VarId>, i128), Vec<ExprId>)> = Vec::new();
             let mut ok = cases.len() <= MAX_SPLIT_ASSIGNMENTS;
             for (assign, a) in &cases {
-                let Some(key) = arena.affine(*a) else {
+                let Some(key) = arena.affine_probe(*a) else {
                     ok = false;
                     break;
                 };
@@ -331,7 +347,9 @@ impl<'a> Emulator<'a> {
             }
         }
         state.unknown_loads += 1;
-        self.note(format!("unknown load address {}", arena.fmt(addr)));
+        let atoms = arena.bool_atoms(addr).len();
+        let vars: Vec<String> = arena.free_vars(addr).iter().map(|v| format!("{:?}", arena.var_info(*v).kind)).collect();
+        self.note(format!("unknown load address (atoms {atoms}, vars {vars:?}) {}", arena.fmt(addr)));
         arena.unknown(size)
     }
 
@@ -366,7 +384,7 @@ impl<'a> Emulator<'a> {
                 return;
             }
         }
-        if let Some((base, off)) = arena.affine(addr) {
+        if let Some((base, off)) = arena.affine_probe(addr) {
             if base.is_some() && base == self.watch_base && (-0x40..0x40).contains(&off) {
                 self.note(format!("watch store [{off:#x}] size {size} = {}", arena.fmt(val)));
             }
@@ -374,13 +392,28 @@ impl<'a> Emulator<'a> {
             return;
         }
         if let Some(cases) = arena.case_split(addr) {
-            if cases.len() <= MAX_SPLIT_CASES && cases.iter().all(|(_, a)| arena.affine(*a).is_some()) {
-                for (assign, a) in &cases {
-                    let (base, off) = arena.affine(*a).unwrap();
-                    let old = state.read_mem(arena, self.target, base, off, size);
-                    let cond = assignment_cond(arena, assign);
+            let mut groups: Vec<((Option<VarId>, i128), Vec<ExprId>)> = Vec::new();
+            let mut ok = cases.len() <= MAX_SPLIT_ASSIGNMENTS;
+            for (assign, a) in &cases {
+                let Some(key) = arena.affine_probe(*a) else {
+                    ok = false;
+                    break;
+                };
+                let cond = assignment_cond(arena, assign);
+                match groups.iter_mut().find(|(k, _)| *k == key) {
+                    Some((_, conds)) => conds.push(cond),
+                    None => groups.push((key, vec![cond])),
+                }
+            }
+            if ok && groups.len() <= MAX_SPLIT_CASES {
+                for ((base, off), conds) in &groups {
+                    let mut cond = conds[0];
+                    for c in &conds[1..] {
+                        cond = arena.mk_bin(CPUI_INT_OR, cond, *c, 1);
+                    }
+                    let old = state.read_mem(arena, self.target, *base, *off, size);
                     let new = arena.mk_ite(cond, val, old);
-                    state.write_mem(base, off, new, size);
+                    state.write_mem(*base, *off, new, size);
                 }
                 return;
             }

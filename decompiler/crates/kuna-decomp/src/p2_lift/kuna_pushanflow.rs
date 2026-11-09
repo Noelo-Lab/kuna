@@ -152,6 +152,8 @@ pub struct Explorer<'a> {
     pub to_symbolize: BTreeMap<NodeKey, BTreeMap<SymLoc, BTreeSet<u128>>>,
     /// The constants recorded for each symbol created by [`State::symbolize`].
     sym_values: BTreeMap<u32, BTreeSet<u128>>,
+    /// Bits every value seen at a symbolized location agreed on.
+    sym_known: BTreeMap<(NodeKey, SymLoc), (u128, u128)>,
     pub stats: Stats,
     pub log: Vec<String>,
     retaddr: Option<ExprId>,
@@ -164,6 +166,8 @@ pub struct Explorer<'a> {
 const VPC_MAX_DISP: i128 = 16;
 /// Most constants remembered for one symbolized location.
 const MAX_SYM_VALUES: usize = 32;
+/// Distinct virtual-PC values a node may fork into.
+const MAX_VPC_FORK: usize = 4;
 /// Bytes behind each pointer argument an external call may write.
 const CALL_POINTEE_BYTES: i128 = 16;
 
@@ -177,6 +181,7 @@ impl<'a> Explorer<'a> {
             entry_addr,
             to_symbolize: BTreeMap::new(),
             sym_values: BTreeMap::new(),
+            sym_known: BTreeMap::new(),
             stats: Stats::default(),
             log: Vec::new(),
             retaddr: None,
@@ -323,9 +328,12 @@ impl<'a> Explorer<'a> {
             if let Some(tr) = &self.config.trace {
                 use std::io::Write;
                 let base = self.sp0;
-                for off in (-0x40i128..0).step_by(8) {
+                for off in (-0x400i128..0x40).step_by(8) {
                     let a = entry.read_mem(&mut self.arena, self.target, base, off, 8);
                     let b = state.read_mem(&mut self.arena, self.target, base, off, 8);
+                    if a == b {
+                        continue;
+                    }
                     let _ = writeln!(tr.borrow_mut(), "        rereach node {id} slot {off:#x}: entry {} | incoming {}", self.arena.fmt(a).chars().take(200).collect::<String>(), self.arena.fmt(b).chars().take(200).collect::<String>());
                 }
                 for d in &diffs {
@@ -349,11 +357,27 @@ impl<'a> Explorer<'a> {
             for d in diffs {
                 // The VPC itself is part of the key; never symbolize it.
                 if let Loc::Reg { off } = d.loc.loc {
-                    if Some(off) == vpc_reg {
+                    if vpc_reg.is_some_and(|r| off >= r && off < r + self.abi.ptr_size as u64) {
                         continue;
                     }
                 }
+                // Memory under any other symbolic base is keyed by a variable
+                // that is fresh every round: it can never be re-applied.
+                if let Loc::Mem { base: Some(b), .. } = d.loc.loc {
+                    if Some(b) != self.sp0 {
+                        continue;
+                    }
+                }
+                // A difference inside a location already recorded is that location.
+                let mut d = d;
+                if let Some(cover) = set.keys().find(|l| covers(l, &d.loc)).copied() {
+                    d.loc = cover;
+                }
                 let is_new = !set.contains_key(&d.loc);
+                let k = self.sym_known.entry((key, d.loc)).or_insert(d.known);
+                let narrowed = (k.0 & d.known.0, k.1 & d.known.1);
+                let shrank = narrowed != *k;
+                *k = narrowed;
                 let values = set.entry(d.loc).or_default();
                 let mut grew = false;
                 for v in [d.values.map(|v| v.0), d.values.map(|v| v.1), d.entry_const, d.incoming_const].into_iter().flatten() {
@@ -361,16 +385,20 @@ impl<'a> Explorer<'a> {
                         grew = true;
                     }
                 }
-                if is_new || grew {
+                if is_new || grew || shrank {
                     self.new_syms += 1;
+                    if self.stats.rounds > 3 && self.log.len() < 400 {
+                        self.log.push(format!("  round {} new sym at {:#x}/{:?}: {:?} new={is_new} grew={grew} shrank={shrank} known={:x?}", self.stats.rounds, key.addr, key.ctx, d.loc, d.known));
+                    }
                 }
             }
             return id;
         }
         if let Some(locs) = self.to_symbolize.get(&key) {
-            let locs_only: Vec<SymLoc> = locs.keys().copied().collect();
+            let with_known: Vec<(SymLoc, (u128, u128))> =
+                locs.keys().map(|l| (*l, self.sym_known.get(&(key, *l)).copied().unwrap_or((0, 0)))).collect();
             let tag = key_tag(&key);
-            let made = state.symbolize(&mut self.arena, tag, &locs_only);
+            let made = state.symbolize_known(&mut self.arena, tag, &with_known);
             for (l, e) in made {
                 if let (Some(v), Some(vals)) = (self.arena.as_var(e), locs.get(&l)) {
                     self.sym_values.insert(v, vals.clone());
@@ -474,11 +502,106 @@ impl<'a> Explorer<'a> {
             }
         }
         let next_ctx = self.successor_ctx(&mut state, &traces, ctx);
-        let node_exit = self.resolve_exit(cfg, worklist, id, exit, state, next_ctx, &insns);
+        let node_exit = match self.fork_on_vpc(cfg, worklist, id, &exit, &mut state, next_ctx) {
+            Some(e) => e,
+            None => self.resolve_exit(cfg, worklist, id, exit, state, next_ctx, &insns),
+        };
         let node = &mut cfg.nodes[id as usize];
         node.insns = insns;
         node.traces = traces;
         node.exit = node_exit;
+    }
+
+    /// A virtual PC decided by boolean atoms (the interpreter's conditional
+    /// jump computes both successors and selects one arithmetically): split
+    /// the state there, one successor per value with its atoms pinned, so
+    /// each path decodes its own bytecode with a concrete context.  This is
+    /// the state split angr's emulator performs on a two-valued expression.
+    fn fork_on_vpc(
+        &mut self,
+        cfg: &mut FlatCfg,
+        worklist: &mut VecDeque<NodeId>,
+        id: NodeId,
+        exit: &Exit,
+        state: &mut State,
+        ctx: VmCtx,
+    ) -> Option<NodeExit> {
+        let r = ctx.vpc_reg?;
+        if !matches!(exit, Exit::Fallthrough(_) | Exit::Jump(_)) {
+            return None;
+        }
+        let v = state.read_reg(&mut self.arena, r, self.abi.ptr_size);
+        if self.arena.is_const(v).is_some() {
+            return None;
+        }
+        let cases = self.arena.case_split(v)?;
+        let mut groups: Vec<(u64, Vec<Vec<(ExprId, bool)>>)> = Vec::new();
+        for (assign, e) in &cases {
+            let c = self.arena.is_const(*e)? as u64;
+            if !self.target.is_mapped(c) {
+                return None;
+            }
+            match groups.iter_mut().find(|(k, _)| *k == c) {
+                Some((_, a)) => a.push(assign.clone()),
+                None => groups.push((c, vec![assign.clone()])),
+            }
+        }
+        if groups.len() < 2 || groups.len() > MAX_VPC_FORK {
+            return None;
+        }
+        let mut atoms: Vec<ExprId> = Vec::new();
+        for (assign, _) in &cases {
+            for (a, _) in assign {
+                if !atoms.contains(a) {
+                    atoms.push(*a);
+                }
+            }
+        }
+        // Every arm must reach a single node; check the targets first.
+        let mut plans = Vec::with_capacity(groups.len());
+        for (c, assigns) in &groups {
+            let mut map = BTreeMap::new();
+            for a in &atoms {
+                let value_in = |as_: &Vec<(ExprId, bool)>| as_.iter().find(|(x, _)| x == a).map(|(_, v)| *v);
+                let Some(first) = value_in(&assigns[0]) else { continue };
+                if assigns.iter().all(|as_| value_in(as_) == Some(first)) {
+                    map.insert(*a, self.arena.cst(1, first as u128));
+                }
+            }
+            let next = match exit {
+                Exit::Fallthrough(n) => *n,
+                Exit::Jump(t) => {
+                    let t2 = self.arena.substitute(*t, &map);
+                    self.arena.is_const(t2)? as u64
+                }
+                _ => return None,
+            };
+            if self.classify_target(next).is_err() {
+                return None;
+            }
+            plans.push((*c, assigns.clone(), map, next));
+        }
+        if let Some(tr) = &self.config.trace {
+            use std::io::Write;
+            let _ = writeln!(tr.borrow_mut(), "        fork on vpc {} into {:x?}", self.arena.fmt(v).chars().take(400).collect::<String>(), plans.iter().map(|p| p.0).collect::<Vec<_>>());
+            for a in &atoms {
+                let vars: Vec<String> = self.arena.free_vars(*a).iter().map(|v| format!("{:?}", self.arena.var_info(*v).kind)).collect();
+                let _ = writeln!(tr.borrow_mut(), "          atom {} vars {:?}", self.arena.fmt(*a).chars().take(600).collect::<String>(), vars);
+            }
+        }
+        let mut targets = Vec::with_capacity(plans.len());
+        for (c, assigns, map, next) in plans {
+            let mut st = state.clone();
+            st.map_values(&mut self.arena, &mut |a, e| a.substitute(e, &map));
+            let mut sctx = ctx;
+            sctx.ctx = Some(c);
+            let succ = match self.jump_to(cfg, worklist, id, next, st, sctx) {
+                NodeExit::Branch(n) => n,
+                other => self.trampoline(cfg, id, next, other),
+            };
+            targets.push((assigns, succ));
+        }
+        Some(NodeExit::Select { atoms, targets, by_atoms: true })
     }
 
     /// The interpreter context the block hands to its successors.
@@ -716,7 +839,14 @@ impl<'a> Explorer<'a> {
             let c = *by_target.keys().next().unwrap();
             return self.jump_to(cfg, worklist, id, c, state, ctx);
         }
-        let atoms: Vec<ExprId> = cases[0].0.iter().map(|(a, _)| *a).collect();
+        let mut atoms: Vec<ExprId> = Vec::new();
+        for (assign, _) in &cases {
+            for (a, _) in assign {
+                if !atoms.contains(a) {
+                    atoms.push(*a);
+                }
+            }
+        }
         // A symbol enumeration encodes (symbol, constant) pairs instead of atoms.
         let symbol_pins = atoms.len() == 2 && self.arena.as_var(atoms[0]).is_some_and(|v| self.sym_values.contains_key(&v));
         let mut targets = Vec::new();
@@ -732,9 +862,10 @@ impl<'a> Explorer<'a> {
                 }
             } else {
                 // Atoms fixed across every assignment reaching this target can be pinned.
-                for (i, a) in atoms.iter().enumerate() {
-                    let first = assigns[0][i].1;
-                    if assigns.iter().all(|as_| as_[i].1 == first) {
+                for a in atoms.iter() {
+                    let value_in = |as_: &Vec<(ExprId, bool)>| as_.iter().find(|(x, _)| x == a).map(|(_, v)| *v);
+                    let Some(first) = value_in(&assigns[0]) else { continue };
+                    if assigns.iter().all(|as_| value_in(as_) == Some(first)) {
                         let k = self.arena.cst(1, first as u128);
                         pin(&mut self.arena, &mut st, *a, k);
                     }
@@ -842,7 +973,7 @@ impl<'a> Explorer<'a> {
     fn pushed_return_address(&mut self, state: &mut State) -> Option<u64> {
         let ps = self.abi.ptr_size;
         let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
-        let (base, off) = self.arena.affine(sp)?;
+        let (base, off) = self.arena.affine_probe(sp)?;
         let top = state.read_mem(&mut self.arena, self.target, base, off, ps);
         let c = self.arena.is_const(top)? as u64;
         (self.target.is_mapped(c) && self.target.is_executable(c)).then_some(c)
@@ -860,7 +991,7 @@ impl<'a> Explorer<'a> {
             if self.config.trace.is_some() {
                 self.log.push(format!("call at {site:#x}: arg reg{off:x} = {} affine={:?}", self.arena.fmt(v), self.arena.affine(v)));
             }
-            match self.arena.affine(v) {
+            match self.arena.affine_probe(v) {
                 Some((Some(base), o)) => {
                     for k in 0..(CALL_POINTEE_BYTES / ps as i128) {
                         let u = self.arena.unknown(ps);
@@ -925,6 +1056,16 @@ pub fn pin(arena: &mut ExprArena, state: &mut State, atom: ExprId, value: ExprId
     let mut map = BTreeMap::new();
     map.insert(atom, value);
     state.map_values(arena, &mut |a, e| a.substitute(e, &map));
+}
+
+/// Does `outer` contain every byte of `inner`?
+fn covers(outer: &SymLoc, inner: &SymLoc) -> bool {
+    let (o0, i0) = match (outer.loc, inner.loc) {
+        (Loc::Reg { off: a }, Loc::Reg { off: b }) => (a as i128, b as i128),
+        (Loc::Mem { base: ba, off: a }, Loc::Mem { base: bb, off: b }) if ba == bb => (a, b),
+        _ => return false,
+    };
+    o0 <= i0 && i0 + inner.size as i128 <= o0 + outer.size as i128
 }
 
 pub fn key_tag(key: &NodeKey) -> u64 {

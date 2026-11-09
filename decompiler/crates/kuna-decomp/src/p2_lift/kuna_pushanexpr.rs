@@ -26,6 +26,10 @@ pub const MAX_SIZE: u8 = 16;
 pub const DIV_ZERO_TAG: u64 = 0x1000_0000;
 /// Most boolean atoms a case split enumerates (2^N substitutions).
 pub const MAX_SPLIT_ATOMS: usize = 10;
+/// Levels of nested splitting (atoms exposed by an outer substitution).
+const MAX_SPLIT_DEPTH: u32 = 4;
+/// Substitutions one case split may perform in total.
+const MAX_SPLIT_TOTAL: usize = 4096;
 const MAX_DEPTH: u32 = 900;
 
 #[inline]
@@ -144,6 +148,7 @@ pub struct ExprArena {
     /// location is the same symbol in every exploration round.
     var_memo: BTreeMap<(VarKind, u8), ExprId>,
     unknown_tag: u64,
+    probe_memo: BTreeMap<ExprId, Option<(Option<VarId>, i128)>>,
 }
 
 impl Default for ExprArena {
@@ -161,6 +166,7 @@ impl ExprArena {
             vars: Vec::new(),
             var_memo: BTreeMap::new(),
             unknown_tag: 0,
+            probe_memo: BTreeMap::new(),
         }
     }
 
@@ -847,6 +853,17 @@ impl ExprArena {
         if a == b {
             return self.cst(out, 0);
         }
+        // x ^ (x ^ y) = y: the XOR swap obfuscators use to exchange the stack pointer.
+        for (x, y) in [(a, b), (b, a)] {
+            if let ExprKind::Bin(CPUI_INT_XOR, p, q) = self.kind(y).clone() {
+                if p == x {
+                    return q;
+                }
+                if q == x {
+                    return p;
+                }
+            }
+        }
         let m = mask(out);
         if self.is_const(a).is_some() {
             return self.mk_xor(b, a, out);
@@ -1463,6 +1480,61 @@ impl ExprArena {
         }
     }
 
+    /// [`affine`](Self::affine), and when the linear form does not see it,
+    /// a probe: an expression over one variable that moves by exactly the
+    /// variable's change at three dissimilar points is `var + d`.  This is how
+    /// angr's concretizing solver sees through mixed boolean-arithmetic
+    /// rewrites of the stack pointer, without fixing the pointer's value.
+    pub fn affine_probe(&mut self, e: ExprId) -> Option<(Option<VarId>, i128)> {
+        if let Some(r) = self.affine(e) {
+            return Some(r);
+        }
+        if let Some(r) = self.probe_memo.get(&e) {
+            return *r;
+        }
+        let vars = self.free_vars(e);
+        let r = if vars.len() == 1 {
+            let v = *vars.iter().next().unwrap();
+            let info = self.vars[v as usize];
+            let size = self.size(e);
+            if info.size != size || size < 4 {
+                None
+            } else {
+                let var_e = self.intern.get(&(ExprKind::Var(v), info.size)).copied();
+                let var_e = var_e.unwrap_or(e);
+                let m = mask(size);
+                let mut d: Option<u128> = None;
+                let mut ok = true;
+                for p in [0x0000_7ffd_3a5c_9e40u128, 0x0000_1234_5678_9ab0, 0x0000_6b8b_4567_3270] {
+                    let pv = ((p & m) & !info.known.0) | info.known.1;
+                    let k = self.cst(size, pv);
+                    let mut map = BTreeMap::new();
+                    map.insert(var_e, k);
+                    let r = self.substitute(e, &map);
+                    let Some(c) = self.is_const(r) else {
+                        ok = false;
+                        break;
+                    };
+                    let diff = c.wrapping_sub(pv) & m;
+                    if d.is_some_and(|x| x != diff) {
+                        ok = false;
+                        break;
+                    }
+                    d = Some(diff);
+                }
+                if ok && var_e != e {
+                    d.map(|x| (Some(v), sext(x, size)))
+                } else {
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        self.probe_memo.insert(e, r);
+        r
+    }
+
     // -- known bits -----------------------------------------------------------
 
     fn compute_known(&self, kind: &ExprKind, size: u8) -> (u128, u128) {
@@ -1768,20 +1840,58 @@ impl ExprArena {
 
     /// The values `e` takes over every assignment of the boolean atoms it
     /// actually depends on, as expressions (constants when nothing else is
-    /// symbolic).  An atom whose flip never changes the result is dropped
-    /// from the assignments: the interpreter's flag arithmetic carries every
-    /// flag bit through a conditional jump, and only the compared ones decide
-    /// it.
+    /// symbolic).  Atoms are split innermost first: a comparison whose own
+    /// operands are decided by other atoms (the interpreter's flags computed
+    /// from flags) is left to fold under the inner assignment, and only the
+    /// atoms that survive the substitution are split in turn.  An atom whose
+    /// flip never changes the result is dropped from the assignments.
+    /// Different cases may therefore assign different atoms.
     pub fn case_split(&mut self, e: ExprId) -> Option<Vec<(Vec<(ExprId, bool)>, ExprId)>> {
         if self.is_const(e).is_some() {
             return Some(vec![(Vec::new(), e)]);
         }
-        let atoms = self.bool_atoms(e);
-        if atoms.is_empty() || atoms.len() > MAX_SPLIT_ATOMS {
+        let mut budget = MAX_SPLIT_TOTAL;
+        let out = self.split_rec(e, 0, &mut budget)?;
+        if out.len() == 1 && out[0].0.is_empty() && self.is_const(out[0].1).is_none() {
+            return None;
+        }
+        Some(out)
+    }
+
+    /// The innermost atoms of `e`: atoms whose operands hold no atom.
+    fn leaf_atoms(&self, e: ExprId) -> Vec<ExprId> {
+        let all = self.bool_atoms(e);
+        let mut out = Vec::with_capacity(all.len());
+        for a in all {
+            let inner = match self.kind(a).clone() {
+                ExprKind::Bin(_, x, y) => !self.bool_atoms(x).is_empty() || !self.bool_atoms(y).is_empty(),
+                ExprKind::Un(_, x) => !self.bool_atoms(x).is_empty(),
+                _ => false,
+            };
+            if !inner {
+                out.push(a);
+            }
+        }
+        out
+    }
+
+    fn split_rec(&mut self, e: ExprId, depth: u32, budget: &mut usize) -> Option<Vec<(Vec<(ExprId, bool)>, ExprId)>> {
+        if self.is_const(e).is_some() {
+            return Some(vec![(Vec::new(), e)]);
+        }
+        let atoms = self.leaf_atoms(e);
+        if atoms.is_empty() {
+            return Some(vec![(Vec::new(), e)]);
+        }
+        if atoms.len() > MAX_SPLIT_ATOMS || depth > MAX_SPLIT_DEPTH {
             return None;
         }
         let n = atoms.len();
         let total = 1usize << n;
+        if total > *budget {
+            return None;
+        }
+        *budget -= total;
         let mut results = Vec::with_capacity(total);
         for bitsv in 0..total {
             let mut map = BTreeMap::new();
@@ -1794,7 +1904,7 @@ impl ExprArena {
         let essential: Vec<usize> = (0..n)
             .filter(|&i| (0..total).any(|b| results[b] != results[b ^ (1 << i)]))
             .collect();
-        let mut out = Vec::with_capacity(1 << essential.len());
+        let mut out = Vec::new();
         for bitsv in 0..(1usize << essential.len()) {
             let mut full = 0usize;
             let mut assign = Vec::with_capacity(essential.len());
@@ -1805,7 +1915,16 @@ impl ExprArena {
                 }
                 assign.push((atoms[i], v));
             }
-            out.push((assign, results[full]));
+            let r = results[full];
+            if self.is_const(r).is_some() || self.bool_atoms(r).is_empty() {
+                out.push((assign, r));
+                continue;
+            }
+            for (sub, v) in self.split_rec(r, depth + 1, budget)? {
+                let mut a2 = assign.clone();
+                a2.extend(sub);
+                out.push((a2, v));
+            }
         }
         Some(out)
     }

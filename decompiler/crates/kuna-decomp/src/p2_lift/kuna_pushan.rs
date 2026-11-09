@@ -13,9 +13,9 @@
 //! (SSA, dead code, stack variables, types, structuring) does the paper's
 //! stage 2 and 3 on that program unchanged.
 //!
-//! `auto` (the default) devirtualizes a function whose first instruction is a
-//! direct transfer into an executable section other than its own — the stub a
-//! protector leaves at the original entry; `on` treats the requested function
+//! `auto` (the default) devirtualizes a function whose direct native flow
+//! reaches a branch or call into a separate executable section of at least
+//! 64 KiB — the stub a protector leaves at the original entry; `on` treats the requested function
 //! as protected regardless; `off` restores the plain flow.
 
 use std::cell::RefCell;
@@ -733,8 +733,12 @@ pub fn call_kills(fd: &Funcdata, addr: &Address, size: int4) -> bool {
     kills.iter().any(|&(o, s)| o <= lo && hi <= o.saturating_add(s.max(0) as u64))
 }
 
+/// Point the translator at `overlay`. Through the shared handle: taking the
+/// translator mutably resets per-image state other passes keep.
 fn install(arch: &mut Architecture, overlay: Option<Rc<PcodeOverlay>>) {
-    if let Some(s) = arch.translate_mut().as_sleigh_mut() {
-        s.set_pcode_overlay(overlay);
+    if let Some(s) = arch.translate().as_sleigh() {
+        if overlay.is_some() || s.pcode_overlay().is_some() {
+            s.set_pcode_overlay(overlay);
+        }
     }
 }

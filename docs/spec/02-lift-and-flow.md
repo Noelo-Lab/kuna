@@ -3309,3 +3309,224 @@ traps sit behind a `w0` compare and an `x0` bit test and stay, and plain-AArch64
 bytechunks of the real check, the same compare, a `mov x30` forgery in the
 guard block and in an earlier block, an `x30` load from a non-frame address, and
 a guard that traps when the bits agree).
+
+## 2.11 VM devirtualization (`pushan`)
+
+**(angr) `option pushan auto|on|off`, default auto,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushan.rs (prepare_flow)`.**
+A port of Pushan (Sudhir et al., "Pushan: Trace-Free Deobfuscation of
+Virtualization-Obfuscated Binaries", NDSS 2027; angr PR #7680) onto p-code.
+A function protected by a VM-based obfuscator (VMProtect, Themida) keeps only a
+stub at its original entry: it pushes some context and jumps into an
+interpreter in a section the protector added, which runs the function's
+bytecode. Without the option the flow follower lifts that stub and stops at the
+interpreter's computed dispatch, so the function decompiles to an empty body or
+to the interpreter's dispatch loop. With it, the flow follower is handed a
+different program: the protected function's own control flow, recovered by
+emulating the interpreter symbolically and emitted as synthetic p-code. Every
+later phase runs unchanged on that program, and it does the cleanup that the
+paper's stages 2 and 3 do (SSA, dead code, stack variables, types, structuring).
+x86 and x86-64 are supported; any other target reports a header warning and
+keeps the plain flow.
+
+**Detection.** `auto` devirtualizes a function only when the image has an
+executable section of at least 0x10000 bytes other than the one holding the
+entry, and the function's direct native flow reaches into such a section.
+`kuna_pushan.rs (detect_vm_entry)` walks fall-throughs, direct jumps and both
+sides of conditionals from the entry, without following calls, for up to 4096
+instructions. The first branch or call whose target lies in a large foreign
+code section is the VM entry. That covers both the stub a protector leaves at a
+whole-function entry and an SDK-marked region's `push imm; call vm_entry`.
+PLT stubs, init code and cold-text splits sit in smaller sections and never
+match. The sections come from the loader (`ArchTarget::new`, falling back to
+segments), so a raw image or an XML `<binaryimage>` reports none, and `auto`
+never fires on it. `on` skips the detection and devirtualizes the requested
+function. Under both values, an exploration that never reaches a block inside
+the interpreter (`vm_nodes == 0`) is discarded and the plain flow is used, so a
+false detection costs one exploration and changes nothing. `off` always uses
+the plain flow. A successful result is cached per entry on the architecture
+(`pushan_cache`), so re-decompiling the same function does not explore it again.
+
+**Exploration keys.** The flat graph is built by
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanflow.rs (Explorer)`. A
+node is a native address plus the virtual program counter (VPC) the
+interpreter holds when it gets there. As a result, every bytecode
+instruction's run through its handler is a separate block, and the graph is
+the protected program's control flow laid out flat through the interpreter.
+The VPC register is found as the paper describes. It is the general-purpose
+register a block dereferences, with a displacement of at most 16, into a
+256-byte window of the image whose byte entropy is at least 5.0 bits (the
+paper's bytecode test, `bytecode_like`). The register is kept while the
+interpreter keeps fetching through it and replaced when the interpreter moves
+the bytecode pointer to another register. A block with no fetch carries the
+last VPC forward. Outside the interpreter (a re-entry stub, an external
+call's return), the context sticks to the last VPC, salted with the return
+address that a dispatch call pushed, so two re-entry stubs never share the
+entry handler's node.
+
+**The emulator and the expression arena.** Each node is emulated one native
+instruction at a time over its SLEIGH p-code
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanemu.rs (Emulator)`).
+The state (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanstate.rs
+(State)`) is byte-granular: registers, temporaries and memory hold
+(expression, byte index) cells, so overlapping x86 sub-registers and
+mixed-width stack accesses compose exactly. Memory is split into regions by
+the address's symbolic base. Distinct symbolic bases never alias, which is the
+paper's stack assumption. Unwritten read-only memory reads the image, and
+unwritten symbolic memory and registers read a stable symbol, the same one on
+every path. Values live in a hash-consed DAG
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanexpr.rs (ExprArena)`)
+that normalizes every node as it is built. Constants fold.
+ADD/SUB/negate/multiply-by-constant chains collapse to one linear normal form
+over their non-linear atoms, so the interpreter's key arithmetic and
+obfuscated stack offsets cancel structurally. A known-bits lattice prunes masks,
+pushes them through shifts, and distributes truncations and zero-extensions
+over disjoint sums, which is how a `pushfq` flags word or a De Morgan mask
+over it stays decidable. A comparison of two offsets from the same pointer
+base is decided by the offsets. The entry stack pointer carries its ABI
+alignment as known bits. The entry values of the system flags (TF, IF, AC,
+ID and the rest) and of DF are fixed to their user-mode values, so
+anti-debugging checks fold.
+
+There is no path condition and no SMT solver. The exploration asks two
+questions: is this guard fixed, and which constants can this target take. Both
+are answered by a case split over the boolean atoms of the expression
+(`ExprArena::case_split`). The atoms are the comparisons and boolean variables
+the value depends on. They are substituted innermost first, so a comparison
+over flags that are computed from other flags folds under the inner
+assignment. An atom whose flip never changes the result is dropped, and a case
+that only fails through a shift or division made undefined by its own
+assignment is infeasible. The split is bounded at 10 atoms per level, 4
+nested levels and 4096 substitutions. A guard that folds takes one side. A
+guard that stays symbolic keeps both, as a native conditional. A computed
+target becomes a select over its enumerated destinations, each arm labelled
+with the atom values that choose it, and up to 16 arms. A load or store
+whose address selects between a few concrete locations becomes a select over
+those locations, which is the paper's two-valued VIP/key handling.
+
+**The symbolization fixpoint.** Exploration runs in rounds of at most 40
+(`Explorer::run`). When a later path reaches an existing node, its incoming
+state is compared with the node's recorded entry state
+(`State::diff_constants`). Following angr's merge rule, every location whose
+value differs is recorded against the node's key. A location is an aligned
+8-byte slot. A slot that is symbolic on both sides and differs in only one
+half is narrowed to that half, down to one byte, so a narrow variable sharing
+a slot with an unchanged neighbour does not take the neighbour with it. Each
+recorded location keeps the constants it was seen to hold (up to 32) and the
+bits all of them agreed on. The VPC register is part of the key and is never
+symbolized. The next round starts over. At a recorded node, each recorded
+location becomes a fresh symbol that carries the agreed known bits. The fixpoint
+is reached when a round records no new location, no new constant and no
+narrowed bits. A computed target of the form `symbol + k` over a symbolized
+location is enumerated over that location's recorded constants instead of
+atoms. A loop counter or a virtual register that differs between iterations
+therefore becomes a variable, while a value that is the same on every path
+stays a constant and keeps its handler resolved.
+
+**The virtual-PC fork.** An interpreter's conditional jump usually computes
+both successors and selects one arithmetically (a `cmov`, a masked add), so at
+the end of the handler the VPC register holds a value that depends on a guard,
+not a constant. `Explorer::fork_on_vpc` splits the state at that point, as
+angr's emulator does for a two-valued expression. For each of up to 4 VPC
+values, the deciding atoms are pinned to the assignment that produces it in a
+copy of the state. Each path then decodes its own bytecode with a concrete
+context. The node's exit becomes an atom-labelled select over those
+successors.
+
+**External calls.** A call into the foreign code section to an address that
+is not a known function is the interpreter's own dispatch. It is followed as a
+jump, salted as above. Every other call is not followed, and neither is a jump
+back into native code over a return address the interpreter has pushed (its
+`push ret; jmp f` call form). A jump to another function's entry is a tail
+call. `Explorer::apply_call_summary` models a call that is not followed. The return
+register gets a fresh call-result symbol. Each ABI scratch register (RCX,
+RDX, R8-R11 and the arithmetic flags on x86-64, ECX/EDX on x86) gets a
+call-clobber symbol. The return address is popped. The 16 bytes behind
+every pointer argument become unknown, because a `scanf("%d", &v)` writes
+`v`, and `v`'s old constant must not decide the branch that tests it.
+Emulation continues at the return address. On a Windows image
+(`ThreadBlock`) the segment register that addresses the thread block is
+fixed to a synthetic TEB, with a PEB, process heap and image base behind it,
+holding the values an ordinary undebugged process sees. The protector's TEB
+and PEB checks (debugger flags, heap flags, OS version, the block's own
+address) then fold instead of forking the exploration on an unknown.
+
+**Emission.** `decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanemit.rs
+(emit)` turns the graph into a
+`decompiler/crates/kuna-sleigh/src/kuna_pcodeoverlay.rs (PcodeOverlay)`. Each
+node becomes a run of synthetic instructions, one per native instruction it
+executed, at addresses past every mapped section (0x2000 bytes per node; the
+function entry address maps to the entry node). The native p-code is copied
+with these edits:
+
+- Control flow is rewritten to the resolved exits. A pruned conditional
+  becomes a jump. A dispatch call or `push; ret` becomes a jump. A return to
+  the caller stays a return, even with the entry stub's extra pops folded in.
+  A symbolic guard keeps its CBRANCH. A computed target that could not be
+  enumerated keeps its original op, and an unexplored node is a dead end.
+  Within a node where nothing forked, the executed path is emitted (loops
+  unrolled) and the decided internal branches are dropped.
+- Folding. A data op whose result the emulation fixed to a constant becomes a
+  COPY of that constant, which removes the bytecode fetches, key arithmetic and
+  handler addresses. The exception is a load from writable memory, which stays
+  a load, because the image value there is not a fact.
+- Stack-pointer rematerialization. A register result equal to the entry stack
+  pointer plus a constant is rebuilt as `sp + k` from the current stack
+  pointer. A stack access is addressed through such a rebuilt `sp + k`, which
+  undoes the obfuscated stack arithmetic that the paper's stage 3 repairs
+  later.
+- Dead-code elimination. Backward liveness runs over registers and the stack
+  bytes from -0x8000 to +0x1000 relative to the entry stack pointer. An
+  instruction dies when nothing it defines is read and it has no other effect.
+  Inside a live instruction, a stack store nobody reads dies with the address
+  arithmetic that fed it. A return keeps the return register and the
+  callee-saved registers, minus those the emulation proved still hold their
+  entry value. An external call keeps the argument registers and every stack
+  byte at or above its stack pointer (an escaped pointer can reach any of it),
+  and none below.
+- Undefined-argument placeholders. Before an external call, an argument
+  register that still holds its entry value, or an earlier call's leftovers, is
+  one the program never defined. The same applies to the return register at a
+  return, when the function merely restores the caller's value. Such a read is
+  rewritten as a read of a placeholder register (`undef_register`) that no
+  instruction writes, so the parameter analysis rejects it the way it rejects
+  an untouched register in native code, instead of inventing a parameter or a
+  return value.
+- Witness slots for selects. Each deciding atom of an atom-labelled select gets
+  a one-byte slot in a register range past the real registers. The emitted op
+  that computes the atom, or its negation, also copies it into the slot. When
+  every atom of a select has been witnessed, the exit is a chain of CBRANCHes on
+  the slot conjunctions, so the decompiler sees the program's own comparison
+  as the branch condition. Otherwise the exit compares the computed target
+  against each destination's native address.
+
+**How the decompiler consumes it.** `prepare_flow` is called by
+`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (generate_flow)`
+before the `FlowInfo` is built. It installs the overlay on the SLEIGH
+translator (`set_pcode_overlay`), which serves an overlay instruction's p-code
+and listing text before decoding any bytes. It also clears the function's
+declared extent, and the flow follower's mapped-byte checks accept overlay
+addresses. The function gets a header warning with the node, instruction and
+round counts, and an instruction budget of at least 4,000,000. A function
+that is not devirtualized gets the overlay cleared. The program's call-kill
+list (the scratch registers, the return register and the placeholders) is
+stored on the `Funcdata`, and `Heritage::guardCalls`
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs`) consults
+`kuna_pushan.rs (call_kills)` to turn an unknown effect on those registers
+into killed-by-call. The interpreter re-saves its whole context right after
+each call, reading registers the callee has just clobbered. With the
+prototype model's unknown effect, that read would look like a live use of the
+argument the caller placed there. After block generation,
+`kuna_pushan.rs (mark_undefined_copies)` marks every COPY out of a placeholder
+register as an incidental copy, so the parameter analysis walks through it to
+the placeholder itself, an input nothing wrote, instead of taking it as a real
+movement into the argument register.
+
+Pinned by `tests/stages/kuna-pushan.xml`. It runs two passes over the
+synthetic `pushan_vm_x86_64` fixture, a push/ret-dispatched stack-machine
+interpreter in a 64 KiB `.vmp0` whose bytecode computes `arg0 == 0 ? 7 :
+arg0 + 5` with a cmov-selected virtual branch. With `off`, the function is an
+empty body. With the default, the virtual branch and both returns are
+recovered. The expression arena and the state have unit tests in
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanexpr/tests.rs` and
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushanstate/tests.rs`.

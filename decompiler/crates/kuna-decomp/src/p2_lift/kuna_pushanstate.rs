@@ -224,6 +224,8 @@ pub struct Diff {
     pub entry_const: Option<u128>,
     /// The incoming value, when constant.
     pub incoming_const: Option<u128>,
+    /// Bits both sides agree on: (known-zero mask, known-one mask).
+    pub known: (u128, u128),
 }
 
 #[derive(Clone, Debug)]
@@ -322,9 +324,12 @@ impl State {
 
     /// Locations where `self` (the recorded entry state) and `other` (a new
     /// incoming state) disagree and at least one side is a constant.
+    /// Every location whose value differs between the two states, as angr's
+    /// merge reports it.  A location is an aligned 8-byte slot; a slot
+    /// symbolic on both sides whose difference sits in one half only is
+    /// narrowed to that half (down to a byte), so a narrow variable sharing a
+    /// slot with an unchanged neighbour does not take the neighbour with it.
     pub fn diff_constants(&mut self, other: &mut State, arena: &mut ExprArena, image: &dyn PushanImage) -> Vec<Diff> {
-        // Every location is compared as its aligned 8-byte slot, so a
-        // constant in one slot is never hidden by a symbolic neighbour.
         let mut out = Vec::new();
         let slots_of = |runs: Vec<(i128, u8)>| {
             let mut slots: Vec<i128> = Vec::new();
@@ -340,16 +345,37 @@ impl State {
             slots.sort_unstable();
             slots
         };
+        let record = |arena: &ExprArena, loc: SymLoc, a: ExprId, b: ExprId| {
+            let (za, oa) = arena.known_bits(a);
+            let (zb, ob) = arena.known_bits(b);
+            Diff {
+                loc,
+                values: arena.is_const(a).zip(arena.is_const(b)),
+                entry_const: arena.is_const(a),
+                incoming_const: arena.is_const(b),
+                known: (za & zb, oa & ob),
+            }
+        };
         for slot in slots_of(self.regs.diff_bytes(&other.regs)) {
-            let a = self.read_reg(arena, slot as u64, 8);
-            let b = other.read_reg(arena, slot as u64, 8);
-            if a != b && (arena.is_const(a).is_some() || arena.is_const(b).is_some()) {
-                out.push(Diff {
-                    loc: SymLoc { loc: Loc::Reg { off: slot as u64 }, size: 8 },
-                    values: arena.is_const(a).zip(arena.is_const(b)),
-                    entry_const: arena.is_const(a),
-                    incoming_const: arena.is_const(b),
-                });
+            let mut todo = vec![(slot, 8u8)];
+            while let Some((off, size)) = todo.pop() {
+                let a = self.read_reg(arena, off as u64, size);
+                let b = other.read_reg(arena, off as u64, size);
+                if a == b {
+                    continue;
+                }
+                let h = size / 2;
+                let split = size > 1 && arena.is_const(a).is_none() && arena.is_const(b).is_none() && {
+                    let lo_same = self.read_reg(arena, off as u64, h) == other.read_reg(arena, off as u64, h);
+                    let hi_same = self.read_reg(arena, (off + h as i128) as u64, h) == other.read_reg(arena, (off + h as i128) as u64, h);
+                    lo_same || hi_same
+                };
+                if split {
+                    todo.push((off + h as i128, h));
+                    todo.push((off, h));
+                } else {
+                    out.push(record(arena, SymLoc { loc: Loc::Reg { off: off as u64 }, size }, a, b));
+                }
             }
         }
         let bases: Vec<Option<VarId>> = self.mem.keys().chain(other.mem.keys()).copied().collect::<std::collections::BTreeSet<_>>().into_iter().collect();
@@ -357,15 +383,26 @@ impl State {
         for base in bases {
             let runs = self.mem.get(&base).unwrap_or(&empty).diff_bytes(other.mem.get(&base).unwrap_or(&empty));
             for slot in slots_of(runs) {
-                let a = self.read_mem(arena, image, base, slot, 8);
-                let b = other.read_mem(arena, image, base, slot, 8);
-                if a != b && (arena.is_const(a).is_some() || arena.is_const(b).is_some()) {
-                    out.push(Diff {
-                        loc: SymLoc { loc: Loc::Mem { base, off: slot }, size: 8 },
-                        values: arena.is_const(a).zip(arena.is_const(b)),
-                        entry_const: arena.is_const(a),
-                        incoming_const: arena.is_const(b),
-                    });
+                let mut todo = vec![(slot, 8u8)];
+                while let Some((off, size)) = todo.pop() {
+                    let a = self.read_mem(arena, image, base, off, size);
+                    let b = other.read_mem(arena, image, base, off, size);
+                    if a == b {
+                        continue;
+                    }
+                    let h = size / 2;
+                    let split = size > 1 && arena.is_const(a).is_none() && arena.is_const(b).is_none() && {
+                        let lo_same = self.read_mem(arena, image, base, off, h) == other.read_mem(arena, image, base, off, h);
+                        let hi_same =
+                            self.read_mem(arena, image, base, off + h as i128, h) == other.read_mem(arena, image, base, off + h as i128, h);
+                        lo_same || hi_same
+                    };
+                    if split {
+                        todo.push((off + h as i128, h));
+                        todo.push((off, h));
+                    } else {
+                        out.push(record(arena, SymLoc { loc: Loc::Mem { base, off }, size }, a, b));
+                    }
                 }
             }
         }
@@ -374,11 +411,21 @@ impl State {
 
     /// Replace each location by a stable fresh symbol; returns the symbols.
     pub fn symbolize(&mut self, arena: &mut ExprArena, node_tag: u64, locs: &[SymLoc]) -> Vec<(SymLoc, ExprId)> {
+        let with: Vec<(SymLoc, (u128, u128))> = locs.iter().map(|l| (*l, (0, 0))).collect();
+        self.symbolize_known(arena, node_tag, &with)
+    }
+
+    /// [`symbolize`](Self::symbolize) with the bits every observed value
+    /// agreed on, so fixed bits (a flag word's reserved and system bits, an
+    /// aligned pointer's low bits) still fold through the symbol.
+    pub fn symbolize_known(&mut self, arena: &mut ExprArena, node_tag: u64, locs: &[(SymLoc, (u128, u128))]) -> Vec<(SymLoc, ExprId)> {
         let mut out = Vec::with_capacity(locs.len());
-        for l in locs.iter() {
-            let tag = node_tag.wrapping_mul(0x9E3779B97F4A7C15) ^ loc_tag(&l.loc).rotate_left(7) ^ l.size as u64;
+        for (l, known) in locs.iter() {
+            let known_tag = ((known.0 ^ (known.1 << 1)) as u64).wrapping_mul(0xff51afd7ed558ccd);
+            let tag = node_tag.wrapping_mul(0x9E3779B97F4A7C15) ^ loc_tag(&l.loc).rotate_left(7) ^ l.size as u64 ^ known_tag;
             let node = (node_tag & 0xffff_ffff) as u32;
-            let v = arena.var_of(VarKind::Merged { node, tag }, l.size, false);
+            let boolean = l.size == 1 && matches!(l.loc, Loc::Reg { off } if off >= self.flag_regs.0 && off < self.flag_regs.1);
+            let v = arena.var_of_known(VarKind::Merged { node, tag }, l.size, boolean, *known);
             match l.loc {
                 Loc::Reg { off } => self.write_reg(off, v, l.size),
                 Loc::Mem { base, off } => self.write_mem(base, off, v, l.size),

@@ -370,3 +370,27 @@ fn negated_flag_terms_do_not_hide_mask_pruning() {
     let zsf = a.mk_un(CPUI_INT_ZEXT, sf, 8);
     assert_eq!(sfbit, a.mk_bin(CPUI_INT_MULT, zsf, m80, 8), "{}", a.fmt(sfbit));
 }
+
+#[test]
+fn known_bits_decide_a_flag_word_compare() {
+    use kuna_num::opcodes::OpCode::*;
+    let mut a = ExprArena::new();
+    let af = a.var(VarInfo::new(VarKind::InitReg { offset: 0x204 }, 1, true));
+    let z = a.mk_un(CPUI_INT_ZEXT, af, 2);
+    let k10 = a.cst(2, 0x10);
+    let m = a.mk_bin(CPUI_INT_MULT, z, k10, 2);
+    let one = a.cst(2, 1);
+    let x = a.mk_bin(CPUI_INT_OR, m, one, 2);
+    let x8 = a.mk_un(CPUI_INT_ZEXT, x, 8);
+    let nx = a.mk_un(CPUI_INT_NEGATE, x8, 8);
+    let k815 = a.cst(8, 0x815);
+    let andv = a.mk_bin(CPUI_INT_AND, nx, k815, 8);
+    let k280 = a.cst(8, 0x280);
+    let v = a.mk_bin(CPUI_INT_ADD, andv, k280, 8);
+    let nv = a.mk_un(CPUI_INT_NEGATE, v, 8);
+    let kmask = a.cst(8, 0xffff_ffff_ffff_ff7f);
+    let o = a.mk_bin(CPUI_INT_OR, nv, kmask, 8);
+    let all = a.cst(8, u64::MAX as u128);
+    let eq = a.mk_bin(CPUI_INT_EQUAL, o, all, 1);
+    assert_eq!(a.is_const(eq), Some(0), "{}", a.fmt(eq));
+}
