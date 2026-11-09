@@ -292,12 +292,13 @@ impl<'a> Explorer<'a> {
             cfg.escapes = self.escapes.iter().copied().collect();
             let n = cfg.nodes.len();
             self.log.push(format!(
-                "round {}: {} nodes, {} new symbolized locations, {} unresolved, {} halts",
+                "round {}: {} nodes, {} new symbolized locations, {} unresolved, {} halts, {:.1}s",
                 round + 1,
                 n,
                 self.new_syms,
                 self.stats.unresolved,
-                self.stats.halts
+                self.stats.halts,
+                self.started.elapsed().as_secs_f64()
             ));
             if self.new_syms == 0 && n == prev_nodes {
                 break;

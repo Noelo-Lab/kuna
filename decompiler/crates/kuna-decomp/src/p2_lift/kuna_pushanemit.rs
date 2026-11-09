@@ -615,6 +615,7 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
         em.stats.dead = d;
         em.stats.dead_ops = o;
     }
+    let mut lens: Vec<u64> = vec![1; cfg.nodes.len()];
     for (idx, node) in cfg.nodes.iter().enumerate() {
         let base = syn_addr(conf, idx as NodeId);
         let n = node.insns.len();
@@ -636,7 +637,13 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
             }
             continue;
         }
+        // Live instructions are laid out back to back: a dead one carries no
+        // op the decompiler would have to wade through.
+        let mut at = base;
         for (k, insn) in node.insns.iter().enumerate() {
+            if dead[idx][k] && k + 1 < n {
+                continue;
+            }
             let mut shared = false;
             let mut ops: Vec<OverlayOp> = if dead[idx][k] {
                 vec![em.nop_op()]
@@ -663,7 +670,7 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
             em.stats.insns += 1;
             em.stats.ops += ops.len();
             overlay.insns.insert(
-                base + k as u64,
+                at,
                 OverlayInsn {
                     ops,
                     length: 1,
@@ -671,9 +678,94 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
                     body: format!("{:#x} {}{}", insn.addr, insn.asm, if dead[idx][k] { " (dead)" } else { "" }),
                 },
             );
+            at += 1;
+        }
+        lens[idx] = at - base;
+    }
+    fuse_chains(&mut overlay, cfg, conf, &lens);
+    (overlay, em.stats)
+}
+
+/// The nodes `exit` continues at.
+fn successors(exit: &NodeExit) -> Vec<NodeId> {
+    match exit {
+        NodeExit::Branch(s) => vec![*s],
+        NodeExit::CondBranch { arms, fall } => arms.iter().map(|(_, t)| *t).chain(std::iter::once(*fall)).collect(),
+        NodeExit::Select { targets, .. } => targets.iter().map(|(_, t)| *t).collect(),
+        NodeExit::Call { ret, .. } => vec![*ret],
+        _ => Vec::new(),
+    }
+}
+
+/// Lay each run of nodes joined by an unconditional branch into a node no
+/// other path enters back to back, the branch dropped: the decompiler then
+/// reads one basic block where it would otherwise splice thousands (every
+/// splice restructures the whole graph).
+fn fuse_chains(overlay: &mut PcodeOverlay, cfg: &FlatCfg, conf: &EmitConfig, lens: &[u64]) {
+    let n = cfg.nodes.len();
+    let mut indeg = vec![0u32; n];
+    indeg[cfg.entry as usize] += 1;
+    for node in &cfg.nodes {
+        for s in successors(&node.exit) {
+            indeg[s as usize] += 1;
         }
     }
-    (overlay, em.stats)
+    let mut next: Vec<Option<usize>> = vec![None; n];
+    let mut is_next = vec![false; n];
+    for (i, node) in cfg.nodes.iter().enumerate() {
+        if let NodeExit::Branch(s) = node.exit {
+            let s = s as usize;
+            if s != i && s != cfg.entry as usize && indeg[s] == 1 && !cfg.nodes[s].insns.is_empty() {
+                next[i] = Some(s);
+                is_next[s] = true;
+            }
+        }
+    }
+    let mut addr: Vec<u64> = (0..n).map(|i| syn_addr(conf, i as NodeId)).collect();
+    let mut fused = vec![false; n];
+    let mut heads: Vec<usize> = (0..n).filter(|i| !is_next[*i]).collect();
+    while let Some(h) = heads.pop() {
+        let (mut cur, mut end) = (h, addr[h] + lens[h]);
+        while let Some(s) = next[cur] {
+            if end + lens[s] > addr[h] + conf.stride {
+                heads.push(s);
+                break;
+            }
+            addr[s] = end;
+            end += lens[s];
+            fused[cur] = true;
+            cur = s;
+        }
+    }
+    let span = n as u64 * conf.stride;
+    let node_of = |a: u64| (a >= conf.syn_base && a < conf.syn_base + span).then(|| (((a - conf.syn_base) / conf.stride) as usize, (a - conf.syn_base) % conf.stride));
+    let old = std::mem::take(&mut overlay.insns);
+    for (a, mut insn) in old {
+        let mut at = a;
+        if let Some((id, off)) = node_of(a) {
+            at = addr[id] + off;
+            if fused[id] && off + 1 == lens[id] {
+                let s = next[id].expect("fused node has a successor");
+                if insn.ops.last().is_some_and(|op| op.opc == CPUI_BRANCH && op.ins[0].offset == syn_addr(conf, s as NodeId)) {
+                    insn.ops.pop();
+                    if insn.ops.is_empty() {
+                        let nop = VarnodeData { space: Some(Rc::clone(&conf.unique)), offset: conf.scratch, size: 1 };
+                        let zero = VarnodeData { space: Some(Rc::clone(&conf.const_space)), offset: 0, size: 1 };
+                        insn.ops.push(OverlayOp { opc: CPUI_COPY, out: Some(nop), ins: vec![zero] });
+                    }
+                }
+            }
+        }
+        for op in insn.ops.iter_mut() {
+            if !matches!(op.opc, CPUI_BRANCH | CPUI_CBRANCH) || op.ins[0].space.as_ref().map(classify_space) != Some(Space::Ram) {
+                continue;
+            }
+            if let Some((id, 0)) = node_of(op.ins[0].offset) {
+                op.ins[0].offset = addr[id];
+            }
+        }
+        overlay.insns.insert(at, insn);
+    }
 }
 
 impl<'a> Emitter<'a> {
