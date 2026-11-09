@@ -1072,10 +1072,9 @@ those COPYs in the order upstream built them leaves every Varnode's readers in
 upstream's order. Only the pairs a later read sees build their COPY, and each
 reads the reached Varnode directly where upstream's chains the guard COPYs of
 consecutive LOADs. The read
-locations that branch-scope trimming (chapter 06, `guardedreadtrim`) records
-for the stack guard COPYs are recorded once per block and range
-(`kuna_stackreadscope.rs (mark_guarded_read)`). With the option off, every
-COPY is built as upstream builds it.
+locations that branch-scope trimming (chapter 06, `kuna_guardedreadtrim.rs`)
+records for the stack guard COPYs are recorded once per block and range
+(`kuna_stackreadscope.rs (mark_guarded_read)`).
 
 At `global`, the default, the LOAD guard runs and so does the global half of
 upstream's STORE guard (`heritage.rs (Heritage::guard_global_stores)`): every
@@ -3456,8 +3455,8 @@ hold that dead-code elimination immediately reinstates would prevent the main
 loop from converging; ordinary temporary holds keep their existing release rule.
 
 
-With `guardedreadtrim on`, a physical stack LOAD lowered by `RuleLoadVarnode`
-retains its original read block and byte range. Indexed frame LOAD guards also
+A physical stack LOAD lowered by `RuleLoadVarnode` retains its original read
+block and byte range. Indexed frame LOAD guards also
 record their conservative range when heritage creates the preserving COPY.
 When copy propagation binds that read to call-written frame memory, the call
 is associated with that provenance before the COPY is removed.
@@ -3530,7 +3529,7 @@ without any restart (§0.7): the next mainloop iteration simply re-heritages
 the smaller graph.
 
 
-`localstackviews` adds only positively proved local byte ranges to
+The bounded local policy (`kuna_localstackviews.rs`) adds only positively proved local byte ranges to
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackeffects.rs`.
 The native STORE hook exposes those ranges before the next heritage pass;
 waiting for dead-code preparation can incorrectly fold a later frame read

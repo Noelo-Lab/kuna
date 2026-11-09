@@ -1,4 +1,4 @@
-//! (kuna) Consolidate redundant copies of one value — the `hideshadow` option.
+//! (kuna) Consolidate redundant copies of one value.
 //!
 //! # The gap
 //!
@@ -51,9 +51,7 @@ use crate::action::ApplyResult;
 use crate::context::VarnodeId;
 use crate::funcdata::Funcdata;
 use crate::merge::MergeContext;
-use crate::options::on_or_off;
 use crate::varnode::varnode_flags;
-use kuna_base::error::KunaResult;
 
 /// Run `Merge::hideShadows` over every `HighVariable` with a written instance
 /// (C++ `ActionHideShadow::apply`, `coreaction.cc:4976-4995`).  Returns the
@@ -90,22 +88,3 @@ pub fn hide_shadow_copies(data: &mut Funcdata) -> ApplyResult {
     })
 }
 
-/// (kuna) Toggle the shadow-copy consolidation: `hideshadow on|off`.
-pub struct OptionHideShadow;
-
-impl OptionHideShadow {
-    /// The option name.
-    pub const NAME: &'static str = "hideshadow";
-
-    /// Parse `on|off` and return the resolved flag + confirmation message.  The
-    /// caller writes the flag into `Architecture::hide_shadow`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Shadow-copy consolidation turned {prop}")))
-    }
-}
-
-#[cfg(test)]
-#[path = "kuna_hideshadow/tests.rs"]
-mod tests;

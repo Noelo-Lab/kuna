@@ -1,4 +1,4 @@
-//! (kuna `reglocals`) A local the C declares outside the stack frame is a
+//! (kuna) A local the C declares outside the stack frame is a
 //! `kind: "register"` row of `decompile-all --json`'s `variables`, under its
 //! printed name and type and with the instructions that use it; the emitted C
 //! does not move.
@@ -7,11 +7,11 @@ use crate::common;
 use serde_json::Value;
 use std::process::Command;
 
-fn run(reglocals: &str, jobs: &str) -> Value {
-    run_on("aliasoverlap_x86_64", "inside,indexed", reglocals, jobs)
+fn run(jobs: &str) -> Value {
+    run_on("aliasoverlap_x86_64", "inside,indexed", jobs)
 }
 
-fn run_on(fixture: &str, functions: &str, reglocals: &str, jobs: &str) -> Value {
+fn run_on(fixture: &str, functions: &str, jobs: &str) -> Value {
     let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args([
             "decompile-all",
@@ -21,9 +21,6 @@ fn run_on(fixture: &str, functions: &str, reglocals: &str, jobs: &str) -> Value 
             "--jobs",
             jobs,
             "--json",
-            "--option",
-            "reglocals",
-            reglocals,
             "--sleighpath",
         ])
         .arg(common::repo_root().join("specs"))
@@ -48,7 +45,7 @@ fn rows<'a>(f: &'a Value, kind: &str) -> Vec<&'a Value> {
 
 #[test]
 fn a_register_local_is_reported_under_its_declaration_with_its_uses() {
-    let doc = run("on", "1");
+    let doc = run("1");
     let f = function(&doc, "inside");
     let code = f["code"].as_str().expect("code");
     let lines: Vec<&str> = code.lines().collect();
@@ -79,22 +76,8 @@ fn a_register_local_is_reported_under_its_declaration_with_its_uses() {
 }
 
 #[test]
-fn reglocals_moves_only_the_variables_array() {
-    let (on, off) = (run("on", "1"), run("off", "1"));
-    for name in ["inside", "indexed"] {
-        let (a, b) = (function(&on, name), function(&off, name));
-        assert_eq!(a["code"], b["code"], "{name}: the emitted C moved");
-        assert!(rows(b, "register").is_empty(), "{b}");
-        assert!(!rows(a, "register").is_empty(), "{a}");
-        let frame: Vec<&Value> = a["variables"].as_array().unwrap().iter().filter(|v| v["kind"] != "register").collect();
-        let before: Vec<&Value> = b["variables"].as_array().unwrap().iter().collect();
-        assert_eq!(frame, before, "{name}: a parameter or frame row moved");
-    }
-}
-
-#[test]
 fn a_worker_process_reports_the_same_register_rows() {
-    let (serial, workers) = (run("on", "1"), run("on", "2"));
+    let (serial, workers) = (run("1"), run("2"));
     for name in ["inside", "indexed"] {
         assert_eq!(function(&serial, name)["variables"], function(&workers, name)["variables"], "{name}");
     }
@@ -102,7 +85,7 @@ fn a_worker_process_reports_the_same_register_rows() {
 
 #[test]
 fn a_register_array_is_spelled_like_a_frame_array() {
-    let doc = run_on("argclobber_pair_x86_64", "sub_401010", "on", "1");
+    let doc = run_on("argclobber_pair_x86_64", "sub_401010", "1");
     let f = function(&doc, "sub_401010");
     let code = f["code"].as_str().expect("code");
     assert!(code.contains("char v1 [16]; // rdx:rax"), "{code}");
@@ -114,7 +97,7 @@ fn a_register_array_is_spelled_like_a_frame_array() {
 
 #[test]
 fn a_declaration_the_c_places_on_the_stack_is_not_a_register_row() {
-    let doc = run_on("arraycoverwidth_x86_64", "vm", "on", "1");
+    let doc = run_on("arraycoverwidth_x86_64", "vm", "1");
     let f = function(&doc, "vm");
     let code = f["code"].as_str().expect("code");
     assert!(code.contains("char v1 [16]; // stack - 0x38"), "{code}");

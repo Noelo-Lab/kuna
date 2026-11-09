@@ -2707,8 +2707,7 @@ mod w10_printc_cast_render {
                 type_metatype::TYPE_FLOAT
             );
             let mut arch = bare_arch();
-            arch.decl_high_type = true;
-            assert!(crate::kuna_bitcast::truncated_float_storage(&fd, true, op).is_some());
+            assert!(crate::kuna_bitcast::truncated_float_storage(&fd, op).is_some());
             for lang in ["c", "rust"] {
                 let mut printer = PrintC::new();
                 printer.set_name(lang);

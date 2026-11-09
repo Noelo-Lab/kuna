@@ -1,4 +1,4 @@
-//! Unit tests for the `declhightype` type-representative ordering.
+//! Unit tests for the merged-local type-representative ordering.
 //!
 //! The shapes are the witness's: one merged RAX carrying a `char *` from a call
 //! return, an `unsigned long long *` from a pointer computation, and an integer.
@@ -85,9 +85,3 @@ fn an_unresolvable_member_is_skipped() {
 }
 
 /// The option parses `on`/`off` and refuses anything else.
-#[test]
-fn the_option_parses_on_and_off_only() {
-    assert_eq!(OptionDeclHighType.apply("on").unwrap().0, true);
-    assert_eq!(OptionDeclHighType.apply("off").unwrap().0, false);
-    assert!(OptionDeclHighType.apply("maybe").is_err());
-}

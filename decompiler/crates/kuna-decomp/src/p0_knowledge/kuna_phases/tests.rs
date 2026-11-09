@@ -649,7 +649,6 @@ fn option_values_live_value_present_for_189() {
                             | "returndup"
                             | "orchain"
                             | "rettriangle"
-                            | "clonephiorder"
                             | "earlyreturn"
                             | "switchreturn"
                             | "loopbreak_recovery"
@@ -741,11 +740,8 @@ fn option_values_live_value_present_for_189() {
                             // (kuna) `bejoinpass` likewise (`off|whole|high`);
                             // its live value is `Architecture::be_join_pass`.
                             | "bejoinpass"
-                            | "arraycoverwidth"
                             | "bytearrayc"
-                            | "emptystrconst"
-                            // (kuna) `structdefs` is a PrintC option like
-                            // `arraycoverwidth`/`emptystrconst` above: its live
+                            // (kuna) `structdefs` is a PrintC option: its live
                             // state is `PrintC::options.struct_defs`, which the
                             // codegen live reader (an `Architecture` bool
                             // member) cannot reach.
@@ -754,7 +750,6 @@ fn option_values_live_value_present_for_189() {
                             // `PrintC::options.global_ref`.
                             | "globalref"
                             | "callsitestackargs"
-                            | "protoranges"
                             | "varargstackargs"
                             | "varargforward"
                             | "calleearity"

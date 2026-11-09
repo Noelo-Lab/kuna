@@ -34,7 +34,7 @@
 //! | `ActionMarkIndirectOnly` | `"markindirectonly"` | `rule_onceperfunc` | `data.markIndirectOnly()` (stub) |
 //! | `ActionMergeAdjacent` | `"mergeadjacent"` | `rule_onceperfunc` | `merge.mergeAdjacent()` (stub) |
 //! | `ActionMergeType` | `"mergetype"` | `rule_onceperfunc` | `merge.mergeByDatatype(beginLoc,endLoc)` (stub) |
-//! | `ActionHideShadow` | `"hideshadow"` | `rule_onceperfunc` | `coreaction.cc:4976` (option `hideshadow`) |
+//! | `ActionHideShadow` | `"hideshadow"` | `rule_onceperfunc` | `coreaction.cc:4976` |
 //! | `ActionCopyMarker` | `"copymarker"` | `rule_onceperfunc` | `merge.markInternalCopies()` (stub) |
 //! | `ActionNameVars` | `"namevars"` | `rule_onceperfunc` | `coreaction.cc:3076` (stub) |
 //! | `ActionSetCasts` | `"setcasts"` | `rule_onceperfunc` | `coreaction.cc:2812` (stub) |
@@ -1992,12 +1992,6 @@ impl Action for ActionHideShadow {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:4976 — ActionHideShadow::apply
-        //
-        // (kuna) option `hideshadow`: OFF reproduces the historical stub exactly
-        // (no walk, no change), ON runs the upstream body.
-        if !data.get_arch().hide_shadow {
-            return 0;
-        }
         self.base.count += crate::kuna_hideshadow::hide_shadow_copies(data);
         0
     }

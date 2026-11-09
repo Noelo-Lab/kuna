@@ -892,7 +892,7 @@ impl PrintC {
             {
                 return Rc::clone(ty);
             }
-            if let Some(ty) = crate::printc::declared_variable_type(fd, arch.decl_high_type, vn) {
+            if let Some(ty) = crate::printc::declared_variable_type(fd, vn) {
                 return ty;
             }
         }

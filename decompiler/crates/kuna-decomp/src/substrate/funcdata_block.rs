@@ -4279,9 +4279,7 @@ impl CloneBlockOps {
             ops.push(o);
             cur = data.obank().get(o).expect("cloneBlock: stale op").basic_neighbours().1;
         }
-        if data.get_arch().clone_phi_order {
-            crate::p8_structure::kuna_clonephiorder::order_global_phis(data, &mut ops);
-        }
+        crate::p8_structure::kuna_clonephiorder::order_global_phis(data, &mut ops);
         for orig_op in ops {
             let clone_op = match self.build_op_clone(data, orig_op)? {
                 Some(c) => c,

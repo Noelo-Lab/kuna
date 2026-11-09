@@ -3050,7 +3050,7 @@ diamonds around every check. The abstraction does not specify OS handler
 dispatch or resumable exception state. Both operand widths preserve the checks
 instead of lifting to an empty operation list.
 
-With `localstackviews`, the `FlowEmit::dump` seam in
+For the bounded local policy (`kuna_localstackviews.rs`), the `FlowEmit::dump` seam in
 `decompiler/crates/kuna-decomp/src/p2_lift/flow.rs` records original STORE and
 persistent memory COPY identities for the bounded P6 policy. Register COPYs do
 not contribute. Generational operation identity and original receiver storage

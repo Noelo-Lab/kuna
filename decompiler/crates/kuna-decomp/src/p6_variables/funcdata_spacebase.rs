@@ -590,8 +590,7 @@ impl Funcdata {
             // MapState clears the proto's param range out of the analysis range;
             // restructureVarnode passes (getRangeTree, proto.getParamRange()).
             let rangetree = lm.range_tree_clone();
-            let param_range =
-                self.get_func_proto().param_range(self.get_arch().proto_ranges).clone();
+            let param_range = self.get_func_proto().get_param_range().clone();
             let types = match self.get_arch().types() {
                 Some(t) => t,
                 None => return 0,
@@ -601,7 +600,7 @@ impl Funcdata {
                 Ok(t) => t,
                 Err(_) => return 0,
             };
-            let bounds = proto_boundaries(self.get_func_proto(), self.get_arch().proto_ranges);
+            let bounds = proto_boundaries(self.get_func_proto());
             (space, rangetree, param_range, default_unknown, bounds)
         };
 
@@ -684,14 +683,11 @@ impl Funcdata {
             self.annotate_raw_stack_ptr(&space);
         }
 
-        // (kuna `framelayout`) Fold this pass's layout into the running union, so a
+        // (kuna framelayout) Fold this pass's layout into the running union, so a
         // slot a later pass's dataflow folds away is still reportable on the
         // `decompile-all --json` `variables` surface.  Union only -- nothing here
-        // feeds back into the IR or the emitted C.
-        // Recorded unconditionally (one BTreeMap insert per stack symbol per pass);
-        // the `framelayout` option gates the REPORTING, in `extract_variables`,
-        // which is the only reader.  The config `Architecture` carrying that option
-        // is not reachable from the per-function `ArchContext` seam here.
+        // feeds back into the IR or the emitted C; `extract_variables` is the
+        // only reader.
         self.record_frame_layout_pass(&space);
         rebased
     }
@@ -716,9 +712,7 @@ impl Funcdata {
             slots.push((off, crate::funcdata::FrameSlot { name, dtype: ct, size }));
         }
         self.record_frame_slots(slots);
-        if self.get_arch().slot_ptr {
-            crate::kuna_slotptr::record_pass(self, space);
-        }
+        crate::kuna_slotptr::record_pass(self, space);
     }
 
     /// C++ `ScopeLocal::checkUnaliasedReturn` (`varmap.cc:414-428`): if the return
@@ -1490,15 +1484,12 @@ fn addr_eq(a: &Address, b: &Address) -> bool {
 /// Extract the four `deriveBoundaries` inputs from a function prototype (C++
 /// `AliasChecker::deriveBoundaries`'s reads of `proto.hasModel()` + the first
 /// local / last param `Range`s).  `None` when the prototype has no model.
-fn proto_boundaries(
-    proto: &crate::fspec::FuncProto,
-    spec_ranges: bool,
-) -> Option<crate::varmap::ProtoBoundaries> {
+fn proto_boundaries(proto: &crate::fspec::FuncProto) -> Option<crate::varmap::ProtoBoundaries> {
     if !proto.has_model() {
         return None;
     }
-    let localrange = proto.local_range(spec_ranges);
-    let paramrange = proto.param_range(spec_ranges);
+    let localrange = proto.get_local_range();
+    let paramrange = proto.get_param_range();
     let local = localrange.get_first_range();
     let param = paramrange.get_last_range();
     let has_local_first = local.is_some();
@@ -1563,7 +1554,7 @@ impl Funcdata {
     /// Returns `None` if there is no stack space (no possible local alias).
     pub(crate) fn build_alias_checker_deferred(&self) -> Option<crate::varmap::AliasChecker> {
         let stackspc = self.get_arch().manage().get_stack_space().map(Rc::clone)?;
-        let bounds = proto_boundaries(self.get_func_proto(), self.get_arch().proto_ranges);
+        let bounds = proto_boundaries(self.get_func_proto());
         let mut checker = crate::varmap::AliasChecker::new();
         let mut access = self.alias_gather_access();
         checker.gather(stackspc, bounds.as_ref(), true, &mut access);

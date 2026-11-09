@@ -799,14 +799,13 @@ What the split cannot recover is where a store sat once copy propagation folded
 its value into the phi (`RulePropagateCopy` lets a non-constant value into a
 MULTIEQUAL, and the store then dies). The clone's copy of that phi is the store,
 at the start of the clone, after every store the predecessor kept; several such
-stores print in the order the phis are cloned. That order is the
-`clonephiorder` decision point,
-`decompiler/crates/kuna-decomp/src/p8_structure/kuna_clonephiorder.rs (order_global_phis)`:
-on (the default) clones the phis on globals after the others and in address
+stores print in the order the phis are cloned. That order is set by
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_clonephiorder.rs (order_global_phis)`,
+always on: the phis on globals are cloned after the others and in address
 order, which is how kuna printed most of these stores before the clone kept its
-guards' flag; off clones them in block order, the reverse of heritage's
-placement (heritage inserts each phi at the block start in ascending address
-order, so one pass's phis end up in descending address order). Only the clone is reordered: the original block keeps its op order,
+guards' flag. Block order would be the reverse of heritage's placement
+(heritage inserts each phi at the block start in ascending address order, so
+one pass's phis end up in descending address order). Only the clone is reordered: the original block keeps its op order,
 which merging also reads (reordering its phis too printed bash
 `get_urandom32`'s seed store inside the loop it leaves). Neither order comes
 from the binary. Over 140 corpus binaries the two

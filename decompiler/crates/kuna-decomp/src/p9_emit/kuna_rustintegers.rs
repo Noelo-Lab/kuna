@@ -86,7 +86,7 @@ impl PrintC {
         {
             return Some(Rc::clone(ty));
         }
-        crate::printc::declared_variable_type(fd, arch.decl_high_type, value)
+        crate::printc::declared_variable_type(fd, value)
     }
 
     pub(crate) fn rust_integer_value_type(

@@ -107,7 +107,6 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.memset_recover);
     assert!(arch.ov_less_simplify);
     assert!(arch.fold_boolean_mask);
-    assert!(arch.input_varnode_adjust);
     assert!(arch.fold_flag_compare);
     assert!(arch.recover_array_stride);
     assert!(arch.recover_lowered_switch);
@@ -476,20 +475,6 @@ fn loopcounterstore_defaults_on_and_toggles() {
     arch.set_kuna_option("loopcounterstore", "on").unwrap();
     assert!(arch.loop_counter_store);
     assert!(arch.set_kuna_option("loopcounterstore", "maybe").is_err());
-}
-
-/// (kuna) `tiedphitrim` (DIV-182): ships default-ON, toggles by name and
-/// refuses a bogus value.
-#[test]
-fn tiedphitrim_defaults_on_and_toggles() {
-    let mut arch = Architecture::new("t", bare_sleigh());
-    arch.reset_defaults_internal();
-    assert!(arch.tied_phi_trim, "tiedphitrim ships default-ON (DIV-182)");
-    arch.set_kuna_option("tiedphitrim", "off").unwrap();
-    assert!(!arch.tied_phi_trim);
-    arch.set_kuna_option("tiedphitrim", "on").unwrap();
-    assert!(arch.tied_phi_trim);
-    assert!(arch.set_kuna_option("tiedphitrim", "maybe").is_err());
 }
 
 /// (kuna) `jumptablemax`: ships at upstream's 1024, takes a positive decimal

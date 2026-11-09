@@ -149,7 +149,7 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
                     .ok()?
             }
         } else {
-            crate::printc::declared_variable_type(fd, fd.get_arch().decl_high_type, input)
+            crate::printc::declared_variable_type(fd, input)
                 .unwrap_or_else(|| fd.vn_type_read_facing(input, op))
         };
         if scalar(&ty) && ty.get_size() == size {
@@ -302,7 +302,7 @@ pub(super) fn memmove_source(
         if value.is_constant() {
             return Some(false);
         }
-        let ty = crate::printc::declared_variable_type(fd, fd.get_arch().decl_high_type, vn)
+        let ty = crate::printc::declared_variable_type(fd, vn)
             .unwrap_or_else(|| fd.vn_type_read_facing(vn, op));
         Some(
             ty.get_metatype() == type_metatype::TYPE_PTR

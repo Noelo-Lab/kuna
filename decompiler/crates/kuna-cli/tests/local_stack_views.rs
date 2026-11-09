@@ -30,14 +30,13 @@ fn escaped_publications(code: &str) -> usize {
         .count()
 }
 
-fn decompile(image: &Path, function: &str, enabled: bool, contracts: &[String]) -> String {
-    decompile_with_views(image, function, enabled, contracts, false)
+fn decompile(image: &Path, function: &str, contracts: &[String]) -> String {
+    decompile_with_views(image, function, contracts, false)
 }
 
 fn decompile_with_views(
     image: &Path,
     function: &str,
-    enabled: bool,
     contracts: &[String],
     full_views: bool,
 ) -> String {
@@ -65,9 +64,6 @@ fn decompile_with_views(
             "--sleighpath",
         ])
         .arg(common::repo_root().join("specs"));
-    if !enabled {
-        command.args(["--option", "localstackviews", "off"]);
-    }
     for contract in contracts {
         command.args(["--assert", contract]);
     }
@@ -79,15 +75,13 @@ fn decompile_with_views(
     .expect("bounded local-view decompilation");
     assert!(
         output.status.success(),
-        "{function}, localstackviews={enabled}: {}",
+        "{function}: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(document["functions"][0]["error"].is_null(), "{document}");
     let code = document["functions"][0]["code"].as_str().unwrap();
-    if enabled {
-        assert!(!code.contains("WARNING:"), "{code}");
-    }
+    assert!(!code.contains("WARNING:"), "{code}");
     code.to_owned()
 }
 
@@ -302,13 +296,9 @@ fn optimized_pair_handle_lifetimes_preserve_constant_register_partial_and_branch
             ("local_partial", &[("", 92)][..]),
             ("local_branch", &[("0", 67), ("1", 162), ("-1", 162)][..]),
         ] {
-            let enabled = decompile(&image, function, true, &contracts);
+            let enabled = decompile(&image, function, &contracts);
             assert!(enabled.contains("union stack_views_"), "{enabled}");
             execute_emitted(&compilers, &image, function, cases, &enabled);
-            let disabled = decompile(&image, function, false, &contracts);
-            assert!(!disabled.contains("union stack_views_"), "{disabled}");
-            assert!(disabled.contains("read_pair("), "{disabled}");
-            assert!(disabled.contains("read_handle("), "{disabled}");
         }
         std::fs::remove_file(image).unwrap();
     }
@@ -330,7 +320,7 @@ fn permanent_stack_lifetimes_keep_escaped_pointers_and_simultaneous_views() {
         ("escaped_object_reuse", 122),
         ("simultaneous_views", 56),
     ] {
-        let enabled = decompile(&image, function, true, &contracts);
+        let enabled = decompile(&image, function, &contracts);
         if function != "escaped_alias" {
             assert!(enabled.contains("union stack_views_"), "{enabled}");
         }
@@ -338,8 +328,6 @@ fn permanent_stack_lifetimes_keep_escaped_pointers_and_simultaneous_views() {
             assert_eq!(escaped_publications(&enabled), 1, "{enabled}");
         }
         execute_emitted(&compilers, &image, function, &[("", expected)], &enabled);
-        let disabled = decompile(&image, function, false, &contracts);
-        assert!(!disabled.contains("union stack_views_"), "{disabled}");
     }
 }
 
@@ -349,9 +337,7 @@ fn shifted_declared_objects_decline_without_splitting_prior_storage() {
     common::process::required_output(&mut Command::new(&image));
     let contracts = vec![format!("@{}.kuna", image.display())];
     for function in ["obj_global_shifted", "obj_volatile_shifted"] {
-        let enabled = decompile(&image, function, true, &contracts);
-        let disabled = decompile(&image, function, false, &contracts);
-        assert_eq!(enabled, disabled, "{function}");
+        let enabled = decompile(&image, function, &contracts);
         assert!(!enabled.contains("union stack_views_"), "{enabled}");
     }
 }
@@ -359,9 +345,7 @@ fn shifted_declared_objects_decline_without_splitting_prior_storage() {
 #[test]
 fn qualified_nominal_types_decline_automatic_views() {
     let image = PathBuf::from(common::fixture("dwarfvariants_x86_64"));
-    let enabled = decompile(&image, "fx::_start", true, &[]);
-    let disabled = decompile(&image, "fx::_start", false, &[]);
-    assert_eq!(enabled, disabled);
+    let enabled = decompile(&image, "fx::_start", &[]);
     assert!(!enabled.contains("union stack_views_"), "{enabled}");
 }
 
@@ -385,7 +369,7 @@ fn escaped_scalar_writes_reach_every_observer_and_readback() {
         ("escaped_branch", &[("0", 7), ("1", 5), ("-1", 5)][..], 1),
         ("callback_rewrite", &[("set_seven", 7)][..], 0),
     ] {
-        let enabled = decompile(&image, function, true, &contracts);
+        let enabled = decompile(&image, function, &contracts);
         assert_eq!(escaped_publications(&enabled), publications, "{enabled}");
         execute_emitted(&compilers, &image, function, cases, &enabled);
         let disabled = decompile(&image, function, false, &contracts);
@@ -513,7 +497,7 @@ fn escaped_ranges_preserve_valid_accesses_and_decline_crossing_reads_and_stores(
         ));
     }
     for function in functions {
-        let enabled = decompile(&image, function, true, &contracts);
+        let enabled = decompile(&image, function, &contracts);
         if matches!(function, "local_range_valid" | "local_range_read_valid") {
             let wrapper = format!(
                 "{enabled}\nint local_range_check(void) {{ {} return 0; }}\n",
@@ -527,16 +511,8 @@ fn escaped_ranges_preserve_valid_accesses_and_decline_crossing_reads_and_stores(
                 &wrapper,
             );
         }
-        let disabled = decompile(&image, function, false, &contracts);
-        assert!(!disabled.contains("union stack_views_"), "{disabled}");
         if !matches!(function, "local_range_valid" | "local_range_read_valid") {
-            assert_eq!(enabled, disabled, "{function}");
             assert!(!enabled.contains("union stack_views_"), "{enabled}");
-        }
-        if function == "local_range_read_cross" {
-            let full = decompile_with_views(&image, function, true, &contracts, true);
-            let prior = decompile_with_views(&image, function, false, &contracts, true);
-            assert_eq!(full, prior);
         }
     }
     std::fs::remove_file(image).unwrap();

@@ -718,10 +718,6 @@ pub struct ArchContext {
     pub max_term_duplication: int4,
     /// (kuna) GH-6990: keep only the first return register (C++ `return_single`).
     pub return_single: bool,
-    /// (kuna GH-9218) When adjusting an unjustified input parameter container,
-    /// also absorb an overlapping input that extends ABOVE the container's end
-    /// (forward scan in `ActionUnjustifiedParams`).  C++ `input_varnode_adjust`.
-    pub input_varnode_adjust: bool,
     /// (kuna) Keep a returned register half whose value is a formal input
     /// parameter, instead of dropping it as uncomputed leftover
     /// (`option retinputhalf`); read by [`crate::kuna_retinputhalf`].
@@ -818,14 +814,6 @@ pub struct ArchContext {
     /// by [`PrintC::emit_local_var_decls`](crate::printc); `option dedupvardecls`,
     /// default-off (angr-inspired, S9).
     pub dedup_var_decls: bool,
-    /// (kuna) Do not declare an `&parameter` reference as a body local; also lets
-    /// the `variables` JSON surface attribute the reference to the parameter.
-    /// `option paramrefdecl`, mirrored from
-    /// [`Architecture::param_ref_decl`](crate::architecture::Architecture).
-    pub param_ref_decl: bool,
-    /// `option declhightype`, mirrored from
-    /// [`Architecture::decl_high_type`](crate::architecture::Architecture).
-    pub decl_high_type: bool,
     /// (kuna) GH-558: present canonicalized `INT_LESS(x, c+1)` comparisons in
     /// their original `x <= c` form (C++ `present_lessequal`, DIV-2 default-on).
     /// Read by [`ActionPresentCompareForm`](crate::kuna_compareform::ActionPresentCompareForm).
@@ -973,12 +961,6 @@ pub struct ArchContext {
     /// (kuna `elemptr`) The sections a program's data objects live in, sorted and
     /// inclusive; the `globalref` ranges, copied from the Architecture.
     pub elem_ptr_ranges: std::rc::Rc<Vec<(u64, u64)>>,
-    /// (kuna `slotptr`) Record what each `restructure_varnode` pass sees stored
-    /// into the stack frame; mirrors
-    /// [`Architecture::slot_ptr`](crate::architecture::Architecture).
-    /// Read by `Funcdata::record_frame_layout_pass`; the evidence is consumed by
-    /// [`kuna_slotptr`](crate::p6_variables::kuna_slotptr).
-    pub slot_ptr: bool,
     /// (kuna `libctypes`) The named libc aggregate tables are on.  Copied from
     /// [`Architecture::analysis_libctypes`](crate::architecture::Architecture);
     /// read by [`kuna_libcfit`](crate::p5_types::kuna_libcfit), which holds a
@@ -1010,9 +992,6 @@ pub struct ArchContext {
     /// Read by [`check_input_trial_use`](crate::funcdata_callsite::check_input_trial_use)
     /// through [`crate::p4_calls::kuna_callsitestackargs::outside_caller_local_range`].
     pub callsite_stack_args: bool,
-    /// (kuna) `protoranges`: read the prototype's spec stack ranges rather than
-    /// the defaults (see [`crate::fspec::ProtoModel::local_range`]).
-    pub proto_ranges: bool,
     /// (kuna) an unread zero element right after an open stack character array
     /// is its terminator (`nulterminator`).  Read by
     /// [`Funcdata::gather_varnodes`](crate::funcdata_spacebase) for
@@ -1287,8 +1266,6 @@ pub struct ArchContext {
     pub stack_alias_deadstore: bool,
     /// Operation-specific typed views over shared physical frame storage.
     pub stack_views: bool,
-    /// Bounded native local storage and declared pointer views.
-    pub local_stack_views: bool,
     /// (kuna `libcnames`) Name locals from the library calls they meet.
     /// See [`crate::kuna_libcnames`].
     pub libc_names: bool,
@@ -1303,8 +1280,6 @@ pub struct ArchContext {
     /// vanishing from the emitted C.  Read by
     /// [`crate::p3_dataflow::kuna_tiedstorekeep::declines`].
     pub tied_store_keep: bool,
-    /// Preserve guarded stack-read scope when inserting merge trims.
-    pub guarded_read_trim: bool,
     /// (kuna) `option loopcounterstore` (default-on, DIV-146): refuse the
     /// `RulePropagateCopy` marker propagation that would delete the write-back
     /// of a loop counter living in an address-tied frame slot, so the counter's
@@ -1330,10 +1305,6 @@ pub struct ArchContext {
     /// conversion's rounding through `RuleFloatCast` and `SubfloatFlow`. Read
     /// by [`crate::p3_dataflow::kuna_intfloatround`].
     pub int_float_round: bool,
-    /// (kuna) `option tiedphitrim` (default-on, DIV-182): `Merge::mergeOp` trims a
-    /// loop head's direct read of an aliased location out of the forced merge.
-    /// Read through `MergeContext::kuna_tied_phi_trim`.
-    pub tied_phi_trim: bool,
     /// (kuna) `splitstorekeep` — carry `stack_store` onto refinement pieces.
     pub split_store_keep: bool,
     /// (kuna) `pairrefine` — refine integer register pairs at their midpoint.
@@ -1521,10 +1492,6 @@ pub struct ArchContext {
     /// one-block `if` -- see `Architecture::returndup_triangle`.  Read by
     /// `Funcdata::returndup_apply`.
     pub returndup_triangle: bool,
-    /// (kuna) `clonephiorder`: clone a return block's phis on globals last and in
-    /// address order -- see `Architecture::clone_phi_order`.  Read by
-    /// `CloneBlockOps::clone_block`.
-    pub clone_phi_order: bool,
     /// (kuna) `paramcopyhoist`: anchor an unmodified incoming parameter's trim COPY
     /// in the entry block rather than at the MULTIEQUAL slot's predecessor tail —
     /// see `Architecture::param_copy_hoist`.  Read by
@@ -1558,14 +1525,10 @@ pub struct ArchContext {
     /// `check_implied_cover`'s inflate arm (option `foldcallretphi`,
     /// default-on).  Read by `check_implied_cover`.
     pub fold_call_ret_phi: bool,
-    pub fpu_trunc_views: bool,
     /// (kuna) Run `Funcdata::markIndirectOnly` instead of the inert stub
     /// (option `indirectonly`, opt-in default-off).  Read by
     /// `ActionMarkIndirectOnly`.
     pub mark_indirect_only: bool,
-    /// (kuna) Consolidate redundant copies of one value in the merge phalanx
-    /// (option `hideshadow`, default-on).  Read by `ActionHideShadow`.
-    pub hide_shadow: bool,
     /// (kuna) strip the glibc -fstack-protector canary epilogue (C++
     /// `strip_stack_guard`, opt-in default-off).  Read by
     /// [`crate::kuna_stackguard`]'s `ActionStripStackGuard`.
@@ -1856,9 +1819,6 @@ impl ArchContext {
             // C++ Architecture default: max_term_duplication = 2 (resetDefaults).
             max_term_duplication: 2,
             return_single: false,
-            // (kuna) GH-9218 DIV-3 default-on; the real value is copied from the
-            // engine Architecture in `build_arch_handle`.
-            input_varnode_adjust: true,
             // (kuna) `option retinputhalf` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             ret_input_half: true,
@@ -1915,8 +1875,6 @@ impl ArchContext {
             // (kuna) default-off opt-in; the real value is copied from the engine
             // Architecture in `build_arch_handle` (`option dedupvardecls`).
             dedup_var_decls: false,
-            param_ref_decl: false,
-            decl_high_type: false,
             // (kuna) DIV-2 default-on (GH-558): resetDefaults sets present_lessequal=true.
             present_lessequal: true,
             // (kuna) the real arch overwrites each of these in `build_arch_handle`;
@@ -1963,7 +1921,6 @@ impl ArchContext {
             char_ptr: false, // (kuna) option charptr (default off)
             elem_ptr: false, // (kuna) option elemptr, copied from Architecture
             elem_ptr_ranges: std::rc::Rc::new(Vec::new()), // (kuna) elemptr
-            slot_ptr: true, // (kuna) option slotptr (default on), copied from Architecture
             libctypes: false, // (kuna) option libctypes, copied from Architecture
             model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
@@ -1974,8 +1931,6 @@ impl ArchContext {
             // callsitestackargs is a correctness fix, not an opt-in transform, so the
             // hand-built-fixture seam carries the same default the real path does.
             callsite_stack_args: true,
-            // A hand-built model decodes no spec, so both range choices agree.
-            proto_ranges: true,
             nul_terminator: false,
             // endptrbound only re-expresses an address the walk already compares
             // against, so the fixture seam carries the real default.
@@ -2052,10 +2007,8 @@ impl ArchContext {
             array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
             array_size: 0,               // arraysize (Architecture::reset_defaults sets the shipped default)
             stack_alias_deadstore: false,
-            local_stack_views: true,
             stack_views: false, // stackviews (opt-in)
             libc_names: false, // libcnames (opt-in)
-            guarded_read_trim: false,
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             halt_loop_guard: false,      // haltloopguard (Architecture::reset_defaults sets the shipped default: on)
@@ -2063,7 +2016,6 @@ impl ArchContext {
             global_field_store: false,
             global_call_store: false,    // globalcallstore (Architecture::reset_defaults sets the shipped default: on)
             int_float_round: false,      // intfloatround (Architecture::reset_defaults sets the shipped default: on)
-            tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)
             split_store_keep: false,     // splitstorekeep (Architecture::reset_defaults sets the shipped default: on)
             pair_refine: false,          // pairrefine (Architecture::reset_defaults sets the shipped default: on)
             wide_slice_reduce: false,    // wideslice (Architecture::reset_defaults sets the shipped default: on)
@@ -2103,16 +2055,13 @@ impl ArchContext {
             param_copy_hoist: false,      // paramcopyhoist (parameter copy-shadow -> entry block)
             returndup_orchain: false,     // orchain (short-circuit chain protection, default-off)
             returndup_triangle: false,    // rettriangle (one-block-if join, copied from the Architecture)
-            clone_phi_order: false,       // clonephiorder (Architecture::reset_defaults sets the shipped default: on)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             early_return: false, // earlyreturn (opt-in default-off)
             switch_return: false, // switchreturn (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
             fold_call_returns: false, // foldcallret (Architecture::reset_defaults sets the shipped default: on)
-            fpu_trunc_views: false,
             fold_call_ret_phi: false, // foldcallretphi (Architecture::reset_defaults sets the shipped default: on)
             mark_indirect_only: false, // indirectonly (opt-in default-off)
-            hide_shadow: false,       // hideshadow (Architecture::reset_defaults sets the shipped default: on)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             strip_msvc_stack_guard: false, // msvcstackguard (fixture default-off; the live gate rides build_arch_handle)
             go_bounds: true,

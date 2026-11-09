@@ -371,7 +371,7 @@ With the option off neither input is seeded, the stack register stays one wide
 input, and no parameter starts with pointer flow.
 
 The model's stack ranges come from the spec too, as upstream `ProtoModel::decode`
-takes them (`option protoranges`, default on, §6.2): the parameter range is every stack `<pentry>` of `<input>` plus any
+takes them (§6.2): the parameter range is every stack `<pentry>` of `<input>` plus any
 `<paramrange>`, and the local range is the `<localrange>` element
 (`decompiler/crates/kuna-decomp/src/infra/architecture.rs (decode_proto_ranges)`).
 Only a spec that states neither keeps `defaultParamRange` (stack 0..511) and
