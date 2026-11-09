@@ -437,7 +437,7 @@ already held, so the `0 > type_order` test rejects it and the lattice settles
 instead of running to the ceiling. Depth 1 and depth 2 over a concrete base are
 untouched, so a genuine `char **argv` keeps its spelling.
 
-**The `code` pointee (`codescalar`).** The generic `code` type is built with
+**The `code` pointee.** The generic `code` type is built with
 size 1, so that `code *` arithmetic steps one byte at a time, and
 `propagate_from_pointer` decides what a dereference yields by testing only
 whether the pointee's size equals the access width. Those two facts together
@@ -448,10 +448,9 @@ use of it is cast back to a real width. The shape is ordinary in packers and
 anti-debug stubs, which read and patch a byte of their own callee
 (`v1 = *(code **)g; if (*v1 != 0xcc) (*v1)(); *v1 = f();`) — the LOAD types the
 compared byte, the STORE types the stored one, and `INT_EQUAL` spreads `code`
-to the compared constant as well. When `codescalar` is on (the shipped default,
-DIV-138),
+to the compared constant as well.
 `decompiler/crates/kuna-decomp/src/p5_types/kuna_codescalar.rs
-(blocks_value_type)` declines a `TYPE_CODE` pointee on the value side of the
+(blocks_value_type)` (always on) declines a `TYPE_CODE` pointee on the value side of the
 LOAD/STORE transfer function, so the value keeps the size-correct default the
 access already gives it. The same test is consulted once more in the cast
 tail — `TypeOpStore`'s value cast would otherwise re-impose the pointee on the
@@ -1583,11 +1582,10 @@ option is on (chapter 01): diffutils' `hash_table.hasher` is
 The option takes effect only with
 `ctypes` on (`ArchContext::call_target_type` is set from both): without C's own
 spelling the target prints the upstream `code *`, which the option leaves
-alone. Shipped OFF in the catalog, because the XML datatest corpus pins the
-upstream `code *` spellings and applies no mode; ON in the `aggressive` preset,
-which `auto` selects under 500 KiB, so it is the default rendering of every real
-binary. The Ghidra front-end, which otherwise applies that preset, leaves it off
-(`decompiler/crates/kuna-ghidra/src/process.rs
+alone. It is on by default, so wherever `ctypes` is on (`auto` at every size,
+`aggressive`, `fast`) the call's type prints, and an explicit `--mode reliable`,
+which leaves `ctypes` off, prints `code *`. The Ghidra front-end sets it off after applying
+the `aggressive` preset (`decompiler/crates/kuna-ghidra/src/process.rs
 (apply_ghidra_mode_defaults)`): Java's
 `PcodeDataTypeManager` reads an anonymous code type back as `undefined1`, so a
 retyped local would reach the program database as `undefined1 *`. Over the
@@ -1697,10 +1695,9 @@ recovered as a pointer into the declaration when its sink is typed as a
 pointer, and otherwise prints as the bare address, the same as for an
 aggregate the DWARF tier declared.
 
-Two (kuna) escapes hook exactly here, both shipped default-on (DIV-2,
-`decompiler/crates/kuna-decomp/phases.toml`):
+Two (kuna) escapes hook exactly here, both always on:
 
-- **(kuna GH-6930)** [`inferfuncentry`](../options.md): the
+- **(kuna GH-6930)** The function-entry escape: the
   bit-transitions rejection is skipped when the constant resolves *exactly* to
   a known function entry
   (`decompiler/crates/kuna-decomp/src/p5_types/kuna_inferfuncentry.rs
@@ -1738,7 +1735,7 @@ Two (kuna) escapes hook exactly here, both shipped default-on (DIV-2,
   number *anywhere*, which `ActionConstantPtr::apply` collects once per pass from
   the constant snapshot it already takes
   (`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs`).
-- **(kuna GH-8471)** [`thumbfuncptr`](../options.md): a Thumb function pointer
+- **(kuna GH-8471)** Thumb function-pointer preservation: a Thumb function pointer
   is `fn|1`; constant-pointer recovery produces `PTRSUB(fn) + 1`, and the
   simplification rule that normally deletes out-of-bounds PTRSUBs would
   collapse it back to a hex literal. The guard
@@ -3097,7 +3094,7 @@ address, and every pointer formed from either -- have passed. With `floatglobals
 before the option existed.
 ### A float helper that works on the bits is a float (`kuna_floatbits.rs`)
 
-(kuna, GH-890, option `floatbits`, default on.) Both votes above refuse a value
+(kuna, GH-890, `kuna_floatbits.rs`, always on.) Both votes above refuse a value
 an integer op computes with, and a float helper written on the bits is nothing
 but integer ops. newlib's `fabsf` is `GET_FLOAT_WORD(ix,x);
 SET_FLOAT_WORD(x,ix&0x7fffffff); return x;`, which hard-float ARM compiles to
@@ -3351,13 +3348,13 @@ stack-pointer constraints keep their existing path.
 
 The solver's one in-tree client is the LoadGuard range refinement at
 `decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs (LoadGuard)`,
-gated by `option loadguardrange` (default on): at the end of each heritage
+always on: at the end of each heritage
 pass the pointer of every newly discovered indexed-stack LOAD/STORE guard is
 solved for its `[min,max,step]` window (chapter
 [03](03-ssa-and-simplification.md)), and the refined, range-locked guards are
 what let the P6 frame layout size an indexed stack array by its real index
 bound (chapter [06](06-variables-and-merge.md)). The refinement is
-load-bearing for correctness, not just precision: with it off, every guard
+load-bearing for correctness, not just precision: without it, every guard
 keeps the conservative whole-space range, and the P6 fallback bound of 3
 splits any element past index 3 of an indexed array into a separate
 never-assigned scalar — an *under*-sized array with out-of-bounds subscripts
@@ -3412,14 +3409,12 @@ DynamicHash symbol, consulted through
 override surface for this whole section (the `aggregate-union` row in
 `decompiler/crates/kuna-decomp/phases.toml`); (3) the scoring engine.
 
-**Whole aggregates (`aggregatefields`).** The `aggregatefields` row in
-`decompiler/crates/kuna-decomp/phases.toml` (default on) keeps a structured
-value whole until its fields can be named, at four places owned by three
-chapters: the concatenation and cleanup-split rules (§3), the partial-symbol
-walk (§9), and this resolution rule. Each place asks one predicate in
-`decompiler/crates/kuna-decomp/src/p5_types/kuna_aggregatefields.rs`, which
-answers as upstream when the option is off. With it on,
-single-component structs and arrays retain the whole container when a RETURN
+**Whole aggregates.** kuna keeps a structured value whole until its fields
+can be named, at four places owned by three chapters: the concatenation and
+cleanup-split rules (§3), the partial-symbol walk (§9), and this resolution
+rule. Each place asks one predicate in
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_aggregatefields.rs` (always
+on). Single-component structs and arrays retain the whole container when a RETURN
 value matches the function's locked output type and is an unchanged copy of a
 locked input of that container type. Equal-width COPY chains preserve this
 evidence: both edges of every copy on the chain to the return resolve to the
@@ -3427,10 +3422,9 @@ whole container, so no copy's definition and use disagree. A
 scalar used to construct a single-field return is still resolved to the field;
 the declared output alone does not establish a whole-container input. The
 return-address slot and unlocked or differently typed returns supply no evidence.
-Off restores upstream `scoreSingleComponent`, which resolves such a RETURN to
-the field and prints `return x.d;` for a function returning its `struct S`
-argument unchanged. ABI padding pieces of a join stay logical constants under
-either setting.
+Upstream `scoreSingleComponent` resolves such a RETURN to the field and prints
+`return x.d;` for a function returning its `struct S` argument unchanged. ABI
+padding pieces of a join stay logical constants.
 
 **Facet trials and scoring.**
 `decompiler/crates/kuna-decomp/src/p5_types/unionresolve_run.rs

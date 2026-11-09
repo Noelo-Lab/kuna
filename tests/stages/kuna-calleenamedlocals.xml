@@ -147,6 +147,7 @@ c3c3c3
 <symbol space="ram" offset="0x100122" name="big"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>parse line struct Node { uint1 skip; uint4 hits; };</com>
   <com>parse line extern void consume(Node *object);</com>
   <com>parse line extern void visit(Node **representatives,uint4 representative_count,Node **members,uint4 member_count);</com>

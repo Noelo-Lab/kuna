@@ -218,3 +218,58 @@ fn malformed_input_is_not_userland() {
     huge[28..32].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(!is_os_userland_image(&huge));
 }
+
+/// A Linux ELF has the GNU `EI_OSABI`, or the System V one with no other
+/// system's ABI-tag note.
+#[test]
+fn linux_image_by_osabi_and_note() {
+    assert!(is_linux_image(&image(false, false, 0, &[], &[])));
+    assert!(is_linux_image(&image(true, false, 3, &[], &[])));
+    for owner in ["GNU", "Android"] {
+        let note = Part {
+            kind: PT_NOTE,
+            data: notes(false, &[(owner, 1)]),
+        };
+        assert!(
+            is_linux_image(&image(false, false, 0, &[note], &[])),
+            "{owner}"
+        );
+    }
+    let build_id = Part {
+        kind: PT_NOTE,
+        data: notes(false, &[("GNU", 3)]),
+    };
+    assert!(is_linux_image(&image(false, false, 0, &[build_id], &[])));
+}
+
+/// A BSD or Solaris `EI_OSABI`, a BSD ABI-tag note under the System V OSABI,
+/// and a non-ELF image are not Linux.
+#[test]
+fn foreign_images_are_not_linux() {
+    for osabi in [2, 6, 9, 12, 64, 97, 255] {
+        assert!(
+            !is_linux_image(&image(false, false, osabi, &[], &[])),
+            "EI_OSABI {osabi}"
+        );
+    }
+    for owner in ["FreeBSD", "NetBSD", "OpenBSD"] {
+        let note = Part {
+            kind: PT_NOTE,
+            data: notes(false, &[("GNU", 3), (owner, 1)]),
+        };
+        assert!(
+            !is_linux_image(&image(false, false, 0, &[note], &[])),
+            "{owner}"
+        );
+        let section = Part {
+            kind: SHT_NOTE,
+            data: notes(true, &[(owner, 1)]),
+        };
+        assert!(
+            !is_linux_image(&image(true, true, 0, &[], &[section])),
+            "{owner} section"
+        );
+    }
+    assert!(!is_linux_image(b"MZ\0\0"));
+    assert!(!is_linux_image(&[]));
+}

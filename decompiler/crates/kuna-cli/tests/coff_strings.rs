@@ -144,32 +144,3 @@ fn encodings_and_section_filters_use_the_mapped_regions() {
     }
 }
 
-#[test]
-fn explicit_rebase_choices_are_applied_before_scanning() {
-    let path = fixture();
-    let enabled = query(&path, &["--no-xrefs", "--option", "relocrebase", "on"]);
-    assert!(enabled["strings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|r| r["address"].as_u64().unwrap() >= 0x400000));
-    let disabled = query(&path, &["--no-xrefs", "--option", "relocrebase", "off"]);
-    assert!(disabled["strings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|r| r["address"].as_u64().unwrap() < 0x400000));
-    let restored = query(
-        &path,
-        &[
-            "--no-xrefs",
-            "--option",
-            "relocrebase",
-            "off",
-            "--option",
-            "relocrebase",
-            "on",
-        ],
-    );
-    assert_eq!(restored, enabled);
-}

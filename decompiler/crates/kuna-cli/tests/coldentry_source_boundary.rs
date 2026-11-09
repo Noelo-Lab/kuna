@@ -61,14 +61,11 @@ fn fixture(source: &str, frame: bool) -> Option<Fixture> {
     Some(Fixture { dir, binary })
 }
 
-fn entries(fixture: &Fixture, enabled: bool) -> Vec<u64> {
+fn entries(fixture: &Fixture) -> Vec<u64> {
     let (stdout, stderr, rc) = common::run_kuna(&[
         "functions",
         fixture.binary.to_str().unwrap(),
         "--json",
-        "--option",
-        "coldentry",
-        if enabled { "on" } else { "off" },
     ]);
     assert_eq!(rc, 0, "{stderr}\n{stdout}");
     let parsed: serde_json::Value = serde_json::from_str(&stdout).unwrap();
@@ -95,9 +92,8 @@ fn branch_bytes_inside_an_immediate_do_not_create_a_cold_entry() {
             let Some(fixture) = fixture(source, frame) else {
                 return;
             };
-            assert!(!entries(&fixture, false).contains(&0x401005));
             assert!(
-                !entries(&fixture, true).contains(&0x401005),
+                !entries(&fixture).contains(&0x401005),
                 "an embedded branch encoding is not an incoming edge: {source}, frame={frame}"
             );
         }
@@ -112,9 +108,8 @@ fn real_rel32_branches_still_discover_cold_entries_with_or_without_source_fdes()
             let Some(fixture) = fixture(&source, frame) else {
                 return;
             };
-            assert!(!entries(&fixture, false).contains(&0x401005));
             assert!(
-                entries(&fixture, true).contains(&0x401005),
+                entries(&fixture).contains(&0x401005),
                 "genuine incoming edge lost: {encoding}, frame={frame}"
             );
         }

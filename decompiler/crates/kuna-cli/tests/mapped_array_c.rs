@@ -120,6 +120,9 @@ fn mapped_byte_accesses_compile_and_preserve_bytes() {
         "--option",
         "readonly",
         "off",
+        "--option",
+        "partialaccess",
+        "off",
         "--assert-strict",
         "--json",
     ]

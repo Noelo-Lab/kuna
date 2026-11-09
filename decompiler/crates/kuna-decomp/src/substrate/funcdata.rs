@@ -505,8 +505,7 @@ pub struct Funcdata {
     /// `(space index, entry offset)`.  Seeded by the driver after the flow build
     /// — the only place the disassembly engine is still reachable — and read at
     /// the input-trial scoring seam
-    /// ([`crate::kuna_calleedeadarg::trial_is_dead_in_callee`]).  Empty unless
-    /// `option calleedeadarg` is live for this function.
+    /// ([`crate::kuna_calleedeadarg::trial_is_dead_in_callee`]).
     kuna_callee_entry_dead: std::collections::HashMap<
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
@@ -647,6 +646,9 @@ pub struct Funcdata {
     /// (kuna `elfmain`) The C runtime's `main` declaration this function's inputs
     /// take, when it is an executable's own `main`. See [`crate::kuna_elfmaindecl`].
     kuna_elfmain: Option<std::rc::Rc<crate::kuna_elfmaindecl::Runtime>>,
+    /// (kuna `swiftcall`) Names and types for the inputs this function's
+    /// analysis recovers. See [`crate::kuna_inputhints`].
+    kuna_input_hints: Option<std::rc::Rc<Vec<crate::kuna_inputhints::InputHint>>>,
     /// (kuna `calleevote fields`) Every caller of this function is a known direct call.
     kuna_calleevote_closed: bool,
     /// (kuna `elemptr`) The globals this function must not type as element
@@ -684,8 +686,7 @@ pub struct Funcdata {
     /// (kuna `retpushedhalf`) Registers this function only ever pushed, gathered
     /// during the flow build while the store and the load still exist and read at
     /// the return-half placement test
-    /// ([`crate::kuna_retpushedhalf::PushedRegisters`]).  Empty unless
-    /// `option retpushedhalf` is live for this function.
+    /// ([`crate::kuna_retpushedhalf::PushedRegisters`]).
     kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters,
 }
 
@@ -899,6 +900,7 @@ impl Funcdata {
             kuna_calleevote_inputs: None,
             kuna_callerargs: None,
             kuna_elfmain: None,
+            kuna_input_hints: None,
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
             kuna_elemptr_adopt: None,
@@ -1644,6 +1646,16 @@ impl Funcdata {
     /// (kuna `elfmain`) The C runtime's `main` declaration for this function.
     pub fn kuna_elfmain(&self) -> Option<&crate::kuna_elfmaindecl::Runtime> {
         self.kuna_elfmain.as_deref()
+    }
+
+    /// (kuna `swiftcall`) Seed the input hints. See [`crate::kuna_inputhints`].
+    pub fn kuna_set_input_hints(&mut self, hints: Option<std::rc::Rc<Vec<crate::kuna_inputhints::InputHint>>>) {
+        self.kuna_input_hints = hints;
+    }
+
+    /// (kuna `swiftcall`) The input hints of this function.
+    pub fn kuna_input_hints(&self) -> Option<&[crate::kuna_inputhints::InputHint]> {
+        self.kuna_input_hints.as_deref().map(Vec::as_slice)
     }
 
     /// (kuna `calleevote fields`) Mark every caller of this function as known.
@@ -2474,7 +2486,7 @@ impl Funcdata {
 
     /// (kuna `stackstoreguard`) Is the guard on for this function?
     pub fn stack_store_guard(&self) -> bool {
-        self.get_arch().stack_store_guard && !self.stack_store_guard_withdrawn.get()
+        !self.stack_store_guard_withdrawn.get()
     }
 
     pub(crate) fn note_stack_byte_copy_op(&mut self, op: OpId) {
@@ -3090,9 +3102,8 @@ impl Funcdata {
         if self.localmap.is_none() || !self.funcp.has_model() {
             return;
         }
-        let spec = self.get_arch().proto_ranges;
-        let local = self.funcp.local_range(spec).clone();
-        let param = self.funcp.param_range(spec).clone();
+        let local = self.funcp.get_local_range().clone();
+        let param = self.funcp.get_param_range().clone();
         let grows_neg = self.funcp.is_stack_grows_negative();
         if let Some(sl) = self.localmap.as_mut() {
             sl.reset_local_window(&local, &param, grows_neg);

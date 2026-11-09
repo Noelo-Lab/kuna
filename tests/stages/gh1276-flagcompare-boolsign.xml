@@ -13,16 +13,11 @@
       while ((BANK0_R4 < uVar1) << 7 < '\0') { ... }
 
     Stage model: S3 "simplification-quiescence" (which algebraic/peephole rules
-    fire).  kuna's RuleBoolSignLess (group "analysis", gated by the default-off
-    arch flag fold_flag_compare) recognizes `INT_SLESS(INT_LEFT(b,k), 0)` where
-    b's NZMask is exactly the single bit that the shift lands in the sign
-    position, and rewrites it to `b != 0`, dropping the shift entirely.
-    Exposed by `option flagcompare on`.
-
-    Pass 1 (default pipeline) reproduces the bug: the `<< 7 < ` shift-into-sign
-    survives (assert #1).
-    Pass 2 (after `option flagcompare on`) the shift is gone and the condition is
-    a clean boolean comparison: no `<< 7` appears anywhere (assert #2).
+    fire).  kuna's RuleBoolSignLess (group "analysis", always on) recognizes
+    `INT_SLESS(INT_LEFT(b,k), 0)` where b's NZMask is exactly the single bit
+    that the shift lands in the sign position, and rewrites it to `b != 0`,
+    dropping the shift entirely: the condition is a clean boolean comparison
+    and no `<< 7` appears anywhere.
 -->
 <bytechunk space="CODE" offset="0x0">
 e4fdfcc2998f992099100dedae0470010c14c394cdee943740ed3099037f01227f0022
@@ -30,15 +25,11 @@ e4fdfcc2998f992099100dedae0470010c14c394cdee943740ed3099037f01227f0022
 <symbol space="CODE" offset="0x0" name="FUN_0"/>
 </binaryimage>
 <script>
-  <com>option flagcompare off</com>
   <com>lo fu FUN_0</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option flagcompare on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH1276 #1: default pipeline keeps the (bool) &lt;&lt; 7 s&lt; 0 sign-bit idiom (bug reproduces, appears once)" min="1" max="1">while \(\(BANK0_R4 &lt; v1\) &lt;&lt; 7 &lt; '\\0'\)</stringmatch>
-<stringmatch name="GH1276 #2: option flagcompare on folds it to a clean comparison (fix, appears once)" min="1" max="1">while \(BANK0_R4 &lt; v1\)</stringmatch>
+<stringmatch name="GH1276 #1: the (bool) &lt;&lt; 7 s&lt; 0 sign-bit idiom never survives" min="0" max="0">while \(\(BANK0_R4 &lt; v1\) &lt;&lt; 7 &lt; '\\0'\)</stringmatch>
+<stringmatch name="GH1276 #2: the idiom folds to a clean comparison" min="1" max="1">while \(BANK0_R4 &lt; v1\)</stringmatch>
 </decompilertest>

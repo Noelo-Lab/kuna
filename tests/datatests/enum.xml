@@ -29,6 +29,7 @@ c3
 <symbol space="ram" offset="0x101000" name="setStruct"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>parse line enum flags {
   FLAG_1=1,
   FLAG_2 = 2,

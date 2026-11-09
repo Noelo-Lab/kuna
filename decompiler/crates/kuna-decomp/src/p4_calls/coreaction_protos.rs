@@ -278,7 +278,7 @@ impl Action for ActionPrototypeTypes {
         }
 
         let stack = data.get_arch().manage().get_stack_space().cloned();
-        if let Some(stack) = stack.filter(|_| data.get_arch().trunc_ptr_flow) {
+        if let Some(stack) = stack {
             if data.bblocks_get_size() > 0 {
                 let top = data.bblocks_get_block(0);
                 for i in 0..stack.num_spacebase() {
@@ -312,7 +312,7 @@ impl Action for ActionPrototypeTypes {
         // exists even when only part is used (SUBPIECE can then be built off it).
         if data.get_func_proto().is_input_locked() {
             let ptr_size = data.get_arch().manage().get_default_code_space()
-                .filter(|s| data.get_arch().trunc_ptr_flow && s.is_truncated())
+                .filter(|s| s.is_truncated())
                 .map(|s| s.get_addr_size() as int4);
             let topbl = if data.bblocks_get_size() > 0 {
                 Some(data.bblocks_get_block(0))
@@ -514,16 +514,17 @@ impl Action for ActionDefaultParams {
                         _ => None,
                     }
                 };
-                let (callee_pieces, callee_model) = if let Some(entry) = pieces_entry {
+                let (callee_pieces, callee_model, bound_model) = if let Some(entry) = pieces_entry {
                     // (kuna, Phase 3) A host-declared prototype model rides the
                     // locked pieces (ghidra-mode `<prototype model=…>`); `None`
                     // on the standalone path, keeping the default-model seed.
                     (
                         arch.callee_proto_pieces(&entry),
                         arch.callee_proto_model(&entry),
+                        arch.bound_proto_model(&entry),
                     )
                 } else {
-                    (None, None)
+                    (None, None, None)
                 };
                 // (kuna) An *output-only* callee pieces (no declared inputs / void
                 // outtype, but a custom locked output) is what the console
@@ -574,7 +575,6 @@ impl Action for ActionDefaultParams {
                                 // [`crate::p4_calls::kuna_calleeprotostack`].
                                 Ok(()) => {
                                     crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
-                                        arch.callee_proto_stack,
                                         &mut fp,
                                     );
                                     Some(Rc::new(fp))
@@ -600,8 +600,14 @@ impl Action for ActionDefaultParams {
                     None => {
                         // No source-declared callee prototype (a symbol with no
                         // Funcdata): set the default-model internal proto.  The
-                        // register-parameter datatests resolve here.
+                        // register-parameter datatests resolve here.  (kuna) A
+                        // throwing Swift call, or a callee the analysis tier
+                        // bound to a model without a signature, has its
+                        // arguments recovered under that model.
                         let model = crate::kuna_armfloatreturn::helper_model(&arch, data.get_call_specs(i).get_name())
+                            .or_else(|| crate::kuna_swiftcall::throwing_call(data, data.get_call_specs(i).get_op()))
+                            .or(bound_model)
+                            .or_else(|| crate::kuna_swiftcall::indirect_call(data, data.get_call_specs(i).get_op()))
                             .unwrap_or_else(|| evalfp.clone());
                         data.get_call_specs_mut(i).proto_mut().set_internal(model, void_ty.clone());
                         // (kuna) A console `map return <addr>`-only callee: keep the
@@ -621,7 +627,6 @@ impl Action for ActionDefaultParams {
                 }
             } else if arch.callee_proto_model(data.get_call_specs(i).get_entry_address()).is_some() {
                 crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
-                    arch.callee_proto_stack,
                     data.get_call_specs_mut(i).proto_mut(),
                 );
             }
@@ -1333,9 +1338,6 @@ impl Action for ActionActiveParam {
         // checker for the spacebase-parameter branch.
         let mut aliascheck = data.build_alias_checker_deferred();
         let manager_rc = data.get_arch().manage.clone();
-        // (kuna) varargstackargs
-        let vararg_stack_args = data.get_arch().vararg_stack_args;
-        let stack_arg_gap = data.get_arch().stack_arg_gap;
         // (kuna) `calleearityfwd`: call sites that finalize with an empty argument
         // list, retried at the end of the pass against the siblings that finalize
         // after them.  See [`crate::p4_calls::kuna_calleearityfwd`].
@@ -1422,13 +1424,13 @@ impl Action for ActionActiveParam {
                 // variable arguments live on the stack, so the empty register
                 // slots before them are the ABI's doing and not evidence that
                 // the recovery has run past the argument list.
-                let vararg_split = vararg_stack_args && fc.is_dotdotdot();
+                let vararg_split = fc.is_dotdotdot();
                 fc.get_active_input().set_vararg_stack_split(vararg_split);
                 // (kuna) `stackarggap`: tell `fillinMap` that an argument
                 // register this caller never wrote ends the argument list when
                 // the next slot is on the stack -- the ABI reaches the stack
                 // only past a full register file.
-                fc.get_active_input().set_stack_arg_gap(stack_arg_gap);
+                fc.get_active_input().set_stack_arg_gap(true);
                 crate::kuna_armfloatargs::mark_single_floats(&mut fc, data);
                 let written = crate::kuna_armfloatargs::written_inputs(&fc, data);
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
@@ -1756,8 +1758,7 @@ impl Action for ActionReturnRecovery {
             None => return 0,
         };
         let maxancestor = data.get_arch().trim_recurse_max;
-        let cond_exe_ret = data.get_arch().cond_exe_ret;
-        let remembering = crate::p4_calls::kuna_condexeret::remembering(&active, cond_exe_ret);
+        let remembering = crate::p4_calls::kuna_condexeret::remembering(&active);
         let mut cond_failed = Vec::new();
         let return_ops: Vec<crate::context::OpId> =
             data.obank().iter_code(OpCode::CPUI_RETURN).collect();
@@ -1840,7 +1841,7 @@ impl Action for ActionReturnRecovery {
         }
 
         crate::p4_calls::kuna_voidret::score_forced(data, &mut active, &return_ops, maxancestor);
-        crate::p4_calls::kuna_condexeret::end_pass(&mut active, cond_exe_ret, cond_failed);
+        crate::p4_calls::kuna_condexeret::end_pass(&mut active, cond_failed);
         active.finish_pass();
         if active.get_num_passes() > active.get_max_pass() {
             active.mark_fully_checked();
@@ -2001,12 +2002,12 @@ impl Action for ActionInputPrototype {
             // the heritage collected).  `triallist[i]` is the i-th registered
             // trial's Varnode (1-based slot in ParamTrial).
             let mut active = crate::fspec::ParamActive::new(false);
-            // (kuna) `inputparamgap`: these are the function's OWN input trials,
-            // where an ACTIVE trial means the body reads the register before it
-            // writes it.  Tell `forceInactiveChain` that a run of unused argument
-            // registers is not evidence against a later one.  See
+            // (kuna) These are the function's OWN input trials, where an ACTIVE
+            // trial means the body reads the register before it writes it.  Tell
+            // `forceInactiveChain` that a run of unused argument registers is not
+            // evidence against a later one.  See
             // [`crate::p4_calls::kuna_inputparamgap`].
-            active.set_own_input_gap(data.get_arch().input_param_gap);
+            active.set_own_input_gap(true);
             let mut triallist: Vec<crate::context::VarnodeId> = Vec::new();
             let input_vns: Vec<crate::context::VarnodeId> =
                 data.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();
@@ -2112,7 +2113,9 @@ fn update_input_types(
         let _ = is_persist;
         // (kuna `elfmain`) A runtime argument of an executable's own `main` takes
         // its runtime name. See `kuna_elfmaindecl`.
-        let name = crate::kuna_elfmaindecl::param_name(data, &addr, ty.get_size()).unwrap_or_default();
+        let name = crate::kuna_elfmaindecl::param_name(data, &addr, ty.get_size())
+            .or_else(|| crate::kuna_inputhints::param_name(data, &addr, ty.get_size()))
+            .unwrap_or_default();
         let pieces = crate::fspec::ParameterPieces { addr, type_: Some(ty), flags: 0 };
         data.get_func_proto_mut().store_set_input(count, &name, &pieces);
         count += 1;

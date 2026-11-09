@@ -20,13 +20,12 @@
 
     Stage model: P4 call recovery, active-input-trial scoring.  Upstream fails
     a trial whose value is the function's own input (AncestorRealistic) or
-    another call's output (ancestorOpUse).  `option varargforward` keeps it at
+    another call's output (ancestorOpUse).  kuna_varargforward.rs (always on) keeps it at
     a call whose prototype ends in `...` when the value is a declared parameter
     of the caller, or the result of a call whose return type is declared, and
     nothing else reads it.
 
-    Pass 1 (`option varargforward off`) reproduces the bug: `vr(k)` in both.
-    Pass 2 (default, on) prints `vr(k,x)` and passes the result of g.
+    Without the rule both print `vr(k)`; with it `vr(k,x)` and the result of g.
 -->
 <bytechunk space="ram" offset="0x100000">
 40000014
@@ -48,14 +47,6 @@ c0035fd6000000000000000000000000c0035fd6
   <com>parse line extern float8 g(int4 k);</com>
   <com>parse line extern float8 c2(int4 k, float8 x);</com>
   <com>parse line extern float8 e3(int4 k);</com>
-  <com>option varargforward off</com>
-  <com>lo fu c2</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu e3</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option varargforward on</com>
   <com>lo fu c2</com>
   <com>decompile</com>
   <com>print C</com>
@@ -64,8 +55,8 @@ c0035fd6000000000000000000000000c0035fd6
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH829 a64 #1: varargforward off drops the double in d0 from both calls (bug reproduced)" min="2" max="2">return vr\(k\);</stringmatch>
-<stringmatch name="GH829 a64 #2: varargforward on keeps the parameter forwarded in d0" min="1" max="1">return vr\(k,x\);</stringmatch>
-<stringmatch name="GH829 a64 #3: varargforward on passes the result of g left in d0" min="1" max="1">return vr\(k,v1\);</stringmatch>
-<stringmatch name="GH829 a64 #4: with it on, the result of g is the variable passed to vr" min="1" max="1">v1 = g\(k\);</stringmatch>
+<stringmatch name="GH829 a64 #1: the double in d0 is never dropped from either call" min="0" max="0">return vr\(k\);</stringmatch>
+<stringmatch name="GH829 a64 #2: the parameter forwarded in d0 is kept" min="1" max="1">return vr\(k,x\);</stringmatch>
+<stringmatch name="GH829 a64 #3: the result of g left in d0 is passed" min="1" max="1">return vr\(k,v1\);</stringmatch>
+<stringmatch name="GH829 a64 #4: the result of g is the variable passed to vr" min="1" max="1">v1 = g\(k\);</stringmatch>
 </decompilertest>

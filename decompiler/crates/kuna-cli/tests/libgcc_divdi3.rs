@@ -236,9 +236,6 @@ int high(long long a,long long b){return (int)((a/b)>>32);}
                     args.extend(["--option", "libgccsigs", "on"]);
                 } else {
                     args.extend([
-                        "--option",
-                        "libproto",
-                        "off",
                         "--assert",
                         "prototype __divdi3 long long __divdi3(long long a,long long b)",
                     ]);

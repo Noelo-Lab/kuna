@@ -12,10 +12,9 @@
     the rendered C instead of collapsing to a clean signed less-than.
 
     Stage / sub-stage: S3 simplification-quiescence (new named rule RuleOvLessSimplify).
-    P0 assertion: option ovlesssimplify off|on (default off = upstream byte-identical).
-    Pass 1 (default off): assertion #1 proves the bug reproduces today.
-    Pass 2 (option ovlesssimplify on): assertion #2 proves the rule collapses the
-    condition to a clean `cVar5 < '\b'` (signed byte compare against 8).
+    The rule is always on: assertion #2 proves it collapses the condition to
+    a clean `cVar5 < '\b'` (signed byte compare against 8), and #1 that the
+    OV-flag garbage condition never appears.
 -->
 <bytechunk space="ram" offset="0x0">
 06f0e7008056a5a5b51560085f3a007241f2ca660100a152c16e01002c69b205aa56f76b4172a10aae006872b6f5e039dfed7f00
@@ -27,11 +26,8 @@
   <com>lo fu FUN_00000000</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option ovlesssimplify off</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH7190 #1: ovlesssimplify off restores the OV-flag garbage condition (old behavior; 0&lt;= form via DIV-2 compareform)" min="1" max="1">while \(v6 \+ -8 &lt; 0 != \(v5 &gt;&gt; 7 &lt; '\\0' &amp;&amp; 0 &lt;= v6 \+ -8\)\)</stringmatch>
-<stringmatch name="GH7190 #2: default pipeline collapses to a clean signed byte compare (fix is DIV-2 default)" min="1" max="1">while \(v5 &lt; '\\b'\)</stringmatch>
+<stringmatch name="GH7190 #1: the OV-flag garbage condition never appears (0&lt;= form via DIV-2 compareform)" min="0" max="0">while \(v6 \+ -8 &lt; 0 != \(v5 &gt;&gt; 7 &lt; '\\0' &amp;&amp; 0 &lt;= v6 \+ -8\)\)</stringmatch>
+<stringmatch name="GH7190 #2: the pipeline collapses to a clean signed byte compare" min="1" max="1">while \(v5 &lt; '\\b'\)</stringmatch>
 </decompilertest>

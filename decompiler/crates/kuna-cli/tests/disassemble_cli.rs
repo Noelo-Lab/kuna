@@ -1295,8 +1295,6 @@ fn raw_pcode_lifts_a_mips_unaligned_pair_as_the_decompiler_does() {
         let paired = opcodes(&[]);
         assert_eq!(count(&paired, "LOAD"), 1, "{name}: one whole load: {paired:?}");
         assert_eq!(count(&paired, "INT_LEFT") + count(&paired, "INT_RIGHT"), 0, "{name}: {paired:?}");
-        let halves = opcodes(&["--option", "mipsunaligned", "off"]);
-        assert_eq!(count(&halves, "LOAD"), 2, "{name}: each half merges: {halves:?}");
     }
 }
 

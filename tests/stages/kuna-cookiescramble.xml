@@ -29,9 +29,9 @@
     %fs:0x28 and never touch the stack pointer, which is why the defect is
     invisible on ELF corpora.
 
-    Stage model: P6 "alias-facets".  The P0 assertion
-    `option cookiescramble on|off` (default ON) decides whether an INT_XOR of a
-    stack-pointer-derived Varnode records an escape site.
+    Stage model: P6 "alias-facets".  kuna_cookiescramble.rs (always on) keeps
+    an INT_XOR of a stack-pointer-derived Varnode from recording an escape site
+    for the call-site checker.
 
     Witness, hand-assembled to the /GS shape (SysV x86-64 so the last two of
     eight arguments are stack-passed, plus the `xor %rsp` cookie mix):
@@ -48,10 +48,9 @@
                  mov    0x28(%rsp),%rcx ; xor %rsp,%rcx ; add %rcx,%rax
                  add    $0x38,%rsp ; ret
 
-    Pass 1 (option cookiescramble off) reproduces the bug: the call truncates at
-    the six register arguments and the two argument stores survive as dead
-    assignments to stack locals.  Pass 2 (option cookiescramble on, the default)
-    proves the fix: both stack-passed arguments are recovered.
+    Without the exemption the call would truncate at the six register
+    arguments and the two argument stores would survive as dead assignments to
+    stack locals; both stack-passed arguments are recovered instead.
 -->
 <bytechunk space="ram" offset="0x401000">
 488b44240848034424104801f84801f04801d04801c84c01c04c01c8c34883ec
@@ -63,16 +62,12 @@ ff488b4c24284831e14801c84883c438c3
 <symbol space="ram" offset="0x40101d" name="caller"/>
 </binaryimage>
 <script>
-  <com>option cookiescramble off</com>
   <com>lo fu caller</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option cookiescramble on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="cookiescramble #1: the /GS cookie mix drops both stack-passed arguments (bug reproduced)" min="1" max="1">callee\(1,2,3,4,5,6\);</stringmatch>
-<stringmatch name="cookiescramble #2: option off leaves the dropped arguments as dead stores to locals" min="1" max="1">v2 = a0;</stringmatch>
-<stringmatch name="cookiescramble #3: option on recovers both stack-passed arguments" min="1" max="1">callee\(1,2,3,4,5,6,a0,a1\)</stringmatch>
+<stringmatch name="cookiescramble #1: the /GS cookie mix never drops the stack-passed arguments" min="0" max="0">callee\(1,2,3,4,5,6\);</stringmatch>
+<stringmatch name="cookiescramble #2: no dead stores to locals are left" min="0" max="0">v2 = a0;</stringmatch>
+<stringmatch name="cookiescramble #3: both stack-passed arguments are recovered" min="1" max="1">callee\(1,2,3,4,5,6,a0,a1\)</stringmatch>
 </decompilertest>

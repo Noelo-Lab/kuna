@@ -423,7 +423,7 @@ walks only the helper bodies it can reach. The same option therefore asserts
 the fact from the name at the flow seam
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
 (ArchFlowEnv::query_call_no_return)`) — the same seam, the same shape and the
-same one-list discipline as `noreturn_externmatch`, on a list that exists
+same one-list discipline as the known-no-return name match, on a list that exists
 nowhere but Rust. Without it roughly half the checks in a Rust binary survive
 as *returning* panic blocks the P7 guard correctly declines to remove.
 
@@ -492,8 +492,8 @@ and stack-pointer checks. Exhaustion declines the entire call, retaining its
 ordinary register effects and the check itself. A phi with more inputs than
 the remaining budget declines before allocating its edge vector. The
 stack-pointer affine walk also retains its separate 32-step depth bound. These
-limits apply to the default `calleeretpreserves` path as well as explicit
-`msvcstackguard` removal, so repeated long call chains cannot make the matcher
+limits apply to the always-on return-storage preservation path as well as
+explicit `msvcstackguard` removal, so repeated long call chains cannot make the matcher
 walk the whole function for every argument.
 Three further gates keep the edit honest: the victim must be a direct
 `CPUI_CALL` (the checker is statically linked into the image, never an import
@@ -508,7 +508,7 @@ checker.
 recognition happens after chapter 03 has already guarded the checker call, the
 destructive arm records the first match's instruction address in the function's
 P0 override store and requests a full pipeline restart. When `msvcstackguard`
-is off but `calleeretpreserves` is on, the recognizer instead collects every
+is off, the recognizer instead collects every
 exact checker whose output is locked `void`, records the full set, and requests
 one restart; this remains complete beyond the driver's eight-reflow limit. On
 replay, `Heritage::guard_calls` preserves only the exact logical ABI output
@@ -554,13 +554,15 @@ deleted by that step: a slot version still feeding a live reader survives, and
 the store, the cookie read and the scramble die only through the ordinary
 consume fixpoint.
 
-**Why tier=transform, destructive, default-off.** Like §7.3 and §7.4 it
+**Why tier=transform, destructive, default-on.** Like §7.3 and §7.4 it
 deletes real instructions the binary executes (`REMOVES CODE`,
-`destructive = true`). It ships **off** because the cost of a wrong match is a
-deleted call and a deleted argument computation, and because a reader who
-wants to audit the protector itself should get the same escape hatch
-`stackguard off` gives — kept as a separate option so flipping one never
-silently changes the other. Nothing in the pass consults the compiler spec:
+`destructive = true`). It ships **on** because the shape it matches -- the
+MSVC `/GS` cookie's `(K ^ SP) ^ SP` -- occurs in no other compiler's output,
+so a Windows PE loses its boilerplate by default and nothing else is touched;
+`off` is the escape hatch for a reader who wants to audit the protector
+itself, the same one `stackguard off` gives — kept as a separate option so
+flipping one never silently changes the other. Nothing in the pass consults
+the compiler spec:
 the shape is the gate, and GCC/Clang read the canary from `%fs:0x28` and never
 mix the stack pointer into it, so `(K ^ SP) ^ SP` cannot occur in
 `-fstack-protector` output and the option is byte-identical (0/675) on the
@@ -574,7 +576,7 @@ addresses on the same instruction, from the other side; the two compose.
 `tests/stages/kuna-msvcstackguard.xml` pins both directions, with the callee
 deliberately unnamed so the shape-only claim is what is tested.
 `tests/stages/kuna-msvcstackguard-return.xml` pins the restart handoff with a
-two-arm shared epilogue and crosses `calleeretpreserves on|off`; its checker
+two-arm shared epilogue; its checker
 failure tail enters a helper with an ordinary returning call before fast-fail,
 so generic callee-body inference is deliberately unavailable.
 `tests/stages/kuna-declaring-double-score-return.xml` pins the non-destructive

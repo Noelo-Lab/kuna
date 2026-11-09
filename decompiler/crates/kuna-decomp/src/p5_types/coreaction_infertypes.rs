@@ -456,6 +456,8 @@ fn build_localtypes(data: &mut Funcdata) {
         // (kuna `elfmain`) An executable's own `main` gives the runtime arguments
         // its body reads their runtime types, unlocked. See `kuna_elfmaindecl`.
         let ct = if from_seed { ct } else { crate::kuna_elfmaindecl::input_type(data, vn).unwrap_or(ct) };
+        // (kuna `swiftcall`) A hinted input takes its hinted type, unlocked.
+        let ct = if from_seed { ct } else { crate::kuna_inputhints::input_type(data, vn).unwrap_or(ct) };
         // (kuna `regnarrow`) A narrowed register value nothing else types is unsigned.
         let ct = if from_seed { ct } else { crate::kuna_regnarrow::unsigned_vote(data, vn, &ct).unwrap_or(ct) };
         // (kuna `narrowargs callers`) A parameter its callers narrow takes their extension's type.
@@ -714,6 +716,9 @@ fn propagate_type_edge(data: &mut Funcdata, op: OpId, inslot: int4, outslot: int
     // runtime type, without the type lock that would make it a realistic input
     // to the next call. See `kuna_elfmaindecl`.
     if crate::kuna_elfmaindecl::took_runtime_type(data, outvn, &cur) {
+        return false;
+    }
+    if crate::kuna_inputhints::took_hint_type(data, outvn, &cur) {
         return false;
     }
     if 0 > newtype.type_order(&cur).unwrap_or(0) {
@@ -1101,16 +1106,14 @@ fn propagate_load_store(
         let spc = space_from_const(data, op, 0)?;
         propagate_to_pointer(tlst, alttype, out_size, spc.get_word_size() as int4)
     } else {
-        // (kuna `codescalar`) `code` is size 1 only so that `code *` arithmetic
-        // steps one byte; adopting it as the dereferenced VALUE type declares a
-        // scalar with no width.  The test lives here rather than inside the
-        // ported `propagate_from_pointer`, whose C++ body (typeop.cc:207) has no
-        // such case.
-        if data.get_arch().codescalar {
-            if let Some(ptrto) = alttype.get_ptr_to() {
-                if crate::kuna_codescalar::blocks_value_type(&ptrto) {
-                    return None;
-                }
+        // (kuna) `code` is size 1 only so that `code *` arithmetic steps one
+        // byte; adopting it as the dereferenced VALUE type declares a scalar
+        // with no width.  The test lives here rather than inside the ported
+        // `propagate_from_pointer`, whose C++ body (typeop.cc:207) has no such
+        // case.
+        if let Some(ptrto) = alttype.get_ptr_to() {
+            if crate::kuna_codescalar::blocks_value_type(&ptrto) {
+                return None;
             }
         }
         let value = propagate_from_pointer(tlst, alttype, out_size)?;

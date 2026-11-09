@@ -57,11 +57,14 @@ fn call_fields(cx: &SpellCtx, fd: &Funcdata, op: OpId) -> Option<[Rc<Datatype>; 
 }
 
 pub(crate) fn call_projection(fd: &Funcdata, arch: &Architecture, op: OpId) -> Option<usize> {
-    if !arch.analysis_godwarfsig || !arch.analysis_gopairreturns {
+    if !arch.analysis_godwarfsig {
         return None;
     }
     let value = fd.vbank().get(fd.obank().get(op)?.get_out()?)?;
     let proto = fd.get_call_specs(fd.get_call_specs_index(op)?).proto();
+    if !proto.has_store() {
+        return None;
+    }
     let ty = proto.get_output_type()?;
     arch.types()
         .kuna_lang_facet(ty.get_name())?

@@ -26,8 +26,8 @@ fn mode_predicates() {
 }
 
 #[test]
-fn default_is_off() {
-    assert_eq!(X64SyscallMode::default(), X64SyscallMode::Off);
+fn default_is_on() {
+    assert_eq!(X64SyscallMode::default(), X64SyscallMode::On);
 }
 
 #[test]

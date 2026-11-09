@@ -4,7 +4,7 @@ use crate::common;
 use std::process::Command;
 use std::time::Duration;
 
-fn decompile(function: &str, enabled: bool) -> String {
+fn decompile(function: &str) -> String {
     let fixture = common::fixture("lifetimes_stack_x86_64");
     let assertions = format!("@{fixture}.kuna");
     let specs = common::repo_root().join("specs");
@@ -21,13 +21,10 @@ fn decompile(function: &str, enabled: bool) -> String {
             &assertions,
             "--option",
             "stackalias",
-            if enabled { "on" } else { "off" },
+            "on",
             "--sleighpath",
         ])
         .arg(specs);
-    if !enabled {
-        command.args(["--option", "localstackviews", "off"]);
-    }
     let output = common::process::output_with_timeout(
         &mut command,
         Duration::from_secs(15),
@@ -44,12 +41,7 @@ fn decompile(function: &str, enabled: bool) -> String {
 
 #[test]
 fn escaped_pointer_read_keeps_its_physical_writes() {
-    let off = decompile("escaped_alias", false);
-    assert!(
-        !off.contains(" = 7;"),
-        "baseline control no longer reproduces: {off}"
-    );
-    let on = decompile("escaped_alias", true);
+    let on = decompile("escaped_alias");
     assert!(on.contains(" = 7;"), "{on}");
     assert!(on.contains("return *escaped_pointer;"), "{on}");
 
@@ -84,7 +76,7 @@ fn calls_partial_writes_branches_loops_and_indirect_writers_stay_bounded() {
         "escaped_loop",
         "callback_rewrite",
     ] {
-        let on = decompile(function, true);
+        let on = decompile(function);
         assert!(!on.contains("WARNING:"), "{function}: {on}");
         if function == "callback_rewrite" {
             assert!(on.contains("(*callback)"), "{on}");
@@ -96,7 +88,7 @@ fn calls_partial_writes_branches_loops_and_indirect_writers_stay_bounded() {
 
 #[test]
 fn indirect_writer_keeps_its_declared_function_pointer() {
-    let code = decompile("callback_rewrite", true);
+    let code = decompile("callback_rewrite");
     assert!(code.contains("void (*callback)(int4 *)"), "{code}");
     if common::process::optional_output(Command::new("clang").arg("--version")).is_none() {
         eprintln!("clang unavailable; skipping emitted callback execution");

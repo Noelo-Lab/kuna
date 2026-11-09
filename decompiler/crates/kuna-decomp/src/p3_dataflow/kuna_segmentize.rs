@@ -1,5 +1,5 @@
-//! (kuna `segmentize`) Segmented addressing: the processor's `<segmentop>`
-//! applied to the analysis, as upstream does.
+//! (kuna) Segmented addressing: the processor's `<segmentop>` applied to the
+//! analysis, as upstream does.
 //!
 //! A segmented processor's SLEIGH spec computes every effective address through
 //! a user-defined p-code op. x86 real mode writes `segment(SS,SP)` for each push
@@ -15,7 +15,7 @@
 //! SS,&Stack0000))` for a `RET`), the stack is never recognized through it and
 //! no constant pointer is ever resolved.
 //!
-//! On, upstream's machinery runs:
+//! Upstream's machinery runs:
 //! - `ActionSegmentize` rewrites each such CALLOTHER into the internal
 //!   `CPUI_SEGMENTOP`, which the stack and type passes see through and which
 //!   prints as its near pointer alone.
@@ -29,8 +29,6 @@
 //!   and the space accepts near-pointer-sized constants as pointers.
 //! - A far-pointer segment op sets the data organization's pointer size to the
 //!   near size and its alternate pointer size to the far size.
-//!
-//! Off restores all of it, leaving the CALLOTHER untouched.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -49,20 +47,6 @@ use kuna_sleigh::semantics::ConstructTpl;
 use crate::inject_sleigh::SleighInjectEngine;
 use crate::pcodeinject::{InjectArchitecture, InjectContext, InjectPayload, SnippetLayout};
 use crate::userop::SegmentOp;
-
-/// The `segmentize` option value parser.
-pub struct OptionSegmentize;
-
-impl OptionSegmentize {
-    /// The option name.
-    pub const NAME: &'static str = "segmentize";
-
-    /// Parse the `on`/`off` value.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = crate::options::on_or_off(p1)?;
-        Ok((val, format!("Segmented address analysis turned {}", if val { "on" } else { "off" })))
-    }
-}
 
 /// One `<segmentop>` with its compiled snippet, shared into the per-function
 /// architecture snapshot (C++ `SegmentOp` with its `ExecutablePcode`).
@@ -269,16 +253,4 @@ fn target_through_segment(fd: &crate::funcdata::Funcdata, indop: crate::context:
         work.extend((0..op.num_input()).filter_map(|i| op.get_in(i)));
     }
     false
-}
-
-/// The values the option changes outside the per-function snapshot, kept so
-/// `off` can put them back.
-#[derive(Debug, Clone)]
-pub struct SegmentSaved {
-    /// Data organization pointer size before the far-pointer adjustment.
-    pub size_of_pointer: int4,
-    /// Alternate (far) pointer size before the adjustment.
-    pub size_of_alt_pointer: int4,
-    /// Each marked space with its prior near-pointer flag and minimum pointer size.
-    pub spaces: Vec<(Rc<AddrSpace>, bool, i32)>,
 }

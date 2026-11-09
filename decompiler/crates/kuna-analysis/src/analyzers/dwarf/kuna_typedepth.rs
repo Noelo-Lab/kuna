@@ -7,7 +7,7 @@
 //! its count. This distinguishes a cycle from a deep, finite type declaration.
 //! [`MAX_NESTING`] also bounds the native stack for long acyclic chains.
 //!
-//! [`Guard::Depth`] retains the three-hop budget for `--option typedepth off`.
+//! [`Guard::Depth`] retains the legacy three-hop budget for the guard's own tests.
 //! It counts transparent qualifiers too, so ordinary declarations such as
 //! `const char **` exceed it. Either guard's refusal makes the caller yield
 //! `void` for that part of the type.
@@ -23,7 +23,7 @@ const MAX_REENTRY: u32 = 3;
 /// real declaration comes close — the deepest in the C corpus measured here is 4.
 const MAX_NESTING: u32 = 64;
 
-/// The pre-fix hop budget (`MAX_TYPE_DEPTH`), retained for the gate-off arm.
+/// The legacy hop budget (`MAX_TYPE_DEPTH`), retained for the guard's tests.
 const MAX_TYPE_DEPTH: u32 = 3;
 
 /// The recursion guard threaded through [`super::build_datatype`].
@@ -39,21 +39,19 @@ pub(super) struct TypeWalk {
 
 /// The recursion-guard arms proper.
 pub(super) enum Guard {
-    /// `--option typedepth off`: the flat hop budget, every hop counted.
+    /// The legacy flat hop budget, every hop counted.
     Depth { depth: u32 },
     /// Default: upstream's per-offset re-entry counter plus a stack backstop.
     Cycle { counts: BTreeMap<usize, u32>, nesting: u32 },
 }
 
 impl TypeWalk {
-    /// A walk configured from the process gate
-    /// ([`kuna_decomp::kuna_typedepth::typedepth_enabled`]).
+    /// The cycle-guarded walk every caller uses.
     pub(super) fn new() -> Self {
-        Self::with_gate(kuna_decomp::kuna_typedepth::typedepth_enabled())
+        Self::with_gate(true)
     }
 
-    /// A walk with the gate supplied explicitly (the unit tests, which must not
-    /// depend on process environment).
+    /// A walk with the guard chosen explicitly (the unit tests).
     pub(super) fn with_gate(full_depth: bool) -> Self {
         let guard = if full_depth {
             Guard::Cycle { counts: BTreeMap::new(), nesting: 0 }

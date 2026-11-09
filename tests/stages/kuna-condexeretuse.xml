@@ -22,18 +22,16 @@
     in the graph the 7 reaches both the RETURN and the tail call, though
     the execution that wrote it always returns.  ActionConditionalExe
     threads that block only after ActionReturnRecovery scored the output
-    trials, and onlyOpUse rejected r0 for the competing CALL use.  With
-    condexeretuse on, a use the merge rules out is skipped.  In differ the
-    7 can reach getv, in stores the STORE is on the path that returns, and
-    in compl the call is the only use the 7 can reach, so all three keep
-    the upstream void in both passes.  In spin, nrexit and tnrexit the 7
-    is forced away from the RETURN (into a spin loop or a call that does
-    not return), so it never reaches it: skipping the STORE and the RETURN
-    there would pass the walk with nothing checked, and all three must
-    keep void too.
+    trials, and onlyOpUse rejected r0 for the competing CALL use.  A use the
+    merge rules out is skipped (kuna_condexeretuse.rs, always on).  In differ
+    the 7 can reach getv, in stores the STORE is on the path that returns, and
+    in compl the call is the only use the 7 can reach, so all three keep the
+    upstream void.  In spin, nrexit and tnrexit the 7 is forced away from the
+    RETURN (into a spin loop or a call that does not return), so it never
+    reaches it: skipping the STORE and the RETURN there would pass the walk
+    with nothing checked, and all three must keep void too.
 
-    Stage / sub-stage: P4 "output-prototype", option condexeretuse.  Pass 1
-    pins off (the bug), pass 2 the default.
+    Stage / sub-stage: P4 "output-prototype".
 -->
 <bytechunk space="ram" offset="0x100000">
 000050e30700a0031eff2f01190000ea000050e30700a0030010a0031eff2f01
@@ -63,38 +61,6 @@
 <script>
   <com>set context TMode 1 [ram,0x10008c] [ram,0x1000a7]</com>
   <com>set context TMode 1 [ram,0x1000d8] [ram,0x1000e7]</com>
-  <com>option condexeretuse off</com>
-  <com>lo fu pick</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu pair</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu popr</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu differ</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu stores</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu compl</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu tpick</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu spin</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu nrexit</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu tnrexit</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option condexeretuse on</com>
   <com>lo fu pick</com>
   <com>decompile</com>
   <com>print C</com>
@@ -127,14 +93,14 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="condexeretuse #1: off, pick pair popr and tpick lose their return value" min="4" max="4">void (pick|pair|popr|tpick)\(</stringmatch>
-<stringmatch name="condexeretuse #2: on, pick pair and tpick return 7 on the path that writes it" min="3" max="3">return 7;</stringmatch>
-<stringmatch name="condexeretuse #3: on, pair returns both halves" min="1" max="1">unsigned long long pair\(</stringmatch>
-<stringmatch name="condexeretuse #4: on, popr returns 3 through popeq" min="1" max="1">return 3;</stringmatch>
-<stringmatch name="condexeretuse #5: on, the tail calls return their result" min="4" max="4">return getvt?\(</stringmatch>
-<stringmatch name="condexeretuse #6: a possible call path keeps differ void in both passes" min="2" max="2">void differ\(</stringmatch>
-<stringmatch name="condexeretuse #7: a store on the returning path keeps stores void in both passes" min="2" max="2">void stores\(</stringmatch>
-<stringmatch name="condexeretuse #8: a 7 that only reaches the call keeps compl void in both passes" min="2" max="2">void compl\(</stringmatch>
-<stringmatch name="condexeretuse #9: a 7 forced into a spin loop keeps spin void in both passes" min="2" max="2">void spin\(</stringmatch>
-<stringmatch name="condexeretuse #10: a 7 passed to a call that does not return keeps nrexit and tnrexit void in both passes" min="4" max="4">void t?nrexit\(</stringmatch>
+<stringmatch name="condexeretuse #1: pick pair popr and tpick never lose their return value" min="0" max="0">void (pick|pair|popr|tpick)\(</stringmatch>
+<stringmatch name="condexeretuse #2: pick pair and tpick return 7 on the path that writes it" min="3" max="3">return 7;</stringmatch>
+<stringmatch name="condexeretuse #3: pair returns both halves" min="1" max="1">unsigned long long pair\(</stringmatch>
+<stringmatch name="condexeretuse #4: popr returns 3 through popeq" min="1" max="1">return 3;</stringmatch>
+<stringmatch name="condexeretuse #5: the tail calls return their result" min="4" max="4">return getvt?\(</stringmatch>
+<stringmatch name="condexeretuse #6: a possible call path keeps differ void" min="1" max="1">void differ\(</stringmatch>
+<stringmatch name="condexeretuse #7: a store on the returning path keeps stores void" min="1" max="1">void stores\(</stringmatch>
+<stringmatch name="condexeretuse #8: a 7 that only reaches the call keeps compl void" min="1" max="1">void compl\(</stringmatch>
+<stringmatch name="condexeretuse #9: a 7 forced into a spin loop keeps spin void" min="1" max="1">void spin\(</stringmatch>
+<stringmatch name="condexeretuse #10: a 7 passed to a call that does not return keeps nrexit and tnrexit void" min="2" max="2">void t?nrexit\(</stringmatch>
 </decompilertest>

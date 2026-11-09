@@ -39,12 +39,12 @@
     propagation folds the stored register into the RET block's phis and the
     two stores die, so the split prints them from the clone's copies of the
     phis, in the order the phis are cloned, which the binary does not record.
-    `option clonephiorder` picks that order: on (the default) clones the phis
-    on globals in address order, which is the binary's order here (#8); off
-    clones them in heritage's order, the reverse (#9).
+    kuna_clonephiorder.rs clones the phis on globals in address order, which
+    is the binary's order here (#8); heritage's order, the reverse, never
+    prints (#9).
 
     Stage: P8 structure (return-block node split).  #1-#7 are a strict fix,
-    no option; #8-#9 pin `option clonephiorder on|off`.
+    no option; #8-#9 pin the clone's phi order.
 -->
 <bytechunk space="ram" offset="0x1000" readonly="true">
 8d4707c38d470bc38d4713c3488d05f5ffffff488905e61f0000833de71f0000
@@ -77,11 +77,6 @@
   <com>lo fu audit_pair</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option clonephiorder off</com>
-  <com>lo fu audit_pair</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option clonephiorder on</com>
   <com>lo fu audit_select</com>
   <com>decompile</com>
   <com>print C</com>
@@ -110,7 +105,7 @@ return 1;</stringmatch>
 <stringmatch name="RETCOPYCLONE #8: by default audit_pair's stores print in address order, as the binary makes them" min="1" max="1">audit_lo = \w+;
 audit_hi = \w+;
 return 1;</stringmatch>
-<stringmatch name="RETCOPYCLONE #9: with clonephiorder off they print in heritage's order, reversed" min="1" max="1">audit_hi = \w+;
+<stringmatch name="RETCOPYCLONE #9: they never print in heritage's order, reversed" min="0" max="0">audit_hi = \w+;
 audit_lo = \w+;
 return 1;</stringmatch>
 </decompilertest>

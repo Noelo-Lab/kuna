@@ -25,7 +25,7 @@ length-carried strings).
 | CFG idioms | Rust panic/drop handling: `cleanupcode`, `securitycheck`; plus the stripper family (`stackguard`, `msvcstackguard`, `devectorize`, `msvcstrappend`, `strlenscan`, `outline`) | `p2_lift/kuna_cleanupcode.rs`, `p7_regions/kuna_securitycheck.rs`, … | All hand-coded; **no generic subgraph matcher**; nothing for Go (`morestack`, write barriers, `panicIndex`) or Swift (ARC, exclusivity) |
 | Types | Rust DWARF enum layouts parsed into `VariantLayout` side table | `analyzers/dwarf/kuna_dwarfvariants.rs`, `p0_knowledge/kuna_dwarfvariants.rs` | **Nothing reads the table yet**; no notion of slices/fat pointers/interfaces/tuples; zero-sized fields dropped; sizes are `int4` so unsized types unrepresentable |
 | Strings | NUL-terminated scan (`StringLiteralPass`), NUL-terminated render (`StringManagerUnicode::get_string_data`) | `analyzers/strings/mod.rs`, `p9_emit/stringmanage.rs` | Go/Rust strings carry length, not NUL; Go rodata is one unterminated blob. BUT: a bounded, NUL-free literal path already exists — `Funcdata::get_internal_string` → `BUILTIN_STRINGDATA` (used only by `constseq.rs`) |
-| Symbols | pclntab pass (names + extents, go1.2–1.20); Rust v0/legacy + Itanium + MSVC demangling; per-language no-return lists | `analyzers/pclntab/`, `analyzers/demangle/`, `loader/noreturn.rs` + `data/{Rust,Golang}FunctionsThatDoNotReturn` | No Go runtime type info (typelinks/moduledata); Swift demangler done (`kuna_swift`, `$s` + `_Tt`); `__swift5_*` metadata naming done (`analyzers/swift`, option `swiftmetadata`); no symbolic references in mangled type names yet |
+| Symbols | pclntab pass (names + extents, go1.2–1.20); Rust v0/legacy + Itanium + MSVC demangling; per-language no-return lists | `analyzers/pclntab/`, `analyzers/demangle/`, `loader/noreturn.rs` + `data/{Rust,Golang}FunctionsThatDoNotReturn` | No Go runtime type info (typelinks/moduledata); Swift demangler done (`kuna_swift`, `$s` + `_Tt`); `__swift5_*` metadata naming done (`analyzers/swift`, option `swiftmetadata`); struct/class layouts from static type metadata done (`swifttypes`; symbolic references resolved); `__swiftcall` / `__swiftcall_throws` models (derived from each AArch64 and x86-64 spec's default) with model-only bindings and an unlocked `self` hint (`swiftcall`), throwing calls detected by the caller's zeroing of the error register; the error value is still an anonymous local, not a second return |
 | Output | Full outlang plane: `OutLang{C,Rust}`, `LangProfile`, `TypeSpeller`, `LangAbi` (stub: `extern_marker` only, doc names Go multi-return as the known omission) | `p9_emit/kuna_lang.rs`, `kuna_langrust.rs`, `p4_calls/kuna_langabi.rs` | Rust output has no type definitions renderer; no tuple/multi-return form |
 
 Two structural facts shape the whole design:
@@ -33,7 +33,7 @@ Two structural facts shape the whole design:
 1. **Detection runs inside `load file`, before any `option` line** (the
    stash→flags→commit protocol, `docs/spec/00-overview.md` §0.1). A user
    override of the detected language therefore has to be a *loadtime-tier*
-   option (env binding via `kuna-cli/src/loadtime.rs`), like `relocobjects`.
+   option (env binding via `kuna-cli/src/loadtime.rs`), like `goabi`.
 2. **`type_metatype` is effectively closed** (~3.7k references across 380
    files, mostly non-exhaustive matches; `kuna_dwarfvariants.rs` already
    examined and rejected adding a variant). Language type semantics must ride
@@ -184,8 +184,9 @@ typed_data/prototypes` seam):
   the single highest-value type provider in the plan and is pure analysis-tier
   code (new `analyzers/gotypes/`).
 - Swift `__swift5_*` reflection metadata (field descriptors + mangled type
-  names) — the demangler it needs exists (`kuna_swift::demangle_swift_tree`
-  gives the type tree; symbolic references are not read yet).
+  names) — **done** as `swifttypes` (`analyzers/swift/kuna_swifttypes.rs`):
+  layouts from the static type metadata, field types through
+  `kuna_swift::demangle_swift_type` with its symbolic references resolved.
 - **Synthesized well-known shells** registered by each pack even with no
   debug info (`runtime.g`, `go.string`, `go.slice`, `go.iface`,
   `swift.refcounted`), so P5 recognizers can type a `(ptr,len)` pair loaded
@@ -205,10 +206,16 @@ AArch64 and never chosen. Plan:
    `PrototypePieces`). Fix: let `AnalysisOutput` carry `(addr, model_name)`
    facts and honor a model-only binding in `callee_proto_model` /
    `ActionDefaultParams`.
-2. **Swift models added to cspecs** (`swiftcall`: self = r13/x20,
-   error = r12/x21, plus the SysV base), selected per-symbol from demangled
-   Swift signatures (`throws` ⇒ error-register convention). The swifterror
-   out-value is representable near-term as a second joined return (below).
+2. **Swift models** (**done**, derived from each AArch64 and x86-64 spec's
+   default model when the spec is read, so the vendored specs stay untouched:
+   `__swiftcall` is the platform base plus `swiftself` (x20 / r13) as an input resource section of its own;
+   `__swiftcall_throws` also kills `swifterror` (x21 / r12)). Bound per symbol
+   as `(addr, model)` facts — the model-only binding item 1 calls for, now
+   honored by the function's own drive and by `ActionDefaultParams` — from the
+   Swift metadata and the demangled symbols (`throws` ⇒ the throwing model),
+   and per call where the caller zeroes the error register before it. The
+   swifterror out-value is still an anonymous local after the call;
+   representing it as a second joined return (below) is open.
 3. **The g register**: `<global><register name="R14"/>` in the golang cspec
    plus the synthesized `runtime.g` shell type makes goroutine-local accesses
    render as `g->stackguard0` instead of an unexplained raw register — and
@@ -286,7 +293,7 @@ toolchain in the devcontainer):
 - Mode interaction: real Go binaries are almost always >2 MiB, so `auto`
   resolves to `fast` and the Listing is off — but **pclntab *is* Go's
   function discovery**, runs at load, and is cheap. The pack keeps
-  `gopclntab` on in every mode (it already defaults on), making Go the rare
+  `gopclntab` running in every mode, making Go the rare
   case where `fast` loses nothing on inventory.
 
 **Rust pack** (second: much already exists — detection, demangling, rustabi,
@@ -303,12 +310,20 @@ panic no-return lists, securitycheck, DWARF variants):
 
 **Swift pack** (third: most new infrastructure, smallest immediate corpus):
 - Prereqs the others don't need: a Swift demangler (**done**: the pure-Rust
-  `analyzers/demangle/kuna_swift.rs`, option `swiftdemangle`, verified against
+  `analyzers/demangle/kuna_swift.rs`, verified against
   `swift-demangle`; every crate alternative builds Apple's C++ demangler, which
-  `kuna-wasm` cannot carry), `__swift5_*` metadata walker (**done** for
-  naming: `analyzers/swift`, option `swiftmetadata` — accessors, vtable slots,
-  witnesses, descriptors; field types still need symbolic-reference
-  demangling), Swift detection, cspec `swiftcall` models. Mach-O loading itself is already solid
+  `kuna-wasm` cannot carry), `__swift5_*` metadata walker (**done**:
+  `analyzers/swift`, option `swiftmetadata` names accessors, vtable slots,
+  witnesses and descriptors; its `swifttypes` arm lays out every fixed-layout
+  struct and class from the static type metadata, resolving the field
+  descriptors' symbolic references, and pins getters' `self` to the
+  `swiftself` register), Swift detection, `__swiftcall` models
+  (**done**: option `swiftcall` binds them to methods, initializers,
+  accessors and witnesses with an unlocked typed `self`, and gives a call
+  that zeroes the error register the throwing model; still open: the
+  indirect-result register (x8 / rax), up-to-four-register returns, the
+  async context register (x22 / r14), and `self` at indirect vtable and
+  witness calls that do not throw). Mach-O loading itself is already solid
   (fat binaries, stubs, issue-#666 underscore handling).
 - Idioms: `swift_retain/release/autorelease` elision
   (`CallStraightLine` → `DeleteCall`; **default-on within the pack** — ARC

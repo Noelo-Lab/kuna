@@ -39,18 +39,20 @@
 //!
 //! The transform is bounded and conservative (≤ [`MAX_TAIL_BLOCKS`] blocks /
 //! [`MAX_TAIL_OPS`] ops, no `CALL`/`STORE` in the tail), so duplication stays
-//! cheap and side-effect-safe.  It is gated by `option gotoreduce on|off`
-//! (`reduce_return_gotos`, default-ON per DIV-14) — when off, [`ActionGotoReduce::apply`]
-//! early-returns and output is byte-identical.
+//! cheap and side-effect-safe.
+//!
+//! `option gotoreduce off|return|on` ([`GotoReduceMode`]) selects which return
+//! tails are duplicated: `return` runs this pass alone, `on` (the default) also
+//! runs [`crate::p8_structure::kuna_taildup`] for a return tail that contains a
+//! call, and `off` runs neither, leaving the upstream goto/label rendering.
 
-use kuna_base::error::KunaResult;
+use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::block::{block_flags, BlockType};
 use crate::funcdata::Funcdata;
-use crate::options::on_or_off;
 use crate::context::BlockId;
 
 use kuna_base::marshal::ElementId;
@@ -63,8 +65,42 @@ pub const MAX_TAIL_BLOCKS: usize = 3;
 /// Maximum number of p-code ops across a duplicated return tail.
 pub const MAX_TAIL_OPS: usize = 8;
 
+/// Which return tails `option gotoreduce` duplicates into a `goto` source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GotoReduceMode {
+    /// Neither rewrite: the upstream goto/label rendering.
+    #[default]
+    Off,
+    /// Only a call-free return tail ([`ActionGotoReduce`]).
+    Return,
+    /// `return`, and a return tail that contains a call
+    /// ([`crate::p8_structure::kuna_taildup::ActionTailDup`]).
+    On,
+}
+
+impl GotoReduceMode {
+    /// The option token.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            GotoReduceMode::Off => "off",
+            GotoReduceMode::Return => "return",
+            GotoReduceMode::On => "on",
+        }
+    }
+
+    /// Does [`ActionGotoReduce`] run?
+    pub fn return_tails(self) -> bool {
+        self != GotoReduceMode::Off
+    }
+
+    /// Does [`crate::p8_structure::kuna_taildup::ActionTailDup`] run?
+    pub fn call_tails(self) -> bool {
+        self == GotoReduceMode::On
+    }
+}
+
 /// \brief Reduce gotos by duplicating a small return tail into the `goto` source
-/// (C++/angr `ReturnDuplicator`).  Option-gated (`reduce_return_gotos`).
+/// (C++/angr `ReturnDuplicator`).  Runs when [`GotoReduceMode::return_tails`].
 pub struct ActionGotoReduce {
     base: ActionBase,
 }
@@ -90,8 +126,7 @@ impl Action for ActionGotoReduce {
         Some(Box::new(ActionGotoReduce { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // P0 assertion `option gotoreduce on|off`, carried on the Architecture boundary.
-        if !data.get_arch().reduce_return_gotos {
+        if !data.get_arch().goto_reduce.return_tails() {
             return 0;
         }
         if data.sblocks_get_size() == 0 {
@@ -218,20 +253,28 @@ fn return_tail_chain(data: &Funcdata, bb0: BlockId) -> Option<Vec<BlockId>> {
 }
 
 //===========================================================================
-// Option parse (`gotoreduce on|off`).
+// Option parse (`gotoreduce off|return|on`).
 //===========================================================================
 
-/// The `gotoreduce on|off` ArchOption (angr SAILR goto-reduction).
+/// The `gotoreduce off|return|on` ArchOption (angr SAILR goto-reduction).
 pub struct OptionGotoReduce;
 
 impl OptionGotoReduce {
     /// The option name.
     pub const NAME: &'static str = "gotoreduce";
 
-    /// Parse `on`/`off`, returning the bool value + a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Return-tail goto reduction turned {prop}")))
+    /// Parse `off`/`return`/`on`, returning the mode + a confirmation message.
+    pub fn apply(&self, p1: &str) -> KunaResult<(GotoReduceMode, String)> {
+        let mode = match p1 {
+            "off" => GotoReduceMode::Off,
+            "return" => GotoReduceMode::Return,
+            "on" => GotoReduceMode::On,
+            _ => {
+                return Err(KunaError::parse(
+                    "Must specify gotoreduce as 'off', 'return' or 'on'",
+                ))
+            }
+        };
+        Ok((mode, format!("Return-tail goto reduction set to {}", mode.as_str())))
     }
 }

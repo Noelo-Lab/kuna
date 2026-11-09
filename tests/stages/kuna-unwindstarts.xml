@@ -39,6 +39,7 @@ c0035fd6
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_unwind_only_arm64</com>
+  <com>option unwindstarts off</com>
   <com>read symbols</com>
   <com>functions</com>
   <com>clear architecture</com>

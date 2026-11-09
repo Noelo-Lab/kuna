@@ -19,10 +19,10 @@ session changes only the options that second mode names. Discover them with
 
 | Mode | What it does |
 |---|---|
-| `auto` | The default file-front-end policy: `aggressive` below 500 KiB, `reliable` from 500 KiB up to 2 MiB, and `fast` at 2 MiB or larger, with `ctypes` and `partialaccess` on at every size. |
+| `auto` | The default file-front-end policy: `aggressive` below 500 KiB, `reliable` from 500 KiB up to 2 MiB, and `fast` at 2 MiB or larger, with `ctypes` on at every size. |
 | `reliable` | The shipped, well-tested defaults — the safe, stable baseline. An **empty** override list. |
-| `aggressive` | Maximum recovery: turns **on** every off-by-default quality, structuring, and analysis pass except `v850indirectbranch` and `dwarf_lines`. Slower and more speculative (may over-recover); best for readability and for measuring the recovery ceiling on the benchmark, not for guaranteed faithfulness. |
-| `fast` | Latency first: disables the exhaustive Listing consumers, prologue-pattern scan, and AIF gap walk, then substitutes rooted direct-call discovery and conservative pointer-table validation. Keeps the shipped per-function transforms and explicit selectors, but may still discover fewer functions and recover fewer program-wide facts than `reliable`. Spells core types and partial accesses as C (`ctypes`, `partialaccess`). |
+| `fast` | Latency first: disables the exhaustive Listing consumers, prologue-pattern scan, and AIF gap walk, then substitutes rooted direct-call discovery and conservative pointer-table validation. Keeps the shipped per-function transforms and explicit selectors, but may still discover fewer functions and recover fewer program-wide facts than `reliable`. Spells core types as C (`ctypes`). |
+| `aggressive` | Maximum recovery: turns **on** every off-by-default quality, structuring, and analysis pass except `dwarf_lines`. Slower and more speculative (may over-recover); best for readability and for measuring the recovery ceiling on the benchmark, not for guaranteed faithfulness. |
 
 ## `auto` (default)
 
@@ -36,25 +36,26 @@ session changes only the options that second mode names. Discover them with
 
 The boundary comparisons are exact: a 500 KiB file is `reliable`, and a 2 MiB
 file is `fast`. “Standard mode” in the size policy means the existing
-`reliable` preset. The native CLI reads filesystem metadata; the browser/WASI
+`reliable` preset. The native CLI reads filesystem metadata; for a dyld shared
+cache it uses the summed file size of the selected image's segments instead,
+because the main cache file says nothing about the image. The browser/WASI
 front-end classifies the uploaded virtual file's byte length through the same
 Rust function. An explicit concrete `--mode` bypasses size selection, and a
 later explicit `--option` still overrides the selected preset.
 
-`auto` also carries two overrides of its own, `ctypes=on` and
-`partialaccess=on`, applied before the selected preset's list (`AUTO_OVERRIDES`, resolved together with the preset by
+`auto` also carries an override of its own, `ctypes=on`, applied before the
+selected preset's list (`AUTO_OVERRIDES`, resolved together with the preset by
 `resolve_overrides_for_size`). The size policy trades discovery and recovery
 depth for latency; how the emitted C spells a type is not part of that trade,
 and `ctypes` costs nothing. Without it a binary of 500 KiB or more printed
 `int4`, `uint8` and `float8` where a smaller one printed `int`,
 `unsigned long` and `double`. An 8-byte element cast such as `((int8 *)a0)[4]`
 reads like a byte offset of 4 when the offset is 0x20 (GH-1063). `kuna modes`
-`partialaccess` is the same kind of choice: it prints a partial access of a
-variable as a typed pointer access (`((short *)&v1)[2]`) instead of Ghidra's
-`v1._4_2_`, which is not C. `kuna modes` lists both overrides under `auto`. An
-explicit `--mode reliable` does not get them:
-that preset stays the catalog defaults, which is also what the datatest corpus
-runs.
+lists the override under `auto`. An explicit `--mode reliable` does not get
+it: that preset stays the catalog defaults, which is also what the datatest
+corpus runs. The same kind of choice for a partial access, `partialaccess`
+(a typed pointer access `((short *)&v1)[2]` instead of Ghidra's `v1._4_2_`,
+which is not C), is a catalog default, so every mode prints it.
 
 This makes small binaries favor maximum recovery while bounding the work a
 browser or bulk export attempts for large inputs. On private PE
@@ -75,9 +76,8 @@ The current defaults are already a well-tuned, net-positive-on-benchmark set
 (many angr structuring flags are default-on; see `docs/history.md`).
 `reliable` is a stable, named alias for that set — its override list is
 deliberately empty. `auto`'s 500 KiB–2 MiB tier selects it with `auto`'s own
-`ctypes=on` and `partialaccess=on` in front; an explicit `--mode reliable` is
-the catalog defaults exactly, Ghidra's `int4`/`float8` spellings and `._4_2_`
-members included. Pinning options here (e.g. `listing off`) would *change*
+`ctypes=on` in front; an explicit `--mode reliable` is the catalog defaults
+exactly, Ghidra's `int4`/`float8` spellings included. Pinning options here (e.g. `listing off`) would *change*
 behaviour versus the surface defaults (`decompile` and `decompile-all`
 auto-enable the Listing), so the empty list is the faithful implementation. It
 future-proofs the preset: if the defaults later drift more aggressive,
@@ -95,7 +95,7 @@ build failure. The options it enables:
   `switchguardbound` (speed-costly),
   `unrolledguard` (speed-costly), `sparcstructret`,
   `globalarrayanchor` (retain mapped array bases in negatively biased element indices),
-  `regionedgeorder`, `returndup`, `orchain`, `iteexpr`,
+  `regionedgeorder`, `returndup`, `iteexpr`,
   `devectorize` (a proven vectorized integer reduction re-rolled into its scalar
   loop; off by default only because the rewrite hides the stride and the
   duplicated body), `ctypes`, `partialaccess` (a partial access prints as a
@@ -126,29 +126,30 @@ build failure. The options it enables:
   also need `listing`, which this preset supplies; off ARM they are measured
   no-ops (identical entry sets on 90 x86-64 twins and 12 i386 PE images).
 
-`returndup` (DIV-54), `pdb` (DIV-129) and `cfstrings` became shipped defaults and are
-deliberately kept on the list: the preset **owns** the option, so an earlier
+`returndup` (DIV-54), `pdb` (DIV-129), `cfstrings`, the presentation defaults
+(`partialaccess`, `voidtailreturn`, `importdata`, `calltargettype`, `libcnames`)
+and the target-gated passes (`sparcstructret`, `v850indirectbranch`,
+`cortexmpriv`, `x64syscall`, `armfloatreturn`/`armfloatargs`, `rtti`,
+`itaniumrtti`, `objc`, `swiftmetadata`, `macho-arm64e` and the four ARM entry
+passes) became shipped defaults and are deliberately kept on the list: the
+preset **owns** the option, so an earlier
 `--option returndup off` on the same command line is re-enabled by
 `--mode aggressive`, and the preset's contract ("every recovery pass on") does not
 silently change if a default drifts back.
 
 ### The deliberate exclusions
 
-Most off-by-default options are safe to blanket-enable: the format-specific ones
-are inert off their target (`rtti` = PE, `objc`/`cfstrings`/`macho-arm64e` = Mach-O,
-`sparcstructret` = the SPARC `unimp`-trap idiom, which cannot occur off SPARC,
-and since DIV-93 the four ARM entry passes, which are inert off ARM). These are
-not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
+Most off-by-default options are safe to blanket-enable (the target-gated ones --
+`rtti` = PE, `objc`/`cfstrings`/`macho-arm64e` = Mach-O, `sparcstructret` = SPARC,
+`v850indirectbranch` = V850, the four ARM entry passes = ARM -- now ship on and
+are inert off their target). These are not, and the invariant test's
+`EXCLUDED_ON_PURPOSE` list is the authority:
 
 - **`x86listingswitch`** — bounded i386 table coverage can expose tail jumps
   into independent functions before AIF discovers their entries. The measured
   Wine corpus lost seven real starts; keep this discovery tradeoff explicit
   with `--option x86listingswitch on` in every mode.
 
-- **`v850indirectbranch`** — its predicate (`kuna_is_v850_indirect_jmp`,
-  `p2_lift/kuna_v850indbranch.rs`) matches **any** register-indirect `CALLIND`,
-  so on x86-64/ARM it would reclassify every `call reg` into an indirect branch
-  — corruption, not recovery.
 - **`dwarf_lines`** — it recovers nothing. It attaches every instruction's
   `.debug_line` `file:line` as a comment, and those survive into the emitted C,
   so on any `-g` binary the body renders interleaved with `/* src.c:NNN */`
@@ -169,11 +170,6 @@ not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
   charging `kuna decompile` for a feature `decompile-all` never delivered; now
   both surfaces honour `--option formatstring on` identically, and neither pays
   for it unless asked (DIV-66).
-
-- **`ifuncfpret`** — Stage A of the IFUNC FP-return chain. On its own it only
-  renames x86-64 IFUNC stubs to synthetic `ifunc_<resolver>` names and recovers a
-  tail call to them; it does not yet fix the `xmm0` return the feature exists for,
-  so it stays an opt-in until the chain is complete.
 
 - **`msvcstrappend`** — it collapses an inlined MSVC `std::string` append into one
   `std::string::push_back`/`append` call, deleting the fast arm's stores and naming
@@ -203,8 +199,8 @@ not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
   `f ? a / b : c`) then keeps only the high word or returns nothing, where the
   default returns every word.
 
-These therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
-`--option dwarf_lines on`, `--option formatstring full`, `--option ifuncfpret on`,
+These therefore stay manual per-run opt-ins (`--option dwarf_lines on`,
+`--option formatstring full`,
 `--option msvcstrappend on`, `--option bejoin on`, `--option regsigned on`,
 `--option libgccsigs on`)
 even under `--mode aggressive`; a named `--option` still wins over the preset by
@@ -223,12 +219,12 @@ next call keeps its argument. Flip `--option argclobber off` to keep every
 argument the register model produced, phantom or not.
 
 Separately, these default-off options remain unevaluated for preset membership:
-`guardarm`, `loopcondhoist`, `paramcopyhoist`, `switchselector`, `msvcstackguard`,
-and `stackaddrargtrial`. Each needs the sweep and speed evidence that would
+`guardarm`, `loopcondhoist`, `paramcopyhoist`, `switchselector` and
+`stackaddrargtrial`. Each needs the sweep and speed evidence that would
 justify a preset change. The stack-address option has focused tests and a local
-speed measurement, but no broad sweep; the MSVC option still needs a corpus with
-real `/GS` cookies. The `UNEVALUATED` list beside the invariant test records this
-follow-up. DIV-93 previously removed the four ARM entry options from that list.
+speed measurement, but no broad sweep. The `UNEVALUATED` list beside the
+invariant test records this follow-up. DIV-93 previously removed the four ARM
+entry options from that list.
 
 ### Caveats
 
@@ -254,7 +250,7 @@ preset merely keeps naming it. See
 
 ## `fast`
 
-`fast` applies exactly six overrides:
+`fast` applies exactly five overrides:
 
 ```text
 listing=off
@@ -262,12 +258,10 @@ funcstart_patterns=off
 aif=off
 fast_funcdisc=on
 ctypes=on
-partialaccess=on
 ```
 
-`ctypes` and `partialaccess` are the printer's C spelling of the core types and
-of a partial access and cost nothing, so a speed preset has no reason to print
-`int8` or `v1._4_2_` where `aggressive` prints C.
+`ctypes` is the printer's C spelling of the core types and costs nothing, so a
+speed preset has no reason to print `int8` where `aggressive` prints C.
 The first three disable the exhaustive program-wide decode and speculative
 discovery paths that dominate large-binary latency. Naming `listing` suppresses
 its default injection on all three decompile surfaces; naming

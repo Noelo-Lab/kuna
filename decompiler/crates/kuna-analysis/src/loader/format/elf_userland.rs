@@ -13,6 +13,13 @@
 /// OpenBSD.
 const OS_ABIS: [u8; 4] = [2, 3, 9, 12];
 
+/// The generic System V `EI_OSABI`, which Linux toolchains emit by default.
+const ELFOSABI_NONE: u8 = 0;
+/// The GNU/Linux `EI_OSABI`.
+const ELFOSABI_GNU: u8 = 3;
+/// Note owners whose ABI-tag note names Linux or Android.
+const LINUX_NOTE_OWNERS: [&[u8]; 2] = [b"GNU", b"Android"];
+
 /// Note owners whose type-1 note identifies the system the image was built for
 /// (`NT_GNU_ABI_TAG`, `NT_FREEBSD_ABI_TAG`, `NT_NETBSD_IDENT`,
 /// `NT_OPENBSD_IDENT`, `NT_ANDROID_TYPE_IDENT`).
@@ -77,6 +84,25 @@ pub fn is_os_userland_image(bytes: &[u8]) -> bool {
         }
     }
     false
+}
+
+/// Is `bytes` an ELF image built for Linux?
+///
+/// Yes when its `EI_OSABI` is GNU/Linux, or the generic System V value with no
+/// ABI-tag note of another system's owner (FreeBSD, NetBSD, OpenBSD). A BSD or
+/// Solaris `EI_OSABI`, and anything that is not a well-formed ELF (so every PE,
+/// Mach-O or raw image), answers `false`.
+pub fn is_linux_image(bytes: &[u8]) -> bool {
+    let Some(elf) = Elf::parse(bytes) else {
+        return false;
+    };
+    match bytes[7] {
+        ELFOSABI_GNU => true,
+        ELFOSABI_NONE => elf
+            .os_note_owner()
+            .map_or(true, |owner| LINUX_NOTE_OWNERS.contains(&owner)),
+        _ => false,
+    }
 }
 
 /// The header fields the checks read, and the image to read the rest from.
@@ -209,41 +235,67 @@ impl<'a> Elf<'a> {
     /// Does the note area at `[offset, offset + size)` hold a type-1 note of a
     /// system's owner? Entries are padded to `align`, 4 or 8.
     fn has_os_note(&self, offset: u64, size: u64, align: u64) -> bool {
-        let Some((start, end)) = self.range(offset, size) else {
-            return false;
-        };
+        self.note_owner(offset, size, align).is_some()
+    }
+
+    /// The owner of the first type-1 note of a system's owner in the note area
+    /// at `[offset, offset + size)`. Entries are padded to `align`, 4 or 8.
+    fn note_owner(&self, offset: u64, size: u64, align: u64) -> Option<&'static [u8]> {
+        let (start, end) = self.range(offset, size)?;
         let pad = if align == 8 { 8 } else { 4 };
         let up = |n: usize| n.checked_add(pad - 1).map(|n| n & !(pad - 1));
         let mut at = start;
         while at + 12 <= end {
-            let (Some(namesz), Some(descsz), Some(kind)) =
-                (self.u32(at), self.u32(at + 4), self.u32(at + 8))
-            else {
-                return false;
-            };
+            let (namesz, descsz, kind) = (self.u32(at)?, self.u32(at + 4)?, self.u32(at + 8)?);
             let name_at = at + 12;
-            let Some(name_end) = name_at.checked_add(namesz as usize) else {
-                return false;
-            };
-            let Some(name) = self.bytes.get(name_at..name_end.min(end)) else {
-                return false;
-            };
+            let name_end = name_at.checked_add(namesz as usize)?;
+            let name = self.bytes.get(name_at..name_end.min(end))?;
             let owner = name.strip_suffix(b"\0").unwrap_or(name);
-            if kind == 1 && OS_NOTE_OWNERS.contains(&owner) {
-                return true;
+            if kind == 1 {
+                if let Some(known) = OS_NOTE_OWNERS.iter().copied().find(|o| *o == owner) {
+                    return Some(known);
+                }
             }
-            let Some(desc_at) = up(name_end) else {
-                return false;
-            };
-            let Some(next) = desc_at.checked_add(descsz as usize).and_then(up) else {
-                return false;
-            };
+            let desc_at = up(name_end)?;
+            let next = desc_at.checked_add(descsz as usize).and_then(up)?;
             if next <= at {
-                return false;
+                return None;
             }
             at = next;
         }
-        false
+        None
+    }
+
+    /// The owner of the first system ABI-tag note in any `PT_NOTE` segment or
+    /// `SHT_NOTE` section.
+    fn os_note_owner(&self) -> Option<&'static [u8]> {
+        for i in 0..self.phnum {
+            let ph = self.phoff.saturating_add(i * self.phentsize);
+            if self.u32(ph) != Some(PT_NOTE) {
+                continue;
+            }
+            let (offset, filesz, align) =
+                (self.word(ph, 8, 4), self.word(ph, 32, 16), self.word(ph, 48, 28));
+            if let (Some(offset), Some(filesz)) = (offset, filesz) {
+                if let Some(owner) = self.note_owner(offset, filesz, align.unwrap_or(4)) {
+                    return Some(owner);
+                }
+            }
+        }
+        for i in 0..self.shnum {
+            let sh = self.shoff.saturating_add(i * self.shentsize);
+            if self.u32(sh.saturating_add(4)) != Some(SHT_NOTE) {
+                continue;
+            }
+            let (offset, size, align) =
+                (self.word(sh, 24, 16), self.word(sh, 32, 20), self.word(sh, 48, 32));
+            if let (Some(offset), Some(size)) = (offset, size) {
+                if let Some(owner) = self.note_owner(offset, size, align.unwrap_or(4)) {
+                    return Some(owner);
+                }
+            }
+        }
+        None
     }
 }
 

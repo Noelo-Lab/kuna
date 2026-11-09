@@ -75,6 +75,7 @@ cc1cfaffe961ffffff0f1f8000000000660f6f05c8600200c644242000488d6c
 <symbol space="ram" offset="0x6cbf0" name="get_hz"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>map addr r0x92e50 char s_92e50[32]</com>
   <com>lo fu get_hz</com>
   <com>decompile</com>

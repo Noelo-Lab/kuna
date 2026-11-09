@@ -91,13 +91,8 @@ fn build_manager() -> AddrSpaceManager {
 }
 
 fn build_fd(shuffle_ids: Vec<u32>) -> Funcdata {
-    build_fd_gated(shuffle_ids, true)
-}
-
-fn build_fd_gated(shuffle_ids: Vec<u32>, gate: bool) -> Funcdata {
     let manage = build_manager();
     let mut ctx = ArchContext::new(manage);
-    ctx.simd_lane_fold = gate;
     ctx.simd_shuffle_userops = shuffle_ids;
     let glb = Rc::new(ctx);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
@@ -197,7 +192,7 @@ fn broadcast_lane_read_is_reanchored_on_the_source_lane_zero() {
     let mut fd = build_fd(vec![SHUF_ID as u32]);
     let (op, src) = build_lane_read(&mut fd, SHUF_ID, 16, true, 5, 1);
 
-    let mut rule = RuleSimdShuffleLane::new(true);
+    let mut rule = RuleSimdShuffleLane::new();
     assert_eq!(rule.apply_op(op, &mut fd), 1);
 
     let (code, in0, k) = subpiece_shape(&fd, op);
@@ -207,19 +202,10 @@ fn broadcast_lane_read_is_reanchored_on_the_source_lane_zero() {
 }
 
 #[test]
-fn the_gate_off_leaves_the_lane_read_alone() {
-    // ArchContext gate off AND the rule's own override off.
-    let mut fd = build_fd_gated(vec![SHUF_ID as u32], false);
-    let (op, _src) = build_lane_read(&mut fd, SHUF_ID, 16, true, 5, 1);
-    let mut rule = RuleSimdShuffleLane::new(false);
-    assert_eq!(rule.apply_op(op, &mut fd), 0);
-}
-
-#[test]
 fn a_non_constant_mask_is_declined() {
     let mut fd = build_fd(vec![SHUF_ID as u32]);
     let (op, _src) = build_lane_read(&mut fd, SHUF_ID, 16, false, 5, 1);
-    let mut rule = RuleSimdShuffleLane::new(true);
+    let mut rule = RuleSimdShuffleLane::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
 }
 
@@ -228,7 +214,7 @@ fn a_multi_byte_lane_read_is_declined() {
     // Two lanes of a broadcast are a concatenation, not another SUBPIECE.
     let mut fd = build_fd(vec![SHUF_ID as u32]);
     let (op, _src) = build_lane_read(&mut fd, SHUF_ID, 16, true, 4, 2);
-    let mut rule = RuleSimdShuffleLane::new(true);
+    let mut rule = RuleSimdShuffleLane::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
 }
 
@@ -238,7 +224,7 @@ fn an_unnamed_user_op_is_declined() {
     // register under a shuffle name.
     let mut fd = build_fd(vec![SHUF_ID as u32]);
     let (op, _src) = build_lane_read(&mut fd, SHUF_ID + 1, 16, true, 5, 1);
-    let mut rule = RuleSimdShuffleLane::new(true);
+    let mut rule = RuleSimdShuffleLane::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
 }
 
@@ -246,7 +232,7 @@ fn an_unnamed_user_op_is_declined() {
 fn an_architecture_with_no_shuffle_user_op_never_fires() {
     let mut fd = build_fd(vec![]);
     let (op, _src) = build_lane_read(&mut fd, SHUF_ID, 16, true, 5, 1);
-    let mut rule = RuleSimdShuffleLane::new(true);
+    let mut rule = RuleSimdShuffleLane::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
 }
 
@@ -256,7 +242,7 @@ fn an_unsupported_vector_width_is_declined() {
     // permutation, so the width is not matched.
     let mut fd = build_fd(vec![SHUF_ID as u32]);
     let (op, _src) = build_lane_read(&mut fd, SHUF_ID, 32, true, 5, 1);
-    let mut rule = RuleSimdShuffleLane::new(true);
+    let mut rule = RuleSimdShuffleLane::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
 }
 
@@ -267,9 +253,3 @@ fn the_rule_registers_in_the_analysis_group() {
     assert_eq!(specs[0].group, "analysis");
 }
 
-#[test]
-fn the_option_parses_on_and_off() {
-    assert!(OptionSimdLane.apply("on").unwrap().0);
-    assert!(!OptionSimdLane.apply("off").unwrap().0);
-    assert_eq!(OptionSimdLane::NAME, "simdlane");
-}

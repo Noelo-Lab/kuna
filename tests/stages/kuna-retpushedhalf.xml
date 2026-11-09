@@ -5,7 +5,7 @@
     the epilogue invent an extra argument and a 128-bit return.
 
     Stage / sub-stage: P4 call and prototype model, output-prototype.
-    P0 assertion:      option retpushedhalf on|off  (default on).
+    The rule (kuna_retpushedhalf.rs) is always on.
 
     Source (gas, x86-64 SysV, bytes verbatim below):
 
@@ -16,7 +16,7 @@
     All three leave something in RDX at the RETURN, so return recovery offers the
     SysV RAX:RDX pair in all three. They differ in where the RDX value came from.
 
-    The bug (pass 2, option off): in cross_reg_restore the popped slot holds R8,
+    The bug: in cross_reg_restore the popped slot holds R8,
     which the function pushed only to move the stack pointer. RDX at the RETURN
     therefore traces back to R8 at entry, and kuna_retinputhalf reads that as
     "an input parameter the function PLACED in the return register" and keeps the
@@ -24,14 +24,14 @@
     what makes R8 a parameter, so a one-argument function recovers FIVE
     arguments and a 128-bit return, with the fifth used only as the high half.
 
-    The fix (pass 1, default): a register some stack-adjusting instruction stores
+    The fix: a register some stack-adjusting instruction stores
     to memory and no instruction ever writes is stack maintenance, not a value the
     function placed anywhere, so it cannot satisfy the placement test. The
     evidence is gathered during the flow build, because by the time the repair
     runs copy propagation has collapsed the store and the load and the surviving
     RDX = COPY(R8) is identical to a deliberate mov %r8,%rdx.
 
-    The two controls are unmoved in both passes. same_reg_restore pops back into
+    The two controls are unmoved. same_reg_restore pops back into
     the register it pushed, so the pop WRITES it and the register is not
     push-only; dead_rdx_write touches no stack at all, and its RDX really is a
     plain copy of the second argument, which is indistinguishable from a genuine
@@ -54,21 +54,11 @@
   <com>lo fu dead_rdx_write</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option retpushedhalf off</com>
-  <com>lo fu same_reg_restore</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu cross_reg_restore</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu dead_rdx_write</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="RETPUSHEDHALF #1: by default the alignment push/pop leaves a one-argument function returning one register" min="1" max="1">int8 cross_reg_restore\(int8 a0\)</stringmatch>
-<stringmatch name="RETPUSHEDHALF #2: with the option off the bug returns: the pushed register becomes a fifth argument" min="1" max="1">undefined16 cross_reg_restore\(int8 a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned long a4\)</stringmatch>
-<stringmatch name="RETPUSHEDHALF #3: and the invented argument is used only as the high half of the return" min="1" max="1">v1\._8_8_ = a4;</stringmatch>
-<stringmatch name="RETPUSHEDHALF #4: the same-register save/restore is unmoved in both passes, because the pop writes the register it pushed" min="2" max="2">int8 same_reg_restore\(int8 a0\)</stringmatch>
-<stringmatch name="RETPUSHEDHALF #5: a plain register-to-register move into RDX is unmoved in both passes: no stack, no push, nothing to reject" min="2" max="2">undefined16 dead_rdx_write\(int8 a0,unsigned long a1\)</stringmatch>
+<stringmatch name="RETPUSHEDHALF #1: the alignment push/pop leaves a one-argument function returning one register" min="1" max="1">int8 cross_reg_restore\(int8 a0\)</stringmatch>
+<stringmatch name="RETPUSHEDHALF #2: the pushed register never becomes a fifth argument" min="0" max="0">undefined16 cross_reg_restore\(int8 a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned long a4\)</stringmatch>
+<stringmatch name="RETPUSHEDHALF #3: no invented argument is used as the high half of the return" min="0" max="0">v1\._8_8_ = a4;</stringmatch>
+<stringmatch name="RETPUSHEDHALF #4: the same-register save/restore is unmoved, because the pop writes the register it pushed" min="1" max="1">int8 same_reg_restore\(int8 a0\)</stringmatch>
+<stringmatch name="RETPUSHEDHALF #5: a plain register-to-register move into RDX is unmoved: no stack, no push, nothing to reject" min="1" max="1">undefined16 dead_rdx_write\(int8 a0,unsigned long a1\)</stringmatch>
 </decompilertest>

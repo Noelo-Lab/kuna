@@ -131,7 +131,7 @@ fn boolsignless_folds_to_noteq() {
     let out = fd.new_unique(1, Some(unk(1)));
     let _ = set_def(&mut fd, out, op);
 
-    let mut rule = RuleBoolSignLess::new(true);
+    let mut rule = RuleBoolSignLess::new();
     assert_eq!(rule.apply_op(op, &mut fd), 1);
 
     let o = fd.obank().get(op).unwrap();
@@ -140,28 +140,6 @@ fn boolsignless_folds_to_noteq() {
     let c = o.get_in(1).unwrap();
     assert!(fd.vbank().get(c).unwrap().is_constant());
     assert_eq!(fd.vbank().get(c).unwrap().get_offset(), 0);
-}
-
-#[test]
-fn boolsignless_gate_off_is_noop() {
-    let mut fd = build_fd();
-    let boolvn = fd.new_constant(1, 1);
-    let leftshift = mk_op(&mut fd, 0x100, 2, OpCode::CPUI_INT_LEFT);
-    let sa = fd.new_constant(1, 7);
-    wire_const(&mut fd, boolvn, leftshift, 0);
-    wire(&mut fd, sa, leftshift, 1);
-    let shiftout = fd.new_unique(1, Some(unk(1)));
-    let shiftout = set_def(&mut fd, shiftout, leftshift);
-    let op = mk_op(&mut fd, 0x108, 2, OpCode::CPUI_INT_SLESS);
-    let zero = fd.new_constant(1, 0);
-    wire(&mut fd, shiftout, op, 0);
-    wire(&mut fd, zero, op, 1);
-    let out = fd.new_unique(1, Some(unk(1)));
-    let _ = set_def(&mut fd, out, op);
-
-    let mut rule = RuleBoolSignLess::new(false);
-    assert_eq!(rule.apply_op(op, &mut fd), 0);
-    assert_eq!(fd.obank().get(op).unwrap().code(), OpCode::CPUI_INT_SLESS);
 }
 
 #[test]
@@ -182,7 +160,7 @@ fn boolsignless_extra_nzmask_bit_declines() {
     let out = fd.new_unique(1, Some(unk(1)));
     let _ = set_def(&mut fd, out, op);
 
-    let mut rule = RuleBoolSignLess::new(true);
+    let mut rule = RuleBoolSignLess::new();
     assert_eq!(rule.apply_op(op, &mut fd), 0);
 }
 
@@ -247,7 +225,7 @@ fn sborrowge_and_of_ors_folds_to_slessequal() {
     let (n, v) = build_flag_pair(&mut fd, vbase, 7, 4);
     let andop = build_and_of_ors(&mut fd, n, v);
 
-    let mut rule = RuleSborrowGe::new(true);
+    let mut rule = RuleSborrowGe::new();
     assert_eq!(rule.apply_op(andop, &mut fd), 1);
 
     let o = fd.obank().get(andop).unwrap();
@@ -257,18 +235,6 @@ fn sborrowge_and_of_ors_folds_to_slessequal() {
     assert!(fd.vbank().get(k).unwrap().is_constant());
     assert_eq!(fd.vbank().get(k).unwrap().get_offset(), 7);
     assert_eq!(o.get_in(1), Some(vbase));
-}
-
-#[test]
-fn sborrowge_gate_off_is_noop() {
-    let mut fd = build_fd();
-    let vbase = mk_written(&mut fd, 0x40, 4);
-    let (n, v) = build_flag_pair(&mut fd, vbase, 7, 4);
-    let andop = build_and_of_ors(&mut fd, n, v);
-
-    let mut rule = RuleSborrowGe::new(false);
-    assert_eq!(rule.apply_op(andop, &mut fd), 0);
-    assert_eq!(fd.obank().get(andop).unwrap().code(), OpCode::CPUI_BOOL_AND);
 }
 
 #[test]
@@ -283,7 +249,7 @@ fn sborrowge_non_xnor_declines() {
     let out = fd.new_unique(1, Some(unk(1)));
     let _ = set_def(&mut fd, out, andop);
 
-    let mut rule = RuleSborrowGe::new(true);
+    let mut rule = RuleSborrowGe::new();
     assert_eq!(rule.apply_op(andop, &mut fd), 0);
 }
 

@@ -22,7 +22,7 @@
     `._<off>_<size>_` field - so `v.._0_4_` and `v..[0]` appeared side by side in
     one function for accesses four times apart in width.
 
-    Fix: `option arraycoverwidth` (default on) suppresses that top-of-walk break
+    Fix: kuna_arraycoverwidth.rs (always on) suppresses that top-of-walk break
     for an array whose element stride is smaller than the access, so the cover
     falls to the same artificial field a partial access gets and renders
     `v2._0_16_`.  An access that fits inside one element keeps its subscript;
@@ -45,10 +45,9 @@
             add $0x38,%rsp ; ret
         sink: ret
 
-    Pass 1 (default): assertions #1-#3 prove every sixteen-byte access carries
-    its width, and #4 that the one-byte read keeps its subscript in both passes.
-    Pass 2 (arraycoverwidth off): assertion #5 reproduces the filed bug, and its
-    max="1" is what pins the repair - the same line appears once, not twice.
+    Assertions #1-#3 prove every sixteen-byte access carries its width, #4 that
+    the one-byte read keeps its subscript, and #5 that the filed bug's line never
+    appears.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 4883ec38660fefc00f2904240f294424
@@ -61,11 +60,8 @@ b64424034883c438c3c3
 <symbol space="ram" offset="0x100049" name="sink"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>parse line extern void sink(void *);</com>
-  <com>lo fu vm</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option arraycoverwidth off</com>
   <com>lo fu vm</com>
   <com>decompile</com>
   <com>print C</com>
@@ -74,6 +70,6 @@ b64424034883c438c3c3
 <stringmatch name="ARRAYCOVERWIDTH #1: the vector zero-init of bank A reports sixteen bytes, not element zero" min="1" max="1">v2\._0_16_ = 0;</stringmatch>
 <stringmatch name="ARRAYCOVERWIDTH #2: and so does bank B's" min="1" max="1">v3\[0\]\._0_16_ = 0;</stringmatch>
 <stringmatch name="ARRAYCOVERWIDTH #3: the swap's first leg carries the transfer width on both sides" min="1" max="1">v2\._0_16_ = v3\[0\]\._0_16_;</stringmatch>
-<stringmatch name="ARRAYCOVERWIDTH #4: a genuine one-byte in-element read KEEPS its subscript, in both passes" min="2" max="2">return v2\[3\];</stringmatch>
-<stringmatch name="ARRAYCOVERWIDTH #5: arraycoverwidth off restores the size-blind element-zero form (the filed bug), exactly once" min="1" max="1">v2\[0\] = v3\[0\];</stringmatch>
+<stringmatch name="ARRAYCOVERWIDTH #4: a genuine one-byte in-element read KEEPS its subscript" min="1" max="1">return v2\[3\];</stringmatch>
+<stringmatch name="ARRAYCOVERWIDTH #5: the size-blind element-zero form (the filed bug) never appears" min="0" max="0">v2\[0\] = v3\[0\];</stringmatch>
 </decompilertest>
