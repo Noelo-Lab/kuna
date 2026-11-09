@@ -3,6 +3,7 @@
 use crate::check_types_result::CheckTypesResult;
 use crate::dec_helper::DecHelper;
 use crate::exprent::{Exprent, ExprentKind};
+use crate::java_subclass;
 use crate::pattern::Pattern;
 use crate::rt::{BitSet, JList, JavaEq, JavaHash};
 use crate::struct_class::StructClass;
@@ -10,7 +11,6 @@ use crate::text_buffer::TextBuffer;
 use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
 use crate::var_type::VarType;
-use crate::{java_subclass, unported};
 
 /// Java `PatternExprent.PatternData.RecordPatternData`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -90,11 +90,63 @@ impl PatternExprent {
     }
 
     pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("PatternExprent.toJava")
+        let (var_type, exprents) = self.d(|d| (d.var_type.clone(), d.exprents.clone()));
+        let mut buf = TextBuffer::new();
+        buf.append_cast_type_name(&var_type);
+        buf.append("(");
+
+        for i in 0..exprents.len() {
+            buf.append_buffer(&exprents.get(i).to_java_default());
+
+            if i + 1 < exprents.len() {
+                buf.append(", ");
+            }
+        }
+
+        buf.append(")");
+
+        buf
     }
 
+    /// The `super.checkExprTypeBounds()` fallback is unreachable: `PatternData`
+    /// has only the record variant.
     pub fn check_expr_type_bounds(self) -> Option<CheckTypesResult> {
-        unported!("PatternExprent.checkExprTypeBounds")
+        let (data, exprents, bound_types) =
+            self.d(|d| (d.data, d.exprents.clone(), d.bound_types.clone()));
+        let PatternData::RecordPatternData(record) = data;
+        let mut res = CheckTypesResult::new();
+
+        ValidationHelper::assert_true(
+            record.cl.get_record_components().is_some(),
+            "Must not be null!",
+        );
+        ValidationHelper::assert_true(
+            record
+                .cl
+                .get_record_components()
+                .expect("NullPointerException")
+                .len()
+                == exprents.len(),
+            "Record component size and expr list size must be equal!",
+        );
+
+        for i in 0..exprents.len() {
+            match bound_types.get(i) {
+                Some(type_) => res.add_expr_lower_bound(exprents.get(i), &type_),
+                None => {
+                    let components = record
+                        .cl
+                        .get_record_components()
+                        .expect("NullPointerException");
+                    res.add_expr_lower_bound(
+                        exprents.get(i),
+                        &VarType::new_signature(&components[i].get_descriptor()),
+                    );
+                }
+            }
+        }
+
+        Some(res)
     }
 
     pub fn get_bytecode_range(self, mut values: Option<&mut BitSet>) {

@@ -2,9 +2,9 @@
 
 use crate::check_types_result::CheckTypesResult;
 use crate::exprent::{Exprent, ExprentKind};
+use crate::java_subclass;
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::text_buffer::TextBuffer;
-use crate::{java_subclass, unported};
 
 pub struct AssertExprentData {
     /// `[condition, message?]`; the condition is `None` for `assert false`.
@@ -44,8 +44,25 @@ impl AssertExprent {
         AssertExprent::new(parameters).0
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("AssertExprent.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let parameters = self.d(|d| d.parameters.clone());
+        let mut buffer = TextBuffer::new();
+
+        buffer.append("assert ");
+
+        buffer.add_bytecode_mapping(self.get_bytecode().as_ref());
+
+        match parameters[0] {
+            None => buffer.append("false"),
+            Some(condition) => buffer.append_buffer(&condition.to_java(indent)),
+        };
+
+        if parameters.len() > 1 {
+            buffer.append(" : ");
+            buffer.append_buffer(&parameters[1].expect("NullPointerException").to_java(indent));
+        }
+
+        buffer
     }
 
     pub fn replace_exprent(self, old_expr: Exprent, new_expr: Exprent) {

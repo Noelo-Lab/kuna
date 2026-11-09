@@ -1,9 +1,12 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/MonitorExprent.java`.
 
+use crate::decompiler_context::DecompilerContext;
 use crate::exprent::{Exprent, ExprentKind};
+use crate::i_fernflower_logger::Severity;
+use crate::java_subclass;
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::text_buffer::TextBuffer;
-use crate::{java_subclass, unported};
+use crate::var_type::VarType;
 
 /// Java `MonitorExprent.Type`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
@@ -83,8 +86,23 @@ impl MonitorExprent {
         self.d(|d| lst.push(d.value));
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("MonitorExprent.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut buf = TextBuffer::new();
+        buf.add_bytecode_mapping(self.get_bytecode().as_ref());
+
+        let (mon_type, value) = self.d(|d| (d.mon_type, d.value));
+        if mon_type == Type::Enter {
+            if value.is_const() && value.get_expr_type().ptr_eq(&VarType::VARTYPE_NULL()) {
+                DecompilerContext::get_logger()
+                    .write_message("Created invalid synchronize on null!", Severity::Warn);
+            }
+            buf.append_buffer(&value.to_java(indent))
+                .enclose("synchronized (", ")");
+            buf
+        } else {
+            buf.append("// $VF: monitorexit");
+            buf
+        }
     }
 
     pub fn replace_exprent(self, old_expr: Exprent, new_expr: Exprent) {

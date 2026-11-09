@@ -1,15 +1,20 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/ExitExprent.java`.
 
 use crate::check_types_result::CheckTypesResult;
+use crate::code_type::CodeType;
+use crate::decompiler_context::DecompilerContext;
+use crate::expr_processor::{ExprProcessor, NullCastType};
 use crate::exprent::{Exprent, ExprentKind};
+use crate::i_matchable::MatchProperties;
+use crate::java_subclass;
 use crate::match_engine::MatchEngine;
-use crate::match_node::MatchNode;
+use crate::match_node::{MatchNode, MatchValue};
 use crate::method_descriptor::MethodDescriptor;
 use crate::rt::{BitSet, JavaEq, JavaHash};
+use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::text_buffer::TextBuffer;
 use crate::validation_helper::ValidationHelper;
 use crate::var_type::VarType;
-use crate::{java_subclass, unported};
 
 /// Java `ExitExprent.Type`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
@@ -108,7 +113,22 @@ impl ExitExprent {
     }
 
     pub fn check_expr_type_bounds(self) -> Option<CheckTypesResult> {
-        unported!("ExitExprent.checkExprTypeBounds")
+        let mut result = CheckTypesResult::new();
+
+        let (exit_type, value, ret_type) = self.d(|d| (d.exit_type, d.value, d.ret_type.clone()));
+        if exit_type == Type::Return {
+            let ret_type = ret_type.expect("NullPointerException");
+            if ret_type.type_ != CodeType::Void {
+                let value = value.expect("NullPointerException");
+                result.add_expr_lower_bound(
+                    value,
+                    &VarType::find_family_bottom(ret_type.type_family),
+                );
+                result.add_expr_upper_bound(value, &ret_type);
+            }
+        }
+
+        Some(result)
     }
 
     pub fn get_all_exprents_list(self, lst: &mut Vec<Exprent>) {
@@ -119,8 +139,90 @@ impl ExitExprent {
         });
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("ExitExprent.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut buf = TextBuffer::new();
+        buf.add_bytecode_mapping(self.get_bytecode().as_ref());
+
+        let (exit_type, value, ret_type, method_descriptor) = self.d(|d| {
+            (
+                d.exit_type,
+                d.value,
+                d.ret_type.clone(),
+                d.method_descriptor.clone(),
+            )
+        });
+
+        if exit_type == Type::Return {
+            buf.append("return");
+
+            let ret_type = ret_type.expect("NullPointerException");
+            if ret_type.type_ != CodeType::Void {
+                let mut ret = ret_type;
+                if let Some(generic_ret) = method_descriptor
+                    .as_ref()
+                    .and_then(|md| md.generic_info())
+                    .and_then(|gi| gi.return_type())
+                {
+                    ret = generic_ret;
+                }
+                buf.append_char(' ');
+
+                ExprProcessor::get_casted_exprent_full(
+                    value.expect("NullPointerException"),
+                    &ret,
+                    &mut buf,
+                    indent,
+                    NullCastType::DontCastAtAll,
+                    false,
+                    false,
+                    false,
+                );
+            }
+
+            buf
+        } else {
+            let method = DecompilerContext::get_current_method_wrapper();
+            let node = DecompilerContext::get_current_class_node();
+
+            if let (Some(method), Some(node)) = (method, node) {
+                let method_struct = method.with(|d| d.method_struct);
+                let attr =
+                    method_struct.get_attribute(StructGeneralAttribute::ATTRIBUTE_EXCEPTIONS);
+
+                if let Some(attr) = attr {
+                    let mut classname: Option<String> = None;
+
+                    let class_struct = node.with(|d| d.class_struct);
+                    for i in 0..attr.get_throws_exceptions().len() {
+                        let ex_class_name =
+                            attr.get_exc_classname(i as i32, class_struct.get_pool());
+                        if ex_class_name == "java/lang/Throwable" {
+                            classname = Some(ex_class_name);
+                            break;
+                        } else if ex_class_name == "java/lang/Exception" {
+                            classname = Some(ex_class_name);
+                        }
+                    }
+
+                    if let Some(classname) = classname {
+                        let ex_type = VarType::new_signature_cl(&classname, true);
+                        buf.append("throw ");
+                        ExprProcessor::get_casted_exprent(
+                            value.expect("NullPointerException"),
+                            &ex_type,
+                            &mut buf,
+                            indent,
+                            false,
+                        );
+                        return buf;
+                    }
+                }
+            }
+
+            buf.append_buffer(&value.expect("NullPointerException").to_java(indent))
+                .prepend("throw ");
+            buf
+        }
     }
 
     pub fn replace_exprent(self, old_expr: Exprent, new_expr: Exprent) {
@@ -165,7 +267,18 @@ impl ExitExprent {
     }
 
     /// Java: `match(MatchNode, MatchEngine)`.
-    pub fn match_(self, _match_node: &MatchNode, _engine: &MatchEngine) -> bool {
-        unported!("ExitExprent.match")
+    pub fn match_(self, match_node: &MatchNode, engine: &MatchEngine) -> bool {
+        if !Exprent::match_base(self.0, match_node, engine) {
+            return false;
+        }
+
+        match match_node.get_rule_value(MatchProperties::ExprentExittype) {
+            None => true,
+            Some(MatchValue::ExitType(type_)) => self.get_exit_type() == type_,
+            Some(_) => crate::rt::throw(
+                "ClassCastException",
+                "rule value is not an ExitExprent.Type",
+            ),
+        }
     }
 }

@@ -1,9 +1,11 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/AnnotationExprent.java`.
 
+use crate::decompiler_context::DecompilerContext;
+use crate::expr_processor::ExprProcessor;
 use crate::exprent::{Exprent, ExprentKind};
+use crate::java_subclass;
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::text_buffer::TextBuffer;
-use crate::{java_subclass, unported};
 
 /// Java `AnnotationExprent.Type`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
@@ -94,11 +96,99 @@ impl AnnotationExprent {
         AnnotationExprent::new(class_name, par_names, exps).0
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("AnnotationExprent.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut buffer = TextBuffer::new();
+
+        let (class_name, par_names, par_values) = self.d(|d| {
+            (
+                d.class_name.clone(),
+                d.par_names.clone(),
+                d.par_values.clone(),
+            )
+        });
+
+        buffer.append_char('@');
+        let short_name = DecompilerContext::get_import_collector()
+            .get_short_name(&ExprProcessor::build_java_class_name(&class_name))
+            .expect("NullPointerException");
+        buffer.append_all_classes(&short_name, Some(&class_name));
+
+        let type_ = self.get_annotation_type();
+
+        if type_ != Type::Marker {
+            buffer.append_char('(');
+            buffer.push_newline_group(indent, 1);
+            buffer.append_possible_newline();
+            for i in 0..par_names.len() {
+                if type_ != Type::SingleElement {
+                    let name = &par_names[i];
+
+                    let struct_class =
+                        DecompilerContext::get_struct_context().get_class(&class_name);
+                    if let Some(struct_class) = struct_class {
+                        let method = struct_class
+                            .get_methods()
+                            .to_vec()
+                            .into_iter()
+                            .find(|m| m.get_name() == *name);
+                        if let Some(method) = method {
+                            buffer.append_method(
+                                name,
+                                false,
+                                &class_name,
+                                name,
+                                &method.get_descriptor(),
+                            );
+                        } else {
+                            buffer.append_method(
+                                name,
+                                false,
+                                &class_name,
+                                name,
+                                &format!("(){}", par_values[i].get_expr_type()),
+                            );
+                        }
+                    } else {
+                        buffer.append_method(
+                            name,
+                            false,
+                            &class_name,
+                            name,
+                            &format!("(){}", par_values[i].get_expr_type()),
+                        );
+                    }
+
+                    buffer.append(" = ");
+                }
+
+                let par_value = par_values[i];
+
+                let single_element = if AnnotationExprent::is_array_value(par_value) {
+                    let elements = par_value.as_new().get_lst_array_elements();
+                    (elements.len() == 1 && !AnnotationExprent::is_array_value(elements.get(0)))
+                        .then(|| elements.get(0))
+                } else {
+                    None
+                };
+                match single_element {
+                    Some(element) => buffer.append_buffer(&element.to_java(indent)),
+                    None => buffer.append_buffer(&par_value.to_java(indent)),
+                };
+
+                if i + 1 < par_names.len() {
+                    buffer.append(",");
+                    buffer.append_possible_newline_alt(" ");
+                } else {
+                    buffer.append_possible_newline_dedent("", true);
+                }
+            }
+            buffer.append_char(')');
+            buffer.pop_newline_group();
+        }
+
+        buffer
     }
 
-    #[allow(dead_code)]
     fn is_array_value(par_value: Exprent) -> bool {
         par_value
             .try_as_new()

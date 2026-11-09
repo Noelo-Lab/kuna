@@ -1,11 +1,13 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/YieldExprent.java`.
 
 use crate::check_types_result::CheckTypesResult;
+use crate::code_type::CodeType;
+use crate::expr_processor::{ExprProcessor, NullCastType};
 use crate::exprent::{Exprent, ExprentKind};
+use crate::java_subclass;
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
-use crate::{java_subclass, unported};
 
 pub struct YieldExprentData {
     pub content: Exprent,
@@ -46,11 +48,34 @@ impl YieldExprent {
     }
 
     pub fn check_expr_type_bounds(self) -> Option<CheckTypesResult> {
-        unported!("YieldExprent.checkExprTypeBounds")
+        let mut result = CheckTypesResult::new();
+
+        let (content, ret_type) = self.d(|d| (d.content, d.ret_type.clone()));
+        if ret_type.type_ != CodeType::Void {
+            result
+                .add_expr_lower_bound(content, &VarType::find_family_bottom(ret_type.type_family));
+            result.add_expr_upper_bound(content, &ret_type);
+        }
+
+        Some(result)
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("YieldExprent.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let (content, ret_type) = self.d(|d| (d.content, d.ret_type.clone()));
+        let mut buf = TextBuffer::new();
+        buf.append("yield ");
+        ExprProcessor::get_casted_exprent_full(
+            content,
+            &ret_type,
+            &mut buf,
+            indent,
+            NullCastType::DontCastAtAll,
+            false,
+            false,
+            false,
+        );
+
+        buf
     }
 
     pub fn get_content(self) -> Exprent {
