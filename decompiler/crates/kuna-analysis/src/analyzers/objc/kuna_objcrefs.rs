@@ -1,5 +1,5 @@
 //! The ObjC reference slots and selector stubs: `__objc_selrefs`,
-//! `__objc_classrefs`, `__objc_superrefs` and `__objc_stubs`.
+//! `__objc_classrefs`, `__objc_superrefs`, `__objc_protorefs` and `__objc_stubs`.
 //!
 //! Code never touches a selector string or a `class_t` directly. A message send
 //! loads the selector from a `__objc_selrefs` slot (`adrp/ldr x1`), a class
@@ -12,7 +12,8 @@
 //! Per slot this emits a pointer-sized data object: `selRef_<sel>` (colons
 //! sanitized, the `sel_` convention of the selector string itself),
 //! `classRef_<Class>` / `superRef_<Class>` (the class a rebase slot points at,
-//! or the import a bind slot names, `_OBJC_CLASS_$_` stripped). Each stub
+//! or the import a bind slot names, `_OBJC_CLASS_$_` stripped), `protoRef_<P>`
+//! for a protocol reference. Each stub
 //! becomes the function `objc_msgSend$<sel>`, the name the linker gives the
 //! symbol it synthesizes the stub for (IDA renders the same).
 //!
@@ -37,16 +38,20 @@ use object::read::{Object, ObjectSection};
 use super::classt;
 use super::sanitize_selector;
 use super::sections::MachoImage;
-use super::{encoding, TypeCtx};
+use super::encoding::{self, TypeCtx};
+use kuna_decomp::architecture::Architecture;
 use crate::pass::{AnalysisOutput, DataObjectFact, FidMatch, SymFact, SymKind};
 
 const SEC_SELREFS: &str = "__objc_selrefs";
 const SEC_CLASSREFS: &str = "__objc_classrefs";
 const SEC_SUPERREFS: &str = "__objc_superrefs";
+const SEC_PROTOREFS: &str = "__objc_protorefs";
 const SEC_STUBS: &str = "__objc_stubs";
 
 /// The import symbol prefix of an Objective-C class (`_OBJC_CLASS_$_NSObject`).
 const CLASS_SYMBOL_PREFIX: &str = "_OBJC_CLASS_$_";
+/// The import symbol prefix of an Objective-C protocol (`_OBJC_PROTOCOL_$_P`).
+const PROTOCOL_SYMBOL_PREFIX: &str = "_OBJC_PROTOCOL_$_";
 
 /// What the method walk learned about this image's selectors, for the stubs.
 #[derive(Default)]
@@ -54,21 +59,65 @@ pub struct Selectors {
     /// Per selector, the one type encoding every method with that selector
     /// agrees on; `None` once two methods disagree.
     encodings: HashMap<String, Option<String>>,
+    /// The SDK headers' declarations (`objcsdk`), consulted for a selector this
+    /// image declares nowhere.
+    sdk: HashMap<String, Option<String>>,
+    /// Per `(class, selector)`, the class-naming spelling that class's own
+    /// property gave the selector — what its IMP is typed with, so another
+    /// class's `view` returning a different class cannot reach it.
+    by_class: HashMap<(String, String), String>,
     /// Selector strings that already carry a `sel_` symbol.
     named: HashSet<u64>,
 }
 
 impl Selectors {
-    /// Record one method's selector and type encoding.
+    pub fn with_sdk(sdk: HashMap<String, Option<String>>) -> Selectors {
+        Selectors { sdk, ..Selectors::default() }
+    }
+
+    /// Record one declaration's selector and type encoding. Two spellings
+    /// agree when they match with frame offsets and class names erased; of
+    /// two that agree the one naming classes (`@"Base"`, a property's) is kept.
     pub fn record(&mut self, selector: &str, types: Option<&str>) {
-        self.encodings
-            .entry(selector.to_string())
-            .and_modify(|e| {
-                if e.as_deref() != types {
-                    *e = None;
+        let Some(new) = types else {
+            self.encodings.entry(selector.to_string()).or_insert(None);
+            return;
+        };
+        match self.encodings.get(selector) {
+            None => {
+                self.encodings.insert(selector.to_string(), Some(new.to_string()));
+            }
+            Some(None) => {}
+            Some(Some(have)) => {
+                if shape(have) != shape(new) {
+                    self.encodings.insert(selector.to_string(), None);
+                } else if !have.contains('"') && new.contains('"') {
+                    self.encodings.insert(selector.to_string(), Some(new.to_string()));
                 }
-            })
-            .or_insert_with(|| types.map(str::to_string));
+            }
+        }
+    }
+
+    /// Record a property's spelling of `selector` for its own `class`.
+    pub fn record_for_class(&mut self, class: &str, selector: &str, types: &str) {
+        self.record(selector, Some(types));
+        self.by_class.insert((class.to_string(), selector.to_string()), types.to_string());
+    }
+
+    /// The spelling `class`'s own property gives `selector`, what its IMP is
+    /// typed with; `None` when the class has no such property, whose IMP then
+    /// keeps its method encoding rather than another class's spelling.
+    pub fn encoding_for_class(&self, class: &str, selector: &str) -> Option<&str> {
+        self.by_class.get(&(class.to_string(), selector.to_string())).map(String::as_str)
+    }
+
+    /// The one encoding known for `selector`: the image's own declarations
+    /// first, the SDK's only when the image has none.
+    pub fn encoding(&self, selector: &str) -> Option<&str> {
+        match self.encodings.get(selector) {
+            Some(e) => e.as_deref(),
+            None => self.sdk.get(selector).and_then(|e| e.as_deref()),
+        }
     }
 
     /// The `sel_<sel>` data symbol on the selector string, once per string. The
@@ -92,6 +141,7 @@ impl Selectors {
 pub(super) fn emit(
     img: &MachoImage,
     file: &object::File,
+    arch: &Architecture,
     tctx: &TypeCtx,
     selectors: &mut Selectors,
     out: &mut AnalysisOutput,
@@ -134,6 +184,21 @@ pub(super) fn emit(
         }
     }
 
+    for va in section_slots(file, SEC_PROTOREFS, ps) {
+        let name = match img.rebase_ptr(va) {
+            Some(proto_va) => {
+                let Some(name) = super::kuna_objcprotos::protocol_name(img, proto_va) else { continue };
+                push_slot(&mut const_slots, va, ps);
+                name
+            }
+            None => match img.bind_name(va).and_then(|n| n.strip_prefix(PROTOCOL_SYMBOL_PREFIX)) {
+                Some(name) => name.to_string(),
+                None => continue,
+            },
+        };
+        out.data_objects.push(DataObjectFact { addr: va, name: format!("protoRef_{name}"), size: ps as u32 });
+    }
+
     if let Some(sec) = file.section_by_name(SEC_STUBS) {
         if let Ok(data) = sec.data() {
             for (stub_va, selref_va) in stubs(file.architecture(), sec.address(), data) {
@@ -142,8 +207,8 @@ pub(super) fn emit(
                 selectors.name(out, sel_va, &sel);
                 let name = format!("objc_msgSend${sel}");
                 out.symbols.push(SymFact { addr: stub_va, name: name.clone(), kind: SymKind::Function });
-                if let Some(enc) = selectors.encodings.get(&sel).and_then(|e| e.as_deref()) {
-                    if let Some(pieces) = stub_prototype(&name, enc, file.architecture(), tctx) {
+                if let Some(enc) = selectors.encoding(&sel).filter(|e| img.charge(e.len() as u64)) {
+                    if let Some(pieces) = stub_prototype(&name, enc, file.architecture(), arch, tctx) {
                         out.prototypes_at.push((stub_va, pieces));
                     }
                 }
@@ -156,7 +221,7 @@ pub(super) fn emit(
 
 /// The address of every pointer-sized slot of the named section, bounded by the
 /// bytes the file actually backs it with (a header size alone is untrusted).
-fn section_slots(file: &object::File, name: &str, ps: u64) -> Vec<u64> {
+pub(super) fn section_slots(file: &object::File, name: &str, ps: u64) -> Vec<u64> {
     let Some(sec) = file.section_by_name(name) else { return Vec::new() };
     let Ok(data) = sec.data() else { return Vec::new() };
     let (base, n) = (sec.address(), (data.len() as u64).min(sec.size()) / ps);
@@ -164,6 +229,28 @@ fn section_slots(file: &object::File, name: &str, ps: u64) -> Vec<u64> {
         return Vec::new();
     }
     (0..n).map(|i| base + i * ps).collect()
+}
+
+/// (test) `bytes` with the `size` field of the 64-bit section `name` rewritten.
+#[cfg(test)]
+pub(crate) fn with_section_size(mut bytes: Vec<u8>, name: &str, size: u64) -> Vec<u8> {
+    let u32_at = |b: &[u8], o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap()) as usize;
+    let (mut off, mut hit) = (32, 0);
+    for _ in 0..u32_at(&bytes, 16) {
+        let (cmd, cmdsize) = (u32_at(&bytes, off), u32_at(&bytes, off + 4));
+        if cmd == 0x19 {
+            for j in 0..u32_at(&bytes, off + 64) {
+                let s = off + 72 + 80 * j;
+                if bytes[s..s + 16].split(|&b| b == 0).next() == Some(name.as_bytes()) {
+                    bytes[s + 40..s + 48].copy_from_slice(&size.to_le_bytes());
+                    hit += 1;
+                }
+            }
+        }
+        off += cmdsize;
+    }
+    assert_eq!(hit, 1, "{name}");
+    bytes
 }
 
 /// Append the slot `[va, va + ps)`, merging with the previous range when adjacent.
@@ -174,67 +261,160 @@ fn push_slot(ranges: &mut Vec<(u64, u64)>, va: u64, ps: u64) {
     }
 }
 
+/// An encoding's shape: its types with frame offsets and class names erased
+/// (`@16@0:8` and `@"Base"@:` both `@@:`); the text itself when it does not parse.
+fn shape(enc: &str) -> String {
+    match encoding::split_method(enc) {
+        Some((ret, args)) => {
+            let mut s = ret;
+            for a in args {
+                s.push_str(&a);
+            }
+            let mut out = String::new();
+            let mut quoted = false;
+            for c in s.chars() {
+                if c == '"' {
+                    quoted = !quoted;
+                } else if !quoted {
+                    out.push(c);
+                }
+            }
+            out
+        }
+        None => enc.to_string(),
+    }
+}
+
 /// The prototype of a selector stub from its method's type encoding: the
 /// method's signature without `_cmd`, every parameter pinned to the register
 /// the full `(self, _cmd, …)` call places it in, so a caller renders
-/// `objc_msgSend$greet:(obj, 5)` rather than passing a dead `x1` through. Only
-/// register-class integer and pointer arguments (and on arm64 floating-point
-/// ones) are pinned; a signature with a stack or aggregate argument gets no
-/// prototype and keeps the untyped inference.
+/// `objc_msgSend$greet:(obj, 5)` rather than passing a dead `x1` through.
+/// Register-class integer and pointer arguments take the next `x` register
+/// (`rdi, rdx, …` on x86-64), floating-point ones the next `d` (`xmm`); a
+/// struct passed by value follows [`struct_passing`]: a homogeneous aggregate
+/// of up to four doubles (`CGRect`) over `d` registers, two 8-byte integers
+/// (`NSRange`) over `x` registers, each member its own `argN_k` parameter, and
+/// a larger one (`CGAffineTransform`) the pointer AAPCS64 passes instead; x86-64
+/// has registers only for two members and puts anything larger on the stack.
+/// A struct return is typed only when [`struct_passing`] says it spreads over
+/// registers. A signature outside those shapes gets no prototype and keeps the
+/// untyped inference.
 fn stub_prototype(
     name: &str,
     enc: &str,
-    arch: object::Architecture,
+    machine: object::Architecture,
+    arch: &Architecture,
     tctx: &TypeCtx,
 ) -> Option<PrototypePieces> {
-    let (int_regs, float_regs): (&[&str], &[&str]) = match arch {
+    let (int_regs, float_regs): (&[&str], &[&str]) = match machine {
         object::Architecture::Aarch64 => (
             &["x0", "x2", "x3", "x4", "x5", "x6", "x7"],
             &["d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7"],
         ),
-        object::Architecture::X86_64 => (&["RDI", "RDX", "RCX", "R8", "R9"], &[]),
+        object::Architecture::X86_64 => (
+            &["RDI", "RDX", "RCX", "R8", "R9"],
+            &["XMM0_Qa", "XMM1_Qa", "XMM2_Qa", "XMM3_Qa", "XMM4_Qa", "XMM5_Qa", "XMM6_Qa", "XMM7_Qa"],
+        ),
         _ => return None,
     };
-    let method = encoding::decode_method(name, enc, tctx.types, tctx.ptr_size, tctx.word_size)?;
-    if method.intypes.len() < 2 {
+    let (ret, args) = encoding::split_method(enc)?;
+    if args.len() < 2 {
         return None;
     }
+    let outtype = if ret.starts_with('{') {
+        let members = encoding::struct_members(&ret)?;
+        if !matches!(struct_passing(machine, &members), StructPass::Spread) {
+            return None;
+        }
+        encoding::struct_type(&ret, tctx)?
+    } else {
+        encoding::decode_ivar_type(&ret, tctx)?
+    };
     let mut pieces = PrototypePieces {
         name: name.to_string(),
-        outtype: method.outtype,
+        outtype: Some(outtype),
         first_var_arg_slot: -1,
         ..Default::default()
     };
     let (mut next_int, mut next_float) = (0usize, 0usize);
-    for (i, (ty, pname)) in method.intypes.iter().zip(&method.innames).enumerate() {
-        if i == 1 {
-            continue;
-        }
+    let mut push = |pieces: &mut PrototypePieces, ty: Rc<Datatype>, pname: String| -> Option<()> {
         let reg = match ty.get_metatype() {
             type_metatype::TYPE_FLOAT => {
                 next_float += 1;
                 float_regs.get(next_float - 1)?
             }
-            _ if is_register_scalar(ty, tctx.ptr_size) => {
+            _ if is_register_scalar(&ty, tctx.ptr_size) => {
                 next_int += 1;
                 int_regs.get(next_int - 1)?
             }
             _ => return None,
         };
-        let vn = tctx.arch.get_register_varnode(reg.as_bytes()).ok()?;
+        let vn = arch.get_register_varnode(reg.as_bytes()).ok()?;
         let slot = pieces.intypes.len();
-        pieces.intypes.push(Rc::clone(ty));
-        pieces.innames.push(pname.clone());
+        pieces.intypes.push(Rc::clone(&ty));
+        pieces.innames.push(pname);
         pieces.input_storage.push((
             slot as i32,
             ParameterPieces {
                 addr: Address::new(vn.space?, vn.offset),
-                type_: Some(Rc::clone(ty)),
+                type_: Some(ty),
                 flags: parameter_pieces_flags::TYPELOCK | parameter_pieces_flags::NAMELOCK,
             },
         ));
+        Some(())
+    };
+    for (i, raw) in args.iter().enumerate() {
+        if i == 1 {
+            continue;
+        }
+        let pname = if i == 0 { "self".to_string() } else { format!("arg{}", i - 1) };
+        if raw.starts_with('{') {
+            let members = encoding::struct_members(raw)?;
+            let names = encoding::struct_name(raw).map(encoding::member_names).unwrap_or(&[]);
+            match struct_passing(machine, &members) {
+                StructPass::Spread => {
+                    for (k, c) in members.iter().enumerate() {
+                        let ty = encoding::decode_ivar_type(&c.to_string(), tctx)?;
+                        let member = names.get(k).map(|n| n.to_string()).unwrap_or_else(|| k.to_string());
+                        push(&mut pieces, ty, format!("{pname}_{member}"))?;
+                    }
+                }
+                StructPass::ByReference => push(&mut pieces, encoding::decode_ivar_type("^v", tctx)?, pname)?,
+                StructPass::Unmodelled => return None,
+            }
+            continue;
+        }
+        let ty = encoding::decode_ivar_type(raw, tctx)?;
+        push(&mut pieces, ty, pname)?;
     }
     Some(pieces)
+}
+
+/// How a by-value struct of `members` travels under `machine`'s convention.
+enum StructPass {
+    /// One register per member.
+    Spread,
+    /// AAPCS64 passes a pointer to a caller-held copy.
+    ByReference,
+    /// Not expressible with register pins; the stub stays unprototyped.
+    Unmodelled,
+}
+
+/// AAPCS64 spreads a homogeneous aggregate of up to four doubles over `d`
+/// registers and at most two words over `x` registers, and passes a larger
+/// aggregate by reference. System V x86-64 spreads at most two eightbytes of
+/// one class and passes anything larger on the stack.
+fn struct_passing(machine: object::Architecture, members: &[char]) -> StructPass {
+    let all_doubles = members.iter().all(|&c| c == 'd');
+    let all_words = members.iter().all(|&c| c == 'q' || c == 'Q');
+    let max_doubles = if machine == object::Architecture::X86_64 { 2 } else { 4 };
+    if (all_doubles && members.len() <= max_doubles) || (all_words && members.len() <= 2) {
+        StructPass::Spread
+    } else if machine == object::Architecture::Aarch64 && all_doubles {
+        StructPass::ByReference
+    } else {
+        StructPass::Unmodelled
+    }
 }
 
 /// Whether `ty` travels in one integer register: an integer, pointer, boolean or
@@ -373,27 +553,6 @@ mod tests {
         assert_eq!(img.bind_name(0x100004000), Some("_ext"));
     }
 
-    /// `bytes` with the `size` field of the 64-bit section `name` rewritten.
-    fn with_section_size(mut bytes: Vec<u8>, name: &str, size: u64) -> Vec<u8> {
-        let u32_at = |b: &[u8], o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap()) as usize;
-        let (mut off, mut hit) = (32, 0);
-        for _ in 0..u32_at(&bytes, 16) {
-            let (cmd, cmdsize) = (u32_at(&bytes, off), u32_at(&bytes, off + 4));
-            if cmd == 0x19 {
-                for j in 0..u32_at(&bytes, off + 64) {
-                    let s = off + 72 + 80 * j;
-                    if bytes[s..s + 16].split(|&b| b == 0).next() == Some(name.as_bytes()) {
-                        bytes[s + 40..s + 48].copy_from_slice(&size.to_le_bytes());
-                        hit += 1;
-                    }
-                }
-            }
-            off += cmdsize;
-        }
-        assert_eq!(hit, 1, "{name}");
-        bytes
-    }
-
     /// A ref section whose header claims far more bytes than the file holds
     /// yields no slots instead of one allocation per claimed slot.
     #[test]
@@ -407,6 +566,27 @@ mod tests {
         }
         let file = object::File::parse(bytes.as_slice()).expect("parse Mach-O");
         assert_eq!(section_slots(&file, SEC_SELREFS, 8).len(), 6);
+    }
+
+    /// AAPCS64 spreads a homogeneous aggregate of up to four doubles and passes
+    /// a larger one by pointer; System V stops at two eightbytes and passes
+    /// anything larger on the stack, which no register pin can state.
+    #[test]
+    fn struct_passing_follows_each_convention() {
+        use object::Architecture::{Aarch64, X86_64};
+        let rect = ['d'; 4];
+        let size = ['d'; 2];
+        let transform = ['d'; 6];
+        let range = ['Q'; 2];
+        assert!(matches!(struct_passing(Aarch64, &rect), StructPass::Spread));
+        assert!(matches!(struct_passing(Aarch64, &transform), StructPass::ByReference));
+        assert!(matches!(struct_passing(Aarch64, &range), StructPass::Spread));
+        assert!(matches!(struct_passing(Aarch64, &['f', 'f']), StructPass::Unmodelled));
+        assert!(matches!(struct_passing(X86_64, &rect), StructPass::Unmodelled));
+        assert!(matches!(struct_passing(X86_64, &transform), StructPass::Unmodelled));
+        assert!(matches!(struct_passing(X86_64, &size), StructPass::Spread));
+        assert!(matches!(struct_passing(X86_64, &range), StructPass::Spread));
+        assert!(matches!(struct_passing(X86_64, &['q'; 3]), StructPass::Unmodelled));
     }
 
     /// A stub section mapped at the top of the address space wraps instead of
@@ -426,5 +606,38 @@ mod tests {
         push_slot(&mut r, 0x108, 8);
         push_slot(&mut r, 0x118, 8);
         assert_eq!(r, vec![(0x100, 0x110), (0x118, 0x120)]);
+    }
+
+    /// A hostile spelling reaches `split_method` through [`shape`]: it is
+    /// refused at the depth cap and compared as text, not recursed.
+    #[test]
+    fn record_survives_a_hostile_spelling() {
+        let deep = format!("v@:{}i", "^".repeat(1_000_000));
+        let mut sel = Selectors::default();
+        sel.record("x", Some("v16@0:8"));
+        sel.record("x", Some(&deep));
+        assert_eq!(sel.encoding("x"), None);
+        sel.record("y", Some(&deep));
+        sel.record("y", Some(&deep));
+        assert_eq!(sel.encoding("y"), Some(deep.as_str()));
+    }
+
+    #[test]
+    fn record_keeps_the_class_bearing_spelling_and_drops_disagreement() {
+        let mut sel = Selectors::default();
+        sel.record("inner", Some("@16@0:8"));
+        sel.record("inner", Some("@\"Base\"@:"));
+        assert_eq!(sel.encoding("inner"), Some("@\"Base\"@:"));
+        sel.record("inner", Some("@16@0:8"));
+        assert_eq!(sel.encoding("inner"), Some("@\"Base\"@:"), "a plain spelling does not replace a classed one");
+        sel.record("inner", Some("q16@0:8"));
+        assert_eq!(sel.encoding("inner"), None, "a different shape drops the selector");
+
+        let mut sel = Selectors::default();
+        sel.record_for_class("A", "view", "@\"UIView\"@:");
+        sel.record_for_class("B", "view", "@\"NSView\"@:");
+        assert_eq!(sel.encoding_for_class("B", "view"), Some("@\"NSView\"@:"), "each class keeps its own class");
+        assert_eq!(sel.encoding_for_class("C", "view"), None, "a class with no property takes no other class's spelling");
+        assert_eq!(sel.encoding("view"), Some("@\"UIView\"@:"), "a stub still takes the first spelling");
     }
 }

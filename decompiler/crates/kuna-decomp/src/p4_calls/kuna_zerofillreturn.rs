@@ -1,5 +1,5 @@
 //! (kuna) The upper half of a vector register that a narrow write zero-fills is
-//! not part of the value a function returns (option `zerofillreturn`).
+//! not part of the value a function returns.
 //!
 //! AAPCS64 returns a `double` in `d0`, the low doubleword of `q0`, and the
 //! compiler spec's floating output entries are the whole 16-byte `q0`..`q3`.
@@ -34,7 +34,6 @@
 //! never touched.
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::space::spacetype;
 use kuna_num::opcodes::OpCode;
 
@@ -43,24 +42,6 @@ use crate::dtype::type_class;
 use crate::fspec::{ParamActive, ParamEntry};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_addlflags::kuna_zerofill;
-use crate::p0_knowledge::options::on_or_off;
-
-/// (kuna) Drop the zero-filled upper half of a returned vector register:
-/// `zerofillreturn on|off`.
-pub struct OptionZeroFillReturn;
-
-impl OptionZeroFillReturn {
-    /// The option name.
-    pub const NAME: &'static str = "zerofillreturn";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::zero_fill_return`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Zero-filled return lanes dropped: {prop}")))
-    }
-}
 
 /// The low bytes a narrow write keeps; above them a lane is zero fill.
 const LOW_LANE: i32 = 8;
@@ -85,8 +66,8 @@ fn wide_entries(fd: &Funcdata) -> Vec<ParamEntry> {
 
 /// Mark the COPYs of zero a narrow write leaves above its lane of a returnable
 /// vector register. Runs on the freshly lifted p-code.
-pub fn seed(arch: &crate::architecture::Architecture, fd: &mut Funcdata) {
-    if !arch.zero_fill_return || fd.get_func_proto().is_output_locked() {
+pub fn seed(fd: &mut Funcdata) {
+    if fd.get_func_proto().is_output_locked() {
         return;
     }
     let wide = wide_entries(fd);
@@ -199,7 +180,7 @@ fn lane_end(writes: &[(i32, i32, bool)]) -> Option<i32> {
 /// [`returned_alone`]: retiring only `q0`'s fill would return the first member
 /// of what may be a pair, so every fill stays and the return is `q0` as before.
 pub fn drop_zero_fill(data: &Funcdata, active: &mut ParamActive, returns: &[OpId]) {
-    if !data.get_arch().zero_fill_return || data.get_func_proto().is_output_locked() {
+    if data.get_func_proto().is_output_locked() {
         return;
     }
     let wide = wide_entries(data);

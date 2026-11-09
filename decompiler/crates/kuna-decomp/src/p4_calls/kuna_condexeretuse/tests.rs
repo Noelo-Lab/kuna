@@ -1,4 +1,4 @@
-//! Unit tests for `condexeretuse`: the reachability walk and the repeated
+//! Unit tests for the re-tested-condition use rule: the reachability walk and the repeated
 //! `only_op_use` walk on a hand-built re-test merge.  The end-to-end behaviour
 //! is `tests/stages/kuna-condexeretuse.xml`.
 
@@ -14,7 +14,7 @@ use crate::fspec::ParamTrial;
 
 use super::*;
 
-fn build_fd(on: bool) -> Funcdata {
+fn build_fd() -> Funcdata {
     let mut m = AddrSpaceManager::new();
     m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
     m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
@@ -31,9 +31,7 @@ fn build_fd(on: bool) -> Funcdata {
     )))
     .unwrap();
     m.set_default_code_space(2).unwrap();
-    let mut ctx = ArchContext::new(m);
-    ctx.cond_exe_ret_use = on;
-    let glb = Rc::new(ctx);
+    let glb = Rc::new(ArchContext::new(m));
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     Funcdata::new("f", "f", glb, Address::new(ram, 0x1000), 0x10000000, 0x40).unwrap()
 }
@@ -124,8 +122,8 @@ fn scored(fd: &mut Funcdata, retop: OpId, vn: VarnodeId) -> bool {
 }
 
 /// `pick`: the taken arm returns, the other tail-calls with the merged value.
-fn pick(on: bool) -> bool {
-    let mut fd = build_fd(on);
+fn pick() -> bool {
+    let mut fd = build_fd();
     let m = retest(&mut fd);
     let r = ret(&mut fd, m.t, 0x114, m.merged);
     let tgt = code(&mut fd, 0x4000);
@@ -135,7 +133,7 @@ fn pick(on: bool) -> bool {
 
 #[test]
 fn the_in_edge_fixes_the_out_block() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let m = retest(&mut fd);
     assert_eq!(ConditionalExecution::forced_out_block(&fd, m.c, 1), Some(m.t));
     assert_eq!(ConditionalExecution::forced_out_block(&fd, m.c, 0), Some(m.f));
@@ -143,7 +141,7 @@ fn the_in_edge_fixes_the_out_block() {
 
 #[test]
 fn a_complemented_retest_swaps_the_out_block() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let m = retest(&mut fd);
     fd.obank_mut().get_mut(m.cbranch).unwrap().set_flag(crate::op::pcodeop_flags::boolean_flip);
     assert_eq!(ConditionalExecution::forced_out_block(&fd, m.c, 1), Some(m.f));
@@ -152,12 +150,7 @@ fn a_complemented_retest_swaps_the_out_block() {
 
 #[test]
 fn a_call_the_forced_branch_cannot_reach_does_not_compete() {
-    assert!(pick(true));
-}
-
-#[test]
-fn option_off_keeps_the_upstream_rejection() {
-    assert!(!pick(false));
+    assert!(pick());
 }
 
 #[test]
@@ -165,7 +158,7 @@ fn a_value_forced_away_from_the_return_never_passes() {
     // `beq spin; str r0,[r1]; bx lr; spin: b spin`: the 7 goes into the loop, so
     // the STORE and the RETURN are both out of its reach.  Skipping them must not
     // pass the walk with nothing checked.
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let m = retest(&mut fd);
     fd.bblocks_mut().add_edge(m.t, m.t);
     let a1 = input(&mut fd, 0x24, 4);
@@ -177,7 +170,7 @@ fn a_value_forced_away_from_the_return_never_passes() {
 
 #[test]
 fn a_use_on_the_returning_path_still_competes() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let m = retest(&mut fd);
     let a1 = input(&mut fd, 0x24, 4);
     let spc = fd.new_constant(4, 0);
@@ -190,7 +183,7 @@ fn a_use_on_the_returning_path_still_competes() {
 
 #[test]
 fn reachability_takes_only_the_forced_edge_of_a_merge_it_enters() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let m = retest(&mut fd);
     let reach = reachable_from(&fd, m.b).unwrap();
     assert!(reach.contains(&m.c) && reach.contains(&m.t) && !reach.contains(&m.f));
@@ -198,7 +191,7 @@ fn reachability_takes_only_the_forced_edge_of_a_merge_it_enters() {
 
 #[test]
 fn reachability_gives_up_past_the_visit_cap() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let first = block(&mut fd);
     let mut prev = first;
     for _ in 0..MAX_VISIT + 8 {
@@ -207,7 +200,7 @@ fn reachability_gives_up_past_the_visit_cap() {
         prev = next;
     }
     assert!(reachable_from(&fd, first).is_none());
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let first = block(&mut fd);
     let second = block(&mut fd);
     fd.bblocks_mut().add_edge(first, second);

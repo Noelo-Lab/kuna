@@ -1,5 +1,4 @@
-//! P4 self-cancelling-operand tolerance in input-trial scoring — the
-//! `zeroidiomuse` decision point.
+//! P4 self-cancelling-operand tolerance in input-trial scoring.
 //!
 //! # The gap
 //!
@@ -63,13 +62,8 @@ use crate::funcdata::Funcdata;
 const MAX_DEPTH: u32 = 2;
 
 /// Whether the descendant op at `op` throws its operand away — an `INT_XOR` or
-/// `INT_SUB` of a value with itself, whose result is `0` regardless. Off
-/// restores the upstream treatment, where such an op is walked through like any
-/// other arithmetic.
+/// `INT_SUB` of a value with itself, whose result is `0` regardless.
 pub fn op_discards_operand(data: &Funcdata, op: OpId) -> bool {
-    if !data.get_arch().zero_idiom_use {
-        return false;
-    }
     let Some(o) = data.obank().get(op) else {
         return false;
     };

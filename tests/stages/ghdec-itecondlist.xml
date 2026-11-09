@@ -43,7 +43,7 @@
     object: the folded diamonds report `cond_ty=Copy cbr=true`, the declined one
     `cond_ty=Ls cond_sz=2 cbr=false`, with both arms passing every other test.
 
-    The fix (`option itecondlist on`, the default) descends a condition-position
+    The fix (part of `iteregion` and `iteboolean`) descends a condition-position
     `BlockList` to its LAST component before the leaf test.  It is sound because
     the rewrite is print-only and the printer already renders that shape:
     `emit_block_if` emits the condition component once under NO_BRANCH (its
@@ -54,15 +54,11 @@
     so a `BlockGraph` is deliberately excluded.
 
     Stage model: P8 "goto-quality" (S8 structured-tree rewrite), rendered in P9.
-    The P0 assertion `option itecondlist on|off` selects it; the pass is
-    print-only (it widens which condition blocks `iteregion`/`iteboolean` accept,
-    and mutates no p-code).
-
-    Pass 1 (option itecondlist off) reproduces the gap: 2 of the 3 identical
-    diamonds fold and the middle one stays an explicit `if (c) v1 = 7; else
-    { v1 = 9; }`.
-    Pass 2 (option itecondlist on, the default) proves the fix: all 3 fold, and
-    the statements around them are unchanged.
+    The pass is print-only (it widens which condition blocks `iteregion`/
+    `iteboolean` accept, and mutates no p-code).  Without it 2 of the 3
+    identical diamonds fold and the middle one stays an explicit
+    `if (c) v1 = 7; else { v1 = 9; }`; all 3 fold, and the statements around
+    them are unchanged.
 -->
 <bytechunk space="ram" offset="0x101000">
 f30f1efa554889e54883ec30897dec488975e0488955d8488b45e0ffd0837dec
@@ -74,19 +70,15 @@ d889c7ffd2488b45e0ffd0837dec007409c745fc07000000eb07c745fc090000
 <symbol space="ram" offset="0x101000" name="t"/>
 </binaryimage>
 <script>
-  <com>option itecondlist off</com>
   <com>lo fu t</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option itecondlist on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="itecondlist #1: option off leaves the middle diamond as an explicit if/else true arm (gap reproduced)" min="1" max="1">v1 = 7;</stringmatch>
-<stringmatch name="itecondlist #2: option off leaves that diamond's else arm too" min="1" max="1">v1 = 9;</stringmatch>
-<stringmatch name="itecondlist #3: option off recovers only ceil(3/2) = 2 of the 3 identical diamonds (the header count carries into pass 2, so it appears twice)" min="2" max="2">ternary x2</stringmatch>
-<stringmatch name="itecondlist #4: option on recovers all 3 of them" min="1" max="1">ternary x3</stringmatch>
-<stringmatch name="itecondlist #5: every recovered diamond renders as the same ternary statement (2 off + 3 on)" min="5" max="5">v1 = \(a0\) \? 7 : 9;</stringmatch>
-<stringmatch name="itecondlist #6: the surrounding indirect calls are untouched in both passes" min="6" max="6">\(\*a2\)\(v1\);</stringmatch>
+<stringmatch name="itecondlist #1: the middle diamond is never left as an explicit if/else true arm" min="0" max="0">v1 = 7;</stringmatch>
+<stringmatch name="itecondlist #2: nor its else arm" min="0" max="0">v1 = 9;</stringmatch>
+<stringmatch name="itecondlist #3: never only ceil(3/2) = 2 of the 3 identical diamonds" min="0" max="0">ternary x2</stringmatch>
+<stringmatch name="itecondlist #4: all 3 of them are recovered" min="1" max="1">ternary x3</stringmatch>
+<stringmatch name="itecondlist #5: every recovered diamond renders as the same ternary statement" min="3" max="3">v1 = \(a0\) \? 7 : 9;</stringmatch>
+<stringmatch name="itecondlist #6: the surrounding indirect calls are untouched" min="3" max="3">\(\*a2\)\(v1\);</stringmatch>
 </decompilertest>

@@ -130,80 +130,75 @@ fn logical_integer_views_preserve_escaped_storage_and_call_effects() {
     let mut source = String::from("#include <stdint.h>\n#include <string.h>\nvoid touch(float *);\nvoid sink_word(short);\nvoid sink_float(float);\ndouble sample(double *);\nvoid alter(float *);\n");
     let mut calls = Vec::new();
     for (kind, address, _) in samples {
-        for feature in ["off", "on"] {
-            for policy in ["off", "on"] {
-                let name = format!("transport_{kind}_{feature}_{policy}");
-                let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
-                    .args([
-                        "decompile",
-                        path.to_str().unwrap(),
-                        address,
-                        "--raw-image",
-                        "--base",
-                        "0x1100",
-                        "--target",
-                        "sparc:BE:32:default",
-                    ])
-                    .args([
-                        "--define-function",
-                        "0x2000=touch",
-                        "--define-function",
-                        "0x2100=sink_word",
-                        "--define-function",
-                        "0x2200=sink_float",
-                        "--define-function",
-                        "0x2300=sample",
-                        "--define-function",
-                        "0x2400=alter",
-                    ])
-                    .args(["--define-function", &format!("{address}={name}")])
-                    .args([
-                        "--assert",
-                        "prototype touch void touch(float *)",
-                        "--assert",
-                        "prototype sink_word void sink_word(short)",
-                        "--assert",
-                        "prototype sink_float void sink_float(float)",
-                        "--assert",
-                        "prototype sample double sample(double *)",
-                        "--assert",
-                        "prototype alter void alter(float *)",
-                    ])
-                    .args([
-                        "--assert",
-                        &format!("prototype {name} void {name}(double *,float *)"),
-                        "--assert-strict",
-                        "--option",
-                        "fputruncviews",
-                        feature,
-                        "--option",
-                        "castnarrow",
-                        policy,
-                        "--json",
-                    ])
-                    .output()
-                    .unwrap();
-                assert!(
-                    output.status.success(),
-                    "{}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-                let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-                let function = &json["functions"][0];
-                assert!(function["error"].is_null(), "{json}");
-                let code = function["code"].as_str().unwrap();
-                assert_eq!(code.matches("sample(").count(), 1, "{code}");
-                if kind == "effect" && feature == "on" {
-                    assert!(!code.contains("float from; unsigned int to;"), "{code}");
-                    assert!(code.contains("(int)sample("), "{code}");
-                }
-                source.push_str(code);
-                source.push('\n');
-                calls.push(format!(
-                    "run({name},{})",
-                    if kind == "clobber" { 1 } else { 0 }
-                ));
+        for policy in ["off", "on"] {
+            let name = format!("transport_{kind}_{policy}");
+            let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+                .args([
+                    "decompile",
+                    path.to_str().unwrap(),
+                    address,
+                    "--raw-image",
+                    "--base",
+                    "0x1100",
+                    "--target",
+                    "sparc:BE:32:default",
+                ])
+                .args([
+                    "--define-function",
+                    "0x2000=touch",
+                    "--define-function",
+                    "0x2100=sink_word",
+                    "--define-function",
+                    "0x2200=sink_float",
+                    "--define-function",
+                    "0x2300=sample",
+                    "--define-function",
+                    "0x2400=alter",
+                ])
+                .args(["--define-function", &format!("{address}={name}")])
+                .args([
+                    "--assert",
+                    "prototype touch void touch(float *)",
+                    "--assert",
+                    "prototype sink_word void sink_word(short)",
+                    "--assert",
+                    "prototype sink_float void sink_float(float)",
+                    "--assert",
+                    "prototype sample double sample(double *)",
+                    "--assert",
+                    "prototype alter void alter(float *)",
+                ])
+                .args([
+                    "--assert",
+                    &format!("prototype {name} void {name}(double *,float *)"),
+                    "--assert-strict",
+                    "--option",
+                    "castnarrow",
+                    policy,
+                    "--json",
+                ])
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{json}");
+            let code = function["code"].as_str().unwrap();
+            assert_eq!(code.matches("sample(").count(), 1, "{code}");
+            if kind == "effect" {
+                assert!(!code.contains("float from; unsigned int to;"), "{code}");
+                assert!(code.contains("(int)sample("), "{code}");
             }
+            source.push_str(code);
+            source.push('\n');
+            calls.push(format!(
+                "run({name},{})",
+                if kind == "clobber" { 1 } else { 0 }
+            ));
         }
     }
     source.push_str(r#"
@@ -285,54 +280,49 @@ fn mixed_phi_slot_orders_preserve_bits_before_alias_clobber() {
     );
     let mut names = Vec::new();
     for (index, (address, _)) in bodies.into_iter().enumerate() {
-        for option in ["off", "on"] {
-            let name = format!("phi_{index}_{option}");
-            let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
-                .args([
-                    "decompile",
-                    path.to_str().unwrap(),
-                    address,
-                    "--raw-image",
-                    "--base",
-                    "0x1300",
-                    "--target",
-                    "sparc:BE:32:default",
-                ])
-                .args([
-                    "--define-function",
-                    "0x2000=touch",
-                    "--define-function",
-                    "0x2500=release",
-                    "--define-function",
-                    &format!("{address}={name}"),
-                ])
-                .args([
-                    "--assert",
-                    "prototype touch void touch(float *)",
-                    "--assert",
-                    "prototype release void release(void)",
-                    "--assert",
-                    &format!("prototype {name} unsigned int {name}(double *,float *,int)"),
-                    "--assert-strict",
-                    "--option",
-                    "fputruncviews",
-                    option,
-                    "--json",
-                ])
-                .output()
-                .unwrap();
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            let function = &json["functions"][0];
-            assert!(function["error"].is_null(), "{json}");
-            source.push_str(function["code"].as_str().unwrap());
-            source.push('\n');
-            names.push(name);
-        }
+        let name = format!("phi_{index}");
+        let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args([
+                "decompile",
+                path.to_str().unwrap(),
+                address,
+                "--raw-image",
+                "--base",
+                "0x1300",
+                "--target",
+                "sparc:BE:32:default",
+            ])
+            .args([
+                "--define-function",
+                "0x2000=touch",
+                "--define-function",
+                "0x2500=release",
+                "--define-function",
+                &format!("{address}={name}"),
+            ])
+            .args([
+                "--assert",
+                "prototype touch void touch(float *)",
+                "--assert",
+                "prototype release void release(void)",
+                "--assert",
+                &format!("prototype {name} unsigned int {name}(double *,float *,int)"),
+                "--assert-strict",
+                "--json",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{json}");
+        source.push_str(function["code"].as_str().unwrap());
+        source.push('\n');
+        names.push(name);
     }
     source.push_str(
         r#"
@@ -399,41 +389,34 @@ fn an_integer_register_argument_reads_the_logical_integer() {
     let path = common::scratch_file("integer-register-argument", "bin");
     std::fs::write(&path, image).unwrap();
     let mut source = String::from("#include <stdint.h>\n#include <string.h>\nvoid sinki(int);\n");
-    for option in ["on", "off"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
-            .args([
-                "decompile",
-                path.to_str().unwrap(),
-                "0x1000",
-                "--raw-image",
-                "--base",
-                "0x1000",
-                "--target",
-                "ARM:LE:32:v8",
-                "--isa",
-                "arm",
-                "--define-function",
-                &format!("0x1000=scale_{option}"),
-                "--define-function",
-                "0x1100=sinki",
-                "--option",
-                "fputruncviews",
-                option,
-                "--json",
-            ])
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-        let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        let code = json["functions"][0]["code"].as_str().unwrap();
-        let call = code.lines().find(|line| line.contains("sinki(")).unwrap();
-        assert!(!call.contains("union"), "{code}");
-        if option == "on" {
-            assert!(code.contains("unsigned int from; float to;"), "{code}");
-        }
-        source.push_str(code);
-        source.push('\n');
-    }
+    let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile",
+            path.to_str().unwrap(),
+            "0x1000",
+            "--raw-image",
+            "--base",
+            "0x1000",
+            "--target",
+            "ARM:LE:32:v8",
+            "--isa",
+            "arm",
+            "--define-function",
+            "0x1000=scale",
+            "--define-function",
+            "0x1100=sinki",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let code = json["functions"][0]["code"].as_str().unwrap();
+    let call = code.lines().find(|line| line.contains("sinki(")).unwrap();
+    assert!(!call.contains("union"), "{code}");
+    assert!(code.contains("unsigned int from; float to;"), "{code}");
+    source.push_str(code);
+    source.push('\n');
     source.push_str(
         r#"
 static int seen;
@@ -451,7 +434,7 @@ static int check(float (*fn)(float, float)) {
     }
     return 0;
 }
-int main(void) { return check(scale_on) || check(scale_off); }
+int main(void) { return check(scale); }
 "#,
     );
     let c_path = common::scratch_file("integer-register-argument", "c");

@@ -106,6 +106,7 @@ impl From<String> for Refusal {
 const NATIVE_ONLY: &[&str] = &[
     "--isa",
     "--slice",
+    "--image",
     "--target",
     "--base",
     "--entry",
@@ -255,7 +256,7 @@ pub(crate) fn parse(sub: Sub, argv: &[String], input: &str, kind: InputKind) -> 
             "--json" | "--no-vars" if sub == Sub::Project => {
                 return Err(Refusal::Usage(format!("{a} is not a decompile-project option")));
             }
-            _ if NATIVE_ONLY.contains(&a) => {
+            _ if NATIVE_ONLY.contains(&a) || a.starts_with("--image=") => {
                 return Err(Refusal::Usage(format!(
                     "{a} is a native-engine flag; {input} is a {}, decompiled by the JVM engine ({DOCS_POINTER})",
                     super::input_label(kind)

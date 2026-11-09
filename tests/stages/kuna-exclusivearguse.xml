@@ -31,19 +31,15 @@
         401044  call append_slow          ; the other arm
 
     append_loop is the control: the same two arms inside a loop, where the back
-    edge makes each arm reachable from the other, so the rule declines and the
-    call keeps its one argument in both passes.  append_slow leaves rcx
-    untouched, which is what keeps the calleearity family from reconstructing
-    the list from the callee body instead.
+    edge makes each arm reachable from the other, so the rule declines there.
+    append_slow leaves rcx untouched, which is what keeps the calleearity
+    family from reconstructing the list from the callee body instead; it reads
+    rdi, rsi and rdx on entry, so the callee-read rule passes all three at the
+    loop control.
 
-    Phase: P4 active input-trial scoring, option exclusivearguse off|on.  Pass 1
-    (off) pins the bug: append_slow() with no arguments.  Pass 2 (on, the
-    shipped default) pins all three.  Nothing else moves.
-
-    `calleereadarg` is off in pass 1: append_slow reads rdi, rsi and rdx on
-    entry, so that rule passes all three at both calls by itself and would
-    hide the bug.  Pass 2 is the shipped default, with both rules on, and
-    there the loop control gets all three from calleereadarg.
+    Phase: P4 active input-trial scoring (kuna_exclusivearguse.rs, always on).
+    Without the rule append_slow() renders with no arguments; all three are
+    pinned here.
 -->
 <bytechunk space="ram" offset="0x401000">
 488b0748897708440fb6124488104889c2c366662e0f1f8400000000000f1f00400fb6c6488d15d50f00004801c2488b7708483b7710740c0fb60288064883470801eb05e8b7ffffffc3660f1f44000053554889fb4889f54889df4889ea488b7308483b7310740c0fb60288064883430801eb05e887ffffff836b180175d95d5bc3
@@ -57,16 +53,6 @@
 <symbol space="ram" offset="0x402000" name="table"/>
 </binaryimage>
 <script>
-  <com>option calleereadarg off</com>
-  <com>option exclusivearguse off</com>
-  <com>lo fu append</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu append_loop</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option calleereadarg on</com>
-  <com>option exclusivearguse on</com>
   <com>lo fu append</com>
   <com>decompile</com>
   <com>print C</com>
@@ -75,10 +61,9 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="EXCLUSIVEARGUSE #1: off, the slow-path call has an empty argument list" min="1" max="1">append_slow\(\)</stringmatch>
-<stringmatch name="EXCLUSIVEARGUSE #2: on, the write cursor and the source byte both reach the call" min="1" max="1">append_slow\(a0,v[0-9]+,&amp;table\[a1\]\)</stringmatch>
-<stringmatch name="EXCLUSIVEARGUSE #3: with both rules off the loop control keeps its one argument, so a back edge still counts the dereference as competing" min="1" max="1">append_slow\(a0\)</stringmatch>
-<stringmatch name="EXCLUSIVEARGUSE #4: append's fast path still writes the byte it read in BOTH passes, so only the argument list moved" min="2" max="2">= table\[a1\];</stringmatch>
-<stringmatch name="EXCLUSIVEARGUSE #5: the loop control's fast path still stores the byte it reads in BOTH passes" min="2" max="2">= \*a1;</stringmatch>
-<stringmatch name="EXCLUSIVEARGUSE #6: at the shipped default the loop control passes the cursor and the source byte too, because append_slow reads rdi, rsi and rdx (calleereadarg)" min="1" max="1">append_slow\(a0,v[0-9]+,a1\)</stringmatch>
+<stringmatch name="EXCLUSIVEARGUSE #1: the slow-path call never has an empty argument list" min="0" max="0">append_slow\(\)</stringmatch>
+<stringmatch name="EXCLUSIVEARGUSE #2: the write cursor and the source byte both reach the call" min="1" max="1">append_slow\(a0,v[0-9]+,&amp;table\[a1\]\)</stringmatch>
+<stringmatch name="EXCLUSIVEARGUSE #4: append's fast path still writes the byte it read, so only the argument list moved" min="1" max="1">= table\[a1\];</stringmatch>
+<stringmatch name="EXCLUSIVEARGUSE #5: the loop control's fast path still stores the byte it reads" min="1" max="1">= \*a1;</stringmatch>
+<stringmatch name="EXCLUSIVEARGUSE #6: the loop control passes the cursor and the source byte too, because append_slow reads rdi, rsi and rdx (the callee-read rule)" min="1" max="1">append_slow\(a0,v[0-9]+,a1\)</stringmatch>
 </decompilertest>

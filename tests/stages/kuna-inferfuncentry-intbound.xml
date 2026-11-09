@@ -4,7 +4,7 @@
     kuna strict fix (P5, ActionConstantPtr::isPointer function-entry escape; no
     option).
 
-    `inferfuncentry` (GH-6930, gh6930-inferfuncentry.xml) lifts the
+    The function-entry escape (GH-6930, gh6930-inferfuncentry.xml) lifts the
     bit_transitions less-than-3 guard for a constant that resolves to an exact
     function entry, so a callback at a power-of-two image base still prints as
     its name.  The lift applied to every use of such a constant, including the
@@ -29,9 +29,7 @@
     name, so the GH-6930 escape is intact.  #4: a COPY of the same address keeps
     the name too, because nothing in dispatch orders that value: coreutils od
     selects between four formatters this way and only one of the four has fewer
-    than three bit transitions.  #5: with `option inferfuncentry off` reg passes
-    the bare literal, which is upstream's behaviour and the control that says #3
-    is the escape firing.
+    than three bit transitions.  #5: reg never passes the bare literal.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">f30f1efac3</bytechunk>
 <bytechunk space="ram" offset="0x100010" readonly="true">
@@ -60,15 +58,11 @@
   <com>lo fu dispatch</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option inferfuncentry off</com>
-  <com>lo fu reg</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="inferfuncentry #1: the bounded value keeps its integer type" min="1" max="1">uint8 bound\(uint8 a0\)</stringmatch>
 <stringmatch name="inferfuncentry #2: an integer bound that lands on a function entry stays a number" min="1" max="1">return 0x100000;</stringmatch>
 <stringmatch name="inferfuncentry #3: a callback argument at the same address still prints its name" min="1" max="1">setcb\(0,handler\)</stringmatch>
 <stringmatch name="inferfuncentry #4: a function pointer the body never orders still prints its name" min="1" max="1">return handler;</stringmatch>
-<stringmatch name="inferfuncentry #5: inferfuncentry off restores the bare literal for the argument too" min="1" max="1">setcb\(0,0x100000\)</stringmatch>
+<stringmatch name="inferfuncentry #5: the argument is never the bare literal" min="0" max="0">setcb\(0,0x100000\)</stringmatch>
 </decompilertest>

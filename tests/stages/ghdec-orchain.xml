@@ -35,7 +35,7 @@
     select diamond either.  `ActionReturnDup` runs in the `returnsplit` group and
     `collapse_conditions` runs later, so the loss is permanent.
 
-    The fix (`option orchain on`) replays `collapse_conditions` read-only on the
+    The fix (part of `returndup`) replays `collapse_conditions` read-only on the
     bblocks CFG before splitting (`kuna_orchain::shortcircuit_shared_targets`,
     mirroring ruleBlockOr's own admission test: one in-edge, two out-edges, not a
     switch, not BlockBasic::isComplex, and a shared out-target) and declines the
@@ -45,13 +45,11 @@
     still sees the constant-materialisation blocks in between.
 
     Stage model: P8 "goto-quality" (S8 CFG rewrite before the final block
-    structuring), rendered in P9.  The P0 assertion `option orchain on|off`
-    selects it; default OFF, and inert with `option returndup off`.
+    structuring), rendered in P9.  Inert with `option returndup off`.
 
-    Pass 1 (option orchain off) reproduces the gap: one source expression becomes
-    a five-return guard cascade, `return-dupe x3` on the header.
-    Pass 2 (option orchain on, the DIV-69 default) proves the fix: the whole chain
-    folds back into one short-circuit condition with a single guarded return.
+    Without the gate one source expression becomes a five-return guard cascade,
+    `return-dupe x3` on the header; the whole chain folds back into one
+    short-circuit condition with a single guarded return.
 -->
 <bytechunk space="ram" offset="0x101000">
 f30f1efa554889e5897dfc8975f88955f4894df0837dfc007512837df8007413
@@ -60,21 +58,17 @@ f30f1efa554889e5897dfc8975f88955f4894df0837dfc007512837df8007413
 <symbol space="ram" offset="0x101000" name="t"/>
 </binaryimage>
 <script>
-  <com>option orchain off</com>
   <com>lo fu t</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option orchain on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="orchain #1: option off opens the cascade with the first operand as its own guard (gap reproduced)" min="1" max="1">if \(a0\)</stringmatch>
-<stringmatch name="orchain #2: option off gives the second operand a private return too" min="1" max="1">if \(!a1\)</stringmatch>
-<stringmatch name="orchain #3: and the third" min="1" max="1">if \(a2\)</stringmatch>
-<stringmatch name="orchain #4: and the fourth, so one source expression is four guards plus a trailing return" min="1" max="1">if \(a3\)</stringmatch>
-<stringmatch name="orchain #5: the splits are returndup's (the header slug carries into pass 2)" min="2" max="2">return-dupe x3</stringmatch>
-<stringmatch name="orchain #6: option on (the default) folds the whole operand chain back into one short-circuit condition" min="1" max="1">if \(\(!a0\) &amp;&amp; \(\(!a1 \|\| \(\(!a2 &amp;&amp; \(!a3\)\)\)\)\)\)</stringmatch>
-<stringmatch name="orchain #7: three of the four `return 1;` are the cascade's, one is the folded form's" min="4" max="4">return 1;</stringmatch>
-<stringmatch name="orchain #8: two of the three `return 0;` are the cascade's, one is the folded form's guarded return" min="3" max="3">return 0;</stringmatch>
+<stringmatch name="orchain #1: the cascade never opens with the first operand as its own guard" min="0" max="0">if \(a0\)</stringmatch>
+<stringmatch name="orchain #2: the second operand never gets a private return" min="0" max="0">if \(!a1\)</stringmatch>
+<stringmatch name="orchain #3: nor the third" min="0" max="0">if \(a2\)</stringmatch>
+<stringmatch name="orchain #4: nor the fourth" min="0" max="0">if \(a3\)</stringmatch>
+<stringmatch name="orchain #5: returndup never splits the chain" min="0" max="0">return-dupe x3</stringmatch>
+<stringmatch name="orchain #6: the whole operand chain folds back into one short-circuit condition" min="1" max="1">if \(\(!a0\) &amp;&amp; \(\(!a1 \|\| \(\(!a2 &amp;&amp; \(!a3\)\)\)\)\)\)</stringmatch>
+<stringmatch name="orchain #7: one `return 1;`, the folded form's" min="1" max="1">return 1;</stringmatch>
+<stringmatch name="orchain #8: one `return 0;`, the folded form's guarded return" min="1" max="1">return 0;</stringmatch>
 </decompilertest>

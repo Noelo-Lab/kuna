@@ -28,10 +28,6 @@ fn only_concrete_got_import_declarations_supply_type_only_prototypes() {
         let proto = kuna_qualifiedcall::prototype(&ctx, &entry).unwrap();
         assert!(proto.is_output_locked() && proto.get_output().get_size() > 0);
         assert_eq!(proto.num_params(), 1);
-        prog.arch_mut().set_kuna_option("gotimportproto", "off").unwrap();
-        assert!(kuna_qualifiedcall::prototype(&prog.arch().build_arch_handle(), &entry).is_none(),
-            "gotimportproto off keeps the storage requirement");
-        prog.arch_mut().set_kuna_option("gotimportproto", "on").unwrap();
         let void = prog.arch().types().get_type_void().unwrap();
         let unknown = prog.arch().types().get_base(4, type_metatype::TYPE_UNKNOWN).unwrap();
         for output in [None, Some(void), Some(unknown.clone())] {

@@ -1,4 +1,4 @@
-//! (kuna) `calleearity` — one callee, one argument list.
+//! (kuna) One callee, one argument list.
 //!
 //! # The gap
 //!
@@ -85,7 +85,6 @@
 //! this same plan at the end of the pass instead of moving anything.
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
@@ -95,27 +94,9 @@ use kuna_num::opcodes::OpCode;
 use crate::context::OpId;
 use crate::fspec::FuncCallSpecs;
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 
 /// Marshaling element `<calleearity>` (kuna 4000+ range; 4132 = varargstackargs).
 pub const ELEM_CALLEEARITY: ElementId = ElementId::new("calleearity", 4133);
-
-/// (kuna) Reconcile the recovered argument list across call sites of the same
-/// callee: `calleearity on|off`.
-pub struct OptionCalleeArity;
-
-impl OptionCalleeArity {
-    /// The option name.
-    pub const NAME: &'static str = "calleearity";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_arity`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Call-site argument-list reconciliation turned {prop}")))
-    }
-}
 
 /// The register argument storage of an already-final direct call, in prototype
 /// order.
@@ -237,7 +218,7 @@ pub fn plan_promotions(witness: &[(Address, int4)], trials: &[TrialView]) -> Opt
 /// Called from `build_input_from_trials` after `deriveInputMap` has set the
 /// `used` flags and before the CALL op's final input list is written.
 pub fn unify_with_sibling_call(fc: &mut FuncCallSpecs, data: &Funcdata) -> int4 {
-    if !data.get_arch().callee_arity || fc.is_input_locked() {
+    if fc.is_input_locked() {
         return 0;
     }
     let op = fc.get_op();
@@ -259,7 +240,8 @@ pub fn unify_with_sibling_call(fc: &mut FuncCallSpecs, data: &Funcdata) -> int4 
             TrialView {
                 addr: t.get_address().clone(),
                 size: t.get_size(),
-                used: t.is_used(),
+                // (kuna `swiftcall`) A Swift `self` alone is no recovered list.
+                used: t.is_used() && !crate::kuna_swiftcall::is_self_storage(data, t.get_address(), t.get_size()),
                 definitely_not_used: t.is_definitely_not_used(),
                 unref: t.is_unref(),
                 has_value,

@@ -29,7 +29,7 @@ line means the numbers are wrong, not interesting:
 Usage (needs the decbench venv python)::
 
     ~/.virtualenvs/decbench/bin/python -m scripts.decbench.typesweep \
-        --option framelayout on --opt O0 --workers 16 \
+        --opt O0 --workers 16 \
         --out docs/decbench/framelayout-o0
 
     ... --opt O0 --opt O2 --opt O2-noinline     # all three levels

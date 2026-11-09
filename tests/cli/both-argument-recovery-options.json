@@ -8,13 +8,7 @@
     "0x8049000",
     "--addr",
     "--define-function",
-    "0x8049027=ptrace",
-    "--option",
-    "calleearity",
-    "on",
-    "--option",
-    "varargstackargs",
-    "on"
+    "0x8049027=ptrace"
   ],
   "cwd": "{{WORK}}",
   "env": {

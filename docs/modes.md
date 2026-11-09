@@ -41,7 +41,9 @@ engine has no size-dependent policy. Change its behavior with `--option jvm_*` i
 
 The boundary comparisons are exact: a 500 KiB file is `reliable`, and a 2 MiB
 file is `fast`. “Standard mode” in the size policy means the existing
-`reliable` preset. The native CLI reads filesystem metadata; the browser/WASI
+`reliable` preset. The native CLI reads filesystem metadata; for a dyld shared
+cache it uses the summed file size of the selected image's segments instead,
+because the main cache file says nothing about the image. The browser/WASI
 front-end classifies the uploaded virtual file's byte length through the same
 Rust function. An explicit concrete `--mode` bypasses size selection, and a
 later explicit `--option` still overrides the selected preset.
@@ -100,7 +102,7 @@ build failure. The options it enables:
   `switchguardbound` (speed-costly),
   `unrolledguard` (speed-costly), `sparcstructret`,
   `globalarrayanchor` (retain mapped array bases in negatively biased element indices),
-  `regionedgeorder`, `returndup`, `orchain`, `iteexpr`,
+  `regionedgeorder`, `returndup`, `iteexpr`,
   `devectorize` (a proven vectorized integer reduction re-rolled into its scalar
   loop; off by default only because the rewrite hides the stride and the
   duplicated body), `ctypes`, `partialaccess` (a partial access prints as a
