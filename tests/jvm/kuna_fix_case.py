@@ -207,7 +207,11 @@ def add_case(a, extra, work):
         entry['language'] = 'kotlin'
     if extra:
         entry['options'] = extra
-    table['cases'] = sorted([c for c in table['cases'] if c['id'] != case_id] + [entry], key=lambda c: c['id'])
+    ids = [c['id'] for c in table['cases']]
+    if case_id in ids:
+        table['cases'][ids.index(case_id)] = entry
+    else:
+        table['cases'].append(entry)
     with open(table_path, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(table, f, indent=2)
         f.write('\n')

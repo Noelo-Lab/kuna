@@ -479,6 +479,18 @@ def kotlin_type_end(toks, j):
     while j + 2 < len(toks) and toks[j + 1] == '.' and WORD.fullmatch(toks[j + 2]):
         j += 2
     j += 1
+    if j < len(toks) and toks[j] == '<':
+        depth = 0
+        while j < len(toks):
+            depth += {'<': 1, '>': -1}.get(toks[j], 0)
+            j += 1
+            if depth == 0:
+                break
+    if j < len(toks) and toks[j] == '?':
+        j += 1
+    return j
+
+
 IDENT = re.compile(r'[A-Za-z_$][\w$]*$')
 TYPE_NAME = r'[\w$.]+(?:<[\w$.<>, ?\[\]]*>)?(?:\[\])*\??'
 JAVA_DECL_INIT = re.compile(r'^(?:final )?' + TYPE_NAME + r' ([\w$]+) = (.*)$')
@@ -523,7 +535,10 @@ def kt_vararg_from_metadata(old, new):
             i, j = i + 1, j + 1
         elif (a[i:i + 1] == ['vararg'] and a[i + 1:i + 3] == b[j:j + 2] and a[i + 2:i + 3] == [':']
               and a[i + 3:i + 4] == ['Any'] and b[j + 2:j + 3] == ['Array']):
-            i, j, found = i + 4, kotlin_type_end(b, j + 2), True
+            end = kotlin_type_end(b, j + 2)
+            if end is None:
+                return False
+            i, j, found = i + 4, end, True
         elif (b[j:j + 1] == ['vararg'] and b[j + 1:j + 3] == a[i:i + 2] and a[i + 1:i + 2] == [':']
               and i + 2 < len(a) and j + 3 < len(b) and KT_ARRAYS.get(a[i + 2]) == b[j + 3]):
             i, j, found = i + 3, j + 4, True
