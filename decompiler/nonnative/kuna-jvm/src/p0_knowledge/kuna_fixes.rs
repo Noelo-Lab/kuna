@@ -32,6 +32,10 @@ pub enum KunaFix {
     /// `jvm_fix_twr_unary_condition`: a `catch (Throwable)` handler that starts
     /// with `if (!flag)` is not taken for a try-with-resources null check.
     TwrUnaryCondition,
+    /// `jvm_fix_if_denest_fallthrough`: if-else-chain denesting no longer
+    /// moves the code after an if into its then-branch while the if's body
+    /// still reaches that code.
+    IfDenestFallthrough,
 }
 
 impl KunaFix {
@@ -40,6 +44,7 @@ impl KunaFix {
         KunaFix::ReportToKuna,
         KunaFix::LambdaWildcardReturn,
         KunaFix::TwrUnaryCondition,
+        KunaFix::IfDenestFallthrough,
     ];
 
     /// The option row that turns this fix on or off.
@@ -48,6 +53,7 @@ impl KunaFix {
             KunaFix::ReportToKuna => "jvm_fix_report_to_kuna",
             KunaFix::LambdaWildcardReturn => "jvm_fix_lambda_wildcard_return",
             KunaFix::TwrUnaryCondition => "jvm_fix_twr_unary_condition",
+            KunaFix::IfDenestFallthrough => "jvm_fix_if_denest_fallthrough",
         }
     }
 

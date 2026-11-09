@@ -1092,3 +1092,30 @@ that a negation does not have and fails the method with an index out of bounds (
 `develop/1.13.0`). With the fix, a condition with fewer than two operands is not a null
 check: the handler is not a try-with-resources, and the matcher leaves the statement alone,
 as it does when the operand is not a variable; the `try`/`catch` is written as it is.
+**`jvm_fix_if_denest_fallthrough`.** `IfHelper::merge_ifs`
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/if_helper.rs (IfHelper::if_else_chain_denesting)`)
+rewrites `if (a) { if (b) X; ...; Y } Z`, where the body and `Z` both jump to the end of
+the enclosing sequence, as `if (!a) { Z } else { if (b) X; ...; Y }`: it negates the
+condition and swaps the branches, which moves `Z` (and everything after the `if` in its
+sequence) into the then-branch. Vineflower 1.12.0 (from upstream `91ff9353`, unchanged on
+`develop/1.13.0`) checks that the body *has* a jump to the end (`hasDirectEndEdge`), which
+any exit of any statement in it satisfies: a `return` in a `catch`, the rethrow edge of a
+`finally` handler, one branch of an inner `if`-`else`. It does not check what `reorderIf`
+checks before the same swap, that no jump from inside the `if` reaches the statements it
+moves. When the body can also complete normally (a `try` whose body falls through to `Z`),
+those jumps are left pointing into the then-branch of an `if` they are no longer inside,
+an invalid tree (`ValidationHelper` reports `Break edge with closure with invalid direct
+path` right after the swap). What happens next depends on `Z`: when it is a lone `return`,
+`ExitHelper::condense_exits` later copies it into each jump and the method comes out
+correct but restructured; otherwise the path through the body loses `Z`, and Vineflower
+prints a `break` past it (a skipped statement, a missing `return`). With an `assert`
+before the `try`, `AssertProcessor` moves the stale jump onto the new `assert` block,
+which no later pass repairs; `ExitHelper::remove_redundant_returns` empties `Z`,
+`SecondaryFunctionsHelper` drops the then-branch it has become, and the method fails with
+`Could not find destination nodes for stat id` when `VarDefinitionHelper` flattens the
+tree for the jump that still points at it. With the fix,
+the swap is skipped when an edge from inside the `if` reaches a statement after it in the
+sequence, and the method keeps its source shape. On the benchmark inputs it decompiles
+Elasticsearch's `InternalEngine.closeNoLock` and changes two methods that Vineflower prints
+correctly through the healed path (Ghidra's `DataTypeManagerDB.resolveBuiltIn`, Spring's
+`AnnotationTypeFilter.hasAnnotation`); all three recompile to the original bytecode.

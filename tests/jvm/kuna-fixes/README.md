@@ -18,10 +18,134 @@ source they were compiled from.
 
 | Case | Fix | Compiled with | With the fix |
 |---|---|---|---|
+| `pkg/TestIfDenestFallthrough` | `jvm_fix_if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestMethodRefWildcardReceiver` | `jvm_fix_lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestTryCatchNotFlag` | `jvm_fix_twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 
 ## Diffs (compat -> default)
+
+### `pkg/TestIfDenestFallthrough`
+
+```diff
+--- expected-compat/pkg/TestIfDenestFallthrough.java
++++ expected/pkg/TestIfDenestFallthrough.java
+@@ -4,82 +4,65 @@
+    private boolean closed;
+    private int count;
+ 
+-   public void assertThenTryFinally(int var1) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 0
+-      // 01: getfield pkg/TestIfDenestFallthrough.closed Z
+-      // 04: ifeq 2b
+-      // 07: getstatic pkg/TestIfDenestFallthrough.$assertionsDisabled Z
+-      // 0a: ifne 19
+-      // 0d: iload 1
+-      // 0e: ifgt 19
+-      // 11: new java/lang/AssertionError
+-      // 14: dup
+-      // 15: invokespecial java/lang/AssertionError.<init> ()V
+-      // 18: athrow
+-      // 19: aload 0
+-      // 1a: invokevirtual pkg/TestIfDenestFallthrough.run ()V
+-      // 1d: aload 0
+-      // 1e: invokevirtual pkg/TestIfDenestFallthrough.cleanup ()V
+-      // 21: goto 2b
+-      // 24: astore 2
+-      // 25: aload 0
+-      // 26: invokevirtual pkg/TestIfDenestFallthrough.cleanup ()V
+-      // 29: aload 2
+-      // 2a: athrow
+-      // 2b: return
+-      // try (11 -> 13): 16 null
++   public void assertThenTryFinally(int x) {
++      if (this.closed) {
++         assert x > 0;
++
++         try {
++            this.run();
++         } finally {
++            this.cleanup();
++         }
++      }
+    }
+ 
+    public int tryFinallyThenCode(int x) {
+-      label29: {
+-         if (!this.closed) {
+-            this.count++;
+-            return 0;
+-         }
+-
++      if (this.closed) {
+          if (x <= 0) {
+             return 1;
+          }
+ 
+          try {
+             this.run();
+-            break label29;
+          } finally {
+             this.cleanup();
+          }
+       }
++
++      this.count++;
++      return 0;
+    }
+ 
+    public void tryCatchReturn(int x) {
+-      label16:
+-      if (!this.closed) {
+-         this.count++;
+-      } else if (x > 0) {
++      if (this.closed) {
++         if (x <= 0) {
++            return;
++         }
++
+          try {
+             this.run();
+-            break label16;
+          } catch (RuntimeException e) {
++            return;
+          }
+       }
++
++      this.count++;
+    }
+ 
+    public int tryFinallyThenReturn(int x) {
+-      if (!this.closed) {
+-         return 0;
++      if (this.closed) {
++         if (x <= 0) {
++            return 1;
++         }
++
++         try {
++            this.run();
++         } finally {
++            this.cleanup();
++         }
+       }
+ 
+-      if (x <= 0) {
+-         return 1;
+-      }
+-
+-      try {
+-         this.run();
+-         return 0;
+-      } finally {
+-         this.cleanup();
+-      }
++      return 0;
+    }
+ 
+    private void run() {
+```
 
 ### `pkg/TestMethodRefWildcardReceiver`
 

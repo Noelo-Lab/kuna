@@ -3,10 +3,16 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use kuna_jvm::basic_block_statement::BasicBlockStatement;
+use kuna_jvm::const_exprent::ConstExprent;
 use kuna_jvm::decompiler_context::DecompilerContext;
+use kuna_jvm::dummy_exit_statement::DummyExitStatement;
 use kuna_jvm::fernflower::{Fernflower, KUNA_ERROR_MESSAGE};
 use kuna_jvm::i_fernflower_logger::IFernflowerLogger;
 use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
+use kuna_jvm::if_exprent::{IfExprent, Type as IfType};
+use kuna_jvm::if_helper::IfHelper;
+use kuna_jvm::if_statement::IfStatement;
 use kuna_jvm::kuna_corpus::{
     count_failed_methods, load_cases, reset_engine_thread, run_case, with_engine_stack, CaseStatus,
 };
@@ -14,6 +20,14 @@ use kuna_jvm::kuna_fixes::{
     self, enabled, take_switches, KunaFix, KunaFixes, FIX_PREFIX, VINEFLOWER_COMPAT,
 };
 use kuna_jvm::kuna_options::{resolve, rows};
+use kuna_jvm::list_stack::ListStack;
+use kuna_jvm::root_statement::RootStatement;
+use kuna_jvm::rt::{reset_class_scope, JHashSet};
+use kuna_jvm::sequence_statement::SequenceStatement;
+use kuna_jvm::stat_edge::StatEdge;
+use kuna_jvm::statement::Statement;
+
+use crate::k2_dom_helper::{fixture_method, oracle_context, start_method};
 
 fn pairs(list: &[(&'static str, &'static str)]) -> Vec<(String, String)> {
     list.iter()
@@ -204,4 +218,89 @@ fn every_kuna_fixes_case_matches_in_both_modes() {
         assert!(failed > 0, "{compat_id}: Vineflower's text has no failure comment");
         assert!(fixed < failed, "{id}: the fix decompiles no method Vineflower fails on");
     }
+}
+
+/// `if (a) { if (b) throw; if (c) return; else e(); } z; return;` as IfHelper sees it after
+/// `ExprProcessor`: the else branch `e` falls through to `z`, so `ifElseChainDenesting` must not
+/// move `z` into the then-branch (`jvm_fix_if_denest_fallthrough`); Vineflower does, and `e`'s
+/// break then targets a statement inside the if it is no longer in.
+fn denest_shape(fixes: KunaFixes) -> (bool, Statement, Statement, Statement, Statement) {
+    reset_class_scope();
+    start_method(fixture_method());
+    kuna_fixes::activate(fixes);
+    let bb = || BasicBlockStatement::create().0;
+    let edge = |t: i32, s: Statement, d: Statement, c: Option<Statement>| {
+        let e = StatEdge::new_closure(t, s, d, c);
+        s.add_successor(e);
+    };
+    let cond = || {
+        let mut stack = ListStack::new();
+        stack.push(ConstExprent::new_int(1, true, None).0);
+        IfExprent::new(IfType::Value, &mut stack, None).0
+    };
+    let if_then = |head: Statement, body: Statement| {
+        let ifs = IfStatement::new(head, 0, None);
+        ifs.set_ifstat(Some(body));
+        ifs.get_stats().borrow_mut().add_with_key(body, body.id());
+        ifs.set_all_parent();
+        ifs.get_headexprent_list().add(cond());
+        ifs
+    };
+    let (h0, h1, h2, t, r, e, z) = (bb(), bb(), bb(), bb(), bb(), bb(), bb());
+    let exit = DummyExitStatement::new();
+
+    edge(StatEdge::TYPE_REGULAR, h2, e, None);
+    edge(StatEdge::TYPE_REGULAR, h2, r, None);
+    let join = bb();
+    edge(StatEdge::TYPE_REGULAR, r, join, None);
+    edge(StatEdge::TYPE_REGULAR, e, join, None);
+    let c = IfStatement::new(h2, 2, None);
+    for branch in [r, e] {
+        branch.remove_successor(branch.get_all_successor_edges()[0]);
+    }
+    c.set_all_parent();
+    c.get_headexprent_list().add(cond());
+    edge(StatEdge::TYPE_REGULAR, h1, c.0, None);
+    edge(StatEdge::TYPE_REGULAR, h1, t, None);
+    let nested = if_then(h1, t);
+    let body = SequenceStatement::new(vec![nested.0, c.0]);
+    body.set_all_parent();
+    edge(StatEdge::TYPE_REGULAR, h0, z, None);
+    edge(StatEdge::TYPE_REGULAR, h0, body.0, None);
+    let outer = if_then(h0, body.0);
+    let seq = SequenceStatement::new(vec![outer.0, z]);
+    seq.set_all_parent();
+    for (source, destination) in [(t, exit.0), (r, exit.0), (z, exit.0)] {
+        edge(StatEdge::TYPE_BREAK, source, destination, Some(seq.0));
+    }
+    for source in [e, c.0, body.0] {
+        edge(StatEdge::TYPE_BREAK, source, z, Some(outer.0));
+    }
+    let root = RootStatement::new(seq.0, exit, fixture_method());
+    let changed = IfHelper::merge_ifs(seq.0, &mut JHashSet::new());
+    kuna_fixes::activate(KunaFixes::DEFAULT);
+    assert_eq!(root.get_first(), Some(seq.0));
+    (changed, outer.0, body.0, z, e)
+}
+
+#[test]
+fn if_denest_leaves_an_if_whose_body_reaches_the_moved_code() {
+    let _context = oracle_context();
+
+    let (changed, outer, _, z, e) = denest_shape(KunaFixes::COMPAT);
+    assert!(changed, "Vineflower swaps the branches");
+    assert_eq!(z.get_parent(), Some(outer), "z moved into the if");
+    assert!(!outer.contains_statement_strict(e));
+    assert_eq!(
+        e.get_all_successor_edges()[0].get_destination(),
+        z,
+        "e's break now enters the if"
+    );
+
+    let (changed, outer, body, z, e) = denest_shape(KunaFixes::DEFAULT);
+    assert!(!changed);
+    assert_eq!(outer.as_if().get_ifstat(), Some(body));
+    assert_eq!(z.get_parent(), outer.get_parent());
+    assert!(outer.contains_statement_strict(e));
+    assert_eq!(e.get_all_successor_edges()[0].get_destination(), z);
 }

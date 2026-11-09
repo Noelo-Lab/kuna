@@ -1376,6 +1376,7 @@ symptoms = "// $VF: Couldn't be decompiled with NullPointerException: returnType
 
 [[option]]
 option = "jvm_fix_twr_unary_condition"
+option = "jvm_fix_if_denest_fallthrough"
 vineflower = ""
 short = ""
 aliases = []
@@ -1395,6 +1396,18 @@ inspiration = "Vineflower 1.12.0 TryWithResourcesProcessor.makeTryWithResourceJ1
 change_kind = "kuna-fix"
 tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with index out of bounds: the len is 1 but the index is 1 (IndexOutOfBoundsException: Index 1 out of bounds for length 1 in Vineflower)|a try/catch (Throwable) whose handler starts with if (!flag) fails to decompile"
+subphase = "if_helper"
+strength = "HARD"
+rewind = "p8_structure"
+issue = ""
+summary = "Keep if (a) { if (b) X; Y } Z as it is when Y can complete normally and so reaches Z: Vineflower's if-else-chain denesting rewrites it as if (!a) { Z } else { ... } on the strength of one jump to the end anywhere in Y (a return in a catch, the rethrow of a finally), leaving Y's jumps to Z pointing into the other branch. Vineflower then prints code that skips Z on that path (a missing return, a skipped statement) or fails the method with Could not find destination nodes."
+use_when = "Leave on; turn off only to reproduce Vineflower's output on such a method."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_if_denest_fallthrough off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 IfHelper.ifElseChainDenesting (from 91ff9353, Fix complex if-else chain #69) checks that the if's body has some edge to the end (hasDirectEndEdge) but not, as reorderIf does before the same swapBranches, that no edge from inside the if reaches the statement it moves; unchanged on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "// $VF: Couldn't be decompiled with IllegalStateException: Could not find destination nodes for stat id|code after an if with a try/finally or try/catch inside is skipped (break label; past the following statements)|a method's last return is missing after decompiling"
 
 [[option]]
 option = "jvm_variable_renaming"
