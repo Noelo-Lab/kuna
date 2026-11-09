@@ -1,4 +1,7 @@
 //! Port of `org/vineflower/kotlin/expr/KFieldExprent.java`.
+//!
+//! kuna fix `kt_property_reference`: the `INSTANCE` of a property-reference
+//! class is written as the reference (`kuna_fix_kt_property_reference`).
 
 use crate::classes_processor::ClassNode;
 use crate::decompiler_context::DecompilerContext;
@@ -13,6 +16,8 @@ use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
+use crate::kuna_fix_kt_property_reference;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::method_wrapper::MethodWrapper;
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
@@ -80,6 +85,19 @@ impl KFieldExprent {
             KotlinChooser::parse_metadata_for(cl);
 
             let Some(kt_data) = KtAttrs::get(cl, &KElement::KEY()) else {
+                if kuna_fixes::enabled(KunaFix::KtPropertyReference) {
+                    let reference = root_class_node(&classname).and_then(|node| {
+                        kuna_fix_kt_property_reference::stringify(
+                            indent,
+                            node,
+                            self.get_bytecode().as_ref(),
+                            None,
+                        )
+                    });
+                    if let Some(reference) = reference {
+                        return reference;
+                    }
+                }
                 return FieldExprent::to_java(self.0, indent);
             };
 

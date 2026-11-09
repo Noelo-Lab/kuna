@@ -11,6 +11,15 @@
 //! their `return`s and failure comments
 //! (`kuna_fix_kt_synthetic_anonymous_object`).
 //!
+//! kuna fix `kt_anonymous_class_failure_reason`: an anonymous class
+//! the writer cannot write fails with a message that names it and the reason
+//! (`kuna_fix_kt_anonymous_class_failure_reason`).
+//!
+//! kuna fix `kt_reference_anonymous_super_call`: `stringify_reference`
+//! reads the super call of a reference class that is an anonymous class from
+//! the node, where `NestedClassProcessor` keeps it
+//! (`kuna_fix_kt_reference_anonymous_super_call`).
+//!
 //! kuna fix `kt_local_as_extension_receiver`: in `write_method`,
 //! only a method with a parameter can be an extension function, where
 //! Vineflower takes a `$this$` local in the first free slot of a
@@ -63,6 +72,8 @@ use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{ClassKind, Modality, Visibility};
+use crate::kuna_fix_kt_anonymous_class_failure_reason;
+use crate::kuna_fix_kt_reference_anonymous_super_call;
 use crate::kuna_fix_kt_synthetic_anonymous_object;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::kuna_spans;
@@ -1085,15 +1096,18 @@ impl KotlinWriter {
             .get_first()
             .expect("NullPointerException: root.getFirst()")
             .get_exprents();
-        let exprents = match exprents {
-            Some(exprents) if exprents.len() == 1 => exprents,
-            _ => return None,
+        let super_call = if kuna_fixes::enabled(KunaFix::KtReferenceAnonymousSuperCall) {
+            kuna_fix_kt_reference_anonymous_super_call::super_call(node, exprents)?
+        } else {
+            match exprents {
+                Some(exprents) if exprents.len() == 1 => exprents.get(0),
+                _ => return None,
+            }
         };
 
         let mut buf = TextBuffer::new();
         buf.add_bytecode_mapping(bytecode);
 
-        let super_call = exprents.get(0);
         let parameters = super_call.as_invocation().get_lst_parameters();
 
         let const_string = |index: usize| -> String {
@@ -1309,6 +1323,10 @@ impl KotlinWriter {
                 {
                     kuna_fix_kt_synthetic_anonymous_object::write_object_header(node, buffer);
                     return;
+                }
+                if kuna_fixes::enabled(KunaFix::KtAnonymousClassFailureReason) {
+                    let message = kuna_fix_kt_anonymous_class_failure_reason::message(node);
+                    jthrow!(IllegalStateException; "{}", message);
                 }
                 jthrow!(IllegalStateException; "Anonymous class does not have Class Kotlin metadata");
             };

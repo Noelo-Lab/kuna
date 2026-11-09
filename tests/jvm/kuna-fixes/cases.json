@@ -293,6 +293,38 @@
       "source": "src/pkg/TestTypeSwitchPatternType.java",
       "compiler": "javac 21.0.12.1 (no -g)",
       "summary": "case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type"
+    },
+    {
+      "id": "pkg/TestPropertyReferencesKt",
+      "fix": "kt_property_reference",
+      "class_files": [
+        "pkg/TestPropertyReferencesKt.class",
+        "pkg/TestPropertyReferencesKt$bound$1.class",
+        "pkg/TestPropertyReferencesKt$boundMutable$ref$1.class",
+        "pkg/TestPropertyReferencesKt$extension$ref$1.class",
+        "pkg/TestPropertyReferencesKt$member$ref$1.class",
+        "pkg/TestPropertyReferencesKt$mutableMember$ref$1.class",
+        "pkg/TestPropertyReferencesKt$topLevel$ref$1.class"
+      ],
+      "source": "src/pkg/TestPropertyReferences.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
+      "summary": "`bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled`",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestReferenceClassesKt",
+      "fix": "kt_reference_anonymous_super_call",
+      "class_files": [
+        "pkg/TestReferenceClassesKt.class",
+        "pkg/TestReferenceClassesKt$bound$ref$1.class",
+        "pkg/TestReferenceClassesKt$constructor$ref$1.class",
+        "pkg/TestReferenceClassesKt$topLevel$ref$1.class",
+        "pkg/TestReferenceClassesKt$unbound$ref$1.class"
+      ],
+      "source": "src/pkg/TestReferenceClasses.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
+      "summary": "`bound` (`adder::add`, which failed) and `unbound`, `constructor` and `topLevel` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their function references: `NestedClassProcessor` took the reference classes' `super(..)` calls out of their constructors, and they are read from the class node",
+      "language": "kotlin"
     }
   ]
 }

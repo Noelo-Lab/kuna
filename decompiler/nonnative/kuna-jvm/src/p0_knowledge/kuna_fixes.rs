@@ -95,6 +95,16 @@ pub enum KunaFix {
     /// by its own index constant, so labels after the first of a case and
     /// labels whose index equals an integer label's value are resolved.
     TypeSwitchLabelLookup,
+    /// `kt_reference_anonymous_super_call`: a function reference whose
+    /// class is an anonymous class is read from the super call
+    /// `NestedClassProcessor` took out of its constructor.
+    KtReferenceAnonymousSuperCall,
+    /// `kt_property_reference`: a property-reference class is written as
+    /// the reference it stands for.
+    KtPropertyReference,
+    /// `kt_anonymous_class_failure_reason`: an anonymous class the Kotlin
+    /// writer cannot write fails with a message naming it and why.
+    KtAnonymousClassFailureReason,
 }
 
 impl KunaFix {
@@ -123,6 +133,9 @@ impl KunaFix {
         KunaFix::TypeSwitchEnumLabel,
         KunaFix::TypeSwitchPatternType,
         KunaFix::TypeSwitchLabelLookup,
+        KunaFix::KtReferenceAnonymousSuperCall,
+        KunaFix::KtPropertyReference,
+        KunaFix::KtAnonymousClassFailureReason,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -151,6 +164,9 @@ impl KunaFix {
             KunaFix::TypeSwitchEnumLabel => "type_switch_enum_label",
             KunaFix::TypeSwitchPatternType => "type_switch_pattern_type",
             KunaFix::TypeSwitchLabelLookup => "type_switch_label_lookup",
+            KunaFix::KtReferenceAnonymousSuperCall => "kt_reference_anonymous_super_call",
+            KunaFix::KtPropertyReference => "kt_property_reference",
+            KunaFix::KtAnonymousClassFailureReason => "kt_anonymous_class_failure_reason",
         }
     }
 
