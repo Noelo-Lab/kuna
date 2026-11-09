@@ -120,3 +120,5 @@ mod b19_classes;
 mod b20_nested;
 #[path = "kuna_corpus.rs"]
 mod kuna_corpus;
+#[path = "s3_parity.rs"]
+mod s3_parity;
