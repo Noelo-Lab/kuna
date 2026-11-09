@@ -30,6 +30,8 @@
 //! empty encoding yields `None` (the IMP is still *named* `-[Class sel]` — only
 //! the typed prototype is dropped), never a failure.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory};
@@ -46,25 +48,28 @@ use kuna_decomp::fspec::PrototypePieces;
 pub fn decode_method(
     name: &str,
     encoding: &str,
-    types: &dyn TypeFactory,
-    ptr_size: i32,
-    word_size: u32,
+    tctx: &TypeCtx,
+    self_type: Option<&Rc<Datatype>>,
 ) -> Option<PrototypePieces> {
     let mut p = Parser::new(encoding);
 
     // Return type first (a null/void return is still `Some(void)`).
-    let outtype = Some(p.next_type(types, ptr_size, word_size)?);
+    let outtype = Some(p.next_type(tctx)?);
 
     let mut intypes: Vec<Rc<Datatype>> = Vec::new();
     let mut innames: Vec<String> = Vec::new();
     let mut idx = 0usize;
     while !p.at_end() {
-        let Some(ty) = p.next_type(types, ptr_size, word_size) else { break };
+        let Some(ty) = p.next_type(tctx) else { break };
         // The first two ObjC arguments are always the implicit receiver + selector.
         let nm = match idx {
             0 => "self".to_string(),
             1 => "_cmd".to_string(),
             _ => format!("arg{}", idx - 1),
+        };
+        let ty = match (idx, self_type) {
+            (0, Some(st)) => Rc::clone(st),
+            _ => ty,
         };
         intypes.push(ty);
         innames.push(nm);
@@ -86,13 +91,50 @@ pub fn decode_method(
 /// Decode a single ivar type encoding (the element's `@encode` string) into its
 /// [`Datatype`]. Used for the `<Class>::ivar` typing (design §5 PR-O2). `None`
 /// for an empty / unparseable encoding.
-pub fn decode_ivar_type(
-    encoding: &str,
-    types: &dyn TypeFactory,
-    ptr_size: i32,
-    word_size: u32,
-) -> Option<Rc<Datatype>> {
-    Parser::new(encoding).next_type(types, ptr_size, word_size)
+pub fn decode_ivar_type(encoding: &str, tctx: &TypeCtx) -> Option<Rc<Datatype>> {
+    Parser::new(encoding).next_type(tctx)
+}
+
+/// The type-mapping context a method or ivar encoding is decoded against: the
+/// architecture's [`TypeFactory`] plus its pointer size / word size
+/// (`data_org`), and a cache of the named opaque pointer types the decoder
+/// hands out (`objc_object *`, `objc_selector *`, `NSString *`). The factory
+/// finds a type by name with a linear scan of every type it holds, and an
+/// image with thousands of classes asks for `objc_object *` once per method
+/// argument, so the cache is what keeps the walk linear in the metadata.
+pub struct TypeCtx<'a> {
+    pub types: &'a dyn TypeFactory,
+    pub ptr_size: i32,
+    pub word_size: u32,
+    opaque: RefCell<HashMap<String, Rc<Datatype>>>,
+}
+
+impl<'a> TypeCtx<'a> {
+    pub fn new(types: &'a dyn TypeFactory, ptr_size: i32, word_size: u32) -> TypeCtx<'a> {
+        TypeCtx { types, ptr_size, word_size, opaque: RefCell::new(HashMap::new()) }
+    }
+
+    /// A pointer to the named struct (`objc_object*` for `id`, `objc_class*` for
+    /// `Class`, `objc_selector*` for `SEL`, `Foo*` for `@"Foo"`): the struct of
+    /// that name when one exists, else a declared record so a pointer built
+    /// before the class's layout lands (`kuna_objcivars`) reads the completion
+    /// afterwards; a plain `void*` if the record cannot be created.
+    pub(super) fn opaque_ptr(&self, struct_name: &str) -> Option<Rc<Datatype>> {
+        if let Some(t) = self.opaque.borrow().get(struct_name) {
+            return Some(Rc::clone(t));
+        }
+        let pointee = self
+            .types
+            .find_by_name(struct_name)
+            .ok()
+            .flatten()
+            .filter(|t| t.get_metatype() == type_metatype::TYPE_STRUCT)
+            .or_else(|| self.types.kuna_declare_record(struct_name, false).ok())
+            .or_else(|| self.types.get_type_void().ok())?;
+        let ptr = self.types.get_type_pointer(self.ptr_size, pointee, self.word_size).ok()?;
+        self.opaque.borrow_mut().insert(struct_name.to_string(), Rc::clone(&ptr));
+        Some(ptr)
+    }
 }
 
 /// A cursor over an ObjC type-encoding string. `next_type` consumes one type code
@@ -100,11 +142,16 @@ pub fn decode_ivar_type(
 struct Parser<'a> {
     bytes: &'a [u8],
     pos: usize,
+    /// Pointer nesting (`^^^…`) entered so far; a hostile depth is refused.
+    depth: usize,
 }
+
+/// The deepest `^` nesting decoded; a real encoding is two or three deep.
+const MAX_POINTER_DEPTH: usize = 32;
 
 impl<'a> Parser<'a> {
     fn new(s: &'a str) -> Parser<'a> {
-        Parser { bytes: s.as_bytes(), pos: 0 }
+        Parser { bytes: s.as_bytes(), pos: 0, depth: 0 }
     }
 
     /// At (or past) the end of the encoding.
@@ -129,6 +176,22 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// The `"Name"` an ivar encoding appends to `@` (`@"NSString"`, also
+    /// `@"<Proto>"` for a protocol-qualified `id`, which names no class),
+    /// consumed when present.
+    fn quoted_class_name(&mut self) -> Option<String> {
+        if self.peek()? != b'"' {
+            return None;
+        }
+        let rest = &self.bytes[self.pos + 1..];
+        let end = rest.iter().position(|&b| b == b'"')?;
+        let name = std::str::from_utf8(&rest[..end]).ok()?;
+        self.pos += end + 2;
+        let class = name.split('<').next().unwrap_or("");
+        (!class.is_empty() && class.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'$'))
+            .then(|| class.to_string())
+    }
+
     /// Skip the decimal frame-offset digits trailing a type code in a *method*
     /// encoding (`i16` → skip `16`). An ivar/standalone encoding has no trailing
     /// number, so this is a no-op there.
@@ -144,12 +207,8 @@ impl<'a> Parser<'a> {
 
     /// Consume one type code and map it to a [`Datatype`]. Returns `None` at the
     /// end of the string or on an unparseable code.
-    fn next_type(
-        &mut self,
-        types: &dyn TypeFactory,
-        ptr_size: i32,
-        word_size: u32,
-    ) -> Option<Rc<Datatype>> {
+    fn next_type(&mut self, tctx: &TypeCtx) -> Option<Rc<Datatype>> {
+        let (types, ptr_size, word_size) = (tctx.types, tctx.ptr_size, tctx.word_size);
         self.skip_qualifiers();
         let c = self.peek()?;
         self.pos += 1;
@@ -175,18 +234,38 @@ impl<'a> Parser<'a> {
                 let ch = types.get_type_char(1).ok()?;
                 types.get_type_pointer(ptr_size, ch, word_size).ok()?
             }
-            // `@` = id (object pointer) → an opaque `objc_object*`.
-            b'@' => named_opaque_ptr(types, "objc_object", ptr_size, word_size)?,
+            // `@` = id (object pointer) → an opaque `objc_object*`; an ivar's
+            // `@"NSString"` names the class, so the pointee is that opaque type;
+            // `@?` is a block, modelled as `void*`.
+            b'@' => {
+                if self.peek() == Some(b'?') {
+                    self.pos += 1;
+                    let v = types.get_type_void().ok()?;
+                    types.get_type_pointer(ptr_size, v, word_size).ok()?
+                } else {
+                    match self.quoted_class_name() {
+                        Some(class) => tctx.opaque_ptr(&class)?,
+                        None => tctx.opaque_ptr("objc_object")?,
+                    }
+                }
+            }
             // `#` = Class → an opaque `objc_class*`.
-            b'#' => named_opaque_ptr(types, "objc_class", ptr_size, word_size)?,
+            b'#' => tctx.opaque_ptr("objc_class")?,
             // `:` = SEL → an opaque `objc_selector*`.
-            b':' => named_opaque_ptr(types, "objc_selector", ptr_size, word_size)?,
+            b':' => tctx.opaque_ptr("objc_selector")?,
             // `^T` = pointer to T: decode the pointee (name-level), fall back to
             // void* on an opaque/unparseable pointee.
             b'^' => {
-                let pointee = self
-                    .next_type(types, ptr_size, word_size)
-                    .or_else(|| types.get_type_void().ok())?;
+                self.depth += 1;
+                if self.depth > MAX_POINTER_DEPTH {
+                    return None;
+                }
+                let pointee = self.next_type(tctx);
+                if self.depth > MAX_POINTER_DEPTH {
+                    return None;
+                }
+                self.depth -= 1;
+                let pointee = pointee.or_else(|| types.get_type_void().ok())?;
                 types.get_type_pointer(ptr_size, pointee, word_size).ok()?
             }
             // `{name=...}` struct, `(name=...)` union, `[N T]` array, `b<n>`
@@ -244,23 +323,6 @@ impl<'a> Parser<'a> {
     }
 }
 
-/// A named-opaque pointer datatype (`objc_object*` for `id`, `objc_class*` for
-/// `Class`, `objc_selector*` for `SEL`): a pointer to a named-opaque struct, the
-/// `dwarf` `get_type_struct` posture. Falls back to a plain `void*` if the
-/// named-opaque struct cannot be created.
-fn named_opaque_ptr(
-    types: &dyn TypeFactory,
-    struct_name: &str,
-    ptr_size: i32,
-    word_size: u32,
-) -> Option<Rc<Datatype>> {
-    let pointee = types
-        .get_type_struct(struct_name)
-        .ok()
-        .or_else(|| types.get_type_void().ok())?;
-    types.get_type_pointer(ptr_size, pointee, word_size).ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,7 +351,7 @@ mod tests {
     fn decode_greet_method() {
         let f = factory();
         let (ptr, ws): (i32, u32) = (8, 1);
-        let p = decode_method("-[Greeter greet:]", "i20@0:8i16", &f, ptr, ws)
+        let p = decode_method("-[Greeter greet:]", "i20@0:8i16", &TypeCtx::new(&f, ptr, ws), None)
             .expect("the greet: encoding decodes");
         assert_eq!(p.name, "-[Greeter greet:]");
         assert_eq!(p.intypes.len(), 3, "self + _cmd + n");
@@ -308,7 +370,7 @@ mod tests {
     fn decode_void_return_double_arg() {
         let f = factory();
         let (ptr, ws): (i32, u32) = (8, 1);
-        let p = decode_method("-[C set:]", "v24@0:8d16", &f, ptr, ws).unwrap();
+        let p = decode_method("-[C set:]", "v24@0:8d16", &TypeCtx::new(&f, ptr, ws), None).unwrap();
         assert_eq!(p.outtype.as_ref().unwrap().get_size(), 0, "void is the size-0 void type");
         assert_eq!(p.intypes.len(), 3);
         assert_eq!(p.intypes[2].get_size(), 8, "double arg");
@@ -318,7 +380,7 @@ mod tests {
     #[test]
     fn decode_ivar_long() {
         let f = factory();
-        let ty = decode_ivar_type("q", &f, 8, 1).unwrap();
+        let ty = decode_ivar_type("q", &TypeCtx::new(&f, 8, 1)).unwrap();
         assert_eq!(ty.get_size(), 8);
     }
 
@@ -329,8 +391,8 @@ mod tests {
     #[test]
     fn decode_pointers() {
         let f = factory();
-        assert_eq!(decode_ivar_type("^i", &f, 8, 1).unwrap().get_size(), 8, "int*");
-        assert_eq!(decode_ivar_type("^v", &f, 8, 1).unwrap().get_size(), 8, "void*");
+        assert_eq!(decode_ivar_type("^i", &TypeCtx::new(&f, 8, 1)).unwrap().get_size(), 8, "int*");
+        assert_eq!(decode_ivar_type("^v", &TypeCtx::new(&f, 8, 1)).unwrap().get_size(), 8, "void*");
     }
 
     /// An empty / garbage encoding yields `None` — the IMP keeps its name, only the
@@ -338,7 +400,32 @@ mod tests {
     #[test]
     fn empty_encoding_is_none() {
         let f = factory();
-        assert!(decode_method("-[C x]", "", &f, 8, 1).is_none());
-        assert!(decode_ivar_type("", &f, 8, 1).is_none());
+        assert!(decode_method("-[C x]", "", &TypeCtx::new(&f, 8, 1), None).is_none());
+        assert!(decode_ivar_type("", &TypeCtx::new(&f, 8, 1)).is_none());
+    }
+
+    /// An ivar's `@"NSString"` names its class: the pointee is the opaque struct
+    /// `NSString`, and a protocol-qualified `@"<Proto>"` falls back to `objc_object`.
+    #[test]
+    fn decode_ivar_quoted_class() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let t = decode_ivar_type("@\"NSString\"", &tctx).unwrap();
+        assert_eq!(t.get_metatype(), type_metatype::TYPE_PTR);
+        assert_eq!(t.get_ptr_to().unwrap().get_name(), "NSString");
+        let t = decode_ivar_type("@\"<Greeter>\"", &tctx).unwrap();
+        assert_eq!(t.get_ptr_to().unwrap().get_name(), "objc_object");
+    }
+
+    /// A block (`@?`) is one pointer, and pointer nesting is bounded.
+    #[test]
+    fn blocks_are_one_type_and_nesting_is_bounded() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let p = decode_method("-[C a:]", "v24@0:8@?16", &tctx, None).unwrap();
+        assert_eq!(p.intypes.len(), 3, "the block is one argument, not `@` then `?`");
+        let deep = format!("{}i", "^".repeat(MAX_POINTER_DEPTH + 1));
+        assert!(decode_ivar_type(&deep, &tctx).is_none());
+        assert!(decode_ivar_type("^^i", &tctx).is_some());
     }
 }

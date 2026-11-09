@@ -1218,6 +1218,11 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
+    "kernelcache" => {
+        let (choice, msg) = crate::kuna_kernelcache::parse_kernelcache(p1)?;
+        crate::kuna_kernelcache::set_kernelcache_env(&choice);
+        Ok(msg)
+    },
     "dynrelocs" => {
         let val = on_or_off(p1)?;
         self.analysis_dynrelocs = val;
@@ -1441,6 +1446,12 @@ kuna_options! { self, p1;
         Ok(format!("Mach-O __cfstring constant-string recovery pass turned {state}"))
     },
     "swifttypes" => on_off!(analysis_swifttypes, "Swift type layouts from static metadata"),
+    "objcivars" => {
+        let val = on_or_off(p1)?;
+        self.analysis_objcivars = val;
+        crate::kuna_objcivars::set_objcivars_env(val);
+        Ok(format!("Objective-C instance layouts turned {}", if val { "on" } else { "off" }))
+    },
     "swiftcall" => on_off!(analysis_swiftcall, "Swift calling convention on methods and witnesses"),
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
     "relocobjects" => {

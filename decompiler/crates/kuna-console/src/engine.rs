@@ -1135,7 +1135,7 @@ impl ConsoleProgram {
     ///
     /// The address half of the loader's import resolution
     /// (`ObjectLoadImage::import_slot_ranges`). Always false on the XML datatest
-    /// path, for a raw image, and for every non-PE object.
+    /// path and for a raw image.
     pub fn is_import_slot(&self, vma: u64) -> bool {
         self.import_slots.iter().any(|&(lo, hi)| vma >= lo && vma < hi)
     }
@@ -3142,6 +3142,9 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // Metadata alone has no output effect; the live flow option gates its use.
         "ppc32_pic_slots" => true,
         "authptrcall" => arch.analysis_authptrcall,
+        // (kuna) ELF GOT data imports: the slot names + externref paint exist only
+        // to let `importdata` render a read through the slot, so they share its gate.
+        "elfgotimports" => arch.import_data,
         "libproto" => arch.analysis_libproto,
         // (kuna) The measured libc signature extension — the ~200 prototypes the
         // 27-entry base table does not carry, seeded onto IMPORTED names only. The
@@ -4417,6 +4420,15 @@ pub fn bootstrap_from_object_with_isa(
     // object::File view (the analyzers need a parsed object the loader drops).
     let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to open image file: {path}: {e}")))?;
+    // (kuna `kernelcache`) IMG4 / IM4P / LZFSE / complzss unwrapping and MH_FILESET
+    // entry selection, ahead of every other normalization.
+    let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
+    let peeled = kuna_analysis::loader::kuna_kernelcache::peel(bytes, &choice)
+        .map_err(KunaError::lowlevel)?;
+    if let Some(note) = &peeled.note {
+        kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
+    }
+    let bytes = peeled.bytes;
     // (PR-8) Mach-O fat / universal (`0xcafebabe`) peel: `object::File::parse`
     // is a thin, single-arch view and cannot parse a fat header, so a universal
     // binary is reduced to ONE arch slice's bytes here — the single, canonical
@@ -4949,17 +4961,23 @@ fn commit_analysis_output(
     //     Painted BEFORE the slots' own `selRef_`/`classRef_` symbols are mapped at
     //     1a: `Scope::addMap` copies the range property into the SymbolEntry, and
     //     the per-function snapshot reads the symbol's flags.
-    if prog.arch().analysis_objcrefconst && !out.const_ranges.is_empty() {
+    //     `objcivars` gates the ivar offset variables the same way.
+    let (refs_on, ivars_on) = (prog.arch().analysis_objcrefconst, prog.arch().analysis_objcivars);
+    let const_on = |gate: kuna_analysis::pass::ConstGate| match gate {
+        kuna_analysis::pass::ConstGate::ObjcRefs => refs_on,
+        kuna_analysis::pass::ConstGate::ObjcIvars => ivars_on,
+    };
+    if out.const_ranges.iter().any(|r| const_on(r.gate)) {
         let mut ranges = prog.arch().dynreloc_const.as_ref().clone();
-        for &(first, last_open) in &out.const_ranges {
-            let begin = Address::new(Rc::clone(code_space), first);
-            let end = Address::new(Rc::clone(code_space), last_open);
+        for r in out.const_ranges.iter().filter(|r| const_on(r.gate)) {
+            let begin = Address::new(Rc::clone(code_space), r.first);
+            let end = Address::new(Rc::clone(code_space), r.last_open);
             prog.arch_mut().symboltab.set_property_range(
                 kuna_decomp::varnode::varnode_flags::readonly,
                 &begin,
                 &end,
             );
-            ranges.push((first, last_open - 1));
+            ranges.push((r.first, r.last_open - 1));
         }
         ranges.sort_unstable();
         prog.arch_mut().dynreloc_const = Rc::new(ranges);
@@ -5000,6 +5018,22 @@ fn commit_analysis_output(
                 arch.symboltab
                     .set_attribute(sid, kuna_decomp::varnode::varnode_flags::namelock);
             }
+        }
+    }
+
+    // 1-. (kuna `elfgotimports`) The import a loader import slot holds. A
+    //     `FunctionSymbol` in the symbol table, exactly as the format's own import
+    //     names are, so `query_function` resolves a read or a call through the slot;
+    //     but not registered in the function inventory, because the slot is a
+    //     pointer word, not a function.
+    for (slot, name) in &out.import_slot_names {
+        let addr = Address::new(Rc::clone(code_space), *slot);
+        let type_code = prog.arch().types().get_type_code()?;
+        let min_size = prog.arch().min_funcsymbol_size;
+        let arch = prog.arch_mut();
+        let (scope, base) = arch.symboltab.find_create_scope_from_symbol_name(name, "::", None, num_spaces)?;
+        if arch.symboltab.find_function(scope, &addr).is_none() {
+            arch.symboltab.add_function(scope, &addr, &base, min_size, type_code)?;
         }
     }
 
@@ -5487,15 +5521,24 @@ fn commit_analysis_output(
     let stream_syms = if prog.arch().analysis_datasyms { out.typed_data.as_slice() } else { &[] };
     for fact in stream_syms {
         let addr = Address::new(Rc::clone(code_space), fact.addr);
+        // A function symbol on an import slot only carries the import's name; the
+        // slot is still a pointer word whose type the stream declares.
+        let import_slot = prog.is_import_slot(fact.addr);
         let occupied = {
             let arch = prog.arch();
             match arch.symboltab.get_global_scope() {
                 Some(global) => {
-                    arch.symboltab.find_function(global, &addr).is_some()
+                    let names_import = |s: &kuna_decomp::database::Symbol| {
+                        import_slot
+                            && matches!(s.kind, kuna_decomp::database::SymbolKind::Function { .. })
+                    };
+                    (arch.symboltab.find_function(global, &addr).is_some() && !import_slot)
                         || arch.is_lazy_entry(addr.get_offset())
                         || arch
                             .symboltab
-                            .find_container(global, &addr, 1, &Address::new_invalid())
+                            .find_container_matching(global, &addr, 1, &Address::new_invalid(), |s| {
+                                !names_import(s)
+                            })
                             .is_some()
                 }
                 None => false,
@@ -5608,7 +5651,16 @@ fn commit_analysis_output(
     //    read-only markup applied above and the StringManager — renders the string
     //    literal `puts("Username: ")`). A name with no matching FunctionSymbol is a
     //    silent no-op.
-    for pieces in out.prototypes {
+    //    (kuna `objcivars`) An Objective-C method whose class has an instance
+    //    struct takes `self` as `Class *` instead of the encoding's `id`.
+    let self_types: std::collections::HashMap<String, Rc<kuna_decomp::dtype::Datatype>> =
+        if prog.arch().analysis_objcivars { out.objc_self_types.into_iter().collect() } else { Default::default() };
+    for mut pieces in out.prototypes {
+        if let Some(st) = self_types.get(&pieces.name) {
+            if let Some(first) = pieces.intypes.first_mut() {
+                *first = Rc::clone(st);
+            }
+        }
         let name = pieces.name.clone();
         prog.arch_mut().set_function_prototype_pieces(&name, pieces);
     }
@@ -6020,6 +6072,13 @@ fn select_macho_slice(bytes: Vec<u8>, target: &str) -> Vec<u8> {
     peel_fat_image(bytes, slice_pref(None, Some(target)))
 }
 
+/// An IMG4 / IM4P / compressed kernelcache, admitted while `kernelcache` is not off.
+fn is_apple_container(bytes: &[u8]) -> bool {
+    kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env()
+        != kuna_decomp::kuna_kernelcache::KernelcacheChoice::Off
+        && kuna_analysis::loader::kuna_kernelcache::is_container(bytes)
+}
+
 const RAW_IMAGE_INPUT_HINT: &str =
     "unrecognized input format; for a headerless image use --raw-image --target <SLEIGH-language-id> --base <address> and at least one --entry/--addr <address>";
 
@@ -6064,7 +6123,7 @@ pub fn bootstrap_from_file(
             .flatten();
         return bootstrap_from_te_bytes(path, &bytes, target, spec_roots, isa);
     }
-    if is_object_binary(&bytes) {
+    if is_object_binary(&bytes) || is_apple_container(&bytes) {
         // Real object-format binary (ELF / PE / Mach-O / COFF): drive the
         // object-crate loader.
         return bootstrap_from_object(path, target, spec_roots);

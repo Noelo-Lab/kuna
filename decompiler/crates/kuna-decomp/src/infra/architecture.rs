@@ -2766,6 +2766,11 @@ pub struct Architecture {
     /// shape of a console `map param`. The decompile drive seeds a
     /// function's own decompile with them ahead of the console's.
     pub loader_param_locks: std::collections::BTreeMap<Address, Vec<(int4, String, crate::fspec::ParameterPieces)>>,
+    /// (kuna `objcivars`) Type an Objective-C method's `self` as a pointer to the
+    /// struct built from its class's ivar list, and fold the `__objc_ivar` offset
+    /// variables to their compile-time layout offsets so an ivar access renders
+    /// `self->field`; default **on**. Inert unless `objc` is on.
+    pub analysis_objcivars: bool,
     /// (kuna) Gate the Swift calling-convention arm of the metadata pass
     /// (`swiftcall`): methods, initializers and accessors bound to the
     /// `__swiftcall` model with their `self` named and typed. Default-on;
@@ -3621,6 +3626,7 @@ impl Architecture {
             cfstring_entries: std::collections::BTreeSet::new(),
             analysis_swifttypes: true,
             loader_param_locks: std::collections::BTreeMap::new(),
+            analysis_objcivars: true,
             analysis_swiftcall: true,
             loader_proto_models: Rc::default(),
             loader_input_hints: std::collections::BTreeMap::new(),
@@ -4135,6 +4141,7 @@ impl Architecture {
         self.analysis_cfstrings = true; // (kuna) Mach-O __cfstring constant-string recovery default-on: Mach-O-only and real-binary-path only, so the XML datatest corpus never runs it (0/675); on an 80 MB third-party arm64 iOS app one decompile is within noise (min 2.324 s off, 2.359 s on, medians 2.442 / 2.372 over 6 interleaved runs)
         self.cfstrings_annotate = false;
         self.analysis_swifttypes = true; // Swift type layouts default-on, inert unless swiftmetadata is on
+        self.analysis_objcivars = true; // (kuna) ObjC instance structs + typed self + ivar offset fold; inert unless objc is on
         self.analysis_swiftcall = true; // Swift calling convention default-on, inert unless swiftmetadata is on
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)

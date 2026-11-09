@@ -57,6 +57,7 @@ fn with_types<R>(f: impl FnOnce(&Types) -> R) -> R {
             .filter(|s| s.kind() == object::SectionKind::Text)
             .map(|s| (s.address(), s.address().saturating_add(s.size())))
             .collect(),
+        claims: Default::default(),
         budget: std::cell::Cell::new(usize::MAX),
     };
     let tf = factory();

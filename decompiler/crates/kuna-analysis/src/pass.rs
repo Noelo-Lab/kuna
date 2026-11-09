@@ -374,6 +374,23 @@ pub struct FidMatch {
     pub name: String,
 }
 
+/// Which option decides whether a [`ConstRange`] is committed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConstGate {
+    /// `objcrefconst`: the ObjC selector/class/super/protocol reference slots.
+    ObjcRefs,
+    /// `objcivars`: the ObjC ivar offset variables in `__objc_ivar`.
+    ObjcIvars,
+}
+
+/// A `[first, last_open)` byte range whose contents the engine may fold.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConstRange {
+    pub first: u64,
+    pub last_open: u64,
+    pub gate: ConstGate,
+}
+
 /// The facts one analysis contributes. Every field is additive and may be empty;
 /// merging two outputs is concatenation (the driver dedups by address).
 #[derive(Default, Debug)]
@@ -449,12 +466,15 @@ pub struct AnalysisOutput {
     pub call_returns: Vec<(u64, u64)>,
     /// Extra read-only address ranges (e.g. `.got` after relocation).
     pub readonly: Vec<(u64, u64)>,
-    /// (kuna `objcrefconst`) `[first, last_open)` ranges whose loaded contents
-    /// are constant by construction — the Objective-C reference slots dyld
-    /// fills once before any code runs. Committed like the `dynrelocs`
+    /// (kuna) Ranges whose loaded contents are constant by construction, each
+    /// behind the option its [`ConstGate`] names. Committed like the `dynrelocs`
     /// RELRO slots: painted read-only *and* foldable without the program-wide
     /// `option readonly`. Produced only by the `objc` pass; empty otherwise.
-    pub const_ranges: Vec<(u64, u64)>,
+    pub const_ranges: Vec<ConstRange>,
+    /// (kuna `objcivars`) `(method label, Class *)`: the typed `self` of an
+    /// Objective-C method whose class got an instance struct. Applied to the
+    /// matching entry of [`Self::prototypes`] at the commit when the gate is on.
+    pub objc_self_types: Vec<(String, std::rc::Rc<kuna_decomp::dtype::Datatype>)>,
     /// (kuna) Address ranges holding an **external reference** — an import slot
     /// whose contents the dynamic loader fills in with the address of a function
     /// living in another image (a PE IAT entry or a typed Mach-O lazy/non-lazy
@@ -465,6 +485,12 @@ pub struct AnalysisOutput {
     /// `peimportcall` pass; empty for formats without such typed slots. See
     /// [`crate::loader::kuna_peimportcall`].
     pub externref: Vec<(u64, u64)>,
+    /// (kuna `elfgotimports`) The import each loader import slot holds, as
+    /// `(slot VMA, import name)`. Committed as a `FunctionSymbol` in the symbol
+    /// table, so `query_function` resolves a read or a call through the slot to
+    /// the import, but never registered in the function inventory: the slot is a
+    /// pointer word, not a function.
+    pub import_slot_names: Vec<(u64, String)>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
     pub strings: Vec<StringFact>,
     /// (kuna `fatstr`) Length-BOUNDED string literals recovered from static
@@ -767,7 +793,9 @@ impl AnalysisOutput {
         self.call_returns.extend(other.call_returns);
         self.readonly.extend(other.readonly);
         self.const_ranges.extend(other.const_ranges);
+        self.objc_self_types.extend(other.objc_self_types);
         self.externref.extend(other.externref);
+        self.import_slot_names.extend(other.import_slot_names);
         self.strings.extend(other.strings);
         self.bounded_strings.extend(other.bounded_strings);
         self.wide_strings.extend(other.wide_strings);

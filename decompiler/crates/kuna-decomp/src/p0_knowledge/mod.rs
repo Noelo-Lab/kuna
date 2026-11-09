@@ -22,6 +22,9 @@ pub mod kuna_ppcapu;
 pub mod kuna_relocrebase;
 // (kuna) Linked-image dynamic-relocation application option gate (load-time, env-bridged).
 pub mod kuna_dynrelocs;
+// (kuna) Apple firmware container / kernel-collection entry selection (load-time,
+// env-bridged).
+pub mod kuna_kernelcache;
 // (kuna) PE chained-`UNWIND_INFO` `.pdata` entry suppression option gate
 // (load-time, env-bridged).
 pub mod kuna_pdatachained;
@@ -33,6 +36,8 @@ pub mod kuna_rexthunk;
 pub mod kuna_sourcelang;
 // (kuna) Swift symbol demangling gate (load-time, env-bridged).
 pub mod kuna_swiftdemangle;
+// (kuna) The Objective-C instance-layout gate's load-time half (env-bridged).
+pub mod kuna_objcivars;
 // (kuna) The Go runtime-type harvest gate (load-time, env-bridged).
 pub mod kuna_gotypes;
 // (kuna) golang cspec auto-selection + the .abi0 stack-ABI model binding

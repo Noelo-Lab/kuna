@@ -146,6 +146,7 @@ writeup, not here.
 | `kuna-swiftdemangle.xml` | Swift name demangling | P1 environment-binding (the loader's symbol-name demangle seam + the ObjC pass's class-name rendering) | `option swiftdemangle on\|off` |
 | `kuna-swiftmetadata.xml` | Authored Swift runtime-metadata recovery | P1 external-refinement (the `swift5_*` reflection-section walk names accessors, vtable slots, witnesses and descriptors) | `option swiftmetadata on\|off` |
 | `kuna-swifttypes.xml` | Authored Swift type layouts | P1 external-refinement (struct and class layouts from static type metadata; the `self` of getters pinned to the `swiftself` register) | `option swifttypes on\|off` |
+| `kuna-swifticf.xml` | Authored Swift names on folded code | P1 external-refinement (a function several metadata records claim is named after what they agree on, or not at all, and takes no type's `self`) | `option swiftmetadata on\|off` |
 | `kuna-swiftcall.xml` | Swift calling convention | P1 external-refinement (methods, initializers, accessors and witnesses bound to the `__swiftcall` model derived from the compiler spec's default with a typed `self` hint; P4 throwing calls hand back the `swifterror` register) | `option swiftcall on\|off` |
 | `kuna-thunkentry.xml` | [Kuna #992](https://github.com/Noelo-Lab/kuna/issues/992) | P1 code/data partition (the target of a walk entry that is one direct `jmp` becomes a function; MSVC `/INCREMENTAL` thunk table) | `option thunkentry on\|off` |
 | `kuna-unwindstarts.xml` | Measured: a 249 MB third-party iOS app with no `LC_FUNCTION_STARTS` yields 23 real `__text` functions of the 204,800 its `__unwind_info` records | P1 code/data partition (a stripped Mach-O's `__TEXT,__unwind_info` second-level pages seed the function inventory) | `option unwindstarts on\|off` |
@@ -273,6 +274,8 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 | `kuna-ptrauthtrap.xml` | An arm64e iOS system daemon: 205 functions printed `if ((v1 ^ v1 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); }` before a tail call, the compiler's inline check of an `autibsp` result that SLEIGH hides. P2 flow-classification (`p2_lift/kuna_ptrauthtrap.rs` removes each CBRANCH edge into a `brk #0xc470..0xc473` trap block whose guard is the return-address bit test, pre-SSA) | `option ptrauthtrap on\|off` (new kuna settable) |
 | `kuna-authptrcall.xml` | An arm64e iOS system daemon: three `___chkstk_darwin` calls through `__auth_ptr` rendered `(*dat_1000716c0)(...)` while every `__auth_got` call was named; `__auth_ptr` has no indirect-symbol entries. P1 external-refinement (`loader/kuna_authptrcall.rs` names each `__auth_ptr` bind slot from its chained bind and paints it `externref`) | `option authptrcall on\|off` (new kuna settable) |
 | `kuna-cfstrings.xml` | a Mach-O `__cfstring` constant prints as its entry address (`NSLog(0x1044376b0)` in a large third-party iOS app): code references the CFString struct, and the constant-string route reads the bytes at that address | P1 external-refinement (the Mach-O `cfstrings` analysis pass; the commit types the entry an opaque `struct __CFString`, spelled `CFStringRef` through a pointer, and seeds the StringManager with its resolved string); `option cfstrings on\|off\|annotate` (kuna settable, default on; carried by `--mode aggressive`); on renders `CFSTR("...")`, annotate adds the entry address |
+| `kuna-elfgotimports.xml` | an ELF `-fPIC` read of data another object defines (`stdout`, `environ`, a library global) loads a `GLOB_DAT` GOT slot and then loads through it, and printed as `*dat_<slot>`: PE/Mach-O import slots were painted externref but an ELF GOT slot never was | P1 environment-binding (`kuna_elfgotimports`: the undefined-symbol `GLOB_DAT` slots are import slots, named and painted externref) + P9 naming-policy (`importdata`) | `option importdata on\|off` (default off); x86-64 and AArch64 shared objects, with a defined-symbol control |
+| `kuna-objcmeta.xml` | A third-party iOS app (1.9 MB arm64 ObjC): with `objc on` every category method stayed `sub_<addr>` (77: categories extend classes of other images, out of the class walk's reach), every ivar access read `*(long *)((long)self + dat_1001aea74)` (505 sites: the offset variable's 1-byte label never matched the 4-byte load) and a protocol-declared selector typed nothing. P1 external-refinement (`analyzers/objc/kuna_objccats.rs`, `kuna_objcprotos.rs`, `kuna_objcivars.rs`: `-[Class(Category) sel]` renames, `_OBJC_PROTOCOL_$_` names + declared encodings for the stubs, a struct per class from `class_ro_t.ivars` typing `self`) → P3 fold of the offset variables | `option objc on\|off` (names), `option objcivars on\|off` (new kuna settable; struct + typed self + offset fold) |
 
 `kuna-storecopyeffects.xml` pins the AArch64 address-spill store across calls,
 repeated stores, a load between calls, and a truly dead-store control. The
@@ -414,6 +417,11 @@ callers against boundary values and check that each helper is called once.
 `ghangr-go-store-value.xml` checks Go integer destination conversions for fields,
 plain/indexed pointers and a side-effectful call, with all integer widths and
 complete native bodies covered by the CLI integration fixture.
+`kuna-kernelcache.xml` loads a synthetic arm64 kernel collection three ways: the
+bare MH_FILESET with `kernelcache off` (one image, no symbols), its kext out of an
+IMG4(IM4P(LZFSE)) wrapper, and its kernel out of a bare IM4P(complzss). The
+fixtures and their generator live in
+`decompiler/crates/kuna-analysis/tests/fixtures/kernelcache/`.
 
 `ghangr-go-pointer-arithmetic-32.xml` and `ghangr-go-pointer-arithmetic-64.xml`
 check live pointer bases through constant, negative and signed dynamic byte

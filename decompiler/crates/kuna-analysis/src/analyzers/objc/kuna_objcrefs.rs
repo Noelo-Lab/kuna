@@ -1,5 +1,5 @@
 //! The ObjC reference slots and selector stubs: `__objc_selrefs`,
-//! `__objc_classrefs`, `__objc_superrefs` and `__objc_stubs`.
+//! `__objc_classrefs`, `__objc_superrefs`, `__objc_protorefs` and `__objc_stubs`.
 //!
 //! Code never touches a selector string or a `class_t` directly. A message send
 //! loads the selector from a `__objc_selrefs` slot (`adrp/ldr x1`), a class
@@ -12,7 +12,8 @@
 //! Per slot this emits a pointer-sized data object: `selRef_<sel>` (colons
 //! sanitized, the `sel_` convention of the selector string itself),
 //! `classRef_<Class>` / `superRef_<Class>` (the class a rebase slot points at,
-//! or the import a bind slot names, `_OBJC_CLASS_$_` stripped). Each stub
+//! or the import a bind slot names, `_OBJC_CLASS_$_` stripped), `protoRef_<P>`
+//! for a protocol reference. Each stub
 //! becomes the function `objc_msgSend$<sel>`, the name the linker gives the
 //! symbol it synthesizes the stub for (IDA renders the same).
 //!
@@ -37,16 +38,20 @@ use object::read::{Object, ObjectSection};
 use super::classt;
 use super::sanitize_selector;
 use super::sections::MachoImage;
-use super::{encoding, TypeCtx};
+use super::encoding::{self, TypeCtx};
+use kuna_decomp::architecture::Architecture;
 use crate::pass::{AnalysisOutput, DataObjectFact, FidMatch, SymFact, SymKind};
 
 const SEC_SELREFS: &str = "__objc_selrefs";
 const SEC_CLASSREFS: &str = "__objc_classrefs";
 const SEC_SUPERREFS: &str = "__objc_superrefs";
+const SEC_PROTOREFS: &str = "__objc_protorefs";
 const SEC_STUBS: &str = "__objc_stubs";
 
 /// The import symbol prefix of an Objective-C class (`_OBJC_CLASS_$_NSObject`).
 const CLASS_SYMBOL_PREFIX: &str = "_OBJC_CLASS_$_";
+/// The import symbol prefix of an Objective-C protocol (`_OBJC_PROTOCOL_$_P`).
+const PROTOCOL_SYMBOL_PREFIX: &str = "_OBJC_PROTOCOL_$_";
 
 /// What the method walk learned about this image's selectors, for the stubs.
 #[derive(Default)]
@@ -92,6 +97,7 @@ impl Selectors {
 pub(super) fn emit(
     img: &MachoImage,
     file: &object::File,
+    arch: &Architecture,
     tctx: &TypeCtx,
     selectors: &mut Selectors,
     out: &mut AnalysisOutput,
@@ -134,6 +140,21 @@ pub(super) fn emit(
         }
     }
 
+    for va in section_slots(file, SEC_PROTOREFS, ps) {
+        let name = match img.rebase_ptr(va) {
+            Some(proto_va) => {
+                let Some(name) = super::kuna_objcprotos::protocol_name(img, proto_va) else { continue };
+                push_slot(&mut const_slots, va, ps);
+                name
+            }
+            None => match img.bind_name(va).and_then(|n| n.strip_prefix(PROTOCOL_SYMBOL_PREFIX)) {
+                Some(name) => name.to_string(),
+                None => continue,
+            },
+        };
+        out.data_objects.push(DataObjectFact { addr: va, name: format!("protoRef_{name}"), size: ps as u32 });
+    }
+
     if let Some(sec) = file.section_by_name(SEC_STUBS) {
         if let Ok(data) = sec.data() {
             for (stub_va, selref_va) in stubs(file.architecture(), sec.address(), data) {
@@ -143,7 +164,7 @@ pub(super) fn emit(
                 let name = format!("objc_msgSend${sel}");
                 out.symbols.push(SymFact { addr: stub_va, name: name.clone(), kind: SymKind::Function });
                 if let Some(enc) = selectors.encodings.get(&sel).and_then(|e| e.as_deref()) {
-                    if let Some(pieces) = stub_prototype(&name, enc, file.architecture(), tctx) {
+                    if let Some(pieces) = stub_prototype(&name, enc, file.architecture(), arch, tctx) {
                         out.prototypes_at.push((stub_va, pieces));
                     }
                 }
@@ -156,7 +177,7 @@ pub(super) fn emit(
 
 /// The address of every pointer-sized slot of the named section, bounded by the
 /// bytes the file actually backs it with (a header size alone is untrusted).
-fn section_slots(file: &object::File, name: &str, ps: u64) -> Vec<u64> {
+pub(super) fn section_slots(file: &object::File, name: &str, ps: u64) -> Vec<u64> {
     let Some(sec) = file.section_by_name(name) else { return Vec::new() };
     let Ok(data) = sec.data() else { return Vec::new() };
     let (base, n) = (sec.address(), (data.len() as u64).min(sec.size()) / ps);
@@ -164,6 +185,28 @@ fn section_slots(file: &object::File, name: &str, ps: u64) -> Vec<u64> {
         return Vec::new();
     }
     (0..n).map(|i| base + i * ps).collect()
+}
+
+/// (test) `bytes` with the `size` field of the 64-bit section `name` rewritten.
+#[cfg(test)]
+pub(crate) fn with_section_size(mut bytes: Vec<u8>, name: &str, size: u64) -> Vec<u8> {
+    let u32_at = |b: &[u8], o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap()) as usize;
+    let (mut off, mut hit) = (32, 0);
+    for _ in 0..u32_at(&bytes, 16) {
+        let (cmd, cmdsize) = (u32_at(&bytes, off), u32_at(&bytes, off + 4));
+        if cmd == 0x19 {
+            for j in 0..u32_at(&bytes, off + 64) {
+                let s = off + 72 + 80 * j;
+                if bytes[s..s + 16].split(|&b| b == 0).next() == Some(name.as_bytes()) {
+                    bytes[s + 40..s + 48].copy_from_slice(&size.to_le_bytes());
+                    hit += 1;
+                }
+            }
+        }
+        off += cmdsize;
+    }
+    assert_eq!(hit, 1, "{name}");
+    bytes
 }
 
 /// Append the slot `[va, va + ps)`, merging with the previous range when adjacent.
@@ -184,10 +227,11 @@ fn push_slot(ranges: &mut Vec<(u64, u64)>, va: u64, ps: u64) {
 fn stub_prototype(
     name: &str,
     enc: &str,
-    arch: object::Architecture,
+    machine: object::Architecture,
+    arch: &Architecture,
     tctx: &TypeCtx,
 ) -> Option<PrototypePieces> {
-    let (int_regs, float_regs): (&[&str], &[&str]) = match arch {
+    let (int_regs, float_regs): (&[&str], &[&str]) = match machine {
         object::Architecture::Aarch64 => (
             &["x0", "x2", "x3", "x4", "x5", "x6", "x7"],
             &["d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7"],
@@ -195,7 +239,7 @@ fn stub_prototype(
         object::Architecture::X86_64 => (&["RDI", "RDX", "RCX", "R8", "R9"], &[]),
         _ => return None,
     };
-    let method = encoding::decode_method(name, enc, tctx.types, tctx.ptr_size, tctx.word_size)?;
+    let method = encoding::decode_method(name, enc, tctx, None)?;
     if method.intypes.len() < 2 {
         return None;
     }
@@ -221,7 +265,7 @@ fn stub_prototype(
             }
             _ => return None,
         };
-        let vn = tctx.arch.get_register_varnode(reg.as_bytes()).ok()?;
+        let vn = arch.get_register_varnode(reg.as_bytes()).ok()?;
         let slot = pieces.intypes.len();
         pieces.intypes.push(Rc::clone(ty));
         pieces.innames.push(pname.clone());
@@ -371,27 +415,6 @@ mod tests {
         assert!(img.chained());
         assert_eq!(img.rebase_ptr(0x100004000), None);
         assert_eq!(img.bind_name(0x100004000), Some("_ext"));
-    }
-
-    /// `bytes` with the `size` field of the 64-bit section `name` rewritten.
-    fn with_section_size(mut bytes: Vec<u8>, name: &str, size: u64) -> Vec<u8> {
-        let u32_at = |b: &[u8], o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap()) as usize;
-        let (mut off, mut hit) = (32, 0);
-        for _ in 0..u32_at(&bytes, 16) {
-            let (cmd, cmdsize) = (u32_at(&bytes, off), u32_at(&bytes, off + 4));
-            if cmd == 0x19 {
-                for j in 0..u32_at(&bytes, off + 64) {
-                    let s = off + 72 + 80 * j;
-                    if bytes[s..s + 16].split(|&b| b == 0).next() == Some(name.as_bytes()) {
-                        bytes[s + 40..s + 48].copy_from_slice(&size.to_le_bytes());
-                        hit += 1;
-                    }
-                }
-            }
-            off += cmdsize;
-        }
-        assert_eq!(hit, 1, "{name}");
-        bytes
     }
 
     /// A ref section whose header claims far more bytes than the file holds
