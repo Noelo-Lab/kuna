@@ -77,8 +77,9 @@ pub enum NodeExit {
 #[derive(Clone, Debug)]
 pub struct Node {
     /// Where each variable of a select's deciding atoms lives when the node
-    /// exits, with the stack pointer's offset from its entry value there.
-    pub exit_locs: Option<(Vec<(VarId, Loc)>, Option<i128>)>,
+    /// exits, as the constant it is offset by there, with the stack pointer's
+    /// offset from its entry value there.
+    pub exit_locs: Option<(Vec<(VarId, Loc, i128)>, Option<i128>)>,
     pub key: NodeKey,
     pub entry: State,
     pub entry_ctx: VmCtx,
@@ -176,7 +177,7 @@ pub struct Explorer<'a> {
     /// Entry-stack offsets passed to external calls, over every round.
     escapes: BTreeSet<i128>,
     /// Locations recorded by the last select built, for its node.
-    pending_locs: Option<(Vec<(VarId, Loc)>, Option<i128>)>,
+    pending_locs: Option<(Vec<(VarId, Loc, i128)>, Option<i128>)>,
     /// Callees in the image already read.
     callees: BTreeMap<u64, Option<CalleeScan>>,
     /// The native addresses nodes start at this round (handler entries).
@@ -661,8 +662,10 @@ impl<'a> Explorer<'a> {
     }
 
     /// A register or entry-stack slot holding each variable the atoms read,
-    /// in `state`; None when one has no home (it was only ever in flight).
-    fn locate_vars(&mut self, state: &mut State, atoms: &[ExprId]) -> Option<(Vec<(VarId, Loc)>, Option<i128>)> {
+    /// in `state`, or else holding it plus a constant (a loop counter the
+    /// interpreter already advanced past the value its guard tested); None
+    /// when one has no home (it was only ever in flight).
+    fn locate_vars(&mut self, state: &mut State, atoms: &[ExprId]) -> Option<(Vec<(VarId, Loc, i128)>, Option<i128>)> {
         let mut vars = BTreeSet::new();
         for a in atoms {
             vars.extend(self.arena.free_vars(*a));
@@ -679,27 +682,45 @@ impl<'a> Explorer<'a> {
             let size = info.size;
             let target = self.arena.var_expr(v)?;
             let mut found = None;
+            let mut shifted = None;
             let mut regs: Vec<u64> = self.abi.gprs.clone();
             regs.extend(self.abi.callee_saved.iter().map(|(o, _)| *o));
+            let note = |arena: &ExprArena, value: ExprId, loc: Loc, shifted: &mut Option<(Loc, i128)>| {
+                if value == target {
+                    return true;
+                }
+                if shifted.is_none() {
+                    if let Some((Some(b), k)) = arena.affine(value) {
+                        if b == v {
+                            *shifted = Some((loc, k));
+                        }
+                    }
+                }
+                false
+            };
             for r in regs {
                 if r == self.abi.sp {
                     continue;
                 }
-                if state.read_reg(&mut self.arena, r, size) == target {
-                    found = Some(Loc::Reg { off: r });
+                let value = state.read_reg(&mut self.arena, r, size);
+                if note(&self.arena, value, Loc::Reg { off: r }, &mut shifted) {
+                    found = Some((Loc::Reg { off: r }, 0));
                     break;
                 }
             }
             if found.is_none() && sp_off.is_some() {
                 let offs: Vec<i128> = state.mem_offsets(self.sp0).into_iter().filter(|o| o.rem_euclid(size as i128) == 0).collect();
                 for o in offs {
-                    if state.read_mem(&mut self.arena, self.target, self.sp0, o, size) == target {
-                        found = Some(Loc::Mem { base: self.sp0, off: o });
+                    let value = state.read_mem(&mut self.arena, self.target, self.sp0, o, size);
+                    let loc = Loc::Mem { base: self.sp0, off: o };
+                    if note(&self.arena, value, loc, &mut shifted) {
+                        found = Some((loc, 0));
                         break;
                     }
                 }
             }
-            out.push((v, found?));
+            let (loc, k) = found.or(shifted)?;
+            out.push((v, loc, k));
         }
         Some((out, sp_off))
     }

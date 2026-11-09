@@ -1374,7 +1374,7 @@ impl<'a> Emitter<'a> {
     /// one reads a variable with no home or uses a form p-code cannot state.
     fn rematerialize(&mut self, node: &super::kuna_pushanflow::Node, atoms: &[ExprId], out: &mut Vec<OverlayOp>) -> Option<BTreeMap<ExprId, VarnodeData>> {
         let (locs, sp_off) = node.exit_locs.as_ref()?;
-        let homes: BTreeMap<u32, Loc> = locs.iter().map(|(v, l)| (*v, *l)).collect();
+        let homes: BTreeMap<u32, (Loc, i128)> = locs.iter().map(|(v, l, k)| (*v, (*l, *k))).collect();
         let mut ops = Vec::new();
         let mut memo: BTreeMap<ExprId, VarnodeData> = BTreeMap::new();
         let mut next = REMAT_SCRATCH;
@@ -1391,7 +1391,7 @@ impl<'a> Emitter<'a> {
     fn compile(
         &mut self,
         e: ExprId,
-        homes: &BTreeMap<u32, Loc>,
+        homes: &BTreeMap<u32, (Loc, i128)>,
         sp_off: Option<i128>,
         memo: &mut BTreeMap<ExprId, VarnodeData>,
         next: &mut u64,
@@ -1412,19 +1412,30 @@ impl<'a> Emitter<'a> {
         };
         let r = match self.arena.kind(e).clone() {
             ExprKind::Const(c) => self.cst(c as u64, size),
-            ExprKind::Var(v) => match homes.get(&v)? {
-                Loc::Reg { off } => self.vn(&self.conf.register, *off, size),
-                Loc::Mem { off, .. } => {
-                    let ptr = self.conf.ptr_size as u32;
-                    sp_off?;
-                    let addr = fresh(self);
-                    let addr = VarnodeData { size: ptr, ..addr };
-                    ops.push(self.frame_op(addr.clone(), *off));
+            ExprKind::Var(v) => {
+                let (loc, k) = *homes.get(&v)?;
+                let held = match loc {
+                    Loc::Reg { off } => self.vn(&self.conf.register, off, size),
+                    Loc::Mem { off, .. } => {
+                        let ptr = self.conf.ptr_size as u32;
+                        sp_off?;
+                        let addr = fresh(self);
+                        let addr = VarnodeData { size: ptr, ..addr };
+                        ops.push(self.frame_op(addr.clone(), off));
+                        let t = fresh(self);
+                        ops.push(OverlayOp { opc: CPUI_LOAD, out: Some(t.clone()), ins: vec![self.cst(self.conf.ram.get_index() as u64, ptr), addr] });
+                        t
+                    }
+                };
+                if k == 0 {
+                    held
+                } else {
+                    // The home holds the variable plus `k`.
                     let t = fresh(self);
-                    ops.push(OverlayOp { opc: CPUI_LOAD, out: Some(t.clone()), ins: vec![self.cst(self.conf.ram.get_index() as u64, ptr), addr] });
+                    ops.push(OverlayOp { opc: CPUI_INT_SUB, out: Some(t.clone()), ins: vec![held, self.cst(k as u64 & (u64::MAX >> (64 - 8 * size.min(8))), size)] });
                     t
                 }
-            },
+            }
             ExprKind::Un(opc, a) => {
                 let x = self.compile(a, homes, sp_off, memo, next, ops, depth + 1)?;
                 let t = self.scratch(*next, size);
