@@ -150,3 +150,5 @@ mod kt0_hooks;
 mod kt3_elements;
 #[path = "kt7_kotlin_writer.rs"]
 mod kt7_kotlin_writer;
+#[path = "kt4_members.rs"]
+mod kt4_members;

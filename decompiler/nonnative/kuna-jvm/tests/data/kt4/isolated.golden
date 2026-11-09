@@ -1,0 +1,208 @@
+== root kt4/Abs
+node	kt4/Abs
+  bridge <init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V	<init> (I)V	<init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    p0	 = 1
+  bridge g$default (Lkt4/Abs;IILjava/lang/Object;)I	g (I)I	g$default (Lkt4/Abs;IILjava/lang/Object;)I
+    p0	 = 2
+== root kt4/Base
+node	kt4/Base
+  bridge over$default (Lkt4/Base;IILjava/lang/Object;)I	over (I)I	over$default (Lkt4/Base;IILjava/lang/Object;)I
+    p0	 = 1
+== root kt4/Color
+node	kt4/Color
+  hidden	$ENTRIES Lkotlin/enums/EnumEntries;,$VALUES [Lkt4/Color;,valueOf (Ljava/lang/String;)Lkt4/Color;,values ()[Lkt4/Color;
+  bridge <init> (Ljava/lang/String;IILjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V	<init> (Ljava/lang/String;IILjava/lang/String;)V	<init> (Ljava/lang/String;IILjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    p0	 = 0
+    p1	 = "none"
+    p2	 = ...
+    p3	 = ...
+  bridge describe$default (Lkt4/Color;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	describe (Ljava/lang/String;)Ljava/lang/String;	describe$default (Lkt4/Color;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+    p0	 = "c:"
+== root kt4/CtorBase
+node	kt4/CtorBase
+== root kt4/CtorOnly
+node	kt4/CtorOnly
+== root kt4/Defaults
+node	kt4/Defaults
+  bridge <init> (ILjava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V	<init> (ILjava/lang/String;J)V	<init> (ILjava/lang/String;JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    p0	 = 1
+    p1	 = "two"
+    p2	 = 3L
+  bridge <init> (DIILkotlin/jvm/internal/DefaultConstructorMarker;)V	<init> (DI)V	<init> (DIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    p0	 = ...
+    p1	 = 7
+  bridge simple$default (Lkt4/Defaults;ILjava/lang/String;Ljava/lang/Object;ILjava/lang/Object;)Ljava/lang/String;	simple (ILjava/lang/String;Ljava/lang/Object;)Ljava/lang/String;	simple$default (Lkt4/Defaults;ILjava/lang/String;Ljava/lang/Object;ILjava/lang/Object;)Ljava/lang/String;
+    p0	 = ...
+    p1	 = "y"
+    p2	 = null
+  bridge withThis$default (Lkt4/Defaults;IIILjava/lang/Object;)I	withThis (II)I	withThis$default (Lkt4/Defaults;IIILjava/lang/Object;)I
+    p0	 = this.hashCode()
+    p1	 = x + 1
+  bridge bounded$default (Lkt4/Defaults;Ljava/lang/Number;Ljava/lang/Number;ILjava/lang/Object;)Ljava/lang/Number;	bounded (Ljava/lang/Number;Ljava/lang/Number;)Ljava/lang/Number;	bounded$default (Lkt4/Defaults;Ljava/lang/Number;Ljava/lang/Number;ILjava/lang/Object;)Ljava/lang/Number;
+    p0	 = ...
+    p1	 = null
+  bridge unbounded$default (Lkt4/Defaults;Ljava/lang/Object;Ljava/lang/Object;ILjava/lang/Object;)Ljava/lang/Object;	unbounded (Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;	unbounded$default (Lkt4/Defaults;Ljava/lang/Object;Ljava/lang/Object;ILjava/lang/Object;)Ljava/lang/Object;
+    p0	 = ...
+    p1	 = null
+  bridge multi$default (Lkt4/Defaults;Ljava/lang/CharSequence;IILjava/lang/Object;)I	multi (Ljava/lang/CharSequence;I)I	multi$default (Lkt4/Defaults;Ljava/lang/CharSequence;IILjava/lang/Object;)I
+    p0	 = ...
+    p1	 = 5
+  bridge ext$default (Lkt4/Defaults;Ljava/lang/String;IILjava/lang/Object;)Ljava/lang/String;	ext (Ljava/lang/String;I)Ljava/lang/String;	ext$default (Lkt4/Defaults;Ljava/lang/String;IILjava/lang/Object;)Ljava/lang/String;
+    p0	 = $this$ext.length()
+    p1	 = ...
+  bridge many$default (Lkt4/Defaults;IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJLjava/lang/String;IILjava/lang/Object;)I	many (IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJLjava/lang/String;)I	many$default (Lkt4/Defaults;IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIJLjava/lang/String;IILjava/lang/Object;)I
+    p0	 = 0
+    p1	 = 1
+    p2	 = 2
+    p3	 = 3
+    p4	 = 4
+    p5	 = 5
+    p6	 = 6
+    p7	 = 7
+    p8	 = 8
+    p9	 = 9
+    p10	 = 10
+    p11	 = 11
+    p12	 = 12
+    p13	 = 13
+    p14	 = 14
+    p15	 = 15
+    p16	 = 16
+    p17	 = 17
+    p18	 = 18
+    p19	 = 19
+    p20	 = 20
+    p21	 = 21
+    p22	 = 22
+    p23	 = 23
+    p24	 = 24
+    p25	 = 25
+    p26	 = 26
+    p27	 = 27
+    p28	 = 28
+    p29	 = 29
+    p30	 = 30
+    p31	 = 31
+    p32	 = 32
+    p33	 = 33L
+    p34	 = "34"
+  bridge count$default (Lkt4/Defaults;IIILjava/lang/Object;)I	count (II)I	count$default (Lkt4/Defaults;IIILjava/lang/Object;)I
+    p0	 = ...
+    p1	 = 0
+  bridge inl$default (Lkt4/Defaults;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V	inl (Lkotlin/jvm/functions/Function0;)V	inl$default (Lkt4/Defaults;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V
+    p0	 = (Function0)<unrepresentable>.INSTANCE
+  bridge susp$default (Lkt4/Defaults;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;	susp (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;	susp$default (Lkt4/Defaults;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+    p0	 = 4
+    p1	 = ...
+  bridge priv$default (Lkt4/Defaults;IILjava/lang/Object;)I	priv (I)I	priv$default (Lkt4/Defaults;IILjava/lang/Object;)I
+    p0	 = 1
+  bridge intern$kt4members$default (Lkt4/Defaults;[IILjava/lang/Object;)I	intern$kt4members ([I)I	intern$kt4members$default (Lkt4/Defaults;[IILjava/lang/Object;)I
+    p0	 = new int[]{1}
+  bridge nullableRet$default (Lkt4/Defaults;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	nullableRet (Ljava/lang/String;)Ljava/lang/String;	nullableRet$default (Lkt4/Defaults;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+    p0	 = null
+  bridge arr$default (Lkt4/Defaults;[Ljava/lang/String;DILjava/lang/Object;)I	arr ([Ljava/lang/String;D)I	arr$default (Lkt4/Defaults;[Ljava/lang/String;DILjava/lang/Object;)I
+    p0	 = new String[]{"a"}
+    p1	 = 1.5
+node	kt4/Defaults$inl$1
+== root kt4/Derived
+node	kt4/Derived
+== root kt4/E2
+node	kt4/E2
+  hidden	$ENTRIES Lkotlin/enums/EnumEntries;,$VALUES [Lkt4/E2;,valueOf (Ljava/lang/String;)Lkt4/E2;,values ()[Lkt4/E2;
+== root kt4/Iface
+node	kt4/Iface
+node	kt4/Iface$DefaultImpls
+  bridge defaultMethod$default (Lkt4/Iface;IILjava/lang/Object;)I	defaultMethod (Lkt4/Iface;I)I	defaultMethod$default (Lkt4/Iface;IILjava/lang/Object;)I
+    p0	 = 9
+    p1	 = ...
+== root kt4/Impl
+node	kt4/Impl
+== root kt4/InitOnly
+node	kt4/InitOnly
+== root kt4/Marker
+node	kt4/Marker
+== root kt4/MembersKt
+log	WARN Unreferenced anonymous class kt4/MembersKt$lam$1!
+node	kt4/MembersKt
+  bridge ctxFun$default (Ljava/lang/String;IILjava/lang/Object;)I	ctxFun (Ljava/lang/String;I)I	ctxFun$default (Ljava/lang/String;IILjava/lang/Object;)I
+    p0	 = ...
+    p1	 = 1
+  bridge topLevel$default (ILjava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	topLevel (ILjava/lang/String;)Ljava/lang/String;	topLevel$default (ILjava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+    p0	 = 1
+    p1	 = "b"
+  bridge maxOf3$default (Ljava/lang/Comparable;Ljava/lang/Comparable;Ljava/lang/Comparable;ILjava/lang/Object;)Ljava/lang/Comparable;	maxOf3 (Ljava/lang/Comparable;Ljava/lang/Comparable;Ljava/lang/Comparable;)Ljava/lang/Comparable;	maxOf3$default (Ljava/lang/Comparable;Ljava/lang/Comparable;Ljava/lang/Comparable;ILjava/lang/Object;)Ljava/lang/Comparable;
+    p0	 = ...
+    p1	 = ...
+    p2	 = a
+  bridge extTop$default (IIILjava/lang/Object;)I	extTop (II)I	extTop$default (IIILjava/lang/Object;)I
+    p0	 = 2
+    p1	 = ...
+  bridge applyTwice$default (Lkotlin/jvm/functions/Function1;IILjava/lang/Object;)I	applyTwice (Lkotlin/jvm/functions/Function1;I)I	applyTwice$default (Lkotlin/jvm/functions/Function1;IILjava/lang/Object;)I
+    p0	 = 0
+    p1	 = ...
+== root kt4/Multi
+node	kt4/Multi
+  bridge partOne$default (IILjava/lang/Object;)I	partOne (I)I	partOne$default (IILjava/lang/Object;)I
+    p0	 = ...
+  bridge partTwo$default (Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	partTwo (Ljava/lang/String;)Ljava/lang/String;	partTwo$default (Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+    p0	 = ...
+== root kt4/Multi__Multi1Kt
+node	kt4/Multi__Multi1Kt
+  bridge partOne$default (IILjava/lang/Object;)I	partOne (I)I	partOne$default (IILjava/lang/Object;)I
+    p0	 = 11
+== root kt4/Multi__Multi2Kt
+node	kt4/Multi__Multi2Kt
+  bridge partTwo$default (Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	partTwo (Ljava/lang/String;)Ljava/lang/String;	partTwo$default (Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+    p0	 = "two"
+== root kt4/Named
+node	kt4/Named
+  hidden	access$getMade$cp ()I,access$setMade$cp (I)V
+node	kt4/Named$Factory
+  bridge make$default (Lkt4/Named$Factory;IILjava/lang/Object;)Lkt4/Named;	make (I)Lkt4/Named;	make$default (Lkt4/Named$Factory;IILjava/lang/Object;)Lkt4/Named;
+    p0	 = 1
+== root kt4/Obj
+log	WARN Unreferenced anonymous class kt4/Obj$lazyVal$2!
+node	kt4/Obj
+  field INSTANCE Lkt4/Obj;	Hidden OBJECT_INSTANCE
+  bridge stat$default (IILjava/lang/Object;)I	stat (I)I	stat$default (IILjava/lang/Object;)I
+    p0	 = 2
+  bridge plain$default (Lkt4/Obj;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	plain (Ljava/lang/String;)Ljava/lang/String;	plain$default (Lkt4/Obj;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+    p0	 = "p"
+== root kt4/Point
+node	kt4/Point
+  bridge <init> (IIILkotlin/jvm/internal/DefaultConstructorMarker;)V	<init> (II)V	<init> (IIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    p0	 = 0
+    p1	 = 0
+  bridge copy$default (Lkt4/Point;IIILjava/lang/Object;)Lkt4/Point;	copy (II)Lkt4/Point;	copy$default (Lkt4/Point;IIILjava/lang/Object;)Lkt4/Point;
+    p0	 = this.x
+    p1	 = this.y
+== root kt4/PrivCls
+node	kt4/PrivCls
+  bridge <init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V	<init> (I)V	<init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    p0	 = 1
+== root kt4/PropAnn
+node	kt4/PropAnn
+== root kt4/Secondary
+node	kt4/Secondary
+  bridge <init> (Ljava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V	<init> (Ljava/lang/String;I)V	<init> (Ljava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    p0	 = ...
+    p1	 = 2
+== root kt4/Shape
+node	kt4/Shape
+node	kt4/Shape$Circle
+  bridge <init> (DILkotlin/jvm/internal/DefaultConstructorMarker;)V	<init> (D)V	<init> (DILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    p0	 = 1.0
+node	kt4/Shape$Empty
+  field INSTANCE Lkt4/Shape$Empty;	Hidden OBJECT_INSTANCE
+== root kt4/WithCompanion
+node	kt4/WithCompanion
+  hidden	access$getCv$cp ()I,access$getJsv$cp ()I,access$setJsv$cp (I)V
+  bridge <init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V	<init> (I)V	<init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+    p0	 = 0
+node	kt4/WithCompanion$Companion
+  bridge cf$default (Lkt4/WithCompanion$Companion;IILjava/lang/Object;)I	cf (I)I	cf$default (Lkt4/WithCompanion$Companion;IILjava/lang/Object;)I
+    p0	 = 1
+  bridge nonStatic$default (Lkt4/WithCompanion$Companion;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;	nonStatic (Ljava/lang/String;)Ljava/lang/String;	nonStatic$default (Lkt4/WithCompanion$Companion;Ljava/lang/String;ILjava/lang/Object;)Ljava/lang/String;
+    p0	 = "z"
+== root kt4/WithCompanion$special$$inlined$observable$1
+node	kt4/WithCompanion$special$$inlined$observable$1
