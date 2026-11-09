@@ -60,6 +60,8 @@ pub trait PushanTarget: PushanImage {
     /// `addr` lies in a mapped region that looks like VM bytecode: the paper's
     /// test, a 256-byte window with Shannon entropy above 5 bits per byte.
     fn bytecode_like(&self, addr: u64) -> bool;
+    /// A software interrupt with this vector never returns (Windows `int 0x29`, `__fastfail`).
+    fn noreturn_interrupt(&self, vector: u64) -> bool;
 }
 
 /// Shannon entropy (bits per byte) of a window.
@@ -130,6 +132,8 @@ pub enum Exit {
     CondJump { arms: Vec<(ExprId, ExprId, Box<State>)>, fallthrough: u64 },
     Call { target: ExprId, fallthrough: u64 },
     Return(ExprId),
+    /// A call that never returns (a no-return interrupt): the path ends.
+    NoReturn,
     Halt(String),
 }
 
@@ -173,6 +177,8 @@ pub struct Emulator<'a> {
     notes: Vec<String>,
     /// The constants each symbolized location was seen to hold (shared with the explorer).
     pub sym_values: SymValues,
+    /// The handler address a no-return interrupt produced in this instruction.
+    noreturn_target: Option<ExprId>,
 }
 
 /// Symbol -> the constants its location held where paths met.
@@ -192,6 +198,7 @@ impl<'a> Emulator<'a> {
             notes: Vec::new(),
             image_loads: BTreeMap::new(),
             sym_values: Default::default(),
+            noreturn_target: None,
         }
     }
 
@@ -528,6 +535,7 @@ impl<'a> Emulator<'a> {
         trace.forked = false;
         trace.path.clear();
         self.notes.clear();
+        self.noreturn_target = None;
         let mut visited = vec![false; insn.ops.len() + 1];
         let r = self.run_from(state, arena, insn, 0, trace, &mut visited, 0);
         trace.notes = std::mem::take(&mut self.notes);
@@ -634,6 +642,9 @@ impl<'a> Emulator<'a> {
                 }
                 CPUI_CALLIND => {
                     let target = self.read_vn(state, arena, &op.ins[0]);
+                    if self.noreturn_target == Some(target) {
+                        return Exit::NoReturn;
+                    }
                     return Exit::Call { target, fallthrough: next };
                 }
                 CPUI_RETURN => {
@@ -643,11 +654,16 @@ impl<'a> Emulator<'a> {
                 CPUI_CALLOTHER => {
                     let idx = op.ins[0].offset;
                     let name = self.target.userop_name(idx).unwrap_or_else(|| format!("userop_{idx}"));
+                    let vector = op.ins.get(1).map(|v| self.read_vn(state, arena, v)).and_then(|v| arena.is_const(v));
+                    let noreturn = name == "swi" && vector.is_some_and(|v| self.target.noreturn_interrupt(v as u64));
                     trace.userops.push(name);
                     if let Some(out) = &op.out {
                         let u = self.unknown(arena, out.size.min(MAX_SIZE as u32) as u8, "user-op result");
                         trace.op_out[pc] = Some(u);
                         self.write_vn(state, arena, out, u);
+                        if noreturn {
+                            self.noreturn_target = Some(u);
+                        }
                     }
                 }
                 CPUI_LOAD => {

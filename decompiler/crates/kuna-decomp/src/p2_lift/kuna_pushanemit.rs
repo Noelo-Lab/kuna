@@ -424,7 +424,7 @@ fn mark_dead(
                         out.regs = full_regs.clone();
                         out.mem = mem_from(exits[i].sp_off);
                     }
-                    NodeExit::Unresolved(_) | NodeExit::Halt(_) => {
+                    NodeExit::Unresolved(_) | NodeExit::Halt(_) | NodeExit::NoReturn => {
                         out.regs = full_regs.clone();
                         out.mem = full_mem.clone();
                     }
@@ -1010,6 +1010,10 @@ impl<'a> Emitter<'a> {
                         kept_flow = true;
                         self.stats.kept_unresolved += 1;
                     }
+                    NodeExit::NoReturn => {
+                        out.push(Self::raw(op));
+                        kept_flow = true;
+                    }
                     NodeExit::CondBranch { arms, .. } if op.opc == CPUI_CBRANCH => {
                         match arms.get(arm_index) {
                             Some((_, taken)) => {
@@ -1317,7 +1321,7 @@ impl<'a> Emitter<'a> {
                 });
                 out.push(OverlayOp { opc: CPUI_RETURN, out: None, ins: vec![ra] });
             }
-            NodeExit::Unresolved(_) | NodeExit::Halt(_) => {
+            NodeExit::Unresolved(_) | NodeExit::Halt(_) | NodeExit::NoReturn => {
                 if !kept_flow {
                     self.dead_end(out);
                 }

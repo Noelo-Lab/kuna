@@ -170,6 +170,8 @@ pub struct ArchTarget<'a> {
     userops: Vec<String>,
     /// Entropy of each 256-byte block, computed on demand.
     entropy: RefCell<BTreeMap<u64, f64>>,
+    /// A Windows image (`int 0x29` is `__fastfail`).
+    windows: bool,
 }
 
 struct Collect(Vec<RawOp>);
@@ -211,7 +213,8 @@ impl<'a> ArchTarget<'a> {
         arch.translate().get_user_op_names(&mut userops);
         let ptr = ram.get_addr_size() as u8;
         let image_base = sections.iter().map(|s| s.start).min().unwrap_or(0) & !0xffff;
-        let teb = super::kuna_fastfailnoreturn::archid_is_windows(&arch.archid).then(|| ThreadBlock::new(ptr, image_base));
+        let windows = super::kuna_fastfailnoreturn::archid_is_windows(&arch.archid);
+        let teb = windows.then(|| ThreadBlock::new(ptr, image_base));
         Some(ArchTarget {
             arch,
             ram,
@@ -221,6 +224,7 @@ impl<'a> ArchTarget<'a> {
             lifts: RefCell::new(BTreeMap::new()),
             userops,
             entropy: RefCell::new(BTreeMap::new()),
+            windows,
         })
     }
 
@@ -332,6 +336,9 @@ impl PushanTarget for ArchTarget<'_> {
             return Some(0);
         }
         Some(p.intypes.iter().map(|t| (t.get_size().max(0) as u32 + 3) & !3).sum())
+    }
+    fn noreturn_interrupt(&self, vector: u64) -> bool {
+        self.windows && vector == super::kuna_fastfailnoreturn::FASTFAIL_VECTOR as u64
     }
     fn bytecode_like(&self, addr: u64) -> bool {
         if self.section_of(addr).is_none() {
@@ -681,6 +688,7 @@ fn describe_exit(e: &NodeExit) -> String {
         NodeExit::Return => "return".into(),
         NodeExit::TailCall(c) => format!("tailcall {c:#x}"),
         NodeExit::TailCallSlot(c) => format!("tailcall [{c:#x}]"),
+        NodeExit::NoReturn => "no return".into(),
         NodeExit::Unresolved(m) => format!("unresolved: {}", m.chars().take(400).collect::<String>()),
         NodeExit::Halt(m) => format!("halt: {m}"),
     }

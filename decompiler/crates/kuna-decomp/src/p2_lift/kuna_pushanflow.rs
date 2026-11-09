@@ -69,6 +69,8 @@ pub enum NodeExit {
     TailCall(u64),
     /// A jump through an import or GOT slot.
     TailCallSlot(u64),
+    /// A call that never returns (Windows `__fastfail`); the original op is kept.
+    NoReturn,
     /// A target the emulation could not enumerate; the original op is kept.
     Unresolved(String),
     Halt(String),
@@ -1016,6 +1018,7 @@ impl<'a> Explorer<'a> {
                 self.stats.halts += 1;
                 NodeExit::Halt(m)
             }
+            Exit::NoReturn => NodeExit::NoReturn,
             Exit::Jump(t) => self.resolve_jump(cfg, worklist, id, t, state, ctx, false),
             Exit::Return(t) => {
                 if Some(t) == self.retaddr || self.is_caller_slot(t) {
@@ -1653,6 +1656,7 @@ pub fn exit_brief(e: &NodeExit) -> String {
         NodeExit::Return => "return".into(),
         NodeExit::TailCall(c) => format!("tailcall {c:#x}"),
         NodeExit::TailCallSlot(c) => format!("tailcall [{c:#x}]"),
+        NodeExit::NoReturn => "noreturn".into(),
         NodeExit::Unresolved(m) => format!("unresolved: {}", m.chars().take(120).collect::<String>()),
         NodeExit::Halt(m) => format!("halt: {}", m.chars().take(120).collect::<String>()),
     }
