@@ -302,6 +302,30 @@ opt	__dump_original_lines__	1
 opt	dump-exception-on-error	0
 opt	ignore-invalid-bytecode	1
 opt	kt-decompile-facades	1
+set	Kuna Fixes, Vineflower compat	kuna-fixes-compat
+opt	log-level	warn
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	__unit_test_mode__	1
+opt	new-line-separator	1
+opt	error-message	
+opt	include-runtime	
+opt	dump-exception-on-error	0
+opt	jvm_vineflower_compat	1
+set	Kuna Fixes	kuna-fixes
+opt	log-level	warn
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	__unit_test_mode__	1
+opt	new-line-separator	1
+opt	error-message	
+opt	include-runtime	
+opt	dump-exception-on-error	0
+opt	jvm_vineflower_compat	0
 case	complex-condys/pkg/TestComplexCondy	Complex Condys
 class	classes/jasm/pkg/TestComplexCondy.class
 expected	expected/complex-condys/pkg/TestComplexCondy.java
@@ -3107,3 +3131,21 @@ case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB	Kotlin Multifile 
 class	classes/kotlin/kt/pkg/TestMultifile__TestMultifileBKt.class
 expected	expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB.kt
 compare	TestMultifile__TestMultifileBKt.kt	TestMultifile__TestMultifileBKt.java
+case	kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class
+class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Factory.class
+class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Fn.class
+class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Pipe.class
+class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
+class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
+expected	kuna-fixes/expected-compat/pkg/TestMethodRefWildcardReceiver.java
+compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes/pkg/TestMethodRefWildcardReceiver	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class
+class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Factory.class
+class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Fn.class
+class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Pipe.class
+class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
+class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
+expected	kuna-fixes/expected/pkg/TestMethodRefWildcardReceiver.java
+compare	TestMethodRefWildcardReceiver.java
