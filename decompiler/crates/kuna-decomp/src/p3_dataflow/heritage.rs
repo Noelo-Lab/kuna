@@ -1646,7 +1646,7 @@ impl Heritage {
             // `local_array[10]`.  Net +7 (Partial splitting #15-19, Wayoff array
             // #1, No-for-loop alias #3), regressed-set empty.
             fl |= fd.query_local_properties(addr, size, &usepoint);
-            let live = (self.prunes(fd, fl, addr) && super::kuna_prunedssa::applies_to_calls(fd, addr)).then(|| {
+            let live = (self.prunes(fl, addr) && super::kuna_prunedssa::applies_to_calls(fd, addr)).then(|| {
                 super::kuna_prunedssa::live_calls(
                     fd, fd.call_specs(), addr, size, read, &full_write_ops, &partial_write_ops,
                 )
@@ -1709,7 +1709,7 @@ impl Heritage {
 
     /// (kuna `prunedssa`) May this pass prune the markers of the range `addr`
     /// with properties `fl`?
-    fn prunes(&self, fd: &crate::funcdata::Funcdata, fl: uint4, addr: &Address) -> bool {
+    fn prunes(&self, fl: uint4, addr: &Address) -> bool {
         addr.get_space().is_some_and(|spc| {
             super::kuna_prunedssa::applies(fl, addr, self.pass, self.get_info(spc).deadcodedelay)
         })
@@ -5194,7 +5194,7 @@ impl Heritage {
                     super::kuna_persistcalls::restart_full(fd);
                 }
             }
-            if fl.is_some_and(|fl| !memrange.old_addresses() && self.prunes(fd, fl, &memrange.addr))
+            if fl.is_some_and(|fl| !memrange.old_addresses() && self.prunes(fl, &memrange.addr))
                 && super::kuna_prunedssa::prune_merges(fd, &memrange.addr, size, &mut self.merge)
             {
                 let spc = memrange.addr.get_space().expect("place_multiequals: range space").clone();
@@ -6459,7 +6459,7 @@ mod tests {
     #[test]
     fn entry_partition_reuses_slots_and_replaces_an_illegal_wide_input() {
         for big in [false, true] {
-            let (mut fd, addr) = entry_partition_fixture(big, true, false);
+            let (mut fd, addr) = entry_partition_fixture(big, false);
             let original = fd.new_varnode(8, &addr, None);
             fd.set_input_varnode(original).unwrap();
             let heritage = Heritage::new();
@@ -6533,7 +6533,7 @@ mod tests {
     #[test]
     fn guard_input_rewrites_existing_whole_and_tiles_complete_holes() {
         for big in [false, true] {
-            let (mut fd, addr) = entry_partition_fixture(big, true, false);
+            let (mut fd, addr) = entry_partition_fixture(big, false);
             let whole = fd.new_varnode(8, &addr, None);
             fd.set_input_varnode(whole).unwrap();
             let mut heritage = Heritage::new();

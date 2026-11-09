@@ -809,10 +809,40 @@ fn dead_waves_remove_the_chain_and_visit_only_its_links() {
     assert!(waved_far >= 40 * 40, "{waved_far}");
 }
 
+/// The real dead-op removal rule, recording the ops each application took out
+/// (a cascade takes out several at once) in the order the pass's log saw them.
+struct RecordedRemoval {
+    inner: crate::ruleaction_1::RuleEarlyRemoval,
+    removed: Rc<RefCell<Vec<OpId>>>,
+}
+
+impl Rule for RecordedRemoval {
+    fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        let mark = data.dead_wave_log_mark();
+        let res = self.inner.apply_op(op, data);
+        self.removed.borrow_mut().extend_from_slice(data.dead_wave_log_since(mark).0);
+        res
+    }
+    fn get_op_list(&self) -> Vec<OpCode> {
+        self.inner.get_op_list()
+    }
+    fn clone_rule(&self, _g: &ActionGroupList) -> Option<Box<dyn Rule>> {
+        Some(Box::new(RecordedRemoval {
+            inner: crate::ruleaction_1::RuleEarlyRemoval::new("deadcode"),
+            removed: self.removed.clone(),
+        }))
+    }
+    fn removes_dead_ops(&self) -> bool {
+        true
+    }
+}
+
 /// A chain of `n` two-input `opc` ops, each reading the one before twice and
 /// the last read by nothing, beside `n` INT_ADDs, under the real dead-op
 /// removal rule with `deadcascade` at `cascade`. Returns the ops left, how many
-/// ops the log rule was offered, and the order the chain was removed in.
+/// ops the log rule was offered, and the order the chain was removed in. The
+/// ops have no block, so a removal never marks its op dead: the pool counts it
+/// as an ordinary change and every pass is a sweep.
 fn run_cascade_chain(n: u64, opc: OpCode, cascade: Option<u32>) -> (Vec<u64>, usize, Vec<u64>) {
     let mut arch = ArchContext::new(build_manager());
     arch.dead_cascade = cascade;
@@ -832,20 +862,23 @@ fn run_cascade_chain(n: u64, opc: OpCode, cascade: Option<u32>) -> (Vec<u64>, us
         make_op(&mut fd, 0x1008 + 0x10 * i, OpCode::CPUI_INT_ADD);
     }
     let log: Log = Rc::new(RefCell::new(Vec::new()));
+    let removed: Rc<RefCell<Vec<OpId>>> = Rc::new(RefCell::new(Vec::new()));
     let mut pool = ActionPool::new(ruleflags::rule_repeatapply, "pool");
     pool.add_rule(
         RuleState::new("deadcode", 0, "earlyremoval"),
-        Box::new(crate::ruleaction_1::RuleEarlyRemoval::new("deadcode")),
+        Box::new(RecordedRemoval {
+            inner: crate::ruleaction_1::RuleEarlyRemoval::new("deadcode"),
+            removed: removed.clone(),
+        }),
     );
     pool.add_rule(
         RuleState::new("analysis", 0, "log"),
         Box::new(LogRule { tag: "log".into(), log: log.clone(), group: "analysis" }),
     );
-    fd.start_dead_wave_log();
     let mut ctx = ActionContext::new();
     pool.perform(&mut fd, &mut ctx);
     let offset = |fd: &Funcdata, id: OpId| fd.obank().get(id).unwrap().get_addr().get_offset();
-    let removed: Vec<OpId> = fd.take_dead_wave_log().0;
+    let removed = removed.borrow();
     let alive = fd
         .obank()
         .iter_all()
