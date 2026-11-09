@@ -1,0 +1,1158 @@
+=M pkg/TestFunVarargs#<init>()V
+@ 0 CondenseSequences
+s0 Root id=3
+  labels s1.0
+ s1 Block id=1
+   > B x c=s0
+   insn [0:25 1:183 4:177]
+x Exit id=2
+  < s1.0
+@ 1 ClearStatements
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   insn [0:25 1:183 4:177]
+x Exit id=2
+  < s1.0
+@ 2 ProcessExpr
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   exprents 3
+   - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@0 0.0 t=Ljava/lang/Object; backing=0:25))
+   - (invoke@1-3 SPECIAL INIT java/lang/Object.<init>()V (var 10000.0 t=Ljava/lang/Object; stack))
+   - (exit@4 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 3 CondenseSequences_1
+= 2
+@ 4 StackVars
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   exprents 2
+   - (invoke@1-3 SPECIAL INIT java/lang/Object.<init>()V (var@0 0.0 t=U pt=Lpkg/TestFunVarargs;))
+   - (exit@4 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 5 BuildAsserts
+= 4
+@ 6 ResetEdges
+= 5
+@ 7 MergeLoop
+= 6
+@ 8 SimplifyStack
+= 7
+@ 9 VarVersions
+= 8
+@ 10 IdentifyLabels
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 2
+   - (invoke@1-3 SPECIAL INIT java/lang/Object.<init>()V (var@0 0.0 t=U pt=Lpkg/TestFunVarargs;))
+   - (exit@4 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 11 MainLoop
+= 10
+@ 12 SimplifyStack #2
+= 11
+@ 13 RedundantReturns
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 1
+   - (invoke@1-3 SPECIAL INIT java/lang/Object.<init>()V (var@0 0.0 t=U pt=Lpkg/TestFunVarargs;))
+x Exit id=2 bc=4
+  < s1.0
+@ 14 SetVarDefinitions
+= 13
+=M pkg/TestFunVarargs#printAll([Ljava/lang/String;)V
+@ 0 CondenseSequences
+s0 Root id=7
+ s1 Seq id=14
+   labels s8.0
+  s2 Block id=1
+    > R s3
+    insn [0:25 1:18 3:184 6:16 7:54 8:25 9:190 10:54]
+  s3 Do id=11 post=s8 loop=INFINITE
+    labels s6.0 s7.0
+    > R s8
+    < s2.0 s7.0
+   s4 Seq id=10
+     cont [s6]
+    s5 If id=9 post=s7 iftype=0 ifstat=~ elsestat=~ ifedge=s6.0 elseedge=~ negated
+      > R s7
+     s6 Block id=2 lbt=IF
+       > B s8 c=s3
+       insn [11:21 12:21 13:162]
+    s7 Block id=3
+      cont [s6]
+      > C s3 c=s3
+      < s5.0
+      insn [16:25 17:21 18:50 19:58 21:178 24:25 26:182 29:132]
+  s8 Block id=4
+    > B x c=s1
+    < s3.0 s6.0
+    insn [35:177]
+x Exit id=5
+  < s8.0
+@ 1 ClearStatements
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s8.0
+  s2 Block id=1
+    cont ~
+    > R s3
+    insn [0:25 1:18 3:184 6:16 7:54 8:25 9:190 10:54]
+  s3 Do id=11 loop=INFINITE
+    cont ~
+    labels s6.0 s7.0
+    > R s8
+    < s2.0 s7.0
+   s4 Seq id=10
+     cont ~
+    s5 If id=9 iftype=0 ifstat=~ elsestat=~ ifedge=s6.0 elseedge=~ negated
+      cont ~
+      > R s7
+     s6 Block id=2 lbt=IF
+       cont ~
+       > B s8 c=s3
+       insn [11:21 12:21 13:162]
+    s7 Block id=3
+      cont ~
+      > C s3 c=s3
+      < s5.0
+      insn [16:25 17:21 18:50 19:58 21:178 24:25 26:182 29:132]
+  s8 Block id=4
+    cont ~
+    > B x c=s1
+    < s3.0 s6.0
+    insn [35:177]
+x Exit id=5
+  < s8.0
+@ 2 ProcessExpr
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s8.0
+  s2 Block id=1
+    cont ~
+    > R s3
+    exprents 8
+    - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@0 1.0 t=Ljava/lang/Object; backing=0:25))
+    - (assign (var 10001.0 t=Ljava/lang/String; stack) (const@1-2 Ljava/lang/String; "messages"))
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var 10000.0 t=Ljava/lang/Object; stack) (var 10001.0 t=Ljava/lang/String; stack))
+    - (assign (var 10000.0 t=Z stack) (const@6 Z 0 boolok))
+    - (assign@7 (var@7 2.0 t=I backing=7:54) (var 10000.0 t=Z stack))
+    - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@8 1.0 t=Ljava/lang/Object; backing=8:25))
+    - (assign (var 10000.0 t=I stack) (func@9 ARRAY_LENGTH (var 10000.0 t=Ljava/lang/Object; stack)))
+    - (assign@10 (var@10 3.0 t=I backing=10:54) (var 10000.0 t=I stack))
+  s3 Do id=11 loop=INFINITE
+    cont ~
+    labels s6.0 s7.0
+    > R s8
+    < s2.0 s7.0
+   s4 Seq id=10
+     cont ~
+    s5 If id=9 iftype=0 ifstat=~ elsestat=~ ifedge=s6.0 elseedge=~ negated
+      cont ~
+      > R s7
+      head (if@13-15 (func@13-15 BOOL_NOT (func@13-15 LT (var 10000.0 t=I stack) (var 10001.0 t=I stack))))
+     s6 Block id=2 lbt=IF
+       cont ~
+       > B s8 c=s3
+       exprents 2
+       - (assign (var 10000.0 t=I stack) (var@11 2.0 t=I backing=11:21))
+       - (assign (var 10001.0 t=I stack) (var@12 3.0 t=I backing=12:21))
+    s7 Block id=3
+      cont ~
+      > C s3 c=s3
+      < s5.0
+      exprents 8
+      - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@16 1.0 t=Ljava/lang/Object; backing=16:25))
+      - (assign (var 10001.0 t=I stack) (var@17 2.0 t=I backing=17:21))
+      - (assign (var 10000.0 t=Ljava/lang/Object; stack) (array@18 Ljava/lang/Object; (var 10000.0 t=Ljava/lang/Object; stack) (var 10001.0 t=I stack)))
+      - (assign@19-20 (var@19-20 4.0 t=Ljava/lang/Object; lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58) (var 10000.0 t=Ljava/lang/Object; stack))
+      - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~))
+      - (assign (var 10001.0 t=Ljava/lang/Object; stack) (var@24-25 4.0 t=Ljava/lang/Object; backing=24:25))
+      - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/Object; stack))
+      - (assign@29-31 (var@29-31 2.0 t=I backing=29:132) (func@29-31 ADD (var@29-31 2.0 t=I) (const I 1)))
+  s8 Block id=4
+    cont ~
+    > B x c=s1
+    < s3.0 s6.0
+    exprents 1
+    - (exit@35 RETURN rt=V ~)
+x Exit id=5
+  < s8.0
+@ 3 CondenseSequences_1
+= 2
+@ 4 StackVars
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s8.0
+  s2 Block id=1
+    cont ~
+    > R s3
+    exprents 3
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "messages"))
+    - (assign@7 (var@7 2.0 t=U pt=I backing=7:54) (const@6 X 0))
+    - (assign@10 (var@10 3.0 t=U pt=I backing=10:54) (func@9 ARRAY_LENGTH (var@8 1.0 t=U pt=[Ljava/lang/String;)))
+  s3 Do id=11 loop=INFINITE
+    cont ~
+    labels s6.0 s7.0
+    > R s8
+    < s2.0 s7.0
+   s4 Seq id=10
+     cont ~
+    s5 If id=9 iftype=0 ifstat=~ elsestat=~ ifedge=s6.0 elseedge=~ negated
+      cont ~
+      > R s7
+      head (if@13-15 (func@13-15 BOOL_NOT (func@13-15 LT (var@11 2.0 t=U pt=I) (var@12 3.0 t=U pt=I))))
+     s6 Block id=2 lbt=IF
+       cont ~
+       > B s8 c=s3
+       exprents 0
+    s7 Block id=3
+      cont ~
+      > C s3 c=s3
+      < s5.0
+      exprents 3
+      - (assign@19-20 (var@19-20 4.0 t=U pt=Ljava/lang/String; lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58) (array@18 Ljava/lang/Object; (var@16 1.0 t=U pt=[Ljava/lang/String;) (var@17 2.0 t=U pt=I)))
+      - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~) (var@24-25 4.0 t=U pt=Ljava/lang/String;))
+      - (func@29-31 PPI it=I (var@29-31 2.0 t=U pt=I))
+  s8 Block id=4
+    cont ~
+    > B x c=s1
+    < s3.0 s6.0
+    exprents 1
+    - (exit@35 RETURN rt=V ~)
+x Exit id=5
+  < s8.0
+@ 5 BuildAsserts
+= 4
+@ 6 ResetEdges
+= 5
+@ 7 MergeLoop
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s5.0
+  s2 Block id=1
+    cont ~
+    > R s3
+    exprents 1
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "messages"))
+  s3 Do id=11 loop=FOR_EACH
+    cont ~
+    labels s4.0
+    > R s5
+    < s2.0 s4.0
+    init (var@10,19-20 4.0 t=U pt=Ljava/lang/String; lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58 bound=Ljava/lang/String;)
+    cond (func@13-15 BOOL_NOT (func@13-15 BOOL_NOT (func@13-15 LT (var@11 2.0 t=I pt=I) (var@12 3.0 t=I pt=I))))
+    inc (var@7-8,10,29-31 1.0 t=U pt=[Ljava/lang/String;)
+   s4 Block id=3
+     cont ~
+     > C s3 c=s3
+     exprents 1
+     - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~) (var@24-25 4.0 t=U pt=Ljava/lang/String;))
+  s5 Block id=4
+    cont ~
+    > B x c=s1
+    < s3.0
+    exprents 1
+    - (exit@35 RETURN rt=V ~)
+x Exit id=5
+  < s5.0
+@ 8 SimplifyStack
+= 7
+@ 9 VarVersions
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s5.0
+  s2 Block id=1
+    cont ~
+    > R s3
+    exprents 1
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "messages"))
+  s3 Do id=11 loop=FOR_EACH
+    cont ~
+    labels s4.0
+    > R s5
+    < s2.0 s4.0
+    init (var@10,19-20 4.0 t=U pt=Ljava/lang/String; lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58 bound=Ljava/lang/String;)
+    cond (func@13-15 BOOL_NOT (func@13-15 BOOL_NOT (func@13-15 LT (var@11 2.0 t=I) (var@12 3.0 t=I))))
+    inc (var@7-8,10,29-31 1.0 t=U pt=[Ljava/lang/String;)
+   s4 Block id=3
+     cont ~
+     > C s3 c=s3
+     exprents 1
+     - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~) (var@24-25 4.0 t=U pt=Ljava/lang/String;))
+  s5 Block id=4
+    cont ~
+    > B x c=s1
+    < s3.0
+    exprents 1
+    - (exit@35 RETURN rt=V ~)
+x Exit id=5
+  < s5.0
+@ 10 IdentifyLabels
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s5.0
+  s2 Block id=1
+    cont ~
+    > R s3 implicit
+    exprents 1
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "messages"))
+  s3 Do id=11 loop=FOR_EACH
+    cont ~
+    labels s4.0
+    > R s5 implicit
+    < s2.0 s4.0
+    init (var@10,19-20 4.0 t=U pt=Ljava/lang/String; lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58 bound=Ljava/lang/String;)
+    cond (func@13-15 BOOL_NOT (func@13-15 BOOL_NOT (func@13-15 LT (var@11 2.0 t=I) (var@12 3.0 t=I))))
+    inc (var@7-8,10,29-31 1.0 t=U pt=[Ljava/lang/String;)
+   s4 Block id=3
+     cont ~
+     > C s3 c=s3 implicit
+     exprents 1
+     - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~) (var@24-25 4.0 t=U pt=Ljava/lang/String;))
+  s5 Block id=4
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s3.0
+    exprents 1
+    - (exit@35 RETURN rt=V ~)
+x Exit id=5
+  < s5.0
+@ 11 MainLoop
+= 10
+@ 12 SimplifyStack #2
+= 11
+@ 13 RedundantReturns
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s5.0
+  s2 Block id=1
+    cont ~
+    > R s3 implicit
+    exprents 1
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "messages"))
+  s3 Do id=11 loop=FOR_EACH
+    cont ~
+    labels s4.0
+    > R s5 implicit
+    < s2.0 s4.0
+    init (var@10,19-20 4.0 t=U pt=Ljava/lang/String; lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58 bound=Ljava/lang/String;)
+    cond (func@13-15 BOOL_NOT (func@13-15 BOOL_NOT (func@13-15 LT (var@11 2.0 t=I) (var@12 3.0 t=I))))
+    inc (var@7-8,10,29-31 1.0 t=U pt=[Ljava/lang/String;)
+   s4 Block id=3
+     cont ~
+     > C s3 c=s3 implicit
+     exprents 1
+     - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~) (var@24-25 4.0 t=U pt=Ljava/lang/String;))
+  s5 Block id=4
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s3.0
+    exprents 0
+x Exit id=5 bc=35
+  < s5.0
+@ 14 SetVarDefinitions
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s5.0
+  s2 Block id=1
+    cont ~
+    > R s3 implicit
+    exprents 1
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String; lvt=messages:[Ljava/lang/String;@0-36/1.1) (const@1-2 Ljava/lang/String; "messages"))
+  s3 Do id=11 loop=FOR_EACH
+    cont ~
+    labels s4.0
+    > R s5 implicit
+    < s2.0 s4.0
+    init (var@10,19-20 4.0 t=U pt=Ljava/lang/String; def lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58 bound=Ljava/lang/String;)
+    cond (func@13-15 BOOL_NOT (func@13-15 BOOL_NOT (func@13-15 LT (var@11 2.0 t=I) (var@12 3.0 t=I))))
+    inc (var@7-8,10,29-31 1.0 t=U pt=[Ljava/lang/String; lvt=messages:[Ljava/lang/String;@0-36/1.1)
+   s4 Block id=3
+     cont ~
+     > C s3 c=s3 implicit
+     exprents 1
+     - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~) (var@24-25 4.0 t=U pt=Ljava/lang/String; lvt=m:Ljava/lang/String;@21-29/4.1))
+  s5 Block id=4
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s3.0
+    exprents 0
+x Exit id=5 bc=35
+  < s5.0
+@ 15 ReplaceStats
+s0 Root id=7
+  cont ~
+ s1 Seq id=16
+   cont ~
+   labels s5.0
+  s2 Block id=1 parent=o14
+    cont ~
+    > R s3 implicit
+    exprents 1
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String; lvt=messages:[Ljava/lang/String;@0-36/1.1) (const@1-2 Ljava/lang/String; "messages"))
+  s3 Do id=15 parent=o14 loop=FOR_EACH
+    cont ~
+    labels s4.0
+    > R s5 implicit
+    < s2.0 s4.0
+    init (var@10,19-20 4.0 t=U pt=Ljava/lang/String; def lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58 bound=Ljava/lang/String;)
+    cond (func@13-15 BOOL_NOT (func@13-15 BOOL_NOT (func@13-15 LT (var@11 2.0 t=I) (var@12 3.0 t=I))))
+    inc (var@7-8,10,29-31 1.0 t=U pt=[Ljava/lang/String; lvt=messages:[Ljava/lang/String;@0-36/1.1)
+   s4 Block id=3 parent=o11
+     cont ~
+     > C s3 c=s3 implicit
+     exprents 1
+     - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~) (var@24-25 4.0 t=U pt=Ljava/lang/String; lvt=m:Ljava/lang/String;@21-29/4.1))
+  s5 Block id=4 parent=o14
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s3.0
+    exprents 0
+x Exit id=5 bc=35
+  < s5.0
+o11 orphan Do
+o14 orphan Seq
+=M pkg/TestFunVarargs#printAllArray([Ljava/lang/String;)V
+@ 0 CondenseSequences
+s0 Root id=7
+ s1 Seq id=14
+   labels s8.0
+  s2 Block id=1
+    > R s3
+    insn [0:25 1:18 3:184 6:16 7:54 8:25 9:190 10:54]
+  s3 Do id=11 post=s8 loop=INFINITE
+    labels s6.0 s7.0
+    > R s8
+    < s2.0 s7.0
+   s4 Seq id=10
+     cont [s6]
+    s5 If id=9 post=s7 iftype=0 ifstat=~ elsestat=~ ifedge=s6.0 elseedge=~ negated
+      > R s7
+     s6 Block id=2 lbt=IF
+       > B s8 c=s3
+       insn [11:21 12:21 13:162]
+    s7 Block id=3
+      cont [s6]
+      > C s3 c=s3
+      < s5.0
+      insn [16:25 17:21 18:50 19:58 21:178 24:25 26:182 29:132]
+  s8 Block id=4
+    > B x c=s1
+    < s3.0 s6.0
+    insn [35:177]
+x Exit id=5
+  < s8.0
+@ 1 ClearStatements
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s8.0
+  s2 Block id=1
+    cont ~
+    > R s3
+    insn [0:25 1:18 3:184 6:16 7:54 8:25 9:190 10:54]
+  s3 Do id=11 loop=INFINITE
+    cont ~
+    labels s6.0 s7.0
+    > R s8
+    < s2.0 s7.0
+   s4 Seq id=10
+     cont ~
+    s5 If id=9 iftype=0 ifstat=~ elsestat=~ ifedge=s6.0 elseedge=~ negated
+      cont ~
+      > R s7
+     s6 Block id=2 lbt=IF
+       cont ~
+       > B s8 c=s3
+       insn [11:21 12:21 13:162]
+    s7 Block id=3
+      cont ~
+      > C s3 c=s3
+      < s5.0
+      insn [16:25 17:21 18:50 19:58 21:178 24:25 26:182 29:132]
+  s8 Block id=4
+    cont ~
+    > B x c=s1
+    < s3.0 s6.0
+    insn [35:177]
+x Exit id=5
+  < s8.0
+@ 2 ProcessExpr
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s8.0
+  s2 Block id=1
+    cont ~
+    > R s3
+    exprents 8
+    - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@0 1.0 t=Ljava/lang/Object; backing=0:25))
+    - (assign (var 10001.0 t=Ljava/lang/String; stack) (const@1-2 Ljava/lang/String; "messages"))
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var 10000.0 t=Ljava/lang/Object; stack) (var 10001.0 t=Ljava/lang/String; stack))
+    - (assign (var 10000.0 t=Z stack) (const@6 Z 0 boolok))
+    - (assign@7 (var@7 2.0 t=I backing=7:54) (var 10000.0 t=Z stack))
+    - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@8 1.0 t=Ljava/lang/Object; backing=8:25))
+    - (assign (var 10000.0 t=I stack) (func@9 ARRAY_LENGTH (var 10000.0 t=Ljava/lang/Object; stack)))
+    - (assign@10 (var@10 3.0 t=I backing=10:54) (var 10000.0 t=I stack))
+  s3 Do id=11 loop=INFINITE
+    cont ~
+    labels s6.0 s7.0
+    > R s8
+    < s2.0 s7.0
+   s4 Seq id=10
+     cont ~
+    s5 If id=9 iftype=0 ifstat=~ elsestat=~ ifedge=s6.0 elseedge=~ negated
+      cont ~
+      > R s7
+      head (if@13-15 (func@13-15 BOOL_NOT (func@13-15 LT (var 10000.0 t=I stack) (var 10001.0 t=I stack))))
+     s6 Block id=2 lbt=IF
+       cont ~
+       > B s8 c=s3
+       exprents 2
+       - (assign (var 10000.0 t=I stack) (var@11 2.0 t=I backing=11:21))
+       - (assign (var 10001.0 t=I stack) (var@12 3.0 t=I backing=12:21))
+    s7 Block id=3
+      cont ~
+      > C s3 c=s3
+      < s5.0
+      exprents 8
+      - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@16 1.0 t=Ljava/lang/Object; backing=16:25))
+      - (assign (var 10001.0 t=I stack) (var@17 2.0 t=I backing=17:21))
+      - (assign (var 10000.0 t=Ljava/lang/Object; stack) (array@18 Ljava/lang/Object; (var 10000.0 t=Ljava/lang/Object; stack) (var 10001.0 t=I stack)))
+      - (assign@19-20 (var@19-20 4.0 t=Ljava/lang/Object; lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58) (var 10000.0 t=Ljava/lang/Object; stack))
+      - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~))
+      - (assign (var 10001.0 t=Ljava/lang/Object; stack) (var@24-25 4.0 t=Ljava/lang/Object; backing=24:25))
+      - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/Object; stack))
+      - (assign@29-31 (var@29-31 2.0 t=I backing=29:132) (func@29-31 ADD (var@29-31 2.0 t=I) (const I 1)))
+  s8 Block id=4
+    cont ~
+    > B x c=s1
+    < s3.0 s6.0
+    exprents 1
+    - (exit@35 RETURN rt=V ~)
+x Exit id=5
+  < s8.0
+@ 3 CondenseSequences_1
+= 2
+@ 4 StackVars
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s8.0
+  s2 Block id=1
+    cont ~
+    > R s3
+    exprents 3
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "messages"))
+    - (assign@7 (var@7 2.0 t=U pt=I backing=7:54) (const@6 X 0))
+    - (assign@10 (var@10 3.0 t=U pt=I backing=10:54) (func@9 ARRAY_LENGTH (var@8 1.0 t=U pt=[Ljava/lang/String;)))
+  s3 Do id=11 loop=INFINITE
+    cont ~
+    labels s6.0 s7.0
+    > R s8
+    < s2.0 s7.0
+   s4 Seq id=10
+     cont ~
+    s5 If id=9 iftype=0 ifstat=~ elsestat=~ ifedge=s6.0 elseedge=~ negated
+      cont ~
+      > R s7
+      head (if@13-15 (func@13-15 BOOL_NOT (func@13-15 LT (var@11 2.0 t=U pt=I) (var@12 3.0 t=U pt=I))))
+     s6 Block id=2 lbt=IF
+       cont ~
+       > B s8 c=s3
+       exprents 0
+    s7 Block id=3
+      cont ~
+      > C s3 c=s3
+      < s5.0
+      exprents 3
+      - (assign@19-20 (var@19-20 4.0 t=U pt=Ljava/lang/String; lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58) (array@18 Ljava/lang/Object; (var@16 1.0 t=U pt=[Ljava/lang/String;) (var@17 2.0 t=U pt=I)))
+      - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~) (var@24-25 4.0 t=U pt=Ljava/lang/String;))
+      - (func@29-31 PPI it=I (var@29-31 2.0 t=U pt=I))
+  s8 Block id=4
+    cont ~
+    > B x c=s1
+    < s3.0 s6.0
+    exprents 1
+    - (exit@35 RETURN rt=V ~)
+x Exit id=5
+  < s8.0
+@ 5 BuildAsserts
+= 4
+@ 6 ResetEdges
+= 5
+@ 7 MergeLoop
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s5.0
+  s2 Block id=1
+    cont ~
+    > R s3
+    exprents 1
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "messages"))
+  s3 Do id=11 loop=FOR_EACH
+    cont ~
+    labels s4.0
+    > R s5
+    < s2.0 s4.0
+    init (var@10,19-20 4.0 t=U pt=Ljava/lang/String; lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58 bound=Ljava/lang/String;)
+    cond (func@13-15 BOOL_NOT (func@13-15 BOOL_NOT (func@13-15 LT (var@11 2.0 t=I pt=I) (var@12 3.0 t=I pt=I))))
+    inc (var@7-8,10,29-31 1.0 t=U pt=[Ljava/lang/String;)
+   s4 Block id=3
+     cont ~
+     > C s3 c=s3
+     exprents 1
+     - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~) (var@24-25 4.0 t=U pt=Ljava/lang/String;))
+  s5 Block id=4
+    cont ~
+    > B x c=s1
+    < s3.0
+    exprents 1
+    - (exit@35 RETURN rt=V ~)
+x Exit id=5
+  < s5.0
+@ 8 SimplifyStack
+= 7
+@ 9 VarVersions
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s5.0
+  s2 Block id=1
+    cont ~
+    > R s3
+    exprents 1
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "messages"))
+  s3 Do id=11 loop=FOR_EACH
+    cont ~
+    labels s4.0
+    > R s5
+    < s2.0 s4.0
+    init (var@10,19-20 4.0 t=U pt=Ljava/lang/String; lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58 bound=Ljava/lang/String;)
+    cond (func@13-15 BOOL_NOT (func@13-15 BOOL_NOT (func@13-15 LT (var@11 2.0 t=I) (var@12 3.0 t=I))))
+    inc (var@7-8,10,29-31 1.0 t=U pt=[Ljava/lang/String;)
+   s4 Block id=3
+     cont ~
+     > C s3 c=s3
+     exprents 1
+     - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~) (var@24-25 4.0 t=U pt=Ljava/lang/String;))
+  s5 Block id=4
+    cont ~
+    > B x c=s1
+    < s3.0
+    exprents 1
+    - (exit@35 RETURN rt=V ~)
+x Exit id=5
+  < s5.0
+@ 10 IdentifyLabels
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s5.0
+  s2 Block id=1
+    cont ~
+    > R s3 implicit
+    exprents 1
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "messages"))
+  s3 Do id=11 loop=FOR_EACH
+    cont ~
+    labels s4.0
+    > R s5 implicit
+    < s2.0 s4.0
+    init (var@10,19-20 4.0 t=U pt=Ljava/lang/String; lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58 bound=Ljava/lang/String;)
+    cond (func@13-15 BOOL_NOT (func@13-15 BOOL_NOT (func@13-15 LT (var@11 2.0 t=I) (var@12 3.0 t=I))))
+    inc (var@7-8,10,29-31 1.0 t=U pt=[Ljava/lang/String;)
+   s4 Block id=3
+     cont ~
+     > C s3 c=s3 implicit
+     exprents 1
+     - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~) (var@24-25 4.0 t=U pt=Ljava/lang/String;))
+  s5 Block id=4
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s3.0
+    exprents 1
+    - (exit@35 RETURN rt=V ~)
+x Exit id=5
+  < s5.0
+@ 11 MainLoop
+= 10
+@ 12 SimplifyStack #2
+= 11
+@ 13 RedundantReturns
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s5.0
+  s2 Block id=1
+    cont ~
+    > R s3 implicit
+    exprents 1
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "messages"))
+  s3 Do id=11 loop=FOR_EACH
+    cont ~
+    labels s4.0
+    > R s5 implicit
+    < s2.0 s4.0
+    init (var@10,19-20 4.0 t=U pt=Ljava/lang/String; lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58 bound=Ljava/lang/String;)
+    cond (func@13-15 BOOL_NOT (func@13-15 BOOL_NOT (func@13-15 LT (var@11 2.0 t=I) (var@12 3.0 t=I))))
+    inc (var@7-8,10,29-31 1.0 t=U pt=[Ljava/lang/String;)
+   s4 Block id=3
+     cont ~
+     > C s3 c=s3 implicit
+     exprents 1
+     - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~) (var@24-25 4.0 t=U pt=Ljava/lang/String;))
+  s5 Block id=4
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s3.0
+    exprents 0
+x Exit id=5 bc=35
+  < s5.0
+@ 14 SetVarDefinitions
+s0 Root id=7
+  cont ~
+ s1 Seq id=14
+   cont ~
+   labels s5.0
+  s2 Block id=1
+    cont ~
+    > R s3 implicit
+    exprents 1
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String; lvt=messages:[Ljava/lang/String;@0-36/1.1) (const@1-2 Ljava/lang/String; "messages"))
+  s3 Do id=11 loop=FOR_EACH
+    cont ~
+    labels s4.0
+    > R s5 implicit
+    < s2.0 s4.0
+    init (var@10,19-20 4.0 t=U pt=Ljava/lang/String; def lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58 bound=Ljava/lang/String;)
+    cond (func@13-15 BOOL_NOT (func@13-15 BOOL_NOT (func@13-15 LT (var@11 2.0 t=I) (var@12 3.0 t=I))))
+    inc (var@7-8,10,29-31 1.0 t=U pt=[Ljava/lang/String; lvt=messages:[Ljava/lang/String;@0-36/1.1)
+   s4 Block id=3
+     cont ~
+     > C s3 c=s3 implicit
+     exprents 1
+     - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~) (var@24-25 4.0 t=U pt=Ljava/lang/String; lvt=m:Ljava/lang/String;@21-29/4.1))
+  s5 Block id=4
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s3.0
+    exprents 0
+x Exit id=5 bc=35
+  < s5.0
+@ 15 ReplaceStats
+s0 Root id=7
+  cont ~
+ s1 Seq id=16
+   cont ~
+   labels s5.0
+  s2 Block id=1 parent=o14
+    cont ~
+    > R s3 implicit
+    exprents 1
+    - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String; lvt=messages:[Ljava/lang/String;@0-36/1.1) (const@1-2 Ljava/lang/String; "messages"))
+  s3 Do id=15 parent=o14 loop=FOR_EACH
+    cont ~
+    labels s4.0
+    > R s5 implicit
+    < s2.0 s4.0
+    init (var@10,19-20 4.0 t=U pt=Ljava/lang/String; def lvt=m:Ljava/lang/String;@21-29/4.1 backing=19:58 bound=Ljava/lang/String;)
+    cond (func@13-15 BOOL_NOT (func@13-15 BOOL_NOT (func@13-15 LT (var@11 2.0 t=I) (var@12 3.0 t=I))))
+    inc (var@7-8,10,29-31 1.0 t=U pt=[Ljava/lang/String; lvt=messages:[Ljava/lang/String;@0-36/1.1)
+   s4 Block id=3 parent=o11
+     cont ~
+     > C s3 c=s3 implicit
+     exprents 1
+     - (invoke@26-28 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@21-23 java/lang/System.out Ljava/io/PrintStream; static ~) (var@24-25 4.0 t=U pt=Ljava/lang/String; lvt=m:Ljava/lang/String;@21-29/4.1))
+  s5 Block id=4 parent=o14
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s3.0
+    exprents 0
+x Exit id=5 bc=35
+  < s5.0
+o11 orphan Do
+o14 orphan Seq
+=M pkg/TestFunVarargs#log([Ljava/lang/String;)V
+@ 0 CondenseSequences
+s0 Root id=3
+  labels s1.0
+ s1 Block id=1
+   > B x c=s0
+   insn [0:25 1:18 3:184 6:25 7:25 8:25 9:190 10:184 13:192 16:182 19:25 20:25 21:182 24:177]
+x Exit id=2
+  < s1.0
+@ 1 ClearStatements
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   insn [0:25 1:18 3:184 6:25 7:25 8:25 9:190 10:184 13:192 16:182 19:25 20:25 21:182 24:177]
+x Exit id=2
+  < s1.0
+@ 2 ProcessExpr
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   exprents 14
+   - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@0 1.0 t=Ljava/lang/Object; backing=0:25))
+   - (assign (var 10001.0 t=Ljava/lang/String; stack) (const@1-2 Ljava/lang/String; "entries"))
+   - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var 10000.0 t=Ljava/lang/Object; stack) (var 10001.0 t=Ljava/lang/String; stack))
+   - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@6 0.0 t=Ljava/lang/Object; backing=6:25))
+   - (assign (var 10001.0 t=Ljava/lang/Object; stack) (var@7 1.0 t=Ljava/lang/Object; backing=7:25))
+   - (assign (var 10002.0 t=Ljava/lang/Object; stack) (var@8 1.0 t=Ljava/lang/Object; backing=8:25))
+   - (assign (var 10002.0 t=I stack) (func@9 ARRAY_LENGTH (var 10002.0 t=Ljava/lang/Object; stack)))
+   - (assign (var 10001.0 t=[Ljava/lang/Object; stack) (invoke@10-12 STATIC GENERAL java/util/Arrays.copyOf([Ljava/lang/Object;I)[Ljava/lang/Object; static ~ (var 10001.0 t=Ljava/lang/Object; stack) (var 10002.0 t=I stack)))
+   - (assign (var 10001.0 t=[Ljava/lang/String; stack) (func@13-15 CAST (var 10001.0 t=[Ljava/lang/Object; stack) (const [Ljava/lang/String; null)))
+   - (invoke@16-18 VIRTUAL GENERAL pkg/TestFunVarargs.printAll([Ljava/lang/String;)V (var 10000.0 t=Ljava/lang/Object; stack) (var 10001.0 t=[Ljava/lang/String; stack))
+   - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@19 0.0 t=Ljava/lang/Object; backing=19:25))
+   - (assign (var 10001.0 t=Ljava/lang/Object; stack) (var@20 1.0 t=Ljava/lang/Object; backing=20:25))
+   - (invoke@21-23 VIRTUAL GENERAL pkg/TestFunVarargs.printAllArray([Ljava/lang/String;)V (var 10000.0 t=Ljava/lang/Object; stack) (var 10001.0 t=Ljava/lang/Object; stack))
+   - (exit@24 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 3 CondenseSequences_1
+= 2
+@ 4 StackVars
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   exprents 4
+   - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "entries"))
+   - (invoke@16-18 VIRTUAL GENERAL pkg/TestFunVarargs.printAll([Ljava/lang/String;)V (var@6 0.0 t=U pt=Lpkg/TestFunVarargs;) (func@13-15 CAST (invoke@10-12 STATIC GENERAL java/util/Arrays.copyOf([Ljava/lang/Object;I)[Ljava/lang/Object; static ~ (var@7 1.0 t=U pt=[Ljava/lang/String;) (func@9 ARRAY_LENGTH (var@8 1.0 t=U pt=[Ljava/lang/String;))) (const [Ljava/lang/String; null)))
+   - (invoke@21-23 VIRTUAL GENERAL pkg/TestFunVarargs.printAllArray([Ljava/lang/String;)V (var@19 0.0 t=U pt=Lpkg/TestFunVarargs;) (var@20 1.0 t=U pt=[Ljava/lang/String;))
+   - (exit@24 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 5 BuildAsserts
+= 4
+@ 6 ResetEdges
+= 5
+@ 7 MergeLoop
+= 6
+@ 8 SimplifyStack
+= 7
+@ 9 VarVersions
+= 8
+@ 10 IdentifyLabels
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 4
+   - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "entries"))
+   - (invoke@16-18 VIRTUAL GENERAL pkg/TestFunVarargs.printAll([Ljava/lang/String;)V (var@6 0.0 t=U pt=Lpkg/TestFunVarargs;) (func@13-15 CAST (invoke@10-12 STATIC GENERAL java/util/Arrays.copyOf([Ljava/lang/Object;I)[Ljava/lang/Object; static ~ (var@7 1.0 t=U pt=[Ljava/lang/String;) (func@9 ARRAY_LENGTH (var@8 1.0 t=U pt=[Ljava/lang/String;))) (const [Ljava/lang/String; null)))
+   - (invoke@21-23 VIRTUAL GENERAL pkg/TestFunVarargs.printAllArray([Ljava/lang/String;)V (var@19 0.0 t=U pt=Lpkg/TestFunVarargs;) (var@20 1.0 t=U pt=[Ljava/lang/String;))
+   - (exit@24 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 11 MainLoop
+= 10
+@ 12 SimplifyStack #2
+= 11
+@ 13 RedundantReturns
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 3
+   - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "entries"))
+   - (invoke@16-18 VIRTUAL GENERAL pkg/TestFunVarargs.printAll([Ljava/lang/String;)V (var@6 0.0 t=U pt=Lpkg/TestFunVarargs;) (func@13-15 CAST (invoke@10-12 STATIC GENERAL java/util/Arrays.copyOf([Ljava/lang/Object;I)[Ljava/lang/Object; static ~ (var@7 1.0 t=U pt=[Ljava/lang/String;) (func@9 ARRAY_LENGTH (var@8 1.0 t=U pt=[Ljava/lang/String;))) (const [Ljava/lang/String; null)))
+   - (invoke@21-23 VIRTUAL GENERAL pkg/TestFunVarargs.printAllArray([Ljava/lang/String;)V (var@19 0.0 t=U pt=Lpkg/TestFunVarargs;) (var@20 1.0 t=U pt=[Ljava/lang/String;))
+x Exit id=2 bc=24
+  < s1.0
+@ 14 SetVarDefinitions
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 3
+   - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String; lvt=entries:[Ljava/lang/String;@0-25/1.1) (const@1-2 Ljava/lang/String; "entries"))
+   - (invoke@16-18 VIRTUAL GENERAL pkg/TestFunVarargs.printAll([Ljava/lang/String;)V (var@6 0.0 t=U pt=Lpkg/TestFunVarargs;) (func@13-15 CAST (invoke@10-12 STATIC GENERAL java/util/Arrays.copyOf([Ljava/lang/Object;I)[Ljava/lang/Object; static ~ (var@7 1.0 t=U pt=[Ljava/lang/String; lvt=entries:[Ljava/lang/String;@0-25/1.1) (func@9 ARRAY_LENGTH (var@8 1.0 t=U pt=[Ljava/lang/String; lvt=entries:[Ljava/lang/String;@0-25/1.1))) (const [Ljava/lang/String; null)))
+   - (invoke@21-23 VIRTUAL GENERAL pkg/TestFunVarargs.printAllArray([Ljava/lang/String;)V (var@19 0.0 t=U pt=Lpkg/TestFunVarargs;) (var@20 1.0 t=U pt=[Ljava/lang/String; lvt=entries:[Ljava/lang/String;@0-25/1.1))
+x Exit id=2 bc=24
+  < s1.0
+=M pkg/TestFunVarargs#test()V
+@ 0 CondenseSequences
+s0 Root id=3
+  labels s1.0
+ s1 Block id=1
+   > B x c=s0
+   insn [0:25 1:16 2:189 5:58 6:25 7:16 8:18 10:83 11:25 12:16 13:18 15:83 16:25 17:16 18:18 20:83 21:25 22:182 25:177]
+x Exit id=2
+  < s1.0
+@ 1 ClearStatements
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   insn [0:25 1:16 2:189 5:58 6:25 7:16 8:18 10:83 11:25 12:16 13:18 15:83 16:25 17:16 18:18 20:83 21:25 22:182 25:177]
+x Exit id=2
+  < s1.0
+@ 2 ProcessExpr
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   exprents 19
+   - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@0 0.0 t=Ljava/lang/Object; backing=0:25))
+   - (assign (var 10001.0 t=X stack) (const@1 X 3 boolok))
+   - (assign (var 10001.0 t=[Ljava/lang/String; stack) (new@2-4 [Ljava/lang/String; ~ (dims (var 10001.0 t=X stack)) (elems)))
+   - (assign@5 (var@5 1.0 t=Ljava/lang/Object; backing=5:58) (var 10001.0 t=[Ljava/lang/String; stack))
+   - (assign (var 10001.0 t=Ljava/lang/Object; stack) (var@6 1.0 t=Ljava/lang/Object; backing=6:25))
+   - (assign (var 10002.0 t=Z stack) (const@7 Z 0 boolok))
+   - (assign (var 10003.0 t=Ljava/lang/String; stack) (const@8-9 Ljava/lang/String; "a"))
+   - (assign@10 (array@10 Ljava/lang/Object; (var 10001.0 t=Ljava/lang/Object; stack) (var 10002.0 t=Z stack)) (var 10003.0 t=Ljava/lang/String; stack))
+   - (assign (var 10001.0 t=Ljava/lang/Object; stack) (var@11 1.0 t=Ljava/lang/Object; backing=11:25))
+   - (assign (var 10002.0 t=Z stack) (const@12 Z 1 boolok))
+   - (assign (var 10003.0 t=Ljava/lang/String; stack) (const@13-14 Ljava/lang/String; "b"))
+   - (assign@15 (array@15 Ljava/lang/Object; (var 10001.0 t=Ljava/lang/Object; stack) (var 10002.0 t=Z stack)) (var 10003.0 t=Ljava/lang/String; stack))
+   - (assign (var 10001.0 t=Ljava/lang/Object; stack) (var@16 1.0 t=Ljava/lang/Object; backing=16:25))
+   - (assign (var 10002.0 t=X stack) (const@17 X 2 boolok))
+   - (assign (var 10003.0 t=Ljava/lang/String; stack) (const@18-19 Ljava/lang/String; "c"))
+   - (assign@20 (array@20 Ljava/lang/Object; (var 10001.0 t=Ljava/lang/Object; stack) (var 10002.0 t=X stack)) (var 10003.0 t=Ljava/lang/String; stack))
+   - (assign (var 10001.0 t=Ljava/lang/Object; stack) (var@21 1.0 t=Ljava/lang/Object; backing=21:25))
+   - (invoke@22-24 VIRTUAL GENERAL pkg/TestFunVarargs.log([Ljava/lang/String;)V (var 10000.0 t=Ljava/lang/Object; stack) (var 10001.0 t=Ljava/lang/Object; stack))
+   - (exit@25 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 3 CondenseSequences_1
+= 2
+@ 4 StackVars
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   exprents 3
+   - (assign@5 (var@5 1.0 t=U pt=[Ljava/lang/String; backing=5:58) (new@2-4 [Ljava/lang/String; ~ (dims (const@1 I 3)) (elems (const@8-9 Ljava/lang/String; "a") (const@13-14 Ljava/lang/String; "b") (const@18-19 Ljava/lang/String; "c"))))
+   - (invoke@22-24 VIRTUAL GENERAL pkg/TestFunVarargs.log([Ljava/lang/String;)V (var@0 0.0 t=U pt=Lpkg/TestFunVarargs;) (var@21 1.0 t=U pt=[Ljava/lang/String;))
+   - (exit@25 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 5 BuildAsserts
+= 4
+@ 6 ResetEdges
+= 5
+@ 7 MergeLoop
+= 6
+@ 8 SimplifyStack
+= 7
+@ 9 VarVersions
+= 8
+@ 10 IdentifyLabels
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 3
+   - (assign@5 (var@5 1.0 t=U pt=[Ljava/lang/String; backing=5:58) (new@2-4 [Ljava/lang/String; ~ (dims (const@1 I 3)) (elems (const@8-9 Ljava/lang/String; "a") (const@13-14 Ljava/lang/String; "b") (const@18-19 Ljava/lang/String; "c"))))
+   - (invoke@22-24 VIRTUAL GENERAL pkg/TestFunVarargs.log([Ljava/lang/String;)V (var@0 0.0 t=U pt=Lpkg/TestFunVarargs;) (var@21 1.0 t=U pt=[Ljava/lang/String;))
+   - (exit@25 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 11 MainLoop
+= 10
+@ 12 SimplifyStack #2
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 2
+   - (invoke@22-24 VIRTUAL GENERAL pkg/TestFunVarargs.log([Ljava/lang/String;)V (var@0 0.0 t=U pt=Lpkg/TestFunVarargs;) (new@2-4,21 [Ljava/lang/String; ~ (dims (const@1 I 3)) (elems (const@8-9 Ljava/lang/String; "a") (const@13-14 Ljava/lang/String; "b") (const@18-19 Ljava/lang/String; "c"))))
+   - (exit@25 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 13 RedundantReturns
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 1
+   - (invoke@22-24 VIRTUAL GENERAL pkg/TestFunVarargs.log([Ljava/lang/String;)V (var@0 0.0 t=U pt=Lpkg/TestFunVarargs;) (new@2-4,21 [Ljava/lang/String; ~ (dims (const@1 I 3)) (elems (const@8-9 Ljava/lang/String; "a") (const@13-14 Ljava/lang/String; "b") (const@18-19 Ljava/lang/String; "c"))))
+x Exit id=2 bc=25
+  < s1.0
+@ 14 SetVarDefinitions
+= 13
+=M pkg/TestFunVarargs#nestedArrays([Ljava/lang/String;[Ljava/lang/Object;[[[Ljava/lang/String;)V
+@ 0 CondenseSequences
+s0 Root id=3
+  labels s1.0
+ s1 Block id=1
+   > B x c=s0
+   insn [0:25 1:18 3:184 6:25 7:18 9:184 12:25 13:18 15:184 18:177]
+x Exit id=2
+  < s1.0
+@ 1 ClearStatements
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   insn [0:25 1:18 3:184 6:25 7:18 9:184 12:25 13:18 15:184 18:177]
+x Exit id=2
+  < s1.0
+@ 2 ProcessExpr
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   exprents 10
+   - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@0 1.0 t=Ljava/lang/Object; backing=0:25))
+   - (assign (var 10001.0 t=Ljava/lang/String; stack) (const@1-2 Ljava/lang/String; "e0"))
+   - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var 10000.0 t=Ljava/lang/Object; stack) (var 10001.0 t=Ljava/lang/String; stack))
+   - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@6 2.0 t=Ljava/lang/Object; backing=6:25))
+   - (assign (var 10001.0 t=Ljava/lang/String; stack) (const@7-8 Ljava/lang/String; "e1"))
+   - (invoke@9-11 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var 10000.0 t=Ljava/lang/Object; stack) (var 10001.0 t=Ljava/lang/String; stack))
+   - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@12 3.0 t=Ljava/lang/Object; backing=12:25))
+   - (assign (var 10001.0 t=Ljava/lang/String; stack) (const@13-14 Ljava/lang/String; "e2"))
+   - (invoke@15-17 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var 10000.0 t=Ljava/lang/Object; stack) (var 10001.0 t=Ljava/lang/String; stack))
+   - (exit@18 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 3 CondenseSequences_1
+= 2
+@ 4 StackVars
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   exprents 4
+   - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "e0"))
+   - (invoke@9-11 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@6 2.0 t=U pt=[Ljava/lang/Object;) (const@7-8 Ljava/lang/String; "e1"))
+   - (invoke@15-17 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@12 3.0 t=U pt=[[[Ljava/lang/String;) (const@13-14 Ljava/lang/String; "e2"))
+   - (exit@18 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 5 BuildAsserts
+= 4
+@ 6 ResetEdges
+= 5
+@ 7 MergeLoop
+= 6
+@ 8 SimplifyStack
+= 7
+@ 9 VarVersions
+= 8
+@ 10 IdentifyLabels
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 4
+   - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "e0"))
+   - (invoke@9-11 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@6 2.0 t=U pt=[Ljava/lang/Object;) (const@7-8 Ljava/lang/String; "e1"))
+   - (invoke@15-17 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@12 3.0 t=U pt=[[[Ljava/lang/String;) (const@13-14 Ljava/lang/String; "e2"))
+   - (exit@18 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 11 MainLoop
+= 10
+@ 12 SimplifyStack #2
+= 11
+@ 13 RedundantReturns
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 3
+   - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String;) (const@1-2 Ljava/lang/String; "e0"))
+   - (invoke@9-11 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@6 2.0 t=U pt=[Ljava/lang/Object;) (const@7-8 Ljava/lang/String; "e1"))
+   - (invoke@15-17 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@12 3.0 t=U pt=[[[Ljava/lang/String;) (const@13-14 Ljava/lang/String; "e2"))
+x Exit id=2 bc=18
+  < s1.0
+@ 14 SetVarDefinitions
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 3
+   - (invoke@3-5 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@0 1.0 t=U pt=[Ljava/lang/String; lvt=e0:[Ljava/lang/String;@0-19/1.1) (const@1-2 Ljava/lang/String; "e0"))
+   - (invoke@9-11 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@6 2.0 t=U pt=[Ljava/lang/Object; lvt=e1:[Ljava/lang/Object;@0-19/2.1) (const@7-8 Ljava/lang/String; "e1"))
+   - (invoke@15-17 STATIC GENERAL kotlin/jvm/internal/Intrinsics.checkNotNullParameter(Ljava/lang/Object;Ljava/lang/String;)V static ~ (var@12 3.0 t=U pt=[[[Ljava/lang/String; lvt=e2:[[[Ljava/lang/String;@0-19/3.1) (const@13-14 Ljava/lang/String; "e2"))
+x Exit id=2 bc=18
+  < s1.0

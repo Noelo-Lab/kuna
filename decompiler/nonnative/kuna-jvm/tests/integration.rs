@@ -146,3 +146,7 @@ mod kt1_metadata;
 mod trace_sweep;
 #[path = "kt0_hooks.rs"]
 mod kt0_hooks;
+#[path = "kt6_passes.rs"]
+mod kt6_passes;
+#[path = "kt6_render.rs"]
+mod kt6_render;

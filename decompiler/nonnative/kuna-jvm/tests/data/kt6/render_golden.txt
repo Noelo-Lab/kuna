@@ -1,0 +1,265 @@
+== kif_break
+assert false;
+if (assert false) {
+   break@label4
+}
+
+<<
+== kif_continue
+   // $VF: monitorexit
+   if (assert false) {
+      continue
+   }
+
+<<
+== kif_implicit
+   // $VF: monitorexit
+   if (assert false) {
+   }
+
+<<
+== kif_return_run
+label8@
+if (// $VF: monitorexit) {
+   return@run
+}
+
+<<
+== kif_return_label
+label8@
+if (// $VF: monitorexit) {
+   return@label6
+}
+
+<<
+== kif_else
+   assert false;
+   if (assert false) {
+      assert false;
+   } else {
+      // $VF: monitorexit
+   }
+
+<<
+== kif_else_if
+assert false;
+if (assert false) {
+   // $VF: monitorexit
+} else if (assert false) {
+   break
+}
+
+<<
+== kseq
+   run label6@{
+      assert false;
+      // $VF: monitorexit
+      break@label5
+   }
+
+<<
+== kseq_labeled
+   run label7@{
+      assert false;
+
+      break@label5
+
+      // $VF: monitorexit
+      break@label5
+   }
+
+<<
+== kdo_infinite
+   label3@ while (true) {
+      assert false;
+      continue@label2
+   }
+
+<<
+== kdo_infinite_labeled
+   label5@ while (true) {
+      assert false;
+   }
+
+<<
+== kdo_do_while
+   do {
+      assert false;
+   } while (assert false)
+
+<<
+== kdo_do_while_labeled
+   label5@ do {
+      assert false;
+      break@label2
+   } while (assert false)
+
+<<
+== kdo_while
+   while (assert false) {
+      assert false;
+   }
+
+<<
+== kdo_while_labeled
+   label5@ while (assert false) {
+      assert false;
+      break@label2
+   }
+
+<<
+== kdo_for
+   // $VF: Unable to resugar Kotlin loop from Java for loop
+   // $VF: monitorexit
+   while (true) {
+      if (assert false) break
+      assert false;
+
+      // $VF: monitorexit
+   }
+
+<<
+== kdo_for_labeled
+   // $VF: Unable to resugar Kotlin loop from Java for loop
+   run label5@{
+      // $VF: monitorexit
+      while (true) {
+         if (assert false) break
+         assert false;
+         break@label2
+
+         // $VF: monitorexit
+      }
+   }
+
+<<
+== kdo_for_each
+   for (var3 in assert false) {
+      assert false;
+   }
+
+<<
+== kdo_for_each_labeled
+   label5@ for (var3 in assert false) {
+      assert false;
+      break@label2
+   }
+
+<<
+== kdo_for_no_init
+// $VF: Unable to resugar Kotlin loop from Java for loop
+while (true) {
+   if (assert false) break
+   assert false;
+
+   // $VF: monitorexit
+}
+
+<<
+== kdo_for_repeat
+   repeat(9) { var1 ->
+      assert false;
+   }
+
+<<
+== kdo_for_range
+   for (var1 in 2..6) {
+      assert false;
+   }
+
+<<
+== kdo_for_down_to
+   for (var1 in 9 downTo 4) {
+      assert false;
+   }
+
+<<
+== kdo_for_var_bound
+   repeat(var2) { var1 ->
+      assert false;
+   }
+
+<<
+== kdo_for_long
+   for (var1 in 0L..5L) {
+      assert false;
+   }
+
+<<
+== kdo_for_abandoned
+   
+<<
+== kdo_for_not_less
+!! NullPointerException
+<<
+== kswitch
+   assert false;
+   switch (assert false) {
+      1 -> assert false;
+      2 -> // $VF: monitorexit
+      3 -> {
+         assert false;
+         // $VF: monitorexit
+      }
+      4, 5 -> {}
+      else -> assert false;
+   }
+
+<<
+== kswitch_labeled
+   run label10@{
+      assert false;
+      switch (assert false) {
+         1 -> {
+            assert false;
+            break@label7
+         }
+         2 -> // $VF: monitorexit
+         3 -> {
+            assert false;
+            // $VF: monitorexit
+         }
+         4, 5 -> {}
+         else -> assert false;
+      }
+   }
+
+<<
+== kswitch_phantom
+   run label11@{
+      assert false;
+
+<<
+== kcatch
+   try {
+      assert false;
+   } catch (var7) {
+      // $VF: monitorexit
+   } catch (var8) {
+      assert false;
+   }
+
+<<
+== kcatch_labeled
+   label6@    try {
+      assert false;
+      break label6;
+   } catch (var7) {
+      // $VF: monitorexit
+   } catch (var8) {
+      assert false;
+   }
+
+<<
+== kcatch_resources
+   try {
+2assert false.use {
+3// $VF: monitorexit.use {
+            assert false;
+         }
+      }
+   } catch (var4) {
+      // $VF: monitorexit
+   }
+
+<<

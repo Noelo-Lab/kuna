@@ -763,7 +763,17 @@ fn kotlin_statements_and_import_collectors_dispatch_to_their_kotlin_class() {
     stat.0.set_kt(true);
     assert!(stat.0.is_kotlin() && stat.0.is_do() && stat.0.is_k_do());
     assert!(!stat.0.is_k_if());
-    assert_eq!(unported(|| stat.0.to_java(0)), "KDoStatement.toJava");
+    // KDoStatement.toJava runs and, like the Java, dereferences the missing body.
+    let missing_body = try_catch(|| {
+        stat.0.to_java(0);
+    })
+    .unwrap_err();
+    assert!(
+        !missing_body.is("UnportedError")
+            && missing_body.message.contains("NullPointerException: first"),
+        "{}",
+        missing_body.message
+    );
 
     let collector = collector();
     assert_eq!(collector.pack_imports(), ["java.util.List"]);
