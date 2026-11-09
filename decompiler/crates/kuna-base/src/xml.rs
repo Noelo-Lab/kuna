@@ -1640,8 +1640,8 @@ mod tests {
         // ghangr-ifelseflatten / ifelseflatten,
         // switchsharedcase-b2sum / switchsharedcase,
         // ghangr-who-condensing-opt-reversion-72e518 / crossjumprevert,
-        // ghangr-morton-my-message-callback-bfd2fa / taildup (return tail with a call),
-        // ghangr-true-1804-dedup-ite-tail-8a690c / dedupitetail (the INVERSE of taildup:
+        // ghangr-morton-my-message-callback-bfd2fa / gotoreduce on (return tail with a call),
+        // ghangr-true-1804-dedup-ite-tail-8a690c / dedupitetail (the INVERSE of gotoreduce:
         // merge a duplicated if/else leaf prefix/suffix),
         // ghangr-setlocale-rettype / DIV-11,
         // ghangr-noreturn_extern / noreturn_extern, angr test_tail_tail_bytes_ret_dup,

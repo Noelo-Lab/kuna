@@ -187,11 +187,7 @@ fn go_scalar_functions_compile_and_preserve_effects() {
     }
     for extra in [
         vec![],
-        vec![
-            "option taildup off",
-            "option crossjumprevert off",
-            "option gotoreduce off",
-        ],
+        vec!["option crossjumprevert off", "option gotoreduce off"],
     ] {
         let mut options = vec![
             "option outlang go",

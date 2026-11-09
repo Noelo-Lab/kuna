@@ -509,9 +509,9 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "gotoreduce" => {
-        let (val, msg) =
+        let (mode, msg) =
             crate::p8_structure::kuna_gotoreduce::OptionGotoReduce.apply(p1)?;
-        self.reduce_return_gotos = val;
+        self.goto_reduce = mode;
         Ok(msg)
     },
     "ifelseflatten" => {
@@ -524,11 +524,6 @@ kuna_options! { self, p1;
         let (val, msg) =
             crate::p8_structure::kuna_crossjumpreverter::OptionCrossJumpReverter.apply(p1)?;
         self.revert_cross_jumps = val;
-        Ok(msg)
-    },
-    "taildup" => {
-        let (val, msg) = crate::p8_structure::kuna_taildup::OptionTailDup.apply(p1)?;
-        self.dup_return_call_tails = val;
         Ok(msg)
     },
     "dedupitetail" => {

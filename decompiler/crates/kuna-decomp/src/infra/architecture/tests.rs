@@ -123,10 +123,9 @@ fn kuna_anchor_flags_default_to_div_values() {
     assert!(arch.tail_call_tables);
     assert!(arch.switch_multi_pred);
     assert!(arch.region_loop_refine);
-    assert!(arch.reduce_return_gotos);
+    assert_eq!(arch.goto_reduce, crate::p8_structure::kuna_gotoreduce::GotoReduceMode::On);
     assert!(arch.flatten_ifelse);
     assert!(arch.revert_cross_jumps);
-    assert!(arch.dup_return_call_tails);
     assert!(arch.dedup_ite_tail);
     assert!(arch.fold_call_returns);
     // (kuna) foldcallretphi default-on (docs/features/foldcallretphi/flip.md).

@@ -1188,10 +1188,9 @@ pub struct ArchContext {
     /// (kuna) `condstmts`: most statements a folded condition operand may print
     /// before its test; negative = off.  See [`crate::p8_structure::kuna_condstmts`].
     pub cond_stmts: int4,
-    /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
-    /// `goto` source (`reduce_return_gotos`, opt-in default-off).  Read by
-    /// [`crate::p8_structure::kuna_gotoreduce`]'s `ActionGotoReduce`.
-    pub reduce_return_gotos: bool,
+    /// (kuna `gotoreduce`) Which small return tails are duplicated into a `goto`
+    /// source.  See [`crate::p8_structure::kuna_gotoreduce`].
+    pub goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode,
     /// (kuna) angr `IfElseFlattener`: drop the `else` arm of a terminating-if
     /// 3-component `if` (`flatten_ifelse`, opt-in default-off).  Read by
     /// [`crate::p8_structure::kuna_ifelseflatten`]'s `ActionIfElseFlatten`.
@@ -1201,11 +1200,6 @@ pub struct ArchContext {
     /// default-off).  Read by
     /// [`crate::p8_structure::kuna_crossjumpreverter`]'s `ActionCrossJumpReverter`.
     pub revert_cross_jumps: bool,
-    /// (kuna) angr SAILR `ReturnDuplicatorLow`: duplicate a small **return tail that
-    /// contains a call** (e.g. `free(p); return;`) into the `goto` source
-    /// (`dup_return_call_tails`, opt-in default-off).  Read by
-    /// [`crate::p8_structure::kuna_taildup`]'s `ActionTailDup`.
-    pub dup_return_call_tails: bool,
     /// (kuna) angr structurer ITE region-dedup: merge a duplicated `if/else` tail
     /// (shared prefix/suffix across both arms) by hoisting the shared blocks out of
     /// the `if` — the inverse of the SAILR duplication passes (`dedup_ite_tail`,
@@ -1695,10 +1689,9 @@ impl ArchContext {
             switch_selector_guard: false, // switchselector (opt-in default-off)
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
             cond_stmts: -1,              // condstmts (-1 = off)
-            reduce_return_gotos: false,  // gotoreduce (opt-in default-off)
+            goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode::Off, // gotoreduce
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)
-            dup_return_call_tails: false, // taildup (opt-in default-off)
             dedup_ite_tail: false,        // dedupitetail (opt-in default-off)
             iteregion: false,             // iteregion (opt-in default-off, runtime-choice)
             iteexpr: false,               // iteexpr (computed-arm ?: extension, default-off)
