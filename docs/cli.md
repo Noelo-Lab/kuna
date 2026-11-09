@@ -185,7 +185,7 @@ SLEIGH specs nor a JDK. `--name N` keeps the cases whose id contains `N`, `--job
 sets how many run at once (default: the core count, at most 16), and the datatest flags
 (`--all`, `--unittests`, `--datatests`, `--datatests-dir`, `--binary`, `--sleighpath`)
 are refused next to it (exit `2`). The summary line reads
-`jvm: 651/651 cases matched (0 mismatch, 0 error, 0 unsupported) in 0.7 s`, followed by
+`jvm: 713/713 cases matched (0 mismatch, 0 error, 0 unsupported) in 1.5 s`, followed by
 `PARITY OK` under `--baseline`. `--all` stays unit tests plus datatests.
 
 `kuna test` parses the harness's two streams separately (unit results on **stderr**,

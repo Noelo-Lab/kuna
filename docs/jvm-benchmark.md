@@ -102,24 +102,42 @@ declared type of the method exact, *bytes exact* is an identical recompiled list
 
 | Project | Methods | Perfect on all metrics | Structure perfect | Types perfect | Bytes exact | Classes recompile | Methods lost |
 |---|---|---|---|---|---|---|---|
-| guava | 12,167 | 91.86% | 98.19% | 99.64% | 91.92% | 84.04% | 0 |
+| guava | 12,167 | 91.86% | 98.19% | 99.64% | 91.92% → 91.93% | 84.04% → 84.44% | 0 |
 | spring-boot | 3,967 | 88.98% | 97.09% → 97.11% | 99.41% | 89.01% | 95.04% | 1 → 0 |
-| spring-framework | 13,874 | 90.83% → 90.85% | 97.45% → 97.47% | 99.36% → 99.37% | 90.88% → 90.90% | 95.75% → 95.83% | 2 → 0 |
-| ghidra | 18,153 | 80.05% → 80.11% | 90.60% | 98.56% | 80.18% → 80.23% | 98.09% → 98.16% | 0 |
-| elasticsearch | 62,077 | 84.20% → 88.32% | 96.80% → 96.84% | 99.62% → 99.63% | 84.26% → 88.38% | 91.82% → 94.96% | 14 → 0 |
+| spring-framework | 13,874 | 90.83% → 90.89% | 97.45% → 97.48% | 99.36% → 99.38% | 90.88% → 90.94% | 95.75% → 95.98% | 2 → 0 |
+| ghidra | 18,153 | 80.05% → 80.11% | 90.60% | 98.56% → 98.58% | 80.18% → 80.24% | 98.09% → 98.71% | 0 |
+| elasticsearch | 62,077 | 84.20% → 88.87% | 96.80% → 96.85% | 99.62% → 99.64% | 84.26% → 88.93% | 91.82% → 95.77% | 14 → 0 |
 
-Over all five projects, 96,679 methods are perfect on every metric instead of 94,106
-(87.70% instead of 85.37%), and every method is decompiled. Most of the gain is in
-Elasticsearch, where 139 more classes recompile, most of them because of two fixes: raw
-generic constructors (`new C(..)` for a library class `C`, whose lambda arguments then
-lose their parameter types) and `assert` statements printed where Java needs an
-expression. Method by method, 2,823 methods score better on some metric and worse on
-none, and one scores worse on one metric: Elasticsearch's `RescorePhase.execute`, whose
-GED goes from 5 to 10 while the method now recompiles (bytes similarity 0 to 0.97).
-Its only change is the removal of an unreachable `return; throw new AssertionError();`
-after the method's `try` (fix `assert_dead_throw`); the GED is computed by an approximate
-assignment, and dropping those two dead statements moves it. Every class that recompiles
-from Vineflower's output also recompiles from kuna's.
+Over all five projects, 97,029 methods are perfect on every metric instead of 94,106
+(88.02% instead of 85.37%), every method is decompiled, and 189 more classes recompile
+(7,797 instead of 7,608). Most of the gain is in Elasticsearch, where 175 more classes
+recompile, most of them because of three fixes: raw generic constructors (`new C(..)` for
+a library class `C`, whose lambda arguments then lose their parameter types), `assert`
+statements printed where Java needs an expression, and imports of non-public nested
+library classes. Every class that recompiles from Vineflower's output also recompiles from
+kuna's. Method by method, 3,261 methods score better on some metric and worse on none, and
+six score worse on one metric, each in a method whose text a fix changed:
+
+- Elasticsearch's `RescorePhase.execute`: GED 5 to 10 while the method now recompiles
+  (bytes similarity 0 to 0.97). Its only change is the removal of an unreachable
+  `return; throw new AssertionError();` after the method's `try` (fix `assert_dead_throw`);
+  the GED is computed by an approximate assignment, and dropping those two dead statements
+  moves it.
+- Elasticsearch's `GeoPointFieldMapper$GeoPointFieldType.distanceFeatureQuery` and Ghidra's
+  `SimpleBlockModel.getFlowType`: GED 2 to 5 while the method now recompiles (bytes
+  similarity 0 to 0.81; Ghidra's method also gets all its types right). An `instanceof`
+  pattern whose variable is used outside the pattern's scope becomes a test and a cast
+  (fix `pattern_variable_scope`), which changes the statement-level graph.
+- Ghidra's `ConstructorPcodeTemplate.adjustFlowFlags` and `SpecExtensionPanel.getXmlString`:
+  bytes similarity 0.70 to 0.65 and 0.62 to 0.61. Two `case` blocks that declare the same
+  name get braces (fix `switch_case_scope`), so the variables keep their source names
+  (`destType`, not `destTypex`); the recompiled listing uses the same slots as the original, and the drop
+  comes from how the benchmark aligns the listings line by line.
+- spring-framework's `javapoet.MethodSpec.overriding`: bytes similarity 0.88 to 0.68. The
+  source reuses its local `Set<Modifier> modifiers` for `new LinkedHashSet<>(modifiers)`;
+  kuna declares the new value in a second variable (fix `var_merge_narrowing`, which
+  refuses a merge whose inferred type is narrower than a value assigned to it), so the recompiled method uses one more local slot. The output is correct
+  and recompiles in both modes.
 
 `docs/jvm.md` ("Performance and limits") has separate timings, measured as the best of
 three on a quiet machine with `kuna decompile-project` and Vineflower's default thread count.
