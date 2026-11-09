@@ -1046,9 +1046,9 @@ fn worker_count_unselected(input: &InputSet, config: &DriverConfig) -> usize {
 /// whatever the count), plus per instance 32 MiB, 4 bytes per byte of input
 /// class files and 1 per byte of library class files (the class universe, whose
 /// classes are read as they are used) unless `instance_memory` says otherwise.
-/// Fitted to the peaks of Elasticsearch (53 MB of classes: 4.8 GB with 8
-/// workers, 8.7 GB with 24), Guava (6.6 MB: 1.0 and 1.9 GB), Ghidra (9.1 MB:
-/// 1.1 and 1.8 GB) and spring-boot (3.0 MB: 0.36 and 0.73 GB).
+/// It bounds the peaks of Elasticsearch (53 MB of classes: 5.3 GB with 8
+/// workers, 9.0 GB with 24), Guava (6.6 MB: 0.9 and 1.7 GB), Ghidra (9.1 MB:
+/// 1.2 and 1.7 GB) and spring-boot (3.0 MB: 0.36 and 0.70 GB).
 pub fn estimate_memory(input: &InputSet, config: &DriverConfig, workers: usize) -> u64 {
     let input_bytes = input.class_bytes() as u64;
     let library_bytes = config

@@ -288,17 +288,17 @@ processes (without writing) the other roots its classes depend on, and a batch w
 read state it did not produce is repeated before its result is used (spec section
 10.14). `auto` is the number of cores, at most 24 and at most one per 16 class files,
 reduced until the memory estimate below fits in 90% of the available memory. Measured on
-an 80-core machine: Elasticsearch (53 MB of classes) 31.7 s with eight workers, 14.5 s
-with twenty-four; Guava (6.6 MB) 22 s with one worker, 4.8 s with eight, 2.9 s with
+an 80-core machine: Elasticsearch (53 MB of classes) 27 s with eight workers, 12 s with
+twenty-four; Guava (6.6 MB) 20 s with one worker, 3.9 s with eight, 2.4 s with
 twenty-four.
 
 **Memory.** An instance reads a class's constant pool entries and members when it first
 uses them (spec section 10.3), so it holds little more than the classes its batches touch.
 The driver estimates an instance at 32 MiB plus 4 bytes per byte of input class files and
 1 per byte of library class files, and the decompiled state and results at 90 bytes per
-input byte, whatever the count; the estimate is fitted to the peaks of Elasticsearch (4.8
-GB with eight workers, 8.7 GB with twenty-four), Guava (1.0 and 1.9 GB), Ghidra (9.1 MB of
-classes: 1.1 and 1.8 GB) and spring-boot (3.0 MB: 0.36 and 0.73 GB).
+input byte, whatever the count; the estimate bounds the peaks of Elasticsearch (5.3 GB
+with eight workers, 9.0 GB with twenty-four), Guava (0.9 and 1.7 GB), Ghidra (9.1 MB of
+classes: 1.2 and 1.7 GB) and spring-boot (3.0 MB: 0.36 and 0.70 GB).
 `--max-fn-memory` is process-wide on JVM inputs, since the instances are threads of one
 process.
 
