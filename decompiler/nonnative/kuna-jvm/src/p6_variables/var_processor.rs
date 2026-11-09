@@ -242,7 +242,7 @@ impl VarProcessor {
         let attr = method
             .get_local_variable_attr()
             .expect("LocalVariableTable");
-        Some(attr.matching_vars(origindex).into_iter().collect())
+        Some(attr.matching_vars_index(origindex))
     }
 
     pub fn find_lvt(self, exprent: VarExprent, start: i32) {

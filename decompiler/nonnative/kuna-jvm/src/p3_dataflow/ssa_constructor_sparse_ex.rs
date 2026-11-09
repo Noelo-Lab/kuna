@@ -6,18 +6,17 @@
 
 use std::ops::{Deref, DerefMut};
 
-use crate::fast_sparse_set_factory::FastSparseSet;
 use crate::field_exprent::FieldExprent;
 use crate::rt::{JHashMap, Shared};
 use crate::s_forms_constructor::{SFormsConstructor, SFormsConstructorKind};
-use crate::s_forms_fast_map_direct::SFormsFastMapDirect;
+use crate::s_forms_fast_map_direct::{SFormsFastMapDirect, VersionSet};
 use crate::statement::Statement;
 use crate::unported;
 use crate::var_exprent::VarExprent;
 use crate::var_version_pair::VarVersionPair;
 
 pub struct SSAConstructorSparseExData {
-    phi: JHashMap<VarVersionPair, FastSparseSet<i32>>,
+    phi: JHashMap<VarVersionPair, VersionSet>,
 }
 
 pub struct SSAConstructorSparseEx(pub SFormsConstructor);
@@ -101,12 +100,12 @@ impl SSAConstructorSparseEx {
         calc_live_vars: bool,
         var_exprent: VarExprent,
         var_map: &Shared<SFormsFastMapDirect>,
-        versions: FastSparseSet<i32>,
+        versions: VersionSet,
     ) {
         unported!("SSAConstructorSparseEx.varReadMultipleVersions")
     }
 
-    pub fn get_phi(&self) -> &JHashMap<VarVersionPair, FastSparseSet<i32>> {
+    pub fn get_phi(&self) -> &JHashMap<VarVersionPair, VersionSet> {
         &Self::d(&self.0).phi
     }
 

@@ -48,19 +48,13 @@ impl FieldExprent {
         bytecode_offsets: Option<&BitSet>,
     ) -> FieldExprent {
         FieldExprent::new(
-            cn.elementname
-                .clone()
-                .expect("NullPointerException: elementname"),
+            cn.elementname.clone(),
             cn.classname
                 .clone()
                 .expect("NullPointerException: classname"),
             instance.is_none(),
             instance,
-            FieldDescriptor::parse_descriptor(
-                cn.descriptor
-                    .as_deref()
-                    .expect("NullPointerException: descriptor"),
-            ),
+            FieldDescriptor::parse_descriptor(&cn.descriptor),
             bytecode_offsets,
         )
     }

@@ -82,7 +82,7 @@ impl SimpleSSAReassign {
     fn find_all_vars(stat: Statement, action: &mut dyn FnMut(VarExprent)) {
         match stat.get_exprents() {
             None => {
-                for st in stat.get_stats().to_vec() {
+                for st in stat.get_stats().borrow().to_vec() {
                     Self::find_all_vars(st, action);
                 }
 

@@ -6,19 +6,18 @@
 //! subclass bodies in path form, `SSAUConstructorSparseEx::method(self, ...)`.
 //! Var maps are `Shared`: the same map sits in a holder, a node's slot in these
 //! tables and `currentCatchableMap`, and is compared by identity. The set
-//! factory is shared by every map and set it makes and grows as they add
-//! elements, so it is `Shared` too.
+//! factory is an aliasing handle shared by every map and set it makes.
 #![allow(dead_code, unused_variables)]
 
 use crate::direct_graph::DirectGraph;
 use crate::direct_node::DirectNode;
 use crate::exprent::Exprent;
-use crate::fast_sparse_set_factory::{FastSparseSet, FastSparseSetFactory};
+use crate::fast_sparse_set_factory::FastSparseSetFactory;
 use crate::field_exprent::FieldExprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, Shared};
-use crate::s_forms_fast_map_direct::SFormsFastMapDirect;
+use crate::s_forms_fast_map_direct::{SFormsFastMapDirect, VersionSet};
 use crate::ssa_constructor_sparse_ex::{SSAConstructorSparseEx, SSAConstructorSparseExData};
 use crate::ssau_constructor_sparse_ex::{SSAUConstructorSparseEx, SSAUConstructorSparseExData};
 use crate::statement::Statement;
@@ -38,7 +37,7 @@ pub struct SFormsConstructor {
     extra_var_versions: JHashMap<String, Shared<SFormsFastMapDirect>>,
     catchable_versions: JHashMap<String, Shared<SFormsFastMapDirect>>,
     lastversion: JHashMap<i32, i32>,
-    pub factory: Option<Shared<FastSparseSetFactory<i32>>>,
+    pub factory: Option<FastSparseSetFactory<i32>>,
     read_count: JHashMap<VarVersionPair, i32>,
     current_catchable_map: Option<Shared<SFormsFastMapDirect>>,
     pub root: Option<RootStatement>,
@@ -87,7 +86,7 @@ impl SFormsConstructor {
         matches!(self.kind, SFormsConstructorKind::Ssau(_))
     }
 
-    fn factory(&self) -> &Shared<FastSparseSetFactory<i32>> {
+    pub fn factory(&self) -> &FastSparseSetFactory<i32> {
         self.factory.as_ref().expect("SFormsConstructor.factory")
     }
 
@@ -171,7 +170,7 @@ impl SFormsConstructor {
         calc_live_vars: bool,
         var_exprent: VarExprent,
         var_map: &Shared<SFormsFastMapDirect>,
-        versions: FastSparseSet<i32>,
+        versions: VersionSet,
     ) {
         match self.kind {
             SFormsConstructorKind::Ssa(_) => SSAConstructorSparseEx::var_read_multiple_versions(
@@ -353,9 +352,9 @@ impl SFormsConstructor {
     }
 
     pub fn set_current_var(&mut self, varmap: &Shared<SFormsFastMapDirect>, var: i32, vers: i32) {
-        let mut set = FastSparseSetFactory::create_empty_set(self.factory());
+        let mut set = self.factory().create_empty_set();
         set.add(vers);
-        varmap.borrow_mut().put(var, set);
+        varmap.borrow_mut().put(var, Shared::new(set));
     }
 
     pub fn has_updated(&self, node: DirectNode, varmaps: &VarMapHolder) -> bool {

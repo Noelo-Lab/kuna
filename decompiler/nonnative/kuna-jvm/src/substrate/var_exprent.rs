@@ -251,9 +251,9 @@ impl VarExprent {
                         .get_class(&qaul_name)
                         .and_then(|cls| cls.get_signature());
                     if let Some(signature) = signature {
-                        vt = Some(signature.generic_type.0.clone());
+                        vt = Some(signature.generic_type().0.clone());
                     } else if vt.is_none() {
-                        vt = Some(VarType::new(CodeType::Object, 0, Some(qaul_name)));
+                        vt = Some(VarType::new_value(CodeType::Object, 0, qaul_name));
                     }
                 }
             }

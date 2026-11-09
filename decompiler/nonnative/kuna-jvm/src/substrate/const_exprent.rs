@@ -190,6 +190,41 @@ impl From<&str> for ConstValue {
     }
 }
 
+/// A pool constant's `value` as the `Object` a `ConstExprent` holds.
+impl From<&crate::primitive_constant::ConstValue> for ConstValue {
+    fn from(v: &crate::primitive_constant::ConstValue) -> Self {
+        use crate::primitive_constant::ConstValue as Pool;
+        match v {
+            Pool::Integer(i) => ConstValue::Int(*i),
+            Pool::Long(l) => ConstValue::Long(*l),
+            Pool::Float(f) => ConstValue::Float(*f),
+            Pool::Double(d) => ConstValue::Double(*d),
+            Pool::String(s) => ConstValue::String(s.to_string()),
+        }
+    }
+}
+
+impl From<crate::primitive_constant::ConstValue> for ConstValue {
+    fn from(v: crate::primitive_constant::ConstValue) -> Self {
+        ConstValue::from(&v)
+    }
+}
+
+/// The inverse of the pool conversion, for callers that hand a constant's
+/// value back to the struct layer (`MatchNode` rule values, `PrimitiveConstant`).
+impl From<&ConstValue> for crate::primitive_constant::ConstValue {
+    fn from(v: &ConstValue) -> Self {
+        use crate::primitive_constant::ConstValue as Pool;
+        match v {
+            ConstValue::Int(i) => Pool::Integer(*i),
+            ConstValue::Long(l) => Pool::Long(*l),
+            ConstValue::Float(f) => Pool::Float(*f),
+            ConstValue::Double(d) => Pool::Double(*d),
+            ConstValue::String(s) => Pool::String(Rc::from(s.as_str())),
+        }
+    }
+}
+
 /// An entry of `UNINLINED_DOUBLES` / `UNINLINED_FLOATS`: renders the constant from its bytecode set.
 pub type UninlinedFn = Rc<dyn Fn(Option<&BitSet>) -> TextBuffer>;
 

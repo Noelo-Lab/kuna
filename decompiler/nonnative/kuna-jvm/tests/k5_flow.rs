@@ -1,11 +1,5 @@
-//! K5 direct graph, var-map holder, var processor and SSA constructors.
-//!
-//! These need `Statement`, `Exprent`, `StructMethod` and `SFormsFastMapDirect`
-//! instances, which only other slices can build. Until they merge the file is
-//! compiled only with `RUSTFLAGS='--cfg kuna_jvm_k5_stubs'` against K5's local
-//! throw-away stubs; at integration, rebind the four constructors in the
-//! `support` block to the real APIs and drop the `cfg`.
-#![cfg(kuna_jvm_k5_stubs)]
+//! K5 direct graph, var-map holder, var processor and SSA constructors over
+//! real statements, exprents and methods, under Vineflower's default context.
 
 use kuna_jvm::direct_edge::DirectEdge;
 use kuna_jvm::direct_edge_type::DirectEdgeType;
@@ -24,38 +18,69 @@ use kuna_jvm::var_type_processor::FinalType;
 use kuna_jvm::var_version_node::State;
 use kuna_jvm::var_version_pair::VarVersionPair;
 
+use crate::common;
+
 mod support {
+    use kuna_jvm::bytecode_version::BytecodeVersion;
+    use kuna_jvm::dummy_exit_statement::DummyExitStatementData;
     use kuna_jvm::fast_sparse_set_factory::FastSparseSetFactory;
+    use kuna_jvm::general_statement::GeneralStatementData;
     use kuna_jvm::method_descriptor::MethodDescriptor;
-    use kuna_jvm::rt::Shared;
-    use kuna_jvm::statement::{Statement, StatementKind};
-    use kuna_jvm::struct_method::StructMethod;
+    use kuna_jvm::rt::{JHashMap, Shared};
+    use kuna_jvm::statement::{Statement, StatementKind, StatementType};
+    use kuna_jvm::struct_member::{StructMember, StructMemberData, StructMemberKind};
+    use kuna_jvm::struct_method::{StructMethod, StructMethodData};
     use kuna_jvm::var_exprent::VarExprent;
+    use kuna_jvm::var_type::VarType;
 
     pub fn stat(id: i32) -> Statement {
-        Statement::new_stub(id, StatementKind::General)
+        Statement::new_with_id(
+            StatementType::General,
+            id,
+            StatementKind::General(GeneralStatementData { placeholder: false }),
+        )
     }
 
     pub fn dummy_exit(id: i32) -> Statement {
-        Statement::new_stub(
+        Statement::new_with_id(
+            StatementType::DummyExit,
             id,
-            StatementKind::DummyExit(kuna_jvm::dummy_exit_statement::DummyExitStatementData),
+            StatementKind::DummyExit(DummyExitStatementData { bytecode: None }),
         )
     }
 
-    pub fn var(id: i32, index: i32, version: i32) -> VarExprent {
-        VarExprent::new_stub(id, index, version)
+    pub fn var(index: i32, version: i32) -> VarExprent {
+        let var = VarExprent::new(index, Some(VarType::VARTYPE_INT()), None);
+        var.set_version(version);
+        var
     }
 
     pub fn method() -> (StructMethod, MethodDescriptor) {
-        (
-            StructMethod::new_stub("m"),
-            MethodDescriptor::new_stub("()V"),
-        )
+        let mt = StructMethod(StructMember::alloc(StructMemberData {
+            access_flags: 0,
+            attributes: Shared::new(JHashMap::new()),
+            kind: StructMemberKind::Method(StructMethodData {
+                name: "m".to_string(),
+                descriptor: "()V".to_string(),
+                bytecode_version: BytecodeVersion::new(BytecodeVersion::MAJOR_8, 0),
+                local_variables: -1,
+                code_and_exceptions: None,
+                seq: None,
+                expanded: false,
+                class_qualified_name: "T".to_string(),
+                signature: None,
+                renamer: None,
+            }),
+        }));
+        (mt, MethodDescriptor::parse_descriptor("()V"))
     }
 
-    pub fn factory() -> Shared<FastSparseSetFactory<i32>> {
-        Shared::new(FastSparseSetFactory::new((0..64).collect()))
+    thread_local! {
+        static FACTORY: FastSparseSetFactory<i32> = FastSparseSetFactory::new(0..64);
+    }
+
+    pub fn factory() -> FastSparseSetFactory<i32> {
+        FACTORY.with(|f| f.clone())
     }
 }
 
@@ -81,6 +106,7 @@ fn ids(nodes: &[DirectNode]) -> String {
 
 #[test]
 fn direct_node_hash_and_equals_match_java() {
+    let _context = common::install_default_context();
     for row in golden("dnode") {
         let t = DirectNodeType::values()[row[0].parse::<usize>().unwrap()];
         let node = DirectNode::for_stat(t, stat(row[1].parse().unwrap()), None);
@@ -109,6 +135,7 @@ fn direct_node_hash_and_equals_match_java() {
 
 #[test]
 fn direct_edge_hash_equals_and_text_match_java() {
+    let _context = common::install_default_context();
     for row in golden("dedge") {
         let num = |i: usize| row[i].parse::<i32>().unwrap();
         let st = DirectNodeType::values()[num(0) as usize];
@@ -177,6 +204,7 @@ fn build_graph() -> Graph {
 
 #[test]
 fn direct_graph_adjacency_and_order_match_java() {
+    let _context = common::install_default_context();
     let Graph { g, n } = build_graph();
     for row in golden("dg_adj") {
         let i: usize = row[0].parse().unwrap();
@@ -212,15 +240,14 @@ fn direct_graph_adjacency_and_order_match_java() {
 
 #[test]
 fn direct_graph_iterate_exprents_matches_java() {
+    let _context = common::install_default_context();
     let Graph { g, n } = build_graph();
     g.sort_reverse_post_order();
-    let mut next_id = 100;
     for node in n.iter().skip(1).take(8) {
         let i: i32 = node.id().parse().unwrap();
         let lst: JList<Exprent> = JList::new();
         for k in 0..3 {
-            next_id += 1;
-            lst.add(var(next_id, i * 10 + k, 0).0);
+            lst.add(var(i * 10 + k, 0).0);
         }
         node.set_exprents(lst);
     }
@@ -281,6 +308,7 @@ fn map() -> Shared<SFormsFastMapDirect> {
 
 #[test]
 fn var_map_holder_state_machine() {
+    let _context = common::install_default_context();
     let base = map();
     base.borrow_mut().set_current_var(1, 1);
     let mut h = VarMapHolder::of_normal(&base);
@@ -298,15 +326,15 @@ fn var_map_holder_state_machine() {
     let other = map();
     other.borrow_mut().set_current_var(2, 3);
     h.merge_if_true(Some(&other));
-    assert!(h.get_if_true().borrow().map.contains_key(&2));
-    assert!(!h.get_if_false().borrow().map.contains_key(&2));
+    assert!(h.get_if_true().borrow().contains_key(2));
+    assert!(!h.get_if_false().borrow().contains_key(2));
     h.merge_if_true(Some(&h.get_if_true()));
     h.merge_if_false(None);
 
     let merged = h.to_normal();
     assert!(h.is_normal());
     assert!(merged.ptr_eq(&h.get_normal()));
-    assert!(merged.borrow().map.contains_key(&2));
+    assert!(merged.borrow().contains_key(2));
 
     let mut h2 = VarMapHolder::of_normal(&base);
     h2.set(&h);
@@ -341,6 +369,7 @@ fn var_map_holder_state_machine() {
 
 #[test]
 fn var_processor_accessors() {
+    let _context = common::install_default_context();
     let (mt, md) = support::method();
     let vp = VarProcessor::new(mt, &md);
     let p = VarVersionPair::new(3, 0);
@@ -394,7 +423,7 @@ fn var_processor_accessors() {
 
     assert!(!vp.has_lvt());
     assert!(vp.get_candidates(0).is_none());
-    vp.find_lvt(var(1, 3, 0), 0);
+    vp.find_lvt(var(3, 0), 0);
 
     vp.get_var_names_collector().add_name("x");
     let vc = VarNamesCollector::new_with_names(["x".to_string()]);
@@ -411,6 +440,7 @@ fn var_processor_accessors() {
 
 #[test]
 fn ssa_constructor_small_bodies() {
+    let _context = common::install_default_context();
     let mut ssa = SSAConstructorSparseEx::new();
     assert!(ssa.is_ssa() && !ssa.track_field_vars && !ssa.track_direct_assignments);
     let p = VarVersionPair::new(5, 2);
@@ -418,12 +448,12 @@ fn ssa_constructor_small_bodies() {
     ssa.mark_direct_assignment(p, p);
     assert!(ssa.get_phi().is_empty());
 
-    let v = var(1, 5, 0);
+    let v = var(5, 0);
     ssa.init_version(v, stat(1));
     assert_eq!(v.get_version(), 1);
     ssa.init_version(v, stat(1));
     assert_eq!(v.get_version(), 1, "already versioned");
-    let w = var(2, 5, 0);
+    let w = var(5, 0);
     ssa.init_version(w, stat(1));
     assert_eq!(w.get_version(), 2);
     assert_eq!(ssa.get_next_free_version(6, None), 1);
@@ -437,6 +467,7 @@ fn ssa_constructor_small_bodies() {
 
 #[test]
 fn ssau_constructor_small_bodies() {
+    let _context = common::install_default_context();
     let mut ssau = SSAUConstructorSparseEx::new();
     assert!(ssau.is_ssau() && ssau.track_field_vars && ssau.track_direct_assignments);
     ssau.factory = Some(support::factory());
@@ -446,7 +477,7 @@ fn ssau_constructor_small_bodies() {
     ssau.mark_direct_assignment(a, b);
     assert_eq!(ssau.get_var_assignment_map().get(&a), Some(&b));
 
-    let v = var(1, 4, 0);
+    let v = var(4, 0);
     ssau.init_version(v, stat(10));
     assert_eq!(v.get_version(), 1);
     let node = ssau.get_node(v).expect("node");
@@ -464,13 +495,13 @@ fn ssau_constructor_small_bodies() {
     assert_eq!(pnode.state(), Some(State::Phantom));
 
     let m = map();
-    let r = var(2, 4, 0);
+    let r = var(4, 0);
     ssau.var_read_single_version(stat(10), false, r, &m, 1);
     assert_eq!(r.get_version(), 3);
     let read = ssau.get_node(r).unwrap();
     assert_eq!(read.state(), Some(State::Read));
     assert_eq!(read.get_predecessors(), vec![node]);
-    assert!(m.borrow().map.contains_key(&4));
+    assert!(m.borrow().contains_key(4));
 
     ssau.var_read_single_version(stat(10), true, r, &m, 1);
     let live = ssau

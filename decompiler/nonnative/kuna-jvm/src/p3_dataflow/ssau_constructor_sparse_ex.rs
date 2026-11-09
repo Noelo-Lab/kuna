@@ -7,12 +7,11 @@
 
 use std::ops::{Deref, DerefMut};
 
-use crate::fast_sparse_set_factory::FastSparseSet;
 use crate::field_exprent::FieldExprent;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, Shared};
 use crate::s_forms_constructor::{SFormsConstructor, SFormsConstructorKind};
-use crate::s_forms_fast_map_direct::SFormsFastMapDirect;
+use crate::s_forms_fast_map_direct::{SFormsFastMapDirect, VersionSet};
 use crate::statement::Statement;
 use crate::struct_method::StructMethod;
 use crate::unported;
@@ -175,7 +174,7 @@ impl SSAUConstructorSparseEx {
         calc_live_vars: bool,
         var_exprent: VarExprent,
         var_map: &Shared<SFormsFastMapDirect>,
-        versions: FastSparseSet<i32>,
+        versions: VersionSet,
     ) {
         let var_index = var_exprent.get_index();
         let mut current_version = var_exprent.get_version();
@@ -205,7 +204,7 @@ impl SSAUConstructorSparseEx {
     fn create_or_update_phi_node(
         this: &mut SFormsConstructor,
         phivar: VarVersionPair,
-        vers: &FastSparseSet<i32>,
+        vers: &VersionSet,
         stat: Statement,
     ) {
         unported!("SSAUConstructorSparseEx.createOrUpdatePhiNode")
@@ -280,9 +279,7 @@ impl SSAUConstructorSparseEx {
         let node = Self::ssu_versions_of(&self.0).get_node_with_key(var_version)?;
         Some(match node.live() {
             Some(live) => live,
-            None => Shared::new(SFormsFastMapDirect::new(
-                self.0.factory.clone().expect("SFormsConstructor.factory"),
-            )),
+            None => Shared::new(SFormsFastMapDirect::new(self.0.factory().clone())),
         })
     }
 

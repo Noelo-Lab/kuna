@@ -112,7 +112,7 @@ pub struct InvocationExprentData {
     pub invocation_type: InvocationType,
     pub lst_parameters: JList<Exprent>,
     pub bootstrap_method: Option<LinkConstant>,
-    pub bootstrap_arguments: Option<Vec<PooledConstant>>,
+    pub bootstrap_arguments: Option<Vec<Option<PooledConstant>>>,
     pub generic_args: Vec<VarType>,
     pub remapped_inst_type: Option<VarType>,
     pub force_generic_qualfication: bool,
@@ -199,7 +199,7 @@ impl InvocationExprent {
         _opcode: i32,
         _cn: &LinkConstant,
         _bootstrap_method: Option<LinkConstant>,
-        _bootstrap_arguments: Option<Vec<PooledConstant>>,
+        _bootstrap_arguments: Option<Vec<Option<PooledConstant>>>,
         _stack: &mut ListStack<Exprent>,
         _bytecode_offsets: Option<&BitSet>,
     ) -> InvocationExprent {
@@ -642,7 +642,7 @@ impl InvocationExprent {
         self.d(|d| d.bootstrap_method.clone())
     }
 
-    pub fn get_bootstrap_arguments(self) -> Option<Vec<PooledConstant>> {
+    pub fn get_bootstrap_arguments(self) -> Option<Vec<Option<PooledConstant>>> {
         self.d(|d| d.bootstrap_arguments.clone())
     }
 
