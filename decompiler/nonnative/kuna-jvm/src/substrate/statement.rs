@@ -17,10 +17,10 @@ use crate::dummy_exit_statement::{DummyExitStatement, DummyExitStatementData};
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
 use crate::general_statement::{GeneralStatement, GeneralStatementData};
-use crate::i_matchable::IMatchable;
+use crate::i_matchable::{IMatchable, MatchProperties};
 use crate::if_statement::{IfStatement, IfStatementData};
 use crate::match_engine::MatchEngine;
-use crate::match_node::MatchNode;
+use crate::match_node::{MatchNode, MatchValue};
 use crate::pattern::Pattern;
 use crate::root_statement::{RootStatement, RootStatementData};
 use crate::rt::{BitSet, JHashMap, JHashSet, JList, JavaEq, JavaHash, Shared};
@@ -34,7 +34,7 @@ use crate::text_buffer::TextBuffer;
 use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
 use crate::vb_style_collection::VBStyleCollection;
-use crate::{arena_identity, arena_object, jthrow, unported};
+use crate::{arena_identity, arena_object, jthrow};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub enum StatementType {
@@ -1210,7 +1210,9 @@ impl Statement {
     }
 
     pub fn to_debug(self) -> String {
-        unported!("Statement.toDebug")
+        let _v = DecompilerContext::get_import_collector().lock();
+        self.to_java_default()
+            .convert_to_string_and_allow_data_discard()
     }
 
     pub fn get_offset(self, values: &mut BitSet) {
@@ -1274,10 +1276,58 @@ impl Statement {
 
     pub fn find_object_base(
         self,
-        _match_node: &MatchNode,
-        _index: i32,
+        match_node: &MatchNode,
+        index: i32,
     ) -> Option<Box<dyn IMatchable>> {
-        unported!("Statement.findObject")
+        let node_type = match_node.get_type();
+
+        let stats = self.get_stats();
+        let exprents = self.get_exprents();
+        if node_type == MatchNode::MATCHNODE_STATEMENT && !stats.borrow().is_empty() {
+            let position = match_node
+                .get_rule_value(MatchProperties::StatementPosition)
+                .map(|p| p.as_string());
+            match position {
+                Some(position) => {
+                    if is_signed_integer(&position) {
+                        let size = stats.borrow().len() as i32;
+                        let at = size.wrapping_add(parse_position(&position)) % size;
+                        let stat = list_get(&stats.borrow().to_vec(), at);
+                        return Some(Box::new(stat));
+                    }
+                }
+                None => {
+                    if (index as i64) < stats.borrow().len() as i64 {
+                        let stat = stats.borrow().get(index as usize);
+                        return Some(Box::new(stat));
+                    }
+                }
+            }
+        } else if node_type == MatchNode::MATCHNODE_EXPRENT
+            && exprents.as_ref().is_some_and(|e| !e.is_empty())
+        {
+            let exprents = exprents.expect("exprents");
+            let position = match_node
+                .get_rule_value(MatchProperties::ExprentPosition)
+                .map(|p| p.as_string());
+            match position {
+                Some(position) => {
+                    if is_signed_integer(&position) {
+                        let size = exprents.len() as i32;
+                        let at = size.wrapping_add(parse_position(&position)) % size;
+                        let exprent = list_get(&exprents.to_vec(), at);
+                        return Some(Box::new(exprent));
+                    }
+                }
+                None => {
+                    if (index as i64) < exprents.len() as i64 {
+                        return Some(Box::new(exprents.get(index as usize)));
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     pub fn match_(self, match_node: &MatchNode, engine: &MatchEngine) -> bool {
@@ -1287,9 +1337,87 @@ impl Statement {
         }
     }
 
-    pub fn match_base(self, _match_node: &MatchNode, _engine: &MatchEngine) -> bool {
-        unported!("Statement.match")
+    pub fn match_base(self, match_node: &MatchNode, engine: &MatchEngine) -> bool {
+        if match_node.get_type() != MatchNode::MATCHNODE_STATEMENT {
+            return false;
+        }
+
+        match_node.iterate_rules(|key, value| {
+            match key {
+                MatchProperties::StatementType => {
+                    let same = matches!(
+                        &value.value,
+                        Some(MatchValue::StatementType(t)) if *t == self.type_()
+                    );
+                    if !same {
+                        return false;
+                    }
+                }
+                MatchProperties::StatementStatsize => {
+                    let statsize = value
+                        .value
+                        .as_ref()
+                        .expect("NullPointerException")
+                        .as_integer();
+                    if self.get_stats().borrow().len() as i32 != statsize {
+                        return false;
+                    }
+                }
+                MatchProperties::StatementExprsize => {
+                    let exprsize = value
+                        .value
+                        .as_ref()
+                        .expect("NullPointerException")
+                        .as_integer();
+                    let exprents = self.get_exprents();
+                    if exprsize == -1 {
+                        if exprents.is_some() {
+                            return false;
+                        }
+                    } else if exprents.is_none_or(|e| e.len() as i32 != exprsize) {
+                        return false;
+                    }
+                }
+                MatchProperties::StatementRet => {
+                    let name = value
+                        .value
+                        .as_ref()
+                        .expect("NullPointerException")
+                        .as_string();
+                    if !engine
+                        .check_and_set_variable_value(&name, Some(MatchValue::Statement(self)))
+                    {
+                        return false;
+                    }
+                }
+                _ => {}
+            }
+
+            true
+        })
     }
+}
+
+/// `position.matches("-?\\d+")`.
+pub(crate) fn is_signed_integer(position: &str) -> bool {
+    let digits = position.strip_prefix('-').unwrap_or(position);
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// `Integer.parseInt` of a string already matched by [`is_signed_integer`].
+fn parse_position(position: &str) -> i32 {
+    match position.parse::<i32>() {
+        Ok(v) => v,
+        Err(_) => jthrow!(NumberFormatException; "For input string: \"{}\"", position),
+    }
+}
+
+/// `List.get(int)`, throwing `IndexOutOfBoundsException` for a negative index.
+fn list_get<T: Copy>(list: &[T], index: i32) -> T {
+    if index < 0 || index as usize >= list.len() {
+        jthrow!(IndexOutOfBoundsException; "Index {} out of bounds for length {}", index, list.len());
+    }
+    list[index as usize]
 }
 
 impl IMatchable for Statement {

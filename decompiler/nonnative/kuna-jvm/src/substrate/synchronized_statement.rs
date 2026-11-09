@@ -3,14 +3,16 @@
 //! `headexprent` is the one-slot list shared with flow nodes (empty while the
 //! Java slot is `null`).
 
+use crate::code_constants::OPC_MONITOREXIT;
+use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::if_statement::set_head_slot;
+use crate::java_subclass;
 use crate::rt::JList;
 use crate::sequence_helper::SequenceHelper;
 use crate::stat_edge::StatEdge;
 use crate::statement::{Statement, StatementKind, StatementType};
 use crate::text_buffer::TextBuffer;
-use crate::{java_subclass, unported};
 
 pub struct SynchronizedStatementData {
     pub body: Option<Statement>,
@@ -54,13 +56,57 @@ impl SynchronizedStatement {
         this
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("SynchronizedStatement.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut buf = TextBuffer::new();
+        buf.append_buffer(&ExprProcessor::list_to_java(
+            Some(&self.get_var_definitions()),
+            indent,
+        ));
+        buf.append_buffer(&self.get_first().expect("first").to_java(indent));
+
+        if self.is_labeled() {
+            buf.append_indent(indent)
+                .append("label")
+                .append_int(self.id())
+                .append(":")
+                .append_line_separator();
+        }
+
+        let head_expr = self.get_headexprent_list().first();
+        buf.append_indent(indent);
+        match head_expr {
+            Some(head_expr) => buf.append_buffer(&head_expr.to_java(indent)),
+            None => buf.append("synchronized <null condition> "),
+        };
+        buf.append(" {").append_line_separator();
+
+        buf.append_buffer(&ExprProcessor::jmp_wrapper(
+            self.get_body(),
+            indent + 1,
+            true,
+        ));
+
+        buf.append_indent(indent).append("}");
+        self.map_monitor_exit_instr(&mut buf);
+        buf.append_line_separator();
+
+        buf
     }
 
-    #[allow(dead_code)]
-    fn map_monitor_exit_instr(self, _buffer: &mut TextBuffer) {
-        unported!("SynchronizedStatement.mapMonitorExitInstr")
+    fn map_monitor_exit_instr(self, buffer: &mut TextBuffer) {
+        let block = self.get_body().get_basichead().get_block();
+        if !block.get_seq().is_empty()
+            && block
+                .get_last_instruction()
+                .expect("NullPointerException")
+                .with(|d| d.opcode)
+                == OPC_MONITOREXIT
+        {
+            let offset = block.get_old_offset(block.size() - 1);
+            if offset > -1 {
+                buffer.add_bytecode_mapping_offset(offset);
+            }
+        }
     }
 
     pub fn init_exprents(self) {

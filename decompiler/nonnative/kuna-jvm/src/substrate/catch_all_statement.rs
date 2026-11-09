@@ -4,13 +4,14 @@ use crate::catch_statement::new_object_var;
 use crate::counter_container::CounterContainer;
 use crate::dec_helper::DecHelper;
 use crate::decompiler_context::DecompilerContext;
-use crate::rt::JList;
+use crate::expr_processor::ExprProcessor;
+use crate::java_subclass;
+use crate::rt::{JList, JavaStr};
 use crate::stat_edge::StatEdge;
 use crate::statement::{LastBasicType, Statement, StatementKind, StatementType};
 use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
 use crate::var_type::VarType;
-use crate::{java_subclass, unported};
 
 pub struct CatchAllStatementData {
     pub handler: Option<Statement>,
@@ -95,8 +96,80 @@ impl CatchAllStatement {
         None
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("CatchAllStatement.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let new_line_separator = DecompilerContext::get_new_line_separator();
+
+        let mut buf = TextBuffer::new();
+
+        buf.append_buffer(&ExprProcessor::list_to_java(
+            Some(&self.get_var_definitions()),
+            indent,
+        ));
+
+        let labeled = self.is_labeled();
+        if labeled {
+            buf.append_indent(indent)
+                .append("label")
+                .append_int(self.id())
+                .append(":")
+                .append_line_separator();
+        }
+
+        let (is_finally, monitor, handler) = self.d(|d| (d.is_finally, d.monitor, d.handler));
+        let first = self.get_first().expect("first");
+        let lst_succs = first.get_successor_edges(Statement::STATEDGE_DIRECT_ALL);
+        if first.is_catch()
+            && first.get_var_definitions().is_empty()
+            && is_finally
+            && !labeled
+            && !first.is_labeled()
+            && (lst_succs.is_empty() || !lst_succs[0].explicit())
+        {
+            let mut content = ExprProcessor::jmp_wrapper(first, indent, true);
+            content.set_length(content.length() - new_line_separator.jlen() as i32);
+            buf.append_buffer(&content);
+        } else {
+            buf.append_indent(indent)
+                .append("try {")
+                .append_line_separator();
+            buf.append_buffer(&ExprProcessor::jmp_wrapper(first, indent + 1, true));
+            buf.append_indent(indent).append("}");
+        }
+
+        if is_finally {
+            buf.append(" finally");
+        } else {
+            buf.append(" catch (")
+                .append_buffer(&self.get_vars().get(0).to_java(indent))
+                .append(")");
+        }
+        buf.append(" {").append_line_separator();
+
+        if let Some(monitor) = monitor {
+            buf.append_indent(indent + 1)
+                .append("if (")
+                .append_buffer(&monitor.to_java(indent))
+                .append(") {")
+                .append_line_separator();
+        }
+
+        buf.append_buffer(&ExprProcessor::jmp_wrapper(
+            handler.expect("NullPointerException"),
+            indent + 1 + if monitor.is_some() { 1 } else { 0 },
+            true,
+        ));
+
+        if monitor.is_some() {
+            buf.append_indent(indent + 1)
+                .append("}")
+                .append_line_separator();
+        }
+
+        buf.append_indent(indent)
+            .append("}")
+            .append_line_separator();
+
+        buf
     }
 
     pub fn replace_statement(self, oldstat: Statement, newstat: Statement) {

@@ -4,8 +4,10 @@ use crate::basic_block::BasicBlock;
 use crate::code_constants::{GROUP_JUMP, GROUP_SWITCH, OPC_GOTO, OPC_MONITOREXIT};
 use crate::counter_container::CounterContainer;
 use crate::decompiler_context::DecompilerContext;
+use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::instruction_sequence::InstructionSequence;
+use crate::java_subclass;
 use crate::rt::JList;
 use crate::start_end_pair::StartEndPair;
 use crate::statement::{
@@ -13,7 +15,6 @@ use crate::statement::{
 };
 use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
-use crate::{java_subclass, unported};
 
 pub struct BasicBlockStatementData {
     pub block: BasicBlock,
@@ -70,8 +71,23 @@ impl BasicBlockStatement {
         self
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("BasicBlockStatement.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut tb = ExprProcessor::list_to_java(Some(&self.get_var_definitions()), indent);
+        let islabeled = self.is_labeled();
+        if islabeled {
+            tb.append_indent(indent)
+                .append("label")
+                .append_int(self.id())
+                .append_char(':')
+                .append("// $VF: Invalid label!")
+                .append_line_separator();
+        }
+
+        tb.append_buffer(&ExprProcessor::list_to_java(
+            self.get_exprents().as_ref(),
+            indent,
+        ));
+        tb
     }
 
     pub fn get_simple_copy(self) -> Statement {

@@ -1,9 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/stats/GeneralStatement.java`.
 
+use crate::java_subclass;
 use crate::rt::JLinkedHashSet;
 use crate::statement::{Statement, StatementKind, StatementType};
 use crate::text_buffer::TextBuffer;
-use crate::{java_subclass, unported};
 
 pub struct GeneralStatementData {
     pub placeholder: bool,
@@ -41,8 +41,28 @@ impl GeneralStatement {
         this
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("GeneralStatement.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut buf = TextBuffer::new();
+
+        if self.is_labeled() {
+            buf.append_indent(indent)
+                .append("label")
+                .append_int(self.id())
+                .append(":")
+                .append_line_separator();
+        }
+
+        buf.append_indent(indent)
+            .append("abstract statement {")
+            .append_line_separator();
+        let stats = self.get_stats().borrow().to_vec();
+        for stat in stats {
+            buf.append_buffer(&stat.to_java(indent + 1));
+        }
+        buf.append_indent(indent).append("}");
+        buf.append_line_separator();
+
+        buf
     }
 
     pub fn set_placeholder(self, placeholder: bool) {

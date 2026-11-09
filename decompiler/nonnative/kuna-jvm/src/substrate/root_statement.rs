@@ -2,12 +2,13 @@
 
 use crate::control_flow_graph::ControlFlowGraph;
 use crate::dummy_exit_statement::DummyExitStatement;
+use crate::expr_processor::ExprProcessor;
+use crate::java_subclass;
 use crate::rt::JLinkedHashSet;
 use crate::start_end_pair::StartEndPair;
 use crate::statement::{Statement, StatementKind, StatementType};
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
-use crate::{java_subclass, unported};
 
 /// `RootStatement.ContentFlags`.
 #[derive(Clone, Copy, Default, Debug)]
@@ -47,8 +48,10 @@ impl RootStatement {
         this
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("RootStatement.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut buf = ExprProcessor::list_to_java(Some(&self.get_var_definitions()), indent);
+        buf.append_buffer(&self.get_first().expect("first").to_java(indent));
+        buf
     }
 
     pub fn get_dummy_exit(self) -> DummyExitStatement {

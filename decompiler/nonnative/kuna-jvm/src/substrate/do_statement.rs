@@ -3,8 +3,10 @@
 //! The three one-slot head lists are shared with flow nodes; a Java `null`
 //! slot is the empty list.
 
+use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::if_statement::set_head_slot;
+use crate::java_subclass;
 use crate::rt::{JHashSet, JList, Shared};
 use crate::stat_edge::StatEdge;
 use crate::statement::{
@@ -12,7 +14,6 @@ use crate::statement::{
 };
 use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
-use crate::{java_subclass, unported};
 
 /// `DoStatement.Type`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
@@ -29,6 +30,12 @@ pub struct DoStatementData {
     pub init_exprent: JList<Exprent>,
     pub condition_exprent: JList<Exprent>,
     pub inc_exprent: JList<Exprent>,
+}
+
+/// A head slot the Java code dereferences unconditionally.
+#[track_caller]
+fn null_slot(slot: Option<Exprent>) -> Exprent {
+    slot.expect("NullPointerException: empty loop head slot")
 }
 
 java_subclass!(pub DoStatement: Statement, StatementKind::Do(DoStatementData), is_do, as_do, try_as_do);
@@ -90,8 +97,97 @@ impl DoStatement {
         continue_set
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("DoStatement.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut buf = TextBuffer::new();
+
+        buf.append_buffer(&ExprProcessor::list_to_java(
+            Some(&self.get_var_definitions()),
+            indent,
+        ));
+
+        if self.is_labeled() {
+            buf.append_indent(indent)
+                .append("label")
+                .append_int(self.id())
+                .append(":")
+                .append_line_separator();
+        }
+
+        let first = self.get_first().expect("first");
+        match self.get_looptype() {
+            Type::Infinite => {
+                buf.append_indent(indent)
+                    .append("while (true) {")
+                    .append_line_separator();
+                buf.append_buffer(&ExprProcessor::jmp_wrapper(first, indent + 1, false));
+                buf.append_indent(indent)
+                    .append("}")
+                    .append_line_separator();
+            }
+            Type::DoWhile => {
+                buf.append_indent(indent)
+                    .append("do {")
+                    .append_line_separator();
+                buf.append_buffer(&ExprProcessor::jmp_wrapper(first, indent + 1, false));
+                buf.append_indent(indent).append("} while (");
+                buf.push_newline_group(indent, 1);
+                buf.append_possible_newline();
+                buf.append_buffer(&null_slot(self.get_condition_exprent()).to_java(indent));
+                buf.append_possible_newline_dedent("", true);
+                buf.pop_newline_group();
+                buf.append(");").append_line_separator();
+            }
+            Type::While => {
+                buf.append_indent(indent).append("while (");
+                buf.push_newline_group(indent, 1);
+                buf.append_possible_newline();
+                buf.append_buffer(&null_slot(self.get_condition_exprent()).to_java(indent));
+                buf.append_possible_newline_dedent("", true);
+                buf.pop_newline_group();
+                buf.append(") {").append_line_separator();
+                buf.append_buffer(&ExprProcessor::jmp_wrapper(first, indent + 1, false));
+                buf.append_indent(indent)
+                    .append("}")
+                    .append_line_separator();
+            }
+            Type::For => {
+                buf.append_indent(indent);
+                buf.push_newline_group(indent, 1);
+                buf.append("for (");
+                if let Some(init) = self.get_init_exprent() {
+                    buf.append_buffer(&init.to_java(indent));
+                }
+                buf.append(";")
+                    .append_possible_newline_alt(" ")
+                    .append_buffer(&null_slot(self.get_condition_exprent()).to_java(indent))
+                    .append(";")
+                    .append_possible_newline_alt(" ")
+                    .append_buffer(&null_slot(self.get_inc_exprent()).to_java(indent))
+                    .append_possible_newline_dedent("", true);
+                buf.pop_newline_group();
+                buf.append(") {").append_line_separator();
+                buf.append_buffer(&ExprProcessor::jmp_wrapper(first, indent + 1, false));
+                buf.append_indent(indent)
+                    .append("}")
+                    .append_line_separator();
+            }
+            Type::ForEach => {
+                buf.append_indent(indent)
+                    .append("for (")
+                    .append_buffer(&null_slot(self.get_init_exprent()).to_java(indent));
+                null_slot(self.get_inc_exprent()).get_inferred_expr_type(None);
+                buf.append(" : ")
+                    .append_buffer(&null_slot(self.get_inc_exprent()).to_java(indent))
+                    .append(") {")
+                    .append_line_separator();
+                buf.append_buffer(&ExprProcessor::jmp_wrapper(first, indent + 1, true));
+                buf.append_indent(indent)
+                    .append("}")
+                    .append_line_separator();
+            }
+        }
+
+        buf
     }
 
     pub fn get_stat_exprents(self) -> Vec<Exprent> {
