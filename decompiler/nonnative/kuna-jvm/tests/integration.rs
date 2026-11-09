@@ -50,3 +50,5 @@ mod jdk_runtime;
 mod jimage_synthetic;
 #[path = "k2_statement_graph.rs"]
 mod k2_statement_graph;
+#[path = "class_model.rs"]
+mod class_model;
