@@ -2329,3 +2329,23 @@ and tests the value it reloads from the slot: with `swiftmetadata on` the call
 is a throwing call and the `-1` error path survives. `spill_moved` (`0x2874`)
 moves rsp between the store and the reload, so the reload reads another slot
 and its test is not the error test.
+
+### `swift_call_hook_elf` — a C function pointer called from Swift (`swiftcall`)
+
+`swift_call_hook_elf` (x86-64 ELF, 11 KB, stripped, SHA-256
+`c058c4f13f17825674ee2476c104ba01274479951c571b44657dceaadfd4ffcf`) is the fixture for the convention an
+indirect call gets in a Swift image (`kuna-console/tests/verify_swiftcall.rs`).
+Its source `swift_call_hook_elf.swift` stores a `@convention(c)` closure in a
+class field and calls it, and dispatches a class method through the object:
+
+```bash
+swiftc -O -wmo -module-name hookfix -no-toolchain-stdlib-rpath \
+  swift_call_hook_elf.swift -o hookfix
+llvm-objcopy --strip-all hookfix swift_call_hook_elf
+```
+
+**Pinned VMAs** (the unstripped symbol table): `callHook(_:_:)`@`0x22f0`, whose
+`callq *0x10(%r14)` calls the C function pointer, and `measure(_:)`@`0x2320`,
+whose `movq (%rdi),%rax; movq %rdi,%r13; callq *0x40(%rax)` dispatches `area()`.
+With `swiftmetadata on` the first call keeps the C model and the second takes
+`__swiftcall`.

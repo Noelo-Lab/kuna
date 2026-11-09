@@ -4072,9 +4072,14 @@ callee that may not take `self`. A call that then passes nothing but that
 `calleearity`), still a call that recovered nothing, so the arguments they
 would have found for it are found after the `self`. An
 indirect call takes `__swiftcall` too when its block loads the target from
-memory — a vtable slot, a witness-table entry, a closure's function
-(`indirect_call`); a trap's target or a coroutine continuation returned by the
-previous call is not a load and keeps the C model. Whether such a call passes
+memory and the call shows it is Swift's (`indirect_call`): the slot is
+reached through another loaded pointer (an isa's vtable, a witness table
+read out of a container), or the caller writes `swiftself` after the
+previous call (a method's `self`, a witness's, a closure's context). A C
+function pointer loaded from a global or from a field of a pointer the caller
+holds, with `swiftself` left alone (`h.hook(x)` for a `@convention(c)`
+field), keeps the C model; so does a trap's target or a coroutine
+continuation returned by the previous call, which is not a load. Whether such a call passes
 `swiftself` is decided by its target alone (`indirect_self`): the register is
 an argument exactly when the target is loaded through the isa of the value
 the register holds (`obj->isa[k](obj, …)`, a method dispatched on that

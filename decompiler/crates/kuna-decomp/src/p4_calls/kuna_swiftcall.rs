@@ -402,11 +402,15 @@ fn dispatches_on(data: &Funcdata, op: OpId, obj: crate::context::VarnodeId) -> b
 }
 
 /// `__swiftcall` for an indirect call whose target its block loads from
-/// memory, in an image the convention is bound in: a vtable slot, a witness
-/// entry or a closure's function, which take it. The model only makes room
-/// for `swiftself`; [`indirect_self`] decides whether the call passes it. A
-/// trap's target or a coroutine continuation the previous call returned is
-/// not a load and keeps the C model.
+/// memory, in an image the convention is bound in, when the call shows it is
+/// Swift's: the slot is reached through another loaded pointer (an isa's
+/// vtable, a witness table read out of a container), or the caller sets
+/// `swiftself` for it (a method's `self`, a witness's, a closure's context).
+/// The model only makes room for `swiftself`; [`indirect_self`] decides
+/// whether the call passes it. A C function pointer loaded from a global or
+/// a field of a pointer the caller holds, with `swiftself` left alone, keeps
+/// the C model, as does a trap's target or a coroutine continuation the
+/// previous call returned, which is not a load.
 pub fn indirect_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
     let abi = data.get_arch().swift_abi.as_ref()?;
     let op = data.obank().get(call)?;
@@ -414,29 +418,62 @@ pub fn indirect_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
         return None;
     }
     let target = data.vbank().get(op.get_in(0)?)?;
-    let (mut addr, mut size) = (target.get_addr().clone(), target.get_size());
-    let mut cur = data.op_previous_op(call);
+    let load = defining_op(data, call, target.get_addr().clone(), target.get_size(), &[OpCode::CPUI_COPY])?;
+    let slot = data.obank().get(load).filter(|o| o.code() == OpCode::CPUI_LOAD)?;
+    let ptr = data.vbank().get(slot.get_in(1)?)?;
+    let through_memory = !ptr.is_constant()
+        && defining_op(
+            data,
+            load,
+            ptr.get_addr().clone(),
+            ptr.get_size(),
+            &[OpCode::CPUI_COPY, OpCode::CPUI_INT_ADD, OpCode::CPUI_PTRADD, OpCode::CPUI_PTRSUB],
+        )
+        .and_then(|d| data.obank().get(d))
+        .is_some_and(|d| d.code() == OpCode::CPUI_LOAD);
+    (through_memory || sets_self(data, call, abi)).then(|| Rc::clone(&abi.call))
+}
+
+/// The op before `from` in its block that last wrote `(addr, size)`, after
+/// following back through any of `through` (each to its first non-constant
+/// input), or `None` when another op writes it first or nothing does.
+fn defining_op(data: &Funcdata, from: OpId, mut addr: Address, mut size: int4, through: &[OpCode]) -> Option<OpId> {
+    let mut cur = data.op_previous_op(from);
     for _ in 0..MAX_SCAN {
         let id = cur?;
         let prev = data.obank().get(id)?;
         if let Some(out) = prev.get_out().and_then(|o| data.vbank().get(o)) {
             if overlaps(out.get_addr(), out.get_size(), &addr, size) {
-                match prev.code() {
-                    OpCode::CPUI_LOAD => return Some(Rc::clone(&abi.call)),
-                    OpCode::CPUI_COPY => {
-                        let src = data.vbank().get(prev.get_in(0)?)?;
-                        if src.is_constant() {
-                            return None;
-                        }
-                        (addr, size) = (src.get_addr().clone(), src.get_size());
-                    }
-                    _ => return None,
+                if !through.contains(&prev.code()) {
+                    return Some(id);
                 }
+                let src = (0..prev.num_input())
+                    .filter_map(|i| prev.get_in(i).and_then(|v| data.vbank().get(v)))
+                    .find(|v| !v.is_constant())?;
+                (addr, size) = (src.get_addr().clone(), src.get_size());
             }
         }
         cur = data.op_previous_op(id);
     }
     None
+}
+
+/// Does the code before `call`, back to the previous call, write `swiftself`?
+fn sets_self(data: &Funcdata, call: OpId, abi: &SwiftAbi) -> bool {
+    let (reg, size) = &abi.self_reg;
+    let mut cur = data.op_previous_op(call);
+    for _ in 0..MAX_SCAN {
+        let Some(id) = cur else { return false };
+        let Some(op) = data.obank().get(id) else { return false };
+        if matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER) {
+            return false;
+        }
+        if op.get_out().and_then(|o| data.vbank().get(o)).is_some_and(|o| overlaps(o.get_addr(), o.get_size(), reg, *size)) {
+            return true;
+        }
+        cur = data.op_previous_op(id);
+    }
+    false
 }
 
 /// How many dominating blocks [`call_since`] walks.
