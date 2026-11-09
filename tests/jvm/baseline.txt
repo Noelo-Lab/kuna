@@ -589,10 +589,13 @@ kuna-fixes-compat/pkg/TestDefaultArgCompoundBranch
 kuna-fixes-compat/pkg/TestDefaultArgsSuperCall
 kuna-fixes-compat/pkg/TestDiamondExternalClass
 kuna-fixes-compat/pkg/TestEnumNoConstants
+kuna-fixes-compat/pkg/TestFailedMethodHidden
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestInnerOfGenericOuter
 kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver
+kuna-fixes-compat/pkg/TestObjectSuperCall
 kuna-fixes-compat/pkg/TestRecordPatternInTry
+kuna-fixes-compat/pkg/TestReturnOutsideLambdaKt
 kuna-fixes-compat/pkg/TestSamWrapperObjectKt
 kuna-fixes-compat/pkg/TestSelfReferencingLambda
 kuna-fixes-compat/pkg/TestSuspendFinallyKt
@@ -611,10 +614,13 @@ kuna-fixes/pkg/TestDefaultArgCompoundBranch
 kuna-fixes/pkg/TestDefaultArgsSuperCall
 kuna-fixes/pkg/TestDiamondExternalClass
 kuna-fixes/pkg/TestEnumNoConstants
+kuna-fixes/pkg/TestFailedMethodHidden
 kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestInnerOfGenericOuter
 kuna-fixes/pkg/TestMethodRefWildcardReceiver
+kuna-fixes/pkg/TestObjectSuperCall
 kuna-fixes/pkg/TestRecordPatternInTry
+kuna-fixes/pkg/TestReturnOutsideLambdaKt
 kuna-fixes/pkg/TestSamWrapperObjectKt
 kuna-fixes/pkg/TestSelfReferencingLambda
 kuna-fixes/pkg/TestSuspendFinallyKt

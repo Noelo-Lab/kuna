@@ -1562,3 +1562,61 @@ selector against those types again (`sel instanceof Integer || sel instanceof St
 `&&` the source's guard if any); `strip_multi_pattern_guards` removes exactly that test, and the
 switch statement and expression writers print such a case as one label of unnamed patterns
 (`case Integer _, String _:`). Each fix's case recompiles to the original bytecode.
+
+**`kt_return_outside_lambda`.** The Kotlin plugin writes a lambda's body with the lambda's
+method installed as the current method wrapper (`KNewExprent` and `KFieldExprent`), and
+`decompiler/nonnative/kuna-jvm/src/kotlin/k_exit_exprent.rs (KExitExprent::to_java)` writes a
+`return` as its bare value whenever a current method wrapper is installed, the last
+expression being a lambda's value. But `writeMethod`, which writes every method without
+Kotlin metadata (the overloads `@JvmOverloads` adds, `$$forInline` copies, `DefaultImpls`
+bodies, value-class `-impl` methods, members of classes kotlinc gives synthetic-class
+metadata), installs the method it writes too, and the wrapper stays installed while an object
+created inside a lambda or inside such a method writes its functions. So every `return` of
+those methods and functions is printed as an expression statement, wrong output with no
+failure comment: `fun scale(x: Int): Int { scale$default(x, 0, 2, null) }`, an early
+`if (v > k) { return v }` as `if (v > k) { v } else { k }` (where the branch value of a
+statement is discarded), a `when` branch `-1 -> return X` as `-1 -> X`, which falls through to
+the code after the `when`; a value-less `return` throws `NullPointerException` (unchanged on
+`develop/1.13.0`). With the fix,
+`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_return_outside_lambda.rs` records, at
+each declaration boundary (`KotlinWriter::write_class` for any class, `write_method` for the
+method it writes), which wrapper was current there; a wrapper installed since then is a
+lambda's, and only its exits drop the `return`. Elsewhere `KExitExprent` writes the `return`
+as `ExitExprent` does, as in every function with metadata (with the casts the plugin prints
+there, `return (T)x`). The default output differs from Vineflower's on code Vineflower prints
+wrongly: about 600 statements of okio, okhttp, kotlin-stdlib, kotlinx-coroutines,
+kotlin-reflect and spring-framework's Kotlin classes gain their `return`.
+
+**`kt_failed_method_hidden`.** `writeMethodBody`
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_writer.rs (KotlinWriter::write_method_body)`)
+starts with the method hidden and shows it only when its body was written, so a method
+without metadata whose body fails (or failed before writing) is left out of its class: the
+class prints without the member and without the `// $VF: Couldn't be decompiled` comment by
+which readers, the CLI and the benchmark count failures. Java's `ClassWriter` prints such a
+method with the comment (unchanged on `develop/1.13.0`). With the fix a method whose body
+failed is printed with its failure comment; an empty constructor or initializer is still
+hidden. On kotlinx-coroutines and kotlin-reflect 11 such members reappear (`$$forInline`
+copies and `DefaultImpls` bodies of suspend functions whose continuation class has no Class
+metadata, `bindCancellationFun`, a constructor of `ReflectKCallableImpl`).
+
+**`kt_object_super_call`.** The Kotlin writer prints an anonymous class with Class metadata as
+an `object` expression whose header lists the supertypes from the metadata
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_writer.rs (KotlinWriter::write_class_definition)`),
+which name types only: `object : Base(k + 1, s)` prints as `object : Base`, and
+`object : Thread()` as `object : Thread`, which Kotlin rejects (unchanged on
+`develop/1.13.0`). kotlinc evaluates the arguments where the object is created and passes them
+to the object's constructor, which passes them, with any constants, to the superclass
+constructor; `NestedClassProcessor` takes that call out of the constructor and keeps it as the
+node's `superInvocation`. With the fix,
+`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_object_super_call.rs` takes that call,
+replaces each read of a constructor parameter by what the `new` passes for it and writes the
+argument list where the `new` stands, before the class is written; the header appends it to the
+supertype that is the class's superclass. When the call is gone because
+`InitializerProcessor.hideEmptySuper` removed it (it passes nothing), the list is `()`. A call
+through the superclass's default-arguments constructor is written as the call it stands for
+when `kt_default_args_super_call` can resugar it; a call whose arguments read anything other
+than the constructor's parameters and constants, or that cannot be resugared, is left out as in
+Vineflower. The default output differs from Vineflower's on code Vineflower prints wrongly: 65
+object headers of okio, okhttp, kotlin-stdlib, kotlinx-coroutines and kotlin-reflect, which match
+the published sources (`object : Task(name, cancelable)`, `object : ForwardingSource(source)`,
+`object : AbstractList<Int>(), RandomAccess`).

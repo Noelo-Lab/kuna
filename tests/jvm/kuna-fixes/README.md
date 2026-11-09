@@ -29,10 +29,13 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestDefaultArgsSuperCall` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call |
 | `pkg/TestDiamondExternalClass` | `external_class_diamond` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are |
 | `pkg/TestEnumNoConstants` | `enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
+| `pkg/TestFailedMethodHidden` | `kt_failed_method_hidden` | kotlinc 2.0.0 | a DefaultImpls method whose body fails is printed with its failure comment (Vineflower leaves it out of the class without a trace) |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
+| `pkg/TestObjectSuperCall` | `kt_object_super_call` | kotlinc 2.0.0 | an object expression's superclass is written with its constructor arguments, object : Base(k + 1, s) (Vineflower prints object : Base) |
 | `pkg/TestRecordPatternInTry` | `nested_handler_copies` | javac 21.0.12.1 (`--release 21 -g`) | `describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's |
+| `pkg/TestReturnOutsideLambdaKt` | `kt_return_outside_lambda` | kotlinc 2.0.0 | a @JvmOverloads overload and the function of an object written inside a lambda return their values (Vineflower prints the values as bare expression statements) |
 | `pkg/TestSamWrapperObjectKt` | `kt_synthetic_anonymous_object` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone |
 | `pkg/TestSelfReferencingLambda` | `self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
 | `pkg/TestSuspendFinallyKt` | `handler_copy_offsets` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable |
@@ -636,6 +639,121 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
 ```
 
+### `pkg/TestFailedMethodHidden`
+
+```diff
+--- expected-compat/pkg/TestFailedMethodHidden.kt
++++ expected/pkg/TestFailedMethodHidden.kt
+@@ -18,6 +18,107 @@
+    // $VF: Class flags could not be determined
+    internal class DefaultImpls {
+       @JvmStatic
++      fun twice(`$this`: TestFailedMethodHidden, `$completion`: Continuation<in Integer>) {
++         // $VF: Couldn't be decompiled
++         // Bytecode:
++         // 00: aload 1
++         // 01: instanceof pkg/TestFailedMethodHidden$twice$1
++         // 04: ifeq 27
++         // 07: aload 1
++         // 08: checkcast pkg/TestFailedMethodHidden$twice$1
++         // 0b: astore 6
++         // 0d: aload 6
++         // 0f: getfield pkg/TestFailedMethodHidden$twice$1.label I
++         // 12: ldc -2147483648
++         // 14: iand
++         // 15: ifeq 27
++         // 18: aload 6
++         // 1a: dup
++         // 1b: getfield pkg/TestFailedMethodHidden$twice$1.label I
++         // 1e: ldc -2147483648
++         // 20: isub
++         // 21: putfield pkg/TestFailedMethodHidden$twice$1.label I
++         // 24: goto 31
++         // 27: new pkg/TestFailedMethodHidden$twice$1
++         // 2a: dup
++         // 2b: aload 1
++         // 2c: invokespecial pkg/TestFailedMethodHidden$twice$1.<init> (Lkotlin/coroutines/Continuation;)V
++         // 2f: astore 6
++         // 31: aload 6
++         // 33: getfield pkg/TestFailedMethodHidden$twice$1.result Ljava/lang/Object;
++         // 36: astore 5
++         // 38: invokestatic kotlin/coroutines/intrinsics/IntrinsicsKt.getCOROUTINE_SUSPENDED ()Ljava/lang/Object;
++         // 3b: astore 7
++         // 3d: aload 6
++         // 3f: getfield pkg/TestFailedMethodHidden$twice$1.label I
++         // 42: tableswitch 149 0 2 26 60 120
++         // 5c: aload 5
++         // 5e: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
++         // 61: aload 0
++         // 62: aload 6
++         // 64: aload 6
++         // 66: aload 0
++         // 67: putfield pkg/TestFailedMethodHidden$twice$1.L$0 Ljava/lang/Object;
++         // 6a: aload 6
++         // 6c: bipush 1
++         // 6d: putfield pkg/TestFailedMethodHidden$twice$1.label I
++         // 70: invokeinterface pkg/TestFailedMethodHidden.next (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
++         // 75: dup
++         // 76: aload 7
++         // 78: if_acmpne 8e
++         // 7b: aload 7
++         // 7d: areturn
++         // 7e: aload 6
++         // 80: getfield pkg/TestFailedMethodHidden$twice$1.L$0 Ljava/lang/Object;
++         // 83: checkcast pkg/TestFailedMethodHidden
++         // 86: astore 0
++         // 87: aload 5
++         // 89: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
++         // 8c: aload 5
++         // 8e: checkcast java/lang/Number
++         // 91: invokevirtual java/lang/Number.intValue ()I
++         // 94: istore 2
++         // 95: iload 2
++         // 96: istore 3
++         // 97: aload 0
++         // 98: aload 6
++         // 9a: aload 6
++         // 9c: aconst_null
++         // 9d: putfield pkg/TestFailedMethodHidden$twice$1.L$0 Ljava/lang/Object;
++         // a0: aload 6
++         // a2: iload 3
++         // a3: putfield pkg/TestFailedMethodHidden$twice$1.I$0 I
++         // a6: aload 6
++         // a8: bipush 2
++         // a9: putfield pkg/TestFailedMethodHidden$twice$1.label I
++         // ac: invokeinterface pkg/TestFailedMethodHidden.next (Lkotlin/coroutines/Continuation;)Ljava/lang/Object; 2
++         // b1: dup
++         // b2: aload 7
++         // b4: if_acmpne c7
++         // b7: aload 7
++         // b9: areturn
++         // ba: aload 6
++         // bc: getfield pkg/TestFailedMethodHidden$twice$1.I$0 I
++         // bf: istore 3
++         // c0: aload 5
++         // c2: invokestatic kotlin/ResultKt.throwOnFailure (Ljava/lang/Object;)V
++         // c5: aload 5
++         // c7: astore 4
++         // c9: iload 3
++         // ca: aload 4
++         // cc: checkcast java/lang/Number
++         // cf: invokevirtual java/lang/Number.intValue ()I
++         // d2: iadd
++         // d3: invokestatic kotlin/coroutines/jvm/internal/Boxing.boxInt (I)Ljava/lang/Integer;
++         // d6: areturn
++         // d7: new java/lang/IllegalStateException
++         // da: dup
++         // db: ldc "call to 'resume' before 'invoke' with coroutine"
++         // dd: invokespecial java/lang/IllegalStateException.<init> (Ljava/lang/String;)V
++         // e0: athrow
++      }
++
++      @JvmStatic
+       fun reset(`$this`: TestFailedMethodHidden, x: Int) {
+          if (x < 0) {
+             `$this`.note(0)
+```
+
 ### `pkg/TestIfDenestFallthrough`
 
 ```diff
@@ -894,6 +1012,40 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     TestMethodRefWildcardReceiver.Pipe<Object> objectsOf(TestMethodRefWildcardReceiver.Factory<String> factory) {
 ```
 
+### `pkg/TestObjectSuperCall`
+
+```diff
+--- expected-compat/pkg/TestObjectSuperCall.kt
++++ expected/pkg/TestObjectSuperCall.kt
+@@ -8,7 +8,7 @@
+    }
+ 
+    public fun make(k: Int, s: String): pkg.TestObjectSuperCall.Base {
+-      return object : pkg.TestObjectSuperCall.Base, pkg.TestObjectSuperCall.Marker {
++      return object : pkg.TestObjectSuperCall.Base(k + 1, s), pkg.TestObjectSuperCall.Marker {
+          public override fun get(): Int {
+             return this.getN() * 2
+          }
+@@ -16,7 +16,7 @@
+    }
+ 
+    public fun plain(): pkg.TestObjectSuperCall.Plain {
+-      return object : pkg.TestObjectSuperCall.Plain {
++      return object : pkg.TestObjectSuperCall.Plain() {
+          public override fun get(): Int {
+             return 5
+          }
+@@ -24,7 +24,7 @@
+    }
+ 
+    public fun captured(r: Int): pkg.TestObjectSuperCall.Base {
+-      return object : pkg.TestObjectSuperCall.Base {
++      return object : pkg.TestObjectSuperCall.Base(this.q, "c") {
+          public override fun get(): Int {
+             return r + TestObjectSuperCall.this.q
+          }
+```
+
 ### `pkg/TestRecordPatternInTry`
 
 ```diff
@@ -972,6 +1124,32 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public int measure(String key) {
+```
+
+### `pkg/TestReturnOutsideLambdaKt`
+
+```diff
+--- expected-compat/pkg/TestReturnOutsideLambdaKt.kt
++++ expected/pkg/TestReturnOutsideLambdaKt.kt
+@@ -14,9 +14,9 @@
+          public fun value(v: Int): Int {
+             if (v > $k) {
+                hits = hits + 1
+-               v
++               return v
+             } else {
+-               $k
++               return $k
+             }
+          }
+       }
+@@ -25,5 +25,5 @@
+ 
+ @JvmOverloads
+ fun scale(x: Int): Int {
+-   scale$default(x, 0, 2, null)
++   return scale$default(x, 0, 2, null)
+ }
 ```
 
 ### `pkg/TestSamWrapperObjectKt`

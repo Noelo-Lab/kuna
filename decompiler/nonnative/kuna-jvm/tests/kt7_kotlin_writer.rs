@@ -4,7 +4,8 @@
 //! `isNullable`, `searchForMethod`, `hideConstructor`, `appendTypeParameters`,
 //! `appendAnnotations` where every declaration annotation is filtered out,
 //! `writeField` (Java-shaped fields) and `writeMethod` on methods whose wrapper
-//! carries a decompile error (header, `writeMethodBody`, `dumpError`).
+//! carries a decompile error (header, `writeMethodBody`, `dumpError`), in compat mode
+//! (kuna fix `kt_failed_method_hidden` prints a method Vineflower hides).
 
 use std::path::PathBuf;
 
@@ -21,6 +22,7 @@ use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
 use kuna_jvm::import_collector::ImportCollector;
 use kuna_jvm::interpreter_util::InterpreterUtil;
 use kuna_jvm::kotlin_writer::KotlinWriter;
+use kuna_jvm::kuna_fixes::{self, KunaFixes};
 use kuna_jvm::method_descriptor::MethodDescriptor;
 use kuna_jvm::method_wrapper::MethodWrapper;
 use kuna_jvm::rt::{throw, try_catch, JavaStr};
@@ -539,6 +541,7 @@ fn java_shaped_fields_match_vineflower() {
 #[test]
 fn failed_methods_match_vineflower() {
     let _guard = context();
+    kuna_fixes::activate(KunaFixes::COMPAT);
     let writer = KotlinWriter::new();
     let mut out = Vec::new();
     for name in CLASSES {
@@ -574,6 +577,7 @@ fn exception_dumps_precede_the_bytecode_listing() {
     _guard
         .struct_context()
         .add_space_file(&data_dir().join("classes"), true);
+    kuna_fixes::activate(KunaFixes::COMPAT);
     let node = node("k7/One");
     let cl = enter(node);
     let index = cl
