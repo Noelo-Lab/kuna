@@ -3,8 +3,8 @@
 //! `ClassWriter` implements the deferred `api/plugin/StatementWriter`; its
 //! `writeClass`/`writeClassHeader` are plain methods here. The Fabric javadoc
 //! hook (`net/fabricmc/fernflower/api`) is reduced to [`IFabricJavadocProvider`]
-//! and [`FabricJavadocStyle`]; Vineflower reads the provider from an object
-//! property that kuna's string properties cannot carry, so it is always absent.
+//! and [`FabricJavadocStyle`]; the provider object Vineflower reads from the
+//! `fabric:javadoc` property is `DecompilerContext::get_javadoc_provider`.
 //! A [`Caught`] has no stack trace or cause: `collectErrorLines` reports its
 //! throw location as the only frame.
 
@@ -239,7 +239,7 @@ impl ClassWriter {
     pub fn new() -> ClassWriter {
         ClassWriter {
             interceptor: DecompilerContext::get_pool_interceptor(),
-            javadoc_provider: None,
+            javadoc_provider: DecompilerContext::get_javadoc_provider(),
         }
     }
 

@@ -15,11 +15,15 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Instant;
 
+use crate::class_writer::{FabricJavadocStyle, IFabricJavadocProvider};
 use crate::decompiler_context::DecompilerContext;
 use crate::fernflower::{DecompiledClass, Fernflower};
 use crate::i_fernflower_logger::{IFernflowerLogger, Severity};
 use crate::jdk_runtime::JdkRuntime;
 use crate::rt::{self, try_catch, Caught};
+use crate::struct_class::StructClass;
+use crate::struct_field::StructField;
+use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 
 pub const MANIFEST_HEADER: &str = "kuna-jvm-corpus";
@@ -28,6 +32,43 @@ pub const FAILED_METHOD_MARKER: &str = "$VF: Couldn't be decompiled";
 /// Stack for threads that run the engine: the port recurses as deeply as the Java does.
 pub const ENGINE_STACK_BYTES: usize = 512 << 20;
 pub const JAVADOC_OPTION: &str = "fabric:javadoc";
+
+/// The provider `SingleClassesTest`'s Javadoc (`plain`) and Markdown Javadoc (`markdown`) sets pass.
+pub struct FixtureJavadocProvider {
+    pub style: FabricJavadocStyle,
+}
+
+impl FixtureJavadocProvider {
+    pub fn for_style(style: &str) -> Option<FixtureJavadocProvider> {
+        let style = match style {
+            "plain" => FabricJavadocStyle::Html,
+            "markdown" => FabricJavadocStyle::Markdown,
+            _ => return None,
+        };
+        Some(FixtureJavadocProvider { style })
+    }
+}
+
+impl IFabricJavadocProvider for FixtureJavadocProvider {
+    fn get_class_doc(&self, struct_class: StructClass) -> Option<String> {
+        Some(format!(
+            "Class javadoc for '{}'",
+            struct_class.qualified_name()
+        ))
+    }
+
+    fn get_field_doc(&self, _: StructClass, struct_field: StructField) -> Option<String> {
+        Some(format!("Field javadoc for '{}'", struct_field.get_name()))
+    }
+
+    fn get_method_doc(&self, _: StructClass, struct_method: StructMethod) -> Option<String> {
+        Some(format!("Method javadoc for '{}'", struct_method.get_name()))
+    }
+
+    fn get_class_javadoc_style(&self, _: StructClass) -> FabricJavadocStyle {
+        self.style
+    }
+}
 
 /// A JDK a case needs: `${java.N.home}` in an option value, or `current_jdk N`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -337,9 +378,9 @@ fn substitute_java_homes(
 /// Why a case cannot run here, if it cannot; machine-specific detail is in parentheses.
 pub fn unsupported_reason(case: &Case) -> Option<String> {
     if let Some(style) = &case.javadoc {
-        return Some(format!(
-            "javadoc provider {style} (kuna-jvm cannot take a `{JAVADOC_OPTION}` object)"
-        ));
+        if FixtureJavadocProvider::for_style(style).is_none() {
+            return Some(format!("javadoc provider {style} (not a fixture provider)"));
+        }
     }
     for need in &case.jdks {
         let Some(home) = &need.home else {
@@ -507,6 +548,13 @@ pub fn execute(case: &Case) -> EngineRun {
     let start = Instant::now();
     let outcome = try_catch(|| {
         let mut fernflower = Fernflower::new(&case.options, logger.clone());
+        if let Some(provider) = case
+            .javadoc
+            .as_deref()
+            .and_then(FixtureJavadocProvider::for_style)
+        {
+            DecompilerContext::set_javadoc_provider(Some(Rc::new(provider)));
+        }
         let run = try_catch(|| {
             for lib in &case.libraries {
                 fernflower.add_library_file(lib);
@@ -780,8 +828,8 @@ pub fn expected_as_actual(case: &Case) -> Result<EngineRun, String> {
 }
 
 /// The option map the engine runs a case with: Vineflower's defaults overlaid by the case's pairs,
-/// read back from the context `Fernflower::new` installs, sorted by key. A javadoc provider the
-/// port cannot take is listed as `fabric:javadoc=$javadoc_provider:<style>`.
+/// read back from the context `Fernflower::new` installs, sorted by key. The javadoc provider
+/// object is listed as `fabric:javadoc=$javadoc_provider:<style>`.
 pub fn effective_options(case: &Case) -> Result<Vec<(String, String)>, Thrown> {
     reset_engine_thread();
     let result = try_catch(|| {

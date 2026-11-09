@@ -79,7 +79,7 @@ Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a
 - Of the oracle corpus's 598 runnable tests, **68 are not vendored** because their
   output depends on a JDK class library on this machine; run them from the external corpus (below).
   13 registered tests are not runnable at all (Kotlin/Groovy/Scala sources, never compiled).
-- Vendored but reported `Unsupported` until kuna-jvm can take a javadoc provider (`ClassWriter` has no way to receive the `fabric:javadoc` object): `javadoc/pkg/TestJavadoc`, `markdown-javadoc/pkg/TestMarkdownJavadoc`.
+- The runner installs the test's `fabric:javadoc` provider (`FixtureJavadocProvider`) for `javadoc/pkg/TestJavadoc`, `markdown-javadoc/pkg/TestMarkdownJavadoc`.
 
 ### Not vendored
 

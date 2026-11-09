@@ -262,9 +262,8 @@ def main():
                               for r, ids in by_reason.items())
     javadoc_cases = [t['id'] for t in included if set_records(sets[t['set']], base)[1]]
     unsupported_note = (
-        'Vendored but reported `Unsupported` until kuna-jvm can take a javadoc provider '
-        '(`ClassWriter` has no way to receive the `fabric:javadoc` object): '
-        + ', '.join(f'`{i}`' for i in javadoc_cases) + '.') if javadoc_cases else 'No vendored case is unsupported.'
+        'The runner installs the test\'s `fabric:javadoc` provider (`FixtureJavadocProvider`) for '
+        + ', '.join(f'`{i}`' for i in javadoc_cases) + '.') if javadoc_cases else 'No vendored case needs a javadoc provider.'
     srcsets = sorted({f.split('/')[0] for f in class_files})
     compilers = '\n'.join(f'  - `{s}`: {m["source_sets"][s]["compiler"]}' for s in srcsets
                            if s in m['source_sets'] and m['source_sets'][s].get('java_version'))
