@@ -2,7 +2,7 @@
 //! collapsing, statement replacement, orderings and the dominator helpers.
 //!
 //! Every statement takes its id from the decompiler context's counter
-//! container, so `setup` must leave a usable one on this thread.
+//! container, so each test installs a context and starts a method.
 
 use kuna_jvm::basic_block_statement::BasicBlockStatement;
 use kuna_jvm::do_statement::DoStatement;
@@ -15,10 +15,23 @@ use kuna_jvm::sequence_statement::SequenceStatement;
 use kuna_jvm::stat_edge::StatEdge;
 use kuna_jvm::statement::{EdgeDirection, Statement};
 use kuna_jvm::strong_connectivity_helper::StrongConnectivityHelper;
+use kuna_jvm::struct_method::StructMethod;
 use kuna_jvm::switch_statement::SwitchStatement;
 
-fn setup() {
+use crate::common::ContextGuard;
+use crate::k2_dom_helper::{fixture_method, oracle_context, start_method};
+
+fn setup() -> (ContextGuard, StructMethod) {
+    let context = oracle_context();
+    let mt = fixture_method();
+    start_method(mt);
+    (context, mt)
+}
+
+/// The Java oracle's `reset()`: fresh counters (and, here, fresh arenas).
+fn reset(mt: StructMethod) {
     reset_class_scope();
+    start_method(mt);
 }
 
 fn bb() -> Statement {
@@ -37,7 +50,7 @@ fn stats_of(stat: Statement) -> Vec<Statement> {
 
 #[test]
 fn edge_maps_track_types_and_directions() {
-    setup();
+    let _context = setup();
     let (a, b, c) = (bb(), bb(), bb());
     let reg = edge(StatEdge::TYPE_REGULAR, a, b);
     let exc = StatEdge::new_exceptions(a, c, Some(vec!["java/lang/Exception".into()]));
@@ -91,7 +104,7 @@ fn edge_maps_track_types_and_directions() {
 
 #[test]
 fn edge_type_and_endpoint_changes_update_both_ends() {
-    setup();
+    let _context = setup();
     let (a, b, c, d) = (bb(), bb(), bb(), bb());
     let e = edge(StatEdge::TYPE_REGULAR, a, b);
 
@@ -126,7 +139,7 @@ fn edge_type_and_endpoint_changes_update_both_ends() {
 
 #[test]
 fn label_edges_follow_closures() {
-    setup();
+    let _context = setup();
     let (a, b, x) = (bb(), bb(), bb());
     let seq = SequenceStatement::new(vec![a, b]);
     let other = SequenceStatement::new_empty();
@@ -164,7 +177,7 @@ fn label_edges_follow_closures() {
 
 #[test]
 fn orderings_and_sequence_collapse() {
-    setup();
+    let _context = setup();
     let (a, b, c) = (bb(), bb(), bb());
     let exit = bb();
     let general = GeneralStatement::new(a, vec![a, b, c], None);
@@ -210,7 +223,7 @@ fn orderings_and_sequence_collapse() {
 
 #[test]
 fn replace_statement_moves_edges_labels_and_position() {
-    setup();
+    let _context = setup();
     let (a, b, y, x) = (bb(), bb(), bb(), bb());
     let seq = SequenceStatement::new(vec![a, b]);
     seq.set_all_parent();
@@ -251,7 +264,7 @@ fn replace_statement_moves_edges_labels_and_position() {
 
 #[test]
 fn if_statement_without_else_drops_the_fallthrough_edge() {
-    setup();
+    let _context = setup();
     let (h, t, out) = (bb(), bb(), bb());
     let general = GeneralStatement::new(h, vec![h, t], None);
     let ht = edge(StatEdge::TYPE_REGULAR, h, t);
@@ -287,7 +300,7 @@ fn if_statement_without_else_drops_the_fallthrough_edge() {
 
 #[test]
 fn if_else_statement_and_empty_else_fix() {
-    setup();
+    let _context = setup();
     let (h, e, i, p) = (bb(), bb(), bb(), bb());
     let he = edge(StatEdge::TYPE_REGULAR, h, e);
     let hi = edge(StatEdge::TYPE_REGULAR, h, i);
@@ -317,7 +330,7 @@ fn if_else_statement_and_empty_else_fix() {
 
 #[test]
 fn do_statement_turns_self_loop_into_continue() {
-    setup();
+    let _context = setup();
     let a = bb();
     let general = GeneralStatement::new(a, vec![a], None);
     let back = edge(StatEdge::TYPE_REGULAR, a, a);
@@ -344,7 +357,7 @@ fn do_statement_turns_self_loop_into_continue() {
 
 #[test]
 fn clear_temp_information_drops_exception_edges() {
-    setup();
+    let _context = setup();
     let (a, b, h) = (bb(), bb(), bb());
     let reg = edge(StatEdge::TYPE_REGULAR, a, b);
     let exc = StatEdge::new_exceptions(a, h, None);
@@ -360,7 +373,7 @@ fn clear_temp_information_drops_exception_edges() {
 
 #[test]
 fn strong_connectivity_follows_the_java_visit_order() {
-    setup();
+    let _context = setup();
     let (a, b, c) = (bb(), bb(), bb());
     let general = GeneralStatement::new(a, vec![a, b, c], None);
     edge(StatEdge::TYPE_REGULAR, a, b);
@@ -379,7 +392,7 @@ fn strong_connectivity_follows_the_java_visit_order() {
 
 #[test]
 fn dominators_of_a_diamond() {
-    setup();
+    let _context = setup();
     let (a, b, c, d) = (bb(), bb(), bb(), bb());
     let general = GeneralStatement::new(a, vec![a, b, c, d], None);
     edge(StatEdge::TYPE_REGULAR, a, b);
@@ -400,7 +413,7 @@ fn dominators_of_a_diamond() {
     assert_eq!(engine.all_doms_for(b.id()).to_vec(), vec![b.id()]);
     assert_eq!(
         engine.get_ordered_idoms().get_lst_keys().to_vec(),
-        vec![a.id(), c.id(), b.id(), d.id()]
+        vec![Some(a.id()), Some(c.id()), Some(b.id()), Some(d.id())]
     );
 
     let mut filter = DominatorTreeExceptionFilter::new(general.0);
@@ -411,7 +424,7 @@ fn dominators_of_a_diamond() {
 
 #[test]
 fn switch_cases_are_added_and_removed() {
-    setup();
+    let _context = setup();
     let (h, s1, s2) = (bb(), bb(), bb());
     let sw = SwitchStatement::new_empty();
     sw.set_first(h);
@@ -471,7 +484,7 @@ fn matches_the_vineflower_oracle() {
     let mut out = String::new();
     let mut p = |key: &str, value: String| out.push_str(&format!("{key} = {value}\n"));
 
-    setup();
+    let (_context, mt) = setup();
     {
         let (a, b, c) = (bb(), bb(), bb());
         let reg = edge(REG, a, b);
@@ -489,7 +502,7 @@ fn matches_the_vineflower_oracle() {
         p("edges.first", a.get_first_successor().to_string());
     }
 
-    setup();
+    reset(mt);
     {
         let (a, b, c, exit) = (bb(), bb(), bb(), bb());
         let general = GeneralStatement::new(a, vec![a, b, c], None);
@@ -510,7 +523,7 @@ fn matches_the_vineflower_oracle() {
         p("seq.succs", list(seq.get_all_successor_edges()));
     }
 
-    setup();
+    reset(mt);
     {
         let (a, b, y, x) = (bb(), bb(), bb(), bb());
         let seq = SequenceStatement::new(vec![a, b]);
@@ -530,7 +543,7 @@ fn matches_the_vineflower_oracle() {
         p("replace.empty.stats", list(stats_of(seq.0)));
     }
 
-    setup();
+    reset(mt);
     {
         let (h, t, o) = (bb(), bb(), bb());
         let general = GeneralStatement::new(h, vec![h, t], None);
@@ -546,7 +559,7 @@ fn matches_the_vineflower_oracle() {
         p("if1.succs", list(ifs.get_all_successor_edges()));
     }
 
-    setup();
+    reset(mt);
     {
         let (h, e, i, q) = (bb(), bb(), bb(), bb());
         edge(REG, h, e);
@@ -568,7 +581,7 @@ fn matches_the_vineflower_oracle() {
         p("if2.fix.succs", list(ifs.get_all_successor_edges()));
     }
 
-    setup();
+    reset(mt);
     {
         let a = bb();
         let general = GeneralStatement::new(a, vec![a], None);
@@ -583,7 +596,7 @@ fn matches_the_vineflower_oracle() {
         p("do.general.first", opt(general.get_first()));
     }
 
-    setup();
+    reset(mt);
     {
         let (a, b, c) = (bb(), bb(), bb());
         let general = GeneralStatement::new(a, vec![a, b, c], None);
@@ -603,7 +616,7 @@ fn matches_the_vineflower_oracle() {
         );
     }
 
-    setup();
+    reset(mt);
     {
         let (a, b, c, d) = (bb(), bb(), bb(), bb());
         let general = GeneralStatement::new(a, vec![a, b, c, d], None);
@@ -618,7 +631,9 @@ fn matches_the_vineflower_oracle() {
         let keys = idoms.get_lst_keys().to_vec();
         p(
             "dom.idoms",
-            list((0..keys.len()).map(|i| format!("{}={}", keys[i], idoms.get(i).unwrap()))),
+            list(
+                (0..keys.len()).map(|i| format!("{}={}", keys[i].unwrap(), idoms.get(i).unwrap())),
+            ),
         );
         p("dom.all.a", list(engine.all_doms_for(a.id()).to_vec()));
         p("dom.all.b", list(engine.all_doms_for(b.id()).to_vec()));
@@ -634,7 +649,7 @@ fn matches_the_vineflower_oracle() {
         );
     }
 
-    setup();
+    reset(mt);
     {
         let (h, s1, s2) = (bb(), bb(), bb());
         let sw = SwitchStatement::new_empty();
@@ -653,7 +668,7 @@ fn matches_the_vineflower_oracle() {
         p("switch.h.succs3", list(h.get_all_successor_edges()));
     }
 
-    setup();
+    reset(mt);
     {
         let (head, handler, next) = (bb(), bb(), bb());
         let general = GeneralStatement::new(head, vec![head, handler, next], None);

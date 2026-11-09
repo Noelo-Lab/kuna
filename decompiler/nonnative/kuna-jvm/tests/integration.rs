@@ -62,3 +62,5 @@ mod struct_classfile;
 mod struct_bytecode;
 #[path = "common/mod.rs"]
 pub mod common;
+#[path = "k2_dom_helper.rs"]
+mod k2_dom_helper;
