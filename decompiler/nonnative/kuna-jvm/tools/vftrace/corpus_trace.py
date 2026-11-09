@@ -56,15 +56,17 @@ def run_case(t, a, java_homes):
         with open(produced, "rb") as f1, open(expected, "rb") as f2:
             match = f1.read() == f2.read()
     size = os.path.getsize(trace) if os.path.isfile(trace) else 0
-    methods = steps = 0
+    keys = set()
+    steps = 0
     if size:
         with open(trace, encoding="utf-8") as f:
             for line in f:
                 if line.startswith("=M "):
-                    methods += 1
+                    keys.add(line)
                 elif line.startswith("@ "):
                     steps += 1
-    return dict(id=t["id"], rc=rc, seconds=secs, trace_bytes=size, methods=methods, steps=steps, output_match=match)
+    return dict(id=t["id"], rc=rc, seconds=secs, trace_bytes=size, methods=len(keys), steps=steps,
+                output_match=match)
 
 
 def main():

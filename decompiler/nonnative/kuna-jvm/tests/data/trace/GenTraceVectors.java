@@ -458,13 +458,50 @@ public class GenTraceVectors {
     emit("exprents", root);
   }
 
+  // ---- 4. the trace file: DecompileRecord.add through kuna.vftrace.Trace ----
+
+  static RootStatement tiny(StructMethod mt) {
+    BasicBlockStatement b = block();
+    return new RootStatement(b, new DummyExitStatement(), mt);
+  }
+
+  static void record(String path) throws Exception {
+    kuna.vftrace.Trace.start(Paths.get(path), "engine=vineflower", null);
+    start();
+    RootStatement root = tiny(MT);
+    org.jetbrains.java.decompiler.main.rels.DecompileRecord rec = new org.jetbrains.java.decompiler.main.rels.DecompileRecord(MT);
+    rec.add("Initial", root);
+    rec.add("CondenseSequences", root);
+    root.getFirst().setExprents(list(ci(1)));
+    rec.incrementMainLoop();
+    rec.add("Start", root);
+    rec.add("Start", root);
+    rec.incrementMergeLoop();
+    rec.add("MergeLoopStart", root);
+    rec.resetMergeLoop();
+    rec.resetMainLoop();
+    rec.add("MainLoopEnd", root);
+    rec.add("NoTree", null);
+    start();
+    RootStatement root2 = tiny(MT2);
+    new org.jetbrains.java.decompiler.main.rels.DecompileRecord(MT2).add("Initial", root2);
+    new org.jetbrains.java.decompiler.main.rels.DecompileRecord(MT).add("FinalSimplifySwitches", root);
+    new org.jetbrains.java.decompiler.main.rels.DecompileRecord(MT2).add("FinalPrettifyIfs", root);
+    kuna.vftrace.Trace.finish();
+  }
+
+  static StructMethod MT2;
+
   public static void main(String[] args) throws Exception {
     install();
-    MT = load(args[0]).getMethod("straight", "(II)I");
+    StructClass shapes = load(args[0]);
+    MT = shapes.getMethod("straight", "(II)I");
+    MT2 = shapes.getMethod("ifElse", "(I)I");
     REC = load(args[1]);
     blocks();
     control();
     exprents();
     Files.writeString(Paths.get(args[2]), OUT.toString());
+    record(args[3]);
   }
 }

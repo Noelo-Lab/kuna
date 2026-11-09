@@ -76,3 +76,5 @@ mod f2_context;
 mod k1_exprents;
 #[path = "trace_vectors.rs"]
 mod trace_vectors;
+#[path = "trace_file.rs"]
+mod trace_file;

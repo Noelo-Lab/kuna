@@ -5,7 +5,9 @@ For every method prints OK, or the first divergent step "<n> <StepName>" followe
 that step's dump, then a histogram of first-divergence steps across all methods.
 
 usage: compare.py A.vft B.vft [--names A B] [--filter S] [--context N] [--max-lines N] [--quiet]
-                  [--ignore REGEX]... [--json OUT]
+                  [--prefix] [--ignore REGEX]... [--json OUT]
+  --prefix        a trace that stops early but agrees on every step it has is OK ("OK-PREFIX"):
+                  for comparing a partially ported pipeline, or kuna's --initial-only mode
   --ignore REGEX  delete every match of REGEX from each dump line before comparing (repeatable)
   --quiet         no per-method diffs, only the OK/DIFF lines and the summary
   --json OUT      machine-readable result: {method: {"status", "step", "name_a", "name_b", "diff"}}
@@ -68,9 +70,10 @@ def clean(lines, ignores):
     return out
 
 
-def compare_method(a_steps, b_steps, ignores):
+def compare_method(a_steps, b_steps, ignores, prefix=False):
     """None when equal, else (index, name_a, name_b, lines_a, lines_b)."""
-    for i in range(max(len(a_steps), len(b_steps))):
+    n = min(len(a_steps), len(b_steps)) if prefix else max(len(a_steps), len(b_steps))
+    for i in range(n):
         a = a_steps[i] if i < len(a_steps) else None
         b = b_steps[i] if i < len(b_steps) else None
         if a is None or b is None:
@@ -90,6 +93,7 @@ def main():
     ap.add_argument("--context", type=int, default=3)
     ap.add_argument("--max-lines", type=int, default=80)
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--prefix", action="store_true")
     ap.add_argument("--ignore", action="append", default=[])
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
@@ -114,11 +118,15 @@ def main():
             out.write(f"MISSING {key}: not traced by {side}\n")
             result[key] = {"status": "missing", "missing_in": side}
             continue
-        d = compare_method(ma[key], mb[key], ignores)
+        d = compare_method(ma[key], mb[key], ignores, args.prefix)
         if d is None:
             counts["ok"] += 1
-            out.write(f"OK {key}\n")
-            result[key] = {"status": "ok", "steps": len(ma[key])}
+            common = min(len(ma[key]), len(mb[key]))
+            if len(ma[key]) == len(mb[key]):
+                out.write(f"OK {key}\n")
+            else:
+                out.write(f"OK-PREFIX {key}: {common} common steps agree\n")
+            result[key] = {"status": "ok", "steps": common}
             continue
         i, sa, sb, la, lb = d
         counts["diff"] += 1

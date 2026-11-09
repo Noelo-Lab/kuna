@@ -245,12 +245,9 @@ fn trace_dump_blocks_and_edges() {
     b4.set_parent(Some(root.0));
     b3.set_copied(true);
     b4.set_phantom(true);
-    b4.set_exprents(JList::from(vec![AssignmentExprent::new(
-        var(&c, 1),
-        ci(2),
-        Some(&bs(&[3, 4, 5, 9])),
-    )
-    .0]));
+    b4.set_exprents(JList::from(vec![
+        AssignmentExprent::new(var(&c, 1), ci(2), Some(&bs(&[3, 4, 5, 9]))).0,
+    ]));
     root.get_var_definitions().add(var(&c, 7));
     exit.add_bytecode_offsets(Some(&bs(&[3, 4, 5, 9, 11, 12])));
     root.add_comment("first");
@@ -347,7 +344,8 @@ fn trace_dump_compound_statements() {
     let resource = AssignmentExprent::new(var(&c, 8), cs("r"), None).0;
     ts.d(|d| {
         d.exctstrings.add(vec!["java/lang/Exception".to_string()]);
-        d.exctstrings.add(vec!["a/B".to_string(), "c/D".to_string()]);
+        d.exctstrings
+            .add(vec!["a/B".to_string(), "c/D".to_string()]);
         d.vars.add(v5);
         d.vars.add(v6);
         d.resources.add(resource);
@@ -396,6 +394,7 @@ fn trace_dump_compound_statements() {
 }
 
 #[test]
+#[allow(clippy::vec_init_then_push)]
 fn trace_dump_every_exprent_kind() {
     let _context = common::install_default_context();
     let c = start();
@@ -429,7 +428,14 @@ fn trace_dump_every_exprent_kind() {
         )
         .0,
     );
-    l.push(ConstExprent::new(VarType::VARTYPE_DOUBLE(), Some(ConstValue::Double(-0.0)), None).0);
+    l.push(
+        ConstExprent::new(
+            VarType::VARTYPE_DOUBLE(),
+            Some(ConstValue::Double(-0.0)),
+            None,
+        )
+        .0,
+    );
     l.push(ConstExprent::new(VarType::VARTYPE_CHAR(), Some(ConstValue::Int(65)), None).0);
     l.push(
         ConstExprent::new_condy(
@@ -490,10 +496,7 @@ fn trace_dump_every_exprent_kind() {
     }
     let cast = FunctionExprent::new(
         FunctionType::Cast,
-        vec![
-            var(&c, 1),
-            ConstExprent::new(obj("a/B"), None, None).0,
-        ],
+        vec![var(&c, 1), ConstExprent::new(obj("a/B"), None, None).0],
         None,
     );
     cast.set_implicit_type(Some(VarType::VARTYPE_LONG()));
@@ -577,7 +580,8 @@ fn trace_dump_every_exprent_kind() {
     nobj.set_enum_const(true);
     nobj.d_mut(|d| {
         d.inferred_lambda_type = Some(obj("a/F"));
-        d.generic_args.push(GenericType::parse("Ljava/util/List<*>;"));
+        d.generic_args
+            .push(GenericType::parse("Ljava/util/List<*>;"));
     });
     l.push(nobj.0);
     l.push(
@@ -588,7 +592,11 @@ fn trace_dump_every_exprent_kind() {
         )
         .0,
     );
-    let ninit = NewExprent::new(VarType::new_dim(CodeType::Int, 1), Vec::<Exprent>::new(), None);
+    let ninit = NewExprent::new(
+        VarType::new_dim(CodeType::Int, 1),
+        Vec::<Exprent>::new(),
+        None,
+    );
     ninit.set_lst_array_elements(vec![ci(1), ci(2)]);
     ninit.set_direct_array_init(true);
     ninit.set_var_arg_param(true);

@@ -41,6 +41,9 @@ public final class Dumper {
   };
 
   private static final Map<String, Field> FIELDS = new HashMap<>();
+  /** -Dvftrace.rawpreds=1 keeps predecessor lists in list order (hash-sensitivity experiments). */
+  private static final boolean RAW_PREDS = Boolean.getBoolean("vftrace.rawpreds")
+    || "1".equals(System.getProperty("vftrace.rawpreds"));
 
   static {
     // Resolved up front on the driver's main thread. Class literals and forName(.., false, ..) load
@@ -519,7 +522,7 @@ public final class Dumper {
         refs.add(r);
       }
       // Predecessor order is the one hash-order-dependent element of Vineflower's state (README).
-      refs.sort(Dumper::compareRefs);
+      if (!RAW_PREDS) refs.sort(Dumper::compareRefs);
       out.append(in).append("< ").append(String.join(" ", refs)).append('\n');
     }
     subLists(st, in, true, succ);
