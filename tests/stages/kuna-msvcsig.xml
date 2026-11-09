@@ -32,10 +32,9 @@
     hidden return pointer, typed. The copy constructor's evidence (it is
     imported) is what proves MakeStack returns Arr through that pointer.
     MakeStack's by-value `Arr` has a size the name does not state, so the
-    parameters after it are left open. the by-value sizing (always on) sizes
-    that class from the caller's cleanup; it is pinned off here so this test
-    pins the declaration arm alone (tests/stages/kuna-msvcbyval.xml covers
-    it), and without it the pushes above the slot stay stores before the call.
+    parameters after it are left open until the by-value sizing
+    (kuna_msvcbyval.rs, always on; tests/stages/kuna-msvcbyval.xml) reads the
+    class's size from the caller's cleanup and MakeStack takes every argument.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
