@@ -1,5 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/main/rels/NestedClassProcessor.java`.
 //!
+//! kuna fix `local_class_anonymous_subclass` (`kuna_fixes`): in
+//! `search_for_class`, creating an anonymous class whose supertype is the
+//! local class counts as a use of it (`kuna_fix_local_class_anonymous_subclass`).
+//!
 //! Java lets a variable name be `null` (an unnamed enclosing variable); the
 //! name maps here carry `Option<String>`, and a `None` name is not written
 //! into a `VarProcessor` or name set, which cannot hold one.
@@ -9,6 +13,8 @@
 use std::collections::{BTreeSet, VecDeque};
 use std::fmt;
 
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p8_structure::kuna_fix_local_class_anonymous_subclass;
 use crate::class_wrapper::ClassWrapper;
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::{
@@ -1500,6 +1506,10 @@ impl NestedClassProcessor {
                         res = new_type.type_ == CodeType::Object
                             && new_type.value.as_deref() == Some(classname)
                             || Self::contains_type(new_expr.get_constructor(), class_type);
+                        if !res && kuna_fixes::enabled(KunaFix::LocalClassAnonymousSubclass) {
+                            res = new_expr.is_anonymous()
+                                && kuna_fix_local_class_anonymous_subclass::extends(&new_type, classname);
+                        }
                     }
                 }
                 ExprentType::Var => {

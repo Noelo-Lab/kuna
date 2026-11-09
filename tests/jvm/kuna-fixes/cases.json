@@ -8,65 +8,42 @@
   ],
   "cases": [
     {
-      "id": "pkg/TestMethodRefWildcardReceiver",
-      "fix": "lambda_wildcard_return",
+      "id": "pkg/TestAnonymousStaticCall",
+      "fix": "anonymous_static_qualifier",
       "class_files": [
-        "pkg/TestMethodRefWildcardReceiver.class",
-        "pkg/TestMethodRefWildcardReceiver$Factory.class",
-        "pkg/TestMethodRefWildcardReceiver$Fn.class",
-        "pkg/TestMethodRefWildcardReceiver$Pipe.class",
-        "pkg/TestMethodRefWildcardReceiver$Shape.class",
-        "pkg/TestMethodRefWildcardReceiver$ShapeFactory.class"
+        "pkg/TestAnonymousStaticCall.class",
+        "pkg/TestAnonymousStaticCall$1$1.class",
+        "pkg/TestAnonymousStaticCall$1.class",
+        "pkg/TestAnonymousStaticCall$Counter.class",
+        "pkg/TestAnonymousStaticCall$Counter2.class"
       ],
-      "source": "src/pkg/TestMethodRefWildcardReceiver.java",
+      "source": "src/pkg/TestAnonymousStaticCall.java",
       "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "`objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone"
+      "summary": "the inner anonymous class's call of its enclosing anonymous class's static `twice` is written `twice(value)`, not `<unrepresentable>.twice(value)`; the call of a named class's static method keeps its qualifier"
     },
     {
-      "id": "pkg/TestTryCatchNotFlag",
-      "fix": "twr_unary_condition",
+      "id": "pkg/TestAssertDeadThrow",
+      "fix": "assert_dead_throw",
       "class_files": [
-        "pkg/TestTryCatchNotFlag.class",
-        "pkg/TestTryCatchNotFlag$Res.class"
+        "pkg/TestAssertDeadThrow.class"
       ],
-      "source": "src/pkg/TestTryCatchNotFlag.java",
+      "source": "src/pkg/TestAssertDeadThrow.java",
       "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "`create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one"
+      "summary": "the dead `throw new AssertionError(...)` statements after `return` in `spans` and `widths` are gone, and `widths` declares its for-each variable in the header (`for (int[] row : rows)`, was `for (row : rows)`)"
     },
     {
-      "id": "pkg/TestIfDenestFallthrough",
-      "fix": "if_denest_fallthrough",
+      "id": "pkg/TestAssertExpressionPosition",
+      "fix": "statement_as_expression",
       "class_files": [
-        "pkg/TestIfDenestFallthrough.class"
+        "pkg/TestAssertExpressionPosition.class",
+        "pkg/TestAssertExpressionPosition$Pairs.class",
+        "pkg/TestAssertExpressionPosition$Runnable.class",
+        "pkg/TestAssertExpressionPosition$Sink.class",
+        "pkg/TestAssertExpressionPosition$Source.class"
       ],
-      "source": "src/pkg/TestIfDenestFallthrough.java",
-      "compiler": "javac 17.0.20.1 (`-g`)",
-      "summary": "`assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's"
-    },
-    {
-      "id": "pkg/TestSwitchExprConstLub",
-      "fix": "switch_yield_const_retype",
-      "class_files": [
-        "pkg/TestSwitchExprConstLub.class",
-        "pkg/TestSwitchExprConstLub$IntSink.class"
-      ],
-      "source": "src/pkg/TestSwitchExprConstLub.java",
+      "source": "src/pkg/TestAssertExpressionPosition.java",
       "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone"
-    },
-    {
-      "id": "pkg/TestCatchLoopBack",
-      "fix": "catch_loop_back_successor",
-      "class_files": [
-        "pkg/TestCatchLoopBack.class",
-        "pkg/TestCatchLoopBack$IoError.class",
-        "pkg/TestCatchLoopBack$OtherError.class",
-        "pkg/TestCatchLoopBack$Source.class",
-        "pkg/TestCatchLoopBack$StateError.class"
-      ],
-      "source": "src/pkg/TestCatchLoopBack.java",
-      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "`read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone"
+      "summary": "`consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects"
     },
     {
       "id": "pkg/TestCapturedReceiverKt",
@@ -81,18 +58,18 @@
       "language": "kotlin"
     },
     {
-      "id": "pkg/TestSamWrapperObjectKt",
-      "fix": "kt_synthetic_anonymous_object",
+      "id": "pkg/TestCatchLoopBack",
+      "fix": "catch_loop_back_successor",
       "class_files": [
-        "pkg/TestSamWrapperObjectKt.class",
-        "pkg/TestSamWrapperObjectKt$byLength$1.class",
-        "pkg/TestSamWrapperObjectKt$nullsFirstBy$1.class",
-        "pkg/TestSamWrapperObjectKt$twice$1.class"
+        "pkg/TestCatchLoopBack.class",
+        "pkg/TestCatchLoopBack$IoError.class",
+        "pkg/TestCatchLoopBack$OtherError.class",
+        "pkg/TestCatchLoopBack$Source.class",
+        "pkg/TestCatchLoopBack$StateError.class"
       ],
-      "source": "src/pkg/TestSamWrapperObject.kt",
-      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
-      "summary": "`byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone",
-      "language": "kotlin"
+      "source": "src/pkg/TestCatchLoopBack.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone"
     },
     {
       "id": "pkg/TestDefaultArgCompoundBranch",
@@ -128,31 +105,6 @@
       "language": "kotlin"
     },
     {
-      "id": "pkg/TestInnerOfGenericOuter",
-      "fix": "generic_parent_without_signature",
-      "class_files": [
-        "pkg/TestInnerOfGenericOuter.class",
-        "pkg/TestInnerOfGenericOuter$Itr.class",
-        "pkg/TestInnerOfGenericOuter$Itrs$Node.class",
-        "pkg/TestInnerOfGenericOuter$Itrs.class",
-        "pkg/TestInnerOfGenericOuter$Ref.class"
-      ],
-      "source": "src/pkg/TestInnerOfGenericOuter.java",
-      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "`sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone"
-    },
-    {
-      "id": "pkg/TestSelfReferencingLambda",
-      "fix": "self_referencing_lambda",
-      "class_files": [
-        "pkg/TestSelfReferencingLambda.class",
-        "pkg/TestSelfReferencingLambda$Task.class"
-      ],
-      "source": "src/pkg/TestSelfReferencingLambda.jasm",
-      "compiler": "asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1",
-      "summary": "the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place"
-    },
-    {
       "id": "pkg/TestDiamondExternalClass",
       "fix": "external_class_diamond",
       "class_files": [
@@ -164,44 +116,6 @@
       "source": "src/pkg/TestDiamondExternalClass.java",
       "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
       "summary": "every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are"
-    },
-    {
-      "id": "pkg/TestAssertExpressionPosition",
-      "fix": "statement_as_expression",
-      "class_files": [
-        "pkg/TestAssertExpressionPosition.class",
-        "pkg/TestAssertExpressionPosition$Pairs.class",
-        "pkg/TestAssertExpressionPosition$Runnable.class",
-        "pkg/TestAssertExpressionPosition$Sink.class",
-        "pkg/TestAssertExpressionPosition$Source.class"
-      ],
-      "source": "src/pkg/TestAssertExpressionPosition.java",
-      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "`consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects"
-    },
-    {
-      "id": "pkg/TestAnonymousStaticCall",
-      "fix": "anonymous_static_qualifier",
-      "class_files": [
-        "pkg/TestAnonymousStaticCall.class",
-        "pkg/TestAnonymousStaticCall$1$1.class",
-        "pkg/TestAnonymousStaticCall$1.class",
-        "pkg/TestAnonymousStaticCall$Counter.class",
-        "pkg/TestAnonymousStaticCall$Counter2.class"
-      ],
-      "source": "src/pkg/TestAnonymousStaticCall.java",
-      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "the inner anonymous class's call of its enclosing anonymous class's static `twice` is written `twice(value)`, not `<unrepresentable>.twice(value)`; the call of a named class's static method keeps its qualifier"
-    },
-    {
-      "id": "pkg/TestAssertDeadThrow",
-      "fix": "assert_dead_throw",
-      "class_files": [
-        "pkg/TestAssertDeadThrow.class"
-      ],
-      "source": "src/pkg/TestAssertDeadThrow.java",
-      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
-      "summary": "the dead `throw new AssertionError(...)` statements after `return` in `spans` and `widths` are gone, and `widths` declares its for-each variable in the header (`for (int[] row : rows)`, was `for (row : rows)`)"
     },
     {
       "id": "pkg/TestEnumNoConstants",
@@ -217,17 +131,92 @@
       "summary": "the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged"
     },
     {
-      "id": "pkg/TestSuspendFinallyKt",
-      "fix": "handler_copy_offsets",
+      "id": "pkg/TestIfDenestFallthrough",
+      "fix": "if_denest_fallthrough",
       "class_files": [
-        "pkg/TestSuspendFinallyKt.class",
-        "pkg/TestSuspendFinallyKt$early$1.class",
-        "pkg/TestSuspendFinallyKt$once$1.class",
-        "pkg/TestSuspendFinallyKt$twice$1.class"
+        "pkg/TestIfDenestFallthrough.class"
       ],
-      "source": "src/pkg/TestSuspendFinally.kt",
-      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
-      "summary": "`once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable"
+      "source": "src/pkg/TestIfDenestFallthrough.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "`assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's"
+    },
+    {
+      "id": "pkg/TestInnerOfGenericOuter",
+      "fix": "generic_parent_without_signature",
+      "class_files": [
+        "pkg/TestInnerOfGenericOuter.class",
+        "pkg/TestInnerOfGenericOuter$Itr.class",
+        "pkg/TestInnerOfGenericOuter$Itrs$Node.class",
+        "pkg/TestInnerOfGenericOuter$Itrs.class",
+        "pkg/TestInnerOfGenericOuter$Ref.class"
+      ],
+      "source": "src/pkg/TestInnerOfGenericOuter.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone"
+    },
+    {
+      "id": "pkg/TestLocalClassAnonymousSubclass",
+      "fix": "local_class_anonymous_subclass",
+      "class_files": [
+        "pkg/TestLocalClassAnonymousSubclass.class",
+        "pkg/TestLocalClassAnonymousSubclass$1.class",
+        "pkg/TestLocalClassAnonymousSubclass$1LocalClass.class"
+      ],
+      "source": "src/pkg/TestLocalClassAnonymousSubclass.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "the local class is declared before new LocalClass<String>() {} instead of inside the later loop that uses LocalClass.class"
+    },
+    {
+      "id": "pkg/TestMethodRefWildcardReceiver",
+      "fix": "lambda_wildcard_return",
+      "class_files": [
+        "pkg/TestMethodRefWildcardReceiver.class",
+        "pkg/TestMethodRefWildcardReceiver$Factory.class",
+        "pkg/TestMethodRefWildcardReceiver$Fn.class",
+        "pkg/TestMethodRefWildcardReceiver$Pipe.class",
+        "pkg/TestMethodRefWildcardReceiver$Shape.class",
+        "pkg/TestMethodRefWildcardReceiver$ShapeFactory.class"
+      ],
+      "source": "src/pkg/TestMethodRefWildcardReceiver.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone"
+    },
+    {
+      "id": "pkg/TestNonPublicNestedImport",
+      "fix": "nonpublic_nested_import",
+      "class_files": [
+        "pkg/TestNonPublicNestedImport.class",
+        "pkg/TestNonPublicNestedImport$1.class",
+        "pkg/TestNonPublicNestedImport$2.class"
+      ],
+      "source": "src/pkg/TestNonPublicNestedImport.java",
+      "compiler": "javac 17.0.20.1 (`-g`, against a `lib.Base` that is not in the input)",
+      "summary": "protected member classes of a library class used in a subclass (Base.Helper, Base.Holder.Deep, an enum switched on, one inside an anonymous subclass) are written Base.Helper, not imported"
+    },
+    {
+      "id": "pkg/TestOverrideInaccessible",
+      "fix": "override_inaccessible_method",
+      "class_files": [
+        "pkg/TestOverrideInaccessible.class",
+        "pkg/TestOverrideInaccessible$Inner.class",
+        "pkg/TestOverrideInaccessible$InnerSub.class",
+        "ext/TestOverrideInaccessibleBase.class"
+      ],
+      "source": "src/pkg/TestOverrideInaccessible.java",
+      "compiler": "javac 17.0.20.1 (`-g`) (with ext/TestOverrideInaccessibleBase.java, vendored as a second input class)",
+      "summary": "methods matching a package-private superclass method of another package or a private one get no @Override; true overrides keep it"
+    },
+    {
+      "id": "pkg/TestPatternVariableScope",
+      "fix": "pattern_variable_scope",
+      "class_files": [
+        "pkg/TestPatternVariableScope.class",
+        "pkg/TestPatternVariableScope$Special.class",
+        "pkg/TestPatternVariableScope$Stream.class"
+      ],
+      "source": "src/pkg/TestPatternVariableScope.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch still becomes a pattern"
     },
     {
       "id": "pkg/TestRecordPatternInTry",
@@ -244,6 +233,44 @@
       "summary": "`describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's"
     },
     {
+      "id": "pkg/TestSamWrapperObjectKt",
+      "fix": "kt_synthetic_anonymous_object",
+      "class_files": [
+        "pkg/TestSamWrapperObjectKt.class",
+        "pkg/TestSamWrapperObjectKt$byLength$1.class",
+        "pkg/TestSamWrapperObjectKt$nullsFirstBy$1.class",
+        "pkg/TestSamWrapperObjectKt$twice$1.class"
+      ],
+      "source": "src/pkg/TestSamWrapperObject.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
+      "summary": "`byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone",
+      "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSelfReferencingLambda",
+      "fix": "self_referencing_lambda",
+      "class_files": [
+        "pkg/TestSelfReferencingLambda.class",
+        "pkg/TestSelfReferencingLambda$Task.class"
+      ],
+      "source": "src/pkg/TestSelfReferencingLambda.jasm",
+      "compiler": "asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1",
+      "summary": "the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place"
+    },
+    {
+      "id": "pkg/TestSuspendFinallyKt",
+      "fix": "handler_copy_offsets",
+      "class_files": [
+        "pkg/TestSuspendFinallyKt.class",
+        "pkg/TestSuspendFinallyKt$early$1.class",
+        "pkg/TestSuspendFinallyKt$once$1.class",
+        "pkg/TestSuspendFinallyKt$twice$1.class"
+      ],
+      "source": "src/pkg/TestSuspendFinally.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
+      "summary": "`once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable"
+    },
+    {
       "id": "pkg/TestSuspendLoopFinally",
       "fix": "copied_finally",
       "class_files": [
@@ -255,6 +282,38 @@
       "source": "src/pkg/TestSuspendLoopFinally.kt",
       "compiler": "kotlinc-jvm 2.0.0 (JDK 17.0.20.1)",
       "summary": "`drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies)"
+    },
+    {
+      "id": "pkg/TestSwitchCaseScope",
+      "fix": "switch_case_scope",
+      "class_files": [
+        "pkg/TestSwitchCaseScope.class"
+      ],
+      "source": "src/pkg/TestSwitchCaseScope.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "two cases declaring double z before an if, and a case-level int length clashing with a nested one in a later case, are written with braces"
+    },
+    {
+      "id": "pkg/TestSwitchExprConstLub",
+      "fix": "switch_yield_const_retype",
+      "class_files": [
+        "pkg/TestSwitchExprConstLub.class",
+        "pkg/TestSwitchExprConstLub$IntSink.class"
+      ],
+      "source": "src/pkg/TestSwitchExprConstLub.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone"
+    },
+    {
+      "id": "pkg/TestTryCatchNotFlag",
+      "fix": "twr_unary_condition",
+      "class_files": [
+        "pkg/TestTryCatchNotFlag.class",
+        "pkg/TestTryCatchNotFlag$Res.class"
+      ],
+      "source": "src/pkg/TestTryCatchNotFlag.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one"
     },
     {
       "id": "pkg/TestTypeSwitchEnumLabel",
@@ -293,6 +352,19 @@
       "source": "src/pkg/TestTypeSwitchPatternType.java",
       "compiler": "javac 21.0.12.1 (no -g)",
       "summary": "case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type"
+    },
+    {
+      "id": "pkg/TestWildcardArrayBound",
+      "fix": "primitive_array_wildcard",
+      "class_files": [
+        "pkg/TestWildcardArrayBound.class",
+        "pkg/TestWildcardArrayBound$BytesEncoder.class",
+        "pkg/TestWildcardArrayBound$Encoder.class",
+        "pkg/TestWildcardArrayBound$Source.class"
+      ],
+      "source": "src/pkg/TestWildcardArrayBound.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "Source<? extends byte[]> and Source<? super int[]> keep their wildcards, so BytesEncoder.encode overrides Encoder<byte[]>.encode"
     }
   ]
 }

@@ -95,6 +95,28 @@ pub enum KunaFix {
     /// by its own index constant, so labels after the first of a case and
     /// labels whose index equals an integer label's value are resolved.
     TypeSwitchLabelLookup,
+    /// `nonpublic_nested_import`: a non-public member class of a class
+    /// outside the input and the current package is named through its
+    /// enclosing class instead of imported.
+    NonpublicNestedImport,
+    /// `primitive_array_wildcard`: a wildcard type argument bounded by a
+    /// primitive array type (`? extends byte[]`) keeps its wildcard.
+    PrimitiveArrayWildcard,
+    /// `override_inaccessible_method`: `@Override` is not written for a
+    /// method that matches only a private supertype method or a
+    /// package-private one of another package.
+    OverrideInaccessibleMethod,
+    /// `pattern_variable_scope`: an `instanceof` and the cast assignment
+    /// after it become a pattern only when the variable is not used outside
+    /// the pattern's scope.
+    PatternVariableScope,
+    /// `switch_case_scope`: the declarations at the top level of a case
+    /// stay in scope for the later cases, so a clashing one is renamed or
+    /// both cases get braces.
+    SwitchCaseScope,
+    /// `local_class_anonymous_subclass`: a local class is declared before
+    /// the first anonymous class that extends it.
+    LocalClassAnonymousSubclass,
 }
 
 impl KunaFix {
@@ -123,6 +145,12 @@ impl KunaFix {
         KunaFix::TypeSwitchEnumLabel,
         KunaFix::TypeSwitchPatternType,
         KunaFix::TypeSwitchLabelLookup,
+        KunaFix::NonpublicNestedImport,
+        KunaFix::PrimitiveArrayWildcard,
+        KunaFix::OverrideInaccessibleMethod,
+        KunaFix::PatternVariableScope,
+        KunaFix::SwitchCaseScope,
+        KunaFix::LocalClassAnonymousSubclass,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -151,6 +179,12 @@ impl KunaFix {
             KunaFix::TypeSwitchEnumLabel => "type_switch_enum_label",
             KunaFix::TypeSwitchPatternType => "type_switch_pattern_type",
             KunaFix::TypeSwitchLabelLookup => "type_switch_label_lookup",
+            KunaFix::NonpublicNestedImport => "nonpublic_nested_import",
+            KunaFix::PrimitiveArrayWildcard => "primitive_array_wildcard",
+            KunaFix::OverrideInaccessibleMethod => "override_inaccessible_method",
+            KunaFix::PatternVariableScope => "pattern_variable_scope",
+            KunaFix::SwitchCaseScope => "switch_case_scope",
+            KunaFix::LocalClassAnonymousSubclass => "local_class_anonymous_subclass",
         }
     }
 

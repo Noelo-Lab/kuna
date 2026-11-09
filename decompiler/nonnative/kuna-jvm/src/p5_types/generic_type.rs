@@ -8,6 +8,12 @@
 //! non-generic inner class of a generic class) maps as the generic type its
 //! signature would declare, `Name<>`, where Vineflower dereferences the
 //! missing signature.
+//!
+//! kuna fix `primitive_array_wildcard` (`kuna_fixes`): `parse` returns a plain
+//! `VarType` for a primitive element type, dropping the wildcard of a type
+//! argument bounded by a primitive array (`Publisher<+[B>`, written
+//! `Publisher<byte[]>`, which changes the signature and breaks overriding).
+//! With the fix such an argument keeps its wildcard: `? extends byte[]`.
 
 use std::ops::Deref;
 use std::rc::Rc;
@@ -269,6 +275,10 @@ impl GenericType {
                 )
                 .0
             }
+        } else if wildcard != GenericType::WILDCARD_NO
+            && kuna_fixes::enabled(KunaFix::PrimitiveArrayWildcard)
+        {
+            GenericType::new_shared(type_, array_dim, value, None, Rc::from(Vec::new()), wildcard).0
         } else {
             VarType::new_value(type_, array_dim, value)
         }

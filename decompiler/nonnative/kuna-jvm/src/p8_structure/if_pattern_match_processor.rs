@@ -1,4 +1,8 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/IfPatternMatchProcessor.java`.
+//!
+//! kuna fix `pattern_variable_scope` (`kuna_fixes`): `check_branch` makes a
+//! pattern only when the variable is used nowhere outside the pattern's scope
+//! (`kuna_fix_pattern_variable_scope`).
 
 use std::collections::VecDeque;
 
@@ -10,6 +14,8 @@ use crate::exprent::{Exprent, ExprentType};
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::if_helper::IfHelper;
 use crate::if_statement::IfStatement;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p8_structure::kuna_fix_pattern_variable_scope;
 use crate::pattern_exprent::PatternExprent;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JList, JavaEq, JavaHash};
@@ -146,8 +152,12 @@ impl IfPatternMatchProcessor {
         let left = sides[0];
         let right = sides[1];
 
-        let mut result =
-            Self::find_pattern_matching_instanceof(left, right, source, target, branch, iof, head);
+        let out_of_scope = kuna_fixes::enabled(KunaFix::PatternVariableScope)
+            && left.try_as_var().is_some_and(|var| {
+                !kuna_fix_pattern_variable_scope::in_scope(statement, branch, var, root.0)
+            });
+        let mut result = !out_of_scope
+            && Self::find_pattern_matching_instanceof(left, right, source, target, branch, iof, head);
 
         if let Some(exprents) = head.get_exprents() {
             if !exprents.is_empty() {

@@ -14,6 +14,9 @@
 //! kuna fix `enum_body_separator` (`kuna_fixes`): in `write_class`, an
 //! enum whose members have no constant before them gets the `;` Java requires
 //! (`kuna_fix_enum_body_separator`).
+//! kuna fix `override_inaccessible_method` (`kuna_fixes`): `@Override` is
+//! written only for a supertype method the class can override
+//! (`kuna_fix_override_inaccessible_method`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -59,6 +62,7 @@ use crate::link_constant::LinkConstant;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::p9_emit::kuna_fix_enum_body_separator::EnumBodySeparator;
+use crate::p9_emit::kuna_fix_override_inaccessible_method;
 use crate::pair::Pair;
 use crate::pass_context::PassContext;
 use crate::pool_interceptor::PoolInterceptor;
@@ -1824,8 +1828,11 @@ impl ClassWriter {
                     && !mt.has_modifier(ACC_PRIVATE);
 
             if should_apply_override {
-                let is_override =
-                    ClassWriter::search_for_method(Some(cl), &mt.get_name(), &md, false);
+                let is_override = if kuna_fixes::enabled(KunaFix::OverrideInaccessibleMethod) {
+                    kuna_fix_override_inaccessible_method::overrides(cl, &mt.get_name(), &md)
+                } else {
+                    ClassWriter::search_for_method(Some(cl), &mt.get_name(), &md, false)
+                };
                 let already_has_override = annotation_attribute.is_some_and(|a| {
                     a.get_annotations()
                         .iter()
