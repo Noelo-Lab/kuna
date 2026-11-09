@@ -572,8 +572,7 @@ fn option_values_live_value_present_for_105() {
                             // its live value is `Architecture::be_join_pass`.
                             | "bejoinpass"
                             | "bytearrayc"
-                            // (kuna) `structdefs` is a PrintC option like
-                            // `arraycoverwidth`/`emptystrconst` above: its live
+                            // (kuna) `structdefs` is a PrintC option: its live
                             // state is `PrintC::options.struct_defs`, which the
                             // codegen live reader (an `Architecture` bool
                             // member) cannot reach.
@@ -581,21 +580,7 @@ fn option_values_live_value_present_for_105() {
                             // (kuna) `globalref` is a PrintC option too:
                             // `PrintC::options.global_ref`.
                             | "globalref"
-                            | "callsitestackargs"
-                            | "varargstackargs"
-                            | "varargforward"
-                            | "calleearity"
-                            | "calleearityfwd"
-                            | "calleearitylive"
-                            | "calleearitybody"
-                            | "calleearitycut"
-                            | "calleearityscratch"
-                            | "calleedeadarg"
-                            | "hiddenretarg"
                             | "mixedtailret"
-                            | "calleereadarg"
-                            | "zerofillreturn"
-                            | "zerocallregs"
                             | "calloverlap"
                             | "indexaliasguard"
                             // (kuna) `arrayextent` takes a MODE

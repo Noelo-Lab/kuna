@@ -3715,6 +3715,11 @@ impl Architecture {
             };
         ctx.bound_proto_models = Rc::clone(&self.loader_proto_models);
         ctx.swift_abi = self.loader_swift_abi.clone();
+        // Carry the constant-pointer-inference config (C++ `glb->infer_pointers`)
+        // and the ordered inferable-pointer spaces (C++ `glb->inferPtrSpaces`,
+        // built by cacheAddrSpaceProperties) so `ActionConstantPtr` (run via
+        // `glb`) can rewrite a mapped global-constant address into a typed
+        // `PTRSUB(spacebase,off)`.
         ctx.infer_pointers = self.infer_pointers;
         ctx.infer_ptr_spaces = self.infer_ptr_spaces.clone();
         // Snapshot the tracked-register database (C++ `glb->context`'s track base,
