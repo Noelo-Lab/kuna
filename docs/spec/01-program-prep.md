@@ -1071,7 +1071,14 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   `PTR_64`, a signed 19 bits in a plain arm64e bind; an authenticated bind spends
   those bits on its signing context and has none). A C++ RTTI record points at
   `vtable for __si_class_type_info + 16` this way, so a slot whose addend is not
-  zero holds an address inside the import, not the import itself. The resolver also records which segments the
+  zero holds an address inside the import, not the import itself. An image that
+  predates chained fixups keeps its
+  binds as the `LC_DYLD_INFO` opcode program instead, and the slot itself holds
+  zero in the file;
+  `decompiler/crates/kuna-analysis/src/loader/format/macho/dyldinfo.rs (resolve_dyld_info_binds)`
+  replays that program (segment+offset, symbol, bind, advance; weak binds
+  included, lazy and arm64e threaded binds not) to the same `slot → import name`
+  answer. The resolver also records which segments the
   linker flagged `SG_READ_ONLY`, the Mach-O statement that dyld maps the segment
   read-only once its fixups are in (`__DATA_CONST`); `dynrelocs` (§1.3) reads
   it as the `PT_GNU_RELRO` of a Mach-O.
@@ -4514,8 +4521,9 @@ every other binary's pass list is byte-identical to before the pass existed):
     `superRef_<Class>`: a rebase slot's class is read off the `class_t` it points
     at, a chained **bind** slot's from the import it names with `_OBJC_CLASS_$_`
     stripped (§1.2), so `classRef_UIView` is named although no address exists for
-    it. A classic `LC_DYLD_INFO` image stores a bind slot as zero and leaves it
-    unnamed (its bind opcodes are not parsed);
+    it. A classic `LC_DYLD_INFO` image stores a bind slot as zero; its name comes
+    from the replayed bind program (§1.2,
+    `decompiler/crates/kuna-analysis/src/loader/format/macho/dyldinfo.rs`);
   - each `__objc_stubs` entry is the function `objc_msgSend$<sel>`, the name the
     linker gives the symbol it synthesized the stub for. The entry is found by
     its own first two instructions (arm64 `adrp x1; ldr x1, [x1, #off]`, x86-64
@@ -4547,8 +4555,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   (`objc_msgSend(obj, selRef_init)`), the shape to read when the slot itself is
   the question. The fold is what the chained-fixup unpacking in §1.3 exists for
   here: a chained slot holds its packed chain word until `dynrelocs` unpacks it,
-  so on a chained image the pass reports no constant slot while `dynrelocs` is
-  off (the names stay). Like every analysis gate, `objcrefconst` is read at the
+  so on a chained image the pass reports no constant reference slot while
+  `dynrelocs` is off (the names stay; the ivar offset variables are plain words,
+  not fixups, and keep folding). Like every analysis gate, `objcrefconst` is read at the
   `read symbols` commit; flipping it afterwards does not re-paint.
 - **Swift metadata** (`swiftmetadata`, Mach-O and ELF, Swift images only,
   default-off but ON in the `aggressive` preset, which `auto` selects for any
@@ -4748,6 +4757,82 @@ every other binary's pass list is byte-identical to before the pass existed):
   vtable getters and 2,821 witness getters, for about 0.1 s and 3 MB over the
   naming arm. The stage test `tests/stages/kuna-swifttypes.xml` runs the
   stripped swiftc-built `swift_types_elf` with the arm off and on.
+
+  The class walk reaches only what `__objc_classlist` reaches. Three more
+  metadata tables fill in the rest (kuna; Ghidra's `ObjectiveC2_ClassAnalyzer`
+  reads the same three):
+
+  - **Categories**
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objccats.rs (categories)`):
+    `__objc_catlist` and `__objc_nlcatlist` point at `category_t` records whose
+    class is usually in another image, so their IMPs were the bulk of the
+    `sub_<addr>` left on an ObjC app (77 of 1,892 on a 1.9 MB iOS app). The
+    class is read off the `class_t` a rebase slot points at or off the bind name
+    (`_OBJC_CLASS_$_UIView` → `UIView`), and the two method lists go through the
+    same rename as a class's own: `-[UIView(Layout) setLeft:]`,
+    `+[NSMutableDictionary(JSON) dictionaryWithJSON:]`. A category whose class
+    slot resolves to nothing is labelled `-[(Category) sel]` rather than guessed.
+    Protocol and property lists are not read; nothing in the C would show them.
+  - **Protocols**
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcprotos.rs (protocols)`):
+    each `__objc_protolist` entry is a `protocol_t` named `_OBJC_PROTOCOL_$_<P>`,
+    and its four method lists (required/optional × instance/class) are
+    declarations with no IMP — which `method_list_t` readers now keep (`imp ==
+    0`) because the declaration carries the one thing a sent-only selector lacks:
+    its **type encoding**. `UITableViewDelegate` redeclared in the image spells
+    the signature of every `tableView:didSelectRowAtIndexPath:` send, so those
+    encodings feed the `objc_msgSend$<sel>` stub prototypes above (that app: 13 more
+    stubs typed, the fixture's `objc_msgSend$wave(self)` from `v16@0:8`). A
+    `__objc_protorefs` slot is `protoRef_<P>` and folds like the other refs. A
+    class's own conformance list is not read: it names nothing the C would show.
+  - **Instance layouts**
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcivars.rs (Structs::build)`,
+    option **`objcivars`**, kuna, default-on, inert unless `objc` is on, as `objc`
+    is on any Mach-O image under 500 KiB):
+    `class_ro_t.ivars` names every ivar with its type encoding, its size and a
+    pointer to its *offset variable* in `__objc_ivar` — the word a compiled method
+    loads and adds to `self` (`ldrsw x8, [x8, #off]; ldr d0, [x19, x8]`), because
+    under the non-fragile ABI the runtime may slide an offset when a superclass
+    from another image grows. The offset variable was already labelled, but as a
+    1-byte symbol a 4-byte load never matched, so 505 ivar accesses on that app read
+    `*(long *)((long)self + dat_1001aea74)`; it is now the 4-byte data object
+    `<Class>::<ivar>`. Statically the word holds the compile-time layout, so the
+    pass builds `struct <Class>` with each ivar at that offset (type from the
+    encoding — `@"NSString"` is an opaque `NSString *`, `#` an `objc_class *`,
+    a non-decoding encoding an `undefined<size>` — a local superclass embedded as
+    `super` at 0 so `self->super.count` keeps its name, an imported one left as
+    an anonymous prefix; `instanceSize` is the struct size), superclass first so
+    a child can embed its parent. Under `objcivars` the commit types `self` as
+    `<Class> *` in the class's and its categories' instance methods (the encoding
+    still decodes `@`; the typed `self` rides a separate fact so the gate decides
+    at the commit) and reports the offset variables constant through the same
+    `dynrelocs` fold path as the refs, so `*(double *)((long)self + Foo::ratio)`
+    renders `self->ratio` and `objc_storeStrong((long)self + Foo::_name, x)`
+    renders `objc_storeStrong(&self->_name, x)` (that app: 5,207 field accesses, 0
+    anonymous offset loads; an 84 MB Swift + ObjC app's Swift classes expose
+    their stored properties the same way). The struct takes the class's runtime
+    name, so a Swift class whose labels read `-[main.Greeter greet:]` under
+    `swiftdemangle` has `self` typed `_TtC4main7Greeter *`, a name C accepts.
+    A class that got no
+    layout — one of another image behind a category, or one with no field of
+    its own — still types `self` as a pointer to its declared record, so the
+    receiver is a `<Class> *` even when it is opaque. Off (the option is read
+    at load as `KUNA_OBJCIVARS` for the structs and at the commit for `self`
+    and the fold, so it is set before the `load file` it applies to), no class
+    struct is interned, `self` stays `id`, the offset variable keeps its name
+    and the load stays a load — the shape to read when a superclass from
+    another image may have grown since the link. A class whose name already
+    denotes a complete struct (DWARF) is that struct. Class (`+`) methods keep
+    `objc_object *self`. The number of classes given a layout is bounded
+    (32,768): every type the factory interns costs a linear name scan.
+    Properties are not read: a property is a method pair plus an ivar, all
+    already named.
+
+  Decoding every method's encoding asks the type factory for `objc_object *`
+  once per argument, and the factory finds a type by name with a linear scan of
+  every type it holds; with thousands of class structs interned that scan is no
+  longer cheap, so the decoder caches the named opaque pointer types it hands out
+  (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (TypeCtx)`).
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

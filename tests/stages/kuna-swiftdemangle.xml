@@ -36,6 +36,8 @@
     the method `-[main.Greeter greet:]`. Pass 2 (`option swiftdemangle off`)
     reproduces the BUG: the same two functions are
     `$s4main10countWords2ofS2i_tF` and `-[_TtC4main7Greeter greet:]`.
+    In both passes `self` is the class's own instance struct (`objcivars`),
+    which keeps the runtime name `_TtC4main7Greeter`.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c0035fd6
@@ -67,9 +69,9 @@ c0035fd6
   <com>quit</com>
 </script>
 <stringmatch name="swiftdemangle off: the Swift 5 symbol stays mangled" min="1" max="1">\$s4main10countWords2ofS2i_tF\(int4 a0\)</stringmatch>
-<stringmatch name="swiftdemangle off: the ObjC method label carries the runtime class name" min="1" max="1">-\[_TtC4main7Greeter greet:\]\(objc_object \*self</stringmatch>
+<stringmatch name="swiftdemangle off: the ObjC method label carries the runtime class name" min="1" max="1">-\[_TtC4main7Greeter greet:\]\(_TtC4main7Greeter \*self</stringmatch>
 <stringmatch name="swiftdemangle default: the Swift 5 symbol demangles to its reference path" min="1" max="1">main\.countWords\(of:\)\(int4 a0\)</stringmatch>
-<stringmatch name="swiftdemangle default: the ObjC method label carries the demangled class name" min="1" max="1">-\[main\.Greeter greet:\]\(objc_object \*self</stringmatch>
+<stringmatch name="swiftdemangle default: the ObjC method label carries the demangled class name" min="1" max="1">-\[main\.Greeter greet:\]\(_TtC4main7Greeter \*self</stringmatch>
 <stringmatch name="both passes keep the function bodies" min="2" max="2">return a0 &lt;&lt; 1 \| 1;</stringmatch>
 <stringmatch name="both passes keep the method bodies" min="2" max="2">return arg1 \* 3 \+ 7;</stringmatch>
 </decompilertest>

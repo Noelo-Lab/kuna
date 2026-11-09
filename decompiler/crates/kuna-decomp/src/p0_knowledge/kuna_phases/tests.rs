@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_397() {
-    assert_eq!(kuna_num_settables(), 397);
-    assert_eq!(SETTABLE_TABLE.len(), 397);
+fn settable_count_is_398() {
+    assert_eq!(kuna_num_settables(), 398);
+    assert_eq!(SETTABLE_TABLE.len(), 398);
 }
 
 #[test]
-fn tier_counts_are_136_core_158_transform_103_analysis() {
+fn tier_counts_are_136_core_159_transform_103_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_136_core_158_transform_103_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (136, 158, 103));
+    assert_eq!((core, transform, analysis), (136, 159, 103));
 }
 
 #[test]
@@ -520,6 +520,8 @@ fn option_values_live_value_present_for_189() {
         "cfstrings",
         // (kuna) The Swift type-layout arm's gate, read inside that pass.
         "swifttypes",
+        // (kuna) Objective-C instance layouts — same commit-side gate as `objcrefconst`.
+        "objcivars",
         // (kuna) PE PDB metadata recovery — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), like the gates around
         // it. Default-on (DIV-129), PE-only, `.pdb`-sidecar-gated.
@@ -1225,7 +1227,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftmetadata`; its P1 row sits beside `objc`.
     // +1 for `swifttypes`, beside it.
     // +1 for `kernelcache`; its P1 row sits beside `macho-arm64e`.
-    assert_eq!(json.matches("},\n").count(), 396);
+    // +1 for `objcivars`; its P1 row sits beside `objcrefconst`.
+    assert_eq!(json.matches("},\n").count(), 397);
 }
 
 #[test]

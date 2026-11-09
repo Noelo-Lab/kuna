@@ -1446,6 +1446,12 @@ kuna_options! { self, p1;
         Ok(format!("Mach-O __cfstring constant-string recovery pass turned {state}"))
     },
     "swifttypes" => on_off!(analysis_swifttypes, "Swift type layouts from static metadata"),
+    "objcivars" => {
+        let val = on_or_off(p1)?;
+        self.analysis_objcivars = val;
+        crate::kuna_objcivars::set_objcivars_env(val);
+        Ok(format!("Objective-C instance layouts turned {}", if val { "on" } else { "off" }))
+    },
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
     "relocobjects" => {
         let val = on_or_off(p1)?;

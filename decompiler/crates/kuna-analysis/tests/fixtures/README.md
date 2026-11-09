@@ -1396,6 +1396,41 @@ clang --target=aarch64-linux-gnu -O1 -fPIC -shared -fuse-ld=lld -nostdlib \
 `imported_counter` / `environ` / `stdout`; off they are `*dat_<slot>`.
 `exported_value` / `&exported_value` read the same either way.
 
+### `macho_objc_meta_arm64` — categories, a protocol, ivars
+
+`macho_objc_meta_arm64` (arm64, ~51 KB) is the fixture for the ObjC category /
+protocol / instance-layout recovery (`analyzers/objc/kuna_objccats.rs`,
+`kuna_objcprotos.rs`, `kuna_objcivars.rs`; stage test `tests/stages/kuna-objcmeta.xml`).
+Source `macho_objc_meta.m`: root class `Base { Class isa; int count; double ratio;
+id name; }` with `-count`/`-setCount:`/`-ratio`; protocol `Greeter` (`-greet:`
+required, `-wave` optional); category `Base(Extra) <Greeter>` (`-greet:`,
+`+extraTag`); `@interface Remote` with **no implementation** and its category
+`Remote(Extra)` (`-remoteGreet:`, `+remoteTag`), so the category's class is an
+imported (bind) class; `Sub : Remote { int x; id tag; }` whose `-[Sub x]` reads
+`x` through the `__objc_ivar` offset variable (non-fragile, the superclass being
+external) while `Base`'s own methods use direct offsets; `use` sends `wave` through
+a linker stub. The committed `.s` is `clang -S` output with that one send routed
+through `_objc_msgSend$wave` and the `.globl` dropped from the `_OBJC_IVAR_$_`
+symbols so `-x` strips them as a shipped app does:
+
+```bash
+clang -target arm64-apple-macos11 -fno-objc-arc -O1 -S macho_objc_meta.m -o macho_objc_meta_arm64.s
+# edit: route the `wave` send through `_objc_msgSend$wave`; delete the `.globl _OBJC_IVAR_$_*` lines
+clang -target arm64-apple-macos11 -c macho_objc_meta_arm64.s -o meta.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -objc_stubs_fast \
+         -undefined dynamic_lookup -x -e _main -o macho_objc_meta_arm64 meta.o
+```
+
+**Pinned VMAs:** `-[Base ratio]`@`0x100000830`, `-[Base(Extra) greet:]`@`0x10000083c`,
+`-[Sub x]`@`0x100000860` (reads the offset variable `Sub::x`@`0x100008388`),
+`objc_msgSend$wave`@`0x1000008e0`, `__objc_catlist`@`0x100004020` (two entries),
+`__objc_protolist`@`0x100004008` (`Greeter`), `__objc_ivar`@`0x100008378` (six
+offset variables). With `objc on` the categories render `-[Base(Extra) greet:]` /
+`+[Remote(Extra) remoteTag]`, `self` is `Base *` / `Sub *` and the ivars read
+`self->ratio`, `self->x`; with `objcivars off` `self` stays `objc_object *` and
+`-[Sub x]` reads `(int8)self + (int8)Sub::x`; with `objc off` the category methods
+are `sub_10000083c`… and the ivar load is `dat_100008388`.
+
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 
 The multi-format **entry-discovery** gate
