@@ -18,8 +18,14 @@ pub type VersionSet = Shared<FastSparseSet<i32>>;
 pub struct SFormsFastMapDirect {
     size: i32,
     factory: FastSparseSetFactory<i32>,
-    elements: [Vec<Option<VersionSet>>; 3],
-    next: [Vec<i32>; 3],
+    segments: [Vec<Slot>; 3],
+}
+
+/// One key of a segment: Java's `elements[i][key]` and `next[i][key]`, which
+/// always have the same length, kept side by side so a copy is one block.
+struct Slot {
+    set: Option<VersionSet>,
+    next: i32,
 }
 
 fn with_pair(
@@ -50,8 +56,7 @@ impl SFormsFastMapDirect {
         SFormsFastMapDirect {
             size: 0,
             factory,
-            elements: [Vec::new(), Vec::new(), Vec::new()],
-            next: [Vec::new(), Vec::new(), Vec::new()],
+            segments: [Vec::new(), Vec::new(), Vec::new()],
         }
     }
 
@@ -59,25 +64,26 @@ impl SFormsFastMapDirect {
         let mut map = SFormsFastMapDirect::new(self.factory.clone());
         map.size = self.size;
         for i in (0..3).rev() {
-            let arr = &self.elements[i];
-            let length = arr.len();
-            if length > 0 {
-                let arrnext = &self.next[i];
-                let mut arrnew: Vec<Option<VersionSet>> = vec![None; length];
-                let mut arrnextnew = arrnext.clone();
-                arrnextnew.resize(length, 0);
+            let arr = &self.segments[i];
+            if !arr.is_empty() {
+                let mut arrnew: Vec<Slot> = arr
+                    .iter()
+                    .map(|slot| Slot {
+                        set: None,
+                        next: slot.next,
+                    })
+                    .collect();
                 let mut pointer = 0usize;
                 loop {
-                    if let Some(set) = &arr[pointer] {
-                        arrnew[pointer] = Some(Shared::new(set.borrow().get_copy()));
+                    if let Some(set) = &arr[pointer].set {
+                        arrnew[pointer].set = Some(Shared::new(set.borrow().get_copy()));
                     }
-                    pointer = arrnext[pointer] as usize;
+                    pointer = arr[pointer].next as usize;
                     if pointer == 0 {
                         break;
                     }
                 }
-                map.elements[i] = arrnew;
-                map.next[i] = arrnextnew;
+                map.segments[i] = arrnew;
             }
         }
         map
@@ -108,18 +114,19 @@ impl SFormsFastMapDirect {
     }
 
     fn remove_all_in(&mut self, index: usize) {
-        for i in (0..self.elements[index].len()).rev() {
-            if self.elements[index][i].is_some() {
-                self.elements[index][i] = None;
+        for i in (0..self.segments[index].len()).rev() {
+            let slot = &mut self.segments[index][i];
+            if slot.set.is_some() {
+                slot.set = None;
                 self.size -= 1;
             }
-            self.next[index][i] = 0;
+            slot.next = 0;
         }
     }
 
     fn put_internal(&mut self, key: i32, value: Option<VersionSet>, remove: bool) {
         let (index, ikey) = segment(key);
-        if ikey as i64 >= self.elements[index].len() as i64 {
+        if ikey as i64 >= self.segments[index].len() as i64 {
             if remove {
                 return;
             }
@@ -127,24 +134,24 @@ impl SFormsFastMapDirect {
         }
         let slot = ikey as usize;
         let added = value.is_some();
-        let oldval = std::mem::replace(&mut self.elements[index][slot], value);
-        let arrnext = &mut self.next[index];
+        let arr = &mut self.segments[index];
+        let oldval = std::mem::replace(&mut arr[slot].set, value);
         if oldval.is_none() && added {
             self.size += 1;
-            let oldnext = arrnext[slot];
-            SFormsFastMapDirect::change_next(arrnext, ikey, oldnext, ikey);
+            let oldnext = arr[slot].next;
+            SFormsFastMapDirect::change_next(arr, ikey, oldnext, ikey);
         } else if oldval.is_some() && !added {
             self.size -= 1;
-            let newnext = arrnext[slot];
-            SFormsFastMapDirect::change_next(arrnext, ikey, ikey, newnext);
+            let newnext = arr[slot].next;
+            SFormsFastMapDirect::change_next(arr, ikey, ikey, newnext);
         }
     }
 
-    fn change_next(arrnext: &mut [i32], key: i32, oldnext: i32, newnext: i32) {
+    fn change_next(arr: &mut [Slot], key: i32, oldnext: i32, newnext: i32) {
         let mut i = key - 1;
         while i >= 0 {
-            if arrnext[i as usize] == oldnext {
-                arrnext[i as usize] = newnext;
+            if arr[i as usize].next == oldnext {
+                arr[i as usize].next = newnext;
             } else {
                 break;
             }
@@ -159,9 +166,9 @@ impl SFormsFastMapDirect {
     /// Java: `get(int)`; the returned set aliases the one in the map.
     pub fn get(&self, key: i32) -> Option<VersionSet> {
         let (index, key) = segment(key);
-        let arr = &self.elements[index];
+        let arr = &self.segments[index];
         if (key as i64) < arr.len() as i64 {
-            return arr[key as usize].clone();
+            return arr[key as usize].set.clone();
         }
         None
     }
@@ -173,24 +180,25 @@ impl SFormsFastMapDirect {
 
     pub fn complement(&mut self, map: &SFormsFastMapDirect) {
         for i in (0..3).rev() {
-            if self.elements[i].is_empty() {
+            if self.segments[i].is_empty() {
                 continue;
             }
-            let lst_extern = &map.elements[i];
+            let lst_extern = &map.segments[i];
+            let arr = &mut self.segments[i];
             let mut pointer = 0usize;
             loop {
-                if let Some(first) = self.elements[i][pointer].clone() {
+                if let Some(first) = arr[pointer].set.clone() {
                     if pointer >= lst_extern.len() {
                         break;
                     }
-                    if let Some(second) = &lst_extern[pointer] {
+                    if let Some(second) = &lst_extern[pointer].set {
                         with_pair(&first, second, |a, b| a.complement(b));
                         if first.borrow().is_empty() {
-                            self.elements[i][pointer] = None;
+                            arr[pointer].set = None;
                             self.size -= 1;
-                            let newnext = self.next[i][pointer];
+                            let newnext = arr[pointer].next;
                             SFormsFastMapDirect::change_next(
-                                &mut self.next[i],
+                                arr,
                                 pointer as i32,
                                 pointer as i32,
                                 newnext,
@@ -198,7 +206,7 @@ impl SFormsFastMapDirect {
                         }
                     }
                 }
-                pointer = self.next[i][pointer] as usize;
+                pointer = arr[pointer].next as usize;
                 if pointer == 0 {
                     break;
                 }
@@ -208,15 +216,16 @@ impl SFormsFastMapDirect {
 
     pub fn intersection(&mut self, map: &SFormsFastMapDirect) {
         for i in (0..3).rev() {
-            if self.elements[i].is_empty() {
+            if self.segments[i].is_empty() {
                 continue;
             }
-            let lst_extern = &map.elements[i];
+            let lst_extern = &map.segments[i];
+            let arr = &mut self.segments[i];
             let mut pointer = 0usize;
             loop {
-                if let Some(first) = self.elements[i][pointer].clone() {
+                if let Some(first) = arr[pointer].set.clone() {
                     let second = if pointer < lst_extern.len() {
-                        lst_extern[pointer].clone()
+                        lst_extern[pointer].set.clone()
                     } else {
                         None
                     };
@@ -224,18 +233,18 @@ impl SFormsFastMapDirect {
                         with_pair(&first, second, |a, b| a.intersection(b));
                     }
                     if second.is_none() || first.borrow().is_empty() {
-                        self.elements[i][pointer] = None;
+                        arr[pointer].set = None;
                         self.size -= 1;
-                        let newnext = self.next[i][pointer];
+                        let newnext = arr[pointer].next;
                         SFormsFastMapDirect::change_next(
-                            &mut self.next[i],
+                            arr,
                             pointer as i32,
                             pointer as i32,
                             newnext,
                         );
                     }
                 }
-                pointer = self.next[i][pointer] as usize;
+                pointer = arr[pointer].next as usize;
                 if pointer == 0 {
                     break;
                 }
@@ -245,25 +254,24 @@ impl SFormsFastMapDirect {
 
     pub fn union(&mut self, map: &SFormsFastMapDirect) {
         for i in (0..3).rev() {
-            let lst_extern = &map.elements[i];
+            let lst_extern = &map.segments[i];
             if lst_extern.is_empty() {
                 continue;
             }
-            let arrnext_extern = &map.next[i];
             let mut pointer = 0usize;
             loop {
-                if pointer >= self.elements[i].len() {
+                if pointer >= self.segments[i].len() {
                     self.ensure_capacity(i, lst_extern.len() as i32, true);
                 }
-                if let Some(second) = &lst_extern[pointer] {
-                    match self.elements[i][pointer].clone() {
+                if let Some(second) = &lst_extern[pointer].set {
+                    let arr = &mut self.segments[i];
+                    match arr[pointer].set.clone() {
                         None => {
-                            self.elements[i][pointer] =
-                                Some(Shared::new(second.borrow().get_copy()));
+                            arr[pointer].set = Some(Shared::new(second.borrow().get_copy()));
                             self.size += 1;
-                            let oldnext = self.next[i][pointer];
+                            let oldnext = arr[pointer].next;
                             SFormsFastMapDirect::change_next(
-                                &mut self.next[i],
+                                arr,
                                 pointer as i32,
                                 oldnext,
                                 pointer as i32,
@@ -272,7 +280,7 @@ impl SFormsFastMapDirect {
                         Some(first) => with_pair(&first, second, |a, b| a.union(b)),
                     }
                 }
-                pointer = arrnext_extern[pointer] as usize;
+                pointer = lst_extern[pointer].next as usize;
                 if pointer == 0 {
                     break;
                 }
@@ -284,8 +292,8 @@ impl SFormsFastMapDirect {
     pub fn entry_list(&self) -> Vec<(i32, VersionSet)> {
         let mut list = Vec::new();
         for i in (0..3).rev() {
-            for (ikey, ent) in self.elements[i].iter().enumerate() {
-                if let Some(ent) = ent {
+            for (ikey, slot) in self.segments[i].iter().enumerate() {
+                if let Some(ent) = &slot.set {
                     let ikey = ikey as i32;
                     let key = match i {
                         0 => ikey,
@@ -300,7 +308,7 @@ impl SFormsFastMapDirect {
     }
 
     fn ensure_capacity(&mut self, index: usize, size: i32, exact: bool) {
-        let arr_len = self.elements[index].len() as i32;
+        let arr_len = self.segments[index].len() as i32;
         let mut minsize = size;
         if !exact {
             minsize = 2 * arr_len / 3 + 1;
@@ -311,8 +319,7 @@ impl SFormsFastMapDirect {
         if minsize < arr_len {
             crate::jthrow!(ArrayIndexOutOfBoundsException; "arraycopy: last destination index {} out of bounds for length {}", arr_len, minsize);
         }
-        self.elements[index].resize(minsize as usize, None);
-        self.next[index].resize(minsize as usize, 0);
+        self.segments[index].resize_with(minsize as usize, || Slot { set: None, next: 0 });
     }
 
     pub fn set_current_var(&mut self, var: i32, version: i32) {
