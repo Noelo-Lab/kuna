@@ -92,3 +92,5 @@ mod b06_sforms;
 mod b07a_var_definition;
 #[path = "b07b_classpath.rs"]
 mod b07b_classpath;
+#[path = "b08_lift.rs"]
+mod b08_lift;
