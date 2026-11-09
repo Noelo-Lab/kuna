@@ -4025,7 +4025,11 @@ register is one in every Swift function that does not throw and in any C or
 C++ code linked in, and a zero written there before a call and read back as
 a value (a loop counter, a sum) is still that zero after the call
 (`tested_after` keeps the register and up to three copies of it in view,
-passes over stores of them to the stack, and takes a zero the instruction
+follows a store of one of them to a stack slot (a base register plus a
+constant) into a later load of the same slot while the base register is
+unchanged, so a caller that spills the error register, reuses it and tests
+the reloaded value is still a caller of a throwing function, passes over any
+other store of them, and takes a zero the instruction
 first loads into a temporary as the constant: the arm64 `-Onone` caller
 copies x21 and stores the copy before its `cbnz x21`, and arm64 compares a
 register with an immediate zero through such a temporary). And a struct or

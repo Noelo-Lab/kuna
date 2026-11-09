@@ -145,7 +145,8 @@ fn zeroed_before(data: &Funcdata, call: OpId, reg: &Address, size: int4) -> bool
 }
 
 /// How many places the error register's value is followed through after a
-/// call: the register itself and the copies made of it before the test.
+/// call: the register itself, the copies made of it and the stack slots it is
+/// spilled to before the test.
 const MAX_TRACKED: usize = 4;
 
 /// Is `(addr, size)` within one of `set`'s places?
@@ -153,14 +154,34 @@ fn within(set: &[(Address, int4)], addr: &Address, size: int4) -> bool {
     set.iter().any(|(a, w)| overlaps(addr, size, a, *w))
 }
 
+/// The `(base register, offset)` an op computes into its output: the
+/// register itself for a copy of one, `base + c` for an add or subtract of a
+/// constant (`rsp + 8`, `x29 - 0x18`); `None` for anything else.
+fn address_of(code: OpCode, inputs: &[&crate::varnode::Varnode]) -> Option<(Address, int4, uintb)> {
+    let register = |v: &crate::varnode::Varnode| {
+        !v.is_constant() && v.get_addr().get_space().is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR)
+    };
+    let (base, off) = match (code, inputs) {
+        (OpCode::CPUI_COPY, [a]) => (*a, 0),
+        (OpCode::CPUI_INT_ADD, [a, b]) if a.is_constant() => (*b, a.get_offset()),
+        (OpCode::CPUI_INT_ADD, [a, b]) if b.is_constant() => (*a, b.get_offset()),
+        (OpCode::CPUI_INT_SUB, [a, b]) if b.is_constant() => (*a, b.get_offset().wrapping_neg()),
+        _ => return None,
+    };
+    register(base).then(|| (base.get_addr().clone(), base.get_size(), off))
+}
+
 /// Does the code after `call` examine `(reg, size)` the way a caller of a
 /// throwing function does: its next read compares it with zero? The read may
 /// be of the register or of a copy of it (an arm64 debug build copies x21 and
-/// stores the copy, then tests x21 itself), a store of either is passed over,
-/// and the zero may be a temporary the instruction loaded first (arm64
-/// `cmp x21, #0`).
+/// stores the copy, then tests x21 itself), or of a value reloaded from a
+/// stack slot it was spilled to while the slot's base register is unchanged;
+/// any other store of either is passed over, and the zero may be a temporary
+/// the instruction loaded first (arm64 `cmp x21, #0`).
 fn tested_after(data: &Funcdata, call: OpId, reg: &Address, size: int4) -> bool {
     let mut tracked = vec![(reg.clone(), size)];
+    let mut slots: Vec<(Address, int4, uintb)> = Vec::new();
+    let mut pointers: Vec<(Address, int4, (Address, int4, uintb))> = Vec::new();
     let mut zeros: Vec<(Address, int4)> = Vec::new();
     let mut cur = data.op_next_op(call);
     for _ in 0..MAX_SCAN {
@@ -173,6 +194,21 @@ fn tested_after(data: &Funcdata, call: OpId, reg: &Address, size: int4) -> bool 
             .get_out()
             .and_then(|o| data.vbank().get(o))
             .map(|o| (o.get_addr().clone(), o.get_size()));
+        let slot = match (op.code(), inputs.get(1)) {
+            (OpCode::CPUI_LOAD | OpCode::CPUI_STORE, Some(p)) if !p.is_constant() => {
+                pointers.iter().find(|(a, w, _)| a == p.get_addr() && *w == p.get_size()).map(|(_, _, s)| s.clone()).or_else(
+                    || p.get_addr().get_space().is_some_and(|s| s.get_type() == kuna_base::space::spacetype::IPTR_PROCESSOR)
+                        .then(|| (p.get_addr().clone(), p.get_size(), 0)),
+                )
+            }
+            _ => None,
+        };
+        if let Some((addr, width)) = &out {
+            pointers.retain(|(a, w, (b, bw, _))| !overlaps(addr, *width, a, *w) && !overlaps(addr, *width, b, *bw));
+            if let Some(target) = address_of(op.code(), &inputs) {
+                pointers.push((addr.clone(), *width, target));
+            }
+        }
         let read = inputs.iter().any(|v| !v.is_constant() && within(&tracked, v.get_addr(), v.get_size()));
         if read {
             match op.code() {
@@ -193,17 +229,33 @@ fn tested_after(data: &Funcdata, call: OpId, reg: &Address, size: int4) -> bool 
                 OpCode::CPUI_INT_AND => {
                     return inputs.len() == 2 && inputs[0].get_addr() == inputs[1].get_addr();
                 }
-                OpCode::CPUI_COPY if tracked.len() < MAX_TRACKED => {
+                OpCode::CPUI_COPY if tracked.len() + slots.len() < MAX_TRACKED => {
                     let Some(place) = out.clone() else { return false };
                     tracked.push(place);
                 }
-                OpCode::CPUI_STORE => {}
+                OpCode::CPUI_STORE => {
+                    let value = inputs.get(2).is_some_and(|v| within(&tracked, v.get_addr(), v.get_size()));
+                    if let Some(slot) = slot.filter(|_| value && tracked.len() + slots.len() < MAX_TRACKED) {
+                        slots.push(slot);
+                    }
+                }
                 _ => return false,
             }
-        } else if let Some((addr, width)) = &out {
-            tracked.retain(|(a, w)| !overlaps(addr, *width, a, *w));
-            if tracked.is_empty() {
-                return false;
+        } else {
+            if let Some(slot) = &slot {
+                if op.code() == OpCode::CPUI_STORE {
+                    slots.retain(|s| s != slot);
+                }
+            }
+            if let Some((addr, width)) = &out {
+                tracked.retain(|(a, w)| !overlaps(addr, *width, a, *w));
+                slots.retain(|(a, w, _)| !overlaps(addr, *width, a, *w));
+                if op.code() == OpCode::CPUI_LOAD && slot.as_ref().is_some_and(|s| slots.contains(s)) {
+                    tracked.push((addr.clone(), *width));
+                }
+                if tracked.is_empty() && slots.is_empty() {
+                    return false;
+                }
             }
         }
         if let Some((addr, width)) = out {

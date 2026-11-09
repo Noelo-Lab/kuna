@@ -2309,3 +2309,23 @@ SHA-256: `b9f8e94c95950dda727c67e0cf527ea4650e5218f40b724503d0432ace708787`.
 **Pinned VMAs:** `$s7freefix4onceySiAA7CounterVz_SitF`@`0x2610`,
 `$s7freefix4spinyS2iF`@`0x27c0`, `$s7freefix7CounterV4bumpyyAA4StepOF`@`0x2780`.
 With `swiftmetadata on` the call decompiles as `freefix.Counter.bump(_:)(a0,v1,0)`.
+
+### `swift_call_spill_elf` — callers that spill the error register before testing it (`swiftcall`)
+
+`swift_call_spill_elf` (x86-64 ELF, 11 KB, stripped, SHA-256
+`b2079e1eb1793dc33332865221e30b16291533ef2cfd1f805c001d676bf95d79`) is built from
+`swift_call_spill_elf.swift` and `swift_call_spill_helper.c`:
+
+```bash
+gcc -c -O1 swift_call_spill_helper.c -o helper.o
+swiftc -O -wmo -module-name spillfix -no-toolchain-stdlib-rpath \
+  swift_call_spill_elf.swift helper.o -o spillfix
+llvm-objcopy --strip-all spillfix swift_call_spill_elf
+```
+
+(swiftc 6.3, gcc 15.3.0.) `spill_test` (`0x2836`) zeroes r12, calls the
+throwing Swift function `risky` (`0x2800`), stores r12 to `8(%rsp)`, reuses r12
+and tests the value it reloads from the slot: with `swiftmetadata on` the call
+is a throwing call and the `-1` error path survives. `spill_moved` (`0x2874`)
+moves rsp between the store and the reload, so the reload reads another slot
+and its test is not the error test.
