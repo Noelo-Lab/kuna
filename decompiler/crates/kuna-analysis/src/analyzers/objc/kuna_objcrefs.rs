@@ -20,7 +20,7 @@
 //! The rebase slots are also reported as **constant** (the ranges [`emit`] returns):
 //! dyld fills them before any code runs and nothing rewrites them afterwards,
 //! which is why Ghidra's `ObjectiveC2_ClassAnalyzer` marks the three ref blocks
-//! read-only. The commit paints those ranges foldable under `objcrefconst`, so a
+//! read-only. The commit paints those ranges foldable whenever `objc` is on, so a
 //! send renders `objc_msgSend(obj, sel_init)` and `[super init]` shows its class.
 //! A bind slot (an imported class) has no static value and is named only.
 //!

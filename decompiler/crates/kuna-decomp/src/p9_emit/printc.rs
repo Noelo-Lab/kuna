@@ -7275,7 +7275,7 @@ impl PrintC {
     /// [`op_type_cast_ir`](Self::op_type_cast_ir), leaving the cast out when
     /// `implied` (kuna `castimplied`: C's own conversion performs it).
     fn op_type_cast_ir_with(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, implied: bool) {
-        if arch.analysis_godwarfsig && arch.analysis_gopairreturns {
+        if arch.analysis_godwarfsig {
             if let Some(operation) = fd.obank().get(op) {
                 if let (Some(input), Some(output)) = (operation.get_in(0), operation.get_out()) {
                     if self.push_pair_carrier(fd, arch, input, op, &fd.vn_type_def_facing(output)) {
@@ -8305,7 +8305,7 @@ impl PrintC {
     /// (`getHiddenThisSlot`) is the C++ method-invocation hook (always -1 here —
     /// the C++ `int4 skip = -1;` for the direct case, no C++ method format yet).
     fn op_call_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
-        if !arch.analysis_gopairreturns || !arch.analysis_godwarfsig {
+        if !arch.analysis_godwarfsig {
             self.op_call_raw_ir(fd, arch, op);
             return;
         }
@@ -12956,7 +12956,7 @@ impl RealTypeCtx {
             model: crate::kuna_ctypes::CDataModel::from_types(&*arch.types()),
             go_package: None,
             go_pair_types: (lang == crate::kuna_lang::OutLang::Go
-                && arch.analysis_godwarfsig && arch.analysis_gopairreturns).then(|| arch.types_rc()),
+                && arch.analysis_godwarfsig).then(|| arch.types_rc()),
         }
     }
 }

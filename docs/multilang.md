@@ -33,7 +33,7 @@ Two structural facts shape the whole design:
 1. **Detection runs inside `load file`, before any `option` line** (the
    stash→flags→commit protocol, `docs/spec/00-overview.md` §0.1). A user
    override of the detected language therefore has to be a *loadtime-tier*
-   option (env binding via `kuna-cli/src/loadtime.rs`), like `relocobjects`.
+   option (env binding via `kuna-cli/src/loadtime.rs`), like `goabi`.
 2. **`type_metatype` is effectively closed** (~3.7k references across 380
    files, mostly non-exhaustive matches; `kuna_dwarfvariants.rs` already
    examined and rejected adding a variant). Language type semantics must ride
@@ -293,7 +293,7 @@ toolchain in the devcontainer):
 - Mode interaction: real Go binaries are almost always >2 MiB, so `auto`
   resolves to `fast` and the Listing is off — but **pclntab *is* Go's
   function discovery**, runs at load, and is cheap. The pack keeps
-  `gopclntab` on in every mode (it already defaults on), making Go the rare
+  `gopclntab` running in every mode, making Go the rare
   case where `fast` loses nothing on inventory.
 
 **Rust pack** (second: much already exists — detection, demangling, rustabi,
@@ -310,7 +310,7 @@ panic no-return lists, securitycheck, DWARF variants):
 
 **Swift pack** (third: most new infrastructure, smallest immediate corpus):
 - Prereqs the others don't need: a Swift demangler (**done**: the pure-Rust
-  `analyzers/demangle/kuna_swift.rs`, option `swiftdemangle`, verified against
+  `analyzers/demangle/kuna_swift.rs`, verified against
   `swift-demangle`; every crate alternative builds Apple's C++ demangler, which
   `kuna-wasm` cannot carry), `__swift5_*` metadata walker (**done**:
   `analyzers/swift`, option `swiftmetadata` names accessors, vtable slots,

@@ -1,16 +1,13 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-983e58b7c36b",
+  "probe_id": "a-8fbb8870b3a5",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
     "decompile",
     "{{BIN}}",
     "0x401028",
-    "--addr",
-    "--option",
-    "peimportcall",
-    "on"
+    "--addr"
   ],
   "cwd": "{{WORK}}",
   "env": {

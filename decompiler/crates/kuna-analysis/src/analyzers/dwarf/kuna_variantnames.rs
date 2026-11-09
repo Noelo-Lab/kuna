@@ -48,7 +48,7 @@ pub(super) fn tag_namemap(facets: &[VariantFacet], tag_size: int4) -> BTreeMap<u
 
 /// The type to install on the `tag` member: a synthesized enum named
 /// `<enum>::Discriminant` carrying [`tag_namemap`], or `None` to keep the
-/// DWARF-declared integer (gate off, tag already an enum, no named value, or
+/// DWARF-declared integer (tag already an enum, no named value, or
 /// a same-named foreign type owns the name — never fight one).
 pub(super) fn synthesized_tag_enum(
     types: &dyn TypeFactory,
@@ -56,7 +56,7 @@ pub(super) fn synthesized_tag_enum(
     tag_type: &Rc<Datatype>,
     facets: &[VariantFacet],
 ) -> Option<Rc<Datatype>> {
-    if !kuna_decomp::kuna_variantnames::variantnames_enabled() || tag_type.is_enum_type() {
+    if tag_type.is_enum_type() {
         return None;
     }
     let tag_size = tag_type.get_size();

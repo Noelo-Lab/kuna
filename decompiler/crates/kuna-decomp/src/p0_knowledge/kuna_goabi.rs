@@ -23,7 +23,7 @@
 //!
 //! The language id is composed inside `load file`, upstream of every
 //! per-function `option` command — the same seam as `sourcelang`, and the
-//! same [`GOABI_ENV`] bridge pattern (`rexthunk`/`relocobjects`).
+//! same [`GOABI_ENV`] bridge pattern.
 //!
 //! ## The `.abi0` binding that is deliberately NOT here
 //!

@@ -415,23 +415,18 @@ impl Listing {
 
         // The PPC64 ELFv2 local-entry fold (`ppclocalentry`): an intra-module `bl`
         // targets `st_value + <localentry>`, which is a point inside the callee,
-        // not a function of its own. Empty on every other architecture and
-        // whenever the option is off (see `kuna_ppclocalentry`).
-        let local_entries = kuna_ppclocalentry::fold_map(arch, file, seeds);
+        // not a function of its own. Empty on every other architecture (see
+        // `kuna_ppclocalentry`).
+        let local_entries = kuna_ppclocalentry::fold_map(file, seeds);
         let tail_transfers: BTreeMap<u64, u64> = mips_transfers.iter().copied().collect();
         let want_stack_callbacks = arch.analysis_fast_funcdisc
             && matches!(file.architecture(), object::Architecture::I386 | object::Architecture::X86_64);
 
-        let tables = arch
-            .analysis_thumbswitch
-            .then(|| {
-                kuna_thumbswitch::HalfwordTables::new(
-                    file,
-                    arch.manage().get_default_data_space().cloned(),
-                    arch.max_jumptable_size as usize,
-                )
-            })
-            .flatten();
+        let tables = kuna_thumbswitch::HalfwordTables::new(
+            file,
+            arch.manage().get_default_data_space().cloned(),
+            arch.max_jumptable_size as usize,
+        );
         let a32_pool = kuna_a32switch::applies(file, arch).then(|| kuna_poolref::PoolImage::new(file)).flatten();
         let a32_tables = a32_pool.as_ref().map(|pool| kuna_a32switch::A32Tables::new(arch, pool));
         let x86_tables = arch

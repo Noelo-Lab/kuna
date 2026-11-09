@@ -114,7 +114,6 @@ impl Loaded {
             true,
             false,
             Some(&bracket),
-            true,
             None,
         )
     }

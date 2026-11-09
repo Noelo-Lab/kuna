@@ -223,46 +223,12 @@ fn armframes_on(arch: &mut Architecture) {
     arch.set_kuna_option("armframes", "on").expect("armframes flips on");
 }
 
-/// `armpltslot off` restores the constant scan's rows: each stub's `adr`
-/// files the PC value and its `add` the mapped immediate. The load still files
-/// its slot, which register pair carrying reads on its own.
-#[test]
-fn armpltslot_off_files_the_partial_sums() {
-    let idx = build_with("xreffp_arm_le32", |arch| {
-        arch.set_kuna_option("armpltslot", "off").expect("armpltslot flips off");
-    });
-    for (stub, slot) in STUBS {
-        assert_eq!(from(&idx, stub), vec![(stub + 8, XrefKind::Data)], "{stub:#x}");
-        assert_eq!(from(&idx, stub + 4), vec![(STUB_ADD, XrefKind::Data)], "{stub:#x}");
-        assert!(from(&idx, stub + 8).contains(&(slot, XrefKind::Read)), "{stub:#x}");
-    }
-}
-
-/// `armcondskip off` restores a jump from every predicated instruction to the
-/// next one, and from a skip that falls through into an entry.
-#[test]
-fn armcondskip_off_files_every_skip() {
-    let idx = build_with("xreffp_arm_le32", |arch| {
-        arch.set_kuna_option("armcondskip", "off").expect("armcondskip flips off");
-    });
-    for (at, len) in PREDICATED {
-        assert_eq!(from(&idx, at), vec![(at + len, XrefKind::Jump)], "{at:#x}");
-    }
-    let (at, entry) = SKIP_INTO_ENTRY;
-    assert_eq!(from(&idx, at), vec![(entry, XrefKind::Jump)]);
-}
-
 /// The condition-skip rule leaves A32 table reading alone: `dispatch_last`'s
-/// `addls pc` table is still read and its cases still referenced, with
-/// `armcondskip` on and off.
+/// `addls pc` table is still read and its cases still referenced.
 #[test]
-fn a32_tables_are_read_under_armcondskip() {
-    let off = build_with("xreffp_strip_arm_le32", |arch| {
-        arch.set_kuna_option("armcondskip", "off").expect("armcondskip flips off");
-    });
-    for idx in [build("xreffp_strip_arm_le32"), off] {
-        let tables: Vec<_> = idx.switch_tables().iter().map(|t| (t.dispatch, t.cases.clone())).collect();
-        assert_eq!(tables.len(), 1, "{tables:?}");
-        assert_eq!(tables[0].0, 0x10084);
-    }
+fn a32_tables_are_read_with_condition_skips() {
+    let idx = build("xreffp_strip_arm_le32");
+    let tables: Vec<_> = idx.switch_tables().iter().map(|t| (t.dispatch, t.cases.clone())).collect();
+    assert_eq!(tables.len(), 1, "{tables:?}");
+    assert_eq!(tables[0].0, 0x10084);
 }
