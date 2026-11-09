@@ -6,6 +6,7 @@
 
 use std::rc::Rc;
 
+use crate::annotation_exprent::AnnotationExprent;
 use crate::class_reference14_processor::ClassReference14Processor;
 use crate::class_wrapper::ClassWrapper;
 use crate::class_writer::{ClassWriter, IFabricJavadocProvider};
@@ -30,7 +31,9 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::import_collector::ImportCollector;
 use crate::initializer_processor::InitializerProcessor;
 use crate::interpreter_util::InterpreterUtil;
+use crate::jthrow;
 use crate::k_annotation_exprent::{KAnnotationExprent, UseSiteTarget};
+use crate::k_class::KClass;
 use crate::k_constructor::KConstructor;
 use crate::k_element::KElement;
 use crate::k_enum_processor::KEnumProcessor;
@@ -47,6 +50,7 @@ use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{ClassKind, Modality, Visibility};
 use crate::link_constant::LinkConstant;
+use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::pool_interceptor::PoolInterceptor;
@@ -425,9 +429,7 @@ impl KotlinWriter {
     }
 
     /// `cls.resolver()`, dereferenced (a `null` resolver is a `NullPointerException`).
-    fn class_resolver(
-        cls: &crate::k_class::KClass,
-    ) -> &crate::metadata_name_resolver::MetadataNameResolver {
+    fn class_resolver(cls: &KClass) -> &MetadataNameResolver {
         cls.resolver
             .as_ref()
             .expect("NullPointerException: KClass.resolver")
@@ -1176,7 +1178,7 @@ impl KotlinWriter {
     /// shortened list, in this class scope and (through its source) in later ones.
     fn remove_annotation(
         attribute: StructAnnotationAttribute,
-        annotations: Vec<crate::annotation_exprent::AnnotationExprent>,
+        annotations: Vec<AnnotationExprent>,
         index: usize,
     ) {
         let mut annotations = annotations;
@@ -1200,7 +1202,7 @@ impl KotlinWriter {
         let node_type = node.with(|d| d.type_);
         if node_type == ClassNodeType::Anonymous {
             let Some(KElement::Class(cls)) = kt_data else {
-                crate::jthrow!(IllegalStateException; "Anonymous class does not have Class Kotlin metadata");
+                jthrow!(IllegalStateException; "Anonymous class does not have Class Kotlin metadata");
             };
 
             buffer.append("object");

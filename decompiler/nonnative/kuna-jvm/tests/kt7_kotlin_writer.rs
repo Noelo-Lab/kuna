@@ -330,7 +330,9 @@ fn valid_kotlin_identifiers_match_vineflower() {
     let none: Option<&str> = None;
     out.push(format!(
         "ident\t\\N\t{}",
-        esc(none.map(KotlinWriter::to_valid_kotlin_identifier).as_deref())
+        esc(none
+            .map(KotlinWriter::to_valid_kotlin_identifier)
+            .as_deref())
     ));
     assert_lines(&out, "ident");
 }
@@ -496,7 +498,11 @@ fn type_parameters_match_vineflower() {
         );
         let mut buffer = TextBuffer::new();
         KotlinWriter::append_type_parameters(&mut buffer, &parameters, &bounds);
-        out.push(format!("typeparams\t{}\t{}", method_label(mt), text(&buffer)));
+        out.push(format!(
+            "typeparams\t{}\t{}",
+            method_label(mt),
+            text(&buffer)
+        ));
     }
     assert_lines(&out, "typeparams");
 }
@@ -540,8 +546,8 @@ fn failed_methods_match_vineflower() {
         let cl = enter(node);
         let methods = cl.get_methods().to_vec();
         for (i, &mt) in methods.iter().enumerate() {
-            let writable = mt.get_descriptor() == "()V"
-                || (name == "k7/En" && mt.get_name() == "<init>");
+            let writable =
+                mt.get_descriptor() == "()V" || (name == "k7/En" && mt.get_name() == "<init>");
             if !writable {
                 continue;
             }
@@ -579,7 +585,10 @@ fn exception_dumps_precede_the_bytecode_listing() {
     let mut buffer = TextBuffer::new();
     let mt = cl.get_methods().get(index);
     let shown = KotlinWriter::new().write_method(node, mt, index as i32, &mut buffer, 0);
-    assert!(!shown, "a method that failed to decompile is reported as hidden");
+    assert!(
+        !shown,
+        "a method that failed to decompile is reported as hidden"
+    );
     let text = buffer.convert_to_string_and_allow_data_discard();
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines[0], "open fun One() {");
@@ -591,4 +600,63 @@ fn exception_dumps_precede_the_bytecode_listing() {
     assert_eq!(lines[6], "   // Bytecode:");
     assert_eq!(lines[7], "   // 0: aload 0");
     assert_eq!(*lines.last().unwrap(), "}");
+}
+
+struct KotlinOnly;
+
+impl kuna_jvm::plugin_source::PluginSource for KotlinOnly {
+    fn find_plugins(&self) -> Vec<std::rc::Rc<dyn kuna_jvm::plugin::Plugin>> {
+        vec![std::rc::Rc::new(
+            kuna_jvm::kotlin_plugin::KotlinPlugin::new(),
+        )]
+    }
+}
+
+/// One Kotlin corpus class through the whole pipeline with the Kotlin plugin
+/// injected; prints the output or where it stops (`KT7_E2E_CLASS` overrides the class).
+#[test]
+#[ignore = "probe: run with --ignored --nocapture while other Kotlin slices are unported"]
+fn kotlin_class_end_to_end_probe() {
+    use std::rc::Rc;
+
+    use kuna_jvm::context_source::SingleFileContextSource;
+    use kuna_jvm::fernflower::Fernflower;
+    use kuna_jvm::i_fernflower_logger::CollectingLogger;
+    use kuna_jvm::kuna_corpus::reset_engine_thread;
+
+    let class = std::env::var("KT7_E2E_CLASS").unwrap_or_else(|_| {
+        format!(
+            "{}/kwt/jvm/corpus-kt/classes/kt/pkg/TestAnyType.class",
+            std::env::var("HOME").unwrap()
+        )
+    });
+    let path = PathBuf::from(&class);
+    if !path.exists() {
+        eprintln!("no {class}");
+        return;
+    }
+    let logger = Rc::new(CollectingLogger::new());
+    let options = vec![(
+        IFernflowerPreferences::INCLUDE_JAVA_RUNTIME.to_string(),
+        "0".to_string(),
+    )];
+    let mut fernflower =
+        Fernflower::new_with_plugin_sources(&options, logger.clone(), vec![Rc::new(KotlinOnly)]);
+    fernflower.add_source(Rc::new(SingleFileContextSource::new(&path)));
+    let mut units = Vec::new();
+    let result = try_catch(|| fernflower.decompile_context(&mut |unit| units.push(unit)));
+    match &result {
+        Ok(()) => eprintln!("finished"),
+        Err(caught) => eprintln!("stopped: {}", caught.message),
+    }
+    for message in logger.messages() {
+        eprintln!("log: {message}");
+    }
+    for unit in &units {
+        eprintln!("--- {}\n{}", unit.path, unit.content);
+    }
+    if result.is_ok() {
+        fernflower.clear_context();
+    }
+    reset_engine_thread();
 }
