@@ -94,3 +94,5 @@ mod b07a_var_definition;
 mod b07b_classpath;
 #[path = "b08_lift.rs"]
 mod b08_lift;
+#[path = "b09_stack_vars.rs"]
+mod b09_stack_vars;
