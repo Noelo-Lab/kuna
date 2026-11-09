@@ -116,3 +116,5 @@ mod b16_pattern_match;
 mod b18_class_writer;
 #[path = "b19_classes.rs"]
 mod b19_classes;
+#[path = "b20_nested.rs"]
+mod b20_nested;
