@@ -665,7 +665,9 @@ pub(crate) fn decompile_all(args: &Args) -> i32 {
         Some(roots)
     };
     execute(args, &loaded, select, &|outcome, runtime| {
-        finish_decompile_all(args, &loaded, &targets, by_method, &selected, total, &outcome, runtime)
+        let status = finish_decompile_all(args, &loaded, &targets, by_method, &selected, total, &outcome, runtime);
+        run::abandon(outcome);
+        status
     })
 }
 

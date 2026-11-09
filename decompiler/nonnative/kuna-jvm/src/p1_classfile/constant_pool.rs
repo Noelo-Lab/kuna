@@ -1,10 +1,20 @@
 //! Port of `org/jetbrains/java/decompiler/struct/consts/ConstantPool.java`.
+//!
+//! kuna reads a pool lazily when no pool interceptor is set: construction
+//! only records where each entry lies, and an entry is read (and resolved, its
+//! referenced entries first) when it is first asked for. The values are those
+//! of Java's two-pass resolution whenever every reference has the kind that
+//! pass expects; a pool where one does not is read eagerly, as in Java.
+
+use std::rc::Rc;
 
 use crate::byte_cursor::ByteCursor;
 use crate::code_constants::{
     CONSTANT_CLASS, CONSTANT_DOUBLE, CONSTANT_DYNAMIC, CONSTANT_FIELDREF, CONSTANT_FLOAT,
     CONSTANT_INTEGER, CONSTANT_INTERFACE_METHODREF, CONSTANT_INVOKE_DYNAMIC, CONSTANT_LONG,
-    CONSTANT_METHODREF, CONSTANT_METHOD_HANDLE, CONSTANT_METHOD_TYPE, CONSTANT_MODULE,
+    CONSTANT_METHODREF, CONSTANT_METHOD_HANDLE, CONSTANT_METHOD_HANDLE_REF_GET_FIELD,
+    CONSTANT_METHOD_HANDLE_REF_GET_STATIC, CONSTANT_METHOD_HANDLE_REF_PUT_FIELD,
+    CONSTANT_METHOD_HANDLE_REF_PUT_STATIC, CONSTANT_METHOD_TYPE, CONSTANT_MODULE,
     CONSTANT_NAME_AND_TYPE, CONSTANT_PACKAGE, CONSTANT_STRING, CONSTANT_UTF8,
 };
 use crate::decompiler_context::DecompilerContext;
@@ -23,6 +33,14 @@ use crate::{arena_identity, arena_object};
 pub struct ConstantPoolData {
     pub pool: Vec<Option<PooledConstant>>,
     pub interceptor: Option<PoolInterceptor>,
+    pending: Option<Rc<Pending>>,
+}
+
+/// The entries of a lazily read pool: the class bytes and, by index, the
+/// offset of each entry's tag (0: no entry).
+struct Pending {
+    bytes: ByteCursor,
+    at: Vec<u32>,
 }
 
 arena_object!(pub ConstantPool => ConstantPoolData, Session);
@@ -41,10 +59,226 @@ impl ConstantPool {
 
     /// Java: `ConstantPool(DataInputStream)`
     pub fn new(in_: &mut ByteCursor) -> ConstantPool {
-        let this = ConstantPool::new_without_interceptor(in_);
         let interceptor = DecompilerContext::get_pool_interceptor();
+        if interceptor.is_none() {
+            let start = in_.position();
+            let (this, at) = ConstantPool::scan(in_);
+            let bytes = in_.share_at(0);
+            if Self::resolves_in_any_order(bytes.data(), &at) {
+                this.with_mut(|d| {
+                    d.pool = vec![None; at.len()];
+                    d.pending = Some(Rc::new(Pending { bytes, at }));
+                });
+                return this;
+            }
+            return ConstantPool::new_without_interceptor(&mut in_.share_at(start));
+        }
+        let this = ConstantPool::new_without_interceptor(in_);
         this.with_mut(|d| d.interceptor = interceptor);
         this
+    }
+
+    /// Reads the entry layout as the Java constructor reads the entries (same
+    /// end position, same exceptions); returns each entry's tag offset.
+    fn scan(in_: &mut ByteCursor) -> (ConstantPool, Vec<u32>) {
+        let size = in_.read_unsigned_short();
+        let this = ConstantPool::alloc(ConstantPoolData {
+            pool: Vec::new(),
+            interceptor: None,
+            pending: None,
+        });
+        let mut at: Vec<u32> = Vec::with_capacity(size as usize);
+        at.push(0);
+        let mut i = 1;
+        while i < size {
+            let offset = in_.position() as u32;
+            let tag = in_.read_unsigned_byte() as i8;
+            match tag as i32 {
+                CONSTANT_UTF8 => {
+                    let len = in_.read_unsigned_short() as usize;
+                    in_.discard(len);
+                }
+                CONSTANT_INTEGER => {
+                    in_.read_int();
+                }
+                CONSTANT_FLOAT => {
+                    in_.read_float();
+                }
+                CONSTANT_LONG | CONSTANT_DOUBLE => {
+                    in_.read_long();
+                    at.push(offset);
+                    at.push(0);
+                    i += 2;
+                    continue;
+                }
+                CONSTANT_CLASS | CONSTANT_STRING | CONSTANT_METHOD_TYPE | CONSTANT_MODULE
+                | CONSTANT_PACKAGE => {
+                    in_.read_unsigned_short();
+                }
+                CONSTANT_NAME_AND_TYPE
+                | CONSTANT_FIELDREF
+                | CONSTANT_METHODREF
+                | CONSTANT_INTERFACE_METHODREF
+                | CONSTANT_INVOKE_DYNAMIC
+                | CONSTANT_DYNAMIC => {
+                    in_.read_unsigned_short();
+                    in_.read_unsigned_short();
+                }
+                CONSTANT_METHOD_HANDLE => {
+                    in_.read_unsigned_byte();
+                    in_.read_unsigned_short();
+                }
+                _ => crate::jthrow!("Invalid Constant Pool entry #{} Type: {}", i, tag),
+            }
+            at.push(offset);
+            i += 1;
+        }
+        (this, at)
+    }
+
+    /// Whether resolving entries on demand gives what the Java constructor's
+    /// passes give and throws nothing there: every reference points at an
+    /// entry of a kind resolved in an earlier pass, and every method
+    /// descriptor `LinkConstant` checks is well formed.
+    fn resolves_in_any_order(data: &[u8], at: &[u32]) -> bool {
+        let tag = |i: usize| -> i32 {
+            match at.get(i) {
+                Some(&o) if o != 0 => data[o as usize] as i32,
+                _ => 0,
+            }
+        };
+        let u2 = |o: usize| ((data[o] as usize) << 8) | data[o + 1] as usize;
+        let utf8 = |i: usize| -> Option<&[u8]> {
+            (tag(i) == CONSTANT_UTF8).then(|| {
+                let o = at[i] as usize;
+                &data[o + 3..o + 3 + u2(o + 1)]
+            })
+        };
+        let method_descriptor = |name_and_type: usize| -> bool {
+            let Some(d) = utf8(u2(at[name_and_type] as usize + 3)) else {
+                return false;
+            };
+            if d.is_ascii() {
+                d.first() == Some(&b'(') && d.contains(&b')')
+            } else {
+                let d = decode_modified_utf8(d);
+                d.encode_utf16().count() >= 2 && d.contains(')') && d.starts_with('(')
+            }
+        };
+        let name_and_type_of = |i: usize| -> Option<usize> {
+            match tag(i) {
+                CONSTANT_NAME_AND_TYPE => Some(i),
+                CONSTANT_FIELDREF
+                | CONSTANT_METHODREF
+                | CONSTANT_INTERFACE_METHODREF
+                | CONSTANT_INVOKE_DYNAMIC
+                | CONSTANT_DYNAMIC => Some(u2(at[i] as usize + 3)),
+                _ => None,
+            }
+        };
+        for (i, &o) in at.iter().enumerate() {
+            if o == 0 {
+                continue;
+            }
+            let o = o as usize;
+            let ok = match tag(i) {
+                CONSTANT_CLASS | CONSTANT_STRING | CONSTANT_METHOD_TYPE | CONSTANT_MODULE
+                | CONSTANT_PACKAGE => utf8(u2(o + 1)).is_some(),
+                CONSTANT_NAME_AND_TYPE => utf8(u2(o + 1)).is_some() && utf8(u2(o + 3)).is_some(),
+                t @ (CONSTANT_FIELDREF
+                | CONSTANT_METHODREF
+                | CONSTANT_INTERFACE_METHODREF
+                | CONSTANT_INVOKE_DYNAMIC
+                | CONSTANT_DYNAMIC) => {
+                    let class_ok = t == CONSTANT_INVOKE_DYNAMIC
+                        || t == CONSTANT_DYNAMIC
+                        || matches!(
+                            tag(u2(o + 1)),
+                            CONSTANT_UTF8
+                                | CONSTANT_CLASS
+                                | CONSTANT_STRING
+                                | CONSTANT_METHOD_TYPE
+                                | CONSTANT_MODULE
+                                | CONSTANT_PACKAGE
+                        );
+                    let name_and_type = u2(o + 3);
+                    class_ok
+                        && tag(name_and_type) == CONSTANT_NAME_AND_TYPE
+                        && (t == CONSTANT_FIELDREF
+                            || t == CONSTANT_DYNAMIC
+                            || method_descriptor(name_and_type))
+                }
+                CONSTANT_METHOD_HANDLE => {
+                    let kind = data[o + 1] as i32;
+                    let field_kind = matches!(
+                        kind,
+                        CONSTANT_METHOD_HANDLE_REF_GET_FIELD
+                            | CONSTANT_METHOD_HANDLE_REF_PUT_FIELD
+                            | CONSTANT_METHOD_HANDLE_REF_GET_STATIC
+                            | CONSTANT_METHOD_HANDLE_REF_PUT_STATIC
+                    );
+                    match name_and_type_of(u2(o + 2)) {
+                        Some(n) => {
+                            tag(n) == CONSTANT_NAME_AND_TYPE && (field_kind || method_descriptor(n))
+                        }
+                        None => false,
+                    }
+                }
+                _ => true,
+            };
+            if !ok {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Reads and resolves pending entry `index` of a lazily read pool.
+    fn read_pending(self, index: usize, pending: &Pending) -> PooledConstant {
+        let mut in_ = pending.bytes.share_at(pending.at[index] as usize);
+        let tag = in_.read_unsigned_byte() as i8;
+        let mut constant: PooledConstant = match tag as i32 {
+            CONSTANT_UTF8 => {
+                let len = in_.read_unsigned_short() as usize;
+                let text = decode_modified_utf8(&in_.read(len));
+                PrimitiveConstant::new(CONSTANT_UTF8, ConstValue::String(text.into())).into()
+            }
+            CONSTANT_INTEGER => {
+                PrimitiveConstant::new(CONSTANT_INTEGER, ConstValue::Integer(in_.read_int())).into()
+            }
+            CONSTANT_FLOAT => {
+                PrimitiveConstant::new(CONSTANT_FLOAT, ConstValue::Float(in_.read_float())).into()
+            }
+            CONSTANT_LONG => {
+                PrimitiveConstant::new(CONSTANT_LONG, ConstValue::Long(in_.read_long())).into()
+            }
+            CONSTANT_DOUBLE => {
+                PrimitiveConstant::new(CONSTANT_DOUBLE, ConstValue::Double(in_.read_double()))
+                    .into()
+            }
+            CONSTANT_CLASS | CONSTANT_STRING | CONSTANT_METHOD_TYPE | CONSTANT_MODULE
+            | CONSTANT_PACKAGE => {
+                PrimitiveConstant::new_index(tag as i32, in_.read_unsigned_short()).into()
+            }
+            CONSTANT_METHOD_HANDLE => {
+                let index1 = in_.read_unsigned_byte();
+                let index2 = in_.read_unsigned_short();
+                LinkConstant::new_index(tag as i32, index1, index2).into()
+            }
+            _ => {
+                let index1 = in_.read_unsigned_short();
+                let index2 = in_.read_unsigned_short();
+                LinkConstant::new_index(tag as i32, index1, index2).into()
+            }
+        };
+        if !matches!(
+            tag as i32,
+            CONSTANT_UTF8 | CONSTANT_INTEGER | CONSTANT_FLOAT | CONSTANT_LONG | CONSTANT_DOUBLE
+        ) {
+            constant.resolve_constant(self);
+        }
+        self.with_mut(|d| d.pool[index] = Some(constant.clone()));
+        constant
     }
 
     /// The Java constructor up to (not including) its read of the context's pool interceptor.
@@ -53,6 +287,7 @@ impl ConstantPool {
         let this = ConstantPool::alloc(ConstantPoolData {
             pool: Vec::with_capacity(size as usize),
             interceptor: None,
+            pending: None,
         });
         let mut next_pass = [BitSet::new(), BitSet::new(), BitSet::new()];
         let mut pool: Vec<Option<PooledConstant>> = Vec::with_capacity(size as usize);
@@ -205,7 +440,18 @@ impl ConstantPool {
 
     #[track_caller]
     pub fn get_constant(self, index: i32) -> Option<PooledConstant> {
-        self.with(|d| d.pool[index as usize].clone())
+        let index = index as usize;
+        let found = self.with(|d| match &d.pool[index] {
+            Some(c) => Ok(Some(c.clone())),
+            None => match &d.pending {
+                Some(pending) if pending.at[index] != 0 => Err(pending.clone()),
+                _ => Ok(None),
+            },
+        });
+        match found {
+            Ok(c) => c,
+            Err(pending) => Some(self.read_pending(index, &pending)),
+        }
     }
 
     #[track_caller]
@@ -291,6 +537,10 @@ impl ConstantPool {
     }
 
     pub fn get_pool(self) -> Vec<Option<PooledConstant>> {
+        let len = self.with(|d| d.pool.len());
+        for index in 0..len {
+            self.get_constant(index as i32);
+        }
         self.with(|d| d.pool.clone())
     }
 

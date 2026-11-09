@@ -135,10 +135,10 @@ impl ContextUnit {
     }
 
     pub fn try_load_class(self, class_name: &str) -> Option<StructClass> {
-        let data = self.get_class_bytes(class_name)?;
+        let data = self.source().get_class_bytes_shared(class_name)?;
 
         Some(StructClass::create(
-            &mut ByteCursor::new(data),
+            &mut ByteCursor::from_arc(data),
             self.is_own(),
         ))
     }
@@ -258,6 +258,7 @@ impl ContextUnit {
         }
 
         Self::wait_for_all(futures);
+        crate::kuna_driver::trace(|| format!("processed {}", to_dump.len()));
         let mut futures: Vec<Result<(), Caught>> = Vec::new();
 
         for class_ctx in to_dump.iter_mut() {

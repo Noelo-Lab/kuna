@@ -56,6 +56,7 @@ pub(crate) fn load(args: &Args) -> Result<Loaded, String> {
         siblings: args.siblings,
     };
     let input = kuna_input::load(Path::new(&args.input), &options).map_err(|e| e.to_string())?;
+    kuna_jvm::kuna_driver::trace(|| "cli input read".into());
     let universe = Universe::new(kuna_inventory::list(&input));
     if universe.classes.is_empty() {
         return Err(format!("{}: no class file could be read", args.input));
@@ -201,6 +202,13 @@ pub(crate) fn config(
         }));
     }
     Ok(config)
+}
+
+/// Leaves a rendered outcome to the process exit that follows: its text was
+/// built on the engine threads, and handing it back to their heaps while they
+/// drop their engines costs a quarter second on a large jar.
+pub(crate) fn abandon(outcome: Outcome) {
+    std::mem::forget(outcome);
 }
 
 /// What a finished (or abandoned) run hands its renderer.

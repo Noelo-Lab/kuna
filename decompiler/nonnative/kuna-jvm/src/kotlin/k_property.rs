@@ -608,23 +608,21 @@ impl KProperty {
                         &field.get_name(),
                         &field.get_descriptor(),
                     );
-                    class_struct.d_mut(|d| Rc::make_mut(&mut d.fields).add_with_key(field, key));
+                    class_struct.add_field_with_key(field, key);
                 }
                 if let Some(getter_method) = getter_method {
                     let key = InterpreterUtil::make_unique_key(
                         &getter_method.get_name(),
                         &getter_method.get_descriptor(),
                     );
-                    class_struct
-                        .d_mut(|d| Rc::make_mut(&mut d.methods).add_with_key(getter_method, key));
+                    class_struct.add_method_with_key(getter_method, key);
                 }
                 if let Some(setter_method) = setter_method {
                     let key = InterpreterUtil::make_unique_key(
                         &setter_method.get_name(),
                         &setter_method.get_descriptor(),
                     );
-                    class_struct
-                        .d_mut(|d| Rc::make_mut(&mut d.methods).add_with_key(setter_method, key));
+                    class_struct.add_method_with_key(setter_method, key);
                 }
             }
         }

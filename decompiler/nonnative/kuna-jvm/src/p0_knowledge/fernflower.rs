@@ -283,7 +283,9 @@ impl Fernflower {
             converter.rename();
         }
 
+        crate::kuna_driver::trace(|| "load start".into());
         self.class_processor.load_classes(self.helper.as_deref());
+        crate::kuna_driver::trace(|| "load_classes done".into());
     }
 
     /// The root classes a full run delivers, in its order (own units in order,

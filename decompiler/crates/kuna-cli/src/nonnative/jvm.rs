@@ -9,6 +9,7 @@
 mod args;
 pub(crate) mod catalog;
 pub(crate) mod corpus;
+mod heap;
 mod project;
 mod render;
 mod run;
@@ -22,6 +23,7 @@ pub(crate) const DOCS_POINTER: &str = "kuna docs jvm";
 
 /// Runs `kuna <sub> <rest..>` on the JVM input `input`.
 pub(crate) fn run(sub: &str, rest: &[String], input: &str) -> i32 {
+    kuna_jvm::kuna_driver::trace(|| "cli start".into());
     if rest.iter().any(|a| a == "-h" || a == "--help") {
         eprintln!("{}", args::usage(sub));
         return 0;
@@ -49,6 +51,9 @@ pub(crate) fn run(sub: &str, rest: &[String], input: &str) -> i32 {
             return 2;
         }
     };
+    if sub != args::Sub::Functions {
+        heap::tune();
+    }
     match sub {
         args::Sub::Decompile => render::decompile(&parsed),
         args::Sub::DecompileAll => render::decompile_all(&parsed),

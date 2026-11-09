@@ -210,6 +210,20 @@ class is finished. Method bodies are therefore kept as raw bytes and expanded on
 and annotations, which Vineflower parses straight into expressions, are parsed at load
 time into a session-lived element tree and built into expressions on first use in each
 class scope (`decompiler/nonnative/kuna-jvm/src/p1_classfile/struct_annotation_attribute.rs`).
+Reading is lazy where no output can tell (kuna). Unless a pool interceptor is set
+(renaming), a class is built from its header, interfaces and class attributes only: its
+constant pool records where each entry lies and reads an entry the first time it is
+asked for, resolving the entries it names first, and its fields and methods are read on
+the first `StructClass::get_fields`/`get_methods`
+(`decompiler/nonnative/kuna-jvm/src/p1_classfile/constant_pool.rs (ConstantPool::new)`).
+Resolving on demand gives the values of Java's two resolution passes whenever every
+reference points at an entry of the kind the pass expects and every method descriptor a
+link constant checks is well formed; a construction-time scan checks exactly that and
+reads any other pool eagerly, so a malformed pool fails where Java's does. Laziness
+changes only the creation order, hence the identity hashes, of member and attribute
+objects, and those hash only into sets the engine tests for membership. Class bytes are
+shared with the input, not copied. A member whose content (not its framing) is malformed
+fails when its class is first used rather than when the input is added.
 `jvm_decompile_generics` decides whether `Signature` attributes are parsed into generic
 descriptors (`decompiler/nonnative/kuna-jvm/src/p5_types/generic_main.rs`); off, every
 type prints erased. Debug attributes feed naming later: the `LocalVariableTable` and
@@ -741,20 +755,28 @@ input's classes and methods (names, nesting, access flags, source file, sizes, b
 length per method) from the class files alone, without decompiling.
 
 **Parallel instances.** `decompiler/nonnative/kuna-jvm/src/infra/kuna_driver.rs (run)`
-decompiles one input on several threads with output identical to a single instance's. A
-planning instance loads the input and lists its root classes in the order a single run
-writes them. The single run's only cross-class dependency that changes output is a class
+decompiles one input on several threads with output identical to a single instance's.
+Every worker loads its engine as it starts; the first also plans: it lists the root
+classes in the order a single run writes them. The single run's only cross-class dependency that changes output is a class
 reading another root class's processing results while it is written (most visibly the
 constructor masks of that root's nested classes, read when `new Outer.Inner(..)` or
 `super(..)` is written), so `decompiler/nonnative/kuna-jvm/src/infra/kuna_partition.rs`
 reads from the class files whose nested-class constructors each root calls. Roots
-are grouped into batches that also *process* (without writing) the roots they depend on,
-worker threads take batches from a shared cursor, largest first, and each runs its batch
-with `Fernflower::decompile_selected`, in the single run's order. A detector watches every
+are grouped into batches that also *process* (without writing) the roots they depend on.
+A root is first joined with the roots it depends on, costliest first, while the joined
+unit stays within the first batch's size, so that few batches process a root another
+batch writes; units are packed in root order into batches that shrink as the grouping goes
+(each about the cost not yet grouped over twice the worker count, down to the total over
+eight times the worker count, and closed before a unit would overfill it), so the last
+batches are short. Worker threads take batches from a shared queue,
+largest first, preferring among the next few one their engine can run without reloading
+(it processes no root this engine already processed), and each runs its batch with
+`Fernflower::decompile_selected`, in the single run's order. A detector watches every
 read of another root's state during the run; a read whose answer would differ from the
 single run's (*a divergent read*) makes the driver repeat that batch with the missing root
 added, so results are delivered only once clean. Results reach the caller in root order,
-whatever the number of workers. Each engine instance runs on a thread with a 512 MiB
+whatever the number of workers, and the call returns after the last delivery while the
+workers drop their engines. Each engine instance runs on a thread with a 512 MiB
 stack, since the port recurses as deeply as Vineflower does on the JVM.
 
 **Options.** `decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_options.rs (resolve)`
