@@ -102,3 +102,5 @@ mod b10_simplify;
 mod b11_condense;
 #[path = "b11_finally.rs"]
 mod b11_finally;
+#[path = "b12_loops.rs"]
+mod b12_loops;
