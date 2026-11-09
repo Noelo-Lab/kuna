@@ -66,12 +66,20 @@ thread_local! {
 
 pub struct MethodProcessor;
 
-/// The scratch objects one `code_to_java` run allocates and drops on the floor
-/// (Java's GC reclaims them): direct graphs and their nodes, SSA version graphs
-/// and their nodes, variable-definition helpers. Released when the run returns
-/// or unwinds; the only ones that escape are the direct graphs another
-/// method's wrapper cached meanwhile, which are kept with their nodes.
-struct MethodScratch {
+/// The scratch objects the passes allocate and drop on the floor (Java's GC
+/// reclaims them): direct graphs and their nodes, SSA version graphs and their
+/// nodes, variable-definition helpers. None of them is held by anything that
+/// outlives the pass that built it, except the direct graphs
+/// `MethodWrapper::get_or_build_graph` caches, which are kept with their nodes.
+///
+/// A scope releases every such object allocated since it was opened (or since
+/// its last `checkpoint`) when it is dropped -- on return or unwind -- and at
+/// each `checkpoint`, which callers place where no pass is in flight, so a long
+/// method stays bounded instead of keeping every round's garbage.
+pub(crate) struct ScratchScope(ScratchMarks);
+
+#[derive(Clone, Copy)]
+struct ScratchMarks {
     direct_graph: u32,
     direct_node: u32,
     versions_graph: u32,
@@ -79,9 +87,9 @@ struct MethodScratch {
     var_definition_helper: u32,
 }
 
-impl MethodScratch {
-    fn open() -> MethodScratch {
-        MethodScratch {
+impl ScratchMarks {
+    fn now() -> ScratchMarks {
+        ScratchMarks {
             direct_graph: DirectGraph::arena_len(),
             direct_node: DirectNode::arena_len(),
             versions_graph: VarVersionsGraph::arena_len(),
@@ -89,10 +97,8 @@ impl MethodScratch {
             var_definition_helper: VarDefinitionHelper::arena_len(),
         }
     }
-}
 
-impl Drop for MethodScratch {
-    fn drop(&mut self) {
+    fn release(self) {
         let kept_graphs = MethodWrapper::cached_graphs_since(self.direct_graph);
         let node_mark = self.direct_node;
         let mut kept_nodes = vec![false; (DirectNode::arena_len() - node_mark) as usize];
@@ -121,6 +127,25 @@ impl Drop for MethodScratch {
         VarVersionsGraph::release_since(self.versions_graph, |_| false);
         VarVersionNode::release_since(self.version_node, |_| false);
         VarDefinitionHelper::release_since(self.var_definition_helper, |_| false);
+    }
+}
+
+impl ScratchScope {
+    pub(crate) fn open() -> ScratchScope {
+        ScratchScope(ScratchMarks::now())
+    }
+
+    /// Release the scratch objects allocated since the last checkpoint; the
+    /// caller guarantees that none of them is still in use.
+    pub(crate) fn checkpoint(&mut self) {
+        self.0.release();
+        self.0 = ScratchMarks::now();
+    }
+}
+
+impl Drop for ScratchScope {
+    fn drop(&mut self) {
+        self.0.release();
     }
 }
 
@@ -163,7 +188,7 @@ impl MethodProcessor {
         var_proc: VarProcessor,
         spec: Option<&LanguageSpec>,
     ) -> RootStatement {
-        let _scratch = MethodScratch::open();
+        let mut scratch = ScratchScope::open();
         CancelationManager::check_canceled();
 
         Self::set_debug_currently_decompiling(None);
@@ -256,6 +281,7 @@ impl MethodProcessor {
 
         while f_proc.iterate_graph(cl, mt, root, graph) {
             finally_processed += 1;
+            scratch.checkpoint();
             let old_root = root;
             decompile_record.add(
                 &format!("ProcessFinallyOld_{finally_processed}"),
@@ -301,6 +327,7 @@ impl MethodProcessor {
         let mut stack_vars_processed = 0;
         loop {
             stack_vars_processed += 1;
+            scratch.checkpoint();
 
             StackVarsProcessor::simplify_stack_vars(root, mt, cl);
             decompile_record.add(
@@ -340,6 +367,7 @@ impl MethodProcessor {
 
         loop {
             decompile_record.increment_main_loop();
+            scratch.checkpoint();
             decompile_record.add("Start", Some(root));
 
             LabelHelper::clean_up_edges(root);
@@ -348,6 +376,7 @@ impl MethodProcessor {
             if root.has_loops() {
                 loop {
                     decompile_record.increment_merge_loop();
+                    scratch.checkpoint();
                     decompile_record.add("MergeLoopStart", Some(root));
 
                     if EliminateLoopsHelper::eliminate_loops(root.0, cl) {

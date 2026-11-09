@@ -19,6 +19,7 @@ use crate::function_exprent::FunctionType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::jthrow;
 use crate::method_descriptor::MethodDescriptor;
+use crate::method_processor::ScratchScope;
 use crate::monitor_exprent::Type as MonitorType;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JList};
@@ -76,10 +77,12 @@ impl StackVarsProcessor {
         cl: StructClass,
         options: StackSimplifyOptions,
     ) {
+        let mut scratch = ScratchScope::open();
         let mut set_reordered_ifs: JHashSet<i32> = JHashSet::new();
         let mut ssau: Option<SSAUConstructorSparseEx> = None;
         loop {
             let mut found = false;
+            scratch.checkpoint();
             let first = ssau.is_none();
 
             let mut ssa = SSAConstructorSparseEx::new();
@@ -101,6 +104,7 @@ impl StackVarsProcessor {
             SequenceHelper::condense_sequences(root.0);
             ValidationHelper::validate_statement(root);
 
+            scratch.checkpoint();
             let current = ssau.insert(SSAUConstructorSparseEx::new());
             current.split_variables(root, mt);
 
@@ -121,6 +125,7 @@ impl StackVarsProcessor {
             }
         }
 
+        scratch.checkpoint();
         let mut ssau = SSAUConstructorSparseEx::new();
         ssau.split_variables(root, mt);
         ValidationHelper::validate_statement(root);
