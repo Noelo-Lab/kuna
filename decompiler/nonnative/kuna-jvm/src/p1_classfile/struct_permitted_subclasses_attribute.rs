@@ -43,7 +43,8 @@ impl StructPermittedSubclassesAttribute {
             let class = pool
                 .get_primitive_constant(data.read_unsigned_short())
                 .expect("constant")
-                .get_string();
+                .get_string()
+                .to_string();
             self.d_mut(|d| d.classes.push(class));
         }
     }

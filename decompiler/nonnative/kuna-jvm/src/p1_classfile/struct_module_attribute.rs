@@ -46,7 +46,8 @@ impl StructModuleAttribute {
         let module_name = pool
             .get_primitive_constant(module_name_index)
             .expect("constant")
-            .get_string();
+            .get_string()
+            .to_string();
         let module_flags = data.read_unsigned_short();
         self.d_mut(|d| {
             d.module_name = module_name;
@@ -58,7 +59,8 @@ impl StructModuleAttribute {
             let module_version = pool
                 .get_primitive_constant(module_version_index)
                 .expect("constant")
-                .get_string();
+                .get_string()
+                .to_string();
             self.d_mut(|d| d.module_version = Some(module_version));
         }
 
@@ -88,14 +90,16 @@ impl StructModuleAttribute {
             let module_name = pool
                 .get_primitive_constant(module_name_index)
                 .expect("constant")
-                .get_string();
+                .get_string()
+                .to_string();
             let version = if version_index == 0 {
                 None
             } else {
                 Some(
                     pool.get_primitive_constant(version_index)
                         .expect("constant")
-                        .get_string(),
+                        .get_string()
+                        .to_string(),
                 )
             };
             requires.push(RequiresEntry::new(module_name, requires_flags, version));
@@ -117,7 +121,8 @@ impl StructModuleAttribute {
             let package_name = pool
                 .get_primitive_constant(package_name_index)
                 .expect("constant")
-                .get_string();
+                .get_string()
+                .to_string();
             exports.push(ExportsEntry::new(
                 package_name,
                 exports_flags,
@@ -141,7 +146,8 @@ impl StructModuleAttribute {
             let package_name = pool
                 .get_primitive_constant(package_name_index)
                 .expect("constant")
-                .get_string();
+                .get_string()
+                .to_string();
             opens.push(OpensEntry::new(package_name, opens_flags, opens_to_modules));
         }
         opens
@@ -163,7 +169,8 @@ impl StructModuleAttribute {
             let interface_name = pool
                 .get_primitive_constant(interface_name_index)
                 .expect("constant")
-                .get_string();
+                .get_string()
+                .to_string();
             let implementation_names = StructModuleAttribute::read_string_list(data, pool);
             provides.push(ProvidesEntry::new(interface_name, implementation_names));
         }
@@ -181,7 +188,8 @@ impl StructModuleAttribute {
                 strings.push(
                     pool.get_primitive_constant(index)
                         .expect("constant")
-                        .get_string(),
+                        .get_string()
+                        .to_string(),
                 );
             }
             strings

@@ -40,7 +40,8 @@ impl StructEnclosingMethodAttribute {
         let class_name = pool
             .get_primitive_constant(class_index)
             .expect("constant")
-            .get_string();
+            .get_string()
+            .to_string();
         self.d_mut(|d| d.class_name = Some(class_name));
         if method_index != 0 {
             let lk = pool.get_link_constant(method_index).expect("constant");

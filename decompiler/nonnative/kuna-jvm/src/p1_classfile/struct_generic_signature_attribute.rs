@@ -36,7 +36,8 @@ impl StructGenericSignatureAttribute {
         let signature = pool
             .get_primitive_constant(index)
             .expect("constant")
-            .get_string();
+            .get_string()
+            .to_string();
         self.d_mut(|d| d.signature = signature);
     }
 

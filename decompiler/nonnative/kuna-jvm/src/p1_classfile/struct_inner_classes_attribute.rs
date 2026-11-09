@@ -73,12 +73,14 @@ impl StructInnerClassesAttribute {
             let inner_name = pool
                 .get_primitive_constant(inner_name_idx)
                 .expect("constant")
-                .get_string();
+                .get_string()
+                .to_string();
             let outer_name = if outer_name_idx != 0 {
                 Some(
                     pool.get_primitive_constant(outer_name_idx)
                         .expect("constant")
-                        .get_string(),
+                        .get_string()
+                        .to_string(),
                 )
             } else {
                 None
@@ -87,7 +89,8 @@ impl StructInnerClassesAttribute {
                 Some(
                     pool.get_primitive_constant(simple_name_idx)
                         .expect("constant")
-                        .get_string(),
+                        .get_string()
+                        .to_string(),
                 )
             } else {
                 None

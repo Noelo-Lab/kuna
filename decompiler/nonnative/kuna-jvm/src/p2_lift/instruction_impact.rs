@@ -423,7 +423,7 @@ impl InstructionImpact {
         match opcode {
             OPC_ACONST_NULL => {
                 data.get_stack()
-                    .push(VarType::new_array_dim_value(CodeType::Null, 0, None));
+                    .push(VarType::new_value(CodeType::Null, 0, None::<&str>));
             }
             OPC_LDC | OPC_LDC_W | OPC_LDC2_W => {
                 let constant = pool.get_constant(instr.operand(0)).expect("constant");
@@ -439,12 +439,12 @@ impl InstructionImpact {
                         stack.push(VarType::new(CodeType::Double));
                         stack.push(VarType::new(CodeType::Group2empty));
                     }
-                    CONSTANT_STRING => stack.push(VarType::new_array_dim_value(
+                    CONSTANT_STRING => stack.push(VarType::new_value(
                         CodeType::Object,
                         0,
                         Some("java/lang/String"),
                     )),
-                    CONSTANT_CLASS => stack.push(VarType::new_array_dim_value(
+                    CONSTANT_CLASS => stack.push(VarType::new_value(
                         CodeType::Object,
                         0,
                         Some("java/lang/Class"),
@@ -465,7 +465,7 @@ impl InstructionImpact {
                             }
                         }
                     }
-                    CONSTANT_METHOD_TYPE => stack.push(VarType::new_array_dim_value(
+                    CONSTANT_METHOD_TYPE => stack.push(VarType::new_value(
                         CodeType::Object,
                         0,
                         Some("java/lang/invoke/MethodType"),
@@ -478,8 +478,8 @@ impl InstructionImpact {
                 data.get_stack().push(var1);
             }
             OPC_AALOAD => {
-                let var1 = data.get_stack().pop_count(2).expect("stack");
-                data.get_stack().push(VarType::new_array_dim_value(
+                let var1 = data.get_stack().pop_n(2).expect("stack");
+                data.get_stack().push(VarType::new_value(
                     var1.type_,
                     var1.array_dim.wrapping_sub(1),
                     var1.value.as_deref(),
@@ -527,7 +527,7 @@ impl InstructionImpact {
                 }
                 let ck = pool.get_link_constant(instr.operand(0)).expect("constant");
                 let var1 = VarType::new_signature(&ck.descriptor);
-                data.get_stack().pop_count(var1.stack_size);
+                data.get_stack().pop_n(var1.stack_size);
             }
             OPC_INVOKEVIRTUAL | OPC_INVOKESPECIAL | OPC_INVOKEINTERFACE | OPC_INVOKESTATIC
             | OPC_INVOKEDYNAMIC => {
@@ -539,7 +539,7 @@ impl InstructionImpact {
                     let md = MethodDescriptor::parse_descriptor(&ck.descriptor);
                     let stack = data.get_stack();
                     for param in md.params.iter() {
-                        stack.pop_count(param.stack_size);
+                        stack.pop_n(param.stack_size);
                     }
                     if md.ret.type_ != CodeType::Void {
                         stack.push(md.ret.clone());
@@ -553,17 +553,14 @@ impl InstructionImpact {
                 let cn = pool
                     .get_primitive_constant(instr.operand(0))
                     .expect("constant");
-                data.get_stack().push(VarType::new_array_dim_value(
-                    CodeType::Object,
-                    0,
-                    Some(&cn.get_string()),
-                ));
+                data.get_stack()
+                    .push(VarType::new_value(CodeType::Object, 0, cn.get_string()));
             }
             OPC_NEWARRAY => {
                 let stack = data.get_stack();
                 stack.pop();
                 stack.push(
-                    VarType::new_array_dim(ARR_TYPE[(instr.operand(0) - 4) as usize], 1)
+                    VarType::new_dim(ARR_TYPE[(instr.operand(0) - 4) as usize], 1)
                         .resize_array_dim(1),
                 );
             }
@@ -578,11 +575,8 @@ impl InstructionImpact {
                 let cn = pool
                     .get_primitive_constant(instr.operand(0))
                     .expect("constant");
-                data.get_stack().push(VarType::new_array_dim_value(
-                    CodeType::Object,
-                    0,
-                    Some(&cn.get_string()),
-                ));
+                data.get_stack()
+                    .push(VarType::new_value(CodeType::Object, 0, cn.get_string()));
             }
             OPC_ANEWARRAY | OPC_MULTIANEWARRAY => {
                 let dimensions = if opcode == OPC_ANEWARRAY {
@@ -590,20 +584,19 @@ impl InstructionImpact {
                 } else {
                     instr.operand(1)
                 };
-                data.get_stack().pop_count(dimensions);
+                data.get_stack().pop_n(dimensions);
                 let cn = pool
                     .get_primitive_constant(instr.operand(0))
                     .expect("constant");
                 if cn.is_array {
-                    let var1 =
-                        VarType::new_array_dim_value(CodeType::Object, 0, Some(&cn.get_string()));
+                    let var1 = VarType::new_value(CodeType::Object, 0, cn.get_string());
                     let var1 = var1.resize_array_dim(var1.array_dim.wrapping_add(dimensions));
                     data.get_stack().push(var1);
                 } else {
-                    data.get_stack().push(VarType::new_array_dim_value(
+                    data.get_stack().push(VarType::new_value(
                         CodeType::Object,
                         dimensions,
-                        Some(&cn.get_string()),
+                        cn.get_string(),
                     ));
                 }
             }

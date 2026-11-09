@@ -107,7 +107,8 @@ impl StructMember {
             let name = pool
                 .get_primitive_constant(name_index)
                 .expect("attribute name")
-                .get_string();
+                .get_string()
+                .to_string();
 
             let attribute = StructGeneralAttribute::create_attribute(&name);
             let att_length = in_.read_int();

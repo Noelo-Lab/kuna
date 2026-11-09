@@ -62,10 +62,12 @@ impl StructLocalVariableTableAttribute {
                     length,
                     pool.get_primitive_constant(name_index)
                         .expect("constant")
-                        .get_string(),
+                        .get_string()
+                        .to_string(),
                     pool.get_primitive_constant(descriptor_index)
                         .expect("constant")
-                        .get_string(),
+                        .get_string()
+                        .to_string(),
                     var_index,
                 ));
             }

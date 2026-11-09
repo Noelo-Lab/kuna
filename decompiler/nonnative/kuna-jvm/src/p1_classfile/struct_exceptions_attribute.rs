@@ -45,6 +45,7 @@ impl StructExceptionsAttribute {
         pool.get_primitive_constant(cp_index)
             .expect("constant")
             .get_string()
+            .to_string()
     }
 
     pub fn get_throws_exceptions(self) -> Vec<i32> {

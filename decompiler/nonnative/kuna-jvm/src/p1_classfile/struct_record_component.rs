@@ -117,7 +117,7 @@ impl StructRecordComponent {
 /// `((PrimitiveConstant)pool.getConstant(index)).getString()`.
 fn primitive_string(pool: ConstantPool, index: i32) -> String {
     match pool.get_constant(index).expect("constant") {
-        PooledConstant::Primitive(p) => p.get_string(),
+        PooledConstant::Primitive(p) => p.get_string().to_string(),
         PooledConstant::Link(_) => {
             jthrow!(ClassCastException; "LinkConstant cannot be cast to PrimitiveConstant")
         }

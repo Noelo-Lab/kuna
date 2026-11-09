@@ -69,7 +69,8 @@ impl StructClass {
         let qualified_name = pool
             .get_primitive_constant(this_class_idx)
             .expect("this_class")
-            .get_string();
+            .get_string()
+            .to_string();
         let super_class = pool.get_primitive_constant(super_class_idx);
 
         let mut length = in_.read_unsigned_short();
@@ -80,12 +81,13 @@ impl StructClass {
             interface_names[i] = pool
                 .get_primitive_constant(interfaces[i])
                 .expect("interface")
-                .get_string();
+                .get_string()
+                .to_string();
         }
 
         length = in_.read_unsigned_short();
         let mut fields: VBStyleCollection<StructField, String> =
-            VBStyleCollection::with_capacity(length as usize);
+            VBStyleCollection::with_capacity(length);
         for _ in 0..length {
             let field = StructField::create(in_, pool, &qualified_name, bytecode_version);
             let key = InterpreterUtil::make_unique_key(&field.get_name(), &field.get_descriptor());
@@ -94,7 +96,7 @@ impl StructClass {
 
         length = in_.read_unsigned_short();
         let mut methods: VBStyleCollection<StructMethod, String> =
-            VBStyleCollection::with_capacity(length as usize);
+            VBStyleCollection::with_capacity(length);
         for _ in 0..length {
             let method = StructMethod::create(in_, pool, &qualified_name, bytecode_version, own);
             let key =
@@ -258,7 +260,7 @@ impl StructClass {
         match record_attr {
             None => {
                 if let Some(super_class) = self.super_class() {
-                    if super_class.get_string() == "java/lang/Record" {
+                    if &*super_class.get_string() == "java/lang/Record" {
                         return Some(Vec::new());
                     }
                 }
@@ -300,12 +302,13 @@ impl StructClass {
         let type_ = type_.expect("type");
         let gtype: GenericType = type_.as_generic();
         let arguments = gtype.get_arguments();
-        if arguments.len() != signature.fparameters.len() {
+        let fparameters = signature.fparameters().clone();
+        if arguments.len() != fparameters.len() {
             return JHashMap::new();
         }
 
         let mut ret = JHashMap::new();
-        for (parameter, var) in signature.fparameters.iter().zip(arguments.iter()) {
+        for (parameter, var) in fparameters.iter().zip(arguments.iter()) {
             if let Some(var) = var {
                 ret.put(GenericType::parse(&format!("T{};", parameter)), var.clone());
             }
@@ -321,9 +324,10 @@ impl StructClass {
         let signature = self.get_signature();
         let mut ret: JHashMap<String, GenericMap> = JHashMap::new();
         if let Some(signature) = &signature {
-            if !signature.fparameters.is_empty() {
+            let fparameters = signature.fparameters().clone();
+            if !fparameters.is_empty() {
                 let mut mine = JHashMap::new();
-                for par in signature.fparameters.iter() {
+                for par in fparameters.iter() {
                     let type_ = GenericType::parse(&format!("T{};", par));
                     mine.put(type_.clone(), type_);
                 }
@@ -333,9 +337,10 @@ impl StructClass {
 
         let mut visited: JHashSet<String> = JHashSet::new();
         if let Some(signature) = &signature {
-            for intf in signature.superinterfaces.iter() {
-                if let Some(value) = intf.value.clone() {
-                    visited.add(value);
+            let superinterfaces = signature.superinterfaces().clone();
+            for intf in superinterfaces.iter() {
+                if let Some(value) = intf.value.as_deref() {
+                    visited.add(value.to_string());
                 }
 
                 let cls = intf
@@ -370,7 +375,7 @@ impl StructClass {
             if let Some(cls) = cls {
                 let sig = match &signature {
                     None => JHashMap::new(),
-                    Some(signature) => cls.get_generic_map(signature.superclass.as_ref()),
+                    Some(signature) => cls.get_generic_map(Some(&signature.superclass())),
                 };
                 if sig.is_empty() {
                     ret.put_all(cls.get_all_generics().entry_vec());

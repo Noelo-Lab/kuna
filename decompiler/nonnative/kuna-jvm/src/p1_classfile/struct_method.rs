@@ -377,7 +377,8 @@ impl StructMethod {
                 Some(
                     pool.get_primitive_constant(exc_class)
                         .expect("catch type")
-                        .get_string(),
+                        .get_string()
+                        .to_string(),
                 )
             };
 

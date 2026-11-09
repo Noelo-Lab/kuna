@@ -55,7 +55,8 @@ impl StructMethodParametersAttribute {
                 Some(
                     pool.get_primitive_constant(name_index)
                         .expect("constant")
-                        .get_string(),
+                        .get_string()
+                        .to_string(),
                 )
             } else {
                 None

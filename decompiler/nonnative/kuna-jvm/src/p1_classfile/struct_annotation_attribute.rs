@@ -11,14 +11,14 @@ use crate::annotation_exprent::AnnotationExprent;
 use crate::byte_cursor::ByteCursor;
 use crate::bytecode_version::BytecodeVersion;
 use crate::code_type::CodeType;
-use crate::const_exprent::ConstExprent;
+use crate::const_exprent::{ConstExprent, ConstValue};
 use crate::constant_pool::ConstantPool;
 use crate::exprent::Exprent;
 use crate::field_descriptor::FieldDescriptor;
 use crate::field_exprent::FieldExprent;
 use crate::jthrow;
 use crate::new_exprent::NewExprent;
-use crate::primitive_constant::PrimitiveConstant;
+use crate::primitive_constant::{ConstValue as PoolValue, PrimitiveConstant};
 use crate::struct_general_attribute::{
     attribute_view, StructGeneralAttribute, StructGeneralAttributeKind,
 };
@@ -67,7 +67,7 @@ impl AnnotationRecord {
             .map(AnnotationElement::to_exprent)
             .collect();
         AnnotationExprent::new(
-            self.class_name.as_deref().unwrap_or_default(),
+            self.class_name.clone().unwrap_or_default(),
             self.names.clone(),
             values,
         )
@@ -80,8 +80,8 @@ impl AnnotationElement {
             AnnotationElement::Enum {
                 const_name, descr, ..
             } => FieldExprent::new(
-                const_name,
-                descr.type_.value.as_deref().unwrap_or_default(),
+                const_name.clone(),
+                descr.type_.value.as_deref().unwrap_or_default().to_string(),
                 true,
                 None,
                 descr.clone(),
@@ -89,21 +89,17 @@ impl AnnotationElement {
             )
             .into(),
             AnnotationElement::Class { value, .. } => {
-                ConstExprent::new(VarType::VARTYPE_CLASS(), value.clone().into(), None).into()
+                ConstExprent::new(VarType::VARTYPE_CLASS(), Some(value.clone().into()), None).into()
             }
             AnnotationElement::Array { elements } => {
                 let elements: Vec<Exprent> =
                     elements.iter().map(AnnotationElement::to_exprent).collect();
 
                 let new_type = if elements.is_empty() {
-                    VarType::new_array_dim_value(CodeType::Object, 1, Some("java/lang/Object"))
+                    VarType::new_value(CodeType::Object, 1, "java/lang/Object")
                 } else {
                     let element_type = elements[0].get_expr_type();
-                    VarType::new_array_dim_value(
-                        element_type.type_,
-                        1,
-                        element_type.value.as_deref(),
-                    )
+                    VarType::new_value(element_type.type_, 1, &element_type.value)
                 };
 
                 let new_expr = NewExprent::new(new_type, Vec::new(), None);
@@ -124,7 +120,7 @@ impl AnnotationElement {
                     b'Z' => VarType::VARTYPE_BOOLEAN(),
                     _ => VarType::VARTYPE_STRING(),
                 };
-                ConstExprent::new(const_type, cn.value.clone(), None).into()
+                ConstExprent::new(const_type, cn.value.as_ref().map(expr_value), None).into()
             }
         }
     }
@@ -201,7 +197,8 @@ impl StructAnnotationAttribute {
         let class_name = pool
             .get_primitive_constant(type_index)
             .expect("constant")
-            .get_string();
+            .get_string()
+            .to_string();
 
         let len = data.read_unsigned_short();
         let mut name_indices = Vec::with_capacity(len as usize);
@@ -213,7 +210,8 @@ impl StructAnnotationAttribute {
             names.push(
                 pool.get_primitive_constant(name_index)
                     .expect("constant")
-                    .get_string(),
+                    .get_string()
+                    .to_string(),
             );
             values.push(StructAnnotationAttribute::read_annotation_element(
                 data, pool,
@@ -222,7 +220,10 @@ impl StructAnnotationAttribute {
 
         AnnotationRecord {
             type_index,
-            class_name: VarType::new_signature(&class_name).value.clone(),
+            class_name: VarType::new_signature(&class_name)
+                .value
+                .as_deref()
+                .map(str::to_string),
             name_indices,
             names,
             values,
@@ -239,12 +240,14 @@ impl StructAnnotationAttribute {
                 let class_name = pool
                     .get_primitive_constant(type_index)
                     .expect("constant")
-                    .get_string();
+                    .get_string()
+                    .to_string();
                 let const_index = data.read_unsigned_short();
                 let const_name = pool
                     .get_primitive_constant(const_index)
                     .expect("constant")
-                    .get_string();
+                    .get_string()
+                    .to_string();
                 let descr = FieldDescriptor::parse_descriptor(&class_name);
                 AnnotationElement::Enum {
                     type_index,
@@ -258,11 +261,12 @@ impl StructAnnotationAttribute {
                 let descriptor = pool
                     .get_primitive_constant(index)
                     .expect("constant")
-                    .get_string();
+                    .get_string()
+                    .to_string();
                 let type_ = FieldDescriptor::parse_descriptor(&descriptor).type_.clone();
 
                 let value = match type_.type_ {
-                    CodeType::Object => type_.value.clone().unwrap_or_default(),
+                    CodeType::Object => type_.value.as_deref().unwrap_or_default().to_string(),
                     CodeType::Byte => "byte".to_string(),
                     CodeType::Char => "char".to_string(),
                     CodeType::Double => "double".to_string(),
@@ -331,6 +335,17 @@ impl StructAnnotationAttribute {
             d.annotations = Some(annotations);
             d.pinned = true;
         })
+    }
+}
+
+/// `cn.value` as the `Object` a `ConstExprent` holds.
+fn expr_value(v: &PoolValue) -> ConstValue {
+    match v {
+        PoolValue::Integer(i) => ConstValue::Int(*i),
+        PoolValue::Long(l) => ConstValue::Long(*l),
+        PoolValue::Float(f) => ConstValue::Float(*f),
+        PoolValue::Double(d) => ConstValue::Double(*d),
+        PoolValue::String(s) => ConstValue::String(s.to_string()),
     }
 }
 

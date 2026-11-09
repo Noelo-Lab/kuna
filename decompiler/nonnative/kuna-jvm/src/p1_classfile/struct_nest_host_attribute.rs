@@ -41,6 +41,7 @@ impl StructNestHostAttribute {
         pool.get_primitive_constant(index)
             .expect("constant")
             .get_string()
+            .to_string()
     }
 
     pub fn set_const_pool_index(self, const_pool_index: i32) {

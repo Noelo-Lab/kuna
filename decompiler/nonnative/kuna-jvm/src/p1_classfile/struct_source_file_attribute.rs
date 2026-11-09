@@ -41,6 +41,7 @@ impl StructSourceFileAttribute {
         pool.get_primitive_constant(index)
             .expect("constant")
             .get_string()
+            .to_string()
     }
 
     pub fn get_const_pool_index(self) -> i32 {
