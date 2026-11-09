@@ -1,0 +1,81 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    ELF GOT data imports (`option importdata on|off`, pass `elfgotimports`).
+
+    Issue: a -fPIC read of data another image defines loads a GOT slot the
+    dynamic loader fills with the symbol's address (R_*_GLOB_DAT), then loads
+    through it. kuna painted PE and Mach-O import slots externref but never an
+    ELF GOT slot, so the read printed as `*dat_<slot>` (libcurl, libssl and
+    libxml2 on this host all read stdout, environ or a library global that way).
+
+    Stage / sub-stage: P1 environment-binding, the ELF GOT import slots
+    (`kuna-analysis/src/loader/kuna_elfgotimports.rs`: reported as import slots,
+    named and painted externref), rendered by P9 naming-policy
+    `PrintC::op_load` (`importdata`).
+
+    P0 assertion: `option importdata on|off` (default off). The ELF slot facts
+    are committed under the same gate, so it is set after `load file` and before
+    the `read symbols` that commits them.
+
+    Fixtures: `elf_gotdata_x86_64.so` and `elf_gotdata_aarch64.so` (built from
+    `elf_gotdata.c`, see the fixtures README). `get_counter` reads the undefined
+    `imported_counter`; `get_exported` reads `exported_value`, a symbol the object
+    defines, whose GLOB_DAT slot `dynrelocs` already folds.
+
+    Pass 1 / 3 (the default, the BUG): `get_counter` returns `*dat_2680` /
+    `*dat_205c0`. Pass 2 / 4 (`option importdata on`, the FIX): it returns
+    `imported_counter`. `get_exported` returns `exported_value` in all four
+    passes: a defined symbol's slot is never painted.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elf_gotdata_x86_64.so</com>
+  <com>read symbols</com>
+  <com>load addr 0x1580</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x15b0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elf_gotdata_x86_64.so</com>
+  <com>option importdata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x1580</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x15b0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elf_gotdata_aarch64.so</com>
+  <com>read symbols</com>
+  <com>load addr 0x104e4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x10514</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elf_gotdata_aarch64.so</com>
+  <com>option importdata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x104e4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x10514</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="elfgotimports off: x86-64 reads the import through its GOT slot" min="1" max="1">return \*dat_2680;</stringmatch>
+<stringmatch name="elfgotimports off: AArch64 reads the import through its GOT slot" min="1" max="1">return \*dat_205c0;</stringmatch>
+<stringmatch name="elfgotimports on: both architectures render the import" min="2" max="2">return imported_counter;</stringmatch>
+<stringmatch name="elfgotimports: a defined symbol's GOT read is the object in every pass" min="4" max="4">return exported_value;</stringmatch>
+</decompilertest>

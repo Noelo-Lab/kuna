@@ -3,6 +3,7 @@
 //!
 //! ```text
 //!   kuna unpack <binary> [-o OUT] [--json]
+//!   kuna unpack <dyld_shared_cache> (--list | --image NAME [-o OUT]) [--json]
 //!   kuna unpack <binary> --raw-lzma START:END [--lzma-props P] [--raw-offsets]
 //! ```
 //!
@@ -55,6 +56,9 @@ use object::{Object, ObjectSection};
 
 use crate::jsonfmt::{dumps_indent2, Json};
 
+#[path = "unpack/dyld.rs"]
+mod dyld;
+
 /// The output ceiling a length-less decode runs under when the caller names no
 /// other. Large enough for any payload an analyst is plausibly carving out by
 /// hand, small enough that a range that is not really a stream fails instead of
@@ -68,6 +72,7 @@ struct Args {
     binary: String,
     output: Option<String>,
     json: bool,
+    list: bool,
     raw: Option<RawLzma>,
 }
 
@@ -100,6 +105,14 @@ pub fn run(argv: &[String]) -> i32 {
 
     if let Some(raw) = &args.raw {
         return run_raw(&args, raw);
+    }
+
+    if kuna_analysis::loader::kuna_dyldcache::is_dyld_cache_file(std::path::Path::new(&args.binary)) {
+        return dyld::run(&args.binary, args.output.as_deref(), args.list, args.json);
+    }
+    if args.list {
+        eprintln!("error: --list applies to a dyld shared cache; {} is not one", args.binary);
+        return 2;
     }
 
     let image = match std::fs::read(&args.binary) {
@@ -720,6 +733,7 @@ fn parse_args(argv: &[String]) -> Result<Option<Args>, String> {
     let mut binary: Option<String> = None;
     let mut output: Option<String> = None;
     let mut json = false;
+    let mut list = false;
     let mut range: Option<(u64, u64)> = None;
     let mut offsets = false;
     let mut props: Option<(u8, u8, u8)> = None;
@@ -728,6 +742,7 @@ fn parse_args(argv: &[String]) -> Result<Option<Args>, String> {
     while i < argv.len() {
         match argv[i].as_str() {
             "--json" => json = true,
+            "--list" => list = true,
             "--raw-lzma" => {
                 i += 1;
                 let spec = argv.get(i).ok_or_else(|| {
@@ -784,7 +799,7 @@ fn parse_args(argv: &[String]) -> Result<Option<Args>, String> {
         }
     }
     let raw = range.map(|(start, end)| RawLzma { start, end, offsets, props, max });
-    Ok(Some(Args { binary, output, json, raw }))
+    Ok(Some(Args { binary, output, json, list, raw }))
 }
 
 /// `START:END` (end exclusive) or `START+LENGTH`. Endpoints are hexadecimal by
@@ -852,6 +867,7 @@ fn parse_props(spec: &str) -> Result<(u8, u8, u8), String> {
 
 fn usage() {
     eprintln!("usage: kuna unpack <binary> [-o OUT] [--json]");
+    eprintln!("       kuna unpack <dyld_shared_cache> (--list | --image NAME [-o OUT]) [--json]");
     eprintln!(
         "       kuna unpack <binary> --raw-lzma START:END [--lzma-props pb,lp,lc] \\\n                                    [--raw-offsets] [--raw-max-size N] [-o OUT] [--json]"
     );

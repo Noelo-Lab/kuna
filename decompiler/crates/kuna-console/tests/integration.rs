@@ -329,12 +329,17 @@ mod verify_noreturn_propagate;
 mod verify_objc;
 #[path = "verify_swiftmetadata.rs"]
 mod verify_swiftmetadata;
+#[path = "verify_swifttypes.rs"]
+mod verify_swifttypes;
 
 #[path = "verify_importdata.rs"]
 mod verify_importdata;
 
 #[path = "verify_cfstring.rs"]
 mod verify_cfstring;
+
+#[path = "verify_elfgotimports.rs"]
+mod verify_elfgotimports;
 
 #[path = "verify_object_formats.rs"]
 mod verify_object_formats;

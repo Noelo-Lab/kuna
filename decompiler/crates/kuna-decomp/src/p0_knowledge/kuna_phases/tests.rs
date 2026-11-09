@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_360() {
-    assert_eq!(kuna_num_settables(), 360);
-    assert_eq!(SETTABLE_TABLE.len(), 360);
+fn settable_count_is_402() {
+    assert_eq!(kuna_num_settables(), 402);
+    assert_eq!(SETTABLE_TABLE.len(), 402);
 }
 
 #[test]
-fn tier_counts_are_102_core_157_transform_101_analysis() {
+fn tier_counts_are_136_core_159_transform_107_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_102_core_157_transform_101_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (102, 157, 101));
+    assert_eq!((core, transform, analysis), (136, 159, 107));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_168() {
+fn option_values_live_value_present_for_189() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -288,6 +288,10 @@ fn option_values_live_value_present_for_168() {
         // (kuna) Swift demangling - a loadtime env bridge (`KUNA_SWIFTDEMANGLE`,
         // the rexthunk pattern); live state read console-side.
         "swiftdemangle",
+        // (kuna) dyld shared cache image selection and cross-image naming -
+        // loadtime env bridges (`KUNA_DYLD_IMAGE`, `KUNA_DYLDCROSSREFS`).
+        "dyldimage",
+        "dyldcrossrefs",
         // (kuna) golang cspec selection - a loadtime env bridge (`KUNA_GOABI`,
         // the rexthunk/sourcelang pattern) whose live state is read
         // console-side via `kuna_live_value` (auto|off token), so it has no
@@ -518,6 +522,15 @@ fn option_values_live_value_present_for_168() {
         // with no codegen live reader (read console-side via kuna_live_value), like
         // the gates around it. Default-on, Mach-O-only.
         "cfstrings",
+        // (kuna) The Swift type-layout arm's gate, read inside that pass.
+        "swifttypes",
+        // (kuna) Objective-C instance layouts — same commit-side gate as `objcrefconst`.
+        "objcivars",
+        // (kuna) The Swift calling-convention arm's gate, read inside that pass.
+        "swiftcall",
+        // (kuna) The Objective-C SDK header directory — a load-time env bridge
+        // (`KUNA_OBJCSDK`, the sourcelang pattern); no codegen live reader.
+        "objcsdk",
         // (kuna) PE PDB metadata recovery — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), like the gates around
         // it. Default-on (DIV-129), PE-only, `.pdb`-sidecar-gated.
@@ -597,6 +610,9 @@ fn option_values_live_value_present_for_168() {
         // `read symbols` (the commit either creates a Function per entry or parks
         // the starts), so it has no codegen live reader. Default-off.
         "lazyfuncs",
+        // (kuna) Apple kernelcache unwrapping + MH_FILESET entry choice -- a
+        // LOAD-time gate read from `KUNA_KERNELCACHE`. Default auto.
+        "kernelcache",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -753,8 +769,22 @@ fn option_values_live_value_present_for_168() {
                             // (kuna) `globalref` is a PrintC option too:
                             // `PrintC::options.global_ref`.
                             | "globalref"
+                            | "callsitestackargs"
                             | "protoranges"
+                            | "varargstackargs"
+                            | "varargforward"
+                            | "calleearity"
+                            | "calleearityfwd"
+                            | "calleearitylive"
+                            | "calleearitybody"
+                            | "calleearitycut"
+                            | "calleearityscratch"
+                            | "calleedeadarg"
+                            | "hiddenretarg"
                             | "mixedtailret"
+                            | "calleereadarg"
+                            | "zerofillreturn"
+                            | "zerocallregs"
                             | "calleepreserves"
                             | "calleeretpreserves"
                             | "calleescratchbody"
@@ -964,7 +994,7 @@ fn option_values_live_value_present_for_168() {
     // 179 -> 181: +1 for `copywaves` (pool_copy_waves), +1 for `armderef` (analysis_armderef).
     // 178 -> 179: +1 for `ptrauthtrap` (live_field = ptrauth_trap).
     // 179 -> 180: +1 for `authptrcall` (live_field = analysis_authptrcall).
-    assert_eq!(with_live, 168);
+    assert_eq!(with_live, 189);
 }
 
 #[test]
@@ -1204,7 +1234,13 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `ptrauthtrap`; its P2 row sits beside `gowritebarrier`.
     // +1 for `authptrcall`; its P1 row sits beside `peimportcall`.
     // +1 for `swiftmetadata`; its P1 row sits beside `objc`.
-    assert_eq!(json.matches("},\n").count(), 359);
+    // +1 for `swifttypes`, beside it.
+    // +1 for `kernelcache`; its P1 row sits beside `macho-arm64e`.
+    // +1 for `objcivars`; its P1 row sits beside `objcrefconst`.
+    // +1 for `swiftcall`, beside that.
+    // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
+    // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
+    assert_eq!(json.matches("},\n").count(), 401);
 }
 
 #[test]

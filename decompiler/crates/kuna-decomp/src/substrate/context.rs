@@ -1708,6 +1708,16 @@ pub struct ArchContext {
     /// Empty when no declaration named a convention.
     pub callee_proto_models:
         Vec<(int4, kuna_base::types::uintb, Rc<crate::fspec::ProtoModel>)>,
+    /// (kuna) The calling convention bound to a function with no declared
+    /// signature, by entry `(space index, offset)`: the analysis tier's
+    /// model-only facts ([`crate::Architecture::loader_proto_models`]). The
+    /// function's own decompile recovers its parameters under it, and a call
+    /// to it does the same at the call site.
+    pub bound_proto_models:
+        Rc<std::collections::BTreeMap<(int4, kuna_base::types::uintb), Rc<crate::fspec::ProtoModel>>>,
+    /// (kuna `swiftcall`) The Swift registers and the throwing model, when the
+    /// image binds the Swift convention ([`crate::kuna_swiftcall`]).
+    pub swift_abi: Option<Rc<crate::kuna_swiftcall::SwiftAbi>>,
     /// Snapshot of the engine's tracked-register database (C++ `glb->context`'s
     /// track base, populated by `set track <reg> <val> [start end]`).  The
     /// per-function `glb` skeleton does not hold the `ContextDatabase`, so
@@ -1745,6 +1755,8 @@ impl ArchContext {
             opbehaviors: Vec::new(),
             floatformats: Vec::new(),
             callee_proto_models: Vec::new(),
+            bound_proto_models: Rc::default(),
+            swift_abi: None,
             defaultfp: None,
             evalfp_current: None,
             default_return_addr: None,
@@ -2208,6 +2220,14 @@ impl ArchContext {
             .iter()
             .find(|(sp, off, _)| *sp == space_index && *off == offset)
             .map(|(_, _, m)| std::rc::Rc::clone(m))
+            .or_else(|| self.bound_proto_model(addr))
+    }
+
+    /// The model-only binding of the function at `addr` (see
+    /// [`Self::bound_proto_models`]).
+    pub fn bound_proto_model(&self, addr: &Address) -> Option<std::rc::Rc<crate::fspec::ProtoModel>> {
+        let key = (addr.get_space()?.get_index(), addr.get_offset());
+        self.bound_proto_models.get(&key).cloned()
     }
 
     /// (kuna `libcnames`) The library names the prototype parked on the
