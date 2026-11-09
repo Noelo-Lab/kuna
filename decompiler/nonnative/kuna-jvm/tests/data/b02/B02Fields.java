@@ -7,4 +7,10 @@ public class B02Fields {
   public static final long BIG = 1L;
   public static final String NAME = "x";
   public int plain;
+
+  public static class Nested {
+  }
+
+  public class Inner {
+  }
 }
