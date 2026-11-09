@@ -83,9 +83,9 @@ impl AnalysisPass for CFStringPass {
 /// `read_ptr`'s fixup overlay misses and returns the raw word, while `data` is the
 /// rebase the overlay resolves on an arm64(e) chained image (a raw pointer on a
 /// classic `LC_DYLD_INFO` one). 8-bit data is kept only when it is UTF-8 (the
-/// printer would cut an invalid one short), and a string with a NUL before its
-/// end is skipped because a C literal stops there. Every string read is charged to
-/// a budget of the file's length. Each entry is marked read-only: a CFString
+/// printer would cut an invalid one short), and a string holding a NUL is skipped
+/// because a C literal stops there, trailing NULs included. Every string read is
+/// charged to a budget of the file's length. Each entry is marked read-only: a CFString
 /// constant is immutable, and the printer's constant-string route needs that on the
 /// historical writable `__DATA,__cfstring` layout.
 fn collect(file: &object::File, bytes: &[u8]) -> AnalysisOutput {
@@ -160,9 +160,10 @@ fn collect_bounded(file: &object::File, bytes: &[u8], max_span_checks: u64) -> A
     out
 }
 
-/// Does `text` have a NUL with more text after it?
+/// Does `text` hold a NUL? The printed literal would end there, so even a
+/// trailing one (`CFSTR("a\0\0")`, length 3) would print as a shorter string.
 fn nul_inside(text: &[u8]) -> bool {
-    text.iter().position(|&b| b == 0).is_some_and(|at| text[at..].iter().any(|&b| b != 0))
+    text.contains(&0)
 }
 
 /// Decode a UTF-16 char buffer to UTF-8 bytes. `None` on an odd length or an
@@ -292,11 +293,19 @@ mod tests {
     #[test]
     fn a_string_holding_a_nul_is_skipped_not_cut_short() {
         assert!(!nul_inside(b"plain"));
-        assert!(!nul_inside(b"trailing\0"));
         assert!(nul_inside(b"a\0b"));
         let mut bytes = fixture();
         let at = bytes.windows(14).position(|w| w == b"cfstring hello").unwrap();
         bytes[at + 8] = 0;
+        assert_eq!(texts(&bytes), ["a constant string longer than one entry", "after the long one"]);
+    }
+
+    #[test]
+    fn a_string_ending_in_a_nul_is_skipped_too() {
+        assert!(nul_inside(b"trailing\0"));
+        let mut bytes = fixture();
+        let at = bytes.windows(14).position(|w| w == b"cfstring hello").unwrap();
+        bytes[at + 13] = 0;
         assert_eq!(texts(&bytes), ["a constant string longer than one entry", "after the long one"]);
     }
 
