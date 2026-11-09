@@ -48,9 +48,9 @@ Four habits produced the surface:
 | REMOVE | 164 | the flag goes; the default behaviour is unconditional |
 | FOLD | 23 | the flag goes; the behaviour is part of its parent option |
 | AUTO | 21 | target-gated; default on (or `auto`), the row names the target |
-| FLIP | 8 | default off -> on, with the datatest corpus pinned per test |
+| FLIP | 7 | default off -> on, with the datatest corpus pinned per test |
 | MERGE | 25 | fold into one multi-valued option (follow-up) |
-| KEEP | 154 | a real judgement, destructive, speed trade, heuristic or policy |
+| KEEP | 155 | a real judgement, destructive, speed trade, heuristic or policy |
 
 After REMOVE and FOLD the catalog has **208** options; after the merges about 183.
 
@@ -287,18 +287,21 @@ OS ABI), and `msvcstackguard` needs a `/GS` fixture to measure against.
 
 ### FLIP: default off -> on
 
-Datatest assertions that pin the upstream spelling get `option <name> off` in their script,
-the precedent set by `returndup`, `truthycond`, `branchflip`, `foldcallret`, `braceelide` and
-`castwiden`.
+Measured by injecting `option <name> on` into every datatest and stage script: `importdata`,
+`calltargettype`, `libcnames` and `lazyfuncs` move 0/675 datatest and 0/3990 stage assertions;
+`ctypes` moves 41 datatest (14 files) and 535 stage assertions (188 files), `partialaccess` 2
+and 40, `voidtailreturn` 1 and 2 -- every one of them a spelling pin (`int4`, `._4_2_`, the
+trailing `return;`). Those assertions keep their meaning with `option <name> off` added to the
+script, the precedent set by `returndup`, `truthycond`, `branchflip`, `foldcallret`,
+`braceelide` and `castwiden`.
 
 | option | phase | default | reason |
 |---|---|---|---|
 | `lazyfuncs` | P1 | off | byte-identical output, 30-40% faster single-function decompile |
-| `calltargettype` | P5 | off | in the aggressive preset with measured net-positive evidence |
-| `ptrdepthcap` | P5 | off | in the aggressive preset with measured net-positive evidence |
-| `libcnames` | P6 | off | in the aggressive preset with measured net-positive evidence |
+| `calltargettype` | P5 | off | in the aggressive preset with measured net-positive evidence; 0/675 datatests and 0 stage assertions move |
+| `libcnames` | P6 | off | in the aggressive preset with measured net-positive evidence; 0/675 datatests and 0 stage assertions move |
 | `ctypes` | P9 | off | presentation default `auto` already applies at every size; pin the datatests |
-| `importdata` | P9 | off | in the aggressive preset with measured net-positive evidence |
+| `importdata` | P9 | off | in the aggressive preset with measured net-positive evidence; 0/675 datatests and 0 stage assertions move |
 | `partialaccess` | P9 | off | presentation default `auto` already applies at every size; pin the datatests |
 | `voidtailreturn` | P9 | off | presentation default `auto` already applies at every size; pin the datatests |
 
@@ -336,7 +339,7 @@ the precedent set by `returndup`, `truthycond`, `branchflip`, `foldcallret`, `br
 
 **destructive (REMOVES CODE or splices bodies)** (24): `argclobber`, `callarrayextent`, `cleanupcode`, `constselectjump`, `funcboundflow`, `gobool`, `gobounds`, `gomorestack`, `gowritebarrier`, `jtsharepartial`, `msvcstrappend`, `outline`, `overlapbranch`, `ptrauthtrap`, `returnpair`, `securitycheck`, `stackalias`, `stackguard`, `switchguardbound`, `switchmodbound`, `switchmultipred`, `switchsharedcase`, `tailcallframe`, `unrolledguard`
 
-**faithfulness vs readability judgement** (61): `armconstshift`, `arraynotation`, `arraystride`, `boolbyte`, `braceelide`, `branchflip`, `bytearrayc`, `callbacktype`, `callerptr`, `callrettype`, `castobject`, `charbyte`, `charptr`, `condfold`, `crossjumprevert`, `dedupitetail`, `dedupvardecls`, `devectorize`, `earlyreturn`, `elemptr`, `endptrbound`, `floatglobals`, `foldcallret`, `globalarrayanchor`, `globalref`, `gotoreduce`, `guardarm`, `ifelseflatten`, `indirectonly`, `iteboolean`, `iteexpr`, `iteregion`, `loopbreak_recovery`, `loopcondhoist`, `loopcontinue`, `loweredswitch`, `memsetrecover`, `mixedtailret`, `narrowret`, `nulterminator`, `paramcopyhoist`, `passthrough`, `ppcapu`, `realtypes`, `regionedgeorder`, `regionlooprefine`, `regionstructure`, `regnarrow`, `regsigned`, `rettriangle`, `returndup`, `rodatastring`, `stackaddrargtrial`, `stackviews`, `strlenscan`, `structdefs`, `switchreturn`, `switchselector`, `tailcalljump`, `truthycond`, `varargsharedfloat`
+**faithfulness vs readability judgement** (62): `armconstshift`, `arraynotation`, `arraystride`, `boolbyte`, `braceelide`, `branchflip`, `bytearrayc`, `callbacktype`, `callerptr`, `callrettype`, `castobject`, `charbyte`, `charptr`, `condfold`, `crossjumprevert`, `dedupitetail`, `dedupvardecls`, `devectorize`, `earlyreturn`, `elemptr`, `endptrbound`, `floatglobals`, `foldcallret`, `globalarrayanchor`, `globalref`, `gotoreduce`, `guardarm`, `ifelseflatten`, `indirectonly`, `iteboolean`, `iteexpr`, `iteregion`, `loopbreak_recovery`, `loopcondhoist`, `loopcontinue`, `loweredswitch`, `memsetrecover`, `mixedtailret`, `narrowret`, `nulterminator`, `paramcopyhoist`, `passthrough`, `ppcapu`, `ptrdepthcap`, `realtypes`, `regionedgeorder`, `regionlooprefine`, `regionstructure`, `regnarrow`, `regsigned`, `rettriangle`, `returndup`, `rodatastring`, `stackaddrargtrial`, `stackviews`, `strlenscan`, `structdefs`, `switchreturn`, `switchselector`, `tailcalljump`, `truthycond`, `varargsharedfloat`
 
 **heuristic scanner / speculative discovery (precision vs recall)** (24): `addrtable`, `addrtakenentry`, `aif`, `armframes`, `cfstrings`, `dwarf`, `dwarf_lines`, `eh_frame_full`, `entry_disc`, `fast_funcdisc`, `fid`, `flowmode`, `funcstart_patterns`, `listing`, `noreturn_disc`, `noreturn_known`, `noreturn_propagate`, `noreturn_reach`, `operand_refs`, `pdb`, `strings`, `widestrings`, `widestrings32`, `x86listingswitch`
 
@@ -346,6 +349,9 @@ the precedent set by `returndup`, `truthycond`, `branchflip`, `foldcallret`, `br
 
 ## Not flipped, and why
 
+- `ptrdepthcap`: with it on, two stage tests lose a legitimate `int **` local and the
+  `&p->r[i]` rendering (kuna-stackviews, gh558-arraynotation), so the cap is not the
+  pure improvement its row describes; it stays preset-only until that is understood.
 - `stackstruct`, `regionedgeorder`, `rettriangle`, `iteexpr`, `devectorize`,
   `globalarrayanchor`, `constselectjump`, `switchmodbound`, `switchguardbound`,
   `unrolledguard`: in the `aggressive` preset but each has a recorded regression, a
