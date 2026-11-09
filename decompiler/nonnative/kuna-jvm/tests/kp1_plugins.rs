@@ -415,7 +415,11 @@ fn bundled_plugins_register_in_oracle_order_with_their_options() {
                 "jad-style-parameter-naming",
                 Some("0".to_string())
             ),
-            ("Kotlin".to_string(), "kt-show-public", Some("1".to_string())),
+            (
+                "Kotlin".to_string(),
+                "kt-show-public",
+                Some("1".to_string())
+            ),
             ("Kotlin".to_string(), "kt-enable", Some("1".to_string())),
             (
                 "Kotlin".to_string(),
@@ -427,7 +431,11 @@ fn bundled_plugins_register_in_oracle_order_with_their_options() {
                 "kt-collapse-string-concat",
                 Some("1".to_string())
             ),
-            ("Kotlin".to_string(), "kt-export-metadata", Some("0".to_string())),
+            (
+                "Kotlin".to_string(),
+                "kt-export-metadata",
+                Some("0".to_string())
+            ),
             (
                 "Kotlin".to_string(),
                 "kt-decompile-facades",

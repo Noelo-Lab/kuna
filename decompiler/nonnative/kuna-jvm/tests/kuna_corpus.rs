@@ -699,7 +699,10 @@ fn vendored_corpus_is_complete() {
         if kotlin {
             assert_eq!(case.options[0].0, "jvm_plugins", "{}", case.id);
             let class = case.class_files[0].file_stem().unwrap().to_string_lossy();
-            assert_eq!(case.compare, [format!("{class}.kt"), format!("{class}.java")]);
+            assert_eq!(
+                case.compare,
+                [format!("{class}.kt"), format!("{class}.java")]
+            );
         }
         let keys: Vec<&str> = case
             .options

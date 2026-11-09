@@ -4,7 +4,7 @@
 //! `Toy`, its pipeline runs part of the Java one, and its writer marks the
 //! output and drops semicolons. Also: plugin option defaults, the bundled
 //! plugin switch, and the routing of Kotlin-flagged exprents, statements and
-//! import collectors to the Kotlin classes (whose bodies are still unported).
+//! import collectors to the Kotlin classes.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -54,7 +54,7 @@ use kuna_jvm::plugin::Plugin;
 use kuna_jvm::plugin_context::PluginContext;
 use kuna_jvm::plugin_options::{AddDefaults, DefaultsConsumer, PluginOptions};
 use kuna_jvm::plugin_source::PluginSource;
-use kuna_jvm::rt::{try_catch, Caught, JHashMap, JHashSet};
+use kuna_jvm::rt::{try_catch, JHashMap, JHashSet};
 use kuna_jvm::sequence_helper::SequenceHelper;
 use kuna_jvm::stack_vars_processor::StackVarsProcessor;
 use kuna_jvm::statement_writer::StatementWriter;
@@ -623,15 +623,6 @@ fn the_bundled_plugin_switch() {
     }
 }
 
-fn unported<R>(f: impl FnOnce() -> R) -> String {
-    let caught: Caught = try_catch(|| {
-        f();
-    })
-    .expect_err("expected the Kotlin body to be reached");
-    assert!(caught.is("UnportedError"), "{}", caught.message);
-    caught.exception.unwrap().message
-}
-
 fn collector() -> ImportCollector {
     let mut simple_names = JHashMap::new();
     simple_names.put("List".to_string(), "java.util".to_string());
@@ -660,27 +651,6 @@ fn int(value: i32) -> Exprent {
     ConstExprent::new_int(value, false, None).0
 }
 
-/// `f()`, or `None` when it stops at a body another Kotlin slice has not
-/// ported yet in this tree (the assertions on its result then wait for it).
-fn unless_foreign_unported<R>(f: impl FnOnce() -> R) -> Option<R> {
-    match try_catch(f) {
-        Ok(r) => Some(r),
-        Err(caught) => {
-            let message = caught
-                .exception
-                .as_ref()
-                .map_or(String::new(), |e| e.message.clone());
-            let foreign = ["KUtils.", "KTypes.", "KotlinWriter.", "KotlinChooser."];
-            assert!(
-                caught.is("UnportedError") && foreign.iter().any(|f| message.starts_with(f)),
-                "{}",
-                caught.message
-            );
-            None
-        }
-    }
-}
-
 #[test]
 fn kotlin_exprents_dispatch_to_their_kotlin_class() {
     let _guard = common::install_default_context();
@@ -702,16 +672,18 @@ fn kotlin_exprents_dispatch_to_their_kotlin_class() {
         .is_some_and(|t| t.equals(&VarType::VARTYPE_BOOLEAN())));
     let bounds = e.check_expr_type_bounds().expect("FunctionExprent bounds");
     assert_eq!(bounds.get_lower_bounds().len(), 2);
-    if let Some(copy) = unless_foreign_unported(|| e.copy()) {
-        assert!(copy != e && copy.is_k_function());
-        assert_eq!(copy.as_k_function().kd(|d| d.k_type), KFunctionType::Equals3);
-        assert_eq!(copy.as_function().get_func_type(), FunctionType::Add);
-        assert!(copy
-            .as_function()
-            .get_lst_operands()
-            .iter()
-            .all(|o| o.is_k_const()));
-    }
+    let copy = e.copy();
+    assert!(copy != e && copy.is_k_function());
+    assert_eq!(
+        copy.as_k_function().kd(|d| d.k_type),
+        KFunctionType::Equals3
+    );
+    assert_eq!(copy.as_function().get_func_type(), FunctionType::Add);
+    assert!(copy
+        .as_function()
+        .get_lst_operands()
+        .iter()
+        .all(|o| o.is_k_const()));
     // Java-virtual calls inside the FunctionExprent bodies reach the override.
     assert!(e
         .get_inferred_expr_type(None)
@@ -724,8 +696,7 @@ fn kotlin_exprents_dispatch_to_their_kotlin_class() {
         "an EQUALS3 precedence of 6 needs no parentheses"
     );
     let ternary = kotlin_function(FunctionType::Ternary, vec![int(1), int(2), int(3)]);
-    let ternary_bounds =
-        FunctionExprent::check_expr_type_bounds(ternary).expect("ternary bounds");
+    let ternary_bounds = FunctionExprent::check_expr_type_bounds(ternary).expect("ternary bounds");
     assert!(ternary_bounds
         .get_upper_bounds()
         .iter()
@@ -748,12 +719,11 @@ fn kotlin_exprents_dispatch_to_their_kotlin_class() {
         declaration_type: None,
     })));
     let v = var.0;
-    if let Some(name) = unless_foreign_unported(|| var.get_name()) {
-        assert_eq!(name, "var1");
-    }
-    if let Some(text) = unless_foreign_unported(|| v.to_java(0)) {
-        assert_eq!(text.convert_to_string_and_allow_data_discard(), "var1");
-    }
+    assert_eq!(var.get_name(), "var1");
+    assert_eq!(
+        v.to_java(0).convert_to_string_and_allow_data_discard(),
+        "var1"
+    );
     let var_copy = v.copy();
     assert!(var_copy != v && var_copy.is_k_var());
     assert_eq!(

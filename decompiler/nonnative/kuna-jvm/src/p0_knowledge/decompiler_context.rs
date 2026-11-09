@@ -223,7 +223,10 @@ impl DecompilerContext {
     }
 
     pub fn get_import_collector() -> ImportCollector {
-        Self::current(|d| d.import_collector).expect("getImportCollector()")
+        match Self::current(|d| d.import_collector) {
+            Some(collector) => collector,
+            None => crate::jthrow!(NullPointerException; "DecompilerContext.getImportCollector()"),
+        }
     }
 
     pub fn get_var_processor() -> VarProcessor {

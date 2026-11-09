@@ -1,9 +1,8 @@
 //! KT3: the Kotlin plugin's type model, contracts, type mapping, import
 //! collector and language chooser against what Vineflower's own plugin
 //! classes print for the same input (`data/kt3/KtElementDump.java`;
-//! regenerate with `data/kt3/gen.sh`). A line the Rust side cannot produce yet
-//! because a callee of another slice is still `unported!` ends that case's
-//! comparison (counted as pending). Opt-in sweep over full dumps:
+//! regenerate with `data/kt3/gen.sh`). Every case is compared in full: an
+//! `unported!` callee (`?pending`) fails the comparison. Opt-in sweep over full dumps:
 //! `KT3_SWEEP_DIR=<dir> cargo test -p kuna-jvm --test integration kt3_sweep -- --ignored`.
 
 use std::cell::RefCell;
@@ -191,6 +190,11 @@ impl Tally {
             self.pending,
             self.pending_names,
             self.mismatches.len()
+        );
+        assert_eq!(
+            self.pending, 0,
+            "{what}: no Kotlin body is unported any more: {:?}",
+            self.pending_names
         );
         if !self.mismatches.is_empty() {
             let shown: Vec<&String> = self.mismatches.iter().take(20).collect();
@@ -1049,13 +1053,8 @@ fn kt3_replace_exprent() {
         KUtils::replace_exprents(&[assignment, constant]),
         vec![assignment, constant]
     );
-    match try_catch(|| KUtils::replace_exprent(int(5))) {
-        Ok(k) => {
-            let k = k.unwrap();
-            assert!(k.is_k_const() && k.is_const());
-        }
-        Err(e) => assert!(e.is("UnportedError"), "{}", e.message),
-    }
+    let k = KUtils::replace_exprent(int(5)).unwrap();
+    assert!(k.is_k_const() && k.is_const());
 }
 
 // ---- the opt-in sweep

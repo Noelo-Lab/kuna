@@ -3,11 +3,6 @@
 //! or by `ReplaceStatsPass`, rendered against Vineflower 1.12.0 with its Kotlin plugin
 //! (`data/kt6/KT6Oracle.java` -> `data/kt6/render_golden.txt`, `data/kt6/gen-render.sh`). Each
 //! scenario mirrors the Java driver statement by statement, so statement ids line up.
-//!
-//! Some renders go through other slices' bodies (`KExprProcessor.jmpWrapper`,
-//! `KUtils.replaceExprent`, the `KVarExprent`/`KConstExprent`/`KFunctionExprent` classes,
-//! `KotlinWriter.toValidKotlinIdentifier`); while one of those is still `unported!` the scenario
-//! is reported as pending instead of compared.
 
 use kuna_jvm::assert_exprent::AssertExprent;
 use kuna_jvm::assignment_exprent::AssignmentExprent;
@@ -43,17 +38,6 @@ use crate::common;
 use crate::k2_dom_helper::{fixture_method, start_method};
 
 const GOLDEN: &str = include_str!("data/kt6/render_golden.txt");
-
-/// Bodies of other slices a render may still reach unported.
-const OTHER_SLICES: [&str; 7] = [
-    "KExprProcessor.jmpWrapper",
-    "KUtils.replaceExprent",
-    "KVarExprent.",
-    "KConstExprent.",
-    "KFunctionExprent.",
-    "KotlinWriter.",
-    "KTypes.",
-];
 
 const REG: i32 = StatEdge::TYPE_REGULAR;
 const BREAK: i32 = StatEdge::TYPE_BREAK;
@@ -120,13 +104,8 @@ fn parents(stat: Statement) {
     }
 }
 
-enum Outcome {
-    Text(String),
-    Pending(String),
-}
-
 struct Oracle {
-    out: Vec<(String, Outcome)>,
+    out: Vec<(String, String)>,
     mt: StructMethod,
 }
 
@@ -137,19 +116,11 @@ impl Oracle {
 
     fn out(&mut self, name: &str, render: impl FnOnce() -> TextBuffer) {
         let outcome = match try_catch(render) {
-            Ok(buf) => Outcome::Text(buf.convert_to_string_and_allow_data_discard()),
-            Err(caught) if caught.is("UnportedError") => {
-                let body = caught
-                    .exception
-                    .as_ref()
-                    .map_or(String::new(), |e| e.message.clone());
-                assert!(
-                    OTHER_SLICES.iter().any(|other| body.starts_with(other)),
-                    "{name}: a KT6 body is unported: {body}"
-                );
-                Outcome::Pending(body)
+            Ok(buf) => buf.convert_to_string_and_allow_data_discard(),
+            Err(caught) => {
+                assert!(!caught.is("UnportedError"), "{name}: {}", caught.message);
+                format!("!! {}", exception_name(&caught.message))
             }
-            Err(caught) => Outcome::Text(format!("!! {}", exception_name(&caught.message))),
         };
         self.out.push((name.to_string(), outcome));
     }
@@ -200,7 +171,7 @@ fn loop_name(type_: LoopType) -> &'static str {
     }
 }
 
-fn render_all() -> Vec<(String, Outcome)> {
+fn render_all() -> Vec<(String, String)> {
     let mut o = Oracle {
         out: Vec::new(),
         mt: fixture_method(),
@@ -527,23 +498,10 @@ fn kotlin_statements_render_like_vineflower() {
     );
 
     let mut mismatches = Vec::new();
-    let mut pending = Vec::new();
-    for ((name, text), (_, outcome)) in expected.iter().zip(&actual) {
-        match outcome {
-            Outcome::Pending(body) => pending.push(format!("{name} ({body})")),
-            Outcome::Text(actual) => {
-                if actual != text {
-                    mismatches.push(format!("== {name}\njava:\n{text}\nrust:\n{actual}"));
-                }
-            }
+    for ((name, text), (_, actual)) in expected.iter().zip(&actual) {
+        if actual != text {
+            mismatches.push(format!("== {name}\njava:\n{text}\nrust:\n{actual}"));
         }
-    }
-    if !pending.is_empty() {
-        eprintln!(
-            "kt6_render: {} scenarios wait for other slices: {}",
-            pending.len(),
-            pending.join(", ")
-        );
     }
     assert!(
         mismatches.is_empty(),
@@ -551,8 +509,5 @@ fn kotlin_statements_render_like_vineflower() {
         mismatches.len(),
         mismatches.join("\n")
     );
-    assert!(
-        actual.len() - pending.len() >= 8,
-        "the scenarios that need no other slice are compared"
-    );
+    assert_eq!(actual.len(), 33, "every scenario is compared");
 }

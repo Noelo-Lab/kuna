@@ -9,9 +9,7 @@
 //! classes `copy()` and the passes produce. The tree parser mirrors the Java
 //! driver's, so construction order (and so every id) matches.
 //!
-//! Until the other Kotlin slices land, a row that reaches one of their
-//! `unported!` bodies (`KUtils`, `KTypes`, `KotlinWriter`, `KotlinChooser`) is
-//! skipped and counted.
+//! Every row is compared; a row that reaches an `unported!` body fails.
 
 use std::path::Path;
 use std::rc::Rc;
@@ -79,9 +77,6 @@ use crate::f2_types::{esc, run, same, unesc};
 
 const CASES: &str = include_str!("data/kt5/cases.txt");
 const GOLDEN: &str = include_str!("data/kt5/golden.txt");
-
-/// The other Kotlin slices' bodies a row may reach before they land.
-const FOREIGN: [&str; 4] = ["KUtils.", "KTypes.", "KotlinWriter.", "KotlinChooser."];
 
 fn value(spec: &str) -> Option<ConstValue> {
     if spec == "N" {
@@ -812,19 +807,13 @@ fn unported(columns: &[String]) -> Option<String> {
 
 struct Rows {
     checked: usize,
-    skipped: usize,
     failures: Vec<String>,
 }
 
 impl Rows {
     fn compare(&mut self, what: &str, names: &[&str], java: &[&str], rust: &[String]) {
         if let Some(message) = unported(rust) {
-            assert!(
-                FOREIGN.iter().any(|f| message.starts_with(f)),
-                "{what}: reached unported {message}"
-            );
-            self.skipped += 1;
-            return;
+            panic!("{what}: reached unported {message}");
         }
         if java.len() != rust.len() {
             self.checked += 1;
@@ -902,7 +891,6 @@ fn kotlin_exprents_match_vineflower() {
     let cases = CASES.lines().filter(|l| !l.starts_with('#')).count();
     let mut rows = Rows {
         checked: 0,
-        skipped: 0,
         failures: Vec::new(),
     };
     let mut seen = 0;
@@ -934,12 +922,13 @@ fn kotlin_exprents_match_vineflower() {
         }
     }
 
-    eprintln!(
-        "Kotlin exprent rows: {} columns checked, {} rows skipped (other slices unported)",
-        rows.checked, rows.skipped
-    );
+    eprintln!("Kotlin exprent rows: {} columns checked", rows.checked);
     assert!(seen >= cases, "{seen} golden rows for {cases} cases");
-    assert!(rows.checked > 300, "only {} columns checked", rows.checked);
+    assert!(
+        rows.checked >= 8979,
+        "only {} columns checked",
+        rows.checked
+    );
     assert!(
         rows.failures.is_empty(),
         "{} mismatches:\n{}",

@@ -5,10 +5,6 @@
 //! kotlinc 2.0.0 fixture in `data/kt4/classes`. Every run decompiles with the
 //! Java pipeline and no plugins on both sides.
 //!
-//! `members` needs `KType.from`, `KTypeParameter.from`, `KContract.from`,
-//! `KTypes.getJavaSignature`, `KotlinWriter.searchForMethod` and
-//! `KotlinChooser.parseMetadataFor` from other slices; while one of them is
-//! still `unported!` the test reports which and passes.
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -25,10 +21,7 @@ use kuna_jvm::k_class::KClass;
 use kuna_jvm::k_constructor::KConstructor;
 use kuna_jvm::k_element::KElement;
 use kuna_jvm::k_enum_processor::KEnumProcessor;
-use kuna_jvm::k_file::KFile;
 use kuna_jvm::k_function::{KFunction, MethodSupplier};
-use kuna_jvm::k_function_reference::KFunctionReference;
-use kuna_jvm::k_multifile_facade::KMultifileFacade;
 use kuna_jvm::k_parameter::KParameter;
 use kuna_jvm::k_property::{KProperty, KPropertyAnnotation, PropertyMethod};
 use kuna_jvm::k_type::KType;
@@ -78,27 +71,6 @@ fn assert_lines(actual: &[String], expected: &[String]) {
         assert_eq!(a, e, "line {}", i + 1);
     }
     assert_eq!(actual.len(), expected.len(), "line count");
-}
-
-/// The bodies of other slices this test runs through, when still `unported!`.
-fn waiting_on(caught: &Caught) -> Option<String> {
-    if !caught.is("UnportedError") {
-        return None;
-    }
-    let body = caught.exception.as_ref().unwrap().message.clone();
-    let own = [
-        "KFunction.",
-        "KProperty.",
-        "KConstructor.",
-        "DefaultArgsMap.",
-        "KotlinObjectProcessors.",
-        "KEnumProcessor.",
-    ];
-    assert!(
-        !own.iter().any(|p| body.starts_with(p)),
-        "KT4 body {body} is unported"
-    );
-    Some(body)
 }
 
 struct Dump {
@@ -559,167 +531,11 @@ fn dump_property(d: &mut Dump, wrapper: ClassWrapper, prop: &KProperty) {
     ));
 }
 
-/// The decode half of `KotlinChooser.parseMetadataFor` plus the parsers it
-/// runs, used while the chooser itself is `unported!`.
-fn parse_metadata_for(cl: StructClass) {
-    match try_catch(|| KotlinChooser::parse_metadata_for(cl)) {
-        Ok(()) => return,
-        Err(e)
-            if e.is("UnportedError")
-                && e.exception.as_ref().unwrap().message == "KotlinChooser.parseMetadataFor" => {}
-        Err(e) => rethrow(e),
-    }
-    if KtAttrs::has(cl, &KElement::KEY()) {
-        return;
-    }
-    let Some(anno) = KotlinMetadataAnnotation::find(cl) else {
-        return;
-    };
-    let qualified_name = cl.qualified_name();
-    let warn = |message: String| {
-        DecompilerContext::get_logger().write_message(&message, Severity::Warn);
-    };
-    let result = try_catch(|| {
-        let k_index = anno.index_of("k");
-        let d1_index = anno.index_of("d1");
-        let d2_index = anno.index_of("d2");
-        if k_index == -1 {
-            warn(format!("No k attribute (type) in class metadata for class {qualified_name}, cannot continue Kotlin parsing"));
-            return;
-        }
-        let k = KotlinMetadataAnnotation::int_value(anno.get_par_value(k_index));
-        if d1_index == -1 {
-            let function_ref = cl
-                .super_class()
-                .is_some_and(|s| &*s.get_string() == "kotlin/jvm/internal/FunctionReferenceImpl");
-            if function_ref {
-                KtAttrs::put(
-                    cl,
-                    &KElement::KEY(),
-                    KElement::FunctionReference(KFunctionReference),
-                );
-            }
-            let resolution = if function_ref {
-                "assuming function reference"
-            } else {
-                "cannot continue Kotlin parsing"
-            };
-            warn(format!(
-                "No d1 attribute (data) in class metadata for class {qualified_name}, {resolution}"
-            ));
-            return;
-        }
-        if d2_index == -1 {
-            warn(format!(
-                "No d2 attribute (strings) in class metadata for class {qualified_name}"
-            ));
-        }
-        let d1 = KotlinMetadataAnnotation::data_from_expr(anno.get_par_value(d1_index));
-        let d2 = (d2_index != -1)
-            .then(|| KotlinMetadataAnnotation::data_from_expr(anno.get_par_value(d2_index)));
-        let xs_index = anno.index_of("xs");
-        let xs = (k == 5 && xs_index != -1)
-            .then(|| KotlinMetadataAnnotation::string_value(anno.get_par_value(xs_index)));
-        let decoded = KtMetadata::decode(k, &d1, d2.as_deref(), xs.as_deref());
-        let resolver = decoded.resolver;
-        match decoded.message {
-            KotlinMetadataMessage::Class(pcl) => {
-                KProperty::parse(cl, &pcl.get_property_list(), resolver.as_ref(), None);
-                KFunction::parse(
-                    cl,
-                    resolver.as_ref(),
-                    &pcl.get_type_table(),
-                    &pcl.get_function_list(),
-                    false,
-                    None,
-                );
-                KConstructor::parse(cl, &pcl, resolver.as_ref());
-                KtAttrs::put(
-                    cl,
-                    &KElement::KEY(),
-                    KElement::Class(Rc::new(KClass::new(pcl, resolver))),
-                );
-            }
-            KotlinMetadataMessage::File(pcl) => {
-                KProperty::parse(cl, &pcl.get_property_list(), resolver.as_ref(), None);
-                KFunction::parse(
-                    cl,
-                    resolver.as_ref(),
-                    &pcl.get_type_table(),
-                    &pcl.get_function_list(),
-                    false,
-                    None,
-                );
-                KtAttrs::put(
-                    cl,
-                    &KElement::KEY(),
-                    KElement::File(Rc::new(KFile::new(pcl, resolver, None))),
-                );
-            }
-            KotlinMetadataMessage::SyntheticClass(func) => {
-                KFunction::parse(
-                    cl,
-                    resolver.as_ref(),
-                    &func.get_type_table(),
-                    std::slice::from_ref(&func),
-                    true,
-                    None,
-                );
-                if !KtAttrs::has(cl, &KElement::KEY()) {
-                    KtAttrs::put(
-                        cl,
-                        &KElement::KEY(),
-                        KElement::Function(KFunction::FAILED_LAMBDA()),
-                    );
-                }
-            }
-            KotlinMetadataMessage::MultifileFacade(files) => {
-                KtAttrs::put(
-                    cl,
-                    &KElement::KEY(),
-                    KElement::MultifileFacade(Rc::new(KMultifileFacade::new(files))),
-                );
-            }
-            KotlinMetadataMessage::MultifilePart { package, xs } => {
-                KProperty::parse(cl, &package.get_property_list(), resolver.as_ref(), None);
-                KFunction::parse(
-                    cl,
-                    resolver.as_ref(),
-                    &package.get_type_table(),
-                    &package.get_function_list(),
-                    false,
-                    None,
-                );
-                if xs.is_none() {
-                    warn(format!("No xs attribute (extra string; multifile part name) in class metadata for class {qualified_name}"));
-                }
-                let name = KtMetadata::multifile_name(xs.as_deref(), &qualified_name);
-                KtAttrs::put(
-                    cl,
-                    &KElement::KEY(),
-                    KElement::File(Rc::new(KFile::new(package, resolver, Some(name)))),
-                );
-            }
-            KotlinMetadataMessage::None => {}
-        }
-    });
-    if let Err(e) = result {
-        if e.is("UnportedError") {
-            rethrow(e);
-        }
-        DecompilerContext::get_logger().write_message_ex(
-            &format!("Failed to parse metadata for class {qualified_name}"),
-            Severity::Warn,
-            &e,
-        );
-    }
-}
-
 fn members(guard: &ContextGuard) -> Vec<String> {
     let mut d = Dump::new(guard);
     let classes = sorted_classes(guard);
     for &cl in &classes {
-        parse_metadata_for(cl);
+        KotlinChooser::parse_metadata_for(cl);
     }
     d.p("== parse".to_string());
     d.flush_logs();
@@ -769,13 +585,7 @@ fn members(guard: &ContextGuard) -> Vec<String> {
 #[test]
 fn kt4_members_match_plugin() {
     let guard = install();
-    match try_catch(|| members(&guard)) {
-        Ok(out) => assert_lines(&out, &golden("members.golden")),
-        Err(e) => match waiting_on(&e) {
-            Some(body) => eprintln!("kt4_members_match_plugin: waiting on {body}"),
-            None => rethrow(e),
-        },
-    }
+    assert_lines(&members(&guard), &golden("members.golden"));
 }
 
 /// Opt-in: `KT4_SWEEP=<input>=<dump>,...` compares `KtMembersDump members <input>`
@@ -801,18 +611,13 @@ fn kt4_members_sweep() {
             .lines()
             .map(str::to_string)
             .collect();
-        match try_catch(|| members(&guard)) {
-            Ok(out) => match std::env::var("KT4_SWEEP_OUT") {
-                Ok(dir) => {
-                    let name = Path::new(dump).file_name().unwrap();
-                    std::fs::write(Path::new(&dir).join(name), out.join("\n") + "\n").unwrap();
-                }
-                Err(_) => assert_lines(&out, &expected),
-            },
-            Err(e) => match waiting_on(&e) {
-                Some(body) => eprintln!("kt4_members_sweep: waiting on {body}"),
-                None => rethrow(e),
-            },
+        let out = members(&guard);
+        match std::env::var("KT4_SWEEP_OUT") {
+            Ok(dir) => {
+                let name = Path::new(dump).file_name().unwrap();
+                std::fs::write(Path::new(&dir).join(name), out.join("\n") + "\n").unwrap();
+            }
+            Err(_) => assert_lines(&out, &expected),
         }
         drop(guard);
         eprintln!("kt4_members_sweep: {input} ok");

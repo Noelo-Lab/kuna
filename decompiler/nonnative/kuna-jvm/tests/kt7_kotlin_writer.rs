@@ -612,51 +612,62 @@ impl kuna_jvm::plugin_source::PluginSource for KotlinOnly {
     }
 }
 
-/// One Kotlin corpus class through the whole pipeline with the Kotlin plugin
-/// injected; prints the output or where it stops (`KT7_E2E_CLASS` overrides the class).
+/// Vendored Kotlin corpus cases through the whole pipeline with only the Kotlin plugin
+/// injected, the way the plugin's own test fixture loads it: the same text as the
+/// bundled plugins (the corpus runner) give.
 #[test]
-#[ignore = "probe: run with --ignored --nocapture while other Kotlin slices are unported"]
-fn kotlin_class_end_to_end_probe() {
+fn kotlin_only_plugin_source_matches_the_fixture() {
+    use std::path::Path;
     use std::rc::Rc;
 
-    use kuna_jvm::context_source::SingleFileContextSource;
     use kuna_jvm::fernflower::Fernflower;
     use kuna_jvm::i_fernflower_logger::CollectingLogger;
-    use kuna_jvm::kuna_corpus::reset_engine_thread;
+    use kuna_jvm::kuna_corpus::{
+        evaluate, load_cases, reset_engine_thread, with_engine_stack, CaseStatus, EngineRun,
+    };
 
-    let class = std::env::var("KT7_E2E_CLASS").unwrap_or_else(|_| {
-        format!(
-            "{}/kwt/jvm/corpus-kt/classes/kt/pkg/TestAnyType.class",
-            std::env::var("HOME").unwrap()
-        )
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/jvm/cases.tsv");
+    let cases: Vec<_> = load_cases(&manifest)
+        .unwrap()
+        .into_iter()
+        .filter(|c| {
+            [
+                "kotlin-entire-classpath/pkg/TestAnyType",
+                "kotlin-entire-classpath/pkg/TestDataClass",
+                "kotlin-multifile-facade/pkg/TestMultifile",
+            ]
+            .contains(&c.id.as_str())
+        })
+        .collect();
+    assert_eq!(cases.len(), 3);
+    with_engine_stack(move || {
+        for case in cases {
+            reset_engine_thread();
+            let logger = Rc::new(CollectingLogger::new());
+            let mut fernflower = Fernflower::new_with_plugin_sources(
+                &case.options,
+                logger,
+                vec![Rc::new(KotlinOnly)],
+            );
+            for class in &case.class_files {
+                fernflower.add_source_file(class);
+            }
+            let mut units = Vec::new();
+            fernflower.decompile_context(&mut |unit| units.push(unit));
+            fernflower.clear_context();
+            reset_engine_thread();
+            let run = EngineRun {
+                units,
+                ..EngineRun::default()
+            };
+            let result = evaluate(&case, run);
+            assert_eq!(
+                result.status,
+                CaseStatus::Match,
+                "{}: {:?}",
+                case.id,
+                result.first_diff
+            );
+        }
     });
-    let path = PathBuf::from(&class);
-    if !path.exists() {
-        eprintln!("no {class}");
-        return;
-    }
-    let logger = Rc::new(CollectingLogger::new());
-    let options = vec![(
-        IFernflowerPreferences::INCLUDE_JAVA_RUNTIME.to_string(),
-        "0".to_string(),
-    )];
-    let mut fernflower =
-        Fernflower::new_with_plugin_sources(&options, logger.clone(), vec![Rc::new(KotlinOnly)]);
-    fernflower.add_source(Rc::new(SingleFileContextSource::new(&path)));
-    let mut units = Vec::new();
-    let result = try_catch(|| fernflower.decompile_context(&mut |unit| units.push(unit)));
-    match &result {
-        Ok(()) => eprintln!("finished"),
-        Err(caught) => eprintln!("stopped: {}", caught.message),
-    }
-    for message in logger.messages() {
-        eprintln!("log: {message}");
-    }
-    for unit in &units {
-        eprintln!("--- {}\n{}", unit.path, unit.content);
-    }
-    if result.is_ok() {
-        fernflower.clear_context();
-    }
-    reset_engine_thread();
 }
