@@ -511,10 +511,11 @@ fn option_values_live_value_present_for_189() {
         // (kuna) Objective-C reference-slot folding — committed console-side with
         // the `objc` facts (read via kuna_live_value), like `objc` above.
         // Default-on, inert unless `objc` is on.
+        "objcrefconst",
         // (kuna) Mach-O __cfstring constant-string recovery — an analysis-pass gate
         // with no codegen live reader (read console-side via kuna_live_value), like
         // the gates around it. Default-on, Mach-O-only.
-        "objcrefconst",
+        "cfstrings",
         // (kuna) PE PDB metadata recovery — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), like the gates around
         // it. Default-on (DIV-129), PE-only, `.pdb`-sidecar-gated.
