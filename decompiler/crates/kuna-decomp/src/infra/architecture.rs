@@ -1901,6 +1901,11 @@ pub struct Architecture {
     /// `.gcc_except_table` markup); default **off** (output-changing: adds the
     /// discovered exception-handler landing pads as function entries).
     pub analysis_eh_frame_full: bool,
+    /// (kuna) Gate the Mach-O `__unwind_info` function-start discovery pass
+    /// (`unwindstarts`); default **off** (output-changing: adds the function
+    /// starts the linker recorded in `__TEXT,__unwind_info`, which matter only on
+    /// an image whose `LC_FUNCTION_STARTS` was stripped).
+    pub analysis_unwindstarts: bool,
     /// (kuna) Refuse a function entry at a direct CALL target the Listing walk's
     /// own out-of-bounds gate forbids it to decode (`unmappedentry`); default
     /// **on**. The recursive-descent walk gates every instruction address on the
@@ -3470,6 +3475,7 @@ impl Architecture {
             analysis_widestrings32: false,
             analysis_entry_disc: false,
             analysis_eh_frame_full: false,
+            analysis_unwindstarts: false,
             analysis_fdeinterior: false,
             analysis_coldentry: false,
             analysis_pdatainterior: false,
@@ -3967,6 +3973,9 @@ impl Architecture {
         // (kuna) `.eh_frame` LSDA landing-pad discovery — default-OFF (opt-in,
         // output-changing: adds the discovered exception landing pads as entries).
         self.analysis_eh_frame_full = false;
+        // (kuna) Mach-O `__unwind_info` function-start discovery — default-OFF
+        // (opt-in, output-changing: adds the unwind-recorded function starts).
+        self.analysis_unwindstarts = false;
         // (kuna) DIV-61 `.eh_frame` FDE-interior entry suppression — default-ON.
         self.analysis_fdeinterior = true;
         self.analysis_coldentry = true;
