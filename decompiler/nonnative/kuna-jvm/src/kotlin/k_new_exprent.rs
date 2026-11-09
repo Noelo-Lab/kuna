@@ -270,6 +270,7 @@ impl KNewExprent {
                 }
 
                 if let Some(decompile_error) = wrapper.with(|d| d.decompile_error.clone()) {
+                    crate::kuna_spans::method_failed(wrapper);
                     let mut lines: Vec<String> = Vec::new();
                     if DecompilerContext::get_option(
                         IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR,

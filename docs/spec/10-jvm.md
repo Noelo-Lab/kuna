@@ -700,7 +700,16 @@ records, with zero-width marks that ride through re-wrapping and are never print
 each class and each method starts and ends in the final text, and groups the tracer's
 offsets by method and line. These spans are what lets a front end slice one method out of
 a class, report its line mapping in bytecode offsets, and mark a method as failed, without
-changing a byte of the output.
+changing a byte of the output. The recorder also keeps the stack of spans open while the
+writers recurse. When a body printed inside another one is written as a failure comment (a
+lambda, a method of an anonymous or local class, such a class itself), the writers report
+it (`method_failed` from each writer's `dump_error` and the inline-lambda and Kotlin-lambda
+error paths, `class_failed` from `invoke_processors` and the Kotlin writer's failed-lambda
+path), and every open method span records it as a nested failure, as does the innermost
+open class span when no method of it is open (a field initializer); the failing body's own
+span keeps it as its own error. A closed span also closes those a throw left open inside
+it. A method span further carries the method's `$VF:` comments when its wrapper's
+`add_error_comment` is set, the comments Vineflower follows with its report-this note.
 
 **Failure granularity.** A method failure becomes the comment block above and the class
 survives. A class whose processing throws (section 10.11) is written as
@@ -1012,7 +1021,8 @@ Kotlin plugin's own tests and core's Kotlin tests are corpus cases (`tests/jvm/k
 compared with the released jar's text. `decompiler/nonnative/kuna-jvm/src/infra/kuna_spans.rs`
 spans are recorded by the Kotlin writer too: a property's getter and setter share the span
 of the property's declaration, a primary constructor's span is its `init` block (it has
-none when the body is empty), and members the writer folds away have none.
+none when the body is empty; it is opened before the constructor is stringified, so a
+failure inside it is the constructor's), and members the writer folds away have none.
 `DecompiledClass::language` (`decompiler/nonnative/kuna-jvm/src/infra/kuna_plugins.rs`)
 reports `kotlin` for a unit whose file name ends in `.kt`, which is how the CLI labels
 units and writes `.kt` files in a project export; the CLI's `--language java` is

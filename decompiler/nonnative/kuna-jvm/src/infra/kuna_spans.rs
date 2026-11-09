@@ -9,12 +9,21 @@
 //! groups the buffer's bytecode-offset mapping (what `BytecodeMappingTracer`
 //! receives, whatever `bytecode-source-mapping` says) by method and line.
 //! Recording is active only between [`begin`] and [`take`].
+//!
+//! A body the writers print inside another one and cannot decompile (a
+//! lambda, a method of an anonymous or local class, such a class itself) is
+//! recorded by [`method_failed`] or [`class_failed`] against every method span
+//! open at that moment, and against an open class span when no method of it
+//! is open (a field initializer): the failure comment is part of their text.
+//! A method's own `$VF:` comments are kept when the engine marks them as
+//! errors (`MethodWrapper::add_error_comment`).
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use crate::class_wrapper::ClassWrapper;
 use crate::interpreter_util::InterpreterUtil;
+use crate::method_wrapper::MethodWrapper;
 use crate::rt::Caught;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
@@ -32,6 +41,8 @@ pub struct ClassSpan {
     pub end_line: u32,
     /// Set when the class could not be written (its text is an error comment).
     pub error: Option<String>,
+    /// Bodies written in this class's text outside its methods that could not be decompiled.
+    pub nested: Vec<BodyFailure>,
 }
 
 /// One method written into the text: `start..end` are byte offsets covering
@@ -52,6 +63,21 @@ pub struct MethodSpan {
     pub error: Option<String>,
     /// `(1-based line, bytecode offsets)` pairs in line order, offsets ascending.
     pub lines: Vec<(u32, Vec<u32>)>,
+    /// Other bodies written inside this method's text that could not be decompiled.
+    pub nested: Vec<BodyFailure>,
+    /// The method's `$VF:` comments when the engine flags them as errors.
+    pub warnings: Vec<String>,
+}
+
+/// A body that could not be decompiled: a method (or lambda), or a class when
+/// `name` is empty.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BodyFailure {
+    /// Internal name of the class.
+    pub class: String,
+    pub name: String,
+    pub descriptor: String,
+    pub error: String,
 }
 
 /// What one root class's writing recorded.
@@ -69,6 +95,8 @@ enum Pending {
     Class {
         internal: String,
         failed: bool,
+        reason: Option<String>,
+        nested: Vec<BodyFailure>,
     },
     Method {
         class: String,
@@ -76,6 +104,7 @@ enum Pending {
         descriptor: String,
         access: i32,
         wrapper: ClassWrapper,
+        nested: Vec<BodyFailure>,
     },
 }
 
@@ -83,6 +112,8 @@ enum Pending {
 struct Recorder {
     active: bool,
     pending: Vec<Pending>,
+    /// Spans opened and not yet closed, innermost last.
+    open: Vec<u32>,
     result: Recorded,
 }
 
@@ -112,7 +143,9 @@ fn open(buffer: &mut TextBuffer, pending: Pending) -> SpanId {
             return None;
         }
         r.pending.push(pending);
-        Some((r.pending.len() - 1) as u32)
+        let id = (r.pending.len() - 1) as u32;
+        r.open.push(id);
+        Some(id)
     })?;
     buffer.add_kuna_mark(id * 2);
     Some(id)
@@ -128,6 +161,8 @@ pub fn open_class(buffer: &mut TextBuffer, cl: StructClass) -> SpanId {
         Pending::Class {
             internal: cl.qualified_name(),
             failed: false,
+            reason: None,
+            nested: Vec::new(),
         },
     )
 }
@@ -151,15 +186,105 @@ pub fn open_method(
             descriptor: mt.get_descriptor(),
             access: mt.get_access_flags(),
             wrapper,
+            nested: Vec::new(),
         },
     )
 }
 
-/// Closes `span` at the end of `buffer`.
+/// Closes `span` at the end of `buffer`, and every span opened inside it
+/// that a throw left open.
 pub fn close(buffer: &mut TextBuffer, span: SpanId) {
     if let Some(id) = span {
         buffer.add_kuna_mark(id * 2 + 1);
+        RECORDER.with(|r| {
+            let mut guard = r.borrow_mut();
+            if let Some(at) = guard.open.iter().rposition(|&o| o == id) {
+                guard.open.truncate(at);
+            }
+        });
     }
+}
+
+/// `wrapper`'s method is written as an error comment: its own span keeps
+/// the error, every other open span records it.
+pub fn method_failed(wrapper: MethodWrapper) {
+    if !is_active() {
+        return;
+    }
+    let (cl, mt, error) = wrapper.with(|d| {
+        (
+            d.class_struct,
+            d.method_struct,
+            d.decompile_error.as_ref().map(|e| e.message.clone()),
+        )
+    });
+    record(BodyFailure {
+        class: cl.qualified_name(),
+        name: mt.get_name(),
+        descriptor: mt.get_descriptor(),
+        error: error.unwrap_or_default(),
+    });
+}
+
+/// The class `internal`, whose span is open, is written as an error comment
+/// for `reason`.
+pub fn class_failed(internal: &str, reason: &str) {
+    if !is_active() {
+        return;
+    }
+    RECORDER.with(|r| {
+        let mut guard = r.borrow_mut();
+        let Recorder { pending, open, .. } = &mut *guard;
+        let span = open.iter().rev().find(|&&id| {
+            matches!(pending.get(id as usize), Some(Pending::Class { internal: name, .. }) if name == internal)
+        });
+        if let Some(Pending::Class { failed, reason: slot, .. }) =
+            span.and_then(|&id| pending.get_mut(id as usize))
+        {
+            *failed = true;
+            *slot = Some(reason.to_string());
+        }
+    });
+    record(BodyFailure {
+        class: internal.to_string(),
+        error: reason.to_string(),
+        ..BodyFailure::default()
+    });
+}
+
+fn record(failure: BodyFailure) {
+    RECORDER.with(|r| {
+        let mut guard = r.borrow_mut();
+        let Recorder { pending, open, .. } = &mut *guard;
+        let mut in_method = false;
+        for &id in open.iter().rev() {
+            let (own, nested) = match pending.get_mut(id as usize) {
+                Some(Pending::Method {
+                    class,
+                    name,
+                    descriptor,
+                    nested,
+                    ..
+                }) => {
+                    in_method = true;
+                    let own = *class == failure.class
+                        && *name == failure.name
+                        && *descriptor == failure.descriptor;
+                    (own, nested)
+                }
+                Some(Pending::Class {
+                    internal, nested, ..
+                }) if !in_method => (failure.name.is_empty() && *internal == failure.class, nested),
+                _ => continue,
+            };
+            let seen = nested.iter().any(|f| {
+                f.class == failure.class && f.name == failure.name && f.descriptor == failure.descriptor
+            });
+            if !own && !seen {
+                nested.push(failure.clone());
+            }
+        }
+    });
 }
 
 /// Closes the class span `span`, whose class could not be written.
@@ -231,8 +356,15 @@ pub fn finish(buffer: &TextBuffer, content: &str) {
         let (start, end) = text.widen(start, end);
         let (start_line, end_line) = (text.line_of(start), text.line_of(end.max(start + 1) - 1));
         match record {
-            Pending::Class { internal, failed } => {
-                let error = failed.then(|| format!("Class {internal} couldn't be written."));
+            Pending::Class {
+                internal,
+                failed,
+                reason,
+                nested,
+            } => {
+                let error = failed.then(|| {
+                    reason.unwrap_or_else(|| format!("Class {internal} couldn't be written."))
+                });
                 classes.push(ClassSpan {
                     internal,
                     start,
@@ -240,6 +372,7 @@ pub fn finish(buffer: &TextBuffer, content: &str) {
                     start_line,
                     end_line,
                     error,
+                    nested,
                 });
             }
             Pending::Method {
@@ -248,13 +381,24 @@ pub fn finish(buffer: &TextBuffer, content: &str) {
                 descriptor,
                 access,
                 wrapper,
+                nested,
             } => {
-                let error = Some(wrapper)
+                let method = Some(wrapper)
                     .filter(|w| w.is_live())
-                    .and_then(|w| w.get_method_wrapper(&name, &descriptor))
-                    .and_then(|m| {
-                        m.with(|d| d.decompile_error.as_ref().map(|e| e.message.clone()))
-                    });
+                    .and_then(|w| w.get_method_wrapper(&name, &descriptor));
+                let (error, warnings) = method.map_or((None, Vec::new()), |m| {
+                    m.with(|d| {
+                        let warnings = match (&d.comment_lines, d.add_error_comment) {
+                            (Some(lines), true) => lines
+                                .iter()
+                                .filter(|l| l.starts_with("$VF:"))
+                                .cloned()
+                                .collect(),
+                            _ => Vec::new(),
+                        };
+                        (d.decompile_error.as_ref().map(|e| e.message.clone()), warnings)
+                    })
+                });
                 let key = (
                     class.clone(),
                     InterpreterUtil::make_unique_key(&name, &descriptor),
@@ -271,6 +415,8 @@ pub fn finish(buffer: &TextBuffer, content: &str) {
                     end_line,
                     error,
                     lines,
+                    nested,
+                    warnings,
                 });
             }
         }
