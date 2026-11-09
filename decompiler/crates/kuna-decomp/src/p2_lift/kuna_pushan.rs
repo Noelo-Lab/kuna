@@ -38,6 +38,8 @@ use super::kuna_pushanemu::{classify_space, LiftedInsn, PushanTarget, RawOp, Spa
 use super::kuna_pushanflow::{Abi, Config, Explorer, NodeExit, Stats};
 use super::kuna_pushanstate::PushanImage;
 use crate::architecture::Architecture;
+use crate::database::SymbolKind;
+use crate::fspec::EXTRAPOP_UNKNOWN;
 use crate::funcdata::Funcdata;
 
 pub const MODE_OFF: u8 = 0;
@@ -312,8 +314,24 @@ impl PushanTarget for ArchTarget<'_> {
         let a = Address::new(Rc::clone(&self.ram), addr);
         self.arch.symboltab.find_function_across_scopes(&a).is_some()
     }
-    fn callee_extra_pop(&self, _site: u64) -> Option<i64> {
-        None
+    fn callee_cleans(&self) -> bool {
+        self.ram.get_addr_size() == 4 && self.arch.default_fp().is_some_and(|m| m.get_extra_pop() == EXTRAPOP_UNKNOWN)
+    }
+    fn declared_pop(&self, addr: u64) -> Option<u32> {
+        let a = Address::new(Rc::clone(&self.ram), addr);
+        let (sid, _) = self.arch.symboltab.find_function_across_scopes(&a)?;
+        let sym = self.arch.symboltab.symbol(sid);
+        if let Some(m) = self.arch.function_prototype_model(&sym.name) {
+            let ep = m.get_extra_pop();
+            if ep != EXTRAPOP_UNKNOWN {
+                return Some((ep as u32).saturating_sub(self.ram.get_addr_size()));
+            }
+        }
+        let SymbolKind::Function { proto_pieces: Some(p), .. } = &sym.kind else { return None };
+        if p.first_var_arg_slot >= 0 {
+            return Some(0);
+        }
+        Some(p.intypes.iter().map(|t| (t.get_size().max(0) as u32 + 3) & !3).sum())
     }
     fn bytecode_like(&self, addr: u64) -> bool {
         if self.section_of(addr).is_none() {

@@ -51,8 +51,12 @@ pub trait PushanTarget: PushanImage {
     fn userop_name(&self, index: u64) -> Option<String>;
     /// A known function starts here (symbol table, exports, unwind data).
     fn is_function_entry(&self, addr: u64) -> bool;
-    /// Bytes a callee pops from the stack beyond its return address (stdcall).
-    fn callee_extra_pop(&self, site: u64) -> Option<i64>;
+    /// The image's default convention leaves argument cleanup to each callee
+    /// (`__stdcall` on 32-bit Windows).
+    fn callee_cleans(&self) -> bool;
+    /// Bytes the callee declared at `addr` (a function or an import slot)
+    /// pops beyond its return address, from its prototype and convention.
+    fn declared_pop(&self, addr: u64) -> Option<u32>;
     /// `addr` lies in a mapped region that looks like VM bytecode: the paper's
     /// test, a 256-byte window with Shannon entropy above 5 bits per byte.
     fn bytecode_like(&self, addr: u64) -> bool;

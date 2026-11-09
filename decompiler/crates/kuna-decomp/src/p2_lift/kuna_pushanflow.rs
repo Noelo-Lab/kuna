@@ -174,6 +174,8 @@ pub struct Explorer<'a> {
     escapes: BTreeSet<i128>,
     /// Locations recorded by the last select built, for its node.
     pending_locs: Option<(Vec<(VarId, Loc)>, Option<i128>)>,
+    /// Callees in the image already read.
+    callees: BTreeMap<u64, Option<CalleeScan>>,
     pub stats: Stats,
     pub log: Vec<String>,
     retaddr: Option<ExprId>,
@@ -192,6 +194,32 @@ const MAX_SYM_VALUES: usize = 32;
 const MAX_VPC_FORK: usize = 4;
 /// Bytes behind each pointer argument an external call may write.
 const CALL_POINTEE_BYTES: i128 = 16;
+/// Most instructions read from a callee in the image when summarizing it.
+const MAX_CALLEE_SCAN: usize = 512;
+
+/// A call leaving the interpreter: where it goes and where it comes back.
+#[derive(Clone, Copy, Debug)]
+struct Callee {
+    target: Option<u64>,
+    slot: Option<u64>,
+    ret: Option<u64>,
+}
+
+/// A callee in the image as its code reads.
+#[derive(Clone, Debug)]
+struct CalleeScan {
+    /// Register ranges some instruction writes.
+    writes: Vec<(u64, u8)>,
+    /// The bytes every `ret` pops beyond the return address.
+    pop: Option<u32>,
+    /// Every path was followed to a return without calling out or jumping
+    /// indirectly, so `writes` is complete.
+    closed: bool,
+}
+
+fn classify_space_of(vn: &kuna_num::pcoderaw::VarnodeData) -> Option<super::kuna_pushanemu::Space> {
+    vn.space.as_ref().map(super::kuna_pushanemu::classify_space)
+}
 
 impl<'a> Explorer<'a> {
     pub fn new(target: &'a dyn PushanTarget, abi: Abi, config: Config, entry_addr: u64) -> Self {
@@ -207,6 +235,7 @@ impl<'a> Explorer<'a> {
             image_ptrs: BTreeMap::new(),
             escapes: BTreeSet::new(),
             pending_locs: None,
+            callees: BTreeMap::new(),
             stats: Stats::default(),
             log: Vec::new(),
             retaddr: None,
@@ -993,7 +1022,8 @@ impl<'a> Explorer<'a> {
                         return NodeExit::Branch(self.reach(cfg, worklist, key, state, ctx, Some(id)));
                     }
                 }
-                self.apply_call_summary(&mut state, insns.last().map(|i| i.addr).unwrap_or(0));
+                let callee = Callee { target: tc, slot: None, ret: Some(fallthrough) };
+                self.apply_call_summary(&mut state, insns.last().map(|i| i.addr).unwrap_or(0), callee);
                 let key = NodeKey { addr: fallthrough, ctx: ctx.ctx };
                 let ret = self.reach(cfg, worklist, key, state, ctx, Some(id));
                 NodeExit::Call { target: tc, ret, slot: None }
@@ -1217,7 +1247,7 @@ impl<'a> Explorer<'a> {
                 if !self.target.is_executable(slot) {
                     if let Some(ret) = self.pushed_return_address(&mut state) {
                         let site = cfg.nodes[id as usize].key.addr;
-                        self.apply_call_summary(&mut state, site);
+                        self.apply_call_summary(&mut state, site, Callee { target: None, slot: Some(slot), ret: Some(ret) });
                         let key = NodeKey { addr: ret, ctx: ctx.ctx };
                         let ret_node = self.reach(cfg, worklist, key, state, ctx, Some(id));
                         return NodeExit::Call { target: None, ret: ret_node, slot: Some(slot) };
@@ -1230,9 +1260,12 @@ impl<'a> Explorer<'a> {
             self.stats.halts += 1;
             return NodeExit::Halt(m);
         }
-        // Compiled code can pass the bytecode entropy test; a known function
-        // entry is native whatever its bytes look like.
-        let native = !self.target.is_foreign_code(c) && (self.target_is_function(c) || !self.target.bytecode_like(c));
+        // Compiled code can pass the bytecode entropy test: a known function
+        // entry is native whatever its bytes look like, and so is a
+        // high-entropy target the interpreter pushed a return into itself for.
+        let pushed = self.pushed_return_address(&mut state);
+        let native = !self.target.is_foreign_code(c)
+            && (self.target_is_function(c) || !self.target.bytecode_like(c) || pushed.is_some_and(|r| r != c && self.target.is_foreign_code(r)));
         if native {
             if let Some(tr) = &self.config.trace {
                 use std::io::Write;
@@ -1243,10 +1276,10 @@ impl<'a> Explorer<'a> {
             }
             // `push return; jmp/ret target`: a call whose return address the
             // interpreter already pushed.
-            if let Some(ret) = self.pushed_return_address(&mut state) {
+            if let Some(ret) = pushed {
                 if ret != c {
                     let site = cfg.nodes[id as usize].key.addr;
-                    self.apply_call_summary(&mut state, site);
+                    self.apply_call_summary(&mut state, site, Callee { target: Some(c), slot: None, ret: Some(ret) });
                     let key = NodeKey { addr: ret, ctx: ctx.ctx };
                     let ret_node = self.reach(cfg, worklist, key, state, ctx, Some(id));
                     return NodeExit::Call { target: Some(c), ret: ret_node, slot: None };
@@ -1292,8 +1325,13 @@ impl<'a> Explorer<'a> {
     /// return address popped, and the memory its pointer arguments reach made
     /// unknown (a `scanf("%d", &v)` writes `v`; its old constant must not
     /// decide the branch that tests it).
-    fn apply_call_summary(&mut self, state: &mut State, site: u64) {
+    fn apply_call_summary(&mut self, state: &mut State, site: u64, callee: Callee) {
         let ps = self.abi.ptr_size;
+        let scan = callee.target.filter(|c| Some(*c) != callee.ret).and_then(|c| self.scan_callee(c));
+        let pop = self.callee_pop(state, &callee, scan.as_ref());
+        if self.config.trace.is_some() {
+            self.log.push(format!("call at {site:#x}: pops {pop}"));
+        }
         let args: Vec<(u64, u8)> = self.abi.args.iter().copied().filter(|(o, _)| *o != self.abi.sp).collect();
         let mut values: Vec<ExprId> = args.iter().map(|&(off, size)| state.read_reg(&mut self.arena, off, size)).collect();
         // Stack-passed arguments sit above the return address.
@@ -1329,22 +1367,188 @@ impl<'a> Explorer<'a> {
                 _ => {}
             }
         }
-        let ret = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallResult { site }, ps, false));
-        state.write_reg(self.abi.return_reg, ret, ps);
+        let kept = |off: u64, size: u8| scan.as_ref().is_some_and(|s| s.closed && !s.writes.iter().any(|&(o, n)| o < off + size as u64 && off < o + n as u64));
+        if !kept(self.abi.return_reg, ps) {
+            let ret = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallResult { site }, ps, false));
+            state.write_reg(self.abi.return_reg, ret, ps);
+        }
         let flags = self.abi.flag_regs;
         for &(off, size) in &self.abi.clobbers {
+            if kept(off, size) {
+                continue;
+            }
             let boolean = size == 1 && off >= flags.0 && off < flags.1;
             let u = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallClobber { site, offset: off }, size, boolean));
             state.write_reg(off, u, size);
         }
         let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
-        let mut pop = ps as u128;
-        if let Some(extra) = self.target.callee_extra_pop(site) {
-            pop += extra as u128;
-        }
-        let k = self.arena.cst(ps, pop);
+        let k = self.arena.cst(ps, ps as u128 + pop as u128);
         let nsp = self.arena.mk_bin(OpCode::CPUI_INT_ADD, sp, k, ps);
         state.write_reg(self.abi.sp, nsp, ps);
+    }
+
+    /// Bytes a callee pops beyond its return address.  Where each callee
+    /// cleans up after itself (32-bit Windows `__stdcall`), this is read from
+    /// the callee's own `ret imm16`, else from the caller restoring the stack
+    /// at the return address (`__cdecl`), else from its declared prototype,
+    /// else from the arguments pushed for it: the stack slots above the return
+    /// address up to the caller's saved registers.  angr gets the same number
+    /// by executing the callee or its calling-convention-aware SimProcedure.
+    fn callee_pop(&mut self, state: &mut State, callee: &Callee, scan: Option<&CalleeScan>) -> u32 {
+        if !self.target.callee_cleans() || (callee.target.is_some() && callee.target == callee.ret) {
+            return 0;
+        }
+        if let Some(p) = scan.and_then(|s| s.pop) {
+            return p;
+        }
+        if let Some(r) = callee.ret {
+            if !self.target.is_foreign_code(r) && self.caller_cleans(r) {
+                return 0;
+            }
+        }
+        if let Some(p) = callee.slot.or(callee.target).and_then(|a| self.target.declared_pop(a)) {
+            return p;
+        }
+        if callee.target.is_some_and(|c| self.target.is_executable(c)) {
+            return 0;
+        }
+        self.pushed_arg_bytes(state)
+    }
+
+    /// The instruction at a call's return address takes the arguments back
+    /// off the stack (`add esp, n`, or a pop into a scratch register).
+    fn caller_cleans(&mut self, ret: u64) -> bool {
+        let Ok(insn) = self.target.lift(ret) else { return false };
+        let sp = self.abi.sp;
+        let mut raises = false;
+        for op in &insn.ops {
+            let Some(out) = &op.out else { continue };
+            if classify_space_of(out) != Some(super::kuna_pushanemu::Space::Register) {
+                continue;
+            }
+            if out.offset == sp {
+                let k = op.ins.get(1).filter(|v| classify_space_of(v) == Some(super::kuna_pushanemu::Space::Const)).map(|v| v.offset as i64);
+                if op.opc == OpCode::CPUI_INT_ADD && op.ins.first().is_some_and(|v| v.offset == sp) && k.is_some_and(|k| k > 0) {
+                    raises = true;
+                }
+            } else if self.abi.callee_saved.iter().any(|&(o, n)| o < out.offset + out.size as u64 && out.offset < o + n as u64) {
+                return false;
+            }
+        }
+        raises
+    }
+
+    /// The pointer-sized stack slots above the return address that hold
+    /// written values, up to the first holding a callee-saved register's
+    /// entry value (the caller's register saves); 0 when no such boundary
+    /// is found within the argument window.
+    fn pushed_arg_bytes(&mut self, state: &mut State) -> u32 {
+        let ps = self.abi.ptr_size;
+        let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);
+        let Some((base, off)) = self.arena.affine(sp) else { return 0 };
+        if base.is_none() || base != self.sp0 {
+            return 0;
+        }
+        let saved: Vec<u64> = self.abi.callee_saved.iter().map(|(o, _)| *o).filter(|o| *o != self.abi.sp).collect();
+        for k in 1..=self.abi.stack_args as i128 {
+            let o = off + k * ps as i128;
+            if o >= 0 || !state.has_mem(base, o, ps) {
+                return 0;
+            }
+            let v = state.read_mem(&mut self.arena, self.target, base, o, ps);
+            if matches!(self.arena.var_kind(v), Some(VarKind::InitReg { offset }) if saved.contains(&offset)) {
+                return ((k - 1) * ps as i128) as u32;
+            }
+        }
+        0
+    }
+
+    /// What a callee in the image does, read off its code: the registers
+    /// any of its instructions writes and the bytes its `ret` pops.
+    fn scan_callee(&mut self, c: u64) -> Option<CalleeScan> {
+        if let Some(s) = self.callees.get(&c) {
+            return s.clone();
+        }
+        let scan = self.scan_callee_code(c);
+        self.callees.insert(c, scan.clone());
+        scan
+    }
+
+    fn scan_callee_code(&mut self, c: u64) -> Option<CalleeScan> {
+        if !self.target.is_executable(c) || self.target.is_foreign_code(c) {
+            return None;
+        }
+        let mut scan = CalleeScan { writes: Vec::new(), pop: None, closed: true };
+        let mut pops: BTreeSet<u32> = BTreeSet::new();
+        let mut seen = BTreeSet::new();
+        let mut work = vec![c];
+        while let Some(a) = work.pop() {
+            if !seen.insert(a) {
+                continue;
+            }
+            if seen.len() > MAX_CALLEE_SCAN {
+                scan.closed = false;
+                break;
+            }
+            let Ok(insn) = self.target.lift(a) else {
+                scan.closed = false;
+                continue;
+            };
+            let mut falls = true;
+            for op in &insn.ops {
+                if let Some(out) = &op.out {
+                    if classify_space_of(out) == Some(super::kuna_pushanemu::Space::Register) {
+                        let w = (out.offset, out.size.min(255) as u8);
+                        if !scan.writes.contains(&w) {
+                            scan.writes.push(w);
+                        }
+                    }
+                }
+                let ram_target = op.ins.first().filter(|v| classify_space_of(v) == Some(super::kuna_pushanemu::Space::Ram)).map(|v| v.offset);
+                match op.opc {
+                    OpCode::CPUI_BRANCH => {
+                        if let Some(t) = ram_target {
+                            work.push(t);
+                            falls = false;
+                        }
+                    }
+                    OpCode::CPUI_CBRANCH => {
+                        if let Some(t) = ram_target {
+                            work.push(t);
+                        }
+                    }
+                    OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => scan.closed = false,
+                    OpCode::CPUI_BRANCHIND => {
+                        scan.closed = false;
+                        falls = false;
+                    }
+                    OpCode::CPUI_RETURN => {
+                        falls = false;
+                        let mut b = [0u8; 4];
+                        if self.target.read_bytes(insn.addr, &mut b) {
+                            let i = b.iter().position(|x| *x != 0xF2 && *x != 0xF3).unwrap_or(0);
+                            match b[i] {
+                                0xC3 => {
+                                    pops.insert(0);
+                                }
+                                0xC2 if i + 2 < b.len() => {
+                                    pops.insert(u16::from_le_bytes([b[i + 1], b[i + 2]]) as u32);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if falls {
+                work.push(insn.addr + insn.len as u64);
+            }
+        }
+        if pops.len() == 1 {
+            scan.pop = pops.first().copied();
+        }
+        Some(scan)
     }
 
     pub fn retaddr(&self) -> Option<ExprId> {
