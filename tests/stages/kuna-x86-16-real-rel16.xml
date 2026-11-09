@@ -35,9 +35,9 @@
     half of its linear address (0xb725), and an instruction that ends on its
     segment's last byte wraps IP to 0 (0x2b623, not 0x3b623).
 
-    The script pins option segmentize off: asserts #7 and #11 read each
-    pushed IP as a store through segment(), which the default folds into the
-    stack frame (see kuna-segmentize.xml).
+    The segment op folds each pushed IP into the stack frame (see
+    kuna-segmentize.xml), so asserts #7, #8, #11 and #12 pin that no store of
+    a pushed IP, wrapped or linear, is printed.
 -->
 <bytechunk space="ram" offset="0x100">
 e80090c3
@@ -97,7 +97,6 @@ b80700c3
 <symbol space="ram" offset="0x2b623" name="v"/>
 </binaryimage>
 <script>
-  <com>option segmentize off</com>
   <com>disassemble 0x100 0x104</com>
   <com>disassemble 0x5b680 0x5b684</com>
   <com>lo fu com_main</com>
@@ -129,11 +128,11 @@ b80700c3
 <stringmatch name="real-rel16 #4: no wrapped call lands in the first 64 KiB (mask) or 64 KiB short (linear sum)" min="0" max="0">CALL\s+(0x4a29|0x24a29|0x44a29|-0x6efd)$</stringmatch>
 <stringmatch name="real-rel16 #5: an instruction CS 0 cannot hold takes the linear sum (0x5b680 to 0x60010)" min="1" max="1">^0x0005b680: CALL\s+0x60010$</stringmatch>
 <stringmatch name="real-rel16 #6: com_main, f and k call what they wrap to" min="3" max="3">^  (com_helper|g|m)\(\);$</stringmatch>
-<stringmatch name="real-rel16 #7: the CALLs in f and k push IP 0x00fb, not the linear low half 0xb67b" min="2" max="2">= 0xfb;$</stringmatch>
+<stringmatch name="real-rel16 #7: the CALLs in f and k fold their pushed IP 0x00fb into the frame" min="0" max="0">= 0xfb;$</stringmatch>
 <stringmatch name="real-rel16 #8: no CALL pushes the linear low half" min="0" max="0">= 0xb67b;$</stringmatch>
 <stringmatch name="real-rel16 #9: in CS 0x2b58 a CS: override reads 2b58:0010 (linear 0x2b590)" min="1" max="1">segment\(0x2b58,0x10\)|2b590</stringmatch>
 <stringmatch name="real-rel16 #10: the CS: read does not use the 64 KiB block guess 0x2000" min="0" max="0">segment\(0x2000,0x10\)|0x20010|_20010</stringmatch>
-<stringmatch name="real-rel16 #11: a far CALL in CS 0x2b58 pushes IP 0x01a5, not the linear low half 0xb725" min="1" max="1">= 0x1a5;$</stringmatch>
+<stringmatch name="real-rel16 #11: a far CALL in CS 0x2b58 folds its pushed IP 0x01a5 into the frame" min="0" max="0">= 0x1a5;$</stringmatch>
 <stringmatch name="real-rel16 #12: no far CALL pushes the linear low half" min="0" max="0">= 0xb725;$</stringmatch>
 <stringmatch name="real-rel16 #13: a CALL ending on its segment's last byte wraps IP to 0 (0x2b623, not 0x3b623)" min="1" max="1">^0x0003b57d: CALL\s+0x2b623$</stringmatch>
 </decompilertest>

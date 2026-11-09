@@ -94,32 +94,7 @@ kuna_options! { self, p1;
         self.return_single = form.return_single();
         Ok(msg)
     },
-    "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
-    "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
-    "cancelbytearithmetic" => {
-        let (val, msg) =
-            crate::p3_dataflow::kuna_cancelbytearithmetic::OptionCancelByteArithmetic
-                .apply(p1)?;
-        self.cancel_byte_arithmetic = val;
-        Ok(msg)
-    },
-    "mulblob" => {
-        let (val, msg) = crate::p3_dataflow::kuna_mulblob::OptionMulBlob.apply(p1)?;
-        self.mul_blob = val;
-        Ok(msg)
-    },
-    "simdlane" => {
-        let (val, msg) = crate::p3_dataflow::kuna_simdlane::OptionSimdLane.apply(p1)?;
-        self.simd_lane_fold = val;
-        Ok(msg)
-    },
-    "constspaceload" => {
-        let (val, msg) =
-            crate::p3_dataflow::kuna_constspaceload::OptionConstSpaceLoad.apply(p1)?;
-        self.const_space_load_fold = val;
-        Ok(msg)
-    },
     "signedness" => {
         let (val, msg) = crate::kuna_typeround::OptionSignedness.apply(p1)?;
         self.signedness = val;
@@ -137,7 +112,6 @@ kuna_options! { self, p1;
         self.ret_split_limit = val;
         Ok(msg)
     },
-    "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
     "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
     "ptrauthtrap" => on_off!(ptrauth_trap, "arm64e pointer-auth failure-check removal"),
     "int3pad" => {
@@ -148,12 +122,6 @@ kuna_options! { self, p1;
     "x64syscall" => {
         let (mode, msg) = crate::kuna_x64syscall::OptionX64Syscall.apply(p1)?;
         self.x64_syscall = mode;
-        Ok(msg)
-    },
-    "segmentize" => {
-        let (val, msg) = crate::kuna_segmentize::OptionSegmentize.apply(p1)?;
-        self.segmentize = val;
-        self.apply_segmentize();
         Ok(msg)
     },
     "fpuemu" => {
@@ -206,7 +174,6 @@ kuna_options! { self, p1;
     "msvcstrappend" => on_off!(msvc_str_append, "MSVC std::string inlined append collapsing"),
     "switchselector" => on_off!(switch_selector_guard, "Lowered-switch in-function-selector restriction"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
-    "multiregargs" => on_off!(multi_reg_args, "Complete ABI register argument partitions"),
     "callwide" => {
         let enabled = on_or_off(p1)?;
         self.kuna_callwide.clear();
@@ -275,11 +242,9 @@ kuna_options! { self, p1;
             None => "Source language follows detection (auto)".to_string(),
         })
     },
-    "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
     "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
     "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
     "stackalias" => on_off!(stack_alias_deadstore, "Stack-pointer-alias dead-store hold"),
-    "globalcallranges" => on_off!(global_call_ranges, "Global call access ranges"),
     "readonlycalls" => {
         let field = p1.trim();
         let (val, msg) = match field {
@@ -314,8 +279,6 @@ kuna_options! { self, p1;
         self.persist_calls = val;
         Ok(msg)
     },
-    "prunedssa" => on_off!(pruned_ssa, "Pruned SSA heritage markers"),
-    "loadguardreads" => on_off!(load_guard_reads, "LOAD guards read at renaming"),
     "stackviews" => {
         let (value, message) = crate::kuna_stackviews::OptionStackViews.apply(p1)?;
         self.stack_views = value;
@@ -339,10 +302,6 @@ kuna_options! { self, p1;
     "switchmultipred" => on_off!(switch_multi_pred, "Switch multi-predecessor unrolled-guard table"),
     "unrolledguard" => on_off!(unrolled_guard, "Interleaved unrolled-guard jump-table partial-flow recovery"),
     "jtsharepartial" => on_off!(jumptable_share_partial, "Shared jump-table partial sub-decompilation"),
-    "earlyrestart" => on_off!(early_restart, "Early restart after a dead-code delay bump"),
-    "haltloopguard" => on_off!(halt_loop_guard, "Global stores live in an exitless loop"),
-    "truncptrflow" => on_off!(trunc_ptr_flow, "Truncated-space pointer flow"),
-    "deadwaves" => on_off!(pool_dead_waves, "Rule-pool dead-removal waves"),
     "deadcascade" => {
         let field = p1.trim();
         let (val, msg) = match field {
@@ -360,7 +319,6 @@ kuna_options! { self, p1;
         self.dead_cascade = val;
         Ok(msg)
     },
-    "copywaves" => on_off!(pool_copy_waves, "Rule-pool copy-propagation waves"),
     "loweredswitch" => {
         let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
         self.recover_lowered_switch = val;
@@ -436,30 +394,6 @@ kuna_options! { self, p1;
         self.mixed_tail_ret = val;
         Ok(msg)
     },
-    "calleepreserves" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleepreserves::OptionCalleePreserves.apply(p1)?;
-        self.callee_preserves = val;
-        Ok(msg)
-    },
-    "calleeretpreserves" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleeretpreserves::OptionCalleeRetPreserves.apply(p1)?;
-        self.callee_ret_preserves = val;
-        Ok(msg)
-    },
-    "calleescratchbody" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleescratchbody::OptionCalleeScratchBody.apply(p1)?;
-        self.callee_scratch_body = val;
-        Ok(msg)
-    },
-    "indirectanchor" => {
-        let (val, msg) =
-            crate::p3_dataflow::kuna_indirectanchor::OptionIndirectAnchor.apply(p1)?;
-        self.indirect_anchor = val;
-        Ok(msg)
-    },
     "varargsharedfloat" => on_off!(vararg_shared_float, "variadic doubles that also feed an earlier argument"),
     "calloverlap" => {
         let (val, msg) =
@@ -473,8 +407,6 @@ kuna_options! { self, p1;
         self.spill_arg_trial = val;
         Ok(msg)
     },
-    "loadguardrange" => on_off!(load_guard_range, "Indexed-stack guard ValueSet range refinement"),
-    "stackstoreguard" => on_off!(stack_store_guard, "Stack-derived store heritage guards"),
     "indexaliasguard" => {
         let (val, msg) =
             crate::p3_dataflow::kuna_indexaliasguard::OptionIndexAliasGuard.apply(p1)?;
@@ -494,20 +426,6 @@ kuna_options! { self, p1;
         self.array_size = val;
         Ok(msg)
     },
-    "tiedstorekeep" => {
-        on_off!(tied_store_keep, "Address-tied store copy-propagation brake")
-    },
-    "loopcounterstore" => {
-        on_off!(loop_counter_store, "Frame-slot loop-counter store brake")
-    },
-    "globalfieldstore" => on_off!(global_field_store, "Typed global field stores"),
-    "globalcallstore" => on_off!(global_call_store, "Loaded global store brake"),
-    "intfloatround" => on_off!(int_float_round, "Integer-to-float rounding preservation"),
-    "splitstorekeep" => {
-        on_off!(split_store_keep, "Refinement-split stack store mark")
-    },
-    "pairrefine" => on_off!(pair_refine, "Register-pair midpoint refinement"),
-    "wideslice" => on_off!(wide_slice_reduce, "Wide SSA slice reduction"),
     "devectorize" => on_off!(devectorize_reduction, "Vectorized reduction re-roll"),
     "strlenscan" => on_off!(strlen_scan, "inline repnz scasb string length as strlen"),
     "regionstructure" => {

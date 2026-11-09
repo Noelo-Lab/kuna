@@ -726,8 +726,6 @@ pub struct ArchContext {
     pub retsysreg_cop_userops: Vec<kuna_base::types::uint4>,
     /// Retain register trials carrying proven stack addresses.
     pub stack_addr_arg_trial: bool,
-    /// Recover complete ABI argument slots within wider physical register ranges.
-    pub multi_reg_args: bool,
     /// (kuna) `option bejoin`: when may a two-register value join with its
     /// high word in the first register where the ABI puts it?  Read by
     /// [`crate::p4_calls::kuna_bejoin::mode`].
@@ -781,15 +779,8 @@ pub struct ArchContext {
     /// their original `x <= c` form (C++ `present_lessequal`, DIV-2 default-on).
     /// Read by [`ActionPresentCompareForm`](crate::kuna_compareform::ActionPresentCompareForm).
     pub present_lessequal: bool,
-    /// (kuna) GH-1282: fold `(b<<k) s>> k` boolean sign-extension-mask idioms
-    /// (C++ `fold_boolean_mask`, DIV-2 default-on).  Read by
-    /// [`RuleBoolSignShift`](crate::kuna_booleanmask::RuleBoolSignShift).
-    pub fold_boolean_mask: bool,
     /// Keep mapped global array bases separate from negative element offsets.
     pub global_array_anchor: bool,
-    /// (kuna) Fold an exact one-byte modular cancellation around a bounded
-    /// left shift (`option cancelbytearithmetic`).
-    pub cancel_byte_arithmetic: bool,
     /// (kuna) refuse to split a shared RETURN block that stores to GLOBALS
     /// (`retsplitglobal`).  Read by
     /// [`Funcdata::return_split_is_splittable`](crate::funcdata::Funcdata),
@@ -797,15 +788,7 @@ pub struct ArchContext {
     pub ret_split_global: bool,
     /// (kuna) `retsplitlimit`, read by `Funcdata::return_split_apply`.
     pub ret_split_limit: Option<u64>,
-    /// (kuna) resolve a one-byte lane read of a CONSTANT-mask `pshufb` shuffle
-    /// to the source lane it selects (`simdlane`).  Read by
-    /// [`RuleSimdShuffleLane`](crate::kuna_simdlane::RuleSimdShuffleLane).
-    pub simd_lane_fold: bool,
 
-    /// (kuna) Resolve a SLEIGH dynamic constant-space export to the value it
-    /// exports (`constspaceload`).  Read by
-    /// [`RuleConstSpaceLoad`](crate::kuna_constspaceload::RuleConstSpaceLoad).
-    pub const_space_load_fold: bool,
     /// (kuna) CALLOTHER user-op ids the architecture registered under a byte
     /// shuffle name ([`SHUFFLE_USEROP_NAMES`](crate::kuna_simdlane::SHUFFLE_USEROP_NAMES)),
     /// resolved once per program in `Architecture::build_arch_handle` so
@@ -818,15 +801,6 @@ pub struct ArchContext {
     /// SLEIGH FIST/FISTP conversion userops and their signed output widths.
     /// Resolved by name once when building the architecture snapshot.
     pub x87_integer_userops: Vec<(kuna_base::types::uint4, int4)>,
-    /// (kuna) GH-1276/8777: fold flag-modelled comparison idioms (C++
-    /// `fold_flag_compare`, DIV-3 default-on).  Read by
-    /// [`RuleBoolSignLess`](crate::kuna_flagcompare::RuleBoolSignLess) /
-    /// [`RuleSborrowGe`](crate::kuna_flagcompare::RuleSborrowGe).
-    pub fold_flag_compare: bool,
-    /// (kuna) GH-7190: collapse the OV-flag signed-less-than idiom to INT_SLESS
-    /// (C++ `ov_less_simplify`, DIV-2 default-on).  Read by
-    /// [`RuleOvLessSimplify`](crate::kuna_ovlesssimplify::RuleOvLessSimplify).
-    pub ov_less_simplify: bool,
     /// (kuna) GH-8724: re-express a strided-induction offset as counter*stride
     /// (C++ `recover_array_stride`, DIV-3 default-on).  Read by
     /// [`RuleArrayStride`](crate::kuna_arraystride::RuleArrayStride).
@@ -936,10 +910,6 @@ pub struct ArchContext {
     /// is declared `T` (`castobject`).  Read by
     /// [`crate::p6_variables::kuna_castobject::declare_out_params`].
     pub cast_object: bool,
-    /// (kuna) a widened multiply operand stays a value instead of being
-    /// structured into an aggregate (`mulblob`).  Read by
-    /// [`crate::p3_dataflow::kuna_mulblob::declines_zext`].
-    pub mul_blob: bool,
     /// (kuna `msvcbyval`) The declarations with a by-value class of unstated
     /// size, by entry; snapshotted from the architecture at `build_arch_handle`.
     pub msvc_byval_decls: Rc<crate::p4_calls::kuna_msvcbyval::ByvalDecls>,
@@ -998,12 +968,6 @@ pub struct ArchContext {
     /// (kuna) how a narrow integer argument or return value fills its register
     /// (`narrowext`).  Read by [`crate::p4_calls::kuna_narrowext`].
     pub narrow_ext: crate::kuna_narrowext::Rules,
-    /// (kuna) narrow a call's `killedbycall` set to the registers a bounded
-    /// decode of the callee's own body proves it writes (`calleepreserves`).
-    /// Read by `Heritage::guard_calls` through
-    /// [`crate::p4_calls::kuna_calleepreserves::callee_preserves_range`].
-    pub callee_preserves: bool,
-    pub global_call_ranges: bool,
     /// (kuna) `readonlycalls`, read by `Heritage::guard_calls`: the guard count
     /// at which a pass leaves read-only ranges unguarded, `None` when off.
     pub readonly_calls: Option<u64>,
@@ -1011,23 +975,6 @@ pub struct ArchContext {
     /// which a pass guards a persistent global only next to its accesses, `None`
     /// when off.
     pub persist_calls: Option<u64>,
-    /// (kuna) `prunedssa`, read by `Heritage::guard_calls` and `Heritage::place_multiequals`.
-    pub pruned_ssa: bool,
-    /// (kuna) `loadguardreads`, read by `Heritage::guard_loads` and `Heritage::guard_global_loads`.
-    pub load_guard_reads: bool,
-    /// (kuna) let the callee's decoded body answer for the call's RETURN
-    /// register too (`calleeretpreserves`).  Read by `Heritage::guard_calls`
-    /// through
-    /// [`crate::p4_calls::kuna_calleeretpreserves::callee_preserves_return_storage`].
-    pub callee_ret_preserves: bool,
-    /// (kuna) accept a callee that clobbers only scratch registers as
-    /// `calleepreserves` evidence (`calleescratchbody`).  Read by
-    /// [`crate::p4_calls::kuna_calleescratchbody::scratch_body_is_a_body`].
-    pub callee_scratch_body: bool,
-    /// (kuna) anchor an op inserted after a call's guard INDIRECT to the call
-    /// itself (`indirectanchor`).  Read by `Funcdata::op_insert_after` through
-    /// [`crate::p3_dataflow::kuna_indirectanchor::anchor_of`].
-    pub indirect_anchor: bool,
     /// (kuna) narrow a register parameter to the low part its uses consume
     /// (`narrowargs`). Read by [`crate::kuna_narrowargs`].
     pub narrow_args: bool,
@@ -1061,15 +1008,6 @@ pub struct ArchContext {
     /// Read by [`Funcdata::only_op_use`](crate::funcdata::Funcdata) through
     /// [`crate::p4_calls::kuna_spillargtrial::store_is_caller_save_spill`].
     pub spill_arg_trial: int4,
-    /// (kuna) `option loadguardrange`: run the upstream ValueSet solver over
-    /// new indexed-stack LOAD/STORE guard pointers at the end of each heritage
-    /// pass (`Heritage::analyzeNewLoadGuards`, heritage.cc:834), refining each
-    /// [`LoadGuard`](crate::p3_dataflow::heritage::LoadGuard)'s
-    /// min/max/step so `MapState::addGuard` can supply real array extents in
-    /// P6.  Off keeps every guard at the whole-space range with `step == 0`
-    /// (the pre-port behavior).  Read by
-    /// [`Heritage::heritage`](crate::p3_dataflow::heritage::Heritage::heritage).
-    pub load_guard_range: bool,
     /// (kuna) `option indexaliasguard off|load|global|full`: how much of the
     /// upstream index-alias arm at the end of `Heritage::guard`
     /// (`heritage.cc:1194`, the `highPtrPossible` gate) runs — `load` puts an
@@ -1103,50 +1041,10 @@ pub struct ArchContext {
     pub call_array_extent: bool,
     /// (kuna `stackstruct`) Lay out an address-taken frame record as one structure.
     pub stack_struct: bool,
-    /// (kuna) `option tiedstorekeep` (default-on, DIV-105): refuse the
-    /// `RulePropagateCopy` marker propagation that would leave an address-tied
-    /// `COPY` output holding a call's return value with no readers, so a
-    /// `local = f();` frame store survives dead-code elimination instead of
-    /// vanishing from the emitted C.  Read by
-    /// [`crate::p3_dataflow::kuna_tiedstorekeep::declines`].
-    pub tied_store_keep: bool,
-    /// (kuna) `option loopcounterstore` (default-on, DIV-146): refuse the
-    /// `RulePropagateCopy` marker propagation that would delete the write-back
-    /// of a loop counter living in an address-tied frame slot, so the counter's
-    /// increment prints on the counter instead of on the register that carried
-    /// it.  Read by
-    /// [`crate::p3_dataflow::kuna_loopcounterstore::declines`].
-    pub loop_counter_store: bool,
-    /// (kuna) `option haltloopguard` (default-on): read each stored global at the
-    /// entry of a loop the function never leaves. Read by
-    /// [`crate::p3_dataflow::kuna_haltloopguard::guard`].
-    pub halt_loop_guard: bool,
-    /// (kuna) `option truncptrflow` (default-on): on a truncated default data
-    /// space, narrow address operands and seed a wide stack register as
-    /// `PIECE(upper, low)`. Read by `RulePtrFlow` and `ActionPrototypeTypes`.
-    pub trunc_ptr_flow: bool,
-    /// (kuna) `option globalcallstore` (default-on): keep a global's COPY of a
-    /// loaded value whose only reader is the global's own marker. Read by
-    /// [`crate::p3_dataflow::kuna_globalcallstore::declines`].
-    pub global_call_store: bool,
-    /// Preserve typed global field stores through marker propagation.
-    pub global_field_store: bool,
-    /// (kuna) `option intfloatround` (default-on): keep an integer-to-float
-    /// conversion's rounding through `RuleFloatCast` and `SubfloatFlow`. Read
-    /// by [`crate::p3_dataflow::kuna_intfloatround`].
-    pub int_float_round: bool,
-    /// (kuna) `splitstorekeep` — carry `stack_store` onto refinement pieces.
-    pub split_store_keep: bool,
-    /// (kuna) `pairrefine` — refine integer register pairs at their midpoint.
-    pub pair_refine: bool,
-    /// (kuna) `wideslice` — slice reduction through synthetic-width SSA trees.
-    pub wide_slice_reduce: bool,
     /// (kuna) `devectorize` — re-roll a vectorized reduction into its scalar loop.
     pub devectorize_reduction: bool,
     /// (kuna) `strlenscan` — collapse an inline `repnz scasb` length into `strlen`.
     pub strlen_scan: bool,
-    /// Guard stack slots against stores through stack-derived pointers.
-    pub stack_store_guard: bool,
     /// (kuna) region-based (Phoenix/SAILR) structurer: structure the CFG by
     /// walking the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid)
     /// region tree and matching Phoenix acyclic schemas instead of running
@@ -1226,9 +1124,8 @@ pub struct ArchContext {
     /// left out, so a spec-declared model always wins.  Read by
     /// [`ActionX64Syscall`](crate::p2_lift::kuna_x64syscall::ActionX64Syscall).
     pub x64_syscall_userops: Vec<kuna_base::types::uint4>,
-    /// (kuna `segmentize`) The processor's segment operations by address-space
-    /// index (C++ `userops.segmentop`); empty when the option is off, so no
-    /// CALLOTHER is segmentized and every constant resolves flat.
+    /// (kuna) The processor's segment operations by address-space index (C++
+    /// `userops.segmentop`); empty when the spec declares none.
     pub segment_ops: Vec<Option<Rc<crate::kuna_segmentize::SegmentDef>>>,
     /// (kuna) `option syscallregs`, resolved against the loader's user-space
     /// fact: does the ARM/AArch64/RISC-V/MIPS/PowerPC system-call user-op read
@@ -1362,12 +1259,6 @@ pub struct ArchContext {
     /// `branchflip`, opt-in default-off).  Read by
     /// [`ActionBranchFlip`](crate::blockaction::ActionBranchFlip).
     pub branch_flip: bool,
-    /// (kuna) GH-9203: when set, `ActionConditionalConst::handlePhiNodes` declines
-    /// to materialize a propagated constant as a COPY inside a loop predecessor
-    /// block (which would render as a spurious `= 0` in the do/while body).  C++
-    /// `Architecture::condexe_block_placement`, DIV-3 default-on.  Read by
-    /// [`crate::condconst`].
-    pub condexe_block_placement: bool,
     /// Attempt conversion of `whiledo` loops to `for` loops (C++
     /// `Architecture::analyze_for_loops`, default-on).  Read by
     /// `Funcdata::finalize_forloop_transform` (the BlockWhileDo for-loop reroll).
@@ -1473,18 +1364,10 @@ pub struct ArchContext {
     /// guard), flipped by `option jtsharepartial`, shared from the real
     /// architecture.  Read by `Funcdata::stage_jump_table`.
     pub jumptable_share_partial: bool,
-    /// (kuna `deadwaves`) Revisit only the neighbours of what the previous
-    /// pool pass removed when removal was its only change, shared from the
-    /// real architecture. Read by `ActionPool::apply`.
-    pub pool_dead_waves: bool,
     /// (kuna `deadcascade`) After this many passes of one run of a rule pool
     /// (`None` = never), dead-op removal also removes the dead chain behind the
     /// removed op; shared from the real architecture. Read by `ActionPool`.
     pub dead_cascade: Option<u32>,
-    /// (kuna `copywaves`) Copy propagations seed a wave too, and a wave offers
-    /// an op reached only for its opcode just the far-walking rules; shared
-    /// from the real architecture. Read by `ActionPool`.
-    pub pool_copy_waves: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -1647,7 +1530,6 @@ impl ArchContext {
             be_join: crate::kuna_bejoin::BeJoinMode::Off,
             be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode::Off,
             call_wide: false,
-            multi_reg_args: false,
             // (kuna) `option rustabi` default-off; the real value is copied from
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,
@@ -1678,18 +1560,12 @@ impl ArchContext {
             // hand-built fixtures (no `build_arch_handle`) get `false`, so a rule
             // registered `enabled=false` is inert there — matching the gate-off
             // unit tests.
-            fold_boolean_mask: false,    // GH-1282 booleanmask
             global_array_anchor: false,
-            cancel_byte_arithmetic: false, // cancelbytearithmetic (the ArchSeam carries the real default)
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             ret_split_limit: None,       // retsplitlimit (the ArchSeam carries the real default)
-            simd_lane_fold: false,       // simdlane (the ArchSeam carries the real default)
-            const_space_load_fold: false, // constspaceload (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),
             x87_float_to_int_userops: Vec::new(),
             x87_integer_userops: Vec::new(),
-            fold_flag_compare: false,    // GH-1276/8777 flagcompare
-            ov_less_simplify: false,     // GH-7190 ovlesssimplify
             recover_array_stride: false, // GH-8724 arraystride
             memset_recover: false,       // GH-9230/1537 memsetrecover
             rodata_string: false,        // (kuna) rodatastring
@@ -1724,9 +1600,6 @@ impl ArchContext {
             // castobject only re-types a slot whose readers agree, so the fixture
             // seam carries the shipped default.
             cast_object: true,
-            // mulblob only declines a rewrite, so the fixture seam carries the
-            // shipped default.
-            mul_blob: true,
             msvc_byval_decls: Rc::new(Default::default()),
             msvc_builders: Rc::new(Default::default()),
             // argclobber only drops a trailing argument the callee's own
@@ -1748,15 +1621,8 @@ impl ArchContext {
             narrow_ext: crate::kuna_narrowext::Rules::default(),
             pass_through: true, // (kuna) option passthrough (default on)
             mixed_tail_ret: false, // (kuna) option mixedtailret (default off)
-            callee_preserves: true,
-            global_call_ranges: true,
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             persist_calls: Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT),
-            pruned_ssa: true,
-            load_guard_reads: true,
-            callee_ret_preserves: true,
-            callee_scratch_body: true,  // calleescratchbody (DIV-149 default-on)
-            indirect_anchor: true,      // indirectanchor (default-on)
             narrow_args: true,
             narrow_locals: true,
             narrow_ret: true,
@@ -1764,7 +1630,6 @@ impl ArchContext {
             vararg_shared_float: false,  // varargsharedfloat (default-off)
             call_overlap: crate::kuna_calloverlap::LEVEL_AUTO, // calloverlap (default auto)
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
-            load_guard_range: true,      // loadguardrange (upstream behavior, default-on)
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)
             call_array_extent: false,
             stack_struct: false,
@@ -1773,19 +1638,8 @@ impl ArchContext {
             stack_alias_deadstore: false,
             stack_views: false, // stackviews (opt-in)
             libc_names: false, // libcnames (opt-in)
-            tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
-            loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
-            halt_loop_guard: false,      // haltloopguard (Architecture::reset_defaults sets the shipped default: on)
-            trunc_ptr_flow: false,       // truncptrflow (Architecture::reset_defaults sets the shipped default: on)
-            global_field_store: false,
-            global_call_store: false,    // globalcallstore (Architecture::reset_defaults sets the shipped default: on)
-            int_float_round: false,      // intfloatround (Architecture::reset_defaults sets the shipped default: on)
-            split_store_keep: false,     // splitstorekeep (Architecture::reset_defaults sets the shipped default: on)
-            pair_refine: false,          // pairrefine (Architecture::reset_defaults sets the shipped default: on)
-            wide_slice_reduce: false,    // wideslice (Architecture::reset_defaults sets the shipped default: on)
             devectorize_reduction: false, // devectorize (opt-in default-off)
             strlen_scan: false, // strlenscan (live value copied from the Architecture)
-            stack_store_guard: false,
             region_structure: false,     // regionstructure (opt-in default-off)
             guard_arm: false,            // guardarm (opt-in default-off)
             loop_continue: true,
@@ -1828,8 +1682,6 @@ impl ArchContext {
             go_bounds: true,
             strip_security_check: false, // securitycheck (fixture default-off; the live gate rides build_arch_handle)
             branch_flip: false,          // branchflip (opt-in default-off)
-            // (kuna) DIV-3 default-on (GH-9203): architecture.cc sets condexe_block_placement=true.
-            condexe_block_placement: true,
             // C++ Architecture default: analyze_for_loops = true (architecture.cc).
             analyze_for_loops: true,
             // C++ Architecture default: nan_ignore_all = false (architecture.cc:1453);
@@ -1852,9 +1704,7 @@ impl ArchContext {
             switch_multi_pred: false, // (kuna) angr opt-in default off (upstream byte-identical)
             unrolled_guard: false, // (kuna) angr opt-in default off (upstream byte-identical)
             jumptable_share_partial: true, // (kuna) DIV: upstream stageJumpTable shape
-            pool_dead_waves: true,
             dead_cascade: Some(crate::p3_dataflow::kuna_deadcascade::DEFAULT_PASSES),
-            pool_copy_waves: true,
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.

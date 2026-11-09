@@ -302,7 +302,6 @@ fn subfloat_trace_preserves_integer_conversion_rounding() {
     ] {
         let mut context = ArchContext::new(build_manager());
         context.floatformats = [4, 8].into_iter().map(kuna_num::float::FloatFormat::new).collect();
-    context.int_float_round = true;
         let context = Rc::new(context);
         let ram = Rc::clone(context.manage().get_space_by_name("ram").unwrap());
         let mut fd = Funcdata::new("convert", "convert", context, Address::new(ram, 0x1000), 0, 0x40).unwrap();
@@ -327,7 +326,6 @@ fn subfloat_trace_preserves_integer_conversion_rounding() {
 fn subfloat_trace_does_not_round_integer_before_square_root() {
     let mut context = ArchContext::new(build_manager());
     context.floatformats = [4, 8].into_iter().map(kuna_num::float::FloatFormat::new).collect();
-    context.int_float_round = true;
     let context = Rc::new(context);
     let ram = Rc::clone(context.manage().get_space_by_name("ram").unwrap());
     let mut fd = Funcdata::new("root", "root", context, Address::new(ram, 0x1000), 0, 0x40).unwrap();

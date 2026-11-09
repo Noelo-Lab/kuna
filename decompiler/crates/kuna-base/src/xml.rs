@@ -1747,8 +1747,7 @@ mod tests {
         // the foldcallret indirect-read barrier (an out-parameter copy printed
         // above the call that fills it, so freecon consumed the pre-call NULL)
         // and gh182-loadguardrange / the ValueSet refinement of indexed-stack
-        // guards sizes a stack array by its real index bound (option off = the
-        // 4-element cap with split-off never-assigned tail scalars)
+        // guards sizes a stack array by its real index bound
         // and gh275-spillargtrial / caller-save spill tolerance in input-trial
         // scoring (option off drops the first atan2 call's second argument to
         // the `movapd [rsp+0x20],xmm1` spill, on recovers it)
@@ -1827,8 +1826,7 @@ mod tests {
         // syscall() with empty parens and a wrapper returning its own syscall
         // number) (repipe r12)
         // and kuna-splitstorekeep / a 31-byte stack-to-stack copy whose middle
-        // two 8-byte stores overlap keeps them (option off = the head store and
-        // the tail store with the fifteen bytes between them gone) (repipe r12)
+        // two 8-byte stores overlap keeps them (repipe r12)
         // and kuna-entrythumbflow / bounded Thumb context from a TE entry
         // and kuna-callretpair / a call whose cspec output rule asked for a
         // register pair gets that pair (repipe r12)
@@ -2114,28 +2112,28 @@ mod tests {
         // and kuna-stacksolver-unsolved / a 16-bit stack solution of 65535 is solved once
         // and kuna-bejoin-evidence-pairs / a long long loaded or carried across a call joins
         // high word first (option bejoin off = swapped)
-        // and kuna-prunedssa / heritage markers only where a range is live (options prunedssa, readonlycalls)
+        // and kuna-prunedssa / heritage markers only where a range is live (option readonlycalls)
         // and kuna-lanedivide-terminator / a terminating SUBPIECE of an upper-lane piece
         // and kuna-x86-16-real-rel16 + kuna-x86-16-protected-rel16 / 16-bit near branches keep their segment
-        // and kuna-segmentize / x86 real-mode accesses go through the segment op (option segmentize)
+        // and kuna-segmentize / x86 real-mode accesses go through the segment op
         // and kuna-calleepop-x86-16 / a near call is credited the two bytes it stores
         // and kuna-returnglobal-sparc / a global in %o1 is not joined into an int's return
         // and kuna-segmentize-z80 / a Z80 table with a row outside the image is still followed
-        // and kuna-loadguardreads / LOAD guards read while renaming (option loadguardreads)
+        // and kuna-loadguardreads / LOAD guards read while renaming
         // and kuna-dedup-goto-arm / a goto into an arm unwrapped by a suffix hoist keeps a live target
         // and kuna-bejoin-callers / a long long whose callers read both registers joins
         // high word first (option bejoin evidence = swapped)
         // and kuna-x86-16-fpuemu / the 8087 emulator's INT 34h-3Dh decode as x87 (option fpuemu)
         // and kuna-retsplitlimit / a return block too costly to clone keeps its gotos (option retsplitlimit)
-        // and kuna-deadwaves / a pass after a removal-only pass visits only what it touched (option deadwaves)
-        // and kuna-earlyrestart / a pass stops at a dead-code delay bump and restarts at once (option earlyrestart)
+        // and kuna-deadwaves / a pass after a removal-only pass visits only what it touched
+        // and kuna-earlyrestart / a pass stops at a dead-code delay bump and restarts at once
         // and kuna-duplabels / two copies of one block print distinct labels
         // and kuna-pltlocal / a call through a bound PLT stub takes the definition's prototype
         // and kuna-floatstore / a float stored into unknown bytes is a float store
-        // and kuna-haltloopguard / a store before a loop the function never leaves is kept (option haltloopguard)
+        // and kuna-haltloopguard / a store before a loop the function never leaves is kept
         // and kuna-lanedivide-freefanout / a lane split giving a free varnode two readers is refused, not fatal
         // and kuna-octeon-core / explicit Octeon integer variants
-        // and kuna-truncptrflow / pointer flow on a truncated address space (option truncptrflow)
+        // and kuna-truncptrflow / pointer flow on a truncated address space
         // and kuna-retcopyclone / a cloned return block does not store a global a second time
         // and kuna-switchrunon / an unguarded jump table stops where its rows leave the function
         // and kuna-revisitrefine / refining a range a later heritage pass revisited
@@ -2174,11 +2172,11 @@ mod tests {
         // and kuna-elf-unwind-pcread / a PowerPC PC read keeps its FDE-owned body
         // and kuna-e500-call-slots / e500 scalar call slots inside 64-bit registers (option calloverlap)
         // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
-        // and kuna-copywaves / copy propagations seed rule-pool waves (option copywaves)
+        // and kuna-copywaves / copy propagations seed rule-pool waves
         // and kuna-stubtailcall / a loader-proven lazy-binding stub flowed as a tail call
         // and kuna-gotimportproto / a type-only declaration bound at a MIPS GOT import call
         // and kuna-aggregatefields / declared records kept whole until their fields are named
-        // and kuna-copywaves / copy propagations seed rule-pool waves (option copywaves)
+        // and kuna-copywaves / copy propagations seed rule-pool waves
         // and kuna-armderef / the ARM pointer-access xref option parses and is inert on the console path
         // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
         // and kuna-armpltslot, -armcondskip / the ARM xref options parse and are

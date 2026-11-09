@@ -56,13 +56,11 @@ impl LiveCalls {
 }
 
 /// May the markers of the range `addr` with properties `fl` be pruned on this
-/// heritage pass: the option is on, the range is neither persistent nor
-/// address-tied, and the `ActionDeadCode` after this pass may remove from its
-/// space?
-pub(crate) fn applies(fd: &Funcdata, fl: u32, addr: &Address, pass: int4, deadcode_delay: int4) -> bool {
+/// heritage pass: the range is neither persistent nor address-tied, and the
+/// `ActionDeadCode` after this pass may remove from its space?
+pub(crate) fn applies(fl: u32, addr: &Address, pass: int4, deadcode_delay: int4) -> bool {
     use crate::varnode::varnode_flags;
-    fd.get_arch().pruned_ssa
-        && pass >= deadcode_delay
+    pass >= deadcode_delay
         && (fl & (varnode_flags::addrtied | varnode_flags::persist)) == 0
         && addr.get_space().is_some()
 }

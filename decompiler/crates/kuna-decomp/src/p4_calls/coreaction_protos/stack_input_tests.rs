@@ -6,7 +6,7 @@ use kuna_base::space::{
     UniqueSpace, VarnodeStorage,
 };
 
-fn stack_fixture(big: bool, trunc_ptr_flow: bool) -> Funcdata {
+fn stack_fixture(big: bool) -> Funcdata {
     let mut manager = AddrSpaceManager::new();
     manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
     manager
@@ -39,8 +39,7 @@ fn stack_fixture(big: bool, trunc_ptr_flow: bool) -> Funcdata {
             true,
         )
         .unwrap();
-    let mut arch = ArchContext::new(manager);
-    arch.trunc_ptr_flow = trunc_ptr_flow;
+    let arch = ArchContext::new(manager);
     let mut fd = Funcdata::new(
         "probe",
         "probe",
@@ -75,7 +74,7 @@ fn full_stack_defs(fd: &Funcdata) -> Vec<OpId> {
 #[test]
 fn narrow_stack_base_retains_every_physical_input_bit() {
     for big in [false, true] {
-        let fd = stack_fixture(big, true);
+        let fd = stack_fixture(big);
         let defs = full_stack_defs(&fd);
         assert_eq!(defs.len(), 1);
         let op = fd.obank().get(defs[0]).unwrap();
@@ -110,10 +109,3 @@ fn narrow_stack_base_retains_every_physical_input_bit() {
     }
 }
 
-#[test]
-fn option_off_seeds_no_stack_reconstruction() {
-    for big in [false, true] {
-        let fd = stack_fixture(big, false);
-        assert!(full_stack_defs(&fd).is_empty());
-    }
-}
