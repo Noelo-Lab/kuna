@@ -77,7 +77,7 @@ use kuna_num::pcoderaw::VarnodeData;
 use crate::kuna_calltrampoline::RawOp;
 
 /// Marshaling element `<callpopret>` (kuna).  ElementIds live in the 4000+
-/// range; 4163 was the next free id when this option was added.
+/// range; 4163 was the next free id when this module was added.
 pub const ELEM_CALLPOPRET: ElementId = ElementId::new("callpopret", 4163);
 
 /// How many machine instructions of the callee the scan will decode before

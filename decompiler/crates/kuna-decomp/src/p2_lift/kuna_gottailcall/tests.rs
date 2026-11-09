@@ -1,13 +1,6 @@
 use super::*;
 
 #[test]
-fn the_option_takes_on_and_off() {
-    assert!(OptionGotTailCall.apply("on").unwrap().0);
-    assert!(!OptionGotTailCall.apply("off").unwrap().0);
-    assert!(OptionGotTailCall.apply("lock").is_err());
-}
-
-#[test]
 fn a_caller_is_due_once_the_callee_it_copied_in_is_filed() {
     let mut ledger = Ledger { recording: true, ..Ledger::default() };
     let (caller, other, callee) = ((1, 0x10), (1, 0x20), (1, 0x30));

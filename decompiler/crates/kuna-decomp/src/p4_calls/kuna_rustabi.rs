@@ -602,7 +602,7 @@ struct ProbeEmit {
     internal_branch: bool,
     unresolved: bool,
     /// The `swi` user-op id, when a Windows `int 0x29` is known to end the path
-    /// (`option fastfailnoreturn`, the gate the flow builder already applies).
+    /// (the gate the flow builder already applies).
     fastfail_swi: Option<u32>,
     /// The `setISAMode` user-op id (ARM, MIPS), which writes nothing.
     mode_switch: Option<u32>,
@@ -1048,14 +1048,11 @@ const MODE_SWITCH_USEROP: &str = "setISAMode";
 /// The `swi` user-op id, when a Windows `int 0x29` in a probed callee body is
 /// known to end the path rather than to call somewhere the walk cannot read.
 ///
-/// The two gates are the flow builder's own (`decompile_drive`'s
-/// `is_fastfail_callind`): `option fastfailnoreturn` plus the compiler-spec
-/// component of the resolved language id, because `int 0x29` is `__fastfail` by
-/// Windows convention alone.
+/// The gate is the flow builder's own (`decompile_drive`'s
+/// `is_fastfail_callind`): the compiler-spec component of the resolved language
+/// id, because `int 0x29` is `__fastfail` by Windows convention alone.
 fn fastfail_swi_userop(arch: &crate::architecture::Architecture) -> Option<u32> {
-    if !arch.fastfail_noreturn
-        || !crate::kuna_fastfailnoreturn::archid_is_windows(arch.get_description())
-    {
+    if !crate::kuna_fastfailnoreturn::archid_is_windows(arch.get_description()) {
         return None;
     }
     arch.userops

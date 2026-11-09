@@ -802,8 +802,8 @@ The walk itself gained one fact to reach this callee at all. The checker's
 failure path leaves by a direct `JMP` into a `__fastfail` stub, and x86 SLEIGH
 lifts `INT imm8` to `intloc = swi(imm8); call [intloc]` (`ia.sinc:3671`), whose
 `CALLIND` would make the walk incomplete and prove nothing. Under the gate
-`fastfailnoreturn` already applies — the option, plus a Windows
-compiler-spec id — a Windows `int 0x29` ends the path instead
+`fastfailnoreturn` already applies — a Windows compiler-spec id — a Windows
+`int 0x29` ends the path instead
 (`kuna_rustabi.rs (ProbeEmit::note_fastfail_swi)`), which is the same statement
 the flow builder makes about the same two ops.
 
