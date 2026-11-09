@@ -1430,6 +1430,16 @@ kuna_options! { self, p1;
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
     "objcrefconst" => on_off!(analysis_objcrefconst, "Objective-C reference-slot folding"),
     "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),
+    "cfstrings" => {
+        let (pass, annotate) = match p1 {
+            "annotate" => (true, true),
+            other => (on_or_off(other)?, false),
+        };
+        self.analysis_cfstrings = pass;
+        self.cfstrings_annotate = annotate;
+        let state = if annotate { "on, annotated" } else if pass { "on" } else { "off" };
+        Ok(format!("Mach-O __cfstring constant-string recovery pass turned {state}"))
+    },
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
     "relocobjects" => {
         let val = on_or_off(p1)?;

@@ -1341,6 +1341,35 @@ The `Square: Shape` (local protocol) witness table is a relocated pointer table,
 which an ELF file carries as addends, so its slots are not named here — the
 Mach-O form (chained fixups) is.
 
+### `macho_cfstring` — Core Foundation constant strings (`cfstrings`)
+
+`macho_cfstring` (arm64, ~50 KB) is a self-contained Mach-O carrying three
+`__builtin_CFString` constants in `__DATA_CONST,__cfstring`, for the `cfstrings`
+pass (`kuna-console/tests/verify_cfstring.rs`, `tests/stages/kuna-cfstrings.xml`).
+Source `macho_cfstring.c` hand-builds each struct `{ ___CFConstantStringClassReference,
+0x7c8 (8-bit), "<text>", <length> }` and a getter returning its address. The second
+string (39 characters) is longer than one 32-byte entry and the third entry sits
+right behind it: the guard that a long string never hides its neighbour. It was
+built with `zig cc`, which bundles its own Mach-O linker and needs no macOS SDK
+(the devcontainer does not ship zig), then `llvm-strip -S` from LLVM 20 to drop
+the STABS debug map, which named the build directories (LLVM 14's `-S` leaves
+Mach-O STABS in place):
+
+```
+zig cc -target aarch64-macos -O0 -Wl,-undefined,dynamic_lookup \
+       -o macho_cfstring macho_cfstring.c
+llvm-strip -S macho_cfstring
+```
+
+`zig cc` links a classic `LC_DYLD_INFO` image, so each entry's `char *` (into
+`__TEXT,__cstring`) is a raw word (the chained path has no fixture here; it was
+checked on arm64 and arm64e iOS binaries). **Pinned VMAs:** `_get_greeting`@`0x100000538` → entry@`0x100004008`
+("cfstring hello"), `_get_long`@`0x100000544` → entry@`0x100004028` ("a constant
+string longer than one entry"), `_get_after`@`0x100000550` → entry@`0x100004048`
+("after the long one"). With `--option cfstrings on` each getter returns
+`CFSTR("...")` of its string (`annotate` adds `/* cfstring@0x<entry> */`); off, it
+returns the entry by its data symbol (`&_kGreeting`).
+
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 
 The multi-format **entry-discovery** gate

@@ -10633,7 +10633,9 @@ impl PrintC {
                 // are indexed, never that they end at a zero byte.
                 if off != 0 && !crate::kuna_elemptr::reaches_element_pointer(fd, vn) {
                     if let Some(sub) = ct.get_ptr_to() {
-                        if sub.is_char_print() {
+                        // (kuna `cfstrings`) An entry reads as its string whatever its type.
+                        let sub = if sub.is_char_print() { Some(sub) } else { cfstring_char(arch, off) };
+                        if let Some(sub) = sub {
                             // point = op->getAddr() (the using op's address; used only
                             // by a segmented resolver — flat spaces ignore it).
                             let point = fd
@@ -11503,8 +11505,10 @@ impl PrintC {
             // with a readonly char-array spacebase symbol.
             if sym_off == 0 && !arrayvalue {
                 if let Some(st) = &sym_type {
-                    if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY {
-                        if let Some(elem) = st.get_array_base() {
+                    // (kuna `cfstrings`) A `__cfstring` entry reads as its string.
+                    let cfstr = if valueon { None } else { cfstring_char(arch, in1const) };
+                    if st.get_metatype() == crate::dtype::type_metatype::TYPE_ARRAY || cfstr.is_some() {
+                        if let Some(elem) = cfstr.or_else(|| st.get_array_base()) {
                             if elem.is_char_print() {
                                 let point = fd
                                     .obank()
@@ -12172,6 +12176,11 @@ impl PrintC {
         if self.out_lang == crate::kuna_lang::OutLang::Go {
             let Ok(pointer) = arch.types().get_type_pointer(ptr_size, subct.clone(), 1) else { return false };
             if !self.push_go_string_pointer(&mut s, &pointer, op) { return false; }
+        }
+        if self.out_lang == crate::kuna_lang::OutLang::C
+            && arch.cfstring_entries.contains(&stringaddr.get_offset())
+        {
+            s = crate::kuna_cfstr::wrap(&s, stringaddr.get_offset(), arch.cfstrings_annotate);
         }
         self.push_atom(&Atom::with_op_vn(
             s,
@@ -13169,6 +13178,15 @@ fn ptrsub_value_access(fd: &Funcdata, op: OpId, value: bool) -> Option<(VarnodeI
             _ => None,
         }
     })
+}
+
+/// (kuna `cfstrings`) The character type a `__cfstring` entry's seeded string is
+/// read with, when `val` is the address of one.
+fn cfstring_char(arch: &Architecture, val: uintb) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+    if !arch.cfstring_entries.contains(&val) {
+        return None;
+    }
+    arch.types().get_type_char(1).ok()
 }
 
 /// C++ `TypeSpacebase::getAddress` (type.cc:3542): the storage a
