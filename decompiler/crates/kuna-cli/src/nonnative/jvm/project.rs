@@ -11,7 +11,7 @@ use std::path::{Component, Path, PathBuf};
 
 use super::args::Args;
 use super::render;
-use super::run::Outcome;
+use super::run::{self, Outcome};
 use super::select::{java_name, Target};
 
 pub(crate) fn run(args: &Args) -> i32 {
@@ -48,6 +48,7 @@ pub(crate) fn run(args: &Args) -> i32 {
         kuna_jvm::kuna_driver::trace(|| "cli write start".into());
         let status = write_tree(args, &out_dir, &outcome);
         kuna_jvm::kuna_driver::trace(|| "cli write end".into());
+        run::abandon(outcome);
         status
     });
     kuna_jvm::kuna_driver::trace(|| "cli end".into());

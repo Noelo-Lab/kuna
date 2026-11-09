@@ -205,6 +205,13 @@ pub(crate) fn config(
     Ok(config)
 }
 
+/// Leaves a rendered outcome to the process exit that follows: its text was
+/// built on the engine threads, and handing it back to their heaps while they
+/// drop their engines costs a quarter second on a large jar.
+pub(crate) fn abandon(outcome: Outcome) {
+    std::mem::forget(outcome);
+}
+
 /// What a finished (or abandoned) run hands its renderer.
 pub(crate) struct Outcome {
     /// Delivered root classes, in root order.
