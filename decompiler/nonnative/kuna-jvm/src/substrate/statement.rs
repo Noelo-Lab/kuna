@@ -777,7 +777,7 @@ impl Statement {
         stats.borrow_mut().remove_with_key(&oldstat.id());
         stats
             .borrow_mut()
-            .add_with_key_and_index(statindex as usize, newstat, newstat.id());
+            .add_with_key_and_index(statindex, newstat, newstat.id());
 
         newstat.set_parent(Some(self));
         let oldpost = oldstat.get_post();
