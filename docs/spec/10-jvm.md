@@ -1092,3 +1092,22 @@ that a negation does not have and fails the method with an index out of bounds (
 `develop/1.13.0`). With the fix, a condition with fewer than two operands is not a null
 check: the handler is not a try-with-resources, and the matcher leaves the statement alone,
 as it does when the operand is not a variable; the `try`/`catch` is written as it is.
+
+**`jvm_fix_generic_parent_without_signature`.** To type a field read or a call on a value of
+a generic type, `decompiler/nonnative/kuna-jvm/src/p5_types/generic_type.rs (GenericType::map_gen_vars_to)`
+maps the type variables of the member's class (the generic type its `Signature` attribute
+declares) onto the value's type, argument by argument, and then onto the value's enclosing
+type: when the value's enclosing type is generic and the declaration's is not, it looks up
+the enclosing class and maps through the generic type that class's signature declares. A
+non-generic inner class of a generic class (`Outer<E>.Itrs`, with no type parameters and a
+plain superclass) has no `Signature` attribute, yet a type nested in it is written with
+`Outer`'s arguments (`Outer<E>.Itrs.Node`), so Vineflower dereferences the missing signature
+and fails the method with a `NullPointerException` (the JDK's
+`ArrayBlockingQueue$Itrs.doSomeSweeping` and three more methods of it; still so on
+`develop/1.13.0`). With the fix, such a class maps as the generic type its signature would
+declare, its name without type arguments (`Outer$Itrs<>`, what `GenericMain` builds for a
+class whose signature has no formal parameters); its arguments match the value's empty
+ones, and the mapping goes on to the next enclosing type, so `Outer`'s `E` still maps to the
+value's argument (`Outer<String>.Itrs.Node` gives `E` to `String`). That is what Vineflower
+does when every class on the way has a signature; the other choice, skipping the enclosing
+types, would lose the mapping and print redundant casts.

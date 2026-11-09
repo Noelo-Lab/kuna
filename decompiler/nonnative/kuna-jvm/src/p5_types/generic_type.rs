@@ -2,6 +2,12 @@
 //!
 //! `GenericType` is a view over a [`VarType`] whose data carries the generic
 //! fields; see `var_type.rs`.
+//!
+//! kuna fix `jvm_fix_generic_parent_without_signature` (`kuna_fixes`): in
+//! `map_gen_vars_to`, an enclosing class without a `Signature` attribute (a
+//! non-generic inner class of a generic class) maps as the generic type its
+//! signature would declare, `Name<>`, where Vineflower dereferences the
+//! missing signature.
 
 use std::ops::Deref;
 use std::rc::Rc;
@@ -10,6 +16,7 @@ use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::generic_main::GenericMain;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::jstring::from_utf16;
 use crate::rt::{JHashMap, JHashSet, JavaStr};
 use crate::var_type::{
@@ -850,11 +857,19 @@ impl GenericType {
                 .map(|p| p.as_generic());
             if parent.is_none() {
                 if let Some(cls) = get_class(&other_parent.value) {
-                    parent = Some(
-                        cls.get_signature()
-                            .expect("NullPointerException")
-                            .generic_type(),
-                    );
+                    if kuna_fixes::enabled(KunaFix::GenericParentWithoutSignature) {
+                        parent = Some(match cls.get_signature() {
+                            Some(sig) => sig.generic_type(),
+                            None => GenericType::parse(&format!("L{}<>;", cls.qualified_name()))
+                                .as_generic(),
+                        });
+                    } else {
+                        parent = Some(
+                            cls.get_signature()
+                                .expect("NullPointerException")
+                                .generic_type(),
+                        );
+                    }
                 }
             }
 

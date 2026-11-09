@@ -8,6 +8,20 @@
   ],
   "cases": [
     {
+      "id": "pkg/TestInnerOfGenericOuter",
+      "fix": "jvm_fix_generic_parent_without_signature",
+      "class_files": [
+        "pkg/TestInnerOfGenericOuter.class",
+        "pkg/TestInnerOfGenericOuter$Itr.class",
+        "pkg/TestInnerOfGenericOuter$Itrs$Node.class",
+        "pkg/TestInnerOfGenericOuter$Itrs.class",
+        "pkg/TestInnerOfGenericOuter$Ref.class"
+      ],
+      "source": "src/pkg/TestInnerOfGenericOuter.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone"
+    },
+    {
       "id": "pkg/TestMethodRefWildcardReceiver",
       "fix": "jvm_fix_lambda_wildcard_return",
       "class_files": [

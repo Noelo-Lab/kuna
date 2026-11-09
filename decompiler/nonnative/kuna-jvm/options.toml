@@ -1397,6 +1397,28 @@ tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with index out of bounds: the len is 1 but the index is 1 (IndexOutOfBoundsException: Index 1 out of bounds for length 1 in Vineflower)|a try/catch (Throwable) whose handler starts with if (!flag) fails to decompile"
 
 [[option]]
+option = "jvm_fix_generic_parent_without_signature"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p5_types"
+subphase = "generic_type"
+strength = "HARD"
+rewind = "p5_types"
+issue = ""
+summary = "Decompile a method that uses a value whose type is nested in a non-generic inner class of a generic class (Outer<E>.Itrs.Node, where Itrs has no type parameters and so no Signature attribute; the JDK's ArrayBlockingQueue$Itrs): the type arguments of Outer are mapped through Itrs as through any enclosing class, Itrs standing as the generic type its signature would declare (no type arguments), where Vineflower reads Itrs's missing signature and fails the method with a NullPointerException."
+use_when = "Leave on; turn off only to reproduce Vineflower's failure on such a method."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_generic_parent_without_signature off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 GenericType.mapGenVarsTo: when the mapped type's enclosing type is generic and its own is not, it maps through the enclosing class's getSignature().genericType without checking that the class has a signature (findBaseType, next to it, returns null in that case); still present on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "// $VF: Couldn't be decompiled with NullPointerException (Cannot read field \"genericType\" because the return value of StructClass.getSignature() is null in Vineflower)|a method using an Outer<E>.Inner.Node value fails to decompile when Inner is not generic"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""
