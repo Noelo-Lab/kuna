@@ -5,7 +5,7 @@
 //! Both act inside `load file`, while the loader rebuilds the image from the
 //! cache, upstream of every per-function `option` command, so both travel as
 //! process environment variables set by the `kuna` CLI before loading (the
-//! `dynrelocs` loadtime pattern). The CLI's `--image NAME` sets
+//! loadtime pattern). The CLI's `--image NAME` sets
 //! [`DYLDIMAGE_ENV`] for every subcommand; the console's `option dyldimage NAME`
 //! before `load file` sets the same variable, and is accepted before any image
 //! is loaded, since choosing the first image is its purpose.

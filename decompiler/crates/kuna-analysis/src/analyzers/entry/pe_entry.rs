@@ -26,7 +26,7 @@
 //!    whose `UNWIND_INFO` sets `UNW_FLAG_CHAININFO` describes a separated code
 //!    chunk of another function — MSVC emits one per shrink-wrapped prologue or
 //!    out-of-line cold block — and its `BeginAddress` is a point *inside* the
-//!    primary, so `pdatachained` (default-on) skips it. And ARM, ARM64, ARM64EC
+//!    primary, so it is skipped. And ARM, ARM64, ARM64EC
 //!    and ARM64X images use an 8-byte `{BeginAddress, UnwindData}` record whose
 //!    `BeginAddress` carries the Thumb bit, so the table is walked at the stride
 //!    the machine dictates rather than at a fixed 12, and a machine with neither
@@ -138,7 +138,7 @@ fn collect_typed<Pe: ImageNtHeaders>(
 /// The record shape is machine-dependent ([`PdataForm`]). On the x64 form a
 /// record whose `UNWIND_INFO` carries `UNW_FLAG_CHAININFO` describes a separated
 /// code chunk of another function rather than a function of its own, so its
-/// `BeginAddress` is skipped (`pdatachained`, default-on) exactly as Ghidra's
+/// `BeginAddress` is skipped exactly as Ghidra's
 /// `ImageRuntimeFunctionEntries_X86.markup` skips it.
 fn pdata_begins<Pe: ImageNtHeaders>(
     pe: &PeFile<Pe>,
@@ -164,8 +164,7 @@ fn pdata_begins<Pe: ImageNtHeaders>(
         Err(_) => return,
     };
     let stride = form.record_size();
-    let skip_chained = matches!(form, PdataForm::X86)
-        && kuna_decomp::kuna_pdatachained::pdatachained_enabled();
+    let skip_chained = matches!(form, PdataForm::X86);
     let n = data.len() / stride;
     for i in 0..n {
         let o = i * stride;
@@ -364,7 +363,6 @@ mod tests {
     /// start (GH-403). The two ordinary records still are.
     #[test]
     fn pdata_chained_record_is_not_a_function_start() {
-        std::env::remove_var(kuna_decomp::kuna_pdatachained::PDATACHAINED_ENV);
         let bytes = fixture("pe_chainedunwind_x86_64.exe");
         let file = object::File::parse(bytes.as_slice()).expect("parse chained-unwind PE");
         let cands = pe_entry_candidates(&file, bytes.as_slice(), &super::super::executable_sections(&file));

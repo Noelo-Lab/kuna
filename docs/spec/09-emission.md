@@ -410,7 +410,7 @@ braces; the pre-existing `if (cond) goto L;` one-liner and the `else if`
 collapse are unaffected. `option braceelide off` restores upstream Ghidra's
 braced form, exercised by `tests/stages/kuna-cnorm-braceelide.xml`.
 
-**(kuna) Decode-failure halt statements (`option decodehalt`, default `on`).**
+**(kuna) Decode-failure halt statements (`kuna_decodehalt.rs`, always on).**
 A `CPUI_RETURN` the flow follower planted because the bytes would not decode
 (chapter 02) is not a return, and printing it as one asserts something about the
 program that the analysis never established. `printc.rs` renders the three
@@ -418,12 +418,11 @@ decode-failure halt causes as upstream `PrintC::opReturn`'s pseudo-calls —
 `halt_baddata()`, `halt_unimplemented()`, `halt_missing()`
 (`kuna_decodehalt.rs (halt_call_name)`) — and the P2 warnings land beside them
 through the ordinary comment channel. `noreturn` halts keep the plain `return;`.
-The elision below is suppressed for exactly those three causes while the option
-is on: that statement is the truncation marker, not the source falling off the
-end of a void body, and eliding it deletes the only thing saying the body is
-incomplete — leaving its warning attached to whatever decoded before it. A
-`noreturn` halt keeps whatever the elision already did with it, and `option
-decodehalt off` restores both halves together.
+The elision below is suppressed for exactly those three causes: that statement
+is the truncation marker, not the source falling off the end of a void body, and
+eliding it deletes the only thing saying the body is incomplete — leaving its
+warning attached to whatever decoded before it. A `noreturn` halt keeps whatever
+the elision already did with it.
 
 **Void tail-return elision (P9/`brace-form`, `option voidtailreturn`, default
 ON, DIV-98).** The printer otherwise emits the function's final `CPUI_RETURN`
@@ -3293,10 +3292,10 @@ is consumed by Ghidra's C token model and Rust text in C token slots is a GUI
 regression. `kuna decompile-project` errors, because its `.c`/`.h`/`.asm` export
 is C-shaped end to end.
 
-**Verified Go pairs (`gopairreturns`).** `p9_emit/kuna_gopairreturns.rs` renders
-the pair-result metadata imported by `godwarfsig` when both options are on.
-With either option off, call emission bypasses the pair adapter and projection
-dispatch before inspecting any call contract.
+**Verified Go pairs.** `p9_emit/kuna_gopairreturns.rs` renders the pair-result
+metadata imported by `godwarfsig` when that option is on (formerly also gated by
+the `gopairreturns` option). With it off, call emission bypasses the pair adapter
+and projection dispatch before inspecting any call contract.
 Every consumer verifies the full two-field, 16-byte, eight-aligned integer
 layout against its language facet; a name prefix or an ordinary two-field
 record is insufficient. `SpellCtx` shares the enabled architecture's type

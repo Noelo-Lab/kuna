@@ -2,7 +2,7 @@
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
     kuna issue testcase: the i386 PIC base register folded into the
-    cross-reference index (`option picbase on|off`, default-ON).
+    cross-reference index.
 
     Issue:      kuna-analysis-picbase - `kuna strings` (JSON, filtered to Password)
                 on crackmes.one/5ab77f6333c5d40ad448ca52 (pancrackme v1.0,
@@ -15,21 +15,14 @@
                 decode-time constants can find it.
     Stage:      P1 code/data partition - the on-demand cross-reference query
                 (`listing/xrefs.rs`), the data-reference projection.
-    P0 assert:  `option picbase on|off`.
 
     The Listing tier and the xref query it feeds are built ONLY on the
     real-object bootstrap path, never on this XML binaryimage path
     (docs/spec/01-program-prep.md section 1.6), which is exactly why the parity
-    oracle is structurally untouched by this change.  On this path the option is
-    therefore INERT, and that is what this case pins - the same contract
-    `kuna-unmappedentry.xml` and `kuna-listing-flag.xml` pin for their options:
+    oracle is structurally untouched by this change.  This case pins that the
+    XML path renders as before.
 
-      * `option picbase off` PARSES and round-trips (an unknown option would
-        make the console error and the second decompile would not run),
-      * flipping it changes NOTHING about the rendered C, in both directions.
-
-    The end-to-end two-pass proof (option off = every literal referenced by
-    nothing, default = the prompt, the banner, the thunked trailer and the
+    The end-to-end proof (the prompt, the banner, the thunked trailer and the
     global all resolved, and the clobbering function still claiming nothing)
     needs a real 32-bit PIC object and lives in the cargo gate
     `decompiler/crates/kuna-console/tests/verify_picbase.rs`, over the
@@ -50,16 +43,7 @@
   <com>lo fu gh558</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option picbase off</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option picbase on</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>phase catalog picbase</com>
   <com>quit</com>
 </script>
-<stringmatch name="KUNA-PICBASE #1: the option parses and round-trips in both directions, and is inert on the XML path -- the source form x &lt;= 8 renders identically in all three passes" min="3" max="3">if \(x &lt;= 8\)</stringmatch>
-<stringmatch name="KUNA-PICBASE #2: the catalog documents it as a default-on P1 code/data-partition option, live-toggled back on" min="1" max="1">"option": "picbase", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "phase": "P1"</stringmatch>
-<stringmatch name="KUNA-PICBASE #3: the catalog row carries the analysis-enablement change_kind an agent reads to judge the flip" min="1" max="1">"change_kind": "analysis-enablement"</stringmatch>
+<stringmatch name="KUNA-PICBASE #1: the XML path renders the source form x &lt;= 8" min="1" max="1">if \(x &lt;= 8\)</stringmatch>
 </decompilertest>

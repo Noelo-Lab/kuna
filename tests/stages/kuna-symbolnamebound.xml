@@ -2,7 +2,7 @@
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
     A deeply nested qualified symbol name is BOUNDED rather than nesting one
-    ~1.5 KB Scope per `::` component without limit (GH-338, `symbolnamebound`).
+    ~1.5 KB Scope per `::` component without limit (GH-338).
 
     `Database::find_create_scope_from_symbol_name` splits a loader symbol name on
     every `::` and creates one Scope per component, and the interning key
@@ -26,12 +26,7 @@
     between runs; assertion #4 pins the exact digits, so a non-deterministic hash
     fails here rather than becoming golden-diff noise.
 
-    This is the DEFAULT arm only, and deliberately so. The gate is read inside
-    `load file`, upstream of every `option` command, so the arm that restores the
-    unbounded behavior (`symbolnamebound off`) has to be set through the env
-    bridge before the load, which no script command can do; that is the same
-    limit `kuna-symbolnamerepair.xml` documents. The two-pass on/off coverage,
-    and the resource assertion itself, live in the Rust gate
+    The resource assertion itself lives in the Rust gate
     `decompiler/crates/kuna-console/tests/verify_symbolnamebound.rs`.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">

@@ -39,9 +39,8 @@
 //! # The fix
 //!
 //! On Windows, `int 0x29` is `__fastfail`: the MSVC `/GS` and STL `_STL_VERIFY`
-//! failure path, which terminates the process and by contract never returns. When
-//! `option fastfailnoreturn on` (default), the call spec built for that `CALLIND`
-//! is marked no-return and `flow.rs` plants the `artificialHalt(noreturn)` it
+//! failure path, which terminates the process and by contract never returns. The
+//! call spec built for that `CALLIND` is marked no-return and `flow.rs` plants the `artificialHalt(noreturn)` it
 //! already plants for a no-return callee, so the block ends at the interrupt. The
 //! unbalanced stack pointer then reaches no join and the frame stays a frame.
 //!

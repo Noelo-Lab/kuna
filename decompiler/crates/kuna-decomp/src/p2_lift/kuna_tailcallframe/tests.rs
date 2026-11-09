@@ -188,7 +188,7 @@ fn gate_off_never_fires() {
     let br = build_teardown_shape(&mut fd, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, false, &e, &d, Some(&sp), true));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, false, &e, &d, Some(&sp)));
 }
 
 #[test]
@@ -197,7 +197,7 @@ fn exact_teardown_of_the_entry_frame_fires() {
     let br = build_teardown_shape(&mut fd, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
+    assert!(kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn explicit_branch_precedence_suppresses_a_positive_frame_teardown() {
     let br = build_teardown_shape(&mut fd, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    let frame_matches = kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true);
+    let frame_matches = kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp));
     assert!(frame_matches, "control must positively trigger tailcallframe");
 
     assert_eq!(
@@ -265,7 +265,7 @@ fn no_stack_pointer_location_declines() {
     let mut fd = build_fd();
     let br = build_teardown_shape(&mut fd, 0x2000);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, None, true));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, None));
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn partial_teardown_declines() {
     let br = emit_branch(&mut fd, 0x1104, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
 }
 
 #[test]
@@ -292,7 +292,7 @@ fn frameless_leaf_never_fires() {
     let br = emit_branch(&mut fd, 0x1100, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
 }
 
 #[test]
@@ -314,7 +314,7 @@ fn opaque_frame_pointer_restore_declines() {
     let br = emit_branch(&mut fd, 0x1104, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
 }
 
 #[test]
@@ -323,7 +323,7 @@ fn self_tail_recursion_excluded() {
     let br = build_teardown_shape(&mut fd, 0x1000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x1000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
 }
 
 #[test]
@@ -334,7 +334,7 @@ fn already_decoded_target_excluded() {
     let br = build_teardown_shape(&mut fd, 0x1005);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x1005));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
 }
 
 #[test]
@@ -348,7 +348,7 @@ fn indirect_branch_excluded() {
     fd.obank_mut().get_mut(op).unwrap().set_input(Some(vn), 0);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, op, true, &e, &d, Some(&sp), true));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, op, true, &e, &d, Some(&sp)));
 }
 
 #[test]
@@ -364,7 +364,7 @@ fn a_gap_before_the_branch_ends_the_epilogue_run() {
     let br = emit_branch(&mut fd, 0x1150, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
 }
 
 #[test]
@@ -381,9 +381,7 @@ fn argument_cleanup_after_a_call_is_not_a_teardown() {
     let br = emit_branch(&mut fd, 0x1104, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
-    // ... and with `tailcallsaved` off it is the pre-existing false positive.
-    assert!(kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), false));
+    assert!(!kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
 }
 
 #[test]
@@ -399,7 +397,7 @@ fn popping_back_what_was_pushed_still_fires() {
     let br = emit_branch(&mut fd, 0x1104, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
+    assert!(kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
 }
 
 #[test]
@@ -413,5 +411,5 @@ fn an_alignment_only_frame_still_fires() {
     let br = emit_branch(&mut fd, 0x1104, 0x2000);
     let sp = sp_loc(&fd);
     let (e, d) = (entry_addr(&fd), dest_addr(&fd, 0x2000));
-    assert!(kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp), true));
+    assert!(kuna_is_frame_teardown_tail_call(&fd, br, true, &e, &d, Some(&sp)));
 }

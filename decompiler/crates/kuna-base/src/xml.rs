@@ -1714,10 +1714,10 @@ mod tests {
         // and ghdec-returncopysplit / the read-only output gate on a datatype
         // copy split (a cloned heritage return-copy printed per-element stores
         // into a .rodata string literal)
+        // and ghdec-peimportcall / PE import-call binding (a `call [IAT slot]` is
+        // named and carries the import's no-return effect)
         // and ghdec-itecondlist / the ITE condition-list tolerance (a run of N
         // identical assignment diamonds re-rolls N, not ceil(N/2))
-        // and ghdec-peimportcall / PE import-call binding (option off leaves a
-        // `call [IAT slot]` as an unnamed `(*dat_...)()` with no no-return effect)
         // and ghdec-undefname / no `$$undef` placeholder survives the naming pass
         // (an identifier containing `$$`, and one stack Symbol split across two names)
         // and ghdec-cspecprotos / the cspec's named prototype models are registered
@@ -2135,7 +2135,7 @@ mod tests {
         // and kuna-octeon-core / explicit Octeon integer variants
         // and kuna-truncptrflow / pointer flow on a truncated address space
         // and kuna-retcopyclone / a cloned return block does not store a global a second time
-        // and kuna-switchrunon / an unguarded jump table stops where its rows leave the function (option switchrunon)
+        // and kuna-switchrunon / an unguarded jump table stops where its rows leave the function
         // and kuna-revisitrefine / refining a range a later heritage pass revisited
         // and kuna-wrapsplit + kuna-wrapsplit-be / accesses that run past the top of their space
         // and kuna-relocobj-ppc-mips / PowerPC and MIPS relocatable objects' calls and addresses
@@ -2143,9 +2143,9 @@ mod tests {
         // and kuna-funcstart-symbolextent / no pattern or gap start inside a sized function symbol
         // and kuna-relocrebase-be / a big-endian object's analysis facts at its load addresses
         // and kuna-bejoin-mipsclang / a proven pair whose low word feeds its high word stays whole
-        // and kuna-mipsgot-local / MIPS GOT slots of what the image defines (option dynrelocs)
+        // and kuna-mipsgot-local / MIPS GOT slots of what the image defines
         // and kuna-funcstart-symbolextent / no pattern or gap start inside a sized function symbol
-        // and kuna-mipsunaligned / a MIPS unaligned pair lifts as one access (option mipsunaligned)
+        // and kuna-mipsunaligned / a MIPS unaligned pair lifts as one access
         // and ghangr-rust-null-pointer / Rust null-constructor expressions
         // and ghangr-joined-callback-return / a callback's joined return components
         // and kuna-bejoinpass / a big-endian pair a call hands back is one value (option bejoinpass)
@@ -2176,11 +2176,11 @@ mod tests {
         // and kuna-stubtailcall / a loader-proven lazy-binding stub flowed as a tail call
         // and kuna-gotimportproto / a type-only declaration bound at a MIPS GOT import call
         // and kuna-aggregatefields / declared records kept whole until their fields are named
+        // and kuna-armderef / the ARM pointer-access xref rule is inert on the console path
         // and kuna-copywaves / copy propagations seed rule-pool waves
-        // and kuna-armderef / the ARM pointer-access xref option parses and is inert on the console path
         // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
-        // and kuna-armpltslot, -armcondskip / the ARM xref options parse and are
-        // inert on the console path
+        // and kuna-armpltslot, -armcondskip / the ARM xref rules are inert on the
+        // console path
         assert_eq!(count, 733, "corpus file count drifted");
     }
 

@@ -259,9 +259,6 @@ fn floating_fields_are_reinterpreted_before_integer_truncation() {
             input.to_str().unwrap(),
             "--functions",
             "ftol_conv",
-            "--option",
-            "msvcftol",
-            "on",
         ])
         .output()
         .unwrap();

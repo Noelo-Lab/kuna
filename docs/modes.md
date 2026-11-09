@@ -21,8 +21,8 @@ session changes only the options that second mode names. Discover them with
 |---|---|
 | `auto` | The default file-front-end policy: `aggressive` below 500 KiB, `reliable` from 500 KiB up to 2 MiB, and `fast` at 2 MiB or larger, with `ctypes` on at every size. |
 | `reliable` | The shipped, well-tested defaults — the safe, stable baseline. An **empty** override list. |
-| `aggressive` | Maximum recovery: turns **on** every off-by-default quality, structuring, and analysis pass except `v850indirectbranch` and `dwarf_lines`. Slower and more speculative (may over-recover); best for readability and for measuring the recovery ceiling on the benchmark, not for guaranteed faithfulness. |
 | `fast` | Latency first: disables the exhaustive Listing consumers, prologue-pattern scan, and AIF gap walk, then substitutes rooted direct-call discovery and conservative pointer-table validation. Keeps the shipped per-function transforms and explicit selectors, but may still discover fewer functions and recover fewer program-wide facts than `reliable`. Spells core types as C (`ctypes`). |
+| `aggressive` | Maximum recovery: turns **on** every off-by-default quality, structuring, and analysis pass except `dwarf_lines`. Slower and more speculative (may over-recover); best for readability and for measuring the recovery ceiling on the benchmark, not for guaranteed faithfulness. |
 
 ## `auto` (default)
 
@@ -126,30 +126,30 @@ build failure. The options it enables:
   also need `listing`, which this preset supplies; off ARM they are measured
   no-ops (identical entry sets on 90 x86-64 twins and 12 i386 PE images).
 
-`returndup` (DIV-54), `pdb` (DIV-129), `cfstrings`, `partialaccess`,
-`voidtailreturn`, `importdata`, `calltargettype` and `libcnames` became shipped
-defaults and are deliberately kept on the list: the preset **owns** the option, so an earlier
+`returndup` (DIV-54), `pdb` (DIV-129), `cfstrings`, the presentation defaults
+(`partialaccess`, `voidtailreturn`, `importdata`, `calltargettype`, `libcnames`)
+and the target-gated passes (`sparcstructret`, `v850indirectbranch`,
+`cortexmpriv`, `x64syscall`, `armfloatreturn`/`armfloatargs`, `rtti`,
+`itaniumrtti`, `objc`, `swiftmetadata`, `macho-arm64e` and the four ARM entry
+passes) became shipped defaults and are deliberately kept on the list: the
+preset **owns** the option, so an earlier
 `--option returndup off` on the same command line is re-enabled by
 `--mode aggressive`, and the preset's contract ("every recovery pass on") does not
 silently change if a default drifts back.
 
 ### The deliberate exclusions
 
-Most off-by-default options are safe to blanket-enable: the format-specific ones
-are inert off their target (`rtti` = PE, `objc`/`cfstrings`/`macho-arm64e` = Mach-O,
-`sparcstructret` = the SPARC `unimp`-trap idiom, which cannot occur off SPARC,
-and since DIV-93 the four ARM entry passes, which are inert off ARM). These are
-not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
+Most off-by-default options are safe to blanket-enable (the target-gated ones --
+`rtti` = PE, `objc`/`cfstrings`/`macho-arm64e` = Mach-O, `sparcstructret` = SPARC,
+`v850indirectbranch` = V850, the four ARM entry passes = ARM -- now ship on and
+are inert off their target). These are not, and the invariant test's
+`EXCLUDED_ON_PURPOSE` list is the authority:
 
 - **`x86listingswitch`** — bounded i386 table coverage can expose tail jumps
   into independent functions before AIF discovers their entries. The measured
   Wine corpus lost seven real starts; keep this discovery tradeoff explicit
   with `--option x86listingswitch on` in every mode.
 
-- **`v850indirectbranch`** — its predicate (`kuna_is_v850_indirect_jmp`,
-  `p2_lift/kuna_v850indbranch.rs`) matches **any** register-indirect `CALLIND`,
-  so on x86-64/ARM it would reclassify every `call reg` into an indirect branch
-  — corruption, not recovery.
 - **`dwarf_lines`** — it recovers nothing. It attaches every instruction's
   `.debug_line` `file:line` as a comment, and those survive into the emitted C,
   so on any `-g` binary the body renders interleaved with `/* src.c:NNN */`
@@ -170,11 +170,6 @@ not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
   charging `kuna decompile` for a feature `decompile-all` never delivered; now
   both surfaces honour `--option formatstring on` identically, and neither pays
   for it unless asked (DIV-66).
-
-- **`ifuncfpret`** — Stage A of the IFUNC FP-return chain. On its own it only
-  renames x86-64 IFUNC stubs to synthetic `ifunc_<resolver>` names and recovers a
-  tail call to them; it does not yet fix the `xmm0` return the feature exists for,
-  so it stays an opt-in until the chain is complete.
 
 - **`msvcstrappend`** — it collapses an inlined MSVC `std::string` append into one
   `std::string::push_back`/`append` call, deleting the fast arm's stores and naming
@@ -204,8 +199,8 @@ not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
   `f ? a / b : c`) then keeps only the high word or returns nothing, where the
   default returns every word.
 
-These therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
-`--option dwarf_lines on`, `--option formatstring full`, `--option ifuncfpret on`,
+These therefore stay manual per-run opt-ins (`--option dwarf_lines on`,
+`--option formatstring full`,
 `--option msvcstrappend on`, `--option bejoin on`, `--option regsigned on`,
 `--option libgccsigs on`)
 even under `--mode aggressive`; a named `--option` still wins over the preset by
@@ -224,12 +219,12 @@ next call keeps its argument. Flip `--option argclobber off` to keep every
 argument the register model produced, phantom or not.
 
 Separately, these default-off options remain unevaluated for preset membership:
-`guardarm`, `loopcondhoist`, `paramcopyhoist`, `switchselector`, `msvcstackguard`,
-and `stackaddrargtrial`. Each needs the sweep and speed evidence that would
+`guardarm`, `loopcondhoist`, `paramcopyhoist`, `switchselector` and
+`stackaddrargtrial`. Each needs the sweep and speed evidence that would
 justify a preset change. The stack-address option has focused tests and a local
-speed measurement, but no broad sweep; the MSVC option still needs a corpus with
-real `/GS` cookies. The `UNEVALUATED` list beside the invariant test records this
-follow-up. DIV-93 previously removed the four ARM entry options from that list.
+speed measurement, but no broad sweep. The `UNEVALUATED` list beside the
+invariant test records this follow-up. DIV-93 previously removed the four ARM
+entry options from that list.
 
 ### Caveats
 

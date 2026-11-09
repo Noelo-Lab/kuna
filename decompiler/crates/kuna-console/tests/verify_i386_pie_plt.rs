@@ -21,8 +21,7 @@
 //! feature proposal's approved sub-decision B.  The decoder arithmetic itself is
 //! additionally unit-tested in `elf_plt.rs::tests::i386_pie_plt_decode`.
 //!
-//! The fix ships **default-on** (`option i386_pie_plt`, the loader-fidelity
-//! default), so this test bootstraps with no option override.
+//! The decode is always on, so this test bootstraps with no option override.
 
 use std::path::PathBuf;
 

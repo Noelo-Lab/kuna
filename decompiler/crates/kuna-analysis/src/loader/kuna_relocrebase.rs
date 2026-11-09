@@ -69,10 +69,6 @@
 //! undefined `exit` in a `.o` has always had address 0); it is retained with its
 //! address zeroed so the name path still fires.
 //!
-//! Gated by `--option relocrebase on|off` (default **ON**, DIV-79) through the
-//! [`kuna_decomp::kuna_relocrebase`] env bridge — the analyzer tier runs inside
-//! `load file`, upstream of the per-function option machinery.
-//!
 //! [`RELOC_BASE`]: crate::loader::reloc_object::RELOC_BASE
 //! [`AnalysisOutput`]: crate::pass::AnalysisOutput
 //! [`NoReturnFact`]: crate::pass::NoReturnFact
@@ -104,12 +100,9 @@ impl RebasedView {
 }
 
 /// Build the rebased analyzer-tier view of `file`, or `None` when this object is
-/// not synthetically laid out, the `relocrebase` gate is off, or the image's
-/// headers cannot be patched (in which case the caller keeps today's behavior).
+/// not synthetically laid out or the image's headers cannot be patched (in which
+/// case the caller keeps today's behavior).
 pub fn rebased_view(file: &object::File, bytes: &[u8]) -> Option<RebasedView> {
-    if !kuna_decomp::kuna_relocrebase::relocrebase_enabled() {
-        return None;
-    }
     if !reloc_object::is_synthetically_laid_out(file) {
         return None;
     }
@@ -483,7 +476,6 @@ pub fn retain_in_image(out: &mut AnalysisOutput, view: &RebasedView) {
     out.cpp_sig.proven.retain(|(a, _)| keep(*a));
     out.cpp_sig.inferred.retain(|(a, _)| keep(*a));
     out.cpp_sig.msvc.retain(|(a, _, _)| keep(*a));
-    out.cpp_sig.msvc_legacy.retain(|(a, _)| keep(*a));
 }
 
 #[cfg(test)]
@@ -624,22 +616,6 @@ mod tests {
             }
             assert!(any, "{name}: no section was rebased");
         }
-    }
-
-    /// The gate is honoured: `off` yields no view at all, so the analyzer tier
-    /// keeps the pre-fix (pre-link) inputs byte for byte.
-    #[test]
-    fn gate_off_declines() {
-        let _serial = serial();
-        let bytes = fixture("ptx.o");
-        let file = object::File::parse(&*bytes).expect("parse ptx.o");
-        kuna_decomp::kuna_relocrebase::set_relocrebase_env(false);
-        let off = rebased_view(&file, &bytes).is_none();
-        kuna_decomp::kuna_relocrebase::set_relocrebase_env(true);
-        let on = rebased_view(&file, &bytes).is_some();
-        std::env::remove_var(kuna_decomp::kuna_relocrebase::RELOCREBASE_ENV);
-        assert!(off, "`relocrebase off` must decline");
-        assert!(on, "`relocrebase on` must rebase");
     }
 
     /// A linked executable is never touched (the whole feature is a strict no-op

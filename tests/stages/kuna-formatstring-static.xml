@@ -215,6 +215,8 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtabi_armhf</com>
   <com>option listing on</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
   <com>option formatstring off</com>
   <com>read symbols</com>
   <com>load function f_conv</com>
@@ -229,6 +231,8 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtabi_armhf</com>
   <com>option listing on</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
   <com>read symbols</com>
   <com>load function f_conv</com>
   <com>decompile</com>
@@ -242,6 +246,8 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtabi_armhf</com>
   <com>option listing on</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
   <com>option formatstring full</com>
   <com>read symbols</com>
   <com>load function f_conv</com>
@@ -318,6 +324,8 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtlf_armhf</com>
   <com>option listing on</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
   <com>option formatstring off</com>
   <com>read symbols</com>
   <com>load function show</com>
@@ -332,6 +340,8 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtlf_armhf</com>
   <com>option listing on</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
   <com>read symbols</com>
   <com>load function show</com>
   <com>decompile</com>
@@ -345,6 +355,8 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fmtlf_armhf</com>
   <com>option listing on</com>
+  <com>option armfloatreturn off</com>
+  <com>option armfloatargs off</com>
   <com>option formatstring full</com>
   <com>read symbols</com>
   <com>load function show</com>

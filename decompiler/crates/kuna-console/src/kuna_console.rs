@@ -156,8 +156,8 @@ fn engine_unavailable(entry: &str) -> IfaceError {
 pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static, str>> {
     // C++ returns "" for an unknown option (suppressing the current field).
     let on_off = |b: bool| if b { "on" } else { "off" };
-    // (kuna `dyldimage`, `symbolnamebound`) The valued live readers whose value
-    // is not a fixed token own their string; every other arm borrows.
+    // (kuna `dyldimage`) The valued live reader whose value is not a fixed
+    // token owns its string; every other arm borrows.
     if option == "dyldimage" {
         return Some(
             std::env::var(kuna_decomp::kuna_dyldcache::DYLDIMAGE_ENV)
@@ -165,12 +165,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
                 .filter(|v| !v.trim().is_empty())
                 .map_or(Cow::Borrowed("none"), Cow::Owned),
         );
-    }
-    if option == "symbolnamebound" {
-        return Some(match conf.analysis_symbolnamebound {
-            None => Cow::Borrowed("off"),
-            Some(n) => Cow::Owned(n.to_string()),
-        });
     }
     if option == "kernelcache" {
         // The loader reads the env bridge, which the `option` command also sets.
@@ -220,6 +214,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "narrowext" => conf.narrow_ext.as_str(),
         // (kuna `syscallregs`) Three-valued, so it reports its own token.
         "syscallregs" => conf.syscall_regs.as_str(),
+        // (kuna `linuxsyscall`) Three-valued, so it reports its own token.
+        "linuxsyscall" => conf.linux_syscall.as_str(),
         // (kuna `callmechanisms`) Three-valued, so it reports its own token.
         "callmechanisms" => conf.call_mechanism_mode.as_str(),
         // (kuna `rustabi`) Three-valued, so it reports its own token.
@@ -248,13 +244,11 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "arraystride" => on_off(conf.recover_array_stride),
         "stackalias" => on_off(conf.stack_alias_deadstore),
         "stackviews" => on_off(conf.stack_views),
-        "stackprobeloop" => on_off(conf.model_stack_probe_loop),
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
         "constselectjump" => on_off(conf.const_select_jump),
         "switchsharedcase" => on_off(conf.switch_shared_case),
         "realtypes" => on_off(conf.realtypes),
-        "litpoolconst" => on_off(conf.litpoolconst),
         // (kuna `calloverlap`) Report the selected overlap policy.
         "calloverlap" => match conf.call_overlap {
             kuna_decomp::kuna_calloverlap::LEVEL_OFF => "off",
@@ -262,18 +256,12 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
             kuna_decomp::kuna_calloverlap::LEVEL_IN => "in",
             _ => "full",
         },
-        "entryretdispatch" => on_off(conf.entry_ret_dispatch),
-        "pushimmediateret" => on_off(conf.push_immediate_ret),
-        "mappedflowboundary" => on_off(conf.mapped_flow_boundary),
         // (kuna) Analysis-pass gates: the live `current` field reflects each pass's
         // per-run enable flag (set by `--option <id> on|off`). Real-ELF path only;
         // with no program loaded these never reach (kuna_live_value's caller passes
         // None), so the no-program catalog byte-compat fixture is untouched.
         "noreturn_known" => on_off(conf.analysis_noreturn_known),
         "godwarfsig" => on_off(conf.analysis_godwarfsig),
-        "gopairreturns" => on_off(conf.analysis_gopairreturns),
-        "libproto" => on_off(conf.analysis_libproto),
-        "libcsigs" => on_off(conf.analysis_libcsigs),
         "libgccsigs" => on_off(conf.analysis_libgccsigs),
         // (kuna `libctypes`) Valued `off|opaque|glibc`, so the live token is the
         // value, not an on/off word.
@@ -288,18 +276,10 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "entry_disc" => on_off(conf.analysis_entry_disc),
         "eh_frame_full" => on_off(conf.analysis_eh_frame_full),
         "unwindstarts" => on_off(conf.analysis_unwindstarts),
-        "arm_markers" => on_off(conf.analysis_arm_markers),
-        "mips_gp" => on_off(conf.analysis_mips_gp),
         "ppc32picimports" => conf.analysis_ppc32picimports.as_str(),
-        "i386_pie_plt" => on_off(conf.analysis_i386_pie_plt),
         "ifuncfpret" => on_off(conf.analysis_ifuncfpret),
         "ppcapu" => on_off(conf.analysis_ppcapu),
-        "relocrebase" => on_off(conf.analysis_relocrebase),
-        "dynrelocs" => on_off(conf.analysis_dynrelocs),
-        "pdatachained" => on_off(conf.analysis_pdatachained),
-        "rexthunk" => on_off(conf.analysis_rexthunk),
         // (kuna `goabi`) Two-valued but spelled auto|off, so it reports its token.
-        "goreg" => on_off(conf.go_reg),
         "goabi" => {
             if conf.analysis_goabi {
                 "auto"
@@ -307,59 +287,29 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
                 "off"
             }
         }
-        "peordinal" => on_off(conf.analysis_peordinal),
-        "symbolnamerepair" => on_off(conf.analysis_symbolnamerepair),
-        "swiftdemangle" => on_off(conf.analysis_swiftdemangle),
         "dyldcrossrefs" => on_off(kuna_decomp::kuna_dyldcache::dyldcrossrefs_enabled()),
         // (kuna `symbolnamechars`) Three-valued, so it reports its own token.
         "symbolnamechars" => conf.analysis_symbolnamechars.as_str(),
-        "msvcfpconst" => on_off(conf.analysis_msvcfpconst),
-        "mips_isa" => on_off(conf.analysis_mips_isa),
         "dwarf" => on_off(conf.analysis_dwarf),
         // (kuna) ELF data-symbol naming (DIV-76): committed at `read symbols`
         // like the analysis-pass gates, so the live flag is authoritative.
-        "datasyms" => on_off(conf.analysis_datasyms),
-        "typedepth" => on_off(conf.analysis_typedepth),
-        "dwarfstructs" => on_off(conf.analysis_dwarfstructs),
-        "dwarfvariants" => on_off(conf.analysis_dwarfvariants),
-        "variantnames" => on_off(conf.analysis_variantnames),
         // (kuna `cppsig`) Three-valued, so it reports its own token rather than
         // on/off.
         "cppsig" => conf.analysis_cppsig.as_str(),
-        "msvcsig" => on_off(conf.analysis_msvcsig),
-        "callfixup" => on_off(conf.analysis_callfixup),
         "addrtable" => on_off(conf.analysis_addrtable),
         "listing" => on_off(conf.analysis_listing),
         "armframes" => if !conf.analysis_armframes { "off" }
             else if conf.analysis_armframes_full { "on" } else { "inventory" },
-        "unmappedentry" => on_off(conf.analysis_unmappedentry),
-        "thumbswitch" => on_off(conf.analysis_thumbswitch),
         "x86listingswitch" => on_off(conf.analysis_x86listingswitch),
-        "switchreach" => on_off(conf.analysis_switchreach),
-        "thunkentry" => on_off(conf.analysis_thunkentry),
         "addrtakenentry" => on_off(conf.analysis_addrtakenentry),
-        "ppclocalentry" => on_off(conf.analysis_ppclocalentry),
-        "gowalkprune" => on_off(conf.analysis_gowalkprune),
         // (kuna `flowmode`) Valued `on|aftercall|off`, so it reports its own token.
         "flowmode" => match (conf.analysis_flowmode, conf.analysis_flowmode_aftercall) {
             (false, _) => "off",
             (true, false) => "on",
             (true, true) => "aftercall",
         },
-        "picbase" => on_off(conf.analysis_picbase),
-        "entrymainproto" => on_off(conf.analysis_entrymainproto),
-        "machomain" => on_off(conf.analysis_machomain),
-        "pemain" => on_off(conf.analysis_pemain),
-        "armlibcmain" => on_off(conf.analysis_armlibcmain),
         "elfmain" => on_off(conf.analysis_elfmain),
         "fast_funcdisc" => on_off(conf.analysis_fast_funcdisc),
-        "rawdiscover" => on_off(conf.analysis_rawdiscover),
-        "mzsweep" => on_off(conf.analysis_mzsweep),
-        "gopclntab" => on_off(conf.analysis_gopclntab),
-        "gotypes" => on_off(conf.analysis_gotypes),
-        "gonoreturn" => on_off(conf.analysis_gonoreturn),
-        "aifbracket" => on_off(conf.analysis_aifbracket),
-        "aifnoppad" => on_off(conf.analysis_aifnoppad),
         "aifpoolslide" => on_off(conf.analysis_aifpoolslide),
         "armconstshift" => on_off(conf.arm_constant_shift),
         // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested

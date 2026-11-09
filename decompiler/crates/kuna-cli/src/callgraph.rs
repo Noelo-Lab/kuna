@@ -618,6 +618,7 @@ mod tests {
                 ("listing", "on"),
                 ("funcstart_patterns", "on"),
                 ("aif", "off"),
+                ("tailcallentry", "off"),
             ] {
                 prog.arch_mut().set_kuna_option(name, value).unwrap();
             }
@@ -677,6 +678,7 @@ mod tests {
                 ("funcstart_patterns", "on"),
                 ("armframes", "on"),
                 ("aif", "off"),
+                ("tailcallentry", "off"),
             ] {
                 prog.arch_mut().set_kuna_option(name, value).unwrap();
             }

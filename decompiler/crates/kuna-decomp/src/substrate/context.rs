@@ -801,9 +801,6 @@ pub struct ArchContext {
     /// SLEIGH FIST/FISTP conversion userops and their signed output widths.
     /// Resolved by name once when building the architecture snapshot.
     pub x87_integer_userops: Vec<(kuna_base::types::uint4, int4)>,
-    /// (kuna) `stubtailcall`, default-on: flow loader-proven lazy-binding stubs as
-    /// tail calls ([`crate::kuna_stubtailcall`]).
-    pub stub_tail_call: bool,
     /// (kuna) GH-8724: re-express a strided-induction offset as counter*stride
     /// (C++ `recover_array_stride`, DIV-3 default-on).  Read by
     /// [`RuleArrayStride`](crate::kuna_arraystride::RuleArrayStride).
@@ -896,28 +893,10 @@ pub struct ArchContext {
     /// read by [`kuna_libcfit`](crate::p5_types::kuna_libcfit), which holds a
     /// named libc pointer vote to what the caller does through it.
     pub libctypes: bool,
-    /// (kuna) GH-8017: resolve the gcc stack-probe loop SP MULTIEQUAL to a
-    /// constant (C++ `model_stack_probe_loop`, DIV-3 default-on).  Read by
-    /// [`RuleStackProbeLoop`](crate::kuna_stackprobeloop::RuleStackProbeLoop).
-    pub model_stack_probe_loop: bool,
     /// (kuna) reconstruct a compiler-lowered comparison cascade into a switch
     /// (C++ `recover_lowered_switch`, default-on).  Read by the
     /// [`crate::kuna_loweredswitch`] detect/install actions.
     pub recover_lowered_switch: bool,
-    /// (kuna) Derive lowered-switch case-label signedness from its required range
-    /// comparisons instead of from case-value bits.
-    pub lowered_switch_labels: bool,
-    /// (kuna) `option loweredswitchvalue`: withdraw a re-rolled lowered switch
-    /// unless it reads the value its cascade compared.  Read by
-    /// [`crate::p2_lift::kuna_loweredswitchvalue`] and the lowered-switch install.
-    pub lowered_switch_value_check: bool,
-    /// (kuna) `option loweredswitchexact`: label every case value of a re-rolled
-    /// lowered switch and keep it only when it matches its compare tree.  Read by
-    /// [`crate::kuna_loweredswitch`] and the lowered-switch install.
-    pub lowered_switch_exact: bool,
-    /// (kuna) `option loweredswitchheads`: try every cascade head, not only the
-    /// first.  Read by [`crate::kuna_loweredswitch`]'s detect action.
-    pub lowered_switch_every_head: bool,
     /// (kuna) an unread zero element right after an open stack character array
     /// is its terminator (`nulterminator`).  Read by
     /// [`Funcdata::gather_varnodes`](crate::funcdata_spacebase) for
@@ -1276,8 +1255,6 @@ pub struct ArchContext {
     pub strip_security_check: bool,
     /// Fold Go compiler bounds/division panic arms (option gobounds).
     pub go_bounds: bool,
-    /// Normalize Go branch-only blocks before runtime idiom matching.
-    pub go_jump_chain: bool,
     /// (kuna) flip negated-guard if/else branches for linearity (option
     /// `branchflip`, opt-in default-off).  Read by
     /// [`ActionBranchFlip`](crate::blockaction::ActionBranchFlip).
@@ -1324,27 +1301,15 @@ pub struct ArchContext {
     /// by `JumpBasic::buildAddresses` to align recovered targets.  `0` (no
     /// alignment) for hand-built fixtures.
     pub funcptr_align: int4,
-    /// (kuna) PE/Mach-O import-slot call binding (`option peimportcall`), shared from the real
-    /// architecture.  Read by [`Self::query_function`]: with the gate on, a resolved
-    /// callee's no-return flag rides the prototype handed to `ActionDeindirect`, so a
-    /// deindirected `call [IAT slot]` to `ExitThread` restarts and re-flows with the
-    /// artificial halt instead of falling through into the next function.  `false`
-    /// for hand-built fixtures.
-    pub peimportcall: bool,
     /// (kuna) Bound a LOAD-table jumptable by a modulo/and-mask on its index when
     /// the basic model fails to bound it (C++ `Architecture::switch_modulo_bound`,
     /// flipped by `option switchmodbound`, GH-9191), shared from the real
     /// architecture.  Read by `JumpBasic::recoverModel` before
     /// `kunaTryModuloBoundTable`.  `false` (default off / upstream byte-identical).
     pub switch_modulo_bound: bool,
-    /// (kuna) Cut an unguarded jump table where its rows run on into other
-    /// functions (`switchrunon`). See [`crate::kuna_switchrunon`].
-    pub switch_run_on: bool,
-    /// (kuna) Count only a guard that narrows the selector as a guard for
-    /// `switchrunon` (`switchrunonguard`). See [`crate::kuna_switchrunon`].
-    pub switch_run_on_guard: bool,
     /// (kuna `lazyfuncs`) The entry starts the commit installed as names only,
-    /// sorted, so `switchrunon` sees the same functions with the option on.
+    /// sorted, so the run-on cut (`kuna_switchrunon`) sees the same functions
+    /// with the option on.
     pub lazy_entry_starts: Rc<Vec<u64>>,
     /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
     /// addresses (`option constselectjump`, `p2_lift/kuna_constselectjump.rs`).
@@ -1420,16 +1385,11 @@ pub struct ArchContext {
     /// (kuna `litpoolconst`) `[start, stop]` (inclusive) offsets of the image's
     /// executable, non-writable, file-backed regions — the instruction stream, and
     /// so the literal pools embedded in it. A read entirely inside one is foldable
-    /// with [`Self::readonlypropagate`] off, gated by [`Self::litpoolconst`].
+    /// with [`Self::readonlypropagate`] off.
     /// Sorted ascending, disjoint, and EMPTY for every hand-built fixture and every
     /// XML `<binaryimage>` load, which is why the datatest parity oracle cannot see
     /// this field.
     pub litpool_const: Rc<Vec<(u64, u64)>>,
-    /// (kuna) Whether an in-code literal-pool read folds to its constant
-    /// (`option litpoolconst`, default on). Carried into the per-function `glb`
-    /// beside [`Self::readonlypropagate`]; inert while [`Self::litpool_const`] is
-    /// empty.
-    pub litpoolconst: bool,
     /// Whether the volatile read/write userops display \e functionally (C++
     /// `VolatileReadOp`/`VolatileWriteOp` ctor `functional` flag — the `<volatile
     /// format="functional">` spec attribute).  Drives the `setHoldOutput` branch
@@ -1594,7 +1554,6 @@ impl ArchContext {
             simd_shuffle_userops: Vec::new(),
             x87_float_to_int_userops: Vec::new(),
             x87_integer_userops: Vec::new(),
-            stub_tail_call: false,       // stubtailcall
             recover_array_stride: false, // GH-8724 arraystride
             memset_recover: false,       // GH-9230/1537 memsetrecover
             rodata_string: false,        // (kuna) rodatastring
@@ -1621,12 +1580,7 @@ impl ArchContext {
             elem_ptr: false, // (kuna) option elemptr, copied from Architecture
             elem_ptr_ranges: std::rc::Rc::new(Vec::new()), // (kuna) elemptr
             libctypes: false, // (kuna) option libctypes, copied from Architecture
-            model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
-            lowered_switch_labels: true, // loweredswitchlabels
-            lowered_switch_value_check: true, // loweredswitchvalue
-            lowered_switch_exact: true, // loweredswitchexact
-            lowered_switch_every_head: true, // loweredswitchheads
             nul_terminator: false,
             // endptrbound only re-expresses an address the walk already compares
             // against, so the fixture seam carries the real default.
@@ -1682,9 +1636,9 @@ impl ArchContext {
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
             outline_spec: String::new(), // outline (opt-in default-off; empty = off)
             remove_cleanup_code: true,   // cleanupcode (DIV-81 default-on; inert on a non-Rust binary)
-            linux_syscall: false,        // linuxsyscall (opt-in default-off)
+            linux_syscall: false,        // linuxsyscall (the mode resolves against the Linux-ELF fact in build_arch_handle)
             msvc_str_append: false,      // msvcstrappend (opt-in default-off)
-            x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (opt-in default-off)
+            x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (Architecture::reset_defaults sets the shipped default: on)
             x64_syscall_memory_target: false,
             x64_syscall_userops: Vec::new(),
             segment_ops: Vec::new(),
@@ -1712,9 +1666,8 @@ impl ArchContext {
             fold_call_returns: false, // foldcallret (Architecture::reset_defaults sets the shipped default: on)
             mark_indirect_only: false, // indirectonly (opt-in default-off)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
-            strip_msvc_stack_guard: false, // msvcstackguard (fixture default-off; the live gate rides build_arch_handle)
+            strip_msvc_stack_guard: true, // msvcstackguard (the live gate rides build_arch_handle)
             go_bounds: true,
-            go_jump_chain: true,
             strip_security_check: false, // securitycheck (fixture default-off; the live gate rides build_arch_handle)
             branch_flip: false,          // branchflip (opt-in default-off)
             // C++ Architecture default: analyze_for_loops = true (architecture.cc).
@@ -1729,10 +1682,7 @@ impl ArchContext {
             max_jumptable_size: 0,
             alias_block_level: 2, // Architecture default: block structs and arrays
             funcptr_align: 0,
-            peimportcall: false, // (kuna) the real arch overwrites this in build_arch_handle
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
-            switch_run_on: false, // switchrunon (the ArchSeam carries the real default)
-            switch_run_on_guard: false, // switchrunonguard (the ArchSeam carries the real default)
             lazy_entry_starts: Rc::default(),
             const_select_jump: false, // (kuna) constant-select indirect branch: default off
             highslice_guard: false,
@@ -1752,7 +1702,6 @@ impl ArchContext {
             // (kuna) No executable read-only ranges until a real object load
             // installs them (see `Architecture::litpool_const`).
             litpool_const: Rc::new(Vec::new()),
-            litpoolconst: false,
             // Default volatile ops are non-functional (`getDisplay() != 0`), so the
             // volatile-read op's output is held; matches the unconfigured glb.
             volatile_display_functional: false,
@@ -1854,11 +1803,10 @@ impl ArchContext {
     /// (kuna `litpoolconst`) Whether the `size`-byte read at `offset` lies
     /// entirely inside the image's executable read-only memory, so a read-only
     /// varnode there may be folded to the constant it holds even with global
-    /// read-only propagation off. A plain `false` when the option is off or the
-    /// range list is empty, which is every non-object path.
+    /// read-only propagation off. A plain `false` when the range list is empty,
+    /// which is every non-object path.
     pub fn litpool_const_contains(&self, offset: u64, size: u32) -> bool {
-        self.litpoolconst
-            && crate::kuna_litpoolconst::contains(&self.litpool_const, offset, size)
+        crate::kuna_litpoolconst::contains(&self.litpool_const, offset, size)
     }
 
     /// Whether the volatile-read op's output must be held (C++
@@ -2347,7 +2295,7 @@ impl ArchContext {
                 if e.func_inject_id >= 0 {
                     proto.set_inject_id(e.func_inject_id);
                 }
-                if e.func_no_return && self.peimportcall {
+                if e.func_no_return {
                     proto.set_no_return(true);
                 }
                 return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::new(proto)));
@@ -2367,12 +2315,12 @@ impl ArchContext {
                             let mut p = crate::fspec::FuncProto::new();
                             p.copy(proto);
                             p.set_inject_id(e.func_inject_id);
-                            if e.func_no_return && self.peimportcall {
+                            if e.func_no_return {
                                 p.set_no_return(true);
                             }
                             return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::new(p)));
                         }
-                        if e.func_no_return && self.peimportcall && !proto.is_no_return() {
+                        if e.func_no_return && !proto.is_no_return() {
                             let mut p = crate::fspec::FuncProto::new();
                             p.copy(proto);
                             p.set_no_return(true);
@@ -2401,10 +2349,10 @@ impl ArchContext {
             if e.func_inject_id >= 0 {
                 proto.set_inject_id(e.func_inject_id);
             }
-            // (kuna) The callee's no-return flow effect, gated by `peimportcall`:
-            // `deindirect` skips its prototype merge for a no-return callee and
-            // schedules the restart whose re-flow truncates at the call.
-            if e.func_no_return && self.peimportcall {
+            // (kuna) The callee's no-return flow effect: `deindirect` skips its
+            // prototype merge for a no-return callee and schedules the restart
+            // whose re-flow truncates at the call.
+            if e.func_no_return {
                 proto.set_no_return(true);
             }
             return Some((e.symbol_name.clone(), entry_addr, std::rc::Rc::new(proto)));

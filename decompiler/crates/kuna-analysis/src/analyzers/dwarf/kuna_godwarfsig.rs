@@ -222,19 +222,17 @@ impl Facts {
             return compressed.decode(self.names).map(|facts| facts.materialize(arch)).unwrap_or_default();
         }
         let mut repeated = BTreeSet::new();
-        if arch.analysis_gopairreturns {
-            let mut entries = BTreeSet::new();
-            for die in self.dies.values().filter(|die| die.tag == gimli::DW_TAG_subprogram && !die.declaration) {
-                if let Some(entry) = die.low_pc {
-                    if !entries.insert(entry) { repeated.insert(entry); }
-                }
+        let mut entries = BTreeSet::new();
+        for die in self.dies.values().filter(|die| die.tag == gimli::DW_TAG_subprogram && !die.declaration) {
+            if let Some(entry) = die.low_pc {
+                if !entries.insert(entry) { repeated.insert(entry); }
             }
         }
         self.dies.iter().filter_map(|(offset, die)| {
             if die.tag != gimli::DW_TAG_subprogram || die.declaration {
                 return None;
             }
-            let pieces = self.prototype(*offset, arch, !arch.analysis_gopairreturns || !repeated.contains(&die.low_pc?))?;
+            let pieces = self.prototype(*offset, arch, !repeated.contains(&die.low_pc?))?;
             Some((die.low_pc?, pieces))
         }).collect()
     }
@@ -332,7 +330,7 @@ impl Facts {
             let registers = if scalar.float { FLOAT_REGISTERS } else { INTEGER_REGISTERS };
             if result {
                 let index = output_count;
-                if index > 0 && (!arch.analysis_gopairreturns || !unique || index != 1) { return None; }
+                if index > 0 && (!unique || index != 1) { return None; }
                 let &(dwarf_register, register) = registers.get(index)?;
                 if location != Location::Unavailable && location != Location::Register(dwarf_register) { return None; }
                 outputs[index] = Some((parameter.type_ref?, scalar, register));

@@ -75,10 +75,10 @@ fn decompile(bin: &str, func: &str, options: &[&str]) -> String {
     status.optr.clone()
 }
 
-/// The bug, pinned: at the default the producer collapses to its discriminant.
+/// The bug, pinned: with the option off the producer collapses to its discriminant.
 #[test]
-fn by_default_the_producer_loses_its_payload_register() {
-    let code = decompile("rust_scalarpair_x86_64", "prod", &[]);
+fn with_rustabi_off_the_producer_loses_its_payload_register() {
+    let code = decompile("rust_scalarpair_x86_64", "prod", &["option rustabi off"]);
     assert!(
         code.contains("bool prod"),
         "the pre-fix rendering is the one-bit discriminant alone; got:\n{code}",
