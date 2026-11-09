@@ -134,6 +134,8 @@ mod kuna_input;
 mod kuna_options;
 #[path = "kuna_fixes.rs"]
 mod kuna_fixes;
+#[path = "kuna_fix_type_switch.rs"]
+mod kuna_fix_type_switch;
 #[path = "kuna_inventory.rs"]
 mod kuna_inventory;
 #[path = "kuna_spans.rs"]

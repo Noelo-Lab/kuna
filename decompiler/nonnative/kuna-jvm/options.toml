@@ -1397,6 +1397,72 @@ tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with index out of bounds: the len is 1 but the index is 1 (IndexOutOfBoundsException: Index 1 out of bounds for length 1 in Vineflower)|a try/catch (Throwable) whose handler starts with if (!flag) fails to decompile"
 
 [[option]]
+option = "jvm_fix_type_switch_enum_label"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p8_structure"
+subphase = "switch_pattern_match_processor"
+strength = "HARD"
+rewind = "p8_structure"
+issue = ""
+summary = "Decompile a Java 21+ pattern switch that mixes qualified enum constant labels with type patterns (switch (a) { case E.X -> ...; case C c -> ... }): the label, which javac passes to SwitchBootstraps.typeSwitch as an EnumDesc dynamic constant, is resolved to the enum constant and printed qualified (case E.X) when the switch is not on the enum type, where Vineflower leaves the raw switch index and fails the method with Invalid switch case set."
+use_when = "Always on; jvm_vineflower_compat on gives Vineflower's behaviour."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_type_switch_enum_label off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 SwitchPatternMatchProcessor.processStatement resolves only Integer, String and Class bootstrap arguments; fixed upstream on develop/1.13.0 by 36ac62ec (Fix switches with both types and enum values: CondyHelper EnumDesc/ClassDesc/invoke, qualified label printing), ported here with ClassDesc's binary name in internal form"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "// $VF: Couldn't be decompiled with IllegalStateException: Invalid switch case set: [[const(0)], ...] for selector of type ...|a switch with case E.X and a type pattern fails to decompile"
+
+[[option]]
+option = "jvm_fix_type_switch_pattern_type"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p8_structure"
+subphase = "switch_pattern_match_processor"
+strength = "HARD"
+rewind = "p8_structure"
+issue = ""
+summary = "Decompile a pattern switch on a boxed type, String or other type whose type pattern is the selector's own type (switch (o) { case 42 -> ...; case Integer i when i < 50 -> ... }, no checkcast in the bytecode): the pattern's type operand is that class, not a class literal of type java.lang.Class, so type inference no longer widens the selector to the common supertype of Class and the selector type. Vineflower fails such a method with Invalid switch case set (when the JDK is loaded) or invalid constant type (without debug info), and prints case Class<Integer> var3 when var3 > 10 for the pattern variable of a class without a LocalVariableTable."
+use_when = "Always on; jvm_vineflower_compat on gives Vineflower's behaviour."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_type_switch_pattern_type off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 SwitchPatternMatchProcessor.processStatement builds the pattern's type operand as new ConstExprent(VarType.VARTYPE_CLASS, className) on the no-cast path (its other two paths use the type itself); SwitchHeadExprent.checkExprTypeBounds and FunctionExprent INSTANCEOF read it as the pattern type. develop/1.13.0 (4cad12c6) only stops the bound computation at the contradiction, which moves the failure to printing without debug info"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "// $VF: Couldn't be decompiled with IllegalStateException: Invalid switch case set: [[const(42)], [var0_1 instanceof i], ...] for selector of type Ljava/io/Serializable;|// $VF: Couldn't be decompiled with invalid constant type: Ljava/io/Serializable; with value 42|case Class<Integer> var3 when var3 > 10"
+
+[[option]]
+option = "jvm_fix_type_switch_label_lookup"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p8_structure"
+subphase = "switch_pattern_match_processor"
+strength = "HARD"
+rewind = "p8_structure"
+issue = ""
+summary = "Decompile pattern switches whose cases have several labels, and print correctly those whose integer labels equal a later switch index: each typeSwitch index constant is replaced by its label wherever it sits (case 5, 7; case E.X, E.Y; case Integer _, String _), and a case with several type patterns is written as one label of unnamed patterns without javac's re-test of the selector (case Integer _, String _ ->). Vineflower finds a label only in the first position of a case and by value, so it fails such methods (invalid constant type, index out of bounds) or prints wrong labels (case 5, 7 as case 5: case 1:, case 1 -> as case Integer var5 ->). The default output differs from Vineflower's on code that Vineflower prints wrongly."
+use_when = "Always on; jvm_vineflower_compat on gives Vineflower's behaviour."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_type_switch_label_lookup off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 SwitchPatternMatchProcessor.processStatement locates bootstrap index i by an integer constant equal to i in caseValueSet.get(0), falling back to case i; unchanged on develop/1.13.0, which still fails case E.X, E.Y and case Integer _, String _"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "// $VF: Couldn't be decompiled with invalid constant type: Ljava/lang/Object; with value 1|// $VF: Couldn't be decompiled with index out of bounds: the len is 3 but the index is 3|case 5, 7 printed as case 5: case 1:|case 1 -> printed as case Integer var5 ->"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""

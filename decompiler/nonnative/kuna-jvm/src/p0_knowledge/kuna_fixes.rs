@@ -32,6 +32,16 @@ pub enum KunaFix {
     /// `jvm_fix_twr_unary_condition`: a `catch (Throwable)` handler that starts
     /// with `if (!flag)` is not taken for a try-with-resources null check.
     TwrUnaryCondition,
+    /// `jvm_fix_type_switch_enum_label`: a pattern switch's qualified enum
+    /// constant labels (`EnumDesc` dynamic constants) are resolved.
+    TypeSwitchEnumLabel,
+    /// `jvm_fix_type_switch_pattern_type`: a type pattern made from a class
+    /// label without a cast is typed by that class, not by `Class`.
+    TypeSwitchPatternType,
+    /// `jvm_fix_type_switch_label_lookup`: each pattern-switch label is found
+    /// by its own index constant, so labels after the first of a case and
+    /// labels whose index equals an integer label's value are resolved.
+    TypeSwitchLabelLookup,
 }
 
 impl KunaFix {
@@ -40,6 +50,9 @@ impl KunaFix {
         KunaFix::ReportToKuna,
         KunaFix::LambdaWildcardReturn,
         KunaFix::TwrUnaryCondition,
+        KunaFix::TypeSwitchEnumLabel,
+        KunaFix::TypeSwitchPatternType,
+        KunaFix::TypeSwitchLabelLookup,
     ];
 
     /// The option row that turns this fix on or off.
@@ -48,6 +61,9 @@ impl KunaFix {
             KunaFix::ReportToKuna => "jvm_fix_report_to_kuna",
             KunaFix::LambdaWildcardReturn => "jvm_fix_lambda_wildcard_return",
             KunaFix::TwrUnaryCondition => "jvm_fix_twr_unary_condition",
+            KunaFix::TypeSwitchEnumLabel => "jvm_fix_type_switch_enum_label",
+            KunaFix::TypeSwitchPatternType => "jvm_fix_type_switch_pattern_type",
+            KunaFix::TypeSwitchLabelLookup => "jvm_fix_type_switch_label_lookup",
         }
     }
 

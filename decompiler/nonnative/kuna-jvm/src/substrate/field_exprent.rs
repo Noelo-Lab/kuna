@@ -254,6 +254,11 @@ impl FieldExprent {
     }
 
     pub fn to_java(self, indent: i32) -> TextBuffer {
+        self.to_java_condy_comment(indent, true)
+    }
+
+    /// Java (`develop/1.13.0`): `toJava(int, boolean includeCondyComment)`.
+    pub fn to_java_condy_comment(self, indent: i32, include_condy_comment: bool) -> TextBuffer {
         let mut buf = TextBuffer::new();
         let (name, classname, is_static, instance, descriptor, is_qualifier, was_condy) =
             self.d(|d| {
@@ -268,7 +273,7 @@ impl FieldExprent {
                 )
             });
 
-        if was_condy {
+        if was_condy && include_condy_comment {
             buf.append("/* $VF: constant dynamic */ ");
         }
 
@@ -401,6 +406,10 @@ impl FieldExprent {
 
     pub fn get_instance(self) -> Option<Exprent> {
         self.d(|d| d.instance)
+    }
+
+    pub fn is_was_condy(self) -> bool {
+        self.d(|d| d.was_condy)
     }
 
     pub fn is_static(self) -> bool {

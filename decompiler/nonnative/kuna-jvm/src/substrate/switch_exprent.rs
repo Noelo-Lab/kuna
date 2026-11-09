@@ -1,4 +1,8 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/SwitchExprent.java`.
+//!
+//! kuna fixes (`kuna_fixes`): `type_switch_enum_label` qualifies an enum
+//! constant label of a pattern switch on another type; `type_switch_label_lookup`
+//! writes a case with several type patterns as one label of unnamed patterns.
 
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::code_constants::ACC_ENUM;
@@ -6,6 +10,8 @@ use crate::const_exprent::ConstExprent;
 use crate::exit_exprent::Type as ExitType;
 use crate::exprent::{Exprent, ExprentKind};
 use crate::field_exprent::FieldExprent;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p8_structure::{kuna_fix_type_switch_enum_label, kuna_fix_type_switch_label_lookup};
 use crate::function_exprent::FunctionType;
 use crate::pattern::Pattern;
 use crate::rt::{BitSet, JHashSet, JavaEq, JavaHash};
@@ -92,8 +98,21 @@ impl SwitchExprent {
                 }
             }
 
+            let unnamed = if kuna_fixes::enabled(KunaFix::TypeSwitchLabelLookup) {
+                kuna_fix_type_switch_label_lookup::unnamed_pattern_types(&values)
+            } else {
+                None
+            };
             let mut has_edge = false;
             for j in 0..edges.len() {
+                if let Some(types) = &unnamed {
+                    if j == 0 {
+                        buf.append_indent(indent + 1).append("case ");
+                        kuna_fix_type_switch_label_lookup::append_unnamed(&mut buf, types);
+                        has_edge = true;
+                    }
+                    continue;
+                }
                 let value = if Some(edges.get(j)) == backing.get_default_edge() && values.len() <= j
                 {
                     Some(ConstExprent::new(VarType::VARTYPE_NULL(), None, None).0)
@@ -122,7 +141,20 @@ impl SwitchExprent {
                     value_ex.as_const().set_const_type(switch_type.clone());
                 }
 
-                if let Some(field) = value_ex.try_as_field().filter(|f| f.is_static()) {
+                let qualified = value_ex.try_as_field().filter(|f| {
+                    f.is_static()
+                        && kuna_fixes::enabled(KunaFix::TypeSwitchEnumLabel)
+                        && kuna_fix_type_switch_enum_label::is_qualified_label(
+                            *f,
+                            &switch_type,
+                            backing.0,
+                        )
+                });
+                if let Some(field) = qualified {
+                    buf.append_buffer(&kuna_fix_type_switch_enum_label::qualified_label(
+                        field, indent,
+                    ));
+                } else if let Some(field) = value_ex.try_as_field().filter(|f| f.is_static()) {
                     let name = field.get_name();
                     buf.append_field_descriptor(
                         &name,

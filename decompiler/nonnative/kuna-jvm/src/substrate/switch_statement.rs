@@ -3,6 +3,10 @@
 //! `caseValues` is shared with the `SwitchHeadExprent` (`setCaseValues`), and
 //! its `null` entries mark the default case. `headexprent` is the one-slot list
 //! shared with flow nodes (empty while the Java slot is `null`).
+//!
+//! kuna fixes (`kuna_fixes`): `type_switch_enum_label` qualifies an enum
+//! constant label of a pattern switch on another type; `type_switch_label_lookup`
+//! writes a case with several type patterns as one label of unnamed patterns.
 
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::const_exprent::ConstExprent;
@@ -10,6 +14,8 @@ use crate::dec_helper::DecHelper;
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
+use crate::kuna_fixes::{self, KunaFix};
+use crate::p8_structure::{kuna_fix_type_switch_enum_label, kuna_fix_type_switch_label_lookup};
 use crate::function_exprent::FunctionType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_statement::set_head_slot;
@@ -162,8 +168,28 @@ impl SwitchStatement {
                 None
             };
             let scoped = self.d(|d| d.scoped_case_statements.contains(&stat));
+            let unnamed = if kuna_fixes::enabled(KunaFix::TypeSwitchLabelLookup) {
+                kuna_fix_type_switch_label_lookup::unnamed_pattern_types(&values)
+            } else {
+                None
+            };
 
             for j in 0..edges.len() {
+                if let Some(types) = &unnamed {
+                    if j == 0 {
+                        buf.append_indent(indent + 1).append("case ");
+                        kuna_fix_type_switch_label_lookup::append_unnamed(&mut buf, types);
+                        if let Some(guard) = guard {
+                            buf.append(" when ").append_buffer(&guard.to_java_default());
+                        }
+                        buf.append(":");
+                        if scoped {
+                            buf.append(" {");
+                        }
+                        buf.append_line_separator();
+                    }
+                    continue;
+                }
                 if Some(edges.get(j)) == default_edge {
                     buf.append_indent(indent + 1).append("default:");
                     if scoped && j == edges.len() - 1 {
@@ -183,7 +209,20 @@ impl SwitchStatement {
                             value = Some(copied);
                         }
                     }
-                    if let Some(field) = value
+                    let qualified = value.and_then(|v| v.try_as_field()).filter(|f| {
+                        f.is_static()
+                            && kuna_fixes::enabled(KunaFix::TypeSwitchEnumLabel)
+                            && kuna_fix_type_switch_enum_label::is_qualified_label(
+                                *f,
+                                &switch_type,
+                                self.0,
+                            )
+                    });
+                    if let Some(field) = qualified {
+                        buf.append_buffer(&kuna_fix_type_switch_enum_label::qualified_label(
+                            field, indent,
+                        ));
+                    } else if let Some(field) = value
                         .and_then(|v| v.try_as_field())
                         .filter(|f| f.is_static())
                     {
