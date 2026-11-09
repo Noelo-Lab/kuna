@@ -98,3 +98,7 @@ mod b08_lift;
 mod b09_stack_vars;
 #[path = "b10_simplify.rs"]
 mod b10_simplify;
+#[path = "b11_condense.rs"]
+mod b11_condense;
+#[path = "b11_finally.rs"]
+mod b11_finally;

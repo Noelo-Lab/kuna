@@ -357,8 +357,7 @@ const VINEFLOWER_FAILURES: [(&str, &str); 2] = [
 ];
 
 /// `parse_graph` on every method of real classes: each one gets through
-/// `processStatement` and then finishes or stops at a callee that is still
-/// `unported!`, except where Vineflower fails too.
+/// `processStatement` and finishes, except where Vineflower fails too.
 #[test]
 fn parse_graph_runs_on_real_methods() {
     let _context = common::install_default_context();
@@ -428,4 +427,5 @@ fn parse_graph_runs_on_real_methods() {
     );
     assert_eq!(methods, 182);
     assert_eq!(decomposed + failures.len(), methods);
+    assert_eq!(finished + failures.len(), methods, "blocked by {blocked:?}");
 }
