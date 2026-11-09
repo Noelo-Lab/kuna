@@ -38,9 +38,8 @@ fn jstr<T: Display>(o: Option<T>) -> String {
     o.map_or_else(|| "null".to_string(), |v| v.to_string())
 }
 
-/// Java `AbstractCollection.toString()`.
-fn jlist<T: Display>(items: impl IntoIterator<Item = T>) -> String {
-    let parts: Vec<String> = items.into_iter().map(|i| i.to_string()).collect();
+/// Java `AbstractCollection.toString()` over the elements' `toString()`.
+fn jlist(parts: Vec<String>) -> String {
     format!("[{}]", parts.join(", "))
 }
 
@@ -57,7 +56,7 @@ impl ValidationHelper {
             return;
         }
 
-        let statements: VBStyleCollection<Statement, i32> = VBStyleCollection::new();
+        let mut statements: VBStyleCollection<Statement, i32> = VBStyleCollection::new();
 
         let mut stack: VecDeque<Statement> = VecDeque::new();
         stack.push_front(statement.get_dummy_exit().0);
@@ -65,10 +64,10 @@ impl ValidationHelper {
 
         while let Some(stat) = stack.pop_front() {
             statements.put_with_key(stat, stat.with(|d| d.id));
-            stack.extend(stat.get_stats().iter());
+            stack.extend(stat.get_stats().borrow().to_vec());
         }
 
-        for stat in statements.iter() {
+        for stat in statements.to_vec() {
             for edge in stat.get_all_successor_edges() {
                 Self::validate_edge_context(&statements, stat, edge);
             }
@@ -96,14 +95,16 @@ impl ValidationHelper {
                 jthrow!(IllegalStateException; "Non-existing first statement: [{}] {}", stat, jstr(first));
             }
 
-            if !first.is_some_and(|f| stat.get_stats().contains(&f))
+            if !first.is_some_and(|f| stat.get_stats().borrow().contains(&f))
                 && !stat.is_dummy_exit()
                 && !stat.is_basic_block()
             {
                 jthrow!(IllegalStateException; "Stat doesn't contain first statement: [{}] {}", stat, jstr(first));
             }
 
-            for stat_stat in stat.get_stats().iter() {
+            let sub_stats = stat.get_stats().borrow().to_vec();
+
+            for stat_stat in sub_stats {
                 if stat_stat.get_parent() != Some(stat) {
                     jthrow!(IllegalStateException;
                         "Statement parent is not set correctly [{}]: Expected {} but was {}",
@@ -241,7 +242,7 @@ impl ValidationHelper {
     }
 
     pub fn validate_trycatch_statement(catch_stat: CatchStatement) {
-        if catch_stat.get_stats().len() == 1 && catch_stat.get_resources().is_empty() {
+        if catch_stat.get_stats().borrow().len() == 1 && catch_stat.get_resources().is_empty() {
             jthrow!(IllegalStateException; "Try statement with single statement: {}", catch_stat.0);
         }
     }
@@ -251,7 +252,7 @@ impl ValidationHelper {
             return;
         }
 
-        let stats = if_stat.get_stats();
+        let stats: Vec<Statement> = if_stat.get_stats().borrow().to_vec();
         let stat = if_stat.0;
 
         match if_stat.get_first() {
@@ -291,7 +292,7 @@ impl ValidationHelper {
             } else if successors.len() > 1 {
                 jthrow!(IllegalStateException;
                     "If statement with more than one successor: {} (successors: {})",
-                    stat, jlist(if_stat.get_successor_edges(Statement::STATEDGE_DIRECT_ALL)));
+                    stat, jlist(if_stat.get_successor_edges(Statement::STATEDGE_DIRECT_ALL).iter().map(|e| e.to_string()).collect()));
             }
         } else if iftype == IfStatement::IFTYPE_IFELSE {
             let Some(else_edge) = if_stat.get_else_edge() else {
@@ -336,7 +337,7 @@ impl ValidationHelper {
             jthrow!(IllegalStateException; "If statement with more than 3 sub statements: {}", stat);
         }
 
-        for sub in stats.iter() {
+        for sub in stats.iter().copied() {
             if Some(sub) != if_stat.get_first()
                 && Some(sub) != if_stat.get_ifstat()
                 && Some(sub) != if_stat.get_elsestat()
@@ -360,10 +361,9 @@ impl ValidationHelper {
             return;
         }
 
-        let (nodes, first) = graph.with(|d| (d.nodes.clone(), d.first));
+        let (nodes, first) = graph.with(|d| (d.nodes.to_vec(), d.first));
         let first = first.unwrap();
-        let mut inaccessible_nodes: JHashSet<DirectNode> =
-            JHashSet::from_collection(nodes.to_vec());
+        let mut inaccessible_nodes: JHashSet<DirectNode> = JHashSet::from_collection(nodes.clone());
 
         let mut stack: ListStack<DirectNode> = ListStack::new();
         stack.push(first);
@@ -372,25 +372,25 @@ impl ValidationHelper {
         while !stack.is_empty() {
             let node = stack.pop();
 
-            for pred in node.get_predecessors(DirectEdgeType::Regular) {
+            for pred in node.get_predecessors(DirectEdgeType::Regular).iter() {
                 if !pred
                     .get_source()
                     .get_successors(DirectEdgeType::Regular)
                     .contains(&pred)
                 {
                     jthrow!(IllegalStateException;
-                        "Predecessor {} does not have {} as a successor", pred, node);
+                        "Predecessor {} does not have {} as a successor", pred.to_string(), node.to_string());
                 }
             }
 
-            for succ in node.get_successors(DirectEdgeType::Regular) {
+            for succ in node.get_successors(DirectEdgeType::Regular).iter() {
                 if !succ
                     .get_destination()
                     .get_predecessors(DirectEdgeType::Regular)
                     .contains(&succ)
                 {
                     jthrow!(IllegalStateException;
-                        "Successor {} does not have {} as a predecessor", succ, node);
+                        "Successor {} does not have {} as a predecessor", succ.to_string(), node.to_string());
                 }
 
                 if inaccessible_nodes.remove(&succ.get_destination()) {
@@ -403,15 +403,15 @@ impl ValidationHelper {
             for inaccessible_node in inaccessible_nodes.iter() {
                 if inaccessible_node.with(|d| d.type_) != DirectNodeType::FinallyEnd {
                     jthrow!(IllegalStateException;
-                        "Inaccessible direct graph nodes: {}", jlist(inaccessible_nodes.iter()));
+                        "Inaccessible direct graph nodes: {}", jlist(inaccessible_nodes.iter().map(|n| n.to_string()).collect()));
                 }
             }
         }
 
         let mut all_exprents: JHashMap<ID<Exprent>, DirectNode> = JHashMap::new();
 
-        for node in nodes.iter() {
-            let exprents = node.with(|d| d.exprents.clone()).unwrap();
+        for node in nodes {
+            let exprents = node.with(|d| d.exprents.clone());
             for exprent in exprents.iter() {
                 for sub_exprent in exprent.get_all_exprents_rec_self(true, true) {
                     let key = ID::new(sub_exprent);
@@ -419,7 +419,7 @@ impl ValidationHelper {
                         let other = all_exprents.get(&key).copied().unwrap();
                         jthrow!(IllegalStateException;
                             "Duplicated exprent: {} (Sub exprent of: {}) in dgraph. Appears in both node {} and node {}!",
-                            sub_exprent, exprent, node.with(|d| d.id.clone()), other.with(|d| d.id.clone()));
+                            sub_exprent.to_string(), exprent.to_string(), node.with(|d| d.id.clone()), other.with(|d| d.id.clone()));
                     } else {
                         all_exprents.put(key, node);
                     }
@@ -438,16 +438,15 @@ impl ValidationHelper {
             return;
         }
 
-        let nodes = dgraph.with(|d| d.nodes.clone());
-        for node in nodes.iter() {
-            if let Some(exprents) = node.with(|d| d.exprents.clone()) {
-                for exprent in exprents.iter() {
-                    for sub in exprent.get_all_exprents_rec_self(true, true) {
-                        if let Some(var) = sub.try_as_var() {
-                            if !predicate(var) {
-                                jthrow!(IllegalStateException; "{}: {}_{} {}",
-                                    message, var.get_index(), var.get_version(), var.get_var_type());
-                            }
+        let nodes = dgraph.with(|d| d.nodes.to_vec());
+        for node in nodes {
+            let exprents = node.with(|d| d.exprents.clone());
+            for exprent in exprents.iter() {
+                for sub in exprent.get_all_exprents_rec_self(true, true) {
+                    if let Some(var) = sub.try_as_var() {
+                        if !predicate(var) {
+                            jthrow!(IllegalStateException; "{}: {}_{} {}",
+                                message, var.get_index(), var.get_version(), var.get_var_type().to_string());
                         }
                     }
                 }
@@ -468,12 +467,16 @@ impl ValidationHelper {
         }
 
         if exit.get_exit_type() == ExitType::Return {
-            if exit.get_ret_type().equals(&VarType::VARTYPE_VOID()) {
+            if exit
+                .get_ret_type()
+                .expect("ExitExprent.retType")
+                .equals(&VarType::VARTYPE_VOID())
+            {
                 if exit.get_value().is_some() {
-                    jthrow!(IllegalStateException; "Void return with value: {}", exit.0);
+                    jthrow!(IllegalStateException; "Void return with value: {}", exit.0.to_string());
                 }
             } else if exit.get_value().is_none() {
-                jthrow!(IllegalStateException; "Non-void return without value: {}", exit.0);
+                jthrow!(IllegalStateException; "Non-void return without value: {}", exit.0.to_string());
             }
         }
 
@@ -514,7 +517,7 @@ impl ValidationHelper {
 
         if stat.get_all_successor_edges().len() != 1 {
             jthrow!(IllegalStateException; "Statement has more than one successor: [{}] {}",
-                stat, jlist(stat.get_all_successor_edges()));
+                stat, jlist(stat.get_all_successor_edges().iter().map(|e| e.to_string()).collect()));
         }
     }
 
@@ -555,10 +558,10 @@ impl ValidationHelper {
             return;
         }
 
-        let nodes = graph.with(|d| d.nodes.clone());
+        let nodes = graph.with(|d| d.nodes.to_vec());
         let mut roots: JHashSet<VarVersionNode> = JHashSet::new();
 
-        for node in nodes.iter() {
+        for node in nodes.iter().copied() {
             if node.with(|d| d.predecessors.is_empty()) {
                 roots.add(node);
             }

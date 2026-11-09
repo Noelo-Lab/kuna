@@ -12,7 +12,8 @@ impl EnumProcessor {
         let cl = wrapper.get_class_struct();
         let qualified_name = cl.with(|d| d.qualified_name.clone());
 
-        for method in wrapper.get_methods().iter() {
+        let methods = wrapper.get_methods().borrow().to_vec();
+        for method in methods {
             let mt = method.with(|d| d.method_struct);
             let name = mt.get_name();
             let descriptor = mt.get_descriptor();
@@ -48,7 +49,7 @@ impl EnumProcessor {
             }
         }
 
-        for fd in cl.get_fields().iter() {
+        for fd in cl.get_fields().to_vec() {
             let descriptor = fd.get_descriptor();
             if fd.is_synthetic() && descriptor == format!("[L{qualified_name};") {
                 wrapper

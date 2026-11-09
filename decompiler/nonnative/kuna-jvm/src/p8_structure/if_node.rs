@@ -96,7 +96,7 @@ impl IfNode {
                 EdgeType::Else,
             );
         } else {
-            let edge = stat.get_first_successor().unwrap();
+            let edge = stat.get_first_successor();
             if stsingle || edge.get_type() != StatEdge::TYPE_REGULAR {
                 res.set_successor(IfNode::new(edge.get_destination()), EdgeType::Indirect);
             } else {
@@ -129,7 +129,7 @@ impl IfNode {
 
         if statement.has_any_successor() {
             ifnode.set_successor(
-                IfNode::new(statement.get_first_successor().unwrap().get_destination()),
+                IfNode::new(statement.get_first_successor().get_destination()),
                 EdgeType::Indirect,
             );
         }

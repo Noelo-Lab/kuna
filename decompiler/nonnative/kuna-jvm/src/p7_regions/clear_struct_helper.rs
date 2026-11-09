@@ -15,7 +15,7 @@ impl ClearStructHelper {
         while let Some(stat) = stack.pop_front() {
             stat.clear_temp_information();
 
-            stack.extend(stat.get_stats().iter());
+            stack.extend(stat.get_stats().borrow().to_vec());
         }
     }
 }
