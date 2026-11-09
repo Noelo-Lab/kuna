@@ -42,7 +42,7 @@ use kuna_jvm::pattern_exprent::PatternExprent;
 use kuna_jvm::pooled_constant::PooledConstant;
 use kuna_jvm::primitive_constant::{self, PrimitiveConstant};
 use kuna_jvm::root_statement::RootStatement;
-use kuna_jvm::rt::{BitSet, JList};
+use kuna_jvm::rt::{jstring, BitSet, JList};
 use kuna_jvm::sequence_statement::SequenceStatement;
 use kuna_jvm::stat_edge::StatEdge;
 use kuna_jvm::statement::{EdgeDirection, Statement};
@@ -443,6 +443,14 @@ fn trace_dump_every_exprent_kind() {
             Some("a\"b\\c\n\u{e9}\u{1f600}~".into()),
             None,
             true,
+        )
+        .0,
+    );
+    l.push(
+        ConstExprent::new(
+            VarType::VARTYPE_STRING(),
+            Some(jstring::from_utf16(&[0x78, 0xd800, 0x79, 0xdc00, 0xdc00, 0xd800]).into()),
+            None,
         )
         .0,
     );

@@ -328,6 +328,7 @@ public class GenTraceVectors {
     l.add(new ConstExprent(VarType.VARTYPE_DOUBLE, -0.0d, null));
     l.add(new ConstExprent(VarType.VARTYPE_CHAR, 65, null));
     l.add(new ConstExprent(VarType.VARTYPE_STRING, "a\"b\\c\né😀~", null, true));
+    l.add(new ConstExprent(VarType.VARTYPE_STRING, "x\ud800y\udc00\udc00\ud800", null));
     l.add(new ConstExprent(VarType.VARTYPE_NULL, null, null));
     l.add(new ExitExprent(ExitExprent.Type.RETURN, var(3), VarType.VARTYPE_INT, bs(6), null));
     l.add(new ExitExprent(ExitExprent.Type.RETURN, null, VarType.VARTYPE_VOID, null, null));

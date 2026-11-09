@@ -41,7 +41,7 @@ use crate::pattern_exprent::{PatternData, PatternExprent};
 use crate::pooled_constant::PooledConstant;
 use crate::primitive_constant::ConstValue as PrimitiveValue;
 use crate::root_statement::RootStatement;
-use crate::rt::BitSet;
+use crate::rt::{BitSet, JavaStr};
 use crate::stat_edge::StatEdge;
 use crate::statement::{LastBasicType, Statement, StatementType};
 use crate::struct_method::StructMethod;
@@ -1463,7 +1463,7 @@ fn leading_number(s: &str) -> i64 {
 
 /// `String.compareTo`: UTF-16 code unit order.
 fn utf16_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    a.encode_utf16().cmp(b.encode_utf16())
+    a.utf16().cmp(&b.utf16())
 }
 
 /// A Java enum constant name from a Rust variant's `Debug` text: `BoolNot` -> `BOOL_NOT`.
@@ -1521,7 +1521,7 @@ fn const_value(v: Option<&ConstValue>) -> String {
 
 fn jstr(v: &str) -> String {
     let mut s = String::from("\"");
-    for unit in v.encode_utf16() {
+    for unit in v.utf16() {
         match unit {
             0x22 | 0x5c => {
                 s.push('\\');
