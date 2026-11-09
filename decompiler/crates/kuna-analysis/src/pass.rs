@@ -700,7 +700,6 @@ impl AnalysisOutput {
         self.cpp_sig.proven.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_sig.inferred.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_sig.msvc.iter_mut().for_each(|(_, p, _)| fix_proto(p));
-        self.cpp_sig.msvc_legacy.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_sig.msvc_byval.iter_mut().for_each(|(_, d)| fix_proto(&mut d.pieces));
         self.format_sites.iter_mut().for_each(|f| fix_proto(&mut f.pieces));
     }
@@ -733,10 +732,6 @@ pub struct CppSigFacts {
     /// laid out for (`__thiscall`, `__cdecl`, ...) on a 32-bit x86 image, where the
     /// convention decides the storage; `None` elsewhere.
     pub msvc: Vec<(u64, kuna_decomp::fspec::PrototypePieces, Option<&'static str>)>,
-    /// (kuna `msvcsig off`) The same defined MSVC symbols read the way `cppsig`
-    /// read them before the MSVC arm existed, applied in place of [`Self::msvc`]
-    /// when that gate is off.
-    pub msvc_legacy: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
     /// (kuna `msvcbyval`) The MSVC `__cdecl` imports in [`Self::msvc`] left open
     /// at a by-value class, as whole declarations the call sites size.
     pub msvc_byval: Vec<(u64, kuna_decomp::kuna_msvcbyval::ByvalDecl)>,
@@ -820,7 +815,6 @@ impl AnalysisOutput {
         self.cpp_sig.proven.extend(other.cpp_sig.proven);
         self.cpp_sig.inferred.extend(other.cpp_sig.inferred);
         self.cpp_sig.msvc.extend(other.cpp_sig.msvc);
-        self.cpp_sig.msvc_legacy.extend(other.cpp_sig.msvc_legacy);
         self.cpp_sig.msvc_byval.extend(other.cpp_sig.msvc_byval);
         self.cpp_sig.msvc_builders.extend(other.cpp_sig.msvc_builders);
         self.format_sites.extend(other.format_sites);

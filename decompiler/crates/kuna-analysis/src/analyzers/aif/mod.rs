@@ -711,7 +711,7 @@ fn follow_subroutine(
             // Outside the gap: if it is decoded code, "adds info"; otherwise (data /
             // undecoded outside the gap) it is a bad flow target → reject.
             if listing.is_instruction_start(vma) {
-                // (kuna `armfuncmode`) A Thumb walk cannot reach code the
+                // (kuna) A Thumb walk cannot reach code the
                 // function symbols state is A32 without an exchange.
                 if thumb_walk && listing.in_a32_symbol_extent(vma) {
                     return None;

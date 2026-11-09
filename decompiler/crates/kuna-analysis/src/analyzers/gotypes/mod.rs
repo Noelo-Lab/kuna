@@ -58,10 +58,8 @@
 //!
 //! ## Gating
 //!
-//! Registered only for a Go-detected image (the `gopclntab` precedent) and
-//! env-bridged (`KUNA_GOTYPES`, default on) because interning happens at
-//! `load file`, upstream of every `option` line — the `dwarfstructs`
-//! situation exactly. Phase 1 is OUTPUT-NEUTRAL by construction: it adds
+//! Registered only for a Go-detected image (the `gopclntab` precedent).
+//! Phase 1 is OUTPUT-NEUTRAL by construction: it adds
 //! factory knowledge that nothing binds to a variable yet, so emitted C does
 //! not change until a consumer (typed globals, interface dispatch) lands.
 
@@ -71,7 +69,7 @@ use object::read::Object;
 
 use kuna_base::types::int4;
 use kuna_decomp::dtype::{flags as tflags, type_metatype, Datatype, TypeFactory, TypeField};
-use kuna_decomp::kuna_gotypes::{gotypes_enabled, GOTYPES_MAX_TYPELINKS};
+use kuna_decomp::kuna_gotypes::GOTYPES_MAX_TYPELINKS;
 use kuna_decomp::kuna_langfacet::LangFacet;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
@@ -614,8 +612,7 @@ fn intern_named_structs(
     (walked, interned)
 }
 
-/// (kuna) `GoTypesPass` — the Go runtime-type harvest (option `gotypes`,
-/// default on, Go-detected images only).
+/// (kuna) `GoTypesPass` — the Go runtime-type harvest (Go-detected images only).
 pub struct GoTypesPass;
 
 impl AnalysisPass for GoTypesPass {
@@ -626,9 +623,6 @@ impl AnalysisPass for GoTypesPass {
         "gotypes"
     }
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        if !gotypes_enabled() {
-            return AnalysisOutput::default();
-        }
         // The metadata readers currently cover little-endian layouts.
         if !ctx.file.is_little_endian() {
             return AnalysisOutput::default();

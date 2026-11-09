@@ -426,16 +426,11 @@ impl Listing {
         let want_stack_callbacks = arch.analysis_fast_funcdisc
             && matches!(file.architecture(), object::Architecture::I386 | object::Architecture::X86_64);
 
-        let tables = arch
-            .analysis_thumbswitch
-            .then(|| {
-                kuna_thumbswitch::HalfwordTables::new(
-                    file,
-                    arch.manage().get_default_data_space().cloned(),
-                    arch.max_jumptable_size as usize,
-                )
-            })
-            .flatten();
+        let tables = kuna_thumbswitch::HalfwordTables::new(
+            file,
+            arch.manage().get_default_data_space().cloned(),
+            arch.max_jumptable_size as usize,
+        );
         let a32_pool = kuna_a32switch::applies(file, arch).then(|| kuna_poolref::PoolImage::new(file)).flatten();
         let a32_tables = a32_pool.as_ref().map(|pool| kuna_a32switch::A32Tables::new(arch, pool));
         let x86_tables = arch

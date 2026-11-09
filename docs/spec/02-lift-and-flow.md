@@ -41,7 +41,7 @@ for a MIPS language bootstrap installs their resolver sites, and the Listing and
 Off, the resolver call is decoded as an ordinary call that falls through into
 the next stub, as upstream decodes it, and the Listing keeps that fall-through.
 
-With `fdeinterior` enabled, canonical PowerPC `bcl 20,31` PC reads into the
+Canonical PowerPC `bcl 20,31` PC reads into the
 current function's accepted single-function body follow the taken edge while
 preserving the LR write. The inline literal after the instruction is not a
 return continuation. This avoids dropping the remaining body when its interior

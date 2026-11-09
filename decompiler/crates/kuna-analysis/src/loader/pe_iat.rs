@@ -46,8 +46,8 @@
 //! the IAT (the slot addresses) **in lockstep**: the `i`-th INT entry's name
 //! belongs to the IAT slot at `image_base + first_thunk_rva + i*ptr`.  Emit one
 //! [`ImportSym`] per slot.  An import-by-ordinal (no name) takes its name from
-//! the built-in export table of a covered system DLL ([`super::kuna_peordinal`],
-//! option `peordinal`), else synthesizes `<DLL>_Ordinal_<n>` (named beats
+//! the built-in export table of a covered system DLL ([`super::kuna_peordinal`]),
+//! else synthesizes `<DLL>_Ordinal_<n>` (named beats
 //! unresolved).
 //!
 //! Everything degrades gracefully: a non-PE input, a missing import directory, or
@@ -309,14 +309,12 @@ fn walk_import_table<Pe: ImageNtHeaders>(
 }
 
 /// The name of an import-by-ordinal: the built-in export table's name for a
-/// covered system DLL when `peordinal` is on, else [`synth_ordinal_name`].
+/// covered system DLL, else [`synth_ordinal_name`].
 fn ordinal_import_name(dll: &[u8], ord: u16) -> Vec<u8> {
-    if kuna_decomp::kuna_peordinal::peordinal_enabled() {
-        if let Some(name) = super::kuna_peordinal::ordinal_name(dll, ord) {
-            return name.as_bytes().to_vec();
-        }
+    match super::kuna_peordinal::ordinal_name(dll, ord) {
+        Some(name) => name.as_bytes().to_vec(),
+        None => synth_ordinal_name(dll, ord),
     }
-    synth_ordinal_name(dll, ord)
 }
 
 /// Synthesize a name for an import-by-ordinal: `<DLL-stem>_Ordinal_<n>` (the
@@ -374,12 +372,11 @@ fn decode_iat_thunks(
         }
     }
 
-    let reject_rex = kuna_decomp::kuna_rexthunk::rexthunk_enabled();
-    decode_thunks(&code, &image, starts, is_64, reject_rex, slot_to_name, out);
+    decode_thunks(&code, &image, starts, is_64, slot_to_name, out);
 }
 
-/// Decode the `FF 25` thunks of every `(vma, bytes)` code section into `out`. With
-/// `reject_rex` on x86-64, a REX tail the image never references is dropped
+/// Decode the `FF 25` thunks of every `(vma, bytes)` code section into `out`. On
+/// x86-64, a REX tail the image never references is dropped
 /// ([`super::kuna_rexthunk`]); `image` is every section but discardable data and
 /// `starts` the addresses the image declares to begin code.
 fn decode_thunks(
@@ -387,13 +384,12 @@ fn decode_thunks(
     image: &[(u64, &[u8])],
     starts: &[u64],
     is_64: bool,
-    reject_rex: bool,
     slot_to_name: &HashMap<u64, Vec<u8>>,
     out: &mut Vec<ImportSym>,
 ) {
     let first = out.len();
     let mut rex_tails: HashSet<u64> = HashSet::new();
-    let track = reject_rex && is_64;
+    let track = is_64;
     for &(vma, data) in code {
         decode_ff25(vma, data, is_64, slot_to_name, out, track.then_some(&mut rex_tails));
     }

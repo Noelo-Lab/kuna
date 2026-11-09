@@ -2,16 +2,12 @@
 //! `docs/multilang.md` W3, the Go provider, phase 1).
 //!
 //! The proof, on a REAL stripped Go build (no DWARF, no symtab — the binary's
-//! own runtime metadata is the only possible source):
-//! - default (on): the type factory holds `main.Point` as a struct with the
-//!   program's own fields at their true offsets, the definition renders as C,
-//!   and the `go.string` header shell carries its text facet;
-//! - `KUNA_GOTYPES=off`: a fresh load interns nothing — `main.Point` is
-//!   unknown to the factory.
+//! own runtime metadata is the only possible source): the type factory holds
+//! `main.Point` as a struct with the program's own fields at their true
+//! offsets, the definition renders as C, and the `go.string` header shell
+//! carries its text facet.
 //!
-//! Own `[[test]]` target because the off arm mutates process env (the
-//! `verify_goreg`/`verify_goabi` pattern, RAII-guarded). The metadata parsers
-//! themselves are pinned hermetically by the unit tests in
+//! The metadata parsers themselves are pinned hermetically by the unit tests in
 //! `kuna-analysis/src/analyzers/gotypes/tests.rs` (no Go toolchain needed).
 //! Layout checks use application structs and the public Linux Iovec ABI,
 //! rather than runtime-internal types whose fields change between releases.
@@ -124,23 +120,6 @@ fn load(bin: &str) -> ConsoleProgram {
     prog
 }
 
-struct EnvGuard(&'static str, Option<std::ffi::OsString>);
-impl EnvGuard {
-    fn set(name: &'static str, value: &str) -> EnvGuard {
-        let prev = std::env::var_os(name);
-        std::env::set_var(name, value);
-        EnvGuard(name, prev)
-    }
-}
-impl Drop for EnvGuard {
-    fn drop(&mut self) {
-        match &self.1 {
-            Some(v) => std::env::set_var(self.0, v),
-            None => std::env::remove_var(self.0),
-        }
-    }
-}
-
 #[test]
 fn stripped_go_binary_yields_its_own_named_struct() {
     if !go_available() {
@@ -250,16 +229,6 @@ fn check_named_struct(arch: &str) {
     // the string header field through its shell.
     for needle in ["main_Point".to_string(), format!("int{width} X"), format!("int{width} Y"), "go.string Tag".to_string()] {
         assert!(text.contains(&needle), "definition renders {needle}; got:\n{text}");
-    }
-
-    // Off: a fresh load interns nothing.
-    {
-        let _guard = EnvGuard::set("KUNA_GOTYPES", "off");
-        let prog_off = load(bin);
-        assert!(
-            prog_off.arch().types().find_by_name("main.Point").expect("lookup runs").is_none(),
-            "with gotypes off the factory must not hold main.Point"
-        );
     }
 
     let _ = std::fs::remove_dir_all(&dir);

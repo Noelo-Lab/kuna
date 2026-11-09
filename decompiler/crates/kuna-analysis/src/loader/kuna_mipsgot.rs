@@ -20,8 +20,7 @@
 //! lookup may bind the name to another object's definition first. The fold
 //! still names the symbol the call or access binds by, and gives it the body
 //! this image carries, as `dynrelocs` does for a `GLOB_DAT` slot of a defined
-//! symbol and `pltlocal` for a PLT stub. `--option dynrelocs off` leaves every
-//! such slot variable.
+//! symbol and `pltlocal` for a PLT stub.
 //!
 //! Undefined symbols are imports, whose stub slots `elf_plt` folds; common,
 //! absolute, TLS and `STT_GNU_IFUNC` symbols, and a slot whose contents are not
@@ -46,11 +45,10 @@ struct Layout {
 
 /// `[start, stop]` (inclusive) of every primary-GOT slot whose run-time value is
 /// an address the image defines, ascending and coalesced. Empty off-MIPS, for a
-/// relocatable object, without the `DT_MIPS_*` tags, or with `dynrelocs` off.
+/// relocatable object, or without the `DT_MIPS_*` tags.
 pub fn const_ranges(file: &object::File) -> Vec<(u64, u64)> {
     if !matches!(file.architecture(), Architecture::Mips | Architecture::Mips64 | Architecture::Mips64_N32)
         || file.kind() == object::ObjectKind::Relocatable
-        || !kuna_decomp::kuna_dynrelocs::dynrelocs_enabled()
     {
         return Vec::new();
     }

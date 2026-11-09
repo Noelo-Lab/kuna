@@ -419,30 +419,6 @@ fn the_walk_stops_at_the_file_backed_bytes() {
     assert_eq!(tmode_at(&program, 0x401010), 0);
 }
 
-/// Two-pass gate for `entrythumbflow`: off, no context is painted from the
-/// entry bit and the walk never touches the context database.
-#[test]
-fn entrythumbflow_off_leaves_the_entry_at_the_language_default() {
-    let fixture = TeFixture::thumb_entry_before_arm();
-    let path = fixture.0.to_string_lossy();
-    let mut program = load_fixture(&path, "", None);
-    program
-        .arch_mut()
-        .set_kuna_option("entrythumbflow", "off")
-        .unwrap();
-    program.commit_pending_analysis().unwrap();
-    assert_eq!(tmode_at(&program, 0x401000), 0);
-    assert_eq!(tmode_at(&program, 0x401002), 0);
-    assert_eq!(tmode_at(&program, 0x401004), 0);
-    let space = program.arch().manage().get_default_code_space().cloned().unwrap();
-    let (first, last) = program.arch().with_context_db_mut(|db| {
-        let (_, first, last) = db.get_context_bounds(&Address::new(space, 0x401000));
-        (first, last)
-    });
-    assert_eq!((first, last), (0, u32::MAX as u64), "off must leave the context partition untouched");
-    assert!(program.find_entry_at(0x401001).is_some());
-}
-
 #[test]
 fn odd_generic_arm_entry_preserves_a32_code_on_either_side() {
     for (fixture, arm_addr, thumb_addr) in [

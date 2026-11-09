@@ -1195,7 +1195,7 @@ every container, `ARM` may interwork on every container, and machine `0x1c2` is
 read the way its container family names it — `THUMB` on a PE (painted wholly
 Thumb) and `ARMTHUMB_MIXED` on a TE (interworking). Where the policy leaves the
 mode to the entry bit, on a TE or a PE alike, an odd entry proves Thumb at the
-entry alone, and the `entrythumbflow` option (default on) carries that mode
+entry alone, and the entry-reachable Thumb walk carries that mode
 along the flow reachable from the entry, after any byte overlays:
 fall-through, direct branches, and direct `BL` calls, while an interworking
 `BLX` target keeps the mode its own encoding selects. Exactly the instruction
@@ -1206,8 +1206,8 @@ with the language's own context writes suppressed, so an interworking `blx`
 cannot flatten the Thumb code above its target.
 The walk is bounded at 4096 instructions; reaching the bound keeps the ranges
 walked so far, reports that once on stderr, and leaves the unreached code at the
-language default. `--isa thumb` paints the whole image when it is wholly Thumb;
-`--option entrythumbflow off` disables the walk. Unsupported machines and target
+language default. `--isa thumb` paints the whole image when it is wholly Thumb.
+Unsupported machines and target
 width/data-endianness conflicts are explicit errors.
 
 A TE image has no `object`-crate view, so the discovery passes that re-parse the
@@ -1357,8 +1357,8 @@ use, so one failure reads identically from all four commands:
   after a failed `read symbols`, so C *can* still be rendered, but from a program
   whose debug facts were applied only up to the failing step and cannot be
   re-committed; that C used to be printed with exit `0`, indistinguishable from a
-  binary with no symbols at all. `--option datasyms off` (or naming whichever
-  analysis pass is implicated) is the way to get a run through.
+  binary with no symbols at all. Naming whichever analysis pass is implicated
+  is the way to get a run through.
 
 The abort itself is not fatal to the console session (`decomp_dbg` prints
 `Skipping <fn>: <reason>` and keeps going, so datatest `<stringmatch>` rules
@@ -1653,7 +1653,7 @@ without emitting a function list at all, let alone pseudocode.
   (`0x1000005b0`, not `0x5b0`).
 - `main` is the program's own entry function: the first of `main`, `wmain`,
   `WinMain`, `wWinMain` the inventory names (as a name or an alias), or `null`.
-  On a stripped PE that name comes from `--option pemain` (default on), which
+  On a stripped PE that name comes from the CRT-startup scan, which
   follows the in-image CRT startup to the function it calls, so `entry` and
   `main` together answer both "where does the image start" and "where does the
   program start". The text form prints it as `main\t0x<addr>\t<name>`.
@@ -3035,11 +3035,11 @@ words are already the unslid pointers and whose bytes are the file's wherever
 `provenance` below says `file`, and a relocatable object (`.o`, `.obj`), whose
 bytes are kuna's own layout of it with the relocations it supports applied,
 which this list does not cover.
-`--option dynrelocs off` leaves every slot as the file holds it, and `returned`
-then says `file`. A span gets one note, naming up to three slots, when it
+`returned` says `file` where the loader keeps the file's own bytes. A span gets
+one note, naming up to three slots, when it
 overlaps anything but a rebase whose bytes already are its target: a bind, an
 applied slot, an unapplied relocation, or a rebase whose file word is not yet
-its target (a chain word, or a `RELA` slot's zero, with `dynrelocs off`):
+its target (a chain word, or a `RELA` slot's zero):
 
 ```
 $ kuna read ./fixture.dylib 0x4000 --addr --bytes 8

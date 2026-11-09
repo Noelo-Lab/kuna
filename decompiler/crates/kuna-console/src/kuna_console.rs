@@ -305,18 +305,10 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "entry_disc" => on_off(conf.analysis_entry_disc),
         "eh_frame_full" => on_off(conf.analysis_eh_frame_full),
         "unwindstarts" => on_off(conf.analysis_unwindstarts),
-        "arm_markers" => on_off(conf.analysis_arm_markers),
-        "mips_gp" => on_off(conf.analysis_mips_gp),
         "ppc32picimports" => conf.analysis_ppc32picimports.as_str(),
-        "i386_pie_plt" => on_off(conf.analysis_i386_pie_plt),
         "ifuncfpret" => on_off(conf.analysis_ifuncfpret),
         "ppcapu" => on_off(conf.analysis_ppcapu),
-        "relocrebase" => on_off(conf.analysis_relocrebase),
-        "dynrelocs" => on_off(conf.analysis_dynrelocs),
-        "pdatachained" => on_off(conf.analysis_pdatachained),
-        "rexthunk" => on_off(conf.analysis_rexthunk),
         // (kuna `goabi`) Two-valued but spelled auto|off, so it reports its token.
-        "goreg" => on_off(conf.go_reg),
         "goabi" => {
             if conf.analysis_goabi {
                 "auto"
@@ -324,18 +316,14 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
                 "off"
             }
         }
-        "peordinal" => on_off(conf.analysis_peordinal),
         "symbolnamerepair" => on_off(conf.analysis_symbolnamerepair),
         "swiftdemangle" => on_off(conf.analysis_swiftdemangle),
         "dyldcrossrefs" => on_off(kuna_decomp::kuna_dyldcache::dyldcrossrefs_enabled()),
         // (kuna `symbolnamechars`) Three-valued, so it reports its own token.
         "symbolnamechars" => conf.analysis_symbolnamechars.as_str(),
-        "msvcfpconst" => on_off(conf.analysis_msvcfpconst),
-        "mips_isa" => on_off(conf.analysis_mips_isa),
         "dwarf" => on_off(conf.analysis_dwarf),
         // (kuna) ELF data-symbol naming (DIV-76): committed at `read symbols`
         // like the analysis-pass gates, so the live flag is authoritative.
-        "datasyms" => on_off(conf.analysis_datasyms),
         "typedepth" => on_off(conf.analysis_typedepth),
         "dwarfstructs" => on_off(conf.analysis_dwarfstructs),
         "dwarfvariants" => on_off(conf.analysis_dwarfvariants),
@@ -343,20 +331,17 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         // (kuna `cppsig`) Three-valued, so it reports its own token rather than
         // on/off.
         "cppsig" => conf.analysis_cppsig.as_str(),
-        "msvcsig" => on_off(conf.analysis_msvcsig),
         "callfixup" => on_off(conf.analysis_callfixup),
         "addrtable" => on_off(conf.analysis_addrtable),
         "listing" => on_off(conf.analysis_listing),
         "armframes" => if !conf.analysis_armframes { "off" }
             else if conf.analysis_armframes_full { "on" } else { "inventory" },
         "unmappedentry" => on_off(conf.analysis_unmappedentry),
-        "thumbswitch" => on_off(conf.analysis_thumbswitch),
         "x86listingswitch" => on_off(conf.analysis_x86listingswitch),
         "switchreach" => on_off(conf.analysis_switchreach),
         "thunkentry" => on_off(conf.analysis_thunkentry),
         "addrtakenentry" => on_off(conf.analysis_addrtakenentry),
         "ppclocalentry" => on_off(conf.analysis_ppclocalentry),
-        "gowalkprune" => on_off(conf.analysis_gowalkprune),
         // (kuna `flowmode`) Valued `on|aftercall|off`, so it reports its own token.
         "flowmode" => match (conf.analysis_flowmode, conf.analysis_flowmode_aftercall) {
             (false, _) => "off",
@@ -364,16 +349,10 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
             (true, true) => "aftercall",
         },
         "picbase" => on_off(conf.analysis_picbase),
-        "entrymainproto" => on_off(conf.analysis_entrymainproto),
-        "machomain" => on_off(conf.analysis_machomain),
-        "pemain" => on_off(conf.analysis_pemain),
-        "armlibcmain" => on_off(conf.analysis_armlibcmain),
         "elfmain" => on_off(conf.analysis_elfmain),
         "fast_funcdisc" => on_off(conf.analysis_fast_funcdisc),
         "rawdiscover" => on_off(conf.analysis_rawdiscover),
         "mzsweep" => on_off(conf.analysis_mzsweep),
-        "gopclntab" => on_off(conf.analysis_gopclntab),
-        "gotypes" => on_off(conf.analysis_gotypes),
         "gonoreturn" => on_off(conf.analysis_gonoreturn),
         "aifbracket" => on_off(conf.analysis_aifbracket),
         "aifnoppad" => on_off(conf.analysis_aifnoppad),

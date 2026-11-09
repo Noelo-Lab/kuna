@@ -231,16 +231,12 @@ impl AnalysisPass for ObjcMetadataPass {
         let refs = kuna_objcrefs::emit(&img, ctx.file, ctx.arch, &tctx, &mut selectors, &mut out);
 
         // A chained slot holds its packed fixup word until `dynrelocs` unpacks it
-        // at load; with that gate off the slots are named but never folded.
-        if !img.chained() || kuna_decomp::kuna_dynrelocs::dynrelocs_enabled() {
-            out.const_ranges.extend(refs.into_iter().map(|(first, last_open)| ConstRange {
-                first,
-                last_open,
-                gate: ConstGate::ObjcRefs,
-            }));
-        } else {
-            out.const_ranges.retain(|r| r.gate != ConstGate::ObjcRefs);
-        }
+        // at load.
+        out.const_ranges.extend(refs.into_iter().map(|(first, last_open)| ConstRange {
+            first,
+            last_open,
+            gate: ConstGate::ObjcRefs,
+        }));
         out
     }
 }

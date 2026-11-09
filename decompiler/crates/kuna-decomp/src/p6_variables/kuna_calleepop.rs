@@ -193,7 +193,7 @@ pub fn return_address_bytes(data: &Funcdata, stack: &AddrSpace, call_addr: &Addr
 /// `ActionDeindirect` resolves a `call dword ptr [IAT slot]` through the
 /// FunctionSymbol registered at that slot — so the call spec's entry address IS
 /// the slot, and the property is readable straight off it.  A binary whose
-/// imports were never marked up (a raw `.text` blob, or `peimportcall` off) has
+/// imports were never marked up (a raw `.text` blob) has
 /// no imported callees by this test, which leaves the whole function at
 /// upstream's answer.
 pub(crate) fn is_imported(data: &Funcdata, entry: &Address) -> bool {

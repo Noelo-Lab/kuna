@@ -729,7 +729,7 @@ pub fn build_with_unflagged_focus(
 /// PC-relative operand names the dispatch itself rather than a table
 /// ([`super::classify::Classified::predicated_skip`]).
 ///
-/// (kuna `armcondskip`) On an ARM image the skip any predicated instruction
+/// (kuna) On an ARM image the skip any predicated instruction
 /// lifts to stays one of its `flows` and is walked, but files no row
 /// ([`super::classify::Classified::condition_skip`]). The skip leads `flows`,
 /// so only the first flow equal to it is the skip: a predicated branch whose
@@ -741,12 +741,8 @@ pub fn build_with_unflagged_focus(
 /// final entry set after the walk, so the walk order cannot change which rows
 /// survive, and rendered in that mode only when kept.
 ///
-/// (kuna `armpltslot`) On an ARM image a PLT stub's partial sums are not
+/// (kuna) On an ARM image a PLT stub's partial sums are not
 /// references, its slot is ([`super::kuna_pltstub`]).
-///
-/// With `armcondskip` off, every condition skip files its `Jump` except the
-/// predicated skip of an A32 table dispatch that `armframes` reads, as before
-/// the option.
 fn descend(
     file: &object::File,
     arch: &Architecture,
@@ -846,7 +842,7 @@ fn descend(
         data_space: data_space.as_ref(),
         got: got.as_ref(),
         preserved: &preserved,
-        deref: arm && arch.analysis_armderef,
+        deref: arm,
     });
     // (kuna) `regcarry`: the register space a carried constant lives in.
     let carry_machine = CarryMachine::new(
@@ -862,7 +858,7 @@ fn descend(
     // (kuna) `switchtable`: the dispatches whose read stopped for want of a
     // decoded instruction ending at the key, as `(dispatch, mode, branch)`.
     let mut waiting: HashMap<u64, Vec<(u64, _, VarnodeData)>> = HashMap::new();
-    let thumb_tables = (arch.analysis_thumbswitch && sections_are_runtime)
+    let thumb_tables = sections_are_runtime
         .then(|| super::kuna_thumbswitch::HalfwordTables::new(file, data_space.clone(), max_entries))
         .flatten();
     let a32_tables = pool
@@ -878,8 +874,8 @@ fn descend(
 
     // Reused across every decode in the walk (see [`FullCapture`]).
     let mut cap = FullCapture::default();
-    let condskip = arm && arch.analysis_armcondskip;
-    let mut plt_stubs = (arm && arch.analysis_armpltslot)
+    let condskip = arm;
+    let mut plt_stubs = arm
         .then(|| PltStubs::for_file(file, data_space.as_ref(), &mapped))
         .flatten();
     let mut raw: Vec<RawOp> = Vec::new();

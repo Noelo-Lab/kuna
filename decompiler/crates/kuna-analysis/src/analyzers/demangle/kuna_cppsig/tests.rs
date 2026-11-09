@@ -209,7 +209,7 @@ fn msvc_32bit_thiscall_is_refused_not_misplaced() {
     // `?foo@Bar@@QAEXXZ` = `public: void __thiscall Bar::foo(void)`. The 32-bit
     // MSVC ABI passes `this` in ECX, NOT as ordinary argument 0, so placing it
     // positionally would be wrong. This reading refuses it; the MSVC arm
-    // (`kuna_msvcsig`, `--option msvcsig`) lays it out under `__thiscall`.
+    // (`kuna_msvcsig`) lays it out under `__thiscall`.
     assert!(try_decl("?foo@Bar@@QAEXXZ").is_none());
 }
 
@@ -229,15 +229,11 @@ fn msvc_gate_picks_one_reading_of_an_msvc_name() {
         proven: vec![(0x10, pieces("itanium"))],
         inferred: Vec::new(),
         msvc: vec![(0x20, pieces("msvc"), Some("__thiscall"))],
-        msvc_legacy: vec![(0x20, pieces("legacy"))],
         msvc_byval: Vec::new(),
         msvc_builders: Vec::new(),
     };
-    let on = select(facts(), false, true);
+    let on = select(facts(), false);
     assert_eq!(on.iter().map(|s| s.pieces.name.as_str()).collect::<Vec<_>>(), ["itanium", "msvc"]);
     assert_eq!(on[1].model, Some("__thiscall"));
     assert!(on[1].msvc && !on[0].msvc);
-    let off = select(facts(), false, false);
-    assert_eq!(off.iter().map(|s| s.pieces.name.as_str()).collect::<Vec<_>>(), ["itanium", "legacy"]);
-    assert!(off.iter().all(|s| s.model.is_none() && !s.msvc));
 }

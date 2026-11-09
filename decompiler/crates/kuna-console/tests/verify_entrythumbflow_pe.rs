@@ -279,8 +279,5 @@ fn an_arm_machine_pe_with_a_thumb_entry_gets_the_entry_walk() {
     assert_eq!(entry.addr.get_offset(), 0x401000);
     assert_eq!(entry.name, "sub_401000", "named at the even address it lives at");
     assert_eq!(tmode_at(&program, 0x401000), 1, "the walk paints the entry Thumb");
-
-    let off = load(&path, &[("entrythumbflow", "off")]);
-    assert_eq!(tmode_at(&off, 0x401000), 0, "off leaves the language default");
     let _ = std::fs::remove_file(fixture);
 }

@@ -12,8 +12,7 @@
 //! reach it either — `main` rendered `dat_20a098` where both reference
 //! decompilers show `optind`. The loader now collects the data half of the same
 //! two symbol tables and the engine installs each as a named `undefined<size>`
-//! global, gated by `--option datasyms on|off` (default ON, DIV-76, GH-184) at
-//! the `read symbols` commit — the off arm below pins that contract.
+//! global (DIV-76, GH-184) at the `read symbols` commit.
 
 use std::path::PathBuf;
 
@@ -37,9 +36,9 @@ fn faillog() -> PathBuf {
     repo_root().join("tests/bug-repro/faillog")
 }
 
-/// Bootstrap `bin`, optionally flip `--option datasyms off`, commit the analysis facts, run
-/// `load_cmd` + decompile, and return the captured C.
-fn decompile_bin(bin: &PathBuf, load_cmd: &str, datasyms_off: bool) -> String {
+/// Bootstrap `bin`, commit the analysis facts, run `load_cmd` + decompile, and
+/// return the captured C.
+fn decompile_bin(bin: &PathBuf, load_cmd: &str) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
@@ -47,13 +46,8 @@ fn decompile_bin(bin: &PathBuf, load_cmd: &str, datasyms_off: bool) -> String {
     let bin = bin.to_str().expect("UTF-8 fixture path").to_string();
     let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    if datasyms_off {
-        // The live CLI shape: the `option` line runs after `load file` and
-        // before `read symbols`, where the commit consults the flag (DIV-76).
-        prog.arch_mut().set_kuna_option("datasyms", "off").expect("datasyms option applies");
-    }
-    // `read symbols`: commit the analysis facts, including (gated on `datasyms`)
-    // the loader's data symbols.
+    // `read symbols`: commit the analysis facts, including the loader's data
+    // symbols.
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let cmds: Vec<String> = [load_cmd.to_string(), "decompile".into(), "print C".into()].to_vec();
@@ -75,9 +69,9 @@ fn decompile_bin(bin: &PathBuf, load_cmd: &str, datasyms_off: bool) -> String {
 /// `0x20a098`), `stdin`/`stdout` (8 bytes), and `optarg` (8 bytes). All four are
 /// imported libc objects — absent from the program's DWARF — so before the loader
 /// read the data half of the symbol table each rendered `dat_<addr>`.
-/// Decompile `func` from the fmt fixture with the default (datasyms-on) config.
+/// Decompile `func` from the fmt fixture.
 fn decompile(func: &str) -> String {
-    decompile_bin(&fixture(), &format!("load function {func}"), false)
+    decompile_bin(&fixture(), &format!("load function {func}"))
 }
 
 #[test]
@@ -133,21 +127,3 @@ fn faillog_stderr_renders_by_name_by_default() {
     );
 }
 
-/// The `datasyms` off-switch (DIV-76): flipping the option before the commit
-/// restores the raw `dat_<addr>` rendering exactly — the stream is dropped at
-/// `read symbols`, so the symbol never installs and both call sites regress to
-/// the pre-DIV-26 output. This pins the option's contract on the same in-process
-/// path `kuna decompile-all --option datasyms off` drives.
-#[test]
-fn option_datasyms_off_restores_dat_addr() {
-    let code = decompile_bin(&faillog(), "load addr 0x3320", true);
-
-    assert!(
-        code.contains("dat_61a0"),
-        "with `datasyms off` the stream argument must render raw `dat_61a0`; got:\n{code}",
-    );
-    assert!(
-        !code.contains("stderr"),
-        "with `datasyms off` no symbol-table data name may install; got:\n{code}",
-    );
-}

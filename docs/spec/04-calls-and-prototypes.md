@@ -4171,7 +4171,7 @@ function no longer gains `ecx` as a parameter it only pushed. `Build` becomes
 Where no builder is found, the slot is still mapped and keeps the value pushed to
 reserve it, which is what the machine code passes.
 
-Inert without `msvcsig`, and a class passed by value to a callee-pops convention
+Inert while `cppsig` is off, and a class passed by value to a callee-pops convention
 is still refused there (its pop would depend on the missing size).
 
 ### (kuna) `callpush` — a call's own return-address push

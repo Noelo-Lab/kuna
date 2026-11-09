@@ -301,12 +301,6 @@ kuna_options! { self, p1;
         self.go_morestack = mode.as_u8();
         Ok(msg)
     },
-    "goreg" => {
-        let val = on_or_off(p1)?;
-        crate::kuna_goreg::set_goreg_env(val);
-        self.go_reg = val;
-        Ok(format!("Goroutine register naming turned {}", if val { "on" } else { "off" }))
-    },
     "goabi" => {
         let on = crate::kuna_goabi::parse_goabi(p1).map_err(KunaError::parse)?;
         crate::kuna_goabi::set_goabi_env(on);
@@ -1018,7 +1012,6 @@ kuna_options! { self, p1;
     },
     "paramrefdecl" => on_off!(param_ref_decl, "address-taken parameter re-declaration guard"),
     "noreturn_known" => on_off!(analysis_noreturn_known, "No-return-known analysis pass"),
-    "peimportcall" => on_off!(analysis_peimportcall, "PE/Mach-O import-slot call binding"),
     "authptrcall" => on_off!(analysis_authptrcall, "arm64e __auth_ptr call binding"),
     "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
     "libcsigs" => on_off!(analysis_libcsigs, "Measured libc signature extension"),
@@ -1047,7 +1040,6 @@ kuna_options! { self, p1;
             }
         ))
     },
-    "win32sigs" => on_off!(analysis_win32sigs, "Built-in Win32 API signature table"),
     "declaredlibcproto" => {
         on_off!(analysis_declaredlibcproto, "Declared-name libc prototype lookup")
     },
@@ -1062,9 +1054,6 @@ kuna_options! { self, p1;
     "unmappedentry" => {
         on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")
     },
-    "thumbswitch" => {
-        on_off!(analysis_thumbswitch, "Thumb tbb/tbh switch-table read in the Listing walk (GH-299)")
-    },
     "x86listingswitch" => {
         on_off!(analysis_x86listingswitch, "Bounded i386 switch successors in the discovery Listing")
     },
@@ -1077,9 +1066,6 @@ kuna_options! { self, p1;
     },
     "ppclocalentry" => {
         on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
-    },
-    "gowalkprune" => {
-        on_off!(analysis_gowalkprune, "Go pclntab functions out of the fast inventory walk")
     },
     "flowmode" => {
         let (on, after_call) = match p1.trim().to_ascii_lowercase().as_str() {
@@ -1106,18 +1092,6 @@ kuna_options! { self, p1;
     "picbase" => {
         on_off!(analysis_picbase, "PIC base-register folding in the xref index")
     },
-    "entrymainproto" => {
-        on_off!(analysis_entrymainproto, "PE CRT entry-function prototype recovery")
-    },
-    "machomain" => {
-        on_off!(analysis_machomain, "Mach-O LC_MAIN entry naming + prototype")
-    },
-    "pemain" => {
-        on_off!(analysis_pemain, "PE CRT user-entry naming")
-    },
-    "armlibcmain" => {
-        on_off!(analysis_armlibcmain, "non-PIE ARM crt1 _start->main recovery")
-    },
     "elfmain" => {
         on_off!(analysis_elfmain, "ELF libc-start main naming + prototype")
     },
@@ -1129,15 +1103,6 @@ kuna_options! { self, p1;
     },
     "coldentry" => {
         on_off!(analysis_coldentry, "Multi-entry .cold fragment entry discovery")
-    },
-    "fdeinterior" => {
-        on_off!(analysis_fdeinterior, ".eh_frame FDE-interior entry suppression")
-    },
-    "pdatainterior" => {
-        on_off!(analysis_pdatainterior, ".pdata RUNTIME_FUNCTION-interior entry suppression")
-    },
-    "pdbinterior" => {
-        on_off!(analysis_pdbinterior, "PDB procedure-interior entry suppression")
     },
     "funcstart_patterns" => {
         on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")
@@ -1165,31 +1130,13 @@ kuna_options! { self, p1;
             "ARM literal-pool inference (entry recall + AIF phantom suppression)"
         )
     },
-    "arm_markers" => on_off!(analysis_arm_markers, "ARM/Thumb decode-mode marker pass"),
-    "armfuncmode" => on_off!(analysis_armfuncmode, "A32 mode at even ARM function symbols"),
     "armwalkmode" => on_off!(analysis_armwalkmode, "ARM decode mode carried along the Listing walk"),
-    "armpltslot" => on_off!(analysis_armpltslot, "ARM PLT stub slot reference"),
-    "armcondskip" => on_off!(analysis_armcondskip, "ARM condition skips filed as no jump"),
-    "armderef" => on_off!(analysis_armderef, "ARM accesses through a register holding a datum's address"),
-    "entrythumbflow" => {
-        on_off!(analysis_entrythumbflow, "Entry-reachable Thumb context walk")
-    },
-    "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),
     "ppc32picimports" => {
         let mode = crate::kuna_ppc32picimports::Mode::parse(p1)
             .ok_or_else(|| KunaError::parse("Expected ppc32picimports off|on|abi"))?;
         self.analysis_ppc32picimports = mode;
         mode.set_env();
         Ok(format!("PPC32 PIC import recovery {}", mode.as_str()))
-    },
-    "i386_pie_plt" => {
-        let val = on_or_off(p1)?;
-        self.analysis_i386_pie_plt = val;
-        crate::kuna_i386_pie_plt::set_i386_pie_plt_env(val);
-        Ok(format!(
-            "i386-PIE PLT-stub decode turned {}",
-            if val { "on" } else { "off" }
-        ))
     },
     "ppcapu" => {
         let val = on_or_off(p1)?;
@@ -1209,55 +1156,10 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
-    "relocrebase" => {
-        let val = on_or_off(p1)?;
-        self.analysis_relocrebase = val;
-        crate::kuna_relocrebase::set_relocrebase_env(val);
-        Ok(format!(
-            "relocatable-object analysis rebase turned {}",
-            if val { "on" } else { "off" }
-        ))
-    },
     "kernelcache" => {
         let (choice, msg) = crate::kuna_kernelcache::parse_kernelcache(p1)?;
         crate::kuna_kernelcache::set_kernelcache_env(&choice);
         Ok(msg)
-    },
-    "dynrelocs" => {
-        let val = on_or_off(p1)?;
-        self.analysis_dynrelocs = val;
-        crate::kuna_dynrelocs::set_dynrelocs_env(val);
-        Ok(format!(
-            "linked-image dynamic-relocation application turned {}",
-            if val { "on" } else { "off" }
-        ))
-    },
-    "pdatachained" => {
-        let val = on_or_off(p1)?;
-        self.analysis_pdatachained = val;
-        crate::kuna_pdatachained::set_pdatachained_env(val);
-        Ok(format!(
-            "PE chained-UNWIND_INFO .pdata entry suppression turned {}",
-            if val { "on" } else { "off" }
-        ))
-    },
-    "rexthunk" => {
-        let val = on_or_off(p1)?;
-        self.analysis_rexthunk = val;
-        crate::kuna_rexthunk::set_rexthunk_env(val);
-        Ok(format!(
-            "x86-64 PE REX-prefixed import-thunk rejection turned {}",
-            if val { "on" } else { "off" }
-        ))
-    },
-    "peordinal" => {
-        let val = on_or_off(p1)?;
-        self.analysis_peordinal = val;
-        crate::kuna_peordinal::set_peordinal_env(val);
-        Ok(format!(
-            "PE import-by-ordinal naming turned {}",
-            if val { "on" } else { "off" }
-        ))
     },
     "symbolnamerepair" => {
         let val = on_or_off(p1)?;
@@ -1292,20 +1194,7 @@ kuna_options! { self, p1;
         crate::kuna_symbolnamebound::set_symbolnamebound_env(bound);
         Ok(msg)
     },
-    "msvcfpconst" => {
-        let val = on_or_off(p1)?;
-        self.analysis_msvcfpconst = val;
-        crate::kuna_msvcfpconst::set_msvcfpconst_env(val);
-        Ok(format!(
-            "MSVC __real@ FP-constant recovery turned {}",
-            if val { "on" } else { "off" }
-        ))
-    },
-    "mips_isa" => on_off!(analysis_mips_isa, "MIPS16 ISA_MODE decode-mode marker pass"),
     "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
-    "datasyms" => {
-        on_off!(analysis_datasyms, "ELF data-symbol (STT_OBJECT) naming")
-    },
     "dwarf_lines" => {
         on_off!(analysis_dwarf_lines, "DWARF .debug_line source-line comment pass")
     },
@@ -1319,7 +1208,6 @@ kuna_options! { self, p1;
         self.analysis_cppsig = mode;
         Ok(msg)
     },
-    "msvcsig" => on_off!(analysis_msvcsig, "MSVC declaration arm of the demangled signatures"),
     "typedepth" => {
         let val = on_or_off(p1)?;
         self.analysis_typedepth = val;
@@ -1422,15 +1310,6 @@ kuna_options! { self, p1;
     "tailcallentry" => {
         on_off!(analysis_tailcallentry, "Tail-call function-entry recovery Listing consumer")
     },
-    "gopclntab" => {
-        on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
-    },
-    "gotypes" => {
-        let val = on_or_off(p1)?;
-        self.analysis_gotypes = val;
-        crate::kuna_gotypes::set_gotypes_env(val);
-        Ok(format!("Go runtime-type harvest turned {}", if val { "on" } else { "off" }))
-    },
     "gonoreturn" => {
         on_off!(analysis_gonoreturn, "Go pclntab no-return list pass")
     },
@@ -1464,16 +1343,5 @@ kuna_options! { self, p1;
         })
     },
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
-    "relocobjects" => {
-        let val = on_or_off(p1)?;
-        std::env::set_var(
-            crate::options::RELOC_OBJECTS_ENV,
-            if val { "1" } else { "0" },
-        );
-        Ok(format!(
-            "ET_REL relocatable-object loading turned {}",
-            if val { "on" } else { "off" }
-        ))
-    },
     "macho-arm64e" => on_off!(macho_arm64e, "Mach-O arm64e Apple-Silicon spec selection"),
 }

@@ -606,12 +606,9 @@ pub struct ConsoleProgram {
     /// [`commit_analysis_output`].
     ///
     /// This is **loader markup**, not an analysis pass: it is the data twin of the
-    /// funcsym stream `read_loader_symbols` already installs. Per the standing
-    /// options contract it is gated by `--option datasyms on|off` (default ON,
-    /// DIV-76), consulted at the commit via `Architecture::analysis_datasyms` —
-    /// the stream is collected at `load file` but committed at `read symbols`,
-    /// after the option lines are applied, so both CLI paths honor the flag with
-    /// no env bridge. It is installed at the analysis commit rather than eagerly
+    /// funcsym stream `read_loader_symbols` already installs. The stream is
+    /// collected at `load file` but committed at `read symbols`. It is
+    /// installed at the analysis commit rather than eagerly
     /// at bootstrap purely for *precedence*: a DWARF-described global and a
     /// detected string literal both claim their address first, and this arm only
     /// fills the addresses neither covered (which is where the imported libc
@@ -2759,58 +2756,56 @@ impl ConsoleProgram {
         // the pending slot BEFORE it runs so a failure cannot leave it armed for
         // the next commit. Its paints join the gated stash under their own id.
         if let Some(pending) = self.pending_entry_thumb.take() {
-            if self.arch().analysis_entrythumbflow {
-                let code_space = self.analysis_code_space.clone().ok_or_else(|| {
-                    KunaError::lowlevel("no code space for the deferred entry context walk")
-                })?;
-                // Only enabled load-time passes can supply no-return facts
-                // to this walk, just as at the later Listing and fact commit.
-                let noreturn: Vec<u64> = self
-                    .pending_analysis
-                    .iter()
-                    .filter(|(id, _)| analysis_pass_enabled(self.arch(), id))
-                    .flat_map(|(_, out)| out.noreturn.iter().map(|fact| fact.addr))
-                    .collect();
-                let flow = kuna_analysis::listing::kuna_entrythumbflow::entry_thumb_flow(
-                    self.arch(),
-                    &code_space,
-                    &pending.executable_ranges,
-                    pending.entry,
-                    &noreturn,
-                )?;
-                if flow.truncated {
-                    let path = self.image_path();
-                    kuna_base::notes::say_once(
-                        &path,
-                        &format!(
-                            "[kuna entrythumbflow] {path}: the Thumb context walk from the entry stopped at {} instructions; code it did not reach decodes as A32 (use --isa thumb for a wholly Thumb image)",
-                            kuna_analysis::listing::kuna_entrythumbflow::MAX_INSTRUCTIONS
+            let code_space = self.analysis_code_space.clone().ok_or_else(|| {
+                KunaError::lowlevel("no code space for the deferred entry context walk")
+            })?;
+            // Only enabled load-time passes can supply no-return facts
+            // to this walk, just as at the later Listing and fact commit.
+            let noreturn: Vec<u64> = self
+                .pending_analysis
+                .iter()
+                .filter(|(id, _)| analysis_pass_enabled(self.arch(), id))
+                .flat_map(|(_, out)| out.noreturn.iter().map(|fact| fact.addr))
+                .collect();
+            let flow = kuna_analysis::listing::kuna_entrythumbflow::entry_thumb_flow(
+                self.arch(),
+                &code_space,
+                &pending.executable_ranges,
+                pending.entry,
+                &noreturn,
+            )?;
+            if flow.truncated {
+                let path = self.image_path();
+                kuna_base::notes::say_once(
+                    &path,
+                    &format!(
+                        "[kuna entrythumbflow] {path}: the Thumb context walk from the entry stopped at {} instructions; code it did not reach decodes as A32 (use --isa thumb for a wholly Thumb image)",
+                        kuna_analysis::listing::kuna_entrythumbflow::MAX_INSTRUCTIONS
+                    ),
+                );
+            }
+            if !flow.paints.is_empty() {
+                // Written to the database NOW, not only stashed: the deferred
+                // Listing consumers below decode the same bytes before the
+                // stash is committed, and on a PE they would read Thumb code
+                // as A32. The stash still carries the facts so the commit's
+                // record and replay are complete.
+                for paint in &flow.paints {
+                    let begin = Address::new(Rc::clone(&code_space), paint.addr);
+                    let end = paint.end.map(|end| Address::new(Rc::clone(&code_space), end));
+                    self.arch().with_context_db_mut(|db| match end {
+                        Some(end) => db.set_variable_region(
+                            paint.var.as_bytes(),
+                            &begin,
+                            &end,
+                            paint.value,
                         ),
-                    );
+                        None => db.set_variable(paint.var.as_bytes(), &begin, paint.value),
+                    })?;
                 }
-                if !flow.paints.is_empty() {
-                    // Written to the database NOW, not only stashed: the deferred
-                    // Listing consumers below decode the same bytes before the
-                    // stash is committed, and on a PE they would read Thumb code
-                    // as A32. The stash still carries the facts so the commit's
-                    // record and replay are complete.
-                    for paint in &flow.paints {
-                        let begin = Address::new(Rc::clone(&code_space), paint.addr);
-                        let end = paint.end.map(|end| Address::new(Rc::clone(&code_space), end));
-                        self.arch().with_context_db_mut(|db| match end {
-                            Some(end) => db.set_variable_region(
-                                paint.var.as_bytes(),
-                                &begin,
-                                &end,
-                                paint.value,
-                            ),
-                            None => db.set_variable(paint.var.as_bytes(), &begin, paint.value),
-                        })?;
-                    }
-                    let mut output = kuna_analysis::pass::AnalysisOutput::default();
-                    output.context_paints = flow.paints;
-                    self.pending_analysis.push(("entrythumbflow", output));
-                }
+                let mut output = kuna_analysis::pass::AnalysisOutput::default();
+                output.context_paints = flow.paints;
+                self.pending_analysis.push(("entrythumbflow", output));
             }
         }
         // A TE image has no `object::File`, so the discovery tier cannot run
@@ -3139,7 +3134,6 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "noreturn_known" => arch.analysis_noreturn_known,
         // (kuna) PE/Mach-O import-slot call binding — typed-slot `externref`
         // paint plus PE-only Win32 no-return names, committed only when enabled.
-        "peimportcall" => arch.analysis_peimportcall,
         // Metadata alone has no output effect; the live flow option gates its use.
         "ppc32_pic_slots" => true,
         "authptrcall" => arch.analysis_authptrcall,
@@ -3162,7 +3156,6 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // `.gdt` stand-in, seeded onto IMPORTED API names only and keyed by entry
         // address. Facts computed at LOAD, COMMITTED only when this gate is on, so
         // `off` renders exactly what no Win32 prototype at all renders.
-        "win32sigs" => arch.analysis_win32sigs,
         "strings" => arch.analysis_strings,
         // (kuna `fatstr`) The Rust `&str`-record string pass — gated on the SAME
         // option mode the engine's (ptr,len) literal rule reads, so one option
@@ -3183,20 +3176,16 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (kuna) PE CRT entry-function prototype recovery — a standalone stashed pass
         // whose one prototype is computed at LOAD but COMMITTED only when this gate
         // is on. Default-ON; off renders the `void(void)` form exactly.
-        "entrymainproto" => arch.analysis_entrymainproto,
         // (kuna) Mach-O `LC_MAIN` entry naming + prototype — a standalone stashed
         // pass whose one name and one prototype are computed at LOAD but COMMITTED
         // only when this gate is on. Default-ON; off renders the `sub_<addr>` /
         // `void(void)` form exactly.
-        "machomain" => arch.analysis_machomain,
         // (kuna) PE user-entry naming — a standalone stashed pass whose one entry
         // and one name are computed at LOAD but COMMITTED only when this gate is
         // on. Default-ON; off restores the `sub_<addr>` inventory exactly.
-        "pemain" => arch.analysis_pemain,
         // (kuna) non-PIE ARM crt1 `_start`->`main` recovery — a standalone stashed
         // pass whose one entry and one name are computed at LOAD but COMMITTED only
         // when this gate is on. Default-ON; off restores the previous inventory.
-        "armlibcmain" => arch.analysis_armlibcmain,
         // (kuna) ELF libc-start `main` naming + prototype — a standalone stashed
         // pass whose one name and one prototype are computed at LOAD but
         // COMMITTED only when this gate is on. Default-ON; off restores the
@@ -3206,12 +3195,10 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // single-function FDE bodies and the commit rejects any discovered entry
         // strictly inside one. Default-ON; with the gate off the fact stream is
         // dropped here and the discovery set is exactly what it was before.
-        "fdeinterior" => arch.analysis_fdeinterior,
         "coldentry" => arch.analysis_coldentry,
-        "pdatainterior" => arch.analysis_pdatainterior,
         // (kuna) PDB-procedure-interior entry suppression — the extents come out of
         // the `.pdb`, so switching `pdb` off withdraws them too.
-        "pdbinterior" => arch.analysis_pdb && arch.analysis_pdbinterior,
+        "pdbinterior" => arch.analysis_pdb,
         // (kuna) The widened Cortex-M vector-table oracle — a standalone stashed
         // pass whose handler seeds + Thumb region paint are computed at LOAD but
         // COMMITTED only when this gate is on. Default-off (output-changing: adds
@@ -3235,16 +3222,12 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // seeds that feed it (default-OFF; DIV-20 turns it on for non-x86-64 on the
         // decompile-all surface). x86-64 keeps it off ⇒ byte-identical there.
         "funcdisc_recursive" => arch.analysis_funcstart_patterns,
-        "arm_markers" => arch.analysis_arm_markers,
         // (kuna `armfuncmode`) An explicit `--isa` states the mode of the whole
         // image, so the symbol-derived A32 extents yield to it.
-        "armfuncmode" => arch.analysis_armfuncmode && !arch.input_arm_isa_override,
+        "armfuncmode" => !arch.input_arm_isa_override,
         // (kuna) The entry-reachable Thumb context walk. Its paints are computed at
         // the commit (after byte overlays) and stashed under this id, so the gate
         // here is the defensive half of the check that decides whether it runs.
-        "entrythumbflow" => arch.analysis_entrythumbflow,
-        "mips_gp" => arch.analysis_mips_gp,
-        "mips_isa" => arch.analysis_mips_isa,
         "dwarf" => arch.analysis_dwarf,
         // (kuna `cppsig`) The whole-pass gate; WHICH certainty tier survives is a
         // second decision, made on the mode in `commit_analysis_output`.
@@ -3306,8 +3289,6 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // functions, so it changes emitted C by construction). Listing consumer;
         // the live gate is the pre-invocation check in `run_listing_consumers`.
         "tailcallentry" => arch.analysis_tailcallentry,
-        "gopclntab" => arch.analysis_gopclntab,
-        "gotypes" => arch.analysis_gotypes,
         "gonoreturn" => arch.analysis_gonoreturn,
         // (kuna) Mach-O Objective-C metadata recovery — default-OFF (output-changing:
         // renames IMP functions + adds class/selector symbols). Registered here so it
@@ -4904,9 +4885,9 @@ fn commit_analysis_output(
     //     shape as `cppproto` above, but the gate is three-valued, so the mode
     //     selects WHICH certainty tiers survive: `proven` only the prototypes the
     //     mangling entails, `inferred` those plus the class-evidence inferences,
-    //     `off` neither. `msvcsig` picks which reading of an MSVC name applies.
+    //     `off` neither.
     let cppsig_mode = prog.arch().analysis_cppsig;
-    let (msvc_byval, msvc_builders) = if cppsig_mode.enabled() && prog.arch().analysis_msvcsig {
+    let (msvc_byval, msvc_builders) = if cppsig_mode.enabled() {
         (std::mem::take(&mut out.cpp_sig.msvc_byval), std::mem::take(&mut out.cpp_sig.msvc_builders))
     } else {
         (Vec::new(), Vec::new())
@@ -4915,7 +4896,6 @@ fn commit_analysis_output(
         kuna_analysis::demangle::kuna_cppsig::select(
             std::mem::take(&mut out.cpp_sig),
             cppsig_mode.inferred(),
-            prog.arch().analysis_msvcsig,
         )
     } else {
         Vec::new()
@@ -4924,16 +4904,14 @@ fn commit_analysis_output(
 
     // Keep lookup identities even when richer debug information wins the map;
     // a spelling shared by several objects resolves to its lowest address.
-    let data_symbols_enabled = prog.arch().analysis_datasyms;
     let aliases: Vec<(String, u64)> = prog
         .loader_data_objects
         .iter()
-        .filter(|_| data_symbols_enabled)
         .map(|(address, name, _)| (name.clone(), *address))
-        .chain(prog.loader_data_exports.iter().filter(|_| data_symbols_enabled).map(|(address, name)| (name.clone(), *address)))
+        .chain(prog.loader_data_exports.iter().map(|(address, name)| (name.clone(), *address)))
         .chain(out.symbols.iter().filter(|s| s.kind == SymKind::Data).map(|s| (s.name.clone(), s.addr)))
         .chain(out.data_objects.iter().map(|d| (d.name.clone(), d.addr)))
-        .chain(out.typed_data.iter().filter(|_| data_symbols_enabled).map(|d| (d.name.clone(), d.addr)))
+        .chain(out.typed_data.iter().map(|d| (d.name.clone(), d.addr)))
         .collect();
     for (name, address) in aliases {
         let slot = prog.data_name_aliases.entry(name).or_insert(address);
@@ -4942,11 +4920,11 @@ fn commit_analysis_output(
 
     let mut data_names = crate::kuna_dataidentifiers::Names::new(
         prog.symbols.iter().map(|s| s.name.clone())
-            .chain(prog.loader_data_objects.iter().filter(|_| data_symbols_enabled).map(|(_,name,_)| name.clone()))
+            .chain(prog.loader_data_objects.iter().map(|(_,name,_)| name.clone()))
             .chain(prog.global_data_symbols().into_iter().map(|(name,_,_)| name))
             .chain(out.symbols.iter().map(|s| s.name.clone()))
             .chain(out.data_objects.iter().map(|d| d.name.clone()))
-            .chain(out.typed_data.iter().filter(|_| data_symbols_enabled).map(|d| d.name.clone())),
+            .chain(out.typed_data.iter().map(|d| d.name.clone())),
         kuna_decomp::kuna_symbolnamechars::symbolnamechars_mode()
             == kuna_decomp::kuna_symbolnamechars::NameChars::Ident,
     );
@@ -5513,16 +5491,7 @@ fn commit_analysis_output(
     //     claim, and the loader's own untyped `undefined8` naming of the same slot
     //     is skipped by its `occupied` guard below. The stream is empty unless the
     //     `libctypes` gate is on (`LibcTypesPass` returns before it collects).
-    //
-    //     It ALSO answers to `datasyms`, whose contract is that `off` restores the
-    //     raw `dat_<addr>` rendering for every global the DWARF pass does not name
-    //     -- to see which names came from the image's own tables, or because a
-    //     hostile one plants misleading ones. A stream slot's name is a `.dynstr`
-    //     string like any other, so naming a data object stays that option's call
-    //     and `libctypes` only decides what the named object IS. There is no half
-    //     of this to keep: the type rides on the symbol, and with no symbol there
-    //     is nothing to lock a type onto.
-    let stream_syms = if prog.arch().analysis_datasyms { out.typed_data.as_slice() } else { &[] };
+    let stream_syms = out.typed_data.as_slice();
     for fact in stream_syms {
         let addr = Address::new(Rc::clone(code_space), fact.addr);
         // A function symbol on an import slot only carries the import's name; the
@@ -5586,15 +5555,10 @@ fn commit_analysis_output(
     //     `.bss` address and a `.dynsym` entry but no `.debug_info` DIE, so before
     //     this arm it rendered `dat_20a098`. IDA Pro and Ghidra both name data
     //     objects from the symbol table independently of debug info.
-    //     Gated by `--option datasyms on|off` (default ON, DIV-76): the stream is
-    //     collected at `load file` but committed HERE at `read symbols`, after the
-    //     option lines are applied, so the flag needs no env bridge on either CLI
-    //     path. The stash is drained either way (a second `read symbols` must not
-    //     re-commit); off simply drops it and the rendering is exactly pre-DIV-26.
-    let mut loader_data_objects = std::mem::take(&mut prog.loader_data_objects);
-    if !prog.arch().analysis_datasyms {
-        loader_data_objects.clear();
-    }
+    //     The stream is collected at `load file` but committed HERE at `read
+    //     symbols`; the stash is drained so a second `read symbols` does not
+    //     re-commit.
+    let loader_data_objects = std::mem::take(&mut prog.loader_data_objects);
     for (sym_addr, name, size) in &loader_data_objects {
         let addr = Address::new(Rc::clone(code_space), *sym_addr);
         let occupied = {

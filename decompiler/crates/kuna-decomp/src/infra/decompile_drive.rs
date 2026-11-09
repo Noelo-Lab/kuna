@@ -345,7 +345,7 @@ impl FlowEnvironment for ArchFlowEnv {
 
     fn is_ppc_pc_capture(&self, fd: &Funcdata, op: crate::context::OpId) -> bool {
         let arch = self.arch();
-        if !arch.analysis_fdeinterior || !arch.archid.starts_with("PowerPC:") {
+        if !arch.archid.starts_with("PowerPC:") {
             return false;
         }
         crate::p2_lift::kuna_ppcpcread::is_pc_capture(fd, op, &arch.kuna_function_bodies,
