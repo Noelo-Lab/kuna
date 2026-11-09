@@ -139,6 +139,9 @@ pub struct PendingBodyArgs {
     op: OpId,
     entry: Address,
     trials: Vec<BodyTrial>,
+    /// (kuna `swiftcall`) The call already passes a Swift `self` and nothing
+    /// else; the body's plan covers that trial like any other.
+    swift_self: bool,
 }
 
 /// Is `addr` in the `register` space the callee-body summary answers for?
@@ -173,10 +176,14 @@ pub fn capture_lone_call(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingB
     }
     let active = fc.active_input();
     let mut trials: Vec<BodyTrial> = Vec::new();
+    let mut swift_self = false;
     for i in 0..active.get_num_trials() {
         let t = active.get_trial(i);
         if t.is_used() {
-            return None; // this site recovered something; not ours to speak to
+            if swift_self || !crate::kuna_swiftcall::is_self_storage(data, t.get_address(), t.get_size()) {
+                return None; // this site recovered something; not ours to speak to
+            }
+            swift_self = true;
         }
         let addr = t.get_address().clone();
         let size = t.get_size();
@@ -221,7 +228,7 @@ pub fn capture_lone_call(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingB
     if !trials.first().map(|t| is_register(&t.addr)).unwrap_or(false) {
         return None;
     }
-    Some(PendingBodyArgs { op, entry, trials })
+    Some(PendingBodyArgs { op, entry, trials, swift_self })
 }
 
 /// Which of this call's trials the callee's body claims as arguments, or `None`
@@ -334,7 +341,7 @@ fn recover_one(data: &mut Funcdata, p: &PendingBodyArgs) -> bool {
     // `num_input() == 1` is also what defers to the sibling rules: a call
     // `calleearityfwd` already rescued is no longer empty and is not touched.
     match data.obank().get(p.op) {
-        Some(o) if !o.is_dead() && o.code() == OpCode::CPUI_CALL && o.num_input() == 1 => {}
+        Some(o) if !o.is_dead() && o.code() == OpCode::CPUI_CALL && o.num_input() == 1 + p.swift_self as int4 => {}
         _ => return false,
     }
     let cut = data.get_arch().callee_arity_cut;

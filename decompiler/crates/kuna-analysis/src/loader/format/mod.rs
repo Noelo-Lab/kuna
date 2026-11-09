@@ -128,8 +128,9 @@ pub trait ObjectFormat {
     /// them so a `call [slot]` renders the import name, but such an address is a
     /// pointer word, not a function entry. This is the address half of that same
     /// answer, so a consumer that enumerates *bodies* can tell the two apart
-    /// without re-deriving the layout. Implemented for PE IAT entries and typed
-    /// Mach-O lazy/non-lazy symbol-pointer indirect entries.
+    /// without re-deriving the layout. Implemented for PE IAT entries, typed
+    /// Mach-O lazy/non-lazy symbol-pointer indirect entries, and ELF `GLOB_DAT`
+    /// GOT slots of undefined symbols.
     fn import_slots(&self, _file: &object::File, _bytes: &[u8]) -> Vec<(u64, u64)> {
         Vec::new()
     }

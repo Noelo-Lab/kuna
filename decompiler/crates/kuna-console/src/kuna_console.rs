@@ -165,6 +165,11 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
             Some(n) => Cow::Owned(n.to_string()),
         });
     }
+    if option == "kernelcache" {
+        // The loader reads the env bridge, which the `option` command also sets.
+        let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
+        return Some(Cow::Owned(choice.as_str().to_string()));
+    }
     Some(Cow::Borrowed(match option {
         "bytearrayc" => on_off(conf.print().options.bytearray_c),
         "partialaccess" => on_off(conf.print().options.partial_access),
@@ -292,6 +297,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "widestrings32" => on_off(conf.analysis_widestrings32),
         "entry_disc" => on_off(conf.analysis_entry_disc),
         "eh_frame_full" => on_off(conf.analysis_eh_frame_full),
+        "unwindstarts" => on_off(conf.analysis_unwindstarts),
         "arm_markers" => on_off(conf.analysis_arm_markers),
         "mips_gp" => on_off(conf.analysis_mips_gp),
         "ppc32picimports" => conf.analysis_ppc32picimports.as_str(),

@@ -90,6 +90,26 @@ pub struct StringFact {
     pub len: u32,
 }
 
+/// A Mach-O Core Foundation constant string (`__cfstring` entry). The entry is a
+/// `CFString` struct (isa, flags, char pointer, length); `bytes` is the UTF-8 of
+/// the string its char pointer targets, already resolved through chained fixups
+/// and UTF-16-decoded when the flags say so. The commit seam types the entry an
+/// opaque `struct __CFString` (whose pointer is `CFStringRef`) and pre-seeds the
+/// `StringManager` at `addr` with `bytes`, so a reference to the entry renders the
+/// string literal instead of `dat_<addr>`.
+/// Produced by [`crate::analyzers::cfstring`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CFStringFact {
+    /// Virtual address of the `__cfstring` entry (the struct, not its char data).
+    pub addr: u64,
+    /// The UTF-8 string bytes (no trailing NUL), the entry's char pointer resolved.
+    pub bytes: Vec<u8>,
+    /// Byte span of the entry (four pointer words). The type the commit plants
+    /// covers exactly this span: sized from the string, a long one would overrun
+    /// the next entry and hide it.
+    pub size: u32,
+}
+
 /// A processor-context decode-mode paint: set context variable `var` to `value`
 /// starting at `addr` (up to the next change point, or — if `end` is set — over
 /// the explicit `[addr, end)` range). Produced by [`crate::loader::arm_markers`]
@@ -200,6 +220,65 @@ pub struct TypedDataFact {
     /// The recovered kuna [`Datatype`](kuna_decomp::dtype::Datatype) for the
     /// object at that address.
     pub type_: std::rc::Rc<kuna_decomp::dtype::Datatype>,
+}
+
+/// (kuna `swifttypes`) One register-pinned parameter of the function at
+/// `func_addr`: slot `index` is `name`, of `type_`, in register `reg`. The
+/// commit resolves the register through the language and seeds the
+/// function's decompile with it as a `map param` would, so the function is
+/// decompiled with that parameter locked and the rest recovered. For a
+/// convention no model describes (Swift's `self` in `x20` / `r13`).
+#[derive(Clone, Debug)]
+pub struct ParamLockFact {
+    pub func_addr: u64,
+    pub index: i32,
+    pub name: String,
+    pub reg: &'static str,
+    pub type_: std::rc::Rc<kuna_decomp::dtype::Datatype>,
+}
+
+/// (kuna `swifttypes`) The facts the Swift type-layout arm produces, kept
+/// apart so the commit can drop them whole under `option swifttypes off`:
+/// the typed metadata records, the accessor prototypes and the
+/// register-pinned `self` parameters. (The layouts themselves are interned
+/// in the type factory as the pass builds them; unreferenced, they change
+/// nothing.)
+#[derive(Default, Clone, Debug)]
+pub struct SwiftTypeFacts {
+    pub typed_data: Vec<TypedDataFact>,
+    pub prototypes: Vec<kuna_decomp::fspec::PrototypePieces>,
+    pub param_locks: Vec<ParamLockFact>,
+    /// (kuna `swiftcall`) The calling convention of each method, initializer
+    /// and accessor, and the name and type of its `self`.
+    pub models: Vec<ModelFact>,
+    pub input_hints: Vec<InputHintFact>,
+    /// The `swiftself` and `swifterror` registers, once a convention is bound.
+    pub regs: Option<(&'static str, &'static str)>,
+}
+
+/// The function at `func_addr` follows the cspec prototype model `model`,
+/// its signature otherwise unknown: its parameters, and the arguments of
+/// every direct call to it, are recovered under that model.
+#[derive(Clone, Debug)]
+pub struct ModelFact {
+    pub func_addr: u64,
+    pub model: &'static str,
+    /// The convention's implicit context register may or may not be a
+    /// parameter (a Swift struct member's `self`): a call passes it only
+    /// when the caller set it for that call.
+    pub maybe_self: bool,
+}
+
+/// The input of the function at `func_addr` in register `reg` is `name`, of
+/// `type_` when that is known, when the function's own analysis finds it
+/// reads that register
+/// (an unlocked hint, see `kuna_decomp::kuna_inputhints`).
+#[derive(Clone, Debug)]
+pub struct InputHintFact {
+    pub func_addr: u64,
+    pub reg: &'static str,
+    pub name: String,
+    pub type_: Option<std::rc::Rc<kuna_decomp::dtype::Datatype>>,
 }
 
 /// A source-line annotation to attach to a decompiled instruction: at `addr`,
@@ -406,6 +485,12 @@ pub struct AnalysisOutput {
     /// `peimportcall` pass; empty for formats without such typed slots. See
     /// [`crate::loader::kuna_peimportcall`].
     pub externref: Vec<(u64, u64)>,
+    /// (kuna `elfgotimports`) The import each loader import slot holds, as
+    /// `(slot VMA, import name)`. Committed as a `FunctionSymbol` in the symbol
+    /// table, so `query_function` resolves a read or a call through the slot to
+    /// the import, but never registered in the function inventory: the slot is a
+    /// pointer word, not a function.
+    pub import_slot_names: Vec<(u64, String)>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
     pub strings: Vec<StringFact>,
     /// (kuna `fatstr`) Length-BOUNDED string literals recovered from static
@@ -425,6 +510,11 @@ pub struct AnalysisOutput {
     /// count `len / 4`). Produced by [`crate::strings::kuna_widestrings32`] at the
     /// deferred scalar-operand commit, where the operand targets it weighs are known.
     pub wide_strings32: Vec<StringFact>,
+    /// (kuna `cfstrings`) Mach-O Core Foundation constant strings (`__cfstring`):
+    /// one per entry whose char pointer resolved to a string. The commit seam
+    /// types each entry an opaque `struct __CFString` and pre-seeds the
+    /// `StringManager`, so a reference renders the literal. Produced by [`crate::analyzers::cfstring`].
+    pub cfstrings: Vec<CFStringFact>,
     /// Library-function prototypes to seed onto matching FunctionSymbols (the kuna
     /// analog of Ghidra's `ApplyDataArchiveAnalyzer` / `.gdt` archives). Each is
     /// parked on its named callee via `set_function_prototype_pieces`, so a caller
@@ -523,6 +613,8 @@ pub struct AnalysisOutput {
     /// (kuna `libctypes`) Data symbols the analysis tier types outright — the
     /// stdio stream slots. See [`TypedDataFact`].
     pub typed_data: Vec<TypedDataFact>,
+    /// (kuna `swifttypes`) The Swift type-layout facts. See [`SwiftTypeFacts`].
+    pub swift_types: SwiftTypeFacts,
     /// (kuna `formatstring static`) Per-call-site prototype overrides the
     /// LOAD-TIME format-string resolver recovered — a printf/scanf-family call
     /// whose format constant the image itself answers for. Committed onto
@@ -684,6 +776,12 @@ impl AnalysisOutput {
         self.symbols.extend(other.symbols);
         self.data_objects.extend(other.data_objects);
         self.typed_data.extend(other.typed_data);
+        self.swift_types.typed_data.extend(other.swift_types.typed_data);
+        self.swift_types.prototypes.extend(other.swift_types.prototypes);
+        self.swift_types.param_locks.extend(other.swift_types.param_locks);
+        self.swift_types.models.extend(other.swift_types.models);
+        self.swift_types.input_hints.extend(other.swift_types.input_hints);
+        self.swift_types.regs = self.swift_types.regs.or(other.swift_types.regs);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
         self.fde_interior_entries.extend(other.fde_interior_entries);
@@ -697,10 +795,12 @@ impl AnalysisOutput {
         self.const_ranges.extend(other.const_ranges);
         self.objc_self_types.extend(other.objc_self_types);
         self.externref.extend(other.externref);
+        self.import_slot_names.extend(other.import_slot_names);
         self.strings.extend(other.strings);
         self.bounded_strings.extend(other.bounded_strings);
         self.wide_strings.extend(other.wide_strings);
         self.wide_strings32.extend(other.wide_strings32);
+        self.cfstrings.extend(other.cfstrings);
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
         self.arm_float_prototypes.extend(other.arm_float_prototypes);

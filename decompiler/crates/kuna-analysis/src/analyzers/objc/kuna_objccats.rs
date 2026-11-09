@@ -69,12 +69,8 @@ pub fn categories(img: &MachoImage, file: &object::File) -> Vec<Category> {
                     .and_then(|n| n.strip_prefix(CLASS_SYMBOL_PREFIX))
                     .map(str::to_string),
             };
-            let label = match &class {
-                Some(class) => format!("{class}({name})"),
-                None => format!("({name})"),
-            };
             out.push(Category {
-                label,
+                label: label_for(class.as_deref(), &name),
                 class,
                 instance_methods: img.rebase_ptr(cat.wrapping_add(category_t::INSTANCE_METHODS)),
                 class_methods: img.rebase_ptr(cat.wrapping_add(category_t::CLASS_METHODS)),
@@ -86,10 +82,26 @@ pub fn categories(img: &MachoImage, file: &object::File) -> Vec<Category> {
     out
 }
 
+/// The label stem of a category on `class`: the class as its own method labels
+/// show it, then the category in parentheses.
+fn label_for(class: Option<&str>, category: &str) -> String {
+    match class {
+        Some(class) => format!("{}({category})", super::display_class_name(class)),
+        None => format!("({category})"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::loader::format::macho::{resolve_chained_fixups, resolve_dyld_info_binds};
+
+    #[test]
+    fn a_category_label_shows_the_class_as_its_method_labels_do() {
+        assert_eq!(label_for(Some("Base"), "Extra"), "Base(Extra)");
+        assert_eq!(label_for(Some("_TtC6Sample3Foo"), "Extra"), "Sample.Foo(Extra)");
+        assert_eq!(label_for(None, "Extra"), "(Extra)");
+    }
 
     /// `macho_objc_meta_arm64`: `Base(Extra)` on a local class, `Remote(Extra)` on
     /// an imported (bind) class, each with one instance and one class method.
