@@ -18,7 +18,7 @@ use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 use OpCode::*;
 
-use super::kuna_pushanexpr::{VarId, ExprArena, ExprId, MAX_SIZE};
+use super::kuna_pushanexpr::{VarId, ExprArena, ExprId, ExprKind, MAX_SIZE};
 use super::kuna_pushanstate::{PushanImage, State};
 
 /// A lifted p-code operation (the SLEIGH template instantiated at an address).
@@ -209,7 +209,8 @@ impl<'a> Emulator<'a> {
         let size = vn.size as u8;
         let e = arena.resize(e, size);
         // A stack pointer rebuilt through boolean-arithmetic noise is stored
-        // in its plain `sp0 + d` form.
+        // in its plain `sp0 + d` form, and a register XOR-swapped through it
+        // that comes out constant as that constant.
         let e = match self.track_sp {
             Some((sp, sps)) if self.vn_space(vn) == Space::Register && vn.offset == sp && size == sps && arena.affine(e).is_none() => {
                 match arena.affine_probe(e) {
@@ -222,6 +223,10 @@ impl<'a> Emulator<'a> {
                     _ => e,
                 }
             }
+            _ if self.vn_space(vn) == Space::Register && matches!(arena.kind(e), ExprKind::Bin(CPUI_INT_XOR, _, _)) => match arena.affine_probe(e) {
+                Some((None, c)) => arena.cst(size, c as u128),
+                _ => e,
+            },
             _ => e,
         };
         match self.vn_space(vn) {

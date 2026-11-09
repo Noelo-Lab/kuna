@@ -1488,9 +1488,12 @@ impl ExprArena {
 
     /// [`affine`](Self::affine), and when the linear form does not see it,
     /// a probe: an expression over one variable that moves by exactly the
-    /// variable's change at three dissimilar points is `var + d`.  This is how
-    /// angr's concretizing solver sees through mixed boolean-arithmetic
-    /// rewrites of the stack pointer, without fixing the pointer's value.
+    /// variable's change at three dissimilar points is `var + d`; over a
+    /// pointer variable, one that holds the same value at all three is that
+    /// constant (an image base the obfuscator derives from the stack pointer).
+    /// This is how angr's concretizing solver sees through mixed
+    /// boolean-arithmetic rewrites of the stack pointer, without fixing the
+    /// pointer's value.
     pub fn affine_probe(&mut self, e: ExprId) -> Option<(Option<VarId>, i128)> {
         if let Some(r) = self.affine(e) {
             return Some(r);
@@ -1510,7 +1513,9 @@ impl ExprArena {
                 let var_e = var_e.unwrap_or(e);
                 let m = mask(size);
                 let mut d: Option<u128> = None;
+                let mut same: Option<u128> = None;
                 let mut ok = true;
+                let mut constant = info.pointer;
                 for p in [0x0000_7ffd_3a5c_9e40u128, 0x0000_1234_5678_9ab0, 0x0000_6b8b_4567_3270] {
                     let pv = ((p & m) & !info.known.0) | info.known.1;
                     let k = self.cst(size, pv);
@@ -1519,17 +1524,24 @@ impl ExprArena {
                     let r = self.substitute(e, &map);
                     let Some(c) = self.is_const(r) else {
                         ok = false;
+                        constant = false;
                         break;
                     };
+                    constant &= same.is_none_or(|x| x == c);
+                    same = Some(c);
                     let diff = c.wrapping_sub(pv) & m;
                     if d.is_some_and(|x| x != diff) {
                         ok = false;
-                        break;
+                        if !constant {
+                            break;
+                        }
                     }
                     d = Some(diff);
                 }
                 if ok && var_e != e {
                     d.map(|x| (Some(v), sext(x, size)))
+                } else if constant && var_e != e {
+                    same.map(|c| (None, sext(c, size)))
                 } else {
                     None
                 }

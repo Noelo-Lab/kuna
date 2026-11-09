@@ -40,6 +40,9 @@ pub struct NodeKey {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct VmCtx {
     pub vpc_reg: Option<u64>,
+    /// A concrete memory cell holding the VPC (Themida's VM context); it
+    /// takes precedence over `vpc_reg`.
+    pub vpc_cell: Option<u64>,
     pub ctx: Option<u64>,
     pub in_vm: bool,
 }
@@ -181,6 +184,8 @@ pub struct Explorer<'a> {
 }
 
 const VPC_MAX_DISP: i128 = 16;
+/// Farthest a new VPC register's value may sit from the previous context.
+const VPC_NEAR: u64 = 0x100;
 /// Most constants remembered for one symbolized location.
 const MAX_SYM_VALUES: usize = 32;
 /// Distinct virtual-PC values a node may fork into.
@@ -308,13 +313,14 @@ impl<'a> Explorer<'a> {
                 let n = &cfg.nodes[id as usize];
                 let _ = writeln!(
                     t.borrow_mut(),
-                    "[{:>7.3}s] node {} key={:#x}/{} vm={} vpc_reg={:?} insns={} exit={} arena={} mem_bytes={} worklist={}",
+                    "[{:>7.3}s] node {} key={:#x}/{} vm={} vpc_reg={:?} vpc_cell={:x?} insns={} exit={} arena={} mem_bytes={} worklist={}",
                     self.started.elapsed().as_secs_f64(),
                     id,
                     n.key.addr,
                     n.key.ctx.map(|c| format!("{c:#x}")).unwrap_or_else(|| "-".into()),
                     n.entry_ctx.in_vm,
                     n.entry_ctx.vpc_reg,
+                    n.entry_ctx.vpc_cell,
                     n.insns.len(),
                     exit_brief(&n.exit),
                     self.arena.len(),
@@ -346,6 +352,7 @@ impl<'a> Explorer<'a> {
             let mut entry = node.entry.clone();
             let diffs = entry.diff_constants(&mut state, &mut self.arena, self.target);
             let vpc_reg = node.entry_ctx.vpc_reg;
+            let vpc_cell = node.entry_ctx.vpc_cell;
             if let Some(tr) = &self.config.trace {
                 use std::io::Write;
                 let base = self.sp0;
@@ -384,6 +391,11 @@ impl<'a> Explorer<'a> {
                 }
                 if let (Loc::Reg { off }, Some((pc, pcs))) = (d.loc.loc, self.abi.pc) {
                     if off >= pc && off < pc + pcs as u64 {
+                        continue;
+                    }
+                }
+                if let Loc::Mem { base: None, off } = d.loc.loc {
+                    if vpc_cell.is_some_and(|a| off < a as i128 + self.abi.ptr_size as i128 && a as i128 <= off + d.loc.size as i128 - 1) {
                         continue;
                     }
                 }
@@ -601,11 +613,10 @@ impl<'a> Explorer<'a> {
         state: &mut State,
         ctx: VmCtx,
     ) -> Option<NodeExit> {
-        let r = ctx.vpc_reg?;
         if !matches!(exit, Exit::Fallthrough(_) | Exit::Jump(_)) {
             return None;
         }
-        let v = state.read_reg(&mut self.arena, r, self.abi.ptr_size);
+        let v = self.vpc_expr(state, &ctx)?;
         if self.arena.is_const(v).is_some() {
             return None;
         }
@@ -685,16 +696,40 @@ impl<'a> Explorer<'a> {
         Some(NodeExit::Select { atoms, targets, by_atoms: true })
     }
 
-    /// The interpreter context the block hands to its successors.
+    /// The interpreter context the block hands to its successors (angr's
+    /// find_vip).  A VPC value must be unwritten, high-entropy memory in a
+    /// non-writable section of the image.  A concrete memory cell the block loaded a pointer
+    /// from and fetched bytecode through (Themida keeps the VPC in its VM
+    /// context) is the VPC for as long as it holds unwritten image memory.  Otherwise a
+    /// register is a candidate when the block fetched through it: the
+    /// previous VPC register wins while it qualifies, then the candidate
+    /// nearest the previous context, then the one fetched through most.
+    /// Failing that, the previous register's value is followed while it stays
+    /// unwritten image memory, and before the VM is entered a register
+    /// just advanced past a concrete access (a table walk) keys the loop so it
+    /// unrolls.  Otherwise the context is inherited.
     fn successor_ctx(&mut self, state: &mut State, traces: &[InsnTrace], ctx: VmCtx) -> VmCtx {
         let ps = self.abi.ptr_size;
         let mut fetch_regs: BTreeMap<u64, usize> = BTreeMap::new();
+        let mut touched: Vec<u64> = Vec::new();
+        let mut fetches: Vec<u64> = Vec::new();
+        let mut cell_loads: Vec<(u64, u64)> = Vec::new();
         for t in traces {
             for a in &t.accesses {
+                let Some(addr) = a.addr else { continue };
+                touched.push(addr);
                 if a.is_store {
                     continue;
                 }
-                let (Some((reg, disp)), Some(addr)) = (a.via, a.addr) else { continue };
+                if a.size == ps && !t.forked {
+                    if let Some(c) = t.op_out.get(a.op_index).copied().flatten().and_then(|v| self.arena.is_const(v)) {
+                        cell_loads.push((addr, c as u64));
+                    }
+                }
+                if self.target.bytecode_like(addr) {
+                    fetches.push(addr);
+                }
+                let Some((reg, disp)) = a.via else { continue };
                 if disp.abs() > VPC_MAX_DISP || !self.abi.gprs.contains(&reg) {
                     continue;
                 }
@@ -704,55 +739,121 @@ impl<'a> Explorer<'a> {
                 *fetch_regs.entry(reg).or_insert(0) += 1;
             }
         }
-        let mut next = ctx;
-        let chosen = if let Some(r) = ctx.vpc_reg.filter(|r| fetch_regs.contains_key(r)) {
-            Some(r)
-        } else {
-            fetch_regs.iter().max_by_key(|(r, n)| (**n, std::cmp::Reverse(**r))).map(|(r, _)| *r)
-        };
-        if let Some(r) = chosen {
-            let v = state.read_reg(&mut self.arena, r, ps);
-            if let Some(c) = self.arena.is_const(v) {
-                next.vpc_reg = Some(r);
-                next.ctx = Some(c as u64);
-                next.in_vm = true;
-                return next;
-            }
-            if let Some(vals) = self.arena.possible_values(v) {
-                if vals.len() <= 4 {
-                    let mut h: u64 = 0x5bd1e995;
-                    for x in &vals {
-                        h = h.wrapping_mul(0x100000001b3).wrapping_add(*x as u64);
-                    }
-                    next.vpc_reg = Some(r);
-                    next.ctx = Some(h);
-                    next.in_vm = true;
-                    return next;
+        let mut cell = ctx.vpc_cell.filter(|a| self.cell_values(state, *a, false).is_some());
+        if cell.is_none() {
+            for &(a, v) in &cell_loads {
+                if self.written(state, a, ps) && fetches.iter().any(|f| f.abs_diff(v) <= VPC_MAX_DISP as u64) && self.cell_values(state, a, true).is_some() {
+                    cell = Some(a);
+                    break;
                 }
             }
         }
-        // No fetch in this block: a VPC register that still holds a pointer
-        // into the image may have been advanced (or point at a low-entropy
-        // stretch of bytecode); follow its value.
+        let mut next = ctx;
+        if let Some(a) = cell {
+            let vals = self.cell_values(state, a, false).unwrap_or_default();
+            next.vpc_cell = Some(a);
+            next.vpc_reg = None;
+            next.ctx = Some(vpc_key(&vals));
+            next.in_vm = true;
+            return next;
+        }
+        next.vpc_cell = None;
+        let mut cands: Vec<(u64, Vec<u64>, usize)> = Vec::new();
+        for (r, n) in fetch_regs {
+            if let Some(vals) = self.vpc_values(state, r, true) {
+                cands.push((r, vals, n));
+            }
+        }
+        let prev = ctx.ctx.filter(|p| ctx.in_vm && ctx.vpc_reg.is_some() && self.vpc_like(state, *p, true));
+        let near = |vals: &[u64]| prev.and_then(|p| vals.iter().map(|v| v.abs_diff(p)).min()).filter(|d| *d <= VPC_NEAR);
+        let chosen = if let Some(c) = cands.iter().find(|c| Some(c.0) == ctx.vpc_reg) {
+            Some(c)
+        } else if let Some(c) = cands.iter().filter(|c| near(&c.1).is_some()).min_by_key(|c| near(&c.1)) {
+            Some(c)
+        } else {
+            cands.iter().max_by_key(|c| (c.2, std::cmp::Reverse(c.0)))
+        };
+        if let Some((r, vals, _)) = chosen {
+            next.vpc_reg = Some(*r);
+            next.ctx = Some(vpc_key(vals));
+            next.in_vm = true;
+            if let Some(tr) = &self.config.trace {
+                use std::io::Write;
+                let _ = writeln!(tr.borrow_mut(), "        vpc reg{r:x} = {vals:x?} (candidates {:x?}, prev {prev:x?})", cands.iter().map(|c| (c.0, &c.1)).collect::<Vec<_>>());
+            }
+            return next;
+        }
         if let Some(r) = ctx.vpc_reg {
-            let v = state.read_reg(&mut self.arena, r, ps);
-            if let Some(c) = self.arena.is_const(v) {
-                if self.target.is_mapped(c as u64) {
-                    next.ctx = Some(c as u64);
-                    return next;
+            if let Some(vals) = self.vpc_values(state, r, false) {
+                next.ctx = Some(vpc_key(&vals));
+                return next;
+            }
+        }
+        if !ctx.in_vm {
+            for r in self.abi.gprs.clone() {
+                if r == self.abi.sp {
+                    continue;
                 }
-            } else if let Some(vals) = self.arena.possible_values(v) {
-                if vals.len() <= 4 && vals.iter().all(|x| self.target.is_mapped(*x as u64)) {
-                    let mut h: u64 = 0x5bd1e995;
-                    for x in &vals {
-                        h = h.wrapping_mul(0x100000001b3).wrapping_add(*x as u64);
-                    }
-                    next.ctx = Some(h);
+                let v = state.read_reg(&mut self.arena, r, self.abi.ptr_size);
+                let Some(c) = self.arena.is_const(v).map(|c| c as u64) else { continue };
+                if touched.iter().any(|a| c > *a && c - *a <= VPC_MAX_DISP as u64) && self.vpc_like(state, c, false) {
+                    next.vpc_reg = Some(r);
+                    next.ctx = Some(c);
                     return next;
                 }
             }
         }
         next
+    }
+
+    /// The VPC's current value, from its memory cell or its register.
+    fn vpc_expr(&mut self, state: &mut State, ctx: &VmCtx) -> Option<ExprId> {
+        if let Some(a) = ctx.vpc_cell {
+            return Some(state.read_mem(&mut self.arena, self.target, None, a as i128, self.abi.ptr_size));
+        }
+        ctx.vpc_reg.map(|r| state.read_reg(&mut self.arena, r, self.abi.ptr_size))
+    }
+
+    /// The values the memory cell at `a` may hold, when every one is a
+    /// plausible virtual PC.
+    fn cell_values(&mut self, state: &mut State, a: u64, strict: bool) -> Option<Vec<u64>> {
+        let v = state.read_mem(&mut self.arena, self.target, None, a as i128, self.abi.ptr_size);
+        self.bytecode_values(state, v, strict)
+    }
+
+    /// The values register `r` may hold (at most four), when every one is a
+    /// plausible virtual PC.
+    fn vpc_values(&mut self, state: &mut State, r: u64, strict: bool) -> Option<Vec<u64>> {
+        let v = state.read_reg(&mut self.arena, r, self.abi.ptr_size);
+        self.bytecode_values(state, v, strict)
+    }
+
+    fn bytecode_values(&mut self, state: &mut State, v: ExprId, strict: bool) -> Option<Vec<u64>> {
+        let vals: Vec<u64> = match self.arena.is_const(v) {
+            Some(c) => vec![c as u64],
+            None => self.arena.possible_values(v).filter(|vs| vs.len() <= 4)?.into_iter().map(|x| x as u64).collect(),
+        };
+        vals.iter().all(|c| self.vpc_like(state, *c, strict)).then_some(vals)
+    }
+
+    /// Image memory outside the writable sections that no path has written
+    /// (angr's test excludes only the data sections); when `strict`, also
+    /// high-entropy (bytecode rather than a table).
+    fn vpc_like(&mut self, state: &mut State, c: u64, strict: bool) -> bool {
+        self.target.is_mapped(c) && !self.target.is_writable(c) && (!strict || self.target.bytecode_like(c)) && !self.written(state, c, 1)
+    }
+
+    /// Some byte of `[a, a + len)` holds a value other than the image's
+    /// (reads cache image bytes in the state, so presence alone says nothing).
+    fn written(&mut self, state: &mut State, a: u64, len: u8) -> bool {
+        (0..len as u64).any(|i| {
+            if !state.has_mem(None, (a + i) as i128, 1) {
+                return false;
+            }
+            let v = state.read_mem(&mut self.arena, self.target, None, (a + i) as i128, 1);
+            let mut b = [0u8; 1];
+            !(self.target.read_bytes(a + i, &mut b) && self.arena.is_const(v) == Some(b[0] as u128))
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -777,7 +878,7 @@ impl<'a> Explorer<'a> {
             }
             Exit::Jump(t) => self.resolve_jump(cfg, worklist, id, t, state, ctx, false),
             Exit::Return(t) => {
-                if Some(t) == self.retaddr {
+                if Some(t) == self.retaddr || self.is_caller_slot(t) {
                     return NodeExit::Return;
                 }
                 // Returning to the caller's address plus a stack adjustment is
@@ -835,7 +936,7 @@ impl<'a> Explorer<'a> {
                     if self.target.is_foreign_code(c) && !self.target_is_function(c) {
                         // Dispatch through the interpreter: the pushed return
                         // address salts the context so each entry stub is distinct.
-                        if !ctx.in_vm || ctx.vpc_reg.is_none() {
+                        if !ctx.in_vm || (ctx.vpc_reg.is_none() && ctx.vpc_cell.is_none()) {
                             let salt = ctx.ctx.unwrap_or(0).rotate_left(17) ^ fallthrough;
                             ctx.ctx = Some(salt);
                         }
@@ -849,6 +950,15 @@ impl<'a> Explorer<'a> {
                 NodeExit::Call { target: tc, ret, slot: None }
             }
         }
+    }
+
+    /// `t` is the untouched initial contents of a stack slot above the entry
+    /// stack pointer: entered past a native prologue (Themida virtualizes
+    /// from inside the function), the return address sits there.
+    fn is_caller_slot(&self, t: ExprId) -> bool {
+        let Some(v) = self.arena.as_var(t) else { return false };
+        let info = self.arena.var_info(v);
+        info.size == self.abi.ptr_size && matches!(info.kind, VarKind::InitMem { base, offset } if base.is_some() && base == self.sp0 && offset > 0 && offset % self.abi.ptr_size as i128 == 0)
     }
 
     fn target_is_function(&self, addr: u64) -> bool {
@@ -953,9 +1063,8 @@ impl<'a> Explorer<'a> {
                 }
             }
             let mut sctx = ctx;
-            // The pinned state may make the VPC register concrete.
-            if let Some(r) = ctx.vpc_reg {
-                let v = st.read_reg(&mut self.arena, r, self.abi.ptr_size);
+            // The pinned state may make the VPC concrete.
+            if let Some(v) = self.vpc_expr(&mut st, &ctx) {
                 if let Some(vc) = self.arena.is_const(v) {
                     sctx.ctx = Some(vc as u64);
                 }
@@ -1268,6 +1377,18 @@ fn covers(outer: &SymLoc, inner: &SymLoc) -> bool {
         _ => return false,
     };
     o0 <= i0 && i0 + inner.size as i128 <= o0 + outer.size as i128
+}
+
+/// The context for a VPC with these possible values.
+fn vpc_key(vals: &[u64]) -> u64 {
+    if let [c] = vals {
+        return *c;
+    }
+    let mut h: u64 = 0x5bd1e995;
+    for x in vals {
+        h = h.wrapping_mul(0x100000001b3).wrapping_add(*x);
+    }
+    h
 }
 
 pub fn key_tag(key: &NodeKey) -> u64 {

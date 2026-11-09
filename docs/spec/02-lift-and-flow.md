@@ -3353,16 +3353,36 @@ node is a native address plus the virtual program counter (VPC) the
 interpreter holds when it gets there. As a result, every bytecode
 instruction's run through its handler is a separate block, and the graph is
 the protected program's control flow laid out flat through the interpreter.
-The VPC register is found as the paper describes. It is the general-purpose
-register a block dereferences, with a displacement of at most 16, into a
-256-byte window of the image whose byte entropy is at least 5.0 bits (the
-paper's bytecode test, `bytecode_like`). The register is kept while the
-interpreter keeps fetching through it and replaced when the interpreter moves
-the bytecode pointer to another register. A block with no fetch carries the
-last VPC forward. Outside the interpreter (a re-entry stub, an external
-call's return), the context sticks to the last VPC, salted with the return
-address that a dispatch call pushed, so two re-entry stubs never share the
-entry handler's node.
+The VPC is found as angr's `find_vip` finds it (`Explorer::successor_ctx`),
+from the state at the end of each block. A VPC value must point into a
+section of the image that is not writable (angr excludes only the data
+sections; VMProtect may place bytecode in `.pdata`), at bytes no path has
+written, inside a 256-byte window whose byte entropy is at least 5.0 bits (the paper's bytecode test,
+`bytecode_like`). The value must be a constant or one of at most four
+possible values. A value that fails the test (a register that held the
+bytecode pointer earlier in the block and now holds a scratch number, the
+interpreter's writable context area, an unpacked handler table) never keys a
+node.
+
+Themida keeps the VPC in a memory cell of its VM context and copies it into a
+different register in each handler. A concrete memory cell is therefore
+checked first. When the block loaded a pointer from a written cell and
+fetched bytecode within 16 bytes of that pointer, the cell is the VPC. It
+stays the VPC while it holds unwritten image memory, even where a
+handler's bytecode sits in a low-entropy stretch. Otherwise the VPC is a
+general-purpose register the block dereferenced, with a displacement of at
+most 16, into bytecode, and whose own value passes the test. The previous
+VPC register wins while it qualifies. Next comes the candidate nearest
+(within 0x100 bytes) to the previous VPC, then the register fetched through
+most often. A block with no qualifying register follows the previous VPC
+register's value while it stays unwritten image memory, and otherwise
+carries the last VPC forward. Before the interpreter is entered, a register
+that a block advanced just past a concrete memory access (Themida's
+relocation of its handler table) keys the walk, so the walk unrolls with
+constant pointers instead of merging into a loop over symbols. Outside the
+interpreter (a re-entry stub, an external call's return), the context sticks
+to the last VPC, salted with the return address that a dispatch call pushed,
+so two re-entry stubs never share the entry handler's node.
 
 **The emulator and the expression arena.** Each node is emulated one native
 instruction at a time over its SLEIGH p-code
@@ -3383,7 +3403,16 @@ obfuscated stack offsets cancel structurally. A known-bits lattice prunes masks,
 pushes them through shifts, and distributes truncations and zero-extensions
 over disjoint sums, which is how a `pushfq` flags word or a De Morgan mask
 over it stays decidable. A comparison of two offsets from the same pointer
-base is decided by the offsets. The entry stack pointer carries its ABI
+base is decided by the offsets. Mixed boolean-arithmetic rewrites of the
+stack pointer that the normal form does not see are checked by a probe
+(`ExprArena::affine_probe`). The expression is evaluated with the entry
+stack pointer set to three dissimilar values. If it moves by the same amount
+as the pointer each time, it is `sp + d`, and a stack-pointer write is stored
+in that form. If it gives the same value each time, it is that constant.
+Themida derives its image base by XOR-swapping it through the stack pointer,
+so a register written by such an XOR is stored as the constant. The constant
+reading is only taken over the entry stack pointer, whose value is a
+user-mode address. The entry stack pointer carries its ABI
 alignment as known bits. The entry values of the system flags (TF, IF, AC,
 ID and the rest) and of DF are fixed to their user-mode values, so
 anti-debugging checks fold.
@@ -3413,8 +3442,8 @@ value differs is recorded against the node's key. A location is an aligned
 half is narrowed to that half, down to one byte, so a narrow variable sharing
 a slot with an unchanged neighbour does not take the neighbour with it. Each
 recorded location keeps the constants it was seen to hold (up to 32) and the
-bits all of them agreed on. The VPC register is part of the key and is never
-symbolized. The next round starts over. At a recorded node, each recorded
+bits all of them agreed on. The VPC register or cell is part of the key and
+is never symbolized. The next round starts over. At a recorded node, each recorded
 location becomes a fresh symbol that carries the agreed known bits. The fixpoint
 is reached when a round records no new location, no new constant and no
 narrowed bits. A computed target of the form `symbol + k` over a symbolized
@@ -3462,6 +3491,9 @@ with these edits:
 - Control flow is rewritten to the resolved exits. A pruned conditional
   becomes a jump. A dispatch call or `push; ret` becomes a jump. A return to
   the caller stays a return, even with the entry stub's extra pops folded in.
+  A return through an untouched stack slot above the entry stack pointer is a
+  return too: Themida starts the virtualized code after the native prologue,
+  so the caller's return address sits past the prologue's frame.
   A symbolic guard keeps its CBRANCH. A computed target that could not be
   enumerated keeps its original op, and an unexplored node is a dead end.
   Within a node where nothing forked, the executed path is emitted (loops

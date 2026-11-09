@@ -586,12 +586,13 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
                     || matches!(n.exit, NodeExit::Unresolved(_) | NodeExit::Halt(_));
                 let _ = writeln!(
                     f,
-                    "node {} key={:#x}/{:?} vm={} vpc_reg={:?} insns={} exit={}",
+                    "node {} key={:#x}/{:?} vm={} vpc_reg={:?} vpc_cell={:x?} insns={} exit={}",
                     i,
                     n.key.addr,
                     n.key.ctx.map(|c| format!("{c:#x}")),
                     n.entry_ctx.in_vm,
                     n.entry_ctx.vpc_reg,
+                    n.entry_ctx.vpc_cell,
                     n.insns.len(),
                     describe_exit(&n.exit)
                 );
