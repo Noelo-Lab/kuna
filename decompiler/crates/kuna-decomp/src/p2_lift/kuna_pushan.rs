@@ -427,20 +427,23 @@ fn large_code_sections(arch: &Architecture) -> Vec<(u64, u64)> {
     let Some(t) = ArchTarget::new(arch, 0) else { return Vec::new() };
     t.sections
         .iter()
-        .filter(|s| s.flags & section_flags::CODE != 0 && s.end - s.start >= MIN_VM_SECTION)
+        .filter(|s| s.flags & section_flags::CODE != 0 && s.flags & section_flags::NOLOAD == 0 && s.end - s.start >= MIN_VM_SECTION)
         .map(|s| (s.start, s.end))
         .collect()
 }
 
 pub fn detect_vm_entry(target: &ArchTarget<'_>, entry: u64) -> Option<u64> {
     if !target.sections.iter().any(|s| {
-        s.flags & section_flags::CODE != 0 && s.end - s.start >= MIN_VM_SECTION && Some((s.start, s.end)) != target.entry_section
+        s.flags & section_flags::CODE != 0
+            && s.flags & section_flags::NOLOAD == 0
+            && s.end - s.start >= MIN_VM_SECTION
+            && Some((s.start, s.end)) != target.entry_section
     }) {
         return None;
     }
     let foreign = |addr: u64| -> bool {
         target.is_foreign_code(addr)
-            && target.section_of(addr).is_some_and(|s| s.end - s.start >= MIN_VM_SECTION)
+            && target.section_of(addr).is_some_and(|s| s.flags & section_flags::NOLOAD == 0 && s.end - s.start >= MIN_VM_SECTION)
     };
     let mut seen = std::collections::BTreeSet::new();
     let mut work = vec![entry];
