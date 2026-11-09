@@ -9,6 +9,7 @@
 mod args;
 pub(crate) mod catalog;
 pub(crate) mod corpus;
+mod heap;
 mod project;
 mod render;
 mod run;
@@ -50,6 +51,9 @@ pub(crate) fn run(sub: &str, rest: &[String], input: &str) -> i32 {
             return 2;
         }
     };
+    if sub != args::Sub::Functions {
+        heap::tune();
+    }
     match sub {
         args::Sub::Decompile => render::decompile(&parsed),
         args::Sub::DecompileAll => render::decompile_all(&parsed),
