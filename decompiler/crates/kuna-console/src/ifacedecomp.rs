@@ -4367,6 +4367,13 @@ pub fn register_console_commands(status: &mut IfaceStatus) {
 ///
 /// Returns after writing the diagnostic and calling [`IfaceStatus::evaluate_error`].
 pub fn execute(status: &mut IfaceStatus) {
+    // A command runs under the loaded program's load-time options, so a
+    // program bootstrapped with explicit options keeps them in the console.
+    let _load = status
+        .get_data(DECOMPILE_MODULE)
+        .and_then(|data| data.as_any().downcast_ref::<IfaceDecompData>())
+        .and_then(|dcp| dcp.conf.as_ref())
+        .map(|prog| prog.arch().load_scope());
     match status.run_command() {
         Ok(_) => return,
         Err(err) => {

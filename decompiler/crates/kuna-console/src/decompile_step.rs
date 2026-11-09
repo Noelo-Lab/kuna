@@ -146,6 +146,9 @@ pub fn decompile_one_prefollowed(
     proto_overrides: &[(Address, PrototypePieces)],
     prefollowed: Option<Funcdata>,
 ) -> DecompileStep {
+    // The lazy callee materialization between the drives names functions, so
+    // it reads the program's load-time options too.
+    let _load = arch.load_scope();
     let mut first = decompile_one_prefollowed_once(
         arch,
         name,

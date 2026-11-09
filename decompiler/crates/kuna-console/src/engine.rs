@@ -47,6 +47,7 @@ use kuna_decomp::architecture::Architecture;
 use kuna_decomp::options::register_option_elements;
 use kuna_decomp::raw_arch::RawBinaryArchitectureCapability;
 use kuna_decomp::kuna_memoryspecs::IntoSpecRoot;
+use kuna_decomp::kuna_loadoptions::LoadOptions;
 use kuna_decomp::sleigh_arch::{register_sleigh_arch_ids, LanguageDatabase, SleighArchitecture};
 use kuna_decomp::xml_arch::XmlArchitectureCapability;
 
@@ -878,6 +879,7 @@ impl ConsoleProgram {
     /// hook): scan the binaryimage symbols read at load.  `None` if no symbol of
     /// that name exists.
     pub fn lookup_symbol(&self, name: &str) -> Option<Address> {
+        let _load = self.arch().load_scope();
         // (kuna `symbolnamebound`) `self.symbols` carries the bounded spelling,
         // so bound the query too: `load function <name>` must accept both the
         // binary's ORIGINAL name and the one the listing renders. Idempotent, and
@@ -963,6 +965,7 @@ impl ConsoleProgram {
     /// Whether any symbol or loader alias is spelled exactly `name` (the
     /// spelling a name selector would match first). O(1) on the name index.
     pub(crate) fn has_symbol_spelled(&self, name: &str) -> bool {
+        let _load = self.arch().load_scope();
         let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
         (self.symbols.lookup(name).is_some() || self.anonymous_address(name).is_some())
             || self.loader_aliases.values().any(|names| names.iter().any(|alias| alias == name))
@@ -1270,6 +1273,7 @@ impl ConsoleProgram {
     /// to the raw symbol table when it declines, which on a PE import pair is
     /// the pointer slot rather than the thunk `decompile` would have picked.
     pub fn find_entry_by_name(&self, want: &str) -> Option<FunctionEntry> {
+        let _load = self.arch().load_scope();
         // (kuna `symbolnamebound`) The enumeration reports the bounded spelling,
         // so bound the query too -- a caller holding the binary's ORIGINAL name
         // must still resolve. Idempotent, so the bounded spelling resolves as
@@ -1404,6 +1408,7 @@ impl ConsoleProgram {
         &self,
         selector: &EntrySelector,
     ) -> Result<FunctionEntry, EntryLookupError> {
+        let _load = self.arch().load_scope();
         match selector {
             EntrySelector::Name(want) => {
                 // (kuna `symbolnamebound`) The enumeration reports the bounded
@@ -2264,6 +2269,7 @@ impl ConsoleProgram {
     /// `<Class>::RTTI_*` labels the `rtti` pass emits). The verification hook for
     /// the gated MSVC-RTTI recovery e2e.
     pub fn has_symbol_named(&self, full_name: &str) -> bool {
+        let _load = self.arch().load_scope();
         let db = &self.arch().symboltab;
         let (scope, base) = db.resolve_scope_from_symbol_name(full_name, "::", None);
         match scope {
@@ -2321,6 +2327,7 @@ impl ConsoleProgram {
         &mut self,
         entries: &[(String, Address)],
     ) -> KunaResult<usize> {
+        let _load = self.arch().load_scope();
         self.callwide_changed();
         self.anonymous_symbols.take();
         let taken: std::collections::HashSet<String> =
@@ -2366,6 +2373,7 @@ impl ConsoleProgram {
     /// the table is skipped (the C++ `addFunction` no-ops on an existing match via
     /// `queryFunction`).
     pub fn read_loader_symbols(&mut self) -> KunaResult<()> {
+        let _load = self.arch().load_scope();
         self.callwide_changed();
         let type_code = self.arch().types().get_type_code()?;
         let min_size = self.arch().min_funcsymbol_size;
@@ -2412,6 +2420,7 @@ impl ConsoleProgram {
     }
 
     fn register_symbol_record(&mut self, name: &str, addr: Address, sole: bool) {
+        let _load = self.arch().load_scope();
         self.callwide_changed();
         self.anonymous_symbols.take();
         if let Some(prior) = self.anonymous_address(name) {
@@ -2588,6 +2597,7 @@ impl ConsoleProgram {
         name: Option<&str>,
         size: int4,
     ) -> KunaResult<String> {
+        let _load = self.arch().load_scope();
         let addr = match addr.get_space() {
             Some(space) => Address::new(
                 std::rc::Rc::clone(space),
@@ -2648,6 +2658,7 @@ impl ConsoleProgram {
     /// address has a body. Used by an addressed CLI run that needs a symbol for
     /// prototype directives before selection.
     pub fn ensure_function_symbol(&mut self, addr: Address) -> KunaResult<String> {
+        let _load = self.arch().load_scope();
         let addr = match addr.get_space() {
             Some(space) => Address::new(
                 std::rc::Rc::clone(space),
@@ -2880,6 +2891,7 @@ impl ConsoleProgram {
     /// defensively re-gated facts merge into the same `merged` output committed
     /// below. With Listing off, this whole block is skipped.
     pub fn commit_pending_analysis(&mut self) -> KunaResult<()> {
+        let _load = self.arch().load_scope();
         if !self.pending_synthetic_entries.is_empty() {
             // (kuna `rawdiscover`) A headerless image reaches this point holding
             // only the `--entry` addresses the caller typed, because the
@@ -4290,12 +4302,51 @@ pub fn bootstrap_from_image_with_isa_with_specs(
     spec_roots: &[impl IntoSpecRoot],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
+    bootstrap_image(path, target, spec_roots, isa, &LoadOptions::from_env(), true)
+}
+
+/// [`bootstrap_from_image_with_isa`] with the load-time options explicit, as
+/// [`bootstrap_from_object_with_options`] takes them.
+pub fn bootstrap_from_image_with_options(
+    path: &str,
+    target: &str,
+    spec_roots: &[impl IntoSpecRoot],
+    isa: Option<ArmIsa>,
+    options: &LoadOptions,
+) -> KunaResult<ConsoleProgram> {
+    bootstrap_image(path, target, spec_roots, isa, options, false)
+}
+
+/// The image dispatch behind both image bootstraps; `from_env` as in
+/// [`bootstrap_object`].
+fn bootstrap_image(
+    path: &str,
+    target: &str,
+    spec_roots: &[impl IntoSpecRoot],
+    isa: Option<ArmIsa>,
+    options: &LoadOptions,
+    from_env: bool,
+) -> KunaResult<ConsoleProgram> {
     if file_is_te_image(path) {
+        let _load = enter_load(options, from_env);
         bootstrap_from_te_with_specs(path, target, spec_roots, isa)
     } else if let Some(bytes) = file_mz_dos_image(path) {
+        let _load = enter_load(options, from_env);
         bootstrap_from_mz_bytes_with_specs(path, &bytes, target, spec_roots, isa)
     } else {
-        bootstrap_from_object_with_isa_with_specs(path, target, spec_roots, isa)
+        bootstrap_object(path, target, spec_roots, isa, options, from_env)
+    }
+}
+
+/// Put a load's options in force on this thread: `options` for an
+/// explicit-options load, the live environment for an entry point that takes
+/// none (`options` is then [`LoadOptions::from_env`], read for the bootstrap's
+/// own decisions). The program built under the scope keeps that choice.
+fn enter_load(options: &LoadOptions, from_env: bool) -> kuna_decomp::kuna_loadoptions::LoadScope {
+    if from_env {
+        kuna_decomp::kuna_loadoptions::enter_environment()
+    } else {
+        options.enter()
     }
 }
 
@@ -4646,9 +4697,9 @@ fn mips_t9_probe(
     })
 }
 
-/// Explicit-input-context form of [`bootstrap_from_object`]. Front-ends use
-/// this to avoid process-global state; the interactive console wrapper above
-/// retains the environment bridge used by `load file`.
+/// Explicit-input-context form of [`bootstrap_from_object`]: the ARM decode
+/// mode comes from `isa`, the load-time options from the environment.
+/// [`bootstrap_from_object_with_options`] takes both explicitly.
 pub fn bootstrap_from_object_with_isa(
     path: &str,
     target: &str,
@@ -4666,6 +4717,41 @@ pub fn bootstrap_from_object_with_isa_with_specs(
     spec_roots: &[impl IntoSpecRoot],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
+    bootstrap_object(path, target, spec_roots, isa, &LoadOptions::from_env(), true)
+}
+
+/// [`bootstrap_from_object`] with every setting explicit: the ARM decode mode
+/// and the load-time options. Nothing on this path reads or writes the process
+/// environment, so threads may load images at once with different options. The
+/// program keeps `options`, and its analysis commit and decompiles read them.
+pub fn bootstrap_from_object_with_options(
+    path: &str,
+    target: &str,
+    spec_roots: &[impl IntoSpecRoot],
+    isa: Option<ArmIsa>,
+    options: &LoadOptions,
+) -> KunaResult<ConsoleProgram> {
+    bootstrap_object(path, target, spec_roots, isa, options, false)
+}
+
+/// The object bootstrap. `from_env` is set by the entry points that take no
+/// options: their load and the program it builds read the environment live, and
+/// they publish the image's Go toolchain version in
+/// [`GOVERSION_ENV`](kuna_decomp::kuna_goreg::GOVERSION_ENV) (cleared for a
+/// non-Go image). An explicit-options load leaves the environment alone and
+/// never reads it.
+fn bootstrap_object(
+    path: &str,
+    target: &str,
+    spec_roots: &[impl IntoSpecRoot],
+    isa: Option<ArmIsa>,
+    options: &LoadOptions,
+    from_env: bool,
+) -> KunaResult<ConsoleProgram> {
+    // The caller's options are in force from the first byte read: a gate read
+    // outside every scope falls back to the environment, which an explicit
+    // load must never consult.
+    let _caller = enter_load(options, from_env);
     let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
     let registry = build_registry();
 
@@ -4681,7 +4767,7 @@ pub fn bootstrap_from_object_with_isa_with_specs(
             };
             // (kuna `kernelcache`) IMG4 / IM4P / LZFSE / complzss unwrapping and MH_FILESET
             // entry selection, ahead of every other normalization.
-            let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
+            let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();
             let peeled = kuna_analysis::loader::kuna_kernelcache::peel(bytes, &choice)
                 .map_err(KunaError::lowlevel)?;
             if let Some(note) = &peeled.note {
@@ -4696,7 +4782,7 @@ pub fn bootstrap_from_object_with_isa_with_specs(
             // exactly as for a thin Mach-O. The slice preference is `--slice` (env
             // `KUNA_MACHO_SLICE`) or the `--target` stem, else x86-64 → arm64 → first.
             // Non-fat input is untouched (the peel returns the bytes verbatim).
-            let bytes = select_macho_slice(bytes, target);
+            let bytes = select_macho_slice(bytes, options.macho_slice.as_deref(), target);
             // (kuna) ELF section-table tolerance: the second normalization at this same
             // canonical point. An ELF's section table is link-time metadata, but `object`
             // validates it eagerly, so one corrupt half-word rejected an image whose
@@ -4726,6 +4812,27 @@ pub fn bootstrap_from_object_with_isa_with_specs(
     for note in &load_notes {
         kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
     }
+    // (kuna goreg) The Go toolchain version is a BUILD-TIME fact: the goreg
+    // shells are interned inside the cspec decode during the sleigh build
+    // below, upstream of every per-image fact write, and their layouts drift
+    // by release (go1.23's g.syscallbp, go1.25's dropped gobuf.ret). It travels
+    // on the load options, which every gate below reads; this scope replaces the
+    // caller's until the load returns.
+    // An environment-reading load takes the version from the image alone: a
+    // stale `KUNA_GOVERSION` must not outlive a non-Go image.
+    let mut options = options.clone();
+    let stated = if from_env { None } else { options.go_version };
+    options.go_version =
+        kuna_analysis::loader::gobuildinfo::go_toolchain_version(&bytes).or(stated);
+    if from_env {
+        match options.go_version {
+            Some((maj, min)) => {
+                std::env::set_var(kuna_decomp::kuna_goreg::GOVERSION_ENV, format!("{maj}.{min}"))
+            }
+            None => std::env::remove_var(kuna_decomp::kuna_goreg::GOVERSION_ENV),
+        }
+    }
+    let _load = enter_load(&options, from_env);
     let explicit_isa = isa.is_some();
     let import_proofs = kuna_analysis::loader::ImportProofScope::enter(&bytes);
     // LoadImageBfd(filename) + open(): parse the ELF (machine, segments, symbols).
@@ -4736,18 +4843,6 @@ pub fn bootstrap_from_object_with_isa_with_specs(
     // machine → SLEIGH language id), unless an explicit target overrides it;
     // buildSpecFile -> buildTranslator -> the Architecture::init tail follow.
     let arch_type = String::from_utf8_lossy(&loader.get_arch_type()).into_owned();
-    // (kuna goreg) The Go toolchain version is a BUILD-TIME fact: the goreg
-    // shells are interned inside the cspec decode during the sleigh build
-    // below, upstream of every per-image fact write, and their layouts drift
-    // by release (go1.23's g.syscallbp, go1.25's dropped gobuf.ret). Carry it
-    // on the loadtime-env tier; a non-Go image clears the variable so a stale
-    // value from an earlier load in this process cannot leak in.
-    match kuna_analysis::loader::gobuildinfo::go_toolchain_version(&bytes) {
-        Some((maj, min)) => {
-            std::env::set_var(kuna_decomp::kuna_goreg::GOVERSION_ENV, format!("{maj}.{min}"))
-        }
-        None => std::env::remove_var(kuna_decomp::kuna_goreg::GOVERSION_ENV),
-    }
     let mut sleigh = build_sleigh_for_loader(
         path,
         target,
@@ -6415,14 +6510,14 @@ fn is_object_binary(bytes: &[u8]) -> bool {
 /// A fat header that cannot be peeled (unparsable, or no usable slice) is left
 /// untouched, so the downstream `object::File::parse` produces the existing
 /// "Unsupported file format" error rather than this silently mis-loading.
-fn select_macho_slice(bytes: Vec<u8>, target: &str) -> Vec<u8> {
+fn select_macho_slice(bytes: Vec<u8>, slice: Option<&str>, target: &str) -> Vec<u8> {
     use kuna_analysis::loader::macho_fat::{peel_fat_image, slice_pref};
-    peel_fat_image(bytes, slice_pref(None, Some(target)))
+    peel_fat_image(bytes, slice_pref(slice, Some(target)))
 }
 
 /// An IMG4 / IM4P / compressed kernelcache, admitted while `kernelcache` is not off.
 fn is_apple_container(bytes: &[u8]) -> bool {
-    kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env()
+    kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force()
         != kuna_decomp::kuna_kernelcache::KernelcacheChoice::Off
         && kuna_analysis::loader::kuna_kernelcache::is_container(bytes)
 }
