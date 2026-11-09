@@ -158,6 +158,10 @@ fn locate_x86_64(img: &MachoImage, accessor: u64) -> Option<u64> {
     ok.then_some(next.wrapping_add(disp as i64 as u64))
 }
 
+/// `Class_HasResilientSuperclass` in a class descriptor's kind-specific
+/// flags (`TypeContextDescriptorFlags`, the descriptor flags' upper half).
+const CLASS_HAS_RESILIENT_SUPERCLASS: u32 = 1 << 13;
+
 /// Offsets in a value witness table: the size word after the eight
 /// function pointers, and the flags word (bits 0-7 the alignment mask).
 const VWT_SIZE: u64 = 64;
@@ -279,10 +283,18 @@ impl<'a> Types<'a> {
     }
 
     /// Find every statically laid-out type's metadata and check it points
-    /// back at the descriptor.
+    /// back at the descriptor. A generic type, one whose metadata needs
+    /// runtime initialization, or a class with a resilient superclass, whose
+    /// field offsets are only known once the runtime has sized the
+    /// superclass, has none.
     pub fn locate_all(&mut self) {
         for ctx in self.md.contexts.values() {
-            if !ctx.kind.is_nominal() || ctx.flags & 0x80 != 0 || (ctx.flags >> 16) & 3 != 0 {
+            let specific = ctx.flags >> 16;
+            if !ctx.kind.is_nominal()
+                || ctx.flags & 0x80 != 0
+                || specific & 3 != 0
+                || (ctx.kind == ContextKind::Class && specific & CLASS_HAS_RESILIENT_SUPERCLASS != 0)
+            {
                 continue;
             }
             let Some(accessor) = ctx.accessor else {

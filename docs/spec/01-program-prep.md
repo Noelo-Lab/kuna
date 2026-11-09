@@ -4950,8 +4950,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   preset does and `auto` selects for any binary under 500 KiB;
   `decompiler/crates/kuna-analysis/src/analyzers/swift/kuna_swifttypes.rs`): a
   non-generic type whose metadata needs no runtime initialization (the
-  descriptor's `MetadataInitialization` is none: no resilient superclass, no
-  foreign or singleton initialization) has that metadata laid out statically,
+  descriptor's `MetadataInitialization` is none: no foreign or singleton
+  initialization; and a class whose descriptor sets `HasResilientSuperclass`,
+  bit 13 of the kind-specific flags, is skipped whatever that says, since its
+  field offsets wait for the runtime to size the superclass) has that
+  metadata laid out statically,
   and its accessor is the one-line function that returns the address — `adrp
   x0, …; add x0, x0, …; mov x1, #0; ret` on arm64 (or the `adr x0, …; nop` a
   linker relaxes the pair to), `lea rax, [rip + …]; xor
