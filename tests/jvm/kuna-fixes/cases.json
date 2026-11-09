@@ -8,16 +8,6 @@
   ],
   "cases": [
     {
-      "id": "pkg/TestIfDenestFallthrough",
-      "fix": "jvm_fix_if_denest_fallthrough",
-      "class_files": [
-        "pkg/TestIfDenestFallthrough.class"
-      ],
-      "source": "src/pkg/TestIfDenestFallthrough.java",
-      "compiler": "javac 17.0.20.1 (`-g`)",
-      "summary": "`assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's"
-    },
-    {
       "id": "pkg/TestMethodRefWildcardReceiver",
       "fix": "jvm_fix_lambda_wildcard_return",
       "class_files": [
@@ -42,6 +32,16 @@
       "source": "src/pkg/TestTryCatchNotFlag.java",
       "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
       "summary": "`create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one"
+    },
+    {
+      "id": "pkg/TestIfDenestFallthrough",
+      "fix": "jvm_fix_if_denest_fallthrough",
+      "class_files": [
+        "pkg/TestIfDenestFallthrough.class"
+      ],
+      "source": "src/pkg/TestIfDenestFallthrough.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "`assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's"
     }
   ]
 }

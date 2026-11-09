@@ -1376,7 +1376,6 @@ symptoms = "// $VF: Couldn't be decompiled with NullPointerException: returnType
 
 [[option]]
 option = "jvm_fix_twr_unary_condition"
-option = "jvm_fix_if_denest_fallthrough"
 vineflower = ""
 short = ""
 aliases = []
@@ -1396,6 +1395,16 @@ inspiration = "Vineflower 1.12.0 TryWithResourcesProcessor.makeTryWithResourceJ1
 change_kind = "kuna-fix"
 tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with index out of bounds: the len is 1 but the index is 1 (IndexOutOfBoundsException: Index 1 out of bounds for length 1 in Vineflower)|a try/catch (Throwable) whose handler starts with if (!flag) fails to decompile"
+
+[[option]]
+option = "jvm_fix_if_denest_fallthrough"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p8_structure"
 subphase = "if_helper"
 strength = "HARD"
 rewind = "p8_structure"
