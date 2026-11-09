@@ -1,0 +1,27 @@
+== ctors kt4/CtorOnly
+class	kt4/CtorOnly
+  method <init> ()V	Constructor flags=22 primary=false classFlags=6 class=kt4/CtorOnly method=<init> ()V supplier=true params=[]
+deprecated	@Deprecated(message = "Deprecated by attribute.")
+stringify <init> ()V	true	   constructor() : super() {\u000a      System.out.println("secondary");\u000a   }\u000a
+== ctors kt4/InitOnly
+class	kt4/InitOnly
+  primary	Constructor flags=6 primary=true classFlags=6 class=kt4/InitOnly method=<init> ()V supplier=true params=[] same=true
+  method <init> ()V	Constructor flags=6 primary=true classFlags=6 class=kt4/InitOnly method=<init> ()V supplier=true params=[]
+deprecated	@Deprecated(message = "Deprecated by attribute.")
+primary <init> ()V	false	
+stringify <init> ()V	false	
+== ctors kt4/Obj
+class	kt4/Obj
+  primary	Constructor flags=2 primary=true classFlags=326 class=kt4/Obj method=<init> ()V supplier=true params=[] same=true
+  method <init> ()V	Constructor flags=2 primary=true classFlags=326 class=kt4/Obj method=<init> ()V supplier=true params=[]
+log	WARN Unreferenced anonymous class kt4/Obj$lazyVal$2!
+deprecated	@Deprecated(message = "Deprecated by attribute.")
+primary <init> ()V	false	
+stringify <init> ()V	true	   init {\u000a      super();\u000a   }\u000a
+== ctors kt4/E2
+class	kt4/E2
+  primary	Constructor flags=2 primary=true classFlags=32902 class=kt4/E2 method=<init> (Ljava/lang/String;I)V supplier=true params=[] same=true
+  method <init> (Ljava/lang/String;I)V	Constructor flags=2 primary=true classFlags=32902 class=kt4/E2 method=<init> (Ljava/lang/String;I)V supplier=true params=[]
+deprecated	@Deprecated(message = "Deprecated by attribute.")
+primary <init> (Ljava/lang/String;I)V	false	
+stringify <init> (Ljava/lang/String;I)V	false	
