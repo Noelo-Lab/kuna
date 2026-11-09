@@ -2062,3 +2062,93 @@ them then fail like other suspend functions whose `finally` needs a semaphore va
 metadata`). The fix does not touch `return` inside `finally`
 (`TestTryReturn.testParsingFailure`) or a catch range covering the inlined `finally` (kotlinc 1.3,
 okhttp's `PublicSuffixDatabase.readTheListUninterruptibly`), which fail before any split could help.
+
+**Fix `lambda_catch_var_rename`**. `NestedClassProcessor` renames a lambda body's local whose
+name the enclosing method also uses (`e` becomes `ex`): it gives the local a renamed
+local-variable-table entry and hands it to every `VarExprent` of the body's `DirectGraph`. A
+catch clause's variable belongs to its `CatchStatement` (or `CatchAllStatement`) and has no
+node in that graph (`FlattenStatementsHelper` leaves it out: "TODO: add catch variable to this
+node"), so it keeps the old entry; the clause declares `e` while its uses read `ex`, and javac
+cannot resolve `ex`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_lambda_catch_var_rename.rs`) the catch
+variables of the body's statement tree take the entry their uses take. Upstream has no change
+here.
+
+**Fix `type_annotation_qualified_name`**. `TypeAnnotation.appendCastTypeName` writes an
+annotated class type one class name at a time, each by its simple name, from the outermost class
+its internal name shows; a class outside the input is one name (`Map$Entry` is `Entry`). The
+import collector, which decides how the same type is written without an annotation, may have to
+qualify it (`Map.Entry` where another `Entry` is in scope, the full name where the current
+package has a class of the same simple name); that qualifier is dropped, so
+`Map.@Nullable Entry<K, V>` is written `@Nullable Entry<K, V>`, which names another type or none.
+With the fix (`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_type_annotation_qualified_name.rs`)
+the first name is preceded by the qualifier of the import collector's name for it, and the
+annotation follows the qualifier, as Java requires (JLS 9.7.4).
+
+**Fix `type_annotation_argument_scope`**. A type annotation's path leads from the outermost type
+to the annotated part one step per level (JVMS 4.7.20.2). At each generic argument
+`appendCastTypeName` takes the next step of every annotation whose next step names that argument
+and then recurses into the argument with all of the member's annotations, so an annotation meant
+for a later argument takes its steps inside an earlier one:
+`Function<Map<String, @A Object>, @B Map<String, @C Object>>` is written with `@A @C` on the first
+`Object` and nothing on the second. With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_type_annotation_argument_scope.rs`) the
+recursion into an argument sees only the annotations whose path enters it.
+
+**Fix `assert_throw_after_if`**. `AssertProcessor.replaceAssertion` finds an assert's
+`throw new AssertionError` as the body of the `if` testing `$assertionsDisabled`, its else, or the
+statement its body breaks to. When what follows the assert cannot complete normally (a `return`,
+the end of a loop body), the structurer writes the `if` the other way round:
+`if ($assertionsDisabled || cond) { rest } throw new AssertionError();`, or `if (...) continue;`,
+the throw being the last statement of the sequence, reached only when the condition is false.
+Vineflower leaves the shape alone, writes "Could not resugar all assert statements" and a reference
+to the synthetic field, which javac cannot resolve. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_assert_throw_after_if.rs`), when the
+throw's only predecessor is the `if`'s fall-through edge, the condition is negated
+(`SecondaryFunctionsHelper.propagateBoolNot`) and read as for `if (!C) throw`, and the `if` and
+the throw become the assert followed by the `if`'s body (or by its jump). Upstream has no change
+here.
+
+**Fix `sealed_private_permits`**. `ClassWriter.writeClassDefinition` writes a sealed class's
+`PermittedSubclasses` attribute as a `permits` clause. The header of a top-level class is outside
+its body, so a private member class (or one nested in a private member class) cannot be named
+there (JLS 6.6.1) and javac rejects the clause and every subclass with it; a source produces such a
+class only by leaving the clause out, which makes the permitted subclasses those of the same
+compilation unit (JLS 8.1.6). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p9_emit/kuna_fix_sealed_private_permits.rs`) the clause is left
+out for a top-level class whose permitted subclasses are all its member classes and include such
+an inaccessible one. The recompiled attribute lists the same classes, in the order the classes are
+written.
+
+**Fix `switch_expression_assignments`**. `SwitchExpressionHelper` turns a switch statement into
+`v = switch (...) { ... }` when the statements that break out of its cases end by assigning `v` (or
+throw), then replaces every assignment to `v` in the cases by a `yield`. It skips the break
+sources that are not basic blocks and never asks whether an assignment it replaces is the last
+thing done before a break: `if (round) { t = t.truncate(); if (up) { t = t.plus(1); } }` becomes
+`yield t.truncate(); if (up) { yield t.plus(1); }` (unreachable code), and a case left by a
+failed condition, a loop's exit or an empty block yields nothing (`switch rule completes without
+providing a value`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_switch_expression_assignments.rs`) the
+switch becomes an expression only when every break source that is reached by completing normally
+(an empty block, an `if` without else, a conditional loop) is a block ending in an assignment to
+the variable or a throw, and every assignment to it in the cases is one of those. Upstream has no
+change here.
+
+**Fix `nested_param_rename`**. `NestedClassProcessor.insertLocalVars` renames the variables of a
+local or anonymous class's methods whose names the enclosing method's `VarProcessor` also gives to
+captured variables (`refreshVarNames`), in the `VarProcessor` only. That name can be stale (a
+captured variable shares its slot with a catch variable `e`), and the uses of a variable are
+written by their local-variable-table names, which take precedence, while `ClassWriter` declares a
+parameter by the `VarProcessor` name: `onFailure(Exception ex) { log(e); }`, which javac cannot
+resolve, or resolves to a captured variable. With the fix
+(`decompiler/nonnative/kuna-jvm/src/p9_emit/kuna_fix_nested_param_rename.rs`) a parameter without a
+clashing name or a `MethodParameters` name is declared by its local-variable-table name, the name
+its uses are written by; those names are the source's, under which the method compiled.
+
+**Fix `switch_expression_arm_scope`**. `VarDefinitionHelper.iterateClashingNames` does not visit a
+switch expression's (phantom) switch statement, because "switch expressions have isolated
+branches". They are isolated from each other, not from the variables in scope around the
+expression, so an arm may declare a name a case of an enclosing switch statement already declared
+(spring's ASM `Frame.getAbstractTypeFromDescriptor`: `internalName`). With the fix each arm is
+visited like an `if` branch: a clashing declaration is scoped or renamed (including the scoping of
+fix `switch_case_scope`) and the arm's declarations are forgotten when it ends.
