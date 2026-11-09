@@ -121,7 +121,7 @@ rules:
   an extra temporary.
 - **kuna's own code** lives in `kuna_*` modules (`kuna_input`, `kuna_inventory`,
   `kuna_options`, `kuna_driver`, `kuna_partition`, `kuna_plugins`, `kuna_spans`,
-  `kuna_trace`, `kuna_corpus`), in the modules that replace JVM facilities (`context_source`,
+  `kuna_trace`, `kuna_corpus`, `kuna_reclaim`), in the modules that replace JVM facilities (`context_source`,
   `jdk_runtime`, `zip_reader`, `byte_cursor`), and in the Kotlin plugin's seams
   (`kt_metadata`, `kt_attrs`, `k_dispatch`). Changes inside ported files are kept to the
   seams those modules need (span marks in the writer, a deadline poll in the
@@ -226,8 +226,9 @@ and 1,755 classes of JDK 21 come out identical apart from the differences below,
 do the Kotlin libraries okio 2.6.0, okhttp 4.7.2, kotlinx-coroutines 1.8.0 and
 kotlin-stdlib 2.2.20 and spring-framework's Kotlin classes, printed as Kotlin. The parallel
 driver's output is identical to a single instance's: on Guava and spring-boot at every
-worker count, on okio, okhttp and spring-framework at 16 workers. A change that makes a case differ is a regression to fix, unless it is
-a named kuna option that is off by default.
+worker count, on Elasticsearch at 8 and 24 workers, on okio, okhttp and spring-framework
+at 16 workers. A change that makes a case differ is a regression to fix, unless it is a
+named kuna option that is off by default.
 
 **Known, deliberate differences:**
 
@@ -526,17 +527,18 @@ processes (without writing) the other roots its classes depend on, and a batch w
 read state it did not produce is repeated before its result is used (spec section
 10.14). `auto` is the number of cores, at most 24 and at most one per 16 class files,
 reduced until the memory estimate below fits in 90% of the available memory. Measured on
-an 80-core machine: Elasticsearch (53 MB of classes) 27 s with eight workers, 12 s with
-twenty-four; Guava (6.6 MB) 20 s with one worker, 3.9 s with eight, 2.4 s with
-twenty-four.
+an 80-core machine (`decompile-project`, best of three): Elasticsearch (53 MB of classes)
+190 s with one worker, 27 s with eight, 12.5 s with twenty-four; Guava (6.6 MB) 20 s with
+one worker, 3.4 s with eight, 1.9 s with twenty-four.
 
 **Memory.** An instance reads a class's constant pool entries and members when it first
 uses them (spec section 10.3), so it holds little more than the classes its batches touch.
 The driver estimates an instance at 32 MiB plus 4 bytes per byte of input class files and
 1 per byte of library class files, and the decompiled state and results at 90 bytes per
-input byte, whatever the count; the estimate bounds the peaks of Elasticsearch (5.3 GB
-with eight workers, 9.0 GB with twenty-four), Guava (0.9 and 1.7 GB), Ghidra (9.1 MB of
-classes: 1.2 and 1.7 GB) and spring-boot (3.0 MB: 0.36 and 0.70 GB).
+input byte, whatever the count; the estimate bounds the peaks of Elasticsearch (2.5 GB
+with one worker, 4.2 GB with eight, 7.4 GB with twenty-four), Guava (0.37, 0.74 and
+1.5 GB), Ghidra (9.1 MB of classes: 0.82 GB with eight, 1.4 GB with twenty-four) and
+spring-boot (3.0 MB: 0.16, 0.31 and 0.67 GB).
 `--max-fn-memory` is process-wide on JVM inputs, since the instances are threads of one
 process.
 
@@ -548,9 +550,16 @@ normally. A method stuck between two polls is not interrupted; as a last resort 
 stops waiting after `2N+30` seconds, writes the classes that finished, gives the stuck ones
 a stub comment and exits.
 
-**Speed.** One engine instance is slower than Vineflower on one JVM: 3 to 8 times on whole
-jars when the port reached parity (for 1,755 JDK classes, 116 s against 18 s). The
-parallel driver is how kuna makes up the difference on large inputs.
+**Speed.** One engine instance is slower than Vineflower on one thread. Against
+Vineflower 1.12.0 with `-thr=1` on JDK 21, `--jobs 1` takes 1.2 to 2.2 times the wall time
+on whole jars: spring-boot 7.2 s against 6.1 s, Guava 20 s against 13 s, spring-framework
+38 s against 21 s, Elasticsearch 190 s against 85 s. kuna uses one core for that;
+Vineflower's JVM also runs compiler and garbage-collector threads, and its CPU time is
+five to nine times its wall time. The parallel driver is how kuna makes up the
+difference: with both decompilers' default flags
+on the same 80-core machine, kuna finishes spring-boot in 0.7 s against 3.7 s, Guava in
+1.9 s against 5.8 s, spring-framework in 3.9 s against 7.5 s and Elasticsearch in 12.5 s
+against 14.5 s, using a third of Vineflower's CPU time or less.
 
 **Hard failures.** A method or class that throws is contained (spec section 10.12). A
 stack overflow or a failed allocation is not, and ends the process; the engine threads get
