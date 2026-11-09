@@ -50,7 +50,7 @@ impl SimplifyExprentsHelper {
     pub fn simplify_stack_vars_statement(
         stat: Statement,
         set_reordered_ifs: &mut JHashSet<i32>,
-        ssa: Option<SSAConstructorSparseEx>,
+        ssa: Option<&SSAConstructorSparseEx>,
         cl: StructClass,
         first_invocation: bool,
     ) -> bool {
@@ -60,7 +60,7 @@ impl SimplifyExprentsHelper {
     fn simplify_stack_vars_exprents(
         list: &JList<Exprent>,
         cl: StructClass,
-        ssa: Option<SSAConstructorSparseEx>,
+        ssa: Option<&SSAConstructorSparseEx>,
         stat: Statement,
         first_invocation: bool,
     ) -> bool {
@@ -108,7 +108,7 @@ impl SimplifyExprentsHelper {
     }
 
     fn is_inlined_method_reference_assign(
-        ssa: Option<SSAConstructorSparseEx>,
+        ssa: Option<&SSAConstructorSparseEx>,
         first: Exprent,
         second: Exprent,
     ) -> bool {
@@ -218,7 +218,7 @@ impl SimplifyExprentsHelper {
         unported!("SimplifyExprentsHelper.isSimpleConstructorInvocation")
     }
 
-    fn build_iff(stat: Statement, ssa: Option<SSAConstructorSparseEx>) -> bool {
+    fn build_iff(stat: Statement, ssa: Option<&SSAConstructorSparseEx>) -> bool {
         unported!("SimplifyExprentsHelper.buildIff")
     }
 

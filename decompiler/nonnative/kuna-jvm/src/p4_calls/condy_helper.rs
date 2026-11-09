@@ -19,13 +19,13 @@ impl CondyHelper {
     fn construct_var_handle(
         field_name: &str,
         field_owner: &str,
-        field_type: &PooledConstant,
+        field_type: Option<&PooledConstant>,
         is_static: bool,
     ) -> Exprent {
         unported!("CondyHelper.constructVarHandle")
     }
 
-    fn to_class_exprent(constant: &PooledConstant) -> Exprent {
+    fn to_class_exprent(constant: Option<&PooledConstant>) -> Exprent {
         unported!("CondyHelper.toClassExprent")
     }
 
@@ -47,7 +47,9 @@ impl CondyHelper {
         unported!("CondyHelper.constructFindVarHandleExprent")
     }
 
-    fn construct_array_var_handle_exprent(class_const: &PooledConstant) -> InvocationExprent {
+    fn construct_array_var_handle_exprent(
+        class_const: Option<&PooledConstant>,
+    ) -> InvocationExprent {
         unported!("CondyHelper.constructArrayVarHandleExprent")
     }
 }

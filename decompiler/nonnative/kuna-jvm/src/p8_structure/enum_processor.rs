@@ -10,7 +10,7 @@ pub struct EnumProcessor;
 impl EnumProcessor {
     pub fn clear_enum(wrapper: ClassWrapper) {
         let cl = wrapper.get_class_struct();
-        let qualified_name = cl.with(|d| d.qualified_name.clone());
+        let qualified_name = cl.qualified_name();
 
         let methods = wrapper.get_methods().borrow().to_vec();
         for method in methods {

@@ -90,7 +90,7 @@ impl StackVarsProcessor {
 
     fn iterate_statements(
         root: RootStatement,
-        ssa: SSAUConstructorSparseEx,
+        ssa: &mut SSAUConstructorSparseEx,
         options: StackSimplifyOptions,
     ) -> bool {
         unported!("StackVarsProcessor.iterateStatements")
@@ -107,7 +107,7 @@ impl StackVarsProcessor {
         parent: Exprent,
         var: VarExprent,
         dest: Exprent,
-        ssau: SSAUConstructorSparseEx,
+        ssau: &SSAUConstructorSparseEx,
     ) {
         unported!("StackVarsProcessor.replaceSingleVar")
     }
@@ -120,7 +120,7 @@ impl StackVarsProcessor {
         index: i32,
         next: Option<Exprent>,
         map_var_values: &mut JHashMap<VarVersionPair, Exprent>,
-        ssau: SSAUConstructorSparseEx,
+        ssau: &mut SSAUConstructorSparseEx,
         simplify_across_stack: bool,
         ret: &mut [i32; 2],
         options: StackSimplifyOptions,
@@ -133,7 +133,7 @@ impl StackVarsProcessor {
         left: VarExprent,
         right: Exprent,
         lvts: &mut JHashMap<VarVersionPair, LocalVariable>,
-        ssau: SSAUConstructorSparseEx,
+        ssau: &SSAUConstructorSparseEx,
     ) {
         unported!("StackVarsProcessor.onDeletedVar")
     }
@@ -186,7 +186,7 @@ impl StackVarsProcessor {
         parent: Exprent,
         next: Option<Exprent>,
         map_var_values: &mut JHashMap<VarVersionPair, Exprent>,
-        ssau: SSAUConstructorSparseEx,
+        ssau: &mut SSAUConstructorSparseEx,
         ret: &mut ChildRet,
         options: StackSimplifyOptions,
     ) {
@@ -201,7 +201,7 @@ impl StackVarsProcessor {
     }
 
     fn get_used_versions(
-        ssa: SSAUConstructorSparseEx,
+        ssa: &SSAUConstructorSparseEx,
         var: VarVersionPair,
         res: &mut Vec<VarVersionNode>,
     ) -> bool {
@@ -211,7 +211,7 @@ impl StackVarsProcessor {
     fn is_version_to_be_replaced(
         usedvar: VarVersionPair,
         map_vars: &JHashMap<i32, Option<JHashSet<VarVersionPair>>>,
-        ssau: SSAUConstructorSparseEx,
+        ssau: &SSAUConstructorSparseEx,
         leftpaar: VarVersionPair,
     ) -> bool {
         unported!("StackVarsProcessor.isVersionToBeReplaced")
@@ -220,14 +220,14 @@ impl StackVarsProcessor {
     fn get_all_var_versions(
         leftvar: VarVersionPair,
         exprent: Exprent,
-        ssau: SSAUConstructorSparseEx,
+        ssau: &SSAUConstructorSparseEx,
     ) -> JHashMap<i32, Option<JHashSet<VarVersionPair>>> {
         unported!("StackVarsProcessor.getAllVarVersions")
     }
 
     fn set_effectively_final_vars(
         stat: Statement,
-        ssau: SSAUConstructorSparseEx,
+        ssau: &SSAUConstructorSparseEx,
         var_lookup_map: &mut JHashMap<VarVersionPair, VarExprent>,
     ) {
         if let Some(exprents) = stat.get_exprents() {
@@ -258,7 +258,7 @@ impl StackVarsProcessor {
     fn set_effectively_final_vars_exprent(
         stat: Statement,
         exprent: Exprent,
-        ssau: SSAUConstructorSparseEx,
+        ssau: &SSAUConstructorSparseEx,
         index: i32,
         list: &JList<Exprent>,
         var_lookup_map: &mut JHashMap<VarVersionPair, VarExprent>,

@@ -88,7 +88,7 @@ impl ConcatenationHelper {
 
     fn extract_parameters(
         root: RootStatement,
-        bootstrap_arguments: Option<&[PooledConstant]>,
+        bootstrap_arguments: Option<&[Option<PooledConstant>]>,
         expr: InvocationExprent,
     ) -> Vec<Exprent> {
         unported!("ConcatenationHelper.extractParameters")
