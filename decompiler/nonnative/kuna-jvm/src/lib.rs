@@ -31,6 +31,18 @@ pub use infra::{
     pass, pass_context, plugin_context, validation_helper, wrapped_pass,
 };
 pub use kotlin::{bit_encoding, kt_flags, kt_metadata, kt_proto, metadata_name_resolver};
+pub use infra::{
+    graph_parser, kuna_plugins, language_chooser, language_spec, plugin, plugin_options,
+    plugin_source, statement_writer,
+};
+pub use kotlin::{
+    k_annotation_exprent, k_catch_statement, k_class, k_const_exprent, k_constructor, k_dispatch,
+    k_do_statement, k_element, k_exit_exprent, k_field_exprent, k_file, k_function,
+    k_function_exprent, k_function_reference, k_hidden_element, k_if_statement,
+    k_invocation_exprent, k_multifile_facade, k_new_exprent, k_property, k_sequence_statement,
+    k_switch_head_exprent, k_switch_statement, k_type, k_var_exprent, kotlin_import_collector,
+    kt_attrs,
+};
 pub use p0_knowledge::{
     class_wrapper_node, context_source, context_unit, converter_helper, counter_container,
     decompiler_context, fernflower, i_decompiled_data, i_fernflower_logger,

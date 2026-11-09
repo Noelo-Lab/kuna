@@ -596,7 +596,7 @@ impl FunctionExprent {
                 );
             }
 
-            return self.get_expr_type_opt();
+            return self.0.get_expr_type_opt();
         } else if func_type == FunctionType::Ternary {
             let type1 = lst_operands.get(1).get_inferred_expr_type(upper_bound);
             let type2 = lst_operands.get(2).get_inferred_expr_type(upper_bound);
@@ -621,20 +621,20 @@ impl FunctionExprent {
 
             return match union {
                 Some(u) => Some(u),
-                None => self.get_expr_type_opt(),
+                None => self.0.get_expr_type_opt(),
             };
         } else if func_type == FunctionType::Instanceof {
             for oper in lst_operands.iter() {
                 oper.get_inferred_expr_type_opt(None);
             }
-            return self.get_expr_type_opt();
+            return self.0.get_expr_type_opt();
         }
 
         for oper in lst_operands.iter() {
             oper.get_inferred_expr_type_opt(upper_bound);
         }
 
-        self.get_expr_type_opt()
+        self.0.get_expr_type_opt()
     }
 
     fn are_generic_types_same(right: &VarType, upper_bound: &VarType) -> bool {
@@ -701,7 +701,7 @@ impl FunctionExprent {
         use FunctionType::*;
         match func_type {
             Ternary => {
-                let supertype = self.get_expr_type();
+                let supertype = self.0.get_expr_type();
                 result.add_expr_lower_bound(param1, &VarType::VARTYPE_BOOLEAN());
                 result.add_expr_upper_bound(param1, &VarType::VARTYPE_BOOLEAN());
 
@@ -1091,7 +1091,7 @@ impl FunctionExprent {
         newline_group: bool,
     ) -> TextBuffer {
         let func_type = self.get_func_type();
-        let myprec = self.get_precedence();
+        let myprec = self.0.get_precedence();
         let exprprec = expr.get_precedence();
 
         let mut parentheses = exprprec > myprec;
@@ -1170,6 +1170,13 @@ impl FunctionExprent {
     }
 
     pub fn set_func_type(self, func_type: FunctionType) {
+        if self.0.is_kotlin() {
+            return crate::k_dispatch::function_set_func_type(self, func_type);
+        }
+        FunctionExprent::set_func_type_base(self, func_type)
+    }
+
+    pub fn set_func_type_base(self, func_type: FunctionType) {
         self.d_mut(|d| d.func_type = func_type)
     }
 

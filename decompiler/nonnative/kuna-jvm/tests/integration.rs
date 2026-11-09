@@ -144,3 +144,5 @@ mod kuna_driver;
 mod kt1_metadata;
 #[path = "trace_sweep.rs"]
 mod trace_sweep;
+#[path = "kt0_hooks.rs"]
+mod kt0_hooks;

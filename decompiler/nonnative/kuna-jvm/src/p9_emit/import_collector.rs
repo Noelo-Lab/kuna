@@ -6,6 +6,7 @@ use crate::classes_processor::{string_compare_to, ClassNode, ClassNodeType};
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::rt::{JHashMap, JHashSet};
 use crate::struct_class::StructClass;
 use crate::struct_general_attribute::StructGeneralAttribute;
@@ -21,6 +22,8 @@ pub struct ImportCollectorData {
     pub current_package_slash: String,
     pub current_package_point: String,
     pub write_locked: bool,
+    /// Whether this is a `KotlinImportCollector` (see `kotlin_import_collector`).
+    pub kotlin: bool,
 }
 
 arena_object!(pub ImportCollector => ImportCollectorData, Class);
@@ -49,6 +52,7 @@ impl ImportCollector {
             current_package_slash,
             current_package_point,
             write_locked: false,
+            kotlin: false,
         });
 
         let mut processed_classes: JHashSet<StructClass> = JHashSet::new();
@@ -98,6 +102,7 @@ impl ImportCollector {
                 current_package_slash: o.current_package_slash.clone(),
                 current_package_point: o.current_package_point.clone(),
                 write_locked: o.write_locked,
+                kotlin: false,
             }
         });
         ImportCollector::alloc(data)
@@ -274,6 +279,9 @@ impl ImportCollector {
     }
 
     pub fn write_imports(self, buffer: &mut TextBuffer, add_separator: bool) {
+        if let Some(kotlin) = self.try_as_kotlin() {
+            return KotlinImportCollector::write_imports(kotlin, buffer, add_separator);
+        }
         if DecompilerContext::get_option(IFernflowerPreferences::REMOVE_IMPORTS) {
             return;
         }
@@ -308,6 +316,13 @@ impl ImportCollector {
 
     /// Whether the `(simple name, package)` entry is written as an import.
     pub fn keep_import(self, ent: (&str, &str)) -> bool {
+        if let Some(kotlin) = self.try_as_kotlin() {
+            return KotlinImportCollector::keep_import(kotlin, ent);
+        }
+        ImportCollector::keep_import_base(self, ent)
+    }
+
+    pub fn keep_import_base(self, ent: (&str, &str)) -> bool {
         let (key, value) = ent;
         self.with(|d| {
             !d.set_not_imported_names.contains(&key.to_string())

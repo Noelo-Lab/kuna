@@ -12,8 +12,9 @@
 //! `MethodProcessor.codeToJava` up to `DomHelper.parseGraph` on every method of every input
 //! class and records the "Initial" step, for comparing the parts of the pipeline that are ported.
 //! `--save legacy` (default) writes each class to `-o` by file name, as Vineflower's legacy saver
-//! does; `--save folder` keeps its package path. `--hash`, `--shift`, `--javadoc` and `--plugins`
-//! are accepted and ignored. Everything runs on one engine thread with the corpus runner's stack.
+//! does; `--save folder` keeps its package path. Plugins are off unless `--plugins` is given, as
+//! in the Java tracer. `--hash`, `--shift` and `--javadoc` are accepted and ignored. Everything
+//! runs on one engine thread with the corpus runner's stack.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -75,6 +76,7 @@ fn parse_args() -> Args {
     let mut filter = None;
     let mut initial_only = false;
     let mut fixture = false;
+    let mut plugins = false;
     let mut pairs = Vec::new();
     let mut libs = Vec::new();
     let mut inputs = Vec::new();
@@ -104,7 +106,8 @@ fn parse_args() -> Args {
             "--hash" | "--shift" | "--javadoc" => {
                 value("a value");
             }
-            "--plugins" | "--print-options" => {}
+            "--plugins" => plugins = true,
+            "--print-options" => {}
             _ if a.starts_with("--opt=") => pairs.push(a["--opt=".len()..].to_string()),
             _ if a.starts_with("--") => usage(&format!("unknown flag {a}")),
             _ => inputs.push(PathBuf::from(a)),
@@ -114,7 +117,10 @@ fn parse_args() -> Args {
     if inputs.is_empty() {
         usage("no inputs");
     }
-    let mut options: Vec<(String, String)> = Vec::new();
+    let mut options: Vec<(String, String)> = vec![(
+        kuna_jvm::kuna_plugins::JVM_PLUGINS.to_string(),
+        if plugins { "1" } else { "0" }.to_string(),
+    )];
     if fixture {
         options.extend(
             FIXTURE_BASE

@@ -1286,6 +1286,28 @@ change_kind = "kuna-input"
 tier = "analysis"
 symptoms = "inner and anonymous classes missing when decompiling one .class file|unrelated Name$x.class files nested into the class"
 
+[[option]]
+option = "jvm_plugins"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p0_knowledge"
+subphase = "fernflower, kuna_plugins"
+strength = "HARD"
+rewind = "p0_knowledge"
+issue = ""
+summary = "Load the plugins bundled with the engine (Vineflower's VariableRenaming, Kotlin and IdeaNotNull, as they are ported), as java -jar vineflower.jar does; off runs the bare Java pipeline, like Vineflower's test fixture."
+use_when = "Turn off to see what the core Java decompiler makes of a class a plugin would claim, or to compare with Vineflower's test fixture, which loads no plugin."
+example = "kuna decompile app.jar com.ex.Main --option jvm_plugins off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 plugin loading (PluginContext.findPlugins, --list-plugins): java -jar loads VariableRenaming, Kotlin and IdeaNotNull; the test fixture loads none"
+change_kind = "kuna-plugins"
+tier = "core"
+symptoms = "output differs from Vineflower's test fixture but matches java -jar|a class is written in a plugin's language instead of Java|a bundled plugin's pass changes the Java output"
+
 [[driver_owned]]
 vineflower = "thread-count"
 kuna = "--jobs: the driver runs one engine per thread"

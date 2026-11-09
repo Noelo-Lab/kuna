@@ -1245,8 +1245,10 @@ impl ExprProcessor {
                 {
                     buf.append("{} // $VF: monitorenter ");
                 }
-                if let Some(spec) = spec {
-                    match spec {}
+                if let Some(spec) = &spec {
+                    if spec.writer.ends_with_semicolon(expr) {
+                        buf.append_char(';');
+                    }
                 } else if Self::ends_with_semicolon(expr) {
                     buf.append_char(';');
                 }
@@ -1409,7 +1411,7 @@ impl ExprProcessor {
         if type_.is_generic() {
             if let Some(func) = expr.try_as_function() {
                 if func.get_func_type() == FunctionType::Cast {
-                    let func_type = func.get_expr_type();
+                    let func_type = func.0.get_expr_type();
 
                     let gen_type = type_.as_generic();
                     if type_.value.as_deref() == Some(func_type.value_str())

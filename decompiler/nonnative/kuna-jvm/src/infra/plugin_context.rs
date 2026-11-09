@@ -1,12 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/main/plugins/PluginContext.java`.
 //!
-//! Vineflower discovers plugins on the JVM classpath; kuna has no plugin
-//! loading, so a plugin is registered explicitly with
-//! [`PluginContext::register_plugin`] and contributes passes through
-//! [`Plugin::register_java_passes`]. Plugin options and plugin sources are
-//! not ported, and language plugins (`api/plugin/LanguageSpec`) are deferred to
-//! the Kotlin stage: [`LanguageSpec`] is uninhabited, so every `spec != null`
-//! branch of the Java code is unreachable here.
+//! Vineflower discovers plugins through its static plugin sources (plugin
+//! jars, `ServiceLoader`); here each context holds its own sources
+//! ([`PluginContext::set_plugin_sources`], see `kuna_plugins`), and a plugin
+//! can also be registered directly with [`PluginContext::register_plugin`].
 
 use std::rc::Rc;
 
@@ -21,42 +18,25 @@ use crate::java_pass_registrar::JavaPassRegistrar;
 use crate::named_pass::NamedPass;
 use crate::pass::Pass;
 use crate::pass_context::PassContext;
+use crate::plugin_source::PluginSource;
 use crate::rt::{JHashMap, JHashSet};
 use crate::struct_class::StructClass;
 use crate::{arena_identity, arena_object, jthrow};
 
-/// Placeholder for the deferred `api/plugin/LanguageSpec`: no value exists.
-#[derive(Clone, Copy, Debug)]
-pub enum LanguageSpec {}
-
-/// The part of `api/plugin/Plugin` a pass-contributing plugin needs.
-pub trait Plugin {
-    fn id(&self) -> String;
-
-    fn description(&self) -> String;
-
-    fn initialize(&self) {}
-
-    fn before_decompile(&self) {}
-
-    fn close(&self) {}
-
-    fn register_java_passes(&self, _registrar: &mut JavaPassRegistrar) {}
-
-    fn get_language_spec(&self) -> Option<LanguageSpec> {
-        None
-    }
-
-    fn get_renaming_factory(&self) -> Option<Rc<dyn IVariableNamingFactory>> {
-        None
-    }
-}
+pub use crate::language_spec::LanguageSpec;
+pub use crate::plugin::Plugin;
 
 pub struct PluginContextData {
     pub plugins: Vec<Rc<dyn Plugin>>,
+    /// `bySource`, by position in `plugins`.
+    pub by_source: Vec<Option<Rc<dyn PluginSource>>>,
+    /// `PluginSources.PLUGIN_SOURCES` for this context (none by default).
+    pub plugin_sources: Vec<Rc<dyn PluginSource>>,
     pub initialized: bool,
     pub passes: JHashMap<JavaPassLocation, Vec<NamedPass>>,
     pub class_passes: JHashMap<ClassPassLocation, Vec<Rc<dyn ClassPass>>>,
+    /// `languageSpecs`, in the order of their plugins.
+    pub language_specs: Vec<Rc<LanguageSpec>>,
     pub ids: JHashSet<String>,
 }
 
@@ -67,9 +47,12 @@ impl PluginContext {
     pub fn new() -> PluginContext {
         PluginContext::alloc(PluginContextData {
             plugins: Vec::new(),
+            by_source: Vec::new(),
+            plugin_sources: Vec::new(),
             initialized: false,
             passes: JHashMap::new(),
             class_passes: JHashMap::new(),
+            language_specs: Vec::new(),
             ids: JHashSet::new(),
         })
     }
@@ -78,14 +61,37 @@ impl PluginContext {
         DecompilerContext::get_struct_context().get_plugin_context()
     }
 
-    /// Stands in for classpath discovery (`registerPlugin(plugin, source)`).
-    pub fn register_plugin(self, plugin: Rc<dyn Plugin>) {
-        self.with_mut(|d| d.plugins.push(plugin));
+    pub fn set_plugin_sources(self, sources: Vec<Rc<dyn PluginSource>>) {
+        self.with_mut(|d| d.plugin_sources = sources);
     }
 
-    /// No plugin sources exist, so discovery finds nothing.
+    /// A plugin from no source.
+    pub fn register_plugin(self, plugin: Rc<dyn Plugin>) {
+        self.with_mut(|d| {
+            d.plugins.push(plugin);
+            d.by_source.push(None);
+        });
+    }
+
+    /// Java: registerPlugin(Plugin, PluginSource)
+    pub fn register_plugin_from(self, plugin: Rc<dyn Plugin>, source: Rc<dyn PluginSource>) {
+        self.with_mut(|d| {
+            d.plugins.push(plugin);
+            d.by_source.push(Some(source));
+        });
+    }
+
     pub fn find_plugins(self) -> i32 {
-        0
+        let mut plugin_count = 0;
+        let sources = self.with(|d| d.plugin_sources.clone());
+        for source in sources {
+            for plugin in source.find_plugins() {
+                self.register_plugin_from(plugin, source.clone());
+                plugin_count += 1;
+            }
+        }
+
+        plugin_count
     }
 
     pub fn initialize(self) {
@@ -107,7 +113,23 @@ impl PluginContext {
 
             plugin.register_java_passes(&mut registrar);
             if let Some(spec) = plugin.get_language_spec() {
-                match spec {}
+                self.with_mut(|d| d.language_specs.push(Rc::new(spec)));
+            }
+
+            if let Some(opt) = plugin.get_plugin_options() {
+                let add_defaults = opt.provide_options().b;
+                let mut defaults: Vec<(String, String)> = Vec::new();
+                add_defaults(&mut |key: &str, default_val: &str| {
+                    defaults.push((key.to_string(), default_val.to_string()))
+                });
+                let Some(context) = DecompilerContext::get_current_context() else {
+                    jthrow!(NullPointerException; "DecompilerContext.getCurrentContext()");
+                };
+                context.with_mut(|d| {
+                    for (key, default_val) in defaults {
+                        d.properties.put_if_absent(key, default_val);
+                    }
+                });
             }
         }
 
@@ -148,10 +170,16 @@ impl PluginContext {
         }
     }
 
-    /// Always `None`: no plugin can supply a [`LanguageSpec`].
-    pub fn get_language_spec(self, cl: StructClass) -> Option<LanguageSpec> {
-        let _ = cl;
-        None
+    /// The spec of the first plugin whose chooser claims `cl`.
+    pub fn get_language_spec(self, cl: StructClass) -> Option<Rc<LanguageSpec>> {
+        let specs = self.with(|d| {
+            if d.language_specs.is_empty() {
+                None
+            } else {
+                Some(d.language_specs.clone())
+            }
+        })?;
+        specs.into_iter().find(|spec| spec.chooser.is_language(cl))
     }
 
     pub fn get_variable_renamer(self) -> Option<Rc<dyn IVariableNamingFactory>> {
@@ -164,6 +192,15 @@ impl PluginContext {
         }
 
         None
+    }
+
+    pub fn get_source(self, plugin: &Rc<dyn Plugin>) -> Option<Rc<dyn PluginSource>> {
+        self.with(|d| {
+            d.plugins
+                .iter()
+                .position(|p| Rc::ptr_eq(p, plugin))
+                .and_then(|i| d.by_source[i].clone())
+        })
     }
 
     pub fn get_plugins(self) -> Vec<Rc<dyn Plugin>> {

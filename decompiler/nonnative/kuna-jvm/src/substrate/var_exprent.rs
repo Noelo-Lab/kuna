@@ -594,6 +594,13 @@ impl VarExprent {
     }
 
     pub fn get_name(self) -> String {
+        if self.0.is_kotlin() {
+            return crate::k_dispatch::var_get_name(self);
+        }
+        VarExprent::get_name_base(self)
+    }
+
+    pub fn get_name_base(self) -> String {
         let pair = self.get_var_version_pair();
         if !VarExprent::FORCE_VARVER_NAME {
             let (processor, lvt) = self.d(|d| (d.processor, d.lvt.clone()));
