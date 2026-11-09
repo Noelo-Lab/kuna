@@ -1,8 +1,13 @@
 //! Port of `org/vineflower/kotlin/expr/KVarExprent.java`.
 
+#![allow(unused_variables)]
+
 use crate::exprent::Exprent;
+use crate::rt::BitSet;
 use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
+use crate::var_processor::VarProcessor;
+use crate::var_type::VarType;
 use crate::{kotlin_exprent, unported};
 
 /// `KVarExprent.DeclarationType`.
@@ -37,6 +42,21 @@ kotlin_exprent!(pub KVarExprent: VarExprent, Var(KVarExprentData),
                 is_k_var, as_k_var, try_as_k_var);
 
 impl KVarExprent {
+    /// Java: KVarExprent(VarExprent)
+    pub fn new(ex: VarExprent) -> KVarExprent {
+        unported!("KVarExprent.<init>")
+    }
+
+    /// Java: KVarExprent(int, VarType, VarProcessor, BitSet)
+    pub fn new_index(
+        index: i32,
+        var_type: Option<VarType>,
+        processor: Option<VarProcessor>,
+        bytecode: Option<&BitSet>,
+    ) -> KVarExprent {
+        unported!("KVarExprent.<init>")
+    }
+
     pub fn get_name(self) -> String {
         unported!("KVarExprent.getName")
     }

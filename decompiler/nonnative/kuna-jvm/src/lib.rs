@@ -43,6 +43,14 @@ pub use kotlin::{
     k_switch_head_exprent, k_switch_statement, k_type, k_var_exprent, kotlin_import_collector,
     kt_attrs,
 };
+pub use kotlin::{
+    collapse_string_concat_pass, default_args_map, eliminate_dead_vars_pass, java_finally_pass,
+    k_contract, k_enum_processor, k_expr_processor, k_merge_pass, k_parameter,
+    k_property_accessor, k_type_parameter, k_types, k_utils, kotlin_chooser,
+    kotlin_object_processors, kotlin_options, kotlin_plugin, kotlin_writer,
+    obfuscated_exceptions_pass, replace_exprents_pass, replace_stats_pass,
+    resugar_kotlin_methods_pass, stack_var_initial_pass,
+};
 pub use p0_knowledge::{
     class_wrapper_node, context_source, context_unit, converter_helper, counter_container,
     decompiler_context, fernflower, i_decompiled_data, i_fernflower_logger,

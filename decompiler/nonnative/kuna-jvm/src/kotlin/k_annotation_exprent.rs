@@ -1,6 +1,9 @@
 //! Port of `org/vineflower/kotlin/expr/KAnnotationExprent.java`.
 
+#![allow(unused_variables)]
+
 use crate::annotation_exprent::AnnotationExprent;
+use crate::exprent::Exprent;
 use crate::text_buffer::TextBuffer;
 use crate::{kotlin_exprent, unported};
 
@@ -46,7 +49,24 @@ kotlin_exprent!(pub KAnnotationExprent: AnnotationExprent, Annotation(KAnnotatio
                 is_k_annotation, as_k_annotation, try_as_k_annotation);
 
 impl KAnnotationExprent {
+    /// Java: KAnnotationExprent(AnnotationExprent)
+    pub fn new(expr: AnnotationExprent) -> KAnnotationExprent {
+        KAnnotationExprent::new_target(expr, None)
+    }
+
+    /// Java: KAnnotationExprent(AnnotationExprent, UseSiteTarget)
+    pub fn new_target(
+        expr: AnnotationExprent,
+        use_site_target: Option<UseSiteTarget>,
+    ) -> KAnnotationExprent {
+        unported!("KAnnotationExprent.<init>")
+    }
+
     pub fn to_java(self, _indent: i32) -> TextBuffer {
         unported!("KAnnotationExprent.toJava")
+    }
+
+    pub fn write_annotation_value(expr: Exprent, buffer: &mut TextBuffer) {
+        unported!("KAnnotationExprent.writeAnnotationValue")
     }
 }
