@@ -38,13 +38,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_209() {
-    assert_eq!(kuna_num_settables(), 209);
-    assert_eq!(SETTABLE_TABLE.len(), 209);
+fn settable_count_is_207() {
+    assert_eq!(kuna_num_settables(), 207);
+    assert_eq!(SETTABLE_TABLE.len(), 207);
 }
 
 #[test]
-fn tier_counts_are_42_core_115_transform_52_analysis() {
+fn tier_counts_are_42_core_115_transform_50_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_42_core_115_transform_52_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (42, 115, 52));
+    assert_eq!((core, transform, analysis), (42, 115, 50));
 }
 
 #[test]
@@ -1027,7 +1027,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftcall`, beside that.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
-    assert_eq!(json.matches("},\n").count(), 208);
+    assert_eq!(json.matches("},\n").count(), 206);
 }
 
 #[test]
