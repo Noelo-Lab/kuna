@@ -259,7 +259,8 @@ pub fn unify_with_sibling_call(fc: &mut FuncCallSpecs, data: &Funcdata) -> int4 
             TrialView {
                 addr: t.get_address().clone(),
                 size: t.get_size(),
-                used: t.is_used(),
+                // (kuna `swiftcall`) A Swift `self` alone is no recovered list.
+                used: t.is_used() && !crate::kuna_swiftcall::is_self_storage(data, t.get_address(), t.get_size()),
                 definitely_not_used: t.is_definitely_not_used(),
                 unref: t.is_unref(),
                 has_value,

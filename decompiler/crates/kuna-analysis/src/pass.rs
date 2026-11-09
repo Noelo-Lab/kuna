@@ -248,6 +248,37 @@ pub struct SwiftTypeFacts {
     pub typed_data: Vec<TypedDataFact>,
     pub prototypes: Vec<kuna_decomp::fspec::PrototypePieces>,
     pub param_locks: Vec<ParamLockFact>,
+    /// (kuna `swiftcall`) The calling convention of each method, initializer
+    /// and accessor, and the name and type of its `self`.
+    pub models: Vec<ModelFact>,
+    pub input_hints: Vec<InputHintFact>,
+    /// The `swiftself` and `swifterror` registers, once a convention is bound.
+    pub regs: Option<(&'static str, &'static str)>,
+}
+
+/// The function at `func_addr` follows the cspec prototype model `model`,
+/// its signature otherwise unknown: its parameters, and the arguments of
+/// every direct call to it, are recovered under that model.
+#[derive(Clone, Debug)]
+pub struct ModelFact {
+    pub func_addr: u64,
+    pub model: &'static str,
+    /// The convention's implicit context register may or may not be a
+    /// parameter (a Swift struct member's `self`): a call passes it only
+    /// when the caller set it for that call.
+    pub maybe_self: bool,
+}
+
+/// The input of the function at `func_addr` in register `reg` is `name`, of
+/// `type_` when that is known, when the function's own analysis finds it
+/// reads that register
+/// (an unlocked hint, see `kuna_decomp::kuna_inputhints`).
+#[derive(Clone, Debug)]
+pub struct InputHintFact {
+    pub func_addr: u64,
+    pub reg: &'static str,
+    pub name: String,
+    pub type_: Option<std::rc::Rc<kuna_decomp::dtype::Datatype>>,
 }
 
 /// A source-line annotation to attach to a decompiled instruction: at `addr`,
@@ -748,6 +779,9 @@ impl AnalysisOutput {
         self.swift_types.typed_data.extend(other.swift_types.typed_data);
         self.swift_types.prototypes.extend(other.swift_types.prototypes);
         self.swift_types.param_locks.extend(other.swift_types.param_locks);
+        self.swift_types.models.extend(other.swift_types.models);
+        self.swift_types.input_hints.extend(other.swift_types.input_hints);
+        self.swift_types.regs = self.swift_types.regs.or(other.swift_types.regs);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
         self.fde_interior_entries.extend(other.fde_interior_entries);

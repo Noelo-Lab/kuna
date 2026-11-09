@@ -4888,6 +4888,11 @@ fn commit_analysis_output(
         out.typed_data.extend(swift.typed_data);
         out.prototypes.extend(swift.prototypes);
         out.swift_types.param_locks = swift.param_locks;
+        if prog.arch().analysis_swiftcall {
+            out.swift_types.models = swift.models;
+            out.swift_types.input_hints = swift.input_hints;
+            out.swift_types.regs = swift.regs;
+        }
     } else {
         out.swift_types = Default::default();
     }
@@ -5855,6 +5860,56 @@ fn commit_analysis_output(
             let locks = prog.arch_mut().loader_param_locks.entry(entry).or_default();
             locks.retain(|(i, _, _)| *i != fact.index);
             locks.push((fact.index, fact.name.clone(), piece));
+        }
+        // (kuna `swiftcall`) Model-only bindings and the unlocked `self`
+        // hints, the register again resolved through the language.
+        let mut models = (*prog.arch().loader_proto_models).clone();
+        for fact in &out.swift_types.models {
+            let Some(model) = prog.arch().get_model(fact.model).cloned() else { continue };
+            models.insert((code_space.get_index(), fact.func_addr), model);
+        }
+        prog.arch_mut().loader_proto_models = Rc::new(models);
+        let mut hints: std::collections::BTreeMap<Address, Vec<kuna_decomp::kuna_inputhints::InputHint>> =
+            std::collections::BTreeMap::new();
+        for fact in &out.swift_types.input_hints {
+            let Ok(loc) = prog.arch().get_register_varnode(fact.reg.as_bytes()) else {
+                continue;
+            };
+            let Some(space) = loc.space.clone() else { continue };
+            let entry = Address::new(Rc::clone(code_space), fact.func_addr);
+            hints.entry(entry).or_default().push(kuna_decomp::kuna_inputhints::InputHint {
+                addr: Address::new(space, loc.offset),
+                size: loc.size as i32,
+                name: fact.name.clone(),
+                ct: fact.type_.clone(),
+            });
+        }
+        for (entry, list) in hints {
+            prog.arch_mut().loader_input_hints.insert(entry, Rc::new(list));
+        }
+        let throws = prog.arch().get_model(kuna_decomp::kuna_swiftcall::SWIFTCALL_THROWS).cloned();
+        let reg = |name: &str| {
+            let loc = prog.arch().get_register_varnode(name.as_bytes()).ok()?;
+            Some((Address::new(loc.space.clone()?, loc.offset), loc.size as i32))
+        };
+        let call = prog.arch().get_model(kuna_decomp::kuna_swiftcall::SWIFTCALL).cloned();
+        if let (Some((self_reg, error_reg)), Some(call), Some(throws)) = (out.swift_types.regs, call, throws) {
+            if let (Some(self_reg), Some(error_reg)) = (reg(self_reg), reg(error_reg)) {
+                let maybe_self = out
+                    .swift_types
+                    .models
+                    .iter()
+                    .filter(|f| f.maybe_self)
+                    .map(|f| (code_space.get_index(), f.func_addr))
+                    .collect();
+                prog.arch_mut().loader_swift_abi = Some(Rc::new(kuna_decomp::kuna_swiftcall::SwiftAbi {
+                    self_reg,
+                    error_reg,
+                    call,
+                    throws,
+                    maybe_self,
+                }));
+            }
         }
     }
 

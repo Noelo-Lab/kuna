@@ -59,6 +59,7 @@ mod tests;
 /// The `swiftself` register and the first two argument registers.
 pub struct Registers {
     pub self_reg: &'static str,
+    pub error_reg: &'static str,
     pub args: [&'static str; 2],
 }
 
@@ -67,10 +68,12 @@ impl Registers {
         Some(match arch {
             object::Architecture::Aarch64 => Registers {
                 self_reg: "x20",
+                error_reg: "x21",
                 args: ["x0", "x1"],
             },
             object::Architecture::X86_64 => Registers {
                 self_reg: "R13",
+                error_reg: "R12",
                 args: ["RDI", "RSI"],
             },
             _ => return None,
@@ -100,6 +103,15 @@ fn locate_arm64(img: &MachoImage, accessor: u64) -> Option<u64> {
         i = 2;
     }
     let adrp = words[i]?;
+    if adrp & 0x9f00_0000 == 0x1000_0000 && adrp & 31 == 0 && words[i + 1] == Some(0xd503_201f) {
+        // `adr x0, …; nop`: the linker's relaxation of the `adrp`/`add` pair.
+        let imm = ((((adrp >> 5) & 0x7_ffff) << 2) | ((adrp >> 29) & 3)) as i64;
+        let imm = if imm & (1 << 20) != 0 { imm - (1 << 21) } else { imm };
+        let next = words[i + 2]?;
+        let plain = next == 0x5280_0001 || next == 0xd280_0001 || next == 0xd65f_03c0;
+        let call = next & 0xfc00_0000 == 0x9400_0000 || next & 0xfc00_0000 == 0x1400_0000;
+        return (plain || call).then_some((accessor + 4 * i as u64).wrapping_add(imm as u64));
+    }
     if adrp & 0x9f00_0000 != 0x9000_0000 || adrp & 31 != 0 {
         return None;
     }
@@ -279,6 +291,7 @@ impl<'a> Types<'a> {
             let Some(meta) = locate_metadata(self.img(), self.arch, accessor) else {
                 continue;
             };
+
             let descriptor_slot = match ctx.kind {
                 ContextKind::Class => meta.checked_add(self.class_flags_offset() + 24),
                 _ => meta.checked_add(self.md.ptr_size),
@@ -298,7 +311,7 @@ impl<'a> Types<'a> {
     }
 
     /// The dotted path of the type at `addr`, unless another type shares it.
-    fn unique_path(&self, addr: u64) -> Option<String> {
+    pub(super) fn unique_path(&self, addr: u64) -> Option<String> {
         let path = self.namer.path(addr, 0)?;
         (!self.ambiguous.contains(&path)).then_some(path)
     }
@@ -1016,19 +1029,29 @@ impl<'a> Types<'a> {
         (vtable, witness)
     }
 
+    /// The descriptor of the one type spelled `path`.
+    pub(super) fn nominal_at(&self, path: &str) -> Option<u64> {
+        self.by_path.get(path).copied()
+    }
+
     /// The `self` a protocol witness of the type at `addr` receives: the
     /// address of the value (`T *` for a struct, `Class **` for a class),
     /// or the class reference itself under a class-bound protocol.
-    fn witness_self(&self, addr: u64, path: &str, class_bound: bool) -> Option<Rc<Datatype>> {
+    pub(super) fn witness_self(&self, addr: u64, path: &str, class_bound: bool) -> Option<Rc<Datatype>> {
         let t = self.self_pointer(addr, path)?;
         match self.md.contexts.get(&addr)?.kind {
-            ContextKind::Class if !class_bound => self.tf.get_type_pointer(self.ptr_size, t, 1).ok(),
+            ContextKind::Class if !class_bound => self.pointer_to(t),
             _ => Some(t),
         }
     }
 
+    /// A pointer to `t`.
+    pub(super) fn pointer_to(&self, t: Rc<Datatype>) -> Option<Rc<Datatype>> {
+        self.tf.get_type_pointer(self.ptr_size, t, 1).ok()
+    }
+
     /// `Type *`: the pointer a class or struct `self` is passed as.
-    fn self_pointer(&self, addr: u64, path: &str) -> Option<Rc<Datatype>> {
+    pub(super) fn self_pointer(&self, addr: u64, path: &str) -> Option<Rc<Datatype>> {
         let st = self
             .struct_type(addr)
             .or_else(|| self.tf.find_by_name(path).ok().flatten())

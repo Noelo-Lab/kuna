@@ -639,6 +639,9 @@ pub struct Funcdata {
     /// (kuna `elfmain`) The C runtime's `main` declaration this function's inputs
     /// take, when it is an executable's own `main`. See [`crate::kuna_elfmaindecl`].
     kuna_elfmain: Option<std::rc::Rc<crate::kuna_elfmaindecl::Runtime>>,
+    /// (kuna `swiftcall`) Names and types for the inputs this function's
+    /// analysis recovers. See [`crate::kuna_inputhints`].
+    kuna_input_hints: Option<std::rc::Rc<Vec<crate::kuna_inputhints::InputHint>>>,
     /// (kuna `calleevote fields`) Every caller of this function is a known direct call.
     kuna_calleevote_closed: bool,
     /// (kuna `elemptr`) The globals this function must not type as element
@@ -888,6 +891,7 @@ impl Funcdata {
             kuna_calleevote_inputs: None,
             kuna_callerargs: None,
             kuna_elfmain: None,
+            kuna_input_hints: None,
             kuna_calleevote_closed: false,
             kuna_elemptr_blocked: None,
             kuna_elemptr_adopt: None,
@@ -1612,6 +1616,16 @@ impl Funcdata {
     /// (kuna `elfmain`) The C runtime's `main` declaration for this function.
     pub fn kuna_elfmain(&self) -> Option<&crate::kuna_elfmaindecl::Runtime> {
         self.kuna_elfmain.as_deref()
+    }
+
+    /// (kuna `swiftcall`) Seed the input hints. See [`crate::kuna_inputhints`].
+    pub fn kuna_set_input_hints(&mut self, hints: Option<std::rc::Rc<Vec<crate::kuna_inputhints::InputHint>>>) {
+        self.kuna_input_hints = hints;
+    }
+
+    /// (kuna `swiftcall`) The input hints of this function.
+    pub fn kuna_input_hints(&self) -> Option<&[crate::kuna_inputhints::InputHint]> {
+        self.kuna_input_hints.as_deref().map(Vec::as_slice)
     }
 
     /// (kuna `calleevote fields`) Mark every caller of this function as known.

@@ -1452,6 +1452,7 @@ kuna_options! { self, p1;
         crate::kuna_objcivars::set_objcivars_env(val);
         Ok(format!("Objective-C instance layouts turned {}", if val { "on" } else { "off" }))
     },
+    "swiftcall" => on_off!(analysis_swiftcall, "Swift calling convention on methods and witnesses"),
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
     "relocobjects" => {
         let val = on_or_off(p1)?;

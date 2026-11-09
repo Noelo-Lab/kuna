@@ -2771,6 +2771,24 @@ pub struct Architecture {
     /// variables to their compile-time layout offsets so an ivar access renders
     /// `self->field`; default **on**. Inert unless `objc` is on.
     pub analysis_objcivars: bool,
+    /// (kuna) Gate the Swift calling-convention arm of the metadata pass
+    /// (`swiftcall`): methods, initializers and accessors bound to the
+    /// `__swiftcall` model with their `self` named and typed. Default-on;
+    /// inert unless `swiftmetadata` is on.
+    pub analysis_swiftcall: bool,
+    /// (kuna) The calling convention the analysis tier bound to a function
+    /// without declaring its signature, by entry `(space index, offset)`.
+    /// The function's own parameters, and those of every direct call to it,
+    /// are recovered under it ([`crate::context::ArchContext::bound_proto_models`]).
+    pub loader_proto_models:
+        Rc<std::collections::BTreeMap<(int4, uintb), Rc<ProtoModel>>>,
+    /// (kuna) Names and types for the inputs a function's own analysis
+    /// recovers, by function entry, applied without locking them
+    /// ([`crate::kuna_inputhints`]).
+    pub loader_input_hints: std::collections::BTreeMap<Address, Rc<Vec<crate::kuna_inputhints::InputHint>>>,
+    /// (kuna `swiftcall`) The Swift registers and the throwing model
+    /// ([`crate::kuna_swiftcall`]).
+    pub loader_swift_abi: Option<Rc<crate::kuna_swiftcall::SwiftAbi>>,
     /// (kuna) Gate the PE PDB metadata recovery pass (`pdb`); default **off**. The
     /// kuna analog of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer;
     /// the MS-DIA `PdbAnalyzer` is Windows-native and out of scope) — the
@@ -3609,6 +3627,10 @@ impl Architecture {
             analysis_swifttypes: true,
             loader_param_locks: std::collections::BTreeMap::new(),
             analysis_objcivars: true,
+            analysis_swiftcall: true,
+            loader_proto_models: Rc::default(),
+            loader_input_hints: std::collections::BTreeMap::new(),
+            loader_swift_abi: None,
             analysis_pdb: true,
             macho_arm64e: false,
 
@@ -4120,6 +4142,7 @@ impl Architecture {
         self.cfstrings_annotate = false;
         self.analysis_swifttypes = true; // Swift type layouts default-on, inert unless swiftmetadata is on
         self.analysis_objcivars = true; // (kuna) ObjC instance structs + typed self + ivar offset fold; inert unless objc is on
+        self.analysis_swiftcall = true; // Swift calling convention default-on, inert unless swiftmetadata is on
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }
@@ -4991,6 +5014,8 @@ impl Architecture {
                     })
                     .collect()
             };
+        ctx.bound_proto_models = Rc::clone(&self.loader_proto_models);
+        ctx.swift_abi = self.loader_swift_abi.clone();
         // Carry the constant-pointer-inference config (C++ `glb->infer_pointers` /
         // `infer_funcentry`) and the ordered inferable-pointer spaces (C++
         // `glb->inferPtrSpaces`, built by cacheAddrSpaceProperties) so
@@ -7224,6 +7249,28 @@ impl Architecture {
             let rc = Rc::new(model);
             byname.insert(rc.get_name().to_string(), Rc::clone(&rc));
             out.push(rc);
+        }
+        // (kuna `swiftcall`) Swift's two models, derived from the default one
+        // on a language Swift targets when the spec declares neither.
+        let default_el = find_child(root, "default_proto").and_then(|dp| find_child(&dp, "prototype"));
+        let regs = crate::kuna_swiftcall::swift_registers(|name| {
+            self.translate.probe_register_varnode(name.as_bytes()).map(|v| v.size as int4)
+        });
+        if let (Some(el), Some((self_reg, error_reg))) = (default_el, regs) {
+            for (name, error) in [
+                (crate::kuna_swiftcall::SWIFTCALL, None),
+                (crate::kuna_swiftcall::SWIFTCALL_THROWS, Some(error_reg)),
+            ] {
+                if byname.contains_key(name) {
+                    continue;
+                }
+                let derived = Rc::new(crate::kuna_swiftcall::derive_model(&el, name, self_reg, error));
+                if let Ok(model) = self.decode_proto_model(&derived, root) {
+                    let rc = Rc::new(model);
+                    byname.insert(name.to_string(), Rc::clone(&rc));
+                    out.push(rc);
+                }
+            }
         }
         // C++ `parseCompilerConfig` tail, architecture.cc:1342 — "We must have a
         // __thiscall calling convention": when the spec declares none, clone it
