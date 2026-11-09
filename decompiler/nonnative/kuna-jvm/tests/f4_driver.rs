@@ -2,8 +2,8 @@
 //! three-letter names), runtime registration, renamer loading, per-class
 //! failure handling in `ContextUnit.save` (pre-processing and writing errors,
 //! duplicate classes) and in `getClassContent`, and a root context that stays
-//! usable whatever the engine does. End-to-end delivery needs the class
-//! engine (`ClassesProcessor.loadClasses` & co.) and is ignored until it is ported.
+//! usable whatever the engine does. End-to-end delivery needs every pass of the
+//! method pipeline and the class writer, and is ignored until they are ported.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -353,7 +353,7 @@ fn unit_save_dumps_the_pre_processing_exception() {
 }
 
 #[test]
-#[ignore = "needs ClassesProcessor.loadClasses/processClass/writeClass (unported)"]
+#[ignore = "needs the method pipeline and writer of other slices (SequenceHelper, NestedClassProcessor, ClassWriter)"]
 fn delivers_each_root_class_in_entry_order() {
     let logger = Rc::new(CollectingLogger::new());
     let mut fernflower = Fernflower::new(
@@ -394,7 +394,7 @@ fn delivers_each_root_class_in_entry_order() {
 }
 
 #[test]
-#[ignore = "needs ClassesProcessor.loadClasses/processClass/writeClass (unported)"]
+#[ignore = "needs the method pipeline and writer of other slices (SequenceHelper, NestedClassProcessor, ClassWriter)"]
 fn line_mapping_follows_the_option() {
     let mut fernflower = Fernflower::new(
         &options(&[

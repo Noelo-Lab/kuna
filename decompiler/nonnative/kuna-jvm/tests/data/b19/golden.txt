@@ -1,0 +1,198 @@
+== load default
+b/Natives	ROOT	Natives	1057	\N		\N		\N
+b/Outer	ROOT	Outer	33	\N	b/Outer$1,b/Outer$1Local,b/Outer$1LocalE,b/Outer$1LocalI,b/Outer$2,b/Outer$A,b/Outer$B,b/Outer$C	\N		\N
+b/Outer$1	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Object
+b/Outer$1Local	LOCAL	Local	0	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalE	LOCAL	LocalE	16408	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalI	LOCAL	LocalI	1536	b/Outer		run ()V	b/Outer	\N
+b/Outer$2	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Runnable
+b/Outer$A	MEMBER	A	1	b/Outer	b/Outer$A$1,b/Outer$A$Deep	\N	b/Outer	\N
+b/Outer$A$1	ANONYMOUS	\N	0	b/Outer$A		\N	b/Outer,b/Outer$A	java/lang/Runnable
+b/Outer$A$Deep	MEMBER	Deep	0	b/Outer$A		\N	b/Outer$A	\N
+b/Outer$B	MEMBER	B	9	b/Outer		\N	b/Outer	\N
+b/Outer$C	MEMBER	C	1546	b/Outer		\N	b/Outer	\N
+== load verify-anonymous
+b/Natives	ROOT	Natives	1057	\N		\N		\N
+b/Outer	ROOT	Outer	33	\N	b/Outer$1,b/Outer$1Local,b/Outer$1LocalE,b/Outer$1LocalI,b/Outer$2,b/Outer$A,b/Outer$B,b/Outer$C	\N		\N
+b/Outer$1	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Object
+b/Outer$1Local	LOCAL	Local	0	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalE	LOCAL	LocalE	16408	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalI	LOCAL	LocalI	1536	b/Outer		run ()V	b/Outer	\N
+b/Outer$2	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Runnable
+b/Outer$A	MEMBER	A	1	b/Outer	b/Outer$A$1,b/Outer$A$Deep	\N	b/Outer	\N
+b/Outer$A$1	ANONYMOUS	\N	0	b/Outer$A		\N	b/Outer,b/Outer$A	java/lang/Runnable
+b/Outer$A$Deep	MEMBER	Deep	0	b/Outer$A		\N	b/Outer$A	\N
+b/Outer$B	MEMBER	B	9	b/Outer		\N	b/Outer	\N
+b/Outer$C	MEMBER	C	1546	b/Outer		\N	b/Outer	\N
+== load no-inner
+b/Natives	ROOT	Natives	1057	\N		\N		\N
+b/Outer	ROOT	Outer	33	\N		\N		\N
+b/Outer$1	ROOT	Outer$1	32	\N		run ()V		\N
+b/Outer$1Local	ROOT	Outer$1Local	32	\N		run ()V		\N
+b/Outer$1LocalE	ROOT	Outer$1LocalE	16432	\N		run ()V		\N
+b/Outer$1LocalI	ROOT	Outer$1LocalI	1536	\N		run ()V		\N
+b/Outer$2	ROOT	Outer$2	32	\N		run ()V		\N
+b/Outer$A	ROOT	Outer$A	33	\N		\N		\N
+b/Outer$A$1	ROOT	Outer$A$1	32	\N		\N		\N
+b/Outer$A$Deep	ROOT	Outer$A$Deep	32	\N		\N		\N
+b/Outer$B	ROOT	Outer$B	33	\N		\N		\N
+b/Outer$C	ROOT	Outer$C	1536	\N		\N		\N
+== load excluded
+b/Natives	ROOT	Natives	1057	\N		\N		\N
+b/Outer	ROOT	Outer	33	\N	b/Outer$1,b/Outer$1Local,b/Outer$1LocalE,b/Outer$1LocalI,b/Outer$2,b/Outer$B,b/Outer$C	\N		\N
+b/Outer$1	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Object
+b/Outer$1Local	LOCAL	Local	0	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalE	LOCAL	LocalE	16408	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalI	LOCAL	LocalI	1536	b/Outer		run ()V	b/Outer	\N
+b/Outer$2	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Runnable
+b/Outer$B	MEMBER	B	9	b/Outer		\N	b/Outer	\N
+b/Outer$C	MEMBER	C	1546	b/Outer		\N	b/Outer	\N
+log	WARN	Nested class b/Outer$A missing!
+== load included
+b/Natives	ROOT	Natives	1057	\N		\N		\N
+b/Outer	ROOT	Outer	33	\N	b/Outer$1,b/Outer$2	\N		\N
+b/Outer$1	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Object
+b/Outer$2	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Runnable
+log	WARN	Nested class b/Outer$1Local missing!
+log	WARN	Nested class b/Outer$C missing!
+log	WARN	Nested class b/Outer$B missing!
+log	WARN	Nested class b/Outer$A missing!
+log	WARN	Nested class b/Outer$1LocalE missing!
+log	WARN	Nested class b/Outer$1LocalI missing!
+== load no-name-check
+b/Natives	ROOT	Natives	1057	\N		\N		\N
+b/Outer	ROOT	Outer	33	\N	b/Outer$1,b/Outer$1Local,b/Outer$1LocalE,b/Outer$1LocalI,b/Outer$2,b/Outer$A,b/Outer$B,b/Outer$C	\N		\N
+b/Outer$1	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Object
+b/Outer$1Local	LOCAL	Local	0	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalE	LOCAL	LocalE	16408	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalI	LOCAL	LocalI	1536	b/Outer		run ()V	b/Outer	\N
+b/Outer$2	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Runnable
+b/Outer$A	MEMBER	A	1	b/Outer	b/Outer$A$1,b/Outer$A$Deep	\N	b/Outer	\N
+b/Outer$A$1	ANONYMOUS	\N	0	b/Outer$A		\N	b/Outer,b/Outer$A	java/lang/Runnable
+b/Outer$A$Deep	MEMBER	Deep	0	b/Outer$A		\N	b/Outer$A	\N
+b/Outer$B	MEMBER	B	9	b/Outer		\N	b/Outer	\N
+b/Outer$C	MEMBER	C	1546	b/Outer		\N	b/Outer	\N
+== load inconsistent
+b/X	ROOT	X	33	\N	b/X$Y	\N		\N
+b/X$Y	MEMBER	Y	9	b/X		\N	b/X	\N
+log	WARN	Inconsistent inner class entries for b/X$Y!
+log	WARN	  b/X$Y: Y public static MEMBER of b/X
+log	WARN	  b/X: Y  MEMBER of b/X
+== load inconsistent-reversed
+b/X	ROOT	X	33	\N	b/X$Y	\N		\N
+b/X$Y	MEMBER	Y	9	b/X		\N	b/X	\N
+log	WARN	Inconsistent inner class entries for b/X$Y!
+log	WARN	  b/X: Y  MEMBER of b/X
+log	WARN	  b/X$Y: Y public static MEMBER of b/X
+log	WARN	Changing mapping to b/X$Y -> Y public static MEMBER of b/X
+== load inconsistent-quiet
+b/X	ROOT	X	33	\N	b/X$Y	\N		\N
+b/X$Y	MEMBER	Y	9	b/X		\N	b/X	\N
+== lambdas
+b/Natives	ROOT	Natives	1057	\N		\N		\N
+b/Outer	ROOT	Outer	33	\N	b/Outer##Lambda_0_8,b/Outer##Lambda_1_18,b/Outer##Lambda_2_26,b/Outer##Lambda_3_8,b/Outer$1,b/Outer$1Local,b/Outer$1LocalE,b/Outer$1LocalI,b/Outer$2,b/Outer$A,b/Outer$B,b/Outer$C	\N		\N
+b/Outer##Lambda_0_8	LAMBDA	b/Outer##Lambda_0_8	0	b/Outer	b/Outer##Lambda_3_8	<init> ()V		java/lang/Runnable
+lambda	b/Outer##Lambda_0_8	run	()V	b/Outer	lambda$new$1	()V	6	lambda$new$1 ()V	false	true
+b/Outer##Lambda_3_8	LAMBDA	b/Outer##Lambda_3_8	0	b/Outer##Lambda_0_8		lambda$new$1 ()V		java/lang/Runnable
+lambda	b/Outer##Lambda_3_8	run	()V	b/Outer	lambda$new$0	()V	6	lambda$new$0 ()V	false	true
+b/Outer##Lambda_1_18	LAMBDA	b/Outer##Lambda_1_18	0	b/Outer		<init> ()V		java/util/function/Supplier
+lambda	b/Outer##Lambda_1_18	get	()Ljava/lang/String;	java/lang/Object	toString	()Ljava/lang/String;	5	toString ()Ljava/lang/String;	true	false
+b/Outer##Lambda_2_26	LAMBDA	b/Outer##Lambda_2_26	0	b/Outer		<init> ()V		java/util/function/Function
+lambda	b/Outer##Lambda_2_26	apply	(Ljava/lang/String;)Ljava/lang/Integer;	java/lang/String	length	()I	5	length ()I	true	false
+b/Outer$1	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Object
+b/Outer$1Local	LOCAL	Local	0	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalE	LOCAL	LocalE	16408	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalI	LOCAL	LocalI	1536	b/Outer		run ()V	b/Outer	\N
+b/Outer$2	ANONYMOUS	\N	0	b/Outer	b/Outer$2##Lambda_0_8	\N	b/Outer	java/lang/Runnable
+b/Outer$2##Lambda_0_8	LAMBDA	b/Outer$2##Lambda_0_8	0	b/Outer$2		run ()V		java/lang/Runnable
+lambda	b/Outer$2##Lambda_0_8	run	()V	b/Outer$2	lambda$run$0	()V	6	lambda$run$0 ()V	false	true
+b/Outer$A	MEMBER	A	1	b/Outer	b/Outer$A$1,b/Outer$A$Deep	\N	b/Outer	\N
+b/Outer$A$1	ANONYMOUS	\N	0	b/Outer$A		\N	b/Outer,b/Outer$A	java/lang/Runnable
+b/Outer$A$Deep	MEMBER	Deep	0	b/Outer$A		\N	b/Outer$A	\N
+b/Outer$B	MEMBER	B	9	b/Outer		\N	b/Outer	\N
+b/Outer$C	MEMBER	C	1546	b/Outer		\N	b/Outer	\N
+keys	b/Outer##Lambda_0_8,b/Outer##Lambda_1_18,b/Outer##Lambda_2_26,b/Outer##Lambda_3_8,b/Outer$2##Lambda_0_8
+== wrapper
+method	m	(IJLjava/lang/String;)V	true	true
+var	0	0	var0
+var	1	0	var1x
+var	2	0	var2
+var	4	0	var4
+param	0	0
+param	1	0
+param	2	0
+param	4	0
+this	0	0	b/Natives
+method	n	(DI)V	true	true
+var	0	0	var0
+var	1	0	var1x
+var	3	0	var3
+param	0	0
+param	1	0
+param	3	0
+this	0	0	b/Natives
+method	s	(JLjava/lang/Object;I)V	true	true
+var	0	0	var0
+var	2	0	var2
+var	3	0	var3
+param	0	0
+param	2	0
+param	3	0
+method	noArgs	()I	true	true
+var	0	0	var0
+param	0	0
+this	0	0	b/Natives
+== regex
+regex	b/Outer\\$A.*	b/Outer$A$1	true
+regex	b/Outer\\$A.*	b/Outer	false
+regex	.*Test	a/FooTest	true
+regex	(a|b)/.*	b/x	true
+regex	[a-c]+/X	abc/X	true
+regex	[^a-c]+/X	abc/X	false
+regex	\\w+/\\w+	pkg/Name1	true
+regex	\\d{2,3}	1234	false
+regex	\\d{2,3}	123	true
+regex	\\d{2,}	1234	true
+regex	a*+a	aaa	false
+regex	a*?a	aaa	true
+regex	a++	aaa	true
+regex	(?:ab)*	ababab	true
+regex	(?=b).*	bx	true
+regex	(?!b).*	bx	false
+regex	\\Qa.b\\E	a.b	true
+regex	\\Qa.b\\E	axb	false
+regex	\\Qab\\E*	abbb	true
+regex	x\\.y	x.y	true
+regex	x.y	x\ny	false
+regex	^a$	a	true
+regex	a$	a\n	false
+regex	a{3}	aaa	true
+regex	[\\w$]+	Outer$1	true
+regex	[a-z[0-9]]+	a1b2	true
+regex	\\bfoo\\b.*	foo bar	true
+regex	\\Bfoo	foo	false
+regex	(?>a*)a	aaa	false
+regex	\\u0041\\x42\\0103	ABC	true
+regex	(?<name>ab)+	abab	true
+regex	[]a]+	]a]	true
+regex	a|		true
+regex	(a|ab)(c|bcd)(d*)	abcd	true
+regex	[\\s\\S]*	a b\nc	true
+regex	[a-]+	a-a	true
+regex	\\D\\W\\S	x y	true
+regex	\\t\\$	\t$	true
+regex	(a*)*	aaa	true
+regex	(a?)+b	b	true
+regex	\\Ab\\z	b	true
+regex	a\\Z\\n	a\n	true
+regex	a\\z\\n	a\n	false
+regex	a$\\n	a\n	true
+regex	a**	a	error
+regex	(a	a	error
+regex	[a	a	error
+regex	*a	a	error
+regex	a{2	aa	error
+regex	\\y	y	error
+regex	a)	a	error
+regex	[b-a]	a	error
+regex	a{3,2}	aaa	error

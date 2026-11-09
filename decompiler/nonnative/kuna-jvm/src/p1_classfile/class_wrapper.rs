@@ -1,22 +1,35 @@
 //! Port of `org/jetbrains/java/decompiler/main/rels/ClassWrapper.java`.
 //!
-//! `killThread` is not ported: methods are never run on a watchdog thread
-//! (see `method_processor`).
-
-#![allow(dead_code, unused_variables)]
+//! Methods are decompiled on the calling thread. With `max-time-per-method`
+//! set, Vineflower runs each `MethodProcessor` on a watchdog thread and kills
+//! it at the deadline (`killThread`, not ported); here that branch runs the
+//! same schedule inline, with no deadline yet.
 
 use std::fmt;
 
+use crate::cancelation_manager::CanceledException;
 use crate::classes_processor::ClassNode;
+use crate::code_constants::ACC_STATIC;
+use crate::decompiler_context::{java_parse_int, DecompilerContext};
 use crate::exprent::Exprent;
+use crate::i_fernflower_logger::Severity;
+use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
+use crate::method_descriptor::MethodDescriptor;
+use crate::method_processor::MethodProcessor;
 use crate::method_properties::MethodProperties;
+use crate::method_properties_processor::MethodPropertiesProcessor;
 use crate::method_wrapper::MethodWrapper;
 use crate::plugin_context::LanguageSpec;
-use crate::rt::{JHashMap, JHashSet, Shared};
+use crate::root_statement::RootStatement;
+use crate::rt::{rethrow, try_catch, Caught, JHashMap, JHashSet, Shared};
 use crate::struct_class::StructClass;
+use crate::struct_method::StructMethod;
+use crate::var_names_collector::VarNamesCollector;
+use crate::var_processor::VarProcessor;
+use crate::var_version_pair::VarVersionPair;
 use crate::vb_style_collection::VBStyleCollection;
-use crate::{arena_identity, arena_object, unported};
+use crate::{arena_identity, arena_object, jthrow};
 
 pub struct ClassWrapperData {
     pub class_struct: StructClass,
@@ -49,7 +62,186 @@ impl ClassWrapper {
 
     /// Decompiles every method of the class into a [`MethodWrapper`].
     pub fn init(self, spec: Option<&LanguageSpec>) {
-        unported!("ClassWrapper.init")
+        let (class_struct, node) = self.with(|d| (d.class_struct, d.node));
+        DecompilerContext::set_current_class(Some(class_struct));
+        DecompilerContext::set_current_class_wrapper(Some(self));
+        DecompilerContext::set_current_class_node(Some(node));
+        DecompilerContext::get_logger().start_class(&class_struct.qualified_name());
+
+        let max_sec_property =
+            DecompilerContext::get_property(IFernflowerPreferences::MAX_PROCESSING_METHOD)
+                .expect("getProperty(MAX_PROCESSING_METHOD)");
+        let max_sec = java_parse_int(&max_sec_property).unwrap_or_else(
+            || jthrow!(NumberFormatException; "For input string: \"{}\"", max_sec_property),
+        );
+        let test_mode = DecompilerContext::get_option(IFernflowerPreferences::UNIT_TEST_MODE);
+
+        let methods = class_struct.get_methods().to_vec();
+        for &mt in &methods {
+            let mut props = MethodProperties::new(mt);
+            MethodPropertiesProcessor::parse(mt, class_struct, &mut props);
+            let key = InterpreterUtil::make_unique_key(&mt.get_name(), &mt.get_descriptor());
+            self.get_method_properties_map()
+                .borrow_mut()
+                .put(key, props);
+        }
+
+        for mt in methods {
+            DecompilerContext::get_logger().start_method(&format!(
+                "{} {}",
+                mt.get_name(),
+                mt.get_descriptor()
+            ));
+
+            let md = MethodDescriptor::parse_descriptor_struct(mt, None);
+            let var_proc = VarProcessor::new(mt, &md);
+            DecompilerContext::start_method(var_proc);
+
+            let vc = var_proc.get_var_names_collector();
+            let counter = DecompilerContext::get_counter_container();
+
+            let mut root: Option<RootStatement> = None;
+
+            let mut error: Option<Caught> = None;
+
+            if let Some(filter) = Self::DEBUG_METHOD_FILTER {
+                if filter != mt.get_name() {
+                    let method_wrapper =
+                        MethodWrapper::new(None, var_proc, mt, class_struct, counter);
+                    self.get_methods().borrow_mut().add_with_key(
+                        method_wrapper,
+                        InterpreterUtil::make_unique_key(&mt.get_name(), &mt.get_descriptor()),
+                    );
+                    DecompilerContext::get_logger().end_method();
+
+                    continue;
+                }
+            }
+
+            let processed = try_catch(|| {
+                if mt.contains_code() {
+                    if max_sec == 0 || test_mode {
+                        Some(MethodProcessor::code_to_java(
+                            class_struct,
+                            mt,
+                            &md,
+                            var_proc,
+                            spec,
+                        ))
+                    } else {
+                        Some(Self::code_to_java_on_watchdog(
+                            class_struct,
+                            mt,
+                            &md,
+                            var_proc,
+                            spec,
+                        ))
+                    }
+                } else {
+                    Self::name_parameters(class_struct, mt, &md, var_proc, vc);
+                    None
+                }
+            });
+            match processed {
+                Ok(result) => root = result,
+                Err(t) => {
+                    if CanceledException::is(&t) {
+                        rethrow(t);
+                    }
+                    let message = format!(
+                        "Method {} {} in class {} couldn't be decompiled.",
+                        mt.get_name(),
+                        mt.get_descriptor(),
+                        class_struct.qualified_name()
+                    );
+                    DecompilerContext::get_logger().write_message_ex(&message, Severity::Warn, &t);
+                    error = Some(t);
+                }
+            }
+
+            let method_wrapper = MethodWrapper::new(root, var_proc, mt, class_struct, counter);
+            method_wrapper.with_mut(|d| d.decompile_error = error.clone());
+
+            self.get_methods().borrow_mut().add_with_key(
+                method_wrapper,
+                InterpreterUtil::make_unique_key(&mt.get_name(), &mt.get_descriptor()),
+            );
+
+            if error.is_none() {
+                let names_collector = VarNamesCollector::new();
+                for f in class_struct.get_fields().to_vec() {
+                    names_collector.add_name(f.get_name());
+                }
+                var_proc.refresh_var_names(names_collector);
+
+                if DecompilerContext::get_option(IFernflowerPreferences::USE_DEBUG_VAR_NAMES) {
+                    let attr = mt.get_local_variable_attr();
+                    if let Some(attr) = attr {
+                        if let Some(root) = root {
+                            var_proc.set_debug_var_names(root, &attr.get_map_names());
+                        }
+                    }
+                }
+            }
+
+            DecompilerContext::get_logger().end_method();
+        }
+
+        DecompilerContext::get_logger().end_class();
+    }
+
+    /// The `max-time-per-method` branch: Java runs the schedule on a watchdog
+    /// thread that is killed at the deadline (logging "Processing time limit
+    /// exceeded for method …" and recording a `TimeoutException`); this runs it
+    /// inline without a deadline.
+    fn code_to_java_on_watchdog(
+        cl: StructClass,
+        mt: StructMethod,
+        md: &MethodDescriptor,
+        var_proc: VarProcessor,
+        spec: Option<&LanguageSpec>,
+    ) -> RootStatement {
+        MethodProcessor::code_to_java(cl, mt, md, var_proc, spec)
+    }
+
+    /// The no-code branch of `init`: `this` and the parameters get `var<index>` names.
+    fn name_parameters(
+        class_struct: StructClass,
+        mt: StructMethod,
+        md: &MethodDescriptor,
+        var_proc: VarProcessor,
+        vc: VarNamesCollector,
+    ) {
+        let this_var = !mt.has_modifier(ACC_STATIC);
+
+        let mut param_count = 0;
+        if this_var {
+            var_proc
+                .get_this_vars()
+                .borrow_mut()
+                .put(VarVersionPair::new(0, 0), class_struct.qualified_name());
+            param_count = 1;
+        }
+        param_count += md.params.len() as i32;
+
+        let mut var_index = 0;
+        for i in 0..param_count {
+            var_proc.set_var_name(
+                VarVersionPair::new(var_index, 0),
+                vc.get_free_name_index(var_index),
+            );
+            var_proc.mark_param(VarVersionPair::new(var_index, 0));
+
+            if this_var {
+                if i == 0 {
+                    var_index += 1;
+                } else {
+                    var_index += md.params[(i - 1) as usize].stack_size;
+                }
+            } else {
+                var_index += md.params[i as usize].stack_size;
+            }
+        }
     }
 
     /// Java: getMethodWrapper(String, String)

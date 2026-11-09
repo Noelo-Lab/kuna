@@ -114,3 +114,5 @@ mod b15_switch;
 mod b16_pattern_match;
 #[path = "b18_class_writer.rs"]
 mod b18_class_writer;
+#[path = "b19_classes.rs"]
+mod b19_classes;
