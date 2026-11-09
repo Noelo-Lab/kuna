@@ -106,6 +106,11 @@ public class GenB19Oracle {
     }
   }
 
+  /** A starred group around {@code inner}: the nested-quantifier case of the regex table. */
+  static String starOfGroup(String inner) {
+    return "(" + inner + ")*";
+  }
+
   public static void main(String[] args) throws Exception {
     File dir = new File(args[0]);
     List<File> own = classFiles(new File(dir, "classes"));
@@ -171,7 +176,7 @@ public class GenB19Oracle {
       {"a$", "a\n"}, {"a{3}", "aaa"}, {"[\\w$]+", "Outer$1"}, {"[a-z[0-9]]+", "a1b2"},
       {"\\bfoo\\b.*", "foo bar"}, {"\\Bfoo", "foo"}, {"(?>a*)a", "aaa"}, {"\\u0041\\x42\\0103", "ABC"},
       {"(?<name>ab)+", "abab"}, {"[]a]+", "]a]"}, {"a|", ""}, {"(a|ab)(c|bcd)(d*)", "abcd"},
-      {"[\\s\\S]*", "a b\nc"}, {"[a-]+", "a-a"}, {"\\D\\W\\S", "x y"}, {"\\t\\$", "\t$"}, {"(a*)*", "aaa"},
+      {"[\\s\\S]*", "a b\nc"}, {"[a-]+", "a-a"}, {"\\D\\W\\S", "x y"}, {"\\t\\$", "\t$"}, {starOfGroup("a*"), "aaa"},
       {"(a?)+b", "b"}, {"\\Ab\\z", "b"}, {"a\\Z\\n", "a\n"}, {"a\\z\\n", "a\n"}, {"a$\\n", "a\n"}, {"a**", "a"}, {"(a", "a"}, {"[a", "a"}, {"*a", "a"},
       {"a{2", "aa"}, {"\\y", "y"}, {"a)", "a"}, {"[b-a]", "a"}, {"a{3,2}", "aaa"}};
     for (String[] c : cases) {
