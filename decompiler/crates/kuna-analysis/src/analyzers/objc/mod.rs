@@ -55,6 +55,7 @@ pub mod classt;
 pub mod encoding;
 pub mod kuna_objccats;
 pub mod kuna_objcivars;
+pub mod kuna_objcprops;
 pub mod kuna_objcprotos;
 pub mod kuna_objcrefs;
 pub mod kuna_objcsdk;
@@ -141,6 +142,51 @@ impl AnalysisPass for ObjcMetadataPass {
             .filter_map(|(class, name)| kuna_objcivars::layout(&img, class, name).map(|l| (name.clone(), l)))
             .collect();
         let structs = kuna_objcivars::Structs::build(&tctx, &layouts);
+        let categories = kuna_objccats::categories(&img, ctx.file);
+
+        // Every declaration's encoding first — methods and properties of classes,
+        // metaclasses, categories and protocols — so a getter emitted below takes
+        // the class-naming spelling its own property gives it whichever class
+        // comes first.
+        for (class, name) in &classes {
+            let meta_ro = classt::metaclass_ro(&img, class.isa);
+            for ro in [Some(class.ro), meta_ro].into_iter().flatten() {
+                if let Some(list) = classt::base_methods(&img, ro) {
+                    for m in methods::walk_method_list(&img, list, architecture) {
+                        selectors.record(&m.selector, m.types.as_deref());
+                    }
+                }
+                if let Some(list) = classt::base_properties(&img, ro) {
+                    for (sel, enc) in kuna_objcprops::declarations(&img, list) {
+                        selectors.record_for_class(name, &sel, &enc);
+                    }
+                }
+            }
+        }
+        for cat in &categories {
+            for list in [cat.instance_methods, cat.class_methods].into_iter().flatten() {
+                for m in methods::walk_method_list(&img, list, architecture) {
+                    selectors.record(&m.selector, m.types.as_deref());
+                }
+            }
+            for list in [cat.instance_properties, cat.class_properties].into_iter().flatten() {
+                for (sel, enc) in kuna_objcprops::declarations(&img, list) {
+                    match &cat.class {
+                        Some(class) => selectors.record_for_class(class, &sel, &enc),
+                        None => selectors.record(&sel, Some(&enc)),
+                    }
+                }
+            }
+        }
+        let protocols = kuna_objcprotos::protocols(&img, ctx.file);
+        for proto in &protocols {
+            for m in &proto.methods {
+                selectors.record(&m.selector, m.types.as_deref());
+            }
+            for (sel, enc) in &proto.properties {
+                selectors.record(sel, Some(enc));
+            }
+        }
 
         for (class, name) in &classes {
             out.symbols.push(SymFact {
@@ -161,7 +207,7 @@ impl AnalysisPass for ObjcMetadataPass {
             }
         }
 
-        for cat in kuna_objccats::categories(&img, ctx.file) {
+        for cat in &categories {
             let self_type = cat.class.as_deref().filter(|_| objcivars).and_then(|c| structs.self_type(&tctx, c));
             if let Some(list) = cat.instance_methods {
                 self.emit_methods(&img, &tctx, architecture, &cat.label, '-', list, self_type.as_ref(), &mut selectors, &mut out);
@@ -170,14 +216,13 @@ impl AnalysisPass for ObjcMetadataPass {
                 self.emit_methods(&img, &tctx, architecture, &cat.label, '+', list, None, &mut selectors, &mut out);
             }
         }
-        for proto in kuna_objcprotos::protocols(&img, ctx.file) {
+        for proto in &protocols {
             out.symbols.push(SymFact {
                 addr: proto.addr,
                 name: format!("_OBJC_PROTOCOL_$_{}", proto.name),
                 kind: SymKind::Data,
             });
             for m in &proto.methods {
-                selectors.record(&m.selector, m.types.as_deref());
                 if m.selector_va != 0 {
                     selectors.name(&mut out, m.selector_va, &m.selector);
                 }
@@ -248,7 +293,12 @@ impl ObjcMetadataPass {
             // FunctionSymbol installed above with that same `-[Class sel]` name).
             // Best-effort — an unparseable / absent encoding leaves the IMP *named*
             // (above) but untyped, never a failure.
-            if let Some(enc) = m.types.as_deref() {
+            // The spelling the class's own property gives the selector, else the
+            // method's own: another class's property of the same selector says
+            // nothing about this class's return type.
+            let owner = class.split('(').next().unwrap_or(class);
+            let enc = selectors.encoding_for_class(owner, &m.selector).map(str::to_string).or_else(|| m.types.clone());
+            if let Some(enc) = enc.as_deref() {
                 if let Some(pieces) = encoding::decode_method(&label, enc, tctx, None) {
                     out.prototypes.push(pieces);
                     if let Some(st) = self_type {

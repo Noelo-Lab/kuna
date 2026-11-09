@@ -4661,6 +4661,146 @@ every other binary's pass list is byte-identical to before the pass existed):
   `dynrelocs` is off (the names stay; the ivar offset variables are plain words,
   not fixups, and keep folding). Like every analysis gate, `objcrefconst` is read at the
   `read symbols` commit; flipping it afterwards does not re-paint.
+
+  The class walk reaches only what `__objc_classlist` reaches. Three more
+  metadata tables fill in the rest (kuna; Ghidra's `ObjectiveC2_ClassAnalyzer`
+  reads the same three):
+
+  - **Categories**
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objccats.rs (categories)`):
+    `__objc_catlist` and `__objc_nlcatlist` point at `category_t` records whose
+    class is usually in another image, so their IMPs were the bulk of the
+    `sub_<addr>` left on an ObjC app (77 of 1,892 on a 1.9 MB iOS app). The
+    class is read off the `class_t` a rebase slot points at or off the bind name
+    (`_OBJC_CLASS_$_UIView` → `UIView`), and the two method lists go through the
+    same rename as a class's own: `-[UIView(Layout) setLeft:]`,
+    `+[NSMutableDictionary(JSON) dictionaryWithJSON:]`. A category whose class
+    slot resolves to nothing is labelled `-[(Category) sel]` rather than guessed.
+    A category's protocol list is not read; nothing in the C would show it.
+  - **Protocols**
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcprotos.rs (protocols)`):
+    each `__objc_protolist` entry is a `protocol_t` named `_OBJC_PROTOCOL_$_<P>`,
+    and its four method lists (required/optional × instance/class) are
+    declarations with no IMP — which `method_list_t` readers now keep (`imp ==
+    0`) because the declaration carries the one thing a sent-only selector lacks:
+    its **type encoding**. `UITableViewDelegate` redeclared in the image spells
+    the signature of every `tableView:didSelectRowAtIndexPath:` send, so those
+    encodings feed the `objc_msgSend$<sel>` stub prototypes above (that app: 13 more
+    stubs typed, the fixture's `objc_msgSend$wave(self)` from `v16@0:8`). A
+    `__objc_protorefs` slot is `protoRef_<P>` and folds like the other refs. A
+    class's own conformance list is not read: it names nothing the C would show.
+  - **Instance layouts**
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcivars.rs (Structs::build)`,
+    option **`objcivars`**, kuna, default-on, inert unless `objc` is on, as `objc`
+    is on any Mach-O image under 500 KiB):
+    `class_ro_t.ivars` names every ivar with its type encoding, its size and a
+    pointer to its *offset variable* in `__objc_ivar` — the word a compiled method
+    loads and adds to `self` (`ldrsw x8, [x8, #off]; ldr d0, [x19, x8]`), because
+    under the non-fragile ABI the runtime may slide an offset when a superclass
+    from another image grows. The offset variable was already labelled, but as a
+    1-byte symbol a 4-byte load never matched, so 505 ivar accesses on that app read
+    `*(long *)((long)self + dat_1001aea74)`; it is now the 4-byte data object
+    `<Class>::<ivar>`. Statically the word holds the compile-time layout, so the
+    pass builds `struct <Class>` with each ivar at that offset (type from the
+    encoding — `@"NSString"` is an opaque `NSString *`, `#` an `objc_class *`,
+    a non-decoding encoding an `undefined<size>` — a local superclass embedded as
+    `super` at 0 so `self->super.count` keeps its name, an imported one left as
+    an anonymous prefix; `instanceSize` is the struct size), superclass first so
+    a child can embed its parent. Under `objcivars` the commit types `self` as
+    `<Class> *` in the class's and its categories' instance methods (the encoding
+    still decodes `@`; the typed `self` rides a separate fact so the gate decides
+    at the commit) and reports the offset variables constant through the same
+    `dynrelocs` fold path as the refs, so `*(double *)((long)self + Foo::ratio)`
+    renders `self->ratio` and `objc_storeStrong((long)self + Foo::_name, x)`
+    renders `objc_storeStrong(&self->_name, x)` (that app: 5,207 field accesses, 0
+    anonymous offset loads; an 84 MB Swift + ObjC app's Swift classes expose
+    their stored properties the same way). The struct takes the class's runtime
+    name, so a Swift class whose labels read `-[main.Greeter greet:]` under
+    `swiftdemangle` has `self` typed `_TtC4main7Greeter *`, a name C accepts.
+    A class that got no
+    layout — one of another image behind a category, or one with no field of
+    its own — still types `self` as a pointer to its declared record, so the
+    receiver is a `<Class> *` even when it is opaque. Off (the option is read
+    at load as `KUNA_OBJCIVARS` for the structs and at the commit for `self`
+    and the fold, so it is set before the `load file` it applies to), no class
+    struct is interned, `self` stays `id`, the offset variable keeps its name
+    and the load stays a load — the shape to read when a superclass from
+    another image may have grown since the link. A class whose name already
+    denotes a complete struct (DWARF) is that struct. Class (`+`) methods keep
+    `objc_object *self`. The number of classes given a layout is bounded
+    (32,768): every type the factory interns costs a linear name scan.
+
+  - **Declarations typed by class**
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcprops.rs (declarations)`):
+    a method's own encoding spells every object as a bare `@`, so the structs
+    above typed only `self`. The class is in the metadata: an ivar's encoding
+    (`@"Base"`) and a property's attribute string (`T@"Base",&,N,Vinner`, read
+    from the `property_list_t` of every class, metaclass, category and
+    protocol into a getter `<T>@:` and, unless `R`, a setter `v@:<T>`, with
+    `G`/`S` custom selectors honoured; a protocol's class properties too when
+    its record is long enough to carry them). The selector table keeps, of two
+    declarations that agree once frame offsets and class names are erased
+    (`@16@0:8` and `@"Base"@:`), the one naming the class, so a synthesized
+    getter is emitted as `Base * -[Holder inner](Holder *self, …)`, its setter
+    takes `Base *arg1`, and the `objc_msgSend$inner` stub returns `Base *`. An
+    IMP is typed with its *own* class's property spelling, and otherwise its
+    own method encoding, so two classes whose `view` return different classes
+    each keep theirs and a class that merely shares a selector takes no other
+    class's spelling; only a stub, which belongs to no class, takes the first
+    spelling seen. Every
+    declaration — class, category and protocol — is recorded before any IMP is
+    emitted. The
+    decoder resolves `@"Base"` to the struct the layout built — a pointer built
+    before the class's layout lands is to a *declared* record and reads the
+    completion afterwards — so a field read through any of them renders:
+    `v1 = self->inner->count;`. With `objcivars` off the declared pointer types
+    stay (they are the metadata's own statement) while `self` and the offset
+    fold do not, so only a deref through such a declared pointer still shows a
+    field.
+  - **SDK signatures** (`objcsdk`, kuna, default off,
+    `decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcsdk.rs (signatures)`):
+    the stub prototypes above exist only for selectors the image declares, and
+    a framework setter never is, so on a 1.9 MB iOS app 2,897 of 25,084 stub calls rendered
+    with no argument at all. The declarations exist in the SDK the app was built
+    against, and Apple's headers may not be shipped with kuna, so the option
+    names a directory to read **at load** (`KUNA_OBJCSDK`; nothing derived from
+    it is written anywhere): an SDK root contributes the `Headers/` of every
+    framework the image links (`LC_LOAD_DYLIB`, 73 on an 84 MB iOS app; ~0.1 s), any
+    other directory every `.h` under it. The reader takes the declaration
+    subset of the grammar — comments and preprocessor lines stripped,
+    `@interface` / `@protocol` / category bodies with their ivar block skipped,
+    `- (ret)sel:(T)a …;` methods, `@property (attrs) T name;` as a getter and
+    (unless `readonly`) a `setName:` setter with `getter=`/`setter=` honoured,
+    and `typedef`s anywhere so `NSInteger`, `CGFloat`, an `NS_ENUM` name or an
+    `NSString *`-backed typed enum resolve — and spells each declaration as the
+    type encoding the runtime metadata would carry (`v@:d` for
+    `setAlpha:(CGFloat)`), so it rides the one selector → prototype path; the
+    image's own declarations always win. A class-pointer argument keeps its
+    class (`@"UIView"`), a block is `@?`, an `id<P>` is `@`; a type the reader
+    cannot encode (an unknown struct, a function pointer) makes the selector
+    unusable rather than guessed, and a selector declared two ways across
+    classes is dropped (class names erased before comparing). By-value structs
+    follow AAPCS64 in the stub prototype: a homogeneous aggregate of up to four
+    doubles (`CGRect`, `UIEdgeInsets`) is spread over `d` registers as
+    `arg_x, arg_y, arg_width, arg_height`, `NSRange` over two `x` registers, a
+    larger one (`CGAffineTransform`) is the pointer the caller passes; a struct
+    return that spreads over registers is the flat struct
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (struct_type)`,
+    `CGRect {x, y, width, height}`) the model places in `d0..d3`, so
+    `v = objc_msgSend$bounds(view); objc_msgSend$setFrame:(view, v.x, v.y, v.width, v.height)`.
+    System V x86-64 has no such registers past two eightbytes (it passes a
+    larger struct on the stack), so a selector with such an argument or return
+    gets no prototype there
+    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcrefs.rs (struct_passing)`).
+    The 1.9 MB app: 2,897 → 1,221 argument-less stub calls; an 84 MB app sample: 32 → 4, 60 of
+    265 stub calls change shape (`setTransitioningDelegate:(v3, delegate)`,
+    `presentViewController:animated:completion:(vc, (UIViewController *)v10, 1, NULL)`).
+
+  Decoding every method's encoding asks the type factory for `objc_object *`
+  once per argument, and the factory finds a type by name with a linear scan of
+  every type it holds; with thousands of class structs interned that scan is no
+  longer cheap, so the decoder caches the named opaque pointer types it hands out
+  (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (TypeCtx)`).
 - **Swift metadata** (`swiftmetadata`, Mach-O and ELF, Swift images only,
   default-off but ON in the `aggressive` preset, which `auto` selects for any
   binary under 500 KiB; `decompiler/crates/kuna-analysis/src/analyzers/swift/mod.rs`, the
@@ -4918,121 +5058,6 @@ every other binary's pass list is byte-identical to before the pass existed):
   `swift_call_syms_elf` on, and `swift_call_native_elf` on, where a C function
   uses r12 as an ordinary variable and a class witness of a class-bound
   protocol takes the reference.
-
-  The class walk reaches only what `__objc_classlist` reaches. Three more
-  metadata tables fill in the rest (kuna; Ghidra's `ObjectiveC2_ClassAnalyzer`
-  reads the same three):
-
-  - **Categories**
-    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objccats.rs (categories)`):
-    `__objc_catlist` and `__objc_nlcatlist` point at `category_t` records whose
-    class is usually in another image, so their IMPs were the bulk of the
-    `sub_<addr>` left on an ObjC app (77 of 1,892 on a 1.9 MB iOS app). The
-    class is read off the `class_t` a rebase slot points at or off the bind name
-    (`_OBJC_CLASS_$_UIView` → `UIView`), and the two method lists go through the
-    same rename as a class's own: `-[UIView(Layout) setLeft:]`,
-    `+[NSMutableDictionary(JSON) dictionaryWithJSON:]`. A category whose class
-    slot resolves to nothing is labelled `-[(Category) sel]` rather than guessed.
-    Protocol and property lists are not read; nothing in the C would show them.
-  - **Protocols**
-    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcprotos.rs (protocols)`):
-    each `__objc_protolist` entry is a `protocol_t` named `_OBJC_PROTOCOL_$_<P>`,
-    and its four method lists (required/optional × instance/class) are
-    declarations with no IMP — which `method_list_t` readers now keep (`imp ==
-    0`) because the declaration carries the one thing a sent-only selector lacks:
-    its **type encoding**. `UITableViewDelegate` redeclared in the image spells
-    the signature of every `tableView:didSelectRowAtIndexPath:` send, so those
-    encodings feed the `objc_msgSend$<sel>` stub prototypes above (that app: 13 more
-    stubs typed, the fixture's `objc_msgSend$wave(self)` from `v16@0:8`). A
-    `__objc_protorefs` slot is `protoRef_<P>` and folds like the other refs. A
-    class's own conformance list is not read: it names nothing the C would show.
-  - **Instance layouts**
-    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcivars.rs (Structs::build)`,
-    option **`objcivars`**, kuna, default-on, inert unless `objc` is on, as `objc`
-    is on any Mach-O image under 500 KiB):
-    `class_ro_t.ivars` names every ivar with its type encoding, its size and a
-    pointer to its *offset variable* in `__objc_ivar` — the word a compiled method
-    loads and adds to `self` (`ldrsw x8, [x8, #off]; ldr d0, [x19, x8]`), because
-    under the non-fragile ABI the runtime may slide an offset when a superclass
-    from another image grows. The offset variable was already labelled, but as a
-    1-byte symbol a 4-byte load never matched, so 505 ivar accesses on that app read
-    `*(long *)((long)self + dat_1001aea74)`; it is now the 4-byte data object
-    `<Class>::<ivar>`. Statically the word holds the compile-time layout, so the
-    pass builds `struct <Class>` with each ivar at that offset (type from the
-    encoding — `@"NSString"` is an opaque `NSString *`, `#` an `objc_class *`,
-    a non-decoding encoding an `undefined<size>` — a local superclass embedded as
-    `super` at 0 so `self->super.count` keeps its name, an imported one left as
-    an anonymous prefix; `instanceSize` is the struct size), superclass first so
-    a child can embed its parent. Under `objcivars` the commit types `self` as
-    `<Class> *` in the class's and its categories' instance methods (the encoding
-    still decodes `@`; the typed `self` rides a separate fact so the gate decides
-    at the commit) and reports the offset variables constant through the same
-    `dynrelocs` fold path as the refs, so `*(double *)((long)self + Foo::ratio)`
-    renders `self->ratio` and `objc_storeStrong((long)self + Foo::_name, x)`
-    renders `objc_storeStrong(&self->_name, x)` (that app: 5,207 field accesses, 0
-    anonymous offset loads; an 84 MB Swift + ObjC app's Swift classes expose
-    their stored properties the same way). The struct takes the class's runtime
-    name, so a Swift class whose labels read `-[main.Greeter greet:]` under
-    `swiftdemangle` has `self` typed `_TtC4main7Greeter *`, a name C accepts.
-    A class that got no
-    layout — one of another image behind a category, or one with no field of
-    its own — still types `self` as a pointer to its declared record, so the
-    receiver is a `<Class> *` even when it is opaque. Off (the option is read
-    at load as `KUNA_OBJCIVARS` for the structs and at the commit for `self`
-    and the fold, so it is set before the `load file` it applies to), no class
-    struct is interned, `self` stays `id`, the offset variable keeps its name
-    and the load stays a load — the shape to read when a superclass from
-    another image may have grown since the link. A class whose name already
-    denotes a complete struct (DWARF) is that struct. Class (`+`) methods keep
-    `objc_object *self`. The number of classes given a layout is bounded
-    (32,768): every type the factory interns costs a linear name scan.
-    Properties are not read: a property is a method pair plus an ivar, all
-    already named.
-
-  - **SDK signatures** (`objcsdk`, kuna, default off,
-    `decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcsdk.rs (signatures)`):
-    the stub prototypes above exist only for selectors the image declares, and
-    a framework setter never is, so on a 1.9 MB iOS app 2,897 of 25,084 stub calls rendered
-    with no argument at all. The declarations exist in the SDK the app was built
-    against, and Apple's headers may not be shipped with kuna, so the option
-    names a directory to read **at load** (`KUNA_OBJCSDK`; nothing derived from
-    it is written anywhere): an SDK root contributes the `Headers/` of every
-    framework the image links (`LC_LOAD_DYLIB`, 73 on an 84 MB iOS app; ~0.1 s), any
-    other directory every `.h` under it. The reader takes the declaration
-    subset of the grammar — comments and preprocessor lines stripped,
-    `@interface` / `@protocol` / category bodies with their ivar block skipped,
-    `- (ret)sel:(T)a …;` methods, `@property (attrs) T name;` as a getter and
-    (unless `readonly`) a `setName:` setter with `getter=`/`setter=` honoured,
-    and `typedef`s anywhere so `NSInteger`, `CGFloat`, an `NS_ENUM` name or an
-    `NSString *`-backed typed enum resolve — and spells each declaration as the
-    type encoding the runtime metadata would carry (`v@:d` for
-    `setAlpha:(CGFloat)`), so it rides the one selector → prototype path; the
-    image's own declarations always win. A class-pointer argument keeps its
-    class (`@"UIView"`), a block is `@?`, an `id<P>` is `@`; a type the reader
-    cannot encode (an unknown struct, a function pointer) makes the selector
-    unusable rather than guessed, and a selector declared two ways across
-    classes is dropped (class names erased before comparing). By-value structs
-    follow AAPCS64 in the stub prototype: a homogeneous aggregate of up to four
-    doubles (`CGRect`, `UIEdgeInsets`) is spread over `d` registers as
-    `arg_x, arg_y, arg_width, arg_height`, `NSRange` over two `x` registers, a
-    larger one (`CGAffineTransform`) is the pointer the caller passes; a struct
-    return that spreads over registers is the flat struct
-    (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (struct_type)`,
-    `CGRect {x, y, width, height}`) the model places in `d0..d3`, so
-    `v = objc_msgSend$bounds(view); objc_msgSend$setFrame:(view, v.x, v.y, v.width, v.height)`.
-    System V x86-64 has no such registers past two eightbytes (it passes a
-    larger struct on the stack), so a selector with such an argument or return
-    gets no prototype there
-    (`decompiler/crates/kuna-analysis/src/analyzers/objc/kuna_objcrefs.rs (struct_passing)`).
-    The 1.9 MB app: 2,897 → 1,221 argument-less stub calls; an 84 MB app sample: 32 → 4, 60 of
-    265 stub calls change shape (`setTransitioningDelegate:(v3, delegate)`,
-    `presentViewController:animated:completion:(vc, (UIViewController *)v10, 1, NULL)`).
-
-  Decoding every method's encoding asks the type factory for `objc_object *`
-  once per argument, and the factory finds a type by name with a linear scan of
-  every type it holds; with thousands of class structs interned that scan is no
-  longer cheap, so the decoder caches the named opaque pointer types it hands out
-  (`decompiler/crates/kuna-analysis/src/analyzers/objc/encoding.rs (TypeCtx)`).
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the
