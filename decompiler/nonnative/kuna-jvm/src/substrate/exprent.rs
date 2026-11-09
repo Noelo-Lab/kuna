@@ -8,25 +8,29 @@
 use std::cell::RefCell;
 
 use crate::annotation_exprent::{AnnotationExprent, AnnotationExprentData};
+use crate::arena_object;
 use crate::array_exprent::{ArrayExprent, ArrayExprentData};
 use crate::assert_exprent::{AssertExprent, AssertExprentData};
 use crate::assignment_exprent::{AssignmentExprent, AssignmentExprentData};
 use crate::check_types_result::CheckTypesResult;
+use crate::classes_processor::ClassNode;
 use crate::const_exprent::{ConstExprent, ConstExprentData};
 use crate::counter_container::CounterContainer;
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::{ExitExprent, ExitExprentData};
 use crate::field_exprent::{FieldExprent, FieldExprentData};
 use crate::function_exprent::{FunctionExprent, FunctionExprentData};
-use crate::i_matchable::IMatchable;
+use crate::generic_type::GenericType;
+use crate::i_matchable::{IMatchable, MatchProperties};
 use crate::if_exprent::{IfExprent, IfExprentData};
 use crate::invocation_exprent::{InvocationExprent, InvocationExprentData};
 use crate::match_engine::MatchEngine;
-use crate::match_node::MatchNode;
+use crate::match_node::{MatchNode, MatchValue};
+use crate::method_wrapper::MethodWrapper;
 use crate::monitor_exprent::{MonitorExprent, MonitorExprentData};
 use crate::new_exprent::{NewExprent, NewExprentData};
 use crate::pattern_exprent::{PatternExprent, PatternExprentData};
-use crate::rt::{BitSet, JHashMap, JHashSet, JavaEq, JavaHash};
+use crate::rt::{jnum, BitSet, JHashMap, JHashSet, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
 use crate::switch_exprent::{SwitchExprent, SwitchExprentData};
@@ -38,7 +42,12 @@ use crate::var_map_holder::VarMapHolder;
 use crate::var_type::VarType;
 use crate::var_version_pair::VarVersionPair;
 use crate::yield_exprent::{YieldExprent, YieldExprentData};
-use crate::{arena_object, unported};
+
+/// `s.matches("-?\\d+")` (`\d` is ASCII-only in Java regex).
+fn is_signed_decimal(s: &str) -> bool {
+    let digits = s.strip_prefix('-').unwrap_or(s);
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+}
 
 pub struct ExprentData {
     pub id: i32,
@@ -285,6 +294,17 @@ impl Exprent {
         VarType::VARTYPE_VOID()
     }
 
+    /// Java `getExprType()` including its `null`: a `++`/`--` without an
+    /// implicit type (directly or as a switch selector). [`Exprent::get_expr_type`]
+    /// throws `NullPointerException` there instead.
+    pub fn get_expr_type_opt(self) -> Option<VarType> {
+        match self.get_type() {
+            ExprentType::Function => FunctionExprent::get_expr_type_opt(self.as_function()),
+            ExprentType::SwitchHead => self.as_switch_head().get_value().get_expr_type_opt(),
+            _ => Some(self.get_expr_type()),
+        }
+    }
+
     pub fn get_inferred_expr_type(self, upper_bound: Option<&VarType>) -> VarType {
         match self.get_type() {
             ExprentType::Array => {
@@ -310,6 +330,22 @@ impl Exprent {
 
     pub fn get_inferred_expr_type_base(self, _upper_bound: Option<&VarType>) -> VarType {
         self.get_expr_type()
+    }
+
+    /// Java `getInferredExprType(VarType)` including its `null` (a `++`/`--`
+    /// without an implicit type, directly or as an assignment's left side), for
+    /// callers that tolerate or discard it.
+    pub fn get_inferred_expr_type_opt(self, upper_bound: Option<&VarType>) -> Option<VarType> {
+        match self.get_type() {
+            ExprentType::Function => {
+                FunctionExprent::get_inferred_expr_type_opt(self.as_function(), upper_bound)
+            }
+            ExprentType::Assignment => self
+                .as_assignment()
+                .get_left()
+                .get_inferred_expr_type_opt(upper_bound),
+            _ => Some(self.get_inferred_expr_type(upper_bound)),
+        }
     }
 
     pub fn get_exprent_use(self) -> i32 {
@@ -652,29 +688,113 @@ impl Exprent {
 
     pub fn gather_generics(
         self,
-        _upper_bound: Option<&VarType>,
-        _ret: &VarType,
-        _generics_map: &mut JHashMap<VarType, Option<VarType>>,
+        upper_bound: Option<&VarType>,
+        ret: &VarType,
+        generics_map: &mut JHashMap<VarType, Option<VarType>>,
     ) {
-        unported!("Exprent.gatherGenerics")
+        if let Some(upper_bound) = upper_bound {
+            if upper_bound.is_generic()
+                && ret.is_generic()
+                && upper_bound.array_dim == ret.array_dim
+            {
+                let upper_generic = upper_bound.as_generic();
+                let ret_generic = ret.as_generic();
+                let left = upper_generic.get_arguments().len();
+                let right = ret_generic.get_arguments().len();
+                if left == right {
+                    ret_generic.map_gen_vars_to(&upper_generic, generics_map);
+                }
+            }
+        }
     }
 
     /// Java: `getGenericArgs(List<String>, Map<VarType, VarType>, List<VarType>)`.
     pub fn get_generic_args_into(
         self,
-        _fparams: &[String],
-        _generics_map: &JHashMap<VarType, Option<VarType>>,
-        _generic_args: &mut Vec<VarType>,
+        fparams: &[String],
+        generics_map: &JHashMap<VarType, Option<VarType>>,
+        generic_args: &mut Vec<VarType>,
     ) {
-        unported!("Exprent.getGenericArgs")
+        for type_ in fparams {
+            let arg = generics_map
+                .get(&GenericType::parse(&format!("T{type_};")))
+                .cloned()
+                .flatten();
+            match arg {
+                Some(arg)
+                    if !(arg.is_generic()
+                        && arg.as_generic().get_wildcard() != GenericType::WILDCARD_NO) =>
+                {
+                    generic_args.push(arg);
+                }
+                _ => {
+                    generic_args.clear();
+                    break;
+                }
+            }
+        }
     }
 
-    pub fn append_parameters(self, _buf: &mut TextBuffer, _generic_args: &[VarType]) {
-        unported!("Exprent.appendParameters")
+    pub fn append_parameters(self, buf: &mut TextBuffer, generic_args: &[VarType]) {
+        if generic_args.is_empty() {
+            return;
+        }
+        buf.append("<");
+        for i in 0..generic_args.len() {
+            buf.append_cast_type_name(&generic_args[i]);
+            if i + 1 < generic_args.len() {
+                buf.append(", ");
+            }
+        }
+        buf.append(">");
     }
 
+    /// The type variables in scope (class, method and enclosing ones) mapped
+    /// to their bounds; the bound lists are copies of the signatures' lists.
     pub fn get_named_generics(self) -> JHashMap<VarType, Vec<VarType>> {
-        unported!("Exprent.getNamedGenerics")
+        let mut ret: JHashMap<VarType, Vec<VarType>> = JHashMap::new();
+        let mut class_: Option<ClassNode> = DecompilerContext::get_current_class_node();
+        let mut method: Option<MethodWrapper> = DecompilerContext::get_current_method_wrapper();
+
+        loop {
+            let cls = class_.and_then(|c| c.with(|d| d.class_struct).get_signature());
+            if let Some(cls) = cls {
+                let fparameters = cls.fparameters().clone();
+                for x in 0..fparameters.len() {
+                    let bounds = cls.fbounds()[x].clone();
+                    ret.put(GenericType::parse(&format!("T{};", fparameters[x])), bounds);
+                }
+            }
+
+            let mtd = method.and_then(|m| m.with(|d| d.method_struct).get_signature());
+            if let Some(mtd) = mtd {
+                let type_parameters = mtd.type_parameters().clone();
+                for x in 0..type_parameters.len() {
+                    let bounds = mtd.type_parameter_bounds()[x].clone();
+                    ret.put(
+                        GenericType::parse(&format!("T{};", type_parameters[x])),
+                        bounds,
+                    );
+                }
+            }
+
+            let Some(node) = class_ else {
+                break;
+            };
+            let (parent, enclosing_method) = node.with(|d| (d.parent, d.enclosing_method.clone()));
+            let Some(parent) = parent else {
+                break;
+            };
+            let Some(parent_wrapper) = parent.get_wrapper() else {
+                break;
+            };
+            method = match enclosing_method {
+                None => None,
+                Some(key) => parent_wrapper.get_methods().borrow().get_with_key(&key),
+            };
+            class_ = Some(parent);
+        }
+        ret
     }
 
     pub fn set_invocation_instance(self) {
@@ -796,8 +916,30 @@ impl Exprent {
         }
     }
 
-    pub fn find_object(self, _match_node: &MatchNode, _index: i32) -> Option<Exprent> {
-        unported!("Exprent.findObject")
+    pub fn find_object(self, match_node: &MatchNode, index: i32) -> Option<Exprent> {
+        if match_node.get_type() != MatchNode::MATCHNODE_EXPRENT {
+            return None;
+        }
+
+        let lst_all_exprents = self.get_all_exprents();
+        if lst_all_exprents.is_empty() {
+            return None;
+        }
+
+        let position = match_node
+            .get_rule_value(MatchProperties::ExprentPosition)
+            .map(|v| v.as_string());
+        if let Some(position) = position {
+            if is_signed_decimal(&position) {
+                let size = lst_all_exprents.len() as i32;
+                let at = size.wrapping_add(jnum::parse_int(&position)) % size;
+                return Some(lst_all_exprents[at as usize]);
+            }
+        } else if index < lst_all_exprents.len() as i32 {
+            return Some(lst_all_exprents[index as usize]);
+        }
+
+        None
     }
 
     /// Java: `match(MatchNode, MatchEngine)`.
@@ -817,8 +959,29 @@ impl Exprent {
         }
     }
 
-    pub fn match_base(self, _match_node: &MatchNode, _engine: &MatchEngine) -> bool {
-        unported!("Exprent.match")
+    pub fn match_base(self, match_node: &MatchNode, engine: &MatchEngine) -> bool {
+        if match_node.get_type() != MatchNode::MATCHNODE_EXPRENT {
+            return false;
+        }
+
+        let type_ = self.get_type();
+        match_node.iterate_rules(|key, value| {
+            if key == MatchProperties::ExprentType
+                && !matches!(&value.value, Some(MatchValue::ExprentType(t)) if *t == type_)
+            {
+                return false;
+            }
+
+            key != MatchProperties::ExprentRet
+                || engine.check_and_set_variable_value(
+                    &value
+                        .value
+                        .as_ref()
+                        .expect("NullPointerException: EXPRENT_RET value")
+                        .as_string(),
+                    Some(MatchValue::Exprent(self)),
+                )
+        })
     }
 
     /// Java: `toString()`.
@@ -832,7 +995,8 @@ impl Exprent {
     }
 
     pub fn to_string_base(self) -> String {
-        unported!("Exprent.toString")
+        let _lock = DecompilerContext::get_import_collector().lock();
+        self.to_java(0).convert_to_string_and_allow_data_discard()
     }
 
     /// Java `equals(Object)`.

@@ -1,15 +1,21 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/AssignmentExprent.java`.
 
 use crate::check_types_result::CheckTypesResult;
-use crate::exprent::{Exprent, ExprentKind};
+use crate::code_constants::ACC_FINAL;
+use crate::decompiler_context::DecompilerContext;
+use crate::expr_processor::{ExprProcessor, NullCastType};
+use crate::exprent::{Exprent, ExprentKind, ExprentType};
 use crate::function_exprent::FunctionType;
+use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::interpreter_util::InterpreterUtil;
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
 use crate::text_buffer::TextBuffer;
 use crate::var_map_holder::VarMapHolder;
-use crate::var_type::VarType;
-use crate::{java_subclass, unported};
+use crate::var_type::{instance_of, str_equals, VarType};
+use crate::var_version_pair::VarVersionPair;
+use crate::{java_subclass, jthrow};
 
 pub struct AssignmentExprentData {
     pub left: Exprent,
@@ -65,7 +71,12 @@ impl AssignmentExprent {
 
     pub fn get_expr_type(self) -> VarType {
         let (left, right) = self.d(|d| (d.left, d.right));
-        let r_type = VarType::join(&left.get_expr_type(), &right.get_expr_type());
+        let (Some(left_type), Some(right_type)) =
+            (left.get_expr_type_opt(), right.get_expr_type_opt())
+        else {
+            jthrow!(NullPointerException; "VarType.join on null");
+        };
+        let r_type = VarType::join(&left_type, &right_type);
         match r_type {
             Some(t) => t,
             None => left.get_expr_type(),
@@ -77,7 +88,35 @@ impl AssignmentExprent {
     }
 
     pub fn check_expr_type_bounds(self) -> Option<CheckTypesResult> {
-        unported!("AssignmentExprent.checkExprTypeBounds")
+        let mut result = CheckTypesResult::new();
+        let (left, right) = self.d(|d| (d.left, d.right));
+
+        let type_left = left.get_expr_type_opt();
+        let type_right = right.get_expr_type_opt();
+        let (Some(type_left), Some(mut type_right)) = (type_left, type_right) else {
+            jthrow!(NullPointerException; "typeFamily of null");
+        };
+
+        if type_left.type_family.is_greater(type_right.type_family) {
+            result.add_expr_lower_bound(right, &VarType::find_family_bottom(type_left.type_family));
+        } else if type_left.type_family.is_lesser(type_right.type_family) {
+            result.add_expr_lower_bound(left, &type_right);
+        } else {
+            if let Some(func) = right.try_as_function() {
+                if func.get_func_type() == FunctionType::Ternary
+                    && VarType::VARTYPE_INT().equals(&type_right)
+                {
+                    type_right = VarType::VARTYPE_BYTECHAR();
+                }
+            }
+
+            match VarType::join(&type_left, &type_right) {
+                Some(joined) => result.add_expr_lower_bound(left, &joined),
+                None => jthrow!(NullPointerException; "Null not expected here"),
+            }
+        }
+
+        Some(result)
     }
 
     pub fn get_all_exprents_list(self, lst: &mut Vec<Exprent>) {
@@ -97,13 +136,192 @@ impl AssignmentExprent {
         13
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("AssignmentExprent.toJava")
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let left = self.get_left();
+        let left_type = left.get_inferred_expr_type(None);
+
+        let mut field_in_class_init = false;
+        let mut hidden_field = false;
+        if let Some(field) = left.try_as_field() {
+            if let Some(node) = DecompilerContext::get_current_class_node() {
+                let class_struct = node.with(|d| d.class_struct);
+                let fd = class_struct
+                    .get_field(&field.get_name(), &field.get_descriptor().descriptor_string);
+                if let Some(fd) = fd {
+                    if field.is_static() && fd.has_modifier(ACC_FINAL) {
+                        field_in_class_init = true;
+                    }
+                    if let Some(wrapper) = node.get_wrapper() {
+                        let key =
+                            InterpreterUtil::make_unique_key(&fd.get_name(), &fd.get_descriptor());
+                        if wrapper.get_hidden_members().borrow().contains(&key) {
+                            hidden_field = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if hidden_field {
+            return TextBuffer::new();
+        }
+
+        let mut buffer = TextBuffer::new();
+
+        if field_in_class_init {
+            let field = left.as_field();
+            let name = field.get_name();
+            buffer.append_field_descriptor(
+                &name,
+                false,
+                &field.get_classname(),
+                &name,
+                &field.get_descriptor(),
+            );
+        } else {
+            buffer.append_buffer(&left.to_java(indent));
+        }
+
+        if let Some(right_const) = self.get_right().try_as_const() {
+            right_const.adjust_const_type(&left_type);
+        }
+
+        self.optimize_cast_for_assign();
+
+        let right = self.get_right();
+        match self.get_cond_type() {
+            None => {
+                buffer.append(" = ");
+
+                let cast_name = {
+                    let _lock = DecompilerContext::get_import_collector().lock();
+                    ExprProcessor::get_cast_type_name(&left_type)
+                };
+
+                if cast_name == ExprProcessor::UNREPRESENTABLE_TYPE_STRING {
+                    buffer.append_buffer(&right.to_java(indent));
+                } else {
+                    ExprProcessor::get_casted_exprent_full(
+                        right,
+                        &left_type,
+                        &mut buffer,
+                        indent,
+                        NullCastType::DontCastAtAll,
+                        false,
+                        false,
+                        false,
+                    );
+                }
+            }
+            Some(cond_type) => {
+                buffer
+                    .append(" ")
+                    .append(cond_type.operator().unwrap_or("null"))
+                    .append("= ");
+                buffer.append_buffer(&right.to_java(indent));
+            }
+        }
+
+        buffer.add_start_bytecode_mapping(self.get_bytecode().as_ref());
+
+        if let Some(var_left) = self.get_left().try_as_var() {
+            if DecompilerContext::get_option(IFernflowerPreferences::DECOMPILER_COMMENTS) {
+                if var_left.is_definition() {
+                    if let Some(processor) = var_left.get_processor() {
+                        if processor
+                            .get_synthetic_semaphores()
+                            .borrow()
+                            .contains(&var_left.get_index())
+                        {
+                            buffer.append(" /* VF: Semaphore variable */");
+                        }
+                    }
+                }
+            }
+        }
+
+        buffer
     }
 
-    #[allow(dead_code)]
     fn optimize_cast_for_assign(self) {
-        unported!("AssignmentExprent.optimizeCastForAssign")
+        let (left, right) = self.d(|d| (d.left, d.right));
+        let Some(func) = right.try_as_function() else {
+            return;
+        };
+
+        if func.get_func_type() != FunctionType::Cast {
+            return;
+        }
+
+        let cast = func.get_lst_operands().get(1);
+
+        if !func.does_cast() && left.is_var() {
+            if instance_of(&right.get_expr_type().value, &cast.get_expr_type().value) {
+                let cast_val = func.get_lst_operands().get(0);
+
+                if left.get_expr_type().array_dim > cast_val.get_expr_type().array_dim {
+                    func.set_needs_cast(true);
+                    return;
+                }
+            }
+        }
+
+        let left_type = left.get_inferred_expr_type(None);
+
+        if !left_type.is_generic_type() {
+            return;
+        }
+
+        let Some(method) = DecompilerContext::get_current_method_wrapper() else {
+            return;
+        };
+
+        let (mt, class_struct) = method.with(|d| (d.method_struct, d.class_struct));
+        let Some(descriptor) = mt.get_signature() else {
+            return;
+        };
+
+        if descriptor.type_parameters().is_empty() {
+            return;
+        }
+
+        let index = descriptor
+            .type_parameters()
+            .iter()
+            .position(|p| left_type.value.as_deref() == Some(p.as_str()));
+        let Some(index) = index else {
+            return;
+        };
+
+        if let Some(class_descriptor) = class_struct.get_signature() {
+            let snapshot = descriptor.type_parameter_bounds()[index].clone();
+            for type_ in snapshot {
+                let idex = class_descriptor
+                    .fparameters()
+                    .iter()
+                    .position(|p| type_.value.as_deref() == Some(p.as_str()));
+
+                if let Some(idex) = idex {
+                    let extra = class_descriptor.fbounds()[idex].clone();
+                    descriptor.borrow_mut().type_parameter_bounds[index].extend(extra);
+                }
+            }
+        }
+
+        let right_type = cast.get_inferred_expr_type(Some(&left_type));
+
+        let mut did_reset = false;
+        let types = descriptor.type_parameter_bounds()[index].clone();
+        for type_ in &types {
+            if str_equals(&right_type.value, &type_.value) {
+                cast.as_const().set_const_type(left_type.clone());
+                did_reset = true;
+            }
+        }
+
+        if did_reset {
+            func.0.get_inferred_expr_type_opt(None);
+        }
     }
 
     pub fn replace_exprent(self, old_expr: Exprent, new_expr: Exprent) {
@@ -139,12 +357,91 @@ impl AssignmentExprent {
 
     pub fn process_sforms(
         self,
-        _s_forms_constructor: &mut SFormsConstructor,
-        _var_maps: &mut VarMapHolder,
-        _stat: Statement,
-        _calc_live_vars: bool,
+        s_forms_constructor: &mut SFormsConstructor,
+        var_maps: &mut VarMapHolder,
+        stat: Statement,
+        calc_live_vars: bool,
     ) {
-        unported!("AssignmentExprent.processSforms")
+        let dest = self.get_left();
+        match dest.get_type() {
+            ExprentType::Var => {
+                let dest_var = dest.as_var();
+
+                if self.get_cond_type().is_some() {
+                    dest_var
+                        .0
+                        .process_sforms(s_forms_constructor, var_maps, stat, calc_live_vars);
+                    self.get_right().process_sforms(
+                        s_forms_constructor,
+                        var_maps,
+                        stat,
+                        calc_live_vars,
+                    );
+
+                    let var_map = var_maps.to_normal();
+
+                    let phantom =
+                        s_forms_constructor.get_or_create_phantom(dest_var.get_var_version_pair());
+                    var_map.borrow_mut().set_current_var_pair(phantom);
+                } else {
+                    self.get_right().process_sforms(
+                        s_forms_constructor,
+                        var_maps,
+                        stat,
+                        calc_live_vars,
+                    );
+                    let normal = var_maps.to_normal();
+                    s_forms_constructor.update_var_exprent(dest_var, stat, &normal, calc_live_vars);
+
+                    if s_forms_constructor.track_direct_assignments {
+                        let right = self.get_right();
+                        match right.get_type() {
+                            ExprentType::Var => {
+                                let rightpaar = right.as_var().get_var_version_pair();
+                                s_forms_constructor.mark_direct_assignment(
+                                    dest_var.get_var_version_pair(),
+                                    rightpaar,
+                                );
+                            }
+                            ExprentType::Field => {
+                                let index = s_forms_constructor.get_field_index(right.as_field());
+                                let rightpaar = VarVersionPair::new(index, 0);
+                                s_forms_constructor.mark_direct_assignment(
+                                    dest_var.get_var_version_pair(),
+                                    rightpaar,
+                                );
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            ExprentType::Field => {
+                self.get_left()
+                    .process_sforms(s_forms_constructor, var_maps, stat, calc_live_vars);
+                var_maps.assert_is_normal();
+                self.get_right().process_sforms(
+                    s_forms_constructor,
+                    var_maps,
+                    stat,
+                    calc_live_vars,
+                );
+                var_maps.to_normal();
+                var_maps.get_normal().borrow_mut().remove_all_fields();
+            }
+            _ => {
+                self.get_left()
+                    .process_sforms(s_forms_constructor, var_maps, stat, calc_live_vars);
+                var_maps.assert_is_normal();
+                self.get_right().process_sforms(
+                    s_forms_constructor,
+                    var_maps,
+                    stat,
+                    calc_live_vars,
+                );
+                var_maps.to_normal();
+            }
+        }
     }
 
     pub fn get_left(self) -> Exprent {
