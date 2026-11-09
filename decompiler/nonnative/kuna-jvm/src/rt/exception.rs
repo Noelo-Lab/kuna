@@ -6,11 +6,16 @@
 //! that receives it. An ordinary Rust panic inside the region (an index out of
 //! bounds, an `unwrap` on `None`) is caught the same way, as the
 //! `IndexOutOfBoundsException` or `NullPointerException` it stands for.
+//!
+//! A caught throw prints nothing. For debugging, `KUNA_JVM_BACKTRACE` prints
+//! the Rust backtrace of each one on stderr: of every throw when the variable
+//! is `1` or `all`, else of the throws whose text contains its value.
 
 use std::any::Any;
+use std::backtrace::Backtrace;
 use std::cell::{Cell, RefCell};
 use std::panic::{self, AssertUnwindSafe};
-use std::sync::Once;
+use std::sync::{Once, OnceLock};
 
 /// A thrown Java exception: its simple class name and message.
 #[derive(Clone, Debug)]
@@ -66,6 +71,19 @@ fn payload_text(payload: &(dyn Any + Send)) -> String {
     }
 }
 
+/// `KUNA_JVM_BACKTRACE`: `Some("")` prints every caught throw's backtrace.
+fn backtrace_filter() -> Option<&'static str> {
+    static FILTER: OnceLock<Option<String>> = OnceLock::new();
+    FILTER
+        .get_or_init(|| {
+            std::env::var("KUNA_JVM_BACKTRACE")
+                .ok()
+                .filter(|v| !v.is_empty())
+                .map(|v| if v == "1" || v == "all" { String::new() } else { v })
+        })
+        .as_deref()
+}
+
 fn install_hook() {
     HOOK.call_once(|| {
         let previous = panic::take_hook();
@@ -78,7 +96,11 @@ fn install_hook() {
                 .location()
                 .map(|l| format!("{}:{}", l.file(), l.line()))
                 .unwrap_or_default();
-            LAST_PANIC.with(|p| *p.borrow_mut() = Some((payload_text(info.payload()), location)));
+            let text = payload_text(info.payload());
+            if backtrace_filter().is_some_and(|f| text.contains(f)) {
+                eprintln!("kuna-jvm: caught {text} at {location}\n{}", Backtrace::force_capture());
+            }
+            LAST_PANIC.with(|p| *p.borrow_mut() = Some((text, location)));
         }));
     });
 }
