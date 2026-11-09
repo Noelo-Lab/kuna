@@ -15,8 +15,9 @@ use kuna_jvm::dummy_exit_statement::DummyExitStatement;
 use kuna_jvm::eliminate_loops_helper::EliminateLoopsHelper;
 use kuna_jvm::general_statement::GeneralStatement;
 use kuna_jvm::root_statement::RootStatement;
-use kuna_jvm::rt::{reset_class_scope, try_catch};
+use kuna_jvm::rt::{reset_class_scope, try_catch, JHashSet};
 use kuna_jvm::sequence_helper::SequenceHelper;
+use kuna_jvm::simplify_exprents_helper::SimplifyExprentsHelper;
 use kuna_jvm::stat_edge::StatEdge;
 use kuna_jvm::statement::{LastBasicType, Statement};
 use kuna_jvm::struct_class::StructClass;
@@ -208,24 +209,37 @@ impl Oracle {
         self.dump(key, root.0, "");
     }
 
-    /// `eliminateLoops` stops at `SimplifyExprentsHelper` while that is unported;
-    /// the oracle runs exactly the part before it.
+    /// `eliminateLoops` in the oracle's two steps, each dumped.
     fn eliminate(&mut self, key: &str) {
         let (root, cl) = (self.root(), self.cl);
-        let ret = match try_catch(|| EliminateLoopsHelper::eliminate_loops(root.0, cl)) {
-            Ok(ret) => ret,
-            Err(e)
-                if e.is("UnportedError")
-                    && e.message
-                        .contains("SimplifyExprentsHelper.simplifyStackVarsStatement") =>
-            {
-                true
-            }
-            Err(e) => panic!("{key}: eliminateLoops threw {}", e.message),
-        };
+        let ret = EliminateLoopsHelper::eliminate_loops_rec(root.0);
         self.p(&format!("{key}.eliminated"), ret);
-        if ret {
-            self.dump(key, root.0, "");
+        if !ret {
+            return;
+        }
+        SequenceHelper::condense_sequences(root.0);
+        self.dump(key, root.0, "");
+        let simplified = try_catch(|| {
+            let mut set_reordered_ifs = JHashSet::new();
+            while SimplifyExprentsHelper::simplify_stack_vars_statement(
+                root.0,
+                &mut set_reordered_ifs,
+                None,
+                cl,
+                false,
+            ) {
+                SequenceHelper::condense_sequences(root.0);
+            }
+        });
+        match simplified {
+            Ok(()) => {
+                self.p(&format!("{key}.simplified"), true);
+                self.dump(&format!("{key}.simplified"), root.0, "");
+            }
+            Err(e) => {
+                let class = e.exception.map_or("NullPointerException", |x| x.class);
+                self.p(&format!("{key}.simplified"), class);
+            }
         }
     }
 

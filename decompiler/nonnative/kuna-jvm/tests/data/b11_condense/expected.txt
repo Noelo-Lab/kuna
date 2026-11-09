@@ -316,6 +316,24 @@ elim.found6 =                 {Block}:4 parent={If}:11 first=null succs=[8: {Blo
 elim.found6 =         {If}:10 parent={Seq}:21 first={Block}:5 succs=[4: {If}:10 -> {Block}:6 ({Do}:22)] preds=[4: {Block}:2 -> {If}:10 ({Seq}:19), 4: {If}:13 -> {If}:10 ({Seq}:19), 1: {Seq}:19 -> {If}:10] labels=[] exprents=null iftype=0 negated=false ifstat=null elsestat=null
 elim.found6 =           {Block}:5 parent={If}:10 first=null succs=[8: {Block}:5 -> {Seq}:23 ({Seq}:23)] preds=[] labels=[] exprents=null
 elim.found6 =     {Block}:6 parent={Seq}:23 first=null succs=[4: {Block}:6 -> {Exit}:7 ({Seq}:23)] preds=[4: {Block}:3 -> {Block}:6 ({Do}:22), 4: {If}:10 -> {Block}:6 ({Do}:22), 1: {Do}:22 -> {Block}:6] labels=[] exprents=null
+elim.found6.simplified = true
+elim.found6.simplified = {Root}:9 parent=null first={Seq}:23 succs=[] preds=[] labels=[] exprents=null
+elim.found6.simplified =   {Seq}:23 parent={Root}:9 first={Do}:22 succs=[] preds=[8: {Block}:4 -> {Seq}:23 ({Seq}:23), 8: {Block}:5 -> {Seq}:23 ({Seq}:23)] labels=[4: {Block}:6 -> {Exit}:7 ({Seq}:23), 8: {Block}:4 -> {Seq}:23 ({Seq}:23), 8: {Block}:5 -> {Seq}:23 ({Seq}:23)] exprents=null
+elim.found6.simplified =     {Do}:22 parent={Seq}:23 first={Seq}:24 succs=[1: {Do}:22 -> {Block}:6] preds=[] labels=[4: {Block}:3 -> {Block}:6 ({Do}:22), 4: {If}:10 -> {Block}:6 ({Do}:22)] exprents=null looptype=0
+elim.found6.simplified =       {Seq}:24 parent={Do}:22 first={If}:18 succs=[] preds=[] labels=[] exprents=null
+elim.found6.simplified =         {If}:18 parent={Seq}:24 first={Block}:1 succs=[1: {If}:18 -> {If}:10] preds=[] labels=[4: {Block}:2 -> {If}:10 ({If}:18), 4: {If}:13 -> {If}:10 ({If}:18)] exprents=null iftype=1 negated=false ifstat={If}:13 elsestat={Do}:17
+elim.found6.simplified =           {Block}:1 parent={If}:18 first=null succs=[1: {Block}:1 -> {If}:13, 1: {Block}:1 -> {Do}:17] preds=[] labels=[] exprents=null
+elim.found6.simplified =           {If}:13 parent={If}:18 first={Block}:3 succs=[4: {If}:13 -> {If}:10 ({If}:18)] preds=[1: {Block}:1 -> {If}:13] labels=[] exprents=null iftype=0 negated=true ifstat=null elsestat=null
+elim.found6.simplified =             {Block}:3 parent={If}:13 first=null succs=[4: {Block}:3 -> {Block}:6 ({Do}:22)] preds=[] labels=[] exprents=null
+elim.found6.simplified =           {Do}:17 parent={If}:18 first={Seq}:16 succs=[] preds=[8: {If}:11 -> {Do}:17 ({Do}:17), 1: {Block}:1 -> {Do}:17] labels=[8: {If}:11 -> {Do}:17 ({Do}:17)] exprents=null looptype=0
+elim.found6.simplified =             {Seq}:16 parent={Do}:17 first={If}:15 succs=[] preds=[] labels=[] exprents=null
+elim.found6.simplified =               {If}:15 parent={Seq}:16 first={Block}:2 succs=[1: {If}:15 -> {If}:11] preds=[] labels=[] exprents=null iftype=0 negated=true ifstat=null elsestat=null
+elim.found6.simplified =                 {Block}:2 parent={If}:15 first=null succs=[4: {Block}:2 -> {If}:10 ({If}:18)] preds=[] labels=[] exprents=null
+elim.found6.simplified =               {If}:11 parent={Seq}:16 first={Block}:4 succs=[8: {If}:11 -> {Do}:17 ({Do}:17)] preds=[1: {If}:15 -> {If}:11] labels=[] exprents=null iftype=0 negated=true ifstat=null elsestat=null
+elim.found6.simplified =                 {Block}:4 parent={If}:11 first=null succs=[8: {Block}:4 -> {Seq}:23 ({Seq}:23)] preds=[] labels=[] exprents=null
+elim.found6.simplified =         {If}:10 parent={Seq}:24 first={Block}:5 succs=[4: {If}:10 -> {Block}:6 ({Do}:22)] preds=[4: {Block}:2 -> {If}:10 ({If}:18), 4: {If}:13 -> {If}:10 ({If}:18), 1: {If}:18 -> {If}:10] labels=[] exprents=null iftype=0 negated=false ifstat=null elsestat=null
+elim.found6.simplified =           {Block}:5 parent={If}:10 first=null succs=[8: {Block}:5 -> {Seq}:23 ({Seq}:23)] preds=[] labels=[] exprents=null
+elim.found6.simplified =     {Block}:6 parent={Seq}:23 first=null succs=[4: {Block}:6 -> {Exit}:7 ({Seq}:23)] preds=[4: {Block}:3 -> {Block}:6 ({Do}:22), 4: {If}:10 -> {Block}:6 ({Do}:22), 1: {Do}:22 -> {Block}:6] labels=[] exprents=null
 elim.found8.ok = true
 elim.found8.condensed = true
 elim.found8 = {Root}:11 parent=null first={Seq}:28 succs=[] preds=[] labels=[] exprents=null
@@ -360,6 +378,7 @@ elim.found8 =         {Block}:6 parent={Seq}:29 first=null succs=[1: {Block}:6 -
 elim.found8 =         {If}:12 parent={Seq}:29 first={Block}:7 succs=[4: {If}:12 -> {Block}:8 ({Do}:27)] preds=[1: {Block}:6 -> {If}:12] labels=[] exprents=null iftype=0 negated=false ifstat=null elsestat=null
 elim.found8 =           {Block}:7 parent={If}:12 first=null succs=[8: {Block}:7 -> {Seq}:28 ({Seq}:28)] preds=[] labels=[] exprents=null
 elim.found8 =     {Block}:8 parent={Seq}:28 first=null succs=[] preds=[4: {Block}:5 -> {Block}:8 ({Do}:27), 4: {If}:12 -> {Block}:8 ({Do}:27), 1: {Do}:27 -> {Block}:8] labels=[] exprents=null
+elim.found8.simplified = NullPointerException
 elim.breaks8a.ok = true
 elim.breaks8a.condensed = true
 elim.breaks8a = {Root}:11 parent=null first={Seq}:37 succs=[] preds=[] labels=[] exprents=null
@@ -426,6 +445,7 @@ elim.breaks8a =     {Do}:17 parent={Seq}:37 first={Seq}:16 succs=[] preds=[8: {B
 elim.breaks8a =       {Seq}:16 parent={Do}:17 first={Block}:8 succs=[] preds=[] labels=[] exprents=null
 elim.breaks8a =         {Block}:8 parent={Seq}:16 first=null succs=[1: {Block}:8 -> {Block}:3] preds=[] labels=[] exprents=null
 elim.breaks8a =         {Block}:3 parent={Seq}:16 first=null succs=[8: {Block}:3 -> {Do}:17 ({Do}:17)] preds=[1: {Block}:8 -> {Block}:3] labels=[] exprents=null
+elim.breaks8a.simplified = NullPointerException
 elim.breaks8b.ok = true
 elim.breaks8b.condensed = true
 elim.breaks8b = {Root}:11 parent=null first={Seq}:29 succs=[] preds=[] labels=[] exprents=null
@@ -474,6 +494,7 @@ elim.breaks8b =                 {Block}:5 parent={If}:16 first=null succs=[8: {B
 elim.breaks8b =         {If}:12 parent={Seq}:27 first={Block}:3 succs=[4: {If}:12 -> {Block}:8 ({Do}:28)] preds=[4: {Block}:1 -> {If}:12 ({Seq}:25), 4: {If}:18 -> {If}:12 ({Seq}:25), 1: {Seq}:25 -> {If}:12] labels=[] exprents=null iftype=0 negated=false ifstat=null elsestat=null
 elim.breaks8b =           {Block}:3 parent={If}:12 first=null succs=[8: {Block}:3 -> {Seq}:29 ({Seq}:29)] preds=[] labels=[] exprents=null
 elim.breaks8b =     {Block}:8 parent={Seq}:29 first=null succs=[4: {Block}:8 -> {Exit}:9 ({Seq}:29)] preds=[4: {Block}:7 -> {Block}:8 ({Do}:28), 4: {If}:12 -> {Block}:8 ({Do}:28), 1: {Do}:28 -> {Block}:8] labels=[] exprents=null
+elim.breaks8b.simplified = NullPointerException
 elim.breakreject5.ok = true
 elim.breakreject5.condensed = true
 elim.breakreject5 = {Root}:8 parent=null first={Do}:19 succs=[] preds=[] labels=[] exprents=null

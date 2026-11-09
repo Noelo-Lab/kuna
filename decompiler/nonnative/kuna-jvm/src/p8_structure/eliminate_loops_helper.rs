@@ -35,7 +35,7 @@ impl EliminateLoopsHelper {
         ret
     }
 
-    fn eliminate_loops_rec(stat: Statement) -> bool {
+    pub fn eliminate_loops_rec(stat: Statement) -> bool {
         let stats = stat.get_stats().borrow().to_vec();
         for st in stats {
             if Self::eliminate_loops_rec(st) {
