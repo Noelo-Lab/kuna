@@ -2,11 +2,16 @@
 //!
 //! The three one-slot head lists are shared with flow nodes; a Java `null`
 //! slot is the empty list.
+//!
+//! A for-each over a raw iterable casts it to its class parameterized by
+//! the loop variable's type (`raw_receiver_erasure`).
 
 use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::if_statement::set_head_slot;
 use crate::java_subclass;
+use crate::kuna_fix_raw_receiver_erasure;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{JHashSet, JList, Shared};
 use crate::stat_edge::StatEdge;
 use crate::statement::{
@@ -176,10 +181,29 @@ impl DoStatement {
                     .append("for (")
                     .append_buffer(&null_slot(self.get_init_exprent()).to_java(indent));
                 null_slot(self.get_inc_exprent()).get_inferred_expr_type(None);
-                buf.append(" : ")
-                    .append_buffer(&null_slot(self.get_inc_exprent()).to_java(indent))
-                    .append(") {")
-                    .append_line_separator();
+                buf.append(" : ");
+                let iterable = null_slot(self.get_inc_exprent());
+                let cast = if kuna_fixes::enabled(KunaFix::RawReceiverErasure) {
+                    null_slot(self.get_init_exprent())
+                        .try_as_var()
+                        .and_then(|v| {
+                            kuna_fix_raw_receiver_erasure::foreach_cast_type(
+                                iterable,
+                                &v.get_definition_var_type(),
+                            )
+                        })
+                } else {
+                    None
+                };
+                match cast {
+                    Some(cast) => kuna_fix_raw_receiver_erasure::append_cast(
+                        &mut buf, iterable, &cast, indent,
+                    ),
+                    None => {
+                        buf.append_buffer(&iterable.to_java(indent));
+                    }
+                }
+                buf.append(") {").append_line_separator();
                 buf.append_buffer(&ExprProcessor::jmp_wrapper(first, indent + 1, true));
                 buf.append_indent(indent)
                     .append("}")

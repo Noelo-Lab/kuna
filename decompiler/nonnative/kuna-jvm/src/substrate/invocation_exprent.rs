@@ -8,6 +8,20 @@
 //! kuna fix `kt_default_args_super_call`: `append_param_list` writes the
 //! arguments by the names the fix sets (`kuna_arg_names`), leaving out the
 //! ones it names none; unset (always, but for that fix) changes nothing.
+//! kuna fix `inner_method_argument_shift`: in `get_inferred_expr_type`, the
+//! arguments of a call to a method of a non-static inner class are matched
+//! to the signature's parameters from the first, not from the second as if
+//! the method took the outer instance like the class's constructors do; as
+//! in Java, only the method's own type variables are inferred from them (the
+//! classes' come from the receiver).
+//!
+//! kuna fix `raw_receiver_erasure`: a call on a receiver whose static type
+//! is raw has the erased result and parameter types
+//! (`kuna_fix_raw_receiver_erasure`).
+//!
+//! kuna fix `lambda_argument_overload`: in `append_param_list`, a lambda
+//! argument another overload's functional interface also accepts is
+//! ambiguous (`kuna_fix_lambda_argument_overload`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -27,6 +41,9 @@ use crate::generic_type::GenericType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::i_matchable::MatchProperties;
 use crate::interpreter_util::InterpreterUtil;
+use crate::kuna_fix_lambda_argument_overload;
+use crate::kuna_fix_raw_receiver_erasure;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::link_constant::LinkConstant;
 use crate::list_stack::ListStack;
 use crate::match_engine::MatchEngine;
@@ -458,6 +475,11 @@ impl InvocationExprent {
         }
 
         let desc = self.d(|d| d.desc);
+        if kuna_fixes::enabled(KunaFix::RawReceiverErasure)
+            && kuna_fix_raw_receiver_erasure::has_raw_receiver(self)
+        {
+            return self.get_expr_type();
+        }
         if let (Some(desc), Some(mth_cls)) = (desc, mth_cls) {
             let is_new = self.get_functype() == Type::Init;
             let is_gen_new = is_new && mth_cls.get_signature().is_some();
@@ -671,6 +693,7 @@ impl InvocationExprent {
                 if !lst_parameters.is_empty() && desc.get_signature().is_some() {
                     let mut mask: Option<Vec<Option<VarVersionPair>>> = None;
                     let mut start: usize = 0;
+                    let mut own_type_parameters_only = false;
                     let new_node = root_class_node(&classname);
                     if let Some(new_node) = new_node {
                         if is_new {
@@ -692,12 +715,13 @@ impl InvocationExprent {
                             .borrow()
                             .is_empty()
                         {
-                            start =
-                                if (new_node.with(|d| d.access) & CodeConstants::ACC_STATIC) == 0 {
-                                    1
-                                } else {
-                                    0
-                                };
+                            let inner =
+                                (new_node.with(|d| d.access) & CodeConstants::ACC_STATIC) == 0;
+                            if kuna_fixes::enabled(KunaFix::InnerMethodArgumentShift) {
+                                own_type_parameters_only = inner;
+                            } else {
+                                start = if inner { 1 } else { 0 };
+                            }
                         }
                     }
 
@@ -839,6 +863,11 @@ impl InvocationExprent {
                                     if !excluded.contains(&from) {
                                         param_generics.add(from.clone());
                                     }
+                                    if own_type_parameters_only
+                                        && !contains_value(&fparams, &from.value)
+                                    {
+                                        continue;
+                                    }
                                     if !self.process_generic_mapping(
                                         &from,
                                         to.as_ref(),
@@ -872,12 +901,16 @@ impl InvocationExprent {
                             if !excluded.contains(&param_type) {
                                 param_generics.add(param_type.clone());
                             }
-                            self.process_generic_mapping(
-                                &param_type,
-                                Some(&argtype),
-                                &named,
-                                &bounds,
-                            );
+                            if !own_type_parameters_only
+                                || contains_value(&fparams, &param_type.value)
+                            {
+                                self.process_generic_mapping(
+                                    &param_type,
+                                    Some(&argtype),
+                                    &named,
+                                    &bounds,
+                                );
+                            }
                         }
                     }
                 }
@@ -1527,7 +1560,12 @@ impl InvocationExprent {
         let curr_cls = DecompilerContext::get_current_class_node();
         let matches = self.get_matched_descriptors(false);
         let ambiguous_vararg = self.is_varargs_ambiguous(&self.get_matched_descriptors(true));
-        let set_ambiguous_parameters = self.get_ambiguous_parameters(&matches);
+        let mut set_ambiguous_parameters = self.get_ambiguous_parameters(&matches);
+        if kuna_fixes::enabled(KunaFix::LambdaArgumentOverload) {
+            set_ambiguous_parameters.or(&kuna_fix_lambda_argument_overload::ambiguous_arguments(
+                self, &matches,
+            ));
+        }
 
         if lst_parameters.len() == descriptor.params.len()
             && self.is_var_arg_call()
@@ -1657,7 +1695,10 @@ impl InvocationExprent {
                 }
             }
         }
-        let desc = self.d(|d| d.desc);
+        let desc = self.d(|d| d.desc).filter(|_| {
+            !(kuna_fixes::enabled(KunaFix::RawReceiverErasure)
+                && kuna_fix_raw_receiver_erasure::has_raw_receiver(self))
+        });
         if let Some((desc, desc_sig)) =
             desc.and_then(|desc| desc.get_signature().map(|s| (desc, s)))
         {

@@ -2180,3 +2180,128 @@ expression, so an arm may declare a name a case of an enclosing switch statement
 (spring's ASM `Frame.getAbstractTypeFromDescriptor`: `internalName`). With the fix each arm is
 visited like an `if` branch: a clashing declaration is scoped or renamed (including the scoping of
 fix `switch_case_scope`) and the arm's declarations are forgotten when it ends.
+The next seven fixes correct generic types that Vineflower prints without a failure comment but
+that javac rejects, the largest remaining reasons the benchmark's classes do not recompile; the
+default output differs from Vineflower's text only where Vineflower's is not valid Java (or, for
+`inner_method_argument_shift`, an argument's cast changes with the corrected match). None of
+them is touched on `develop/1.13.0` (whose only overload change, `1123be5b`, is about varargs).
+Each fix's case in `tests/jvm/kuna-fixes/` recompiles to the original bytecode.
+
+**The fix `unchecked_type_pattern`**. `IfPatternMatchProcessor.findPatternMatchingInstanceof`
+turns `if (x instanceof C) { T v = (T) x; ... }` into the type pattern `x instanceof T v`, and
+when the variable's type is generic it writes that type into the pattern. Java allows a type
+pattern only where the cast it stands for is checked (JLS 15.20.2): `T` is reifiable, or `x`'s
+static type already fixes `T`'s type arguments. A pattern of a type variable (`sym instanceof NT
+nt`) or of a parameterization the operand does not determine (`value instanceof List<String>
+list` on an `Object`) is rejected (`instanceof.reifiable.not.safe`). With the fix,
+`decompiler/nonnative/kuna-jvm/src/p8_structure/if_pattern_match_processor.rs (IfPatternMatchProcessor::check_branch)`
+asks `decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_unchecked_type_pattern.rs (is_checked_cast)`
+first, and makes no pattern when the cast is unchecked: the `instanceof` and the declaration
+from the cast stay as they are in the bytecode. A cast is checked when the target is reifiable
+(no type arguments but unbounded wildcards), when the operand's type is a subtype of it, or when
+the target's class extends the operand's and every one of its type parameters is passed through
+as one of the operand's type arguments, equal to the target's (`Box<String>` to
+`Leaf<String>` for `Leaf<T> implements Box<T>`). The operand's static type is the type of the
+value assigned to it just before the `if` (which Vineflower then moves into the `instanceof`),
+or a method parameter's declared type, whose variable has no local-variable-table entry yet.
+
+**The fix `inner_method_argument_shift`**. `InvocationExprent.getInferredExprType`
+(`decompiler/nonnative/kuna-jvm/src/substrate/invocation_exprent.rs (InvocationExprent::get_inferred_expr_type)`)
+maps the method's generic parameter types to the argument types to infer type variables. For a
+method of a class in the input that is nested and not static, it starts at the second argument
+(`start = 1`, since `c43c76f7` of 2019), as if the method took the outer instance, which only an
+inner class's constructor does, and the constructor path handles it apart. So every argument is
+matched to the next parameter's type: `subMap(K, boolean, K, boolean)` maps `K` to `boolean`,
+`put(K, V, long)` maps `K` to `V` and `V` to `long`, and `append_param_list` casts the
+arguments to those types, `this.subMap((boolean)fromKey, true, (boolean)toKey, false)`, which
+javac rejects. With the fix the arguments are matched from the first; as Java does for any
+instance method, only the method's own type variables are inferred from them, since the class
+type variables come from the receiver (the receiver of such a call is often an outer instance
+read through a synthetic field, which carries no type arguments, and Vineflower would otherwise
+infer the class's type variable from an argument and drop a cast the call needs).
+
+**The fix `raw_receiver_erasure`**. The members of a raw type are erased (JLS 4.8): on a raw
+`Map`, `keySet()` is a raw `Set` and `set.toArray(new String[0])` is an `Object[]`. Vineflower
+infers a call's generic result whatever its receiver, finds `String[]`, and takes the
+`checkcast` the bytecode holds for redundant; and it writes a for-each over a raw collection
+with the typed loop variable javac then sees as `Object`. With the fix,
+`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_raw_receiver_erasure.rs (has_raw_receiver)`
+finds the calls whose receiver's static type, as the decompiled program declares it, is raw (a
+class with type parameters, written without type arguments): a variable by its parameter or
+local-variable-table type (not `this`, not a lambda's parameter or a captured variable, whose
+types javac infers), a field of a known class, a written cast, or a call whose declared result
+is raw. Such a call's inferred type is its erased descriptor type, so the cast is written
+(`(String[])map.keySet().toArray(...)`), and its arguments are cast to the erased parameter
+types. `decompiler/nonnative/kuna-jvm/src/substrate/do_statement.rs (DoStatement::to_java)`
+casts a raw for-each iterable to its class parameterized by the loop variable's (boxed) type
+when the class has one type parameter and passes it to `Iterable`, `(List<MethodInfo>)methods`,
+replacing the iterable's own raw cast when it has one (`(List<String>)entry.v2()` for
+`(List)entry.v2()`); the cast adds no `checkcast`.
+
+**The fix `boxed_type_variable_cast`**. Java casts a primitive to a reference type only by boxing
+it and widening the box (JLS 5.5), so `(T) 0` does not compile for a type variable `T`.
+Vineflower hides a boxing call (`Integer.valueOf(x)`) wherever Java boxes implicitly, and so
+writes `(T) Integer.valueOf(0)` as `(T)0`. With the fix, a boxing call cast to a type variable
+keeps its call, whether the cast comes from the bytecode (`decompiler/nonnative/kuna-jvm/src/substrate/function_exprent.rs (keep_boxing_under_cast)`)
+or from the cast `decompiler/nonnative/kuna-jvm/src/p2_lift/expr_processor.rs (ExprProcessor::get_casted_exprent_full)`
+adds for an assignment, a return or an argument.
+
+**The fix `lambda_argument_overload`**. An implicitly typed lambda, or a method reference whose
+target is chosen by overload resolution, is compatible with every overload whose parameter at
+its place is a functional interface of the same arity whose result fits the lambda (JLS
+15.12.2.1); two such overloads whose interfaces are unrelated make the call ambiguous:
+`spliterator.forEachRemaining(this::add)` on a `Spliterator.OfInt`, which has
+`forEachRemaining(IntConsumer)` and `forEachRemaining(Consumer<? super Integer>)`.
+`InvocationExprent.getAmbiguousParameters` compares the lambda's own interface type, the one
+the bytecode created, with each overload's parameter and finds only the overload called, so no
+cast is written. With the fix,
+`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_argument_overload.rs (ambiguous_arguments)`
+marks such an argument ambiguous when another overload of the same arity takes, at its place,
+a known functional interface with as many parameters whose result kind (void or a value) the
+lambda can produce (a method reference both when its method returns a value, a lambda what its
+implementation method returns), is not a supertype of the called overload's interface, and
+accepts the other arguments; the argument is then cast to its interface,
+`(IntConsumer)(this::add)`. Overloads that take a type variable at the lambda's place are not
+considered.
+
+**The fix `static_type_variable_scope`**. A class's type variables are not in scope in its
+static methods and initializers (JLS 6.3, 8.1.3). `Exprent.getNamedGenerics`
+(`decompiler/nonnative/kuna-jvm/src/substrate/exprent.rs (Exprent::get_named_generics)`)
+counts them everywhere inside the class, so a type variable of a static method that a call
+leaves unresolved, named like one of the class's, is taken for the class's and written in a
+cast (`getUninterruptibly((Future<V>)future)` in Guava's `AbstractFuture`), which javac rejects
+in a static context. With the fix the walk out from the code stops counting class type
+variables once it has passed a static method
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_static_type_variable_scope.rs (is_static_method)`;
+a synthetic method, such as a lambda's static implementation method, says nothing about the
+context the lambda is written in); the method's own type variables, and those of the methods
+enclosing a local or anonymous class, stay. With the class's type variable out of the way,
+Vineflower also finds the diamond of a generic `new` in a static method
+(`new ElementOrder<>(...)` for `new ElementOrder(...)`). Static nested classes, whose bodies
+are not in their enclosing classes' scope either, are not treated: there the walk's other
+defect, that an enclosing class's type variable overrides a same-named inner one, decides
+whether Vineflower writes a diamond its inference cannot check (Guava's
+`MultimapBuilderWithKeys.enumSetValues` would get a diamond javac rejects).
+
+**The fix `unchecked_generic_cast`**. A cast between two parameterizations of one class, such as
+`(ReferenceEntry<K, V>) NullEntry.INSTANCE` for an enum that implements
+`ReferenceEntry<Object, Object>`, `(CacheBuilder<K1, V1>) this` or `(Comparator<Object>)
+comparator` on a `Comparator<? super E>`, is unchecked and compiles to no instruction, so the
+bytecode keeps no trace of it. `ExprProcessor.getCastedExprent` writes a cast where the erased
+types need one or where `doGenericTypesCast` recognises a few generic shapes, and otherwise
+writes the value bare, which javac rejects when its generic type does not fit the target
+(`incompatible types`). With the fix,
+`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_unchecked_generic_cast.rs (cast_for)`,
+asked by `decompiler/nonnative/kuna-jvm/src/p2_lift/expr_processor.rs (ExprProcessor::get_casted_exprent_full)`
+for a return, an assignment or a field initializer (not an argument), takes a value whose
+static type the program declares: `this` (not of an inner class, whose type does not show the
+enclosing instance's type arguments), a static field or a field of `this` of a known class,
+or a variable with a local-variable-table entry or a parameter's declared type. It views
+that type as the target's class (the target being a declared parameterization: the method's
+generic return type, the variable's or the field's type) and, when a type argument of the
+target that is not a wildcard differs from the value's at its place, writes the cast: to
+the target when at every such place one side is a type variable or the value's is a
+wildcard, else, the two parameterizations being provably distinct (JLS 4.5), to the raw
+class, which javac converts unchecked (`(ImmutableList) delegates`, as the source has it).
+Values of other kinds, a call's result above all, are left alone: their types are
+Vineflower's inference, not a declaration.

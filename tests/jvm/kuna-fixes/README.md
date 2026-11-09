@@ -25,6 +25,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestAssertDeadThrow` | `assert_dead_throw` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the dead `throw new AssertionError(...)` statements after `return` in `spans` and `widths` are gone, and `widths` declares its for-each variable in the header (`for (int[] row : rows)`, was `for (row : rows)`) |
 | `pkg/TestAssertExpressionPosition` | `statement_as_expression` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects |
 | `pkg/TestAssertThrowAfterIf` | `assert_throw_after_if` | javac 17.0.20.1 (`-g`) | asserts at the end of a loop body and before a return, which the structurer wrote as if ($assertionsDisabled || cond) { rest } throw new AssertionError(), are resugared; no $assertionsDisabled reference is left |
+| `pkg/TestBoxedTypeVariableCast` | `boxed_type_variable_cast` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the casts to the type variables `T` and `N` keep their boxing calls (`(T)Integer.valueOf(0)`), as Java has no cast from a primitive to a type variable; `(Object)` still boxes implicitly |
 | `pkg/TestCapturedReceiverKt` | `kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
 | `pkg/TestCatchLoopBack` | `catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
 | `pkg/TestConstructorDiamond` | `kt_constructor_diamond` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the constructor calls whose type arguments Kotlin infers (`return Bag(0)`, `Pair(a, b)`) are written without the Java diamond `<>` |
@@ -43,9 +44,11 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestForRangeExclusiveBound` | `kt_for_range_exclusive_bound` | kotlinc 2.0.0 | `for (i in from until to)` and `repeat(10)` instead of the off-by-one `for (i in from..to)` and `repeat(9)` |
 | `pkg/TestForRangeUnmatchedBound` | `kt_for_range_unmatched_bound` | kotlinc 2.0.0 | the loop `while (i < a.length)`, which Vineflower leaves out (its bound is neither a constant nor a variable), is written |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
+| `pkg/TestInnerMethodArgumentShift` | `inner_method_argument_shift` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the calls to the inner classes' `sub`, `remove` and `put` pass their arguments without the casts to the neighbouring parameter's type (`(boolean)from`, `(V)key`, `(long)value`) that javac rejects; the `(K)` cast an unresolved argument needs stays |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
 | `pkg/TestIrreducibleTry` | `irreducible_with_exception_edges` | asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1 | `run` and `poll`, loops entered at their head and, from a resume branch, in their middle, whose body is protected by one catch-all in several ranges with an unprotected early `return` between them, decompile; the try is built inside its own region or a statement outside every range is copied, and the output recompiles and behaves as the original on 140,000 scripted runs (`run` fails earlier in Vineflower, IndexOutOfBounds, the fix `handler_copy_offsets`) |
 | `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable |
+| `pkg/TestLambdaArgumentOverload` | `lambda_argument_overload` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the lambdas and the method reference passed where two overloads take different functional interfaces of the same shape keep the cast to their interface (`(IntSink)this::add`) that picks the overload; the call with one overload stays without a cast |
 | `pkg/TestLambdaCatchVarRename` | `lambda_catch_var_rename` | javac 17.0.20.1 (`-g`) | catch variables of lambda bodies renamed for a clash with the enclosing method (e -> ex, ex -> exx/exxx) are declared under the name their uses read |
 | `pkg/TestLocalClassAnonymousSubclass` | `local_class_anonymous_subclass` | javac 17.0.20.1 (`-g`) | the local class is declared before new LocalClass<String>() {} instead of inside the later loop that uses LocalClass.class |
 | `pkg/TestLocalVisibilityComment` | `kt_local_visibility_comment` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0 |
@@ -56,12 +59,14 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestOverrideInaccessible` | `override_inaccessible_method` | javac 17.0.20.1 (`-g`) (with ext/TestOverrideInaccessibleBase.java, vendored as a second input class) | methods matching a package-private superclass method of another package or a private one get no @Override; true overrides keep it |
 | `pkg/TestPatternVariableScope` | `pattern_variable_scope` | javac 17.0.20.1 (`-g`) | a local assigned on the other path of the instanceof, or read after the if, keeps its declaration and cast; a local used only inside the branch still becomes a pattern |
 | `pkg/TestPropertyReferencesKt` | `kt_property_reference` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` and `boundMutable` (`box::size`, `box::count`, which failed) and `member`, `mutableMember`, `topLevel` and `extension` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their property references `Box::size`, `Box::count`, `::answer`, `Box::doubled` |
+| `pkg/TestRawReceiverErasure` | `raw_receiver_erasure` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `toArray` on a raw `Bag` keeps the `(String[])` cast its erased `Object[]` result needs, and the for-each loops over a raw `Bag` cast it to `Bag<String>` so that the `String` loop variable compiles |
 | `pkg/TestRecordPatternInTry` | `nested_handler_copies` | javac 21.0.12.1 (`--release 21 -g`) | `describe`, two record deconstruction patterns inside a try/catch, decompiles to its source (one try, the second pattern in a conditional expression); recompiled with javac its bytecode equals the original's |
 | `pkg/TestReferenceClassesKt` | `kt_reference_anonymous_super_call` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `bound` (`adder::add`, which failed) and `unbound`, `constructor` and `topLevel` (whose singleton `INSTANCE`s printed `<unrepresentable>.INSTANCE`) write their function references: `NestedClassProcessor` took the reference classes' `super(..)` calls out of their constructors, and they are read from the class node |
 | `pkg/TestReturnOutsideLambdaKt` | `kt_return_outside_lambda` | kotlinc 2.0.0 | a @JvmOverloads overload and the function of an object written inside a lambda return their values (Vineflower prints the values as bare expression statements) |
 | `pkg/TestSamWrapperObjectKt` | `kt_synthetic_anonymous_object` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `byLength`, `byLengthOf` (which creates `byLength`'s object), `nullsFirstBy` (two early `return@Comparator`s) and `twice` (a `crossinline` function-type lambda) decompile to `object` expressions whose methods return what the source returns; the failure comments are gone |
 | `pkg/TestSealedPrivatePermits` | `sealed_private_permits` | javac 17.0.20.1 (`-g`) | a top-level sealed class whose permitted subclasses are its private members is written without the permits clause javac rejects; a nested sealed class and one permitting public records keep theirs |
 | `pkg/TestSelfReferencingLambda` | `self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
+| `pkg/TestStaticTypeVariableScope` | `static_type_variable_scope` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the static `value` passes its `ListenableBox<?>` without a cast to `Box<V>`, whose `V` is the class's type variable and not in scope in a static method |
 | `pkg/TestSuspendFinallyKt` | `handler_copy_offsets` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable |
 | `pkg/TestSuspendLoopFinally` | `copied_finally` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies) |
 | `pkg/TestSuspendLoopTry` | `irreducible_with_exception_edges` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `indexOf`, `pairs` and `watch`, suspend functions whose loop inside a `try` (with `catch`/`finally`) suspends and resumes in its middle, decompile: `indexOf` and `pairs` once a try region is isolated or a statement outside every range is copied, `watch` (whose loop is resumed in three places) with both |
@@ -78,6 +83,8 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestTypeSwitchEnumLabel` | `type_switch_enum_label` | javac 21.0.12.1 -g | case Kind.CIRCLE beside type patterns in a switch on an interface: the enum label is resolved and printed qualified |
 | `pkg/TestTypeSwitchLabelLookup` | `type_switch_label_lookup` | javac 25.0.5 -g | cases with several labels (case Integer _, String _; case Kind.CIRCLE, Kind.SQUARE; case 5, 7) and an integer label equal to a later switch index: every label is resolved, multi-pattern cases print as one unnamed-pattern label |
 | `pkg/TestTypeSwitchPatternType` | `type_switch_pattern_type` | javac 21.0.12.1 (no -g) | case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type |
+| `pkg/TestUncheckedGenericCast` | `unchecked_generic_cast` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the values returned or assigned where their declared generic type does not fit (`NullEntry.INSTANCE` as an `Entry<K, V>`, `this` as a `TestUncheckedGenericCast<K1, V1>`, a `? super K` ordering as an `Ordering<Object>`) keep the unchecked casts the bytecode cannot show; `order()`, whose value fits, gets none |
+| `pkg/TestUncheckedTypePattern` | `unchecked_type_pattern` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the `instanceof` tests whose cast is unchecked (`List<String>` from an `Object`, `Pair<String, Integer>` from a `Box<String>`, a type variable) keep the `instanceof` and the cast instead of becoming type patterns javac rejects; `Leaf<String>` from a `Box<String>` and `List<?>` stay patterns |
 | `pkg/TestVarMergeLiveness` | `var_merge_liveness` | kotlinc 2.0.0 | the two elvis results keep their own variables, `return if (var10000.size > var9.size) var10000 else var9`, instead of one variable that the second overwrites (`var10000.size > var10000.size`) |
 | `pkg/TestVarMergeNarrowing` | `var_merge_narrowing` | javac 17.0.20.1 (no `-g`) | `firstLength`, whose two block-scoped locals share a slot: the `Object` one is no longer merged into the `String` one, so `src.next()` is not cast to `String` before it is compared with `MARK` |
 | `pkg/TestVarargFromMetadata` | `kt_vararg_from_metadata` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the primary constructor's `Array<String>` parameter is no longer written `vararg names: Any`, and the `vararg` primitive parameters of a constructor and a function keep `vararg` with their element type (`vararg rest: Int`, not `rest: IntArray`) |
@@ -302,6 +309,38 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
           }
  
           c.exec();
+```
+
+### `pkg/TestBoxedTypeVariableCast`
+
+```diff
+--- expected-compat/pkg/TestBoxedTypeVariableCast.java
++++ expected/pkg/TestBoxedTypeVariableCast.java
+@@ -3,20 +3,20 @@
+ public class TestBoxedTypeVariableCast {
+    static <T> T zero(Class<T> type, int kind) {
+       if (kind == 0) {
+-         return (T)'\u0000';
++         return (T)Character.valueOf('\u0000');
+       } else if (kind == 1) {
+-         return (T)0;
++         return (T)Integer.valueOf(0);
+       } else {
+          throw new IllegalArgumentException();
+       }
+    }
+ 
+    static <N extends Number> N narrow(Number number) {
+-      return (N)number.byteValue();
++      return (N)Byte.valueOf(number.byteValue());
+    }
+ 
+    static <N> N widen(Number number) {
+-      return (N)number.doubleValue();
++      return (N)Double.valueOf(number.doubleValue());
+    }
+ 
+    static Object box(long value) {
 ```
 
 ### `pkg/TestCapturedReceiverKt`
@@ -1362,6 +1401,33 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     private void run() {
 ```
 
+### `pkg/TestInnerMethodArgumentShift`
+
+```diff
+--- expected-compat/pkg/TestInnerMethodArgumentShift.java
++++ expected/pkg/TestInnerMethodArgumentShift.java
+@@ -2,8 +2,8 @@
+ 
+ public class TestInnerMethodArgumentShift<K, V> {
+    V store(TestInnerMethodArgumentShift<K, V>.Segment segment, K key, V value) {
+-      segment.remove((V)key, (boolean)value, true);
+-      return (V)segment.put((V)key, (long)value, 0L);
++      segment.remove(key, value, true);
++      return (V)segment.put(key, value, 0L);
+    }
+ 
+    interface Box<T> {
+@@ -13,7 +13,7 @@
+    class Inner implements TestInnerMethodArgumentShift.Nav<K> {
+       @Override
+       public TestInnerMethodArgumentShift.Nav<K> sub(K from, K to) {
+-         return (TestInnerMethodArgumentShift.Nav<K>)this.sub((boolean)from, true, (boolean)to, false);
++         return this.sub(from, true, to, false);
+       }
+ 
+       @Override
+```
+
 ### `pkg/TestInnerOfGenericOuter`
 
 ```diff
@@ -1958,6 +2024,34 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        InlineMarker.finallyStart(2)
 ```
 
+### `pkg/TestLambdaArgumentOverload`
+
+```diff
+--- expected-compat/pkg/TestLambdaArgumentOverload.java
++++ expected/pkg/TestLambdaArgumentOverload.java
+@@ -20,16 +20,16 @@
+    }
+ 
+    public void drain(TestLambdaArgumentOverload.Source source) {
+-      source.forEach(this::add);
+-      source.forEach(v -> this.total -= v);
++      source.forEach((TestLambdaArgumentOverload.IntSink)(this::add));
++      source.forEach((TestLambdaArgumentOverload.IntSink)(v -> this.total -= v));
+    }
+ 
+    public int lookup() {
+-      return select(String.class, name -> name.isEmpty() ? Boolean.TRUE : null);
++      return select(String.class, (TestLambdaArgumentOverload.Lookup<Boolean>)(name -> name.isEmpty() ? Boolean.TRUE : null));
+    }
+ 
+    public int filter() {
+-      return select(String.class, name -> name.isEmpty());
++      return select(String.class, (TestLambdaArgumentOverload.Filter)(name -> name.isEmpty()));
+    }
+ 
+    public int single(TestLambdaArgumentOverload.Lookup<String> lookup) {
+```
+
 ### `pkg/TestLambdaCatchVarRename`
 
 ```diff
@@ -2294,6 +2388,43 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
  }
 ```
 
+### `pkg/TestRawReceiverErasure`
+
+```diff
+--- expected-compat/pkg/TestRawReceiverErasure.java
++++ expected/pkg/TestRawReceiverErasure.java
+@@ -6,17 +6,17 @@
+    private TestRawReceiverErasure.Bag names;
+ 
+    public String[] all(TestRawReceiverErasure.Bag bag) {
+-      return bag.keys().toArray(new String[0]);
++      return (String[])bag.keys().toArray(new String[0]);
+    }
+ 
+    public String[] fields() {
+-      return this.names.toArray(new String[0]);
++      return (String[])this.names.toArray(new String[0]);
+    }
+ 
+    public int count(TestRawReceiverErasure.Bag bag) {
+       int n = 0;
+ 
+-      for (String s : bag) {
++      for (String s : (TestRawReceiverErasure.Bag<String>)bag) {
+          n += s.length();
+       }
+ 
+@@ -26,7 +26,7 @@
+    public int total(TestRawReceiverErasure.Holder<Object> holder) {
+       int n = 0;
+ 
+-      for (String s : (TestRawReceiverErasure.Bag)holder.take()) {
++      for (String s : (TestRawReceiverErasure.Bag<String>)holder.take()) {
+          n += s.length();
+       }
+ 
+```
+
 ### `pkg/TestRecordPatternInTry`
 
 ```diff
@@ -2597,6 +2728,22 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      void run();
 +   }
 +}
+```
+
+### `pkg/TestStaticTypeVariableScope`
+
+```diff
+--- expected-compat/pkg/TestStaticTypeVariableScope.java
++++ expected/pkg/TestStaticTypeVariableScope.java
+@@ -6,7 +6,7 @@
+    }
+ 
+    static Object value(TestStaticTypeVariableScope.ListenableBox<?> box) {
+-      Object v = unwrap((TestStaticTypeVariableScope.Box<V>)box);
++      Object v = unwrap(box);
+       if (v == null) {
+          v = box;
+       }
 ```
 
 ### `pkg/TestSuspendFinallyKt`
@@ -6116,6 +6263,89 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      }
     }
  }
+```
+
+### `pkg/TestUncheckedGenericCast`
+
+```diff
+--- expected-compat/pkg/TestUncheckedGenericCast.java
++++ expected/pkg/TestUncheckedGenericCast.java
+@@ -6,25 +6,25 @@
+    Iterable<TestUncheckedGenericCast.Entry<K, V>> entries;
+ 
+    static <K, V> TestUncheckedGenericCast.Entry<K, V> nullEntry() {
+-      return TestUncheckedGenericCast.NullEntry.INSTANCE;
++      return (TestUncheckedGenericCast.Entry<K, V>)TestUncheckedGenericCast.NullEntry.INSTANCE;
+    }
+ 
+    <K1 extends K, V1 extends V> TestUncheckedGenericCast<K1, V1> retype() {
+-      TestUncheckedGenericCast<K1, V1> me = this;
++      TestUncheckedGenericCast<K1, V1> me = (TestUncheckedGenericCast<K1, V1>)this;
+       me.keyOrder = null;
+       return me;
+    }
+ 
+    static <C extends Comparable<?>> TestUncheckedGenericCast.Ordering<C> natural() {
+-      return NATURAL;
++      return (TestUncheckedGenericCast.Ordering<C>)NATURAL;
+    }
+ 
+    TestUncheckedGenericCast.Ordering<Object> unsafeOrder() {
+-      return this.keyOrder;
++      return (TestUncheckedGenericCast.Ordering<Object>)this.keyOrder;
+    }
+ 
+    <E extends TestUncheckedGenericCast.Entry<K, V>> void setEntries(Iterable<E> source) {
+-      this.entries = source;
++      this.entries = (Iterable<TestUncheckedGenericCast.Entry<K, V>>)source;
+    }
+ 
+    TestUncheckedGenericCast.Ordering<? super K> order() {
+```
+
+### `pkg/TestUncheckedTypePattern`
+
+```diff
+--- expected-compat/pkg/TestUncheckedTypePattern.java
++++ expected/pkg/TestUncheckedTypePattern.java
+@@ -6,7 +6,12 @@
+ 
+ public class TestUncheckedTypePattern {
+    public int size(Object value) {
+-      return value instanceof List<String> list ? ((String)list.get(0)).length() : -1;
++      if (value instanceof List) {
++         List<String> list = (List<String>)value;
++         return ((String)list.get(0)).length();
++      } else {
++         return -1;
++      }
+    }
+ 
+    public String fromBox(TestUncheckedTypePattern.Box<String> box) {
+@@ -19,7 +24,12 @@
+    }
+ 
+    public Integer fromPair(TestUncheckedTypePattern.Box<String> box) {
+-      return box instanceof TestUncheckedTypePattern.Pair<String, Integer> pair ? pair.get().length() : null;
++      if (box instanceof TestUncheckedTypePattern.Pair) {
++         TestUncheckedTypePattern.Pair<String, Integer> pair = (TestUncheckedTypePattern.Pair<String, Integer>)box;
++         return pair.get().length();
++      } else {
++         return null;
++      }
+    }
+ 
+    public int wildcard(Object value) {
+@@ -40,7 +50,8 @@
+ 
+       void add(Iterable<TestUncheckedTypePattern.Node> nodes) {
+          for (TestUncheckedTypePattern.Node node : nodes) {
+-            if (node instanceof N leaf) {
++            if (node instanceof TestUncheckedTypePattern.Leaf) {
++               N leaf = (N)node;
+                this.named.put(leaf.toString(), leaf);
+             }
+          }
 ```
 
 ### `pkg/TestVarMergeLiveness`

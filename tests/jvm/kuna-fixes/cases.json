@@ -792,6 +792,98 @@
       "source": "src/pkg/TestTypeAnnotationQualifiedName.java",
       "compiler": "javac 17.0.20.1 (`-g`, against a `lib.AnnotatedHolder` that is not in the input)",
       "summary": "type-annotated uses of lib.AnnotatedHolder.Entry, which the class's own nested Entry shadows, keep their qualifier (lib.AnnotatedHolder.@A Entry) instead of naming the nested class"
+    },
+    {
+      "id": "pkg/TestBoxedTypeVariableCast",
+      "fix": "boxed_type_variable_cast",
+      "class_files": [
+        "pkg/TestBoxedTypeVariableCast.class"
+      ],
+      "source": "src/pkg/TestBoxedTypeVariableCast.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "the casts to the type variables `T` and `N` keep their boxing calls (`(T)Integer.valueOf(0)`), as Java has no cast from a primitive to a type variable; `(Object)` still boxes implicitly"
+    },
+    {
+      "id": "pkg/TestInnerMethodArgumentShift",
+      "fix": "inner_method_argument_shift",
+      "class_files": [
+        "pkg/TestInnerMethodArgumentShift.class",
+        "pkg/TestInnerMethodArgumentShift$Box.class",
+        "pkg/TestInnerMethodArgumentShift$Inner.class",
+        "pkg/TestInnerMethodArgumentShift$Nav.class",
+        "pkg/TestInnerMethodArgumentShift$Segment.class"
+      ],
+      "source": "src/pkg/TestInnerMethodArgumentShift.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "the calls to the inner classes' `sub`, `remove` and `put` pass their arguments without the casts to the neighbouring parameter's type (`(boolean)from`, `(V)key`, `(long)value`) that javac rejects; the `(K)` cast an unresolved argument needs stays"
+    },
+    {
+      "id": "pkg/TestLambdaArgumentOverload",
+      "fix": "lambda_argument_overload",
+      "class_files": [
+        "pkg/TestLambdaArgumentOverload.class",
+        "pkg/TestLambdaArgumentOverload$Filter.class",
+        "pkg/TestLambdaArgumentOverload$IntSink.class",
+        "pkg/TestLambdaArgumentOverload$Lookup.class",
+        "pkg/TestLambdaArgumentOverload$Sink.class",
+        "pkg/TestLambdaArgumentOverload$Source.class"
+      ],
+      "source": "src/pkg/TestLambdaArgumentOverload.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "the lambdas and the method reference passed where two overloads take different functional interfaces of the same shape keep the cast to their interface (`(IntSink)this::add`) that picks the overload; the call with one overload stays without a cast"
+    },
+    {
+      "id": "pkg/TestRawReceiverErasure",
+      "fix": "raw_receiver_erasure",
+      "class_files": [
+        "pkg/TestRawReceiverErasure.class",
+        "pkg/TestRawReceiverErasure$Bag.class",
+        "pkg/TestRawReceiverErasure$Holder.class"
+      ],
+      "source": "src/pkg/TestRawReceiverErasure.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`toArray` on a raw `Bag` keeps the `(String[])` cast its erased `Object[]` result needs, and the for-each loops over a raw `Bag` cast it to `Bag<String>` so that the `String` loop variable compiles"
+    },
+    {
+      "id": "pkg/TestStaticTypeVariableScope",
+      "fix": "static_type_variable_scope",
+      "class_files": [
+        "pkg/TestStaticTypeVariableScope.class",
+        "pkg/TestStaticTypeVariableScope$Box.class",
+        "pkg/TestStaticTypeVariableScope$ListenableBox.class"
+      ],
+      "source": "src/pkg/TestStaticTypeVariableScope.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "the static `value` passes its `ListenableBox<?>` without a cast to `Box<V>`, whose `V` is the class's type variable and not in scope in a static method"
+    },
+    {
+      "id": "pkg/TestUncheckedGenericCast",
+      "fix": "unchecked_generic_cast",
+      "class_files": [
+        "pkg/TestUncheckedGenericCast.class",
+        "pkg/TestUncheckedGenericCast$Entry.class",
+        "pkg/TestUncheckedGenericCast$Natural.class",
+        "pkg/TestUncheckedGenericCast$NullEntry.class",
+        "pkg/TestUncheckedGenericCast$Ordering.class"
+      ],
+      "source": "src/pkg/TestUncheckedGenericCast.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "the values returned or assigned where their declared generic type does not fit (`NullEntry.INSTANCE` as an `Entry<K, V>`, `this` as a `TestUncheckedGenericCast<K1, V1>`, a `? super K` ordering as an `Ordering<Object>`) keep the unchecked casts the bytecode cannot show; `order()`, whose value fits, gets none"
+    },
+    {
+      "id": "pkg/TestUncheckedTypePattern",
+      "fix": "unchecked_type_pattern",
+      "class_files": [
+        "pkg/TestUncheckedTypePattern.class",
+        "pkg/TestUncheckedTypePattern$Box.class",
+        "pkg/TestUncheckedTypePattern$Grammar.class",
+        "pkg/TestUncheckedTypePattern$Leaf.class",
+        "pkg/TestUncheckedTypePattern$Node.class",
+        "pkg/TestUncheckedTypePattern$Pair.class"
+      ],
+      "source": "src/pkg/TestUncheckedTypePattern.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "the `instanceof` tests whose cast is unchecked (`List<String>` from an `Object`, `Pair<String, Integer>` from a `Box<String>`, a type variable) keep the `instanceof` and the cast instead of becoming type patterns javac rejects; `Leaf<String>` from a `Box<String>` and `List<?>` stay patterns"
     }
   ]
 }

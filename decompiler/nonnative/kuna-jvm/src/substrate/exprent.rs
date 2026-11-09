@@ -25,6 +25,8 @@ use crate::i_matchable::{IMatchable, MatchProperties};
 use crate::if_exprent::{IfExprent, IfExprentData};
 use crate::invocation_exprent::{InvocationExprent, InvocationExprentData};
 use crate::k_dispatch::{self, KExprentExt};
+use crate::kuna_fix_static_type_variable_scope;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
 use crate::method_wrapper::MethodWrapper;
@@ -791,13 +793,25 @@ impl Exprent {
 
     /// The type variables in scope (class, method and enclosing ones) mapped
     /// to their bounds; the bound lists are copies of the signatures' lists.
+    /// With the fix `static_type_variable_scope`, a class's type variables
+    /// are left out where the code is in a static method of that class or of
+    /// a class it encloses.
     pub fn get_named_generics(self) -> JHashMap<VarType, Vec<VarType>> {
         let mut ret: JHashMap<VarType, Vec<VarType>> = JHashMap::new();
         let mut class_: Option<ClassNode> = DecompilerContext::get_current_class_node();
         let mut method: Option<MethodWrapper> = DecompilerContext::get_current_method_wrapper();
+        let scoped = kuna_fixes::enabled(KunaFix::StaticTypeVariableScope);
+        let mut static_context = false;
 
         loop {
-            let cls = class_.and_then(|c| c.with(|d| d.class_struct).get_signature());
+            if scoped {
+                static_context |= method.is_some_and(|m| {
+                    kuna_fix_static_type_variable_scope::is_static_method(class_, m)
+                });
+            }
+            let cls = class_
+                .filter(|_| !static_context)
+                .and_then(|c| c.with(|d| d.class_struct).get_signature());
             if let Some(cls) = cls {
                 let fparameters = cls.fparameters().clone();
                 for x in 0..fparameters.len() {

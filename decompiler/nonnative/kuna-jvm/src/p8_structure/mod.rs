@@ -17,6 +17,7 @@ pub mod kuna_fix_local_class_anonymous_subclass;
 pub mod kuna_fix_lambda_catch_var_rename;
 pub mod kuna_fix_pattern_variable_scope;
 pub mod kuna_fix_switch_expression_assignments;
+pub mod kuna_fix_unchecked_type_pattern;
 pub mod label_helper;
 pub mod loop_extract_helper;
 pub mod low_break_helper;

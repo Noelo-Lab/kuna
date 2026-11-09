@@ -3,6 +3,8 @@
 //! kuna fix `pattern_variable_scope` (`kuna_fixes`): `check_branch` makes a
 //! pattern only when the variable is used nowhere outside the pattern's scope
 //! (`kuna_fix_pattern_variable_scope`).
+//! A type pattern is not made when the cast it replaces is unchecked
+//! (`unchecked_type_pattern`).
 
 use std::collections::VecDeque;
 
@@ -16,6 +18,7 @@ use crate::if_helper::IfHelper;
 use crate::if_statement::IfStatement;
 use crate::kuna_fixes::{self, KunaFix};
 use crate::p8_structure::kuna_fix_pattern_variable_scope;
+use crate::p8_structure::kuna_fix_unchecked_type_pattern;
 use crate::pattern_exprent::PatternExprent;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JList, JavaEq, JavaHash};
@@ -156,7 +159,13 @@ impl IfPatternMatchProcessor {
             && left.try_as_var().is_some_and(|var| {
                 !kuna_fix_pattern_variable_scope::in_scope(statement, branch, var, root.0)
             });
+        let unchecked = kuna_fixes::enabled(KunaFix::UncheckedTypePattern)
+            && !kuna_fix_unchecked_type_pattern::is_checked_cast(
+                &kuna_fix_unchecked_type_pattern::operand_type(source, statement),
+                &left.get_inferred_expr_type(None),
+            );
         let mut result = !out_of_scope
+            && !unchecked
             && Self::find_pattern_matching_instanceof(left, right, source, target, branch, iof, head);
 
         if let Some(exprents) = head.get_exprents() {

@@ -647,6 +647,137 @@ def explicit_type_args_dropped(toks):
                     break
             if j + 1 < len(toks) and IDENT.match(toks[j]) and toks[j + 1] == '(':
                 i = j
+CAST_BEFORE = {'(', ',', '=', 'return', ':', '?', '&', '|', '!', '+', '-', '*', '/', '%', '<', '>', '{', ';', '['}
+BOXES = {'Boolean', 'Byte', 'Character', 'Short', 'Integer', 'Long', 'Float', 'Double'}
+
+
+def cast_type_close(toks, i):
+    """The index of the `)` closing a type that starts at toks[i] (a cast's type), or None."""
+    depth, expect_name, j = 0, True, i
+    while j < len(toks):
+        t = toks[j]
+        if t == ')' and depth == 0 and not expect_name:
+            return j
+        if WORD.fullmatch(t):
+            if not expect_name and t not in ('extends', 'super'):
+                return None
+            expect_name = t in ('extends', 'super')
+        elif t == '.' or t == '&':
+            expect_name = True
+        elif t == '<':
+            depth, expect_name = depth + 1, True
+        elif t == '>':
+            depth -= 1
+            if depth < 0:
+                return None
+        elif t == ',' and depth > 0:
+            expect_name = True
+        elif t == '?' and depth > 0:
+            expect_name = False
+        elif t in ('[', ']'):
+            expect_name = False
+        else:
+            return None
+        j += 1
+    return None
+
+
+def operand_start(t):
+    return t not in ('+', '-') and (WORD.fullmatch(t) is not None or t[0] in '("\'!~' or t[0].isdigit())
+
+
+def cast_at(toks, i):
+    """When toks[i] opens a cast `( Type )` followed by its operand, the index of the `)`."""
+    if toks[i] != '(' or (i > 0 and toks[i - 1] not in CAST_BEFORE):
+        return None
+    j = cast_type_close(toks, i + 1)
+    return j if j is not None and j + 1 < len(toks) and operand_start(toks[j + 1]) else None
+
+
+def unparen(toks):
+    """`( X )` dropped where X is a primary (no operator at its top level) and the parentheses are not a
+    call's or a statement's."""
+    toks = list(toks)
+    changed = True
+    while changed:
+        changed = False
+        for i, t in enumerate(toks):
+            if t != '(' or (i > 0 and toks[i - 1] not in CAST_BEFORE) or cast_at(toks, i) is not None:
+                continue
+            end = block_end(toks, i)
+            if end is None:
+                continue
+            inner = [toks[k] for k in top_level(toks, i + 1, end)]
+            if inner and not any(x in ('?', '=', ',', '+', '-', '*', '/', '<', '>', 'instanceof', ':', '%', '&',
+                                       '|', '^', '!') for x in inner):
+                toks = toks[:i] + toks[i + 1:end] + toks[end + 1:]
+                changed = True
+                break
+    return toks
+
+
+def strip_casts(toks):
+    """The tokens with every cast removed and the parentheses that only grouped a cast's operand dropped."""
+    out, i = [], 0
+    toks = list(toks)
+    while i < len(toks):
+        j = cast_at(toks, i)
+        if j is not None:
+            i = j + 1
+            continue
+        out.append(toks[i])
+        i += 1
+    return unparen(out)
+
+
+def cast_only(old, new):
+    """The hunk only adds, drops or changes casts (and the parentheses around a cast's operand)."""
+    a, b = tokens(old), tokens(new)
+    return a != b and strip_casts(a) == strip_casts(b)
+
+
+def generic_patterns(toks):
+    """The variables of the type patterns `instanceof T<...> v` (or of a type variable, `instanceof T v`)."""
+    out = []
+    for i, t in enumerate(toks):
+        if t != 'instanceof':
+            continue
+        j = i + 1
+        while j + 2 < len(toks) and toks[j + 1] == '.':
+            j += 2
+        generic = j + 1 < len(toks) and toks[j + 1] == '<'
+        if generic:
+            depth = 0
+            for k in range(j + 1, len(toks)):
+                depth += {'<': 1, '>': -1}.get(toks[k], 0)
+                if depth == 0:
+                    j = k
+                    break
+        if j + 1 < len(toks) and WORD.fullmatch(toks[j + 1]) and toks[j + 1] not in ('instanceof',):
+            out.append((generic, toks[j + 1]))
+    return out
+
+
+def unchecked_type_pattern(old, new):
+    """unchecked_type_pattern: type patterns of a generic type or a type variable are gone, each now an
+    `instanceof` of the class and a declaration of the pattern's variable from a cast of the operand."""
+    a, b = tokens(old), tokens(new)
+    gone = [v for v in generic_patterns(a) if v not in generic_patterns(b)]
+    if not gone or 'instanceof' not in b:
+        return False
+    return all(any(b[k] == var and b[k + 1:k + 3] == ['=', '('] for k in range(len(b) - 2)) for _, var in gone)
+
+
+def unbox_casts(toks):
+    """`( T ) Box . valueOf ( X )` written `( T ) X`."""
+    out, i = [], 0
+    while i < len(toks):
+        if (toks[i] in BOXES and i + 3 < len(toks) and toks[i + 1:i + 4] == ['.', 'valueOf', '(']
+                and out and out[-1] == ')'):
+            end = block_end(toks, i + 3)
+            if end is not None:
+                out += toks[i + 4:end]
+                i = end + 1
                 continue
         out.append(toks[i])
         i += 1
@@ -705,6 +836,24 @@ def ternary_numeric_arms(old, new):
                     b = b[:end] + b[end + 1:]
                     j += 1
                 i, found = j + 1, True
+def boxed_type_variable_cast(old, new):
+    """boxed_type_variable_cast: a cast's operand `X` became `Box.valueOf(X)`, nothing else changed."""
+    a, b = tokens(old), tokens(new)
+    return a != b and unbox_casts(b) == a
+
+
+def lambda_argument_overload(old, new):
+    """lambda_argument_overload: a lambda or method reference argument became `(Interface)(lambda)`."""
+    a, b = tokens(old), tokens(new)
+    out, i, found = [], 0, False
+    while i < len(b):
+        j = cast_at(b, i)
+        if j is not None and b[j + 1] == '(':
+            end = block_end(b, j + 1)
+            inner = [b[k] for k in top_level(b, j + 2, end)] if end is not None else []
+            if any(x in ('-', ':') and y in ('>', ':') for x, y in zip(inner, inner[1:])):
+                out += b[j + 2:end]
+                i, found = end + 1, True
                 continue
         out.append(b[i])
         i += 1
@@ -1301,6 +1450,65 @@ def kt_semaphore_store_liveness_scope(a, b, i1, i2, j1, j2, throw_names):
                                 new[0].replace(m.group(1), m.group(2))) and old[0] != new[0]:
                 return any(p.match(x) for x in near_b for p in KT_SEMAPHORE_NEW)
     return False
+def raw_receiver_erasure(old, new):
+    """raw_receiver_erasure: casts only, and among them an array cast of a `toArray` call or the cast of a
+    for-each's iterable (`for (T x : (C<T>) e)`)."""
+    if not cast_only(old, new):
+        return False
+    b = tokens(new)
+    for i in range(len(b)):
+        j = cast_at(b, i)
+        if j is None:
+            continue
+        if b[j - 1] == ']' and 'toArray' in b[j + 1:]:
+            return True
+        if i > 0 and b[i - 1] == ':' and '<' in b[i:j]:
+            return True
+    return False
+
+
+def undiamond(toks):
+    """`new C<>(` written `new C(`."""
+    out = []
+    for i, t in enumerate(toks):
+        if t == '<' and toks[i + 1:i + 3] == ['>', '('] and 'new' in toks[max(0, i - 8):i]:
+            continue
+        if t == '>' and i > 0 and toks[i - 1] == '<' and toks[i + 1:i + 2] == ['(']:
+            continue
+        out.append(t)
+    return out
+
+
+def unchecked_generic_cast(old, new):
+    """unchecked_generic_cast: casts added, each of `this`, a field or a variable (no call in its operand)."""
+    if not cast_only(old, new):
+        return False
+    a, b = tokens(old), tokens(new)
+    casts = [i for i in range(len(b)) if cast_at(b, i) is not None]
+    if len(casts) <= sum(cast_at(a, i) is not None for i in range(len(a))):
+        return False
+    for i in casts:
+        k = cast_at(b, i) + 1
+        while k < len(b) and b[k] not in (';', ')', ',', '?', ':', '='):
+            if b[k] == '(' and cast_at(b, k) is None:
+                break
+            k += 1
+        if k < len(b) and b[k] == '(':
+            return False
+    return True
+
+
+def static_type_variable_scope(old, new):
+    """static_type_variable_scope: casts dropped (none added) and diamonds added, nothing else changed."""
+    a, b = tokens(old), undiamond(tokens(new))
+    if a == b or strip_casts(a) != strip_casts(b):
+        return False
+    return sum(cast_at(b, i) is not None for i in range(len(b))) < sum(cast_at(a, i) is not None for i in range(len(a)))
+
+
+def inner_method_argument_shift(old, new):
+    """inner_method_argument_shift: casts only."""
+    return cast_only(old, new)
 
 
 CONTEXT_RECOGNISERS = {'enum_body_separator': enum_body_separator,
@@ -1342,6 +1550,13 @@ RECOGNISERS = {
     'assert_throw_after_if': assert_throw_after_if,
     'sealed_private_permits': sealed_private_permits,
     'switch_expression_assignments': switch_expression_assignments,
+    'unchecked_type_pattern': unchecked_type_pattern,
+    'boxed_type_variable_cast': boxed_type_variable_cast,
+    'lambda_argument_overload': lambda_argument_overload,
+    'raw_receiver_erasure': raw_receiver_erasure,
+    'unchecked_generic_cast': unchecked_generic_cast,
+    'static_type_variable_scope': static_type_variable_scope,
+    'inner_method_argument_shift': inner_method_argument_shift,
 }
 
 
@@ -1369,6 +1584,8 @@ def classify_base(a, b, i1, i2, j1, j2, marked):
             and all(o.strip().startswith(VINEFLOWER_NOTE) and n.strip().startswith(KUNA_NOTE)
                     for o, n in zip(old, new))):
         return 'note'
+    if not old and new and all(is_import(x) for x in new):
+        return 'import'
     if not old:
         if all(is_import(x) for x in new):
             return 'import'
