@@ -82,6 +82,16 @@ impl<K: JavaHash + JavaEq + Clone> PackedMap<K> {
     pub fn size(&self) -> i32 {
         self.size
     }
+
+    /// An exact copy of this map's state.
+    pub fn duplicate(&self) -> Self {
+        PackedMap {
+            values: self.values.clone(),
+            keys: self.keys.clone(),
+            map_keys: self.map_keys.duplicate(),
+            size: self.size,
+        }
+    }
 }
 
 impl<K> PackedMap<K> {

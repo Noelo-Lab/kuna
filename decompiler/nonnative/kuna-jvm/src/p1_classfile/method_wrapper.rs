@@ -1,5 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/main/rels/MethodWrapper.java`.
 
+use std::cell::RefCell;
 use std::fmt;
 
 use crate::counter_container::CounterContainer;
@@ -32,6 +33,10 @@ pub struct MethodWrapperData {
 
 arena_object!(pub MethodWrapper => MethodWrapperData, Class);
 arena_identity!(MethodWrapper);
+
+thread_local! {
+    static CACHED_GRAPHS: RefCell<Vec<DirectGraph>> = const { RefCell::new(Vec::new()) };
+}
 
 impl MethodWrapper {
     pub fn new(
@@ -80,10 +85,30 @@ impl MethodWrapper {
             if let Some(root) = root {
                 let graph = FlattenStatementsHelper::new().build_direct_graph(root);
                 self.with_mut(|d| d.graph = Some(graph));
+                CACHED_GRAPHS.with(|c| {
+                    let mut c = c.borrow_mut();
+                    if c.last().is_some_and(|g| !g.is_live()) {
+                        c.clear();
+                    }
+                    c.push(graph);
+                });
             }
         }
 
         self.with(|d| d.graph)
+    }
+
+    /// The graphs `get_or_build_graph` cached on some wrapper whose index is
+    /// at least `mark`: the only direct graphs that outlive the pass that built them.
+    pub(crate) fn cached_graphs_since(mark: u32) -> Vec<DirectGraph> {
+        CACHED_GRAPHS.with(|c| {
+            c.borrow()
+                .iter()
+                .rev()
+                .take_while(|g| g.is_live() && g.index() >= mark)
+                .copied()
+                .collect()
+        })
     }
 
     pub fn add_comment(self, comment: &str) {

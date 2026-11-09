@@ -402,6 +402,11 @@ impl StructMethod {
         self.d(|d| d.name.clone())
     }
 
+    /// `name.equals(getName())` without copying the name.
+    pub fn name_eq(self, name: &str) -> bool {
+        self.d(|d| d.name == name)
+    }
+
     pub fn get_descriptor(self) -> String {
         self.d(|d| d.descriptor.clone())
     }

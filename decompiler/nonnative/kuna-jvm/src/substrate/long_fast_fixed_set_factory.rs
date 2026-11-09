@@ -8,6 +8,10 @@ use crate::short_fast_fixed_set_factory::next_factory_identity;
 
 struct LongFactoryData<E> {
     indexes: JLinkedHashMap<E, i32>,
+    /// The entries by index, when the indexes are exactly their insertion
+    /// order 0, 1, 2, ... (no duplicate input): members can then be listed by
+    /// scanning set bits, in the same order as the factory walk.
+    by_index: Option<Vec<E>>,
     data_length: i32,
     identity: i32,
 }
@@ -37,8 +41,14 @@ impl<E: JavaHash + JavaEq + Clone> LongFastFixedSetFactory<E> {
         for (index, element) in set.into_iter().enumerate() {
             indexes.put(element, index as i32);
         }
+        let by_index = indexes
+            .iter()
+            .enumerate()
+            .all(|(n, (_, &i))| i == n as i32)
+            .then(|| indexes.key_vec());
         LongFastFixedSetFactory(Rc::new(LongFactoryData {
             indexes,
+            by_index,
             data_length,
             identity: next_factory_identity(),
         }))
@@ -206,22 +216,86 @@ impl<E: JavaHash + JavaEq + Clone> LongFastFixedSet<E> {
 
     /// Members in factory order.
     pub fn iter(&self) -> impl Iterator<Item = E> + '_ {
-        self.factory
-            .0
-            .indexes
-            .iter()
-            .filter(move |(_, &i)| (self.data[(i >> 6) as usize] & bit(i)) != 0)
-            .map(|(item, _)| item.clone())
+        let scan = || {
+            self.factory
+                .0
+                .indexes
+                .iter()
+                .filter(move |(_, &i)| (self.data[(i >> 6) as usize] & bit(i)) != 0)
+                .map(|(item, _)| item.clone())
+        };
+        match &self.factory.0.by_index {
+            Some(by_index) => Members::Bits {
+                by_index,
+                data: &self.data,
+                word: 0,
+                rest: self.data.first().map_or(0, |&w| w as u64),
+            },
+            None => Members::Scan(scan()),
+        }
     }
 
     /// An iterator-`remove()` loop: drops the members `keep` rejects.
     pub fn retain(&mut self, mut keep: impl FnMut(&E) -> bool) {
         let factory = self.factory.clone();
+        if let Some(by_index) = &factory.0.by_index {
+            for word in 0..self.data.len() {
+                let mut rest = self.data[word] as u64;
+                while rest != 0 {
+                    let i = (word * 64) as i32 + rest.trailing_zeros() as i32;
+                    rest &= rest - 1;
+                    if (i as usize) < by_index.len() && !keep(&by_index[i as usize]) {
+                        self.data[word] &= !bit(i);
+                    }
+                }
+            }
+            return;
+        }
         for (item, &i) in factory.0.indexes.iter() {
             let word = (i >> 6) as usize;
             if (self.data[word] & bit(i)) != 0 && !keep(item) {
                 self.data[word] &= !bit(i);
             }
+        }
+    }
+}
+
+enum Members<'a, E, I> {
+    Bits {
+        by_index: &'a [E],
+        data: &'a [i64],
+        word: usize,
+        rest: u64,
+    },
+    Scan(I),
+}
+
+impl<E: Clone, I: Iterator<Item = E>> Iterator for Members<'_, E, I> {
+    type Item = E;
+
+    fn next(&mut self) -> Option<E> {
+        match self {
+            Members::Scan(scan) => scan.next(),
+            Members::Bits {
+                by_index,
+                data,
+                word,
+                rest,
+            } => loop {
+                if *rest != 0 {
+                    let i = *word * 64 + rest.trailing_zeros() as usize;
+                    *rest &= *rest - 1;
+                    if i < by_index.len() {
+                        return Some(by_index[i].clone());
+                    }
+                    continue;
+                }
+                *word += 1;
+                if *word >= data.len() {
+                    return None;
+                }
+                *rest = data[*word] as u64;
+            },
         }
     }
 }

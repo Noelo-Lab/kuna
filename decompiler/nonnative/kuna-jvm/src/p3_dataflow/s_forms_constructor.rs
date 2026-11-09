@@ -32,14 +32,19 @@ use crate::var_map_holder::VarMapHolder;
 use crate::var_version_node::VarVersionNode;
 use crate::var_version_pair::VarVersionPair;
 
+thread_local! {
+    /// `new FastSparseSetFactory<>(0..63)`, which every `splitVariables` builds.
+    static INITIAL_FACTORY: FastSparseSetFactory<i32> = FastSparseSetFactory::new(0..64);
+}
+
 pub struct SFormsConstructor {
     pub track_field_vars: bool,
     pub track_direct_assignments: bool,
-    in_var_versions: JHashMap<String, Shared<SFormsFastMapDirect>>,
-    out_var_versions: JHashMap<String, Shared<SFormsFastMapDirect>>,
-    out_neg_var_versions: JHashMap<String, Shared<SFormsFastMapDirect>>,
-    extra_var_versions: JHashMap<String, Shared<SFormsFastMapDirect>>,
-    catchable_versions: JHashMap<String, Shared<SFormsFastMapDirect>>,
+    in_var_versions: JHashMap<std::rc::Rc<str>, Shared<SFormsFastMapDirect>>,
+    out_var_versions: JHashMap<std::rc::Rc<str>, Shared<SFormsFastMapDirect>>,
+    out_neg_var_versions: JHashMap<std::rc::Rc<str>, Shared<SFormsFastMapDirect>>,
+    extra_var_versions: JHashMap<std::rc::Rc<str>, Shared<SFormsFastMapDirect>>,
+    catchable_versions: JHashMap<std::rc::Rc<str>, Shared<SFormsFastMapDirect>>,
     lastversion: JHashMap<i32, i32>,
     pub factory: Option<FastSparseSetFactory<i32>>,
     read_count: JHashMap<VarVersionPair, i32>,
@@ -119,20 +124,16 @@ impl SFormsConstructor {
             "Var version is not zero",
         );
 
-        let mut set_init: Vec<i32> = Vec::new();
-        for i in 0..64 {
-            set_init.push(i);
-        }
-        self.factory = Some(FastSparseSetFactory::new(set_init));
+        self.factory = Some(INITIAL_FACTORY.with(FastSparseSetFactory::duplicate));
 
-        let first_id = dgraph.first().expect("DirectGraph.first").id();
+        let first_id = dgraph.first().expect("DirectGraph.first").id_key();
         let first_map = self.create_first_map();
         self.extra_var_versions.put(first_id, first_map);
 
         self.set_catch_maps(root.into(), dgraph, &flatthelper);
 
         let mut iteration = 1;
-        let mut updated: JHashSet<String> = JHashSet::new();
+        let mut updated: JHashSet<std::rc::Rc<str>> = JHashSet::new();
         loop {
             CancelationManager::check_canceled();
             self.ssa_statements(dgraph, &mut updated, false, mt, iteration);
@@ -146,13 +147,13 @@ impl SFormsConstructor {
     pub fn ssa_statements(
         &mut self,
         dgraph: DirectGraph,
-        updated: &mut JHashSet<String>,
+        updated: &mut JHashSet<std::rc::Rc<str>>,
         calc_live_vars: bool,
         _mt: StructMethod,
         _iteration: i32,
     ) {
         for node in dgraph.nodes() {
-            let node_id = node.id();
+            let node_id = node.id_key();
             updated.remove(&node_id);
             self.merge_in_var_maps(node, dgraph);
 
@@ -197,11 +198,11 @@ impl SFormsConstructor {
 
                 if !dgraph.extra_nodes().j_contains(&node) {
                     for nd in node.get_successors(DirectEdgeType::Regular).to_vec() {
-                        updated.add(nd.get_destination().id());
+                        updated.add(nd.get_destination().id_key());
                     }
 
                     for nd in node.get_successors(DirectEdgeType::Exception).to_vec() {
-                        updated.add(nd.get_destination().id());
+                        updated.add(nd.get_destination().id_key());
                     }
                 }
             }
@@ -442,7 +443,7 @@ impl SFormsConstructor {
         }
 
         for pred in node.get_predecessors(DirectEdgeType::Exception).to_vec() {
-            let map_out = self.catchable_versions.get_cloned(&pred.get_source().id());
+            let map_out = self.catchable_versions.get_cloned(&pred.get_source().id_key());
             if let Some(map_out) = map_out {
                 if map_new.borrow().is_empty() {
                     map_new = Shared::new(map_out.borrow().get_copy());
@@ -452,7 +453,7 @@ impl SFormsConstructor {
             }
         }
 
-        let node_id = node.id();
+        let node_id = node.id_key();
         if self.extra_var_versions.contains_key(&node_id) {
             let map_extra = self
                 .extra_var_versions
@@ -476,7 +477,7 @@ impl SFormsConstructor {
     ) -> Shared<SFormsFastMapDirect> {
         let mut map_new = Shared::new(SFormsFastMapDirect::new(self.factory().clone()));
 
-        let (node_id, pred_id) = (node.id(), pred.id());
+        let (node_id, pred_id) = (node.id_key(), pred.id_key());
         let neg_dest = dgraph.with(|d| d.map_neg_if_branch.get_cloned(&pred_id));
         if neg_dest.as_ref() == Some(&node_id) {
             if let Some(out) = self.out_neg_var_versions.get(&pred_id) {
@@ -499,10 +500,11 @@ impl SFormsConstructor {
                     ValidationHelper::not_null(finally_node.as_ref());
                     let fnode = finally_node.expect("NullPointerException");
                     if fnode.type_() == DirectNodeType::Finally {
-                        let input_key = format!("{}_FINALLY", fnode.statement().id());
+                        let input_key: std::rc::Rc<str> =
+                            format!("{}_FINALLY", fnode.statement().id()).into();
                         Self::get_and_apply_diff(
                             self.in_var_versions.get(&input_key),
-                            self.out_var_versions.get(&fnode.id()),
+                            self.out_var_versions.get(&fnode.id_key()),
                             &map_new,
                         );
                     }
@@ -616,7 +618,7 @@ impl SFormsConstructor {
                 let id = flatthelper
                     .get_direct_node(st)
                     .expect("NullPointerException")
-                    .id();
+                    .id_key();
                 self.extra_var_versions.put(id, map);
 
                 i += 1;
@@ -721,7 +723,7 @@ impl SFormsConstructor {
     }
 
     pub fn has_updated(&self, node: DirectNode, varmaps: &VarMapHolder) -> bool {
-        let id = node.id();
+        let id = node.id_key();
         !Self::maps_equal(Some(&varmaps.get_if_true()), self.out_var_versions.get(&id))
             || (self.out_neg_var_versions.contains_key(&id)
                 && !Self::maps_equal(

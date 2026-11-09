@@ -5,6 +5,7 @@
 //! increment slot); that slot is an empty list here.
 
 use std::collections::VecDeque;
+use std::rc::Rc;
 
 use crate::arena_object;
 use crate::direct_edge_type::DirectEdgeType;
@@ -18,7 +19,7 @@ pub struct DirectGraphData {
     pub nodes: VBStyleCollection<DirectNode, String>,
     pub extra_nodes: Vec<DirectNode>,
     pub first: Option<DirectNode>,
-    pub map_neg_if_branch: JHashMap<String, String>,
+    pub map_neg_if_branch: JHashMap<Rc<str>, Rc<str>>,
     pub map_finally_monitor_exception_path_exits: JHashMap<String, String>,
 }
 
