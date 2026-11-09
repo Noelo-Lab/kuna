@@ -1,0 +1,47 @@
+# java.version=21.0.12.1
+java/lang/String	format	(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;	public static java.lang.String java.lang.String.format(java.lang.String,java.lang.Object[])	true
+java/lang/String	join	(Ljava/lang/CharSequence;[Ljava/lang/CharSequence;)Ljava/lang/String;	public static java.lang.String java.lang.String.join(java.lang.CharSequence,java.lang.CharSequence[])	true
+java/lang/String	valueOf	([C)Ljava/lang/String;	null	-
+java/lang/String	valueOf	(Ljava/lang/Object;)Ljava/lang/String;	public static java.lang.String java.lang.String.valueOf(java.lang.Object)	false
+java/lang/String	length	()I	null	-
+java/lang/String	toString	()Ljava/lang/String;	public java.lang.String java.lang.String.toString()	false
+java/lang/String	hashCode	()I	null	-
+java/lang/String	getClass	()Ljava/lang/Class;	null	-
+java/lang/Object	toString	()Ljava/lang/String;	public java.lang.String java.lang.Object.toString()	false
+java/lang/Object	getClass	()Ljava/lang/Class;	public final native java.lang.Class java.lang.Object.getClass()	false
+java/lang/Integer	valueOf	(I)Ljava/lang/Integer;	null	-
+java/lang/Integer	valueOf	(Ljava/lang/String;)Ljava/lang/Integer;	public static java.lang.Integer java.lang.Integer.valueOf(java.lang.String) throws java.lang.NumberFormatException	false
+java/lang/StringBuilder	toString	()Ljava/lang/String;	public java.lang.String java.lang.StringBuilder.toString()	false
+java/lang/StringBuilder	append	(Ljava/lang/CharSequence;)Ljava/lang/StringBuilder;	public java.lang.StringBuilder java.lang.StringBuilder.append(java.lang.CharSequence)	false
+java/lang/StringBuilder	append	(Ljava/lang/CharSequence;)Ljava/lang/Appendable;	public java.lang.Appendable java.lang.StringBuilder.append(java.lang.CharSequence) throws java.io.IOException	false
+java/lang/StringBuilder	append	(Ljava/lang/CharSequence;)Ljava/lang/AbstractStringBuilder;	public java.lang.AbstractStringBuilder java.lang.StringBuilder.append(java.lang.CharSequence)	false
+java/lang/StringBuilder	chars	()Ljava/util/stream/IntStream;	public java.util.stream.IntStream java.lang.StringBuilder.chars()	false
+java/lang/AbstractStringBuilder	chars	()Ljava/util/stream/IntStream;	public java.util.stream.IntStream java.lang.AbstractStringBuilder.chars()	false
+java/util/Arrays	asList	([Ljava/lang/Object;)Ljava/util/List;	public static java.util.List java.util.Arrays.asList(java.lang.Object[])	true
+java/util/List	of	([Ljava/lang/Object;)Ljava/util/List;	public static java.util.List java.util.List.of(java.lang.Object[])	true
+java/util/List	of	(Ljava/lang/Object;)Ljava/util/List;	public static java.util.List java.util.List.of(java.lang.Object)	false
+java/util/List	toString	()Ljava/lang/String;	null	-
+java/util/ArrayList	stream	()Ljava/util/stream/Stream;	null	-
+java/util/ArrayList	iterator	()Ljava/util/Iterator;	public java.util.Iterator java.util.ArrayList.iterator()	false
+java/util/Collection	stream	()Ljava/util/stream/Stream;	public default java.util.stream.Stream java.util.Collection.stream()	false
+java/util/Map	entry	(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;	public static java.util.Map$Entry java.util.Map.entry(java.lang.Object,java.lang.Object)	false
+java/util/Map	ofEntries	([Ljava/util/Map$Entry;)Ljava/util/Map;	public static java.util.Map java.util.Map.ofEntries(java.util.Map$Entry[])	true
+java/util/Map$Entry	getKey	()Ljava/lang/Object;	public abstract java.lang.Object java.util.Map$Entry.getKey()	false
+java/util/concurrent/ConcurrentHashMap	keySet	()Ljava/util/concurrent/ConcurrentHashMap$KeySetView;	public java.util.concurrent.ConcurrentHashMap$KeySetView java.util.concurrent.ConcurrentHashMap.keySet()	false
+java/util/concurrent/ConcurrentHashMap	keySet	()Ljava/util/Set;	public java.util.Set java.util.concurrent.ConcurrentHashMap.keySet()	false
+java/nio/file/Paths	get	(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;	public static java.nio.file.Path java.nio.file.Paths.get(java.lang.String,java.lang.String[])	true
+java/nio/file/Path	of	(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;	public static java.nio.file.Path java.nio.file.Path.of(java.lang.String,java.lang.String[])	true
+java/lang/invoke/MethodHandle	invoke	([Ljava/lang/Object;)Ljava/lang/Object;	public final native java.lang.Object java.lang.invoke.MethodHandle.invoke(java.lang.Object[]) throws java.lang.Throwable	true
+java/lang/invoke/MethodHandles$Lookup	findVirtual	(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/MethodHandle;	public java.lang.invoke.MethodHandle java.lang.invoke.MethodHandles$Lookup.findVirtual(java.lang.Class,java.lang.String,java.lang.invoke.MethodType) throws java.lang.NoSuchMethodException,java.lang.IllegalAccessException	false
+java/lang/Thread	run	()V	null	-
+java/io/PrintStream	printf	(Ljava/lang/String;[Ljava/lang/Object;)Ljava/io/PrintStream;	public java.io.PrintStream java.io.PrintStream.printf(java.lang.String,java.lang.Object[])	true
+java/io/Reader	read	([C)I	null	-
+java/lang/Class	forName	(Ljava/lang/String;)Ljava/lang/Class;	public static java.lang.Class java.lang.Class.forName(java.lang.String) throws java.lang.ClassNotFoundException	false
+java/lang/Class	getMethod	(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;	public java.lang.reflect.Method java.lang.Class.getMethod(java.lang.String,java.lang.Class[]) throws java.lang.NoSuchMethodException,java.lang.SecurityException	true
+java/lang/Enum	valueOf	(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;	public static java.lang.Enum java.lang.Enum.valueOf(java.lang.Class,java.lang.String)	false
+java/util/Optional	map	(Ljava/util/function/Function;)Ljava/util/Optional;	public java.util.Optional java.util.Optional.map(java.util.function.Function)	false
+java/util/stream/Stream	of	([Ljava/lang/Object;)Ljava/util/stream/Stream;	public static java.util.stream.Stream java.util.stream.Stream.of(java.lang.Object[])	true
+java/util/stream/IntStream	boxed	()Ljava/util/stream/Stream;	public abstract java.util.stream.Stream java.util.stream.IntStream.boxed()	false
+java/sql/DriverManager	getConnection	(Ljava/lang/String;)Ljava/sql/Connection;	null	-
+java/lang/Missing	foo	()Ljava/lang/Object;	null	-
+com/example/Foo	bar	(Ljava/lang/String;)Ljava/lang/String;	null	-
