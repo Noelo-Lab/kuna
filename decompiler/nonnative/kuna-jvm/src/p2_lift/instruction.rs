@@ -234,7 +234,7 @@ impl std::fmt::Display for Instruction {
             res.push_str("@wide ");
         }
         res.push('@');
-        res.push_str(&TextUtil::get_instruction_name(opcode));
+        res.push_str(TextUtil::get_instruction_name(opcode));
         for op in operands.unwrap_or_default() {
             if op < 0 {
                 res.push_str(&format!(" -{:x}", op.wrapping_neg() as u32));

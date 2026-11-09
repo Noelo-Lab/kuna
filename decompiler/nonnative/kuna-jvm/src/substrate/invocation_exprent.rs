@@ -1629,7 +1629,7 @@ impl InvocationExprent {
                     let cls = get_class(&inst_type.value);
                     if let Some(sig) = cls.and_then(|cls| cls.get_signature()) {
                         let mut generics_map =
-                            self.d_mut(|d| std::mem::replace(&mut d.generics_map, JHashMap::new()));
+                            self.d_mut(|d| std::mem::take(&mut d.generics_map));
                         sig.generic_type()
                             .map_gen_vars_to(&ginstance, &mut generics_map);
                         self.d_mut(|d| d.generics_map = generics_map);

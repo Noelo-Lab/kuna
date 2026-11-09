@@ -367,7 +367,7 @@ impl ImportCollector {
                 let qualified_name = class.qualified_name();
                 for entry in attribute.get_entries() {
                     if entry.enclosing_name.as_deref() == Some(qualified_name.as_str()) {
-                        let inner_name = entry.inner_name.replace('/', ".").replace('$', ".");
+                        let inner_name = entry.inner_name.replace(['/', '$'], ".");
                         if let Some(simple_name) = entry.simple_name.clone() {
                             names.put(simple_name, inner_name);
                         }

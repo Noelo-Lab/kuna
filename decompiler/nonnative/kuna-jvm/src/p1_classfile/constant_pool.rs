@@ -158,7 +158,7 @@ impl ConstantPool {
     }
 
     fn interceptor(self) -> Option<PoolInterceptor> {
-        self.with(|d| d.interceptor.clone())
+        self.with(|d| d.interceptor)
     }
 
     pub fn get_class_element(

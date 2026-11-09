@@ -10,6 +10,21 @@
 //! schedule in `infra/method_processor.rs`. Module names are flat
 //! (`kuna_jvm::if_helper`) through the re-exports below.
 
+// These lints fight a line-by-line port: the Java control flow is kept as written.
+#![allow(
+    clippy::collapsible_if,
+    clippy::needless_range_loop,
+    clippy::new_without_default,
+    clippy::only_used_in_recursion,
+    clippy::if_same_then_else,
+    clippy::nonminimal_bool,
+    clippy::large_enum_variant,
+    clippy::manual_range_contains,
+    clippy::needless_late_init,
+    clippy::explicit_counter_loop,
+    clippy::unnecessary_unwrap
+)]
+
 pub mod infra;
 pub mod kotlin;
 pub mod p0_knowledge;

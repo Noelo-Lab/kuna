@@ -368,7 +368,7 @@ impl TextBuffer {
     pub fn append_cast_type_name_annotations(
         &mut self,
         type_: &VarType,
-        type_annotations: &mut Vec<Pair<VecDeque<PathValue>, AnnotationExprent>>,
+        type_annotations: &mut [Pair<VecDeque<PathValue>, AnnotationExprent>],
         filter: &JHashSet<String>,
     ) -> &mut Self {
         self.append_cast_type_name_annotations_vararg(type_, type_annotations, filter, false, true)
@@ -378,7 +378,7 @@ impl TextBuffer {
     pub fn append_cast_type_name_annotations_vararg(
         &mut self,
         type_: &VarType,
-        type_annotations: &mut Vec<Pair<VecDeque<PathValue>, AnnotationExprent>>,
+        type_annotations: &mut [Pair<VecDeque<PathValue>, AnnotationExprent>],
         filter: &JHashSet<String>,
         vararg: bool,
         flush: bool,

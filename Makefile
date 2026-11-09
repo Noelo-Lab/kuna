@@ -125,7 +125,7 @@ rust-test:
 # One invocation: a crate an earlier `--no-deps` run checked only as a dependency
 # is fresh to a later run, which then passes without linting it.
 lint:
-	cd $(ENGINE) && cargo clippy --release -p kuna-cli -p kuna-base -p kuna-num --no-deps -- -D warnings
+	cd $(ENGINE) && cargo clippy --release -p kuna-cli -p kuna-base -p kuna-num -p kuna-jvm --no-deps -- -D warnings
 
 clean:
 	cd $(ENGINE) && cargo clean
