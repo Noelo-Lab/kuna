@@ -1562,3 +1562,71 @@ selector against those types again (`sel instanceof Integer || sel instanceof St
 `&&` the source's guard if any); `strip_multi_pattern_guards` removes exactly that test, and the
 switch statement and expression writers print such a case as one label of unnamed patterns
 (`case Integer _, String _:`). Each fix's case recompiles to the original bytecode.
+
+**`var_merge_narrowing`.** After the variables are versioned and typed,
+`decompiler/nonnative/kuna-jvm/src/p6_variables/var_definition_helper.rs (VarDefinitionHelper::merge_vars)`
+merges a definition into an earlier variable of the same slot (or stack slot) that is no longer
+read, so one Java local stands for both. The merged type comes from `getMergedType`, which may
+pick an upper bound of one variable (the class it is used as without a cast) or the narrower of
+the two lower bounds; when that type is strictly below the type of a value assigned to either
+variable, the assignment is printed with a cast the bytecode does not have there, or, where
+`getCastedExprent` only casts from `Object`, with none, which does not compile. The shape that
+shows it is a value checked before it is cast: a Kotlin suspend loop stores the suspend call's
+result in a stack variable, compares it with `COROUTINE_SUSPENDED`, and only then casts it
+(`Object v = src.next(c); if (v == SUSPENDED) return v; Integer w = (Integer)v;`); merged as an
+`Integer`, Vineflower prints `Integer v = (Integer)src.next(c);`, which throws
+`ClassCastException` exactly where the bytecode returns the marker, and `var10000 =
+(Function3)var10000.invoke(...)` or `var25 = (Waiter)ChannelResult.closed(...)` elsewhere in
+kotlinx-coroutines. javac code shows it where two block-scoped locals share a slot (`{ Object o
+= src.next(); if (o == MARK) return -1; } { String s = (String)src.next(); ... }` becomes `String
+o = (String)src.next(); if (o == MARK) ...`). `develop/1.13.0` (`3ce9eb26`) only refreshes the
+declared type of the merge target and keeps the merge. With the fix,
+`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_fix_var_merge_narrowing.rs (assigns_wider)`
+is asked before a merge whose type narrows a lower bound: it collects the method's assignments
+and refuses the merge when one to either variable assigns a value whose type the merged type is
+strictly below, following conditionals and copies of other variables, whose own lower bounds
+can be a loose join (the join of two interfaces that found no common class is `Object`). A
+refused merge is denylisted as one `remapVar` could not do, and a declaration that would have
+been merged stays where it is; two variables are always correct, since SSA split them. Merges
+that narrow only a loose bound (a `null`, a join, a parameter whose declared type the
+declaration keeps) are made as before. On the eight benchmark inputs the fix changes 71 hunks (13 in the five Java
+projects, 58 in okhttp and kotlin-stdlib written as Kotlin), 89 in kotlinx-coroutines, and 303
+in okhttp, kotlin-stdlib and kotlinx-coroutines written as Java, where the 22 suspend-call
+casts of kotlinx-coroutines before their `COROUTINE_SUSPENDED` check are gone.
+
+**`switch_expression_poly_cast`.** A switch expression in an assignment or invocation context is
+a poly expression: each result is converted to the target type on its own (JLS 15.28.1). In a
+cast it is standalone, and results that are all numeric (or all `boolean`/`Boolean`) are
+promoted together. `decompiler/nonnative/kuna-jvm/src/p2_lift/expr_processor.rs (ExprProcessor::get_casted_exprent_full)`
+casts a value whose type is not known to fit the target, and a switch expression's type is the
+join of its results, `Object` when their common superclass is not loaded; so `Number f(int x) {
+return switch (x) { case 1 -> 1; default -> 2L; }; }` is printed `return (Number)(switch (x) {
+case 1 -> 1; default -> 2L; });`, whose `case 1` yields a `Long`, and `case 1 -> 'a'; default ->
+1` against a `Comparable<?>` becomes a `char` switch whose default yields `'\u0001'`. With the
+fix the cast is not written when the only reason for it is the unknown type and
+`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_switch_expression_poly_cast.rs (results_promote)`
+finds the results promoted together; every result already fits the target, which the bytecode
+assigns from every branch. With the JDK loaded the join is `Number` and nothing changes; none of
+the benchmark inputs has an instance.
+
+**`ternary_numeric_arms`.** A reference conditional in bytecode passes each arm's object
+through (`c ? Integer.valueOf(1) : Long.valueOf(2L)`), but `InvocationExprent.toJava` prints a
+boxing call as its argument, so `FunctionExprent.toJava` writes `c ? 1 : 2L`, which javac types
+as a numeric conditional (JLS 15.25): `1` becomes a `Long`, and a boxed arm is unboxed, so `c ?
+1 : a` throws `NullPointerException` where `a` is `null` and `Integer.valueOf(a.intValue())` is
+not `a`. The outer cast Vineflower adds when the join is unknown (`(Number)(c ? 1 : 2L)`) does
+not help, as a numeric conditional is not a poly expression. With the fix,
+`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_ternary_numeric_arms.rs (arm_casts)`
+looks at the types the two arms are written with and, when javac would unbox or promote them,
+casts an arm to the conditional's type `T` (the join of the arms): the first arm when `T` is no
+boxed type (`c ? (Number)1 : 2L`, `c ? (Object)1 : 2L` without the JDK), which makes it no
+numeric operand, and every arm not already written as `T` when `T` is a boxed type (`c ?
+(Integer)1 : a`, `c ? d : (Double)0.5`), so both arms have the same type. Either way the
+conditional stays a reference conditional, as in the bytecode; an arm written as an expression
+of lower precedence is parenthesized. On the benchmark inputs this changes 9 conditionals
+(Elasticsearch's `BucketHelpers`, `GeometryNormalizer`, `QueryPhaseCollectorManager`, Ghidra's
+`SourceFileIndexer`, kotlin-stdlib's `toBooleanStrictOrNull`, which Vineflower prints as `? true
+: (... ? false : null)` and so throws on any other string). Each fix's Java case recompiles and
+runs as the original (`TestTernaryNumericArms.intOrLong` gains a `checkcast Number` without the
+JDK, from the outer cast); the compat texts recompile to code that differs: `Long` 1, `Character`
+`'\u0001'`, `NullPointerException`, `ClassCastException` on the marker.

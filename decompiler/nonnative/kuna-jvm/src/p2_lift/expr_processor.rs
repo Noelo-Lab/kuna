@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/ExprProcessor.java`.
+//!
+//! kuna fix `switch_expression_poly_cast` (`kuna_fix_switch_expression_poly_cast.rs`):
+//! `getCastedExprent` does not cast a switch expression whose results would be promoted.
 
 use crate::array_exprent::ArrayExprent;
 use crate::assert_processor::AssertProcessor;
@@ -21,6 +24,7 @@ use crate::generic_type::GenericType;
 use crate::if_exprent::{IfExprent, Type as IfType};
 use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
 use crate::method_descriptor::MethodDescriptor;
 use crate::monitor_exprent::{MonitorExprent, Type as MonitorType};
@@ -34,6 +38,7 @@ use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
 use crate::struct_class::StructClass;
 use crate::struct_general_attribute::StructGeneralAttribute;
+use crate::substrate::kuna_fix_switch_expression_poly_cast;
 use crate::switch_head_exprent::SwitchHeadExprent;
 use crate::text_buffer::TextBuffer;
 use crate::text_util::TextUtil;
@@ -1350,6 +1355,15 @@ impl ExprProcessor {
 
         let mut cast =
             cast_always || do_cast || do_cast_null || do_cast_narrowing || do_cast_generics;
+
+        if cast
+            && !(cast_always || do_cast_null || do_cast_narrowing || do_cast_generics)
+            && left_type.type_ == CodeType::Object
+            && kuna_fixes::enabled(KunaFix::SwitchExpressionPolyCast)
+            && kuna_fix_switch_expression_poly_cast::results_promote(exprent)
+        {
+            cast = false;
+        }
 
         if cast_null == NullCastType::DontCastAtAll && right_type.type_ == CodeType::Null {
             cast = cast_always;

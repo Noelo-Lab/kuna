@@ -95,6 +95,16 @@ pub enum KunaFix {
     /// by its own index constant, so labels after the first of a case and
     /// labels whose index equals an integer label's value are resolved.
     TypeSwitchLabelLookup,
+    /// `var_merge_narrowing`: two variables are not merged when the
+    /// merged type is a strict subtype of what either is assigned (the merge
+    /// would print a cast the bytecode does not have there).
+    VarMergeNarrowing,
+    /// `switch_expression_poly_cast`: a switch expression whose results
+    /// javac would promote together is not cast to its target type.
+    SwitchExpressionPolyCast,
+    /// `ternary_numeric_arms`: a reference conditional whose arms print as
+    /// different numeric types keeps its first arm cast to its type.
+    TernaryNumericArms,
 }
 
 impl KunaFix {
@@ -123,6 +133,9 @@ impl KunaFix {
         KunaFix::TypeSwitchEnumLabel,
         KunaFix::TypeSwitchPatternType,
         KunaFix::TypeSwitchLabelLookup,
+        KunaFix::VarMergeNarrowing,
+        KunaFix::SwitchExpressionPolyCast,
+        KunaFix::TernaryNumericArms,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -151,6 +164,9 @@ impl KunaFix {
             KunaFix::TypeSwitchEnumLabel => "type_switch_enum_label",
             KunaFix::TypeSwitchPatternType => "type_switch_pattern_type",
             KunaFix::TypeSwitchLabelLookup => "type_switch_label_lookup",
+            KunaFix::VarMergeNarrowing => "var_merge_narrowing",
+            KunaFix::SwitchExpressionPolyCast => "switch_expression_poly_cast",
+            KunaFix::TernaryNumericArms => "ternary_numeric_arms",
         }
     }
 

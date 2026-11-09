@@ -96,7 +96,7 @@ public final class TestSuspendLoopFinally {
                try {
                   var41 = true;
                   ResultKt.throwOnFailure($result);
-                  var10000 = (Integer)$result;
+                  var10000 = $result;
                   var41 = false;
                } catch (Throwable var53) {
                   cause = var53;
@@ -111,13 +111,13 @@ public final class TestSuspendLoopFinally {
 
                try {
                   var19 = true;
-                  var10000 = var10000;
-                  if (var10000 == null) {
+                  Integer var77 = (Integer)var10000;
+                  if ((Integer)var10000 == null) {
                      var19 = false;
                      break label265;
                   }
 
-                  int e = var10000;
+                  int e = var77;
                   out.add(Boxing.boxInt(e));
                   var19 = false;
                   break;
@@ -142,7 +142,7 @@ public final class TestSuspendLoopFinally {
                $continuation.L$0 = src;
                $continuation.L$1 = out;
                $continuation.label = 1;
-               var78 = (Integer)src.next($continuation);
+               var78 = src.next($continuation);
                var30 = false;
             } catch (Throwable e) {
                cause = e;
@@ -161,13 +161,13 @@ public final class TestSuspendLoopFinally {
 
             try {
                var19 = true;
-               var78 = var78;
-               if (var78 == null) {
+               Integer var79 = (Integer)var78;
+               if ((Integer)var78 == null) {
                   var19 = false;
                   break;
                }
 
-               int var63 = var78;
+               int var63 = var79;
                out.add(Boxing.boxInt(var63));
                var19 = false;
             } catch (Throwable var59) {

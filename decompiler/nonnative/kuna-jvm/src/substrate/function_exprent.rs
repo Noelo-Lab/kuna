@@ -1,4 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/FunctionExprent.java`.
+//!
+//! kuna fix `ternary_numeric_arms` (`kuna_fix_ternary_numeric_arms.rs`): a
+//! reference conditional whose arms would be promoted casts its first arm.
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -7,6 +10,7 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::{Exprent, ExprentKind, ExprentType};
 use crate::i_matchable::MatchProperties;
 use crate::int_helper::IntHelper;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
@@ -14,6 +18,7 @@ use crate::pattern::Pattern;
 use crate::rt::{BitSet, JList, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
+use crate::substrate::kuna_fix_ternary_numeric_arms;
 use crate::text_buffer::TextBuffer;
 use crate::typed::Typed;
 use crate::var_map_holder::VarMapHolder;
@@ -974,11 +979,21 @@ impl FunctionExprent {
                 buf.append_buffer(&first)
                     .append_possible_newline_alt(" ")
                     .append("? ");
-                let second = self.wrap_operand_string(lst_operands.get(1), true, indent);
+                let arm_casts = if kuna_fixes::enabled(KunaFix::TernaryNumericArms) {
+                    kuna_fix_ternary_numeric_arms::arm_casts(
+                        lst_operands.get(1),
+                        lst_operands.get(2),
+                    )
+                } else {
+                    [None, None]
+                };
+                let second =
+                    self.wrap_ternary_arm(lst_operands.get(1), arm_casts[0].as_ref(), indent);
                 buf.append_buffer(&second)
                     .append_possible_newline_alt(" ")
                     .append(": ");
-                let third = self.wrap_operand_string(lst_operands.get(2), true, indent);
+                let third =
+                    self.wrap_ternary_arm(lst_operands.get(2), arm_casts[1].as_ref(), indent);
                 buf.append_buffer(&third);
                 buf.pop_newline_group();
                 return buf;
@@ -1082,6 +1097,28 @@ impl FunctionExprent {
     }
 
     /// Java: `wrapOperandString(Exprent, boolean, int)`.
+    /// Fix `ternary_numeric_arms`: a conditional's arm, cast to `cast` if given
+    /// (parenthesized as the operand it is written as: a boxing call's argument).
+    fn wrap_ternary_arm(self, expr: Exprent, cast: Option<&VarType>, indent: i32) -> TextBuffer {
+        let Some(cast) = cast else {
+            return self.wrap_operand_string(expr, true, indent);
+        };
+        let written = kuna_fix_ternary_numeric_arms::written_operand(expr);
+        let quote = written.get_precedence() >= FunctionType::Cast.precedence();
+        let mut buf = TextBuffer::new();
+        buf.append_char('(')
+            .append_cast_type_name(cast)
+            .append_char(')');
+        if quote {
+            buf.append_char('(');
+        }
+        buf.append_buffer(&expr.to_java(indent));
+        if quote {
+            buf.append_char(')');
+        }
+        buf
+    }
+
     pub fn wrap_operand_string(self, expr: Exprent, eq: bool, indent: i32) -> TextBuffer {
         self.wrap_operand_string_group(expr, eq, indent, false)
     }

@@ -37,11 +37,15 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSelfReferencingLambda` | `self_referencing_lambda` | asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1 | the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place |
 | `pkg/TestSuspendFinallyKt` | `handler_copy_offsets` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | `once`, `twice` and `early`, suspend functions whose try/finally spans a suspension point, decompile: the try of the tail keeps its inlined finally and each range part the exception deobfuscator split off becomes a try/finally guarded by a semaphore variable |
 | `pkg/TestSuspendLoopFinally` | `copied_finally` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies) |
+| `pkg/TestSuspendResultCast` | `var_merge_narrowing` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `sum` and `fold`, suspend loops: the result of the suspend call is cast to `Integer` after the `COROUTINE_SUSPENDED` check, as in the bytecode, not before it (where the marker would throw `ClassCastException`) |
 | `pkg/TestSwitchExprConstLub` | `switch_yield_const_retype` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone |
+| `pkg/TestSwitchExprPolyCast` | `switch_expression_poly_cast` | javac 17.0.20.1 (`-g`) | `intOrLong`, `charOrInt` and `argument`, whose switch expressions yield numbers of different types to a reference target: the switch is no longer wrapped in a cast, which made it a standalone numeric switch (`case 1 -> 1` a `Long`) |
+| `pkg/TestTernaryNumericArms` | `ternary_numeric_arms` | javac 17.0.20.1 (`-g`) | the conditionals whose boxed arms would print as numbers of different types (`int` and `long`, `int` and `Integer`, `boolean` and `Boolean`, `Double` and `double`) keep an arm cast, so they stay reference conditionals: no promotion of `1` to `Long`, no unboxing of a `null` arm |
 | `pkg/TestTryCatchNotFlag` | `twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 | `pkg/TestTypeSwitchEnumLabel` | `type_switch_enum_label` | javac 21.0.12.1 -g | case Kind.CIRCLE beside type patterns in a switch on an interface: the enum label is resolved and printed qualified |
 | `pkg/TestTypeSwitchLabelLookup` | `type_switch_label_lookup` | javac 25.0.5 -g | cases with several labels (case Integer _, String _; case Kind.CIRCLE, Kind.SQUARE; case 5, 7) and an integer label equal to a later switch index: every label is resolved, multi-pattern cases print as one unnamed-pattern label |
 | `pkg/TestTypeSwitchPatternType` | `type_switch_pattern_type` | javac 21.0.12.1 (no -g) | case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type |
+| `pkg/TestVarMergeNarrowing` | `var_merge_narrowing` | javac 17.0.20.1 (no `-g`) | `firstLength`, whose two block-scoped locals share a slot: the `Object` one is no longer merged into the `String` one, so `src.next()` is not cast to `String` before it is compared with `MARK` |
 
 ## Diffs (compat -> default)
 
@@ -1917,7 +1921,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +               try {
 +                  var41 = true;
 +                  ResultKt.throwOnFailure($result);
-+                  var10000 = (Integer)$result;
++                  var10000 = $result;
 +                  var41 = false;
 +               } catch (Throwable var53) {
 +                  cause = var53;
@@ -1932,13 +1936,13 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +
 +               try {
 +                  var19 = true;
-+                  var10000 = var10000;
-+                  if (var10000 == null) {
++                  Integer var77 = (Integer)var10000;
++                  if ((Integer)var10000 == null) {
 +                     var19 = false;
 +                     break label265;
 +                  }
 +
-+                  int e = var10000;
++                  int e = var77;
 +                  out.add(Boxing.boxInt(e));
 +                  var19 = false;
 +                  break;
@@ -1963,7 +1967,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +               $continuation.L$0 = src;
 +               $continuation.L$1 = out;
 +               $continuation.label = 1;
-+               var78 = (Integer)src.next($continuation);
++               var78 = src.next($continuation);
 +               var30 = false;
 +            } catch (Throwable e) {
 +               cause = e;
@@ -1982,13 +1986,13 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +
 +            try {
 +               var19 = true;
-+               var78 = var78;
-+               if (var78 == null) {
++               Integer var79 = (Integer)var78;
++               if ((Integer)var78 == null) {
 +                  var19 = false;
 +                  break;
 +               }
 +
-+               int var63 = var78;
++               int var63 = var79;
 +               out.add(Boxing.boxInt(var63));
 +               var19 = false;
 +            } catch (Throwable var59) {
@@ -2202,6 +2206,57 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     @Metadata(
 ```
 
+### `pkg/TestSuspendResultCast`
+
+```diff
+--- expected-compat/pkg/TestSuspendResultCast.java
++++ expected/pkg/TestSuspendResultCast.java
+@@ -90,17 +90,17 @@
+          $continuation.L$0 = src;
+          $continuation.I$0 = total;
+          $continuation.label = 1;
+-         Integer var10 = (Integer)src.next($continuation);
++         Object var10 = src.next($continuation);
+          if (var10 == var7) {
+             return var7;
+          }
+ 
+-         var10 = var10;
+-         if (var10 == null) {
++         Integer var11 = (Integer)var10;
++         if ((Integer)var10 == null) {
+             return Boxing.boxInt(total);
+          }
+ 
+-         int var9 = var10;
++         int var9 = var11;
+          total += var9;
+       }
+    }
+@@ -184,17 +184,17 @@
+          $continuation.L$1 = op;
+          $continuation.I$0 = acc;
+          $continuation.label = 1;
+-         Integer var13 = (Integer)src.next($continuation);
++         Object var13 = src.next($continuation);
+          if (var13 == var9) {
+             return var9;
+          }
+ 
+-         var13 = var13;
+-         if (var13 == null) {
++         Integer var14 = (Integer)var13;
++         if ((Integer)var13 == null) {
+             return Boxing.boxInt(acc);
+          }
+ 
+-         int var11 = var13;
++         int var11 = var14;
+          Integer var16 = Boxing.boxInt(acc);
+          Integer var17 = Boxing.boxInt(var11);
+          $continuation.L$0 = src;
+```
+
 ### `pkg/TestSwitchExprConstLub`
 
 ```diff
@@ -2381,6 +2436,81 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public Object charOrInt(int x) {
+```
+
+### `pkg/TestSwitchExprPolyCast`
+
+```diff
+--- expected-compat/pkg/TestSwitchExprPolyCast.java
++++ expected/pkg/TestSwitchExprPolyCast.java
+@@ -2,25 +2,25 @@
+ 
+ public class TestSwitchExprPolyCast {
+    public Number intOrLong(int x) {
+-      return (Number)(switch (x) {
++      return switch (x) {
+          case 1 -> 1;
+          default -> 2L;
+-      });
++      };
+    }
+ 
+    public Comparable<?> charOrInt(int x) {
+-      return (Comparable<?>)(switch (x) {
++      return switch (x) {
+          case 1 -> 'a';
+          default -> 1;
+-      });
++      };
+    }
+ 
+    public void argument(int x) {
+-      take((Number)(switch (x) {
++      take(switch (x) {
+          case 1 -> 1;
+          case 2 -> 2.5;
+          default -> 3L;
+-      }));
++      });
+    }
+ 
+    public Object toObject(int x) {
+```
+
+### `pkg/TestTernaryNumericArms`
+
+```diff
+--- expected-compat/pkg/TestTernaryNumericArms.java
++++ expected/pkg/TestTernaryNumericArms.java
+@@ -2,23 +2,23 @@
+ 
+ public class TestTernaryNumericArms {
+    public Number intOrLong(boolean c) {
+-      return (Number)(c ? 1 : 2L);
++      return (Number)(c ? (Object)1 : 2L);
+    }
+ 
+    public Object intOrLongObject(boolean c) {
+-      return c ? 1 : 2L;
++      return c ? (Object)1 : 2L;
+    }
+ 
+    public Integer boxedOrNull(boolean c, Integer a) {
+-      return c ? 1 : a;
++      return c ? (Integer)1 : a;
+    }
+ 
+    public Boolean flagOrNull(boolean c, Boolean b) {
+-      return c ? true : b;
++      return c ? (Boolean)true : b;
+    }
+ 
+    public Object doubleOrBoxed(boolean c, Double d) {
+-      return c ? d : 0.5;
++      return c ? d : (Double)0.5;
+    }
+ 
+    public long numeric(boolean c, int i, long l) {
 ```
 
 ### `pkg/TestTryCatchNotFlag`
@@ -3003,4 +3133,28 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +      }
     }
  }
+```
+
+### `pkg/TestVarMergeNarrowing`
+
+```diff
+--- expected-compat/pkg/TestVarMergeNarrowing.java
++++ expected/pkg/TestVarMergeNarrowing.java
+@@ -4,13 +4,13 @@
+    static final Object MARK = new Object();
+ 
+    public int firstLength(TestVarMergeNarrowing.Source var1) {
+-      String var2 = (String)var1.next();
++      Object var2 = var1.next();
+       if (var2 == MARK) {
+          return -1;
+       }
+ 
+-      var2 = (String)var1.next();
+-      return var2.length();
++      String var3 = (String)var1.next();
++      return var3.length();
+    }
+ 
+    public int nextLength(TestVarMergeNarrowing.Source var1) {
 ```
