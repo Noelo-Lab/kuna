@@ -351,6 +351,17 @@ impl<'a> Explorer<'a> {
                 }
             }
             let mut entry = node.entry.clone();
+            // States at different stack depths are not merged (angr's
+            // symbolizer groups the states it merges by stack pointer).
+            let ps = self.abi.ptr_size;
+            let (sa, sb) = (entry.read_reg(&mut self.arena, self.abi.sp, ps), state.read_reg(&mut self.arena, self.abi.sp, ps));
+            if sa != sb && !self.same_on_stack(sa, sb) {
+                if let Some(tr) = &self.config.trace {
+                    use std::io::Write;
+                    let _ = writeln!(tr.borrow_mut(), "        stack pointer differs at node {id}: not merged");
+                }
+                return id;
+            }
             let diffs = entry.diff_constants(&mut state, &mut self.arena, self.target);
             let vpc_reg = node.entry_ctx.vpc_reg;
             let vpc_cell = node.entry_ctx.vpc_cell;
@@ -382,6 +393,20 @@ impl<'a> Explorer<'a> {
                     );
                 }
             }
+            let mut kept = Vec::with_capacity(diffs.len());
+            for d in diffs {
+                let (a, b) = match d.loc.loc {
+                    Loc::Reg { off } => (entry.read_reg(&mut self.arena, off, d.loc.size), state.read_reg(&mut self.arena, off, d.loc.size)),
+                    Loc::Mem { base, off } => (
+                        entry.read_mem(&mut self.arena, self.target, base, off, d.loc.size),
+                        state.read_mem(&mut self.arena, self.target, base, off, d.loc.size),
+                    ),
+                };
+                if !self.same_on_stack(a, b) {
+                    kept.push(d);
+                }
+            }
+            let diffs = kept;
             let set = self.to_symbolize.entry(key).or_default();
             for d in diffs {
                 // The VPC itself is part of the key; never symbolize it.
@@ -554,6 +579,29 @@ impl<'a> Explorer<'a> {
         node.traces = traces;
         node.exit = node_exit;
         node.exit_locs = exit_locs;
+    }
+
+    /// Two values built over the entry stack pointer that agree wherever the
+    /// stack is (the interpreter rebuilds a saved stack address through
+    /// different arithmetic on two paths).  angr compares merged values under
+    /// its stack-pointer preconstraint, so such a pair is never a difference.
+    fn same_on_stack(&mut self, a: ExprId, b: ExprId) -> bool {
+        if self.arena.is_const(a).is_some() || self.arena.is_const(b).is_some() {
+            return false;
+        }
+        let Some(sp) = self.sp0.and_then(|v| self.arena.var_expr(v)) else { return false };
+        let low: u128 = if self.abi.ptr_size == 8 { 0xFFF8 } else { 0xFFFC };
+        for hi in [0x0012_0000u128, 0x5678_0000] {
+            let k = self.arena.cst(self.abi.ptr_size, hi | low);
+            let mut map = BTreeMap::new();
+            map.insert(sp, k);
+            let (x, y) = (self.arena.substitute(a, &map), self.arena.substitute(b, &map));
+            match (self.arena.is_const(x), self.arena.is_const(y)) {
+                (Some(p), Some(q)) if p == q => {}
+                _ => return false,
+            }
+        }
+        true
     }
 
     /// A register or entry-stack slot holding each variable the atoms read,
