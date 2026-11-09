@@ -131,7 +131,9 @@ source after the class, as Vineflower's test fixture and IDE integration do; wit
 a class's nested, local and anonymous classes are missing. Archive entries keep their
 names: the multi-release variants under `META-INF/versions/<n>/` are skipped, and a
 prefixed entry such as `BOOT-INF/classes/a/B.class` is placed by its class name, not its
-path.
+path. A large archive's class entries are inflated on up to eight threads, at most one
+per 256 entries, each with its own reader of the archive; the results keep entry order,
+and a part whose reader fails is read again on the calling thread.
 
 **Sources and libraries.** `decompiler/nonnative/kuna-jvm/src/p0_knowledge/struct_context.rs
 (StructContext)` holds the session's units: *own* units (what is decompiled) and library
@@ -731,6 +733,17 @@ port depends on one faithful Rust shape:
   ends; session-scope arenas (the class model, the class forest) live as long as the
   engine instance. Hash collections keyed by such objects order them by creation index,
   where Java would use identity hashes.
+- **Reclaiming garbage** (`decompiler/nonnative/kuna-jvm/src/infra/kuna_reclaim.rs
+  (ReclaimWindow)`). Java's collector frees what the passes discard (replaced
+  expressions, copies, the trees each `finally` re-parse throws away); the arenas would
+  hold all of it until the decompile ends. A window opens when a method's schedule starts;
+  when the method returns or throws, and at points inside its loops where no pass is in
+  flight once the arenas have grown enough, every object allocated since the window opened
+  that is not reachable from the handles the schedule still holds is released. When a root
+  class has been processed or written, the decompile records, variable-definition helpers
+  and mapping tracers it allocated are released too. A released slot keeps its index, so
+  creation order, and with it every hash order above, is unchanged, and a wrongly
+  released object fails on its next use instead of being reused.
 - **Hash collections in JDK order** (`decompiler/nonnative/kuna-jvm/src/rt/jhash.rs`).
   Vineflower iterates `HashMap` and `HashSet` in places where the order reaches the
   output, so the port reproduces JDK 21's table: hash spreading, power-of-two buckets,
@@ -798,7 +811,13 @@ when the input operand is a class file, an archive or a directory (chapter 00, s
 from the command line, slices classes and methods out of the delivered text by their
 spans, and renders the native CLI's text and JSON shapes, tagging each unit with its
 language (`java`, or `kotlin` for a unit the Kotlin plugin wrote, whose file name ends in
-`.kt`). The CLI surface is `docs/cli.md` ("JVM inputs").
+`.kt`). Before a command that decompiles (not `functions`) it sets glibc's heap policy
+for the process (`decompiler/crates/kuna-cli/src/nonnative/jvm/heap.rs (tune)`, Linux
+with glibc only): a 256 MiB top pad, no trimming, and blocks up to 32 MiB served from the
+heaps instead of fresh mappings. The engine threads allocate and free many small objects,
+and under the default policy each heap's growth and trimming are memory-map calls under
+one process-wide lock that serialize the threads; the native path never sets it. The CLI
+surface is `docs/cli.md` ("JVM inputs").
 
 ## 10.15 Kotlin
 
