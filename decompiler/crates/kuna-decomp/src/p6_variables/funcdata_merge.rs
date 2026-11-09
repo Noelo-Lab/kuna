@@ -343,7 +343,7 @@ fn copy_pair_writes(
 
 impl MergeContext for Funcdata {
     fn fpu_trunc_views_enabled(&self) -> bool {
-        self.get_arch().fpu_trunc_views && !self.kuna_fpu_trunc_views.is_empty()
+        !self.kuna_fpu_trunc_views.is_empty()
     }
     fn fpu_trunc_view_highs(&self, a: HighVariableId, b: HighVariableId) -> bool {
         self.kuna_fpu_trunc_views.iter().any(|id| {
@@ -950,9 +950,6 @@ impl MergeContext for Funcdata {
         self.obank().iter_alive().collect()
     }
 
-    fn kuna_tied_phi_trim(&self) -> bool {
-        self.get_arch().tied_phi_trim
-    }
     fn kuna_same_prior_variable(&self, a: HighVariableId, b: HighVariableId) -> Option<bool> {
         crate::kuna_stablenames::same_variable(self, a, b)
     }

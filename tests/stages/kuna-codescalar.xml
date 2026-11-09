@@ -26,9 +26,8 @@
     back-end.  The store then demands a cast back to the pointee, which prints
     `(void)`.
 
-    Stage / sub-stage: P5 "type-propagation".  The P0 assertion
-    `option codescalar on|off` decides whether a `code` pointee may type a
-    dereferenced value.
+    Stage / sub-stage: P5 "type-propagation".  kuna_codescalar.rs (always on)
+    refuses a `code` pointee as the type of a dereferenced value.
 
     The fixture is the same construct on SysV x86-64.  Both functions take a
     pointer and a flag, zero al, and on the taken arm call something and store al
@@ -37,9 +36,8 @@
         codebyte:  call *%rbx      # rbx is the call target -> code *
         databyte:  call sink       # rbx is never called    -> plain data pointer
 
-    `codebyte` is the witness.  `databyte` is the discriminator and is identical
-    in BOTH passes: nothing types its pointer `code *`, so the byte was always
-    `char`.  Pass 1 (`option codescalar off`) reproduces the bug.
+    `codebyte` is the witness.  `databyte` is the discriminator: nothing types
+    its pointer `code *`, so the byte was always `char`.
 -->
 <bytechunk space="ram" offset="0x100000">
 c3000000000000000000000000000000534889fb31c085f67404ffd388030424
@@ -51,14 +49,6 @@ c3000000000000000000000000000000534889fb31c085f67404ffd388030424
 <symbol space="ram" offset="0x100030" name="databyte"/>
 </binaryimage>
 <script>
-  <com>option codescalar off</com>
-  <com>lo fu codebyte</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu databyte</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option codescalar on</com>
   <com>lo fu codebyte</com>
   <com>decompile</com>
   <com>print C</com>
@@ -67,10 +57,10 @@ c3000000000000000000000000000000534889fb31c085f67404ffd388030424
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="codescalar #1: with the option off the dereferenced byte is typed by the size-1 code pointee -- the bug" min="1" max="1">code v[0-9]+; // al</stringmatch>
-<stringmatch name="codescalar #2: and the value stored back through the function pointer is cast to that widthless type" min="1" max="1">= \(code\)\(\*a[0-9]+\)\(\)</stringmatch>
-<stringmatch name="codescalar #3: with the option on the byte carries the width the access has, in the witness and in the control" min="3" max="3">char v[0-9]+; // al</stringmatch>
-<stringmatch name="codescalar #4: the cast is gone with it, so the store is a plain assignment" min="1" max="1">= \(\*a[0-9]+\)\(\);</stringmatch>
-<stringmatch name="codescalar #5: the POINTER keeps its code type in both passes, so the indirect call still renders" min="2" max="2">code \*a[0-9]+</stringmatch>
-<stringmatch name="codescalar #6: the data control is untouched in both passes -- its pointer was never a code pointer" min="2" max="2">char \*a[0-9]+,int4 a[0-9]+</stringmatch>
+<stringmatch name="codescalar #1: the dereferenced byte is never typed by the size-1 code pointee" min="0" max="0">code v[0-9]+; // al</stringmatch>
+<stringmatch name="codescalar #2: the value stored back through the function pointer is never cast to that widthless type" min="0" max="0">= \(code\)\(\*a[0-9]+\)\(\)</stringmatch>
+<stringmatch name="codescalar #3: the byte carries the width the access has, in the witness and in the control" min="2" max="2">char v[0-9]+; // al</stringmatch>
+<stringmatch name="codescalar #4: the store is a plain assignment" min="1" max="1">= \(\*a[0-9]+\)\(\);</stringmatch>
+<stringmatch name="codescalar #5: the POINTER keeps its code type, so the indirect call still renders" min="1" max="1">code \*a[0-9]+</stringmatch>
+<stringmatch name="codescalar #6: the data control is untouched -- its pointer was never a code pointer" min="1" max="1">char \*a[0-9]+,int4 a[0-9]+</stringmatch>
 </decompilertest>

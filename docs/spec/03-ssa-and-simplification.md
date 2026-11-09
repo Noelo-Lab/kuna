@@ -91,17 +91,15 @@ wholly in padding receives a temporary instead
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs (varnode_out)`);
 padding renormalizes to constant zero, and any other constant output address is
 still refused. Attaching a constant as an operation's output is refused before
-the operation changes. With `option aggregatefields` on (the default), a
-struct- or array-typed concatenation with low zero bytes stays a PIECE for
-field recovery rather than becoming an integer shift; off restores
-`RuleConcatZero`'s upstream rewrite for every concatenation.
+the operation changes. A struct- or array-typed concatenation with low zero
+bytes stays a PIECE for field recovery rather than becoming an integer shift
+(`RuleConcatZero`'s upstream rewrite applies to every other concatenation).
 Join addresses use the join space's target byte order, including a partial join
 whose first piece is a constant. Byte positions within padding stay separate
 from its zero value, so slicing that padding neither invents nonzero constants
 nor shifts the adjacent physical fields.
 
-Cleanup splitting can extract fields from an already truncated aggregate. With
-`option aggregatefields` on (the default), its
+Cleanup splitting can extract fields from an already truncated aggregate. Its
 new SUBPIECEs immediately collapse nested truncations through the existing
 double-subpiece rule, preserving their total byte offset. The main
 simplification pool has already finished at this point; leaving the intermediate
@@ -1074,10 +1072,9 @@ those COPYs in the order upstream built them leaves every Varnode's readers in
 upstream's order. Only the pairs a later read sees build their COPY, and each
 reads the reached Varnode directly where upstream's chains the guard COPYs of
 consecutive LOADs. The read
-locations that branch-scope trimming (chapter 06, `guardedreadtrim`) records
-for the stack guard COPYs are recorded once per block and range
-(`kuna_stackreadscope.rs (mark_guarded_read)`). With the option off, every
-COPY is built as upstream builds it.
+locations that branch-scope trimming (chapter 06, `kuna_guardedreadtrim.rs`)
+records for the stack guard COPYs are recorded once per block and range
+(`kuna_stackreadscope.rs (mark_guarded_read)`).
 
 At `global`, the default, the LOAD guard runs and so does the global half of
 upstream's STORE guard (`heritage.rs (Heritage::guard_global_stores)`): every
@@ -2316,7 +2313,7 @@ for the four ARM cspecs, the nine MIPS cspecs, the four Loongarch cspecs and
 8051, and `align="4"` (two word-alignment bits) for the five AARCH64 cspecs;
 AARCH64's own `blr` masks nothing, so there the rule only fires on a mask the
 program itself wrote. `funcptr_align` has two other live readers — the jump-table
-model (chapter 02) and the `thumbfuncptr` const-pointer preservation (chapter 05,
+model (chapter 02) and the Thumb const-pointer preservation (chapter 05,
 §5) — and the three do not interact: this rule only ever removes an `INT_AND`
 that a `CALLIND` consumes.
 
@@ -3048,7 +3045,7 @@ including auto when the input size selects aggressive. An explicit
 INT_CARRY or its const-folded `INT_LESSEQUAL((-b) & mask, a)` form, matched
 through CAST/COPY chains. Rewrite: one wide `INT_ADD(PIECE(hipart, b),
 ZEXT(a))`, recovering the single 16-bit addition the 6502-class ADC pair
-implements. Settable `addcarrychain`, shipped default **on** (DIV-2).
+implements. The rule is always on.
 
 Carry-chain and array-stride helper outputs use
 `decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs (new_unique_out)`
@@ -3458,8 +3455,8 @@ hold that dead-code elimination immediately reinstates would prevent the main
 loop from converging; ordinary temporary holds keep their existing release rule.
 
 
-With `guardedreadtrim on`, a physical stack LOAD lowered by `RuleLoadVarnode`
-retains its original read block and byte range. Indexed frame LOAD guards also
+A physical stack LOAD lowered by `RuleLoadVarnode` retains its original read
+block and byte range. Indexed frame LOAD guards also
 record their conservative range when heritage creates the preserving COPY.
 When copy propagation binds that read to call-written frame memory, the call
 is associated with that provenance before the COPY is removed.
@@ -3532,7 +3529,7 @@ without any restart (§0.7): the next mainloop iteration simply re-heritages
 the smaller graph.
 
 
-`localstackviews` adds only positively proved local byte ranges to
+The bounded local policy (`kuna_localstackviews.rs`) adds only positively proved local byte ranges to
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackeffects.rs`.
 The native STORE hook exposes those ranges before the next heritage pass;
 waiting for dead-code preparation can incorrectly fold a later frame read

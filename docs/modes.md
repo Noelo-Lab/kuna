@@ -97,7 +97,7 @@ build failure. The options it enables:
   `switchguardbound` (speed-costly),
   `unrolledguard` (speed-costly), `sparcstructret`,
   `globalarrayanchor` (retain mapped array bases in negatively biased element indices),
-  `regionedgeorder`, `returndup`, `orchain`, `iteexpr`,
+  `regionedgeorder`, `returndup`, `iteexpr`,
   `devectorize` (a proven vectorized integer reduction re-rolled into its scalar
   loop; off by default only because the rewrite hides the stride and the
   duplicated body), `ctypes`, `partialaccess` (a partial access prints as a

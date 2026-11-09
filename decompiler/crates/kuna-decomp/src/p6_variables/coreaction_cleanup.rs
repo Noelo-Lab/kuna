@@ -34,7 +34,7 @@
 //! | `ActionMarkIndirectOnly` | `"markindirectonly"` | `rule_onceperfunc` | `data.markIndirectOnly()` (stub) |
 //! | `ActionMergeAdjacent` | `"mergeadjacent"` | `rule_onceperfunc` | `merge.mergeAdjacent()` (stub) |
 //! | `ActionMergeType` | `"mergetype"` | `rule_onceperfunc` | `merge.mergeByDatatype(beginLoc,endLoc)` (stub) |
-//! | `ActionHideShadow` | `"hideshadow"` | `rule_onceperfunc` | `coreaction.cc:4976` (option `hideshadow`) |
+//! | `ActionHideShadow` | `"hideshadow"` | `rule_onceperfunc` | `coreaction.cc:4976` |
 //! | `ActionCopyMarker` | `"copymarker"` | `rule_onceperfunc` | `merge.markInternalCopies()` (stub) |
 //! | `ActionNameVars` | `"namevars"` | `rule_onceperfunc` | `coreaction.cc:3076` (stub) |
 //! | `ActionSetCasts` | `"setcasts"` | `rule_onceperfunc` | `coreaction.cc:2812` (stub) |
@@ -1644,12 +1644,11 @@ fn check_implied_cover(data: &mut Funcdata, vn: crate::context::VarnodeId, store
         let n = o.num_input();
         (0..n).filter_map(|i| o.get_in(i)).collect()
     };
-    // (kuna) foldcallretphi: a call output reaches the arm above only because
+    // (kuna) foldcallret: a call output reaches the arm above only because
     // `foldcallret` let it through `base_explicit`, and what it collides with is
     // usually the call's own INDIRECT effect on an operand -- see
     // `kuna_foldcallretphi` for why that collision is not a reason to refuse.
-    let self_effect_ok = data.get_arch().fold_call_ret_phi
-        && data.get_arch().fold_call_returns
+    let self_effect_ok = data.get_arch().fold_call_returns
         && data.obank().get(def).map(|o| o.is_call()).unwrap_or(false)
         && crate::kuna_callretfold::call_output_foldable(data, vn);
     let use_op = if self_effect_ok { data.lone_descend(vn) } else { None };
@@ -1992,12 +1991,6 @@ impl Action for ActionHideShadow {
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:4976 — ActionHideShadow::apply
-        //
-        // (kuna) option `hideshadow`: OFF reproduces the historical stub exactly
-        // (no walk, no change), ON runs the upstream body.
-        if !data.get_arch().hide_shadow {
-            return 0;
-        }
         self.base.count += crate::kuna_hideshadow::hide_shadow_copies(data);
         0
     }

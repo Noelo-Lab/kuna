@@ -1,4 +1,4 @@
-//! Unit tests for the `paramrefdecl` Symbol-identity test.
+//! Unit tests for the `&parameter` Symbol-identity test.
 //!
 //! The frame modelled is the witness's: an i386 cdecl stack parameter at
 //! `[EBP + 8]` whose address the body takes, with a plain local behind it.

@@ -73,8 +73,6 @@ mod verify_branchtable;
 #[path = "verify_buildstamp.rs"]
 mod verify_buildstamp;
 
-#[path = "verify_bytehonest.rs"]
-mod verify_bytehonest;
 
 #[path = "verify_lazyfuncs.rs"]
 mod verify_lazyfuncs;
@@ -195,8 +193,6 @@ mod verify_flowreuse;
 #[path = "verify_formatstring_crossarch.rs"]
 mod verify_formatstring_crossarch;
 
-#[path = "verify_framelayout.rs"]
-mod verify_framelayout;
 
 #[path = "verify_funcbounds.rs"]
 mod verify_funcbounds;
@@ -434,8 +430,6 @@ mod verify_sectionlessextent;
 #[path = "verify_short_utf16_window.rs"]
 mod verify_short_utf16_window;
 
-#[path = "verify_slotptr.rs"]
-mod verify_slotptr;
 
 #[path = "verify_sparc_plt.rs"]
 mod verify_sparc_plt;

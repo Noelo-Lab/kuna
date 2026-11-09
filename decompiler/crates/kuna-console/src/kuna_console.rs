@@ -192,16 +192,13 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         // C++ `arraynotation` reads `conf->print` (PrintC::getArrayNotation), now
         // exposed via `Architecture::print()` (the owned `PrintC`).
         "arraynotation" => on_off(conf.print().options.array_notation()),
-        "thumbfuncptr" => on_off(conf.preserve_thumb_funcptr),
         "armfloatargs" => on_off(conf.arm_float_args),
         "callarrayextent" => on_off(conf.call_array_extent),
         "stackstruct" => on_off(conf.stack_struct),
-        "inferfuncentry" => on_off(conf.infer_funcentry),
         "globalarrayanchor" => on_off(conf.global_array_anchor),
         "booleanmask" => on_off(conf.fold_boolean_mask),
         "ovlesssimplify" => on_off(conf.ov_less_simplify),
         "flagcompare" => on_off(conf.fold_flag_compare),
-        "addcarrychain" => on_off(conf.add_carry_chain),
         "memsetrecover" => on_off(conf.memset_recover),
         "rodatastring" => on_off(conf.rodata_string),
         "returnpair" => {
@@ -213,10 +210,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         }
         "simdlane" => on_off(conf.simd_lane_fold),
         "constspaceload" => on_off(conf.const_space_load_fold),
-        "declhightype" => on_off(conf.decl_high_type),
         "nulterminator" => on_off(conf.nul_terminator),
         "retsplitglobal" => on_off(conf.ret_split_global),
-        "inputvarnodeadjust" => on_off(conf.input_varnode_adjust),
         // (kuna `protoorder`) Three-valued, so it reports its own token.
         "protoorder" => conf.protoorder.as_str(),
         // (kuna `calleevote`) Three-valued, so it reports its own token.
@@ -258,9 +253,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "sparcstructret" => on_off(conf.sparc_struct_return),
         "arraystride" => on_off(conf.recover_array_stride),
         "stackalias" => on_off(conf.stack_alias_deadstore),
-        "localstackviews" => on_off(conf.local_stack_views),
         "stackviews" => on_off(conf.stack_views),
-        "dynamichashmax" => on_off(conf.dynamic_hash_maxdup_high),
         "stackprobeloop" => on_off(conf.model_stack_probe_loop),
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
@@ -870,7 +863,7 @@ impl IfaceCommandAction for IfcKunaAssert {
                 let oldname = tokens[0].clone();
                 let newname = tokens[1].clone();
                 let dcp = dcp_mut(status)?;
-                let maxduplicates = if dcp.conf.as_ref().is_some_and(|p| p.arch().dynamic_hash_maxdup_high) { 16 } else { 8 };
+                let maxduplicates = kuna_decomp::kuna_dynamichashmax::MAX_DUPLICATES;
                 dcp.local_symbol_fd(&oldname)?;
                 let (Some(fd), arch) = (dcp.fd.as_mut(), dcp.conf.as_ref().map(|p| p.arch())) else {
                     return Err(IfaceError::execution("no function selected"));

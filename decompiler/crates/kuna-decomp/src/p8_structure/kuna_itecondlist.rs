@@ -24,11 +24,11 @@
 //! `shell_initialize` three source-identical `x = a||b||c||d;` call arguments come
 //! out as one re-rolled assignment plus two explicit diamonds.
 //!
-//! # What this option does
+//! # What this does
 //!
-//! With `option itecondlist on`, both matchers descend a condition-position
-//! `BlockList` to its **last** component before applying their usual leaf/condition
-//! test ([`cond_list_tail`]).  Nothing else changes: the arms keep the strict
+//! Both matchers descend a condition-position `BlockList` to its **last**
+//! component before applying their usual leaf/condition test
+//! ([`cond_list_tail`]).  Nothing else changes: the arms keep the strict
 //! single-statement `leaf_bblock` test, the labelled-goto-target guard still applies
 //! to the descended leaf, and the marked op is still the tail's terminal `CBRANCH`.
 //!
@@ -52,12 +52,9 @@
 //! included: `PrintC::emit_block_graph` ignores `ONLY_BRANCH` and emits every
 //! component, so descending one would make the emitters print the whole graph twice.
 
-use kuna_base::error::KunaResult;
-
 use crate::block::BlockType;
 use crate::context::BlockId;
 use crate::funcdata::Funcdata;
-use crate::options::on_or_off;
 
 use kuna_base::marshal::ElementId;
 
@@ -71,15 +68,10 @@ const MAX_LIST_DEPTH: u32 = 16;
 
 /// The block the diamond matchers should test as the condition leaf of `id`.
 ///
-/// With `option itecondlist off` this is `id` itself (byte-identical to the shipped
-/// `iteregion`/`iteboolean` behaviour).  With it on, a condition-position
-/// [`BlockType::Ls`] is descended to its **last** component — the one the printer
-/// renders as the `if` header — so a diamond whose condition got concatenated with a
-/// preceding statement block still matches.
+/// A condition-position [`BlockType::Ls`] is descended to its **last** component
+/// — the one the printer renders as the `if` header — so a diamond whose
+/// condition got concatenated with a preceding statement block still matches.
 pub(crate) fn cond_list_tail(data: &Funcdata, id: BlockId) -> BlockId {
-    if !data.get_arch().itecondlist {
-        return id;
-    }
     let mut cur = id;
     for _ in 0..MAX_LIST_DEPTH {
         let g = data.sblocks_ref();
@@ -94,26 +86,4 @@ pub(crate) fn cond_list_tail(data: &Funcdata, id: BlockId) -> BlockId {
         cur = blk.get_block(n - 1);
     }
     cur
-}
-
-//===========================================================================
-// Option parse (`itecondlist on|off`).
-//===========================================================================
-
-/// The `itecondlist on|off` ArchOption.
-pub struct OptionIteCondList;
-
-impl OptionIteCondList {
-    /// The option name.
-    pub const NAME: &'static str = "itecondlist";
-
-    /// Parse `on`/`off`, returning the bool value + a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((
-            val,
-            format!("ITE diamond matching through a concatenated condition list turned {prop}"),
-        ))
-    }
 }

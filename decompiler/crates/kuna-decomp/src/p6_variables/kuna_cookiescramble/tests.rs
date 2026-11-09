@@ -1,19 +1,9 @@
-//! Unit tests for (kuna) `cookiescramble`.
+//! Unit tests for the (kuna) stack-cookie scramble alias exemption.
 
 use super::*;
 
 #[test]
-fn option_accepts_on_and_off() {
-    let (v, msg) = OptionCookieScramble.apply("on").expect("on parses");
-    assert!(v);
-    assert!(msg.contains("on"), "{msg}");
-    let (v, _) = OptionCookieScramble.apply("off").expect("off parses");
-    assert!(!v);
-    assert!(OptionCookieScramble.apply("maybe").is_err());
-}
-
-#[test]
-fn option_off_is_upstream_faithful() {
+fn the_layout_gather_is_upstream_faithful() {
     // Every non-additive use records an escape site, the cookie scramble included.
     assert!(is_escape_site(false, OpCode::CPUI_INT_XOR));
     assert!(is_escape_site(false, OpCode::CPUI_STORE));

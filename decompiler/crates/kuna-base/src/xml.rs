@@ -1714,8 +1714,8 @@ mod tests {
         // and ghdec-returncopysplit / the read-only output gate on a datatype
         // copy split (a cloned heritage return-copy printed per-element stores
         // into a .rodata string literal)
-        // and ghdec-itecondlist / the ITE condition-list tolerance (option off
-        // re-rolls only ceil(N/2) of a run of N identical assignment diamonds)
+        // and ghdec-itecondlist / the ITE condition-list tolerance (a run of N
+        // identical assignment diamonds re-rolls N, not ceil(N/2))
         // and ghdec-peimportcall / PE import-call binding (option off leaves a
         // `call [IAT slot]` as an unnamed `(*dat_...)()` with no no-return effect)
         // and ghdec-undefname / no `$$undef` placeholder survives the naming pass
@@ -1733,7 +1733,7 @@ mod tests {
         // and ghdec-calloverlap / the two partial-range call-overlap guards
         // (a whole-width PXOR write hides the SysV entry inside the XMM0 range)
         // and ghdec-orchain / returndup must not split the operand chain of a
-        // short-circuit (option off = the guard cascade, on = the folded condition)
+        // short-circuit (the folded condition, not the guard cascade)
         // and kuna-evalcurrentproto / the compiler spec's <eval_current_prototype>
         // model recovers a __fastcall function's ECX/EDX arguments
         // and kuna-msvcftol / the MSVC __ftol call-fixup recovers the x87 (ST0)
@@ -2118,7 +2118,7 @@ mod tests {
         // and kuna-lanedivide-terminator / a terminating SUBPIECE of an upper-lane piece
         // and kuna-x86-16-real-rel16 + kuna-x86-16-protected-rel16 / 16-bit near branches keep their segment
         // and kuna-segmentize / x86 real-mode accesses go through the segment op (option segmentize)
-        // and kuna-calleepop-x86-16 / a near call is credited the two bytes it stores (option calleepop)
+        // and kuna-calleepop-x86-16 / a near call is credited the two bytes it stores
         // and kuna-returnglobal-sparc / a global in %o1 is not joined into an int's return
         // and kuna-segmentize-z80 / a Z80 table with a row outside the image is still followed
         // and kuna-loadguardreads / LOAD guards read while renaming (option loadguardreads)

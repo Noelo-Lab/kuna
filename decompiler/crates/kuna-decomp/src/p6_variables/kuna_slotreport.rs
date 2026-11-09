@@ -67,12 +67,8 @@ struct Declared {
 }
 
 impl DeclaredSlots {
-    /// The declarations `fd`'s printed C places in frame slots; `None` with
-    /// both `slotreport` and `slotsplit` off.
+    /// The declarations `fd`'s printed C places in frame slots.
     pub fn of(arch: &Architecture, fd: &Funcdata) -> Option<Self> {
-        if !arch.slot_report && !arch.slot_split {
-            return None;
-        }
         let print = arch.print();
         let through = print.declared_through();
         let mut slots: HashMap<(i64, i64), Vec<Declared>> = HashMap::new();
