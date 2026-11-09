@@ -154,6 +154,8 @@ mod kuna_fix_type_switch;
 mod kuna_fix_irreducible_try;
 #[path = "kuna_fix_jinfer.rs"]
 mod kuna_fix_jinfer;
+#[path = "kuna_fix_jinfer2.rs"]
+mod kuna_fix_jinfer2;
 #[path = "kuna_inventory.rs"]
 mod kuna_inventory;
 #[path = "kuna_spans.rs"]

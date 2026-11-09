@@ -15,6 +15,7 @@ pub mod instruction_sequence;
 pub mod jump_instruction;
 pub mod kuna_fix_kt_java_cast_syntax;
 pub mod kuna_fix_nested_handler_copies;
+pub mod kuna_fix_unchecked_call_result_cast;
 pub mod kuna_fix_unchecked_generic_cast;
 pub mod method_properties;
 pub mod method_properties_processor;

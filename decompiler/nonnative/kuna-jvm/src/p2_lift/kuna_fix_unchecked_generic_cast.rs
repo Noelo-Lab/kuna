@@ -19,6 +19,8 @@ use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::generic_type::GenericType;
+use crate::kuna_fix_unchecked_call_result_cast;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::kuna_static_types::{arg_equal, field_declared, param_type, supertype_args};
 use crate::var_type::{instance_of, VarType};
 
@@ -37,6 +39,7 @@ pub fn cast_for(exprent: Exprent, left: &VarType) -> Option<VarType> {
         return None;
     }
     let right = declared_type(exprent)?;
+    let call = exprent.try_as_invocation().is_some();
     if right.type_ != CodeType::Object
         || right.array_dim != 0
         || !instance_of(&right.value, &left.value)
@@ -59,7 +62,7 @@ pub fn cast_for(exprent: Exprent, left: &VarType) -> Option<VarType> {
         }
         mismatch = true;
         if v.as_ref().is_some_and(|v| {
-            is_exact(v) && v.type_ != CodeType::Genvar && w.type_ != CodeType::Genvar
+            is_exact(v) && (v.type_ != CodeType::Genvar || call) && w.type_ != CodeType::Genvar
         }) {
             distinct = true;
         }
@@ -76,8 +79,15 @@ pub fn cast_for(exprent: Exprent, left: &VarType) -> Option<VarType> {
 
 /// The type the program declares for `exprent`: `this` (not of an inner
 /// class), a static field or a field of `this` of a known class, or a
-/// variable with a local variable table entry or a parameter's declared type.
+/// variable with a local variable table entry or a parameter's declared type;
+/// with the fix `unchecked_call_result_cast`, also a call's declared result
+/// (`kuna_fix_unchecked_call_result_cast`).
 fn declared_type(exprent: Exprent) -> Option<VarType> {
+    if let Some(inv) = exprent.try_as_invocation() {
+        return kuna_fixes::enabled(KunaFix::UncheckedCallResultCast)
+            .then(|| kuna_fix_unchecked_call_result_cast::declared_result(inv, declared_type))
+            .flatten();
+    }
     if let Some(var) = exprent.try_as_var() {
         let processor = var.get_processor()?;
         let pair = var.get_var_version_pair();

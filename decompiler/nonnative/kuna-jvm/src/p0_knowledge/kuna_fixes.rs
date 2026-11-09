@@ -263,6 +263,18 @@ pub enum KunaFix {
     /// `kt_java_cast_syntax`: a Kotlin numeric conversion or cast to a type
     /// variable is written in Kotlin's syntax.
     KtJavaCastSyntax,
+    /// `lambda_pertinence`: a type variable of a generic method that only
+    /// implicitly typed lambdas and inexact method references determine is
+    /// not taken for inferred from its arguments.
+    LambdaPertinence,
+    /// `lambda_type_variable_target`: a lambda passed for a bare type
+    /// variable that javac resolves from other bounds to another type is
+    /// cast to its interface.
+    LambdaTypeVariableTarget,
+    /// `unchecked_call_result_cast`: a call result whose declared generic
+    /// type the target's type arguments do not accept keeps its unchecked
+    /// cast.
+    UncheckedCallResultCast,
 }
 
 impl KunaFix {
@@ -343,6 +355,9 @@ impl KunaFix {
         KunaFix::KtLambdaSingletonReturns,
         KunaFix::KtTypeParameterId,
         KunaFix::KtJavaCastSyntax,
+        KunaFix::LambdaPertinence,
+        KunaFix::LambdaTypeVariableTarget,
+        KunaFix::UncheckedCallResultCast,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -423,6 +438,9 @@ impl KunaFix {
             KunaFix::KtLambdaSingletonReturns => "kt_lambda_singleton_returns",
             KunaFix::KtTypeParameterId => "kt_type_parameter_id",
             KunaFix::KtJavaCastSyntax => "kt_java_cast_syntax",
+            KunaFix::LambdaPertinence => "lambda_pertinence",
+            KunaFix::LambdaTypeVariableTarget => "lambda_type_variable_target",
+            KunaFix::UncheckedCallResultCast => "unchecked_call_result_cast",
         }
     }
 

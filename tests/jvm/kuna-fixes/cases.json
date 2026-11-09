@@ -893,7 +893,7 @@
       ],
       "source": "src/pkg/TestWhenCaseType.kt",
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
-      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'뉯' ->`",
+      "summary": "the labels of the `when` over `name.hashCode()` are the hash codes, `45679 ->`, where Vineflower writes them as characters, `'\ub26f' ->`",
       "language": "kotlin"
     },
     {
@@ -967,6 +967,55 @@
       "compiler": "kotlinc 2.0.0 (`-Xlambdas=class`)",
       "summary": "numeric conversions are Kotlin's conversion calls, `l.toInt()`, `d.toInt().toByte()`, `Math.min(byteCount, (8192 - limit).toLong()).toInt()`, and casts to a type variable `as` casts, `this.items[i] as T`, where Vineflower writes Java's casts, `(int)l`, `(byte)d`, `(T)this.items[i]`",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestLambdaPertinence",
+      "fix": "lambda_pertinence",
+      "class_files": [
+        "pkg/TestLambdaPertinence.class",
+        "pkg/TestLambdaPertinence$Action.class",
+        "pkg/TestLambdaPertinence$Box.class",
+        "pkg/TestLambdaPertinence$Flow.class",
+        "pkg/TestLambdaPertinence$Fn.class",
+        "pkg/TestLambdaPertinence$It.class",
+        "pkg/TestLambdaPertinence$Name.class",
+        "pkg/TestLambdaPertinence$Order.class",
+        "pkg/TestLambdaPertinence$Task.class",
+        "pkg/TestLambdaPertinence$ToInt.class"
+      ],
+      "source": "src/pkg/TestLambdaPertinence.java",
+      "compiler": "javac 17.0.20.1",
+      "summary": "qualifier calls whose type variables only lambdas or inexact method references fix get explicit type arguments; recompiles to the original bytecode"
+    },
+    {
+      "id": "pkg/TestLambdaTypeVariableTarget",
+      "fix": "lambda_type_variable_target",
+      "class_files": [
+        "pkg/TestLambdaTypeVariableTarget.class",
+        "pkg/TestLambdaTypeVariableTarget$Chunk.class",
+        "pkg/TestLambdaTypeVariableTarget$Chunked.class",
+        "pkg/TestLambdaTypeVariableTarget$It.class",
+        "pkg/TestLambdaTypeVariableTarget$Leaf.class",
+        "pkg/TestLambdaTypeVariableTarget$Out.class"
+      ],
+      "source": "src/pkg/TestLambdaTypeVariableTarget.java",
+      "compiler": "javac 17.0.20.1",
+      "summary": "a lambda passed for a bare type variable that javac resolves from the other arguments to another type is cast to its interface; recompiles to the original bytecode"
+    },
+    {
+      "id": "pkg/TestUncheckedCallResultCast",
+      "fix": "unchecked_call_result_cast",
+      "class_files": [
+        "pkg/TestUncheckedCallResultCast.class",
+        "pkg/TestUncheckedCallResultCast$Box.class",
+        "pkg/TestUncheckedCallResultCast$Factory.class",
+        "pkg/TestUncheckedCallResultCast$Kind.class",
+        "pkg/TestUncheckedCallResultCast$Shape.class",
+        "pkg/TestUncheckedCallResultCast$Shelf.class"
+      ],
+      "source": "src/pkg/TestUncheckedCallResultCast.java",
+      "compiler": "javac 17.0.20.1",
+      "summary": "a returned call whose declared result does not fit the target keeps its unchecked cast (to the raw class where the result's type argument is a type variable); recompiles to the original bytecode"
     }
   ]
 }

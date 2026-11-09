@@ -611,7 +611,9 @@ kuna-fixes-compat/pkg/TestJavaCastSyntax
 kuna-fixes-compat/pkg/TestKtFinallySemaphore
 kuna-fixes-compat/pkg/TestLambdaArgumentOverload
 kuna-fixes-compat/pkg/TestLambdaCatchVarRename
+kuna-fixes-compat/pkg/TestLambdaPertinence
 kuna-fixes-compat/pkg/TestLambdaSingletonReturnsKt
+kuna-fixes-compat/pkg/TestLambdaTypeVariableTarget
 kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes-compat/pkg/TestLocalVisibilityComment
 kuna-fixes-compat/pkg/TestMethodObjectReturnType
@@ -649,6 +651,7 @@ kuna-fixes-compat/pkg/TestTypeParameterId
 kuna-fixes-compat/pkg/TestTypeSwitchEnumLabel
 kuna-fixes-compat/pkg/TestTypeSwitchLabelLookup
 kuna-fixes-compat/pkg/TestTypeSwitchPatternType
+kuna-fixes-compat/pkg/TestUncheckedCallResultCast
 kuna-fixes-compat/pkg/TestUncheckedGenericCast
 kuna-fixes-compat/pkg/TestUncheckedTypePattern
 kuna-fixes-compat/pkg/TestVarMergeLiveness
@@ -687,7 +690,9 @@ kuna-fixes/pkg/TestJavaCastSyntax
 kuna-fixes/pkg/TestKtFinallySemaphore
 kuna-fixes/pkg/TestLambdaArgumentOverload
 kuna-fixes/pkg/TestLambdaCatchVarRename
+kuna-fixes/pkg/TestLambdaPertinence
 kuna-fixes/pkg/TestLambdaSingletonReturnsKt
+kuna-fixes/pkg/TestLambdaTypeVariableTarget
 kuna-fixes/pkg/TestLocalClassAnonymousSubclass
 kuna-fixes/pkg/TestLocalVisibilityComment
 kuna-fixes/pkg/TestMethodObjectReturnType
@@ -725,6 +730,7 @@ kuna-fixes/pkg/TestTypeParameterId
 kuna-fixes/pkg/TestTypeSwitchEnumLabel
 kuna-fixes/pkg/TestTypeSwitchLabelLookup
 kuna-fixes/pkg/TestTypeSwitchPatternType
+kuna-fixes/pkg/TestUncheckedCallResultCast
 kuna-fixes/pkg/TestUncheckedGenericCast
 kuna-fixes/pkg/TestUncheckedTypePattern
 kuna-fixes/pkg/TestVarMergeLiveness

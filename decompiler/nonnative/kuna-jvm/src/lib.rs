@@ -164,9 +164,11 @@ pub use substrate::{
     text_util, type_annotation, type_family, typed, var_exprent, var_type, vb_style_collection,
     yield_exprent, zip_reader,
 };
+pub use p2_lift::kuna_fix_unchecked_call_result_cast;
 pub use p2_lift::kuna_fix_unchecked_generic_cast;
 pub use p5_types::kuna_static_types;
 pub use substrate::{
-    kuna_fix_lambda_argument_overload, kuna_fix_raw_receiver_erasure,
+    kuna_fix_lambda_argument_overload, kuna_fix_lambda_pertinence, kuna_fix_lambda_type_variable_target,
+    kuna_fix_raw_receiver_erasure,
     kuna_fix_static_type_variable_scope,
 };

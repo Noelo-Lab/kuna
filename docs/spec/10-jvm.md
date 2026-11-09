@@ -2401,3 +2401,79 @@ which lets `null` through as Java's does. Every other cast keeps Java's syntax: 
 type, Kotlin's `as` rejects `null`, which Java's cast lets through, so no Kotlin cast has the same
 meaning there (about 600 such casts remain, with about 20 primitive ones that other code prints,
 such as `(long)32` from a constant).
+
+**The fix `lambda_pertinence`**. javac infers a generic method's type variables from a lambda or
+method-reference argument only as far as it can type the argument before them (JLS 15.12.2.2,
+18.5.2): an implicitly typed lambda's parameters, and an inexact method reference's (its name
+overloaded, its method generic or of variable arity, or its class generic and written raw, as
+`Constructor::getParameterCount`), take the function type's parameter types, so the variables
+in those are resolved first, without the argument; a lambda or method reference whose target is
+a bare type variable, or a lambda returned by a lambda whose function type returns one, needs
+that variable resolved first as well. A call used as the qualifier of another has no target type
+(JLS 15.12), so a variable nothing else fixes becomes its bound there and the lambda does not
+compile against it: `names.map(n -> () -> n.length()).iterator()`,
+`Comparator.comparingInt(Constructor::getParameterCount).reversed()`. Vineflower writes explicit
+type arguments on a qualifier call when one of its type variables is not mapped from an argument
+(`InvocationExprent.getInferredExprType`, the `missing` test), but it counts every argument,
+lambdas included, as mapping the variables of its parameter type (except, for an overloaded
+method reference, those of the function type's parameters). With the fix
+(`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_pertinence.rs (excluded_vars)`,
+asked by
+`decompiler/nonnative/kuna-jvm/src/substrate/invocation_exprent.rs (InvocationExprent::get_inferred_expr_type)`)
+the variables such an argument cannot fix for javac do not count, so the qualifier call gets its
+type arguments, `names.<Task<Integer>>map(...)`, `Comparator.<Constructor<?>>comparingInt(...)`;
+their values are the ones Vineflower inferred, from the lambda's implementation method or from
+the target the chain is returned or assigned to. None are written when one of them names a type
+variable not in scope or is a raw type, and a call written without a qualifier gets its class's
+name (or `this`) in front of them. The explicit type arguments change nothing in the bytecode
+(spring-boot's `Instantiator`, spring-framework's `AnnotatedTypeMetadata`, Elasticsearch's
+`SniffConnectionStrategy`, `SeedHostsResolver`, `CompositeIndexEventListener`). Upstream has no
+change here.
+
+**The fix `lambda_type_variable_target`**. A lambda passed where a generic method takes a bare type
+variable, `Iterators.single(T element)`, gives javac no constraint on the variable: it is
+resolved from its other bounds and the lambda is checked against the result (JLS 18.5.2). When
+that call is an argument of another generic call, `concat(single((b, p) -> ...), chunks)` for
+`<T> Iterator<T> concat(Iterator<? extends T>...)`, the other arguments give the outer variable
+proper lower bounds, and unless the target type fixes it, it resolves to their least upper bound
+(JLS 18.4): `Leaf`, or the capture of `? extends Chunk`, which is not a functional interface, so
+javac rejects the lambda. Vineflower's inference maps the variable to the lambda's own interface
+and writes the lambda bare, dropping the cast the source had (Elasticsearch writes
+`Iterators.single((ToXContent) (builder, p) -> ...)`), which compiles to no instruction. With the
+fix,
+`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_lambda_type_variable_target.rs (mark)`,
+called from `InvocationExprent::append_param_list` of the outer call, works out the outer
+variable's bounds: the type each other argument gives it (a variable's or field's declared type,
+a call's inferred type), and the declared target of the call, which
+`decompiler/nonnative/kuna-jvm/src/substrate/exit_exprent.rs (ExitExprent::to_java)` records on a
+returned call (the method's generic return type, or in a lambda's body the return type of the
+function type when it names no type variable of the interface). It resolves the variable as javac
+does in the cases it can tell: an exact target type argument fixes it; else a single lower bound,
+or several equal ones, give it that type; else an upper bound from the target; else `Object`.
+Several different lower bounds, an unknown target where the call's result depends on it, or
+arguments of other shapes leave the call alone. When the variable resolves to a type other than
+the lambda's interface, the inner call's lambdas passed for the bare variable are cast to the
+interface Vineflower mapped them to, `single((ToXContent)((b, p) -> ...))`. This makes
+Elasticsearch's `BlobStoreRepository` compile (its `PROJECT_METADATA_FORMAT` initializer held the
+class's only error javac's salvage cannot stub, 175 methods). Upstream has no change here.
+
+**The fix `unchecked_call_result_cast`**. The fix `unchecked_generic_cast` writes the unchecked
+cast a returned or assigned value needs when its declared generic type does not fit the target,
+and leaves calls alone, their types being Vineflower's inference. A call's result type is
+declared, though, when its method has no type parameter of its own in its return type: the
+generic return type with the class's type parameters replaced by the receiver's declared type
+arguments (JLS 4.5.2), the receiver being a value whose type the program declares or such a call
+in turn; a type argument that is a wildcard stands for a type parameter only where that is one of
+the return type's own type arguments (`Box<P>` with `P` from `Factory<? extends Shape>` is
+`Box<? extends Shape>`, javac's capture). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_unchecked_call_result_cast.rs (declared_result)`,
+asked by
+`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_unchecked_generic_cast.rs (declared_type)`)
+that type takes part in `unchecked_generic_cast`'s test, so `factory.make()` returned as a
+`Box<Shape>` is written `(Box<Shape>)factory.make()`, as the source had it
+(`(Constructor<Exception>) exceptionClass.getConstructor(..)` in spring-framework's
+`ServiceLocatorFactoryBean`). Where the result's type argument is a type variable and the
+target's a type, the cast is to the raw class, as for provably distinct parameterizations:
+javac rejects `(Iterator<Bucket>)` of an `Iterator<B>` whose variable's bound is not `Bucket`,
+and the source writes `(Iterator) buckets.iterator()` (Elasticsearch's
+`InternalMappedSignificantTerms`). Upstream has no change here.

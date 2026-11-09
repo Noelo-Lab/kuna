@@ -639,6 +639,9 @@ impl Marker {
                     is_synthetic_null_check: _,
                     was_lazy_condy: _,
                     kuna_arg_names: _,
+                    kuna_needs_type_args: _,
+                    kuna_target: _,
+                    kuna_cast_lambdas: _,
                 } = &**invocation;
                 self.exprent_opt(*instance);
                 self.exprent_list(lst_parameters);

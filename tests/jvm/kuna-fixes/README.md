@@ -51,7 +51,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable |
 | `pkg/TestLambdaArgumentOverload` | `lambda_argument_overload` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the lambdas and the method reference passed where two overloads take different functional interfaces of the same shape keep the cast to their interface (`(IntSink)this::add`) that picks the overload; the call with one overload stays without a cast |
 | `pkg/TestLambdaCatchVarRename` | `lambda_catch_var_rename` | javac 17.0.20.1 (`-g`) | catch variables of lambda bodies renamed for a clash with the enclosing method (e -> ex, ex -> exx/exxx) are declared under the name their uses read |
+| `pkg/TestLambdaPertinence` | `lambda_pertinence` | javac 17.0.20.1 | qualifier calls whose type variables only lambdas or inexact method references fix get explicit type arguments; recompiles to the original bytecode |
 | `pkg/TestLambdaSingletonReturnsKt` | `kt_lambda_singleton_returns` | kotlinc 2.0.0 (`-Xlambdas=class`) | `search`'s lambda, whose `return@search i` is inside its loop, is labelled and returns with `return@lambda_1 i`, where Vineflower writes the bare `i`, so the loop goes on and the lambda returns `-1`; `clamp`, `firstNegative` and `sign`, whose results are in tail position, are unchanged |
+| `pkg/TestLambdaTypeVariableTarget` | `lambda_type_variable_target` | javac 17.0.20.1 | a lambda passed for a bare type variable that javac resolves from the other arguments to another type is cast to its interface; recompiles to the original bytecode |
 | `pkg/TestLocalClassAnonymousSubclass` | `local_class_anonymous_subclass` | javac 17.0.20.1 (`-g`) | the local class is declared before new LocalClass<String>() {} instead of inside the later loop that uses LocalClass.class |
 | `pkg/TestLocalVisibilityComment` | `kt_local_visibility_comment` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0 |
 | `pkg/TestMethodObjectReturnType` | `kt_method_object_return_type` | kotlinc 2.0.0 (`-Xlambdas=class`) | the `@JvmOverloads` overload of `describe`, which returns `Object`, is written `fun describe(value: Any?): Any?` with its `return`, where Vineflower writes it without a return type and drops the `return` (and `pick`'s overload gets its `return`) |
@@ -89,6 +91,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestTypeSwitchEnumLabel` | `type_switch_enum_label` | javac 21.0.12.1 -g | case Kind.CIRCLE beside type patterns in a switch on an interface: the enum label is resolved and printed qualified |
 | `pkg/TestTypeSwitchLabelLookup` | `type_switch_label_lookup` | javac 25.0.5 -g | cases with several labels (case Integer _, String _; case Kind.CIRCLE, Kind.SQUARE; case 5, 7) and an integer label equal to a later switch index: every label is resolved, multi-pattern cases print as one unnamed-pattern label |
 | `pkg/TestTypeSwitchPatternType` | `type_switch_pattern_type` | javac 21.0.12.1 (no -g) | case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type |
+| `pkg/TestUncheckedCallResultCast` | `unchecked_call_result_cast` | javac 17.0.20.1 | a returned call whose declared result does not fit the target keeps its unchecked cast (to the raw class where the result's type argument is a type variable); recompiles to the original bytecode |
 | `pkg/TestUncheckedGenericCast` | `unchecked_generic_cast` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the values returned or assigned where their declared generic type does not fit (`NullEntry.INSTANCE` as an `Entry<K, V>`, `this` as a `TestUncheckedGenericCast<K1, V1>`, a `? super K` ordering as an `Ordering<Object>`) keep the unchecked casts the bytecode cannot show; `order()`, whose value fits, gets none |
 | `pkg/TestUncheckedTypePattern` | `unchecked_type_pattern` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the `instanceof` tests whose cast is unchecked (`List<String>` from an `Object`, `Pair<String, Integer>` from a `Box<String>`, a type variable) keep the `instanceof` and the cast instead of becoming type patterns javac rejects; `Leaf<String>` from a `Box<String>` and `List<?>` stay patterns |
 | `pkg/TestVarMergeLiveness` | `var_merge_liveness` | kotlinc 2.0.0 | the two elvis results keep their own variables, `return if (var10000.size > var9.size) var10000 else var9`, instead of one variable that the second overwrites (`var10000.size > var10000.size`) |
@@ -2180,6 +2183,47 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        });
 ```
 
+### `pkg/TestLambdaPertinence`
+
+```diff
+--- expected-compat/pkg/TestLambdaPertinence.java
++++ expected/pkg/TestLambdaPertinence.java
+@@ -1,7 +1,9 @@
+ package pkg;
+ 
+ public class TestLambdaPertinence {
+-   static final TestLambdaPertinence.Order<TestLambdaPertinence.Box<?>> BY_SIZE = TestLambdaPertinence.Order.comparingInt(TestLambdaPertinence.Box::size)
++   static final TestLambdaPertinence.Order<TestLambdaPertinence.Box<?>> BY_SIZE = TestLambdaPertinence.Order.<TestLambdaPertinence.Box<?>>comparingInt(
++         TestLambdaPertinence.Box::size
++      )
+       .reversed();
+ 
+    static <T> TestLambdaPertinence.It<T> single(T element) {
+@@ -9,11 +11,11 @@
+    }
+ 
+    TestLambdaPertinence.It<TestLambdaPertinence.Task<Integer>> tasks(TestLambdaPertinence.Flow<TestLambdaPertinence.Name> names) {
+-      return names.map(n -> () -> n.length()).iterator();
++      return names.<TestLambdaPertinence.Task<Integer>>map(n -> () -> n.length()).iterator();
+    }
+ 
+    TestLambdaPertinence.It<TestLambdaPertinence.Action> actions(TestLambdaPertinence.Flow<TestLambdaPertinence.Name> names) {
+-      return names.map(n -> n::clear).iterator();
++      return names.<TestLambdaPertinence.Action>map(n -> n::clear).iterator();
+    }
+ 
+    TestLambdaPertinence.Order<TestLambdaPertinence.Box<String>> byValue() {
+@@ -21,7 +23,7 @@
+    }
+ 
+    int first() {
+-      return single(() -> 1).next().call();
++      return TestLambdaPertinence.<TestLambdaPertinence.Task<Integer>>single(() -> 1).next().call();
+    }
+ 
+    TestLambdaPertinence.Order<TestLambdaPertinence.Name> byLength() {
+```
+
 ### `pkg/TestLambdaSingletonReturnsKt`
 
 ```diff
@@ -2205,6 +2249,40 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 -   -1
 +   return@lambda_1 -1
  } as Function2
+```
+
+### `pkg/TestLambdaTypeVariableTarget`
+
+```diff
+--- expected-compat/pkg/TestLambdaTypeVariableTarget.java
++++ expected/pkg/TestLambdaTypeVariableTarget.java
+@@ -1,7 +1,9 @@
+ package pkg;
+ 
+ public class TestLambdaTypeVariableTarget {
+-   static final TestLambdaTypeVariableTarget.Chunked HEADER = depth -> concat(single((o, d) -> o.put("#")), single(new TestLambdaTypeVariableTarget.Leaf()));
++   static final TestLambdaTypeVariableTarget.Chunked HEADER = depth -> concat(
++      single((TestLambdaTypeVariableTarget.Chunk)((o, d) -> o.put("#"))), single(new TestLambdaTypeVariableTarget.Leaf())
++   );
+ 
+    static <T> TestLambdaTypeVariableTarget.It<T> single(T element) {
+       return () -> element;
+@@ -15,11 +17,13 @@
+    TestLambdaTypeVariableTarget.It<? extends TestLambdaTypeVariableTarget.Chunk> leaves(
+       TestLambdaTypeVariableTarget.It<TestLambdaTypeVariableTarget.Leaf> leaves
+    ) {
+-      return concat(single((o, d) -> o.put("[")), leaves, single((o, d) -> o.put("]")));
++      return concat(
++         single((TestLambdaTypeVariableTarget.Chunk)((o, d) -> o.put("["))), leaves, single((TestLambdaTypeVariableTarget.Chunk)((o, d) -> o.put("]")))
++      );
+    }
+ 
+    TestLambdaTypeVariableTarget.It<? extends TestLambdaTypeVariableTarget.Chunk> wrapped(TestLambdaTypeVariableTarget.Chunked inner, int depth) {
+-      return concat(single((o, d) -> o.put("{")), inner.chunks(depth));
++      return concat(single((TestLambdaTypeVariableTarget.Chunk)((o, d) -> o.put("{"))), inner.chunks(depth));
+    }
+ 
+    TestLambdaTypeVariableTarget.It<TestLambdaTypeVariableTarget.Chunk> typed(TestLambdaTypeVariableTarget.It<TestLambdaTypeVariableTarget.Leaf> leaves) {
 ```
 
 ### `pkg/TestLocalClassAnonymousSubclass`
@@ -6526,6 +6604,38 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 +         default:
 +            sink("other");
 +      }
+    }
+ }
+```
+
+### `pkg/TestUncheckedCallResultCast`
+
+```diff
+--- expected-compat/pkg/TestUncheckedCallResultCast.java
++++ expected/pkg/TestUncheckedCallResultCast.java
+@@ -13,13 +13,13 @@
+    TestUncheckedCallResultCast.Box<TestUncheckedCallResultCast.Shape> shapes(
+       TestUncheckedCallResultCast.Factory<? extends TestUncheckedCallResultCast.Shape> factory
+    ) {
+-      return factory.make();
++      return (TestUncheckedCallResultCast.Box<TestUncheckedCallResultCast.Shape>)factory.make();
+    }
+ 
+    TestUncheckedCallResultCast.Box<TestUncheckedCallResultCast.Shape> chained(
+       TestUncheckedCallResultCast.Factory<? extends TestUncheckedCallResultCast.Shape> factory
+    ) {
+-      return factory.make().self();
++      return (TestUncheckedCallResultCast.Box<TestUncheckedCallResultCast.Shape>)factory.make().self();
+    }
+ 
+    TestUncheckedCallResultCast.Box<String> exact(TestUncheckedCallResultCast.Kind<String> kind) {
+@@ -67,7 +67,7 @@
+       }
+ 
+       TestUncheckedCallResultCast.Box<TestUncheckedCallResultCast.Shape> all() {
+-         return this.items();
++         return (TestUncheckedCallResultCast.Box)this.items();
+       }
     }
  }
 ```
