@@ -4,16 +4,15 @@
 //! tests `== THIS_TYPE`) and by value (a `DefaultArgsMap` key), so it is an
 //! `Rc`-backed value: `equals` is the record's, `ptr_eq` is Java `==`.
 
-#![allow(dead_code, unused_variables)]
-
 use std::ops::Deref;
 use std::rc::Rc;
 
 use crate::k_type::KType;
+use crate::kotlin_writer::KotlinWriter;
+use crate::kt_flags::Flags;
 use crate::rt::jstring::java_string_hash;
 use crate::rt::{JavaEq, JavaHash};
 use crate::text_buffer::TextBuffer;
-use crate::unported;
 
 pub struct KParameterData {
     pub flags: i32,
@@ -84,7 +83,28 @@ impl KParameter {
     }
 
     pub fn stringify(&self, indent: i32, buf: &mut TextBuffer) {
-        unported!("KParameter.stringify")
+        if Flags::IS_CROSSINLINE.get(self.flags) {
+            buf.append("crossinline ");
+        }
+
+        if Flags::IS_NOINLINE.get(self.flags) {
+            buf.append("noinline ");
+        }
+
+        let is_vararg = self.vararg_type.is_some() && self.type_.k().kotlin_type == "kotlin/Array";
+
+        if is_vararg {
+            buf.append("vararg ");
+        }
+
+        buf.append(&KotlinWriter::to_valid_kotlin_identifier(&self.name))
+            .append(": ");
+
+        let type_ = match &self.vararg_type {
+            Some(vararg_type) if is_vararg => vararg_type,
+            _ => &self.type_,
+        };
+        buf.append_buffer(&type_.stringify(indent + 1));
     }
 }
 

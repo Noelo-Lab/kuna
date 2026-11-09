@@ -5,9 +5,9 @@
 //! keys of `KOTLIN_TO_JAVA_LANG` and `KOTLIN_TO_JAVA_UTIL` (whose JDK order is
 //! salted per JVM run).
 
-#![allow(dead_code, unused_variables)]
-
-use crate::unported;
+use crate::expr_processor::ExprProcessor;
+use crate::jthrow;
+use crate::rt::{jnum, try_catch};
 use crate::var_type::VarType;
 
 pub struct KTypes;
@@ -115,7 +115,63 @@ impl KTypes {
     }
 
     pub fn get_java_signature(kotlin_type: &str, is_nullable: bool) -> String {
-        unported!("KTypes.getJavaSignature")
+        let mut kotlin_type = kotlin_type.to_string();
+        if kotlin_type.starts_with('L') && kotlin_type.ends_with(';') {
+            kotlin_type = kotlin_type[1..kotlin_type.len() - 1].to_string();
+        }
+
+        if kotlin_type.contains('.') {
+            kotlin_type = kotlin_type.replace('.', "$");
+        }
+
+        if kotlin_type.starts_with("kotlin/") {
+            let primitive = KTypes::lookup(KTypes::KOTLIN_PRIMITIVE_TYPES, &kotlin_type);
+            if primitive.is_some() && !is_nullable {
+                return primitive.unwrap().to_string();
+            } else if kotlin_type.ends_with("$Companion")
+                && KTypes::lookup(
+                    KTypes::KOTLIN_PRIMITIVE_TYPES,
+                    &kotlin_type.replace("$Companion", ""),
+                )
+                .is_some()
+            {
+                let parts = java_split(&kotlin_type, '/');
+                let simple = java_split(array_get(&parts, 1), '$');
+                return format!(
+                    "Lkotlin/jvm/internal/{}CompanionObject;",
+                    array_get(&simple, 0)
+                );
+            } else if kotlin_type.ends_with("Array")
+                && KTypes::lookup(
+                    KTypes::KOTLIN_PRIMITIVE_TYPES,
+                    &kotlin_type.replace("Array", ""),
+                )
+                .is_some()
+            {
+                let element = KTypes::lookup(
+                    KTypes::KOTLIN_PRIMITIVE_TYPES,
+                    &kotlin_type.replace("Array", ""),
+                );
+                return format!("[{}", element.unwrap());
+            } else if let Some(java) = KTypes::lookup(KTypes::KOTLIN_TO_JAVA_LANG, &kotlin_type) {
+                return format!("L{};", java);
+            } else if let Some(java) = KTypes::lookup(KTypes::KOTLIN_TO_JAVA_UTIL, &kotlin_type) {
+                return format!("L{};", java);
+            } else if kotlin_type.starts_with("kotlin/Function") {
+                let arity = &kotlin_type["kotlin/Function".len()..];
+                match try_catch(|| jnum::parse_int(arity)) {
+                    Ok(arity) => {
+                        if arity > KTypes::MAX_KOTLIN_FUNCTION_ARITY {
+                            return "Lkotlin/jvm/functions/FunctionN;".to_string();
+                        }
+                        return format!("Lkotlin/jvm/functions{};", &kotlin_type["kotlin".len()..]);
+                    }
+                    Err(e) if e.is("NumberFormatException") => {}
+                    Err(e) => crate::rt::rethrow(e),
+                }
+            }
+        }
+        format!("L{};", kotlin_type)
     }
 
     /// Java: getKotlinType(VarType); `null` gives `*`.
@@ -125,22 +181,221 @@ impl KTypes {
 
     /// Java: getKotlinType(VarType, boolean)
     pub fn get_kotlin_type_outer(type_: Option<&VarType>, include_outer_classes: bool) -> String {
-        unported!("KTypes.getKotlinType")
+        let Some(type_) = type_ else {
+            return "*".to_string();
+        };
+
+        let type_str;
+        if KTypes::is_function_type(type_) {
+            type_str = KTypes::function_type_to_kotlin(type_);
+        } else if let Some(translated) =
+            KTypes::lookup(KTypes::JAVA_CLASS_TRANSLATIONS, type_.value_str())
+        {
+            type_str = translated.to_string();
+        } else if KTypes::lookup(KTypes::JAVA_GENERIC_TRANSLATIONS, type_.value_str()).is_some()
+            && type_.is_generic()
+        {
+            let generic_type = type_.as_generic();
+            let arguments = generic_type.get_arguments();
+            let generic_name =
+                KTypes::lookup(KTypes::JAVA_GENERIC_TRANSLATIONS, type_.value_str()).unwrap();
+            if arguments.is_empty() {
+                type_str = generic_name.to_string();
+            } else {
+                let mut builder = String::from(generic_name);
+                builder.push('<');
+                for (i, argument) in arguments.iter().enumerate() {
+                    if i != 0 {
+                        builder.push_str(", ");
+                    }
+                    builder.push_str(&KTypes::get_kotlin_type(argument.as_ref()));
+                }
+                builder.push('>');
+                type_str = builder;
+            }
+        } else {
+            let mut s = ExprProcessor::get_cast_type_name(type_);
+            if ExprProcessor::UNDEFINED_TYPE_STRING == s {
+                s = "Any".to_string();
+            }
+            if !include_outer_classes {
+                s = match s.rfind('.') {
+                    Some(dot) => s[dot + 1..].to_string(),
+                    None => s,
+                };
+            }
+
+            return KTypes::map_java_type_to_kotlin(&s);
+        }
+        if type_.array_dim < 0 {
+            jthrow!(IllegalArgumentException; "count is negative: {}", type_.array_dim);
+        }
+        let array_dim = type_.array_dim as usize;
+        format!(
+            "{}{}{}",
+            "Array<".repeat(array_dim),
+            type_str,
+            ">".repeat(array_dim)
+        )
     }
 
     fn map_java_type_to_kotlin(type_: &str) -> String {
-        unported!("KTypes.mapJavaTypeToKotlin")
+        if type_.starts_with('?') {
+            if type_ == "?" {
+                return "*".to_string();
+            } else if let Some(bound) = type_.strip_prefix("? extends ") {
+                return format!("out {}", bound);
+            } else if let Some(bound) = type_.strip_prefix("? super ") {
+                return format!("in {}", bound);
+            }
+        }
+
+        if let Some(base_type) = type_.strip_suffix("[]") {
+            return match base_type {
+                "boolean" | "byte" | "char" | "short" | "int" | "long" | "float" | "double" => {
+                    format!("{}Array", KTypes::map_java_type_to_kotlin(base_type))
+                }
+                _ => format!("Array<{}>", KTypes::map_java_type_to_kotlin(base_type)),
+            };
+        }
+
+        match type_ {
+            "boolean" => "Boolean".to_string(),
+            "byte" => "Byte".to_string(),
+            "char" => "Char".to_string(),
+            "short" => "Short".to_string(),
+            "int" => "Int".to_string(),
+            "long" => "Long".to_string(),
+            "float" => "Float".to_string(),
+            "double" => "Double".to_string(),
+            "void" => "Unit".to_string(),
+            _ => {
+                let parts = java_split(type_, '.');
+                let mut sb = String::new();
+                let mut append_dot = false;
+                for part in parts {
+                    let matcher = KTypes::generics_pattern_match(part);
+
+                    if append_dot {
+                        sb.push('.');
+                    }
+                    append_dot = true;
+
+                    if let Some((group1, group2)) = matcher {
+                        sb.push_str(&KTypes::map_java_type_to_kotlin(group1));
+                        sb.push('<');
+                        let mut append_comma = false;
+                        for generic in java_split(group2, ',') {
+                            if append_comma {
+                                sb.push_str(", ");
+                            }
+                            sb.push_str(&KTypes::map_java_type_to_kotlin(java_trim(generic)));
+                            append_comma = true;
+                        }
+                        sb.push('>');
+                    } else {
+                        sb.push_str(part);
+                    }
+                }
+                sb
+            }
+        }
     }
 
     pub fn is_function_type(type_: &VarType) -> bool {
         type_
-            .value
-            .as_deref()
-            .expect("NullPointerException: type.value")
+            .value_str()
             .starts_with("kotlin/jvm/functions/Function")
     }
 
     fn function_type_to_kotlin(type_: &VarType) -> String {
-        unported!("KTypes.functionTypeToKotlin")
+        if !KTypes::is_function_type(type_) {
+            jthrow!(IllegalArgumentException; "Not a function type: {}", type_);
+        }
+
+        let param_count = &type_.value_str()["kotlin/jvm/functions/Function".len()..];
+        let generic_type = match type_.try_as_generic() {
+            Some(generic_type) if param_count != "N" => generic_type,
+            _ => {
+                let type_str = ExprProcessor::get_cast_type_name(type_);
+                if ExprProcessor::UNDEFINED_TYPE_STRING == type_str {
+                    return "Any".to_string();
+                }
+                return KTypes::map_java_type_to_kotlin(&type_str);
+            }
+        };
+
+        let params = generic_type.get_arguments();
+
+        let param_count_int = jnum::parse_int(param_count);
+        let mut sb = String::new();
+        sb.push('(');
+        for i in 0..param_count_int {
+            if i > 0 {
+                sb.push_str(", ");
+            }
+
+            let param = list_get(params, i);
+            let mut param_str = KTypes::get_kotlin_type(param.as_ref());
+            if KTypes::is_function_type(non_null(param)) {
+                param_str = format!("({})", param_str);
+            }
+            sb.push_str(&param_str);
+            sb.push('?');
+        }
+
+        sb.push_str(") -> ");
+        let return_type = list_get(params, param_count_int);
+        let mut return_str = KTypes::get_kotlin_type(return_type.as_ref());
+        if KTypes::is_function_type(non_null(return_type)) {
+            return_str = format!("({})", return_str);
+        }
+        sb.push_str(&return_str);
+
+        sb
+    }
+}
+
+/// `s.split(regex)` for a one-character literal regex: trailing empty strings
+/// are dropped, and a string without the separator is the only element.
+fn java_split(s: &str, separator: char) -> Vec<&str> {
+    if !s.contains(separator) {
+        return vec![s];
+    }
+    let mut parts: Vec<&str> = s.split(separator).collect();
+    while parts.last() == Some(&"") {
+        parts.pop();
+    }
+    parts
+}
+
+/// `array[index]` on the result of `split`.
+fn array_get<'a>(array: &[&'a str], index: usize) -> &'a str {
+    match array.get(index) {
+        Some(s) => s,
+        None => {
+            jthrow!(ArrayIndexOutOfBoundsException; "Index {} out of bounds for length {}", index, array.len())
+        }
+    }
+}
+
+/// `String.trim()`.
+fn java_trim(s: &str) -> &str {
+    s.trim_matches(|c: char| c <= ' ')
+}
+
+/// `list.get(index)` on a `GenericType`'s argument list.
+fn list_get(list: &[Option<VarType>], index: i32) -> &Option<VarType> {
+    if index < 0 || index as usize >= list.len() {
+        jthrow!(IndexOutOfBoundsException; "Index {} out of bounds for length {}", index, list.len());
+    }
+    &list[index as usize]
+}
+
+/// A dereference of a possibly-null type.
+fn non_null(type_: &Option<VarType>) -> &VarType {
+    match type_ {
+        Some(type_) => type_,
+        None => jthrow!(NullPointerException; "type is null"),
     }
 }

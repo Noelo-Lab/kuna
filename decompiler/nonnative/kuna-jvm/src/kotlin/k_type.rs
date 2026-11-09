@@ -8,10 +8,12 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 use crate::code_type::CodeType;
+use crate::decompiler_context::DecompilerContext;
+use crate::jthrow;
+use crate::k_types::KTypes;
 use crate::kt_proto::{self, Projection};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::text_buffer::TextBuffer;
-use crate::unported;
 use crate::validation_helper::ValidationHelper;
 use crate::var_type::{VarType, VarTypeData};
 
@@ -125,21 +127,152 @@ impl KType {
     }
 
     /// Java: from(ProtoBuf.Type, MetadataNameResolver)
-    pub fn from(_type: &kt_proto::Type, _name_resolver: &MetadataNameResolver) -> KType {
-        unported!("KType.from")
+    pub fn from(type_: &kt_proto::Type, name_resolver: &MetadataNameResolver) -> KType {
+        let kotlin_type = if type_.has_class_name() {
+            name_resolver.resolve(type_.get_class_name())
+        } else {
+            "kotlin/Any".to_string()
+        };
+        let is_nullable = type_.get_nullable();
+
+        if !is_nullable {
+            let existing = match kotlin_type.as_str() {
+                "kotlin/Unit" => Some(KType::UNIT()),
+                "kotlin/Nothing" => Some(KType::NOTHING()),
+                "kotlin/UByte" => Some(KType::UBYTE()),
+                "kotlin/UShort" => Some(KType::USHORT()),
+                "kotlin/UInt" => Some(KType::UINT()),
+                "kotlin/ULong" => Some(KType::ULONG()),
+                _ => None,
+            };
+            if let Some(existing) = existing {
+                return existing;
+            }
+        }
+
+        let mut type_arguments: Option<Rc<[TypeArgument]>> = None;
+        if type_.get_argument_count() > 0 {
+            let mut arguments = Vec::with_capacity(type_.get_argument_count() as usize);
+            for i in 0..type_.get_argument_count() {
+                let argument = type_.get_argument(i);
+                arguments.push(TypeArgument::new(
+                    KType::from(&argument.get_type(), name_resolver),
+                    argument.get_projection(),
+                ));
+            }
+            type_arguments = Some(Rc::from(arguments));
+        }
+
+        let mut jvm_desc = KTypes::get_java_signature(&kotlin_type, is_nullable);
+        if kotlin_type == "kotlin/Array" {
+            let Some(arguments) = &type_arguments else {
+                jthrow!(NullPointerException; "typeArguments is null")
+            };
+            let array_type = &arguments[0];
+            if array_type.type_projection == Projection::In {
+                jvm_desc = "[Ljava/lang/Object;".to_string();
+            } else {
+                jvm_desc = format!("[{}", array_type.type_.0);
+            }
+        }
+        let var_type = VarType::new_signature(&jvm_desc);
+
+        let type_parameter_name = if type_.has_type_parameter_name() {
+            Some(name_resolver.resolve(type_.get_type_parameter_name()))
+        } else {
+            None
+        };
+        let type_alias_name = if type_.has_type_alias_name() {
+            Some(name_resolver.resolve(type_.get_type_alias_name()))
+        } else {
+            None
+        };
+
+        KType::new(
+            &var_type,
+            &kotlin_type,
+            is_nullable,
+            false,
+            type_arguments,
+            type_parameter_name,
+            type_alias_name,
+        )
     }
 
     /// Java: from(int, MetadataNameResolver, ProtoBuf.TypeTable)
     pub fn from_table(
-        _table_index: i32,
-        _resolver: &MetadataNameResolver,
-        _type_table: &kt_proto::TypeTable,
+        table_index: i32,
+        resolver: &MetadataNameResolver,
+        type_table: &kt_proto::TypeTable,
     ) -> KType {
-        unported!("KType.from")
+        KType::from(&type_table.get_type(table_index), resolver)
     }
 
-    pub fn stringify(&self, _indent: i32) -> TextBuffer {
-        unported!("KType.stringify")
+    pub fn stringify(&self, indent: i32) -> TextBuffer {
+        let mut buf = TextBuffer::new();
+        let k = self.k();
+
+        if let Some(type_parameter_name) = &k.type_parameter_name {
+            buf.append(type_parameter_name);
+            if k.is_nullable {
+                buf.append("?");
+            }
+
+            return buf;
+        }
+
+        if !k.kotlin_type.starts_with("kotlin/Function") {
+            let type_ = k.kotlin_type.replace('/', ".");
+            let short_name = DecompilerContext::get_import_collector().get_short_name(&type_);
+            buf.append(short_name.as_deref().unwrap_or("null"));
+
+            if let Some(type_arguments) = &k.type_arguments {
+                buf.append("<");
+                buf.push_newline_group(indent, 1);
+                buf.append_possible_newline();
+                let mut first = true;
+                for type_argument in type_arguments.iter() {
+                    if !first {
+                        buf.append(",").append_possible_newline_alt(" ");
+                    }
+                    buf.append_buffer(&type_argument.stringify(indent + 1));
+                    first = false;
+                }
+                buf.append_possible_newline_dedent("", true);
+                buf.append(">");
+                buf.pop_newline_group();
+            }
+
+            if k.is_nullable {
+                buf.append("?");
+            }
+        } else {
+            buf.append(if k.is_nullable { "((" } else { "(" });
+            buf.push_newline_group(indent, 1);
+            buf.append_possible_newline();
+            let Some(type_arguments) = &k.type_arguments else {
+                jthrow!(NullPointerException; "typeArguments is null")
+            };
+            let length = type_arguments.len() as i32;
+            for i in 0..length - 1 {
+                if i != 0 {
+                    buf.append(",").append_possible_newline_alt(" ");
+                }
+                buf.append_buffer(&type_arguments[i as usize].stringify(indent + 1));
+            }
+            buf.append_possible_newline_dedent("", true);
+            buf.pop_newline_group();
+            buf.append(") -> ");
+            if length == 0 {
+                jthrow!(ArrayIndexOutOfBoundsException; "Index -1 out of bounds for length 0");
+            }
+            buf.append_buffer(&type_arguments[(length - 1) as usize].stringify(indent + 1));
+            if k.is_nullable {
+                buf.append(")?");
+            }
+        }
+
+        buf
     }
 }
 
@@ -151,8 +284,23 @@ impl TypeArgument {
         }
     }
 
-    pub fn stringify(&self, _indent: i32) -> TextBuffer {
-        unported!("KType.TypeArgument.stringify")
+    pub fn stringify(&self, indent: i32) -> TextBuffer {
+        let mut buf = TextBuffer::new();
+        match self.type_projection {
+            Projection::In => {
+                buf.append("in ");
+            }
+            Projection::Out => {
+                buf.append("out ");
+            }
+            Projection::Star => {
+                buf.append("*");
+                return buf;
+            }
+            Projection::Inv => {}
+        }
+        buf.append_buffer(&self.type_.stringify(indent));
+        buf
     }
 }
 

@@ -1,11 +1,8 @@
 //! Port of `org/vineflower/kotlin/struct/KTypeParameter.java`.
 
-#![allow(dead_code, unused_variables)]
-
 use crate::k_type::KType;
 use crate::kt_proto::{self, Variance};
 use crate::metadata_name_resolver::MetadataNameResolver;
-use crate::unported;
 
 #[derive(Clone)]
 pub struct KTypeParameter {
@@ -37,6 +34,16 @@ impl KTypeParameter {
         proto: &kt_proto::TypeParameter,
         resolver: &MetadataNameResolver,
     ) -> KTypeParameter {
-        unported!("KTypeParameter.from")
+        KTypeParameter::new(
+            proto.get_reified(),
+            proto.get_variance(),
+            proto
+                .get_upper_bound_list()
+                .iter()
+                .map(|type_| KType::from(type_, resolver))
+                .collect(),
+            resolver.resolve(proto.get_name()),
+            proto.get_id(),
+        )
     }
 }

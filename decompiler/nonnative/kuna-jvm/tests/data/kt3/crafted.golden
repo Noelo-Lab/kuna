@@ -1,0 +1,977 @@
+=== crafted!contract_shapes
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a023008320610031a023001320a080210041a04180130023214080c10051a0e1204120230011204120230083007f201060a041801300e82029c020a0808011202100320010a0808011202100020020a060801120210010a000a0208000a0c0800120218001a04080310010a0c0800120218021a04080210020a0808001204100218010a0a080012060801100118000a0808001204080118020a0a08021a061001220230060a1008021a0c08011000220612020803300d0a0808021a04100128000a0208020a0c0800120210021a04080110020a10080012001a0a320210023204080310010a0c0800120810023204080210010a120800120218001a0a3a0210023a04080210010a2c0800120218001a2410023204080210013a120801100232061001220230063204080310033a061000220230010a140800120218011a0c320a3a0210023a04080110020a0a08001202180012021801
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ param 0 x 0
+  type kotlin/Int false false \null \null I INT 0 INTEGER 1
+  jsig I
+  kt Int
+  str Int
+ param 2 b 0
+  type kotlin/Boolean true false \null \null Ljava/lang/Boolean; OBJECT 0 OBJECT 1
+  jsig Ljava/lang/Boolean;
+  kt java.lang.Boolean
+  str Boolean?
+ param 12 block 0
+  type kotlin/Function1 false false \null \null Lkotlin/jvm/functions/Function1; OBJECT 0 OBJECT 1
+   arg INV
+    type kotlin/Int false false \null \null I INT 0 INTEGER 1
+   arg INV
+    type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig Lkotlin/jvm/functions/Function1;
+  kt Function1
+  str (Int)\u0020->\u0020Unit
+ returns
+  type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig V
+  kt Unit
+  str Unit
+imports import\u0020kotlin.jvm.functions.Function1\u000a\u000a
+pstr f
+ x:\u0020Int
+ b:\u0020Boolean?
+ crossinline\u0020noinline\u0020block:\u0020(Int)\u0020->\u0020Unit
+contract f
+ \u0020\u0020\u0020contract\u0020{\u000a\u0020\u0020\u0020\u0020\u0020\u0020callsInPlace(block,\u0020InvocationKind.EXACTLY_ONCE)\u000a\u0020\u0020\u0020\u0020\u0020\u0020callsInPlace(`this`,\u0020InvocationKind.AT_LEAST_ONCE)\u000a\u0020\u0020\u0020\u0020\u0020\u0020callsInPlace(x)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returns()\u000a\u0020\u0020\u0020\u0020\u0020\u0020returns(true)\u0020implies\u0020(x\u0020!=\u0020null)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returns(null)\u0020implies\u0020(b\u0020==\u0020null)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returns(b\u0020==\u0020false)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returns(!true)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returns(!null)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returnsNotNull()\u0020implies\u0020(x\u0020is\u0020String)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returnsNotNull()\u0020implies\u0020(this\u0020!is\u0020List<*>)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returnsNotNull()\u0020implies\u0020(x\u0020is\u0020Foo?)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returnsNotNull()\u000a\u0020\u0020\u0020\u0020\u0020\u0020returns(b)\u0020implies\u0020(!b)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returns()\u0020implies\u0020(b\u0020&&\u0020x\u0020!=\u0020null)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returns(b\u0020&&\u0020x\u0020==\u0020null)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returns(true)\u0020implies\u0020(b\u0020||\u0020x\u0020==\u0020null)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returns(true)\u0020implies\u0020((b\u0020&&\u0020x\u0020==\u0020null)\u0020||\u0020(!b\u0020&&\u0020x\u0020is\u0020String\u0020&&\u0020block\u0020!=\u0020null\u0020||\u0020this\u0020is\u0020Int)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returns(false)\u0020implies\u0020(b\u0020||\u0020!b)\u000a\u0020\u0020\u0020\u0020\u0020\u0020returns(true)\u000a\u0020\u0020\u0020}\u000a
+end
+=== crafted!contract_calls_without_argument
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a023008320610031a023001320a080210041a04180130023214080c10051a0e12041202300112041202300830078202040a020801
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ param 0 x 0
+  type kotlin/Int false false \null \null I INT 0 INTEGER 1
+  jsig I
+  kt Int
+  str Int
+ param 2 b 0
+  type kotlin/Boolean true false \null \null Ljava/lang/Boolean; OBJECT 0 OBJECT 1
+  jsig Ljava/lang/Boolean;
+  kt java.lang.Boolean
+  str Boolean?
+ param 12 block 0
+  type kotlin/Function1 false false \null \null Lkotlin/jvm/functions/Function1; OBJECT 0 OBJECT 1
+   arg INV
+    type kotlin/Int false false \null \null I INT 0 INTEGER 1
+   arg INV
+    type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig Lkotlin/jvm/functions/Function1;
+  kt Function1
+  str (Int)\u0020->\u0020Unit
+ returns
+  type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig V
+  kt Unit
+  str Unit
+imports import\u0020kotlin.jvm.functions.Function1\u000a\u000a
+pstr f
+ x:\u0020Int
+ b:\u0020Boolean?
+ crossinline\u0020noinline\u0020block:\u0020(Int)\u0020->\u0020Unit
+contract f
+!IndexOutOfBoundsException
+end
+=== crafted!contract_calls_without_reference
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a023008320610031a023001320a080210041a04180130023214080c10051a0e12041202300112041202300830078202080a06080112021800
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ param 0 x 0
+  type kotlin/Int false false \null \null I INT 0 INTEGER 1
+  jsig I
+  kt Int
+  str Int
+ param 2 b 0
+  type kotlin/Boolean true false \null \null Ljava/lang/Boolean; OBJECT 0 OBJECT 1
+  jsig Ljava/lang/Boolean;
+  kt java.lang.Boolean
+  str Boolean?
+ param 12 block 0
+  type kotlin/Function1 false false \null \null Lkotlin/jvm/functions/Function1; OBJECT 0 OBJECT 1
+   arg INV
+    type kotlin/Int false false \null \null I INT 0 INTEGER 1
+   arg INV
+    type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig Lkotlin/jvm/functions/Function1;
+  kt Function1
+  str (Int)\u0020->\u0020Unit
+ returns
+  type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig V
+  kt Unit
+  str Unit
+imports import\u0020kotlin.jvm.functions.Function1\u000a\u000a
+pstr f
+ x:\u0020Int
+ b:\u0020Boolean?
+ crossinline\u0020noinline\u0020block:\u0020(Int)\u0020->\u0020Unit
+contract f
+!NullPointerException
+end
+=== crafted!contract_reference_past_two
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a023008320610031a023001320610121a0230028202080a06080012021003
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ param 0 x 0
+  type kotlin/Int false false \null \null I INT 0 INTEGER 1
+  jsig I
+  kt Int
+  str Int
+ param 0 y 0
+  type kotlin/Boolean false false \null \null Z BOOLEAN 0 BOOLEAN 1
+  jsig Z
+  kt Boolean
+  str Boolean
+ returns
+  type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig V
+  kt Unit
+  str Unit
+imports 
+pstr f
+ x:\u0020Int
+ y:\u0020Boolean
+contract f
+!IndexOutOfBoundsException
+end
+=== crafted!contract_reference_negative
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a023008320610031a023001320610121a0230028202110a0f0800120b10ffffffffffffffffff01
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ param 0 x 0
+  type kotlin/Int false false \null \null I INT 0 INTEGER 1
+  jsig I
+  kt Int
+  str Int
+ param 0 y 0
+  type kotlin/Boolean false false \null \null Z BOOLEAN 0 BOOLEAN 1
+  jsig Z
+  kt Boolean
+  str Boolean
+ returns
+  type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig V
+  kt Unit
+  str Unit
+imports 
+pstr f
+ x:\u0020Int
+ y:\u0020Boolean
+contract f
+!IndexOutOfBoundsException
+end
+=== crafted!contract_reference_past_three
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a023008320610031a023001320a080210041a04180130023214080c10051a0e12041202300112041202300830078202080a06080012021007
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ param 0 x 0
+  type kotlin/Int false false \null \null I INT 0 INTEGER 1
+  jsig I
+  kt Int
+  str Int
+ param 2 b 0
+  type kotlin/Boolean true false \null \null Ljava/lang/Boolean; OBJECT 0 OBJECT 1
+  jsig Ljava/lang/Boolean;
+  kt java.lang.Boolean
+  str Boolean?
+ param 12 block 0
+  type kotlin/Function1 false false \null \null Lkotlin/jvm/functions/Function1; OBJECT 0 OBJECT 1
+   arg INV
+    type kotlin/Int false false \null \null I INT 0 INTEGER 1
+   arg INV
+    type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig Lkotlin/jvm/functions/Function1;
+  kt Function1
+  str (Int)\u0020->\u0020Unit
+ returns
+  type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig V
+  kt Unit
+  str Unit
+imports import\u0020kotlin.jvm.functions.Function1\u000a\u000a
+pstr f
+ x:\u0020Int
+ b:\u0020Boolean?
+ crossinline\u0020noinline\u0020block:\u0020(Int)\u0020->\u0020Unit
+contract f
+!ArrayIndexOutOfBoundsException
+end
+=== crafted!contract_reference_without_params
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a0230088202080a06080012021001
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ returns
+  type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig V
+  kt Unit
+  str Unit
+imports 
+pstr f
+contract f
+!ArrayIndexOutOfBoundsException
+end
+=== crafted!contract_one_param
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a023008320610031a02300182020c0a0a0800120210011a021002
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ param 0 x 0
+  type kotlin/Int false false \null \null I INT 0 INTEGER 1
+  jsig I
+  kt Int
+  str Int
+ returns
+  type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig V
+  kt Unit
+  str Unit
+imports 
+pstr f
+ x:\u0020Int
+contract f
+!IndexOutOfBoundsException
+end
+=== crafted!contract_type_id_past_table
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a023008320610031a023001320a080210041a04180130023214080c10051a0e1204120230011204120230083007f201040a02300182020a0a0808021a0410012804
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ param 0 x 0
+  type kotlin/Int false false \null \null I INT 0 INTEGER 1
+  jsig I
+  kt Int
+  str Int
+ param 2 b 0
+  type kotlin/Boolean true false \null \null Ljava/lang/Boolean; OBJECT 0 OBJECT 1
+  jsig Ljava/lang/Boolean;
+  kt java.lang.Boolean
+  str Boolean?
+ param 12 block 0
+  type kotlin/Function1 false false \null \null Lkotlin/jvm/functions/Function1; OBJECT 0 OBJECT 1
+   arg INV
+    type kotlin/Int false false \null \null I INT 0 INTEGER 1
+   arg INV
+    type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig Lkotlin/jvm/functions/Function1;
+  kt Function1
+  str (Int)\u0020->\u0020Unit
+ returns
+  type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig V
+  kt Unit
+  str Unit
+imports import\u0020kotlin.jvm.functions.Function1\u000a\u000a
+pstr f
+ x:\u0020Int
+ b:\u0020Boolean?
+ crossinline\u0020noinline\u0020block:\u0020(Int)\u0020->\u0020Unit
+contract f
+!IndexOutOfBoundsException
+end
+=== crafted!contract_type_id_without_table
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a023008320610031a023001320a080210041a04180130023214080c10051a0e120412023001120412023008300782020a0a0808021a0410012800
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ param 0 x 0
+  type kotlin/Int false false \null \null I INT 0 INTEGER 1
+  jsig I
+  kt Int
+  str Int
+ param 2 b 0
+  type kotlin/Boolean true false \null \null Ljava/lang/Boolean; OBJECT 0 OBJECT 1
+  jsig Ljava/lang/Boolean;
+  kt java.lang.Boolean
+  str Boolean?
+ param 12 block 0
+  type kotlin/Function1 false false \null \null Lkotlin/jvm/functions/Function1; OBJECT 0 OBJECT 1
+   arg INV
+    type kotlin/Int false false \null \null I INT 0 INTEGER 1
+   arg INV
+    type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig Lkotlin/jvm/functions/Function1;
+  kt Function1
+  str (Int)\u0020->\u0020Unit
+ returns
+  type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig V
+  kt Unit
+  str Unit
+imports import\u0020kotlin.jvm.functions.Function1\u000a\u000a
+pstr f
+ x:\u0020Int
+ b:\u0020Boolean?
+ crossinline\u0020noinline\u0020block:\u0020(Int)\u0020->\u0020Unit
+contract f
+!IndexOutOfBoundsException
+end
+=== crafted!function_type_without_arguments
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a041801300c320610031a02300c
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ param 0 x 0
+  type kotlin/Function0 false false \null \null Lkotlin/jvm/functions/Function0; OBJECT 0 OBJECT 1
+  jsig Lkotlin/jvm/functions/Function0;
+  kt Function0
+!NullPointerException
+!NullPointerException
+ returns
+  type kotlin/Function0 true false \null \null Lkotlin/jvm/functions/Function0; OBJECT 0 OBJECT 1
+  jsig Lkotlin/jvm/functions/Function0;
+  kt Function0
+!NullPointerException
+!NullPointerException
+imports import\u0020kotlin.jvm.functions.Function0\u000a\u000a
+pstr f
+!NullPointerException
+end
+=== crafted!function_types
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a1c1210120e1204120230011204120230013007120612041801480a3007323210031a2e1204120230011208080012041801300212181216120412023006120c120a1204120230081801300c300718013010320a10121a0612020803300c
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ param 0 x 0
+  type kotlin/Function2 true false \null \null Lkotlin/jvm/functions/Function2; OBJECT 0 OBJECT 1
+   arg INV
+    type kotlin/Int false false \null \null I INT 0 INTEGER 1
+   arg IN
+    type kotlin/Boolean true false \null \null Ljava/lang/Boolean; OBJECT 0 OBJECT 1
+   arg INV
+    type kotlin/Function1 false false \null \null Lkotlin/jvm/functions/Function1; OBJECT 0 OBJECT 1
+     arg INV
+      type kotlin/String false false \null \null Ljava/lang/String; OBJECT 0 OBJECT 1
+     arg INV
+      type kotlin/Function0 true false \null \null Lkotlin/jvm/functions/Function0; OBJECT 0 OBJECT 1
+       arg INV
+        type kotlin/Unit false false \null \null V VOID 0 UNKNOWN 0 =UNIT
+  jsig Lkotlin/jvm/functions/Function2;
+  kt Function2
+  str ((Int,\u0020in\u0020Boolean?)\u0020->\u0020(String)\u0020->\u0020(()\u0020->\u0020Unit)?)?
+  fmt ((\u000a\u0020\u0020\u0020\u0020\u0020\u0020Int,\u000a\u0020\u0020\u0020\u0020\u0020\u0020in\u0020Boolean?\u000a\u0020\u0020\u0020)\u0020->\u0020(String)\u0020->\u0020(()\u0020->\u0020Unit)?)?
+ param 0 y 0
+  type kotlin/Function0 false false \null \null Lkotlin/jvm/functions/Function0; OBJECT 0 OBJECT 1
+   arg STAR
+    type kotlin/Any false false \null \null Ljava/lang/Object; OBJECT 0 OBJECT 1
+  jsig Lkotlin/jvm/functions/Function0;
+  kt Function0
+  str ()\u0020->\u0020*
+ returns
+  type kotlin/Function1 false false \null \null Lkotlin/jvm/functions/Function1; OBJECT 0 OBJECT 1
+   arg INV
+    type kotlin/Function1 false false \null \null Lkotlin/jvm/functions/Function1; OBJECT 0 OBJECT 1
+     arg INV
+      type kotlin/Int false false \null \null I INT 0 INTEGER 1
+     arg INV
+      type kotlin/Int false false \null \null I INT 0 INTEGER 1
+   arg INV
+    type kotlin/Any true false T \null Ljava/lang/Object; OBJECT 0 OBJECT 1
+  jsig Lkotlin/jvm/functions/Function1;
+  kt Function1
+  str ((Int)\u0020->\u0020Int)\u0020->\u0020T?
+  fmt (\u000a\u0020\u0020\u0020\u0020\u0020\u0020(Int)\u0020->\u0020Int\u000a\u0020\u0020\u0020)\u0020->\u0020T?
+imports import\u0020kotlin.jvm.functions.Function0\u000aimport\u0020kotlin.jvm.functions.Function1\u000aimport\u0020kotlin.jvm.functions.Function2\u000a\u000a
+pstr f
+ x:\u0020((Int,\u0020in\u0020Boolean?)\u0020->\u0020(String)\u0020->\u0020(()\u0020->\u0020Unit)?)?
+ y:\u0020()\u0020->\u0020*
+end
+=== crafted!array_without_arguments
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a023008320610031a023009
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+!NullPointerException
+imports 
+end
+=== crafted!array_types
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a10120c120a120612041801300230093009320e10031a0a12060800120230063009320a10121a06120208033009321c080410041a12120c120a1206080112023001300918013009220230063212080610051a0812041202480a30092202480a
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ param 0 x 0
+  type kotlin/Array false false \null \null [Ljava/lang/Object; OBJECT 1 OBJECT 1
+   arg IN
+    type kotlin/String false false \null \null Ljava/lang/String; OBJECT 0 OBJECT 1
+  jsig Lkotlin/Array;
+  kt Array<Any>
+  str Array<in\u0020String>
+  fmt Array<\u000a\u0020\u0020\u0020\u0020\u0020\u0020in\u0020String\u000a\u0020\u0020\u0020>
+ param 0 y 0
+  type kotlin/Array false false \null \null [Ljava/lang/Object; OBJECT 1 OBJECT 1
+   arg STAR
+    type kotlin/Any false false \null \null Ljava/lang/Object; OBJECT 0 OBJECT 1
+  jsig Lkotlin/Array;
+  kt Array<Any>
+  str Array<*>
+ param 4 b 0
+  type kotlin/Array true false \null \null [[I INT 2 OBJECT 1
+   arg INV
+    type kotlin/Array false false \null \null [I INT 1 OBJECT 1
+     arg OUT
+      type kotlin/Int false false \null \null I INT 0 INTEGER 1
+  jsig Lkotlin/Array;
+  kt Array<IntArray>
+  str Array<Array<out\u0020Int>>?
+  fmt Array<\u000a\u0020\u0020\u0020\u0020\u0020\u0020Array<out\u0020Int>\u000a\u0020\u0020\u0020>?
+  vararg
+   type kotlin/String false false \null \null Ljava/lang/String; OBJECT 0 OBJECT 1
+   jsig Ljava/lang/String;
+   kt java.lang.String
+   str String
+ param 6 block 0
+  type kotlin/Array false false \null \null [Ljava/lang/Object; OBJECT 1 OBJECT 1
+   arg INV
+    type kotlin/Any false false T \null Ljava/lang/Object; OBJECT 0 OBJECT 1
+  jsig Lkotlin/Array;
+  kt Array<Any>
+  str Array<T>
+  vararg
+   type kotlin/Any false false T \null Ljava/lang/Object; OBJECT 0 OBJECT 1
+   jsig Ljava/lang/Object;
+   kt Any
+   str T
+ returns
+  type kotlin/Array false false \null \null [[Ljava/lang/Boolean; OBJECT 2 OBJECT 1
+   arg INV
+    type kotlin/Array false false \null \null [Ljava/lang/Boolean; OBJECT 1 OBJECT 1
+     arg INV
+      type kotlin/Boolean true false \null \null Ljava/lang/Boolean; OBJECT 0 OBJECT 1
+  jsig Lkotlin/Array;
+  kt Array<Array<java.lang.Boolean>>
+  str Array<Array<Boolean?>>
+  fmt Array<\u000a\u0020\u0020\u0020\u0020\u0020\u0020Array<Boolean?>\u000a\u0020\u0020\u0020>
+imports 
+pstr f
+ x:\u0020Array<in\u0020String>
+ y:\u0020Array<*>
+ crossinline\u0020vararg\u0020b:\u0020String
+ crossinline\u0020vararg\u0020block:\u0020T
+end
+=== crafted!type_names
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a041801301622180800100a180120012a041801300f2a0812041202480a301522060801101220002a0418013014320810031a041801480a320810121a04300e600b320c10041a08120218001801600b321610051a12120608011202300612060800120230133011
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ param 0 x 0
+  type kotlin/Any true false T \null Ljava/lang/Object; OBJECT 0 OBJECT 1
+  jsig Ljava/lang/Object;
+  kt Any
+  str T?
+ param 0 y 0
+  type pkg/Foo false false \null MyAlias Lpkg/Foo; OBJECT 0 OBJECT 1
+  jsig Lpkg/Foo;
+  kt Foo
+  str Foo
+ param 0 b 0
+  type kotlin/Any true false \null MyAlias Ljava/lang/Object; OBJECT 0 OBJECT 1
+   arg INV
+    type kotlin/Any false false \null \null Ljava/lang/Object; OBJECT 0 OBJECT 1
+  jsig Ljava/lang/Object;
+  kt Any
+  str Any<Any>?
+ param 0 block 0
+  type kotlin/collections/MutableMap.MutableEntry false false \null \null Ljava/util/Map$Entry; OBJECT 0 OBJECT 1
+   arg OUT
+    type kotlin/String false false \null \null Ljava/lang/String; OBJECT 0 OBJECT 1
+   arg IN
+    type java/util/List false false \null \null Ljava/util/List; OBJECT 0 OBJECT 1
+  jsig Ljava/util/Map$Entry;
+  kt Entry
+  str MutableEntry<out\u0020String,\u0020in\u0020java.util.List>
+  fmt MutableEntry<\u000a\u0020\u0020\u0020\u0020\u0020\u0020out\u0020String,\u000a\u0020\u0020\u0020\u0020\u0020\u0020in\u0020java.util.List\u000a\u0020\u0020\u0020>
+ tparam true OUT T 0
+  type kotlin/Any true false \null \null Ljava/lang/Object; OBJECT 0 OBJECT 1
+  jsig Ljava/lang/Object;
+  kt Any
+  str Any?
+  type pkg/Outer.Inner false false \null \null Lpkg/Outer$Inner; OBJECT 0 OBJECT 1
+   arg INV
+    type kotlin/Any false false T \null Ljava/lang/Object; OBJECT 0 OBJECT 1
+  jsig Lpkg/Outer$Inner;
+  kt Inner
+  str Inner<T>
+ tparam false IN y 1
+ receiver
+  type kotlin/UInt true false \null \null Lkotlin/UInt; OBJECT 0 OBJECT 1
+  jsig Lkotlin/UInt;
+  kt UInt
+  str UInt?
+ returns
+  type kotlin/Nothing true false \null \null Ljava/lang/Void; OBJECT 0 OBJECT 1
+  jsig Ljava/lang/Void;
+  kt Void
+  str Nothing?
+imports import\u0020java.util.Map.Entry\u000aimport\u0020kotlin.collections.MutableMap.MutableEntry\u000aimport\u0020pkg.Outer.Inner\u000a\u000a
+pstr f
+ x:\u0020T?
+ y:\u0020Foo
+ b:\u0020Any<Any>?
+ block:\u0020MutableEntry<out\u0020String,\u0020in\u0020java.util.List>
+end
+=== crafted!unsigned_and_cached
+pkg pkg
+k 3
+d1 1
+h 00040a02081710001a04180130082a023016320610031a023014320810121a0418013014
+d2 23
+s f
+s kotlin/Int
+s kotlin/Boolean
+s x
+s b
+s block
+s kotlin/String
+s kotlin/Function1
+s kotlin/Unit
+s kotlin/Array
+s T
+s MyAlias
+s kotlin/Function0
+s kotlin/collections/List
+s pkg/Foo
+s kotlin/Any
+s kotlin/Function2
+s kotlin/collections/MutableMap.MutableEntry
+s y
+s java/util/List
+s kotlin/UInt
+s pkg/Outer.Inner
+s kotlin/Nothing
+--
+lambda
+fun f 6
+ param 0 x 0
+  type kotlin/UInt false true \null \null I INT 0 INTEGER 1 =UINT
+  jsig Lkotlin/UInt;
+  kt Int
+  str UInt
+ param 0 y 0
+  type kotlin/UInt true false \null \null Lkotlin/UInt; OBJECT 0 OBJECT 1
+  jsig Lkotlin/UInt;
+  kt UInt
+  str UInt?
+ receiver
+  type kotlin/Nothing false false \null \null Ljava/lang/Void; OBJECT 0 OBJECT 1 =NOTHING
+  jsig Ljava/lang/Void;
+  kt Void
+  str Nothing
+ returns
+  type kotlin/Unit true false \null \null Lkotlin/Unit; OBJECT 0 OBJECT 1
+  jsig Lkotlin/Unit;
+  kt Unit
+  str Unit?
+imports 
+pstr f
+ x:\u0020UInt
+ y:\u0020UInt?
+end
