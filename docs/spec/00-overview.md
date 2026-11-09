@@ -3022,7 +3022,6 @@ runtime `on_or_off` parser.
 |---|---|---|
 | `KUNA_IFUNCFPRET` | `ifuncfpret` | x86-64 IFUNC (`R_X86_64_IRELATIVE`) stub naming, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ifuncfpret.rs (IFUNCFPRET_ENV)` |
 | `KUNA_PPCAPU` | `ppcapu` | PowerPC32 e500 selection from an SPE APU note, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_ppcapu.rs (PPCAPU_ENV)` |
-| `KUNA_TYPEDEPTH` | `typedepth` | DWARF full-depth type resolution, `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_typedepth.rs (TYPEDEPTH_ENV)` |
 | `KUNA_DWARFSTRUCTS` | `dwarfstructs` | DWARF aggregate-layout import (`DW_AT_byte_size` + `DW_TAG_member` walk), `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dwarfstructs.rs (DWARFSTRUCTS_ENV)` |
 | `KUNA_CALLTARGETTYPE` | `calltargettype` | DWARF `DW_TAG_subroutine_type` import as a function prototype (off unless the option, or the `aggressive` preset, is on, and never for Rust output), `decompiler/crates/kuna-decomp/src/p5_types/kuna_calltargettype.rs (CALLTARGETTYPE_ENV)` |
 | `KUNA_DWARFVARIANTS` | `dwarfvariants` | DWARF variant-part (discriminated-union) import (`DW_AT_discr` + `DW_TAG_variant` walk), `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_dwarfvariants.rs (DWARFVARIANTS_ENV)` |
@@ -3339,20 +3338,15 @@ and an agent writes:
   Non-global scope has empty name` and emits nothing. (Answering with the reason
   attached is what DIV-90 gave the subprocess surface, which until then replaced
   it with a fixed string — so this symptom, which `docs/options.md` publishes as
-  the trigger for flipping `symbolnamerepair`, was unmatchable from the surface an
+  the trigger for the repair, was unmatchable from the surface an
   agent is most likely driving.) Symbol-name bytes are attacker-controlled data
   that no header check
   validates, which makes that a denial-of-analysis primitive a hostile binary can
-  buy for a few `.strtab` bytes. `symbolnamerepair` (on|off, default on;
-  `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_symbolnamerepair.rs`) skips
+  buy for a few `.strtab` bytes. The repair
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_symbolnamerepair.rs`) skips
   the degenerate component instead, so the symbol keeps the rest of its scope path
   and the load survives; only the empty component is treated as degenerate, since
-  every other string names a Scope perfectly well however strange it looks. Off
-  restores the hard error, which is what someone investigating a binary's symbol
-  table itself wants to see. Like the other gates consumed inside `load file`
-  (`relocrebase`, `i386_pie_plt`, `typedepth`) it is read through a process
-  environment variable rather than an `Architecture` flag, because `option` is
-  applied downstream of the load it would have to govern.
+  every other string names a Scope perfectly well however strange it looks.
   The scope path is not the only thing a name's bytes reach: the same string is
   printed into emitted C, and nothing on the way validates it.
   `symbolnamechars` (off|safe|ident, default safe;
@@ -3374,7 +3368,7 @@ and an agent writes:
   name a roughly 498-fold input-to-RSS amplifier: 600 KB of `.strtab` in a single
   name cost 292 MB, and the whole-binary path is quadratic in depth on top of
   that, so tens of kilobytes already bought a stall of tens of seconds.
-  `symbolnamebound` (`<n>|off`, default 256;
+  The scope bound (256 components, always on;
   `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_symbolnamebound.rs`) caps
   the scope-component count, and with it each component's length and the whole
   scope path's length. A name over a limit is **folded**, not truncated: the
@@ -3409,11 +3403,7 @@ and an agent writes:
   the ceiling and none of their scopes can be shared. Closing that needs a cap on
   the total `Scope` population, or a cheaper `Scope`; what this gate closes is
   the reported primitive, one name turning 600 KB of `.strtab` into 292 MB, and
-  the quadratic whole-binary blowup that rode on it. Same loader-tier env
-  bridge as `symbolnamerepair`, and deliberately a
-  separate gate from it: turning the repair off is a debugging affordance for
-  someone inspecting a symbol table, and that must not also remove a resource
-  bound.
+  the quadratic whole-binary blowup that rode on it.
 - **The Override store** (`decompiler/crates/kuna-decomp/src/p0_knowledge/overrides.rs
   (Override)`): per-function commands that override pipeline decisions — flow
   reclassification, direct-call redirects, prototype replacement, multistage

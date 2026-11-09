@@ -84,9 +84,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // prototypes the 27-entry base table does not carry, ranked out of the frozen
         // decbench C corpus and reduced from the platform headers. Applied only to
         // names the image IMPORTS (see the module docs — a defined `error` is the
-        // image's own function). Registered always; the COMMIT is gated by
-        // `--option libcsigs on|off` via `engine.rs::analysis_pass_enabled`, so `off`
-        // is byte-identical to the base table alone.
+        // image's own function). Registered always.
         Box::new(crate::protos::kuna_libcsigs::LibcSigsPass),
         // S1 libgcc DI-mode contracts (`libgccsigs`): `long long __divdi3(long long,
         // long long)` on SPARC32 BE ELF. Registered always; the COMMIT is gated by
@@ -321,8 +319,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // default-on `CallFixupAnalyzer` (the install half; the flow-repair half is
         // engine-internal at this tier — see callfixup docs). After LibProtoPass
         // (the fixup tags the *callee* function, independent of prototype seeding).
-        // Always-on, like noreturn/libproto/entry; `--option callfixup off` restores
-        // the un-fixed rendering.
+        // Always-on, like noreturn/libproto/entry.
         Box::new(crate::callfixup::CallFixupPass),
 
         // S1 address tables (AddrTablePass) is implemented + tested but **disabled
@@ -449,7 +446,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // S1 arm64e `__auth_ptr` call binding (AuthPtrCallPass): name each chained
     // bind slot of `__auth_ptr` after its import and paint it `externref`, the
     // `peimportcall` facts for the one Mach-O import table the indirect-symbol
-    // walk does not cover. Committed only when `authptrcall` is on.
+    // walk does not cover.
     if format == object::BinaryFormat::MachO {
         passes.push(Box::new(crate::loader::kuna_authptrcall::AuthPtrCallPass));
     }
@@ -1289,7 +1286,7 @@ pub fn run_listing_consumers_replaying(
 
     // (kuna `thunkentry`) The targets of the walk's jump thunks join the walk's own
     // function set wherever that set is committed. See `listing/kuna_thunkentry.rs`.
-    let thunk_targets = if arch.analysis_thunkentry && walk_committed {
+    let thunk_targets = if walk_committed {
         crate::listing::kuna_thunkentry::thunk_entries(&file, &listing)
     } else {
         Vec::new()

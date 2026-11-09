@@ -525,15 +525,12 @@ fn msvc_constructor_return_survives_a_void_member_with_its_signature() {
     }
 }
 
-/// The DIV-88 fixture: an ELF whose `.symtab` carries `::b`, a qualified name
-/// with an empty scope component.  `symbolnamerepair` (default-ON) skips the
-/// degenerate component; `off` restores the hard load failure this test needs.
-fn hostile_scope() -> String {
-    repo_root()
-        .join("decompiler/crates/kuna-analysis/tests/fixtures/hostile_scope_x86_64")
-        .to_str()
-        .unwrap()
-        .to_string()
+/// A scratch file of junk bytes: neither an object format nor a `<binaryimage>`
+/// document, so every surface fails its load.
+fn junk_binary() -> String {
+    let path = std::env::temp_dir().join(format!("kuna_clidiag_junk_{}.bin", std::process::id()));
+    std::fs::write(&path, [0xa5u8; 200]).expect("write the junk fixture");
+    path.to_str().unwrap().to_string()
 }
 
 /// GH-337: all four surfaces must answer one binary-load failure with one
@@ -543,7 +540,7 @@ fn hostile_scope() -> String {
 /// print reorder — the recorded-transcript unit tests would not.
 #[test]
 fn every_surface_reports_the_same_load_failure() {
-    let bin = hostile_scope();
+    let bin = junk_binary();
     let sp = specs();
     let project_out = std::env::temp_dir().join(format!(
         "kuna_clidiag_proj_{}_{}",
@@ -564,13 +561,7 @@ fn every_surface_reports_the_same_load_failure() {
 
     let mut reports: Vec<(&str, String)> = Vec::new();
     for (name, mut argv) in surfaces {
-        argv.extend_from_slice(&[
-            "--option",
-            "symbolnamerepair",
-            "off",
-            "--sleighpath",
-            sp.as_str(),
-        ]);
+        argv.extend_from_slice(&["--sleighpath", sp.as_str()]);
         let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
             .args(&argv)
             .output()
@@ -580,14 +571,17 @@ fn every_surface_reports_the_same_load_failure() {
         reports.push((name, stderr.trim().to_string()));
     }
     let _ = std::fs::remove_dir_all(&project_out);
+    let _ = std::fs::remove_file(&bin);
 
-    let expected = format!(
-        "error: could not build an architecture for {}: Non-global scope has empty name",
-        std::fs::canonicalize(&bin).expect("the fixture is checked in").display()
+    let prefix = format!(
+        "error: could not build an architecture for {}: ",
+        std::fs::canonicalize(&bin).map(|p| p.display().to_string()).unwrap_or(bin.clone())
     );
+    let first = &reports[0].1;
+    assert!(first.starts_with(&prefix), "{}: {first}", reports[0].0);
     for (name, stderr) in &reports {
         assert_eq!(
-            stderr, &expected,
+            stderr, first,
             "{name} must report the real reason, byte-identically to the others"
         );
     }

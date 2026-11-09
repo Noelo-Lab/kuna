@@ -2347,8 +2347,8 @@ callee from DWARF or `--assert prototype`, the same limit applies.
 The authored `kuna-cli/tests/libgcc_divdi3.rs` round trips cover direct,
 saved-across-call, guarded, nontrivial-constant and one-word-replaced quotient
 returns at compiler `-O0` and `-O2`,
-both with `libgccsigs` on and with an explicit wide prototype while
-`libproto` is off. They also check single-word truncations, call effects, and
+both with `libgccsigs` on and with an explicit wide prototype. They also
+check single-word truncations, call effects, and
 that the default (`libgccsigs` off) leaves a low-word store as before.
 
 After native return trials are finalized, an otherwise unknown ten-byte scalar

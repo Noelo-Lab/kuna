@@ -491,7 +491,7 @@ statically linked image turns `ptrace()` into
 `ptrace(v18[-0xc],v18[-0xb],(void *)v18[-10],(void *)v18[-9])`. The load-time
 prototype passes cannot reach this case: they match a name the *image* carries,
 and a stripped image carries none. An explicit `--assert prototype` on the same
-function still wins, and `--option declaredlibcproto off` declares the name alone.
+function still wins.
 
 A declared `end` that cuts real control flow is reported rather than silently
 truncating the body: the function carries a `// warn: Function flows out of bounds`
@@ -1242,10 +1242,10 @@ the next segment the image names), so a near branch wraps inside its segment as
 the CPU's does. Only the load module is mapped: the header, any
 overlay past the image size, and the uninitialized memory the header asks for
 are not. The call sweep that widens discovery past the entry reads the module's
-relocations (`mzsweep`, on by default): a far call counts only through a
+relocations (`mzsweep`): a far call counts only through a
 relocated segment word, and a call decoded among zero fill, or to a target that
-does not open with code, is data in a far data segment rather than a function;
-`--option mzsweep off` sweeps the whole module as a raw image does. A file packed with PKLITE or LZEXE loads too, but its code is the
+does not open with code, is data in a far data segment rather than a function.
+A file packed with PKLITE or LZEXE loads too, but its code is the
 decompressor stub and a packed body, so kuna says so on stderr; unpack it first
 (`kuna unpack` for PKLITE, for example `deark -m lzexe` for LZEXE).
 A program linked with Microsoft's or Borland's 8087 emulator carries its float
@@ -1295,15 +1295,14 @@ the next address and the displacement, until a far call or jump names the
 segment of its target.
 
 Raw images carry no symbols, so there is no object-backed discovery tier to
-run; `--option rawdiscover off` leaves the inventory at the explicit seeds.
-On (the default) `rawdiscover` sweeps the executable bytes for direct call
+run; `rawdiscover` sweeps the executable bytes for direct call
 targets and hands them, with the seeds, to the ordinary recursive descent, so
 `functions` reports what the image calls rather than only what you typed:
 
 ```bash
 $ kuna functions fw.bin --json --raw-image \
     --target Cortus:LE:32:APS3:default --base 0x80000000 --entry 0x8000010c
-#   "count": 556          # 1 with --option rawdiscover off
+#   "count": 556
 ```
 
 `--entry` therefore seeds the load without *selecting*: an unfiltered

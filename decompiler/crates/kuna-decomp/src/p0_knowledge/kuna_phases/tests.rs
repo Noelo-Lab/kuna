@@ -264,11 +264,6 @@ fn option_values_live_value_present_for_189() {
     // byte-pattern function-start pass).
     const PASS_GATES: &[&str] = &[
         "noreturn_known",
-        "libproto",
-        // (kuna) The measured libc signature extension — an analysis-pass gate with
-        // no codegen live reader (read console-side via kuna_live_value), same as
-        // `libproto` above. Default-ON (DIV-65).
-        "libcsigs",
         // (kuna) Discriminant-value naming -- a load-time env bridge
         // (`KUNA_VARIANTNAMES`, the dwarfstructs/dwarfvariants pattern) whose
         // live state is read console-side via `kuna_live_value`, so it has no
@@ -280,9 +275,6 @@ fn option_values_live_value_present_for_189() {
         // option, `auto` by default, not the detected fact), so it has no
         // codegen live reader.
         "sourcelang",
-        // (kuna) Swift demangling - a loadtime env bridge (`KUNA_SWIFTDEMANGLE`,
-        // the rexthunk pattern); live state read console-side.
-        "swiftdemangle",
         // (kuna) dyld shared cache image selection and cross-image naming -
         // loadtime env bridges (`KUNA_DYLD_IMAGE`, `KUNA_DYLDCROSSREFS`).
         "dyldimage",
@@ -306,10 +298,6 @@ fn option_values_live_value_present_for_189() {
         // every `option` command), so no codegen live reader. Default-ON
         // (`opaque`).
         "libctypes",
-        // (kuna) The declared-name libc prototype lookup — read console-side at
-        // declaration time (`ConsoleProgram::declare_function`), so it has no
-        // codegen live reader either. Default-ON (DIV-139).
-        "declaredlibcproto",
         // (kuna) The libgcc `__divdi3` contract -- an analysis-pass gate read
         // console-side via kuna_live_value, like `libcsigs`. Default-off.
         "libgccsigs",
@@ -329,9 +317,6 @@ fn option_values_live_value_present_for_189() {
         // gate with no codegen live reader (read console-side via kuna_live_value),
         // same as `eh_frame_full` above. Default-off.
         "unwindstarts",
-        // (kuna) Multi-entry `.cold` fragment entries — an analysis-pass gate with
-        // no codegen live reader. Default-ON.
-        "coldentry",
         // (kuna) The full byte-pattern function-start pass — an analysis-pass gate
         // with no codegen live reader (read console-side via kuna_live_value), same
         // as the gates around it. Default-off.
@@ -347,20 +332,11 @@ fn option_values_live_value_present_for_189() {
         "ptrentry",
         "dwarf",
         "dwarf_lines",
-        "callfixup",
         "addrtable",
         "operand_refs",
         "formatstring",
         "listing",
         "fast_funcdisc",
-        // (kuna, DIV-185) Headerless-image function discovery -- an analysis-tier
-        // gate read console-side via kuna_live_value, like the gates around it.
-        // Default-ON, raw-container only.
-        "rawdiscover",
-        // (kuna #1288) The MS-DOS evidence for rawdiscover's call sweep -- an
-        // analysis-tier gate read console-side via kuna_live_value. Default-ON,
-        // MZ loads only.
-        "mzsweep",
         "noreturn_disc",
         // (kuna, GH-312) The positive-evidence-only tally for `noreturn_disc` -- a
         // sub-rule gate with no codegen live reader (read console-side via
@@ -388,27 +364,11 @@ fn option_values_live_value_present_for_189() {
         // `machomain` above and the same seam: an analysis-tier gate with no
         // codegen live reader, read console-side via kuna_live_value. Default-ON.
         "elfmain",
-        // (kuna) Unmapped-CALL-target entry suppression -- an analysis-tier gate with
-        // no codegen live reader (read console-side via kuna_live_value), like the
-        // discovery gates around it. Default-ON.
-        "unmappedentry",
         "x86listingswitch",
-        // (kuna) Register-chain jump-table reach in the reference walk -- an
-        // analysis-tier gate with no codegen live reader, like `thumbswitch`
-        // above. Default-ON.
-        "switchreach",
-        // (kuna) Jump-thunk target function entries -- an analysis-tier gate with
-        // no codegen live reader (read console-side via kuna_live_value), like
-        // `unmappedentry` above. Default-ON.
-        "thunkentry",
         // (kuna) Address-taken code function entries -- an analysis-tier gate with
         // no codegen live reader (read console-side via kuna_live_value), like
         // `thunkentry` above. Default-ON.
         "addrtakenentry",
-        // (kuna) PPC64 ELFv2 local-entry entry suppression -- an analysis-tier gate
-        // with no codegen live reader (read console-side via kuna_live_value), like
-        // `unmappedentry` above. Default-ON.
-        "ppclocalentry",
         // (kuna, GH-780) ARM flow-proven decode-mode paints -- an analysis-tier
         // gate read console-side via kuna_live_value, like `ppclocalentry` above.
         // Default-ON.
@@ -472,36 +432,19 @@ fn option_values_live_value_present_for_189() {
         // (kuna) PowerPC APU-note language selection: a load-time gate read via
         // the `kuna_ppcapu` env var, like `ifuncfpret`.
         "ppcapu",
-        // (kuna) Degenerate-symbol-name repair: a load-time gate read via the
-        // `kuna_symbolnamerepair` env var (the symbol table is installed inside
-        // `load file`), like `relocrebase`. Default-ON.
-        "symbolnamerepair",
         // (kuna, GH-340) Symbol-name character sanitizing: a load-time gate read
         // via the `kuna_symbolnamechars` env var (names are minted inside `load
         // file`), like `symbolnamerepair`. Three-valued, default `safe`.
         "symbolnamechars",
-        // (kuna, GH-338) Symbol-name scope resource bound: the same load-time
-        // seam, read via the `kuna_symbolnamebound` env var. VALUED (the scope
-        // ceiling is a number), so its live `current` is read console-side via
-        // kuna_live_value. Default 32.
-        "symbolnamebound",
         // (PR-8) Mach-O arm64e spec selection: a load-time (pre-`option`) gate read
         // from the `KUNA_MACHO_ARM64E` env var, so it too has no codegen live_value.
         "macho-arm64e",
-        // (kuna) DWARF C++ prototype recovery — an analysis-tier gate read at the
-        // analysis COMMIT boundary (console-side via kuna_live_value), like the
-        // analysis-pass gates above. Default-on.
-        "cppproto",
         "godwarfsig",
         "gopairreturns",
         // (kuna) Demangled C++ signature application — an analysis-tier gate read
         // at the analysis COMMIT boundary (console-side via kuna_live_value), like
         // `cppproto` above. Three-valued, default `proven`.
         "cppsig",
-        // (kuna) Full-depth DWARF type resolution — a LOAD-time gate read from the
-        // `KUNA_TYPEDEPTH` env var (the types are mapped inside `load file`), so
-        // like `macho-arm64e` above it has no codegen live_value. Default-on.
-        "typedepth",
         // (kuna) Itanium (GCC/Clang) RTTI + vtable recovery — an analysis-tier gate
         // read at the analysis COMMIT boundary (console-side via kuna_live_value),
         // like the analysis-pass gates above. Default-off, ELF-only.
@@ -516,11 +459,6 @@ fn option_values_live_value_present_for_189() {
         // type inside `load file`), the same seam as `dwarfstructs` above.
         // Default-on.
         "dwarfvariants",
-        // (kuna) PIC base-register folding in the cross-reference index -- an
-        // analysis-tier gate read by the read-only xref query, console-side via
-        // kuna_live_value like the analysis-pass gates above, so it has no
-        // codegen live_value. Default-on.
-        "picbase",
         // (kuna `lazyfuncs`) The deferred entry commit -- read console-side at
         // `read symbols` (the commit either creates a Function per entry or parks
         // the starts), so it has no codegen live reader. Default-off.

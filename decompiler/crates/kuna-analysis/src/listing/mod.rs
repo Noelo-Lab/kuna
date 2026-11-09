@@ -415,9 +415,9 @@ impl Listing {
 
         // The PPC64 ELFv2 local-entry fold (`ppclocalentry`): an intra-module `bl`
         // targets `st_value + <localentry>`, which is a point inside the callee,
-        // not a function of its own. Empty on every other architecture and
-        // whenever the option is off (see `kuna_ppclocalentry`).
-        let local_entries = kuna_ppclocalentry::fold_map(arch, file, seeds);
+        // not a function of its own. Empty on every other architecture (see
+        // `kuna_ppclocalentry`).
+        let local_entries = kuna_ppclocalentry::fold_map(file, seeds);
         let tail_transfers: BTreeMap<u64, u64> = if arch.stub_tail_call {
             mips_transfers.iter().copied().collect()
         } else {

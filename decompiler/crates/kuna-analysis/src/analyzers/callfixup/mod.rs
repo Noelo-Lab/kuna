@@ -186,8 +186,7 @@ fn scan_call_fixups(file: &object::File, arch: &Architecture) -> AnalysisOutput 
 /// Port of `CallFixupAnalyzer` (the install half): tag every program function
 /// whose name matches a cspec call-fixup `<target>` so the engine applies that
 /// fixup at flow time. Ghidra ships it default-on (`setDefaultEnablement(true)`,
-/// CallFixupAnalyzer.java:51), so on-by-default is faithful; gate id `"callfixup"`
-/// lets `--option callfixup off` restore the un-fixed rendering.
+/// CallFixupAnalyzer.java:51), so it is always on.
 #[derive(Clone, Copy, Default)]
 pub struct CallFixupPass;
 

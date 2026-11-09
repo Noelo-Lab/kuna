@@ -30,7 +30,6 @@ pub mod kuna_kernelcache;
 // override (load-time, env-bridged).
 pub mod kuna_sourcelang;
 // (kuna) Swift symbol demangling gate (load-time, env-bridged).
-pub mod kuna_swiftdemangle;
 // (kuna) The Objective-C instance-layout gate's load-time half (env-bridged).
 pub mod kuna_objcivars;
 // (kuna) The Objective-C SDK header directory (`objcsdk`, load-time, env-bridged).
@@ -60,7 +59,6 @@ pub mod kuna_libctypes;
 // (load-time, env-bridged) plus the recovered-layout side table.
 pub mod kuna_dwarfvariants;
 // (kuna) DWARF full-depth type-resolution option gate (load-time, env-bridged).
-pub mod kuna_typedepth;
 // (kuna) Degenerate-symbol-name repair option gate (load-time, env-bridged).
 pub mod kuna_symbolnamerepair;
 // (kuna) Symbol-name character sanitizer + option gate (load-time, env-bridged).

@@ -1773,16 +1773,11 @@ pub struct ArchContext {
     /// (kuna `litpoolconst`) `[start, stop]` (inclusive) offsets of the image's
     /// executable, non-writable, file-backed regions — the instruction stream, and
     /// so the literal pools embedded in it. A read entirely inside one is foldable
-    /// with [`Self::readonlypropagate`] off, gated by [`Self::litpoolconst`].
+    /// with [`Self::readonlypropagate`] off.
     /// Sorted ascending, disjoint, and EMPTY for every hand-built fixture and every
     /// XML `<binaryimage>` load, which is why the datatest parity oracle cannot see
     /// this field.
     pub litpool_const: Rc<Vec<(u64, u64)>>,
-    /// (kuna) Whether an in-code literal-pool read folds to its constant
-    /// (`option litpoolconst`, default on). Carried into the per-function `glb`
-    /// beside [`Self::readonlypropagate`]; inert while [`Self::litpool_const`] is
-    /// empty.
-    pub litpoolconst: bool,
     /// Whether the volatile read/write userops display \e functionally (C++
     /// `VolatileReadOp`/`VolatileWriteOp` ctor `functional` flag — the `<volatile
     /// format="functional">` spec attribute).  Drives the `setHoldOutput` branch
@@ -2226,7 +2221,6 @@ impl ArchContext {
             // (kuna) No executable read-only ranges until a real object load
             // installs them (see `Architecture::litpool_const`).
             litpool_const: Rc::new(Vec::new()),
-            litpoolconst: false,
             // Default volatile ops are non-functional (`getDisplay() != 0`), so the
             // volatile-read op's output is held; matches the unconfigured glb.
             volatile_display_functional: false,
@@ -2330,11 +2324,10 @@ impl ArchContext {
     /// (kuna `litpoolconst`) Whether the `size`-byte read at `offset` lies
     /// entirely inside the image's executable read-only memory, so a read-only
     /// varnode there may be folded to the constant it holds even with global
-    /// read-only propagation off. A plain `false` when the option is off or the
-    /// range list is empty, which is every non-object path.
+    /// read-only propagation off. A plain `false` when the range list is empty,
+    /// which is every non-object path.
     pub fn litpool_const_contains(&self, offset: u64, size: u32) -> bool {
-        self.litpoolconst
-            && crate::kuna_litpoolconst::contains(&self.litpool_const, offset, size)
+        crate::kuna_litpoolconst::contains(&self.litpool_const, offset, size)
     }
 
     /// Whether the volatile-read op's output must be held (C++

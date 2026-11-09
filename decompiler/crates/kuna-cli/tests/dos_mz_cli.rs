@@ -266,10 +266,6 @@ fn the_call_sweep_keeps_code_calls_and_drops_calls_decoded_from_data() {
         assert!(!kept.contains(name), "{name} is a call decoded from data: {kept}");
     }
 
-    let swept = list(&["--option", "mzsweep", "off"]);
-    for name in ["\"sub_10060\"", "\"sub_10070\"", "\"sub_10200\"", "\"sub_10300\"", "\"sub_10400\""] {
-        assert!(swept.contains(name), "missing {name} from the whole-module sweep: {swept}");
-    }
     std::fs::remove_file(&path).unwrap();
 }
 

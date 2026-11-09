@@ -1,4 +1,4 @@
-//! End-to-end gate for the DWARF **C++ prototype** arm (`--option cppproto`).
+//! End-to-end gate for the DWARF **C++ prototype** arm.
 //!
 //! The bug: `DwarfPass` keyed every recovery off a subprogram DIE's own
 //! `DW_AT_name`. C++ splits a definition from its declaration — an out-of-line
@@ -11,9 +11,8 @@
 //! normalized to `maxof`; a qualified name lives in a nested scope).
 //!
 //! The fixture `cppproto_x86_64` (source vendored alongside) is a `-g` C++ binary
-//! whose every interesting function exercises one of those shapes. Each test is
-//! TWO-PASS: `option cppproto off` reproduces the bug (`a0`/`a1` parameters,
-//! `void *` for a class pointer), the default reproduces the fix.
+//! whose every interesting function exercises one of those shapes; before the
+//! arm they rendered `a0`/`a1` parameters and `void *` for a class pointer.
 
 use std::path::PathBuf;
 
@@ -25,9 +24,9 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-/// Bootstrap the C++ fixture with `cppproto` set to `on`/`off`, commit the DWARF facts
-/// under that gate, decompile `func` and return the captured C.
-fn decompile(func: &str, cppproto: bool) -> String {
+/// Bootstrap the C++ fixture, commit the DWARF facts, decompile `func` and return
+/// the captured C.
+fn decompile(func: &str) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
@@ -38,18 +37,10 @@ fn decompile(func: &str, cppproto: bool) -> String {
         .to_string();
     let mut prog = bootstrap_from_object(&path, "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    // The gate is read at the analysis COMMIT boundary (the producing pass runs at
-    // `load file`, upstream of any `option` command), so it must be set here.
-    prog.arch_mut()
-        .set_kuna_option("cppproto", if cppproto { "on" } else { "off" })
-        .expect("cppproto is a registered option");
-    // (kuna `cppsig`) The SIBLING recovery is turned off in BOTH arms so this file
-    // measures the DWARF arm alone. `cppsig` reads the same shapes off the mangled
-    // symbol, so with it at its `proven` default the "gate off = the bug" baseline
-    // stopped reproducing: `Account::available` came back as `Account *this` (a
-    // `const` member is a proven `this`) and `probe_virtual_call` as `Shape *a0`
-    // (an unqualified global proves it has none). Their interaction — DWARF wins
-    // where both reach a function — is asserted in `verify_cppsig.rs`.
+    // (kuna `cppsig`) The SIBLING recovery is turned off so this file measures the
+    // DWARF arm alone: `cppsig` reads the same shapes off the mangled symbol.
+    // Their interaction — DWARF wins where both reach a function — is asserted in
+    // `verify_cppsig.rs`.
     prog.arch_mut().set_kuna_option("cppsig", "off").expect("cppsig is a registered option");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
@@ -73,13 +64,7 @@ fn decompile(func: &str, cppproto: bool) -> String {
 /// artificial `this` typed by a `DW_TAG_class_type`).
 #[test]
 fn out_of_line_member_recovers_this_and_parameter_names() {
-    let off = decompile("Account::deposit", false);
-    assert!(
-        off.contains("Account::deposit(int4 *a0,int4 a1)"),
-        "gate off must reproduce the name-only walk's a0/a1 signature, got:\n{off}"
-    );
-
-    let on = decompile("Account::deposit", true);
+    let on = decompile("Account::deposit");
     assert!(
         on.contains("Account::deposit(Account *this,int4 amount)"),
         "gate on must recover `Account *this` + the DWARF parameter name, got:\n{on}"
@@ -90,13 +75,7 @@ fn out_of_line_member_recovers_this_and_parameter_names() {
 /// that used to exceed the type mapper's depth budget and degrade to `void *`.
 #[test]
 fn const_member_this_survives_the_qualifier_chain() {
-    let off = decompile("Account::available", false);
-    assert!(
-        off.contains("Account::available(int4 *a0)"),
-        "gate off signature, got:\n{off}"
-    );
-
-    let on = decompile("Account::available", true);
+    let on = decompile("Account::available");
     assert!(
         on.contains("Account::available(Account *this)"),
         "a const method's `this` must still resolve to `Account *`, got:\n{on}"
@@ -106,7 +85,7 @@ fn const_member_this_survives_the_qualifier_chain() {
 /// A C++ REFERENCE parameter (`DW_TAG_reference_type`) maps to a pointer.
 #[test]
 fn reference_parameter_maps_to_a_pointer() {
-    let on = decompile("Account::bump", true);
+    let on = decompile("Account::bump");
     assert!(
         on.contains("Account::bump(Account *this,int4 *out)"),
         "`int &out` must render as `int4 *out`, got:\n{on}"
@@ -117,10 +96,7 @@ fn reference_parameter_maps_to_a_pointer() {
 /// definition — proof the drop was never about the `this` DIE.
 #[test]
 fn static_member_recovers_its_parameter_name() {
-    let off = decompile("Account::make_id", false);
-    assert!(off.contains("Account::make_id(int4 a0)"), "gate off signature, got:\n{off}");
-
-    let on = decompile("Account::make_id", true);
+    let on = decompile("Account::make_id");
     assert!(
         on.contains("Account::make_id(int4 seed)"),
         "a static member must recover its DWARF parameter name, got:\n{on}"
@@ -130,13 +106,7 @@ fn static_member_recovers_its_parameter_name() {
 /// A namespace function defined out of line.
 #[test]
 fn namespaced_function_recovers_its_prototype() {
-    let off = decompile("db::inner::scaled_add", false);
-    assert!(
-        off.contains("db::inner::scaled_add(int4 a0,int4 a1)"),
-        "gate off signature, got:\n{off}"
-    );
-
-    let on = decompile("db::inner::scaled_add", true);
+    let on = decompile("db::inner::scaled_add");
     assert!(
         on.contains("db::inner::scaled_add(int4 a,int4 b)"),
         "a namespaced function must recover its DWARF parameter names, got:\n{on}"
@@ -148,10 +118,7 @@ fn namespaced_function_recovers_its_prototype() {
 /// park reaches it.
 #[test]
 fn template_instantiation_binds_by_address_not_name() {
-    let off = decompile("maxof<int>", false);
-    assert!(off.contains("maxof<int>(int4 a0,int4 a1)"), "gate off signature, got:\n{off}");
-
-    let on = decompile("maxof<int>", true);
+    let on = decompile("maxof<int>");
     assert!(
         on.contains("maxof<int>(int4 a,int4 b)"),
         "a template instantiation's prototype must bind by entry address, got:\n{on}"
@@ -162,13 +129,7 @@ fn template_instantiation_binds_by_address_not_name() {
 /// every `Foo *` parameter degraded to `void *`.
 #[test]
 fn class_typed_pointer_parameter_keeps_its_class() {
-    let off = decompile("probe_virtual_call", false);
-    assert!(
-        off.contains("probe_virtual_call(void *s,int4 scale)"),
-        "gate off must degrade the class pointer to `void *`, got:\n{off}"
-    );
-
-    let on = decompile("probe_virtual_call", true);
+    let on = decompile("probe_virtual_call");
     assert!(
         on.contains("probe_virtual_call(Shape *s,int4 scale)"),
         "`DW_TAG_class_type` must map like a structure, got:\n{on}"

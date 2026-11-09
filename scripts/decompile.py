@@ -168,9 +168,6 @@ def decompile(
 # the process environment instead (the same bridge `kuna decompile` puts on the
 # decomp_dbg subprocess). Keyed option name -> env var.
 _LOADTIME_GATE_ENV = {
-    # (kuna `typedepth`) The DWARF type mapper's recursion guard; the types are
-    # mapped inside `load file`, so `option typedepth off` alone is too late.
-    "typedepth": "KUNA_TYPEDEPTH",
     # (kuna `dwarfstructs`) The DWARF aggregate-layout import; the layout is
     # installed on the interned type inside `load file`, so `option dwarfstructs
     # off` alone is too late.

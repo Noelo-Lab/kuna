@@ -195,10 +195,7 @@ pub fn demangle_raw(raw: &str) -> Option<String> {
     // form, types included) or passes through; it is never fed to the
     // Itanium/Rust/MSVC arms.
     if crate::sourcelang::is_swift_mangled(raw) {
-        if kuna_decomp::kuna_swiftdemangle::swiftdemangle_enabled() {
-            return kuna_swift::demangle_swift_full(raw);
-        }
-        return None;
+        return kuna_swift::demangle_swift_full(raw);
     }
 
     // MSVC C++ (PR-9): a leading `?` is exclusive to the `cl.exe` scheme, which
@@ -357,10 +354,7 @@ pub fn demangle_name(raw: &str) -> Option<String> {
     // arms, and the name-only printer emits no signature text to strip (the
     // label form `f(a:b:)` survives the default `safe` sanitizer).
     if crate::sourcelang::is_swift_mangled(raw) {
-        if kuna_decomp::kuna_swiftdemangle::swiftdemangle_enabled() {
-            return kuna_swift::demangle_swift_name(raw);
-        }
-        return None;
+        return kuna_swift::demangle_swift_name(raw);
     }
 
     // MSVC C++ (PR-9): a leading `?` is exclusive to the `cl.exe` scheme.

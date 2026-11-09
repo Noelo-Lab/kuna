@@ -1,5 +1,4 @@
-//! The target of a `jmp rel32` thunk is a function in every mode (GH-992), and
-//! `--option thunkentry off` restores the thunk-only inventory.
+//! The target of a `jmp rel32` thunk is a function in every mode (GH-992).
 
 use crate::common;
 
@@ -51,20 +50,3 @@ fn every_thunk_target_is_a_function_in_every_mode() {
     }
 }
 
-#[test]
-fn thunkentry_off_restores_the_thunk_only_inventory() {
-    assert_eq!(
-        inventory("fast", &["--option", "thunkentry", "off"]),
-        listed(&[("0x401000", 5), ("0x401005", 5), ("0x40100a", 74)]),
-    );
-    assert_eq!(
-        inventory("reliable", &["--option", "thunkentry", "off"]),
-        listed(&[
-            ("0x401000", 5),
-            ("0x401005", 5),
-            ("0x40100a", 6),
-            ("0x401010", 48),
-            ("0x401040", 20),
-        ]),
-    );
-}

@@ -919,9 +919,6 @@ kuna_options! { self, p1;
         on_off!(strip_security_check, "Rust security-check branch stripping")
     },
     "branchflip" => on_off!(branch_flip, "Negated-guard branch flipping for linearity"),
-    "litpoolconst" => {
-        on_off!(litpoolconst, "In-code literal-pool constant folding")
-    },
     "loopbreak_recovery" => {
         let (val, msg) =
             crate::kuna_loopbreak_recovery::OptionLoopBreakRecovery.apply(p1)?;
@@ -1012,9 +1009,6 @@ kuna_options! { self, p1;
     },
     "paramrefdecl" => on_off!(param_ref_decl, "address-taken parameter re-declaration guard"),
     "noreturn_known" => on_off!(analysis_noreturn_known, "No-return-known analysis pass"),
-    "authptrcall" => on_off!(analysis_authptrcall, "arm64e __auth_ptr call binding"),
-    "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
-    "libcsigs" => on_off!(analysis_libcsigs, "Measured libc signature extension"),
     "libgccsigs" => on_off!(analysis_libgccsigs, "libgcc __divdi3 DI-mode contract"),
     "libctypes" => {
         use crate::kuna_libctypes::LibcTypesLayout;
@@ -1040,9 +1034,6 @@ kuna_options! { self, p1;
             }
         ))
     },
-    "declaredlibcproto" => {
-        on_off!(analysis_declaredlibcproto, "Declared-name libc prototype lookup")
-    },
     "strings" => on_off!(analysis_strings, "String-literal analysis pass"),
     "widestrings" => {
         on_off!(analysis_widestrings, "UTF-16LE width of the string-literal pass")
@@ -1051,21 +1042,11 @@ kuna_options! { self, p1;
         on_off!(analysis_widestrings32, "UTF-32 width of the string-literal pass")
     },
     "entry_disc" => on_off!(analysis_entry_disc, "Entry-discovery analysis pass"),
-    "unmappedentry" => {
-        on_off!(analysis_unmappedentry, "Unmapped-CALL-target entry suppression")
-    },
     "x86listingswitch" => {
         on_off!(analysis_x86listingswitch, "Bounded i386 switch successors in the discovery Listing")
     },
-    "switchreach" => {
-        on_off!(analysis_switchreach, "Register-chain jump-table reach in the reference walk")
-    },
-    "thunkentry" => on_off!(analysis_thunkentry, "Jump-thunk target function entries"),
     "addrtakenentry" => {
         on_off!(analysis_addrtakenentry, "Address-taken code function entries")
-    },
-    "ppclocalentry" => {
-        on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
     },
     "flowmode" => {
         let (on, after_call) = match p1.trim().to_ascii_lowercase().as_str() {
@@ -1089,9 +1070,6 @@ kuna_options! { self, p1;
             }
         ))
     },
-    "picbase" => {
-        on_off!(analysis_picbase, "PIC base-register folding in the xref index")
-    },
     "elfmain" => {
         on_off!(analysis_elfmain, "ELF libc-start main naming + prototype")
     },
@@ -1100,9 +1078,6 @@ kuna_options! { self, p1;
     },
     "unwindstarts" => {
         on_off!(analysis_unwindstarts, "Mach-O __unwind_info function-start discovery")
-    },
-    "coldentry" => {
-        on_off!(analysis_coldentry, "Multi-entry .cold fragment entry discovery")
     },
     "funcstart_patterns" => {
         on_off!(analysis_funcstart_patterns, "Full byte-pattern function-start pass")
@@ -1161,23 +1136,8 @@ kuna_options! { self, p1;
         crate::kuna_kernelcache::set_kernelcache_env(&choice);
         Ok(msg)
     },
-    "symbolnamerepair" => {
-        let val = on_or_off(p1)?;
-        self.analysis_symbolnamerepair = val;
-        crate::kuna_symbolnamerepair::set_symbolnamerepair_env(val);
-        Ok(format!(
-            "degenerate-symbol-name repair turned {}",
-            if val { "on" } else { "off" }
-        ))
-    },
     "dyldimage" => Ok(crate::kuna_dyldcache::set_dyldimage(p1)),
     "dyldcrossrefs" => crate::kuna_dyldcache::set_dyldcrossrefs(p1),
-    "swiftdemangle" => {
-        let val = on_or_off(p1)?;
-        self.analysis_swiftdemangle = val;
-        crate::kuna_swiftdemangle::set_swiftdemangle_env(val);
-        Ok(format!("Swift symbol demangling turned {}", if val { "on" } else { "off" }))
-    },
     "symbolnamechars" => {
         let mode = crate::kuna_symbolnamechars::NameChars::parse(p1).ok_or_else(|| {
             KunaError::lowlevel(format!(
@@ -1188,18 +1148,9 @@ kuna_options! { self, p1;
         crate::kuna_symbolnamechars::set_symbolnamechars_env(mode);
         Ok(format!("symbol-name character sanitizing set to {}", mode.as_str()))
     },
-    "symbolnamebound" => {
-        let (bound, msg) = crate::kuna_symbolnamebound::parse_symbolnamebound(p1)?;
-        self.analysis_symbolnamebound = bound;
-        crate::kuna_symbolnamebound::set_symbolnamebound_env(bound);
-        Ok(msg)
-    },
     "dwarf" => on_off!(analysis_dwarf, "DWARF recovery analysis pass"),
     "dwarf_lines" => {
         on_off!(analysis_dwarf_lines, "DWARF .debug_line source-line comment pass")
-    },
-    "cppproto" => {
-        on_off!(analysis_cppproto, "DWARF C++ prototype recovery arm")
     },
     "godwarfsig" => on_off!(analysis_godwarfsig, "Go DWARF scalar and pointer signatures"),
     "gopairreturns" => on_off!(analysis_gopairreturns, "Go DWARF paired integer results"),
@@ -1207,15 +1158,6 @@ kuna_options! { self, p1;
         let (mode, msg) = crate::kuna_cppsig::parse_cppsig_mode(p1)?;
         self.analysis_cppsig = mode;
         Ok(msg)
-    },
-    "typedepth" => {
-        let val = on_or_off(p1)?;
-        self.analysis_typedepth = val;
-        crate::kuna_typedepth::set_typedepth_env(val);
-        Ok(format!(
-            "Full-depth DWARF type resolution turned {}",
-            if val { "on" } else { "off" }
-        ))
     },
     "dwarfstructs" => {
         let val = on_or_off(p1)?;
@@ -1244,7 +1186,6 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
-    "callfixup" => on_off!(analysis_callfixup, "Call-fixup analysis pass"),
     "addrtable" => on_off!(analysis_addrtable, "Address-table analysis pass"),
     "operand_refs" => on_off!(analysis_operand_refs, "Scalar/operand reference-markup pass"),
     "formatstring" => {
@@ -1260,12 +1201,6 @@ kuna_options! { self, p1;
         analysis_lazyfuncs,
         "Materialize Function objects on demand instead of one per entry"
     ),
-    "rawdiscover" => {
-        on_off!(analysis_rawdiscover, "Raw-image recursive function discovery")
-    },
-    "mzsweep" => {
-        on_off!(analysis_mzsweep, "MS-DOS executable call-sweep evidence")
-    },
     "noreturn_disc" => {
         on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")
     },

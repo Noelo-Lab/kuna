@@ -604,11 +604,9 @@ fn read_sleb128(buf: &[u8]) -> Option<(i64, usize)> {
 /// piece rather than failing the analysis. `walk` is the recursion guard
 /// ([`kuna_typedepth::TypeWalk`]) and is the whole of the termination argument.
 ///
-/// `cpp` adds the C++-only tag arms (`--option cppproto`, see
-/// [`kuna_cppproto`]): a `DW_TAG_class_type` maps like a structure and a
-/// `DW_TAG_reference_type`/`DW_TAG_rvalue_reference_type` like a pointer. With
-/// `cpp` false and the guard in its budget mode (`--option typedepth off`) the
-/// switch is byte-identical to the pre-`cppproto` mapper.
+/// `cpp` adds the C++-only tag arms (see [`kuna_cppproto`]): a
+/// `DW_TAG_class_type` maps like a structure and a
+/// `DW_TAG_reference_type`/`DW_TAG_rvalue_reference_type` like a pointer.
 fn build_datatype(
     off: Option<usize>,
     dies: &BTreeMap<usize, DieSnap>,
@@ -1243,9 +1241,8 @@ impl AnalysisPass for DwarfPass {
                         // (kuna `cppproto`) The C++ arm: fuse the definition with the
                         // declaration it links to, qualify the name by its
                         // namespace/class ancestry, and key the prototype by entry
-                        // address. Emitted into a SEPARATE fact set so the commit
-                        // boundary can drop it under `--option cppproto off` — the
-                        // pass runs at load, upstream of the `option` commands.
+                        // address. Emitted into a SEPARATE fact set the commit
+                        // boundary merges in its own order.
                         let Some(res) = kuna_cppproto::resolve_subprogram(snap, &dies) else {
                             continue;
                         };
@@ -1440,8 +1437,7 @@ mod tests {
         }
     }
 
-    /// The same forged input under the pre-fix budget (`--option typedepth off`)
-    /// also terminates — the off arm must stay safe, not just reproducible.
+    /// The same forged input under the legacy hop budget also terminates.
     #[test]
     fn forged_type_cycles_terminate_with_the_budget() {
         let types = factory();

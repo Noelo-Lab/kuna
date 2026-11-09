@@ -310,7 +310,7 @@ panic no-return lists, securitycheck, DWARF variants):
 
 **Swift pack** (third: most new infrastructure, smallest immediate corpus):
 - Prereqs the others don't need: a Swift demangler (**done**: the pure-Rust
-  `analyzers/demangle/kuna_swift.rs`, option `swiftdemangle`, verified against
+  `analyzers/demangle/kuna_swift.rs`, verified against
   `swift-demangle`; every crate alternative builds Apple's C++ demangler, which
   `kuna-wasm` cannot carry), `__swift5_*` metadata walker (**done**:
   `analyzers/swift`, option `swiftmetadata` names accessors, vtable slots,

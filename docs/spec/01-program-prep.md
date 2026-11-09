@@ -2091,7 +2091,7 @@ funcsym stream:
   stop that fold. The same holds for a local GOT entry (`RELATIVE` to an in-image
   object) inside RELRO, which the fold above already renders as the object. A
   local entry outside RELRO stays a dereference for the reason given above.
-- **In-code literal pools** (kuna, `litpoolconst`, default-on, DIV-136,
+- **In-code literal pools** (kuna, `litpoolconst`, always on, DIV-136,
   `decompiler/crates/kuna-decomp/src/p1_partition/kuna_litpoolconst.rs`): the
   third user of the same "constant by construction, not by policy" exception, and
   the one that needs no loader pass at all — only the section table the loader
@@ -2392,12 +2392,12 @@ code loads itself, for instance clang's `adrp; ldr x16; blraaz x16` call of
 `___chkstk_darwin`. It is a plain `S_REGULAR` section with no indirect-symbol
 entries; only its `LC_DYLD_CHAINED_FIXUPS` bind says which import a slot
 holds. `decompiler/crates/kuna-analysis/src/loader/kuna_authptrcall.rs (AuthPtrCallPass)`
-(`authptrcall`, Mach-O only, default on) gives each `__auth_ptr` bind slot a
+(`authptrcall`, Mach-O only, always on) gives each `__auth_ptr` bind slot a
 `FunctionSymbol` named after its import, with one leading `_` stripped as the
 indirect-symbol walk does, and reports the slot as an `externref` range. The
 commit and `ActionDeindirect` then treat the slot exactly like a `__got` slot.
 A bind with a nonzero addend points inside the import rather than at it, so it
-is skipped. Off, such a call renders `(*dat_<slot>)(...)` as before.
+is skipped.
 
 Two arch-marker passes paint **decode context** rather than names, because a wrong
 decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/loader/arm_markers.rs
@@ -2801,8 +2801,7 @@ moves.
   definition still suppresses ambiguous name-only parking. The `libcsigs` and
   `libctypes` passes use this same import evidence.
   The extension adds no option of its own: it is more evidence for the same
-  passes, so `libproto`, `libcsigs` and `libctypes` off together decompile a
-  relocatable object exactly as before. Code imports
+  passes. Code imports
   the loader cannot establish, including untyped x86 `PC32` direct calls and
   `GOTPCRELX` indirect calls, remain outside this additional evidence stream.
   LOSS: typing one callee can move an untyped neighbour's argument inference
@@ -3120,8 +3119,8 @@ moves.
   upstream of the runtime option pass. An architecture flag read inside the pass
   would therefore see the constructor default whatever the operator asked for, so
   the gate is a process environment variable that the console's `option` arm and
-  both CLI surfaces set before the load, the same bridge `dwarfstructs` and
-  `typedepth` use. With the gate off the pass returns immediately: not one shell
+  both CLI surfaces set before the load, the same bridge the other load-time
+  gates use. With the gate off the pass returns immediately: not one shell
   is interned and the output is the shipped tables, byte for byte. The same gate
   answers the operator's declared-name lookup (`declaredlibcproto`), so
   `--define-function 0x…=fopen` agrees with what the pass parks on an imported
@@ -3587,7 +3586,7 @@ moves.
   (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/lines.rs (DwarfLinesPass)`)
   is the separate `.debug_line` pass: each row becomes a `file:line` instruction
   comment in the commentdb; default-off because it changes the output.
-- **DWARF C++ prototypes** (`cppproto`, default-on,
+- **DWARF C++ prototypes** (`cppproto`, always on,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_cppproto.rs`) is the
   C++ arm of that same pass. Keying every recovery off a subprogram DIE's own
   `DW_AT_name` is right for C and wrong for C++, where the compiler splits a
@@ -3617,10 +3616,8 @@ moves.
   template name `maxof<int>` as `maxof`, and a qualified name lives in a nested
   scope that a global by-name query cannot reach — so both the drive's own-prototype
   lookup (04 §4.2) and the callee-prototype snapshot resolve across every scope,
-  not just the global one. The producing pass runs at `load file`, upstream of the
-  `option` commands, so its C++ facts are stashed apart from the always-on ones and
-  the gate is applied where they are committed; with `cppproto off` the DWARF
-  recovery is the name-only walk, byte for byte. (Struct/class **fields** are the
+  not just the global one. The producing pass runs at `load file`; its C++ facts
+  are stashed apart from the generic ones and merged at the commit. (Struct/class **fields** are the
   sibling `dwarfstructs` increment below; before it, a class stayed a named opaque
   and `this->balance` printed as an offset.)
   At the enabled commit boundary,
@@ -3641,8 +3638,7 @@ moves.
   Conflicting qualified facts, different names or addresses, and data symbols
   remain intact. Existing symbols in the database,
   including explicit global aliases and unmangled exports, are never removed.
-  With `cppproto off`, the generic stream is unchanged. Address-keyed prototype
-  application still follows generic prototype application.
+  Address-keyed prototype application follows generic prototype application.
 - **Aggregate layout** (`dwarfstructs`, default-on,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfstructs.rs`) is
   what turns a recovered aggregate from a *name* into a *type*. The mapper used to
@@ -3925,7 +3921,7 @@ moves.
   the mode's preset included, and leaves off when the output language is Rust;
   the browser front-end does not export it.
   Chapter 05 covers what the option does to the calls.
-- **Full-depth DWARF types** (`typedepth`, default-on,
+- **Full-depth DWARF types** (`typedepth`, always on,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_typedepth.rs`) is the
   type mapper's recursion guard, and it exists because the DIE walk can be handed a
   chain that closes on itself — a `DW_TAG_pointer_type` whose `DW_AT_type` is its
@@ -3951,13 +3947,7 @@ moves.
   another kind (kuna registers a core type called `code`, which zlib's
   `inftrees.h` really does typedef an anonymous struct to), the aggregate falls
   back to the anonymous name rather than failing to build and letting the pointer
-  arm degrade it to `void *`. Like the other DWARF gates the mapping happens at
-  `load file`, upstream of the `option` commands — but unlike `cppproto` this one
-  changes how a single fact set is *built* rather than selecting between two, so
-  the live gate is the process env var
-  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_typedepth.rs`) that the
-  CLI exports before the load, the same bridge the other load-time gates
-  use. With `typedepth off` the mapper is the pre-fix budget, byte for byte.
+  arm degrade it to `void *`. The mapping happens at `load file`.
 - **Demangling** (`decompiler/crates/kuna-analysis/src/analyzers/demangle/mod.rs
   (demangle_name)`, the `GnuDemanglerAnalyzer` analog) is not a registered pass but
   a loader hook: applied to every funcsym name after `@VERSION` stripping, before
@@ -4035,10 +4025,8 @@ moves.
   class's method labels read `-[Sample.Foo viewDidLoad]` while the
   `_OBJC_CLASS_$_…` data symbol keeps the linker's spelling. The arm is
   shape-gated on `sourcelang::is_swift_mangled` — prefixes no other scheme
-  owns — and option-gated by `swiftdemangle` (default on) through the
-  `KUNA_SWIFTDEMANGLE` loadtime env bridge, the `rexthunk` pattern, because
-  names are demangled inside `load file` upstream of every option line. On a large arm64 iOS app (314,038 functions, 7,382 of them under Swift symbols) the
-  option takes every Swift symbol from mangled to demangled where the earlier
+  owns — and always on. On a large arm64 iOS app (314,038 functions, 7,382 of them under Swift symbols) it
+  takes every Swift symbol from mangled to demangled where the earlier
   name-only subset reached 26%, at no measurable cost (demangling the whole
   symbol table takes under 10 ms). The unit-test corpus is real symbols
   pinned with the `swift-demangle` output; the stage test
@@ -4692,8 +4680,8 @@ every other binary's pass list is byte-identical to before the pass existed):
     renders `objc_storeStrong(&self->_name, x)` (that app: 5,207 field accesses, 0
     anonymous offset loads; an 84 MB Swift + ObjC app's Swift classes expose
     their stored properties the same way). The struct takes the class's runtime
-    name, so a Swift class whose labels read `-[main.Greeter greet:]` under
-    `swiftdemangle` has `self` typed `_TtC4main7Greeter *`, a name C accepts.
+    name, so a Swift class whose labels read `-[main.Greeter greet:]`
+    has `self` typed `_TtC4main7Greeter *`, a name C accepts.
     A class that got no
     layout — one of another image behind a category, or one with no field of
     its own — still types `self` as a pointer to its declared record, so the
@@ -5731,7 +5719,7 @@ interior entry must leave its code reachable from the owning entry. PowerPC PC
 reads are handled there as described in the lift chapter.
 
 **(kuna) Except where a `.cold` fragment is entered more than once**
-(`coldentry`, default-**on**;
+(`coldentry`, always on;
 `decompiler/crates/kuna-analysis/src/analyzers/entry/kuna_coldentry.rs`). GCC's
 hot/cold splitting moves a function's unlikely blocks into a separate `foo.cold`
 fragment with its own FDE, and when several unlikely paths are split out they are
@@ -6571,7 +6559,7 @@ not seed the walk with them either, and they are exec-filtered like every other
 seed, so a junk-word CALL target outside the image stays a non-function.
 
 (kuna) The two worklists must agree about what counts as code, and
-`unmappedentry` (default-on;
+`unmappedentry` (always on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_unmappedentry.rs
 (admits_call_entry)`) is what makes them. The instruction worklist gates every
 address on the executable ranges above and drops anything outside them; the
@@ -6598,9 +6586,9 @@ had a body. Measured over 234 crackmes images it removes 150 entries on 19 of
 them and adds none; every one is `size: 0` and outside every executable section,
 and emitted C over 6,085 functions of those images changes in exactly one
 function, where two parameters wrongly typed `code *` (a phantom sat at the
-address they pointed to) come back as the data pointers they are. Off restores the previous, phantom-producing discovery set exactly.
+address they pointed to) come back as the data pointers they are.
 
-(kuna) The same seam carries `ppclocalentry` (default-on;
+(kuna) The same seam carries `ppclocalentry` (always on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_ppclocalentry.rs (fold_map)`),
 which answers a different question about a CALL target: not whether it is code,
 but whether it is a *function*. The OpenPOWER ELFv2 ABI gives a PPC64 function
@@ -6629,10 +6617,9 @@ last guard is what makes the walk's instruction closure invariant under the fold
 either way — so the fold can only ever remove the duplicate second entry, never a
 body. As with `unmappedentry` only the function claim is withheld; the Call
 cross-reference is filed in both directions either way. PPC64-only, and inert on
-an image whose symbols carry no local-entry annotation. Off restores the previous,
-husk-producing discovery set exactly.
+an image whose symbols carry no local-entry annotation.
 
-(kuna) `thunkentry` (default-on;
+(kuna) `thunkentry` (always on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_thunkentry.rs (thunk_entries)`)
 answers the opposite question about a *jump* target: whether it is a function
 although no CALL reaches it. A function whose whole body is one direct `jmp` is a
@@ -6973,7 +6960,7 @@ candidate cannot split them. ARM instead reuses the existing Thumb-pointer
 oracle: an aligned odd code pointer is accepted only at an undefined
 frame-establishing prologue that passes the same valid-subroutine probe.
 
-**Headerless-image function discovery** (`rawdiscover`, default-on;
+**Headerless-image function discovery** (`rawdiscover`, always on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_rawdiscover.rs`) is the raw
 analog of that walk. A `--raw-image` load has no `object::File`, so the whole
 tier above declines: the consumer entry point opens by parsing the object, and
@@ -7007,10 +6994,10 @@ would hide everything found from it. `--addr` continues to do both. What this
 cannot recover is what the input does not record: a function no direct call
 reaches and no seed names stays undiscovered, and `--define-function` remains
 the way to assert it. Raw-container only, so every object-format result is
-byte-identical; `--option rawdiscover off` restores the seeds-only inventory.
+byte-identical.
 
 (kuna) **On an MS-DOS executable the sweep keeps only the calls a DOS program
-can make** (`mzsweep`, default-on;
+can make** (`mzsweep`, always on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_mzsweep.rs (MzEvidence)`). An
 `MZ` load reaches this pass as a raw image (§1.2), but unlike a
 firmware image its load module is mostly data: a large-model program's far data
@@ -7049,8 +7036,7 @@ data segments in front of the code, one in DGROUP; 321 functions become 297,
 functions whose decode hits bad instruction data go from 15 to 3, and the
 zero-run bodies from 15 to none) and keeps every function IDA has; the bodies
 of every function that stays are byte-identical. `MZ` loads only, so every other
-input, `--raw-image` included, is byte-identical; `--option mzsweep off`
-restores the whole-module sweep.
+input, `--raw-image` included, is byte-identical.
 
 Table-derived roots are committed but are deliberately not fed through a
 second recursive walk. Thus the bounded path obtains direct-call closure and
@@ -8177,7 +8163,7 @@ materialises the GOT pointer at run time — `call <next instruction>; pop ebx; 
 ebx,imm`, an idiom that exists for no other purpose — and every literal is reached
 as base-plus-displacement, so the address occurs nowhere in the image and the
 constant scan reports that every string in the program is referenced by nothing.
-**PIC base folding** (`picbase`, default-on,
+**PIC base folding** (`picbase`, always on,
 `decompiler/crates/kuna-analysis/src/listing/kuna_picbase.rs`) closes that with a
 deliberately tiny abstract machine over the same whole p-code the query already
 keeps: a value is a constant or an offset from the stack pointer, memory is
@@ -8796,14 +8782,12 @@ entry, the gnulib image 89 to 100, the MSVC fixture 2 to 6. `kuna strings` over 
 (kuna) gcc's own dispatches kept most of a switch's callees out of that read all
 the same — 3,913 of the 186,139 direct call sites in 51 x86-64 decbench binaries,
 2,609 of them at `-O0`, where every computed jump of a PIE fails. Five things
-were in the way, and each is now read. **Switch reach** (`switchreach`,
-default-on) gates how far the read follows a dispatch — the unscaled index, the
-long slice across calls, the sixteen-instruction search for the range check,
-the masked index and the re-read below; off, the slice and the search stop at
-eight instructions and at the first call, as they did. How the range check is
-read once it is found is *not* gated, so the option off is not the old walk:
-ssh `-O2`'s dispatch at `0x42a26` in `main` reads 9 of its 13 cases on the old
-walk, all 13 with the option on, and none with it off.
+were in the way, and each is now read. **Switch reach** (always on) is how far
+the read follows a dispatch — the unscaled index, the long slice across calls,
+the sixteen-instruction search for the range check, the masked index and the
+re-read below; the slice and the search used to stop at eight instructions and
+at the first call. ssh `-O2`'s dispatch at `0x42a26` in `main` read 9 of its 13
+cases on the old walk and reads all 13 now.
 
 *The `-O0` chain.* gcc spends seven instructions between its `ja` and the jump:
 `mov %eax,%eax; lea 0(,%rax,4),%rdx; lea jt(%rip),%rax; mov (%rdx,%rax,1),%eax;

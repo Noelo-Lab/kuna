@@ -68,7 +68,7 @@ use std::rc::Rc;
 use object::read::Object;
 
 use kuna_base::types::int4;
-use kuna_decomp::dtype::{flags as tflags, type_metatype, Datatype, TypeFactory, TypeField};
+use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory, TypeField};
 use kuna_decomp::kuna_gotypes::GOTYPES_MAX_TYPELINKS;
 use kuna_decomp::kuna_langfacet::LangFacet;
 

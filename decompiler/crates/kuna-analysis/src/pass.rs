@@ -596,10 +596,8 @@ pub struct AnalysisOutput {
     /// See [`FidMatch`].
     pub fid_names: Vec<FidMatch>,
     /// (kuna `cppproto`) The DWARF recoveries that only the C++ arm of the DWARF
-    /// pass produces, held APART from the streams above so the commit boundary can
-    /// drop them wholesale under `--option cppproto off`. The producing pass runs
-    /// at load, upstream of the `option` commands, so the gate cannot live inside
-    /// it — this split is what makes the flag live. See [`CppDwarfFacts`].
+    /// pass produces, held APART from the streams above so the commit boundary
+    /// merges them in its own order. See [`CppDwarfFacts`].
     pub cpp_dwarf: CppDwarfFacts,
     /// Go DWARF signatures, with type interning deferred until the commit gate.
     pub go_dwarf: Vec<crate::dwarf::kuna_godwarfsig::Facts>,

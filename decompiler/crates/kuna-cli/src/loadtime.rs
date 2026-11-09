@@ -11,10 +11,9 @@ use std::process::Command;
 use kuna_decomp::{
     kuna_calltargettype, kuna_dwarfstructs, kuna_dyldcache, kuna_dwarfvariants,
     kuna_ifuncfpret, kuna_kernelcache, kuna_libctypes, kuna_ppcapu,
-    kuna_goabi, kuna_objcivars, kuna_objcsdk, kuna_sourcelang, kuna_swiftdemangle,
-    kuna_symbolnamebound, kuna_symbolnamechars,
+    kuna_goabi, kuna_objcivars, kuna_objcsdk, kuna_sourcelang,
+    kuna_symbolnamechars,
     kuna_variantnames,
-    kuna_symbolnamerepair, kuna_typedepth,
 };
 
 #[derive(Clone, Copy)]
@@ -38,10 +37,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "ppcapu" => (kuna_ppcapu::PPCAPU_ENV, DefaultOff),
         "kernelcache" => (kuna_kernelcache::KERNELCACHE_ENV, Kernelcache),
         "goabi" => (kuna_goabi::GOABI_ENV, DefaultOn),
-        "symbolnamerepair" => (kuna_symbolnamerepair::SYMBOLNAMEREPAIR_ENV, DefaultOn),
         "symbolnamechars" => (kuna_symbolnamechars::SYMBOLNAMECHARS_ENV, SymbolNameChars),
-        "symbolnamebound" => (kuna_symbolnamebound::SYMBOLNAMEBOUND_ENV, Trimmed),
-        "typedepth" => (kuna_typedepth::TYPEDEPTH_ENV, DefaultOn),
         "libctypes" => (kuna_libctypes::LIBCTYPES_ENV, LibcTypes),
         "dwarfstructs" => (kuna_dwarfstructs::DWARFSTRUCTS_ENV, DefaultOn),
         "dwarfvariants" => (kuna_dwarfvariants::DWARFVARIANTS_ENV, DefaultOn),
@@ -49,7 +45,6 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "calltargettype" => (kuna_calltargettype::CALLTARGETTYPE_ENV, DefaultOff),
         "macho-arm64e" => ("KUNA_MACHO_ARM64E", Arm64e),
         "sourcelang" => (kuna_sourcelang::SOURCELANG_ENV, SourceLang),
-        "swiftdemangle" => (kuna_swiftdemangle::SWIFTDEMANGLE_ENV, DefaultOn),
         "objcivars" => (kuna_objcivars::OBJCIVARS_ENV, DefaultOn),
         "objcsdk" => (kuna_objcsdk::OBJCSDK_ENV, Trimmed),
         "dyldimage" => (kuna_dyldcache::DYLDIMAGE_ENV, Trimmed),
@@ -212,7 +207,7 @@ mod tests {
                 ("", Some("on")), ("0", Some("off")), ("yes", Some("off")),
                 ("invalid", Some("off"))]),
             (
-                "typedepth",
+                "objcivars",
                 vec![
                     (" OFF ", Some("off")),
                     ("false", Some("off")),
@@ -258,10 +253,6 @@ mod tests {
                 ],
             ),
             (
-                "symbolnamebound",
-                vec![(" 23 ", Some("23")), ("BAD", Some("BAD"))],
-            ),
-            (
                 "symbolnamechars",
                 vec![("off", Some("off")), ("invalid", Some("safe"))],
             ),
@@ -280,8 +271,8 @@ mod tests {
     #[test]
     fn command_overrides_keep_last_values_and_explicit_removals() {
         let options = [
-            ("typedepth".into(), "on".into()),
-            ("typedepth".into(), "off".into()),
+            ("objcivars".into(), "on".into()),
+            ("objcivars".into(), "off".into()),
             ("macho-arm64e".into(), "off".into()),
             ("dwarfvariants".into(), "off".into()),
             ("unrelated".into(), "on".into()),
@@ -295,7 +286,7 @@ mod tests {
         assert_eq!(
             actual,
             BTreeMap::from([
-                ("KUNA_TYPEDEPTH", Some("off")),
+                ("KUNA_OBJCIVARS", Some("off")),
                 ("KUNA_MACHO_ARM64E", None),
                 ("KUNA_MACHO_SLICE", Some("arm64")),
                 ("KUNA_DWARFVARIANTS", Some("off")),

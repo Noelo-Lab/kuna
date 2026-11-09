@@ -804,7 +804,7 @@ fn descend(
     // *inherits* is established in a different function's prologue -- see
     // `kuna_picbase`. `None` (every non-PIC target, every image with no GOT)
     // leaves the walk below byte-identical to the pre-feature one.
-    let picbase: Option<(PicCtx, PicBase)> = if arch.analysis_picbase && !mapped.is_empty() {
+    let picbase: Option<(PicCtx, PicBase)> = if !mapped.is_empty() {
         PicCtx::new(arch, data_space.as_ref()).and_then(|ctx| {
             kuna_picbase::detect(file, translate, &code_space, &ctx, &seed_set).map(|b| (ctx, b))
         })
@@ -831,8 +831,7 @@ fn descend(
     let preserved = kuna_switchtable::preserved_registers(arch);
     let reach = kuna_switchtable::Reach {
         max_entries,
-        preserved: if arch.analysis_switchreach { &preserved } else { &[] },
-        far: arch.analysis_switchreach,
+        preserved: &preserved,
     };
     let arm = file.architecture() == object::Architecture::Arm;
     let pic_image = pool.as_ref().map(|pool| kuna_picpool::Image {

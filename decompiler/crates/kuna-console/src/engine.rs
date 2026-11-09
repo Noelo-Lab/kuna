@@ -2550,13 +2550,10 @@ impl ConsoleProgram {
     /// by-name query answers out of the global scope, which is the wrong symbol
     /// whenever two share a spelling (an import thunk and its IAT slot).
     ///
-    /// A silent no-op when the option is off, when neither table knows the name, or
-    /// when the declaration named an entry that already carries a locked prototype
-    /// from a stronger source.
+    /// A silent no-op when neither table knows the name, or when the declaration
+    /// named an entry that already carries a locked prototype from a stronger
+    /// source.
     fn seed_declared_libc_prototype(&mut self, name: &str, addr: &Address) {
-        if !self.arch().analysis_declaredlibcproto {
-            return;
-        }
         let (_addr_size, word_size) = self.arch().data_org();
         // The layout is the load-time pass's decision, not a fresh one: only an
         // image whose own target gate passed may be handed the glibc field
@@ -2685,7 +2682,7 @@ impl ConsoleProgram {
         let known: BTreeSet<u64> = seeds.iter().copied().collect();
         let found = {
             let arch = self.arch();
-            let mz = self.mz_evidence.as_ref().filter(|_| arch.analysis_mzsweep);
+            let mz = self.mz_evidence.as_ref();
             kuna_analysis::listing::kuna_rawdiscover::discover(
                 arch,
                 arch.translate(),
@@ -2733,7 +2730,7 @@ impl ConsoleProgram {
             // object-file discovery tier below declines without an
             // `object::File`. Discover the rest first, so the entries it finds
             // are named and installed by the same loop.
-            if self.container == ProgramContainer::Raw && self.arch().analysis_rawdiscover {
+            if self.container == ProgramContainer::Raw {
                 self.discover_raw_entries();
             }
             let entries = std::mem::take(&mut self.pending_synthetic_entries);
@@ -2879,16 +2876,7 @@ impl ConsoleProgram {
         // because it decodes, but because its gate is only known now. Registered at
         // load it swept the whole image on every binary and was discarded whenever
         // the gate was off (the default). See `passes::run_deferred_entry_passes`.
-        let want_funcstart_patterns = self.arch().analysis_funcstart_patterns;
-        let want_coldentry = self.arch().analysis_coldentry;
-        if (want_listing
-            || want_fast_funcdisc
-            || want_operand_refs
-            || want_wide32_alone
-            || want_funcstart_patterns
-            || want_coldentry)
-            && self.analysis_image.is_some()
-        {
+        if self.analysis_image.is_some() {
             let analysis_target = self.arch.arch_id().to_string();
             if let Some((path, bytes, import_proofs)) = self.analysis_image.take() {
                 let _import_proofs =
@@ -2906,7 +2894,7 @@ impl ConsoleProgram {
                     // in `merged` before `committed_entry_seeds` is read below, which
                     // is what hands the load-time inventory to the Listing walk as
                     // extra roots (`armdiscseed`).
-                    if want_funcstart_patterns || want_coldentry {
+                    {
                         let arch = self.arch();
                         let entry_out = kuna_analysis::passes::run_deferred_entry_passes(
                             &bytes,
@@ -3061,8 +3049,7 @@ fn suppress_pdb_interior_entries(
     if bodies.is_empty() {
         return;
     }
-    let cpp_symbols: &[kuna_analysis::pass::SymFact] =
-        if arch.analysis_cppproto { &merged.cpp_dwarf.symbols } else { &[] };
+    let cpp_symbols: &[kuna_analysis::pass::SymFact] = &merged.cpp_dwarf.symbols;
     let mut named: Vec<(u64, String)> = merged
         .symbols
         .iter()
@@ -3136,16 +3123,13 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // paint plus PE-only Win32 no-return names, committed only when enabled.
         // Metadata alone has no output effect; the live flow option gates its use.
         "ppc32_pic_slots" => true,
-        "authptrcall" => arch.analysis_authptrcall,
         // (kuna) ELF GOT data imports: the slot names + externref paint exist only
         // to let `importdata` render a read through the slot, so they share its gate.
         "elfgotimports" => arch.import_data,
-        "libproto" => arch.analysis_libproto,
         // (kuna) The measured libc signature extension — the ~200 prototypes the
         // 27-entry base table does not carry, seeded onto IMPORTED names only. The
         // facts are computed at LOAD and COMMITTED only when this gate is on, so
         // `off` renders exactly what the base table alone renders.
-        "libcsigs" => arch.analysis_libcsigs,
         "libgccsigs" => arch.analysis_libgccsigs,
         // (kuna) The LOAD-TIME format-string resolver — a Listing consumer whose
         // per-call-site overrides are computed at the deferred commit point and
@@ -3195,7 +3179,6 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // single-function FDE bodies and the commit rejects any discovered entry
         // strictly inside one. Default-ON; with the gate off the fact stream is
         // dropped here and the discovery set is exactly what it was before.
-        "coldentry" => arch.analysis_coldentry,
         // (kuna) PDB-procedure-interior entry suppression — the extents come out of
         // the `.pdb`, so switching `pdb` off withdraws them too.
         "pdbinterior" => arch.analysis_pdb,
@@ -3236,7 +3219,6 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // default-OFF (it changes the output), so it must be registered here to be
         // gated by the `analysis_dwarf_lines` flag rather than running by default.
         "dwarf_lines" => arch.analysis_dwarf_lines,
-        "callfixup" => arch.analysis_callfixup,
         "addrtable" => arch.analysis_addrtable,
         "operand_refs" => arch.analysis_operand_refs,
         "listing" => arch.analysis_listing,
@@ -4837,24 +4819,17 @@ fn commit_analysis_output(
 
     let num_spaces = prog.arch().manage().num_spaces();
 
-    // 0. (kuna `cppproto`) The DWARF C++ arm's facts. The producing pass runs at
-    //    `load file`, upstream of the `option` commands, so it stashes them apart
-    //    and the live gate is HERE: on, they fold into the normal symbol/local
-    //    streams below and their address-keyed prototypes are applied at step 5a;
-    //    off, they are dropped and the DWARF recovery is the name-only walk,
-    //    byte-identical to before this arm existed.
+    // 0. (kuna `cppproto`) The DWARF C++ arm's facts, stashed apart by the
+    //    producing pass: they fold into the normal symbol/local streams below and
+    //    their address-keyed prototypes are applied at step 5a.
     let mut out = out;
     for slot in std::mem::take(&mut out.ppc32_pic_slots) {
         prog.arch_mut().ppc32_pic_imports.insert(slot.address, slot);
     }
-    if prog.arch().analysis_cppproto {
-        let cpp = std::mem::take(&mut out.cpp_dwarf);
-        kuna_analysis::dwarf::merge_cpp_symbols(&mut out.symbols, cpp.symbols);
-        out.locals.extend(cpp.locals);
-        out.cpp_dwarf.prototypes = cpp.prototypes;
-    } else {
-        out.cpp_dwarf.prototypes.clear();
-    }
+    let cpp = std::mem::take(&mut out.cpp_dwarf);
+    kuna_analysis::dwarf::merge_cpp_symbols(&mut out.symbols, cpp.symbols);
+    out.locals.extend(cpp.locals);
+    out.cpp_dwarf.prototypes = cpp.prototypes;
     let go_prototypes = if prog.arch().analysis_godwarfsig {
         out.go_dwarf.iter().flat_map(|facts| facts.materialize(prog.arch())).collect::<Vec<_>>()
     } else {
