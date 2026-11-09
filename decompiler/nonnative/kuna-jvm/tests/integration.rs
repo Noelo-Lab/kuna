@@ -52,3 +52,7 @@ mod jimage_synthetic;
 mod k2_statement_graph;
 #[path = "class_model.rs"]
 mod class_model;
+#[path = "k5_vars.rs"]
+mod k5_vars;
+#[path = "k5_flow.rs"]
+mod k5_flow;
