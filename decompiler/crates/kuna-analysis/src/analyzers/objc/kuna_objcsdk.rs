@@ -257,8 +257,12 @@ impl Types {
             .filter(|t| !matches!(*t, "nullable" | "nonnull" | "null_unspecified" | "null_resettable" | "_Nullable" | "_Nonnull" | "_Null_unspecified" | "__kindof" | "const" | "volatile" | "__unsafe_unretained" | "__weak" | "__strong" | "__autoreleasing" | "in" | "out" | "inout" | "bycopy" | "byref" | "oneway" | "struct" | "enum" | "union" | "NS_NOESCAPE"))
             .filter(|t| !t.starts_with('<') && !t.starts_with("__attribute__"))
             .collect();
-        if text.trim() == "@?" || text.contains("(^") || text.contains("^)") || toks.iter().any(|t| t.starts_with('(')) {
+        let groups: Vec<&str> = toks.iter().copied().filter(|t| t.starts_with('(')).collect();
+        if text.trim() == "@?" || groups.first().is_some_and(|g| g.contains('^')) {
             return Some("@?".to_string());
+        }
+        if !groups.is_empty() {
+            return None;
         }
         let stars = toks.iter().rev().take_while(|t| **t == "*").count();
         let base: Vec<&str> = toks[..toks.len() - stars].to_vec();
@@ -443,7 +447,7 @@ fn property(rest: &str, types: &Types) -> Vec<(String, Option<String>)> {
         }
     }
     let decl = &rest[i..];
-    let (ty, name) = if let Some(k) = decl.find("(^") {
+    let (ty, name) = if let Some(k) = decl.find("(^").or_else(|| decl.find("(*")) {
         let name = decl[k + 2..].split(')').next().unwrap_or("").trim().to_string();
         (decl.to_string(), name)
     } else {
@@ -714,6 +718,38 @@ mod tests {
         assert_eq!(out.get("setAlpha:"), Some(&None));
         assert_eq!(out.get("setBeta:").cloned().flatten().as_deref(), Some("v@:d"));
         assert_eq!(out.get("setTitle:").cloned().flatten().as_deref(), Some("v@:@\"NSString\""));
+    }
+
+    /// A parenthesized declarator is a block only when it is a caret: a C
+    /// function pointer, as an argument or a property, claims its selector as
+    /// one this reader cannot spell instead of taking a block's `@?`.
+    #[test]
+    fn a_function_pointer_is_not_a_block() {
+        let text = strip_comments(concat!(
+            "typedef void (^Handler)(int);\n",
+            "@interface W\n",
+            "- (void)setBlock:(void (^)(int))block;\n",
+            "- (void)setNullableBlock:(void (^ _Nullable)(int))block;\n",
+            "- (void)setHandler:(Handler)handler;\n",
+            "- (void)setFunction:(void (*)(int))function;\n",
+            "- (void)setCallback:(int (* _Nullable)(void *, int))callback;\n",
+            "@property (assign) void (*hook)(int);\n",
+            "@property (copy) void (^done)(void);\n",
+            "@end\n",
+        ));
+        let mut types = Types::default();
+        types.scan_typedefs(&text);
+        let mut out = HashMap::new();
+        scan_declarations(&text, &types, &mut out);
+        let get = |s: &str| out.get(s).cloned();
+        assert_eq!(get("setBlock:"), Some(Some("v@:@?".to_string())));
+        assert_eq!(get("setNullableBlock:"), Some(Some("v@:@?".to_string())));
+        assert_eq!(get("setHandler:"), Some(Some("v@:@?".to_string())));
+        assert_eq!(get("setFunction:"), Some(None));
+        assert_eq!(get("setCallback:"), Some(None));
+        assert_eq!(get("hook"), Some(None));
+        assert_eq!(get("setHook:"), Some(None));
+        assert_eq!(get("done"), Some(Some("@?@:".to_string())));
     }
 
     #[test]
