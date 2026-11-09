@@ -1,0 +1,295 @@
+=M pkg/TestSynchronized#<init>()V
+@ 0 CondenseSequences
+s0 Root id=3
+  labels s1.0
+ s1 Block id=1
+   > B x c=s0
+   insn [0:25 1:183 4:177]
+x Exit id=2
+  < s1.0
+@ 1 ClearStatements
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   insn [0:25 1:183 4:177]
+x Exit id=2
+  < s1.0
+@ 2 ProcessExpr
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   exprents 3
+   - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@0 0.0 t=Ljava/lang/Object; backing=0:25))
+   - (invoke@1-3 SPECIAL INIT java/lang/Object.<init>()V (var 10000.0 t=Ljava/lang/Object; stack))
+   - (exit@4 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 3 CondenseSequences_1
+= 2
+@ 4 StackVars
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   exprents 2
+   - (invoke@1-3 SPECIAL INIT java/lang/Object.<init>()V (var@0 0.0 t=U pt=Lpkg/TestSynchronized;))
+   - (exit@4 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 5 BuildAsserts
+= 4
+@ 6 ResetEdges
+= 5
+@ 7 MergeLoop
+= 6
+@ 8 SimplifyStack
+= 7
+@ 9 VarVersions
+= 8
+@ 10 IdentifyLabels
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 2
+   - (invoke@1-3 SPECIAL INIT java/lang/Object.<init>()V (var@0 0.0 t=U pt=Lpkg/TestSynchronized;))
+   - (exit@4 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 11 MainLoop
+= 10
+@ 12 SimplifyStack #2
+= 11
+@ 13 RedundantReturns
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 1
+   - (invoke@1-3 SPECIAL INIT java/lang/Object.<init>()V (var@0 0.0 t=U pt=Lpkg/TestSynchronized;))
+x Exit id=2 bc=4
+  < s1.0
+@ 14 SetVarDefinitions
+= 13
+=M pkg/TestSynchronized#test()V
+@ 0 RemoveSynchronized
+s0 Root id=11
+  comment "$VF: Extended synchronized range to monitorexit"
+ s1 Seq id=13 athrow monexit
+   labels s4.0
+  s2 Sync id=14 body=s4
+   s3 Block id=1 monenter
+     > R s4
+     insn [0:25 1:58 2:25 3:194]
+   s4 Block id=2 monexit rmexit
+     > B x c=s1
+     < s3.0
+     insn [4:0 5:16 6:54 7:18 9:178 12:95 13:182 16:0 17:178 20:58 21:25 22:195 31:177]
+x Exit id=9
+  < s4.0
+@ 1 CondenseSequences
+s0 Root id=11
+  comment "$VF: Extended synchronized range to monitorexit"
+ s1 Sync id=14 body=s3
+   labels s3.0
+  s2 Block id=1 monenter
+    > R s3
+    insn [0:25 1:58 2:25 3:194]
+  s3 Block id=2 monexit rmexit
+    > B x c=s1
+    < s2.0
+    insn [4:0 5:16 6:54 7:18 9:178 12:95 13:182 16:0 17:178 20:58 21:25 22:195 31:177]
+x Exit id=9
+  < s3.0
+@ 2 ClearStatements
+s0 Root id=11
+  cont ~
+  comment "$VF: Extended synchronized range to monitorexit"
+ s1 Sync id=14 body=s3
+   cont ~
+   labels s3.0
+  s2 Block id=1
+    cont ~
+    > R s3
+    insn [0:25 1:58 2:25 3:194]
+  s3 Block id=2 rmexit
+    cont ~
+    > B x c=s1
+    < s2.0
+    insn [4:0 5:16 6:54 7:18 9:178 12:95 13:182 16:0 17:178 20:58 21:25 22:195 31:177]
+x Exit id=9
+  < s3.0
+@ 3 ProcessExpr
+s0 Root id=11
+  cont ~
+  comment "$VF: Extended synchronized range to monitorexit"
+ s1 Sync id=14 body=s3
+   cont ~
+   labels s3.0
+   head (monitor@3 ENTER (var 10000.0 t=Ljava/lang/Object; stack))
+  s2 Block id=1
+    cont ~
+    > R s3
+    exprents 3
+    - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@0 0.0 t=Ljava/lang/Object; backing=0:25))
+    - (assign@1 (var@1 1.0 t=Ljava/lang/Object; backing=1:58) (var 10000.0 t=Ljava/lang/Object; stack))
+    - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@2 1.0 t=Ljava/lang/Object; backing=2:25))
+  s3 Block id=2 rmexit
+    cont ~
+    > B x c=s1
+    < s2.0
+    exprents 13
+    - (assign (var 10000.0 t=Z stack) (const@5 Z 0 boolok))
+    - (assign@6 (var@6 2.0 t=I lvt=$i$a$-synchronized-TestSynchronized$test$1:I@7-17/2.1 backing=6:54) (var 10000.0 t=Z stack))
+    - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@7-8 Ljava/lang/String; "Hello"))
+    - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@9-11 java/lang/System.out Ljava/io/PrintStream; static ~))
+    - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+    - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+    - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+    - (invoke@13-15 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+    - (assign (var 10000.0 t=Lkotlin/Unit; stack) (field@17-19 kotlin/Unit.INSTANCE Lkotlin/Unit; static ~))
+    - (assign@20 (var@20 2.0 t=Ljava/lang/Object; backing=20:58) (var 10000.0 t=Lkotlin/Unit; stack))
+    - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@21 1.0 t=Ljava/lang/Object; backing=21:25))
+    - (monitor@22 EXIT remove (var 10000.0 t=Ljava/lang/Object; stack))
+    - (exit@23 RETURN rt=V ~)
+x Exit id=9
+  < s3.0
+@ 4 CondenseSequences_1
+= 3
+@ 5 StackVars
+s0 Root id=11
+  cont ~
+  comment "$VF: Extended synchronized range to monitorexit"
+ s1 Sync id=14 body=s3
+   cont ~
+   labels s3.0
+   head (monitor@3 ENTER (var@2 1.0 t=U pt=Lpkg/TestSynchronized;))
+  s2 Block id=1
+    cont ~
+    > R s3
+    exprents 1
+    - (assign@1 (var@1 1.0 t=U pt=Lpkg/TestSynchronized; backing=1:58) (var@0 0.0 t=U pt=Lpkg/TestSynchronized;))
+  s3 Block id=2 rmexit
+    cont ~
+    > B x c=s1
+    < s2.0
+    exprents 4
+    - (assign@6 (var@6 2.0 t=U pt=I lvt=$i$a$-synchronized-TestSynchronized$test$1:I@7-17/2.1 backing=6:54) (const@5 X 0))
+    - (invoke@13-15 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@9-11 java/lang/System.out Ljava/io/PrintStream; static ~) (const@7-8 Ljava/lang/String; "Hello"))
+    - (assign@20 (var@20 4.0 t=U pt=Lkotlin/Unit; backing=20:58) (field@17-19 kotlin/Unit.INSTANCE Lkotlin/Unit; static ~))
+    - (exit@23 RETURN rt=V ~)
+x Exit id=9
+  < s3.0
+@ 6 BuildAsserts
+= 5
+@ 7 ResetEdges
+= 6
+@ 8 MergeLoop
+= 7
+@ 9 SimplifyStack
+= 8
+@ 10 VarVersions
+= 9
+@ 11 IdentifyLabels
+s0 Root id=11
+  cont ~
+  comment "$VF: Extended synchronized range to monitorexit"
+ s1 Sync id=14 body=s3
+   cont ~
+   labels s3.0
+   head (monitor@3 ENTER (var@2 1.0 t=U pt=Lpkg/TestSynchronized;))
+  s2 Block id=1
+    cont ~
+    > R s3 implicit
+    exprents 1
+    - (assign@1 (var@1 1.0 t=U pt=Lpkg/TestSynchronized; backing=1:58) (var@0 0.0 t=U pt=Lpkg/TestSynchronized;))
+  s3 Block id=2 rmexit
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0
+    exprents 4
+    - (assign@6 (var@6 2.0 t=U pt=I lvt=$i$a$-synchronized-TestSynchronized$test$1:I@7-17/2.1 backing=6:54) (const@5 X 0))
+    - (invoke@13-15 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@9-11 java/lang/System.out Ljava/io/PrintStream; static ~) (const@7-8 Ljava/lang/String; "Hello"))
+    - (assign@20 (var@20 4.0 t=U pt=Lkotlin/Unit; backing=20:58) (field@17-19 kotlin/Unit.INSTANCE Lkotlin/Unit; static ~))
+    - (exit@23 RETURN rt=V ~)
+x Exit id=9
+  < s3.0
+@ 12 EliminateDead
+s0 Root id=11
+  cont ~
+  comment "$VF: Extended synchronized range to monitorexit"
+ s1 Sync id=14 body=s3
+   cont ~
+   labels s3.0
+   head (monitor@3 ENTER (var@2 1.0 t=U pt=Lpkg/TestSynchronized;))
+  s2 Block id=1
+    cont ~
+    > R s3 implicit
+    exprents 1
+    - (assign@1 (var@1 1.0 t=U pt=Lpkg/TestSynchronized; backing=1:58) (var@0 0.0 t=U pt=Lpkg/TestSynchronized;))
+  s3 Block id=2 rmexit
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0
+    exprents 2
+    - (invoke@13-15 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@9-11 java/lang/System.out Ljava/io/PrintStream; static ~) (const@7-8 Ljava/lang/String; "Hello"))
+    - (exit@23 RETURN rt=V ~)
+x Exit id=9
+  < s3.0
+@ 13 MainLoop
+= 12
+@ 14 SimplifyStack #2
+s0 Root id=11
+  cont ~
+  comment "$VF: Extended synchronized range to monitorexit"
+ s1 Sync id=14 body=s3
+   cont ~
+   labels s3.0
+   head (monitor@3 ENTER (var@0,2 0.0 t=U pt=Lpkg/TestSynchronized;))
+  s2 Block id=1
+    cont ~
+    > R s3 implicit
+    exprents 0
+  s3 Block id=2 rmexit
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0
+    exprents 2
+    - (invoke@13-15 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@9-11 java/lang/System.out Ljava/io/PrintStream; static ~) (const@7-8 Ljava/lang/String; "Hello"))
+    - (exit@23 RETURN rt=V ~)
+x Exit id=9
+  < s3.0
+@ 15 RedundantReturns
+s0 Root id=11
+  cont ~
+  comment "$VF: Extended synchronized range to monitorexit"
+ s1 Sync id=14 body=s3
+   cont ~
+   labels s3.0
+   head (monitor@3 ENTER (var@0,2 0.0 t=U pt=Lpkg/TestSynchronized;))
+  s2 Block id=1
+    cont ~
+    > R s3 implicit
+    exprents 0
+  s3 Block id=2 rmexit
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0
+    exprents 1
+    - (invoke@13-15 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@9-11 java/lang/System.out Ljava/io/PrintStream; static ~) (const@7-8 Ljava/lang/String; "Hello"))
+x Exit id=9 bc=23
+  < s3.0
+@ 16 SetVarDefinitions
+= 15

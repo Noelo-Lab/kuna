@@ -152,3 +152,7 @@ mod kt3_elements;
 mod kt7_kotlin_writer;
 #[path = "kt4_members.rs"]
 mod kt4_members;
+#[path = "kt6_passes.rs"]
+mod kt6_passes;
+#[path = "kt6_render.rs"]
+mod kt6_render;

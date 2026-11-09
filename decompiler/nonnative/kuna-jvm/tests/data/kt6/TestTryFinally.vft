@@ -1,0 +1,989 @@
+=M pkg/TestTryFinally#<init>()V
+@ 0 CondenseSequences
+s0 Root id=3
+  labels s1.0
+ s1 Block id=1
+   > B x c=s0
+   insn [0:25 1:183 4:177]
+x Exit id=2
+  < s1.0
+@ 1 ClearStatements
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   insn [0:25 1:183 4:177]
+x Exit id=2
+  < s1.0
+@ 2 ProcessExpr
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   exprents 3
+   - (assign (var 10000.0 t=Ljava/lang/Object; stack) (var@0 0.0 t=Ljava/lang/Object; backing=0:25))
+   - (invoke@1-3 SPECIAL INIT java/lang/Object.<init>()V (var 10000.0 t=Ljava/lang/Object; stack))
+   - (exit@4 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 3 CondenseSequences_1
+= 2
+@ 4 StackVars
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0
+   exprents 2
+   - (invoke@1-3 SPECIAL INIT java/lang/Object.<init>()V (var@0 0.0 t=U pt=Lpkg/TestTryFinally;))
+   - (exit@4 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 5 BuildAsserts
+= 4
+@ 6 ResetEdges
+= 5
+@ 7 MergeLoop
+= 6
+@ 8 SimplifyStack
+= 7
+@ 9 VarVersions
+= 8
+@ 10 IdentifyLabels
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 2
+   - (invoke@1-3 SPECIAL INIT java/lang/Object.<init>()V (var@0 0.0 t=U pt=Lpkg/TestTryFinally;))
+   - (exit@4 RETURN rt=V ~)
+x Exit id=2
+  < s1.0
+@ 11 MainLoop
+= 10
+@ 12 SimplifyStack #2
+= 11
+@ 13 RedundantReturns
+s0 Root id=3
+  cont ~
+  labels s1.0
+ s1 Block id=1
+   cont ~
+   > B x c=s0 unlabeled implicit
+   exprents 1
+   - (invoke@1-3 SPECIAL INIT java/lang/Object.<init>()V (var@0 0.0 t=U pt=Lpkg/TestTryFinally;))
+x Exit id=2 bc=4
+  < s1.0
+@ 14 SetVarDefinitions
+= 13
+=M pkg/TestTryFinally#test0()V
+@ 0 Finally
+s0 Root id=15
+ s1 Seq id=17
+   labels s4.0 s5.0
+  s2 CatchAll id=16 post=s5 handler=s4 finally
+    labels s3.0
+    > R s5
+    catchvar (var 5.0 t=Ljava/lang/Throwable;)
+   s3 Block id=1
+     > B s5 c=s2
+     > E s4
+     insn [0:0 1:18 3:178 6:95 7:182]
+   s4 Block id=7
+     > F x c=s1
+     < s3.1
+     insn [18:20 21:55]
+  s5 Block id=8
+    > B x c=s1
+    < s2.0 s3.0
+    insn [24:177]
+x Exit id=13
+  < s4.0 s5.0
+@ 1 CondenseSequences
+= 0
+@ 2 ClearStatements
+s0 Root id=15
+  cont ~
+ s1 Seq id=17
+   cont ~
+   labels s4.0 s5.0
+  s2 CatchAll id=16 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s5
+    catchvar (var 5.0 t=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s5 c=s2
+     insn [0:0 1:18 3:178 6:95 7:182]
+   s4 Block id=7
+     cont ~
+     > F x c=s1
+     insn [18:20 21:55]
+  s5 Block id=8
+    cont ~
+    > B x c=s1
+    < s2.0 s3.0
+    insn [24:177]
+x Exit id=13
+  < s4.0 s5.0
+@ 3 ProcessExpr
+s0 Root id=15
+  cont ~
+ s1 Seq id=17
+   cont ~
+   labels s4.0 s5.0
+  s2 CatchAll id=16 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s5
+    catchvar (var 5.0 t=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s5 c=s2
+     exprents 6
+     - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@1-2 Ljava/lang/String; "Hello"))
+     - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~))
+     - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+     - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+     - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+   s4 Block id=7
+     cont ~
+     > F x c=s1
+     exprents 2
+     - (assign (var 10000.0 t=J stack) (const@18-20 J 5L))
+     - (assign@21 (var@21 2.0 t=J backing=21:55) (var 10000.0 t=J stack))
+  s5 Block id=8
+    cont ~
+    > B x c=s1
+    < s2.0 s3.0
+    exprents 1
+    - (exit@14 RETURN rt=V ~)
+x Exit id=13
+  < s4.0 s5.0
+@ 4 CondenseSequences_1
+= 3
+@ 5 StackVars
+s0 Root id=15
+  cont ~
+ s1 Seq id=17
+   cont ~
+   labels s4.0 s5.0
+  s2 CatchAll id=16 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s5
+    catchvar (var 5.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s5 c=s2
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Block id=7
+     cont ~
+     > F x c=s1
+     exprents 1
+     - (assign@21 (var@21 2.0 t=U pt=J backing=21:55) (const@18-20 J 5L))
+  s5 Block id=8
+    cont ~
+    > B x c=s1
+    < s2.0 s3.0
+    exprents 1
+    - (exit@14 RETURN rt=V ~)
+x Exit id=13
+  < s4.0 s5.0
+@ 6 BuildAsserts
+= 5
+@ 7 ResetEdges
+= 6
+@ 8 MergeLoop
+= 7
+@ 9 SimplifyStack
+= 8
+@ 10 VarVersions
+= 9
+@ 11 IdentifyLabels
+s0 Root id=15
+  cont ~
+ s1 Seq id=17
+   cont ~
+   labels s4.0 s5.0
+  s2 CatchAll id=16 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s5 implicit
+    catchvar (var 5.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s5 c=s2 implicit
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Block id=7
+     cont ~
+     > F x c=s1 unlabeled
+     exprents 1
+     - (assign@21 (var@21 2.0 t=U pt=J backing=21:55) (const@18-20 J 5L))
+  s5 Block id=8
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s3.0
+    exprents 1
+    - (exit@14 RETURN rt=V ~)
+x Exit id=13
+  < s4.0 s5.0
+@ 12 MainLoop
+= 11
+@ 13 SimplifyStack #2
+= 12
+@ 14 RedundantReturns
+s0 Root id=15
+  cont ~
+ s1 Seq id=17
+   cont ~
+   labels s4.0 s5.0
+  s2 CatchAll id=16 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s5 implicit
+    catchvar (var 5.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s5 c=s2 implicit
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Block id=7
+     cont ~
+     > F x c=s1 unlabeled
+     exprents 1
+     - (assign@21 (var@21 2.0 t=U pt=J backing=21:55) (const@18-20 J 5L))
+  s5 Block id=8
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s3.0
+    exprents 0
+x Exit id=13 bc=14
+  < s4.0 s5.0
+@ 15 SetVarDefinitions
+s0 Root id=15
+  cont ~
+ s1 Seq id=17
+   cont ~
+   labels s4.0 s5.0
+  s2 CatchAll id=16 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s5 implicit
+    catchvar (var 5.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable; def)
+   s3 Block id=1
+     cont ~
+     > B s5 c=s2 implicit
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Block id=7
+     cont ~
+     > F x c=s1 unlabeled
+     exprents 1
+     - (assign@21 (var@21 2.0 t=U pt=J def backing=21:55) (const@18-20 J 5L))
+  s5 Block id=8
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s3.0
+    exprents 0
+x Exit id=13 bc=14
+  < s4.0 s5.0
+@ 16 ReplaceStats
+s0 Root id=15
+  cont ~
+ s1 Seq id=18
+   cont ~
+   labels s4.0 s5.0
+  s2 CatchAll id=16 parent=o17 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s5 implicit
+    catchvar (var 5.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable; def)
+   s3 Block id=1
+     cont ~
+     > B s5 c=s2 implicit
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Block id=7
+     cont ~
+     > F x c=s1 unlabeled
+     exprents 1
+     - (assign@21 (var@21 2.0 t=U pt=J def backing=21:55) (const@18-20 J 5L))
+  s5 Block id=8 parent=o17
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s3.0
+    exprents 0
+x Exit id=13 bc=14
+  < s4.0 s5.0
+o17 orphan Seq
+=M pkg/TestTryFinally#test1()V
+@ 0 Finally
+s0 Root id=15
+ s1 Seq id=17
+   labels s4.0 s5.0
+  s2 CatchAll id=16 post=s5 handler=s4 finally
+    labels s3.0
+    > R s5
+    catchvar (var 3.0 t=Ljava/lang/Throwable;)
+   s3 Block id=1
+     > B s5 c=s2
+     > E s4
+     insn [0:0 1:18 3:178 6:95 7:182]
+   s4 Block id=7
+     > F x c=s1
+     < s3.1
+     insn [23:18 25:178 28:95 29:182]
+  s5 Block id=8
+    > B x c=s1
+    < s2.0 s3.0
+    insn [34:18 36:178 39:95 40:182 43:177]
+x Exit id=13
+  < s4.0 s5.0
+@ 1 CondenseSequences
+= 0
+@ 2 ClearStatements
+s0 Root id=15
+  cont ~
+ s1 Seq id=17
+   cont ~
+   labels s4.0 s5.0
+  s2 CatchAll id=16 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s5
+    catchvar (var 3.0 t=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s5 c=s2
+     insn [0:0 1:18 3:178 6:95 7:182]
+   s4 Block id=7
+     cont ~
+     > F x c=s1
+     insn [23:18 25:178 28:95 29:182]
+  s5 Block id=8
+    cont ~
+    > B x c=s1
+    < s2.0 s3.0
+    insn [34:18 36:178 39:95 40:182 43:177]
+x Exit id=13
+  < s4.0 s5.0
+@ 3 ProcessExpr
+s0 Root id=15
+  cont ~
+ s1 Seq id=17
+   cont ~
+   labels s4.0 s5.0
+  s2 CatchAll id=16 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s5
+    catchvar (var 3.0 t=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s5 c=s2
+     exprents 6
+     - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@1-2 Ljava/lang/String; "Hello"))
+     - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~))
+     - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+     - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+     - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+   s4 Block id=7
+     cont ~
+     > F x c=s1
+     exprents 6
+     - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@23-24 Ljava/lang/String; "Finally"))
+     - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@25-27 java/lang/System.out Ljava/io/PrintStream; static ~))
+     - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+     - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+     - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+     - (invoke@29-31 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+  s5 Block id=8
+    cont ~
+    > B x c=s1
+    < s2.0 s3.0
+    exprents 7
+    - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@19-20 Ljava/lang/String; "Bye"))
+    - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@34-36 java/lang/System.out Ljava/io/PrintStream; static ~))
+    - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+    - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+    - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+    - (invoke@39-41 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+    - (exit@40 RETURN rt=V ~)
+x Exit id=13
+  < s4.0 s5.0
+@ 4 CondenseSequences_1
+= 3
+@ 5 StackVars
+s0 Root id=15
+  cont ~
+ s1 Seq id=17
+   cont ~
+   labels s4.0 s5.0
+  s2 CatchAll id=16 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s5
+    catchvar (var 3.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s5 c=s2
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Block id=7
+     cont ~
+     > F x c=s1
+     exprents 1
+     - (invoke@29-31 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@25-27 java/lang/System.out Ljava/io/PrintStream; static ~) (const@23-24 Ljava/lang/String; "Finally"))
+  s5 Block id=8
+    cont ~
+    > B x c=s1
+    < s2.0 s3.0
+    exprents 2
+    - (invoke@39-41 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@34-36 java/lang/System.out Ljava/io/PrintStream; static ~) (const@19-20 Ljava/lang/String; "Bye"))
+    - (exit@40 RETURN rt=V ~)
+x Exit id=13
+  < s4.0 s5.0
+@ 6 BuildAsserts
+= 5
+@ 7 ResetEdges
+= 6
+@ 8 MergeLoop
+= 7
+@ 9 SimplifyStack
+= 8
+@ 10 VarVersions
+= 9
+@ 11 IdentifyLabels
+s0 Root id=15
+  cont ~
+ s1 Seq id=17
+   cont ~
+   labels s4.0 s5.0
+  s2 CatchAll id=16 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s5 implicit
+    catchvar (var 3.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s5 c=s2 implicit
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Block id=7
+     cont ~
+     > F x c=s1 unlabeled
+     exprents 1
+     - (invoke@29-31 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@25-27 java/lang/System.out Ljava/io/PrintStream; static ~) (const@23-24 Ljava/lang/String; "Finally"))
+  s5 Block id=8
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s3.0
+    exprents 2
+    - (invoke@39-41 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@34-36 java/lang/System.out Ljava/io/PrintStream; static ~) (const@19-20 Ljava/lang/String; "Bye"))
+    - (exit@40 RETURN rt=V ~)
+x Exit id=13
+  < s4.0 s5.0
+@ 12 MainLoop
+= 11
+@ 13 SimplifyStack #2
+= 12
+@ 14 RedundantReturns
+s0 Root id=15
+  cont ~
+ s1 Seq id=17
+   cont ~
+   labels s4.0 s5.0
+  s2 CatchAll id=16 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s5 implicit
+    catchvar (var 3.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s5 c=s2 implicit
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Block id=7
+     cont ~
+     > F x c=s1 unlabeled
+     exprents 1
+     - (invoke@29-31 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@25-27 java/lang/System.out Ljava/io/PrintStream; static ~) (const@23-24 Ljava/lang/String; "Finally"))
+  s5 Block id=8
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s3.0
+    exprents 1
+    - (invoke@39-41 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@34-36 java/lang/System.out Ljava/io/PrintStream; static ~) (const@19-20 Ljava/lang/String; "Bye"))
+x Exit id=13 bc=40
+  < s4.0 s5.0
+@ 15 SetVarDefinitions
+s0 Root id=15
+  cont ~
+ s1 Seq id=17
+   cont ~
+   labels s4.0 s5.0
+  s2 CatchAll id=16 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s5 implicit
+    catchvar (var 3.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable; def)
+   s3 Block id=1
+     cont ~
+     > B s5 c=s2 implicit
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Block id=7
+     cont ~
+     > F x c=s1 unlabeled
+     exprents 1
+     - (invoke@29-31 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@25-27 java/lang/System.out Ljava/io/PrintStream; static ~) (const@23-24 Ljava/lang/String; "Finally"))
+  s5 Block id=8
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s3.0
+    exprents 1
+    - (invoke@39-41 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@34-36 java/lang/System.out Ljava/io/PrintStream; static ~) (const@19-20 Ljava/lang/String; "Bye"))
+x Exit id=13 bc=40
+  < s4.0 s5.0
+@ 16 ReplaceStats
+s0 Root id=15
+  cont ~
+ s1 Seq id=18
+   cont ~
+   labels s4.0 s5.0
+  s2 CatchAll id=16 parent=o17 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s5 implicit
+    catchvar (var 3.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable; def)
+   s3 Block id=1
+     cont ~
+     > B s5 c=s2 implicit
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Block id=7
+     cont ~
+     > F x c=s1 unlabeled
+     exprents 1
+     - (invoke@29-31 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@25-27 java/lang/System.out Ljava/io/PrintStream; static ~) (const@23-24 Ljava/lang/String; "Finally"))
+  s5 Block id=8 parent=o17
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s3.0
+    exprents 1
+    - (invoke@39-41 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@34-36 java/lang/System.out Ljava/io/PrintStream; static ~) (const@19-20 Ljava/lang/String; "Bye"))
+x Exit id=13 bc=40
+  < s4.0 s5.0
+o17 orphan Seq
+=M pkg/TestTryFinally#test2(I)V
+@ 0 Finally
+s0 Root id=25
+ s1 Seq id=30
+   labels s7.0 s8.0 s9.0
+  s2 CatchAll id=29 post=s9 handler=s4 finally
+    labels s3.0
+    > R s9
+    catchvar (var 4.0 t=Ljava/lang/Throwable;)
+   s3 Block id=1
+     > B s9 c=s2
+     > E s4
+     insn [0:0 1:18 3:178 6:95 7:182]
+   s4 Seq id=28
+     < s3.1
+    s5 If id=27 post=s8 iftype=0 ifstat=s7 elsestat=~ ifedge=s6.0 elseedge=~
+      > R s8
+     s6 Block id=11 lbt=IF
+       > R s7
+       insn [35:18 37:178 40:95 41:182 44:21 45:158]
+     s7 Block id=7
+       > B x c=s1
+       < s6.0
+       insn [48:178 51:21 52:182 55:177]
+    s8 Block id=8
+      > F x c=s1
+      < s5.0
+      insn []
+  s9 Block id=12
+    > B x c=s1
+    < s2.0 s3.0
+    insn [58:18 60:178 63:95 64:182 67:177]
+x Exit id=23
+  < s7.0 s8.0 s9.0
+@ 1 CondenseSequences
+= 0
+@ 2 ClearStatements
+s0 Root id=25
+  cont ~
+ s1 Seq id=30
+   cont ~
+   labels s7.0 s8.0 s9.0
+  s2 CatchAll id=29 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s9
+    catchvar (var 4.0 t=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s9 c=s2
+     insn [0:0 1:18 3:178 6:95 7:182]
+   s4 Seq id=28
+     cont ~
+    s5 If id=27 iftype=0 ifstat=s7 elsestat=~ ifedge=s6.0 elseedge=~
+      cont ~
+      > R s8
+     s6 Block id=11 lbt=IF
+       cont ~
+       > R s7
+       insn [35:18 37:178 40:95 41:182 44:21 45:158]
+     s7 Block id=7
+       cont ~
+       > B x c=s1
+       < s6.0
+       insn [48:178 51:21 52:182 55:177]
+    s8 Block id=8
+      cont ~
+      > F x c=s1
+      < s5.0
+      insn []
+  s9 Block id=12
+    cont ~
+    > B x c=s1
+    < s2.0 s3.0
+    insn [58:18 60:178 63:95 64:182 67:177]
+x Exit id=23
+  < s7.0 s8.0 s9.0
+@ 3 ProcessExpr
+s0 Root id=25
+  cont ~
+ s1 Seq id=30
+   cont ~
+   labels s7.0 s8.0 s9.0
+  s2 CatchAll id=29 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s9
+    catchvar (var 4.0 t=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s9 c=s2
+     exprents 6
+     - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@1-2 Ljava/lang/String; "Hello"))
+     - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~))
+     - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+     - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+     - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+   s4 Seq id=28
+     cont ~
+    s5 If id=27 iftype=0 ifstat=s7 elsestat=~ ifedge=s6.0 elseedge=~
+      cont ~
+      > R s8
+      head (if@45-47 (func@45-47 GT (var 10000.0 t=I stack) (const Z 0 boolok)))
+     s6 Block id=11 lbt=IF
+       cont ~
+       > R s7
+       exprents 7
+       - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@35-36 Ljava/lang/String; "Finally"))
+       - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@37-39 java/lang/System.out Ljava/io/PrintStream; static ~))
+       - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+       - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+       - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+       - (invoke@41-43 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+       - (assign (var 10000.0 t=I stack) (var@44 1.0 t=I backing=44:21))
+     s7 Block id=7
+       cont ~
+       > B x c=s1
+       < s6.0
+       exprents 4
+       - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (field@48-50 java/lang/System.out Ljava/io/PrintStream; static ~))
+       - (assign (var 10001.0 t=I stack) (var@51 1.0 t=I backing=51:21))
+       - (invoke@52-54 VIRTUAL GENERAL java/io/PrintStream.println(I)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=I stack))
+       - (exit@55 RETURN rt=V ~)
+    s8 Block id=8
+      cont ~
+      > F x c=s1
+      < s5.0
+      exprents 0
+  s9 Block id=12
+    cont ~
+    > B x c=s1
+    < s2.0 s3.0
+    exprents 7
+    - (assign (var 10000.0 t=Ljava/lang/String; stack) (const@58-59 Ljava/lang/String; "Bye"))
+    - (assign (var 10001.0 t=Ljava/io/PrintStream; stack) (field@60-62 java/lang/System.out Ljava/io/PrintStream; static ~))
+    - (assign (var 10002.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/io/PrintStream; stack))
+    - (assign (var 10001.0 t=Ljava/lang/String; stack) (var 10000.0 t=Ljava/lang/String; stack))
+    - (assign (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10002.0 t=Ljava/io/PrintStream; stack))
+    - (invoke@64-66 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (var 10000.0 t=Ljava/io/PrintStream; stack) (var 10001.0 t=Ljava/lang/String; stack))
+    - (exit@67 RETURN rt=V ~)
+x Exit id=23
+  < s7.0 s8.0 s9.0
+@ 4 CondenseSequences_1
+= 3
+@ 5 StackVars
+s0 Root id=25
+  cont ~
+ s1 Seq id=30
+   cont ~
+   labels s7.0 s8.0 s9.0
+  s2 CatchAll id=29 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s9
+    catchvar (var 4.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s9 c=s2
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Seq id=28
+     cont ~
+    s5 If id=27 iftype=0 ifstat=s7 elsestat=~ ifedge=s6.0 elseedge=~
+      cont ~
+      > R s8
+      head (if@45-47 (func@45-47 GT (var@44 1.0 t=U pt=I) (const X 0 boolok)))
+     s6 Block id=11 lbt=IF
+       cont ~
+       > R s7
+       exprents 1
+       - (invoke@41-43 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@37-39 java/lang/System.out Ljava/io/PrintStream; static ~) (const@35-36 Ljava/lang/String; "Finally"))
+     s7 Block id=7
+       cont ~
+       > B x c=s1
+       < s6.0
+       exprents 2
+       - (invoke@52-54 VIRTUAL GENERAL java/io/PrintStream.println(I)V (field@48-50 java/lang/System.out Ljava/io/PrintStream; static ~) (var@51 1.0 t=U pt=I))
+       - (exit@55 RETURN rt=V ~)
+    s8 Block id=8
+      cont ~
+      > F x c=s1
+      < s5.0
+      exprents 0
+  s9 Block id=12
+    cont ~
+    > B x c=s1
+    < s2.0 s3.0
+    exprents 2
+    - (invoke@64-66 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@60-62 java/lang/System.out Ljava/io/PrintStream; static ~) (const@58-59 Ljava/lang/String; "Bye"))
+    - (exit@67 RETURN rt=V ~)
+x Exit id=23
+  < s7.0 s8.0 s9.0
+@ 6 BuildAsserts
+= 5
+@ 7 ResetEdges
+= 6
+@ 8 MergeLoop
+= 7
+@ 9 SimplifyStack
+= 8
+@ 10 VarVersions
+= 9
+@ 11 IdentifyLabels
+s0 Root id=25
+  cont ~
+ s1 Seq id=30
+   cont ~
+   labels s7.0 s8.0 s9.0
+  s2 CatchAll id=29 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s9 implicit
+    catchvar (var 4.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s9 c=s2 implicit
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Seq id=28
+     cont ~
+    s5 If id=27 iftype=0 ifstat=s7 elsestat=~ ifedge=s6.0 elseedge=~
+      cont ~
+      > R s8 implicit
+      head (if@45-47 (func@45-47 GT (var@44 1.0 t=U pt=I) (const X 0 boolok)))
+     s6 Block id=11 lbt=IF
+       cont ~
+       > R s7
+       exprents 1
+       - (invoke@41-43 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@37-39 java/lang/System.out Ljava/io/PrintStream; static ~) (const@35-36 Ljava/lang/String; "Finally"))
+     s7 Block id=7
+       cont ~
+       > B x c=s1 unlabeled
+       < s6.0
+       exprents 2
+       - (invoke@52-54 VIRTUAL GENERAL java/io/PrintStream.println(I)V (field@48-50 java/lang/System.out Ljava/io/PrintStream; static ~) (var@51 1.0 t=U pt=I))
+       - (exit@55 RETURN rt=V ~)
+    s8 Block id=8
+      cont ~
+      > F x c=s1 unlabeled
+      < s5.0
+      exprents 0
+  s9 Block id=12
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s3.0
+    exprents 2
+    - (invoke@64-66 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@60-62 java/lang/System.out Ljava/io/PrintStream; static ~) (const@58-59 Ljava/lang/String; "Bye"))
+    - (exit@67 RETURN rt=V ~)
+x Exit id=23
+  < s7.0 s8.0 s9.0
+@ 12 MainLoop
+= 11
+@ 13 SimplifyStack #2
+= 12
+@ 14 RedundantReturns
+s0 Root id=25
+  cont ~
+ s1 Seq id=30
+   cont ~
+   labels s7.0 s8.0 s9.0
+  s2 CatchAll id=29 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s9 implicit
+    catchvar (var 4.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable;)
+   s3 Block id=1
+     cont ~
+     > B s9 c=s2 implicit
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Seq id=28
+     cont ~
+    s5 If id=27 iftype=0 ifstat=s7 elsestat=~ ifedge=s6.0 elseedge=~
+      cont ~
+      > R s8 implicit
+      head (if@45-47 (func@45-47 GT (var@44 1.0 t=U pt=I) (const X 0 boolok)))
+     s6 Block id=11 lbt=IF
+       cont ~
+       > R s7
+       exprents 1
+       - (invoke@41-43 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@37-39 java/lang/System.out Ljava/io/PrintStream; static ~) (const@35-36 Ljava/lang/String; "Finally"))
+     s7 Block id=7
+       cont ~
+       > B x c=s1 unlabeled
+       < s6.0
+       exprents 2
+       - (invoke@52-54 VIRTUAL GENERAL java/io/PrintStream.println(I)V (field@48-50 java/lang/System.out Ljava/io/PrintStream; static ~) (var@51 1.0 t=U pt=I))
+       - (exit@55 RETURN rt=V ~)
+    s8 Block id=8
+      cont ~
+      > F x c=s1 unlabeled
+      < s5.0
+      exprents 0
+  s9 Block id=12
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s3.0
+    exprents 1
+    - (invoke@64-66 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@60-62 java/lang/System.out Ljava/io/PrintStream; static ~) (const@58-59 Ljava/lang/String; "Bye"))
+x Exit id=23 bc=67
+  < s7.0 s8.0 s9.0
+@ 15 SetVarDefinitions
+s0 Root id=25
+  cont ~
+ s1 Seq id=30
+   cont ~
+   labels s7.0 s8.0 s9.0
+  s2 CatchAll id=29 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s9 implicit
+    catchvar (var 4.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable; def)
+   s3 Block id=1
+     cont ~
+     > B s9 c=s2 implicit
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Seq id=28
+     cont ~
+    s5 If id=27 iftype=0 ifstat=s7 elsestat=~ ifedge=s6.0 elseedge=~
+      cont ~
+      > R s8 implicit
+      head (if@45-47 (func@45-47 GT (var@44 1.0 t=U pt=I lvt=i:I@0-68/1.1) (const X 0 boolok)))
+     s6 Block id=11 lbt=IF
+       cont ~
+       > R s7
+       exprents 1
+       - (invoke@41-43 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@37-39 java/lang/System.out Ljava/io/PrintStream; static ~) (const@35-36 Ljava/lang/String; "Finally"))
+     s7 Block id=7
+       cont ~
+       > B x c=s1 unlabeled
+       < s6.0
+       exprents 2
+       - (invoke@52-54 VIRTUAL GENERAL java/io/PrintStream.println(I)V (field@48-50 java/lang/System.out Ljava/io/PrintStream; static ~) (var@51 1.0 t=U pt=I lvt=i:I@0-68/1.1))
+       - (exit@55 RETURN rt=V ~)
+    s8 Block id=8
+      cont ~
+      > F x c=s1 unlabeled
+      < s5.0
+      exprents 0
+  s9 Block id=12
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s3.0
+    exprents 1
+    - (invoke@64-66 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@60-62 java/lang/System.out Ljava/io/PrintStream; static ~) (const@58-59 Ljava/lang/String; "Bye"))
+x Exit id=23 bc=67
+  < s7.0 s8.0 s9.0
+@ 16 ReplaceStats
+s0 Root id=25
+  cont ~
+ s1 Seq id=33
+   cont ~
+   labels s7.0 s8.0 s9.0
+  s2 CatchAll id=29 parent=o30 handler=s4 finally
+    cont ~
+    labels s3.0
+    > R s9 implicit
+    catchvar (var 4.0 t=Ljava/lang/Throwable; pt=Ljava/lang/Throwable; def)
+   s3 Block id=1
+     cont ~
+     > B s9 c=s2 implicit
+     exprents 1
+     - (invoke@7-9 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@3-5 java/lang/System.out Ljava/io/PrintStream; static ~) (const@1-2 Ljava/lang/String; "Hello"))
+   s4 Seq id=32
+     cont ~
+    s5 If id=31 parent=o28 iftype=0 ifstat=s7 elsestat=~ ifedge=s6.0 elseedge=~
+      cont ~
+      > R s8 implicit
+      head (if@45-47 (func@45-47 GT (var@44 1.0 t=U pt=I lvt=i:I@0-68/1.1) (const X 0 boolok)))
+     s6 Block id=11 parent=o27 lbt=IF
+       cont ~
+       > R s7
+       exprents 1
+       - (invoke@41-43 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@37-39 java/lang/System.out Ljava/io/PrintStream; static ~) (const@35-36 Ljava/lang/String; "Finally"))
+     s7 Block id=7 parent=o27
+       cont ~
+       > B x c=s1 unlabeled
+       < s6.0
+       exprents 2
+       - (invoke@52-54 VIRTUAL GENERAL java/io/PrintStream.println(I)V (field@48-50 java/lang/System.out Ljava/io/PrintStream; static ~) (var@51 1.0 t=U pt=I lvt=i:I@0-68/1.1))
+       - (exit@55 RETURN rt=V ~)
+    s8 Block id=8 parent=o28
+      cont ~
+      > F x c=s1 unlabeled
+      < s5.0
+      exprents 0
+  s9 Block id=12 parent=o30
+    cont ~
+    > B x c=s1 unlabeled implicit
+    < s2.0 s3.0
+    exprents 1
+    - (invoke@64-66 VIRTUAL GENERAL java/io/PrintStream.println(Ljava/lang/Object;)V (field@60-62 java/lang/System.out Ljava/io/PrintStream; static ~) (const@58-59 Ljava/lang/String; "Bye"))
+x Exit id=23 bc=67
+  < s7.0 s8.0 s9.0
+o27 orphan If
+o28 orphan Seq
+o30 orphan Seq
