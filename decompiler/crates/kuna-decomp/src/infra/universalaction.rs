@@ -379,7 +379,7 @@ pub fn universal_sched(
         rrow!("shiftcompare", "analysis", crate::ruleaction_2::RuleShiftCompare),
         rrow!("shift2mult", "analysis", crate::ruleaction_3::RuleShift2Mult),
         rrow!("shiftpiece", "analysis", crate::ruleaction_3::RuleShiftPiece),
-        rrow!("addcarrychain", "analysis", crate::kuna_addcarrychain::RuleAddCarryChain::with_group(false, "analysis")),
+        rrow!("addcarrychain", "analysis", crate::kuna_addcarrychain::RuleAddCarryChain::with_group("analysis")),
         rrow!("multicollapse", "analysis", crate::ruleaction_3::RuleMultiCollapse::default()),
         rrow!("indirectcollapse", "analysis", crate::ruleaction_3::RuleIndirectCollapse),
         rrow!("2comp2mult", "analysis", crate::ruleaction_3::Rule2Comp2Mult),
@@ -498,8 +498,8 @@ pub fn universal_sched(
         rrow!("loadvarnode", "stackvars", crate::ruleaction_4::RuleLoadVarnode),
         rrow!("storevarnode", "stackvars", crate::ruleaction_4::RuleStoreVarnode),
         // (kuna) callpush: after storevarnode, so a push in a tracked frame is
-        // that rule's stack COPY first; gated by the live arch flag.
-        rrow!("callpush", "stackvars", crate::kuna_callpush::RuleCallPush::with_group(false, "stackvars")),
+        // that rule's stack COPY first.
+        rrow!("callpush", "stackvars", crate::kuna_callpush::RuleCallPush::with_group("stackvars")),
     ];
 
     // --- cleanup pool -----------------------------------------------------

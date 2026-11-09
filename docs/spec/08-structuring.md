@@ -799,14 +799,13 @@ What the split cannot recover is where a store sat once copy propagation folded
 its value into the phi (`RulePropagateCopy` lets a non-constant value into a
 MULTIEQUAL, and the store then dies). The clone's copy of that phi is the store,
 at the start of the clone, after every store the predecessor kept; several such
-stores print in the order the phis are cloned. That order is the
-`clonephiorder` decision point,
-`decompiler/crates/kuna-decomp/src/p8_structure/kuna_clonephiorder.rs (order_global_phis)`:
-on (the default) clones the phis on globals after the others and in address
+stores print in the order the phis are cloned. That order is set by
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_clonephiorder.rs (order_global_phis)`,
+always on: the phis on globals are cloned after the others and in address
 order, which is how kuna printed most of these stores before the clone kept its
-guards' flag; off clones them in block order, the reverse of heritage's
-placement (heritage inserts each phi at the block start in ascending address
-order, so one pass's phis end up in descending address order). Only the clone is reordered: the original block keeps its op order,
+guards' flag. Block order would be the reverse of heritage's placement
+(heritage inserts each phi at the block start in ascending address order, so
+one pass's phis end up in descending address order). Only the clone is reordered: the original block keeps its op order,
 which merging also reads (reordering its phis too printed bash
 `get_urandom32`'s seed store inside the loop it leaves). Neither order comes
 from the binary. Over 140 corpus binaries the two
@@ -1126,9 +1125,8 @@ and emits every component — descending one would make the emitters print the
 whole graph twice.
 
 *Failure:* everything the two matchers already decline, unchanged. It is a
-strictly narrower match than `iteregion`/`iteboolean` themselves, so
-`option itecondlist off` can only ever fold **fewer** diamonds, never different
-ones. Flipped on by DIV-56.
+strictly narrower match than `iteregion`/`iteboolean` themselves and runs
+whenever they do (DIV-56), so their options are the only ones that reach it.
 
 ### earlyreturn — per-edge const-guard peeling (angr `ReturnDuplicatorHigh`, narrowed)
 
@@ -1293,10 +1291,11 @@ functions moved to an exact structural match against 198 moved off, which is
 92% of the post-hoc ceiling at a *smaller* optimized-level cost than the
 ceiling itself. **DIV-69 makes it a default** (rather than a preset member:
 `returndup` is a shipped default in every mode, and 45% of the corpus sits over
-the 500 KiB `auto` threshold where a preset-only gate would never run). It stays
-a per-run choice — `option orchain off` restores the pre-DIV-69 cascade — because
-the merged and split forms compile to the same object code, and where the source
-did write the cascade the gate is wrong (`coreutils factor`, GED 0 → 12).
+the 500 KiB `auto` threshold where a preset-only gate would never run). It is
+part of `returndup` itself: the merged and split forms compile to the same
+object code, and where the source did write the cascade the gate is wrong
+(`coreutils factor`, GED 0 → 12), which `option returndup off` leaves merged as
+upstream does.
 `docs/decbench/returndup-o0-measurement.md` and
 `docs/decbench/returndup-regression-triage.md` hold the corpus tables.
 

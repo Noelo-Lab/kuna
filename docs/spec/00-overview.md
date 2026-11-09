@@ -1553,7 +1553,7 @@ printf-heavy whole binary (DIV-66). That cost is the reason the typing now
 happens at load instead, and the reason `full` — the loop — remains a per-run
 opt-in rather than the default.
 
-The step's last drive answers for a function decompiled alone (`callerreads`,
+The step's last drive answers for a function decompiled alone (`kuna_callerreads.rs`,
 chapter [04](04-calls-and-prototypes.md)): when the finished function returns
 `void` and a direct caller reads one of its return registers after the call, the
 step forces that return and drives the function once more, keeping the redo only
@@ -1720,7 +1720,7 @@ which were otherwise kept for every call site of every function; an inlined
 callee's handles pass to the function it is inlined into, whose cloned call
 ops still name them
 (`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (FlowInfo::inline_flow)`), and the
-per-callee summaries a run caches are stored compactly (04, `calleedeadarg`).
+per-callee summaries a run caches are stored compactly (04, `kuna_calleedeadarg.rs`).
 The allocator keeps a function's freed working memory resident, so without
 a release a batch would start every later function at the high-water of the
 largest one before it, and the pages a function cannot reuse would count as

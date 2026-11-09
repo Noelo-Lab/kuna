@@ -1,5 +1,5 @@
-//! Unit tests for the `inputparamgap` option surface and the register-gap
-//! tolerance it installs in `ParamListStandard::fillin_map`.
+//! Unit tests for the own-input register-gap tolerance installed in
+//! `ParamListStandard::fillin_map`.
 //!
 //! The model mirrors the SysV x86-64 input list the witness is scored against:
 //! six exclusion (register) groups followed by a non-exclusion stack resource,
@@ -99,46 +99,21 @@ fn used_groups(active: &ParamActive, model: &ParamListStandard) -> Vec<int4> {
         .collect()
 }
 
+/// For the function's own inputs the two live-in registers survive and the
+/// ignored registers between them are promoted to filler parameters, so the
+/// recovered list is the contiguous 0..5 the ABI describes.
 #[test]
-fn option_name_and_apply() {
-    assert_eq!(OptionInputParamGap::NAME, "inputparamgap");
-    let (on, msg) = OptionInputParamGap.apply("on").expect("on");
-    assert!(on);
-    assert!(msg.contains("turned on"), "{msg}");
-    let (off, msg) = OptionInputParamGap.apply("off").expect("off");
-    assert!(!off);
-    assert!(msg.contains("turned off"), "{msg}");
-    // Empty defaults to on, as every other on/off option does.
-    assert!(OptionInputParamGap.apply("").expect("empty").0);
-    assert!(OptionInputParamGap.apply("bogus").is_err());
-}
-
-/// The witness: groups 0, 4 and 5 read live-in with 1/2/3 ignored. Without the
-/// option `forceInactiveChain` trips at the third empty slot and drops both far
-/// registers, leaving a one-parameter prototype.
-#[test]
-fn three_register_gap_drops_the_far_registers_without_the_option() {
-    let (model, reg, _stk, mgr) = sysv_like_model();
-    let mut active = active_regs(&reg, &[0, 4, 5], false);
-    model.fillin_map(&mut active, &mgr).expect("fillin_map");
-    assert_eq!(used_groups(&active, &model), vec![0]);
-}
-
-/// With the option on, the two live-in registers survive and the ignored
-/// registers between them are promoted to filler parameters, so the recovered
-/// list is the contiguous 0..5 the ABI describes.
-#[test]
-fn three_register_gap_recovers_the_full_list_with_the_option() {
+fn three_register_gap_recovers_the_full_list() {
     let (model, reg, _stk, mgr) = sysv_like_model();
     let mut active = active_regs(&reg, &[0, 4, 5], true);
     model.fillin_map(&mut active, &mgr).expect("fillin_map");
     assert_eq!(used_groups(&active, &model), vec![0, 1, 2, 3, 4, 5]);
 }
 
-/// A two-register gap was always tolerated: the option moves the limit, it does
-/// not create the behaviour.
+/// A two-register gap was always tolerated, for the function's own inputs and
+/// for a call site alike.
 #[test]
-fn two_register_gap_is_unchanged_by_the_option() {
+fn two_register_gap_is_tolerated_either_way() {
     for gap_on in [false, true] {
         let (model, reg, _stk, mgr) = sysv_like_model();
         let mut active = active_regs(&reg, &[0, 3], gap_on);

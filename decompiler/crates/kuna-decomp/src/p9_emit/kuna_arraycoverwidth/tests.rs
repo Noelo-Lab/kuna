@@ -1,4 +1,4 @@
-//! (kuna) `arraycoverwidth` option + width-predicate tests.
+//! (kuna) array-cover width-predicate tests.
 
 use std::rc::Rc;
 
@@ -16,14 +16,6 @@ fn factory() -> TypeFactoryImpl {
     f.set_default_alignment_map();
     f.set_max_basetype_size(8);
     f
-}
-
-#[test]
-fn apply_parses_on_off_and_rejects_garbage() {
-    let o = OptionArrayCoverWidth;
-    assert!(o.apply("on").unwrap().0);
-    assert!(!o.apply("off").unwrap().0);
-    assert!(o.apply("maybe").is_err());
 }
 
 #[test]

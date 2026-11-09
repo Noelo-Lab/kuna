@@ -5,13 +5,7 @@
     "{{KUNA}}",
     "decompile",
     "{{BIN}}",
-    "strcmp",
-    "--option",
-    "calleearity",
-    "on",
-    "--option",
-    "varargstackargs",
-    "on"
+    "strcmp"
   ],
   "cwd": "{{WORK}}",
   "env": {

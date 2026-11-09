@@ -272,12 +272,8 @@ fn flowpack_inferfuncentry_cross_space_same_offset_not_equal() {
     let rampoint = Address::new(Rc::clone(&ram), 0x10_0000);
     let entry_other_space = Address::new(Rc::clone(&rom), 0x10_0000); // same offset, other space
     // Different space -> Address::eq false -> no inference.
-    assert!(!kuna_is_function_entry(
-        true,
-        Some(&rampoint),
-        Some(&entry_other_space)
-    ));
+    assert!(!kuna_is_function_entry(Some(&rampoint), Some(&entry_other_space)));
     // Same space, same offset -> inference fires.
     let entry_same = Address::new(Rc::clone(&ram), 0x10_0000);
-    assert!(kuna_is_function_entry(true, Some(&rampoint), Some(&entry_same)));
+    assert!(kuna_is_function_entry(Some(&rampoint), Some(&entry_same)));
 }

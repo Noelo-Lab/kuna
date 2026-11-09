@@ -2239,13 +2239,7 @@ mod w10_printc_cast_render {
     }
 
     fn build_fd() -> Funcdata {
-        build_fd_with_aggregate_fields(false)
-    }
-
-    fn build_fd_with_aggregate_fields(enabled: bool) -> Funcdata {
-        let mut arch = ContextArch::new(build_manager());
-        arch.aggregate_fields = enabled;
-        let glb = Rc::new(arch);
+        let glb = Rc::new(ContextArch::new(build_manager()));
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x1000_0000, 0x40).unwrap()
@@ -2382,7 +2376,7 @@ mod w10_printc_cast_render {
             for offset in 0..=4 {
                 let shift = fd.new_constant(4, offset);
                 fd.op_set_input(op, shift, 1).unwrap();
-                assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_some());
+                assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, op).is_some());
                 for language in ["c", "rust"] {
                     for nocasts in [false, true] {
                         let mut printer = PrintC::new();
@@ -2427,7 +2421,7 @@ mod w10_printc_cast_render {
             for offset in [5, u64::MAX] {
                 let shift = fd.new_constant(8, offset);
                 fd.op_set_input(op, shift, 1).unwrap();
-                assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_none());
+                assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, op).is_none());
             }
             let zero = fd.new_constant(4, 0);
             fd.op_set_input(op, zero, 1).unwrap();
@@ -2436,14 +2430,14 @@ mod w10_printc_cast_render {
                 4,
                 type_metatype::TYPE_UINT,
             ));
-            assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_none());
+            assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, op).is_none());
             fd.vbank_mut().get_mut(output).unwrap().update_type(named(
                 "float",
                 4,
                 type_metatype::TYPE_FLOAT,
             ));
             fd.op_set_opcode_code(op, OpCode::CPUI_FLOAT_FLOAT2FLOAT);
-            assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_none());
+            assert!(crate::p9_emit::kuna_floatslice::recognize(&fd, op).is_none());
         }
         execute_float_slice_expressions(&cases);
     }
@@ -2495,7 +2489,7 @@ mod w10_printc_cast_render {
             fd.op_set_output(op, output).unwrap();
             fd.set_high_level();
             assert_eq!(
-                crate::p9_emit::kuna_floatslice::recognize(&fd, false, op).is_some(),
+                crate::p9_emit::kuna_floatslice::recognize(&fd, op).is_some(),
                 producer == OpCode::CPUI_LOAD
             );
         }
@@ -2626,7 +2620,7 @@ mod w10_printc_cast_render {
             let output = fd.new_varnode(8, &Address::new(ram(&fd), 0x408), Some(record.clone()));
             fd.op_set_input(op, input, 0).unwrap();
             fd.op_set_output(op, output).unwrap();
-            assert_eq!(crate::kuna_aggregatecast::storage_transfer(&fd, false, op).is_some(), allowed);
+            assert_eq!(crate::kuna_aggregatecast::storage_transfer(&fd, op).is_some(), allowed);
         }
         let mut fd = build_fd();
         let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_CAST);
@@ -2635,7 +2629,7 @@ mod w10_printc_cast_render {
         let output = fd.new_varnode(8, &Address::new(ram(&fd), 0x408), Some(named("unsigned long", 8, type_metatype::TYPE_UINT)));
         fd.op_set_input(op, input, 0).unwrap();
         fd.op_set_output(op, output).unwrap();
-        assert!(crate::kuna_aggregatecast::storage_transfer(&fd, false, op).is_none());
+        assert!(crate::kuna_aggregatecast::storage_transfer(&fd, op).is_none());
     }
 
     #[test]
@@ -2707,14 +2701,13 @@ mod w10_printc_cast_render {
                 type_metatype::TYPE_UINT
             );
             assert_eq!(
-                super::super::declared_variable_type(&fd, true, source)
+                super::super::declared_variable_type(&fd, source)
                     .unwrap()
                     .get_metatype(),
                 type_metatype::TYPE_FLOAT
             );
             let mut arch = bare_arch();
-            arch.decl_high_type = true;
-            assert!(crate::kuna_bitcast::truncated_float_storage(&fd, true, op).is_some());
+            assert!(crate::kuna_bitcast::truncated_float_storage(&fd, op).is_some());
             for lang in ["c", "rust"] {
                 let mut printer = PrintC::new();
                 printer.set_name(lang);
@@ -2799,7 +2792,7 @@ mod w10_printc_cast_render {
             integer.update_type(named("word", size, type_metatype::TYPE_UINT));
             integer.set_flags_pub(crate::varnode::varnode_flags::typelock);
             assert_eq!(
-                super::super::declared_variable_type(&fd, true, source)
+                super::super::declared_variable_type(&fd, source)
                     .unwrap()
                     .get_metatype(),
                 type_metatype::TYPE_UINT
@@ -2826,8 +2819,8 @@ mod w10_printc_cast_render {
             bitfield: vec![],
         };
         let record = Rc::new(record);
-        for (whole, enabled) in [(true, true), (false, true), (true, false), (false, false)] {
-            let mut fd = build_fd_with_aggregate_fields(enabled);
+        for whole in [true, false] {
+            let mut fd = build_fd();
             let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_COPY);
             let input = fd.new_varnode(8, &Address::new(ram(&fd), 0x400), Some(record.clone()));
             fd.op_set_input(op, input, 0).unwrap();
@@ -2842,8 +2835,8 @@ mod w10_printc_cast_render {
             let emitted = printer.push_partial_symbol_ir(
                 &fd, &bare_arch(), "x", record.clone(), 0, 8, input, op, 0, true,
             );
-            let field = !whole || !enabled;
-            assert_eq!(emitted, field, "whole={whole} aggregatefields={enabled}");
+            let field = !whole;
+            assert_eq!(emitted, field, "whole={whole}");
             assert_eq!(printer.emit_mut().output_str(), if field { "x.d" } else { "" });
         }
     }
@@ -2868,20 +2861,18 @@ mod w10_printc_cast_render {
             field: vec![TypeField::new(0, 0, "a", Rc::new(inner))], bitfield: vec![],
         };
         let outer = Rc::new(outer);
-        for enabled in [true, false] {
-            let mut fd = build_fd_with_aggregate_fields(enabled);
-            let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_COPY);
-            let input = fd.new_varnode(8, &Address::new(ram(&fd), 0x400), Some(outer.clone()));
-            fd.op_set_input(op, input, 0).unwrap();
-            let resolution = crate::unionresolve::ResolvedUnion::new_field(outer.clone(), 0, &types).unwrap();
-            fd.set_union_field(&outer, op, 0, resolution);
-            let mut printer = PrintC::new();
-            printer.set_output_stream();
-            assert!(printer.push_partial_symbol_ir(
-                &fd, &bare_arch(), "x", outer.clone(), 0, 8, input, op, 0, true,
-            ));
-            assert_eq!(printer.emit_mut().output_str(), if enabled { "x.a" } else { "x.a.d" });
-        }
+        let mut fd = build_fd();
+        let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_COPY);
+        let input = fd.new_varnode(8, &Address::new(ram(&fd), 0x400), Some(outer.clone()));
+        fd.op_set_input(op, input, 0).unwrap();
+        let resolution = crate::unionresolve::ResolvedUnion::new_field(outer.clone(), 0, &types).unwrap();
+        fd.set_union_field(&outer, op, 0, resolution);
+        let mut printer = PrintC::new();
+        printer.set_output_stream();
+        assert!(printer.push_partial_symbol_ir(
+            &fd, &bare_arch(), "x", outer.clone(), 0, 8, input, op, 0, true,
+        ));
+        assert_eq!(printer.emit_mut().output_str(), "x.a");
     }
 
     #[test]
@@ -2919,7 +2910,7 @@ mod w10_printc_cast_render {
         named.set_symbol_offset(0);
         let resolution = crate::unionresolve::ResolvedUnion::new_field(Rc::clone(&backing), 0, types.as_ref()).unwrap();
         fd.set_union_field(&backing, op, 0, resolution);
-        assert_eq!(super::super::declared_variable_type(&fd, true, source).unwrap().get_metatype(), type_metatype::TYPE_FLOAT);
+        assert_eq!(super::super::declared_variable_type(&fd, source).unwrap().get_metatype(), type_metatype::TYPE_FLOAT);
         assert_eq!(crate::kuna_stackviews::access_type(&fd, source, op, 0).unwrap().get_metatype(), type_metatype::TYPE_UINT);
         let mut printer = PrintC::new();
         printer.set_output_stream();
@@ -2993,7 +2984,7 @@ mod w10_printc_cast_render {
         let resolution = crate::unionresolve::ResolvedUnion::new_field(Rc::clone(&piece), 1, types.as_ref()).unwrap();
         fd.set_union_field(&piece, op, 0, resolution);
         assert_eq!(fd.vn_type_read_facing(source, op).get_metatype(), type_metatype::TYPE_FLOAT);
-        assert!(crate::kuna_bitcast::storage_transfer(&fd, false, op, |_, _| None).is_none());
+        assert!(crate::kuna_bitcast::storage_transfer(&fd, op, |_, _| None).is_none());
     }
 
     #[test]

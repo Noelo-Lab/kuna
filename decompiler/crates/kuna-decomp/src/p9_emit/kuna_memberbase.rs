@@ -8,7 +8,6 @@ use crate::funcdata::Funcdata;
 
 pub(crate) fn needs_cast(
     fd: &Funcdata,
-    decl_high_type: bool,
     base: VarnodeId,
     pointer: &Rc<Datatype>,
 ) -> bool {
@@ -18,7 +17,7 @@ pub(crate) fn needs_cast(
     {
         return false;
     }
-    let Some(declared) = crate::printc::declared_variable_type(fd, decl_high_type, base) else {
+    let Some(declared) = crate::printc::declared_variable_type(fd, base) else {
         return false;
     };
     declared.get_size() == pointer.get_size()

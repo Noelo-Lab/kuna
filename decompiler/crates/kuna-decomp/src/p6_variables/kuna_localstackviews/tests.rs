@@ -11,10 +11,6 @@ fn frame_data() -> (Funcdata, Rc<AddrSpace>) {
 }
 
 fn frame_data_with_views(full_views: bool) -> (Funcdata, Rc<AddrSpace>) {
-    frame_data_with_options(full_views, true)
-}
-
-fn frame_data_with_options(full_views: bool, local_views: bool) -> (Funcdata, Rc<AddrSpace>) {
     let mut manage = AddrSpaceManager::new();
     manage.insert_space(Rc::new(ConstantSpace::new())).unwrap();
     manage
@@ -51,7 +47,6 @@ fn frame_data_with_options(full_views: bool, local_views: bool) -> (Funcdata, Rc
     manage.set_default_code_space(ram.get_index()).unwrap();
     manage.set_default_data_space(ram.get_index()).unwrap();
     let mut context = ArchContext::new(manage);
-    context.local_stack_views = local_views;
     context.stack_views = full_views;
     let mut fd = Funcdata::new(
         "early_views",
@@ -572,10 +567,9 @@ fn native_marker_copy_requires_exact_live_original_write_inside_admitted_storage
         "width",
         "dead",
         "flag",
-        "off",
         "full",
     ] {
-        let (mut fd, stack) = frame_data_with_options(mode == "full", mode != "off");
+        let (mut fd, stack) = frame_data_with_views(mode == "full");
         let at = Address::new(stack.clone(), (-32i64) as u64);
         let op = store(&mut fd, 0x1000);
         let point = SourcePoint::op(&fd, op).unwrap();

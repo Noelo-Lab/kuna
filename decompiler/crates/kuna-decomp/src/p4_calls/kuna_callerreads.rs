@@ -1,4 +1,4 @@
-//! (kuna `callerreads`) A function decompiled alone returns what its callers
+//! (kuna) A function decompiled alone returns what its callers
 //! read after the call (P4).
 //!
 //! `int f(int a) { gi = a * 3; return gi; }` and `void f(int a) { gi = a * 3; }`
@@ -34,7 +34,7 @@ pub const MAX_CALL_SITES: usize = 32;
 /// output: the widest read of the first model output register a caller reads,
 /// when every caller that reads one reads the same register.
 pub fn read(arch: &Architecture, data: &Funcdata) -> Option<(Address, int4)> {
-    if !arch.caller_reads || arch.kuna_call_returns.is_empty() {
+    if arch.kuna_call_returns.is_empty() {
         return None;
     }
     let entry = data.get_address();

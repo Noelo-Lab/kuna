@@ -232,9 +232,9 @@ Getting the track wrong is the most likely way to waste a builder session.
 | The gap is | a missing or broken capability | kuna's emitted C is wrong | it is too slow |
 | Lives in | `kuna-cli`, `kuna-console`, `kuna-analysis` | `kuna-decomp/src/pN_*/kuna_<slug>.rs` | either |
 | Changes emitted C | **no** | **yes** | must not |
-| `phases.toml` option | **not required** — the rule is "anything that *can change emitted C* ships behind a named option", and a new subcommand cannot | **required**, plus all 8 ritual steps | only if output moves |
+| `phases.toml` option | **not required** — the rule is "a judgement call ships behind a named option", and a new subcommand is not one | **required for a judgement call** (plus all 8 ritual steps); **forbidden for a strict correctness fix**, which ships always-on with a one-pass stage test (`docs/agents.md` → *Adding features*) | only if output moves |
 | Counters | none | `kuna_phases/tests.rs` (2 asserts + the tier tuple + the count-encoding *test names*), `catalog_bytecompat.rs` (3 asserts + the `phase_catalog.json` fixture), `tests/stages/kuna-catalog.xml`, `kuna-base/src/xml.rs` | none |
-| Tests | cargo tests + the promoted acceptance probe. **A `tests/stages/` case would be wrong** — that README scopes the corpus to stage-model issues | two-pass `tests/stages/gh{angr,dec}-<slug>.xml` | timing probe with a stated noise floor |
+| Tests | cargo tests + the promoted acceptance probe. **A `tests/stages/` case would be wrong** — that README scopes the corpus to stage-model issues | `tests/stages/gh{angr,dec}-<slug>.xml`: two-pass when option-gated, one pass when always-on | timing probe with a stated noise floor |
 | Speed bar | before/after on the touched path | `scripts.pipeline.timeit`, ≤5% | **3σ and ≥20%** — `returncopysplit` measured a −20%/−12% noise floor on byte-identical output |
 
 Track `quality` follows `docs/improvement-pipeline.md` §3–4 and

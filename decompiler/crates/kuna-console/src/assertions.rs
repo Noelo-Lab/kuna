@@ -1136,7 +1136,7 @@ fn apply_one_symbol_scoped(
     fd: &mut Funcdata,
     body: &Body,
 ) -> Result<(Option<kuna_decomp::database::SymbolId>, Option<Rc<Datatype>>), String> {
-    let maxduplicates = if prog.arch().dynamic_hash_maxdup_high { 16 } else { 8 };
+    let maxduplicates = kuna_decomp::kuna_dynamichashmax::MAX_DUPLICATES;
     match body {
         Body::Name { symbol, newname, .. } => {
             Ok((crate::kuna_hightarget::apply_local(fd, symbol, newname, None, maxduplicates, Some(prog.arch()))?, None))

@@ -46,6 +46,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--lib",
     "--base",
     "--slice",
+    "--image",
     "--isa",
     "--target",
     "--language",
