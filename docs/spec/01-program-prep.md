@@ -4516,7 +4516,10 @@ every other binary's pass list is byte-identical to before the pass existed):
     renders `self->ratio` and `objc_storeStrong((long)self + Foo::_name, x)`
     renders `objc_storeStrong(&self->_name, x)` (that app: 5,207 field accesses, 0
     anonymous offset loads; an 84 MB Swift + ObjC app's Swift classes expose
-    their stored properties the same way). A class that got no
+    their stored properties the same way). The struct takes the class's runtime
+    name, so a Swift class whose labels read `-[main.Greeter greet:]` under
+    `swiftdemangle` has `self` typed `_TtC4main7Greeter *`, a name C accepts.
+    A class that got no
     layout — one of another image behind a category, or one with no field of
     its own — still types `self` as a pointer to its declared record, so the
     receiver is a `<Class> *` even when it is opaque. Off (the option is read
