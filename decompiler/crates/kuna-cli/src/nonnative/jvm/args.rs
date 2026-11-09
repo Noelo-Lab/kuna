@@ -29,15 +29,6 @@ impl Sub {
             _ => None,
         }
     }
-
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Sub::Decompile => "decompile",
-            Sub::DecompileAll => "decompile-all",
-            Sub::Project => "decompile-project",
-            Sub::Functions => "functions",
-        }
-    }
 }
 
 /// Which JDK gives the engine its class library.
