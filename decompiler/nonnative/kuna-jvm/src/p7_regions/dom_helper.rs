@@ -171,18 +171,18 @@ impl DomHelper {
                 .expect("block statement");
 
             for succ in block.get_succs().to_vec() {
-                let mut stsucc = stats.get_with_key(&succ.get_id()).expect("successor");
+                let mut stsucc = stats.get_with_key(&succ.get_id());
 
                 let type_;
-                if stsucc == firstst {
+                if stsucc == Some(firstst) {
                     type_ = StatEdge::TYPE_CONTINUE;
-                    stsucc = general;
+                    stsucc = Some(general);
                 } else if graph.get_finally_exits().borrow().contains(&block) {
                     type_ = StatEdge::TYPE_FINALLYEXIT;
-                    stsucc = dummyexit.0;
+                    stsucc = Some(dummyexit.0);
                 } else if succ.get_id() == last_id {
                     type_ = StatEdge::TYPE_BREAK;
-                    stsucc = dummyexit.0;
+                    stsucc = Some(dummyexit.0);
                 } else {
                     type_ = StatEdge::TYPE_REGULAR;
                 }
@@ -192,7 +192,12 @@ impl DomHelper {
                 } else {
                     Some(general)
                 };
-                stat.add_successor(StatEdge::new_closure(type_, stat, stsucc, closure));
+                stat.add_successor(StatEdge::new_closure(
+                    type_,
+                    stat,
+                    stsucc.expect("successor statement"),
+                    closure,
+                ));
             }
 
             for succex in block.get_succ_exceptions().to_vec() {
@@ -714,7 +719,7 @@ impl DomHelper {
                 continue;
             }
 
-            let head = stats.borrow().get_with_key(&headid).expect("head");
+            let head = stats.borrow().get_with_key(&headid);
 
             let set_ext_posts = map_ext_post.borrow().get(&headid).map(|s| s.to_vec());
 
@@ -731,6 +736,7 @@ impl DomHelper {
                 let Some(post) = stats.borrow().get_with_key(&post_id) else {
                     continue;
                 };
+                let head = head.expect("head");
 
                 let same = post == head;
 

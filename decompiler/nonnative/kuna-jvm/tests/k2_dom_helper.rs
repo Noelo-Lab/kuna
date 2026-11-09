@@ -337,13 +337,28 @@ fn code_to_statement(cl: StructClass, mt: StructMethod) -> Result<RootStatement,
         if e.is("UnportedError") {
             format!("unported: {}", e.message)
         } else {
-            format!("parse_graph: {} at {}", e.message, e.location)
+            format!("parse_graph: {}", e.message)
         }
     })
 }
 
-/// `parse_graph` on every method of real classes: it either finishes or stops
-/// at a callee that is still `unported!`; nothing else may throw.
+/// The methods of these classes that Vineflower 1.12.0 itself cannot
+/// decompile, with the exception it reports (`IndexOutOfBoundsException` from
+/// the `IfStatement` constructor is an index panic here).
+const VINEFLOWER_FAILURES: [(&str, &str); 2] = [
+    (
+        "CfgOddities.strandedEmptyRange()V",
+        "parse_graph: RuntimeException: parsing failure!",
+    ),
+    (
+        "CfgOddities.fallsOffTheEnd(I)V",
+        "parse_graph: index out of bounds: the len is 1 but the index is 1",
+    ),
+];
+
+/// `parse_graph` on every method of real classes: each one gets through
+/// `processStatement` and then finishes or stops at a callee that is still
+/// `unported!`, except where Vineflower fails too.
 #[test]
 fn parse_graph_runs_on_real_methods() {
     let _context = common::install_default_context();
@@ -388,7 +403,7 @@ fn parse_graph_runs_on_real_methods() {
                 Ok(_) => finished += 1,
                 Err(e) if e.starts_with("cfg: ") => cfg_failures.push(format!("{name}: {e}")),
                 Err(e) if e.starts_with("unported: ") => *blocked.entry(e).or_default() += 1,
-                Err(e) => failures.push(format!("{name}: {e}")),
+                Err(e) => failures.push((name, e)),
             }
         }
         DecompilerContext::set_current_class(None);
@@ -401,15 +416,16 @@ fn parse_graph_runs_on_real_methods() {
         files.len(),
         cfg_failures.len()
     );
+    let expected: Vec<(String, String)> = VINEFLOWER_FAILURES
+        .iter()
+        .map(|(m, e)| (m.to_string(), e.to_string()))
+        .collect();
+    assert_eq!(failures, expected, "methods that threw in parse_graph");
     assert!(
-        failures.is_empty(),
-        "{} methods threw in parse_graph:\n{}",
-        failures.len(),
-        failures.join("\n")
-    );
-    assert!(
-        methods >= 100 && decomposed + cfg_failures.len() >= methods - methods / 20,
-        "{methods} methods, {decomposed} through processStatement; CFG failures:\n{}",
+        cfg_failures.is_empty(),
+        "CFG construction failed:\n{}",
         cfg_failures.join("\n")
     );
+    assert_eq!(methods, 182);
+    assert_eq!(decomposed + failures.len(), methods);
 }
