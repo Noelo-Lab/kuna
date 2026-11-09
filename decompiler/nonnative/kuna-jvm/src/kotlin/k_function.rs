@@ -3,6 +3,9 @@
 //! The record lives for the session (it is attached to members by `kt_attrs`);
 //! its suppliers take the writing class's `ClassWrapper` and build what they
 //! return in that class's scope.
+//!
+//! kuna fix `kt_type_parameter_id`: each member's types are read in the
+//! scope of its own type parameters (`kuna_fix_kt_type_parameter_id`).
 
 use std::rc::Rc;
 
@@ -26,6 +29,8 @@ use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{self, Modality, Visibility};
+use crate::kuna_fix_kt_type_parameter_id;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::method_wrapper::MethodWrapper;
 use crate::rt::{rethrow, try_catch};
@@ -128,6 +133,12 @@ impl KFunction {
         };
 
         for function in proto_functions {
+            let _type_parameters = kuna_fixes::enabled(KunaFix::KtTypeParameterId).then(|| {
+                kuna_fix_kt_type_parameter_id::member_scope(
+                    &function.get_type_parameter_list(),
+                    resolver,
+                )
+            });
             let jvm_data = function.get_extension_method_signature();
 
             let flags = function.get_flags();
@@ -241,8 +252,19 @@ impl KFunction {
             if let Some(receiver_type) = &receiver_type {
                 default_args_desc.push_str(&receiver_type.0.to_string());
             }
-            for parameter in parameters.iter() {
-                if let Some(type_parameter_name) = &parameter.type_.k().type_parameter_name {
+            for (i, parameter) in parameters.iter().enumerate() {
+                let named = !kuna_fixes::enabled(KunaFix::KtTypeParameterId)
+                    || function
+                        .get_value_parameter(i as i32)
+                        .get_type()
+                        .has_type_parameter_name();
+                if let Some(type_parameter_name) = parameter
+                    .type_
+                    .k()
+                    .type_parameter_name
+                    .as_ref()
+                    .filter(|_| named)
+                {
                     let bound = type_parameters
                         .iter()
                         .find(|type_parameter| &type_parameter.name == type_parameter_name)

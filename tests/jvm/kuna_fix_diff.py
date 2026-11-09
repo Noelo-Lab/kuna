@@ -1509,6 +1509,336 @@ def static_type_variable_scope(old, new):
 def inner_method_argument_shift(old, new):
     """inner_method_argument_shift: casts only."""
     return cast_only(old, new)
+# --- kuna fixes of the Kotlin printer (ktprint): the inverse of each fix's change, line by line ---
+
+KT_CONVERSIONS = [  # longest first: the Kotlin conversion and the Java cast it stands for
+    ('.code.toLong()', 'long'), ('.code.toFloat()', 'float'), ('.code.toDouble()', 'double'),
+    ('.code.toByte()', 'byte'), ('.code.toShort()', 'short'),
+    ('.toInt().toChar()', 'char'), ('.toInt().toByte()', 'byte'), ('.toInt().toShort()', 'short'),
+    ('.toChar()', 'char'), ('.toByte()', 'byte'), ('.toShort()', 'short'), ('.toInt()', 'int'),
+    ('.toLong()', 'long'), ('.toFloat()', 'float'), ('.toDouble()', 'double'), ('.code', 'int'),
+]
+KT_CLOSE = {')': '(', ']': '['}
+
+
+def kt_operand_start(s, end):
+    """The start of the postfix operand that ends at `s[end]`: a parenthesised expression, or a chain of
+    names, calls, indexing and member accesses (backquoted names and literals included)."""
+    i = end
+    while i > 0:
+        c = s[i - 1]
+        if c in KT_CLOSE:
+            depth, j = 0, i - 1
+            while j >= 0:
+                if s[j] in '"\'':
+                    q, j = s[j], j - 1
+                    while j >= 0 and not (s[j] == q and (j == 0 or s[j - 1] != '\\')):
+                        j -= 1
+                elif s[j] in KT_CLOSE:
+                    depth += 1
+                elif s[j] in '([':
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j -= 1
+            if j < 0:
+                return None
+            group, i = c, j
+            if group == ')' and (i == 0 or not (s[i - 1].isalnum() or s[i - 1] in '_$`>)]/')):
+                return i
+            continue
+        if c == '/' and i > 1 and s[i - 2] == '*':
+            j = s.rfind('/*', 0, i - 2)
+            if j < 0:
+                return None
+            i = j
+            continue
+        if c == '`':
+            j = s.rfind('`', 0, i - 1)
+            if j < 0:
+                return None
+            i = j
+        elif c.isalnum() or c in '_$':
+            while i > 0 and (s[i - 1].isalnum() or s[i - 1] in '_$'):
+                i -= 1
+        elif c in '"\'':
+            j = i - 2
+            while j >= 0 and not (s[j] == c and (j == 0 or s[j - 1] != '\\')):
+                j -= 1
+            if j < 0:
+                return None
+            i = j
+        else:
+            return i if i < end else None
+        if i > 1 and s[i - 1] == '.' and (s[i - 2].isalnum() or s[i - 2] in '_$`)]"\''):
+            i -= 1
+            continue
+        if i > 2 and s[i - 2:i] == '::':
+            i -= 2
+            continue
+        return i
+    return i
+
+
+def kt_uncast_line(line, old_text):
+    """`line` with each Kotlin conversion `X.toInt()` written as Java's cast `(int)X`, and each cast to a
+    type variable `X as T` as `(T)X` when the old text has that cast (fix kt_java_cast_syntax)."""
+    changed = True
+    while changed:
+        changed = False
+        best = None
+        for suffix, java in KT_CONVERSIONS:
+            k = line.find(suffix)
+            while k >= 0:
+                after = line[k + len(suffix):k + len(suffix) + 1]
+                if not after or not (after.isalnum() or after in '_$('):
+                    break
+                k = line.find(suffix, k + 1)
+            if k >= 0 and (best is None or k < best[0] or (k == best[0] and len(suffix) > len(best[1]))):
+                best = (k, suffix, java)
+        if best:
+            k, suffix, java = best
+            start = kt_operand_start(line, k)
+            if start is not None:
+                operand = line[start:k]
+                if re.fullmatch(r'\(-[\d.]+[LlFfDd]?\)', operand):
+                    operand = operand[1:-1]
+                line = line[:start] + f'({java})' + operand + line[k + len(suffix):]
+                changed = True
+                continue
+        for m in re.finditer(r' as ([A-Za-z_]\w*)(?![\w.<?])', line):
+            if f'({m.group(1)})' not in old_text:
+                continue
+            start = kt_operand_start(line, m.start())
+            if start is not None and line[:start].endswith(' as '):
+                inner = kt_operand_start(line, start - 4)
+                if inner is not None:
+                    line = (line[:inner] + f'({m.group(1)})(' + line[inner:m.start()] + ')'
+                            + line[m.end():])
+                    changed = True
+                    break
+            if start is not None:
+                line = line[:start] + f'({m.group(1)})' + line[start:m.start()] + line[m.end():]
+                changed = True
+                break
+    return line
+
+
+KT_CHAR = re.compile(r"'(?:[^'\\]|\\.|\\u[0-9a-fA-F]{4})'")
+
+
+def kt_char_value(tok):
+    body = tok[1:-1]
+    if body.startswith('\\u'):
+        return int(body[2:], 16)
+    if body.startswith('\\'):
+        return {'b': 8, 't': 9, 'n': 10, 'f': 12, 'r': 13, "'": 39, '"': 34, '\\': 92, '$': 36}.get(body[1])
+    return ord(body) if len(body) == 1 else None
+
+
+def kt_same_constant(o, n):
+    """Old and new token are one constant, as an int and as a char (fix kt_when_case_type)."""
+    for x, y in ((o, n), (n, o)):
+        if KT_CHAR.fullmatch(x) and re.fullmatch(r'-?\d+', y):
+            return kt_char_value(x) == int(y)
+    return False
+
+
+def kt_token_undo(old, new, fired):
+    """`new` with the tokens fixes kt_type_parameter_id (`T` for `Any`) and kt_when_case_type (`':'` for
+    `58` on a case label) changed put back, when the two lines differ only there."""
+    a, b = kt_tokens([old]), kt_tokens([new])
+    if len(a) != len(b) or a == b:
+        return None
+    kinds = set()
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        if x == 'Any' and re.fullmatch(r'[A-Za-z_]\w*', y):
+            kinds.add('kt_type_parameter_id')
+        elif kt_same_constant(x, y) and ' -> ' in new:
+            kinds.add('kt_when_case_type')
+        else:
+            return None
+    fired.update(kinds)
+    return old
+
+
+def kt_paren_undo(old, new, fired):
+    """`new` without the parentheses fix kt_range_operand_precedence puts around a range bound."""
+    for m in re.finditer(r'(?<=\bin )\(|(?<=\.\.)\(|(?<= until )\(|(?<= downTo )\(', new):
+        depth = 0
+        for j in range(m.start(), len(new)):
+            depth += {'(': 1, ')': -1}.get(new[j], 0)
+            if depth == 0:
+                cand = new[:m.start()] + new[m.start() + 1:j] + new[j + 1:]
+                if cand == old:
+                    fired.add('kt_range_operand_precedence')
+                    return old
+                break
+    return None
+
+
+def kt_line_undo(old, new, fired):
+    """One line of new text with the ktprint fixes undone, as close to `old` as they allow."""
+    if old == new:
+        return new
+    line = new
+    m = re.search(r'\blambda_\w+@(?=\{)', line)
+    if m:
+        line = line[:m.start()] + line[m.end():]
+        fired.add('kt_lambda_singleton_returns')
+    line2 = re.sub(r'return@lambda_\w+ ?', '', line)
+    if line2 != line:
+        line = line2
+        fired.add('kt_lambda_singleton_returns')
+    if line == old:
+        return line
+    m = re.fullmatch(r'(.*\bfun .*\)|\s*\)): [^{]+( \{)', line)
+    if m and m.group(1) + m.group(2) == old:
+        fired.add('kt_method_object_return_type')
+        return old
+    uncast = kt_uncast_line(line, old)
+    if uncast != line:
+        fired.add('kt_java_cast_syntax')
+        line = uncast
+    if line == old:
+        return line
+    for undo in (kt_token_undo, kt_paren_undo):
+        got = undo(old, line, fired)
+        if got is not None:
+            return got
+    return line
+
+
+def ktprint_undo(old, new):
+    """The ktprint fixes whose change undone line by line turns `new` into `old`, else None."""
+    fired = set()
+    plain = kt_unjava_char_casts(old)
+    if plain != old:
+        fired.add('kt_java_cast_syntax')
+        old = plain
+    if len(old) == len(new):
+        if [kt_line_undo(o, n, fired) for o, n in zip(old, new)] == old:
+            return fired
+    return kt_joined_undo(old, new, fired)
+
+
+def kt_joined_undo(old, new, fired):
+    """`ktprint_undo` over a hunk whose lines the fixes reflowed: undone as one text, then compared token
+    by token, where a type parameter's name may stand for `Any`, a character for its code and a
+    parenthesised range bound for the bare one."""
+    lines_ = []
+    for n in new:
+        n2 = re.sub(r'\blambda_\w+@(?=\{)', '', n)
+        n2 = re.sub(r'return@lambda_\w+ ?', '', n2)
+        if n2 != n:
+            fired.add('kt_lambda_singleton_returns')
+        lines_.append(n2)
+    old_text = '\n'.join(old)
+    joined = kt_uncast_line('\n'.join(lines_), old_text)
+    if joined != '\n'.join(lines_):
+        fired.add('kt_java_cast_syntax')
+    a, b = kt_tokens(old), kt_tokens([joined])
+    if len(a) != len(b):
+        return fired if a == b else None
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        if x == 'Any' and re.fullmatch(r'[A-Za-z_]\w*', y):
+            fired.add('kt_type_parameter_id')
+        elif kt_same_constant(x, y):
+            fired.add('kt_when_case_type')
+        else:
+            return None
+    return fired or None
+
+
+KTPRINT_ORDER = ['kt_type_parameter_id', 'kt_java_cast_syntax', 'kt_when_case_type',
+                 'kt_method_object_return_type', 'kt_range_operand_precedence',
+                 'kt_lambda_singleton_returns', 'kt_secondary_constructor_line']
+
+
+def ktprint_recogniser(fix):
+    """The recogniser of one ktprint fix: the hunk is undone by the ktprint fixes, the first of which
+    (in KTPRINT_ORDER) is `fix`; a hunk several of them change counts under the first."""
+    def recognise(old, new):
+        fired = ktprint_undo(old, new)
+        return bool(fired) and next(f for f in KTPRINT_ORDER if f in fired) == fix
+    recognise.__name__ = fix
+    return recognise
+
+
+def kt_secondary_constructor_line(old, new):
+    """kt_secondary_constructor_line: `constructor(..) : this(..)}` becomes the constructor line and
+    the brace on the next (and a blank line follows a bodiless constructor that is not the last
+    member); the same tokens."""
+    return (any(re.search(r'\bconstructor\(.*\) : (this|super)\(.*\)\s*\}$', x) for x in old)
+            and tokens(old) == tokens(new))
+
+
+def kt_unjava_char_casts(text_lines):
+    """Old text with Java's identity cast of a character literal, `(char)'x'`, written as the literal,
+    which fix kt_java_cast_syntax writes without a conversion."""
+    return [re.sub(r"\(char\)(" + KT_CHAR.pattern + ")", r'\1', x) for x in text_lines]
+
+
+def ktprint_context(a, b, i1, i2, j1, j2, throw_names):
+    """A ktprint hunk that only its surroundings explain: a cast whose operand starts or ends on a
+    line next to the hunk (undone over the hunk and up to 8 lines on each side, as one text), or the
+    blank line kt_secondary_constructor_line writes after a bodiless secondary constructor, followed
+    by other ktprint changes. Returns the fix, or None."""
+    old, new = a[i1:i2], b[j1:j2]
+    lead = None
+    if new and new[0] == '' and j1 > 0 and re.search(r'\bconstructor\(.*\) : (this|super)\(.*\)$', b[j1 - 1]):
+        lead, new = 'kt_secondary_constructor_line', new[1:]
+        if not old and not new:
+            return lead
+        if kt_secondary_constructor_line(old, new) or ktprint_undo(old, new):
+            return lead
+    for k in range(0, 9):
+        if i1 - k < 0 or j1 - k < 0:
+            break
+        for m in range(0, 9):
+            if i2 + m > len(a) or j2 + m > len(b):
+                break
+            old_w, new_w = a[i1 - k:i2 + m], b[j1 - k:j2 + m]
+            if lead:
+                new_w = new_w[:k] + new_w[k + 1:]
+            fired = set()
+            plain = kt_unjava_char_casts(old_w)
+            if plain != old_w:
+                fired.add('kt_java_cast_syntax')
+            fired = kt_joined_undo(plain, new_w, fired)
+            if fired:
+                return lead or next(f for f in KTPRINT_ORDER if f in fired)
+    return None
+
+
+def ktprint_canon(old, new):
+    """`new` with the ktprint fixes' conversions, casts and lambda labels written back line by line
+    (the casts only where `old` has them), for the recognisers of other fixes whose hunks hold them."""
+    old_text = '\n'.join(old)
+    out = []
+    for k, line in enumerate(new):
+        line = re.sub(r'\blambda_\w+@(?=\{)', '', line)
+        line = re.sub(r'return@lambda_\w+ ?', '', line)
+        line = kt_uncast_line(line, old_text)
+        if len(old) == len(new):
+            if old[k].endswith(') {'):
+                line = re.sub(r'\): [^{]+ \{$', ') {', line)
+            plain = kt_token_undo(old[k], line, set())
+            if plain is not None:
+                line = plain
+        out.append(line)
+    return out
+
+
+def ktprint_context_recogniser(fix):
+    def recognise(a, b, i1, i2, j1, j2, throw_names):
+        return ktprint_context(a, b, i1, i2, j1, j2, throw_names) == fix
+    recognise.__name__ = fix + '_context'
+    return recognise
 
 
 CONTEXT_RECOGNISERS = {'enum_body_separator': enum_body_separator,
@@ -1516,6 +1846,7 @@ CONTEXT_RECOGNISERS = {'enum_body_separator': enum_body_separator,
                        'kt_failed_method_hidden': kt_failed_method_hidden,
                        'kt_return_outside_lambda': kt_return_outside_lambda_scope,
                        'kt_semaphore_store_liveness': kt_semaphore_store_liveness_scope}
+CONTEXT_RECOGNISERS.update((fix, ktprint_context_recogniser(fix)) for fix in KTPRINT_ORDER)
 
 
 RECOGNISERS = {
@@ -1558,6 +1889,8 @@ RECOGNISERS = {
     'static_type_variable_scope': static_type_variable_scope,
     'inner_method_argument_shift': inner_method_argument_shift,
 }
+RECOGNISERS.update((fix, ktprint_recogniser(fix)) for fix in KTPRINT_ORDER[:-1])
+RECOGNISERS['kt_secondary_constructor_line'] = kt_secondary_constructor_line
 
 
 def classify(a, b, i1, i2, j1, j2, marked):
@@ -1568,6 +1901,11 @@ def classify(a, b, i1, i2, j1, j2, marked):
     for fix, recognises in RECOGNISERS.items():
         if recognises(old, new):
             return fix
+    plain = ktprint_canon(old, new)
+    if plain != new:
+        for fix, recognises in RECOGNISERS.items():
+            if fix not in KTPRINT_ORDER and recognises(old, plain):
+                return fix
     return 'layout' if same_tokens(old, new) else 'other'
 
 

@@ -2305,3 +2305,99 @@ wildcard, else, the two parameterizations being provably distinct (JLS 4.5), to 
 class, which javac converts unchecked (`(ImmutableList) delegates`, as the source has it).
 Values of other kinds, a call's result above all, are left alone: their types are
 Vineflower's inference, not a declaration.
+**`kt_when_case_type`.** `KSwitchStatement.toJava` means to write each constant label of a
+`when` with the selector's type: it copies the constant and sets the copy's type to the switch
+head's, but then writes the original, whose type is the one its value suggested. So a `when` on
+a `Char` gets integer labels, `58 -> return i` for `':'` (okhttp's `HttpUrl.portColonOffset`,
+kotlin-stdlib's number parsers), and the `when` on a `String`'s `hashCode()` that kotlinc emits
+for a `when` on strings gets characters for the hash codes that fit in a `char`, `'뉯' ->` for
+`45679` (kotlin-stdlib's `Path.checkFileName`); neither compiles, as Kotlin does not compare a
+`Char` with an `Int` (unchanged on `develop/1.13.0`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_switch_statement.rs (KSwitchStatement::to_java)`)
+the retyped copy is written, as the Java writer does. A form feed, which only this fix brings to
+Kotlin output, is written `'\u000c'`
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_const_exprent.rs`), as Kotlin has no `\f`. The
+default differs from Vineflower's output on code Vineflower prints wrongly: 18 `when` statements
+of okhttp, kotlin-stdlib and kotlin-reflect.
+
+**`kt_method_object_return_type`.** `KotlinWriter.writeMethod`, which writes a method without
+Kotlin metadata (`@JvmOverloads` overloads, `$$forInline` copies, value-class `-impl` methods,
+`invokeSuspend`, reflection's `default$invoke` bridges), writes a return type when
+`!retType.higherEqualInLatticeThan(VarType.VARTYPE_VOID)`. In Vineflower's type lattice
+`java.lang.Object` is above every type but itself, `void` included, so a method returning
+`Object` (`Any?`, an erased type parameter) is written as a `Unit` function whose body returns a
+value, `fun describe(value: Any?) { return describe$default(..) }`. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_writer.rs (KotlinWriter::write_method)`) the
+test is `retType != void`; the type is written as for any other return type, nullable when the
+method is annotated `@Nullable`. The default differs from Vineflower's output on code Vineflower
+prints wrongly: 133 methods of okhttp, kotlin-stdlib, kotlinx-coroutines and kotlin-reflect.
+
+**`kt_secondary_constructor_line`.** `KConstructor.stringify` writes a secondary constructor
+without a body (only its `: this(..)` or `: super(..)` call) without ending the line, so the
+class's closing brace, or the next member's separating line, lands on it:
+`public constructor(cause: Throwable?) : super(cause)}` (kotlin-stdlib's exception classes),
+`public constructor() : this(0)   }` in a nested class. With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/k_constructor.rs (KConstructor::stringify)`) the line
+ends, and the blank line between members follows as after any other member. Layout only: 37
+places in the Kotlin libraries.
+
+**`kt_range_operand_precedence`.** `KDoStatement` writes a resugared `for` loop's range as its
+start, the operator (`..`, `until`, `downTo`) and its end, as they print. Kotlin's `if`
+expression, elvis, infix calls (`shl`, `and`) and comparisons bind less tightly than a range
+operator, so a start `if (c) 1 else 0` makes the range the `else` branch,
+`for (index in if (s[0] == '-') 1 else 0 until length)` (kotlin-stdlib's
+`String.toBigIntegerOrNull`), which iterates over something else or does not compile. With the
+fix (`decompiler/nonnative/kuna-jvm/src/kotlin/k_do_statement.rs (range_operand)`) a bound whose
+precedence is looser than addition's is parenthesised.
+
+**`kt_lambda_singleton_returns`.** kotlinc before 2.0, and 2.x with `-Xlambdas=class`, compiles a
+non-capturing lambda to a class with a singleton `INSTANCE`, which `KFieldExprent` writes as a
+lambda with the class's `invoke` as its body, every exit as its bare value. That value is the
+lambda's result only in tail position (at the end of the body, or at the end of both branches of
+an `if`-`else` there); an early `return@label v` elsewhere, such as in a loop, becomes the
+expression statement `v` and the lambda runs on (wrong output: `search`'s
+`for (..) { if (item == key) return@search i }; -1` returns `-1`). `KNewExprent`, which writes an
+`invokedynamic` lambda, labels it and writes `return@label` for every exit when it has several.
+With the fix (`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_lambda_singleton_returns.rs`)
+a singleton lambda one of whose exits is not in tail position is labelled
+`lambda_<class's last name segment>@{` and its exits are `return@lambda_1 v`; one whose exits are
+all in tail position is written as before. None of the six Kotlin libraries checked has such a
+lambda; the case is the reproducer.
+
+**`kt_type_parameter_id`.** kotlinc's metadata refers to a type parameter of the declaration
+being serialized by name (`Type.type_parameter_name`) and to any other by id
+(`Type.type_parameter`): a class's own type parameters in the types of its members, an outer
+class's in an inner class. `KType.from` reads only the name, so every such type is written as
+`Any`: `fun get(index: Int): Any` for `E`, `Map<Any, Any>` for `Map<K, V>`, constructor
+parameters `value: Any` for `T` (about 920 declarations in kotlin-stdlib, kotlinx-coroutines and
+kotlin-reflect). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_type_parameter_id.rs`), the metadata
+parsers open a scope of ids and names: `KotlinChooser` for a class's members (its own type
+parameters and, for an `inner` class, those of the classes it is inner to, found through
+`InnerClasses` and their metadata), `KFunction.parse` and `KProperty.parse` for each member's own;
+`KType.from` names a type that refers to a parameter by id in scope. Only the written name
+changes: the type's JVM descriptor, which the parsers use to find the member's method or field,
+is still `Object`'s, and the default-arguments descriptor keeps reading bounds only for
+parameters referred to by name.
+
+**`kt_java_cast_syntax`.** The Kotlin plugin leaves the casts of the Java writer in Java's syntax,
+which is not Kotlin: the explicit numeric conversions (`I2L` .. `I2S`, through
+`FunctionExprent.toJava`) and the casts `ExprProcessor.getCastedExprent` adds where a value's type
+does not fit its context, `(int)Math.min(a, (long)b)`, `(byte)(w shr 16)`, `(T)value` (about
+2,500 casts in okio, okhttp, kotlin-stdlib, kotlinx-coroutines, kotlin-reflect and
+spring-framework's Kotlin classes). With the fix
+(`decompiler/nonnative/kuna-jvm/src/p2_lift/kuna_fix_kt_java_cast_syntax.rs`, called from
+`ExprProcessor::get_casted_exprent_full` when the class being written has a language spec, and
+from `KFunctionExprent::to_java`), a cast to a numeric primitive type from a numeric primitive or
+its box is written as Kotlin's conversion call, `Math.min(a, b.toLong()).toInt()`: Kotlin compiles
+`toInt()` and its siblings to the same conversion instructions as Java's cast; from and to `char`
+through the character's code (`c.code`, `i.toChar()`), and to `char`, `byte` and `short` from
+anything but `int` through `toInt()`, the conversions Java's cast performs and the ones Kotlin
+does not deprecate (`d.toInt().toByte()` for `(byte)d`); an operand that is not primary, or a
+negative literal, is parenthesised, `(x / 2).toShort()`. A conversion Java writes implicitly
+(widening) and that writes only its operand counts as that operand's type. A cast to a type
+variable, `(T)value`, is unchecked in Java and is written `value as T`, unchecked in Kotlin too,
+which lets `null` through as Java's does. Every other cast keeps Java's syntax: to a class or array
+type, Kotlin's `as` rejects `null`, which Java's cast lets through, so no Kotlin cast has the same
+meaning there (about 600 such casts remain, with about 20 primitive ones that other code prints,
+such as `(long)32` from a constant).

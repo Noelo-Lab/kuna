@@ -1,4 +1,8 @@
 //! Port of `org/vineflower/kotlin/expr/KFunctionExprent.java`.
+//!
+//! kuna fix `kt_java_cast_syntax`: a numeric conversion is written as a call
+//! of Kotlin's conversion function (`kuna_fix_kt_java_cast_syntax`), where
+//! Vineflower writes Java's cast, `(long)x`.
 
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
@@ -13,6 +17,8 @@ use crate::k_dispatch::KExprentExt;
 use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
 use crate::kotlin_exprent;
+use crate::kuna_fix_kt_java_cast_syntax;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::jstring::from_utf16;
 use crate::rt::BitSet;
 use crate::text_buffer::TextBuffer;
@@ -310,6 +316,27 @@ impl KFunctionExprent {
                 buf.append_buffer(&left).append(" as ");
                 buf.append_buffer(&lst_operands.get(1).to_java(indent));
                 return buf;
+            }
+            func_type
+                if func_type.cast_type().is_some()
+                    && self.does_cast()
+                    && kuna_fixes::enabled(KunaFix::KtJavaCastSyntax) =>
+            {
+                let operand = lst_operands.get(0);
+                if let Some(inv) = operand.try_as_invocation() {
+                    if inv.is_unboxing_call() {
+                        inv.force_unboxing(true);
+                    }
+                }
+                let to = func_type.cast_type().expect("a conversion");
+                let from =
+                    kuna_fix_kt_java_cast_syntax::written_type(operand, operand.get_expr_type());
+                if let Some(cast) = kuna_fix_kt_java_cast_syntax::form(&to, &from) {
+                    buf.append_buffer(&kuna_fix_kt_java_cast_syntax::write(
+                        cast, operand, &to, indent,
+                    ));
+                    return buf;
+                }
             }
             FunctionType::BitNot => {
                 let operand = self.wrap(lst_operands.get(0), indent);

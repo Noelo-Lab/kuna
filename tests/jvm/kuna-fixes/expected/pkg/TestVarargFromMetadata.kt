@@ -10,7 +10,9 @@ public class TestVarargFromMetadata(names: Array<String>, counts: IntArray) {
    }
 
    public constructor(vararg parts: String) : this(parts, IntArray(parts.length))
+
    public constructor(first: Int, vararg rest: Int) : this(arrayOfNulls(0), rest)
+
    public fun sum(vararg values: Int): Int {
       var total: Int = 0
 

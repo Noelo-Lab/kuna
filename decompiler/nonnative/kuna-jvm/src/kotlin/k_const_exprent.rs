@@ -1,4 +1,9 @@
 //! Port of `org/vineflower/kotlin/expr/KConstExprent.java`.
+//!
+//! kuna fix `kt_when_case_type`: the character form feed is written
+//! `'\u000c'`, as Kotlin has no `\f` escape (Java's, which `ConstExprent`
+//! writes); the fix writes `when` labels as characters, the first place it
+//! reaches Kotlin output.
 
 use crate::const_exprent::ConstExprent;
 use crate::expr_util::ExprUtil;
@@ -7,6 +12,7 @@ use crate::k_dispatch::KExprentExt;
 use crate::k_type::KType;
 use crate::k_types::KTypes;
 use crate::kotlin_exprent;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -70,6 +76,16 @@ impl KConstExprent {
             } else {
                 jthrow!(IllegalStateException; "Unknown unsigned type: {}", ktype.0);
             }
+            return buf;
+        }
+
+        if kuna_fixes::enabled(KunaFix::KtWhenCaseType)
+            && const_type.equals(&VarType::VARTYPE_CHAR())
+            && self.get_int_value() == 0xC
+        {
+            let mut buf = TextBuffer::new();
+            buf.add_bytecode_mapping(self.get_bytecode().as_ref());
+            buf.append("'\\u000c'");
             return buf;
         }
 

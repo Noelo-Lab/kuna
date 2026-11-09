@@ -22,7 +22,7 @@ pub fn data(name: &str) -> PathBuf {
 pub fn tmp_dir(name: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join("kuna-jvm-f6")
-        .join(name);
+        .join(format!("{name}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("create tmp dir");
     dir
 }

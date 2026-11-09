@@ -1,11 +1,17 @@
 //! Port of `org/vineflower/kotlin/stat/KSwitchStatement.java`.
+//!
+//! kuna fix `kt_when_case_type`: a case constant is written with the
+//! selector's type (`':' ->` on a `Char`), where Vineflower retypes a copy it
+//! never prints and writes the constant's own type (`58 ->`).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::k_const_exprent::KConstExprent;
 use crate::k_expr_processor::KExprProcessor;
 use crate::k_if_statement::copy_statement_fields;
 use crate::kotlin_statement;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JavaStr;
 use crate::statement::Statement;
 use crate::switch_statement::SwitchStatement;
@@ -103,7 +109,7 @@ impl KSwitchStatement {
 
                 any_non_default = true;
 
-                let value = values.get(j);
+                let mut value = values.get(j);
 
                 if j == 0 {
                     buf.append_indent(indent + 1);
@@ -113,8 +119,14 @@ impl KSwitchStatement {
 
                 if let Some(v) = value {
                     if v.is_const() && !VarType::VARTYPE_NULL().equals(&v.get_expr_type()) {
-                        let const_value = v.copy().as_const();
-                        const_value.set_const_type(switch_type.clone());
+                        if kuna_fixes::enabled(KunaFix::KtWhenCaseType) {
+                            let copied = KConstExprent::new(v.copy().as_const());
+                            copied.set_const_type(switch_type.clone());
+                            value = Some(copied.0 .0);
+                        } else {
+                            let const_value = v.copy().as_const();
+                            const_value.set_const_type(switch_type.clone());
+                        }
                     }
                 }
 
