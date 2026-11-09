@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4069,
-    4069
+    4073,
+    4073
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3834,9 +3834,12 @@
     "data:swiftcall on, symbols: the mutating method's body reads self's fields",
     "data:swiftcall on, symbols: the mutating struct method takes the struct's self",
     "data:swiftcall on, symbols: the non-mutating method gains no self",
+    "data:swiftcall on: a call to a module function leaves the self the caller set",
     "data:swiftcall on: a class witness takes the address of the reference",
     "data:swiftcall on: a class-bound protocol's class witness takes the reference",
+    "data:swiftcall on: a leaf call that never reads r13 leaves the self the caller set",
     "data:swiftcall on: a runtime helper call leaves the self the caller set",
+    "data:swiftcall on: a spilled and reloaded error register keeps the error path, as the moved slot does",
     "data:swiftcall on: a virtual call on self passes self",
     "data:swiftcall on: and reads a field through it",
     "data:swiftcall on: no class-bound witness is typed as a reference to a reference",
@@ -3844,6 +3847,7 @@
     "data:swiftcall on: the class method takes the class's self first",
     "data:swiftcall on: the error path survives",
     "data:swiftcall on: the struct witness writes a field of self",
+    "data:swiftcall on: the throwing call's result is not returned unchecked",
     "data:swiftcall on: the throwing virtual call passes self",
     "data:swiftcall on: the virtual call passes the self it set",
     "data:swiftcall on: the zeroed r12 of a C function stays a constant across its call",
