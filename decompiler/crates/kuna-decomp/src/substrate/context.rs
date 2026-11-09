@@ -801,9 +801,6 @@ pub struct ArchContext {
     /// SLEIGH FIST/FISTP conversion userops and their signed output widths.
     /// Resolved by name once when building the architecture snapshot.
     pub x87_integer_userops: Vec<(kuna_base::types::uint4, int4)>,
-    /// (kuna) `stubtailcall`, default-on: flow loader-proven lazy-binding stubs as
-    /// tail calls ([`crate::kuna_stubtailcall`]).
-    pub stub_tail_call: bool,
     /// (kuna) GH-8724: re-express a strided-induction offset as counter*stride
     /// (C++ `recover_array_stride`, DIV-3 default-on).  Read by
     /// [`RuleArrayStride`](crate::kuna_arraystride::RuleArrayStride).
@@ -896,28 +893,10 @@ pub struct ArchContext {
     /// read by [`kuna_libcfit`](crate::p5_types::kuna_libcfit), which holds a
     /// named libc pointer vote to what the caller does through it.
     pub libctypes: bool,
-    /// (kuna) GH-8017: resolve the gcc stack-probe loop SP MULTIEQUAL to a
-    /// constant (C++ `model_stack_probe_loop`, DIV-3 default-on).  Read by
-    /// [`RuleStackProbeLoop`](crate::kuna_stackprobeloop::RuleStackProbeLoop).
-    pub model_stack_probe_loop: bool,
     /// (kuna) reconstruct a compiler-lowered comparison cascade into a switch
     /// (C++ `recover_lowered_switch`, default-on).  Read by the
     /// [`crate::kuna_loweredswitch`] detect/install actions.
     pub recover_lowered_switch: bool,
-    /// (kuna) Derive lowered-switch case-label signedness from its required range
-    /// comparisons instead of from case-value bits.
-    pub lowered_switch_labels: bool,
-    /// (kuna) `option loweredswitchvalue`: withdraw a re-rolled lowered switch
-    /// unless it reads the value its cascade compared.  Read by
-    /// [`crate::p2_lift::kuna_loweredswitchvalue`] and the lowered-switch install.
-    pub lowered_switch_value_check: bool,
-    /// (kuna) `option loweredswitchexact`: label every case value of a re-rolled
-    /// lowered switch and keep it only when it matches its compare tree.  Read by
-    /// [`crate::kuna_loweredswitch`] and the lowered-switch install.
-    pub lowered_switch_exact: bool,
-    /// (kuna) `option loweredswitchheads`: try every cascade head, not only the
-    /// first.  Read by [`crate::kuna_loweredswitch`]'s detect action.
-    pub lowered_switch_every_head: bool,
     /// (kuna) an unread zero element right after an open stack character array
     /// is its terminator (`nulterminator`).  Read by
     /// [`Funcdata::gather_varnodes`](crate::funcdata_spacebase) for
@@ -1276,8 +1255,6 @@ pub struct ArchContext {
     pub strip_security_check: bool,
     /// Fold Go compiler bounds/division panic arms (option gobounds).
     pub go_bounds: bool,
-    /// Normalize Go branch-only blocks before runtime idiom matching.
-    pub go_jump_chain: bool,
     /// (kuna) flip negated-guard if/else branches for linearity (option
     /// `branchflip`, opt-in default-off).  Read by
     /// [`ActionBranchFlip`](crate::blockaction::ActionBranchFlip).
@@ -1337,14 +1314,9 @@ pub struct ArchContext {
     /// architecture.  Read by `JumpBasic::recoverModel` before
     /// `kunaTryModuloBoundTable`.  `false` (default off / upstream byte-identical).
     pub switch_modulo_bound: bool,
-    /// (kuna) Cut an unguarded jump table where its rows run on into other
-    /// functions (`switchrunon`). See [`crate::kuna_switchrunon`].
-    pub switch_run_on: bool,
-    /// (kuna) Count only a guard that narrows the selector as a guard for
-    /// `switchrunon` (`switchrunonguard`). See [`crate::kuna_switchrunon`].
-    pub switch_run_on_guard: bool,
     /// (kuna `lazyfuncs`) The entry starts the commit installed as names only,
-    /// sorted, so `switchrunon` sees the same functions with the option on.
+    /// sorted, so the run-on cut (`kuna_switchrunon`) sees the same functions
+    /// with the option on.
     pub lazy_entry_starts: Rc<Vec<u64>>,
     /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
     /// addresses (`option constselectjump`, `p2_lift/kuna_constselectjump.rs`).
@@ -1594,7 +1566,6 @@ impl ArchContext {
             simd_shuffle_userops: Vec::new(),
             x87_float_to_int_userops: Vec::new(),
             x87_integer_userops: Vec::new(),
-            stub_tail_call: false,       // stubtailcall
             recover_array_stride: false, // GH-8724 arraystride
             memset_recover: false,       // GH-9230/1537 memsetrecover
             rodata_string: false,        // (kuna) rodatastring
@@ -1621,12 +1592,7 @@ impl ArchContext {
             elem_ptr: false, // (kuna) option elemptr, copied from Architecture
             elem_ptr_ranges: std::rc::Rc::new(Vec::new()), // (kuna) elemptr
             libctypes: false, // (kuna) option libctypes, copied from Architecture
-            model_stack_probe_loop: false, // GH-8017 stackprobeloop
             recover_lowered_switch: false, // loweredswitch
-            lowered_switch_labels: true, // loweredswitchlabels
-            lowered_switch_value_check: true, // loweredswitchvalue
-            lowered_switch_exact: true, // loweredswitchexact
-            lowered_switch_every_head: true, // loweredswitchheads
             nul_terminator: false,
             // endptrbound only re-expresses an address the walk already compares
             // against, so the fixture seam carries the real default.
@@ -1714,7 +1680,6 @@ impl ArchContext {
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             strip_msvc_stack_guard: false, // msvcstackguard (fixture default-off; the live gate rides build_arch_handle)
             go_bounds: true,
-            go_jump_chain: true,
             strip_security_check: false, // securitycheck (fixture default-off; the live gate rides build_arch_handle)
             branch_flip: false,          // branchflip (opt-in default-off)
             // C++ Architecture default: analyze_for_loops = true (architecture.cc).
@@ -1731,8 +1696,6 @@ impl ArchContext {
             funcptr_align: 0,
             peimportcall: false, // (kuna) the real arch overwrites this in build_arch_handle
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
-            switch_run_on: false, // switchrunon (the ArchSeam carries the real default)
-            switch_run_on_guard: false, // switchrunonguard (the ArchSeam carries the real default)
             lazy_entry_starts: Rc::default(),
             const_select_jump: false, // (kuna) constant-select indirect branch: default off
             highslice_guard: false,

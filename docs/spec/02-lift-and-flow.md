@@ -23,9 +23,8 @@ reaches the architecture only through the
 live implementation is
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`.
 
-With `option stubtailcall` on (the default), loader-validated MIPS
-lazy-binding resolver sites carry call-and-return overrides in the shared
-architecture snapshot
+Loader-validated MIPS lazy-binding resolver sites carry call-and-return
+overrides in the shared architecture snapshot
 (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_stubtailcall.rs (flow_override)`). The resolver binds the import
 and jumps to it with the stub caller's return address restored, so the stub is a
 tail call: flow recovery keeps the indirect call, including its delay slot and
@@ -218,7 +217,7 @@ has whole-access forms for both halves, selected by the context bit
 other does nothing. Ghidra's `MipsPreAnalyzer` sets the bit;
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_mipsunaligned.rs (paint)`
 does the same once per image, at the first flow (and before `callwide`'s
-whole-image proof), from `option mipsunaligned` (`on|off`, default **on**).
+whole-image proof); the painting is always on.
 It reads the image's executable ranges, collects the target of every direct
 branch and jump, and pairs a half with the other half of the same width, base
 and data register three (seven) bytes away on the side the byte order puts
@@ -270,8 +269,7 @@ ARM return-dispatch probes preceding flow run in a decode context scope with
 the real walk establishes its boundary; local IT state remains active in a probe.
 The scope journals only touched context partitions, restoring their values and
 explicit-set masks and removing new split points on exit. Opening a scope does
-not copy the image's context database. No scope is opened when both
-`entryretdispatch` and `pushimmediateret` are disabled.
+not copy the image's context database.
 
 Option defaults and flip guidance for every option named below live in the
 generated catalog ([docs/options.md](../options.md)); the rows are defined in
@@ -391,7 +389,7 @@ allowed range, and only an address with no bytes behind it can fail it, so no
 flow that previously decoded is cut: the change turns functions that produced
 nothing into functions that produce a body carrying the warnings above.
 
-**Mapped ELF x86 fall-through.** `option mappedflowboundary on` (default)
+**Mapped ELF x86 fall-through.** Mapped-flow boundary recovery (always on)
 retains decoded paths when another path falls through an image edge. The
 load-time predicate in
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_mappedflowboundary.rs (eligible_elf)`
@@ -400,9 +398,9 @@ ELF32/i386 or ELF64/x86-64, and matching resolved SLEIGH processor, endian,
 and width. Other images and mismatched targets retain legacy flow. Each
 flow follow takes a fresh loader `ImageBytes` snapshot and releases it on
 completion, so byte overlays remain exclusive and later flows see current
-bytes. `option mappedflowboundary off` restores the staged-loader path.
+bytes.
 Mapping warnings from an earlier eligible flow are refreshed when it is
-rebuilt, including after recovery is disabled, so an intervening return override
+rebuilt, so an intervening return override
 or byte overlay cannot leave a stale unmapped-flow warning on the new body.
 Other warnings are retained.
 Cleanup and publication of buffered flow comments occur only after all
@@ -600,32 +598,31 @@ throw under `error_reinterpreted`). An artificial halt
 its cause (`unimplemented`/`badinstruction`/`noreturn`/`missing`), so the CFG
 always terminates cleanly and the printer can attribute the truncation.
 
-**(kuna) A decode-failure halt says so — `option decodehalt`, default `on`.**
+**(kuna) A decode-failure halt says so (`kuna_decodehalt.rs`, always on).**
 Three of the four halt causes are decode failures rather than program returns:
 `badinstruction` (the bytes at the address are not an instruction),
 `unimplemented` (SLEIGH decoded them but has no semantics for them) and
 `missing` (the address was never decoded at all — the out-of-extent branch stub
-of §2.2). With the option on, `flow.rs (FlowInfo::handle_decode_error)` buffers
+of §2.2). `flow.rs (FlowInfo::handle_decode_error)` buffers
 the truncation warning at the failing address and, once per function, the header
 warning naming the cause
 (`kuna_decodehalt.rs` holds the strings), and P9 renders the halt as the
-pseudo-call naming it rather than as a `return;` (chapter 09). Off, the halt is
-still planted and still terminates the CFG — it simply reports nothing, which is
-what kuna did before: a function that ran off into bytes it could not read
-printed a bare `return;` and `error: null`, indistinguishable from a function
-that returns normally. The fourth cause, `noreturn`, is not a decode failure and
-is deliberately untouched: it is already reported on the call it follows.
+pseudo-call naming it rather than as a `return;` (chapter 09). Before this, the
+halt was planted and terminated the CFG but reported nothing: a function that
+ran off into bytes it could not read printed a bare `return;` and `error: null`,
+indistinguishable from a function that returns normally. The fourth cause,
+`noreturn`, is not a decode failure and is deliberately untouched: it is already
+reported on the call it follows.
 
 When the generic `PowerPC:BE:64:default` or `PowerPC:LE:64:default` decoder
-fails on an aligned `isel` encoding, `decodehalt` also names the selected target
+fails on an aligned `isel` encoding, the halt also names the selected target
 and suggests an explicit `--target PowerPC:<endian>:64:A2ALT` for AltiVec code.
 The hint reads only the four bytes at the failure; an unreadable word, another
 opcode or another target adds no hint. It neither retries nor changes the ISA.
 ELF machine/class, ABI version flags and GNU vector calling-convention attributes
 do not identify a complete ISA: the A2 variants have conflicting vector encodings,
 and a matching `isel` word can also be data. The user must choose the variant
-appropriate to the input. The ordinary truncation marker remains, and
-`decodehalt off` suppresses the extra hint along with the existing warnings.
+appropriate to the input. The ordinary truncation marker remains.
 
 **The instruction budget.** `max_instructions` (100000 by default, `option
 maxinstruction N`) caps how many instructions one function's flow may decode.
@@ -766,17 +763,15 @@ recovered switch table.
   real 64-bit width into `EDX:EAX`, and pops the x87 stack. Registration is
   guarded to x86-32 (every register the body names must resolve, at a 4-byte
   code space) because the body would not compile elsewhere and the helper exists
-  nowhere else; it is unconditional rather than option-gated because the
-  architecture bootstraps at `load file`, before the console's `option` lines.
+  nowhere else.
   Registration is skipped outright in ghidra mode, exactly as the Cortex-M
   callother fixup below is and for the same reason: with no local `.sla` there
   is nothing to compile the body against, so the payload could never install.
   Skipping it also keeps the x86-32 language test — which asks whether this
   language has `ST0` — off the wire, since every 32-bit language reaches it (the
   test's cheap half is the code-space width, which ARM32/MIPS32/PPC32 all pass).
-  The user-visible gate is on the *install* instead (`option msvcftol`, default
-  on), where the analysis-tier call-fixup installer drops this one payload's
-  targets from its match map.
+  The analysis-tier call-fixup installer tags the payload onto its targets at
+  `read symbols`.
 - **kuna-owned callother fixups.** The same freedom applies to the user-op side.
   `decompiler/crates/kuna-decomp/src/p2_lift/kuna_cortexmpriv.rs` supplies a
   `<callotherfixup>` body for the ARM user op `isCurrentModePrivileged`, which
@@ -928,7 +923,7 @@ spec, and input recovery marks a trial on it unused
 (`funcdata_callsite.rs (check_input_trial_use)`): its value is the callee's
 own address, never an argument.
 
-In every other case, unless `gottailcall` below takes it, the old behaviour
+In every other case, unless the GOT-slot rule below takes it, the old behaviour
 stays: the follower walks into the callee as a one-case `switch`, because
 `RuleSwitchSingle`, which upstream uses to collapse that switch, is a stub
 here. That copied-in body is wrong in structure, but it still shows the
@@ -944,8 +939,8 @@ meets the out-of-bounds halt. A `flow ... branch` override cannot veto this
 per site: `override_flow` refuses `branch` on a computed jump, so the only
 switch is the option value.
 
-**(kuna) Tail calls through a GOT slot — `option gottailcall`, default on
-(GH-904), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_gottailcall.rs`.**
+**(kuna) Tail calls through a GOT slot — part of `tailcalljump` (GH-904),
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_gottailcall.rs`.**
 A position-independent tail call loads its target from a GOT slot and jumps
 through it: MIPS `lw $t9,%call16(f)($gp); jr $t9`, x86-64 `-fno-plt`
 `jmp *f@GOTPCREL(%rip)`. Jump-table recovery reads the slot, so it is the
@@ -953,7 +948,7 @@ one-destination computed jump above, and with no stated prototype the
 function printed `switch(0x1340) {` around `f`'s copied-in body, or, when
 the slot names an extern of a relocatable object, `switch(0x402000) { case
 0x402000: halt_missing(); }` with the call's arguments gone. Under
-`tailcalljump on`, `gottailcall` adds two cases to the `call_states_the_body`
+`tailcalljump on`, the GOT-slot rule adds two cases to the `call_states_the_body`
 test that `decompile_drive.rs (ArchFlowEnv::is_tail_call_table)` hands
 `kuna_tailcalljump.rs (kuna_is_tail_call_table)`:
 
@@ -1014,8 +1009,8 @@ redone at once. That is the call-graph edge the walk misses, learned from
 the caller's own decompile. The ledger lives only for the length of a
 callee-first run. A single-function `kuna decompile`, `--jobs N`, `protoorder
 off` and a run narrowed past the callee file nothing and keep the copied-in
-body. `option gottailcall off` restores `tailcalljump`'s own rule.
-`tests/stages/kuna-gottailcall.xml` pins the extern arm in two passes, with
+body. `tailcalljump off` keeps the copied-in body for these jumps too.
+`tests/stages/kuna-gottailcall.xml` pins the extern arm, with
 an unmapped non-function and a real one-case switch as controls, and
 `tests/cli/gottailcall-*.json` pin the callee-first arm on an x86-64
 `-fno-plt` library and a MIPS PIC object.
@@ -1069,8 +1064,8 @@ and none of them fire). Deferring the decision until the flow work-stack drains,
 and then asking whether the function decoded `dest` by another path, is the sound
 fix; it is a change to the walk's ordering rather than to this predicate.
 
-**(kuna) A teardown has to give back what the entry block saved — `option
-tailcallsaved`, default on (DIV-157),
+**(kuna) A teardown has to give back what the entry block saved — part of
+`tailcallframe` (DIV-157),
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_tailcallsaved.rs
 (kuna_stack_saved_bytes / kuna_stack_restored_bytes /
 kuna_teardown_restores_saves)`.** Cancelling deltas are necessary but not
@@ -1142,14 +1137,14 @@ block readers index off the end of. Giving the halt its own block puts a real
 no-return RETURN on the far end of the fall-through instead. The halt is deliberately
 *not* marked as an instruction start: `flow.rs (FlowInfo::fallthru_op)` can only
 resolve the fall-through to it as a same-instruction op, the truncated address never
-having been decoded. This overlaps `noreturn_extern`/`noreturn_externmatch` (which stop
+having been decoded. This overlaps the no-return name matches of `noreturn_known` (which stop
 the same leak by callee *name*) but is name-independent — it bounds at the function
 *boundary* whatever the callee. On real binaries ~36% of application functions in a
 measured static-pie build end in such a call and were corrupted this way; IDA and
 Ghidra both bound decompilation to the function body. The `longdouble` datatest
 (which deliberately flows a tail `jmp` into its callee and on across adjacent
 functions) and the `ghangr-noreturn_extern` test (which isolates the
-`noreturn_extern` toggle) opt out per-test.
+name match) opt out per-test.
 
 The foreign entry is also retained as an effective flow cutoff. A branch target
 can have been queued but left unprocessed when another path discovers that
@@ -1164,8 +1159,7 @@ fall-through. This lets `target` walk across already-decoded instructions that
 generated no p-code and terminate at the proven boundary. It does not mark the
 foreign entry as decoded and does not mask a missing op before the cutoff.
 
-**(kuna) Return-address-discarding call trampolines — `option calltrampoline`,
-default on (DIV-144),
+**(kuna) Return-address-discarding call trampolines — always on (DIV-144),
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_calltrampoline.rs
 (kuna_trampoline_branch_target)`.** `CPUI_CALL` is a fall-through op, so the
 follower decodes the return address as the next instruction. A protector breaks
@@ -1217,8 +1211,7 @@ fragment that re-enters mid-stream satisfies that by construction; a thunk to a
 discovered callee does not, and stays a `CALL` for `tailcalljump` to claim at its
 own `jmp`.
 
-**(kuna) Return-address-popping call transfers — `option callpopret`, default
-on (DIV-163),
+**(kuna) Return-address-popping call transfers — always on (DIV-163),
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_callpopret.rs
 (kuna_call_pops_return_address)`.** A second flavour of the same family ends in
 `ret` instead of `jmp`: `call` jumps over inline data, the callee pops the
@@ -1251,8 +1244,8 @@ attributable. Section executability is deliberately irrelevant: the witness's
 whole packer stub, both code and inline data, occupies a section without the
 executable flag.
 
-**(kuna) Immediate-stack RET tail transfers — `option pushimmediateret`,
-default on (DIV-170).** A packer can spell an unconditional terminal transfer
+**(kuna) Immediate-stack RET tail transfers — always on (DIV-170,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_pushimmediateret.rs`).** A packer can spell an unconditional terminal transfer
 as `push <immediate>; ret`. Left as RETURN, flow ends correctly but dead-store
 elimination erases the pushed destination, so emitted C loses the transfer.
 Before following the function, the shared console decompile step runs the
@@ -1274,11 +1267,10 @@ indirect control flow, decode failure, and opaque userops also decline. An
 explicit flow fact at the RET owns the site, including an explicit RETURN veto.
 The flow override changes only the current function's graph: it never registers
 or decodes the constant target as a function, because an unpacker destination
-can still be encrypted in the static image. `option pushimmediateret off`
-restores ordinary RETURN classification.
+can still be encrypted in the static image.
 
-**(kuna) `__fastfail` is a no-return — `option fastfailnoreturn`, default on
-(DIV-120), `decompiler/crates/kuna-decomp/src/p2_lift/kuna_fastfailnoreturn.rs
+**(kuna) `__fastfail` is a no-return — always on (DIV-120),
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_fastfailnoreturn.rs
 (is_fastfail_callind)`.** x86 SLEIGH lifts `INT imm8` to `intloc = swi(imm8);
 call [intloc]` — a `call` with no matching push, unlike every other x86 `CALL`,
 which lifts as `RSP = RSP - 8; push &next; call target`. Nothing downstream
@@ -1649,7 +1641,7 @@ continues. Nothing already committed to is deleted or re-anchored: the loser is
 the instruction *currently* being decoded and the winner is still pending, which
 is what keeps this out of the "repair the flow graph afterwards" class of change.
 
-**(kuna) Stack-probe loops — `option stackprobeloop`, default on (DIV-3),
+**(kuna) Stack-probe loops — always on (DIV-3),
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_stackprobeloop.rs
 (RuleStackProbeLoop)` (from Ghidra issues GH-8017/6858).** gcc's
 stack-clash/`-fstack-check` prologue probes a large frame one page at a time,
@@ -1924,7 +1916,7 @@ the case targets.
    `jumptable.rs (JumpTable::recover_multistage)` (re-recover, restoring the
    saved model and addresses on failure).
 
-   **Run-on rows (`option switchrunon`, default on).** A table whose model
+   **Run-on rows (`kuna_switchrunon.rs`, always on).** A table whose model
    found no guard at all (`selectguards` empty) has as many rows as its
    selector's bits allow: 256 for a byte. That is how a compiler that knows
    the selector is in range lowers a switch, Rust matching on a `u8` enum
@@ -1934,7 +1926,7 @@ the case targets.
    decode each of those destinations, then the tables of the functions it
    reached, and so on: serde-hkx's 1,312-byte 0x14000a040 matches on a
    4-variant enum and decoded 4,791 blocks of 64 other functions, 4.2 GB and
-   no C in 300 s. With the option on, the model's sanity check
+   no C in 300 s. The model's sanity check
    (`jumptable.rs (JumpBasicModel::own_rows)` over
    `decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchrunon.rs (own_rows)`)
    reads each row's owner from the global symbol snapshot (the last known
@@ -1957,11 +1949,10 @@ the case targets.
    table, and one whose first row is already outside. The rows cut are not dispatched
    (`jumptable.rs (JumpTable::cut_rows_dispatched)`), so the late label pass
    does not read them back. The function then decodes its own body only:
-   0x14000a040 prints its four cases in 0.7 s. Off keeps the whole-width
-   table.
+   0x14000a040 prints its four cases in 0.7 s.
 
-   **Guards that leave the top open (`option switchrunonguard`, default
-   on).** `jumptable.rs (JumpBasicModel::analyze_guards)` records the
+   **Guards that leave the top open (always on).**
+   `jumptable.rs (JumpBasicModel::analyze_guards)` records the
    conditional branches on the path just before the dispatch as guards
    whether or not they test the selector, as upstream does; a guard only
    narrows the table when `kuna_switchguardrange.rs (intersect)` finds it
@@ -1979,7 +1970,7 @@ the case targets.
    takes out a value: the range becomes 2..0xff and wraps to 0, 255 rows
    that run on just the same.
 
-   With the option on, a model-1 table also counts as unguarded
+   A model-1 table also counts as unguarded
    (`jumptable.rs (JumpBasicModel::unguarded)`) when the variable it was
    sized from can still take the largest value its size and known-zero
    bits allow (`jumptable.rs (JumpBasicModel::width_range)`, the start of
@@ -2274,9 +2265,9 @@ strand phi state:
   restart-surviving side record. Mixed signed/unsigned evidence, or a range
   without a supported interpretation, declines recovery instead of guessing.
   Equality constants never participate: `0xffffffff` can be either unsigned or
-  signed -1, and the case bit pattern alone cannot decide. The default-on
-  `loweredswitchlabels` policy carries this proof to the installed jump table;
-  its explicit off arm exists only to reproduce the historical top-bit guess.
+  signed -1, and the case bit pattern alone cannot decide. The
+  `kuna_loweredswitchlabels.rs` policy carries this proof to the installed jump
+  table.
   The generic P9 numeric printer is unchanged.
 
   The synthetic BRANCHIND is inserted through `Funcdata::op_insert`, not the
@@ -2340,7 +2331,7 @@ every cascade over a value the function computes still re-rolls, so this is the
 per-cascade form of the whole-pass escape hatch. Measured byte-identical on the
 675-assertion datatest corpus with the guard forced on.
 
-### The value the switch dispatches on — `option loweredswitchvalue`, default on (DIV-181)
+### The value the switch dispatches on (DIV-181, part of `loweredswitch`)
 
 Detection sees the simplified SSA graph, where every compare in the cascade reads
 one value, and records that value's home storage; the install re-lifts raw p-code
@@ -2402,9 +2393,9 @@ check can only replace a switch over a provably wrong value, never lose one it
 cannot judge. A withdrawal or retry takes effect on the restart it requests, so a
 function that has already spent the pipeline's cross-flow restart budget
 (`run_pipeline`, eight re-flows) keeps the switch it last installed. Measured
-byte-identical on the 675-assertion datatest corpus with the value check off.
+byte-identical on the 675-assertion datatest corpus when the check was introduced.
 
-### The switch is the compare tree — `option loweredswitchexact`, default on (DIV-183)
+### The switch is the compare tree (DIV-183, part of `loweredswitch`)
 
 Three things made a re-rolled switch a different program from the cascade it
 replaced. The install gave each case body one table entry and kept the first
@@ -2417,7 +2408,7 @@ removes every block that the new head edges make unreachable, with whatever thos
 blocks compute for the code after the cascade (a `v = 0x8a;` on one arm before a
 shared join).
 
-With the option on, `funcdata_block.rs (Funcdata::kuna_install_lowered_switch)`
+`funcdata_block.rs (Funcdata::kuna_install_lowered_switch)`
 pushes one table entry per case value, so shared bodies keep every label, and
 detection keeps a recovered record only when
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitchexact.rs (record_is_exact)`
@@ -2458,9 +2449,9 @@ set names different values signed and unsigned once C promotes the selector
 prints such labels with the signedness of the selector's declared type when it is
 an integer of the switch size, and otherwise casts the selector to the recorded
 signedness (`switch((unsigned char)a0)`). Measured
-byte-identical on the 675-assertion datatest corpus with the option off.
+byte-identical on the 675-assertion datatest corpus when the check was introduced.
 
-### Every cascade head — `option loweredswitchheads`, default on (DIV-184)
+### Every cascade head (DIV-184, part of `loweredswitch`)
 
 A head is any compare on the switch variable that no other compare on it
 continues into, and a variable is compared outside its switch as often as inside
@@ -2470,24 +2461,19 @@ that single test finds no case, and the fifteen-case tree behind it rendered as 
 goto ladder into the shared join, because detection only ever tried the first
 head.
 
-With the option on,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitchheads.rs (cascade_heads)`
 lists every head in block order and detection tries each (past its leading
-all-ones sentinel guards), recording the first cascade that recovers. The first
-head keeps exactly the acceptance `loweredswitchexact` gives it. A cascade behind
-any later head is recorded only when `kuna_loweredswitchexact.rs (record_is_exact)`
-holds for it, whether or not `loweredswitchexact` is on, modelled on the install
-the current options will perform, and its install runs
-`kuna_loweredswitchexact.rs (raw_install_keeps_values)` either way (the record is
-marked as coming from a later head); when its head block has a single
-predecessor;
+all-ones sentinel guards), recording the first cascade that recovers. Every
+cascade is recorded only when `kuna_loweredswitchexact.rs (record_is_exact)`
+holds for it (the exactness check above); a cascade behind a later head is
+additionally recorded only when its head block has a single predecessor,
 and when `kuna_loweredswitchheads.rs (case_body_entered_elsewhere)` finds no case
 body or default entered from outside the compare tree (another case's body falling
 into it, or code after the switch jumping to it). The structurer renders a switch
 of either shape with a `goto` to a label it never declares, which is tolerated for
 the first head, as before, but never introduced by a later one. A record's
-dispatch value is then subject to `loweredswitchvalue` like any other. Measured byte-identical on the 675-assertion
-datatest corpus with the option off.
+dispatch value is then subject to the value check like any other. Measured
+byte-identical on the 675-assertion datatest corpus when the check was introduced.
 
 ### Bound extensions: rescuing an unboundable table
 
@@ -2587,7 +2573,7 @@ sources, checked in order:
    declared prototype, or by the analysis-tier passes (`noreturn_known`, and
    the call-graph fixpoint `noreturn_propagate`) described in chapter
    [01 — Program preparation](01-program-prep.md);
-2. **(angr) `noreturn_externmatch`, default on (DIV-13)** —
+2. **(angr) the vendored-list name match (DIV-13, under `noreturn_known`)** —
    `decompiler/crates/kuna-decomp/src/p2_lift/kuna_noreturn_externmatch.rs
    (is_known_noreturn_name)`: the callee *display name* matched against the
    same vendored list the analysis tier uses
@@ -2595,7 +2581,7 @@ sources, checked in order:
    build-time-included so the two matchers cannot drift), with the same
    all-leading-underscore strip, global/`std`-only namespace guard, and
    trailing-`*` wildcard-prefix support;
-3. **(angr) `noreturn_extern`, default on (DIV-14)** —
+3. **(angr) the closed-list name match (DIV-14, under `noreturn_known`)** —
    `decompiler/crates/kuna-decomp/src/p2_lift/kuna_noreturnextern.rs
    (matches_noreturn_extern_name)`: an exact-match check against a closed,
    hard-coded ELF no-return name set with the same namespace guard.
@@ -3172,14 +3158,14 @@ the compiler's own polarity) and by the kuna-console `verify_go_writebarrier`
 gate, which builds a real stripped Go binary and proves the detection-driven
 `auto` path end to end.
 
-### Early Go jump chains (`gojumpchain`)
+### Early Go jump chains (`kuna_gojumpchain.rs`)
 
 `kuna_gojumpchain.rs (ActionGoJumpChain)` runs before Go write-barrier
 recognition, while heritage has not yet built SSA. Unoptimized Go builds place
 unconditional forwarding jumps between the flag test and runtime bookkeeping.
 Later branch cleanup is too late to expose these shapes to the early pass.
 
-The default-on option acts only on Go images with `gowritebarrier` enabled.
+It runs whenever `gowritebarrier` is enabled on a Go image.
 It matches a conditional whose two forwarding paths lead to a single-entry
 block with exactly one recognized barrier call and its common join. It removes
 only forwarding blocks in those paths, including any between the call and join;
@@ -3191,7 +3177,6 @@ block-removal primitive redirects the edge and resets structure.
 
 This normalization removes no computation or memory effect. The existing
 `gowritebarrier` pass independently removes the exposed runtime bookkeeping.
-`gojumpchain off` restores the previous recognition boundary.
 
 ## Octeon integer targets
 

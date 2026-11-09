@@ -23,16 +23,11 @@
     the body fills with port reads the program never performs, and the pointer
     the helper exists to hand back appears nowhere.
 
-    Pass 1 (callpopret off, the bug): the fall-through at 0x100005 is decoded and
-    the port reads appear.
-    Pass 2 (default, callpopret on): the call is followed as a branch, the pop
-    and the `ret` join the caller, and the body is `return 0x100006`.
-
-    Assert #1 pins the recovered pointer to EXACTLY ONE occurrence across both
-    print C passes: present in the default pass, absent in the callpopret-off
-    one.  Assert #2 pins the two port reads the other way round (both bytes of
-    the data decode as INSB), so the fix has to RESTORE the pointer and not
-    merely stop emitting junk.
+    The call is followed as a branch, the pop and the `ret` join the caller,
+    and the body is `return 0x100006`.  Assert #1 pins the recovered pointer;
+    assert #2 pins the two port reads the fall-through decode would have
+    produced (both bytes of the data decode as INSB) to zero occurrences, so
+    the rewrite has to RESTORE the pointer and not merely stop emitting junk.
 -->
 <binaryimage arch="x86:LE:32:default:gcc">
 <bytechunk space="ram" offset="0x100000" readonly="true">e80b000000906c6cc3</bytechunk>
@@ -40,15 +35,11 @@
 <symbol space="ram" offset="0x100000" name="caller"/>
 </binaryimage>
 <script>
-  <com>option callpopret off</com>
   <com>lo fu caller</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option callpopret on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="CALLPOPRET #1: the default pass follows the call as a branch and recovers the pointer to the inline data" min="1" max="1">return 0x100006;</stringmatch>
-<stringmatch name="CALLPOPRET #2: the two port reads decoded at the unreachable return address appear only in the callpopret-off pass" min="2" max="2">in\(</stringmatch>
+<stringmatch name="CALLPOPRET #1: the call is followed as a branch and recovers the pointer to the inline data" min="1" max="1">return 0x100006;</stringmatch>
+<stringmatch name="CALLPOPRET #2: no port reads are decoded at the unreachable return address" min="0" max="0">in\(</stringmatch>
 </decompilertest>

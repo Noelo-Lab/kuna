@@ -9331,8 +9331,8 @@ Known pass decides that by name at the stub address, and propagation draws
 nothing from the body. MIPS is where the body misleads. A `.MIPS.stubs` lazy
 stub is `lw $t9,-0x7ff0($gp); move $t7,$ra; jalr $t9; li $t8,<dynsym index>`;
 the resolver jumps to the import, which returns to the caller through `$t7`, so
-control never reaches the word after the stub. Unless `stubtailcall` ends the
-walk at the resolver (see *MIPS lazy-binding imports*), the Listing models the
+control never reaches the word after the stub. Before the stub tail-call rule
+ended the walk at the resolver (see *MIPS lazy-binding imports*), the Listing modelled the
 `jalr` as a returning call whose fall-through is the next stub's entry, and the
 reachability rule below therefore concluded every stub laid out in front of a
 Known no-return stub (`exit`, `abort`, `__stack_chk_fail`) no-return, then the
@@ -9352,7 +9352,7 @@ gates still control this inference.
 
 Two rules fold into the same fixpoint, both Ghidra-derived:
 
-- **The `error(nonzero,…)` value rule** (`noreturn_error`, DIV-16): glibc `error()`
+- **The `error(nonzero,…)` value rule** (DIV-16, under `noreturn_known`): glibc `error()`
   and `error_at_line()` exit when `status != 0` but return for `status == 0`, so
   `error` can never be a Known name. The recognizer resolves the `error` entry
   addresses, then per call site backward-scans the straight-line predecessors for
@@ -9395,17 +9395,17 @@ Two rules fold into the same fixpoint, both Ghidra-derived:
 Finally, (angr) **flow-time extern matching** closes the case no address-keyed fact
 can reach: in an ET_REL `.o`, a libc no-return is a UND symbol with no address and
 no PLT, so nothing above ever marks it, and flow runs off the function's end into
-alignment padding decoded as garbage `add [rax],al` statements.
-`noreturn_externmatch`
-(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_noreturn_externmatch.rs`) applies
+alignment padding decoded as garbage `add [rax],al` statements. Under
+`noreturn_known`,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_noreturn_externmatch.rs` applies
 the same vendored name list and namespace guard *at the flow query seam*
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs
-(query_call_no_return)`); its sibling `noreturn_extern` applies an equivalent
-name match in the same query, differing in gate flag, name-resolution path, and
-name set — `noreturn_extern` carries a frozen hard-coded copy of upstream's 21
-names rather than reading the shipped list, so neither kuna divergence block
-reaches it; it is queried only after `noreturn_externmatch` (which does read the
-list, and is default-on) has already declined. On a
+(query_call_no_return)`); its sibling
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_noreturnextern.rs` applies an
+equivalent name match in the same query, differing in name-resolution path and
+name set — it carries a frozen hard-coded copy of upstream's 21 names rather than
+reading the shipped list, so neither kuna divergence block reaches it; it is
+queried only after the vendored-list match has already declined. On a
 normally-linked ELF the proto flag is already set, so both are no-ops there. These
 two run inside the engine, not the analysis tier — chapter 02 owns the halt
 mechanics they feed.
@@ -9528,13 +9528,11 @@ imports from the ELF function provenance, in the architecture; every Listing
 walk, including a resumed one, and the reference walk behind `kuna xrefs`
 (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (descend)`) take only
 the sites bootstrap installed.
-With `option stubtailcall` on (the default) the Listing models each resolver
-transfer, including the delay slot, as an opaque computed jump. The walk applies
-this when it decodes the call
+The Listing models each resolver transfer, including the delay slot, as an
+opaque computed jump. The walk applies this when it decodes the call
 (`decompiler/crates/kuna-analysis/src/listing/walk.rs (step)`), so it never
 follows the call's fall-through into the next stub, section padding or a
-following section, and files no reference along it. Both walks read the option
-when they are built. A stub's no-return status
+following section, and files no reference along it. A stub's no-return status
 still comes from its import's name, as no-return propagation above describes;
 an unknown resolver destination supplies no terminal evidence. Ordinary
 functions and unrecognized instruction sequences retain their original flow.

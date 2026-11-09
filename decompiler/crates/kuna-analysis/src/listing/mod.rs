@@ -418,11 +418,7 @@ impl Listing {
         // not a function of its own. Empty on every other architecture and
         // whenever the option is off (see `kuna_ppclocalentry`).
         let local_entries = kuna_ppclocalentry::fold_map(arch, file, seeds);
-        let tail_transfers: BTreeMap<u64, u64> = if arch.stub_tail_call {
-            mips_transfers.iter().copied().collect()
-        } else {
-            BTreeMap::new()
-        };
+        let tail_transfers: BTreeMap<u64, u64> = mips_transfers.iter().copied().collect();
         let want_stack_callbacks = arch.analysis_fast_funcdisc
             && matches!(file.architecture(), object::Architecture::I386 | object::Architecture::X86_64);
 

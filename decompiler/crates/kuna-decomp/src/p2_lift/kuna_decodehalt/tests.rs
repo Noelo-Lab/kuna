@@ -1,14 +1,7 @@
-//! Unit tests for the `decodehalt` option surface.
+//! Unit tests for the decode-failure halt rendering.
 
 use super::*;
 use crate::op::pcodeop_flags as f;
-
-#[test]
-fn option_parses_on_and_off() {
-    assert!(OptionDecodeHalt.apply("on").unwrap().0);
-    assert!(!OptionDecodeHalt.apply("off").unwrap().0);
-    assert!(OptionDecodeHalt.apply("halt").is_err());
-}
 
 #[test]
 fn decode_failure_bits_map_to_their_upstream_pseudo_calls() {

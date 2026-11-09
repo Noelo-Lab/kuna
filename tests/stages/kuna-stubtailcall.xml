@@ -7,10 +7,9 @@
     entries load the lazy resolver, save ra in t7, call the resolver with
     `jalr t9` and pass the dynamic-symbol index in the delay slot.
 
-    Pass 1, the default, keeps the call and ends the stub with a return after
-    it. Pass 2, `option stubtailcall off`, decodes the resolver call as an
-    ordinary call whose fall-through reaches the next stub. The default runs
-    first because a warning comment outlives a re-decompilation.
+    Flow keeps the resolver call and ends the stub with a return after it,
+    instead of decoding it as an ordinary call whose fall-through reaches the
+    next stub.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
@@ -22,13 +21,9 @@
   <com>load addr 0x1190</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option stubtailcall off</com>
-  <com>load addr 0x1190</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="STUBTAILCALL: the resolver call is the stub's tail call" min="1" max="1">return \(char \*\)\(\*v1\)\(\);</stringmatch>
-<stringmatch name="STUBTAILCALL off: the resolver call falls through into the next stub" min="1" max="1">fall-through reached the next function entry</stringmatch>
+<stringmatch name="STUBTAILCALL: the resolver call never falls through into the next stub" min="0" max="0">fall-through reached the next function entry</stringmatch>
 <stringmatch name="STUBTAILCALL: no pass treats the resolver as an indirect branch" min="0" max="0">jump-as-call</stringmatch>
 </decompilertest>
