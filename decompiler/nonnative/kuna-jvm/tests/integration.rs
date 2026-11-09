@@ -32,3 +32,9 @@ mod f4_renamer;
 mod f4_struct_context;
 #[path = "f4_util.rs"]
 mod f4_util;
+#[path = "f5_cfg_golden.rs"]
+mod f5_cfg_golden;
+#[path = "f5_dominator.rs"]
+mod f5_dominator;
+#[path = "f5_cfg_blocks.rs"]
+mod f5_cfg_blocks;

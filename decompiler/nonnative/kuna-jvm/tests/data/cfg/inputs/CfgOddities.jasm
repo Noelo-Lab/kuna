@@ -1,0 +1,122 @@
+/**
+ * Hand-written bytecode for CFG paths javac never produces. Assemble with asmtools:
+ * java -cp asmtools-core.jar org.openjdk.asmtools.Main jasm -d OUT CfgOddities.jasm
+ */
+super public class CfgOddities
+	version 52:0
+{
+
+static Method foo:"()V"
+	stack 0 locals 0
+{
+	return;
+}
+
+/* Kotlin-style synchronized: the protected range stops before the monitorexit. */
+static Method kotlinSync:"(Ljava/lang/Object;)V"
+	stack 2 locals 3
+{
+	aload_0;
+	dup;
+	astore_1;
+	monitorenter;
+	try t0;
+		invokestatic	Method foo:"()V";
+	endtry t0;
+	aload_1;
+	monitorexit;
+	return;
+	catch t0 #0;
+		astore_2;
+		goto H2;
+	H2:
+		aload_1;
+		monitorexit;
+		aload_2;
+		athrow;
+}
+
+/* A protected range holding only a goto: empty after goto removal, its handler goes dead. */
+static Method gotoOnlyRange:"()V"
+	stack 1 locals 0
+{
+	invokestatic	Method foo:"()V";
+	try t0;
+		goto L1;
+	endtry t0;
+	L1:
+	return;
+	catch t0 java/lang/Exception;
+		pop;
+		return;
+}
+
+/* An empty block outside its neighbours' range keeps its own range, which removeEmptyRanges drops. */
+static Method strandedEmptyRange:"()V"
+	stack 1 locals 0
+{
+	try t1;
+		invokestatic	Method foo:"()V";
+		goto LG;
+	L3:
+		invokestatic	Method foo:"()V";
+		return;
+	endtry t1;
+	catch t1 java/lang/Exception;
+		pop;
+		return;
+	try t2;
+	LG:
+		goto L3;
+	endtry t2;
+	catch t2 java/lang/Error;
+		pop;
+		return;
+}
+
+/* The entry block is a lone goto, so the graph's first block is replaced. */
+static Method startsWithGoto:"(I)I"
+	stack 1 locals 1
+{
+	goto L1;
+	L0:
+	iinc	0, -1;
+	L1:
+	iload_0;
+	ifne	L0;
+	iload_0;
+	ireturn;
+}
+
+/* A value return inside a range none of its predecessors share. */
+static Method strayReturnRange:"(I)I"
+	stack 1 locals 1
+{
+	iload_0;
+	ifeq	L2;
+	goto	L3;
+	L2:
+	try t0;
+		iload_0;
+		ireturn;
+	L3:
+		invokestatic	Method foo:"()V";
+		iconst_1;
+		ireturn;
+	endtry t0;
+	catch t0 java/lang/Exception;
+		pop;
+		iconst_0;
+		ireturn;
+}
+
+/* A conditional branch as the very last instruction. */
+static Method fallsOffTheEnd:"(I)V"
+	stack 1 locals 1
+{
+	L0:
+	iload_0;
+	ifeq	L0;
+}
+
+} // end Class CfgOddities
