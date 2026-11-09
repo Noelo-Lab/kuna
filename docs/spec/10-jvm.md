@@ -1092,3 +1092,30 @@ that a negation does not have and fails the method with an index out of bounds (
 `develop/1.13.0`). With the fix, a condition with fewer than two operands is not a null
 check: the handler is not a try-with-resources, and the matcher leaves the statement alone,
 as it does when the operand is not a variable; the `try`/`catch` is written as it is.
+
+**The fix `statement_as_expression`** (internally `jvm_fix_statement_as_expression`). Unlike the fixes above, this one corrects output
+Vineflower prints without failing, so the default text differs from Vineflower's on code it
+prints wrongly. Vineflower models `assert`, `return`, `throw`, `yield`, a monitor and a local
+variable declaration as exprents, like expressions, and an `assert` that
+`decompiler/nonnative/kuna-jvm/src/p8_structure/assert_processor.rs (AssertProcessor)`
+resugars from the `$assertionsDisabled` check is a lone `AssertExprent` in a basic block. Two
+places put such a lone exprent where Java requires an expression, and each excludes the
+statement-only kinds it knew of by hand. `decompiler/nonnative/kuna-jvm/src/p9_emit/class_writer.rs (ClassWriter::class_lambda_to_java)`,
+under `inline-simple-lambdas`, writes a lambda whose body is one basic block with one exprent
+as an expression lambda unless the exprent is a declaration or a `throw` (a `return` is written
+as its value), so `forEach((k, v) -> assert v.equals(k) : k)` comes out. `decompiler/nonnative/kuna-jvm/src/p8_structure/merge_helper.rs (MergeHelper::match_for)`
+takes the last exprent of a loop body for the `for` update when the loop has an initializer
+before it and that exprent is alone in a block reached by more than one edge (the `issingle`
+path accepts any kind), and refuses only an exit, so a `while (more) { ...; assert x; }` whose
+last statement follows an `if` becomes `for (...; more; assert x)`. javac rejects both
+(`assert.as.identifier`, `not.stmt`); no upstream commit changes either check through
+`develop/1.13.0`. With the fix both ask one predicate,
+`decompiler/nonnative/kuna-jvm/src/substrate/kuna_fix_statement_as_expression.rs (is_statement_only)`:
+an `assert`, an exit, a `yield`, a monitor, a statement head or a declaration is never written
+as an expression. The lambda then gets a block body, the text Vineflower itself prints for it
+with `inline-simple-lambdas` off, and the loop stays the `while` loop with the `assert` as its
+last statement, as `match_for` leaves a loop that ends in a `throw`. The checks Vineflower
+already made give the same answers; a `return` without a value, a monitor and a declaration
+never reach either position from javac's bytecode (the trailing `return;` is removed first, a
+monitor moves into its `synchronized` head, declarations are set after loops are built), so
+on javac output the fix changes exactly the `assert` cases.

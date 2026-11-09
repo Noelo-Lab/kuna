@@ -18,10 +18,70 @@ source they were compiled from.
 
 | Case | Fix | Compiled with | With the fix |
 |---|---|---|---|
+| `pkg/TestAssertExpressionPosition` | `jvm_fix_statement_as_expression` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects |
 | `pkg/TestMethodRefWildcardReceiver` | `jvm_fix_lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestTryCatchNotFlag` | `jvm_fix_twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 
 ## Diffs (compat -> default)
+
+### `pkg/TestAssertExpressionPosition`
+
+```diff
+--- expected-compat/pkg/TestAssertExpressionPosition.java
++++ expected/pkg/TestAssertExpressionPosition.java
+@@ -17,19 +17,27 @@
+    }
+ 
+    void consistent() {
+-      each((key, value) -> assert value.equals(key) : "mismatch key=[" + key + "]");
++      each((key, value) -> {
++         assert value.equals(key) : "mismatch key=[" + key + "]";
++      });
+    }
+ 
+    void noFailure(Object item) {
+-      put(item, e -> assert e == null : e);
++      put(item, e -> {
++         assert e == null : e;
++      });
+    }
+ 
+    void unreachable(String name) {
+-      run(() -> assert false : name);
++      run(() -> {
++         assert false : name;
++      });
+    }
+ 
+    void plain() {
+-      run(() -> assert this.left > 0);
++      run(() -> {
++         assert this.left > 0;
++      });
+    }
+ 
+    int drain(TestAssertExpressionPosition.Source s) {
+@@ -38,8 +46,9 @@
+       Object ref;
+       while ((ref = s.ref()) != null) {
+          n += ref.hashCode();
++         boolean more = true;
+ 
+-         for (boolean more = true; more; assert s.valid()) {
++         while (more) {
+             n += s.next();
+             if (s.empty()) {
+                more = false;
+@@ -49,6 +58,8 @@
+                n -= this.left;
+                more = false;
+             }
++
++            assert s.valid();
+          }
+       }
+ 
+```
 
 ### `pkg/TestMethodRefWildcardReceiver`
 

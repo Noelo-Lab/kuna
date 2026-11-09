@@ -1,4 +1,8 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/MergeHelper.java`.
+//!
+//! kuna fix `jvm_fix_statement_as_expression` (`kuna_fixes`): in `match_for`,
+//! a loop whose last exprent is statement-only (an `assert`) is not made a
+//! `for` loop with it as the update, where Vineflower excludes only an exit.
 
 use std::collections::VecDeque;
 
@@ -13,6 +17,8 @@ use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::function_exprent::FunctionType;
 use crate::if_statement::IfStatement;
 use crate::invocation_exprent::InvocationExprent;
+use crate::kuna_fix_statement_as_expression;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
 use crate::root_statement::RootStatement;
 use crate::rt::JHashSet;
@@ -501,7 +507,12 @@ impl MergeHelper {
             let last_exprents = last_data.get_exprents().expect("exprents");
             let last_exp = last_exprents.get(last_exprents.len() - 1);
 
-            if last_exp.is_exit() {
+            let statement_only = if kuna_fixes::enabled(KunaFix::StatementAsExpression) {
+                kuna_fix_statement_as_expression::is_statement_only(last_exp)
+            } else {
+                last_exp.is_exit()
+            };
+            if statement_only {
                 return;
             }
 

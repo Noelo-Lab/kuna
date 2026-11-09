@@ -32,6 +32,9 @@ pub enum KunaFix {
     /// `jvm_fix_twr_unary_condition`: a `catch (Throwable)` handler that starts
     /// with `if (!flag)` is not taken for a try-with-resources null check.
     TwrUnaryCondition,
+    /// `jvm_fix_statement_as_expression`: a statement-only exprent (an
+    /// `assert`) is not written as a lambda's expression body or a `for` update.
+    StatementAsExpression,
 }
 
 impl KunaFix {
@@ -40,6 +43,7 @@ impl KunaFix {
         KunaFix::ReportToKuna,
         KunaFix::LambdaWildcardReturn,
         KunaFix::TwrUnaryCondition,
+        KunaFix::StatementAsExpression,
     ];
 
     /// The option row that turns this fix on or off.
@@ -48,6 +52,7 @@ impl KunaFix {
             KunaFix::ReportToKuna => "jvm_fix_report_to_kuna",
             KunaFix::LambdaWildcardReturn => "jvm_fix_lambda_wildcard_return",
             KunaFix::TwrUnaryCondition => "jvm_fix_twr_unary_condition",
+            KunaFix::StatementAsExpression => "jvm_fix_statement_as_expression",
         }
     }
 

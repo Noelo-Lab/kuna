@@ -1397,6 +1397,28 @@ tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with index out of bounds: the len is 1 but the index is 1 (IndexOutOfBoundsException: Index 1 out of bounds for length 1 in Vineflower)|a try/catch (Throwable) whose handler starts with if (!flag) fails to decompile"
 
 [[option]]
+option = "jvm_fix_statement_as_expression"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "p8_structure"
+subphase = "merge_helper, class_writer, kuna_fix_statement_as_expression"
+strength = "HARD"
+rewind = "p8_structure"
+issue = ""
+summary = "Keep statement-only constructs out of expression positions, so the default differs from Vineflower's output on code Vineflower prints wrongly: a lambda whose body is a lone assert is written with a block body ((k, v) -> { assert v.equals(k) : k; }) and a loop whose last statement is an assert stays a while loop with the assert at the end of its body, where Vineflower prints (k, v) -> assert v.equals(k) : k and for (boolean more = true; more; assert s.valid()), which no Java parser accepts."
+use_when = "Always on; jvm_vineflower_compat on gives Vineflower's unparseable output on such a method."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_statement_as_expression off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 ClassWriter.classLambdaToJava (inline-simple-lambdas keeps a lone exprent as the expression body unless it is a declaration or a throw) and MergeHelper.matchFor (a lone exprent at the end of a loop with break edges becomes the for update unless it is an ExitExprent): neither excludes AssertExprent, which prints as an assert statement; still present on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "javac: error: illegal start of expression / not a statement / as of release 1.4, 'assert' is a keyword (assert.as.identifier) on a line like forEach((k, v) -> assert ...) or for (...; ...; assert ...)|an expression lambda or a for loop update that is an assert statement"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""

@@ -8,6 +8,20 @@
   ],
   "cases": [
     {
+      "id": "pkg/TestAssertExpressionPosition",
+      "fix": "jvm_fix_statement_as_expression",
+      "class_files": [
+        "pkg/TestAssertExpressionPosition.class",
+        "pkg/TestAssertExpressionPosition$Pairs.class",
+        "pkg/TestAssertExpressionPosition$Runnable.class",
+        "pkg/TestAssertExpressionPosition$Sink.class",
+        "pkg/TestAssertExpressionPosition$Source.class"
+      ],
+      "source": "src/pkg/TestAssertExpressionPosition.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects"
+    },
+    {
       "id": "pkg/TestMethodRefWildcardReceiver",
       "fix": "jvm_fix_lambda_wildcard_return",
       "class_files": [
