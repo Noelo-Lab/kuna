@@ -19,7 +19,7 @@
 //! as protected regardless; `off` restores the plain flow.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::rc::Rc;
 
@@ -72,6 +72,9 @@ pub struct PushanProgram {
     /// interpreter's own memory, privatized by the emitter.
     pub call_preserves: Vec<(u64, u32)>,
     pub overlay: Rc<PcodeOverlay>,
+    /// Read-only string literals the program refers to by a constant pointer:
+    /// (address, bytes including the terminator).
+    pub strings: Vec<(u64, u32)>,
     pub stats: Stats,
     pub emit_stats: EmitStats,
     pub log: Vec<String>,
@@ -232,6 +235,20 @@ impl<'a> ArchTarget<'a> {
         self.sections.iter().find(|s| s.start <= addr && addr < s.end)
     }
 
+    /// The byte length, terminator included, of the string literal at `addr`
+    /// in a read-only data section ([`literal_len`]).
+    fn string_at(&self, addr: u64, refs: &BTreeSet<u64>) -> Option<u32> {
+        let s = self.section_of(addr)?;
+        if s.flags & section_flags::READONLY == 0 || s.flags & section_flags::CODE != 0 {
+            return None;
+        }
+        let mut buf = vec![0u8; (s.end - addr).min(STRING_MAX) as usize];
+        if !self.read_bytes(addr, &mut buf) {
+            return None;
+        }
+        literal_len(&buf, addr, self.ram.get_addr_size() as usize, |a| self.section_of(a).is_some(), refs)
+    }
+
     /// Highest mapped address, for placing the synthetic range.
     pub fn highest_mapped(&self) -> u64 {
         self.sections.iter().map(|s| s.end).max().unwrap_or(0)
@@ -353,6 +370,93 @@ impl PushanTarget for ArchTarget<'_> {
         self.entropy.borrow_mut().insert(block, h);
         h >= BYTECODE_ENTROPY
     }
+}
+
+/// Longest string literal [`ArchTarget::string_at`] reads.
+const STRING_MAX: u64 = 1024;
+
+/// The byte length, terminator included, of the string literal `buf` holds
+/// at `addr`: a run of printable characters closed by a NUL, which is neither
+/// a pointer-aligned slot holding a `mapped` address nor the head of an array
+/// of 2- or 4-byte character codes whose second element `refs` does not also
+/// name (`operand_refs`' test for a native operand, `kuna-analysis`
+/// `operand_refs::emit_facts`).
+fn literal_len(buf: &[u8], addr: u64, ptr: usize, mapped: impl Fn(u64) -> bool, refs: &BTreeSet<u64>) -> Option<u32> {
+    let printable = |b: u8| (0x20..=0x7e).contains(&b) || matches!(b, 0x09 | 0x0a | 0x0d);
+    let len = buf.iter().position(|&b| !printable(b))?;
+    if len == 0 || buf[len] != 0 {
+        return None;
+    }
+    if addr.is_multiple_of(ptr as u64) && buf.len() >= ptr {
+        let word = buf[..ptr].iter().rev().fold(0u64, |w, &b| (w << 8) | b as u64);
+        if mapped(word) {
+            return None;
+        }
+    }
+    let unit_is = |width: usize, k: usize, nul_ok: bool| {
+        buf.get(k * width..(k + 1) * width)
+            .is_some_and(|u| (printable(u[0]) || (nul_ok && u[0] == 0)) && u[1..].iter().all(|&b| b == 0))
+    };
+    let wide = [(4u64, 2usize), (2, 3)]
+        .into_iter()
+        .find(|&(width, units)| addr.is_multiple_of(width) && (0..units).all(|k| unit_is(width as usize, k, k == 2)));
+    if wide.is_some_and(|(width, _)| !refs.contains(&(addr + width))) {
+        return None;
+    }
+    Some(len as u32 + 1)
+}
+
+/// The string literals the emitted program refers to: every pointer-sized
+/// constant a COPY or STORE writes (the values the emitter folded, and the
+/// immediates of the native code it kept) that [`ArchTarget::string_at`]
+/// accepts.
+fn string_constants(target: &ArchTarget<'_>, overlay: &PcodeOverlay) -> Vec<(u64, u32)> {
+    let ptr = target.ram.get_addr_size();
+    let mut refs = BTreeSet::new();
+    for insn in overlay.insns.values() {
+        for op in &insn.ops {
+            let value = match op.opc {
+                OpCode::CPUI_COPY => op.ins.first(),
+                OpCode::CPUI_STORE => op.ins.get(2),
+                _ => None,
+            };
+            if let Some(v) = value.filter(|v| v.size == ptr && v.space.as_ref().map(classify_space) == Some(Space::Const)) {
+                refs.insert(v.offset);
+            }
+        }
+    }
+    refs.iter().filter_map(|&a| target.string_at(a, &refs).map(|len| (a, len))).collect()
+}
+
+/// Plant a typelocked `char[N]` symbol at each of the program's string
+/// literals that no symbol covers yet, as `operand_refs` does for a native
+/// operand, so the printer renders the constant as the literal. The strings
+/// pass plants only runs of five characters or more, and a shorter literal
+/// is otherwise found only through an instruction operand, which in a
+/// protected image exists only inside the bytecode. True when one was planted.
+fn plant_strings(arch: &mut Architecture, strings: &[(u64, u32)]) -> bool {
+    let (Some(global), Some(space)) = (arch.symboltab.get_global_scope(), arch.manage().get_default_data_space().cloned()) else {
+        return false;
+    };
+    let mut planted = false;
+    for &(off, len) in strings {
+        let addr = Address::new(Rc::clone(&space), off);
+        let occupied = arch.symboltab.find_function(global, &addr).is_some()
+            || arch.is_lazy_entry(off)
+            || arch.symboltab.find_container(global, &addr, 1, &Address::new_invalid()).is_some();
+        if occupied || !arch.is_global_read_only(&addr, len as int4) {
+            continue;
+        }
+        let types = arch.types();
+        let Ok(arr) = types.get_type_char(types.get_size_of_char()).and_then(|ch| types.get_type_array(len as i32, ch)) else {
+            continue;
+        };
+        if let Ok((sid, _)) = arch.symboltab.add_symbol_mapped(global, &format!("s_{off:x}"), arr, &addr, &Address::new_invalid()) {
+            arch.symboltab.set_attribute(sid, crate::varnode::varnode_flags::typelock);
+            planted = true;
+        }
+    }
+    planted
 }
 
 /// Minimum entropy (bits/byte) of a 256-byte window for a VPC fetch (the paper's 5.0).
@@ -562,6 +666,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
     placeholders.push((super::kuna_pushanemit::undef_register(&conf, return_reg), ptr));
     call_kills.extend(placeholders.iter().copied());
     let (overlay, emit_stats) = emit(&cfg, &mut explorer.arena, &target, &conf, entry);
+    let strings = string_constants(&target, &overlay);
     let mut log = std::mem::take(&mut explorer.log);
     if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
         if let Some(l) = status.lines().find(|l| l.starts_with("VmHWM:")) {
@@ -571,6 +676,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
     for s in &target.sections {
         log.push(format!("section {:#x}-{:#x} flags={:#x}{}", s.start, s.end, s.flags, if Some((s.start, s.end)) == target.entry_section { " (entry)" } else { "" }));
     }
+    log.push(format!("string literals: {:x?}", strings));
     log.push(format!(
         "{} nodes ({} in VM), {} instructions, {} symbolized, {} unresolved, {} halts, {} rounds; emitted {} insns/{} ops, {} folded, {} sp-rematerialized, {} dead, {} privatized",
         explorer.stats.nodes,
@@ -674,7 +780,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         }
     }
     let call_preserves = emit_stats.private_regs.into_iter().chain(emit_stats.frame_reg).collect();
-    Ok(PushanProgram { entry, call_kills, placeholders, call_preserves, overlay: Rc::new(overlay), stats: explorer.stats.clone(), emit_stats, log })
+    Ok(PushanProgram { entry, call_kills, placeholders, call_preserves, overlay: Rc::new(overlay), strings, stats: explorer.stats.clone(), emit_stats, log })
 }
 
 fn describe_exit(e: &NodeExit) -> String {
@@ -708,7 +814,7 @@ pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<Pus
     }
     if let Some(p) = arch.pushan_cache.get(&entry).cloned() {
         install(arch, Some(Rc::clone(&p.overlay)));
-        adopt(&p, fd);
+        adopt(arch, &p, fd);
         return Some(p);
     }
     if mode == MODE_AUTO {
@@ -736,7 +842,7 @@ pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<Pus
             let p = Rc::new(p);
             arch.pushan_cache.insert(entry, Rc::clone(&p));
             install(arch, Some(Rc::clone(&p.overlay)));
-            adopt(&p, fd);
+            adopt(arch, &p, fd);
             Some(p)
         }
         Err(e) => {
@@ -764,7 +870,14 @@ pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<Pus
 /// alone, as angr's call-site maker reads the slots above the return address,
 /// and a slot heritage split into halves is passed whole
 /// (`Heritage::guard_joined_stack_input`).
-fn adopt(p: &PushanProgram, fd: &mut Funcdata) {
+///
+/// The program's string literals are planted ([`plant_strings`]) and, when
+/// that moved the symbol table, the function takes a fresh view of it: the
+/// one it was built with predates them.
+fn adopt(arch: &mut Architecture, p: &PushanProgram, fd: &mut Funcdata) {
+    if plant_strings(arch, &p.strings) {
+        fd.kuna_set_arch(arch.build_arch_handle_for_entry(Some(fd.get_address())));
+    }
     fd.kuna_set_size(0);
     fd.kuna_set_call_kills(p.call_kills.iter().map(|&(o, s)| (o, s as int4)).collect());
     fd.kuna_set_call_preserves(p.call_preserves.iter().map(|&(o, s)| (o, s as int4)).collect());
@@ -878,3 +991,6 @@ fn install(arch: &mut Architecture, overlay: Option<Rc<PcodeOverlay>>) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

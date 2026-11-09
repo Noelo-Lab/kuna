@@ -3167,7 +3167,7 @@ impl Architecture {
         self.build_arch_handle_for_entry(None)
     }
 
-    fn build_arch_handle_for_entry(&self, entry: Option<&Address>) -> ArchHandle {
+    pub(crate) fn build_arch_handle_for_entry(&self, entry: Option<&Address>) -> ArchHandle {
         let manage = self.translate.manager_rc();
         let mut ctx = ArchContext::new_shared(manage);
         ctx.call_mechanisms = Rc::clone(&self.call_mechanisms);

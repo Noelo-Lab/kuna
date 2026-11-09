@@ -3633,6 +3633,39 @@ register as an incidental copy, so the parameter analysis walks through it to
 the placeholder itself, an input nothing wrote, instead of taking it as a real
 movement into the argument register.
 
+**String literals.** A short string the program passes to a call (`"123"` to
+`strcmp`, `"cmd"` to `CreateProcessA`) would print as its address. The
+always-on strings pass plants a typelocked `char[N]` only for runs of five
+characters or more. A shorter literal gets one only from `operand_refs`, when
+an instruction operand points at it, and in a protected image that operand is
+inside the bytecode. The native reference of such a function prints the
+literal only through `operand_refs`, which the auto mode turns on for small
+images. The type of the argument does not help either. A 32-bit
+`call [slot]` through the import table lifts as a COPY from the slot into a
+temporary and a CALLIND on the temporary. When `ActionDefaultParams` runs,
+that temporary is not yet linked to its COPY, so the call never receives the
+prototype parked at the slot, and the constant stays an `undefined4` that the
+printer's `char *` path never sees. So `devirtualize` collects the program's
+literals (`kuna_pushan.rs (string_constants)`) as `operand_refs` does for a
+native operand. These are the pointer-sized constants a COPY or STORE of the
+emitted program writes (the values the emitter folded, and the immediates of
+the native code it kept). A constant qualifies when it lands in a read-only,
+non-executable section at a run of printable characters (tab, CR and LF
+included) closed by a NUL within 1024 bytes (`ArchTarget::string_at`). Two
+cases are rejected. A pointer-aligned word that holds a mapped address is a
+pointer slot. A run read as the head of an array of 2- or 4-byte character
+codes (`c 00 c 00 00 00`, a short UTF-16 literal) counts only when the second
+element is also a constant of the program. In `adopt`,
+`kuna_pushan.rs (plant_strings)` plants a typelocked `char[N]` symbol
+`s_<addr>` at each literal that no symbol covers and the symbol table marks
+read-only, as the analysis commit does for `operand_refs`, and the printer
+renders the reference as the literal. The function was built with a snapshot
+of the symbol table taken before the plant, so when something was planted it
+takes a fresh architecture view (`Funcdata::kuna_set_arch`) before its flow
+is generated. A native function only sees the new symbols if it is decompiled
+later in the same process (`decompile-all`), and there they render as the
+literal that `operand_refs` would print.
+
 Stack arguments (every argument of a 32-bit call) need two more allowances,
 both keyed on the `Funcdata` flag `adopt` sets (`kuna_devirtualized`).
 First, the local-alias test of the input trials is off: the deferred alias

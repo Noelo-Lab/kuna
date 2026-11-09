@@ -1930,6 +1930,11 @@ impl Funcdata {
     pub fn kuna_set_size(&mut self, size: int4) {
         self.size = size;
     }
+    /// (kuna pushan) Replace the architecture view of a function whose flow
+    /// has not been generated, after the symbol table it snapshots moved.
+    pub fn kuna_set_arch(&mut self, glb: ArchHandle) {
+        self.glb = glb;
+    }
     /// Get the program/architecture owning \b this function (C++ `getArch`).
     pub fn get_arch(&self) -> &ArchHandle {
         &self.glb
