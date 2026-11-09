@@ -4894,6 +4894,7 @@ fn commit_analysis_output(
         if prog.arch().analysis_swiftcall {
             out.swift_types.models = swift.models;
             out.swift_types.input_hints = swift.input_hints;
+            out.swift_types.no_self = swift.no_self;
             out.swift_types.regs = swift.regs;
         }
     } else {
@@ -5915,12 +5916,14 @@ fn commit_analysis_output(
                     .filter(|f| f.maybe_self)
                     .map(|f| (code_space.get_index(), f.func_addr))
                     .collect();
+                let no_self = out.swift_types.no_self.iter().map(|&f| (code_space.get_index(), f)).collect();
                 prog.arch_mut().loader_swift_abi = Some(Rc::new(kuna_decomp::kuna_swiftcall::SwiftAbi {
                     self_reg,
                     error_reg,
                     call,
                     throws,
                     maybe_self,
+                    no_self,
                 }));
             }
         }

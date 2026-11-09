@@ -20,7 +20,9 @@
 //! argument only when the caller set the register for that call: a value
 //! that reaches it across an earlier call is that call's, not this one's,
 //! unless that call is to a C function (a runtime helper), which preserves
-//! the register and reads none of it ([`stale_self`]).
+//! the register and reads none of it, to a body that does not read it, or to
+//! a Swift function of a module rather than a member ([`stale_self`],
+//! [`seed_self_readers`], [`SwiftAbi::no_self`]).
 //!
 //! A method hands its own `self` on to the methods it calls without writing
 //! the register again; that value is the caller's input in a preserved
@@ -47,8 +49,11 @@ use std::rc::Rc;
 use kuna_base::xml::Element;
 
 use kuna_base::address::Address;
+use kuna_base::space::{AddrSpace, spacetype};
 use kuna_base::types::{int4, uintb};
 use kuna_num::opcodes::OpCode;
+use kuna_num::pcoderaw::VarnodeData;
+use kuna_sleigh::translate::{PcodeEmit, Translate};
 
 use crate::context::OpId;
 use crate::fspec::ProtoModel;
@@ -64,6 +69,9 @@ pub struct SwiftAbi {
     /// The bound callees that may or may not take `swiftself`, by entry
     /// `(space index, offset)`.
     pub maybe_self: BTreeSet<(int4, uintb)>,
+    /// The Swift functions a symbol names as a module's, not a type's
+    /// members: they take no `swiftself` and preserve it.
+    pub no_self: BTreeSet<(int4, uintb)>,
 }
 
 fn overlaps(a: &Address, asize: int4, b: &Address, bsize: int4) -> bool {
@@ -384,18 +392,26 @@ const MAX_BLOCKS: usize = 64;
 
 /// Can the call `id` take `swiftself`? Not when it is under a C model and
 /// its callee is named as a C function (`swift_retain`, `objc_msgSend`, a
-/// `@_cdecl` export): one preserves the register and reads none of it. A
-/// Swift function, an unnamed one or an indirect target may.
+/// `@_cdecl` export): one preserves the register and reads none of it; nor
+/// when its body was seen not to read the register ([`seed_self_readers`]),
+/// or a symbol names it a Swift function of a module rather than a member
+/// ([`SwiftAbi::no_self`]). Any other Swift function, unnamed one or
+/// indirect target may.
 fn may_take_self(data: &Funcdata, id: OpId) -> bool {
     let Some(i) = data.get_call_specs_index(id) else { return true };
     let call = data.get_call_specs(i);
-    let proto = call.proto();
-    if proto.has_model() && is_swift(proto.model()) {
-        return true;
+    let entry = call.get_entry_address();
+    if data.kuna_swift_self_unread(entry) {
+        return false;
     }
-    let name = call.get_name();
-    let c_name = !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
-    !c_name || name.starts_with("sub_") || name.starts_with("FUN_")
+    let free = data.get_arch().swift_abi.as_ref().is_some_and(|abi| {
+        entry.get_space().is_some_and(|sp| abi.no_self.contains(&(sp.get_index(), entry.get_offset())))
+    });
+    if free {
+        return false;
+    }
+    let proto = call.proto();
+    (proto.has_model() && is_swift(proto.model())) || counts_as_swift(call.get_name())
 }
 
 /// Is there a call that may take `swiftself` ([`may_take_self`]) on the dominator path from
@@ -419,6 +435,116 @@ fn call_since(data: &Funcdata, def: Option<OpId>, op: OpId) -> bool {
         cur = data.bb_op_tail(bl);
     }
     false
+}
+
+/// Whether the body at `f` reads the register `reg` before it writes it:
+/// `Some(true)` on a read first (a `self` that arrives there), `Some(false)`
+/// on a write first (the register is scratch), and `None` when the first
+/// sixty-four instructions leave it alone; and whether that verdict was
+/// reached on the one path from the entry: before any branch or call out of
+/// the straight line, and, for `None`, at a return rather than the scan
+/// limit. The scan is linear, so a spill of the register in the prologue (a
+/// push or a `stp`, a store of it through the stack pointer) does not count
+/// as a read, nor its reload as a write. Decodes through `translate`, so its
+/// load image must be attached.
+fn first_touch(translate: &dyn Translate, code_space: &Rc<AddrSpace>, reg: &str, f: u64) -> (Option<bool>, bool) {
+    struct Ops(Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>);
+    impl PcodeEmit for Ops {
+        fn dump(&mut self, _: &Address, opc: OpCode, out: Option<&VarnodeData>, vars: &[VarnodeData]) {
+            self.0.push((opc, out.cloned(), vars.to_vec()));
+        }
+    }
+    let Ok(want) = translate.get_register_data(reg) else { return (None, false) };
+    let sp = translate.get_register_data("RSP").or_else(|_| translate.get_register_data("sp")).ok();
+    let index = |v: &VarnodeData| v.space.as_ref().map(|s| s.get_index());
+    let same = |v: &VarnodeData| {
+        index(v) == index(&want)
+            && v.offset < want.offset + u64::from(want.size)
+            && want.offset < v.offset + u64::from(v.size)
+    };
+    let is_sp = |v: &VarnodeData| sp.as_ref().is_some_and(|sp| index(v) == index(sp) && v.offset == sp.offset);
+    let mut straight = true;
+    let mut vma = f;
+    for _ in 0..64 {
+        let mut ops = Ops(Vec::new());
+        let Ok(len) = translate.one_instruction(&mut ops, &Address::new(Rc::clone(code_space), vma)) else {
+            return (None, false);
+        };
+        for (opc, out, vars) in &ops.0 {
+            match opc {
+                OpCode::CPUI_RETURN => return (None, straight),
+                OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH
+                    if vars.first().and_then(|v| v.space.as_ref()).is_some_and(|s| s.get_type() == spacetype::IPTR_CONSTANT) => {}
+                OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                    straight = false;
+                }
+                _ => {}
+            }
+            let spill = *opc == OpCode::CPUI_STORE
+                && vars.get(2).is_some_and(same)
+                && vars.get(1).is_some_and(|p| {
+                    is_sp(p) || p.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_INTERNAL)
+                });
+            let reload = *opc == OpCode::CPUI_LOAD && out.as_ref().is_some_and(same);
+            if spill || reload {
+                continue;
+            }
+            if vars.iter().any(same) {
+                return (Some(true), straight);
+            }
+            if out.as_ref().is_some_and(same) {
+                return (Some(false), straight);
+            }
+        }
+        let Some(next) = u64::try_from(len).ok().and_then(|l| vma.checked_add(l)) else { return (None, false) };
+        vma = next;
+    }
+    (None, false)
+}
+
+/// Record, for each direct callee [`may_take_self`] would otherwise count (a
+/// Swift function or an unnamed one), a body that does not take `swiftself`: on its one straight path from the
+/// entry it writes the register first or returns without touching it. The
+/// per-function `ArchContext` carries no translator, so the bodies are read
+/// here, once per image. Inert outside an image the convention is bound in.
+pub fn seed_self_readers(arch: &mut crate::architecture::Architecture, data: &mut Funcdata) {
+    let Some(abi) = arch.loader_swift_abi.clone() else { return };
+    if abi.maybe_self.is_empty() || data.num_calls() < 2 {
+        return;
+    }
+    let Some(space) = abi.self_reg.0.get_space().cloned() else { return };
+    let reg = arch.translate().get_register_name(&space, abi.self_reg.0.get_offset(), abi.self_reg.1);
+    if reg.is_empty() {
+        return;
+    }
+    for i in 0..data.num_calls() {
+        let call = data.get_call_specs(i);
+        let entry = call.get_entry_address().clone();
+        let Some(code) = entry.get_space().cloned().filter(|_| !entry.is_invalid()) else { continue };
+        if !(call.proto().has_model() && is_swift(call.proto().model())) && !counts_as_swift(call.get_name()) {
+            continue;
+        }
+        let key = (code.get_index(), entry.get_offset());
+        let unread = match arch.kuna_swift_self_first_cache.get(&key) {
+            Some(&v) => v,
+            None => {
+                let (first, straight) = first_touch(arch.translate(), &code, &reg, entry.get_offset());
+                let v = straight && first != Some(true);
+                arch.kuna_swift_self_first_cache.insert(key, v);
+                v
+            }
+        };
+        if unread {
+            data.kuna_set_swift_self_unread(&entry);
+        }
+    }
+}
+
+/// Is `name` one a Swift function may have: not a C identifier, or the
+/// engine's placeholder for an unnamed one?
+fn counts_as_swift(name: &str) -> bool {
+    let c_name = !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
+    !c_name || name.starts_with("sub_") || name.starts_with("FUN_")
 }
 
 /// The `swiftself` and `swifterror` register names of a language Swift

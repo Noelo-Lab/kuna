@@ -2266,3 +2266,46 @@ throw is `test r12, r12; cmovne`), here `cmp x21, #0; csel`, whose zero the
 arm64 instruction loads into a temporary before comparing. With `swiftmetadata
 on` both keep their error path: `doCatch` releases the error and calls `altv`,
 and `select_error` returns 7 when x21 is set.
+
+### `swift_call_leaf_elf` — a mutating struct call after a Swift leaf call (`swiftcall`)
+
+`swift_call_leaf_elf` (x86-64 ELF, 18 KB, with symbols) is the fixture for the
+`swiftself` value a Swift callee that never reads the register leaves set
+(`tests/stages/kuna-swiftcall.xml`). Its source `swift_call_leaf_elf.swift`
+calls the mutating `Counter.bump(_:)`, whose enum argument leaves it without a
+declared signature, after the leaf `tick(_:)` (`lea (%rdi,%rdi,2),%rax; inc
+%rax; ret`), which runs between `once` setting r13 and the call:
+
+```bash
+swiftc -O -module-name leaffix swift_call_leaf_elf.swift -o swift_call_leaf_elf
+```
+
+SHA-256: `1ba763c5d3b5707bba6d8fc58f3125312745f30e8e8d63eb05ea5e6dd39c3e93`.
+
+**Pinned VMAs:** `$s7leaffix4onceySiAA7CounterVz_SitF`@`0x2630`,
+`$s7leaffix4tickyS2iF`@`0x2800`, `$s7leaffix7CounterV4bumpyyAA4StepOF`@`0x27c0`.
+With `swiftmetadata on` the call decompiles as `leaffix.Counter.bump(_:)(a0,v1,0)`.
+
+### `swift_call_free_elf` — a mutating struct call after a module function (`swiftcall`)
+
+`swift_call_free_elf` (x86-64 ELF, 18 KB, with symbols) is the fixture for the
+`swiftself` value a call to a Swift function of the module, not a member, leaves
+set (`tests/stages/kuna-swiftcall.xml`). Its source `swift_call_free_elf.swift`
+is `swift_call_leaf_elf.swift` with the leaf replaced by `spin(_:)`, whose body
+branches (`test %rdi,%rdi; jle`), so the straight-line read of the callee's body
+does not apply; `once` sets r13 (`mov %rdi,%r13`), calls `spin` and then
+`Counter.bump(_:)`. Built with the swiftly 6.3 toolchain:
+
+```bash
+swiftc -O -module-name freefix swift_call_free_elf.swift -o swift_call_free_elf
+```
+
+Its `DT_RUNPATH` was blanked after the build the same way as
+`swift_metadata_elf`'s (`$ORIGIN` padded with NULs in `.dynstr`); the checksum is
+of the blanked file.
+
+SHA-256: `b9f8e94c95950dda727c67e0cf527ea4650e5218f40b724503d0432ace708787`.
+
+**Pinned VMAs:** `$s7freefix4onceySiAA7CounterVz_SitF`@`0x2610`,
+`$s7freefix4spinyS2iF`@`0x27c0`, `$s7freefix7CounterV4bumpyyAA4StepOF`@`0x2780`.
+With `swiftmetadata on` the call decompiles as `freefix.Counter.bump(_:)(a0,v1,0)`.

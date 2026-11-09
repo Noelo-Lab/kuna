@@ -252,6 +252,9 @@ pub struct SwiftTypeFacts {
     /// and accessor, and the name and type of its `self`.
     pub models: Vec<ModelFact>,
     pub input_hints: Vec<InputHintFact>,
+    /// Swift functions of a module, no type's members, by entry address: a
+    /// call to one passes no `self` and leaves `swiftself` as it was.
+    pub no_self: Vec<u64>,
     /// The `swiftself` and `swifterror` registers, once a convention is bound.
     pub regs: Option<(&'static str, &'static str)>,
 }
@@ -781,6 +784,7 @@ impl AnalysisOutput {
         self.swift_types.param_locks.extend(other.swift_types.param_locks);
         self.swift_types.models.extend(other.swift_types.models);
         self.swift_types.input_hints.extend(other.swift_types.input_hints);
+        self.swift_types.no_self.extend(other.swift_types.no_self);
         self.swift_types.regs = self.swift_types.regs.or(other.swift_types.regs);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);

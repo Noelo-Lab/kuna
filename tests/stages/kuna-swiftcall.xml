@@ -48,6 +48,18 @@
     setting r13 and the call and preserves the register. Pass 5 (`swiftcall
     off`) passes no `self`; pass 6 (the default) passes `a0` to both calls,
     straight-line and in a loop.
+
+    `swift_call_leaf_elf` calls the mutating `Counter.bump(_:)`, which has no
+    declared signature (its argument is an enum), after the Swift leaf
+    `tick(_:)`, which runs between the caller setting r13 and the call and
+    never reads the register. Pass 7 (the default) passes `a0`; before the
+    callee bodies were read, any earlier Swift call made the value stale and
+    the call passed `(v1,0)`.
+
+    `swift_call_free_elf` makes the same call after `spin(_:)`, a function of
+    the module whose body branches, so its body is not read as leaving r13
+    alone; its symbol names it a function of the module, not a member, which
+    takes no `self`. Pass 8 (the default) passes `a0`; before, `(v1,0)`.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -140,6 +152,20 @@ c3
   <com>load addr 0xe70</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_call_leaf_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x2630</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_call_free_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x2610</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="swiftcall off: the class method takes no self" min="1" max="1">vtable#7\.method\(int8 a0,int8 a1\)</stringmatch>
@@ -168,4 +194,6 @@ c3
 <stringmatch name="swiftcall on: a class-bound protocol's class witness takes the reference" min="1" max="1">requirement#0\(swift\.type_metadata \*Self,void \*witness_table,nativefix\.Impl \*self\)</stringmatch>
 <stringmatch name="swiftcall on: and reads a field through it" min="1" max="1">return self-&gt;v;</stringmatch>
 <stringmatch name="swiftcall on: no class-bound witness is typed as a reference to a reference" min="0" max="0">nativefix\.Impl \*\*self</stringmatch>
+<stringmatch name="swiftcall on: a leaf call that never reads r13 leaves the self the caller set" min="1" max="1">leaffix\.Counter\.bump\(_:\)\(a0,v1,0\);</stringmatch>
+<stringmatch name="swiftcall on: a call to a module function leaves the self the caller set" min="1" max="1">freefix\.Counter\.bump\(_:\)\(a0,v1,0\);</stringmatch>
 </decompilertest>

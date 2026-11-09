@@ -1934,6 +1934,9 @@ fn decompile_func_full_with_objects_inner(
         // input-trial scoring seam consults, for the same reason and at the same
         // point.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, &mut fd);
+        // (kuna `swiftcall`) Which direct callees do not read `swiftself`, for
+        // the stale-`self` test at the same seam.
+        crate::kuna_swiftcall::seed_self_readers(arch, &mut fd);
         // (kuna `zerofillreturn`) Mark the zero fills of narrow vector-register
         // writes while the p-code is still as lifted; heritage splits a 128-bit
         // write into the same lanes.

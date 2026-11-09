@@ -4037,8 +4037,21 @@ scored no-use in `ActionActiveParam` (`stale_self`). A call to a C function
 does not count (`may_take_self`): one under a non-Swift model whose callee
 has a C name (`swift_retain`, `objc_msgSend`, a `@_cdecl` export, not an
 engine `sub_`/`FUN_` placeholder) preserves the register and reads none of
-it, so a value set before it is still set for the call that follows. A Swift
-function, an unnamed callee or an indirect target may read it.
+it, so a value set before it is still set for the call that follows. Nor
+does a direct callee whose body leaves the register unread: on its one
+straight path from the entry, before any branch or call out of it, it writes
+the register first or returns without touching it (`seed_self_readers`, read
+in the decompile drive while the translator is reachable and cached per
+image; the probe is `first_touch`'s linear scan, which passes over a prologue
+spill of the register and its reload). A Swift leaf such as
+`tick(x) = x * 3 + 1` called between the caller setting r13 and a mutating
+call so leaves that call its `self`. Nor does a callee a symbol names as a
+Swift function of a module rather than a member of a type
+(`SwiftAbi::no_self`, from the analysis tier's `swift_types.no_self`): such a
+function takes no `self` and preserves the register whatever its body does,
+so `spin(_:)`, whose loop puts a branch on its first path, leaves the call
+after it its `self` too. Any other Swift function, unnamed callee or
+indirect target may read it.
 
 A method passes its own `self` on without touching the register: `settle`
 calls `fee(for:)` and its own getter with x20 / r13 exactly as it received
