@@ -1309,6 +1309,67 @@ clang -target arm64-apple-macos11 -O1 -c macho_gotdata_local.c -o m.o
        -e _main -o macho_gotdata_local m.o
 ```
 
+### `swift_metadata_elf` — a stripped Swift executable (`swiftmetadata`)
+
+`swift_metadata_elf` (x86-64 ELF, 14 KB) is the Swift runtime-metadata fixture
+(`tests/stages/kuna-swiftmetadata.xml`, `kuna-console/tests/verify_swiftmetadata.rs`).
+Its source `swift_metadata_elf.swift` declares a struct, an enum, a protocol
+with a default, a class hierarchy with an override, and a struct conforming
+to a local protocol and to `Hashable`, and a `main` that uses them all (so
+`-O` keeps them). Built with the swiftly 6.3 toolchain and stripped of every
+symbol, so only the `swift5_*` sections can name its functions:
+
+```bash
+swiftc -O -module-name metafix swift_metadata_elf.swift -o metafix
+llvm-strip --strip-all -o swift_metadata_elf metafix
+```
+
+The build records the toolchain's library directory as `DT_RUNPATH`. After the
+build that `.dynstr` string was overwritten in place with `$ORIGIN` padded with
+NULs, so no offset or section size moved.
+
+**Pinned VMAs** (the unstripped `metafix` symbol table, the oracle the tests
+hold the pass to): `$s7metafix5PointVMa` (Point's metadata accessor)@`0x30b0`,
+`$s7metafix6AnimalCMa`@`0x30d0`, `$s7metafix6AnimalC4legsSivg` (vtable slot 0,
+a getter)@`0x2f60`, `$s7metafix6AnimalCACycfC` (slot 3, init)@`0x3100`,
+`$s7metafix6AnimalC5soundSSyF` (slot 4)@`0x2fe0`, `$s7metafix3DogC5soundSSyF`
+(Dog's slot 4)@`0x3000`, the `Square: Hashable` witnesses `hash(into:)`@`0x2ab0`
+and `==`@`0x2b00`. With `--option swiftmetadata on` they decompile as
+`metafix.Point.type_metadata_accessor`, `metafix.Animal.vtable#4.method`,
+`<metafix.Square:Swift.Hashable>.hash(into:)`, …; off, they are `sub_<addr>`.
+The `Square: Shape` (local protocol) witness table is a relocated pointer table,
+which an ELF file carries as `R_X86_64_RELATIVE` addends; the pass reads those
+like a Mach-O's chained-fixup rebases, so its slots are named too.
+
+### `macho_cfstring` — Core Foundation constant strings (`cfstrings`)
+
+`macho_cfstring` (arm64, ~50 KB) is a self-contained Mach-O carrying three
+`__builtin_CFString` constants in `__DATA_CONST,__cfstring`, for the `cfstrings`
+pass (`kuna-console/tests/verify_cfstring.rs`, `tests/stages/kuna-cfstrings.xml`).
+Source `macho_cfstring.c` hand-builds each struct `{ ___CFConstantStringClassReference,
+0x7c8 (8-bit), "<text>", <length> }` and a getter returning its address. The second
+string (39 characters) is longer than one 32-byte entry and the third entry sits
+right behind it: the guard that a long string never hides its neighbour. It was
+built with `zig cc`, which bundles its own Mach-O linker and needs no macOS SDK
+(the devcontainer does not ship zig), then `llvm-strip -S` from LLVM 20 to drop
+the STABS debug map, which named the build directories (LLVM 14's `-S` leaves
+Mach-O STABS in place):
+
+```
+zig cc -target aarch64-macos -O0 -Wl,-undefined,dynamic_lookup \
+       -o macho_cfstring macho_cfstring.c
+llvm-strip -S macho_cfstring
+```
+
+`zig cc` links a classic `LC_DYLD_INFO` image, so each entry's `char *` (into
+`__TEXT,__cstring`) is a raw word (the chained path has no fixture here; it was
+checked on arm64 and arm64e iOS binaries). **Pinned VMAs:** `_get_greeting`@`0x100000538` → entry@`0x100004008`
+("cfstring hello"), `_get_long`@`0x100000544` → entry@`0x100004028` ("a constant
+string longer than one entry"), `_get_after`@`0x100000550` → entry@`0x100004048`
+("after the long one"). With `--option cfstrings on` each getter returns
+`CFSTR("...")` of its string (`annotate` adds `/* cfstring@0x<entry> */`); off, it
+returns the entry by its data symbol (`&_kGreeting`).
+
 ### `macho_objc_meta_arm64` — categories, a protocol, ivars
 
 `macho_objc_meta_arm64` (arm64, ~51 KB) is the fixture for the ObjC category /
@@ -1906,3 +1967,45 @@ below `0x1000`, where an address formed from the PC (`adrp` + `add`/`ldr`, `adr`
 `rust_store_value_harness.c` and `.rs` compare 33 complete Rust bodies emitted from the existing `go_store_value_x86_64` fixture with C at O0/O2. They check all destination and guard bytes, sibling fields, nested fields, and exact pointer/value callback counts over 324 boundary pairs. `array_store` retains an existing raw-pointer indexing error and is excluded from native compilation.
 
 `array_address_x86_64` is an authored x86-64 ELF built with `cc -O2 -g -fno-inline -fno-pie -no-pie array_address.c array_address_helpers.c -o array_address_x86_64` (SHA-256 `477ee45558cae15d4412e642e4a6ec3bc0afbed8d1bba3d425cb17fb9b80edbc`). Its 33 functions cover array addresses and pointer-to-integer array decay. `array_address.kuna` supplies prototypes; `array_address_harness.c` and `.rs` compare complete emitted bodies at O0/O2 over readable and PROT_NONE memory, with one-past addresses, nested arrays, callback order and modular pointer bits.
+
+### `swift_types_elf` — a stripped Swift executable with layouts (`swifttypes`)
+
+`swift_types_elf` (x86-64 ELF, 18 KB) is the Swift type-layout fixture
+(`tests/stages/kuna-swifttypes.xml`, `kuna-console/tests/verify_swifttypes.rs`).
+Its source `swift_types_elf.swift` declares a struct of mixed field types
+(`Pixel`: a nested struct, a `Double`, a `Bool`, a `UInt8`, a `String`, a class
+reference and an optional class reference), a class hierarchy whose stored
+properties are read through `self` in vtable getters (`Animal`, `Dog`,
+`Sprite`), and a struct read through `self` in a protocol witness
+(`Pixel.area()`). Built like `swift_metadata_elf`:
+
+```bash
+swiftc -O -module-name typefix swift_types_elf.swift -o typefix
+llvm-strip --strip-all -o swift_types_elf typefix
+```
+
+Its `DT_RUNPATH` was blanked after the build the same way (`$ORIGIN` padded with
+NULs in `.dynstr`).
+
+**Expected layouts** (the unstripped code's own offsets: `Pixel.area()` reads
+`0(%r13)`, `8(%r13)`, `0x19(%r13)`; `Sprite.count.getter` reads `0x60(%r13)`):
+`typefix.Point {x@0, y@8}` 16 bytes; `typefix.Pixel {at@0: Point, alpha@16:
+double, on@24: bool, tag@25: uint1, label@32: Swift.String, owner@48: Animal *,
+shadow@56: Dog *}` 64 bytes; `typefix.Animal {isa, refcounts, legs@16,
+name@24}` 40 bytes; `typefix.Dog {super@0: Animal, tricks@40}` 48 bytes;
+`typefix.Sprite {isa, refcounts, origin@16: Point, pixel@32: Pixel, count@96,
+mate@104}` 112 bytes.
+
+**Pinned VMAs** (the unstripped `typefix` symbol table): `$s7typefix5PointVMa`
+(Point's accessor)@`0x4110` returning `$s7typefix5PointVN`@`0x5318`,
+`$s7typefix5PointVWV`@`0x52b0`, `$s7typefix5PixelVN`@`0x5398`,
+`$s7typefix6SpriteCN`@`0x6790`, `$s7typefix6SpriteC5countSivg` (vtable slot 6,
+a getter)@`0x3e60`, `$s7typefix6SpriteC6originAA5PointVvg` (slot 0)@`0x3cb0`,
+`$s7typefix6AnimalC4legsSivg`@`0x37f0`, and the `Pixel: Shape` witnesses
+`area()`@`0x2cc0` and `name.getter`@`0x2ce0`. With `swiftmetadata on` (the
+layout arm `swifttypes` is on by default) the getters decompile as
+`long typefix.Sprite.vtable#6.getter(typefix.Sprite *self) { … return
+self->count; }` and the accessor as `swift.type_metadata *
+typefix.Point.type_metadata_accessor(long request) { return
+&typefix.Point.type_metadata; }`; with `swifttypes off` the getter takes no
+parameter and reads `*(long *)(v2 + 0x60)`.

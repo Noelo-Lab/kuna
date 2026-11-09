@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_394() {
-    assert_eq!(kuna_num_settables(), 394);
-    assert_eq!(SETTABLE_TABLE.len(), 394);
+fn settable_count_is_398() {
+    assert_eq!(kuna_num_settables(), 398);
+    assert_eq!(SETTABLE_TABLE.len(), 398);
 }
 
 #[test]
-fn tier_counts_are_136_core_159_transform_99_analysis() {
+fn tier_counts_are_136_core_159_transform_103_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_136_core_159_transform_99_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (136, 159, 99));
+    assert_eq!((core, transform, analysis), (136, 159, 103));
 }
 
 #[test]
@@ -512,6 +512,14 @@ fn option_values_live_value_present_for_189() {
         // the `objc` facts (read via kuna_live_value), like `objc` above.
         // Default-on, inert unless `objc` is on.
         "objcrefconst",
+        // (kuna) The Swift runtime-metadata pass gate, the objc precedent.
+        "swiftmetadata",
+        // (kuna) Mach-O __cfstring constant-string recovery — an analysis-pass gate
+        // with no codegen live reader (read console-side via kuna_live_value), like
+        // the gates around it. Default-on, Mach-O-only.
+        "cfstrings",
+        // (kuna) The Swift type-layout arm's gate, read inside that pass.
+        "swifttypes",
         // (kuna) Objective-C instance layouts — same commit-side gate as `objcrefconst`.
         "objcivars",
         // (kuna) PE PDB metadata recovery — an analysis-pass gate with no codegen
@@ -593,6 +601,9 @@ fn option_values_live_value_present_for_189() {
         // `read symbols` (the commit either creates a Function per entry or parks
         // the starts), so it has no codegen live reader. Default-off.
         "lazyfuncs",
+        // (kuna) Apple kernelcache unwrapping + MH_FILESET entry choice -- a
+        // LOAD-time gate read from `KUNA_KERNELCACHE`. Default auto.
+        "kernelcache",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -1213,8 +1224,11 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `objcrefconst`; its P1 row sits beside `objc`.
     // +1 for `ptrauthtrap`; its P2 row sits beside `gowritebarrier`.
     // +1 for `authptrcall`; its P1 row sits beside `peimportcall`.
+    // +1 for `swiftmetadata`; its P1 row sits beside `objc`.
+    // +1 for `swifttypes`, beside it.
+    // +1 for `kernelcache`; its P1 row sits beside `macho-arm64e`.
     // +1 for `objcivars`; its P1 row sits beside `objcrefconst`.
-    assert_eq!(json.matches("},\n").count(), 393);
+    assert_eq!(json.matches("},\n").count(), 397);
 }
 
 #[test]

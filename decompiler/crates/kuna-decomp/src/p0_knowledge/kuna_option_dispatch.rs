@@ -1218,6 +1218,11 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
+    "kernelcache" => {
+        let (choice, msg) = crate::kuna_kernelcache::parse_kernelcache(p1)?;
+        crate::kuna_kernelcache::set_kernelcache_env(&choice);
+        Ok(msg)
+    },
     "dynrelocs" => {
         let val = on_or_off(p1)?;
         self.analysis_dynrelocs = val;
@@ -1429,6 +1434,18 @@ kuna_options! { self, p1;
     },
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
     "objcrefconst" => on_off!(analysis_objcrefconst, "Objective-C reference-slot folding"),
+    "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),
+    "cfstrings" => {
+        let (pass, annotate) = match p1 {
+            "annotate" => (true, true),
+            other => (on_or_off(other)?, false),
+        };
+        self.analysis_cfstrings = pass;
+        self.cfstrings_annotate = annotate;
+        let state = if annotate { "on, annotated" } else if pass { "on" } else { "off" };
+        Ok(format!("Mach-O __cfstring constant-string recovery pass turned {state}"))
+    },
+    "swifttypes" => on_off!(analysis_swifttypes, "Swift type layouts from static metadata"),
     "objcivars" => {
         let val = on_or_off(p1)?;
         self.analysis_objcivars = val;
