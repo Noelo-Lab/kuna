@@ -496,6 +496,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         callee_saved,
         return_reg,
         call_arg_bytes: if ptr == 8 { 0x60 } else { 0x28 },
+        call_home_bytes: if ptr == 8 && target.teb.is_some() { 0x20 } else { 0 },
         eliminate_dead: std::env::var("KUNA_PUSHAN_NO_DCE").is_err(),
         slot_base: {
             let mut regs = std::collections::BTreeMap::new();

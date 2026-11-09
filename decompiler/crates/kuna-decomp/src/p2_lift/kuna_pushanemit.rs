@@ -52,6 +52,9 @@ pub struct EmitConfig {
     pub return_reg: u64,
     /// Bytes from the stack pointer at a call the callee may read as arguments.
     pub call_arg_bytes: u32,
+    /// The callee-owned home area right above the return address (Windows
+    /// x64's 32-byte shadow space): never read as an argument.
+    pub call_home_bytes: u32,
     pub eliminate_dead: bool,
     /// User-op indices with no effect beyond their outputs (rdtsc, pause, fences).
     pub pure_userops: Vec<u64>,
@@ -322,10 +325,12 @@ fn mark_dead(
     let call_mem = |off: Option<i128>| {
         let Some(k) = off else { return full_mem.clone() };
         let mut m = RegSet::new(MEM_BYTES);
-        let lo = k.max(WIN_LO);
-        let hi = (k + conf.call_arg_bytes as i128).min(WIN_HI);
-        if lo < hi {
-            m.add_range((lo - WIN_LO) as u64, (hi - lo) as u32);
+        let ret_end = k + conf.ptr_size as i128;
+        for (lo, hi) in [(k, ret_end), (ret_end + conf.call_home_bytes as i128, k + conf.call_arg_bytes as i128)] {
+            let (lo, hi) = (lo.max(WIN_LO), hi.min(WIN_HI));
+            if lo < hi {
+                m.add_range((lo - WIN_LO) as u64, (hi - lo) as u32);
+            }
         }
         if let Some(f) = escape_floor {
             m.union_with(&mem_from(Some(f.max(WIN_LO))));
