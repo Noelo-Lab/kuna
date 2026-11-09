@@ -8,7 +8,7 @@
 //! Addresses are `null`, `size` is the bytecode length, and `line_mappings`
 //! map lines of `code` to bytecode offsets.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::sync::Arc;
 
@@ -184,14 +184,13 @@ pub(crate) fn dedent(text: &str) -> String {
     out
 }
 
-/// The bytes of the class files a root class is written from.
-fn unit_size(universe: &Universe, root: &str) -> u64 {
-    universe
-        .classes
-        .iter()
-        .filter(|c| universe.root_of(&c.internal) == root)
-        .map(|c| c.size as u64)
-        .sum()
+/// The bytes of the class files each root class is written from.
+fn unit_sizes(universe: &Universe) -> BTreeMap<String, u64> {
+    let mut sizes = BTreeMap::new();
+    for class in &universe.classes {
+        *sizes.entry(universe.root_of(&class.internal)).or_insert(0) += class.size as u64;
+    }
+    sizes
 }
 
 fn runtime_json(runtime: Option<&Arc<SharedRuntime>>) -> Json {
@@ -409,7 +408,7 @@ fn finish_decompile(
                 path: Some(unit.path.clone()),
                 line: (class != root).then_some(line),
                 size: if class == root {
-                    unit_size(&loaded.universe, root)
+                    unit_sizes(&loaded.universe).get(root).copied().unwrap_or(0)
                 } else {
                     loaded.universe.get(class).map_or(0, |c| c.size as u64)
                 },
@@ -652,6 +651,8 @@ fn finish_decompile_all(
             })
             .collect()
     };
+    let sizes = unit_sizes(universe);
+    let unit_size = |root: &str| sizes.get(root).copied().unwrap_or(0);
     let classes: Vec<ClassBlock> = class_roots
         .iter()
         .map(|class| {
@@ -663,7 +664,7 @@ fn finish_decompile_all(
                         path: Some(unit.path.clone()),
                         line: (*class != root).then_some(line),
                         size: if *class == root {
-                            unit_size(universe, &root)
+                            unit_size(&root)
                         } else {
                             universe.get(class).map_or(0, |c| c.size as u64)
                         },
@@ -683,7 +684,7 @@ fn finish_decompile_all(
                     name: java_name(class),
                     path: None,
                     line: None,
-                    size: unit_size(universe, &root),
+                    size: unit_size(&root),
                     code: None,
                     error: Some(why),
                 },
@@ -714,7 +715,12 @@ fn finish_decompile_all(
         for block in classes.iter() {
             block.text(&mut text);
         }
-        for record in &records {
+        let in_class_block = |record: &Record| {
+            targets
+                .iter()
+                .any(|t| matches!(t, Target::Class(c) if inside(universe, &record.class, c)))
+        };
+        for record in records.iter().filter(|r| !in_class_block(r)) {
             let _ = writeln!(
                 text,
                 "// Method: {}  ({}:{})",

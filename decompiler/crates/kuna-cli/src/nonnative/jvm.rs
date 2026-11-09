@@ -48,10 +48,6 @@ pub(crate) fn run(sub: &str, rest: &[String], input: &str) -> i32 {
             eprintln!("error: {e}");
             return 2;
         }
-        Err(args::Refusal::Capability(e)) => {
-            eprintln!("error: {e}");
-            return 1;
-        }
     };
     match sub {
         args::Sub::Decompile => render::decompile(&parsed),

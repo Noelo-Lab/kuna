@@ -310,3 +310,19 @@ pub(crate) fn drive(
         finish(outcome)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Watch;
+    use std::time::Duration;
+
+    #[test]
+    fn a_method_past_the_limit_is_reported_stuck() {
+        let watch = Watch::default();
+        watch.enter(0, "loop ()V");
+        assert_eq!(watch.stuck(Duration::from_secs(3600)), None);
+        assert_eq!(watch.stuck(Duration::ZERO).as_deref(), Some("loop ()V"));
+        watch.leave(0);
+        assert_eq!(watch.stuck(Duration::ZERO), None);
+    }
+}

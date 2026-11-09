@@ -91,11 +91,9 @@ pub(crate) struct Args {
     pub(crate) output: Option<String>,
 }
 
+/// A command line the JVM path refuses (exit 2).
 pub(crate) enum Refusal {
-    /// A malformed command line (exit 2).
     Usage(String),
-    /// A well-formed request the JVM engine cannot answer yet (exit 1).
-    Capability(String),
 }
 
 impl From<String> for Refusal {
@@ -105,34 +103,34 @@ impl From<String> for Refusal {
 }
 
 /// Flags only the native engine has; each is refused on a JVM input.
-const NATIVE_ONLY: &[(&str, bool)] = &[
-    ("--isa", true),
-    ("--slice", true),
-    ("--target", true),
-    ("--base", true),
-    ("--entry", true),
-    ("--addr", false),
-    ("--define-function", true),
-    ("--assert", true),
-    ("--assert-strict", false),
-    ("--kassert", true),
-    ("--raw", false),
-    ("--regions", false),
-    ("--sleighpath", true),
-    ("--decomp-dbg", true),
-    ("--engine", true),
-    ("--timeout", true),
-    ("--stream", false),
-    ("--progress", false),
-    ("--jobs-chunk", true),
-    ("--jobs-full-load", false),
-    ("--jobs-proto", false),
-    ("--jobs-provenance", false),
-    ("--jobs-types", false),
-    ("--jobs-callees", false),
-    ("--jobs-pointerargs", false),
-    ("--jobs-objects", false),
-    ("--jobs-synth", true),
+const NATIVE_ONLY: &[&str] = &[
+    "--isa",
+    "--slice",
+    "--target",
+    "--base",
+    "--entry",
+    "--addr",
+    "--define-function",
+    "--assert",
+    "--assert-strict",
+    "--kassert",
+    "--raw",
+    "--regions",
+    "--sleighpath",
+    "--decomp-dbg",
+    "--engine",
+    "--timeout",
+    "--stream",
+    "--progress",
+    "--jobs-chunk",
+    "--jobs-full-load",
+    "--jobs-proto",
+    "--jobs-provenance",
+    "--jobs-types",
+    "--jobs-callees",
+    "--jobs-pointerargs",
+    "--jobs-objects",
+    "--jobs-synth",
 ];
 
 fn take(argv: &[String], i: &mut usize, flag: &str) -> Result<String, String> {
@@ -247,7 +245,7 @@ pub(crate) fn parse(sub: Sub, argv: &[String], input: &str, kind: InputKind) -> 
                 });
             }
             "--summary" | "--reachable-from" if sub == Sub::Functions => {
-                return Err(Refusal::Capability(format!(
+                return Err(Refusal::Usage(format!(
                     "{a}: {input} is a {}, and the JVM engine has no call graph yet; \
                      `kuna functions {input} --json` lists every method ({DOCS_POINTER})",
                     super::input_label(kind)
@@ -257,7 +255,7 @@ pub(crate) fn parse(sub: Sub, argv: &[String], input: &str, kind: InputKind) -> 
             "--json" | "--no-vars" if sub == Sub::Project => {
                 return Err(Refusal::Usage(format!("{a} is not a decompile-project option")));
             }
-            _ if NATIVE_ONLY.iter().any(|(flag, _)| *flag == a) => {
+            _ if NATIVE_ONLY.contains(&a) => {
                 return Err(Refusal::Usage(format!(
                     "{a} is a native-engine flag; {input} is a {}, decompiled by the JVM engine ({DOCS_POINTER})",
                     super::input_label(kind)

@@ -152,11 +152,7 @@ pub(crate) fn run(args: &JvmTestArgs) -> i32 {
         if !selection_errors.is_empty() {
             eprintln!("error: not writing baseline {path}: the test selection is incomplete");
         } else {
-            let previous = std::fs::read_to_string(path)
-                .ok()
-                .filter(|_| !path.ends_with(".json"))
-                .map(|text| parse_baseline(&text))
-                .unwrap_or_default();
+            let previous = read_baseline(path).unwrap_or_default();
             let ids = next_baseline(&previous, &results);
             let body = if Path::new(path).extension().is_some_and(|e| e == "json") {
                 baseline_json(&ids, t.matched, t.total, returncode)

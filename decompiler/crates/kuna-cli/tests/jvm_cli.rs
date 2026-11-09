@@ -250,6 +250,14 @@ fn decompile_all_triage_narrows_to_method_slices() {
 }
 
 #[test]
+fn mixed_class_and_method_targets_print_each_method_once() {
+    let text = ok(&jvm(&["decompile-all", &jar(), "--functions", "com.ex.Main.check,com.ex.util.Helper"]));
+    assert!(text.starts_with("// Class: com.ex.util.Helper  (com/ex/util/Helper.java)\n"), "{text}");
+    assert_eq!(text.matches("// Method:").count(), 1, "{text}");
+    assert!(text.contains("// Method: com.ex.Main.check(Ljava/lang/String;)Z  (com/ex/Main.java:"), "{text}");
+}
+
+#[test]
 fn decompile_all_json_lists_methods_and_units() {
     let doc = json(&jvm(&["decompile-all", &jar(), "--json"]));
     assert!(doc.get("total").is_none(), "no triage, no total");
@@ -410,7 +418,7 @@ fn the_other_subcommands_answer_with_capability_errors() {
         assert!(out.stdout.is_empty(), "{sub}");
     }
     let out = kuna(&["functions", &jar(), "--summary"]);
-    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(out.status.code(), Some(2));
     assert!(stderr(&out).contains("no call graph yet"), "{}", stderr(&out));
 }
 
