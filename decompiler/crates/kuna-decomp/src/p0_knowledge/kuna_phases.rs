@@ -514,45 +514,113 @@ pub fn emit_catalog_json(live: impl Fn(&str) -> Option<Cow<'static, str>>) -> St
 /// core so the control surface leads; a generated symptom index maps
 /// output-shaped phrases to options.
 pub fn emit_catalog_markdown() -> String {
-    let mut out = String::new();
-    out.push_str("# kuna option catalog\n\n");
-    out.push_str(
+    let rows: Vec<MarkdownRow<'_>> = (0..kuna_num_settables())
+        .map(|i| {
+            let st = kuna_settable_by_index(i);
+            MarkdownRow {
+                option: st.option,
+                values: st.values,
+                default: st.shipped,
+                destructive: st.destructive,
+                phase: st.phase.code(),
+                subphase: st.subphase,
+                source_decompiler: st.source_decompiler,
+                change_kind: st.change_kind,
+                issue: st.issue,
+                summary: st.summary,
+                use_when: st.use_when,
+                example: st.example,
+                tier: st.tier,
+                symptoms: st.symptoms,
+                aliases: &[],
+            }
+        })
+        .collect();
+    let mut preamble = String::new();
+    preamble.push_str("# kuna option catalog\n\n");
+    preamble.push_str(
         "**Generated** by `kuna catalog --markdown` from `settableTable` in \
          `decompiler/crates/kuna-decomp/phases.toml` -- do not edit by hand; \
          edit the registry row and regenerate.\n\n",
     );
-    out.push_str(
+    preamble.push_str(
         "Set any option per run: `kuna decompile <bin> <fn> --option <name> <value>` \
          (repeatable), `kuna decompile-all <bin> --option <name> <value>`, or the \
          console `option <name> <value>`. Defaults are the shipped values; what a \
          default does is described in its row below. The algorithms behind these \
          options are described in `docs/spec/`.\n\n",
     );
-    out.push_str("Three tiers:\n\n");
-    out.push_str(
+    preamble.push_str("Three tiers:\n\n");
+    preamble.push_str(
         "- **Toggleable transforms** -- restructure, duplicate, remove, or insert \
          code; near-always better on the right source shape and wrong on the wrong \
          one. **This is the on/off control surface.**\n",
     );
-    out.push_str(
+    preamble.push_str(
         "- **Analysis & loader passes** -- what gets discovered/decoded/named \
          before decompilation.\n",
     );
-    out.push_str(
+    preamble.push_str(
         "- **Core rendering defaults** -- near-always-better rendering/naming/\
          peepholes; part of the decompiler, not the control surface. Flip only for \
          upstream byte-parity or unusual consumers.\n\n",
     );
+    emit_catalog_markdown_from(
+        &rows,
+        &MarkdownDoc {
+            preamble: &preamble,
+            sections: [
+                ("transform", "## Toggleable transforms", "The control surface: each of these can make output worse on the wrong source shape, so each stays flippable."),
+                ("analysis", "## Analysis & loader passes", "Program-prep enablement: what is discovered, decoded, and named before any function is decompiled."),
+                ("core", "## Core rendering defaults", "Part of the decompiler; not the control surface. Flip only to reproduce upstream Ghidra output byte-for-byte or for unusual downstream consumers."),
+            ],
+            tail: "## Programmatic use\n\n```bash\n# discover (machine-readable; includes tier + symptoms):\nkuna catalog --json\n\n# transforms only:\nkuna catalog --tier transform\n\n# decompile with an option flipped (repeatable):\nkuna decompile ./a.out main --option gotoreduce off\nkuna decompile ./sparc.elf main --option returnpair single\n```\n",
+        },
+    )
+}
+
+/// One option row as the Markdown catalog renders it; any engine's table
+/// (the native [`SETTABLE_TABLE`], the JVM engine's) maps onto it.
+#[derive(Clone, Copy, Debug)]
+pub struct MarkdownRow<'a> {
+    pub option: &'a str,
+    pub values: &'a str,
+    pub default: &'a str,
+    pub destructive: bool,
+    pub phase: &'a str,
+    pub subphase: &'a str,
+    pub source_decompiler: &'a str,
+    pub change_kind: &'a str,
+    pub issue: &'a str,
+    pub summary: &'a str,
+    pub use_when: &'a str,
+    pub example: &'a str,
+    pub tier: &'a str,
+    pub symptoms: &'a str,
+    /// Other names the option answers to; listed when non-empty.
+    pub aliases: &'a [&'a str],
+}
+
+/// The fixed text around a Markdown catalog: everything before the symptom
+/// index, the three tier sections (tier, heading, blurb) in order, and the tail.
+#[derive(Clone, Copy, Debug)]
+pub struct MarkdownDoc<'a> {
+    pub preamble: &'a str,
+    pub sections: [(&'a str, &'a str, &'a str); 3],
+    pub tail: &'a str,
+}
+
+/// The tier-grouped Markdown catalog of `rows`: `doc.preamble`, a symptom
+/// index, one section per tier, `doc.tail`.
+pub fn emit_catalog_markdown_from(rows: &[MarkdownRow<'_>], doc: &MarkdownDoc<'_>) -> String {
+    let mut out = String::new();
+    out.push_str(doc.preamble);
 
     // ---- symptom index ------------------------------------------------------
     out.push_str("## Symptom index\n\n");
     out.push_str("| If the output shows... | Try |\n|---|---|\n");
-    for tier in ["transform", "analysis", "core"] {
-        for i in 0..kuna_num_settables() {
-            let st = kuna_settable_by_index(i);
-            if st.tier != tier {
-                continue;
-            }
+    for (tier, _, _) in doc.sections {
+        for st in rows.iter().filter(|st| st.tier == tier) {
             for phrase in st.symptoms.split('|') {
                 if phrase.is_empty() {
                     continue;
@@ -578,27 +646,18 @@ pub fn emit_catalog_markdown() -> String {
     out.push('\n');
 
     // ---- per-tier sections --------------------------------------------------
-    let sections = [
-        ("transform", "## Toggleable transforms", "The control surface: each of these can make output worse on the wrong source shape, so each stays flippable."),
-        ("analysis", "## Analysis & loader passes", "Program-prep enablement: what is discovered, decoded, and named before any function is decompiled."),
-        ("core", "## Core rendering defaults", "Part of the decompiler; not the control surface. Flip only to reproduce upstream Ghidra output byte-for-byte or for unusual downstream consumers."),
-    ];
-    for (tier, heading, blurb) in sections {
+    for (tier, heading, blurb) in doc.sections {
         out.push_str(heading);
         out.push_str("\n\n");
         out.push_str(blurb);
         out.push_str("\n\n");
-        for i in 0..kuna_num_settables() {
-            let st = kuna_settable_by_index(i);
-            if st.tier != tier {
-                continue;
-            }
+        for st in rows.iter().filter(|st| st.tier == tier) {
             out.push_str("### `");
             out.push_str(st.option);
             out.push_str("` -- ");
             out.push_str(&st.values.replace('|', " | "));
             out.push_str(", default `");
-            out.push_str(st.shipped);
+            out.push_str(st.default);
             out.push('`');
             if st.destructive {
                 out.push_str(" (destructive opt-in)");
@@ -611,7 +670,7 @@ pub fn emit_catalog_markdown() -> String {
             out.push_str("\n- **When to flip:** ");
             out.push_str(st.use_when);
             out.push_str("\n- **Where / provenance:** ");
-            out.push_str(st.phase.code());
+            out.push_str(st.phase);
             out.push('/');
             out.push_str(st.subphase);
             out.push_str(" \u{b7} ");
@@ -623,6 +682,12 @@ pub fn emit_catalog_markdown() -> String {
                 out.push_str(st.issue);
             }
             out.push('\n');
+            if !st.aliases.is_empty() {
+                out.push_str("- **Also spelled:** ");
+                let spelled: Vec<String> = st.aliases.iter().map(|a| format!("`{a}`")).collect();
+                out.push_str(&spelled.join(", "));
+                out.push('\n');
+            }
             if !st.example.is_empty() {
                 out.push_str("- **Example:** `");
                 out.push_str(st.example);
@@ -631,10 +696,7 @@ pub fn emit_catalog_markdown() -> String {
             out.push('\n');
         }
     }
-    out.push_str(
-        "## Programmatic use\n\n```bash\n# discover (machine-readable; includes tier + symptoms):\nkuna catalog --json\n\n# transforms only:\nkuna catalog --tier transform\n\n# decompile with an option flipped (repeatable):\nkuna decompile ./a.out main --option gotoreduce off\nkuna decompile ./sparc.elf main --option returnpair single\n```\n",
-    )
-;
+    out.push_str(doc.tail);
     out
 }
 

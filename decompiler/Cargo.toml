@@ -33,6 +33,7 @@ kuna-decomp = { path = "crates/kuna-decomp" }
 kuna-analysis = { path = "crates/kuna-analysis" }
 kuna-console = { path = "crates/kuna-console" }
 kuna-slacomp = { path = "crates/kuna-slacomp" }
+kuna-jvm = { path = "nonnative/kuna-jvm" }
 
 [workspace.lints.clippy]
 # Ordered collections keep output decisions deterministic; see clippy.toml.

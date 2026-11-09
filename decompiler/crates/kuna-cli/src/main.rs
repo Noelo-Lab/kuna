@@ -23,6 +23,8 @@ mod jsonfmt;
 mod kuna_allocrelease;
 mod limits;
 mod loadtime;
+#[cfg(feature = "jvm")]
+mod nonnative;
 mod optname;
 mod output;
 mod paths;
@@ -77,6 +79,10 @@ fn main() -> ExitCode {
         _ => {}
     }
     let rest = &args[2..];
+    #[cfg(feature = "jvm")]
+    if let Some(code) = nonnative::dispatch(sub, rest) {
+        return ExitCode::from(code as u8);
+    }
     runtime_hints::note_for_invocation(sub, rest);
     let code = match sub {
         "-V" | "--version" | "version" => {
@@ -128,10 +134,11 @@ fn usage() {
          kuna raw-pcode <binary> [--isa auto|arm|thumb] <name|0xaddr|0xstart-0xend> [--addr] [--count N] [--bytes N] [--follow] [--json] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--slice ARCH] [--target T] [--sleighpath D]\n\
          kuna disassemble <binary> [--isa auto|arm|thumb] <name|0xaddr|0xstart-0xend> [--addr] [--as code|data|auto] [--count N] [--bytes N] [--json] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--slice ARCH] [--target T] [--sleighpath D]\n\
          kuna read <binary> [--isa auto|arm|thumb] <name|0xaddr|0xstart-0xend> [--addr] [--bytes N] [--count N] [--json]   # the hexdump view of the same target\n\
+         kuna decompile|decompile-all|decompile-project|functions <class|jar|dir> ...   # JVM inputs: the JVM engine (`kuna docs jvm`, `kuna catalog --engine jvm`)\n\
          kuna docs [<topic>] [--json] [--all]\n\
          kuna install-skill [--agent claude|codex|opencode|all] [--project | --dir DIR] [--force] [--print]\n\
-         kuna test [--all|--unittests|--datatests] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
-         kuna catalog [--json|--markdown|--check] [--option NAME] [--tier transform|analysis|core]\n\
+         kuna test [--all|--unittests|--datatests|--jvm] [--name N]... [--baseline F] [--save-baseline F] [--json]\n\
+         kuna catalog [--json|--markdown|--check] [--option NAME] [--tier transform|analysis|core] [--engine native|jvm|all]\n\
          kuna modes [--json]\n\
          kuna specs [-a <dir>] [<slaspec>...] [--diff]\n\
          kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
@@ -161,6 +168,10 @@ fn cmd_test(argv: &[String]) -> Result<i32, String> {
     let mut baseline: Option<String> = None;
     let mut save_baseline: Option<String> = None;
     let mut json = false;
+    let mut jvm = false;
+    let mut jvm_dir: Option<String> = None;
+    let mut jobs: Option<usize> = None;
+    let mut native_flag: Option<&str> = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -168,20 +179,41 @@ fn cmd_test(argv: &[String]) -> Result<i32, String> {
         match a {
             "--all" => {
                 mode = Mode::All;
+                native_flag = Some("--all");
             }
             "--unittests" => {
                 mode = Mode::Unittests;
+                native_flag = Some("--unittests");
             }
             "--datatests" => {
                 mode = Mode::Datatests;
+                native_flag = Some("--datatests");
+            }
+            "--jvm" => jvm = true,
+            "--jvm-dir" => {
+                jvm_dir = Some(take_value(argv, &mut i, "--jvm-dir")?);
+                jvm = true;
+            }
+            "--jobs" => {
+                let (n, auto) = jobs::parse_jobs(&take_value(argv, &mut i, "--jobs")?)?;
+                jobs = (!auto).then_some(n);
             }
             "--name" => {
                 names.push(take_value(argv, &mut i, "--name")?);
             }
-            "--binary" => binary = Some(take_value(argv, &mut i, "--binary")?),
+            "--binary" => {
+                binary = Some(take_value(argv, &mut i, "--binary")?);
+                native_flag = Some("--binary");
+            }
             "--engine" => engine = Some(take_value(argv, &mut i, "--engine")?),
-            "--sleighpath" => sleighpath = Some(take_value(argv, &mut i, "--sleighpath")?),
-            "--datatests-dir" => datatests_dir = Some(take_value(argv, &mut i, "--datatests-dir")?),
+            "--sleighpath" => {
+                sleighpath = Some(take_value(argv, &mut i, "--sleighpath")?);
+                native_flag = Some("--sleighpath");
+            }
+            "--datatests-dir" => {
+                datatests_dir = Some(take_value(argv, &mut i, "--datatests-dir")?);
+                native_flag = Some("--datatests-dir");
+            }
             "--baseline" => baseline = Some(take_value(argv, &mut i, "--baseline")?),
             "--save-baseline" => save_baseline = Some(take_value(argv, &mut i, "--save-baseline")?),
             "--json" => json = true,
@@ -199,8 +231,17 @@ fn cmd_test(argv: &[String]) -> Result<i32, String> {
         i += 1;
     }
 
+    if jvm {
+        if let Some(flag) = native_flag {
+            return Err(format!("--jvm runs the JVM corpus on its own; drop {flag}"));
+        }
+        return run_jvm_tests(jvm_dir, names, baseline, save_baseline, json, jobs);
+    }
+    if jobs.is_some() {
+        return Err("--jobs applies to --jvm".into());
+    }
     if !names.is_empty() && mode == Mode::All {
-        return Err("--name requires --unittests or --datatests".into());
+        return Err("--name requires --unittests, --datatests or --jvm".into());
     }
     apply_engine(engine.as_deref());
 
@@ -217,9 +258,40 @@ fn cmd_test(argv: &[String]) -> Result<i32, String> {
     Ok(test::run_cmd(&targs))
 }
 
+#[cfg(feature = "jvm")]
+fn run_jvm_tests(
+    dir: Option<String>,
+    names: Vec<String>,
+    baseline: Option<String>,
+    save_baseline: Option<String>,
+    json: bool,
+    jobs: Option<usize>,
+) -> Result<i32, String> {
+    Ok(nonnative::corpus::run(&nonnative::corpus::JvmTestArgs {
+        dir,
+        names,
+        baseline,
+        save_baseline,
+        json,
+        jobs,
+    }))
+}
+
+#[cfg(not(feature = "jvm"))]
+fn run_jvm_tests(
+    _dir: Option<String>,
+    _names: Vec<String>,
+    _baseline: Option<String>,
+    _save_baseline: Option<String>,
+    _json: bool,
+    _jobs: Option<usize>,
+) -> Result<i32, String> {
+    Err("this kuna was built without the JVM engine (cargo feature `jvm`)".into())
+}
+
 fn usage_test() {
     eprintln!(
-        "usage: kuna test [--all|--unittests|--datatests] [--name N].. [--json] \\\n\
+        "usage: kuna test [--all|--unittests|--datatests|--jvm] [--name N].. [--json] \\\n\
          \x20                [--datatests-dir D] [--baseline F] [--save-baseline F] \\\n\
          \x20                [--binary B] [--sleighpath D]\n\
          \n\
@@ -239,7 +311,14 @@ fn usage_test() {
          --json emits {{unit_footer,data_footer,passing,returncode,failures,selection}},\n\
          plus parity with --baseline; selection is {{complete,errors,data,unit}}, where\n\
          data is {{corpus,requested,matched,missing}} (file names) and unit is\n\
-         {{requested,matched,missing}}, each null when that half did not run."
+         {{requested,matched,missing}}, each null when that half did not run.\n\
+         \n\
+         --jvm [--jvm-dir D] [--jobs N|auto] runs the JVM engine's corpus (tests/jvm:\n\
+         each case's expected text is Vineflower 1.12.0's output, byte for byte) in\n\
+         this process; --name N keeps the cases whose id contains N, and --baseline F\n\
+         takes tests/jvm/baseline.txt (one case id per line) or a JSON record\n\
+         (passing keys jvm:<id>). With --json: {{jvm_footer,passing,returncode,\n\
+         failures,selection}}, plus parity with --baseline."
     );
 }
 
@@ -289,7 +368,10 @@ fn cmd_catalog(argv: &[String]) -> Result<i32, String> {
     if (json as u8) + (markdown as u8) + (check as u8) > 1 {
         return Err("--json, --markdown, --check are mutually exclusive".into());
     }
-    apply_engine(engine.as_deref());
+    let selected = catalog::Engine::parse(engine.as_deref())?;
+    if selected == catalog::Engine::Default {
+        apply_engine(engine.as_deref());
+    }
     let pinned_by = if decomp_dbg_flag {
         Some("--decomp-dbg")
     } else {
@@ -299,11 +381,11 @@ fn cmd_catalog(argv: &[String]) -> Result<i32, String> {
     Ok(if check {
         catalog::cmd_check(pinned_by)
     } else if json {
-        catalog::cmd_json(option.as_deref(), tier.as_deref(), pinned_by)
+        catalog::cmd_json(option.as_deref(), tier.as_deref(), pinned_by, selected)
     } else if markdown {
-        catalog::cmd_markdown(option.as_deref())
+        catalog::cmd_markdown(option.as_deref(), selected)
     } else {
-        catalog::cmd_text(option.as_deref(), tier.as_deref(), pinned_by)
+        catalog::cmd_text(option.as_deref(), tier.as_deref(), pinned_by, selected)
     })
 }
 
@@ -311,7 +393,7 @@ fn usage_catalog() {
     eprintln!(
         "usage: kuna catalog [--json|--markdown|--check] [--option NAME] \\\n\
          \x20                   [--tier transform|analysis|core] [--decomp-dbg P] \\\n\
-         \x20                   [--sleighpath D] [--engine cpp|rust]\n\
+         \x20                   [--sleighpath D] [--engine native|jvm|all]\n\
          \n\
          List the settable phase-model assertions -- the decisions `--option NAME VALUE`\n\
          flips on every decompiling surface.  Each row carries its phase, tier, values,\n\
@@ -332,6 +414,11 @@ fn usage_catalog() {
          option names and exits nonzero on drift; this is the CI gate.\n\
          --option NAME reports one row; --tier keeps one tier, in the table and\n\
          in --json.\n\
+         \n\
+         --engine jvm lists the JVM engine's options (class files, jars), --engine all\n\
+         both, each row tagged `engine` and `aliases`; --markdown --engine jvm\n\
+         regenerates docs/options-jvm.md. Without --engine the catalog is the native\n\
+         one (cpp|rust are accepted as before); --option still finds a JVM name.\n\
          \n\
          Upstream OptionDatabase names (maxinstruction, errortoomanyinstructions, ..)\n\
          are reachable through --option but are NOT catalog rows, so they do not\n\
