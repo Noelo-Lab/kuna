@@ -6,6 +6,8 @@ pub mod class_pass_location;
 pub mod decompile_record;
 pub mod java_pass_location;
 pub mod java_pass_registrar;
+pub mod kuna_corpus;
+pub mod kuna_trace;
 pub mod looping_pass_builder;
 pub mod main_pass_builder;
 pub mod method_processor;
