@@ -970,10 +970,10 @@ pub struct Architecture {
     /// (kuna) `condstmts` statement cap for folded condition operands; negative =
     /// off.  See [`crate::p8_structure::kuna_condstmts`].
     pub cond_stmts: int4,
-    /// (kuna) angr SAILR goto-reduction: duplicate a small return tail into a
-    /// `goto` source so the cross-edge becomes a structured early return
-    /// (`reduce_return_gotos`).
-    pub reduce_return_gotos: bool,
+    /// (kuna `gotoreduce`) angr SAILR goto-reduction: which small return tails are
+    /// duplicated into a `goto` source so the cross-edge becomes a structured early
+    /// return (call-free tails at `return`, also tails with a call at `on`).
+    pub goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode,
     /// (kuna) angr `IfElseFlattener`: drop the `else` arm of a 3-component `if`
     /// whose true-clause is statement-terminating, re-parenting the else body as
     /// the `if`'s follower (`flatten_ifelse`).
@@ -982,18 +982,11 @@ pub struct Architecture {
     /// duplicating a small *non-return* cross-jump tail into the `goto` source so
     /// both paths fall straight through (`revert_cross_jumps`, opt-in default-off).
     pub revert_cross_jumps: bool,
-    /// (kuna) angr SAILR `ReturnDuplicatorLow`: duplicate a small **return tail that
-    /// contains a call** (e.g. `free(p); return;`) into a `goto` source so the
-    /// cross-edge becomes a structured early return.  Fills the gap between
-    /// `gotoreduce` (return tail, no calls) and `crossjumprevert` (non-return tail,
-    /// calls allowed) — angr's `max_calls_in_regions` budget (`dup_return_call_tails`,
-    /// opt-in default-off).
-    pub dup_return_call_tails: bool,
     /// (kuna) angr structurer ITE region-dedup: merge a duplicated `if/else` tail
     /// (a maximal common prefix/suffix of statement-equivalent leaves shared by both
     /// arms) by hoisting the shared blocks out of the `if` — emitting one copy
     /// instead of two.  The inverse of the SAILR duplication passes
-    /// (`gotoreduce`/`crossjumprevert`/`taildup`) (`dedup_ite_tail`, opt-in
+    /// (`gotoreduce`/`crossjumprevert`) (`dedup_ite_tail`, opt-in
     /// default-off).
     pub dedup_ite_tail: bool,
     /// (kuna) angr `ITERegionConverter`: rewrite a two-arm assignment *diamond*
@@ -2336,10 +2329,9 @@ impl Architecture {
             outline_spec: String::new(),
             cond_fold: 0,
             cond_stmts: -1,
-            reduce_return_gotos: false,
+            goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode::Off,
             flatten_ifelse: false,
             revert_cross_jumps: false,
-            dup_return_call_tails: false,
             dedup_ite_tail: false,
             iteregion: false,
             iteexpr: false,
@@ -2630,10 +2622,9 @@ impl Architecture {
         self.outline_spec = String::new(); // (kuna) default-OFF opt-in (excise a supplied single-entry region into a synthesized pseudofunction call; destructive, and inert with no region supplied)
         self.cond_stmts = crate::p8_structure::kuna_condstmts::DEFAULT_CAP; // (kuna) condstmts default-on: a folded condition operand prints at most 3 statements before its test (0/675 ablation)
         self.cond_fold = 0; // (kuna) default-OFF opt-in (angr Phoenix MultiStatementExpression short-circuit relaxation: fold `A || B` across a sibling carrying a bounded prefix, rendered as a comma expression; OFF is byte-identical)
-        self.reduce_return_gotos = true; // (kuna) DIV-13 default-on (angr SAILR goto-reduction; 0/675 ablation)
+        self.goto_reduce = crate::p8_structure::kuna_gotoreduce::GotoReduceMode::On; // (kuna) gotoreduce default `on`: call-free return tails and return tails with a call (angr SAILR ReturnDuplicator/ReturnDuplicatorLow; 0/675 ablation)
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
-        self.dup_return_call_tails = true; // (kuna) DIV-13 default-on (angr SAILR ReturnDuplicatorLow return-call-tail dup; 0/675 ablation)
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
         self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
@@ -3430,10 +3421,9 @@ impl Architecture {
         ctx.switch_selector_guard = self.switch_selector_guard; // switchselector
         ctx.cond_fold = self.cond_fold; // condfold
         ctx.cond_stmts = self.cond_stmts; // condstmts
-        ctx.reduce_return_gotos = self.reduce_return_gotos; // gotoreduce
+        ctx.goto_reduce = self.goto_reduce; // gotoreduce
         ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
         ctx.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
-        ctx.dup_return_call_tails = self.dup_return_call_tails; // taildup
         ctx.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
         ctx.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
         ctx.iteexpr = self.iteexpr; // iteexpr (computed-arm ?: extension, runtime-choice)

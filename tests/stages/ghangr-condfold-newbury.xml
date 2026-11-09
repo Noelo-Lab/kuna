@@ -82,8 +82,8 @@
       }
 
     with every callee a local stub in the same chunk (no PLT, no data
-    references).  The body is 13 calls wide so the default-on taildup does not
-    duplicate it away - taildup only removes this goto for a tiny tail.
+    references).  The body is 13 calls wide so the default `gotoreduce on` does
+    not duplicate it away - it only removes this goto for a tiny tail.
 
     Pass 1 (option condfold off): the fold is declined and one edge into the
     shared body is virtualized - "goto" appears exactly once, and so does the
