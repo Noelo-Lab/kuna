@@ -14,3 +14,7 @@ mod collections;
 mod text_buffer;
 #[path = "util_misc.rs"]
 mod util_misc;
+#[path = "f2_types.rs"]
+mod f2_types;
+#[path = "f2_pool_match.rs"]
+mod f2_pool_match;
