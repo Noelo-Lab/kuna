@@ -69,6 +69,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSwitchCaseScope` | `switch_case_scope` | javac 17.0.20.1 (`-g`) | two cases declaring double z before an if, and a case-level int length clashing with a nested one in a later case, are written with braces |
 | `pkg/TestSwitchExprConstLub` | `switch_yield_const_retype` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestSwitchExprPolyCast` | `switch_expression_poly_cast` | javac 17.0.20.1 (`-g`) | `intOrLong`, `charOrInt` and `argument`, whose switch expressions yield numbers of different types to a reference target: the switch is no longer wrapped in a cast, which made it a standalone numeric switch (`case 1 -> 1` a `Long`) |
+| `pkg/TestSwitchExpressionArmClash` | `switch_expression_arm_scope` | javac 17.0.20.1 (`-g`) | a switch-expression arm declaring internalName inside a case of a switch statement whose earlier case declares internalName gets that case in braces instead of a duplicate declaration |
 | `pkg/TestTernaryNumericArms` | `ternary_numeric_arms` | javac 17.0.20.1 (`-g`) | the conditionals whose boxed arms would print as numbers of different types (`int` and `long`, `int` and `Integer`, `boolean` and `Boolean`, `Double` and `double`) keep an arm cast, so they stay reference conditionals: no promotion of `1` to `Long`, no unboxing of a `null` arm |
 | `pkg/TestTryCatchNotFlag` | `twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 | `pkg/TestTypeAnnotationArgumentScope` | `type_annotation_argument_scope` | javac 17.0.20.1 (`-g`) | type annotations on a later generic argument (Fn<Pair<String, @A Object>, @A Pair<String, @A Object>>) are written in that argument, not repeated in an earlier one |
@@ -5311,6 +5312,37 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public Object toObject(int x) {
+```
+
+### `pkg/TestSwitchExpressionArmClash`
+
+```diff
+--- expected-compat/pkg/TestSwitchExpressionArmClash.java
++++ expected/pkg/TestSwitchExpressionArmClash.java
+@@ -7,12 +7,13 @@
+ 
+    public static int typeOf(String buffer, int offset) {
+       switch (buffer.charAt(offset)) {
+-         case 'L':
++         case 'L': {
+             String internalName = buffer.substring(offset + 1, buffer.length() - 1);
+             return 7 | add(internalName);
++         }
+          case 'V':
+             return 0;
+-         case '[':
++         case '[': {
+             int element = offset + 1;
+ 
+             while (buffer.charAt(element) == '[') {
+@@ -26,6 +27,7 @@
+                }
+                default -> throw new IllegalArgumentException();
+             };
++         }
+          default:
+             throw new IllegalArgumentException();
+       }
 ```
 
 ### `pkg/TestTernaryNumericArms`

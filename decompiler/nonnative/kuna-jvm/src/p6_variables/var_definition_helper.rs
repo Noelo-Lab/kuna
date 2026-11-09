@@ -19,6 +19,13 @@
 //! declarations at the top level of a case's statement sequence stay live
 //! until the end of the switch block, which is their scope
 //! (`kuna_fix_switch_case_scope`).
+//! kuna fix `switch_expression_arm_scope` (`kuna_fixes`): `iterate_clashing_names`
+//! skips a switch expression's (phantom) switch statement, on the ground
+//! that its arms are blocks isolated from each other; they are, but not from
+//! the variables in scope around the expression, so an arm could declare a
+//! name already declared there. With the fix each arm is visited like an
+//! `if` branch: its declarations are renamed when they clash with a live
+//! one and forgotten when the arm ends.
 
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
@@ -1993,14 +2000,19 @@ impl VarDefinitionHelper {
         var_definitions.put(Some(stat), std::mem::take(cur_var_defs));
 
         let mut iterate = true;
+        let mut arms = false;
         if let Some(switch_stat) = stat.try_as_switch() {
             if switch_stat.is_phantom() {
-                iterate = false;
+                if kuna_fixes::enabled(KunaFix::SwitchExpressionArmScope) {
+                    arms = true;
+                } else {
+                    iterate = false;
+                }
             }
         }
 
         let deferred: Vec<Statement> = Vec::new();
-        let seperate = stat.is_if() || stat.is_catch();
+        let seperate = stat.is_if() || stat.is_catch() || arms;
         if iterate {
             let mut stats = stat.get_stats().borrow().to_vec();
             if kuna_fixes::enabled(KunaFix::SwitchCaseScope) {

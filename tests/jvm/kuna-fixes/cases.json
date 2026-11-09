@@ -640,6 +640,16 @@
       "summary": "`intOrLong`, `charOrInt` and `argument`, whose switch expressions yield numbers of different types to a reference target: the switch is no longer wrapped in a cast, which made it a standalone numeric switch (`case 1 -> 1` a `Long`)"
     },
     {
+      "id": "pkg/TestSwitchExpressionArmClash",
+      "fix": "switch_expression_arm_scope",
+      "class_files": [
+        "pkg/TestSwitchExpressionArmClash.class"
+      ],
+      "source": "src/pkg/TestSwitchExpressionArmClash.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "a switch-expression arm declaring internalName inside a case of a switch statement whose earlier case declares internalName gets that case in braces instead of a duplicate declaration"
+    },
+    {
       "id": "pkg/TestTernaryNumericArms",
       "fix": "ternary_numeric_arms",
       "class_files": [

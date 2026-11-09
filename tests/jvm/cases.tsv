@@ -3469,6 +3469,10 @@ case	kuna-fixes-compat/pkg/TestSwitchExprPolyCast	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSwitchExprPolyCast.class
 expected	kuna-fixes/expected-compat/pkg/TestSwitchExprPolyCast.java
 compare	TestSwitchExprPolyCast.java
+case	kuna-fixes-compat/pkg/TestSwitchExpressionArmClash	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSwitchExpressionArmClash.class
+expected	kuna-fixes/expected-compat/pkg/TestSwitchExpressionArmClash.java
+compare	TestSwitchExpressionArmClash.java
 case	kuna-fixes-compat/pkg/TestTernaryNumericArms	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestTernaryNumericArms.class
 expected	kuna-fixes/expected-compat/pkg/TestTernaryNumericArms.java
@@ -3873,6 +3877,10 @@ case	kuna-fixes/pkg/TestSwitchExprPolyCast	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSwitchExprPolyCast.class
 expected	kuna-fixes/expected/pkg/TestSwitchExprPolyCast.java
 compare	TestSwitchExprPolyCast.java
+case	kuna-fixes/pkg/TestSwitchExpressionArmClash	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSwitchExpressionArmClash.class
+expected	kuna-fixes/expected/pkg/TestSwitchExpressionArmClash.java
+compare	TestSwitchExpressionArmClash.java
 case	kuna-fixes/pkg/TestTernaryNumericArms	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestTernaryNumericArms.class
 expected	kuna-fixes/expected/pkg/TestTernaryNumericArms.java

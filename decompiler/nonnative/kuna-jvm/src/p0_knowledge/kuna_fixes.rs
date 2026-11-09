@@ -212,6 +212,10 @@ pub enum KunaFix {
     /// `nested_param_rename`: a parameter whose uses are written by its
     /// local-variable-table name is declared under that name.
     NestedParamRename,
+    /// `switch_expression_arm_scope`: a declaration in a switch expression's
+    /// arm that clashes with a variable in scope around the expression is
+    /// renamed.
+    SwitchExpressionArmScope,
 }
 
 impl KunaFix {
@@ -276,6 +280,7 @@ impl KunaFix {
         KunaFix::SealedPrivatePermits,
         KunaFix::SwitchExpressionAssignments,
         KunaFix::NestedParamRename,
+        KunaFix::SwitchExpressionArmScope,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -340,6 +345,7 @@ impl KunaFix {
             KunaFix::SealedPrivatePermits => "sealed_private_permits",
             KunaFix::SwitchExpressionAssignments => "switch_expression_assignments",
             KunaFix::NestedParamRename => "nested_param_rename",
+            KunaFix::SwitchExpressionArmScope => "switch_expression_arm_scope",
         }
     }
 
