@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3954,
-    3954
+    3958,
+    3958
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1107,7 +1107,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 390 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 391 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -3064,6 +3064,10 @@
     "data:ilp32long ppc #5b: ctypes spells the 8-byte integer long long",
     "data:ilp32long ppc #5c: ctypes pick prototype",
     "data:ilp32long ppc #6: no 8-byte integer spells unsigned long",
+    "data:importdata off: the imported counter is read through its __got slot",
+    "data:importdata off: the imported pointer is tested through its __got slot",
+    "data:importdata on: the imported counter renders as the import",
+    "data:importdata on: the imported pointer renders as the import",
     "data:imported slot writes retain the returning continuation in every mode",
     "data:indirect call passes aggregate value",
     "data:indirectargs off: call passes the ABI pointer",
