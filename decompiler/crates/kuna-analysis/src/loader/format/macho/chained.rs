@@ -987,6 +987,24 @@ mod tests {
         assert!(!resolve_chained_fixups(&classic_file, &classic).is_chained());
     }
 
+    /// `macho_arm64e_auth` (`ARM64E_USERLAND24`): an authenticated rebase strips
+    /// its signing context, authenticated binds name their import with no
+    /// addend, and a plain bind keeps its addend.
+    #[test]
+    fn fixture_arm64e_auth_entries() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_arm64e_auth");
+        let bytes = std::fs::read(path).expect("read fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse Mach-O");
+        let fixups = resolve_chained_fixups(&file, &bytes);
+        let bind = |va| fixups.bind_at(va).map(|b| (std::str::from_utf8(&b.name).unwrap(), b.addend));
+        assert_eq!(fixups.resolved_ptr(0x100004000), Some(0x100000410));
+        assert_eq!(bind(0x100004008), Some(("_ext_func", 0)));
+        assert_eq!(bind(0x100004010), Some(("_ext_data", 16)));
+        assert_eq!(bind(0x100004018), Some(("_ext_func", 0)));
+        assert_eq!(fixups.resolved_ptr(0x100008000), Some(0x100000418));
+        assert!(fixups.in_readonly_segment(0x100004018));
+    }
+
     /// `resolve_chained_fixups` is a strict no-op on a non-Mach-O input.
     #[test]
     fn resolver_noop_on_non_macho() {
