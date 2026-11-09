@@ -448,6 +448,9 @@ pub fn run(
 /// Rounds of repeating a batch with added roots before it is run with every root.
 const MAX_ROUNDS: usize = 3;
 
+/// Queued batches a worker looks through for one its engine can run as is.
+const LOOKAHEAD: usize = 8;
+
 struct SharedPlan {
     order: Arc<BTreeMap<String, RootPos>>,
     roots: Vec<String>,
@@ -495,15 +498,23 @@ impl Board {
         self.changed.notify_all();
     }
 
-    /// The next batch, or `None` once the run is over.
-    fn take(&self) -> Option<(Batch, Arc<SharedPlan>)> {
+    /// The next batch, or `None` once the run is over: among the next
+    /// [`LOOKAHEAD`], the first that processes none of `processed` (the
+    /// caller's engine can run it without reloading), else the first.
+    fn take(&self, processed: &BTreeSet<usize>) -> Option<(Batch, Arc<SharedPlan>)> {
         let mut state = self.state.lock().unwrap();
         loop {
             if state.finished {
                 return None;
             }
             if let Some(plan) = state.plan.clone() {
-                if let Some(batch) = state.queue.pop_front() {
+                let pick = state
+                    .queue
+                    .iter()
+                    .take(LOOKAHEAD)
+                    .position(|b| b.process.is_disjoint(processed))
+                    .unwrap_or(0);
+                if let Some(batch) = state.queue.remove(pick) {
                     return Some((batch, plan));
                 }
             }
@@ -697,7 +708,8 @@ fn worker_main(
         }
         (None, Err(_)) => close_session(None),
     }
-    while let Some((batch, shared)) = board.take() {
+    let none = BTreeSet::new();
+    while let Some((batch, shared)) = board.take(session.as_ref().map_or(&none, |s| &s.processed)) {
         let reuse = session
             .as_ref()
             .is_some_and(|s| s.processed.is_disjoint(&batch.process));
@@ -863,15 +875,17 @@ fn make_batches(plan: &Plan, selected: &[usize], workers: usize, strategy: Strat
     let groups: Vec<BTreeSet<usize>> = match strategy {
         Strategy::Closure => {
             let total: u64 = selected.iter().map(|&i| plan.cost[i].max(1)).sum();
-            let per = total.div_ceil(target as u64).max(1);
+            let floor = total.div_ceil((workers * 8) as u64).max(1);
+            let mut remaining = total;
             let mut groups = Vec::new();
             let mut current = BTreeSet::new();
             let mut weight = 0u64;
             for &i in selected {
                 current.insert(i);
                 weight += plan.cost[i].max(1);
-                if weight >= per {
+                if weight >= remaining.div_ceil((workers * 2) as u64).max(floor) {
                     groups.push(std::mem::take(&mut current));
+                    remaining -= weight;
                     weight = 0;
                 }
             }
