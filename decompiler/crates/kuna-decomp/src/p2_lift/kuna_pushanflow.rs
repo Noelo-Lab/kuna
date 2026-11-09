@@ -45,6 +45,9 @@ pub struct VmCtx {
     pub vpc_cell: Option<u64>,
     pub ctx: Option<u64>,
     pub in_vm: bool,
+    /// A far value the VPC register took without a fetch, followed once it
+    /// survives a second block.
+    pub pending_vpc: Option<u64>,
 }
 
 /// How a node's control flow was resolved.
@@ -176,6 +179,8 @@ pub struct Explorer<'a> {
     pending_locs: Option<(Vec<(VarId, Loc)>, Option<i128>)>,
     /// Callees in the image already read.
     callees: BTreeMap<u64, Option<CalleeScan>>,
+    /// The native addresses nodes start at this round (handler entries).
+    node_addrs: BTreeSet<u64>,
     pub stats: Stats,
     pub log: Vec<String>,
     retaddr: Option<ExprId>,
@@ -238,6 +243,7 @@ impl<'a> Explorer<'a> {
             escapes: BTreeSet::new(),
             pending_locs: None,
             callees: BTreeMap::new(),
+            node_addrs: BTreeSet::new(),
             stats: Stats::default(),
             log: Vec::new(),
             retaddr: None,
@@ -320,6 +326,7 @@ impl<'a> Explorer<'a> {
     fn explore_round(&mut self) -> FlatCfg {
         self.stats.unresolved = 0;
         self.stats.halts = 0;
+        self.node_addrs.clear();
         let mut cfg = FlatCfg { nodes: Vec::new(), index: BTreeMap::new(), entry: 0, escapes: Vec::new() };
         let mut worklist: VecDeque<NodeId> = VecDeque::new();
         let init = self.initial_state();
@@ -514,6 +521,7 @@ impl<'a> Explorer<'a> {
             preds: from.into_iter().collect(),
         });
         cfg.index.insert(key, id);
+        self.node_addrs.insert(key.addr);
         worklist.push_back(id);
         id
     }
@@ -615,7 +623,7 @@ impl<'a> Explorer<'a> {
             }
         }
         self.image_ptrs.append(&mut emu.image_loads);
-        let next_ctx = self.successor_ctx(&mut state, &traces, ctx);
+        let next_ctx = self.successor_ctx(&mut state, &traces, ctx, &insns);
         let node_exit = match self.fork_on_vpc(cfg, worklist, id, &exit, &mut state, next_ctx) {
             Some(e) => e,
             None => self.resolve_exit(cfg, worklist, id, exit, state, next_ctx, &insns),
@@ -802,10 +810,15 @@ impl<'a> Explorer<'a> {
     /// previous VPC register wins while it qualifies, then the candidate
     /// nearest the previous context, then the one fetched through most.
     /// Failing that, the previous register's value is followed while it stays
-    /// unwritten image memory, and before the VM is entered a register
+    /// unwritten image memory other than handler code (a handler's address
+    /// parked in the register never keys a node); a far move is followed
+    /// only once the register still holds it a block later, as angr's
+    /// find_vip follows the VIP register sequentially from its previous
+    /// candidate (VMProtect's 32-bit vJMP garbles the register before the
+    /// real pop), and before the VM is entered a register
     /// just advanced past a concrete access (a table walk) keys the loop so it
     /// unrolls.  Otherwise the context is inherited.
-    fn successor_ctx(&mut self, state: &mut State, traces: &[InsnTrace], ctx: VmCtx) -> VmCtx {
+    fn successor_ctx(&mut self, state: &mut State, traces: &[InsnTrace], ctx: VmCtx, insns: &[Rc<LiftedInsn>]) -> VmCtx {
         let ps = self.abi.ptr_size;
         let mut fetch_regs: BTreeMap<u64, usize> = BTreeMap::new();
         let mut touched: Vec<u64> = Vec::new();
@@ -881,8 +894,17 @@ impl<'a> Explorer<'a> {
             return next;
         }
         if let Some(r) = ctx.vpc_reg {
-            if let Some(vals) = self.vpc_values(state, r, false) {
-                next.ctx = Some(vpc_key(&vals));
+            let vals = self.vpc_values(state, r, false);
+            if let Some(vals) = vals.filter(|vals| !vals.iter().any(|v| self.node_addrs.contains(v) || insns.iter().any(|i| i.addr == *v))) {
+                let key = vpc_key(&vals);
+                let near = |p: u64| vals.iter().any(|v| v.abs_diff(p) <= VPC_NEAR);
+                let from = ctx.ctx.filter(|p| self.target.is_mapped(*p));
+                if from.is_none_or(near) || ctx.pending_vpc == Some(key) {
+                    next.ctx = Some(key);
+                    next.pending_vpc = None;
+                } else {
+                    next.pending_vpc = Some(key);
+                }
                 return next;
             }
         }
