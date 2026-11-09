@@ -226,3 +226,13 @@ def selected(names: list[str] | None) -> list[Project]:
     if not names:
         return list(PROJECTS.values())
     return [get(n) for n in names]
+
+
+def resolve_run(r: str) -> Path:
+    """A run directory, given as a path or as a name under the results directory."""
+    p = Path(r)
+    if not p.exists():
+        p = RESULTS_DIR / r
+    if not (p / "run.json").exists():
+        raise SystemExit(f"not a javabench run: {r}")
+    return p

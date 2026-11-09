@@ -81,10 +81,14 @@ def main(argv: list[str] | None = None) -> None:
         score_run(args.run, args.project, args.jobs, args.kuna_bin, skip_bytes=args.skip_bytes,
                   javac_jdk=args.javac_jdk, reuse_bytes=args.reuse_bytes)
     elif args.cmd == "report":
+        for r in args.runs:
+            projects.resolve_run(r)
         from .run import report
 
         report(args.runs)
     elif args.cmd == "compare":
+        for r in (args.run_a, args.run_b):
+            projects.resolve_run(r)
         from .run import compare
 
         compare(args.run_a, args.run_b, args.project, args.metric or ["ged", "types", "bytes"],

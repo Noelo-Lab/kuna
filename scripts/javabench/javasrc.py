@@ -13,10 +13,6 @@ import re
 import warnings
 from dataclasses import dataclass, field
 
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore")
-    from tree_sitter_languages import get_parser
-
 _PARSER = None
 
 
@@ -25,6 +21,8 @@ def parser():
     if _PARSER is None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
+            from tree_sitter_languages import get_parser
+
             _PARSER = get_parser("java")
     return _PARSER
 

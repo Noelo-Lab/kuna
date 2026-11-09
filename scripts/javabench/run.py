@@ -88,13 +88,7 @@ def run(decompiler: str, names: list[str] | None, full: bool, jobs: int, run_nam
     return rdir
 
 
-def resolve_run(r: str) -> Path:
-    p = Path(r)
-    if not p.exists():
-        p = P.RESULTS_DIR / r
-    if not (p / "run.json").exists():
-        raise SystemExit(f"not a javabench run: {r}")
-    return p
+resolve_run = P.resolve_run
 
 
 def score_run(r: str, names: list[str] | None, jobs: int, kuna_bin: str | None = None, skip_bytes: bool = False,
