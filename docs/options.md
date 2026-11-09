@@ -932,6 +932,10 @@ Three tiers:
 | a message send renders as sub_<addr>(obj) through an __objc_stubs entry | [`objc`](#objc) |
 | objc_msgSend selector argument renders as dat_<addr> | [`objc`](#objc) |
 | a category method renders as sub_<addr> instead of -[Class(Category) sel] | [`objc`](#objc) |
+| objc_msgSend$setFoo:() renders with no argument although the caller sets one | [`objcsdk`](#objcsdk) |
+| objc_msgSend$setAlpha: shows 0x3ff0000000000000 instead of 1.0 | [`objcsdk`](#objcsdk) |
+| objc_msgSend$setFrame: passes one word where a CGRect was built | [`objcsdk`](#objcsdk) |
+| a framework method's stub returns undefined16 or unsigned long instead of its declared type | [`objcsdk`](#objcsdk) |
 | swift binary functions render as sub_<addr> although swift5 metadata sections are present | [`swiftmetadata`](#swiftmetadata) |
 | type metadata accessors unnamed in a stripped swift mach-o | [`swiftmetadata`](#swiftmetadata) |
 | protocol witnesses and class methods of a stripped swift app have no names | [`swiftmetadata`](#swiftmetadata) |
@@ -3537,6 +3541,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off in the shipped catalog (no IMP is renamed and there is zero behavior change), but ON in the `aggressive` preset, which `auto` selects for any binary under 500 KiB, so it is the default rendering of `kuna decompile`, `decompile-all`, `decompile-project` and the web front-end for a Mach-O image of that size. Flip on for a larger Mach-O Objective-C binary to recover method names — a stripped IMP renders -[Greeter greet:] instead of sub_<addr>, the class/selector strings and the selector/class reference slots are named, and a send through an `__objc_stubs` entry renders `objc_msgSend$<sel>(obj, ...)`. `objcrefconst` (on by default) then folds the reference slots to what they hold.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-objc
 - **Example:** `option objc on`
+
+### `objcsdk` -- <directory> | off, default `off`
+
+- **Symptoms:** objc_msgSend$setFoo:() renders with no argument although the caller sets one; objc_msgSend$setAlpha: shows 0x3ff0000000000000 instead of 1.0; objc_msgSend$setFrame: passes one word where a CGRect was built; a framework method's stub returns undefined16 or unsigned long instead of its declared type.
+- **What it does:** Read Objective-C method signatures from SDK headers for the selectors an image only sends. A selector stub `objc_msgSend$setAlpha:` gets a prototype only when something in the image declares the selector (a class, category or protocol of its own), so a send to a framework method kept the untyped call-site inference and lost its arguments (`objc_msgSend$setHidden:();`). The declarations exist in the SDK the app was built against, and Apple's headers are never shipped with kuna, so this names a directory to read at load: an SDK root (`.../iPhoneOS.sdk`) contributes the `Headers/` of every framework the image links (LC_LOAD_DYLIB), any other directory every `.h` under it. The reader takes the declaration subset of the grammar — `@interface`/`@protocol`/category bodies, `- (ret)sel:(T)a ...;` methods, `@property (attrs) T name;` with `getter=`/`setter=`/`readonly` honoured, `typedef`s so NSInteger, CGFloat, NS_ENUM names and NSString-backed typed enums resolve — and turns each into the type encoding the runtime metadata would carry (`v@:d`), which rides the existing selector-to-prototype path: scalars and pointers pinned to their x/d registers, an HFA struct such as CGRect spread over d0..d3 as `arg_x, arg_y, arg_width, arg_height`, NSRange over two x registers, a larger struct (CGAffineTransform) the pointer the caller passes, a struct return the flat struct the model places in d0..d3. A type the reader cannot encode (an unknown struct, a function pointer) makes the selector unusable rather than guessed; one selector declared two ways across classes is dropped (a differing class-pointer argument is not a disagreement). The image's own declarations always win over the headers. Load-time, env-bridged (KUNA_OBJCSDK): set it before the `load file` it should apply to; nothing derived from the headers is written anywhere.
+- **When to flip:** Off (default): only the image's own metadata types a send. Point it at the SDK the app was built against (`--option objcsdk ~/sdks/iPhoneOS16.5.sdk`) to type every UIKit/Foundation send; on a 1.9 MB iOS app that takes argument-less stub calls from 2,897 to 1,221 of 25,084 and renders `objc_msgSend$setAlpha:(v, 1.0)`, `objc_msgSend$setFrame:(v, r.x, r.y, r.width, r.height)`. A directory of your own headers works the same way. Inert unless `objc` is on.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-objc
+- **Example:** `option objcsdk /path/to/iPhoneOS.sdk`
 
 ### `swiftmetadata` -- on | off, default `off`
 

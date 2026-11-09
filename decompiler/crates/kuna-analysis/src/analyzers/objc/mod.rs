@@ -57,6 +57,7 @@ pub mod kuna_objccats;
 pub mod kuna_objcivars;
 pub mod kuna_objcprotos;
 pub mod kuna_objcrefs;
+pub mod kuna_objcsdk;
 pub mod methods;
 pub mod sections;
 
@@ -112,7 +113,11 @@ impl AnalysisPass for ObjcMetadataPass {
         // The type-mapping context for IMP/ivar prototypes (PR-O2).
         let (ptr_size, word_size) = ctx.arch.data_org();
         let tctx = TypeCtx::new(ctx.arch.types(), ptr_size, word_size);
-        let mut selectors = kuna_objcrefs::Selectors::default();
+        let sdk = match kuna_decomp::kuna_objcsdk::sdk_path_from_env() {
+            Some(root) => kuna_objcsdk::signatures(&root, &kuna_objcsdk::linked_frameworks(ctx.file, ctx.bytes)),
+            None => HashMap::new(),
+        };
+        let mut selectors = kuna_objcrefs::Selectors::with_sdk(sdk);
 
         // Walk `__objc_classlist`: an array of `class_t*` (stride = ptr size). The
         // classes are read first so every instance layout is known before any

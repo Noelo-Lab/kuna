@@ -59,11 +59,27 @@ pub struct Selectors {
     /// Per selector, the one type encoding every method with that selector
     /// agrees on; `None` once two methods disagree.
     encodings: HashMap<String, Option<String>>,
+    /// The SDK headers' declarations (`objcsdk`), consulted for a selector this
+    /// image declares nowhere.
+    sdk: HashMap<String, Option<String>>,
     /// Selector strings that already carry a `sel_` symbol.
     named: HashSet<u64>,
 }
 
 impl Selectors {
+    pub fn with_sdk(sdk: HashMap<String, Option<String>>) -> Selectors {
+        Selectors { sdk, ..Selectors::default() }
+    }
+
+    /// The one encoding known for `selector`: the image's own declarations
+    /// first, the SDK's only when the image has none.
+    pub fn encoding(&self, selector: &str) -> Option<&str> {
+        match self.encodings.get(selector) {
+            Some(e) => e.as_deref(),
+            None => self.sdk.get(selector).and_then(|e| e.as_deref()),
+        }
+    }
+
     /// Record one method's selector and type encoding.
     pub fn record(&mut self, selector: &str, types: Option<&str>) {
         self.encodings
@@ -163,7 +179,7 @@ pub(super) fn emit(
                 selectors.name(out, sel_va, &sel);
                 let name = format!("objc_msgSend${sel}");
                 out.symbols.push(SymFact { addr: stub_va, name: name.clone(), kind: SymKind::Function });
-                if let Some(enc) = selectors.encodings.get(&sel).and_then(|e| e.as_deref()) {
+                if let Some(enc) = selectors.encoding(&sel).filter(|e| img.charge(e.len() as u64)) {
                     if let Some(pieces) = stub_prototype(&name, enc, file.architecture(), arch, tctx) {
                         out.prototypes_at.push((stub_va, pieces));
                     }
@@ -220,10 +236,17 @@ fn push_slot(ranges: &mut Vec<(u64, u64)>, va: u64, ps: u64) {
 /// The prototype of a selector stub from its method's type encoding: the
 /// method's signature without `_cmd`, every parameter pinned to the register
 /// the full `(self, _cmd, …)` call places it in, so a caller renders
-/// `objc_msgSend$greet:(obj, 5)` rather than passing a dead `x1` through. Only
-/// register-class integer and pointer arguments (and on arm64 floating-point
-/// ones) are pinned; a signature with a stack or aggregate argument gets no
-/// prototype and keeps the untyped inference.
+/// `objc_msgSend$greet:(obj, 5)` rather than passing a dead `x1` through.
+/// Register-class integer and pointer arguments take the next `x` register
+/// (`rdi, rdx, …` on x86-64), floating-point ones the next `d` (`xmm`); a
+/// struct passed by value follows [`struct_passing`]: a homogeneous aggregate
+/// of up to four doubles (`CGRect`) over `d` registers, two 8-byte integers
+/// (`NSRange`) over `x` registers, each member its own `argN_k` parameter, and
+/// a larger one (`CGAffineTransform`) the pointer AAPCS64 passes instead; x86-64
+/// has registers only for two members and puts anything larger on the stack.
+/// A struct return is typed only when [`struct_passing`] says it spreads over
+/// registers. A signature outside those shapes gets no prototype and keeps the
+/// untyped inference.
 fn stub_prototype(
     name: &str,
     enc: &str,
@@ -236,30 +259,39 @@ fn stub_prototype(
             &["x0", "x2", "x3", "x4", "x5", "x6", "x7"],
             &["d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7"],
         ),
-        object::Architecture::X86_64 => (&["RDI", "RDX", "RCX", "R8", "R9"], &[]),
+        object::Architecture::X86_64 => (
+            &["RDI", "RDX", "RCX", "R8", "R9"],
+            &["XMM0_Qa", "XMM1_Qa", "XMM2_Qa", "XMM3_Qa", "XMM4_Qa", "XMM5_Qa", "XMM6_Qa", "XMM7_Qa"],
+        ),
         _ => return None,
     };
-    let method = encoding::decode_method(name, enc, tctx, None)?;
-    if method.intypes.len() < 2 {
+    let (ret, args) = encoding::split_method(enc)?;
+    if args.len() < 2 {
         return None;
     }
+    let outtype = if ret.starts_with('{') {
+        let members = encoding::struct_members(&ret)?;
+        if !matches!(struct_passing(machine, &members), StructPass::Spread) {
+            return None;
+        }
+        encoding::struct_type(&ret, tctx)?
+    } else {
+        encoding::decode_ivar_type(&ret, tctx)?
+    };
     let mut pieces = PrototypePieces {
         name: name.to_string(),
-        outtype: method.outtype,
+        outtype: Some(outtype),
         first_var_arg_slot: -1,
         ..Default::default()
     };
     let (mut next_int, mut next_float) = (0usize, 0usize);
-    for (i, (ty, pname)) in method.intypes.iter().zip(&method.innames).enumerate() {
-        if i == 1 {
-            continue;
-        }
+    let mut push = |pieces: &mut PrototypePieces, ty: Rc<Datatype>, pname: String| -> Option<()> {
         let reg = match ty.get_metatype() {
             type_metatype::TYPE_FLOAT => {
                 next_float += 1;
                 float_regs.get(next_float - 1)?
             }
-            _ if is_register_scalar(ty, tctx.ptr_size) => {
+            _ if is_register_scalar(&ty, tctx.ptr_size) => {
                 next_int += 1;
                 int_regs.get(next_int - 1)?
             }
@@ -267,18 +299,70 @@ fn stub_prototype(
         };
         let vn = arch.get_register_varnode(reg.as_bytes()).ok()?;
         let slot = pieces.intypes.len();
-        pieces.intypes.push(Rc::clone(ty));
-        pieces.innames.push(pname.clone());
+        pieces.intypes.push(Rc::clone(&ty));
+        pieces.innames.push(pname);
         pieces.input_storage.push((
             slot as i32,
             ParameterPieces {
                 addr: Address::new(vn.space?, vn.offset),
-                type_: Some(Rc::clone(ty)),
+                type_: Some(ty),
                 flags: parameter_pieces_flags::TYPELOCK | parameter_pieces_flags::NAMELOCK,
             },
         ));
+        Some(())
+    };
+    for (i, raw) in args.iter().enumerate() {
+        if i == 1 {
+            continue;
+        }
+        let pname = if i == 0 { "self".to_string() } else { format!("arg{}", i - 1) };
+        if raw.starts_with('{') {
+            let members = encoding::struct_members(raw)?;
+            let names = encoding::struct_name(raw).map(encoding::member_names).unwrap_or(&[]);
+            match struct_passing(machine, &members) {
+                StructPass::Spread => {
+                    for (k, c) in members.iter().enumerate() {
+                        let ty = encoding::decode_ivar_type(&c.to_string(), tctx)?;
+                        let member = names.get(k).map(|n| n.to_string()).unwrap_or_else(|| k.to_string());
+                        push(&mut pieces, ty, format!("{pname}_{member}"))?;
+                    }
+                }
+                StructPass::ByReference => push(&mut pieces, encoding::decode_ivar_type("^v", tctx)?, pname)?,
+                StructPass::Unmodelled => return None,
+            }
+            continue;
+        }
+        let ty = encoding::decode_ivar_type(raw, tctx)?;
+        push(&mut pieces, ty, pname)?;
     }
     Some(pieces)
+}
+
+/// How a by-value struct of `members` travels under `machine`'s convention.
+enum StructPass {
+    /// One register per member.
+    Spread,
+    /// AAPCS64 passes a pointer to a caller-held copy.
+    ByReference,
+    /// Not expressible with register pins; the stub stays unprototyped.
+    Unmodelled,
+}
+
+/// AAPCS64 spreads a homogeneous aggregate of up to four doubles over `d`
+/// registers and at most two words over `x` registers, and passes a larger
+/// aggregate by reference. System V x86-64 spreads at most two eightbytes of
+/// one class and passes anything larger on the stack.
+fn struct_passing(machine: object::Architecture, members: &[char]) -> StructPass {
+    let all_doubles = members.iter().all(|&c| c == 'd');
+    let all_words = members.iter().all(|&c| c == 'q' || c == 'Q');
+    let max_doubles = if machine == object::Architecture::X86_64 { 2 } else { 4 };
+    if (all_doubles && members.len() <= max_doubles) || (all_words && members.len() <= 2) {
+        StructPass::Spread
+    } else if machine == object::Architecture::Aarch64 && all_doubles {
+        StructPass::ByReference
+    } else {
+        StructPass::Unmodelled
+    }
 }
 
 /// Whether `ty` travels in one integer register: an integer, pointer, boolean or
@@ -430,6 +514,27 @@ mod tests {
         }
         let file = object::File::parse(bytes.as_slice()).expect("parse Mach-O");
         assert_eq!(section_slots(&file, SEC_SELREFS, 8).len(), 6);
+    }
+
+    /// AAPCS64 spreads a homogeneous aggregate of up to four doubles and passes
+    /// a larger one by pointer; System V stops at two eightbytes and passes
+    /// anything larger on the stack, which no register pin can state.
+    #[test]
+    fn struct_passing_follows_each_convention() {
+        use object::Architecture::{Aarch64, X86_64};
+        let rect = ['d'; 4];
+        let size = ['d'; 2];
+        let transform = ['d'; 6];
+        let range = ['Q'; 2];
+        assert!(matches!(struct_passing(Aarch64, &rect), StructPass::Spread));
+        assert!(matches!(struct_passing(Aarch64, &transform), StructPass::ByReference));
+        assert!(matches!(struct_passing(Aarch64, &range), StructPass::Spread));
+        assert!(matches!(struct_passing(Aarch64, &['f', 'f']), StructPass::Unmodelled));
+        assert!(matches!(struct_passing(X86_64, &rect), StructPass::Unmodelled));
+        assert!(matches!(struct_passing(X86_64, &transform), StructPass::Unmodelled));
+        assert!(matches!(struct_passing(X86_64, &size), StructPass::Spread));
+        assert!(matches!(struct_passing(X86_64, &range), StructPass::Spread));
+        assert!(matches!(struct_passing(X86_64, &['q'; 3]), StructPass::Unmodelled));
     }
 
     /// A stub section mapped at the top of the address space wraps instead of
