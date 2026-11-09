@@ -1375,6 +1375,28 @@ tier = "transform"
 symptoms = "// $VF: Couldn't be decompiled with NullPointerException: returnType|a method using ::method on a Foo<?> receiver fails to decompile"
 
 [[option]]
+option = "jvm_fix_catch_loop_back_successor"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "substrate"
+subphase = "catch_statement"
+strength = "HARD"
+rewind = "substrate"
+issue = ""
+summary = "Decompile a loop whose body is a try with two or more catch blocks that all go back to the top of the loop (while (true) { try { return read(); } catch (A e) { retry(); } catch (B e) { retry(); } }) when code precedes the loop: the try/catch is not built until the loop around it has been isolated, as Vineflower already does for a single catch, where Vineflower builds it with its own try block as its successor and fails the method with RuntimeException: computing post reverse post order failed!"
+use_when = "Leave on; turn off only to reproduce Vineflower's failure on such a method."
+example = "kuna decompile app.jar com.ex.Main --option jvm_fix_catch_loop_back_successor off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 CatchStatement.isHead: next, the statement after the try/catch, is taken from the first handler's regular successor even when that is the try block itself (a loop's back edge), so collapseNodesToStatement links the new statement to its own child and DomHelper.findSimpleStatements cannot order the general statement; still present on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "// $VF: Couldn't be decompiled with RuntimeException: computing post reverse post order failed!|a retry loop around a try with several catch blocks fails to decompile"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""

@@ -3131,6 +3131,14 @@ case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB	Kotlin Multifile 
 class	classes/kotlin/kt/pkg/TestMultifile__TestMultifileBKt.class
 expected	expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB.kt
 compare	TestMultifile__TestMultifileBKt.kt	TestMultifile__TestMultifileBKt.java
+case	kuna-fixes-compat/pkg/TestCatchLoopBack	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestCatchLoopBack.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$IoError.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$OtherError.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$Source.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$StateError.class
+expected	kuna-fixes/expected-compat/pkg/TestCatchLoopBack.java
+compare	TestCatchLoopBack.java
 case	kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Factory.class
@@ -3140,6 +3148,14 @@ class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Shape.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$ShapeFactory.class
 expected	kuna-fixes/expected-compat/pkg/TestMethodRefWildcardReceiver.java
 compare	TestMethodRefWildcardReceiver.java
+case	kuna-fixes/pkg/TestCatchLoopBack	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestCatchLoopBack.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$IoError.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$OtherError.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$Source.class
+class	kuna-fixes/classes/pkg/TestCatchLoopBack$StateError.class
+expected	kuna-fixes/expected/pkg/TestCatchLoopBack.java
+compare	TestCatchLoopBack.java
 case	kuna-fixes/pkg/TestMethodRefWildcardReceiver	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class
 class	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver$Factory.class

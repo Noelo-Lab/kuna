@@ -205,3 +205,103 @@ fn every_kuna_fixes_case_matches_in_both_modes() {
         assert!(fixed < failed, "{id}: the fix decompiles no method Vineflower fails on");
     }
 }
+
+mod catch_loop_back_successor {
+    use kuna_jvm::basic_block_statement::BasicBlockStatement;
+    use kuna_jvm::catch_statement::CatchStatement;
+    use kuna_jvm::general_statement::GeneralStatement;
+    use kuna_jvm::kuna_fixes::{self, KunaFixes};
+    use kuna_jvm::rt::{reset_class_scope, try_catch};
+    use kuna_jvm::stat_edge::StatEdge;
+    use kuna_jvm::statement::Statement;
+    use kuna_jvm::struct_method::StructMethod;
+
+    use crate::k2_dom_helper::{fixture_method, oracle_context, start_method};
+
+    fn bb() -> Statement {
+        BasicBlockStatement::create().0
+    }
+
+    fn regular(source: Statement, destination: Statement) {
+        source.add_successor(StatEdge::new(StatEdge::TYPE_REGULAR, source, destination));
+    }
+
+    fn catches(head: Statement, handler: Statement, exception: &str) {
+        head.add_successor(StatEdge::new_exceptions(
+            head,
+            handler,
+            Some(vec![exception.to_string()]),
+        ));
+    }
+
+    /// The region of a retry loop after other code as `DomHelper` first sees it:
+    /// `pre -> head`, `head` leaves by a break, and every handler goes back to `head`.
+    fn retry_loop(mt: StructMethod, handlers: usize) -> (GeneralStatement, Statement) {
+        reset_class_scope();
+        start_method(mt);
+        let (pre, head, exit) = (bb(), bb(), bb());
+        let handlers: Vec<Statement> = (0..handlers).map(|_| bb()).collect();
+        let mut nodes = vec![pre, head];
+        nodes.extend(&handlers);
+        let general = GeneralStatement::new(pre, nodes, None);
+        regular(pre, head);
+        let out = StatEdge::new_closure(StatEdge::TYPE_BREAK, head, exit, Some(general.0));
+        head.add_successor(out);
+        for (i, h) in handlers.iter().enumerate() {
+            catches(head, *h, &format!("pkg/E{i}"));
+            regular(*h, head);
+        }
+        general.set_all_parent();
+        (general, head)
+    }
+
+    #[test]
+    fn a_catch_is_not_built_with_its_own_try_block_as_successor() {
+        let _context = oracle_context();
+        let mt = fixture_method();
+
+        kuna_fixes::activate(KunaFixes::COMPAT);
+        let (general, head) = retry_loop(mt, 2);
+        let catch = CatchStatement::is_head(head).expect("Vineflower builds the try/catch");
+        assert_eq!(catch.get_post(), Some(head));
+        general.collapse_nodes_to_statement(catch);
+        let out = catch.get_successor_edges(StatEdge::TYPE_REGULAR);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].get_destination(), head, "an edge to its own child");
+        let caught = try_catch(|| general.get_post_reverse_post_order_list()).unwrap_err();
+        assert!(
+            caught
+                .message
+                .contains("computing post reverse post order failed!"),
+            "{}",
+            caught.message
+        );
+
+        for fixes in [KunaFixes::DEFAULT, KunaFixes::COMPAT] {
+            kuna_fixes::activate(fixes);
+            for handlers in [2, 3] {
+                let (_, head) = retry_loop(mt, handlers);
+                let built = CatchStatement::is_head(head).is_some();
+                assert_eq!(built, fixes == KunaFixes::COMPAT, "{handlers} handlers");
+            }
+            let (_, head) = retry_loop(mt, 1);
+            assert!(
+                CatchStatement::is_head(head).is_none(),
+                "one handler: built later"
+            );
+
+            reset_class_scope();
+            start_method(mt);
+            let (head, h1, h2, next) = (bb(), bb(), bb(), bb());
+            GeneralStatement::new(head, vec![head, h1, h2, next], None).set_all_parent();
+            regular(head, next);
+            for (i, h) in [h1, h2].into_iter().enumerate() {
+                catches(head, h, &format!("pkg/E{i}"));
+                regular(h, next);
+            }
+            let catch = CatchStatement::is_head(head).expect("a try/catch followed by next");
+            assert_eq!(catch.get_post(), Some(next));
+        }
+        kuna_fixes::activate(KunaFixes::DEFAULT);
+    }
+}

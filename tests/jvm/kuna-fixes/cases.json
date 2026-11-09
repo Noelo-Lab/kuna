@@ -8,6 +8,20 @@
   ],
   "cases": [
     {
+      "id": "pkg/TestCatchLoopBack",
+      "fix": "jvm_fix_catch_loop_back_successor",
+      "class_files": [
+        "pkg/TestCatchLoopBack.class",
+        "pkg/TestCatchLoopBack$IoError.class",
+        "pkg/TestCatchLoopBack$OtherError.class",
+        "pkg/TestCatchLoopBack$Source.class",
+        "pkg/TestCatchLoopBack$StateError.class"
+      ],
+      "source": "src/pkg/TestCatchLoopBack.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone"
+    },
+    {
       "id": "pkg/TestMethodRefWildcardReceiver",
       "fix": "jvm_fix_lambda_wildcard_return",
       "class_files": [

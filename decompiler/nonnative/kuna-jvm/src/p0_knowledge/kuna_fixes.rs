@@ -29,17 +29,25 @@ pub enum KunaFix {
     /// `jvm_fix_lambda_wildcard_return`: a method reference on a receiver
     /// whose type argument is `?` no longer fails type inference.
     LambdaWildcardReturn,
+    /// `jvm_fix_catch_loop_back_successor`: a try/catch is not built at a
+    /// level where its successor would be its own try block.
+    CatchLoopBackSuccessor,
 }
 
 impl KunaFix {
     /// Every fix, in declaration order.
-    pub const ALL: &'static [KunaFix] = &[KunaFix::ReportToKuna, KunaFix::LambdaWildcardReturn];
+    pub const ALL: &'static [KunaFix] = &[
+        KunaFix::ReportToKuna,
+        KunaFix::LambdaWildcardReturn,
+        KunaFix::CatchLoopBackSuccessor,
+    ];
 
     /// The option row that turns this fix on or off.
     pub fn option(self) -> &'static str {
         match self {
             KunaFix::ReportToKuna => "jvm_fix_report_to_kuna",
             KunaFix::LambdaWildcardReturn => "jvm_fix_lambda_wildcard_return",
+            KunaFix::CatchLoopBackSuccessor => "jvm_fix_catch_loop_back_successor",
         }
     }
 

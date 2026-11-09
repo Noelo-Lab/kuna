@@ -318,6 +318,7 @@ option per fix, each on by default and each turned off, all at once, by
 |---|---|---|
 | `jvm_fix_report_to_kuna` | the note under every error comment asks readers to report the class to Vineflower's tracker | it asks for reports to kuna's tracker (a `jvm_error_message` you set still wins) |
 | `jvm_fix_lambda_wildcard_return` | fails a method that passes `x::m` on a receiver typed `Foo<?>` to a generic call, when `m` returns `Foo`'s type variable (`NullPointerException: returnType`; spring-boot's `StructuredLoggingJsonProperties.customizers`) | the method decompiles; the lambda keeps the type its call's context gives it |
+| `jvm_fix_catch_loop_back_successor` | fails a `while (true)` loop after other code whose body is a `try` with two or more `catch` blocks that all go back to the loop (`RuntimeException: computing post reverse post order failed!`; Elasticsearch's `RetryingInputStream.read`) | the method decompiles; the loop is isolated before its `try`/`catch` is built, as for a single `catch` |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs` and a row in
 `options.toml`; each site where kuna departs from the Java asks
