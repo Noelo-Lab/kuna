@@ -8,6 +8,8 @@
 // preferred-line-length 40, kt-collapse-string-concat 1, b02/B02Fields (args[0]) as
 // the current class, and a fresh ImportCollector (so a fresh expression counter)
 // before every column. args[1] is cases.txt; 600 random trees follow its rows.
+// classes/kt5/KtProps (src/) is on the class path, its members carrying the KElement /
+// PropertyMethod attributes KotlinChooser would attach (see attributes()).
 // Trees are prefix forms over B02's leaves (C:TYPE:value, G0:int, G1:int, T:sig,
 // FS:name:desc, FX:class:name:desc), method descriptors spelled with <> for (), plus
 //   V:index:TYPE                      VarExprent(index, VarType.TYPE, null)
@@ -73,10 +75,16 @@ import org.vineflower.kotlin.expr.KFunctionExprent.KFunctionType;
 import org.vineflower.kotlin.pass.CollapseStringConcatPass;
 import org.vineflower.kotlin.pass.ResugarKotlinMethodsPass;
 import org.vineflower.kotlin.stat.KSequenceStatement;
+import org.vineflower.kotlin.struct.KElement;
+import org.vineflower.kotlin.struct.KFunction;
+import org.vineflower.kotlin.struct.KParameter;
+import org.vineflower.kotlin.struct.KProperty;
 import org.vineflower.kotlin.struct.KType;
+import org.vineflower.kt.metadata.deserialization.Flags;
 import org.vineflower.kotlin.util.KExprProcessor;
 import org.vineflower.kotlin.util.KUtils;
 
+import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
@@ -589,6 +597,34 @@ public class GenKt5Oracle {
     return sb.append(')').toString();
   }
 
+  // ---- kt5/KtProps members with the attributes KotlinChooser would attach ----
+
+  static void attributes() {
+    DecompilerContext.getStructContext().addSpace(new File("classes"), true);
+    StructClass cl = DecompilerContext.getStructContext().getClass("kt5/KtProps");
+    property(cl, "getValue", "()I", "value", KProperty.PropertyMethod.GETTER);
+    property(cl, "setValue", "(I)V", "value", KProperty.PropertyMethod.SETTER);
+    property(cl, "getTop", "()I", "top", KProperty.PropertyMethod.GETTER);
+    property(cl, "getBroken", "()I", "broken", null);
+    int infix = Flags.IS_INFIX.toFlags(true);
+    function(cl, "to", "(Ljava/lang/Object;)Ljava/lang/Object;", infix, null);
+    function(cl, "until", "(II)Ljava/lang/Object;", infix, KType.UNIT);
+    function(cl, "plain", "(Ljava/lang/Object;)Ljava/lang/Object;", 0, null);
+    function(cl, "lonely", "()Ljava/lang/Object;", infix, null);
+  }
+
+  static void property(StructClass cl, String method, String desc, String name, KProperty.PropertyMethod accessor) {
+    StructMethod mt = cl.getMethod(method, desc);
+    mt.getAttributes().put(KElement.KEY, new KProperty(name, null, 0, null, null, null, null, null, null, cl));
+    if (accessor != null) mt.getAttributes().put(KProperty.PropertyMethod.KEY, accessor);
+  }
+
+  static void function(StructClass cl, String method, String desc, int flags, KType receiver) {
+    StructMethod mt = cl.getMethod(method, desc);
+    mt.getAttributes().put(KElement.KEY, new KFunction(method, new KParameter[0], List.of(), KType.UNIT, flags, List.of(),
+      w -> null, receiver, null, false, w -> null, cl, mt));
+  }
+
   public static void main(String[] args) throws Exception {
     Map<String, Object> props = new HashMap<>();
     props.put(IFernflowerPreferences.INCLUDE_JAVA_RUNTIME, "");
@@ -603,6 +639,8 @@ public class GenKt5Oracle {
     NODE = new ClassesProcessor.ClassNode(ClassesProcessor.ClassNode.Type.ROOT, CLASS);
     DecompilerContext.setProperty(DecompilerContext.CURRENT_CLASS_NODE, NODE);
     DecompilerContext.setProperty(DecompilerContext.CURRENT_CLASS, CLASS);
+
+    attributes();
 
     for (String line : Files.readAllLines(Paths.get(args[1]))) {
       if (line.isBlank() || line.startsWith("#")) continue;

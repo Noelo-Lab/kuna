@@ -326,3 +326,20 @@ J	break-noclosure
 J	break-noclosure-labeled
 J	continue-noclosure-labeled
 J	regular-labeled
+T	(K (I:kt5/KtProps:getValue:<>I:- V:2:VARTYPE_OBJECT))
+T	(K (I:kt5/KtProps:setValue:<I>V:- V:2:VARTYPE_OBJECT G0:5))
+T	(K (I:kt5/KtProps:getTop:<>I:s))
+T	(K (I:kt5/KtProps:getBroken:<>I:- V:2:VARTYPE_OBJECT))
+T	(K (I:kt5/KtProps:to:<Ljava/lang/Object;>Ljava/lang/Object;:- V:2:VARTYPE_OBJECT V:3:VARTYPE_STRING))
+T	(K (I:kt5/KtProps:until:<II>Ljava/lang/Object;:s G0:1 G0:5))
+T	(K (I:kt5/KtProps:plain:<Ljava/lang/Object;>Ljava/lang/Object;:- V:2:VARTYPE_OBJECT V:3:VARTYPE_STRING))
+T	(K (I:kt5/KtProps:lonely:<>Ljava/lang/Object;:- V:2:VARTYPE_OBJECT))
+T	(K (I:kt5/KtProps:getValue:<>I:- (KF:ADD V:1:VARTYPE_INT G0:1)))
+T	(K (I:kt5/KtProps:to:<Ljava/lang/Object;>Ljava/lang/Object;:- (KK:IF_NULL V:2:VARTYPE_OBJECT V:2:VARTYPE_OBJECT) (KF:ADD V:1:VARTYPE_INT G0:1)))
+T	(K (I:kt5/KtProps:until:<II>Ljava/lang/Object;:s (KF:ADD V:1:VARTYPE_INT G0:1) (KF:SHL V:1:VARTYPE_INT G0:1)))
+T	(K (I:kt5/KtProps:to:<Ljava/lang/Object;>Ljava/lang/Object;:s V:3:VARTYPE_STRING))
+T	(K (I:kt5/KtProps:missing:<>I:- V:2:VARTYPE_OBJECT))
+T	(K (I:kt5/KtProps:setValue:<I>V:s G0:5))
+T	(KF:ADD (K (I:kt5/KtProps:to:<Ljava/lang/Object;>Ljava/lang/Object;:- V:2:VARTYPE_OBJECT V:3:VARTYPE_STRING)) G0:1)
+T	(KF:SHL (K (I:kt5/KtProps:until:<II>Ljava/lang/Object;:s G0:1 G0:5)) G0:1)
+T	(KF:MUL (K (I:kt5/KtProps:getValue:<>I:- V:2:VARTYPE_OBJECT)) G0:2)

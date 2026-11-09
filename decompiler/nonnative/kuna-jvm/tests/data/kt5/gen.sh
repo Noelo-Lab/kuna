@@ -6,6 +6,7 @@ cd "$(dirname "$0")"
 JAR=${1:-$HOME/kwt/jvm/oracle/vineflower-1.12.0.jar}
 JDK=${JDK:-$HOME/kwt/jvm/jdks/jdk17}
 OUT=$(mktemp -d)
+"$JDK/bin/javac" --release 8 -d classes src/kt5/KtProps.java
 (cd "$OUT" && unzip -o -q "$JAR" META-INF/plugins/vineflower-kotlin-0.1.0.jar)
 CP="$JAR:$OUT/META-INF/plugins/vineflower-kotlin-0.1.0.jar"
 "$JDK/bin/javac" -nowarn -cp "$CP" -d "$OUT" GenKt5Oracle.java
