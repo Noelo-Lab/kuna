@@ -2181,7 +2181,8 @@ mod tests {
         // and kuna-deadcascade / dead-op removal takes a dead chain out at once (option deadcascade)
         // and kuna-armpltslot, -armcondskip / the ARM xref rules are inert on the
         // console path
-        assert_eq!(count, 733, "corpus file count drifted");
+        // and kuna-pushan / a VM-protected entry stub devirtualized (option pushan)
+        assert_eq!(count, 734, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

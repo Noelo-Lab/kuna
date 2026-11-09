@@ -100,6 +100,15 @@ use crate::varnode::varnode_flags;
 /// Varnode stack (C++ `typedef map<Address,vector<Varnode *> > VariableStack`).
 pub type VariableStack = BTreeMap<Address, Vec<crate::context::VarnodeId>>;
 
+/// A block [`Heritage::rename_recurse`] has entered and not yet left: its
+/// dom-children (`next` is the first not yet walked) and what it pops on exit.
+struct RenameFrame {
+    children: Vec<BlockId>,
+    next: usize,
+    writelist: Vec<crate::context::VarnodeId>,
+    guarded: Vec<Address>,
+}
+
 // =============================================================================
 // LocationMap (heritage.hh:38, heritage.cc:34)
 // =============================================================================
@@ -1118,6 +1127,12 @@ impl Heritage {
         self.pass > self.get_info(spc).deadcodedelay
     }
 
+    /// (kuna) The first pass at which dead code may be removed in every
+    /// heritaged space.
+    pub fn deadcode_settled_pass(&self) -> int4 {
+        self.infolist.iter().filter(|info| info.space.is_some()).map(|info| info.deadcodedelay + 1).max().unwrap_or(0)
+    }
+
     /// Check dead-code removal safety and mark removal as happened (C++
     /// `deadRemovalAllowedSeen`, `heritage.cc:2847`).
     pub fn dead_removal_allowed_seen(&mut self, spc: &Rc<AddrSpace>) -> bool {
@@ -1855,6 +1870,16 @@ impl Heritage {
             // `killedbycall`.
             let mut effecttype = fc.proto().has_effect(&trans_addr, size);
             if effecttype == effect_type::UNKNOWN_EFFECT
+                && crate::p2_lift::kuna_pushan::call_kills(fd, addr, size)
+            {
+                effecttype = effect_type::KILLEDBYCALL;
+            }
+            if effecttype == effect_type::UNKNOWN_EFFECT
+                && crate::p2_lift::kuna_pushan::call_preserves(fd, addr, size)
+            {
+                effecttype = effect_type::UNAFFECTED;
+            }
+            if effecttype == effect_type::UNKNOWN_EFFECT
                 && ((super::kuna_leafmemory::preserves(fd, fc, addr, size)
                         && !self.protostack_is_aliased(fd, &spc, addr.get_offset(), 1)
                         && !self.protostack_is_aliased(fd, &spc,
@@ -2067,6 +2092,7 @@ impl Heritage {
             if fc.is_input_active()
                 && tryregister
                 && !self.guard_counted_float_input(fd, fc, addr, size)
+                && !self.guard_joined_stack_input(fd, fc, addr, &trans_addr, size)
             {
                 Self::guard_call_input(fd, fc, addr, &trans_addr, size, overlap_level);
             }
@@ -2275,7 +2301,6 @@ impl Heritage {
         addr: &Address,
         size: int4,
     ) -> bool {
-        use kuna_num::opcodes::OpCode;
         let Some(entry) = crate::kuna_varargretreg::counted_float_entry(fd, fc, addr, size) else {
             return false;
         };
@@ -2291,6 +2316,61 @@ impl Heritage {
         if start != estart {
             return false;
         }
+        self.tiled_input_trial(fd, fc, addr, size, &entry, 8)
+    }
+
+    /// (kuna pushan) In a devirtualized body, a stack range that is only the
+    /// low piece of an argument slot passes the PIECE of the ranges of this
+    /// pass that tile the whole slot.  The interpreter reads and writes its
+    /// stack in halves, so heritage refines the slots the program's arguments
+    /// later occupy, and the ordinary guard would hand the call only the low
+    /// half of each.  Returns false when the range is not such a piece.
+    fn guard_joined_stack_input(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        fc: &mut crate::fspec::FuncCallSpecs,
+        addr: &Address,
+        trans_addr: &Address,
+        size: int4,
+    ) -> bool {
+        use crate::fspec::Containment;
+        use kuna_base::space::spacetype;
+        if !fd.kuna_devirtualized() {
+            return false;
+        }
+        let Some(spc) = addr.get_space() else { return false };
+        let slot = spc.get_addr_size() as int4;
+        if spc.get_type() != spacetype::IPTR_SPACEBASE
+            || spc.is_big_endian()
+            || size >= slot
+            || trans_addr.get_offset() % slot as u64 != 0
+        {
+            return false;
+        }
+        if fc.proto().characterize_as_input_param(trans_addr, slot) != Containment::ContainsJustified
+            || fc.get_active_input().which_trial(trans_addr, slot) >= 0
+        {
+            return false;
+        }
+        self.tiled_input_trial(fd, fc, addr, size, trans_addr, slot)
+    }
+
+    /// Register the `width`-byte input trial at `entry` (callee perspective)
+    /// whose first piece is the heritaged range `[addr, size)`: the argument is
+    /// the PIECE of that range and the ranges of this pass that follow it up to
+    /// `width` bytes, the last truncated to fit.  False when they leave a gap.
+    fn tiled_input_trial(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        fc: &mut crate::fspec::FuncCallSpecs,
+        addr: &Address,
+        size: int4,
+        entry: &Address,
+        width: int4,
+    ) -> bool {
+        use kuna_num::opcodes::OpCode;
+        let start = addr.get_offset();
+        let eend = start + width as u64;
         let Some(pos) = (0..self.disjoint.len())
             .find(|&i| self.disjoint.get(i).addr == *addr && self.disjoint.get(i).size == size)
         else {
@@ -2316,12 +2396,12 @@ impl Heritage {
             return false;
         }
         let op = fc.get_op();
-        let call_addr = fd.obank().get(op).expect("guardCountedFloatInput: stale call").get_addr().clone();
+        let call_addr = fd.obank().get(op).expect("tiledInputTrial: stale call").get_addr().clone();
         let big = addr.is_big_endian();
         let mut parts = Vec::with_capacity(tiles.len());
         for (taddr, tsize) in tiles {
             let read = fd.new_varnode(tsize, &taddr, None);
-            fd.vbank_mut().get_mut(read).expect("guardCountedFloatInput: read").set_active_heritage();
+            fd.vbank_mut().get_mut(read).expect("tiledInputTrial: read").set_active_heritage();
             let keep = tsize.min((eend - taddr.get_offset()) as int4);
             if keep == tsize {
                 parts.push(read);
@@ -2332,7 +2412,7 @@ impl Heritage {
             let _ = fd.op_set_input(sub, read, 0);
             let c = fd.new_constant(4, if big { (tsize - keep) as u64 } else { 0 });
             let _ = fd.op_set_input(sub, c, 1);
-            let out = fd.new_unique_out(keep, sub).expect("guardCountedFloatInput: subpiece out");
+            let out = fd.new_unique_out(keep, sub).expect("tiledInputTrial: subpiece out");
             fd.op_insert_before(sub, op);
             parts.push(out);
         }
@@ -2341,16 +2421,16 @@ impl Heritage {
         }
         let mut acc = parts[0];
         for &low in &parts[1..] {
-            let width = fd.vbank().get(acc).map(|v| v.get_size()).unwrap_or(0)
+            let joined = fd.vbank().get(acc).map(|v| v.get_size()).unwrap_or(0)
                 + fd.vbank().get(low).map(|v| v.get_size()).unwrap_or(0);
             let piece = fd.new_op(2, call_addr.clone());
             fd.op_set_opcode(piece, typeop_skeleton(OpCode::CPUI_PIECE));
             let _ = fd.op_set_input(piece, acc, 0);
             let _ = fd.op_set_input(piece, low, 1);
-            acc = fd.new_unique_out(width, piece).expect("guardCountedFloatInput: piece out");
+            acc = fd.new_unique_out(joined, piece).expect("tiledInputTrial: piece out");
             fd.op_insert_before(piece, op);
         }
-        fc.get_active_input().register_trial(&entry, 8);
+        fc.get_active_input().register_trial(entry, width);
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         let _ = fd.op_insert_input(op, acc, nin);
         true
@@ -4185,12 +4265,46 @@ impl Heritage {
     /// The heart of the renaming algorithm (C++ `Heritage::renameRecurse`,
     /// `heritage.cc:2480`).
     ///
-    /// Recursively walks the dominance tree from `bl`; at each block, visits
-    /// ops in execution order, replacing free reads with the top of the
-    /// per-address [`VariableStack`] (creating an input Varnode if the stack is
-    /// empty), pushing writes, threading the INDIRECT "same time" special case,
-    /// filling successor MULTIEQUAL inputs by `getOutRevIndex`, recursing into
-    /// dom-children, then popping this block's writes.
+    /// Walks the dominance tree from `bl` in preorder ([`Self::rename_block`]
+    /// at each block), visiting dom-children in order and popping a block's
+    /// writes once its subtree is done. The walk keeps its own stack of open
+    /// blocks rather than recursing: a large function's dominator tree can be
+    /// tens of thousands of blocks deep.
+    #[allow(clippy::mutable_key_type)]
+    pub fn rename_recurse(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        bl: BlockId,
+        varstack: &mut VariableStack,
+    ) -> KunaResult<()> {
+        let mut open = vec![self.rename_block(fd, bl, varstack)?];
+        while let Some(top) = open.last_mut() {
+            if let Some(&child) = top.children.get(top.next) {
+                top.next += 1;
+                let frame = self.rename_block(fd, child, varstack)?;
+                open.push(frame);
+                continue;
+            }
+            let done = open.pop().expect("rename_recurse: open block");
+            for vnout in done.writelist {
+                let key = fd.vbank().get(vnout).expect("rename_recurse: pop out").get_addr().clone();
+                if let Some(stack) = varstack.get_mut(&key) {
+                    stack.pop();
+                }
+            }
+            for key in done.guarded.iter().rev() {
+                self.load_reads.pop(key);
+            }
+        }
+        Ok(())
+    }
+
+    /// One block of [`Self::rename_recurse`]: visits its ops in execution
+    /// order, replacing free reads with the top of the per-address
+    /// [`VariableStack`] (creating an input Varnode if the stack is empty),
+    /// pushing writes, threading the INDIRECT "same time" special case, and
+    /// filling successor MULTIEQUAL inputs by `getOutRevIndex`. Returns what
+    /// the walk pops after the block's dom-children.
     ///
     /// The input-creation sites use `new_entry_input` for complete ABI slots,
     /// then [`kuna_inputtile::new_tiled_input`](crate::p3_dataflow::kuna_inputtile::new_tiled_input)
@@ -4205,12 +4319,12 @@ impl Heritage {
     // and the offset, neither of which mutates after the key is inserted, so
     // the key ordering is stable — a justified false positive.
     #[allow(clippy::mutable_key_type)]
-    pub fn rename_recurse(
+    fn rename_block(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         bl: BlockId,
         varstack: &mut VariableStack,
-    ) -> KunaResult<()> {
+    ) -> KunaResult<RenameFrame> {
         use kuna_num::opcodes::OpCode;
         let mut writelist: Vec<crate::context::VarnodeId> = Vec::new();
         let mut guarded: Vec<Address> = Vec::new();
@@ -4393,24 +4507,9 @@ impl Heritage {
             }
         }
 
-        // Recurse into dom-children.
         let i = fd.bblocks_ref().block(bl).get_index() as usize;
         let children: Vec<BlockId> = self.domchild[i].clone();
-        for child in children {
-            self.rename_recurse(fd, child, varstack)?;
-        }
-
-        // Pop this block's writes off the stack.
-        for vnout in writelist {
-            let key = fd.vbank().get(vnout).expect("rename_recurse: pop out").get_addr().clone();
-            if let Some(stack) = varstack.get_mut(&key) {
-                stack.pop();
-            }
-        }
-        for key in guarded.iter().rev() {
-            self.load_reads.pop(key);
-        }
-        Ok(())
+        Ok(RenameFrame { children, next: 0, writelist, guarded })
     }
 
     /// (kuna `loadguardreads`) Read each range guarded at the LOAD `op` as
@@ -4510,7 +4609,7 @@ impl Heritage {
     /// Perform the renaming algorithm for the current address ranges (C++
     /// `Heritage::rename`, `heritage.cc:2591`).  Phi placement must already have
     /// happened.
-    // `mutable_key_type`: see the note on [`rename_recurse`](Heritage::rename_recurse).
+    // `mutable_key_type`: see the note on [`rename_block`](Heritage::rename_block).
     #[allow(clippy::mutable_key_type)]
     pub fn rename(&mut self, fd: &mut crate::funcdata::Funcdata) -> KunaResult<()> {
         let bblocks = fd.bblocks_ref();

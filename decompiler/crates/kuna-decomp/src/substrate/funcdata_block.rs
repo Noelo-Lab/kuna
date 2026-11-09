@@ -145,6 +145,7 @@ impl Funcdata {
         let sroot = sb.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
         sb.root = Some(sroot);
         *self.sblocks_mut() = sb;
+        self.kuna_structure_flips_mut().clear();
     }
 
     /// Sort the top-level components of the structured graph into their final

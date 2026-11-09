@@ -317,6 +317,12 @@ kuna_options! { self, p1;
         self.dead_cascade = val;
         Ok(msg)
     },
+    "pushan" => {
+        let (mode, msg) = crate::kuna_pushan::OptionPushan.apply(p1)?;
+        self.pushan_mode = mode;
+        self.pushan_cache.clear();
+        Ok(msg)
+    },
     "loweredswitch" => {
         let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
         self.recover_lowered_switch = val;

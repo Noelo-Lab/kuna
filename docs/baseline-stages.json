@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    4043,
-    4043
+    4049,
+    4049
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1110,8 +1110,8 @@
     "data:KUNA-CATALOG #3: returnpair flagged destructive-as-default so an agent keeps it opt-in",
     "data:KUNA-CATALOG #4: v850indirectbranch is a V850-gated default ()",
     "data:KUNA-CATALOG #5: each settable carries symptom-keyed use_when guidance for the operator",
-    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, securitycheck, structsynth, protoorder, calleevote, rustprobestack)",
-    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, guardarm, loopcondhoist, endptrbound, structsynth, structmerge, structheadless, devectorize, gomorestack, gowritebarrier, ptrauthtrap, rustprobestack)",
+    "data:KUNA-CATALOG #6: angr-derived features carry source_decompiler provenance (loweredswitch, namestyle, stackguard, branchflip, foldcallret, dedupvardecls, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, switchguardbound, switchsharedcase, switchmultipred, unrolledguard, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, securitycheck, structsynth, protoorder, calleevote, rustprobestack, pushan)",
+    "data:KUNA-CATALOG #7: change_kind structure-recovery tags the switch/array/loader/loop/tail-call reconstructors (loweredswitch, switchselector, constselectjump, arraystride, noreturn_propagate, loopbreak_recovery, gotoreduce, crossjumprevert, taildup, dedupitetail, returndup, iteregion, iteexpr, tailcalljump, regionstructure, regionlooprefine, regionedgeorder, ifelseflatten, earlyreturn, switchreturn, condfold, iteboolean, paramcopyhoist, guardarm, loopcondhoist, endptrbound, structsynth, structmerge, structheadless, devectorize, gomorestack, gowritebarrier, ptrauthtrap, rustprobestack, pushan)",
     "data:KUNA-CATALOG #8: the opt-in-tool change_kind counts explicitly opted transformations ()",
     "data:KUNA-CATALOG #9: every settable carries a machine-readable change_kind so an LLM can judge default-on eligibility",
     "data:KUNA-CONDCALL #1: the instruction after a blgt is not a function",
@@ -1713,6 +1713,12 @@
     "data:PTRAUTHTRAP #7: a guard whose both arms trap is left whole",
     "data:PTRAUTHTRAP #8: a compare guarding brk #0xc470 keeps its check, plain AArch64 and arm64e",
     "data:PTRAUTHTRAP #9: both brk #0xc470 traps stay",
+    "data:PUSHAN #1: off, the stub decompiles to an empty body",
+    "data:PUSHAN #2: auto, the function is devirtualized",
+    "data:PUSHAN #3: auto, the virtual argument becomes a parameter",
+    "data:PUSHAN #4: auto, the virtual JZ is a test of the argument",
+    "data:PUSHAN #5: auto, the taken arm returns its constant",
+    "data:PUSHAN #6: auto, the fall-through arm returns the virtual ADD",
     "data:PUSHIMMEDIATERET #1: the unpacker call is preserved",
     "data:PUSHIMMEDIATERET #2: the complete tail-transfer statement is emitted",
     "data:PUSHPADREAD #1: the pad push never reads as an argument the call passes on",

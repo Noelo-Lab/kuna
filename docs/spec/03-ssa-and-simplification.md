@@ -157,7 +157,9 @@ MULTIEQUAL placement order and is therefore observable output — and
 input per in-edge at the head of every merge block. Renaming is the classic
 Cytron et al. dominator-tree stack walk
 (`heritage.rs (Heritage::rename_recurse)`): reads take the top of the
-per-address `VariableStack`, writes push, and the walk pops on exit. A read
+per-address `VariableStack`, writes push, and the walk pops on exit. The walk
+keeps an explicit stack of open blocks instead of recursing, since the dominator
+tree of a large function can be tens of thousands of blocks deep. A read
 whose stack is *empty* has no reaching definition — it is materialized as a
 formal **input varnode** of the function; this is how registers read before
 being written become parameters-in-waiting for phase 04. One carve-out: an
@@ -3385,6 +3387,84 @@ into it supplied that second name, so the repetition survived.
 Always on. Upstream Ghidra's rendering prints the same `undefined1 auVarN [16]`
 blobs — this is a deliberate readability divergence, not a fidelity fix, and it
 is inert on every function with no wide multiply.
+
+**Devirtualized residue** (rides on option `pushan`, no option of its own) —
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pushanrules.rs
+(RulePushanLogic)`, `(RulePushanArith)`, `(RulePushanPiece)` and
+`(RulePushanCarry)`, four oppool1 rules whose first test is
+`Funcdata::kuna_devirtualized` — set by `kuna_pushan.rs (adopt)` only for a
+body pushan replaced with its synthetic program (§2.11). Every other function, and so the whole datatest corpus, keeps
+its output byte for byte, and the gate costs one emptiness check per visited
+op. The rules clean up what a VMProtect interpreter leaves after
+devirtualization: its handlers build every logic operation from NOR gates
+(`NOT a` is `NOR(a, a)`, read from two separate VM stack slots, so the two
+operands are equal values computed by distinct ops), write `x - y` as
+`~(~x + y)`, and split a value across two stack cells that heritage then joins
+with a PIECE. Each rewrite is an exact bitvector identity and is taken only when
+the result is strictly smaller than the expression it replaces, so the rules
+reach a fixpoint with each other and with the upstream rules.
+
+`RulePushanLogic` fires on INT_AND, INT_OR, INT_XOR and INT_NEGATE, and on an
+INT_ADD of two non-constant operands, at least one of them a logic operator,
+whose non-zero masks are disjoint (no carry can occur, so the sum is an OR — the
+way a flag-merging handler joins two masked halves of a word). It gathers the
+tree of such operators below the root, at most 64 nodes, also through a
+truncation (SUBPIECE at offset 0) or a zero extension of one: both commute
+with the bitwise operators provided a NOT under an extension is taken at the
+narrower width, and each leaf remembers how many of its low bytes reach the
+root. Everything else is a leaf, and two leaves are the same leaf when they are
+the same constant, or reach the root through the same width and compute the
+same value through pure operators up to five levels deep. With at most six non-constant leaves it evaluates the tree on each
+assignment of all-zeros or all-ones to every leaf, each leaf restricted to its
+non-zero mask and constants taken as they are. Because the operators act on
+each bit independently, these assignments cover every input exactly. Bit
+positions are then grouped by the column of results they produce: a group that
+is always zero or always one is a constant mask, and every other group is a
+boolean function of the at most three leaves it depends on (a group needing more
+declines the rule). That function is replaced by its minimal formula from a
+table of the cheapest NOT/AND/OR/XOR formula of every function of one, two or
+three variables, built once by enumerating formulas in order of size. The
+candidates are a group's formula alone, masked to the non-constant bits and
+OR'ed with the constant ones, the XOR of a formula with the mask of a
+complementary group, and the OR of every group's formula with or without its
+mask. Each candidate is checked on every assignment and the cheapest correct
+one replaces the root when it costs less than the tree (one per operator, one
+and a half per merging addition, a half per truncation or extension a leaf
+needs or the tree passes through, nothing for an operator over constants). This
+is what turns `~(~v & ~c) & ~(v & ~(~c | ~c))` into `v ^ c`, `~(~x & ~x & 0xffff)
+& 0x815` into `x & 0x815`, and the tested bit of a re-assembled flags word into
+the one flag term that can set it.
+
+`RulePushanArith` fires on INT_NEGATE, INT_ADD, INT_SUB, INT_MULT by a constant
+and INT_2COMP. It reads the tree of those operators below the root (at most 64)
+as a linear form over the leaves modulo the root's width, with `~x` taken as
+`-x - 1`; equal leaves (the same test as above) cancel. It rewrites only a tree
+containing a NOT whose linear form is cheaper: one operation per term with a
+coefficient other than one, one addition per further term and one for a nonzero
+constant, or a single NOT when the form is exactly `-x - 1`. The result is built
+in the canonical shape the upstream rules use (`x + y * -1`), so `~(~x + y)`
+prints `x - y`, `~-~r + 0xc65cfe5f` prints `0xc65cfe5d - r`, and `~x + 1` prints
+`-x`, while `~x + 5` (no cheaper) is left alone.
+
+`RulePushanPiece` fires on PIECE. It describes each half as a run of bits of a
+deeper value, following SUBPIECE, logical right shifts by a constant, ZEXT and
+COPY (a SUBPIECE is followed only when the run stays inside it or the
+SUBPIECE reaches the top of its input, so zero fill agrees). When the high half
+is the run directly above the low half's run in the same value, the PIECE
+becomes a COPY of an existing varnode holding exactly the joined run (one of the
+intermediates along either chain), otherwise a COPY, SUBPIECE, logical right
+shift, or a shift followed by a truncation or zero extension of that value. The
+hash loop of a VMProtect "ultra" body reads `v ^= v >> 3` again only after the
+two halves of `v >> 3`, spilled to the 6-byte and 2-byte VM stack cells, are
+recognised as one shift.
+
+`RulePushanCarry` fires on INT_CARRY and INT_SCARRY. An addition whose operands
+share no set bit (disjoint non-zero masks, or one operand the NOT of a value
+equal to the other) carries out of no position, so neither the unsigned carry
+nor the signed overflow can be set, and the op becomes the constant 0. The
+flags word VMProtect pushes after its NOR-gate NOT carries `CARRY4(~v, v)` and
+`SCARRY4(~v, v)` terms that this removes, after which the logic rule reduces the
+masked word to the flags that really vary.
 
 ## 3.6 Early passes
 

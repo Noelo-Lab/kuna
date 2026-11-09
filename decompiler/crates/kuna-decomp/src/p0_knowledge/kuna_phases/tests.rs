@@ -38,13 +38,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_209() {
-    assert_eq!(kuna_num_settables(), 209);
-    assert_eq!(SETTABLE_TABLE.len(), 209);
+fn settable_count_is_210() {
+    assert_eq!(kuna_num_settables(), 210);
+    assert_eq!(SETTABLE_TABLE.len(), 210);
 }
 
 #[test]
-fn tier_counts_are_42_core_115_transform_52_analysis() {
+fn tier_counts_are_42_core_116_transform_52_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,8 @@ fn tier_counts_are_42_core_115_transform_52_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (42, 115, 52));
+    // +1 transform for `pushan` (VM devirtualization).
+    assert_eq!((core, transform, analysis), (42, 116, 52));
 }
 
 #[test]
@@ -615,6 +616,10 @@ fn option_values_live_value_present_for_73() {
                             // (kuna) `gowritebarrier`: the same MODE shape;
                             // its live value is `Architecture::go_write_barrier`.
                             | "gowritebarrier"
+                            // (kuna) `pushan`: the same MODE shape
+                            // (`off|auto|on`); its live value is
+                            // `Architecture::pushan_mode`.
+                            | "pushan"
                             // (kuna) `impliedrefs`/`termdup` take an INTEGER
                             // (`2|3|4|<n>`), which the codegen live reader (a
                             // bool `live_true`/`live_false` pair) cannot
@@ -1036,7 +1041,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftcall`, beside that.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
-    assert_eq!(json.matches("},\n").count(), 208);
+    // +1 for `pushan`; its P2 row sits beside `loweredswitch`.
+    assert_eq!(json.matches("},\n").count(), 209);
 }
 
 #[test]

@@ -483,6 +483,11 @@ pub fn universal_sched(
         rrow!("doublein", "doubleprecis", crate::double::RuleDoubleIn::new("doubleprecis")),
         rrow!("doubleout", "doubleprecis", crate::double::RuleDoubleOut::new("doubleprecis")),
         rrow!("stackprobeloop", "analysis", crate::kuna_stackprobeloop::RuleStackProbeLoop::new("analysis")),
+        // (kuna pushan) inert outside a devirtualized body.
+        rrow!("pushanlogic", "analysis", crate::kuna_pushanrules::RulePushanLogic::new("analysis")),
+        rrow!("pushanarith", "analysis", crate::kuna_pushanrules::RulePushanArith::new("analysis")),
+        rrow!("pushanpiece", "analysis", crate::kuna_pushanrules::RulePushanPiece::new("analysis")),
+        rrow!("pushancarry", "analysis", crate::kuna_pushanrules::RulePushanCarry::new("analysis")),
     ];
     oppool1_rules.extend(extra_pool_rules);
 

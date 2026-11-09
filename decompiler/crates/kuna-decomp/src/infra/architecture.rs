@@ -728,6 +728,13 @@ pub struct Architecture {
     /// (kuna) Reconstruct a compiler-lowered comparison cascade into a switch
     /// (C++ `recover_lowered_switch`).
     pub recover_lowered_switch: bool,
+    /// (kuna `pushan`) Devirtualize VM-protected functions: 0 off, 1 auto, 2 on.
+    pub pushan_mode: u8,
+    /// (kuna `pushan`) Devirtualized programs by entry offset (restarts re-flow).
+    pub pushan_cache: std::collections::BTreeMap<u64, Rc<crate::kuna_pushan::PushanProgram>>,
+    /// (kuna `pushan`) The image's executable sections large enough to hold an
+    /// interpreter, computed once; `auto` never looks further without two.
+    pub pushan_vm_sections: Option<Vec<(u64, u64)>>,
     /// (kuna) An unread zero element right after an open stack character
     /// array is that array's terminator, and the array ends after it (option
     /// `nulterminator`).  See [`crate::p6_variables::kuna_nulterminator`].
@@ -2278,6 +2285,9 @@ impl Architecture {
             libc_names: false, // (kuna) option libcnames; reset_defaults sets the shipped default
             recover_array_stride: false,
             recover_lowered_switch: false,
+            pushan_mode: 0, // (kuna) option pushan; reset_defaults sets the shipped default
+            pushan_cache: std::collections::BTreeMap::new(),
+            pushan_vm_sections: None,
             nul_terminator: false,
             end_ptr_bound: true,
             cast_object: false, // (kuna) option castobject; reset_defaults sets the shipped default
@@ -2577,6 +2587,7 @@ impl Architecture {
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
         self.recover_array_stride = true; // (kuna) DIV-3 default-on (GH-8724)
         self.recover_lowered_switch = true; // (kuna) default-on (angr port)
+        self.pushan_mode = crate::kuna_pushan::MODE_AUTO; // (kuna) option pushan default auto: a function whose entry transfers into another executable section is devirtualized
         self.cast_object = true; // (kuna) option castobject default-on: a stack local whose address only fills declared int * parameters, whose readers agree, is declared int; evidence in docs/features/castobject/default-on-evaluation.md
         self.end_ptr_bound = true; // (kuna) DIV-177 default-on: a pointer walk's end bound renders on its own buffer (0/675 ablation)
         self.call_mechanism_mode = crate::kuna_callmechanisms::CallMechanismMode::Auto; // (kuna) option callmechanisms default `auto`: the PPC64 cspecs' uponreturn stores r2Save at 0x28(r1), the TOC save slot only under ELFv1, so on an image whose ELFv1 function descriptors the loader validated (a linked image's or an object's .opd) a return payload is installed only at a call whose next instruction reloads the slot it stores. Gated on that loader fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `on` installs them on any image, `off` on none
@@ -3156,7 +3167,7 @@ impl Architecture {
         self.build_arch_handle_for_entry(None)
     }
 
-    fn build_arch_handle_for_entry(&self, entry: Option<&Address>) -> ArchHandle {
+    pub(crate) fn build_arch_handle_for_entry(&self, entry: Option<&Address>) -> ArchHandle {
         let manage = self.translate.manager_rc();
         let mut ctx = ArchContext::new_shared(manage);
         ctx.call_mechanisms = Rc::clone(&self.call_mechanisms);

@@ -5,7 +5,7 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, subphase=40, surface=98, settable=75
+# Counts (asserted in tests): group=39, subphase=40, surface=98, settable=76
 # (tiers: 16 core / 35 transform / 24 analysis).
 
 # ---------------------------------------------------------------------------
@@ -2363,6 +2363,25 @@ inspiration = "angr LoweredSwitchSimplifier (angr/analyses/decompiler/optimizati
 change_kind = "structure-recovery"
 tier = "transform"
 symptoms = "switch rendered as nested if/else-if compare tree over one variable|binary-search cascade of constant compares where source had a switch|flip off to keep the compiler's lowered compare-tree rendering"
+
+[[settable]]
+option = "pushan"
+values = "auto|on|off"
+default = "auto"
+destructive = false
+phase = "P2"
+subphase = "flow-follow"
+strength = "HARD"
+rewind = "P2"
+issue = "pushan-devirtualization"
+summary = "Devirtualize a function protected by a VM-based obfuscator (VMProtect, Themida). Port of Pushan (Sudhir et al., NDSS 2027; angr PR #7680): the interpreter is emulated symbolically without path constraints, every block keyed by native address and virtual program counter, so the protected program's own control flow is recovered as a flat graph -- constant guards prune, symbolic guards keep both sides, computed targets are enumerated by case-splitting their boolean atoms, and locations that differ where paths meet are symbolized in a further round until the graph is stable. The graph is emitted as synthetic p-code (bytecode fetches, key arithmetic and handler addresses folded to constants, obfuscated stack-pointer arithmetic rebuilt as sp+k) that the ordinary flow follower lifts, and the rest of the decompiler runs unchanged on it."
+use_when = "auto (default) devirtualizes a function whose direct native flow (up to 4096 instructions) transfers into a separate executable section of at least 64 KiB -- the stub a protector leaves at the original entry; it costs nothing on an unprotected function. Set on to force the analysis on a function the stub heuristic misses (a Themida function whose body was replaced in place, a custom VM entered by a plain jump); set off to see the raw interpreter again or when the analysis runs long on a very large protected function."
+example = "option pushan on"
+source_decompiler = "angr"
+inspiration = "Pushan: Trace-Free Deobfuscation of Virtualization-Obfuscated Binaries (Sudhir, Basque, Gibbs et al., NDSS 2027), angr PR #7680 (VMDeobfuscation / CFGVMDeobfuscation)"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "a function decompiles to a two-line stub that tail-calls into an unnamed section of the binary|the decompiled body is an interpreter dispatch loop: fetches through a pointer into a high-entropy section, a rolling xor key, computed jumps through a handler table|VMProtect .vmp0/.vmp1 or renamed sections and pushfq/popfq register-save sequences at the function entry|hundreds of thousands of instructions reachable from one function with no recognizable program logic"
 
 [[settable]]
 option = "callmechanisms"
