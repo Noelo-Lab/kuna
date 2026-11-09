@@ -62,15 +62,15 @@ Measured on one 80-core machine with both tools run back to back, one project at
 kuna with default flags, Vineflower 1.12.0 on JDK 25 (Temurin 25.0.5) with `-thr=12`, each
 run once while the machine had other work. Wall and CPU time are the decompiler process's
 (user plus system); peak memory is the larger of its own maximum resident set and the
-sampled resident set of its process tree, written as javabench's MiB figure over 1,000.
+sampled resident set of its process tree.
 
 | Project | Methods | Perfect on all metrics (kuna = Vineflower) | kuna wall / CPU / peak memory | Vineflower wall / CPU / peak memory |
 |---|---|---|---|---|
-| guava | 12,167 | 91.86% | 2.1 s / 41 s / 1.5 GB | 4.5 s / 87 s / 3.9 GB |
-| spring-boot | 3,967 | 88.98% | 0.7 s / 10 s / 0.7 GB | 2.7 s / 49 s / 1.7 GB |
-| spring-framework | 13,874 | 90.83% | 3.2 s / 47 s / 1.5 GB | 6.0 s / 119 s / 4.8 GB |
-| ghidra | 18,153 | 80.05% | 3.4 s / 70 s / 1.5 GB | 7.1 s / 138 s / 7.1 GB |
-| elasticsearch | 62,077 | 84.20% | 17.7 s / 357 s / 7.6 GB | 29.2 s / 395 s / 11.8 GB |
+| guava | 12,167 | 91.86% | 2.1 s / 41 s / 1.5 GiB | 4.5 s / 87 s / 3.8 GiB |
+| spring-boot | 3,967 | 88.98% | 0.7 s / 10 s / 0.7 GiB | 2.7 s / 49 s / 1.6 GiB |
+| spring-framework | 13,874 | 90.83% | 3.2 s / 47 s / 1.5 GiB | 6.0 s / 119 s / 4.7 GiB |
+| ghidra | 18,153 | 80.05% | 3.4 s / 70 s / 1.4 GiB | 7.1 s / 138 s / 6.9 GiB |
+| elasticsearch | 62,077 | 84.20% | 17.7 s / 357 s / 7.4 GiB | 29.2 s / 395 s / 11.5 GiB |
 
 Every score field is identical between the two tools on all 110,238 methods: the
 scoreboards match, and so does every per-method record (GED, type and bytecode scores,
