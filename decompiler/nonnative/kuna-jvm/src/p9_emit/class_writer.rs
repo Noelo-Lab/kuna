@@ -7,6 +7,10 @@
 //! `fabric:javadoc` property is `DecompilerContext::get_javadoc_provider`.
 //! A [`Caught`] has no stack trace or cause: `collectErrorLines` reports its
 //! throw location as the only frame.
+//!
+//! kuna fix `statement_as_expression` (`kuna_fixes`): in
+//! `class_lambda_to_java`, a lambda whose lone exprent is statement-only (an
+//! `assert`) gets a block body, where Vineflower writes it as an expression body.
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -45,6 +49,8 @@ use crate::import_collector::ImportCollector;
 use crate::initializer_processor::InitializerProcessor;
 use crate::interpreter_util::InterpreterUtil;
 use crate::java_pass_location::JavaPassLocation;
+use crate::kuna_fix_statement_as_expression;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::kuna_spans;
 use crate::link_constant::LinkConstant;
 use crate::method_descriptor::MethodDescriptor;
@@ -603,7 +609,16 @@ impl ClassWriter {
                                     .try_as_exit()
                                     .is_some_and(|e| e.get_exit_type() == ExitType::Throw);
 
-                                if !is_var_definition && !is_throw {
+                                let is_expression =
+                                    if kuna_fixes::enabled(KunaFix::StatementAsExpression) {
+                                        kuna_fix_statement_as_expression::is_lambda_expression_body(
+                                            first_expr,
+                                        )
+                                    } else {
+                                        !is_var_definition && !is_throw
+                                    };
+
+                                if is_expression {
                                     simple_lambda = true;
                                     let mw = method_wrapper.unwrap();
                                     let outer_wrapper =

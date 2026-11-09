@@ -20,6 +20,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 
 | Case | Fix id | Compiled with | With the fix |
 |---|---|---|---|
+| `pkg/TestAssertExpressionPosition` | `statement_as_expression` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects |
 | `pkg/TestCapturedReceiverKt` | `kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
 | `pkg/TestCatchLoopBack` | `catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
 | `pkg/TestDefaultArgCompoundBranch` | `kt_default_arg_compound_branch` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7` |
@@ -34,6 +35,65 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestTryCatchNotFlag` | `twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 
 ## Diffs (compat -> default)
+
+### `pkg/TestAssertExpressionPosition`
+
+```diff
+--- expected-compat/pkg/TestAssertExpressionPosition.java
++++ expected/pkg/TestAssertExpressionPosition.java
+@@ -17,19 +17,27 @@
+    }
+ 
+    void consistent() {
+-      each((key, value) -> assert value.equals(key) : "mismatch key=[" + key + "]");
++      each((key, value) -> {
++         assert value.equals(key) : "mismatch key=[" + key + "]";
++      });
+    }
+ 
+    void noFailure(Object item) {
+-      put(item, e -> assert e == null : e);
++      put(item, e -> {
++         assert e == null : e;
++      });
+    }
+ 
+    void unreachable(String name) {
+-      run(() -> assert false : name);
++      run(() -> {
++         assert false : name;
++      });
+    }
+ 
+    void plain() {
+-      run(() -> assert this.left > 0);
++      run(() -> {
++         assert this.left > 0;
++      });
+    }
+ 
+    int drain(TestAssertExpressionPosition.Source s) {
+@@ -38,8 +46,9 @@
+       Object ref;
+       while ((ref = s.ref()) != null) {
+          n += ref.hashCode();
++         boolean more = true;
+ 
+-         for (boolean more = true; more; assert s.valid()) {
++         while (more) {
+             n += s.next();
+             if (s.empty()) {
+                more = false;
+@@ -49,6 +58,8 @@
+                n -= this.left;
+                more = false;
+             }
++
++            assert s.valid();
+          }
+       }
+ 
+```
 
 ### `pkg/TestCapturedReceiverKt`
 

@@ -164,6 +164,20 @@
       "source": "src/pkg/TestDiamondExternalClass.java",
       "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
       "summary": "every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are"
+    },
+    {
+      "id": "pkg/TestAssertExpressionPosition",
+      "fix": "statement_as_expression",
+      "class_files": [
+        "pkg/TestAssertExpressionPosition.class",
+        "pkg/TestAssertExpressionPosition$Pairs.class",
+        "pkg/TestAssertExpressionPosition$Runnable.class",
+        "pkg/TestAssertExpressionPosition$Sink.class",
+        "pkg/TestAssertExpressionPosition$Source.class"
+      ],
+      "source": "src/pkg/TestAssertExpressionPosition.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "`consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects"
     }
   ]
 }

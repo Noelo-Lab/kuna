@@ -63,6 +63,9 @@ pub enum KunaFix {
     /// The fix `external_class_diamond`: `new C(..)` of a class outside the
     /// input whose expected type is a parameterization of `C` keeps its diamond.
     ExternalClassDiamond,
+    /// `statement_as_expression`: a statement-only exprent (an
+    /// `assert`) is not written as a lambda's expression body or a `for` update.
+    StatementAsExpression,
 }
 
 impl KunaFix {
@@ -81,6 +84,7 @@ impl KunaFix {
         KunaFix::GenericParentWithoutSignature,
         KunaFix::SelfReferencingLambda,
         KunaFix::ExternalClassDiamond,
+        KunaFix::StatementAsExpression,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -99,6 +103,7 @@ impl KunaFix {
             KunaFix::GenericParentWithoutSignature => "generic_parent_without_signature",
             KunaFix::SelfReferencingLambda => "self_referencing_lambda",
             KunaFix::ExternalClassDiamond => "external_class_diamond",
+            KunaFix::StatementAsExpression => "statement_as_expression",
         }
     }
 

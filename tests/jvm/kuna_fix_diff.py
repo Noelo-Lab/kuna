@@ -87,7 +87,128 @@ def external_class_diamond(old, new):
     return found and out == a
 
 
-RECOGNISERS = {'external_class_diamond': external_class_diamond}
+def block_end(toks, i):
+    """The index of the token that closes the bracket at toks[i]."""
+    pairs = {'(': ')', '{': '}', '[': ']'}
+    depth = 0
+    for j in range(i, len(toks)):
+        if toks[j] in pairs:
+            depth += 1
+        elif toks[j] in pairs.values():
+            depth -= 1
+            if depth == 0:
+                return j
+    return None
+
+
+def top_level(toks, start, end):
+    """The indices in toks[start:end] at bracket depth 0 (relative to start)."""
+    depth, out = 0, []
+    for j in range(start, end):
+        if depth == 0:
+            out.append(j)
+        if toks[j] in '({[':
+            depth += 1
+        elif toks[j] in ')}]':
+            depth -= 1
+    return out
+
+
+def unblock_lambda_asserts(toks):
+    """`-> { assert X ; }` written back as `-> assert X`."""
+    out, i, found = [], 0, False
+    while i < len(toks):
+        if toks[i:i + 4] == ['-', '>', '{', 'assert']:
+            end = block_end(toks, i + 2)
+            if end is not None and toks[end - 1] == ';' and \
+                    [j for j in top_level(toks, i + 3, end) if toks[j] == ';'] == [end - 1]:
+                out += ['-', '>'] + toks[i + 3:end - 1]
+                i, found = end + 1, True
+                continue
+        out.append(toks[i])
+        i += 1
+    return out, found
+
+
+def statement_start(toks, end, floor):
+    """The first token of the statement that ends just before toks[end], in a block starting at floor."""
+    start, depth = floor, 0
+    for j in range(floor, end):
+        if toks[j] in '({[':
+            depth += 1
+        elif toks[j] in ')}]':
+            depth -= 1
+            if depth == 0 and toks[j] == '}':
+                start = j + 1
+        elif toks[j] == ';' and depth == 0:
+            start = j + 1
+    return start
+
+
+def declarations(toks, end):
+    """The (start, semicolon) of each top-level statement before toks[end] shaped `T v = E ;`."""
+    start, depth, out = 0, 0, []
+    for j in range(end):
+        if toks[j] in '({[':
+            depth += 1
+        elif toks[j] in ')}]':
+            depth -= 1
+            if depth == 0 and toks[j] == '}':
+                start = j + 1
+        elif toks[j] == ';' and depth == 0:
+            eq = [k for k in top_level(toks, start, j) if toks[k] == '=']
+            if eq and eq[0] - start >= 2 and toks[eq[0] - 1] not in '.)]>':
+                out.append((start, j))
+            start = j + 1
+    return out
+
+
+def unwhile_assert_updates(toks):
+    """`INIT ; while ( C ) { ... assert X ; }` written back as `for ( INIT ; C ; assert X ) { ... }`
+    (the closing brace may lie past the end of the hunks); INIT may also be the initializer of an
+    earlier declaration `T v = E ;`, which the for form writes as `T v ;` and `for ( v = E ; ...`."""
+    for w in range(len(toks)):
+        if toks[w] != 'while' or w + 1 >= len(toks) or toks[w + 1] != '(':
+            continue
+        cond_end = block_end(toks, w + 1)
+        if cond_end is None or cond_end + 1 >= len(toks) or toks[cond_end + 1] != '{':
+            continue
+        body_end = block_end(toks, cond_end + 1)
+        closed = body_end is not None
+        if not closed:
+            body_end = len(toks)
+        if toks[body_end - 1] != ';':
+            continue
+        upd = statement_start(toks, body_end - 1, cond_end + 2)
+        if toks[upd] != 'assert':
+            continue
+        cond, update, body = toks[w + 2:cond_end], toks[upd:body_end - 1], toks[cond_end + 2:upd]
+        tail = body + (['}'] + toks[body_end + 1:] if closed else [])
+        for init_start in ([statement_start(toks, w - 1, 0)] if w > 0 and toks[w - 1] == ';' else []) + [w]:
+            init = toks[init_start:w - 1] if init_start < w else []
+            yield toks[:init_start] + ['for', '('] + init + [';'] + cond + [';'] + update + [')', '{'] + tail
+        for start, end in declarations(toks, w):
+            eq = toks.index('=', start)
+            init = toks[eq - 1:end]
+            yield (toks[:eq] + [';'] + toks[end + 1:w] + ['for', '('] + init + [';'] + cond + [';'] + update
+                   + [')', '{'] + tail)
+
+
+def statement_as_expression(old, new):
+    """statement_as_expression: token for token, an expression lambda `-> assert X` became
+    `-> { assert X; }`, or `for (INIT; C; assert X) { ... }` became `INIT; while (C) { ... assert X; }`,
+    the lines possibly reflowed."""
+    a, b = tokens(old), tokens(new)
+    b, found = unblock_lambda_asserts(b)
+    if found and b == a:
+        return True
+    return any(candidate == a for candidate in unwhile_assert_updates(b))
+
+
+RECOGNISERS = {
+    'external_class_diamond': external_class_diamond,
+    'statement_as_expression': statement_as_expression,
+}
 
 
 def classify(a, b, i1, i2, j1, j2, marked):

@@ -3131,6 +3131,14 @@ case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB	Kotlin Multifile 
 class	classes/kotlin/kt/pkg/TestMultifile__TestMultifileBKt.class
 expected	expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB.kt
 compare	TestMultifile__TestMultifileBKt.kt	TestMultifile__TestMultifileBKt.java
+case	kuna-fixes-compat/pkg/TestAssertExpressionPosition	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestAssertExpressionPosition.class
+class	kuna-fixes/classes/pkg/TestAssertExpressionPosition$Pairs.class
+class	kuna-fixes/classes/pkg/TestAssertExpressionPosition$Runnable.class
+class	kuna-fixes/classes/pkg/TestAssertExpressionPosition$Sink.class
+class	kuna-fixes/classes/pkg/TestAssertExpressionPosition$Source.class
+expected	kuna-fixes/expected-compat/pkg/TestAssertExpressionPosition.java
+compare	TestAssertExpressionPosition.java
 case	kuna-fixes-compat/pkg/TestCapturedReceiverKt	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestCapturedReceiverKt.class
@@ -3217,6 +3225,14 @@ class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class
 expected	kuna-fixes/expected-compat/pkg/TestTryCatchNotFlag.java
 compare	TestTryCatchNotFlag.java
+case	kuna-fixes/pkg/TestAssertExpressionPosition	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestAssertExpressionPosition.class
+class	kuna-fixes/classes/pkg/TestAssertExpressionPosition$Pairs.class
+class	kuna-fixes/classes/pkg/TestAssertExpressionPosition$Runnable.class
+class	kuna-fixes/classes/pkg/TestAssertExpressionPosition$Sink.class
+class	kuna-fixes/classes/pkg/TestAssertExpressionPosition$Source.class
+expected	kuna-fixes/expected/pkg/TestAssertExpressionPosition.java
+compare	TestAssertExpressionPosition.java
 case	kuna-fixes/pkg/TestCapturedReceiverKt	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestCapturedReceiverKt.class

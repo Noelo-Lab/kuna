@@ -48,13 +48,22 @@ pub mod substrate;
 
 pub use infra::{
     cancelation_manager, class_pass, class_pass_location, decompile_record, java_pass_location,
-    java_pass_registrar, kuna_corpus, kuna_driver, kuna_partition, kuna_spans, kuna_trace, looping_pass_builder, main_pass_builder, method_processor, named_pass,
-    pass, pass_context, plugin_context, validation_helper, wrapped_pass,
+    java_pass_registrar, kuna_corpus, kuna_driver, kuna_partition, kuna_spans, kuna_trace,
+    looping_pass_builder, main_pass_builder, method_processor, named_pass, pass, pass_context,
+    plugin_context, validation_helper, wrapped_pass,
 };
-pub use kotlin::{bit_encoding, kt_flags, kt_metadata, kt_proto, metadata_name_resolver};
 pub use infra::{
     graph_parser, kuna_plugins, language_chooser, language_spec, plugin, plugin_options,
     plugin_source, statement_writer,
+};
+pub use kotlin::{bit_encoding, kt_flags, kt_metadata, kt_proto, metadata_name_resolver};
+pub use kotlin::{
+    collapse_string_concat_pass, default_args_map, eliminate_dead_vars_pass, java_finally_pass,
+    k_contract, k_enum_processor, k_expr_processor, k_merge_pass, k_parameter, k_property_accessor,
+    k_type_parameter, k_types, k_utils, kotlin_chooser, kotlin_object_processors, kotlin_options,
+    kotlin_plugin, kotlin_writer, kuna_fix_kt_synthetic_anonymous_object,
+    obfuscated_exceptions_pass, replace_exprents_pass, replace_stats_pass,
+    resugar_kotlin_methods_pass, stack_var_initial_pass,
 };
 pub use kotlin::{
     k_annotation_exprent, k_catch_statement, k_class, k_const_exprent, k_constructor, k_dispatch,
@@ -64,20 +73,12 @@ pub use kotlin::{
     k_switch_head_exprent, k_switch_statement, k_type, k_var_exprent, kotlin_import_collector,
     kt_attrs,
 };
-pub use kotlin::{
-    collapse_string_concat_pass, default_args_map, eliminate_dead_vars_pass, java_finally_pass,
-    k_contract, k_enum_processor, k_expr_processor, k_merge_pass, k_parameter,
-    k_property_accessor, k_type_parameter, k_types, k_utils, kotlin_chooser,
-    kotlin_object_processors, kotlin_options, kotlin_plugin, kotlin_writer,
-    kuna_fix_kt_synthetic_anonymous_object, obfuscated_exceptions_pass, replace_exprents_pass,
-    replace_stats_pass, resugar_kotlin_methods_pass, stack_var_initial_pass,
-};
 pub use p0_knowledge::{
     class_wrapper_node, context_source, context_unit, converter_helper, counter_container,
     decompiler_context, fernflower, i_decompiled_data, i_fernflower_logger,
     i_fernflower_preferences, i_identifier_renamer, i_variable_name_provider,
-    i_variable_naming_factory, identifier_converter, identity_renamer_factory, jdk_runtime, kuna_fixes, kuna_input, kuna_inventory, kuna_options,
-    pool_interceptor, struct_context,
+    i_variable_naming_factory, identifier_converter, identity_renamer_factory, jdk_runtime,
+    kuna_fixes, kuna_input, kuna_inventory, kuna_options, pool_interceptor, struct_context,
 };
 pub use p1_classfile::{
     bytecode_version, class_wrapper, classes_processor, code_constants, constant_pool, lazy_loader,
@@ -146,12 +147,12 @@ pub use substrate::{
     const_exprent, data_point, do_statement, dummy_exit_statement, either, exit_exprent, expr_util,
     exprent, fast_fixed_set, fast_fixed_set_factory, fast_sparse_set_factory, field_descriptor,
     field_exprent, function_exprent, general_statement, i_matchable, if_exprent, if_statement,
-    int_helper, interpreter_util, invocation_exprent, key, list_stack, long_fast_fixed_set_factory,
-    kuna_fix_switch_yield_const_retype,
-    match_engine, match_node, method_descriptor, monitor_exprent, new_class_name_builder,
-    new_exprent, packed_map, pair, pattern, pattern_exprent, root_statement,
-    s_forms_fast_map_direct, sequence_statement, short_fast_fixed_set_factory, start_end_pair,
-    stat_edge, statement, statement_iterator, statements, switch_exprent, switch_head_exprent,
-    switch_statement, synchronized_statement, text_util, type_annotation, type_family, typed,
-    var_exprent, var_type, vb_style_collection, yield_exprent, zip_reader,
+    int_helper, interpreter_util, invocation_exprent, key, kuna_fix_statement_as_expression,
+    kuna_fix_switch_yield_const_retype, list_stack, long_fast_fixed_set_factory, match_engine,
+    match_node, method_descriptor, monitor_exprent, new_class_name_builder, new_exprent,
+    packed_map, pair, pattern, pattern_exprent, root_statement, s_forms_fast_map_direct,
+    sequence_statement, short_fast_fixed_set_factory, start_end_pair, stat_edge, statement,
+    statement_iterator, statements, switch_exprent, switch_head_exprent, switch_statement,
+    synchronized_statement, text_util, type_annotation, type_family, typed, var_exprent, var_type,
+    vb_style_collection, yield_exprent, zip_reader,
 };

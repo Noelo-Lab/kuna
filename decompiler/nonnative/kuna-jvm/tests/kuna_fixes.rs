@@ -451,3 +451,48 @@ fn an_enclosing_class_without_a_signature_maps_as_its_empty_generic_type() {
         assert!(compat.unwrap_err().message.contains("NullPointerException"));
     });
 }
+#[test]
+fn statement_only_exprents_are_kept_out_of_expression_positions() {
+    use kuna_jvm::assert_exprent::AssertExprent;
+    use kuna_jvm::assignment_exprent::AssignmentExprent;
+    use kuna_jvm::const_exprent::ConstExprent;
+    use kuna_jvm::exit_exprent::{self, ExitExprent};
+    use kuna_jvm::kuna_fix_statement_as_expression::{
+        is_lambda_expression_body, is_statement_only,
+    };
+    use kuna_jvm::monitor_exprent::{self, MonitorExprent};
+    use kuna_jvm::var_exprent::VarExprent;
+    use kuna_jvm::var_type::VarType;
+    use kuna_jvm::yield_exprent::YieldExprent;
+
+    let _g = crate::common::install_default_context();
+    let int = || Some(VarType::VARTYPE_INT());
+    let one = || ConstExprent::new_int(1, false, None).0;
+    let var = || VarExprent::new(1, int(), None).0;
+    let exit = |t, v: Option<_>, r| ExitExprent::new(t, v, Some(r), None, None).0;
+
+    let assert_ = AssertExprent::new(vec![None, Some(one())]).0;
+    let ret_value = exit(exit_exprent::Type::Return, Some(one()), VarType::VARTYPE_INT());
+    let ret_void = exit(exit_exprent::Type::Return, None, VarType::VARTYPE_VOID());
+    let throw = exit(exit_exprent::Type::Throw, Some(var()), VarType::VARTYPE_VOID());
+    let yield_ = YieldExprent::new(one(), VarType::VARTYPE_INT()).0;
+    let monitor = MonitorExprent::new(monitor_exprent::Type::Enter, var(), None).0;
+    let assign = AssignmentExprent::new(var(), one(), None).0;
+    let declared = VarExprent::new(2, int(), None);
+    declared.set_definition(true);
+    let declaration = AssignmentExprent::new(declared.0, one(), None).0;
+    let bare = VarExprent::new(3, int(), None);
+    bare.set_definition(true);
+
+    for e in [assert_, ret_value, ret_void, throw, yield_, monitor, declaration, bare.0] {
+        assert!(is_statement_only(e), "{}", e.to_string());
+    }
+    for e in [assign, var(), one()] {
+        assert!(!is_statement_only(e), "{}", e.to_string());
+        assert!(is_lambda_expression_body(e), "{}", e.to_string());
+    }
+    assert!(is_lambda_expression_body(ret_value), "return 1 is written as 1");
+    for e in [assert_, ret_void, throw, yield_, monitor, declaration, bare.0] {
+        assert!(!is_lambda_expression_body(e), "{}", e.to_string());
+    }
+}

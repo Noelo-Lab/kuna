@@ -580,6 +580,7 @@ kotlin-entire-classpath/pkg/TestWhenControlFlow
 kotlin-multifile-facade/pkg/TestMultifile
 kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA
 kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB
+kuna-fixes-compat/pkg/TestAssertExpressionPosition
 kuna-fixes-compat/pkg/TestCapturedReceiverKt
 kuna-fixes-compat/pkg/TestCatchLoopBack
 kuna-fixes-compat/pkg/TestDefaultArgCompoundBranch
@@ -592,6 +593,7 @@ kuna-fixes-compat/pkg/TestSamWrapperObjectKt
 kuna-fixes-compat/pkg/TestSelfReferencingLambda
 kuna-fixes-compat/pkg/TestSwitchExprConstLub
 kuna-fixes-compat/pkg/TestTryCatchNotFlag
+kuna-fixes/pkg/TestAssertExpressionPosition
 kuna-fixes/pkg/TestCapturedReceiverKt
 kuna-fixes/pkg/TestCatchLoopBack
 kuna-fixes/pkg/TestDefaultArgCompoundBranch
