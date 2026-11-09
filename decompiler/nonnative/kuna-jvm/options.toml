@@ -1397,6 +1397,28 @@ tier = "transform"
 symptoms = "$VF: Unable to decompile class with RuntimeException: Constructor X.<init>(...I)V not found|a Kotlin supertype call passes null placeholders and a bit mask, : Base(a, null, 2)"
 
 [[option]]
+option = "jvm_fix_kt_default_arg_compound_branch"
+vineflower = ""
+short = ""
+aliases = []
+values = "on|off"
+default = "on"
+destructive = false
+phase = "kotlin"
+subphase = "default_args_map"
+strength = "HARD"
+rewind = "kotlin"
+issue = ""
+summary = "Write a Kotlin function or constructor whose default value is computed by more than one statement (methods: List<Method> = names.map { ... }, which the compiler inlines into a loop) with the unknown-default placeholder (jvm_kt_unknown_defaults, ... by default), as the plugin writes any default it cannot read back. Vineflower reads the expression list of the default's branch, which only a single basic block has, and fails the whole class with NullPointerException."
+use_when = "Leave on; turn off only to reproduce Vineflower's failure."
+example = "kuna decompile kotlin-reflect.jar kotlin.reflect.jvm.internal.calls.AnnotationConstructorCaller --option jvm_fix_kt_default_arg_compound_branch off"
+source_decompiler = "kuna"
+inspiration = "Vineflower 1.12.0 DefaultArgsMap.from: ifStatement.getIfstat().getExprents().get(0) assumes the mask test's branch is a basic block; unchanged on develop/1.13.0"
+change_kind = "kuna-fix"
+tier = "transform"
+symptoms = "$VF: Unable to decompile class with NullPointerException: exprents|a Kotlin class with a complex default argument is not written at all"
+
+[[option]]
 option = "jvm_variable_renaming"
 vineflower = "variable-renaming"
 short = ""

@@ -1,4 +1,10 @@
 //! Port of `org/vineflower/kotlin/struct/DefaultArgsMap.java`.
+//!
+//! kuna fix `jvm_fix_kt_default_arg_compound_branch` (`kuna_fixes`): in
+//! `from`, a mask test whose branch is not a basic block (a default value
+//! computed by several statements) recovers no default, as any other branch
+//! that is not a simple assignment; Vineflower reads the branch's expression
+//! list, which only a basic block has, and fails the class.
 
 use std::rc::Rc;
 
@@ -12,6 +18,7 @@ use crate::k_element::KElement;
 use crate::k_parameter::KParameter;
 use crate::k_utils::KUtils;
 use crate::kotlin_options::KotlinOptions;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::method_wrapper::MethodWrapper;
@@ -105,12 +112,19 @@ impl DefaultArgsMap {
                 }
             }
 
-            let expr = if_statement
-                .get_ifstat()
-                .expect("NullPointerException: ifstat")
-                .get_exprents()
-                .expect("NullPointerException: exprents")
-                .get(0);
+            let expr = if kuna_fixes::enabled(KunaFix::KtDefaultArgCompoundBranch) {
+                match if_statement.get_ifstat().and_then(|s| s.get_exprents()) {
+                    Some(exprents) if !exprents.is_empty() => exprents.get(0),
+                    _ => continue,
+                }
+            } else {
+                if_statement
+                    .get_ifstat()
+                    .expect("NullPointerException: ifstat")
+                    .get_exprents()
+                    .expect("NullPointerException: exprents")
+                    .get(0)
+            };
             if let Some(assignment) = expr.try_as_assignment() {
                 let right = assignment.get_right().copy();
                 DefaultArgsMap::update_exprent(right, calling);

@@ -580,8 +580,10 @@ kotlin-entire-classpath/pkg/TestWhenControlFlow
 kotlin-multifile-facade/pkg/TestMultifile
 kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA
 kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB
+kuna-fixes-compat/pkg/TestDefaultArgCompoundBranch
 kuna-fixes-compat/pkg/TestDefaultArgsSuperCall
 kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver
+kuna-fixes/pkg/TestDefaultArgCompoundBranch
 kuna-fixes/pkg/TestDefaultArgsSuperCall
 kuna-fixes/pkg/TestMethodRefWildcardReceiver
 lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass

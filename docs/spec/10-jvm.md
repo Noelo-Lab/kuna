@@ -1114,3 +1114,18 @@ kotlin-stdlib 2.2.20's `TerminateException` lose their `false, 2` and `null, nul
 `: Task("${...} writer")` and `: FileSystemException(file)`, as in their sources. It also takes
 the write order out of the result, which with Vineflower's code decides between failing and
 printing the placeholders (and so differs between kuna's single-instance and parallel runs).
+
+**`jvm_fix_kt_default_arg_compound_branch`.** To print default values,
+`decompiler/nonnative/kuna-jvm/src/kotlin/default_args_map.rs (DefaultArgsMap::from)` reads them
+back from the default-arguments method or constructor: for each `if ((mask & bit) != 0)` test it
+takes the first expression of the branch and, when that is an assignment, records its right-hand
+side as the default of the parameter the bit names; any other test or branch records nothing, and
+the parameter is printed with `jvm_kt_unknown_defaults` (`= ...`). Vineflower takes the branch's
+expression list without checking that the branch is a basic block. When a default is computed by
+several statements (`names.map { ... }`, which the compiler inlines into a loop), the branch is a
+sequence, which has no expression list, and the `NullPointerException` fails the whole top-level
+class, because the defaults are read while the member headers are written (kotlin-reflect's
+`AnnotationConstructorCaller` and `AnnotationConstructorCallerKt`). With the fix, a branch that is
+not a basic block with at least one expression records nothing, as a branch that is not an
+assignment does, and the parameter is printed `= ...`. Reading the sequence's first statement
+instead would take the first temporary of the inlined code for the default value.

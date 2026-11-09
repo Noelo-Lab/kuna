@@ -20,10 +20,56 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 
 | Case | Fix | Compiled with | With the fix |
 |---|---|---|---|
+| `pkg/TestDefaultArgCompoundBranch` | `jvm_fix_kt_default_arg_compound_branch` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7` |
 | `pkg/TestDefaultArgsSuperCall` | `jvm_fix_kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call |
 | `pkg/TestMethodRefWildcardReceiver` | `jvm_fix_lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
 
 ## Diffs (compat -> default)
+
+### `pkg/TestDefaultArgCompoundBranch`
+
+```diff
+--- expected-compat/pkg/TestDefaultArgCompoundBranch.kt
++++ expected/pkg/TestDefaultArgCompoundBranch.kt
+@@ -1,16 +1,27 @@
+ package pkg
++
++import kotlin.jvm.internal.SourceDebugExtension
+ 
+ public class TestDefaultArgCompoundBranch {
+    public fun make(names: List<String>): Any {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 0: aload 1
+-      // 1: ldc "names"
+-      // 3: invokestatic kotlin/jvm/internal/Intrinsics.checkNotNullParameter (Ljava/lang/Object;Ljava/lang/String;)V
+-      // 6: new pkg/TestDefaultArgCompoundBranch$make$1
+-      // 9: dup
+-      // a: aload 1
+-      // b: invokespecial pkg/TestDefaultArgCompoundBranch$make$1.<init> (Ljava/util/List;)V
+-      // e: areturn
++      return object {
++         public fun total(lengths: List<Int> = ...): Int {
++            return CollectionsKt.sumOfInt(lengths as java.lang.Iterable)
++         }
++
++         public fun simple(n: Int = 7): Int {
++            return n + 1
++         }
++
++         @SourceDebugExtension(["SMAP\nTestDefaultArgCompoundBranch.kt\nKotlin\n*S Kotlin\n*F\n+ 1 TestDefaultArgCompoundBranch.kt\npkg/TestDefaultArgCompoundBranch$make$1$Box\n+ 2 _Collections.kt\nkotlin/collections/CollectionsKt___CollectionsKt\n*L\n1#1,12:1\n1557#2:13\n1628#2,3:14\n*S KotlinDebug\n*F\n+ 1 TestDefaultArgCompoundBranch.kt\npkg/TestDefaultArgCompoundBranch$make$1$Box\n*L\n7#1:13\n7#1:14,3\n*E\n"])
++         // $VF: local visibility outside of methodSupplier
++internal inner class Box(sizes: List<Int> = ...) {
++            public final val sizes: List<Int>
++
++            init {
++               this.sizes = sizes
++            }
++         }
++      }
+    }
+ }
+```
 
 ### `pkg/TestDefaultArgsSuperCall`
 

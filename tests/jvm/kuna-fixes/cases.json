@@ -8,6 +8,19 @@
   ],
   "cases": [
     {
+      "id": "pkg/TestDefaultArgCompoundBranch",
+      "fix": "jvm_fix_kt_default_arg_compound_branch",
+      "class_files": [
+        "pkg/TestDefaultArgCompoundBranch.class",
+        "pkg/TestDefaultArgCompoundBranch$make$1$Box.class",
+        "pkg/TestDefaultArgCompoundBranch$make$1.class"
+      ],
+      "source": "src/pkg/TestDefaultArgCompoundBranch.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
+      "summary": "`make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7`",
+      "language": "kotlin"
+    },
+    {
       "id": "pkg/TestDefaultArgsSuperCall",
       "fix": "jvm_fix_kt_default_args_super_call",
       "class_files": [

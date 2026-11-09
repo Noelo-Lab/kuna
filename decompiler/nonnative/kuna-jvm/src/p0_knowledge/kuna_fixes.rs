@@ -33,6 +33,9 @@ pub enum KunaFix {
     /// supertype call through a default-arguments constructor names the
     /// constructor it stands for.
     KtDefaultArgsSuperCall,
+    /// `jvm_fix_kt_default_arg_compound_branch`: a default value computed by
+    /// more than one statement is left unrecovered instead of failing the class.
+    KtDefaultArgCompoundBranch,
 }
 
 impl KunaFix {
@@ -41,6 +44,7 @@ impl KunaFix {
         KunaFix::ReportToKuna,
         KunaFix::LambdaWildcardReturn,
         KunaFix::KtDefaultArgsSuperCall,
+        KunaFix::KtDefaultArgCompoundBranch,
     ];
 
     /// The option row that turns this fix on or off.
@@ -49,6 +53,7 @@ impl KunaFix {
             KunaFix::ReportToKuna => "jvm_fix_report_to_kuna",
             KunaFix::LambdaWildcardReturn => "jvm_fix_lambda_wildcard_return",
             KunaFix::KtDefaultArgsSuperCall => "jvm_fix_kt_default_args_super_call",
+            KunaFix::KtDefaultArgCompoundBranch => "jvm_fix_kt_default_arg_compound_branch",
         }
     }
 
