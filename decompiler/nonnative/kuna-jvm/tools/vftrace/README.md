@@ -36,16 +36,37 @@ Vineflower runs on **JDK 21** here (`VF_JAVA`): it escapes string characters by 
 `Character` tables, and kuna's `rt::jchar` is generated from JDK 21's (Unicode 15). On JDK 17
 (the corpus oracle JVM, Unicode 13) characters added in Unicode 14/15 print raw in kuna and
 `\uXXXX` in Vineflower (seen in Guava's `CharMatcher`, `PublicSuffixPatterns`); traces are not affected.
-Real-world runs used for the stage-3 sweep:
+`--opt` on a corpus sweep overlays every case's options (the corpus under another option map).
+
+Stage-3 sweep results (after the fixes; "OK" = every step identical, variable tables included):
+
+| Input | Cases | Methods | Steps | Result |
+|---|---|---|---|---|
+| corpus, fixture options | 598 | 3,479 | 72,000 | all OK; text: the 4 known corpus failures |
+| corpus x 13 option overlays (`decompile-enums=0`, `lambda-to-anonymous-class=1`, `decompile-generics=0`, `decompile-finally=0`, `use-method-parameters=0`, `rename-members=1`, ...) | 598 each | 3,464-3,479 | 69-72 k each | all OK |
+| JDK 21 `java.base` (`include-runtime` = JDK 21) | 3,481 | 62,791 | 1.28 M | all OK (4 methods need Vineflower `VF_XMX` of 6-24 GB) |
+| Guava 33.8 (`--lib` its jar) | 594 | 15,557 | 284 k | all OK, text identical |
+| spring-boot / spring-framework (500 sampled) / elasticsearch (500 sampled) | 493 / 500 / 500 | 5,192 / 5,115 / 9,083 | 101 / 102 / 178 k | all OK |
+
+The traces are hash-stable: the corpus traced by Vineflower in `stock` and `random:1` mode equals the
+`index` trace. Commands (scratch paths are examples):
 
 ```sh
 J=~/kwt/jvm/jdks/jdk21
 $J/bin/jimage extract --include 'regex:/java.base/.*\.class' --dir jdk $J/lib/modules
-tools/vftrace/sweep.sh --classes jdk/java.base --set jdk21 --opt include-runtime=$J --jobs 8 --out OUT1
+VF_XMX=1g tools/vftrace/sweep.sh --classes jdk/java.base --set jdk21 --opt include-runtime=$J --jobs 8 --out OUT1
 unzip -q ~/kwt/jvm/dataset/guava/classes.jar -d guava
 tools/vftrace/sweep.sh --classes guava --set guava --opt include-runtime=$J \
     --lib ~/kwt/jvm/dataset/guava/classes.jar --out OUT2
+tools/vftrace/sweep.sh --opt decompile-enums=0 --opt remove-synthetic=0 --out OUT3    # an overlay
 ```
+
+A Vineflower `OutOfMemoryError` (its trace "ends early in A") is a heap-size artifact: re-run the case
+with a larger `VF_XMX` (`--only`). Ghidra (500 sampled groups, 6,587 methods) agrees everywhere except
+the ANTLR-generated `SleighParser`, whose `tokendef()` exceeds both engines' budgets: Vineflower
+OOMs at 2 GB and is still in its finally loop after 28 min at 12 GB (9.3 GB RSS); kuna passes the
+600 s case timeout (untraced: 17.6 GB RSS after 14 min). The 9 steps both reach agree; the class's
+other methods come after it and are never traced by kuna.
 
 ## Running
 
