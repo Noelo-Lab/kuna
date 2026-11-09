@@ -111,30 +111,46 @@ o57 orphan Seq          a statement referenced from the tree but not in it
 Vineflower iterates `HashSet`/`HashMap`s keyed by identity-hashed objects; kuna cannot reproduce
 JVM identity hashes and hashes by arena creation index instead. To find out which parts of the
 intermediate state that touches, the Java tracer was run over the 598-case corpus (3,479 method
-traces, 65,512 steps) and 14 JDK classes with their nested classes (2,649 methods) under ten hash
-assignments each: stock twice, stock with the decompiler thread's identity-hash sequence shifted by
+traces, 65,512 steps; 10 runs) and 14 JDK classes with their nested classes (2,649 methods; 9 runs)
+under these hash assignments: stock twice, stock with the decompiler thread's identity-hash sequence shifted by
 starting 1/2/3/5 throwaway threads first (`--shift`, which perturbs *every* identity hash, enums
 included), `index`, and `random:1..4` (shadow classes: `Statement`, `StatEdge`, `Exprent`,
 `BasicBlock`, `Instruction`, `ExceptionRangeCFG`, `VarVersionNode`, one counter per kuna arena).
-With every element printed in raw order, the only difference ever seen was **the order of a
-statement's predecessor-edge list**, first produced by three passes:
+With every element printed in raw order, two things differed between assignments, never anything else:
 
-| pass | why | methods affected (any assignment vs. stock) |
-|---|---|---|
-| `EliminateLoops` | `EliminateLoopsHelper` re-targets `new ArrayList<>(loop.getLabelEdges())` (a `HashSet<StatEdge>`) with `changeDestination` | corpus 4 (TestComplexIfElseChain ×3, TestExceptionElse), JDK 2 (`ConcurrentHashMap.get`, `ConcurrentHashMap$TreeBin.contendedLock`) |
-| `BuildAsserts` | `AssertProcessor` edge rewiring in label-edge order | corpus 1 (TestAssertsEnabled.test10) |
-| `ProcessSwitchPatternMatch` | iterates `stat.getParent().getLabelEdges()` while adding edges | corpus 1 (TestSwitchPatternMatchingJ25.test6) |
+1. **The order of a statement's predecessor-edge list after `EliminateLoops`**: `EliminateLoopsHelper`
+   re-targets `new ArrayList<>(loop.getLabelEdges())` (a `HashSet<StatEdge>`) with
+   `changeDestination`, appending to the new destination's predecessor lists in hash order. Affected:
+   4 corpus methods (`TestComplexIfElseChain.testInLoop1/2/3`, `TestExceptionElse.test`) and 2 JDK
+   methods (`ConcurrentHashMap.get`, `ConcurrentHashMap$TreeBin.contendedLock`), under some or all
+   non-stock assignments. The difference stays confined to that one `<` line through the last step.
+2. **Names of orphan statements**, when they were numbered in encounter order: encounter order
+   followed hash-set iteration (label edges), which showed up first in `BuildAsserts`
+   (`TestAssertsEnabled.test10`) and `ProcessSwitchPatternMatch` (`TestSwitchPatternMatchingJ25.test6`).
+   That was the dump's own artifact, not Vineflower state.
 
-In every case the difference stayed confined to that one predecessor line through the last step;
-raw statement ids, child order, successor order, exprents and the step sequence never changed. The
-dump therefore **sorts predecessor lists** (and prints per-type predecessor deviations as edge refs,
-not list positions) and sorts every set it prints (label edges, continue sets, scoped case
-statements, `genericsMap`); everything else is kept in raw order, because a difference there was
-never hash noise and is a real divergence. Stock Vineflower is not even stable run to run (two
-stock runs differed in 2 corpus cases: JIT compiler threads started on demand shift the decompiler
-thread's hash seed), which is one more reason not to compare against stock dumps unsorted.
-`--hash index` additionally pins the shadowed classes to kuna's arena order, so the traces agree on
-predecessor order whenever both engines allocate in the same order; `trace-diff.sh` uses it.
+Raw statement ids, child order, successor order, per-type list order, exprent trees and the step
+sequence were identical under all assignments. So the dump **sorts predecessor lists** (and prints
+per-type predecessor deviations as edge refs, not list positions), **names orphans by raw id**, and
+sorts every set it prints (label edges, continue sets, scoped case statements, `genericsMap`);
+everything else stays in raw order, because a difference there was never hash noise and is a real
+divergence. With these rules all nine corpus runs and all seven JDK runs of the final format produce
+identical traces.
+Stock Vineflower is not stable run to run either (two stock runs once differed in
+`TestComplexIfElseChain`, probably because compiler threads started on demand draw from the
+`os::random` sequence that seeds each new thread's identity hashes). `--hash index` additionally pins the
+shadowed classes to kuna's arena order, so even raw predecessor order agrees whenever both engines
+allocate in the same order; `trace-diff.sh` uses it. `-Dvftrace.rawpreds=1` (via `VF_JAVA_OPTS`)
+turns predecessor sorting off for such experiments.
+
+## Cost
+
+Java side, whole oracle corpus (`corpus_trace.py`, 598 cases, 16 JVMs at `-Xmx1g`): 31-39 s wall,
+~500 CPU-s, 43.9 MB of traces (65,512 steps over 3,479 methods; largest case 1.5 MB,
+`TestComplexIfElseChain`), every produced `.java` byte-identical to the oracle's. Dumping takes 9%
+of the in-JVM decompile time (33 s of 364 s; `= n` back-references make 80 MB of dumps 44 MB on
+disk). The 14 heavier JDK classes: 67 MB, dumping 21% of decompile time. kuna with tracing off pays
+one thread-local flag read per `DecompileRecord::add`.
 
 ## Blind spots
 
