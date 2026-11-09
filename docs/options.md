@@ -919,6 +919,12 @@ Three tiers:
 | swift function names unreadable in kuna functions output | [`swiftdemangle`](#swiftdemangle) |
 | swift type metadata symbols show raw manglings instead of named paths | [`swiftdemangle`](#swiftdemangle) |
 | objc method labels show _TtC runtime class names | [`swiftdemangle`](#swiftdemangle) |
+| a dyld_shared_cache file is rejected as an unrecognized input format | [`dyldimage`](#dyldimage) |
+| cannot decompile an ios or macos system library because it only exists inside the dyld shared cache | [`dyldimage`](#dyldimage) |
+| dyld shared cache holds N images; choose one with --image | [`dyldimage`](#dyldimage) |
+| calls in a dyld shared cache image render as sub_<addr> into a __TEXT_STUBS island | [`dyldcrossrefs`](#dyldcrossrefs) |
+| a cache image's __got loads name nothing | [`dyldcrossrefs`](#dyldcrossrefs) |
+| cross-library calls of an ios framework have no names | [`dyldcrossrefs`](#dyldcrossrefs) |
 | rust binary renders with c output and no rust abi handling because a stripped image lost its language signals | [`sourcelang`](#sourcelang) |
 | a c binary is detected as another language and language-gated rules misfire | [`sourcelang`](#sourcelang) |
 | go runtime passes do not run on a go binary whose buildinfo section was stripped | [`sourcelang`](#sourcelang) |
@@ -3496,6 +3502,22 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Leave on: a Swift binary's $s soup becomes Module.Type.member(labels:) paths and its ObjC-visible Swift classes read Module.Class. Turn off to audit the raw mangled spellings, or if a third-party tool consuming kuna's output expects the mangled forms.
 - **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-multilang-swiftdemangle
 - **Example:** `option swiftdemangle off`
+
+### `dyldimage` -- none | <install-name>, default `none`
+
+- **Symptoms:** a dyld_shared_cache file is rejected as an unrecognized input format; cannot decompile an ios or macos system library because it only exists inside the dyld shared cache; dyld shared cache holds N images; choose one with --image.
+- **What it does:** Choose which image of a dyld shared cache to load. A cache (dyld_shared_cache_arm64e and its sub-caches .01, .27.dylddata, .44.dyldlinkedit, ... and .symbols beside it) holds every system library of an iOS or macOS release; kuna rebuilds the chosen image as a standalone thin Mach-O before anything parses it, so the loader, the analysis passes and every surface see an ordinary Mach-O. The rebuild keeps each segment at its cache address, applies the cache's slide info (v2, v3 with arm64e auth pointers, v5) at slide zero so every rebased pointer reads as its unslid target, and gives the image a private __LINKEDIT with its own symbol table, the local symbols the cache moved to its .symbols file in place of the <redacted> placeholders, the renumbered indirect-symbol table, and copies of the export trie, function starts and data-in-code. The name matches a full install name (/usr/lib/libobjc.A.dylib), else a unique basename (libobjc.A.dylib, CoreFoundation), else a unique basename without its last extension (libobjc.A). `none` (default) loads the image of a one-image cache and refuses a larger one with the image count. The image is rebuilt inside `load file`, so the choice travels as the KUNA_DYLD_IMAGE environment variable; the CLI's global `--image NAME` sets it for every subcommand, and the console sets it with `option dyldimage NAME` before `load file`, accepted before any image is loaded. `kuna unpack <cache> --list` lists the images and `kuna unpack <cache> --image NAME` writes the rebuilt Mach-O.
+- **When to flip:** Set it (or pass --image) whenever the input is a dyld shared cache: kuna decompile dyld_shared_cache_arm64e --image CoreFoundation CFStringCreateCopy. Not used for any other input.
+- **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-apple-dyldcache
+- **Example:** `option dyldimage /usr/lib/libobjc.A.dylib`
+
+### `dyldcrossrefs` -- on | off, default `on`
+
+- **Symptoms:** calls in a dyld shared cache image render as sub_<addr> into a __TEXT_STUBS island; a cache image's __got loads name nothing; cross-library calls of an ios framework have no names.
+- **What it does:** Name the calls and GOT loads a dyld shared cache image makes into other images. The cache builder routes most cross-image calls past the image's own stubs: on iOS 16 a bl lands on a stub island in a __TEXT_STUBS sub-cache (adrp x16; add x16; br x16 to the callee), on iOS 14 on another image's rewritten stub, and within branch range on the callee itself. It also coalesces __got sections and drops their indirect-symbol entries. None of those targets is inside the rebuilt image, so a call renders as sub_<island address>(...) and a load through a coalesced slot names nothing. When the image is rebuilt, kuna finds every branch target outside it and every coalesced GOT slot pointing outside it. It follows a stub (adrp/add/ldr then br, braa or braaz) to its final target and names that target from the symbol table of the image holding it: exports first, then the locals in the .symbols file. The table rides in the rebuilt Mach-O as a kuna.dyld.xrefs LC_NOTE, and the Mach-O import walk reads it back, so each island becomes a named import stub and each slot a named import slot. Read inside `load file`, so the gate travels as the KUNA_DYLDCROSSREFS environment variable. Inert on every input that is not a rebuilt cache image.
+- **When to flip:** Leave on: CoreFoundation's 9,136 calls into stub islands render as __stack_chk_fail(), os_unfair_lock_lock_with_options(...) instead of sub_18c99b570(). Turn off to see the raw island addresses, for example to check a call against the cache's island layout.
+- **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-apple-dyldcache
+- **Example:** `option dyldcrossrefs off`
 
 ### `sourcelang` -- auto | c | rust | go | swift, default `auto`
 
