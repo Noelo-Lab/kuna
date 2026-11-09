@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_391() {
-    assert_eq!(kuna_num_settables(), 391);
-    assert_eq!(SETTABLE_TABLE.len(), 391);
+fn settable_count_is_392() {
+    assert_eq!(kuna_num_settables(), 392);
+    assert_eq!(SETTABLE_TABLE.len(), 392);
 }
 
 #[test]
-fn tier_counts_are_135_core_158_transform_98_analysis() {
+fn tier_counts_are_135_core_158_transform_99_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_135_core_158_transform_98_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (135, 158, 98));
+    assert_eq!((core, transform, analysis), (135, 158, 99));
 }
 
 #[test]
@@ -333,6 +333,10 @@ fn option_values_live_value_present_for_188() {
         // (kuna) `.eh_frame` LSDA landing-pad discovery sub-feature of entry_disc
         // (GccExceptionAnalyzer), default-off; analysis-tier, no codegen live reader.
         "eh_frame_full",
+        // (kuna) Mach-O `__unwind_info` function-start discovery — an analysis-pass
+        // gate with no codegen live reader (read console-side via kuna_live_value),
+        // same as `eh_frame_full` above. Default-off.
+        "unwindstarts",
         // (kuna) `.eh_frame` FDE-interior entry suppression — an analysis-pass gate
         // with no codegen live reader (read console-side via kuna_live_value), same
         // as the gates around it. Default-ON (DIV-61).
@@ -1203,10 +1207,11 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `copywaves`, its P3 row after `deadwaves`; +1 for `deadcascade`, its P3 row after `copywaves`;
     // +2 for `armpltslot` and `armcondskip`, their P1 rows beside `armwalkmode`.
     // +1 for `armderef`, its P1 row after `armwalkmode`.
+    // +1 for `unwindstarts`; its P1 row sits beside `eh_frame_full`.
     // +1 for `objcrefconst`; its P1 row sits beside `objc`.
     // +1 for `ptrauthtrap`; its P2 row sits beside `gowritebarrier`.
     // +1 for `authptrcall`; its P1 row sits beside `peimportcall`.
-    assert_eq!(json.matches("},\n").count(), 390);
+    assert_eq!(json.matches("},\n").count(), 391);
 }
 
 #[test]

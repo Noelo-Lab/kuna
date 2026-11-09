@@ -614,6 +614,10 @@ Three tiers:
 | c++ catch/cleanup landing pads missing from a stripped binary's function list | [`eh_frame_full`](#eh_frame_full) |
 | exception-handler code never discovered as entries | [`eh_frame_full`](#eh_frame_full) |
 | gcc_except_table call-site targets left unexplored | [`eh_frame_full`](#eh_frame_full) |
+| a stripped mach-o yields almost no functions although __text is large | [`unwindstarts`](#unwindstarts) |
+| an ios app function list is only __mh_execute_header, main, exports and import stubs | [`unwindstarts`](#unwindstarts) |
+| LC_FUNCTION_STARTS absent and the arm64 gap walk cannot reach the body | [`unwindstarts`](#unwindstarts) |
+| functions the unwinder describes in __unwind_info missing from the inventory | [`unwindstarts`](#unwindstarts) |
 | functions ghidra finds in a stripped gcc binary's .cold region missing from kuna's function list | [`coldentry`](#coldentry) |
 | a hot function's decompile inlines an abort or error tail reached by a jump into another function's fde | [`coldentry`](#coldentry) |
 | gaps between consecutive sub_<addr> cold fragments that hold code | [`coldentry`](#coldentry) |
@@ -2860,6 +2864,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off (default) limits .eh_frame use to FDE pcBegin function starts. Flip on to also discover exception-handler landing pads (catch/cleanup blocks) from the .gcc_except_table LSDA in a C++ try/catch binary.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-ehframe-lsda
 - **Example:** `--option eh_frame_full on`
+
+### `unwindstarts` -- on | off, default `off`
+
+- **Symptoms:** a stripped mach-o yields almost no functions although __text is large; an ios app function list is only __mh_execute_header, main, exports and import stubs; LC_FUNCTION_STARTS absent and the arm64 gap walk cannot reach the body; functions the unwinder describes in __unwind_info missing from the inventory.
+- **What it does:** Extend Mach-O function discovery with the function starts the linker recorded in __TEXT,__unwind_info. The second-level pages (regular and compressed) list in ascending order the start offset of every function the unwinder can describe - one per .cfi_startproc the compiler emitted - relative to the image base. The section lives in the mapped __TEXT segment, so it survives the strip that removes LC_FUNCTION_STARTS from __LINKEDIT. On an image that still carries LC_FUNCTION_STARTS every unwind start is already a function-starts entry (the linker folds runs of adjacent same-encoding functions into one entry, so the set is a strict subset) and this oracle adds nothing. Its value is the stripped App-Store app: with LC_FUNCTION_STARTS gone, the symbol stream, LC_MAIN, exports and __mod_init_func seed only a handful of starts and the arm64 gap walk cannot reach the body, so the inventory collapses to the entry and the import stubs - measured on a 249 MB arm64 third-party iOS app with no LC_FUNCTION_STARTS, kuna discovered 23 of the 204,800 real __text functions __unwind_info records. With this on, those 204,800 starts are recovered. Only the function starts are read; the compact encodings (frame size, saved registers, frameless stack size) are ignored because kuna S5/S7 frame analysis recovers the stack frame from the code. Output-changing (adds entries), so default-OFF: a default run is byte-identical to before.
+- **When to flip:** Off (default) keeps Mach-O function starts from LC_FUNCTION_STARTS, LC_MAIN, exports and __mod_init_func. Flip on for a Mach-O whose LC_FUNCTION_STARTS was stripped (a common App-Store app) and whose function list is almost empty - the tell-tale is an inventory of a few named entries and many __stubs/__got slots over a large __text that holds real code. Inert on any image that still carries LC_FUNCTION_STARTS, where the unwind starts are already a subset of what is discovered.
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-unwindstarts
+- **Example:** `--option unwindstarts on`
 
 ### `coldentry` -- on | off, default `on`
 
