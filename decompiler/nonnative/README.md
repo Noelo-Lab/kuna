@@ -12,4 +12,6 @@ source language rather than over p-code.
 | `kuna-jvm` | JVM class files, jars | Java | Rust port of Vineflower 1.12.0 (Apache-2.0) |
 
 What the engines do share with the native side is the front door: the `kuna` CLI, its option
-catalog and its output formats. `kuna-cli` picks the engine from the input file.
+catalog and its output formats. `kuna-cli` picks the engine from the input file: the dispatch
+is `decompiler/crates/kuna-cli/src/nonnative.rs`, and the JVM command lines, selection grammar,
+output shapes and catalog rows are under `decompiler/crates/kuna-cli/src/nonnative/`.
