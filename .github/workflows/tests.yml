@@ -94,6 +94,11 @@ jobs:
       - name: make test-stages -- stage corpus vs docs/baseline-stages.json
         run: make test-stages
 
+      # The JVM engine (docs/jvm.md): the vendored Vineflower corpus vs tests/jvm/baseline.txt.
+      # Reuses the release kuna built above; needs neither specs nor a JDK.
+      - name: make test-jvm -- JVM corpus vs tests/jvm/baseline.txt
+        run: make test-jvm
+
       - name: make check-spec
         run: make check-spec
 
@@ -130,6 +135,16 @@ jobs:
           ./decompiler/target/release/kuna catalog --markdown > /tmp/options.generated.md
           if ! diff -u docs/options.md /tmp/options.generated.md; then
             echo "::error file=docs/options.md::stale -- regenerate with 'decompiler/target/release/kuna catalog --markdown > docs/options.md'"
+            exit 1
+          fi
+
+      # The same freshness check for the JVM engine's catalog, generated from
+      # decompiler/nonnative/kuna-jvm/options.toml.
+      - name: docs/options-jvm.md is the generator's bytes
+        run: |
+          ./decompiler/target/release/kuna catalog --markdown --engine jvm > /tmp/options-jvm.generated.md
+          if ! diff -u docs/options-jvm.md /tmp/options-jvm.generated.md; then
+            echo "::error file=docs/options-jvm.md::stale -- regenerate with 'decompiler/target/release/kuna catalog --markdown --engine jvm > docs/options-jvm.md'"
             exit 1
           fi
 
