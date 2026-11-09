@@ -263,12 +263,23 @@ impl Fernflower {
     /// each in entry order); loads first. Reads only cached classes and class
     /// headers, so it leaves the run unchanged.
     pub fn root_classes(&mut self) -> Vec<String> {
+        self.root_classes_in_units()
+            .into_iter()
+            .map(|(_, name)| name)
+            .collect()
+    }
+
+    /// [`Fernflower::root_classes`] with the index of each root's own unit:
+    /// a run pre-processes and writes one unit's roots before the next unit's.
+    pub fn root_classes_in_units(&mut self) -> Vec<(usize, String)> {
         self.load();
         let mut result = Vec::new();
-        for unit in self.struct_context.get_units() {
-            if !unit.is_own() {
-                continue;
-            }
+        let own_units = self
+            .struct_context
+            .get_units()
+            .into_iter()
+            .filter(|unit| unit.is_own());
+        for (unit_index, unit) in own_units.enumerate() {
             let mut seen = BTreeSet::new();
             for entry in unit.get_class_names() {
                 let cached = self
@@ -287,7 +298,7 @@ impl Fernflower {
                 let is_root = root_class_node(self.class_processor, &name)
                     .is_some_and(|node| class_node_type(node) == ClassNodeType::Root);
                 if is_root && seen.insert(name.clone()) {
-                    result.push(name);
+                    result.push((unit_index, name));
                 }
             }
         }

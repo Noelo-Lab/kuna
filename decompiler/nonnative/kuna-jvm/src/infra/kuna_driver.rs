@@ -32,7 +32,7 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::kuna_corpus::{reset_engine_thread, ENGINE_STACK_BYTES};
 use crate::kuna_input::{InputSet, SharedRuntime};
 use crate::kuna_inventory;
-use crate::kuna_partition::{self, DivergentRead, RootSelection};
+use crate::kuna_partition::{self, DivergentRead, RootPos, RootSelection};
 use crate::rt::try_catch;
 
 /// The most worker threads `Jobs::Auto` picks.
@@ -87,7 +87,8 @@ pub struct DriverConfig {
     pub stack_size: usize,
     /// Memory to plan with, in bytes (`None`: `MemAvailable`).
     pub available_memory: Option<u64>,
-    /// Memory one instance needs, in bytes (`None`: estimated from the input).
+    /// Memory one instance needs for the loaded class universe, in bytes
+    /// (`None`: estimated from the input, see [`estimate_memory`]).
     pub instance_memory: Option<u64>,
 }
 
@@ -193,7 +194,7 @@ impl std::error::Error for DriverError {}
 
 struct Plan {
     roots: Vec<String>,
-    order: Arc<BTreeMap<String, usize>>,
+    order: Arc<BTreeMap<String, RootPos>>,
     cost: Vec<u64>,
     deps: Vec<BTreeSet<usize>>,
 }
@@ -271,7 +272,7 @@ pub fn run(
             None => (0..plan.roots.len()).collect(),
             Some(names) => names
                 .iter()
-                .filter_map(|n| plan.order.get(n).copied())
+                .filter_map(|n| plan.order.get(n).map(|p| p.index))
                 .collect::<BTreeSet<usize>>()
                 .into_iter()
                 .collect(),
@@ -337,8 +338,8 @@ pub fn run(
                 report.repeated += 1;
                 let mut process = outcome.batch.process.clone();
                 for read in &outcome.reads {
-                    if let Some(&owner) = plan.order.get(&read.owner) {
-                        process.insert(owner);
+                    if let Some(owner) = plan.order.get(&read.owner) {
+                        process.insert(owner.index);
                     }
                 }
                 let round = outcome.batch.round + 1;
@@ -435,7 +436,7 @@ pub fn run(
 const MAX_ROUNDS: usize = 3;
 
 struct SharedPlan {
-    order: Arc<BTreeMap<String, usize>>,
+    order: Arc<BTreeMap<String, RootPos>>,
     roots: Vec<String>,
     all: BTreeSet<usize>,
 }
@@ -700,12 +701,13 @@ fn run_batch(session: &mut Session, batch: Batch, plan: &SharedPlan, fresh: bool
 
 /// Lists the roots in run order with their sizes and dependencies.
 fn plan(fernflower: &mut Fernflower, input: &InputSet) -> Plan {
-    let roots = fernflower.root_classes();
-    let order: BTreeMap<String, usize> = roots
+    let placed = fernflower.root_classes_in_units();
+    let roots: Vec<String> = placed.iter().map(|(_, n)| n.clone()).collect();
+    let order: BTreeMap<String, RootPos> = placed
         .iter()
         .enumerate()
         .rev()
-        .map(|(i, n)| (n.clone(), i))
+        .map(|(index, (unit, n))| (n.clone(), RootPos { unit: *unit, index }))
         .collect();
 
     let mut root_of: BTreeMap<String, usize> = BTreeMap::new();
@@ -721,8 +723,8 @@ fn plan(fernflower: &mut Fernflower, input: &InputSet) -> Plan {
             top = parent;
         }
         let top_name = top.with(|d| d.class_struct).qualified_name();
-        if let Some(&index) = order.get(&top_name) {
-            root_of.insert(name, index);
+        if let Some(pos) = order.get(&top_name) {
+            root_of.insert(name, pos.index);
         }
     }
 
@@ -864,37 +866,39 @@ fn worker_count(input: &InputSet, config: &DriverConfig) -> usize {
         Jobs::Exactly(n) => n.max(1),
         Jobs::Auto => {
             let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
-            let wanted = cores.min(MAX_AUTO_JOBS).max(1);
-            let per_instance = config
-                .instance_memory
-                .unwrap_or_else(|| estimate_instance_memory(input, config));
-            match config.available_memory.or_else(mem_available) {
-                Some(available) if per_instance > 0 => {
-                    let fit = (available / 10 * 9 / per_instance) as usize;
-                    wanted.min(fit).max(1)
-                }
-                _ => wanted,
-            }
+            let wanted = cores.clamp(1, MAX_AUTO_JOBS);
+            let Some(available) = config.available_memory.or_else(mem_available) else {
+                return wanted;
+            };
+            let budget = available / 10 * 9;
+            (1..=wanted)
+                .rev()
+                .find(|&n| estimate_memory(input, config, n) <= budget)
+                .unwrap_or(1)
         }
     }
 }
 
-/// A rough upper bound on one instance's memory: the decompiled state of a
-/// class runs to a few hundred times its class-file size, and an instance
-/// holds a batch's worth of classes plus the loaded universe.
-pub fn estimate_instance_memory(input: &InputSet, config: &DriverConfig) -> u64 {
-    let universe = input.class_bytes() as u64
+/// A rough upper bound of a run's memory with `workers` instances: each
+/// instance holds the loaded class universe (`instance_memory`, else about 64
+/// bytes per class-file byte plus a fixed part and the JDK index), and the
+/// decompiled state of the classes being worked on, about 400 bytes per
+/// class-file byte of the whole input, is spread over the instances' batches.
+/// Fitted to Guava (6.5 MB of classes: 2.7 GB with one worker, 9.4 GB with
+/// 16) and spring-boot (3.0 MB: 0.9 and 2.3 GB).
+pub fn estimate_memory(input: &InputSet, config: &DriverConfig, workers: usize) -> u64 {
+    let input_bytes = input.class_bytes() as u64;
+    let universe = input_bytes
         + config
             .libraries
             .iter()
             .map(|l| l.class_bytes() as u64)
             .sum::<u64>();
-    let runtime = if config.runtime.is_some() {
-        96 << 20
-    } else {
-        0
-    };
-    (64 << 20) + runtime + universe * 24 + (universe * 160 / 16).min(4 << 30)
+    let runtime = if config.runtime.is_some() { 96 << 20 } else { 0 };
+    let per_instance = config
+        .instance_memory
+        .unwrap_or((128 << 20) + runtime + universe * 64);
+    per_instance * workers as u64 + input_bytes * 400
 }
 
 /// `MemAvailable` from `/proc/meminfo`, in bytes.
