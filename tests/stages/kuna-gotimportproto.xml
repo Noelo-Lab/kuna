@@ -8,10 +8,10 @@
     the external-symbol GOT; the call has the same instructions as one that
     passes nothing, so only the declared libc prototype states the argument.
 
-    Pass 1, the default, binds that type-only declaration at the loader-proven
-    import: strlen receives the argument and the parameter is a pointer.
-    Pass 2, `option gotimportproto off`, keeps the storage requirement, so the
-    call keeps the arguments its trials recover: none.
+    The type-only declaration is bound at the loader-proven import
+    (kuna_gotimportproto.rs, always on): strlen receives the argument and the
+    parameter is a pointer.  Under the storage requirement alone the call would
+    keep the arguments its trials recover: none.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
@@ -23,12 +23,8 @@
   <com>load addr 0x1000</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option gotimportproto off</com>
-  <com>load addr 0x1000</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="GOTIMPORTPROTO: the declared import receives the passed argument" min="1" max="1">  v1 = strlen\(a0\);</stringmatch>
-<stringmatch name="GOTIMPORTPROTO off: the import call keeps the arguments its trials recover" min="1" max="1">  v1 = strlen\(\);</stringmatch>
+<stringmatch name="GOTIMPORTPROTO: the import call never keeps only the arguments its trials recover" min="0" max="0">  v1 = strlen\(\);</stringmatch>
 </decompilertest>

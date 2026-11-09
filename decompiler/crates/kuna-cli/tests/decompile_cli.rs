@@ -742,18 +742,6 @@ fn a_call_that_finalizes_before_its_witness_recovers_its_argument() {
         on.contains("callee(a0 + 0x27)"),
         "the site that was already correct changed:\n{on}"
     );
-
-    // The ablation: both the new option and the rule it completes turn it off.
-    for off in [
-        ["--option", "calleearityfwd", "off"],
-        ["--option", "calleearity", "off"],
-    ] {
-        let Some(text) = run(&off) else { return };
-        assert!(
-            text.contains("callee();"),
-            "{off:?} did not restore the pre-DIV-103 output:\n{text}"
-        );
-    }
 }
 
 /// A stripped ARM PIE whose `sub_410` exists only because the non-x86-64

@@ -156,14 +156,26 @@ fn engine_unavailable(entry: &str) -> IfaceError {
 pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static, str>> {
     // C++ returns "" for an unknown option (suppressing the current field).
     let on_off = |b: bool| if b { "on" } else { "off" };
-    // (kuna `symbolnamebound`) The one VALUED live reader whose value is not a
-    // fixed token, so it owns its string; every other arm borrows and the
-    // emitted catalog bytes are unchanged.
+    // (kuna `dyldimage`, `symbolnamebound`) The valued live readers whose value
+    // is not a fixed token own their string; every other arm borrows.
+    if option == "dyldimage" {
+        return Some(
+            std::env::var(kuna_decomp::kuna_dyldcache::DYLDIMAGE_ENV)
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .map_or(Cow::Borrowed("none"), Cow::Owned),
+        );
+    }
     if option == "symbolnamebound" {
         return Some(match conf.analysis_symbolnamebound {
             None => Cow::Borrowed("off"),
             Some(n) => Cow::Owned(n.to_string()),
         });
+    }
+    if option == "kernelcache" {
+        // The loader reads the env bridge, which the `option` command also sets.
+        let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
+        return Some(Cow::Owned(choice.as_str().to_string()));
     }
     Some(Cow::Borrowed(match option {
         "bytearrayc" => on_off(conf.print().options.bytearray_c),
@@ -200,7 +212,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "constspaceload" => on_off(conf.const_space_load_fold),
         "nulterminator" => on_off(conf.nul_terminator),
         "retsplitglobal" => on_off(conf.ret_split_global),
-        "retinputhalf" => on_off(conf.ret_input_half),
         // (kuna `protoorder`) Three-valued, so it reports its own token.
         "protoorder" => conf.protoorder.as_str(),
         // (kuna `calleevote`) Three-valued, so it reports its own token.
@@ -216,8 +227,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "syscallregs" => conf.syscall_regs.as_str(),
         // (kuna `callmechanisms`) Three-valued, so it reports its own token.
         "callmechanisms" => conf.call_mechanism_mode.as_str(),
-        "retpushedhalf" => on_off(conf.ret_pushed_half),
-        "inputparamgap" => on_off(conf.input_param_gap),
         // (kuna `rustabi`) Three-valued, so it reports its own token.
         "rustabi" => kuna_decomp::kuna_rustabi::RustAbiMode::from_u8(conf.rust_abi).as_str(),
         // (kuna `fatstr`) Three-valued, so it reports its own token.
@@ -246,7 +255,6 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "stackalias" => on_off(conf.stack_alias_deadstore),
         "stackviews" => on_off(conf.stack_views),
         "stackprobeloop" => on_off(conf.model_stack_probe_loop),
-        "callpush" => on_off(conf.drop_call_push),
         "v850indirectbranch" => on_off(conf.v850_indirect_branch),
         "switchmodbound" => on_off(conf.switch_modulo_bound),
         "constselectjump" => on_off(conf.const_select_jump),
@@ -308,6 +316,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "peordinal" => on_off(conf.analysis_peordinal),
         "symbolnamerepair" => on_off(conf.analysis_symbolnamerepair),
         "swiftdemangle" => on_off(conf.analysis_swiftdemangle),
+        "dyldcrossrefs" => on_off(kuna_decomp::kuna_dyldcache::dyldcrossrefs_enabled()),
         // (kuna `symbolnamechars`) Three-valued, so it reports its own token.
         "symbolnamechars" => conf.analysis_symbolnamechars.as_str(),
         "msvcfpconst" => on_off(conf.analysis_msvcfpconst),

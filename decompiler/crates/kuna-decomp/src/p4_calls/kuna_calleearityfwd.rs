@@ -1,5 +1,5 @@
-//! (kuna) `calleearityfwd` — reconcile a call's argument list against a sibling
-//! that finalizes *later*.
+//! (kuna) Reconcile a call's argument list against a sibling that finalizes
+//! *later*.
 //!
 //! # The gap
 //!
@@ -70,7 +70,6 @@
 //! all sibling reconciliation off.
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
@@ -80,28 +79,10 @@ use kuna_num::opcodes::OpCode;
 use crate::context::{OpId, VarnodeId};
 use crate::fspec::FuncCallSpecs;
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 use crate::p4_calls::kuna_calleearity::{best_witness_for, plan_promotions, TrialView};
 
 /// Marshaling element `<calleearityfwd>` (kuna 4000+ range; 4133 = calleearity).
 pub const ELEM_CALLEEARITYFWD: ElementId = ElementId::new("calleearityfwd", 4137);
-
-/// (kuna) Retry the `calleearity` reconciliation against sibling calls that
-/// finalize later in the same pass: `calleearityfwd on|off`.
-pub struct OptionCalleeArityFwd;
-
-impl OptionCalleeArityFwd {
-    /// The option name.
-    pub const NAME: &'static str = "calleearityfwd";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_arity_fwd`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Forward call-site argument-list reconciliation turned {prop}")))
-    }
-}
 
 /// A call that finalized with no arguments, held until every spec in the pass is
 /// final.
@@ -119,11 +100,10 @@ pub struct PendingRescue {
 ///
 /// Called from `build_input_from_trials` with the trials still intact and the
 /// CALL op's pre-rewrite inputs still attached.  `None` whenever the retry could
-/// not apply anyway: option off, locked prototype, not a live direct CALL, some
+/// not apply anyway: locked prototype, not a live direct CALL, some
 /// argument already recovered, or no promotable register trial left.
 pub fn capture_empty_call(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingRescue> {
-    let arch = data.get_arch();
-    if !arch.callee_arity || !arch.callee_arity_fwd || fc.is_input_locked() {
+    if fc.is_input_locked() {
         return None;
     }
     let op = fc.get_op();

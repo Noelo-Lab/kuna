@@ -674,7 +674,7 @@ arm answers only processor-space ranges, because a callee's memory writes are `S
 address the walk cannot follow; only *killed by call* is downgraded, never
 promoted; and a prototype carrying its own effect-record override has had a
 deliberate statement made about it and is left alone. A call built past a PLT stub at the
-definition the stub is bound to (`pltlocal`, chapter 04) takes no proof either:
+definition the stub is bound to (`kuna_pltlocal.rs`, chapter 04) takes no proof either:
 the compiler that emitted `bl name@plt` could not rely on what one definition
 leaves alone, since the lazy resolver runs first and another may win.
 
@@ -740,7 +740,7 @@ no write to the return storage proves the call has no return value at all
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeretpreserves.rs
 (callee_preserves_return_storage)`). For an exact range the effect is downgraded
 to *unaffected*, the output-active arm is skipped, and the caller's own
-definition flows across the call. A call built past a PLT stub (`pltlocal`) takes no such proof,
+definition flows across the call. A call built past a PLT stub (`kuna_pltlocal.rs`) takes no such proof,
 for the reason given above for `calleepreserves`.
 
 Three conditions bound it. The range must characterize as the call's *output*.
@@ -864,7 +864,7 @@ Floating-point slots, ambiguous contained entries, unnamed ranges, other
 address widths and memory ranges are excluded. `off` disables the partial-range
 guards; `in` and `full` retain their broader opt-in behavior.
 
-Trial scoring for this shape has one companion rule, `exclusivecallret`
+Trial scoring for this shape has one companion rule, `kuna_exclusivecallret.rs`
 (chapter 04, `ActionActiveParam`), which lets a call and a return on mutually
 exclusive arms keep each other's narrow scalar trial.
 
@@ -2961,7 +2961,7 @@ every trial register — rax in slot 1, rdx in slot 2 on x86-64 — and a consta
 known for rdx then replaced the rax slot: a function with a second RETURN
 reached only when `rdx == 0` printed `return 0;` there instead of the entry
 value. That happens whenever the output container outlives the first mainloop
-iteration (a model with a delayed heritage space, or the `condexeret` extra
+iteration (a model with a delayed heritage space, or the `kuna_condexeret.rs` extra
 pass, 04 §4.4). kuna stores the COPY in the slot that actually reads the
 varnode (`condconst.rs (propagate_constant)`); on a trimmed RETURN that is slot
 1, as upstream.

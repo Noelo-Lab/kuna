@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-8fb669a549b6",
+  "probe_id": "a-b8335d5fdce4",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -9,13 +9,7 @@
     "0x8049f20",
     "--addr",
     "--assert",
-    "prototype sub_8049f20 int4 sub_8049f20(char *path,void *buf);",
-    "--option",
-    "calleearity",
-    "on",
-    "--option",
-    "varargstackargs",
-    "on"
+    "prototype sub_8049f20 int4 sub_8049f20(char *path,void *buf);"
   ],
   "cwd": "{{WORK}}",
   "env": {

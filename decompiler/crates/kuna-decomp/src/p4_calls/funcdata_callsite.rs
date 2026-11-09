@@ -135,26 +135,22 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
                 let mut access = data.alias_gather_access();
                 aliascheck.has_local_alias(Some((vn_space.clone(), vn_offset)), &mut access)
             };
-            let trial_addr =
-                data.get_call_specs_mut(idx).get_active_input().get_trial(i).get_address().clone();
             // C++ keeps these two no-use conditions as separate branches
             // (fspec.cc:5616-5619): a stack alias, OR a stack location outside the
             // CALLER's local range, both mean "not a parameter".  The range test is
             // on the argument Varnode's caller-relative address, not the trial's
-            // callee-relative one — (kuna) `callsitestackargs` owns that choice.
+            // callee-relative one (kuna, [`crate::p4_calls::kuna_callsitestackargs`]).
             #[allow(clippy::if_same_then_else)]
             if has_alias {
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
             } else if crate::p4_calls::kuna_callsitestackargs::outside_caller_local_range(
-                data.get_arch().callsite_stack_args,
                 data.get_func_proto().get_local_range(),
                 &vn_space,
                 vn_offset,
-                &trial_addr,
             ) {
                 data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
             } else if callee_pop {
-                let off = trial_addr.get_offset();
+                let off = data.get_call_specs_mut(idx).get_active_input().get_trial(i).get_address().get_offset();
                 let sz = data.get_call_specs_mut(idx).get_active_input().get_trial(i).get_size();
                 if (off as i64 + (sz as i64 - 1)) < expop as i64 {
                     data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_active();
@@ -207,6 +203,31 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
             crate::p4_calls::kuna_passthrough::claimed_range(data, t.get_address(), t.get_size())
         } {
             data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_inactive();
+        } else if {
+            let t = data.get_call_specs(idx).active_input().get_trial(i);
+            crate::p4_calls::kuna_swiftcall::stale_self(data, idx, slot, t.get_address(), t.get_size())
+        } {
+            data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
+        } else if let Some(dispatch) = {
+            let t = data.get_call_specs(idx).active_input().get_trial(i);
+            crate::p4_calls::kuna_swiftcall::indirect_self(data, idx, slot, t.get_address(), t.get_size())
+        } {
+            let trial = data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i);
+            if dispatch {
+                trial.set_ancestor_realistic();
+                trial.set_ancestor_solid();
+                trial.mark_active();
+            } else {
+                trial.mark_no_use();
+            }
+        } else if {
+            let t = data.get_call_specs(idx).active_input().get_trial(i);
+            crate::p4_calls::kuna_swiftcall::passes_own_self(data, idx, slot, t.get_address(), t.get_size())
+        } {
+            let trial = data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i);
+            trial.set_ancestor_realistic();
+            trial.set_ancestor_solid();
+            trial.mark_active();
         } else if {
             // (kuna) `calleedeadarg`: the callee's OWN body can settle a register
             // trial the caller's data flow cannot.  A register the callee
@@ -383,8 +404,8 @@ pub fn build_input_from_trials(
         .unwrap_or(false);
     // (kuna) `calleearity`: before the argument list is written, reconcile it
     // with a sibling call to the same callee whose list is already final, so one
-    // callee does not render with two arities in one function.  Inert with the
-    // option off.  See [`crate::p4_calls::kuna_calleearity`].
+    // callee does not render with two arities in one function.  See
+    // [`crate::p4_calls::kuna_calleearity`].
     crate::p4_calls::kuna_calleearity::unify_with_sibling_call(fc, data);
     // (kuna) `argclobber`: and after it, the subtractive direction -- a trailing
     // register argument a previous call's clobber put there is dropped, unless a
@@ -460,10 +481,26 @@ pub fn build_input_from_trials(
     // (kuna) `calleearityfwd` / `calleearitylive`: capture the retry candidate
     // while the trials and the CALL's pre-rewrite inputs are both still there.
     let read_arg = crate::p4_calls::kuna_calleereadarg::capture(fc, data);
+    // (kuna `swiftcall`) A call passing only a Swift `self` is, for the
+    // callee-body rule, one that recovered nothing.
+    let only_self = newparam.len() == 2 && {
+        let t = (0..fc.active_input().get_num_trials())
+            .map(|i| fc.active_input().get_trial(i))
+            .find(|t| t.is_used());
+        t.is_some_and(|t| crate::p4_calls::kuna_swiftcall::is_self_storage(data, t.get_address(), t.get_size()))
+    };
     let pending = if newparam.len() < 2 {
         PendingCallFixup {
             rescue: crate::p4_calls::kuna_calleearityfwd::capture_empty_call(fc, data),
             extend: None,
+            body: crate::p4_calls::kuna_calleearitybody::capture_lone_call(fc, data),
+            pass_through,
+            read_arg,
+        }
+    } else if only_self {
+        PendingCallFixup {
+            rescue: None,
+            extend: crate::p4_calls::kuna_calleearitylive::capture_partial_call(fc, data),
             body: crate::p4_calls::kuna_calleearitybody::capture_lone_call(fc, data),
             pass_through,
             read_arg,

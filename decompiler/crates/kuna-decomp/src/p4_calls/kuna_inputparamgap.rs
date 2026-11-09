@@ -1,5 +1,5 @@
-//! (kuna) `inputparamgap` — a run of unused argument registers must not veto a
-//! LATER register the function's own body reads before it writes.
+//! (kuna) A run of unused argument registers must not veto a LATER register
+//! the function's own body reads before it writes.
 //!
 //! # The symptom
 //!
@@ -123,36 +123,18 @@
 //!    one. A register the body does not read before writing is still not a
 //!    parameter.
 
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 
 use crate::fspec::{ParamActive, ParamEntry, ParamTrial};
-use crate::p0_knowledge::options::on_or_off;
 
 /// Marshaling element `<inputparamgap>` (kuna 4000+ range; 4140 was the previous
 /// high-water mark).
 pub const ELEM_INPUTPARAMGAP: ElementId = ElementId::new("inputparamgap", 4141);
 
-/// The `inputparamgap` option surface.
-pub struct OptionInputParamGap;
-
-impl OptionInputParamGap {
-    /// The option name.
-    pub const NAME: &'static str = "inputparamgap";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::input_param_gap`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Own-input register-gap tolerance turned {prop}")))
-    }
-}
-
 /// Is `trial` a REGISTER input that `forceInactiveChain` must not demote?
 ///
 /// True only when all three narrowing clauses hold: `active` belongs to the
-/// function's own input recovery with the option on
+/// function's own input recovery
 /// ([`ParamActive::is_own_input_gap`]), the trial is already ACTIVE (this never
 /// makes one active), and its `ParamEntry` is an exclusion — i.e. a register —
 /// group. A stack trial, an entry-less trial, an inactive trial, or any call

@@ -1,14 +1,6 @@
-//! Unit tests for the `zerocallregs` option.
+//! Unit tests for the zeroing-epilogue return rule.
 
 use super::*;
-
-#[test]
-fn option_parses_on_and_off() {
-    assert_eq!(OptionZeroCallRegs::NAME, "zerocallregs");
-    assert!(OptionZeroCallRegs.apply("on").unwrap().0);
-    assert!(!OptionZeroCallRegs.apply("off").unwrap().0);
-    assert!(OptionZeroCallRegs.apply("maybe").is_err());
-}
 
 #[test]
 fn flag_ops_are_comparisons() {

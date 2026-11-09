@@ -981,11 +981,18 @@ decomp_command!(
     IfcOption,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
         let dcp = dcp_mut(status)?;
-        if dcp.conf.is_none() {
-            return Err(IfaceError::execution("No load image present"));
-        }
         s.skip_ws();
         let optname = s.read_token();
+        if dcp.conf.is_none() {
+            s.skip_ws();
+            let value = s.read_token();
+            let Some(res) = kuna_decomp::kuna_dyldcache::set_option(&optname, &value) else {
+                return Err(IfaceError::execution("No load image present"));
+            };
+            let res = res.map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+            status.out(&format!("{res}\n"));
+            return Ok(());
+        }
         s.skip_ws();
         if optname.is_empty() {
             return Err(IfaceError::parse("Missing option name"));

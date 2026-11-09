@@ -1232,7 +1232,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // input-trial scoring seam consults.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, fd);
         // (kuna `zerofillreturn`) And the zero fills, read off the fresh p-code.
-        crate::p4_calls::kuna_zerofillreturn::seed(arch, fd);
+        crate::p4_calls::kuna_zerofillreturn::seed(fd);
         // (kuna `protoorder types`) And for the parameter types earlier callees stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, fd);
         crate::p4_calls::kuna_callrettype::seed(arch, fd);
@@ -1780,6 +1780,20 @@ fn decompile_func_full_with_objects_inner(
         }
         _ => None,
     };
+    // (kuna `swifttypes`) The register-pinned parameters the analysis tier
+    // declared for this function, behind the console's own `map param`s.
+    let mapped_params: Vec<(int4, String, crate::fspec::ParameterPieces)> =
+        match arch.loader_param_locks.get(&funcaddr) {
+            Some(locks) if pending_proto.is_none() => locks
+                .iter()
+                .filter(|(i, _, _)| !mapped_params.iter().any(|(j, _, _)| j == i))
+                .cloned()
+                .chain(mapped_params.iter().cloned())
+                .collect(),
+            _ => mapped_params.to_vec(),
+        };
+    let mapped_params = mapped_params.as_slice();
+    let input_hints = arch.loader_input_hints.get(&funcaddr).cloned();
     let mut attempt = |prefollowed: Option<Funcdata>,
                        unguarded: bool,
                        condstmts_seed: &std::collections::BTreeSet<Address>,
@@ -1873,6 +1887,15 @@ fn decompile_func_full_with_objects_inner(
             fd.apply_locked_prototype_with_model(&rt.output, None)?;
             fd.get_func_proto_mut().set_input_lock(false);
             fd.kuna_set_elfmain(Some(rt.fresh()));
+        } else if let Some(model) =
+            fd.get_arch().bound_proto_model(&entry_addr).filter(|_| mapped_params.is_empty())
+        {
+            // (kuna) A convention bound without a signature: the parameters
+            // are recovered under it, and the hinted ones named and typed.
+            let proto = fd.get_func_proto_mut();
+            proto.set_model(Some(model));
+            proto.set_model_lock(true);
+            fd.kuna_set_input_hints(input_hints.clone());
         }
         // Re-seed any console `map param <i> <addr> <typedecl>` storage locks (lost
         // when the IR is rebuilt, like `pending_proto`/`mapped_symbols`).  This makes
@@ -1909,12 +1932,12 @@ fn decompile_func_full_with_objects_inner(
         crate::p4_calls::kuna_callwide::seed(arch, &mut fd);
         // (kuna `calleedeadarg`) Take the callee entry-liveness probe the
         // input-trial scoring seam consults, for the same reason and at the same
-        // point; inert unless `option calleedeadarg` is live.
+        // point.
         crate::p4_calls::kuna_calleedeadarg::seed_callee_entry_dead(arch, &mut fd);
         // (kuna `zerofillreturn`) Mark the zero fills of narrow vector-register
         // writes while the p-code is still as lifted; heritage splits a 128-bit
         // write into the same lanes.
-        crate::p4_calls::kuna_zerofillreturn::seed(arch, &mut fd);
+        crate::p4_calls::kuna_zerofillreturn::seed(&mut fd);
         // (kuna `protoorder` single-function drive) A `kuna decompile` of one
         // function has no callee-first run behind it, so it may state the
         // prototypes of the direct callees its own call sites pass preferred-split

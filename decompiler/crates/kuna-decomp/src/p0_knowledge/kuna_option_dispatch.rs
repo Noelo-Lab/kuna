@@ -95,7 +95,6 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "stubtailcall" => on_off!(stub_tail_call, "Loader-proven stub tail calls"),
-    "gotimportproto" => on_off!(got_import_proto, "GOT import type-only prototypes"),
     "ovlesssimplify" => on_off!(ov_less_simplify, "OV-flag signed-compare simplification"),
     "booleanmask" => on_off!(fold_boolean_mask, "Boolean sign-mask folding"),
     "globalarrayanchor" => on_off!(global_array_anchor, "Global array anchor preservation"),
@@ -122,7 +121,6 @@ kuna_options! { self, p1;
         self.const_space_load_fold = val;
         Ok(msg)
     },
-    "callpush" => on_off!(drop_call_push, "Call return-address push removal"),
     "signedness" => {
         let (val, msg) = crate::kuna_typeround::OptionSignedness.apply(p1)?;
         self.signedness = val;
@@ -225,16 +223,7 @@ kuna_options! { self, p1;
     "msvcstrappend" => on_off!(msvc_str_append, "MSVC std::string inlined append collapsing"),
     "switchselector" => on_off!(switch_selector_guard, "Lowered-switch in-function-selector restriction"),
     "noreturn_extern" => on_off!(noreturn_extern_calls, "Name-based extern no-return"),
-    "retinputhalf" => on_off!(ret_input_half, "Returned input-parameter half retention"),
-    "retpushedhalf" => on_off!(ret_pushed_half, "Push-only register placement rejection"),
-    "retsysreg" => on_off!(ret_sys_reg, "System-register operand high-word rejection"),
-    "reloadarg" => on_off!(reload_arg, "Frame-reload scratch-register argument rejection"),
-    "noreturnretuse" => on_off!(noreturn_ret_use, "No-return call argument use in return trials"),
-    "zeroidiomuse" => on_off!(zero_idiom_use, "Self-cancelling zeroing-idiom use in input trials"),
-    "exclusivearguse" => on_off!(exclusive_arg_use, "Mutually-exclusive-path dereference in input trials"),
-    "exclusivecallret" => on_off!(exclusive_call_ret, "Mutually-exclusive call and return uses in narrow scalar trials"),
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
-    "callretpair" => on_off!(call_ret_pair, "Two-register CALL output completion"),
     "multiregargs" => on_off!(multi_reg_args, "Complete ABI register argument partitions"),
     "mipsunaligned" => on_off!(mips_unaligned, "MIPS unaligned load/store pairs as one access"),
     "callwide" => {
@@ -412,12 +401,6 @@ kuna_options! { self, p1;
     "loweredswitchvalue" => on_off!(lowered_switch_value_check, "Lowered-switch dispatch value check"),
     "loweredswitchexact" => on_off!(lowered_switch_exact, "Exact lowered-switch recovery"),
     "loweredswitchheads" => on_off!(lowered_switch_every_head, "Lowered-switch detection from every cascade head"),
-    "callsitestackargs" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_callsitestackargs::OptionCallsiteStackArgs.apply(p1)?;
-        self.callsite_stack_args = val;
-        Ok(msg)
-    },
     "nulterminator" => {
         let (val, msg) =
             crate::p6_variables::kuna_nulterminator::OptionNulTerminator.apply(p1)?;
@@ -434,48 +417,6 @@ kuna_options! { self, p1;
         let (val, msg) =
             crate::p6_variables::kuna_castobject::OptionCastObject.apply(p1)?;
         self.cast_object = val;
-        Ok(msg)
-    },
-    "msvcbyval" => {
-        let (val, msg) = crate::p4_calls::kuna_msvcbyval::OptionMsvcByval.apply(p1)?;
-        self.msvc_byval = val;
-        Ok(msg)
-    },
-    "calleeprotostack" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleeprotostack::OptionCalleeProtoStack.apply(p1)?;
-        self.callee_proto_stack = val;
-        Ok(msg)
-    },
-    "calleedeadarg" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleedeadarg::OptionCalleeDeadArg.apply(p1)?;
-        self.callee_dead_arg = val;
-        Ok(msg)
-    },
-    "hiddenretarg" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_hiddenretarg::OptionHiddenRetArg.apply(p1)?;
-        self.hidden_ret_arg = val;
-        Ok(msg)
-    },
-    "calleereadarg" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleereadarg::OptionCalleeReadArg.apply(p1)?;
-        self.callee_read_arg = val;
-        Ok(msg)
-    },
-    "pushpadread" => on_off!(push_pad_read, "push-only reads left out of callee-read argument evidence"),
-    "zerocallregs" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_zerocallregs::OptionZeroCallRegs.apply(p1)?;
-        self.zero_call_regs = val;
-        Ok(msg)
-    },
-    "zerofillreturn" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_zerofillreturn::OptionZeroFillReturn.apply(p1)?;
-        self.zero_fill_return = val;
         Ok(msg)
     },
     "argclobber" => {
@@ -525,11 +466,6 @@ kuna_options! { self, p1;
         self.pass_through = val;
         Ok(msg)
     },
-    "pltlocal" => {
-        let (val, msg) = crate::p4_calls::kuna_pltlocal::OptionPltLocal.apply(p1)?;
-        self.plt_local_calls = val;
-        Ok(msg)
-    },
     "mixedtailret" => {
         let (val, msg) = crate::p4_calls::kuna_mixedtailret::OptionMixedTailRet.apply(p1)?;
         self.mixed_tail_ret = val;
@@ -559,67 +495,7 @@ kuna_options! { self, p1;
         self.indirect_anchor = val;
         Ok(msg)
     },
-    "inputparamgap" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_inputparamgap::OptionInputParamGap.apply(p1)?;
-        self.input_param_gap = val;
-        Ok(msg)
-    },
-    "stackarggap" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_stackarggap::OptionStackArgGap.apply(p1)?;
-        self.stack_arg_gap = val;
-        Ok(msg)
-    },
-    "varargstackargs" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_varargstackargs::OptionVarargStackArgs.apply(p1)?;
-        self.vararg_stack_args = val;
-        Ok(msg)
-    },
-    "varargforward" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_varargforward::OptionVarargForward.apply(p1)?;
-        self.vararg_forward = val;
-        Ok(msg)
-    },
     "varargsharedfloat" => on_off!(vararg_shared_float, "variadic doubles that also feed an earlier argument"),
-    "calleearity" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleearity::OptionCalleeArity.apply(p1)?;
-        self.callee_arity = val;
-        Ok(msg)
-    },
-    "calleearityfwd" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleearityfwd::OptionCalleeArityFwd.apply(p1)?;
-        self.callee_arity_fwd = val;
-        Ok(msg)
-    },
-    "calleearitylive" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleearitylive::OptionCalleeArityLive.apply(p1)?;
-        self.callee_arity_live = val;
-        Ok(msg)
-    },
-    "calleearitybody" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleearitybody::OptionCalleeArityBody.apply(p1)?;
-        self.callee_arity_body = val;
-        return Ok(msg);
-    },
-    "calleearitycut" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleearitycut::OptionCalleeArityCut.apply(p1)?;
-        self.callee_arity_cut = val;
-        return Ok(msg);
-    },
-    "calleearityscratch" => {
-        let (val, msg) =
-            crate::p4_calls::kuna_calleearityscratch::OptionCalleeArityScratch.apply(p1)?;
-        self.callee_arity_scratch = val;
-        return Ok(msg);
-    },
     "calloverlap" => {
         let (val, msg) =
             crate::p3_dataflow::kuna_calloverlap::OptionCallOverlap.apply(p1)?;
@@ -632,8 +508,6 @@ kuna_options! { self, p1;
         self.spill_arg_trial = val;
         Ok(msg)
     },
-    "condexeret" => on_off!(cond_exe_ret, "return-trial retry after conditional-execution removal"),
-    "condexeretuse" => on_off!(cond_exe_ret_use, "return-value uses ruled out by a re-tested condition"),
     "loadguardrange" => on_off!(load_guard_range, "Indexed-stack guard ValueSet range refinement"),
     "stackstoreguard" => on_off!(stack_store_guard, "Stack-derived store heritage guards"),
     "indexaliasguard" => {
@@ -751,12 +625,6 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "iteexpr" => on_off!(iteexpr, "Computed-expression arm ?: recovery (iteregion extension)"),
-    "evalcurrentproto" => {
-        let (val, msg) =
-            crate::kuna_evalcurrentproto::OptionEvalCurrentProto.apply(p1)?;
-        self.evalcurrentproto = val;
-        Ok(msg)
-    },
     "iteboolean" => {
         let (val, msg) =
             crate::p8_structure::kuna_iteboolean::OptionIteBoolean.apply(p1)?;
@@ -883,7 +751,6 @@ kuna_options! { self, p1;
     "ptrdepthcap" => on_off!(ptrdepthcap, "inferred pointer-nesting cap"),
     "calltargettype" => on_off!(call_target_type, "indirect-call target types"),
     "floatglobals" => on_off!(float_globals, "float typing of globals moved only through float registers"),
-    "callerreads" => on_off!(caller_reads, "return recovery from what the callers read"),
     "boolbyte" => on_off!(bool_byte, "truth-valued byte typing"),
     "charbyte" => on_off!(char_byte, "char-pointer byte typing"),
     "castarith" => on_off!(cast_arith, "pointer arithmetic in pointer terms"),
@@ -1123,6 +990,11 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
+    "kernelcache" => {
+        let (choice, msg) = crate::kuna_kernelcache::parse_kernelcache(p1)?;
+        crate::kuna_kernelcache::set_kernelcache_env(&choice);
+        Ok(msg)
+    },
     "dynrelocs" => {
         let val = on_or_off(p1)?;
         self.analysis_dynrelocs = val;
@@ -1168,6 +1040,8 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
+    "dyldimage" => Ok(crate::kuna_dyldcache::set_dyldimage(p1)),
+    "dyldcrossrefs" => crate::kuna_dyldcache::set_dyldcrossrefs(p1),
     "swiftdemangle" => {
         let val = on_or_off(p1)?;
         self.analysis_swiftdemangle = val;
@@ -1344,6 +1218,22 @@ kuna_options! { self, p1;
         self.cfstrings_annotate = annotate;
         let state = if annotate { "on, annotated" } else if pass { "on" } else { "off" };
         Ok(format!("Mach-O __cfstring constant-string recovery pass turned {state}"))
+    },
+    "swifttypes" => on_off!(analysis_swifttypes, "Swift type layouts from static metadata"),
+    "objcivars" => {
+        let val = on_or_off(p1)?;
+        self.analysis_objcivars = val;
+        crate::kuna_objcivars::set_objcivars_env(val);
+        Ok(format!("Objective-C instance layouts turned {}", if val { "on" } else { "off" }))
+    },
+    "swiftcall" => on_off!(analysis_swiftcall, "Swift calling convention on methods and witnesses"),
+    "objcsdk" => {
+        let path = crate::kuna_objcsdk::parse_option_value(p1).map_err(KunaError::parse)?;
+        crate::kuna_objcsdk::set_objcsdk_env(path.as_deref().and_then(|p| p.to_str()));
+        Ok(match path {
+            Some(p) => format!("Objective-C signatures read from {}", p.display()),
+            None => "Objective-C SDK headers off".to_string(),
+        })
     },
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
     "relocobjects" => {
