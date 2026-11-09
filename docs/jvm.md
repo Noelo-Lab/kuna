@@ -318,6 +318,7 @@ option per fix, each on by default and each turned off, all at once, by
 |---|---|---|
 | `jvm_fix_report_to_kuna` | the note under every error comment asks readers to report the class to Vineflower's tracker | it asks for reports to kuna's tracker (a `jvm_error_message` you set still wins) |
 | `jvm_fix_lambda_wildcard_return` | fails a method that passes `x::m` on a receiver typed `Foo<?>` to a generic call, when `m` returns `Foo`'s type variable (`NullPointerException: returnType`; spring-boot's `StructuredLoggingJsonProperties.customizers`) | the method decompiles; the lambda keeps the type its call's context gives it |
+| `jvm_fix_if_denest_fallthrough` | turns `if (a) { ...; try { ... } ... } Z` into `if (!a) { Z } else { ... }` although the `try` falls through to `Z`: prints a `break` past `Z` on that path (a skipped statement or a missing `return`), or fails the method (`IllegalStateException: Could not find destination nodes for stat id`; Elasticsearch's `InternalEngine.closeNoLock`) | the `if` keeps its shape when its body reaches the code after it; the method decompiles to its source |
 
 Every fix is a `KunaFix` variant in `src/p0_knowledge/kuna_fixes.rs` and a row in
 `options.toml`; each site where kuna departs from the Java asks

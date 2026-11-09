@@ -29,17 +29,26 @@ pub enum KunaFix {
     /// `jvm_fix_lambda_wildcard_return`: a method reference on a receiver
     /// whose type argument is `?` no longer fails type inference.
     LambdaWildcardReturn,
+    /// `jvm_fix_if_denest_fallthrough`: if-else-chain denesting no longer
+    /// moves the code after an if into its then-branch while the if's body
+    /// still reaches that code.
+    IfDenestFallthrough,
 }
 
 impl KunaFix {
     /// Every fix, in declaration order.
-    pub const ALL: &'static [KunaFix] = &[KunaFix::ReportToKuna, KunaFix::LambdaWildcardReturn];
+    pub const ALL: &'static [KunaFix] = &[
+        KunaFix::ReportToKuna,
+        KunaFix::LambdaWildcardReturn,
+        KunaFix::IfDenestFallthrough,
+    ];
 
     /// The option row that turns this fix on or off.
     pub fn option(self) -> &'static str {
         match self {
             KunaFix::ReportToKuna => "jvm_fix_report_to_kuna",
             KunaFix::LambdaWildcardReturn => "jvm_fix_lambda_wildcard_return",
+            KunaFix::IfDenestFallthrough => "jvm_fix_if_denest_fallthrough",
         }
     }
 

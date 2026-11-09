@@ -1,4 +1,8 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/IfHelper.java`.
+//!
+//! kuna fix `jvm_fix_if_denest_fallthrough` (`kuna_fixes`): `ifElseChainDenesting`
+//! leaves an if alone when its body still reaches the statements it would move
+//! into the then-branch.
 
 use crate::assert_processor::AssertProcessor;
 use crate::decompiler_context::DecompilerContext;
@@ -8,6 +12,7 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_node::{EdgeType, IfNode};
 use crate::if_statement::IfStatement;
 use crate::jthrow;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::merge_helper::MergeHelper;
 use crate::root_statement::RootStatement;
 use crate::rt::JHashSet;
@@ -522,6 +527,11 @@ impl IfHelper {
                             if next_stat.is_some()
                                 && next_if_stat.is_none_or(|nis| !first_exprents_empty(nis.0))
                             {
+                                if kuna_fixes::enabled(KunaFix::IfDenestFallthrough)
+                                    && Self::reaches_following(outer_if, parent)
+                                {
+                                    return false;
+                                }
                                 let condition_exprent = outer_if.get_headexprent();
                                 condition_exprent.set_condition(
                                     FunctionExprent::new_single(
@@ -541,6 +551,18 @@ impl IfHelper {
         }
 
         false
+    }
+
+    /// Whether an edge from inside `outer_if` reaches a statement after it in
+    /// `parent`: the statements `swap_branches` moves into the then-branch.
+    fn reaches_following(outer_if: IfStatement, parent: SequenceStatement) -> bool {
+        let stats = parent.get_stats().borrow().to_vec();
+        let Some(index) = stats.iter().position(|st| *st == outer_if.0) else {
+            return false;
+        };
+        stats[index + 1..]
+            .iter()
+            .any(|st| Self::exists_path(outer_if.0, *st))
     }
 
     /// `stat` itself when it is an if, or its first statement when `stat` is a
