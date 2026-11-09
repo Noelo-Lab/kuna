@@ -17,16 +17,11 @@
           iVar1 = iVar1 + 1) { ... }
 
     Stage model: S3 "simplification-quiescence" (which algebraic/peephole rules
-    fire).  kuna's RuleSborrowGe (group "analysis", gated by the default-off arch
-    flag fold_flag_compare) recognizes the XNOR(N,V) tree in either De-Morgan
-    dual form (AND-of-ORs or OR-of-ANDs) with N = sign(V-K) and V = SBORROW(V,K),
-    and rewrites the whole boolean tree to INT_SLESSEQUAL(K, V) == `V s>= K`.
-    Exposed by `option flagcompare on`.
-
-    Pass 1 (default pipeline) reproduces the bug: the SBORROW2 flag idiom
-    survives in the loop condition (assert #1).
-    Pass 2 (after `option flagcompare on`) the loop condition is the clean
-    signed comparison `7 <= iVar1` and no SBORROW2 remains (assert #2).
+    fire).  kuna's RuleSborrowGe (group "analysis", always on) recognizes the
+    XNOR(N,V) tree in either De-Morgan dual form (AND-of-ORs or OR-of-ANDs)
+    with N = sign(V-K) and V = SBORROW(V,K), and rewrites the whole boolean
+    tree to INT_SLESSEQUAL(K, V) == `V s>= K`: the loop condition is the clean
+    signed comparison `7 <= iVar1` and no SBORROW2 remains.
 
     Disassembly:
       0x000000 mov.w #0x0,W2
@@ -45,15 +40,11 @@
 <symbol space="rom" offset="0x0" name="FUN_0"/>
 </binaryimage>
 <script>
-  <com>option flagcompare off</com>
   <com>lo fu FUN_0</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option flagcompare on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GH8777 #1: default pipeline keeps the raw SBORROW2 N==V flag idiom (bug reproduces)" min="1" max="1">\(v2 \|\| !SBORROW2\(v1,7\)\) &amp;&amp; \(!v2 \|\| SBORROW2\(v1,7\)\)</stringmatch>
-<stringmatch name="GH8777 #2: option flagcompare on folds it to a clean signed compare (fix, no SBORROW2 left)" min="1" max="1">for \(v1 = 0; 7 &lt;= v1; v1 = v1 \+ 1\)</stringmatch>
+<stringmatch name="GH8777 #1: the raw SBORROW2 N==V flag idiom never survives" min="0" max="0">\(v2 \|\| !SBORROW2\(v1,7\)\) &amp;&amp; \(!v2 \|\| SBORROW2\(v1,7\)\)</stringmatch>
+<stringmatch name="GH8777 #2: the idiom folds to a clean signed compare (no SBORROW2 left)" min="1" max="1">for \(v1 = 0; 7 &lt;= v1; v1 = v1 \+ 1\)</stringmatch>
 </decompilertest>

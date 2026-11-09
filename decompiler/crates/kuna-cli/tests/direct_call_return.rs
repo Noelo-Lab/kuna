@@ -172,23 +172,6 @@ fn terminal_failure_call_preserves_the_pre_call_result() {
             );
         }
     }
-    let off = decompile(
-        &elf,
-        &assertions,
-        "checked_return,simple_checked_return",
-        &[
-            "--option",
-            "noreturn",
-            "cookie_failure",
-            "--option",
-            "calleeretpreserves",
-            "off",
-            "--option",
-            "calleepreserves",
-            "off",
-        ],
-    );
-    assert!(!off.contains("return value;"), "{off}");
     let ordered = decompile(
         &elf,
         &assertions,

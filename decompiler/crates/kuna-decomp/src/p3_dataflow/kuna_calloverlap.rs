@@ -26,14 +26,14 @@
 //!
 //! * [`LEVEL_OFF`] — both branches inert; byte-identical to what kuna shipped
 //!   before this option for a single partially covered ABI entry. Complete
-//!   multi-slot register ranges are separately controlled by `multiregargs`.
+//!   multi-slot register ranges are partitioned by `kuna_multiregargs`.
 //! * [`LEVEL_AUTO`] (the default) — both guards, but only for a named
 //!   eight-byte register's low four-byte general ABI slot on a truncated 32-bit
 //!   address target, including e500 GPRs.
 //! * [`LEVEL_IN`] — the input guard only.  Recovers the dropped argument but
 //!   leaves the call's return value unrecovered.
 //! * [`LEVEL_FULL`] — both upstream partial-range guards. Complete register partitions
-//!   are registered at every level when `multiregargs` is on.
+//!   are registered at every level.
 //!
 //! The guards themselves are upstream `Heritage` methods and live with their
 //! siblings in [`crate::p3_dataflow::heritage`]; this module owns the option's

@@ -30,8 +30,7 @@
     shared with the range, so it never saw the loop's STORE.  The C then
     printed req2's type before the loop that clears it, and req's type was
     copied out of req2.  With stackstoreguard's indexed-store guards this is
-    the shape of iproute2 `ip` -O2 0x64ca0.  Pass 2 (stackstoreguard off)
-    prints what main prints.
+    the shape of iproute2 `ip` -O2 0x64ca0.
 -->
 <bytechunk space="ram" offset="0x401000" readonly="true">
 554881ec0010000048830c24004881ec0010000048830c24004883ec60b90202
@@ -66,15 +65,11 @@ e5ebfe
   <com>lo fu nl</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option stackstoreguard off</com>
-  <com>lo fu nl</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
 <!-- Indexed storage recovery may map a zeroed request as an array; its fields then print through element 0. -->
 <stringmatch name="zeroloopfield #1: nl stores req2's type after the loop that zeroes req2" min="1" max="1">^    v\d+(\[0\])?\._6_2_ = 0x301;$
 ^    v\d+(\[0\])?\._4_2_ = \(int2\)v\d+;$</stringmatch>
 <stringmatch name="zeroloopfield #2: no request field is copied out of another request" min="0" max="0">\._4_2_ = v\d+(\[0\])?\._4_2_;</stringmatch>
-<stringmatch name="zeroloopfield #3: off stores both types from the temporary loaded before the loops, as main does" min="1" max="1">^  v\d+(\[0\])?\._4_2_ = v\d+; // branch-flip$</stringmatch>
+<stringmatch name="zeroloopfield #3: neither type is stored from the temporary loaded before the loops, as main did" min="0" max="0">^  v\d+(\[0\])?\._4_2_ = v\d+; // branch-flip$</stringmatch>
 </decompilertest>

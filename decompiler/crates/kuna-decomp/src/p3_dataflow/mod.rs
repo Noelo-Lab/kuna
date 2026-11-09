@@ -36,7 +36,6 @@ pub mod kuna_booleanmask;
 pub mod kuna_ovlesssimplify;
 pub mod kuna_flagcompare;
 pub mod kuna_arraystride;
-pub mod kuna_condexeplace;
 pub mod kuna_compareform;
 pub mod kuna_segmentize;
 pub mod kuna_indirectanchor; // (kuna) an op inserted after a guard INDIRECT anchors to the op it speaks for
