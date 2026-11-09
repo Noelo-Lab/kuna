@@ -1,0 +1,21 @@
+UNIT archive $DATA/mrtool.jar
+R true false
+C -1 pkg/Hello$1
+C -1 pkg/Hello
+C -1 pkg/util/Util
+C 11 /pkg/util/Util
+D META-INF
+D META-INF/
+D pkg
+D pkg/
+D pkg/util
+D pkg/util/
+D META-INF/versions
+D META-INF/versions/11
+D META-INF/versions/11/
+D META-INF/versions/11/pkg
+D META-INF/versions/11/pkg/
+D META-INF/versions/11/pkg/util
+D META-INF/versions/11/pkg/util/
+O -1 META-INF/MANIFEST.MF
+K 0
