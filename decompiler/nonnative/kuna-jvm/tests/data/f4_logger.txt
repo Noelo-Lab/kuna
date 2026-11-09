@@ -1,0 +1,44 @@
+== TRACE
+TRACE: t
+INFO:  i
+WARN:  w
+ERROR: e
+INFO:  Preprocessing class A
+WARN:     in A
+INFO:     Decompiling class B
+TRACE:       Processing class C
+TRACE:          Processing method m ()V
+ERROR:             deep
+TRACE:             deep trace
+TRACE:          ... proceeded
+TRACE:          Writing class W
+INFO:              w2
+TRACE:          ... written
+TRACE:       ... proceeded
+INFO:     ... done
+INFO:  ... done
+INFO:  out
+
+== INFO
+INFO:  i
+WARN:  w
+ERROR: e
+INFO:  Preprocessing class A
+WARN:     in A
+INFO:     Decompiling class B
+ERROR:             deep
+INFO:              w2
+INFO:     ... done
+INFO:  ... done
+INFO:  out
+
+== WARN
+WARN:  w
+ERROR: e
+WARN:  in A
+ERROR: deep
+
+== ERROR
+ERROR: e
+ERROR: deep
+
