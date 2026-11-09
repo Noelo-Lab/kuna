@@ -1,4 +1,4 @@
-//! End-to-end two-pass gate for `pdbinterior` (GH-468): a PDB procedure's code
+//! End-to-end gate for `pdbinterior` (GH-468): a PDB procedure's code
 //! length keeps the aggressive gap walk from starting a function inside it, but
 //! only inside a procedure whose start is itself a function, and only where that
 //! function's own flow decodes.
@@ -18,12 +18,12 @@
 //!   0x1400011e4  high: cmp ecx,0x3007 ; mov eax,0x4d ; ... ; ret
 //! ```
 //!
-//! **The bug** (`pdbinterior off`): the gap walk probes the leaf's aligned bytes,
+//! **The bug**: the gap walk probes the leaf's aligned bytes,
 //! and `0x1400011d0` opens with the helpers' `mov ; mov` fingerprint and runs to a
 //! `ret`, so AIF accepts it. `funcboundflow` then ends `cascade_leaf` where its
 //! fall-through reaches that entry, and the `0x1000 -> 10` case is gone.
 //!
-//! **The fix** (default): the `.pdb` records `cascade_leaf` as a 56-byte
+//! **The fix**: the `.pdb` records `cascade_leaf` as a 56-byte
 //! procedure and publishes its name, so the entry strictly inside it is rejected
 //! at the commit and the leaf decompiles whole.
 //!
@@ -144,23 +144,6 @@ fn inventory(prog: &ConsoleProgram) -> Vec<(u64, String, Vec<String>)> {
         .collect()
 }
 
-/// BEFORE (`--option pdbinterior off`): the gap walk's entry inside the leaf is
-/// committed and the leaf's render stops at it.
-#[test]
-fn off_plants_an_entry_inside_the_pdb_leaf() {
-    let prog = bootstrap(&[("pdbinterior", "off")]);
-    assert!(prog.lookup_symbol(LEAF).is_some(), "the PDB names the leaf");
-    assert!(
-        prog.lookup_symbol(PHANTOM).is_some(),
-        "with pdbinterior off the gap walk's {PHANTOM} must still be committed"
-    );
-    let body = decompile(prog, LEAF);
-    assert!(
-        body.contains("funcboundflow") && !has_all_cases(&body),
-        "the leaf must be truncated at {PHANTOM} and lose its 0x1000 case; got:\n{body}"
-    );
-}
-
 /// AFTER (default): the PDB procedure bounds the leaf, the interior entry is
 /// rejected and every case renders.
 #[test]
@@ -219,23 +202,11 @@ fn default_keeps_the_only_entry_of_a_static_leaf() {
     );
 }
 
-/// Once a function exists at the static leaf's start, its extent applies: off
-/// truncates the declared function at the gap walk's entry, the default rejects
-/// that entry and renders every case.
+/// Once a function exists at the static leaf's start, its extent applies: the
+/// gap walk's entry is rejected and every case renders.
 #[test]
 fn a_function_at_the_static_leaf_start_lets_its_extent_apply() {
     let declared = Some((STATIC_LEAF, "static_leaf"));
-    let off = bootstrap_image(&fixture("exe"), &[("pdbinterior", "off")], declared);
-    assert!(
-        off.lookup_symbol(STATIC_PHANTOM).is_some(),
-        "off commits {STATIC_PHANTOM}"
-    );
-    let body = decompile(off, "static_leaf");
-    assert!(
-        body.contains("funcboundflow") && !has_all_static_cases(&body),
-        "off must truncate static_leaf at {STATIC_PHANTOM}; got:\n{body}"
-    );
-
     let on = bootstrap_image(&fixture("exe"), &[], declared);
     assert!(
         on.lookup_symbol(STATIC_PHANTOM).is_none(),
@@ -252,22 +223,19 @@ fn a_function_at_the_static_leaf_start_lets_its_extent_apply() {
 /// a block after `handler_leaf`'s last `ret` (where a jump-table case or an
 /// exception handler would sit), the routine `caller_leaf` only calls, and the
 /// block after `noreturn_leaf`'s call to `abort`, which the decompiler stops at.
-/// Every entry exists with the option off, so the default is what keeps them.
 #[test]
 fn default_keeps_entries_the_owner_does_not_decode() {
-    for options in [&[("pdbinterior", "off")][..], &[]] {
-        let prog = bootstrap(options);
-        for (leaf, entry) in [
-            ("handler_leaf", "sub_1400013a0"),
-            ("caller_leaf", "sub_1400013d0"),
-            ("noreturn_leaf", "sub_140001410"),
-        ] {
-            assert!(prog.lookup_symbol(leaf).is_some(), "the PDB names {leaf}");
-            assert!(
-                prog.lookup_symbol(entry).is_some(),
-                "{entry} inside {leaf} must stay committed with {options:?}"
-            );
-        }
+    let prog = bootstrap(&[]);
+    for (leaf, entry) in [
+        ("handler_leaf", "sub_1400013a0"),
+        ("caller_leaf", "sub_1400013d0"),
+        ("noreturn_leaf", "sub_140001410"),
+    ] {
+        assert!(prog.lookup_symbol(leaf).is_some(), "the PDB names {leaf}");
+        assert!(
+            prog.lookup_symbol(entry).is_some(),
+            "{entry} inside {leaf} must stay committed"
+        );
     }
 }
 

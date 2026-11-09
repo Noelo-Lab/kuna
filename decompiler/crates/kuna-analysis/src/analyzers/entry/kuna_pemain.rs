@@ -38,9 +38,7 @@
 //! - an ambiguous image: two different callees from the same shape.
 //!
 //! The name rides the `entry_names` overlay; the prototype `entrymainproto`
-//! recovers is parked by address, so the two compose. Computed at LOAD and
-//! COMMITTED only when the gate is on: `--option pemain off` restores the
-//! `sub_<addr>` inventory exactly.
+//! recovers is parked by address, so the two compose.
 
 use object::read::{Object, ObjectSection, ObjectSymbol};
 

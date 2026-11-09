@@ -669,7 +669,7 @@ fn soft_float_aliases_preserve_unsigned_argument_extension_with_explicit_selecti
 }
 
 #[test]
-fn sectionless_pic_entries_recover_t9_under_the_existing_gate() {
+fn sectionless_pic_entries_recover_t9() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     for abi in ["n32", "64"] {
         let mut bytes =
@@ -684,36 +684,25 @@ fn sectionless_pic_entries_recover_t9_under_the_existing_gate() {
         }
         let path = crate::common::scratch_file("octeon-sectionless", "elf");
         std::fs::write(&path, bytes).unwrap();
-        for enabled in [false, true] {
-            let mut prog = bootstrap_from_object(
-                path.to_str().unwrap(),
-                "",
-                &[root.join("specs").to_string_lossy().into_owned()],
-            )
+        let mut prog = bootstrap_from_object(
+            path.to_str().unwrap(),
+            "",
+            &[root.join("specs").to_string_lossy().into_owned()],
+        )
+        .unwrap();
+        prog.arch_mut().set_kuna_option("ctypes", "on").unwrap();
+        prog.commit_pending_analysis().unwrap();
+        let entry = prog
+            .resolve_entry(&EntrySelector::Numeric(0x100000))
             .unwrap();
-            prog.arch_mut()
-                .set_kuna_option("mips_gp", if enabled { "on" } else { "off" })
-                .unwrap();
-            prog.arch_mut().set_kuna_option("ctypes", "on").unwrap();
-            prog.commit_pending_analysis().unwrap();
-            let entry = prog
-                .resolve_entry(&EntrySelector::Numeric(0x100000))
-                .unwrap();
-            let result = decompile_targets(&mut prog, vec![entry], false, false, false);
-            assert!(result[0].error.is_none(), "{abi}: {:?}", result[0].error);
-            let code = result[0].code.as_ref().unwrap();
-            assert_eq!(
-                code.contains("// t9"),
-                !enabled,
-                "{abi} enabled={enabled}: {code}"
-            );
-            if enabled {
-                assert!(
-                    code.contains(if abi == "n32" { "102018" } else { "102020" }),
-                    "{abi}: {code}"
-                );
-            }
-        }
+        let result = decompile_targets(&mut prog, vec![entry], false, false, false);
+        assert!(result[0].error.is_none(), "{abi}: {:?}", result[0].error);
+        let code = result[0].code.as_ref().unwrap();
+        assert!(!code.contains("// t9"), "{abi}: {code}");
+        assert!(
+            code.contains(if abi == "n32" { "102018" } else { "102020" }),
+            "{abi}: {code}"
+        );
         std::fs::remove_file(path).unwrap();
     }
 }

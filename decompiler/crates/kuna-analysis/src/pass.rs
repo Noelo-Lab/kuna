@@ -377,7 +377,7 @@ pub struct FidMatch {
 /// Which option decides whether a [`ConstRange`] is committed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConstGate {
-    /// `objcrefconst`: the ObjC selector/class/super/protocol reference slots.
+    /// `objc`: the ObjC selector/class/super/protocol reference slots.
     ObjcRefs,
     /// `objcivars`: the ObjC ivar offset variables in `__objc_ivar`.
     ObjcIvars,
@@ -596,10 +596,8 @@ pub struct AnalysisOutput {
     /// See [`FidMatch`].
     pub fid_names: Vec<FidMatch>,
     /// (kuna `cppproto`) The DWARF recoveries that only the C++ arm of the DWARF
-    /// pass produces, held APART from the streams above so the commit boundary can
-    /// drop them wholesale under `--option cppproto off`. The producing pass runs
-    /// at load, upstream of the `option` commands, so the gate cannot live inside
-    /// it — this split is what makes the flag live. See [`CppDwarfFacts`].
+    /// pass produces, held APART from the streams above so the commit boundary
+    /// merges them in its own order. See [`CppDwarfFacts`].
     pub cpp_dwarf: CppDwarfFacts,
     /// Go DWARF signatures, with type interning deferred until the commit gate.
     pub go_dwarf: Vec<crate::dwarf::kuna_godwarfsig::Facts>,
@@ -700,7 +698,6 @@ impl AnalysisOutput {
         self.cpp_sig.proven.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_sig.inferred.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_sig.msvc.iter_mut().for_each(|(_, p, _)| fix_proto(p));
-        self.cpp_sig.msvc_legacy.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_sig.msvc_byval.iter_mut().for_each(|(_, d)| fix_proto(&mut d.pieces));
         self.format_sites.iter_mut().for_each(|f| fix_proto(&mut f.pieces));
     }
@@ -733,10 +730,6 @@ pub struct CppSigFacts {
     /// laid out for (`__thiscall`, `__cdecl`, ...) on a 32-bit x86 image, where the
     /// convention decides the storage; `None` elsewhere.
     pub msvc: Vec<(u64, kuna_decomp::fspec::PrototypePieces, Option<&'static str>)>,
-    /// (kuna `msvcsig off`) The same defined MSVC symbols read the way `cppsig`
-    /// read them before the MSVC arm existed, applied in place of [`Self::msvc`]
-    /// when that gate is off.
-    pub msvc_legacy: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
     /// (kuna `msvcbyval`) The MSVC `__cdecl` imports in [`Self::msvc`] left open
     /// at a by-value class, as whole declarations the call sites size.
     pub msvc_byval: Vec<(u64, kuna_decomp::kuna_msvcbyval::ByvalDecl)>,
@@ -820,7 +813,6 @@ impl AnalysisOutput {
         self.cpp_sig.proven.extend(other.cpp_sig.proven);
         self.cpp_sig.inferred.extend(other.cpp_sig.inferred);
         self.cpp_sig.msvc.extend(other.cpp_sig.msvc);
-        self.cpp_sig.msvc_legacy.extend(other.cpp_sig.msvc_legacy);
         self.cpp_sig.msvc_byval.extend(other.cpp_sig.msvc_byval);
         self.cpp_sig.msvc_builders.extend(other.cpp_sig.msvc_builders);
         self.format_sites.extend(other.format_sites);

@@ -24,16 +24,12 @@ fn repo_root() -> PathBuf {
         .unwrap()
 }
 
-fn decompile(libcsigs: &str) -> String {
+fn decompile() -> String {
     let root = repo_root();
     let specs = vec![root.join("specs").to_str().expect("UTF-8 specs path").to_string()];
     let binary = root.join("decompiler/crates/kuna-analysis/tests/fixtures/libcsigs_pe_x86_64.exe");
     let mut program = bootstrap_from_object(binary.to_str().expect("UTF-8 fixture path"), "", &specs)
         .expect("bootstrap fixture with built processor specs");
-    program
-        .arch_mut()
-        .set_kuna_option("libcsigs", libcsigs)
-        .expect("libcsigs is a registered option");
     program
         .commit_pending_analysis()
         .expect("analysis commit succeeds");
@@ -63,13 +59,7 @@ fn decompile(libcsigs: &str) -> String {
 
 #[test]
 fn memcmp_veneer_receives_the_imports_three_argument_prototype() {
-    let off = decompile("off");
-    assert!(
-        off.contains("memcmp(0x140002100)"),
-        "without libcsigs the duplicate-name veneer loses two arguments:\n{off}"
-    );
-
-    let on = decompile("on");
+    let on = decompile();
     // The buffers are typed `void *` either way: as casts, or (`globalref`,
     // default on) as the addresses of the globals they name.
     assert!(

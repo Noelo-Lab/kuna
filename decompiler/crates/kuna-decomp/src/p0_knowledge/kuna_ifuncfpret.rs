@@ -4,7 +4,7 @@
 //!
 //! ## Why this is an env-var bridge, not an `Architecture` flag
 //!
-//! Like [`i386_pie_plt`](crate::kuna_i386_pie_plt), this is a **loader-tier**
+//! This is a **loader-tier**
 //! change: the stub naming lives in `kuna-analysis`
 //! (`loader/elf_plt.rs::resolve_plt_imports`), which is baked into the
 //! `ObjectLoadImage` at `load file` — **upstream of every per-function `option`

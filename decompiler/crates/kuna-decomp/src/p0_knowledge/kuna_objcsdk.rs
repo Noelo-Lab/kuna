@@ -3,7 +3,7 @@
 //! The `objc` pass runs while the loader snapshots the image, upstream of every
 //! console `option`, so the directory it reads method signatures from travels
 //! as a process environment variable ([`OBJCSDK_ENV`]) the way `sourcelang`
-//! and `dynrelocs` do. Apple's headers are never vendored: the user points kuna
+//! does. Apple's headers are never vendored: the user points kuna
 //! at an SDK on disk (`--option objcsdk /path/to/iPhoneOS.sdk`) or at any
 //! directory of `.h` files, and nothing derived from them is written anywhere.
 

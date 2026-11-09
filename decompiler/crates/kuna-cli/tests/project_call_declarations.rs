@@ -127,9 +127,6 @@ _sample:
                 binary.to_str().unwrap(),
                 "--functions",
                 "_sample",
-                "--option",
-                "libproto",
-                "on",
                 "-o",
                 directory.to_str().unwrap(),
             ];

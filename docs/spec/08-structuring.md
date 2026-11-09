@@ -756,8 +756,8 @@ the schedule (`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
   (Funcdata::node_split)` — the same machinery `ActionReturnSplit` drives —
   *before* final structuring, so the split returns flow through merge/naming
   and are structured normally on the next iteration.
-- **Print-tree rewrites** after `ActionFinalStructure` (`gotoreduce`,
-  `taildup`, `ifelseflatten`, `crossjumprevert`, `dedupitetail`,
+- **Print-tree rewrites** after `ActionFinalStructure` (`gotoreduce`'s
+  two passes, `ifelseflatten`, `crossjumprevert`, `dedupitetail`,
   `iteregion`, `iteboolean`, in that registration order): they edit only the structured
   `sblocks` tree (fresh `BlockCopy` leaves referencing the *same* underlying
   basic blocks, or `list`/`parent` splices, or a print mark) — no p-code is
@@ -825,45 +825,52 @@ share the safety stance: exact structural preconditions, hard caps, and
 decline-on-any-doubt — there is no post-hoc validation to catch a bad edit
 (§8.4).
 
-### gotoreduce — return-tail duplication (angr `ReturnDuplicator`)
+### gotoreduce — return-tail duplication (angr `ReturnDuplicator`, `ReturnDuplicatorLow`)
 
-`decompiler/crates/kuna-decomp/src/p8_structure/kuna_gotoreduce.rs
-(ActionGotoReduce)`. *Pattern:* a `BlockIf` rendering as `if (cond) goto T`
-where `T` is a single-successor basic-block chain ending in `return` —
 `CollapseStructure` has no schema that duplicates a shared multi-predecessor
-return tail, so one in-edge always renders as a goto. *Transform:* inline a
-print-tree copy of the tail into the `if` arm
-(`kuna_inline_return_tail`), clearing `T`'s label when this was its last
-unstructured in-edge — the goto becomes a structured early return.
-*Bounds/failure:* the chain is capped at `kuna_gotoreduce.rs
-(MAX_TAIL_BLOCKS)` = 3 blocks and `(MAX_TAIL_OPS)` = 8 ops, and **any**
-`CALL`/`CALLIND`/`CALLOTHER`/`STORE` in the tail declines the match (a
-duplicated side effect would be unsafe to print twice) — the call-bearing
-return tail is `taildup`'s case. Flipped on by DIV-14 (changes zero
-datatests).
+return tail, so one in-edge always renders as a goto. `gotoreduce` removes
+that goto by inlining a print-tree copy of the tail into its source, clearing
+the target's label when this was its last unstructured in-edge, so the goto
+becomes a structured early return. The option's value says which return tails
+qualify, and each tier is its own pass:
 
-### taildup — return tails with calls (angr `ReturnDuplicatorLow`)
+- `return` runs
+  `decompiler/crates/kuna-decomp/src/p8_structure/kuna_gotoreduce.rs
+  (ActionGotoReduce)` alone. *Pattern:* a `BlockIf` rendering as
+  `if (cond) goto T` where `T` is a single-successor basic-block chain ending
+  in `return`. *Transform:* the tail is inlined into the `if` arm
+  (`kuna_inline_return_tail`). *Bounds/failure:* the chain is capped at
+  `kuna_gotoreduce.rs (MAX_TAIL_BLOCKS)` = 3 blocks and `(MAX_TAIL_OPS)` = 8
+  ops, and **any** `CALL`/`CALLIND`/`CALLOTHER`/`STORE` in the tail declines
+  the match.
+- `on`, the default, runs that pass and then
+  `decompiler/crates/kuna-decomp/src/p8_structure/kuna_taildup.rs
+  (ActionTailDup)` for the return tail that *contains a call* — the
+  `free(p); return;` epilogue, which the call-free pass rejects and
+  `crossjumprevert` (non-return tails only) declines. Two source shapes are
+  matched: the bare `BlockIf` if-goto, and the `BlockGoto` leaf `{ stmts; goto
+  T }` (the goto at the end of a multi-statement arm), each with the matching
+  surgery. Because the tail ends in `return`, the duplicated call is reached on
+  exactly one structured path, so no convergence proof is needed and the call
+  runs as often as before. *Bounds/failure:* ≤ 3 blocks, ≤ 12 printed ops, at
+  most `kuna_taildup.rs (MAX_TAIL_CALLS)` = 2 calls (angr
+  `ReturnDuplicatorBase.max_calls_in_regions = 2` — a budget in calls rather
+  than a veto), `STORE` always declines. The op count includes the casts
+  chapter 09's `ActionSetCasts` inserted, since that pass runs first, so a cast
+  policy that prints fewer casts (`castarith`) can bring a tail within the
+  bound. Each duplication is logged (`taildup:`).
+- `off` runs neither and keeps the upstream goto/label rendering.
 
-`decompiler/crates/kuna-decomp/src/p8_structure/kuna_taildup.rs
-(ActionTailDup)`. *Pattern:* the `free(p); return;` epilogue — a return-tail
-`goto` target that *contains a call*, which `gotoreduce` rejects and
-`crossjumprevert` (non-return tails only) declines. Two source shapes are
-matched: the bare `BlockIf` if-goto, and the `BlockGoto` leaf `{ stmts; goto
-T }` (the goto at the end of a multi-statement arm). *Transform:* the same
-print-tree tail inlining, with the matching surgery per shape. Because the
-tail ends in `return`, the duplicated call is reached on exactly one
-structured path — no convergence proof is needed. *Bounds/failure:* ≤ 3
-blocks, ≤ 12 printed ops, at most `kuna_taildup.rs (MAX_TAIL_CALLS)` = 2
-calls (angr `ReturnDuplicatorBase.max_calls_in_regions = 2` — the budget
-that defines this pass), `STORE` always declines. Flipped on by DIV-14. The
-op count includes the casts chapter 09's `ActionSetCasts` inserted, since that
-pass runs first, so a cast policy that prints fewer casts (`castarith`) can
-bring a tail within the bound.
+`return` is the setting for the C `goto out;` idiom, where many early-exit
+checks share one cleanup epilogue: `on` gives every check its own copy of the
+cleanup call, which the source does not have, while `return` keeps the
+epilogue behind its label and still turns the call-free return tails into
+early returns. Both tiers were flipped on by DIV-14 (changing zero datatests).
 
 ### Releasing a label the duplication passes converted away
 
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_gotolabel.rs`. The three
-passes that turn a `goto` into a duplicated tail (`gotoreduce`, `taildup`,
+passes that turn a `goto` into a duplicated tail (`gotoreduce`'s two passes and
 `crossjumprevert`) each end by clearing `f_unstructured_targ` on the target
 they converted, so a label whose last goto is gone does not linger. That is a
 *release*, and it is only correct when no other carrier still jumps there, so
@@ -898,7 +905,7 @@ and decline the split past `kuna_retsplitglobal.rs
 (MAX_CLONED_GLOBAL_STORES)` = 8, so the epilogue stays shared. *A bound, not a
 veto, is the design*, and it matches this phase's other duplication passes
 (`crossjumprevert` and `dedupitetail` cap a duplicated leaf run at 8 printed
-ops, `taildup` at 12): a two-store epilogue is cheap to clone and reads better
+ops, `gotoreduce on` a return tail with a call at 12): a two-store epilogue is cheap to clone and reads better
 cloned, because the merged form needs a phi per global and can print a global's
 own value back into it on a path where the binary stores nothing; a 72-store
 epilogue across three predecessors is 216 statements. *Bounds/failure:* only
@@ -957,7 +964,7 @@ tail this path stays open — duplicating it is only semantics-preserving if
 both routes provably rejoin at `S`. *Bounds/failure:* exactly one tail block
 (angr duplicates the single `goto_target` node), ≤ 8 printed ops, ≤ 1 call
 (`MAX_TAIL_CALLS`, angr `max_call_dup`), no `STORE`; declines a tail ending
-in `return` (that is the gotoreduce/taildup family) and anything whose
+in `return` (that is `gotoreduce`'s case) and anything whose
 convergence cannot be proven. Flipped on by DIV-14.
 
 ### ifelseflatten — guard-clause flattening (angr `IfElseFlattener`)

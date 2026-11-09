@@ -12,7 +12,7 @@
     emit_basic_block_ops skips exactly that op.  Four conditions must hold -
     void prototype, tail of the LAST structured leaf (descending only Graph/Ls),
     that leaf is not a goto target, and exactly one structured leaf carries the
-    op (returndup/taildup alias one RETURN across several leaves).
+    op (returndup/gotoreduce alias one RETURN across several leaves).
 
     Stage model: S9 emission / brace-form policy.  P0 assertion:
     `option voidtailreturn on|off`.

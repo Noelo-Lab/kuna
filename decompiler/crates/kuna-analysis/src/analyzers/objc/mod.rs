@@ -231,16 +231,12 @@ impl AnalysisPass for ObjcMetadataPass {
         let refs = kuna_objcrefs::emit(&img, ctx.file, ctx.arch, &tctx, &mut selectors, &mut out);
 
         // A chained slot holds its packed fixup word until `dynrelocs` unpacks it
-        // at load; with that gate off the slots are named but never folded.
-        if !img.chained() || kuna_decomp::kuna_dynrelocs::dynrelocs_enabled() {
-            out.const_ranges.extend(refs.into_iter().map(|(first, last_open)| ConstRange {
-                first,
-                last_open,
-                gate: ConstGate::ObjcRefs,
-            }));
-        } else {
-            out.const_ranges.retain(|r| r.gate != ConstGate::ObjcRefs);
-        }
+        // at load.
+        out.const_ranges.extend(refs.into_iter().map(|(first, last_open)| ConstRange {
+            first,
+            last_open,
+            gate: ConstGate::ObjcRefs,
+        }));
         out
     }
 }
@@ -333,10 +329,10 @@ fn emit_ivars(ivars: &[classt::Ivar], class: &str, objcivars: bool, out: &mut An
 }
 
 /// The class name the labels render: the Swift demangling of an ObjC runtime
-/// name (`_TtC6Sample3Foo` → `Sample.Foo`) when `swiftdemangle` is on and the
-/// name is in the demangler's coverage, else the runtime spelling as is.
+/// name (`_TtC6Sample3Foo` → `Sample.Foo`) when the name is in the demangler's
+/// coverage, else the runtime spelling as is.
 fn display_class_name(runtime_name: &str) -> String {
-    if runtime_name.starts_with("_Tt") && kuna_decomp::kuna_swiftdemangle::swiftdemangle_enabled() {
+    if runtime_name.starts_with("_Tt") {
         if let Some(d) = crate::demangle::kuna_swift::demangle_swift_name(runtime_name) {
             return d;
         }

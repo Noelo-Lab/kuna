@@ -29,10 +29,8 @@
 //! instruction alignment after a failed decode rather than cascading, and every
 //! surviving root is then re-walked by the descent, which decodes it for real.
 //! An MS-DOS executable, whose load module is mostly data, also hands the
-//! sweep its relocations ([`super::kuna_mzsweep`], `--option mzsweep`).
-//! `--option rawdiscover off` restores the seeds-only inventory, and
-//! `--define-function` remains the way to assert a boundary neither oracle
-//! found.
+//! sweep its relocations ([`super::kuna_mzsweep`]). `--define-function`
+//! remains the way to assert a boundary neither oracle found.
 
 use std::rc::Rc;
 
