@@ -1,5 +1,7 @@
 //! Port of `org/vineflower/kotlin/expr/KExitExprent.java`.
 
+#![allow(unused_variables)]
+
 use crate::exit_exprent::ExitExprent;
 use crate::exprent::Exprent;
 use crate::text_buffer::TextBuffer;
@@ -13,6 +15,11 @@ kotlin_exprent!(pub KExitExprent: ExitExprent, Exit(KExitExprentData),
                 is_k_exit, as_k_exit, try_as_k_exit);
 
 impl KExitExprent {
+    /// Java: KExitExprent(ExitExprent)
+    pub fn new(expr: ExitExprent) -> KExitExprent {
+        unported!("KExitExprent.<init>")
+    }
+
     pub fn set_lambda_name(self, name: Option<String>) {
         self.kd_mut(|d| d.lambda_name = name)
     }

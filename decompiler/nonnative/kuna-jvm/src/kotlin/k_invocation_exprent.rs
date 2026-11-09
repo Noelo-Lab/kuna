@@ -1,5 +1,7 @@
 //! Port of `org/vineflower/kotlin/expr/KInvocationExprent.java`.
 
+#![allow(unused_variables)]
+
 use crate::exprent::Exprent;
 use crate::invocation_exprent::InvocationExprent;
 use crate::k_element::KElement;
@@ -16,6 +18,11 @@ kotlin_exprent!(pub KInvocationExprent: InvocationExprent, Invocation(KInvocatio
                 is_k_invocation, as_k_invocation, try_as_k_invocation);
 
 impl KInvocationExprent {
+    /// Java: KInvocationExprent(InvocationExprent)
+    pub fn new(expr: InvocationExprent) -> KInvocationExprent {
+        unported!("KInvocationExprent.<init>")
+    }
+
     pub fn get_precedence(self) -> i32 {
         unported!("KInvocationExprent.getPrecedence")
     }
