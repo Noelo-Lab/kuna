@@ -856,7 +856,10 @@ for the process (`decompiler/crates/kuna-cli/src/nonnative/jvm/heap.rs (tune)`, 
 with glibc only): a 256 MiB top pad, no trimming, and blocks up to 32 MiB served from the
 heaps instead of fresh mappings. The engine threads allocate and free many small objects,
 and under the default policy each heap's growth and trimming are memory-map calls under
-one process-wide lock that serialize the threads; the native path never sets it. The CLI
+one process-wide lock that serialize the threads; the native path never sets it. For the
+same reason it arms the per-method memory limit (chapter 00, `kuna_fnmemory`) without the
+heap release the native drivers make before each function
+(`decompiler/crates/kuna-cli/src/nonnative/jvm/run.rs (arm_memory_limit)`). The CLI
 surface is `docs/cli.md` ("JVM inputs").
 
 ## 10.15 Kotlin

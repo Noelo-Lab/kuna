@@ -149,7 +149,11 @@ impl IFernflowerLogger for KunaLogger {
 }
 
 /// Arms `--max-fn-memory` (or the cgroup default); whether a limit is in force.
+/// A method starts without handing free heap pages back: the engine threads
+/// share one heap, and releasing it at every method start cost seconds of
+/// system time on a large jar.
 fn arm_memory_limit(args: &Args) -> bool {
+    kuna_fnmemory::set_release_before_drives(false);
     match args.max_fn_memory {
         Some(mib) => {
             kuna_fnmemory::set_limit_mib(mib);

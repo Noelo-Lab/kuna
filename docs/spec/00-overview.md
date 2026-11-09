@@ -1749,7 +1749,12 @@ neither it nor the value tree it is rendered from is held whole beside the
 results; built whole, the two took about four times the document's size at
 the end of the run. The release at a drive's start uses glibc's `malloc_trim`
 and happens only on Linux with glibc; elsewhere the drive starts from the
-resident set the allocator left.
+resident set the allocator left. A driver whose drives run on many threads of
+one heap at once turns the start release off
+(`kuna_fnmemory.rs (set_release_before_drives)`): the JVM engine's front end
+does (chapter 10), since there each release trims every thread's heap while
+the others allocate and the resident set it lowers is not the drive's own.
+The native drivers never call it.
 A drive armed only by the limit
 gets a deadline a year out so the probes run. The trip holds for the rest of
 the drive, the function's `error` names the limit, and the drive releases free

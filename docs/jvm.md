@@ -786,6 +786,14 @@ knob for exercising the guard). Running out of memory still ends the process: de
 nested expressions cost memory quadratic in their depth (a 2,400-term sum takes 3 GB),
 and the per-method memory limit (`--max-fn-memory`, `docs/cli.md`) is the bound on that.
 
+**Memory guard.** Under a capped cgroup (or with `--max-fn-memory`) each method is armed
+against the per-function memory limit (`docs/cli.md`). On JVM inputs a method starts
+without first handing free heap pages back (`kuna_fnmemory::set_release_before_drives`):
+the engine threads share one heap, and trimming it at method starts made 674,000
+`madvise` calls on Elasticsearch under a 15 GB cap (49 without; median system time 11.6 s
+against 9.1 s over five runs). A method that trips the limit still releases on the way
+out.
+
 ## Testing
 
 | Command | Checks |
