@@ -170,12 +170,13 @@ struct Node<K, V> {
     hash: i32,
     key: K,
     value: V,
+    next: u32,
     before: u32,
     after: u32,
 }
 
 struct Core<K, V> {
-    table: Vec<Vec<u32>>,
+    table: Vec<u32>,
     nodes: Vec<Option<Node<K, V>>>,
     free: Vec<u32>,
     size: usize,
@@ -228,13 +229,15 @@ impl<K: JavaHash + JavaEq, V> Core<K, V> {
             return None;
         }
         let hash = spread(key.java_hash());
-        self.table[self.bucket_of(hash)]
-            .iter()
-            .copied()
-            .find(|&idx| {
-                let n = self.node(idx);
-                n.hash == hash && n.key.java_equals(key)
-            })
+        let mut idx = self.table[self.bucket_of(hash)];
+        while idx != NIL {
+            let n = self.node(idx);
+            if n.hash == hash && n.key.java_equals(key) {
+                return Some(idx);
+            }
+            idx = n.next;
+        }
+        None
     }
 
     fn resize(&mut self) {
@@ -257,11 +260,35 @@ impl<K: JavaHash + JavaEq, V> Core<K, V> {
             new_thr = (new_cap as f32 * 0.75) as usize;
         }
         self.threshold = new_thr;
-        let old = std::mem::replace(&mut self.table, vec![Vec::new(); new_cap]);
-        for (j, chain) in old.into_iter().enumerate() {
-            for idx in chain {
-                let hi = (self.node(idx).hash as u32 as usize) & old_cap != 0;
-                self.table[if hi { j + old_cap } else { j }].push(idx);
+        let old = std::mem::replace(&mut self.table, vec![NIL; new_cap]);
+        for (j, &first) in old.iter().enumerate() {
+            let (mut lo_head, mut lo_tail, mut hi_head, mut hi_tail) = (NIL, NIL, NIL, NIL);
+            let mut idx = first;
+            while idx != NIL {
+                let n = self.node(idx);
+                let next = n.next;
+                let hi = (n.hash as u32 as usize) & old_cap != 0;
+                let (head, tail) = if hi {
+                    (&mut hi_head, &mut hi_tail)
+                } else {
+                    (&mut lo_head, &mut lo_tail)
+                };
+                if *tail == NIL {
+                    *head = idx;
+                } else {
+                    let t = *tail;
+                    self.node_mut(t).next = idx;
+                }
+                *tail = idx;
+                idx = next;
+            }
+            if lo_tail != NIL {
+                self.node_mut(lo_tail).next = NIL;
+                self.table[j] = lo_head;
+            }
+            if hi_tail != NIL {
+                self.node_mut(hi_tail).next = NIL;
+                self.table[j + old_cap] = hi_head;
             }
         }
     }
@@ -284,6 +311,7 @@ impl<K: JavaHash + JavaEq, V> Core<K, V> {
             hash,
             key,
             value,
+            next: NIL,
             before: self.tail,
             after: NIL,
         };
@@ -305,8 +333,21 @@ impl<K: JavaHash + JavaEq, V> Core<K, V> {
         }
         self.tail = idx;
         let bucket = self.bucket_of(hash);
-        let chain_before = self.table[bucket].len();
-        self.table[bucket].push(idx);
+        let mut chain_before = 0;
+        let mut last = self.table[bucket];
+        if last == NIL {
+            self.table[bucket] = idx;
+        } else {
+            loop {
+                chain_before += 1;
+                let next = self.node(last).next;
+                if next == NIL {
+                    break;
+                }
+                last = next;
+            }
+            self.node_mut(last).next = idx;
+        }
         if chain_before >= TREEIFY_THRESHOLD && self.table.len() < MIN_TREEIFY_CAPACITY {
             self.resize();
         }
@@ -324,7 +365,16 @@ impl<K: JavaHash + JavaEq, V> Core<K, V> {
 
     fn remove_idx(&mut self, idx: u32) -> (K, V) {
         let bucket = self.bucket_of(self.node(idx).hash);
-        self.table[bucket].retain(|&i| i != idx);
+        let next = self.node(idx).next;
+        if self.table[bucket] == idx {
+            self.table[bucket] = next;
+        } else {
+            let mut prev = self.table[bucket];
+            while self.node(prev).next != idx {
+                prev = self.node(prev).next;
+            }
+            self.node_mut(prev).next = next;
+        }
         let node = self.nodes[idx as usize].take().expect("live node");
         if node.before == NIL {
             self.head = node.after;
@@ -342,9 +392,7 @@ impl<K: JavaHash + JavaEq, V> Core<K, V> {
     }
 
     fn clear(&mut self) {
-        for chain in &mut self.table {
-            chain.clear();
-        }
+        self.table.fill(NIL);
         self.nodes.clear();
         self.free.clear();
         self.size = 0;
@@ -373,7 +421,6 @@ impl<K: JavaHash + JavaEq, V> Core<K, V> {
         OrderIter {
             core: self,
             bucket: 0,
-            pos: 0,
             cur: NIL,
             linked: false,
         }
@@ -383,7 +430,6 @@ impl<K: JavaHash + JavaEq, V> Core<K, V> {
         OrderIter {
             core: self,
             bucket: 0,
-            pos: 0,
             cur: self.head,
             linked: true,
         }
@@ -401,7 +447,6 @@ impl<K: JavaHash + JavaEq, V> Core<K, V> {
 struct OrderIter<'a, K, V> {
     core: &'a Core<K, V>,
     bucket: usize,
-    pos: usize,
     cur: u32,
     linked: bool,
 }
@@ -421,16 +466,21 @@ impl<K, V> Iterator for OrderIter<'_, K, V> {
                 .after;
             return Some(idx);
         }
-        while self.bucket < self.core.table.len() {
-            let chain = &self.core.table[self.bucket];
-            if self.pos < chain.len() {
-                self.pos += 1;
-                return Some(chain[self.pos - 1]);
+        loop {
+            if self.cur != NIL {
+                let idx = self.cur;
+                self.cur = self.core.nodes[idx as usize]
+                    .as_ref()
+                    .expect("live node")
+                    .next;
+                return Some(idx);
             }
+            if self.bucket >= self.core.table.len() {
+                return None;
+            }
+            self.cur = self.core.table[self.bucket];
             self.bucket += 1;
-            self.pos = 0;
         }
-        None
     }
 }
 
