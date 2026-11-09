@@ -1,4 +1,4 @@
-//! P3 heritage refinement of register pairs — the `pairrefine` decision point.
+//! P3 heritage refinement of register pairs.
 //!
 //! # The gap
 //!
@@ -68,7 +68,7 @@ pub fn split_pair(
     writevars: &[VarnodeId],
     inputvars: &[VarnodeId],
 ) -> bool {
-    if !fd.get_arch().pair_refine || size != 8 || maxw != size {
+    if size != 8 || maxw != size {
         return false;
     }
     let Some(space) = addr.get_space() else {

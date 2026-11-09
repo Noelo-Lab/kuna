@@ -34,5 +34,5 @@
       "Stack[0-9a-fA-F]+\\)\\["
     ]
   },
-  "notes": "Promoted acceptance of rax-preserving-stack-probe, re-pointed from the dataset witness (crackme_shroud.exe sub_140001000, whose whole frame indexed off an unassigned rax local) at the vendored calleescratchbody_x86_64 fixture -- CI has no dataset. Its source .s is MSVC's __chkstk behind `mov eax,SIZE; call; sub rsp,rax`; `--option calleescratchbody off` fails stdout_absent."
+  "notes": "Promoted acceptance of rax-preserving-stack-probe, re-pointed from the dataset witness (crackme_shroud.exe sub_140001000, whose whole frame indexed off an unassigned rax local) at the vendored calleescratchbody_x86_64 fixture -- CI has no dataset. Its source .s is MSVC's __chkstk behind `mov eax,SIZE; call; sub rsp,rax`."
 }

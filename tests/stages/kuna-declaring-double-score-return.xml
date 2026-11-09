@@ -16,8 +16,7 @@
 
   refined_score computes a double division, copies the exact low dword through
   MOVSS to force the real target's XMM0_Da/XMM0_Db heritage partition, and then
-  crosses the same cookie checker. Its option-off pass exposes the unassigned
-  high return cell; its option-on pass must return the complete division.
+  crosses the same cookie checker. It must return the complete division.
 -->
 <bytechunk space="ram" offset="0x1000" readonly="true">
 4883ec38488b05bd1000004833c448894424280f2974241048895c2420bb0200
@@ -74,10 +73,6 @@ efcdab8967452301000000000000f83f0000000000000040
   <com>parse line extern void clobber(void);</com>
   <com>lo fu score</com>
   <com>parse line extern float8 score(void);</com>
-  <com>option calleeretpreserves off</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option calleeretpreserves on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu clobber_caller</com>
@@ -95,22 +90,17 @@ efcdab8967452301000000000000f83f0000000000000040
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu refined_score</com>
-  <com>option calleeretpreserves on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>parse line extern float8 refined_score(void);</com>
-  <com>option calleeretpreserves off</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>option calleeretpreserves on</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="DECLARING-DOUBLE-SCORE #1: option off discards the log result" min="1" max="1">^  log_helper\(dat_20d8\);$</stringmatch>
-<stringmatch name="DECLARING-DOUBLE-SCORE #2: default assigns the log result" min="1" max="1">= log_helper\(dat_20d8\);</stringmatch>
-<stringmatch name="DECLARING-DOUBLE-SCORE #3: default returns both additive doubles" min="2" max="2">return .* \+ .*;</stringmatch>
-<stringmatch name="DECLARING-DOUBLE-SCORE #4: preserving XMM0 does not remove any cookie call" min="6" max="6">cookie\(.*\^</stringmatch>
+<stringmatch name="DECLARING-DOUBLE-SCORE #1: the log result is never discarded" min="0" max="0">^  log_helper\(dat_20d8\);$</stringmatch>
+<stringmatch name="DECLARING-DOUBLE-SCORE #2: the pipeline assigns the log result" min="1" max="1">= log_helper\(dat_20d8\);</stringmatch>
+<stringmatch name="DECLARING-DOUBLE-SCORE #3: the pipeline returns both additive doubles" min="2" max="2">return .* \+ .*;</stringmatch>
+<stringmatch name="DECLARING-DOUBLE-SCORE #4: preserving XMM0 does not remove any cookie call" min="4" max="4">cookie\(.*\^</stringmatch>
 <stringmatch name="DECLARING-DOUBLE-SCORE #5: a body write vetoes preservation of the pre-call XMM0 value" min="1" max="1">^  float8 v1; // xmm0_qa$</stringmatch>
 <stringmatch name="DECLARING-DOUBLE-SCORE #6: an exact cookie marker yields to a recovered XMM0 body write" min="1" max="1">
 ^  cookie_clobber\(.*\);$
@@ -118,8 +108,8 @@ efcdab8967452301000000000000f83f0000000000000040
 </stringmatch>
 <stringmatch name="DECLARING-DOUBLE-SCORE #7: a wide XMM0 range retains the exact low double" min="1" max="1">^  return v1 \+ v3;$</stringmatch>
 <stringmatch name="DECLARING-DOUBLE-SCORE #8: the overlapping upper XMM0 scratch lane remains killed" min="1" max="1">^  float8 v3; // ([^\n]+ \| )?xmm0_qb( \| [^\n]+)?$</stringmatch>
-<stringmatch name="EXPLICIT-DOUBLE-SCORE #1: option off exposes the unassigned refined high return cell" min="1" max="1">^  unsigned int v[0-9]+; // xmm0_db$</stringmatch>
-<stringmatch name="EXPLICIT-DOUBLE-SCORE #2: option on returns the complete double division" min="1" max="1">
+<stringmatch name="EXPLICIT-DOUBLE-SCORE #1: the refined high return cell is never left unassigned" min="0" max="0">^  unsigned int v[0-9]+; // xmm0_db$</stringmatch>
+<stringmatch name="EXPLICIT-DOUBLE-SCORE #2: the declared caller returns the complete double division" min="1" max="1">
 ^  v1 = dat_20d0 / dat_20d8;$
 ^  cookie\(.*\);$
 ^  return v1;$

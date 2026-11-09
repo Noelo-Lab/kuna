@@ -5847,7 +5847,7 @@ impl PrintC {
         }
     }
 
-    /// (kuna) The `loopcounterstore` / `tiedstorekeep` seam for
+    /// (kuna) The loop-counter / address-tied store-brake seam for
     /// [`Self::emit_inplace_op`]: when `op` is a `CPUI_COPY` of an IMPLIED
     /// two-input value, answer that value's defining op and its two inputs, so
     /// the in-place render can be decided on the arithmetic rather than on the
@@ -5895,7 +5895,7 @@ impl PrintC {
             Some(o) => (o.code(), o.get_out(), o.get_in(0), o.get_in(1), o.num_input()),
             None => return false,
         };
-        // (kuna) See through a surviving store: `option loopcounterstore` keeps
+        // (kuna) See through a surviving store: the loop-counter brake keeps
         // the address-tied `COPY` that writes a loop counter back to its frame
         // slot, so the statement's root op is that `COPY` and the arithmetic
         // hangs off it as an implied expression -- `out = out OP y` reaches here

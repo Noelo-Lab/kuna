@@ -37,7 +37,7 @@ fn with_convention(fd: &Funcdata, fc: &mut FuncCallSpecs) {
 
 /// A minimal fixture: a `register` (processor) space, a `stack` spacebase, and
 /// the option in the requested state.
-fn build_fd(on: bool) -> Funcdata {
+fn build_fd() -> Funcdata {
     let mut m = AddrSpaceManager::new();
     m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
     m.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
@@ -65,8 +65,7 @@ fn build_fd(on: bool) -> Funcdata {
         1,
     )))
     .unwrap();
-    let mut ctx = ArchContext::new(m);
-    ctx.callee_preserves = on;
+    let ctx = ArchContext::new(m);
     let glb = Rc::new(ctx);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
@@ -99,7 +98,7 @@ fn build_call(fd: &mut Funcdata, entry_off: u64) -> (FuncCallSpecs, Address) {
 /// write of one register proves the OTHER register crosses the call.
 #[test]
 fn a_complete_probe_proves_an_unwritten_register_preserved() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (fc, entry) = build_call(&mut fd, 0x2000);
     let ram = space(&fd, "ram").get_index();
     // The get-PC thunk writes EBX (here 0x10) and nothing else.
@@ -117,7 +116,7 @@ fn a_complete_probe_proves_an_unwritten_register_preserved() {
 /// callee with no recorded probe at all proves nothing either.
 #[test]
 fn an_incomplete_or_missing_probe_narrows_nothing() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (fc, entry) = build_call(&mut fd, 0x2000);
     let edx = Address::new(space(&fd, "ram"), 0x08);
     assert!(!callee_preserves_range(&fd, &fc, &edx, 4), "no probe recorded");
@@ -133,7 +132,7 @@ fn an_incomplete_or_missing_probe_narrows_nothing() {
 /// STOREs through an address the walk cannot follow.
 #[test]
 fn a_stack_range_is_never_narrowed() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (fc, entry) = build_call(&mut fd, 0x2000);
     fd.kuna_set_callee_ret_writes(
         &entry,
@@ -147,7 +146,7 @@ fn a_stack_range_is_never_narrowed() {
 /// made about it and is left alone.
 #[test]
 fn an_explicit_effect_override_wins() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     fd.kuna_set_callee_ret_writes(
         &entry,
@@ -164,37 +163,14 @@ fn an_explicit_effect_override_wins() {
     assert!(!callee_preserves_range(&fd, &fc, &edx, 4));
 }
 
-/// The gate fails closed: with the option off the same complete probe narrows
-/// nothing.
-#[test]
-fn the_option_gates_the_whole_predicate() {
-    let mut fd = build_fd(false);
-    let (fc, entry) = build_call(&mut fd, 0x2000);
-    let ram = space(&fd, "ram").get_index();
-    fd.kuna_set_callee_ret_writes(
-        &entry,
-        Rc::new(CalleeReturnWrites::from_parts(vec![(ram, 0x10, 4)], Vec::new(), true)),
-    );
-    let edx = Address::new(space(&fd, "ram"), 0x08);
-    assert!(!callee_preserves_range(&fd, &fc, &edx, 4));
-}
-
 /// An indirect call has no entry address to decode, so it is never narrowed.
 #[test]
 fn an_indirect_call_is_never_narrowed() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (fc, _) = build_call(&mut fd, 0x2000);
     let indirect = FuncCallSpecs::new(fc.get_op(), Address::default());
     let edx = Address::new(space(&fd, "ram"), 0x08);
     assert!(!callee_preserves_range(&fd, &indirect, &edx, 4));
-}
-
-/// The option string round-trips both ways and rejects anything else.
-#[test]
-fn the_option_parses_on_and_off() {
-    assert!(OptionCalleePreserves.apply("on").unwrap().0);
-    assert!(!OptionCalleePreserves.apply("off").unwrap().0);
-    assert!(OptionCalleePreserves.apply("maybe").is_err());
 }
 
 /// The load-bearing half. A body that writes only the stack pointer is what a
@@ -203,7 +179,7 @@ fn the_option_parses_on_and_off() {
 /// the image. It must prove nothing.
 #[test]
 fn a_body_that_departs_from_nothing_narrows_nothing() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (fc, entry) = build_call(&mut fd, 0x2000);
     let ram = space(&fd, "ram").get_index();
     // ESP (0x20) is not in the convention's effect list at all, and neither is
@@ -224,7 +200,7 @@ fn a_body_that_departs_from_nothing_narrows_nothing() {
 fn a_mode_switched_walk_keeps_no_argument_register() {
     use crate::dtype::type_class;
     use crate::fspec::ParamEntry;
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (mut fc, entry) = build_call(&mut fd, 0x2000);
     let ram = space(&fd, "ram");
     let mut model = ProtoModel::new(fd.get_arch().manage());
@@ -272,7 +248,7 @@ fn a_mode_switched_walk_keeps_no_argument_register() {
 /// program counter a return wrote is not a departure from the convention.
 #[test]
 fn the_program_counter_a_return_writes_is_no_departure() {
-    let mut fd = build_fd(true);
+    let mut fd = build_fd();
     let (fc, entry) = build_call(&mut fd, 0x2000);
     let ram = space(&fd, "ram").get_index();
     fd.kuna_set_callee_ret_writes(

@@ -83,39 +83,16 @@
 //! effect must have been `killedbycall` to start with. Nothing is ever promoted
 //! to killed. The pass can still only ever *keep* a value the machine keeps.
 //!
-//! Default-**on**: it widens which bodies count as evidence, never what the
-//! evidence proves. Flip `off` to require a convention-preserved write again —
-//! the reason to do that is the same one `calleepreserves` names, a callee
-//! decoded in the wrong instruction mode, where the bytes read are not the
-//! instructions that run.
+//! It widens which bodies count as evidence, never what the evidence proves.
 
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::types::int4;
 
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 
 /// Marshaling element `<calleescratchbody>` (kuna 4000+ range; 4158 = the
 /// previous kuna element).
 pub const ELEM_CALLEESCRATCHBODY: ElementId = ElementId::new("calleescratchbody", 4159);
-
-/// (kuna) Accept a decoded callee that clobbers only scratch registers as
-/// `calleepreserves` evidence: `calleescratchbody on|off`.
-pub struct OptionCalleeScratchBody;
-
-impl OptionCalleeScratchBody {
-    /// The option name.
-    pub const NAME: &'static str = "calleescratchbody";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_scratch_body`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Scratch-only callee bodies as preservation evidence turned {prop}")))
-    }
-}
 
 /// How many decoded instructions a scratch-only body needs before its silence
 /// counts.
@@ -129,15 +106,11 @@ const MIN_HELPER_INSTRUCTIONS: u32 = 2;
 ///
 /// The second half of [`crate::p4_calls::kuna_calleepreserves`]'s
 /// positive-evidence gate, for the callee that clobbers only what the
-/// convention already allows. Answers `false` whenever the option is off, so
-/// the shipped gate is the only one that speaks.
+/// convention already allows.
 pub fn scratch_body_is_a_body(
     data: &Funcdata,
     w: &crate::kuna_rustabi::CalleeReturnWrites,
 ) -> bool {
-    if !data.get_arch().callee_scratch_body {
-        return false;
-    }
     if w.instruction_count() < MIN_HELPER_INSTRUCTIONS {
         return false;
     }

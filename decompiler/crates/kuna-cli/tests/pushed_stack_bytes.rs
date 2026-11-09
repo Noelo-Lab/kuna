@@ -128,9 +128,6 @@ fn decompile(mode: &str) -> Vec<(String, String)> {
         "alias" => {
             command.args(["--option", "stackalias", "on"]);
         }
-        "off" => {
-            command.args(["--option", "stackstoreguard", "off"]);
-        }
         _ => (),
     }
     let output = common::process::output_with_timeout(
@@ -308,20 +305,3 @@ fn short_copies_keep_their_bytes_in_each_storage_mode() {
     }
 }
 
-#[test]
-fn disabling_the_guard_reproduces_the_stale_seed_and_lost_snapshot() {
-    let functions = decompile("off");
-    let code = &functions
-        .iter()
-        .find(|(name, _)| name == "PushedByteBranchesSeed")
-        .unwrap()
-        .1;
-    assert!(code.contains("while ("), "{code}");
-    assert!(code.contains("return (seed & 0xff)"), "{code}");
-    let code = &functions
-        .iter()
-        .find(|(name, _)| name == "PushedByteSnapshot")
-        .unwrap()
-        .1;
-    assert!(code.contains("return 0;"), "{code}");
-}

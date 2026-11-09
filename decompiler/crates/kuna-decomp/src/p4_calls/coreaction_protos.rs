@@ -278,7 +278,7 @@ impl Action for ActionPrototypeTypes {
         }
 
         let stack = data.get_arch().manage().get_stack_space().cloned();
-        if let Some(stack) = stack.filter(|_| data.get_arch().trunc_ptr_flow) {
+        if let Some(stack) = stack {
             if data.bblocks_get_size() > 0 {
                 let top = data.bblocks_get_block(0);
                 for i in 0..stack.num_spacebase() {
@@ -312,7 +312,7 @@ impl Action for ActionPrototypeTypes {
         // exists even when only part is used (SUBPIECE can then be built off it).
         if data.get_func_proto().is_input_locked() {
             let ptr_size = data.get_arch().manage().get_default_code_space()
-                .filter(|s| data.get_arch().trunc_ptr_flow && s.is_truncated())
+                .filter(|s| s.is_truncated())
                 .map(|s| s.get_addr_size() as int4);
             let topbl = if data.bblocks_get_size() > 0 {
                 Some(data.bblocks_get_block(0))
