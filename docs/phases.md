@@ -63,6 +63,33 @@ Ghidra runs as "Run Analysis": PLT/GOT markup, strings, DWARF, demangling, funct
 discovery, …) live in their own crate, `kuna-analysis` (P0/P1), organized as `loader/`
 (image-format markup) + `analyzers/` (one module per pass). See `docs/missing-analyses.md`.
 
+## Non-native engines
+
+`decompiler/nonnative/` holds engines for managed bytecode, which never becomes p-code.
+The one today is `kuna-jvm` (JVM class files and jars to Java, a port of Vineflower;
+`docs/jvm.md`). It **shares the taxonomy, not the schedule**: its source folders carry
+the same phase names, so a stage is found by its phase, but the order its passes run in
+is its own (`infra/method_processor.rs` per method, `p0_knowledge/context_unit.rs` per
+class; `docs/spec/10-jvm.md` section 10.1), and none of the Band B, feedback-edge or registry
+machinery above applies to it. Its decision points are the `jvm_*` options of
+`docs/options-jvm.md`.
+
+| Folder (`kuna-jvm/src/`) | Vineflower stages it holds |
+|---|---|
+| `substrate/` | the Java-level IR: exprents, statements, edges, `VarType`, the fast set/map containers |
+| `p0_knowledge/` | `Fernflower`, `DecompilerContext`, options, `StructContext` and the class sources, the renamer, the JDK reader (kuna) |
+| `p1_classfile/` | `StructClass` and the attributes, `ClassesProcessor` (class nesting), `ClassWrapper` (the per-class method loop) |
+| `p2_lift/` | `ControlFlowGraph`, `DeadCodeHelper`, `ExceptionDeobfuscator`, `ExprProcessor` (stack to expressions) |
+| `p3_dataflow/` | `SSAConstructorSparseEx`, `SSAUConstructorSparseEx`, `StackVarsProcessor`, `SimplifyExprentsHelper`, `SecondaryFunctionsHelper` |
+| `p4_calls/` | `LambdaProcessor`, `NestedMemberAccess`, `CondyHelper`, `ClasspathHelper` |
+| `p5_types/` | `VarTypeProcessor`, generic signatures, `GenericsProcessor`, intersection casts |
+| `p6_variables/` | `VarProcessor`, `VarVersionsProcessor`, `VarDefinitionHelper`, naming |
+| `p7_regions/` | `DomHelper`, `FastExtendedPostdominanceHelper`, `IrreducibleCFGDeobfuscator`, `FinallyProcessor` |
+| `p8_structure/` | `MergeHelper`, `IfHelper`, `LabelHelper`, `SwitchHelper`, pattern matching, try-with-resources, `NestedClassProcessor`, initializers, enums, records |
+| `p9_emit/` | `ClassWriter`, `ImportCollector`, `TextBuffer`, bytecode-to-line mapping |
+| `infra/` | `MethodProcessor.codeToJava` (the schedule), pass hooks, and kuna's parallel driver, spans and tracer |
+| `rt/` | (kuna) the Java-runtime kernel the port stands on: arenas, JDK-order hash collections, UTF-16 strings, exceptions |
+
 ## Sub-phases
 
 A **sub-phase** is a named decision point inside a phase where a different choice — by

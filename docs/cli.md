@@ -11,6 +11,11 @@ document — and exits `0` before anything is loaded, so it needs neither an inp
 nor a compiled `.sla`. `kuna --help` lists the subcommands. Help goes to stderr, as
 every usage block in this CLI does.
 
+**JVM class files, jars and directories** are inputs too: the commands that take an input
+recognize them and decompile them to Java with a separate engine. Where this reference
+says *binary*, read *native binary*; everything specific to JVM inputs is in *JVM inputs*
+below.
+
 All command output goes through a fallible stdout boundary. A downstream reader that closes
 the pipe early is a normal terminal condition, not the `println!` panic (exit `101`) it used
 to be: no panic text, no broken-pipe diagnostic. It suppresses the *diagnostic*, not the
@@ -164,7 +169,15 @@ kuna test --all --baseline docs/baseline.json          # expect: PARITY OK
 kuna test --datatests --json                           # machine-readable
 kuna test --datatests --datatests-dir tests/stages \
     --baseline docs/baseline-stages.json               # the stage-issue corpus (= make test-stages)
+kuna test --jvm --baseline tests/jvm/baseline.txt      # the JVM engine's corpus (= make test-jvm)
 ```
+
+`--jvm` runs the JVM engine's differential corpus (`tests/jvm/`, `docs/jvm.md`) in
+process: each case decompiles its class files with its pinned options and must print
+Vineflower's exact text. `--jvm-dir DIR` runs the manifest in another directory. Its
+results are recorded under `jvm:` keys, its baseline is the list of matching case ids in
+`tests/jvm/baseline.txt` (re-recorded with `--save-baseline`), and it needs neither the
+SLEIGH specs nor a JDK. `--all` stays unit tests plus datatests.
 
 `kuna test` parses the harness's two streams separately (unit results on **stderr**,
 datatest results on **stdout**) and exits nonzero on any failure or baseline regression.
@@ -3658,7 +3671,9 @@ verdict is taken only after the `.c`, `.h`, `.asm`, README and, under `--stream`
 `1`, and a directive the pipeline refused exits `1` on its own, again only after the
 artifacts are written.
 
-Writes a project folder — default `<binary-filename>.kuna/` next to the binary,
+On a JVM input the export is a Java source tree instead, one `.java` file per root
+class under its package path (*JVM inputs* below). For a native binary it writes a
+project folder — default `<binary-filename>.kuna/` next to the binary,
 `-o/--output DIR` overrides — of four artifacts designed so a human or LLM can study the
 binary and attempt recompilation:
 
@@ -4131,6 +4146,178 @@ module-qualified callee — the loader retains no library-module mapping.
 
 Design notes and the reasoning behind each rule: spec §9.7.
 
+## JVM inputs — class files, jars and directories
+
+```bash
+kuna decompile app.jar com.ex.Main             # the class, as its whole compilation unit
+kuna decompile app.jar com.ex.Main.check       # one method
+kuna decompile Main.class                      # a single .class needs no target
+kuna decompile-all app.jar --json              # every method, machine-readable
+kuna decompile-project app.jar -o out          # a Java source tree: out/com/ex/Main.java, ...
+kuna functions app.jar --json                  # classes and methods, nothing decompiled
+kuna decompile app.jar com.ex.Main --option jvm_decompile_finally off
+```
+
+A class file, a jar (or war, ear, zip) or a directory of classes is decompiled to **Java**
+by kuna's non-native JVM engine, `kuna-jvm`, a Rust port of Vineflower 1.12.0 that prints
+the text Vineflower prints (`docs/jvm.md`; the algorithm is `docs/spec/10-jvm.md`). The
+input is recognized before any native code runs, so none of the native machinery (SLEIGH
+specs, `decomp_dbg`, the loader, the native option tables) is involved, and a native
+binary pays one `stat` and one eight-byte read for the check. The commands keep their
+native names, flags and output shapes where they make sense for Java, and say so where
+they do not.
+
+### Which inputs go to the JVM engine
+
+The input operand is the first argument that is neither a flag nor a flag's value. It is
+a JVM input when:
+
+| Input | Recognized by | Then |
+|---|---|---|
+| class file | `CA FE BA BE` and a class-file major version (45-255) at bytes 6-7 | decompiled |
+| jar, war, ear, zip | a zip local or empty-archive header (`PK\x03\x04`, `PK\x05\x06`), or a `.jar`/`.war`/`.ear`/`.zip` name with a zip end record in its last KiB (an executable jar behind a launcher script) | decompiled; classes are placed by their class name whatever the entry prefix (`BOOT-INF/classes/`, `WEB-INF/classes/`), multi-release variants under `META-INF/versions/` are skipped, nested jars are not opened |
+| directory | any directory (no native command takes one) | every class file and archive under it; `no .class files under DIR` (exit `1`) when there is none |
+| `.jmod`, jimage | `JM 01 00`, `DA DA FE CA` | `error: PATH: jmod inputs are not supported yet` (`jimage` likewise), exit `1` |
+| DEX, APK | `dex\n`, or a zip without `.class` entries | `error: PATH: no JVM classes (DEX bytecode is not JVM bytecode)`, exit `1` |
+| fat Mach-O | `CA FE BA BE` whose bytes 6-7 (the low half of its architecture count) are below 45, or `CA FE BA BF` | native, as before (`--slice` below) |
+
+`--raw-image` always keeps an input native. The commands that take no input (`test`,
+`catalog`, `docs`, `modes`, `specs`, `install-skill`) are not affected.
+
+### What each command does with one
+
+| Command | On a JVM input |
+|---|---|
+| `decompile` | a class: its whole compilation unit (package, imports, the class and everything nested in it); a nested class: its part of that unit; a method: just the method, with the common indentation removed. A single `.class` input may omit the target. |
+| `decompile-all` | every class, or the `--functions` selection. Text: one compilation unit per root class, each under a `// Class: com.ex.Main  (com/ex/Main.java)` header. `--json`: one record per method (below). Triage flags as on native inputs: `--functions`, `--filter`, `--min-size`/`--max-size` (bytecode length), `--sort addr\|size\|name` (`addr` is class-file order), `--limit`; plus `--jobs`, `--omit line_mappings,classes` |
+| `decompile-project` | a javac-ready source tree: `DIR/<package path>/<Class>.java` for each root class, nested classes inside their outer class's file, nothing else in the folder; default `DIR` is `<input>.kuna/` next to the input |
+| `functions` | the class and method inventory, read from the class files without decompiling |
+| `strings`, `xrefs`, `disassemble`, `read`, `decompile-graph`, `crypto` | not available yet: an error naming the commands that are, exit `1` |
+| `raw-pcode`, `unpack`, `fid` | not applicable to bytecode: an error, exit `1` |
+
+```
+$ kuna functions app.jar
+com.ex.Main.<init>()V
+com.ex.Main.toString()Ljava/lang/String;
+com.ex.Main.check(Ljava/lang/String;)Z
+com.ex.Main.main([Ljava/lang/String;)V
+com.ex.Main$Checker.<init>()V
+com.ex.Main$Checker.verify(Ljava/lang/String;)Z
+$ kuna decompile app.jar com.ex.Main.check
+public static boolean check(String key) {
+   return key.length() == 16 && Main.Checker.verify(key);
+}
+$ kuna strings app.jar ; echo $?
+error: app.jar: JVM input (jar) is decompiled by the non-native JVM engine, which has no string inventory yet; JVM support covers decompile, decompile-all, decompile-project and functions (kuna docs jvm)
+1
+```
+
+`decompile-project` prints one summary line,
+`wrote DIR: N .java files (B bytes); classes: K ok, F failed; methods: M ok, G failed`,
+and exits `0` when at least one class was written. A class or method the engine could not
+decompile is still written, with a `// $VF: Couldn't be decompiled` comment in place of
+its body (`docs/jvm.md`), and counts as failed.
+
+### Naming a class or a method
+
+| Form | Means |
+|---|---|
+| `com.ex.Main`, `com/ex/Main`, `com/ex/Main.class` | the class `com.ex.Main` |
+| `Main`, `Main.class` | the only class with that simple name |
+| `com.ex.Main$Inner`, `com.ex.Main.Inner` | a nested class; the dotted form resolves when `Main$Inner` exists |
+| `com.ex.Main.check`, `com.ex.Main#check` | every method `check` of the class, each overload printed, with a note on stderr when there are several |
+| `com.ex.Main.check(Ljava/lang/String;)Z` | one overload, by its JVM descriptor |
+| `com.ex.Main.<init>`, `com.ex.Main.<clinit>` | constructors and the static initializer, literally |
+
+An exact class name wins; otherwise the name is split at its last dot into class and
+method. A name that matches nothing is an error that suggests the nearest class or method
+name.
+
+### The JSON documents
+
+`decompile-all --json` and `decompile --json` emit the native document (*The JSON
+documents* under `decompile-all`) with these differences: `engine: "jvm"` after `binary`;
+`language: "java"`; `runtime` after `error`, the JDK used for context (`{path, version}`,
+or `null` for none); a `classes` array before `assertions`; and `omitted` always lists
+`variables`, `types` and `stack_objects`, which the JVM engine does not produce. Each
+method record keeps the native keys, with `address`, `address_hex` and `object_location`
+`null`, `aliases` empty, `size` the method's bytecode length, `unstructured_gotos` `0`,
+and `line_mappings` addresses that are **bytecode offsets** within the method; and adds
+`class`, `method`, `descriptor`, `access` (the modifier words), `path` (the compilation
+unit) and `line` (where the method starts in that unit).
+
+```json
+{"binary": "app.jar", "engine": "jvm", "language": "java",
+ "omitted": ["variables", "types", "stack_objects"], "count": 1, "error": null,
+ "runtime": {"path": "/usr/lib/jvm/java-21-openjdk-amd64", "version": "21.0.12.1"},
+ "functions": [{"name": "com.ex.Main.check", "address": null, "address_hex": null,
+   "aliases": [], "object_location": null, "size": 22,
+   "code": "public static boolean check(String key) {\n   return key.length() == 16 && Main.Checker.verify(key);\n}",
+   "error": null, "unstructured_gotos": 0, "line_mappings": [...],
+   "class": "com.ex.Main", "method": "check", "descriptor": "(Ljava/lang/String;)Z",
+   "access": ["public", "static"], "path": "com/ex/Main.java", "line": 14}],
+ "classes": [...], "assertions": []}
+```
+
+`functions --json` is
+`{binary, engine, count, total, error, functions: [{name, address, address_hex, aliases,
+object_location, size, class, method, descriptor, access}], classes: [{name, outer,
+source_file, size, access}]}`, with the same `null` address fields; `outer` is the
+enclosing class of a nested class (`null` for a top-level one) and `size` is the class
+file's length.
+
+### Options, modes and libraries
+
+JVM options are the `jvm_*` rows of `kuna catalog --engine jvm` (`docs/options-jvm.md`),
+set the usual way: `--option jvm_decompile_finally off`. A boolean takes `on|off` (also
+`1|0|true|false`), a number a decimal integer, and text, regex and path options their text.
+Vineflower's own long and three-letter names are accepted as aliases (`--option
+decompile-finally off`, `--option fdi off`), so a Vineflower command line translates
+directly. A native option on a JVM input is an error that points at `kuna catalog --engine
+jvm`, a `jvm_*` option on a native input gets a hint the other way, and a Vineflower key
+kuna sets itself (thread count, time limit, method selection, line separator and the like)
+is refused with what sets it instead. All of these exit `2` before anything is decompiled.
+`--mode` is accepted and validated, and every mode means the engine's defaults
+(`docs/modes.md`).
+
+`--lib PATH` (repeatable) adds class files, jars or directories as context: their classes
+inform types, overrides and varargs but are not decompiled. The JDK class library is
+context too: `--option jvm_include_runtime on` (the default) uses `JAVA_HOME`, then the
+`java` on `PATH`, then the usual install directories; a path names a JDK home and `off`
+uses none. When no JDK is found, one note on stderr says so and decompilation continues;
+the output can then lack `@Override` on methods that override JDK methods and some generic
+arguments (`docs/jvm.md`). Output depends on the JDK used, so pin one with a path when it
+must be reproducible.
+
+### Parallelism and limits
+
+`--jobs N|auto` (default `auto`) runs N engine instances on N threads of one process. The
+output is byte-identical at every N. `auto` is the core count, at most 16, reduced to what
+the available memory fits: each instance holds the whole input's class universe, roughly
+128 MiB plus 64 bytes per byte of class files (`docs/jvm.md`).
+
+`--max-fn-seconds N` (default 120, `0` disables) bounds each method: the engine polls a
+deadline inside its loops, and a method past it is written as `// $VF: Couldn't be
+decompiled` with a `TimeoutException`, the class around it normally. As a last resort,
+after `2N+30` seconds the run writes the classes that finished, gives each stuck class a
+stub comment and exits. `--max-fn-memory MiB` is the native per-function limit, applied
+to the whole process, since the instances share it.
+
+### Flags refused on JVM inputs
+
+The flags that describe native images exit `2` on a JVM input: `--isa`, `--slice`,
+`--target`, `--base`, `--entry`, `--addr`, `--define-function`, `--assert` and its
+variants, `--kassert`, `--raw`, `--regions`, `--sleighpath`, `--decomp-dbg`, `--summary`,
+`--reachable-from`, `--stream`, `--progress` and the `--jobs-*` worker flags.
+
+### Exit codes
+
+| Exit | Meaning |
+|---|---|
+| `0` | the selection was decompiled; for `decompile-all` and `decompile-project`, at least one class was produced (failed methods inside it are comments, not failures of the run) |
+| `1` | the input could not be read or is a recognized but unsupported kind, the command is not available for JVM inputs, the selection matched nothing, or no class was produced |
+| `2` | a usage error: an unknown or driver-owned option, a bad option value, a refused flag |
+
 ## `kuna docs` — the manual, inside the binary
 
 ```bash
@@ -4152,6 +4339,8 @@ it needs to drive it.
 | `agents` | `docs/agents.md` | the repo rulebook and the doc map |
 | `phases` | `docs/phases.md` | the P0–P9 model, for reasoning about *which* decision to flip |
 | `modes` | `docs/modes.md` | the `--mode` presets and the size thresholds `auto` selects on |
+| `jvm` | `docs/jvm.md` | the JVM engine: what it is, its fidelity contract, the JDK it reads, its limits |
+| `options-jvm` | `docs/options-jvm.md` | the generated `jvm_*` option catalog |
 
 `docs/options.md` is generated (`kuna catalog --markdown > docs/options.md`) and dominates
 the embedded bytes at ~281 KB. A test asserts the embedded copy is byte-identical to the file
@@ -4193,6 +4382,8 @@ kuna catalog --json              # the flippable assertion list, for an agent
 kuna catalog --markdown          # regenerate docs/options.md
 kuna catalog --check             # fail on catalog/registration drift (CI)
 kuna catalog --tier transform    # filter to the transform-tier control surface
+kuna catalog --engine jvm        # only the JVM engine's jvm_* options
+kuna catalog --markdown --engine jvm   # regenerate docs/options-jvm.md
 ```
 
 By default, reads the static catalog directly from the linked engine library, without
@@ -4210,16 +4401,27 @@ every other subcommand's `--json` is an object (`{binary,...}`, `{modes:[...]}`)
 cross-checks the selected catalog against this `kuna` build's
 `kuna_decomp::options::KUNA_OPTION_NAMES` in-process.
 
+The catalog holds two engines' options. The text and `--json` listings give the native
+rows, then the JVM engine's `jvm_*` rows (generated from
+`decompiler/nonnative/kuna-jvm/options.toml`), and every JSON row carries
+`"engine": "native"` or `"engine": "jvm"`; a JVM row also carries `aliases`, Vineflower's
+long and three-letter names for it. `--engine native|jvm` keeps one engine's rows (the
+older spellings `cpp` and `rust` mean `native`), and `--option NAME` also resolves a JVM
+name or alias. `--markdown` alone renders the native catalog, `docs/options.md`;
+`--markdown --engine jvm` renders `docs/options-jvm.md`. `--check` checks the JVM table
+too.
+
 `--decomp-dbg PATH`, or a non-empty `KUNA_DECOMP_DBG` when that flag is absent, opts
 text, JSON and check modes into the existing external console query. The flag takes
 precedence over the environment; a missing explicitly selected binary is an error,
 not a fallback to the local catalog. Build-identity warnings stay on stderr.
-`--sleighpath` and `--engine` remain accepted for compatibility; neither selects an
-external query on its own, and only that route uses their engine/specs configuration.
+`--sleighpath` remains accepted for compatibility; it does not select an external query
+on its own, and only that route uses its specs configuration.
 `--markdown` always describes this `kuna` build, even with an external override.
 
-The rendered catalog is `docs/options.md`; the model behind it is `docs/phases.md` /
-`docs/spec/`; the defaults are recorded in `docs/history.md`.
+The rendered catalogs are `docs/options.md` and `docs/options-jvm.md`; the model behind
+them is `docs/phases.md` / `docs/spec/`; the native defaults are recorded in
+`docs/history.md`, the JVM engine's are Vineflower's (`docs/jvm.md`).
 
 ## `kuna specs` — the SLEIGH compiler
 
@@ -4248,6 +4450,10 @@ It applies to every surface that reads the image — `decompile`, `functions`,
 `decompile-all`, `strings`, `xrefs`, `disassemble`, `decompile-graph`,
 `decompile-project` — so an inventory, its `--summary`, and a string scan of the
 same file all describe the same slice.
+
+A JVM class file starts with the same `CA FE BA BE` magic. It is told apart by bytes
+6-7, which hold its major version (45 or more) where a fat header holds the low half of
+its architecture count, and goes to the JVM engine, which refuses `--slice`.
 
 ## Everything else
 

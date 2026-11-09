@@ -49,6 +49,21 @@ class TestIntegrationLayout(unittest.TestCase):
         (self.crate / "Cargo.toml").write_text('[package]\nname = "example"\n')
         self.assertEqual(check(self.root), [])
 
+    def test_nonnative_engine_crates_are_checked(self):
+        engine = self.root / "decompiler/nonnative/engine"
+        (engine / "tests").mkdir(parents=True)
+        (engine / "Cargo.toml").write_text(
+            '[package]\nname = "engine"\nautotests = false\n'
+            '[[test]]\nname = "integration"\npath = "tests/integration.rs"\n'
+        )
+        (engine / "tests/integration.rs").write_text('#[path = "grouped.rs"]\nmod grouped;\n')
+        (engine / "tests/grouped.rs").write_text("#[test]\nfn example() {}\n")
+        self.assertEqual(check(self.root), [])
+        (engine / "tests/forgotten.rs").write_text("#[test]\nfn forgotten() {}\n")
+        errors = check(self.root)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("nonnative/engine/tests/forgotten.rs: expected one registration, found 0", errors[0])
+
     def test_commented_registration_does_not_count(self):
         (self.tests / "integration.rs").write_text('// #[path = "grouped.rs"]\n// mod grouped;\n')
         self.assertTrue(any("grouped.rs: expected one registration, found 0" in e for e in check(self.root)))

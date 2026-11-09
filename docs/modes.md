@@ -17,6 +17,11 @@ Modes are override batches, not resets: applying a second mode in one console
 session changes only the options that second mode names. Discover them with
 `kuna modes` (or `kuna modes --json`).
 
+On JVM inputs (class files, jars, directories; `docs/jvm.md`), `--mode` is accepted and
+validated like everywhere else, but every mode, `auto` included, means the JVM engine's
+defaults, which are Vineflower's: the presets name native options only, and the JVM
+engine has no size-dependent policy. Change its behavior with `--option jvm_*` instead.
+
 | Mode | What it does |
 |---|---|
 | `auto` | The default file-front-end policy: `aggressive` below 500 KiB, `reliable` from 500 KiB up to 2 MiB, and `fast` at 2 MiB or larger, with `ctypes` and `partialaccess` on at every size. |

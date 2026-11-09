@@ -17,7 +17,7 @@ PYTHON  ?= python3
 # (inside target/, which is gitignored, so a failed run leaves no repo litter).
 GHIDRA_SIM_LOG := $(ENGINE)/target/ghidra-sim.log
 
-.PHONY: all binaries specs test test-stages test-cli test-tools test-ghidra rust rust-test lint clean check-spec version observatory coverage
+.PHONY: all binaries specs test test-stages test-jvm test-cli test-tools test-ghidra rust rust-test lint clean check-spec version observatory coverage
 
 all: binaries specs
 
@@ -53,6 +53,12 @@ test-stages: $(BINDIR)/kuna
 	@test -n "$$(find $(SPECS) -name '*.sla' -print -quit)" || $(MAKE) specs
 	cd $(ROOT) && $(BINDIR)/kuna test --datatests \
 	  --datatests-dir tests/stages --baseline docs/baseline-stages.json
+
+# The JVM engine's differential corpus (tests/jvm/, docs/jvm.md): every vendored Vineflower
+# case listed in the baseline must still print Vineflower's exact text. Needs no SLEIGH specs
+# and no JDK (the corpus pins its own options).
+test-jvm: $(BINDIR)/kuna
+	cd $(ROOT) && $(BINDIR)/kuna test --jvm --baseline tests/jvm/baseline.txt
 
 $(BINDIR)/kuna:
 	cd $(ENGINE) && cargo build --$(PROFILE) -p kuna-cli

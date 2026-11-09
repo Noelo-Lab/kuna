@@ -53,6 +53,33 @@ for structured batch output; project export does not accept `--json`. When only 
 is needed, `--omit line_mappings,variables,types` on either `--json` drops those
 collections (named in the document's `omitted`), keeping it near the size of the C.
 
+## Java: class files, jars and directories
+
+Kuna decompiles JVM bytecode to Java with a separate engine (a port of Vineflower). Pass
+a `.class`, a jar (also war, ear, zip) or a directory wherever a binary goes:
+
+```bash
+kuna functions app.jar --json                    # classes and methods; nothing is decompiled
+kuna decompile app.jar com.ex.Main               # one class, as its whole .java file
+kuna decompile app.jar com.ex.Main.check         # one method (all overloads, or add a descriptor)
+kuna decompile-project app.jar -o ./app.kuna     # DIR/com/ex/Main.java, one file per class
+kuna decompile-all app.jar --json --filter '^com\.ex\.'
+```
+
+Name classes as `com.ex.Main`, `com/ex/Main` or `com.ex.Main$Inner`, and methods as
+`Class.method` or `Class#method`, optionally with a JVM descriptor such as
+`check(Ljava/lang/String;)Z`. `strings`, `xrefs`, `disassemble`, `read`, `crypto` and
+`decompile-graph` do not take JVM inputs yet; search the exported `.java` files instead.
+A method kuna cannot decompile is written as `// $VF: Couldn't be decompiled` followed by
+its bytecode, so read that listing rather than retrying.
+
+Kuna reads the JDK's classes as context (`JAVA_HOME`, else `java` on `PATH`); without
+one it notes that on stderr and may omit `@Override` and some generic arguments. Extra
+dependency jars go in with `--lib other.jar`. Engine options are `jvm_*`: list them with
+`kuna catalog --engine jvm --json` and set them with `--option jvm_NAME VALUE`
+(Vineflower's own option names also work, e.g. `--option rsy off` to show synthetic
+members). Native options and `--mode` presets do not change Java output.
+
 ## Navigate the export
 
 | Artifact | How to use it |
