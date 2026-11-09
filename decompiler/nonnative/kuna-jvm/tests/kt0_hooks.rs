@@ -660,6 +660,27 @@ fn int(value: i32) -> Exprent {
     ConstExprent::new_int(value, false, None).0
 }
 
+/// `f()`, or `None` when it stops at a body another Kotlin slice has not
+/// ported yet in this tree (the assertions on its result then wait for it).
+fn unless_foreign_unported<R>(f: impl FnOnce() -> R) -> Option<R> {
+    match try_catch(f) {
+        Ok(r) => Some(r),
+        Err(caught) => {
+            let message = caught
+                .exception
+                .as_ref()
+                .map_or(String::new(), |e| e.message.clone());
+            let foreign = ["KUtils.", "KTypes.", "KotlinWriter.", "KotlinChooser."];
+            assert!(
+                caught.is("UnportedError") && foreign.iter().any(|f| message.starts_with(f)),
+                "{}",
+                caught.message
+            );
+            None
+        }
+    }
+}
+
 #[test]
 fn kotlin_exprents_dispatch_to_their_kotlin_class() {
     let _guard = common::install_default_context();
@@ -670,44 +691,51 @@ fn kotlin_exprents_dispatch_to_their_kotlin_class() {
     assert!(!e.is_k_var());
     assert_eq!(e.get_kotlin_type(), Some(KExprentType::Function));
     assert_eq!(e.as_k_function().kd(|d| d.k_type), KFunctionType::Equals3);
-    assert_eq!(unported(|| e.to_java(0)), "KFunctionExprent.toJava");
     assert_eq!(
-        unported(|| e.get_precedence()),
-        "KFunctionExprent.getPrecedence"
+        e.to_java(0).convert_to_string_and_allow_data_discard(),
+        "1 + 2"
     );
-    assert_eq!(unported(|| e.copy()), "KFunctionExprent.copy");
-    assert_eq!(
-        unported(|| e.get_expr_type()),
-        "KFunctionExprent.getExprType"
-    );
-    assert_eq!(
-        unported(|| e.get_expr_type_opt()),
-        "KFunctionExprent.getExprType"
-    );
-    assert_eq!(
-        unported(|| e.check_expr_type_bounds()),
-        "KFunctionExprent.checkExprTypeBounds"
-    );
-    assert_eq!(
-        unported(|| func.set_func_type(FunctionType::Sub)),
-        "KFunctionExprent.setFuncType"
-    );
+    assert_eq!(e.get_precedence(), 6, "KFunctionExprent.getPrecedence");
+    assert!(e.get_expr_type().equals(&VarType::VARTYPE_BOOLEAN()));
+    assert!(e
+        .get_expr_type_opt()
+        .is_some_and(|t| t.equals(&VarType::VARTYPE_BOOLEAN())));
+    let bounds = e.check_expr_type_bounds().expect("FunctionExprent bounds");
+    assert_eq!(bounds.get_lower_bounds().len(), 2);
+    if let Some(copy) = unless_foreign_unported(|| e.copy()) {
+        assert!(copy != e && copy.is_k_function());
+        assert_eq!(copy.as_k_function().kd(|d| d.k_type), KFunctionType::Equals3);
+        assert_eq!(copy.as_function().get_func_type(), FunctionType::Add);
+        assert!(copy
+            .as_function()
+            .get_lst_operands()
+            .iter()
+            .all(|o| o.is_k_const()));
+    }
     // Java-virtual calls inside the FunctionExprent bodies reach the override.
+    assert!(e
+        .get_inferred_expr_type(None)
+        .equals(&VarType::VARTYPE_BOOLEAN()));
+    let shift = FunctionExprent::new(FunctionType::Shl, vec![int(1), int(2)], None);
     assert_eq!(
-        unported(|| e.get_inferred_expr_type(None)),
-        "KFunctionExprent.getExprType"
-    );
-    assert_eq!(
-        unported(|| func.wrap_operand_string(int(3), false, 0)),
-        "KFunctionExprent.getPrecedence"
+        func.wrap_operand_string(shift.0, false, 0)
+            .convert_to_string_and_allow_data_discard(),
+        "1 << 2",
+        "an EQUALS3 precedence of 6 needs no parentheses"
     );
     let ternary = kotlin_function(FunctionType::Ternary, vec![int(1), int(2), int(3)]);
-    assert_eq!(
-        unported(|| FunctionExprent::check_expr_type_bounds(ternary)),
-        "KFunctionExprent.getExprType"
-    );
+    let ternary_bounds =
+        FunctionExprent::check_expr_type_bounds(ternary).expect("ternary bounds");
+    assert!(ternary_bounds
+        .get_upper_bounds()
+        .iter()
+        .all(|p| p.type_.equals(&VarType::VARTYPE_BOOLEAN())));
     FunctionExprent::set_func_type_base(func, FunctionType::Sub);
     assert_eq!(func.get_func_type(), FunctionType::Sub);
+    assert_eq!(e.as_k_function().kd(|d| d.k_type), KFunctionType::Equals3);
+    func.set_func_type(FunctionType::Mul);
+    assert_eq!(func.get_func_type(), FunctionType::Mul);
+    assert_eq!(e.as_k_function().kd(|d| d.k_type), KFunctionType::None);
 
     let java = FunctionExprent::new(FunctionType::Add, vec![int(1), int(2)], None);
     assert!(!java.0.is_kotlin() && java.0.try_as_k_function().is_none());
@@ -720,9 +748,19 @@ fn kotlin_exprents_dispatch_to_their_kotlin_class() {
         declaration_type: None,
     })));
     let v = var.0;
-    assert_eq!(unported(|| var.get_name()), "KVarExprent.getName");
-    assert_eq!(unported(|| v.to_java(0)), "KVarExprent.toJava");
-    assert_eq!(unported(|| v.copy()), "KVarExprent.copy");
+    if let Some(name) = unless_foreign_unported(|| var.get_name()) {
+        assert_eq!(name, "var1");
+    }
+    if let Some(text) = unless_foreign_unported(|| v.to_java(0)) {
+        assert_eq!(text.convert_to_string_and_allow_data_discard(), "var1");
+    }
+    let var_copy = v.copy();
+    assert!(var_copy != v && var_copy.is_k_var());
+    assert_eq!(
+        var_copy.as_k_var().kd(|d| d.declaration_type),
+        Some(DeclarationType::Usage),
+        "KVarExprent.copy"
+    );
     assert_eq!(v.get_precedence(), 0, "KVarExprent inherits getPrecedence");
     assert!(v.get_expr_type().equals(&VarType::VARTYPE_INT()));
     assert_eq!(VarExprent::get_name_base(var), "var1");
@@ -737,8 +775,15 @@ fn kotlin_exprents_dispatch_to_their_kotlin_class() {
     let constant = ConstExprent::new_int(7, false, None);
     constant.0.set_kt(Some(KExprentExt::Const));
     assert!(constant.0.is_k_const());
-    assert_eq!(unported(|| constant.0.to_java(0)), "KConstExprent.toJava");
-    assert_eq!(unported(|| constant.to_string()), "KConstExprent.toJava");
+    assert_eq!(
+        constant
+            .0
+            .to_java(0)
+            .convert_to_string_and_allow_data_discard(),
+        "7",
+        "KConstExprent.toJava"
+    );
+    assert_eq!(constant.to_string(), "const(7)");
     let copy = constant.0.copy();
     assert!(
         copy.is_const() && !copy.is_kotlin(),

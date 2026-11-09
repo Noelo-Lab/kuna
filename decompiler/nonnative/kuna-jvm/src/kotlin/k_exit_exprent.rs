@@ -1,11 +1,14 @@
 //! Port of `org/vineflower/kotlin/expr/KExitExprent.java`.
 
-#![allow(unused_variables)]
-
-use crate::exit_exprent::ExitExprent;
+use crate::decompiler_context::DecompilerContext;
+use crate::exit_exprent::{ExitExprent, Type as ExitType};
 use crate::exprent::Exprent;
+use crate::jthrow;
+use crate::k_dispatch::KExprentExt;
+use crate::k_type::KType;
+use crate::kotlin_exprent;
 use crate::text_buffer::TextBuffer;
-use crate::{kotlin_exprent, unported};
+use crate::var_type::VarType;
 
 pub struct KExitExprentData {
     pub lambda_name: Option<String>,
@@ -17,18 +20,56 @@ kotlin_exprent!(pub KExitExprent: ExitExprent, Exit(KExitExprentData),
 impl KExitExprent {
     /// Java: KExitExprent(ExitExprent)
     pub fn new(expr: ExitExprent) -> KExitExprent {
-        unported!("KExitExprent.<init>")
+        let bytecode = expr.get_bytecode();
+        let exit = ExitExprent::new(
+            expr.get_exit_type(),
+            expr.get_value(),
+            expr.get_ret_type(),
+            bytecode.as_ref(),
+            expr.get_method_descriptor(),
+        );
+        exit.0.set_kt(Some(KExprentExt::Exit(KExitExprentData {
+            lambda_name: None,
+        })));
+        KExitExprent(exit)
     }
 
     pub fn set_lambda_name(self, name: Option<String>) {
         self.kd_mut(|d| d.lambda_name = name)
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("KExitExprent.toJava")
+    /// A value-less `return` outside a named lambda throws `NullPointerException`, as in Vineflower.
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        if self.get_exit_type() == ExitType::Throw {
+            return ExitExprent::to_java(self.0, indent);
+        }
+
+        let outer_method = DecompilerContext::get_current_method_wrapper();
+        if outer_method.is_some() {
+            let mut buf = TextBuffer::new();
+
+            if let Some(lambda_name) = self.kd(|d| d.lambda_name.clone()) {
+                buf.append("return@").append(&lambda_name);
+                let ret_type = self.get_ret_type();
+                if VarType::VARTYPE_VOID().equals_opt(ret_type.as_ref())
+                    || KType::UNIT().equals_opt(ret_type.as_ref())
+                {
+                    return buf;
+                }
+                buf.append(" ");
+            }
+
+            let value = self.get_value().unwrap_or_else(
+                || jthrow!(NullPointerException; "KExitExprent.getValue() is null"),
+            );
+            buf.append_buffer(&value.to_java(indent));
+            return buf;
+        }
+
+        ExitExprent::to_java(self.0, indent)
     }
 
     pub fn copy(self) -> Exprent {
-        unported!("KExitExprent.copy")
+        KExitExprent::new(ExitExprent::copy(self.0).as_exit()).0 .0
     }
 }

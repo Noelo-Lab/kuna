@@ -1,16 +1,24 @@
 //! Port of `org/vineflower/kotlin/expr/KFunctionExprent.java`.
 
-#![allow(dead_code, unused_variables)]
-
 use crate::check_types_result::CheckTypesResult;
+use crate::code_type::CodeType;
+use crate::const_exprent::ConstExprent;
+use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
+use crate::i_fernflower_logger::Severity;
+use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::jthrow;
+use crate::k_dispatch::KExprentExt;
+use crate::k_types::KTypes;
+use crate::k_utils::KUtils;
+use crate::kotlin_exprent;
+use crate::rt::jstring::from_utf16;
 use crate::rt::BitSet;
 use crate::text_buffer::TextBuffer;
+use crate::type_family::TypeFamily;
 use crate::typed::Typed;
 use crate::var_type::VarType;
-use crate::{kotlin_exprent, unported};
 
 /// `KFunctionExprent.KFunctionType`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
@@ -54,10 +62,15 @@ pub struct KFunctionExprentData {
 kotlin_exprent!(pub KFunctionExprent: FunctionExprent, Function(KFunctionExprentData),
                 is_k_function, as_k_function, try_as_k_function);
 
+fn npe(what: &str) -> ! {
+    jthrow!(NullPointerException; "{}", what)
+}
+
 impl KFunctionExprent {
     /// Java: KFunctionExprent(FunctionExprent)
     pub fn new(func: FunctionExprent) -> KFunctionExprent {
-        unported!("KFunctionExprent.<init>")
+        let expr_type = func.0.get_expr_type_opt();
+        KFunctionExprent::new_typed(func, KFunctionType::None, expr_type)
     }
 
     /// Java: KFunctionExprent(KFunctionType, List<Exprent>, BitSet)
@@ -66,7 +79,9 @@ impl KFunctionExprent {
         operands: Vec<Exprent>,
         bytecode_offsets: Option<&BitSet>,
     ) -> KFunctionExprent {
-        unported!("KFunctionExprent.<init>")
+        let kex = KFunctionExprent::new_func_type(FunctionType::Other, operands, bytecode_offsets);
+        kex.kd_mut(|d| d.k_type = func_type);
+        kex
     }
 
     /// Java: KFunctionExprent(FunctionType, List<Exprent>, BitSet)
@@ -75,7 +90,8 @@ impl KFunctionExprent {
         operands: Vec<Exprent>,
         bytecode_offsets: Option<&BitSet>,
     ) -> KFunctionExprent {
-        unported!("KFunctionExprent.<init>")
+        let operands = KUtils::replace_exprents(&operands);
+        KFunctionExprent::extend(FunctionExprent::new(func_type, operands, bytecode_offsets))
     }
 
     /// Java: KFunctionExprent(FunctionExprent, KFunctionType, VarType) (private)
@@ -84,29 +100,361 @@ impl KFunctionExprent {
         k_type: KFunctionType,
         expr_type: Option<VarType>,
     ) -> KFunctionExprent {
-        unported!("KFunctionExprent.<init>")
+        let func_type = func.get_func_type();
+        let operands = KUtils::replace_exprents(&func.get_lst_operands().to_vec());
+        let bytecode = func.get_bytecode();
+        let kex =
+            KFunctionExprent::extend(FunctionExprent::new(func_type, operands, bytecode.as_ref()));
+
+        kex.kd_mut(|d| d.k_type = k_type);
+        kex.set_implicit_type(expr_type);
+        kex.set_needs_cast(func.does_cast());
+
+        if kex.get_func_type() == FunctionType::Eq {
+            let left = kex.0 .0.get_all_exprents()[0];
+            let right = kex.0 .0.get_all_exprents()[1];
+
+            let is_null =
+                |t: Option<VarType>| t.is_some_and(|t| t.ptr_eq(&VarType::VARTYPE_NULL()));
+            if !is_null(left.get_expr_type_opt()) && !is_null(right.get_expr_type_opt()) {
+                kex.set_func_type_typed(AnyFunctionType::Kotlin(KFunctionType::Equals3));
+            }
+        }
+
+        kex
     }
 
-    pub fn to_java(self, _indent: i32) -> TextBuffer {
-        unported!("KFunctionExprent.toJava")
+    /// The subclass step of the constructors: the new object becomes a `KFunctionExprent`.
+    fn extend(func: FunctionExprent) -> KFunctionExprent {
+        func.0
+            .set_kt(Some(KExprentExt::Function(KFunctionExprentData {
+                k_type: KFunctionType::None,
+            })));
+        KFunctionExprent(func)
+    }
+
+    fn wrap(self, expr: Exprent, indent: i32) -> TextBuffer {
+        self.0.wrap_operand_string(expr, true, indent)
+    }
+
+    pub fn to_java(self, indent: i32) -> TextBuffer {
+        let mut buf = TextBuffer::new();
+        buf.add_bytecode_mapping(self.get_bytecode().as_ref());
+        let lst_operands = self.get_lst_operands();
+
+        self.optimize_type();
+
+        match self.get_func_type() {
+            FunctionType::Other => {
+                let k_type = self.kd(|d| d.k_type);
+                match k_type {
+                    KFunctionType::Equals3 => {
+                        let left = self.wrap(lst_operands.get(0), indent);
+                        buf.append_buffer(&left).append(" === ");
+                        let right = self.wrap(lst_operands.get(1), indent);
+                        buf.append_buffer(&right);
+                        return buf;
+                    }
+                    KFunctionType::IfNull => {
+                        let left = self.wrap(lst_operands.get(0), indent);
+                        buf.append_buffer(&left).append(" ?: ");
+                        let right = self.wrap(lst_operands.get(1), indent);
+                        buf.append_buffer(&right);
+                        return buf;
+                    }
+                    KFunctionType::GetKclass => {
+                        let operand = lst_operands.get(0);
+                        if let Some(var_exprent) = operand.try_as_var() {
+                            if !var_exprent.get_var_type().equals(&VarType::VARTYPE_CLASS()) {
+                                jthrow!(IllegalArgumentException; "Variable accessing KClass is not a Class");
+                            }
+                            buf.append_buffer(&var_exprent.0.to_java(0))
+                                .append(".kotlin");
+                            return buf;
+                        } else if let Some(const_exprent) = operand.try_as_const() {
+                            let value = const_exprent
+                                .get_value()
+                                .unwrap_or_else(|| npe("ConstExprent.getValue()"))
+                                .java_to_string();
+                            let type_ = VarType::new_signature_cl(&value, !value.starts_with('['));
+                            buf.append(&KTypes::get_kotlin_type(Some(&type_)));
+                        } else if let Some(field_exprent) = operand.try_as_field() {
+                            let primitive_type = field_exprent.get_classname();
+                            let type_ = VarType::new_signature_cl(&primitive_type, true);
+                            buf.append(&KTypes::get_kotlin_type(Some(&type_)));
+                        } else {
+                            buf.append_buffer(&operand.to_java(0));
+                        }
+                        buf.append("::class");
+                        return buf;
+                    }
+                    KFunctionType::StrTemplate => {
+                        buf.append_char('"');
+                        for expr in lst_operands.iter() {
+                            if let Some(const_expr) = expr.try_as_const() {
+                                let const_type = const_expr.get_const_type();
+                                if VarType::VARTYPE_STRING().equals(&const_type) {
+                                    let ascii = DecompilerContext::get_option(
+                                        IFernflowerPreferences::ASCII_STRING_CHARACTERS,
+                                    );
+                                    let string = const_expr
+                                        .get_value()
+                                        .unwrap_or_else(|| npe("ConstExprent.getValue()"));
+                                    let value = ConstExprent::convert_string_to_java(
+                                        string.as_string(),
+                                        ascii,
+                                    );
+                                    buf.append(&value.replace('$', "\\$"));
+                                } else if VarType::VARTYPE_CHAR().equals(&const_type) {
+                                    let unit = const_expr
+                                        .get_value()
+                                        .unwrap_or_else(|| npe("ConstExprent.getValue()"))
+                                        .as_int()
+                                        as u16;
+                                    buf.append(&from_utf16(&[unit]));
+                                } else {
+                                    if VarType::is_primitive(&const_type) {
+                                        DecompilerContext::get_logger().write_message(
+                                            &format!(
+                                                "Primitive constant type in string concatenation: {}",
+                                                const_type
+                                            ),
+                                            Severity::Warn,
+                                        );
+                                    }
+                                    buf.append("${")
+                                        .append_buffer(&expr.to_java(indent))
+                                        .append("}");
+                                }
+                            } else if expr.is_var() {
+                                buf.append("$").append_buffer(&expr.to_java(indent));
+                            } else {
+                                buf.append("${")
+                                    .append_buffer(&expr.to_java(indent))
+                                    .append("}");
+                            }
+                        }
+                        buf.append_char('"');
+                        return buf;
+                    }
+                    KFunctionType::None => {}
+                }
+
+                jthrow!(IllegalStateException; "Unknown function type: {}", k_type.name());
+            }
+            FunctionType::Ternary => {
+                let condition = lst_operands.get(0);
+                let if_true = lst_operands.get(1);
+                let if_false = lst_operands.get(2);
+
+                if condition
+                    .try_as_k_function()
+                    .is_some_and(|c| c.get_func_type() == FunctionType::Instanceof)
+                {
+                    if let Some(cast) = if_true.try_as_k_function() {
+                        if cast.get_func_type() == FunctionType::Cast
+                            && if_false
+                                .get_expr_type_opt()
+                                .is_some_and(|t| t.ptr_eq(&VarType::VARTYPE_NULL()))
+                        {
+                            buf.append_buffer(&cast.get_lst_operands().get(0).to_java(indent));
+                            buf.append(" as? ");
+                            buf.append_buffer(&cast.get_lst_operands().get(1).to_java(indent));
+                            return buf;
+                        }
+                    }
+                }
+
+                buf.push_newline_group(indent, 1);
+                buf.append("if (");
+                let condition = self.wrap(condition, indent);
+                buf.append_buffer(&condition)
+                    .append(")")
+                    .append_possible_newline_alt(" ");
+                let if_true = self.wrap(if_true, indent);
+                buf.append_buffer(&if_true)
+                    .append_possible_newline_alt(" ")
+                    .append("else")
+                    .append_possible_newline_alt(" ");
+                let if_false = self.wrap(if_false, indent);
+                buf.append_buffer(&if_false);
+                buf.pop_newline_group();
+
+                return buf;
+            }
+            FunctionType::Instanceof => {
+                let left = self.wrap(lst_operands.get(0), indent);
+                buf.append_buffer(&left).append(" is ");
+                let right = self.wrap(lst_operands.get(1), indent);
+                buf.append_buffer(&right);
+
+                return buf;
+            }
+            FunctionType::BoolNot => {
+                if let Some(func) = lst_operands.get(0).try_as_k_function() {
+                    if func.get_func_type() == FunctionType::Instanceof {
+                        let left = self.wrap(func.get_lst_operands().get(0), indent);
+                        buf.append_buffer(&left).append(" !is ");
+                        let right = self.wrap(func.get_lst_operands().get(1), indent);
+                        buf.append_buffer(&right);
+                        return buf;
+                    }
+                }
+            }
+            FunctionType::Cast => {
+                if !self.does_cast() {
+                    buf.append_buffer(&lst_operands.get(0).to_java(indent));
+                    return buf;
+                }
+                let left = self.wrap(lst_operands.get(0), indent);
+                buf.append_buffer(&left).append(" as ");
+                buf.append_buffer(&lst_operands.get(1).to_java(indent));
+                return buf;
+            }
+            FunctionType::BitNot => {
+                let operand = self.wrap(lst_operands.get(0), indent);
+                buf.append_buffer(&operand);
+                buf.append(".inv()");
+                return buf;
+            }
+            FunctionType::And => return self.infix(buf, &lst_operands.to_vec(), " and ", indent),
+            FunctionType::Or => return self.infix(buf, &lst_operands.to_vec(), " or ", indent),
+            FunctionType::Xor => return self.infix(buf, &lst_operands.to_vec(), " xor ", indent),
+            FunctionType::Shl => return self.infix(buf, &lst_operands.to_vec(), " shl ", indent),
+            FunctionType::Shr => return self.infix(buf, &lst_operands.to_vec(), " shr ", indent),
+            FunctionType::Ushr => return self.infix(buf, &lst_operands.to_vec(), " ushr ", indent),
+            _ => {}
+        }
+
+        buf.append_buffer(&FunctionExprent::to_java(self.0, indent));
+        buf
+    }
+
+    fn infix(
+        self,
+        mut buf: TextBuffer,
+        lst_operands: &[Exprent],
+        operator: &str,
+        indent: i32,
+    ) -> TextBuffer {
+        let left = self.wrap(lst_operands[0], indent);
+        buf.append_buffer(&left).append(operator);
+        let right = self.wrap(lst_operands[1], indent);
+        buf.append_buffer(&right);
+        buf
     }
 
     /// Java `getExprType()`; throws `NullPointerException` where it is `null`.
     pub fn get_expr_type(self) -> VarType {
-        unported!("KFunctionExprent.getExprType")
+        match self.get_expr_type_opt() {
+            Some(t) => t,
+            None => npe("KFunctionExprent.getExprType() is null"),
+        }
     }
 
     /// Java `getExprType()` exactly, `null` included.
     pub fn get_expr_type_opt(self) -> Option<VarType> {
-        unported!("KFunctionExprent.getExprType")
+        match self.kd(|d| d.k_type) {
+            KFunctionType::Equals3 => Some(VarType::VARTYPE_BOOLEAN()),
+            KFunctionType::IfNull => {
+                let param1 = self.get_lst_operands().get(0);
+                let param2 = self.get_lst_operands().get(1);
+                let type1 = param1.get_expr_type_opt();
+                let type2 = param2.get_expr_type_opt();
+                let (Some(type1), Some(type2)) = (type1, type2) else {
+                    npe("VarType.join on null");
+                };
+                let supertype = VarType::join(&type1, &type2);
+
+                Some(supertype.unwrap_or_else(VarType::VARTYPE_OBJECT))
+            }
+            KFunctionType::GetKclass => Some(VarType::VARTYPE_CLASS()),
+            KFunctionType::StrTemplate => Some(VarType::VARTYPE_STRING()),
+            KFunctionType::None => FunctionExprent::get_expr_type_opt(self.0),
+        }
     }
 
+    /// Computes bounds of its own and drops them: the result is always the
+    /// `FunctionExprent` one, which throws for a Kotlin function type.
     pub fn check_expr_type_bounds(self) -> Option<CheckTypesResult> {
-        unported!("KFunctionExprent.checkExprTypeBounds")
+        let mut result = CheckTypesResult::new();
+
+        let param1 = self.get_lst_operands().get(0);
+        let type1 = param1.get_expr_type_opt();
+        let mut param2: Option<Exprent> = None;
+        let mut type2: Option<VarType> = None;
+
+        if self.get_lst_operands().len() > 1 {
+            let p2 = self.get_lst_operands().get(1);
+            param2 = Some(p2);
+            type2 = p2.get_expr_type_opt();
+        }
+
+        let type1_ref = || type1.as_ref().unwrap_or_else(|| npe("type1"));
+        let type2_ref = || type2.as_ref().unwrap_or_else(|| npe("type2"));
+
+        match self.kd(|d| d.k_type) {
+            KFunctionType::IfNull => {
+                let supertype = self.0 .0.get_expr_type();
+                result.add_expr_lower_bound(
+                    param1,
+                    &VarType::find_family_bottom(supertype.type_family),
+                );
+                if let Some(param2) = param2 {
+                    result.add_expr_lower_bound(
+                        param2,
+                        &VarType::find_family_bottom(supertype.type_family),
+                    );
+                }
+            }
+            KFunctionType::Equals3 => {
+                if type1_ref().type_ == CodeType::Boolean {
+                    if type2_ref().higher_in_lattice_than(type1_ref()) {
+                        result.add_expr_lower_bound(param1, &VarType::VARTYPE_BYTECHAR());
+                    } else {
+                        let param1_false_boolean = param1
+                            .try_as_const()
+                            .is_some_and(|c| !c.has_boolean_value());
+                        let param2_false_boolean = param2
+                            .and_then(|p| p.try_as_const())
+                            .is_some_and(|c| !c.has_boolean_value());
+
+                        if param1_false_boolean || param2_false_boolean {
+                            result.add_expr_lower_bound(param1, &VarType::VARTYPE_BYTECHAR());
+                            if let Some(param2) = param2 {
+                                result.add_expr_lower_bound(param2, &VarType::VARTYPE_BYTECHAR());
+                            }
+                        }
+                    }
+                } else if type2_ref().type_ == CodeType::Boolean
+                    && type1_ref().higher_in_lattice_than(type2_ref())
+                {
+                    if let Some(param2) = param2 {
+                        result.add_expr_lower_bound(param2, &VarType::VARTYPE_BYTECHAR());
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        drop(result);
+        FunctionExprent::check_expr_type_bounds(self.0)
     }
 
     fn optimize_type(self) {
-        unported!("KFunctionExprent.optimizeType")
+        if self.get_any_function_type() == AnyFunctionType::Kotlin(KFunctionType::Equals3) {
+            let l = self.get_lst_operands().get(0);
+            let r = self.get_lst_operands().get(1);
+
+            let family = |e: Exprent| {
+                e.get_expr_type_opt()
+                    .unwrap_or_else(|| npe("getExprType() is null"))
+                    .type_family
+            };
+            if family(l) != TypeFamily::Object || family(r) != TypeFamily::Object {
+                self.0.set_func_type(FunctionType::Eq);
+            }
+        }
     }
 
     pub fn get_any_function_type(self) -> AnyFunctionType {
@@ -126,19 +474,37 @@ impl KFunctionExprent {
 
     /// Java: setFuncType(FunctionType)
     pub fn set_func_type(self, func_type: FunctionType) {
-        unported!("KFunctionExprent.setFuncType")
+        self.set_func_type_typed(AnyFunctionType::Java(func_type));
     }
 
     /// Java: setFuncType(Typed); `super.setFuncType` is `FunctionExprent::set_func_type_base`.
     pub fn set_func_type_typed(self, typed: AnyFunctionType) {
-        unported!("KFunctionExprent.setFuncType")
+        match typed {
+            AnyFunctionType::Java(func_type) => {
+                FunctionExprent::set_func_type_base(self.0, func_type);
+                self.kd_mut(|d| d.k_type = KFunctionType::None);
+            }
+            AnyFunctionType::Kotlin(k_type) => {
+                FunctionExprent::set_func_type_base(self.0, FunctionType::Other);
+                self.kd_mut(|d| d.k_type = k_type);
+            }
+        }
     }
 
     pub fn get_precedence(self) -> i32 {
-        unported!("KFunctionExprent.getPrecedence")
+        match self.kd(|d| d.k_type) {
+            KFunctionType::Equals3 => 6,
+            KFunctionType::IfNull => 11,
+            KFunctionType::GetKclass => 1,
+            KFunctionType::StrTemplate => FunctionType::StrConcat.precedence(),
+            KFunctionType::None => FunctionExprent::get_precedence(self.0),
+        }
     }
 
     pub fn copy(self) -> Exprent {
-        unported!("KFunctionExprent.copy")
+        let func = FunctionExprent::copy(self.0).as_function();
+        let k_type = self.kd(|d| d.k_type);
+        let expr_type = self.0 .0.get_expr_type_opt();
+        KFunctionExprent::new_typed(func, k_type, expr_type).0 .0
     }
 }
