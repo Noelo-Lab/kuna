@@ -297,6 +297,13 @@ pub fn check_input_trial_use(idx: int4, data: &mut Funcdata, aliascheck: &mut Al
             }
         }
 
+        if std::env::var("KUNA_ACTIVEPARAM_TRACE").is_ok() {
+            let t = data.get_call_specs(idx).active_input().get_trial(i);
+            let vn_dbg = data.vbank().get(vn).map(|v| format!("{}/{:#x}:{} written={} input={}", v.get_space().get_name(), v.get_offset(), v.get_size(), v.is_written(), v.is_input())).unwrap_or_default();
+            eprintln!("[activeparam-trace] call {:?} trial {} addr {:?}+{:#x} size {} vn {} active={} checked={} used={} unref={} realistic={} solid={} killed={} indcreate={} nouse={}",
+                data.obank().get(op).map(|o| o.get_addr().get_offset()), i, t.get_address().get_space().map(|s| s.get_name().to_string()), t.get_address().get_offset(), t.get_size(), vn_dbg,
+                t.is_active(), t.is_checked(), t.is_used(), t.is_unref(), t.has_ancestor_realistic(), t.has_ancestor_solid(), t.is_killed_by_call(), t.is_ind_create_formed(), t.is_definitely_not_used());
+        }
         // (kuna) `hiddenretarg`: an active hidden-return register is no argument
         // when no callee could be returning through it.
         crate::p4_calls::kuna_hiddenretarg::rescore_active_trial(data, idx, i);
@@ -392,6 +399,14 @@ pub fn build_input_from_trials(
     // storage.  Inert with the option off.  See [`crate::p4_calls::kuna_argclobber`].
     crate::p4_calls::kuna_argclobber::drop_clobber_tail_arg(fc, data);
 
+    if std::env::var("KUNA_ACTIVEPARAM_TRACE").is_ok() {
+        let n = fc.get_active_input().get_num_trials();
+        for i in 0..n {
+            let t = fc.get_active_input().get_trial(i);
+            eprintln!("[build-input-trace] call {:?} trial {} addr {:?}+{:#x} size {} active={} used={} unref={} nouse={}",
+                data.obank().get(op).map(|o| o.get_addr().get_offset()), i, t.get_address().get_space().map(|s| s.get_name().to_string()), t.get_address().get_offset(), t.get_size(), t.is_active(), t.is_used(), t.is_unref(), t.is_definitely_not_used());
+        }
+    }
     let stackoffset = fc.get_stackoffset();
     let num_trials = fc.get_active_input().get_num_trials();
     for i in 0..num_trials {

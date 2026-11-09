@@ -981,6 +981,9 @@ fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> 
         generated?;
     }
     flow.generate_blocks()?;
+    if let Some(p) = &pushan {
+        crate::kuna_pushan::mark_undefined_copies(p, &mut flow.data);
+    }
     // C++ followFlow: switchOverJumpTables(flow) — map each recovered table's
     // addresses to the basic-block out-edges (the `target` surface is
     // `FlowInfo::target`).  Drive it before the FlowInfo is consumed.

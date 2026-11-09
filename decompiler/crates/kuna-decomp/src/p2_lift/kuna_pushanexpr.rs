@@ -59,6 +59,8 @@ pub enum VarKind {
     InitMem { base: Option<VarId>, offset: i128 },
     /// The value an external call returned (site = native address of the call).
     CallResult { site: u64 },
+    /// Whatever an external call left in a scratch register it may clobber.
+    CallClobber { site: u64, offset: u64 },
     /// A location that held different constants on two paths into a node.
     Merged { node: u32, tag: u64 },
     /// Anything the emulator does not model.
@@ -192,6 +194,11 @@ impl ExprArena {
             _ => None,
         }
     }
+    /// The origin of a bare symbolic variable.
+    pub fn var_kind(&self, e: ExprId) -> Option<VarKind> {
+        self.as_var(e).map(|v| self.vars[v as usize].kind)
+    }
+
     pub fn as_var(&self, e: ExprId) -> Option<VarId> {
         match self.kind(e) {
             ExprKind::Var(v) => Some(*v),
@@ -1822,6 +1829,7 @@ impl ExprArena {
                     VarKind::InitReg { offset } => write!(s, "reg{:x}_{}", offset, info.size),
                     VarKind::InitMem { base, offset } => write!(s, "mem[{:?}{:+#x}]_{}", base, offset, info.size),
                     VarKind::CallResult { site } => write!(s, "ret@{:x}", site),
+                    VarKind::CallClobber { site, offset } => write!(s, "clobber{:x}@{:x}", offset, site),
                     VarKind::Merged { node, tag } => write!(s, "sym{}_{:x}", node, tag),
                     VarKind::Unknown { tag } => write!(s, "unk{}", tag),
                 };

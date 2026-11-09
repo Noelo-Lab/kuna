@@ -28,7 +28,7 @@
 
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
-use kuna_base::types::{int2, int4, uint4, uint8, uintm, Wrap};
+use kuna_base::types::{int2, int4, uint4, uint8, uintb, uintm, Wrap};
 
 use crate::block::{block_flags, BasicData, BlockGraph, BlockKind, FlowBlock};
 use crate::fspec::{FuncCallSpecs, FuncProto, ParamActive};
@@ -455,6 +455,9 @@ pub struct Funcdata {
     kuna_default_name_end: int4,
     /// Whether the naming pass records [`Self::kuna_name_snapshot`].
     kuna_record_names: bool,
+    /// (kuna pushan) Register ranges every external call of this devirtualized
+    /// function kills, over and above the prototype model's own effect list.
+    kuna_call_kills: Vec<(uintb, int4)>,
     /// The numbering the naming pass handed out, by instance identity; see
     /// `kuna_stablenames::snapshot`.
     kuna_name_snapshot: Vec<(String, crate::kuna_stablenames::Keys)>,
@@ -840,6 +843,7 @@ impl Funcdata {
             kuna_prior_names: Default::default(),
             kuna_default_name_end: 1,
             kuna_record_names: false,
+            kuna_call_kills: Vec::new(),
             kuna_name_snapshot: Vec::new(),
             kuna_directive_targets: std::collections::BTreeMap::new(),
             kuna_library_aliases: Vec::new(),
@@ -1117,6 +1121,14 @@ impl Funcdata {
 
     pub fn set_kuna_record_names(&mut self, on: bool) {
         self.kuna_record_names = on;
+    }
+    /// (kuna pushan) The register ranges every external call kills in this
+    /// function; empty outside a devirtualized body.
+    pub fn kuna_call_kills(&self) -> &[(uintb, int4)] {
+        &self.kuna_call_kills
+    }
+    pub fn kuna_set_call_kills(&mut self, kills: Vec<(uintb, int4)>) {
+        self.kuna_call_kills = kills;
     }
 
     /// The numbering the naming pass recorded (empty unless asked to).

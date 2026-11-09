@@ -25,6 +25,7 @@ use std::rc::Rc;
 
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
+use kuna_base::types::int4;
 use kuna_base::space::AddrSpace;
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
@@ -61,6 +62,10 @@ impl OptionPushan {
 /// The devirtualized program for one function entry.
 pub struct PushanProgram {
     pub entry: u64,
+    /// Registers (offset, size) an external call leaves undefined.
+    pub call_kills: Vec<(u64, u8)>,
+    /// The placeholder registers the emitter reads for "never defined" values.
+    pub placeholders: Vec<(u64, u8)>,
     pub overlay: Rc<PcodeOverlay>,
     pub stats: Stats,
     pub emit_stats: EmitStats,
@@ -351,6 +356,10 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
     let mut live_at_exit = abi.callee_saved.clone();
     live_at_exit.push((abi.return_reg, ptr));
     let call_args = abi.args.clone();
+    let callee_saved = abi.callee_saved.clone();
+    let return_reg = abi.return_reg;
+    let mut call_kills = abi.clobbers.clone();
+    call_kills.push((abi.return_reg, ptr));
     let mut explorer = Explorer::new(&target, abi, Config::default(), entry);
     let cfg = explorer.run();
     let m = arch.manage();
@@ -384,6 +393,8 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
         remat_sp: true,
         live_at_exit,
         call_args,
+        callee_saved,
+        return_reg,
         eliminate_dead: std::env::var("KUNA_PUSHAN_NO_DCE").is_err(),
         slot_base: {
             let mut regs = std::collections::BTreeMap::new();
@@ -399,6 +410,16 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
             .map(|(i, _)| i as u64)
             .collect(),
     };
+    // The placeholders the emitter reads for "never defined" registers are
+    // killed by every call too, so no call guard lets a value flow through one.
+    let mut placeholders: Vec<(u64, u8)> = conf
+        .call_args
+        .iter()
+        .filter(|(o, _)| *o != sp_reg)
+        .map(|&(off, size)| (super::kuna_pushanemit::undef_register(&conf, off), size))
+        .collect();
+    placeholders.push((super::kuna_pushanemit::undef_register(&conf, return_reg), ptr));
+    call_kills.extend(placeholders.iter().copied());
     let (overlay, emit_stats) = emit(&cfg, &mut explorer.arena, &target, &conf, entry);
     let mut log = std::mem::take(&mut explorer.log);
     for s in &target.sections {
@@ -504,7 +525,7 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<PushanProgram, St
             }
         }
     }
-    Ok(PushanProgram { entry, overlay: Rc::new(overlay), stats: explorer.stats.clone(), emit_stats, log })
+    Ok(PushanProgram { entry, call_kills, placeholders, overlay: Rc::new(overlay), stats: explorer.stats.clone(), emit_stats, log })
 }
 
 fn describe_exit(e: &NodeExit) -> String {
@@ -533,7 +554,7 @@ pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<Pus
     }
     if let Some(p) = arch.pushan_cache.get(&entry).cloned() {
         install(arch, Some(Rc::clone(&p.overlay)));
-        fd.kuna_set_size(0);
+        adopt(&p, fd);
         return Some(p);
     }
     if mode == MODE_AUTO {
@@ -553,7 +574,7 @@ pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<Pus
             let p = Rc::new(p);
             arch.pushan_cache.insert(entry, Rc::clone(&p));
             install(arch, Some(Rc::clone(&p.overlay)));
-            fd.kuna_set_size(0);
+            adopt(&p, fd);
             Some(p)
         }
         Err(e) => {
@@ -562,6 +583,64 @@ pub fn prepare_flow(arch: &mut Architecture, fd: &mut Funcdata) -> Option<Rc<Pus
             None
         }
     }
+}
+
+/// Point the function at its synthetic program: the flow follower lifts the
+/// overlay instead of a byte range, and every external call kills the ABI's
+/// scratch registers outright. The interpreter re-saves its whole context
+/// right after each call, reading registers the callee just clobbered, and
+/// the prototype model's "unknown effect" on those would make that garbage
+/// read look like a live use of the argument the caller had placed there.
+fn adopt(p: &PushanProgram, fd: &mut Funcdata) {
+    fd.kuna_set_size(0);
+    fd.kuna_set_call_kills(p.call_kills.iter().map(|&(o, s)| (o, s as int4)).collect());
+}
+
+/// Mark every COPY out of a placeholder register as incidental, once the flow
+/// follower has built the ops. The parameter analysis then walks through the
+/// copy into the placeholder itself (an input nothing wrote, or a call's
+/// indirect creation) instead of taking the copy as a solid movement of a
+/// value into the argument register.
+pub fn mark_undefined_copies(p: &PushanProgram, fd: &mut Funcdata) {
+    let is_placeholder = |off: u64, size: i32| p.placeholders.iter().any(|&(o, s)| off >= o && off + size as u64 <= o + s as u64);
+    let copies: Vec<crate::context::OpId> = fd.obank().iter_alive().filter(|&o| fd.obank().get(o).is_some_and(|op| op.code() == OpCode::CPUI_COPY)).collect();
+    let mut marked = 0usize;
+    for op in copies {
+        let from = fd
+            .obank()
+            .get(op)
+            .and_then(|o| o.get_in(0))
+            .and_then(|v| fd.vbank().get(v))
+            .filter(|v| v.get_space().get_name() == "register")
+            .map(|v| (v.get_offset(), v.get_size()));
+        if let Some((off, size)) = from {
+            if is_placeholder(off, size) {
+                if let Some(o) = fd.obank_mut().get_mut(op) {
+                    o.set_additional_flag(crate::op::pcodeop_addlflags::incidental_copy);
+                    marked += 1;
+                }
+            }
+        }
+    }
+    if std::env::var("KUNA_ACTIVEPARAM_TRACE").is_ok() {
+        eprintln!("[pushan-trace] marked {marked} placeholder copies incidental (placeholders {:x?})", p.placeholders);
+    }
+}
+
+/// Does a call inside a devirtualized body kill the register range `addr:size`
+/// beyond what its prototype model says? Consulted by `Heritage::guardCalls`.
+pub fn call_kills(fd: &Funcdata, addr: &Address, size: int4) -> bool {
+    let kills = fd.kuna_call_kills();
+    if kills.is_empty() {
+        return false;
+    }
+    let Some(spc) = addr.get_space() else { return false };
+    if spc.get_name() != "register" {
+        return false;
+    }
+    let lo = addr.get_offset();
+    let hi = lo.saturating_add(size.max(0) as u64);
+    kills.iter().any(|&(o, s)| o <= lo && hi <= o.saturating_add(s.max(0) as u64))
 }
 
 fn install(arch: &mut Architecture, overlay: Option<Rc<PcodeOverlay>>) {

@@ -849,8 +849,10 @@ impl<'a> Explorer<'a> {
         }
         let ret = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallResult { site }, ps, false));
         state.write_reg(self.abi.return_reg, ret, ps);
+        let flags = self.abi.flag_regs;
         for &(off, size) in &self.abi.clobbers {
-            let u = self.arena.unknown(size);
+            let boolean = size == 1 && off >= flags.0 && off < flags.1;
+            let u = self.arena.var(super::kuna_pushanexpr::VarInfo::new(VarKind::CallClobber { site, offset: off }, size, boolean));
             state.write_reg(off, u, size);
         }
         let sp = state.read_reg(&mut self.arena, self.abi.sp, ps);

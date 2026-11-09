@@ -1856,6 +1856,15 @@ impl Heritage {
             // `killedbycall`.
             let mut effecttype = fc.proto().has_effect(&trans_addr, size);
             if effecttype == effect_type::UNKNOWN_EFFECT
+                && crate::p2_lift::kuna_pushan::call_kills(fd, addr, size)
+            {
+                effecttype = effect_type::KILLEDBYCALL;
+            }
+            let gc_trace = std::env::var("KUNA_ACTIVEPARAM_TRACE").is_ok() && ((spc.get_name() == "register" && (addr.get_offset() == 0x8 || addr.get_offset() == 0x10)) || (spc.get_name() == "stack" && addr.get_offset() >= 0xffffffffffffffe0 && addr.get_offset() < 0xffffffffffffffec));
+            if gc_trace {
+                eprintln!("[guardcalls-trace] call {:#x} addr {:#x}:{} initial effect {} has_model={} own_output={} input_active={} output_active={}", fd.obank().get(op).map(|o| o.get_addr().get_offset()).unwrap_or(0), addr.get_offset(), size, effecttype, fc.proto().has_model(), own_output, fc.is_input_active(), fc.is_output_active());
+            }
+            if effecttype == effect_type::UNKNOWN_EFFECT
                 && ((super::kuna_leafmemory::preserves(fd, fc, addr, size)
                         && !self.protostack_is_aliased(fd, &spc, addr.get_offset(), 1)
                         && !self.protostack_is_aliased(fd, &spc,
@@ -1997,6 +2006,9 @@ impl Heritage {
             if preserved {
                 effecttype = effect_type::UNAFFECTED;
             }
+            if gc_trace {
+                eprintln!("[guardcalls-trace] call {:#x} addr {:#x}:{} after preserved={} effect {}", fd.obank().get(op).map(|o| o.get_addr().get_offset()).unwrap_or(0), addr.get_offset(), size, preserved, effecttype);
+            }
             if effecttype == effect_type::UNKNOWN_EFFECT
                 && crate::p4_calls::kuna_msvcbyval::constructs(&constructed, op, &spc, addr.get_offset(), size)
             {
@@ -2082,9 +2094,14 @@ impl Heritage {
             // C++-faithful: emitted for EVERY address-tied range whose effect is
             // unknown/return-address (no persist restriction).
             let _ = fl;
+            if gc_trace {
+                eprintln!("[guardcalls-trace] call {:#x} addr {:#x}:{} final effect {} possibleoutput={}", fd.obank().get(op).map(|o| o.get_addr().get_offset()).unwrap_or(0), addr.get_offset(), size, effecttype, possibleoutput);
+            }
             if effecttype == effect_type::UNKNOWN_EFFECT && live.is_some_and(|l| !l.needs(op)) {
+                if gc_trace { eprintln!("[guardcalls-trace]   pruned by live calls"); }
                 pruned = true;
             } else if effecttype == effect_type::UNKNOWN_EFFECT && sparse.is_some() {
+                if gc_trace { eprintln!("[guardcalls-trace]   deferred (sparse)"); }
                 deferred.push(op);
             } else if effecttype == effect_type::UNKNOWN_EFFECT
                 || effecttype == effect_type::RETURN_ADDRESS

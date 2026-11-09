@@ -46,6 +46,9 @@ pub struct EmitConfig {
     pub live_at_exit: Vec<(u64, u8)>,
     /// Registers an external call reads (argument registers, sp).
     pub call_args: Vec<(u64, u8)>,
+    /// Registers a call preserves (plus the stack pointer).
+    pub callee_saved: Vec<(u64, u8)>,
+    pub return_reg: u64,
     pub eliminate_dead: bool,
     /// User-op indices with no effect beyond their outputs (rdtsc, pause, fences).
     pub pure_userops: Vec<u64>,
@@ -61,6 +64,52 @@ pub struct EmitStats {
     pub remat: usize,
     pub kept_unresolved: usize,
     pub dead: usize,
+    /// Individual ops dropped inside live instructions (dead stack stores, their address arithmetic).
+    pub dead_ops: usize,
+    /// Argument and return registers rewritten as undefined at a call or return.
+    pub undefined: usize,
+}
+
+/// Register-space offset, past the witness slots, of the placeholder registers
+/// that stand for "never defined by the program".
+pub const UNDEF_BASE: u64 = 0x10000;
+
+/// The placeholder register standing in for an undefined `reg`.
+pub fn undef_register(conf: &EmitConfig, reg: u64) -> u64 {
+    conf.slot_base + UNDEF_BASE + reg
+}
+
+/// Where an emitted LOAD or STORE goes.
+#[derive(Clone, Copy, Debug)]
+enum MemRef {
+    /// `sp0 + off`, `size` bytes: a slot of this function's own stack.
+    Stack { off: i128, size: u32 },
+    /// A fixed address outside the stack.
+    Global,
+    /// Not known statically.
+    Unknown,
+}
+
+/// The window of stack bytes, relative to the entry stack pointer, the
+/// liveness analysis tracks; a slot outside it is treated as unknown.
+const WIN_LO: i128 = -0x8000;
+const WIN_HI: i128 = 0x1000;
+const MEM_BYTES: usize = (WIN_HI - WIN_LO) as usize;
+
+fn mem_range(r: &MemRef) -> Option<(u64, u32)> {
+    match r {
+        MemRef::Stack { off, size } if *off >= WIN_LO && *off + *size as i128 <= WIN_HI => Some(((off - WIN_LO) as u64, *size)),
+        _ => None,
+    }
+}
+
+/// What the liveness analysis knows about a node's exit.
+#[derive(Clone, Default)]
+struct ExitInfo {
+    /// Registers live when a Return leaves the function; None keeps the configured set.
+    regs: Option<Vec<(u64, u8)>>,
+    /// The stack pointer at the exit, relative to the entry stack pointer.
+    sp_off: Option<i128>,
 }
 
 /// A set of register-space bytes.
@@ -103,32 +152,127 @@ impl RegSet {
             *a |= *b;
         }
     }
+    fn subtract(&mut self, o: &RegSet) {
+        for (a, b) in self.words.iter_mut().zip(o.words.iter()) {
+            *a &= !*b;
+        }
+    }
+    fn set_all(&mut self) {
+        for w in self.words.iter_mut() {
+            *w = u64::MAX;
+        }
+    }
+    /// Bytes `[off, end)` of the whole set, for the stack window.
+    fn add_from(&mut self, off: u64) {
+        let n = self.words.len() as u64 * 64;
+        if off < n {
+            self.add_range(off, (n - off) as u32);
+        }
+    }
+}
+
+/// Live registers and stack bytes at one program point.
+#[derive(Clone, PartialEq, Eq)]
+struct Live {
+    regs: RegSet,
+    mem: RegSet,
+}
+
+impl Live {
+    fn new(bytes: usize) -> Self {
+        Live { regs: RegSet::new(bytes), mem: RegSet::new(MEM_BYTES) }
+    }
+    fn union_with(&mut self, o: &Live) {
+        self.regs.union_with(&o.regs);
+        self.mem.union_with(&o.mem);
+    }
+}
+
+fn unique_vn(v: &VarnodeData) -> Option<(u64, u32)> {
+    (v.space.as_ref().map(classify_space) == Some(Space::Unique)).then(|| (v.offset, v.size))
+}
+
+/// Ops whose effect is not captured by their outputs or by a tracked stack slot.
+fn op_effect(op: &OverlayOp, r: Option<&MemRef>, pure_userops: &[u64]) -> bool {
+    match op.opc {
+        CPUI_CALLOTHER => !pure_userops.contains(&op.ins[0].offset),
+        CPUI_BRANCHIND | CPUI_CALL | CPUI_CALLIND | CPUI_RETURN => true,
+        CPUI_STORE => r.and_then(mem_range).is_none(),
+        CPUI_BRANCH | CPUI_CBRANCH => op.ins[0].space.as_ref().map(classify_space) != Some(Space::Const),
+        _ => op.out.as_ref().is_some_and(|o| o.space.as_ref().map(classify_space) == Some(Space::Ram)),
+    }
+}
+
+fn internal_flow(ops: &[OverlayOp]) -> bool {
+    ops.iter().any(|op| matches!(op.opc, CPUI_BRANCH | CPUI_CBRANCH) && op.ins[0].space.as_ref().map(classify_space) == Some(Space::Const))
+}
+
+/// Apply one live op backwards to `live` (registers and stack bytes) and to
+/// the instruction-local unique set.
+fn apply_op(op: &OverlayOp, r: Option<&MemRef>, live: &mut Live, uniq: &mut Vec<(u64, u32)>) {
+    if let Some(o) = &op.out {
+        if let Some((off, sz)) = reg_vn(o) {
+            live.regs.remove_range(off, sz);
+        } else if let Some(u) = unique_vn(o) {
+            uniq.retain(|x| *x != u);
+        }
+    }
+    if op.opc == CPUI_STORE {
+        if let Some((off, sz)) = r.and_then(mem_range) {
+            live.mem.remove_range(off, sz);
+        }
+    }
+    for v in &op.ins {
+        if let Some((off, sz)) = reg_vn(v) {
+            live.regs.add_range(off, sz);
+        } else if let Some(u) = unique_vn(v) {
+            if !uniq.contains(&u) {
+                uniq.push(u);
+            }
+        }
+    }
+    if op.opc == CPUI_LOAD {
+        match r {
+            Some(MemRef::Global) => {}
+            Some(rf) if mem_range(rf).is_some() => {
+                let (off, sz) = mem_range(rf).unwrap();
+                live.mem.add_range(off, sz);
+            }
+            _ => live.mem.set_all(),
+        }
+    }
 }
 
 fn reg_vn(v: &VarnodeData) -> Option<(u64, u32)> {
     (v.space.as_ref().map(classify_space) == Some(Space::Register)).then(|| (v.offset, v.size))
 }
 
-/// Ops whose effect is not captured by their register outputs.
-fn has_side_effect(op: &OverlayOp, pure_userops: &[u64]) -> bool {
-    match op.opc {
-        CPUI_CALLOTHER => !pure_userops.contains(&op.ins[0].offset),
-        CPUI_STORE | CPUI_BRANCHIND | CPUI_CALL | CPUI_CALLIND | CPUI_RETURN => true,
-        CPUI_BRANCH | CPUI_CBRANCH => op.ins[0].space.as_ref().map(classify_space) != Some(Space::Const),
-        _ => op.out.as_ref().is_some_and(|o| o.space.as_ref().map(classify_space) == Some(Space::Ram)),
-    }
-}
-
-/// Backward liveness over register bytes; marks instructions whose every
-/// defined register byte is dead and that have no other effect.
-fn mark_dead(cfg: &FlatCfg, conf: &EmitConfig, code: &[Vec<Vec<OverlayOp>>], dead: &mut [Vec<bool>]) -> usize {
+/// Backward liveness over registers and this function's own stack slots.
+/// An instruction dies when nothing it defines is read and it has no other
+/// effect; inside a live instruction a stack store whose bytes nobody reads
+/// dies on its own, with the address arithmetic that fed it.  A return keeps
+/// the configured exit registers minus the callee-saved ones the emulation
+/// proved still hold their entry value; an external call keeps every stack
+/// byte at or above its stack pointer (the callee may reach any of it through
+/// an escaped pointer) and none below (its own frame lands there).
+fn mark_dead(
+    cfg: &FlatCfg,
+    conf: &EmitConfig,
+    code: &[Vec<Vec<OverlayOp>>],
+    refs: &[Vec<Vec<Option<MemRef>>>],
+    exits: &[ExitInfo],
+    dead: &mut [Vec<bool>],
+    dead_ops: &mut [Vec<Vec<bool>>],
+) -> (usize, usize) {
     let mut extent = 0u64;
     for node in code {
         for insn in node {
             for op in insn {
                 for v in op.out.iter().chain(op.ins.iter()) {
                     if let Some((o, s)) = reg_vn(v) {
-                        extent = extent.max(o + s as u64);
+                        if o < UNDEF_BASE {
+                            extent = extent.max(o + s as u64);
+                        }
                     }
                 }
             }
@@ -139,26 +283,69 @@ fn mark_dead(cfg: &FlatCfg, conf: &EmitConfig, code: &[Vec<Vec<OverlayOp>>], dea
     }
     let bytes = (extent as usize).min(0x10000).max(64);
     let n = cfg.nodes.len();
+    let set_of = |regs: &[(u64, u8)]| {
+        let mut s = RegSet::new(bytes);
+        for (o, sz) in regs {
+            s.add_range(*o, *sz as u32);
+        }
+        s
+    };
+    let live_exit_default = set_of(&conf.live_at_exit);
+    let call_args = set_of(&conf.call_args);
+    let full_regs = RegSet::full(bytes);
+    let full_mem = RegSet::full(MEM_BYTES);
+    // Stack bytes at or above `sp0 + off`.
+    let mem_from = |off: Option<i128>| {
+        let mut m = RegSet::new(MEM_BYTES);
+        match off {
+            Some(k) if k >= WIN_LO && k <= WIN_HI => m.add_from((k - WIN_LO) as u64),
+            _ => m.set_all(),
+        }
+        m
+    };
     let mut total_dead = 0usize;
+    let mut total_dead_ops = 0usize;
     loop {
-        // Per-node gen/kill over the live instructions.
-        let mut gen: Vec<RegSet> = Vec::with_capacity(n);
-        let mut kill: Vec<RegSet> = Vec::with_capacity(n);
+        // Per-node gen/kill over the live ops.
+        let mut gen: Vec<Live> = Vec::with_capacity(n);
+        let mut kill: Vec<Live> = Vec::with_capacity(n);
         for i in 0..n {
-            let mut g = RegSet::new(bytes);
-            let mut k = RegSet::new(bytes);
+            let mut g = Live::new(bytes);
+            let mut k = Live::new(bytes);
             for (j, insn) in code[i].iter().enumerate().rev() {
                 if dead[i][j] {
                     continue;
                 }
-                for op in insn.iter().rev() {
-                    if let Some((o, s)) = op.out.as_ref().and_then(reg_vn) {
-                        g.remove_range(o, s);
-                        k.add_range(o, s);
+                for (x, op) in insn.iter().enumerate().rev() {
+                    if dead_ops[i][j][x] {
+                        continue;
+                    }
+                    let r = refs[i][j].get(x).and_then(|r| r.as_ref());
+                    if let Some(o) = &op.out {
+                        if let Some((off, sz)) = reg_vn(o) {
+                            g.regs.remove_range(off, sz);
+                            k.regs.add_range(off, sz);
+                        }
+                    }
+                    if op.opc == CPUI_STORE {
+                        if let Some((off, sz)) = r.and_then(mem_range) {
+                            g.mem.remove_range(off, sz);
+                            k.mem.add_range(off, sz);
+                        }
                     }
                     for v in &op.ins {
-                        if let Some((o, s)) = reg_vn(v) {
-                            g.add_range(o, s);
+                        if let Some((off, sz)) = reg_vn(v) {
+                            g.regs.add_range(off, sz);
+                        }
+                    }
+                    if op.opc == CPUI_LOAD {
+                        match r {
+                            Some(MemRef::Global) => {}
+                            Some(rf) if mem_range(rf).is_some() => {
+                                let (off, sz) = mem_range(rf).unwrap();
+                                g.mem.add_range(off, sz);
+                            }
+                            _ => g.mem.set_all(),
                         }
                     }
                 }
@@ -166,22 +353,12 @@ fn mark_dead(cfg: &FlatCfg, conf: &EmitConfig, code: &[Vec<Vec<OverlayOp>>], dea
             gen.push(g);
             kill.push(k);
         }
-        let exit_set = |regs: &[(u64, u8)]| {
-            let mut s = RegSet::new(bytes);
-            for (o, sz) in regs {
-                s.add_range(*o, *sz as u32);
-            }
-            s
-        };
-        let live_exit = exit_set(&conf.live_at_exit);
-        let call_args = exit_set(&conf.call_args);
-        let full = RegSet::full(bytes);
-        let mut live_in: Vec<RegSet> = (0..n).map(|_| RegSet::new(bytes)).collect();
-        let mut live_out: Vec<RegSet> = (0..n).map(|_| RegSet::new(bytes)).collect();
+        let mut live_in: Vec<Live> = (0..n).map(|_| Live::new(bytes)).collect();
+        let mut live_out: Vec<Live> = (0..n).map(|_| Live::new(bytes)).collect();
         loop {
             let mut changed = false;
             for i in (0..n).rev() {
-                let mut out = RegSet::new(bytes);
+                let mut out = Live::new(bytes);
                 match &cfg.nodes[i].exit {
                     NodeExit::Branch(s) => out.union_with(&live_in[*s as usize]),
                     NodeExit::CondBranch { arms, fall } => {
@@ -197,15 +374,28 @@ fn mark_dead(cfg: &FlatCfg, conf: &EmitConfig, code: &[Vec<Vec<OverlayOp>>], dea
                     }
                     NodeExit::Call { ret, .. } => {
                         out.union_with(&live_in[*ret as usize]);
-                        out.union_with(&call_args);
+                        out.regs.union_with(&call_args);
+                        out.mem.union_with(&mem_from(exits[i].sp_off));
                     }
-                    NodeExit::Return => out.union_with(&live_exit),
-                    NodeExit::TailCall(_) | NodeExit::Unresolved(_) | NodeExit::Halt(_) => out = full.clone(),
+                    NodeExit::Return => {
+                        out.regs = match &exits[i].regs {
+                            Some(r) => set_of(r),
+                            None => live_exit_default.clone(),
+                        };
+                        out.mem = mem_from(exits[i].sp_off.or(Some(0)));
+                    }
+                    NodeExit::TailCall(_) => {
+                        out.regs = full_regs.clone();
+                        out.mem = mem_from(exits[i].sp_off);
+                    }
+                    NodeExit::Unresolved(_) | NodeExit::Halt(_) => {
+                        out.regs = full_regs.clone();
+                        out.mem = full_mem.clone();
+                    }
                 }
                 let mut inn = out.clone();
-                for (a, k) in inn.words.iter_mut().zip(kill[i].words.iter()) {
-                    *a &= !*k;
-                }
+                inn.regs.subtract(&kill[i].regs);
+                inn.mem.subtract(&kill[i].mem);
                 inn.union_with(&gen[i]);
                 if inn != live_in[i] || out != live_out[i] {
                     live_in[i] = inn;
@@ -218,37 +408,77 @@ fn mark_dead(cfg: &FlatCfg, conf: &EmitConfig, code: &[Vec<Vec<OverlayOp>>], dea
             }
         }
         let mut newly = 0usize;
+        let mut newly_ops = 0usize;
         for i in 0..n {
             let mut live = live_out[i].clone();
             for (j, insn) in code[i].iter().enumerate().rev() {
                 if dead[i][j] {
                     continue;
                 }
-                let effect = insn.iter().any(|op| has_side_effect(op, &conf.pure_userops));
-                let defs: Vec<(u64, u32)> = insn.iter().filter_map(|op| op.out.as_ref().and_then(reg_vn)).collect();
-                if !effect && defs.iter().all(|(o, s)| !live.intersects_range(*o, *s)) {
+                let rrow = &refs[i][j];
+                let rof = |x: usize| rrow.get(x).and_then(|r| r.as_ref());
+                let mut all_dead = true;
+                for (x, op) in insn.iter().enumerate() {
+                    if dead_ops[i][j][x] {
+                        continue;
+                    }
+                    if op_effect(op, rof(x), &conf.pure_userops) {
+                        all_dead = false;
+                        break;
+                    }
+                    if op.opc == CPUI_STORE {
+                        if let Some((off, sz)) = rof(x).and_then(mem_range) {
+                            if live.mem.intersects_range(off, sz) {
+                                all_dead = false;
+                                break;
+                            }
+                        }
+                    }
+                    if let Some((o, sz)) = op.out.as_ref().and_then(reg_vn) {
+                        if live.regs.intersects_range(o, sz) {
+                            all_dead = false;
+                            break;
+                        }
+                    }
+                }
+                if all_dead {
                     dead[i][j] = true;
                     newly += 1;
                     continue;
                 }
-                for op in insn.iter().rev() {
-                    if let Some((o, s)) = op.out.as_ref().and_then(reg_vn) {
-                        live.remove_range(o, s);
+                let mut uniq: Vec<(u64, u32)> = Vec::new();
+                let linear = !internal_flow(insn);
+                for (x, op) in insn.iter().enumerate().rev() {
+                    if dead_ops[i][j][x] {
+                        continue;
                     }
-                    for v in &op.ins {
-                        if let Some((o, s)) = reg_vn(v) {
-                            live.add_range(o, s);
+                    let r = rof(x);
+                    if linear && !op_effect(op, r, &conf.pure_userops) {
+                        let out_dead = match &op.out {
+                            Some(o) => match (reg_vn(o), unique_vn(o)) {
+                                (Some((off, sz)), _) => !live.regs.intersects_range(off, sz),
+                                (_, Some(u)) => !uniq.iter().any(|(uo, us)| uo < &(u.0 + u.1 as u64) && u.0 < uo + *us as u64),
+                                _ => false,
+                            },
+                            None => op.opc == CPUI_STORE && r.and_then(mem_range).is_some_and(|(off, sz)| !live.mem.intersects_range(off, sz)),
+                        };
+                        if out_dead {
+                            dead_ops[i][j][x] = true;
+                            newly_ops += 1;
+                            continue;
                         }
                     }
+                    apply_op(op, r, &mut live, &mut uniq);
                 }
             }
         }
         total_dead += newly;
-        if newly == 0 {
+        total_dead_ops += newly_ops;
+        if newly == 0 && newly_ops == 0 {
             break;
         }
     }
-    total_dead
+    (total_dead, total_dead_ops)
 }
 
 struct Emitter<'a> {
@@ -265,6 +495,14 @@ struct Emitter<'a> {
     witnessed: BTreeSet<ExprId>,
     /// The scratch holding the rematerialized address of the access being emitted.
     last_addr_scratch: Option<VarnodeData>,
+}
+
+/// How many times the emitted path executes op `i` of `insn`.
+fn order_count(trace: Option<&super::kuna_pushanemu::InsnTrace>, insn: &LiftedInsn, i: usize) -> usize {
+    match trace {
+        Some(t) if !t.forked && !t.path.is_empty() => t.path.iter().filter(|&&x| x == i).count(),
+        _ => usize::from(i < insn.ops.len()),
+    }
 }
 
 pub fn syn_addr(conf: &EmitConfig, node: NodeId) -> u64 {
@@ -296,12 +534,17 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
         },
     );
     let mut code: Vec<Vec<Vec<OverlayOp>>> = Vec::with_capacity(cfg.nodes.len());
+    let mut refs: Vec<Vec<Vec<Option<MemRef>>>> = Vec::with_capacity(cfg.nodes.len());
     for node in cfg.nodes.iter() {
         let mut insns = Vec::with_capacity(node.insns.len());
+        let mut insn_refs = Vec::with_capacity(node.insns.len());
         for (k, insn) in node.insns.iter().enumerate() {
-            insns.push(em.rewrite_insn(node, k, insn));
+            let (ops, r) = em.rewrite_insn(node, k, insn);
+            insns.push(ops);
+            insn_refs.push(r);
         }
         code.push(insns);
+        refs.push(insn_refs);
     }
     // Exits go in once every witness is known.
     for (idx, node) in cfg.nodes.iter().enumerate() {
@@ -309,11 +552,19 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
             let kept_flow = last.iter().any(|op| matches!(op.opc, CPUI_CALL | CPUI_CALLIND | CPUI_RETURN | CPUI_BRANCHIND)
                 || (op.opc == CPUI_CBRANCH && op.ins[0].space.as_ref().map(classify_space) == Some(Space::Ram)));
             em.append_exit(node, insn, last, kept_flow);
+            let n = last.len();
+            if let Some(r) = refs[idx].last_mut() {
+                r.resize(n, None);
+            }
         }
     }
+    let exits: Vec<ExitInfo> = cfg.nodes.iter().map(|node| em.exit_info(node)).collect();
     let mut dead: Vec<Vec<bool>> = code.iter().map(|n| vec![false; n.len()]).collect();
+    let mut dead_ops: Vec<Vec<Vec<bool>>> = code.iter().map(|n| n.iter().map(|i| vec![false; i.len()]).collect()).collect();
     if conf.eliminate_dead {
-        em.stats.dead = mark_dead(cfg, conf, &code, &mut dead);
+        let (d, o) = mark_dead(cfg, conf, &code, &refs, &exits, &mut dead, &mut dead_ops);
+        em.stats.dead = d;
+        em.stats.dead_ops = o;
     }
     for (idx, node) in cfg.nodes.iter().enumerate() {
         let base = syn_addr(conf, idx as NodeId);
@@ -337,7 +588,15 @@ pub fn emit(cfg: &FlatCfg, arena: &mut ExprArena, target: &dyn PushanTarget, con
             continue;
         }
         for (k, insn) in node.insns.iter().enumerate() {
-            let ops = if dead[idx][k] { vec![em.nop_op()] } else { std::mem::take(&mut code[idx][k]) };
+            let mut ops = if dead[idx][k] {
+                vec![em.nop_op()]
+            } else {
+                let all = std::mem::take(&mut code[idx][k]);
+                all.into_iter().enumerate().filter(|(x, _)| !dead_ops[idx][k][*x]).map(|(_, op)| op).collect()
+            };
+            if ops.is_empty() {
+                ops.push(em.nop_op());
+            }
             em.stats.insns += 1;
             em.stats.ops += ops.len();
             overlay.insns.insert(
@@ -431,10 +690,11 @@ impl<'a> Emitter<'a> {
         OverlayOp { opc: op.opc, out: op.out.clone(), ins: op.ins.clone() }
     }
 
-    fn rewrite_insn(&mut self, node: &super::kuna_pushanflow::Node, k: usize, insn: &LiftedInsn) -> Vec<OverlayOp> {
+    fn rewrite_insn(&mut self, node: &super::kuna_pushanflow::Node, k: usize, insn: &LiftedInsn) -> (Vec<OverlayOp>, Vec<Option<MemRef>>) {
         let is_last = k + 1 == node.insns.len();
         let trace = node.traces.get(k);
         let mut out: Vec<OverlayOp> = Vec::with_capacity(insn.ops.len() + 2);
+        let mut mem_ops: Vec<(usize, usize)> = Vec::new();
         let mut kept_flow = false;
         let mut arm_index = 0usize;
         // Without a fork the emulation fixed every internal branch: emit the
@@ -456,6 +716,7 @@ impl<'a> Emitter<'a> {
                 }
                 match &node.exit {
                     NodeExit::Call { target: Some(t), .. } => {
+                        self.undefined_arguments(node, &mut out);
                         out.push(OverlayOp { opc: CPUI_CALL, out: None, ins: vec![self.code(*t)] });
                         kept_flow = true;
                     }
@@ -464,6 +725,7 @@ impl<'a> Emitter<'a> {
                             CPUI_BRANCHIND | CPUI_RETURN | CPUI_CALLIND | CPUI_CALL => op.ins.first().cloned(),
                             _ => None,
                         };
+                        self.undefined_arguments(node, &mut out);
                         match tv {
                             Some(tv) => out.push(OverlayOp { opc: CPUI_CALLIND, out: None, ins: vec![tv] }),
                             None => out.push(Self::raw(op)),
@@ -471,6 +733,7 @@ impl<'a> Emitter<'a> {
                         kept_flow = true;
                     }
                     NodeExit::Return if matches!(op.opc, CPUI_RETURN | CPUI_BRANCHIND) => {
+                        self.undefined_return(node, &mut out);
                         out.push(OverlayOp { opc: CPUI_RETURN, out: None, ins: vec![op.ins[0].clone()] });
                         kept_flow = true;
                     }
@@ -511,6 +774,9 @@ impl<'a> Emitter<'a> {
                     rewritten.ins[1] = scratch;
                 }
             }
+            if matches!(rewritten.opc, CPUI_LOAD | CPUI_STORE) {
+                mem_ops.push((out.len(), i));
+            }
             out.push(rewritten);
             // Witness a deciding boolean the moment an op computes it.
             if let (Some(trace), Some(out_vn)) = (trace, &op.out) {
@@ -533,7 +799,122 @@ impl<'a> Emitter<'a> {
             }
         }
         let _ = (is_last, kept_flow);
-        out
+        let mut refs: Vec<Option<MemRef>> = vec![None; out.len()];
+        for (pos, i) in mem_ops {
+            let repeats = order_count(trace, insn, i);
+            refs[pos] = Some(if repeats > 1 { MemRef::Unknown } else { self.mem_ref(trace, i) });
+        }
+        (out, refs)
+    }
+
+    /// Where the LOAD/STORE at op index `i` went, from the emulated address.
+    fn mem_ref(&self, trace: Option<&super::kuna_pushanemu::InsnTrace>, i: usize) -> MemRef {
+        let Some(tr) = trace else { return MemRef::Unknown };
+        if tr.forked {
+            return MemRef::Unknown;
+        }
+        let Some(acc) = tr.accesses.iter().find(|a| a.op_index == i) else { return MemRef::Unknown };
+        match self.arena.affine(acc.addr_expr) {
+            Some((Some(b), k)) if Some(b) == self.conf.sp0 => MemRef::Stack { off: k, size: acc.size as u32 },
+            Some((None, _)) => MemRef::Global,
+            _ => MemRef::Unknown,
+        }
+    }
+
+    /// The value a register holds when control leaves `node`, when the
+    /// emulation fixed it along a single path.
+    fn exit_value(&mut self, node: &super::kuna_pushanflow::Node, off: u64, size: u8) -> Option<ExprId> {
+        for (k, insn) in node.insns.iter().enumerate().rev() {
+            let tr = node.traces.get(k)?;
+            if tr.forked {
+                return None;
+            }
+            let order: Vec<usize> = if tr.path.is_empty() { (0..insn.ops.len()).collect() } else { tr.path.clone() };
+            for &i in order.iter().rev() {
+                let Some(o) = insn.ops[i].out.as_ref() else { continue };
+                let Some((lo, sz)) = reg_vn(o) else { continue };
+                let hi = lo + sz as u64;
+                if hi <= off || lo >= off + size as u64 {
+                    continue;
+                }
+                if lo == off && sz as u8 == size {
+                    return tr.op_out.get(i).copied().flatten();
+                }
+                return None;
+            }
+        }
+        let mut st = node.entry.clone();
+        Some(st.read_reg(self.arena, off, size))
+    }
+
+    /// Is `e` the value register `off` held at entry?
+    fn is_entry_value(&self, e: ExprId, off: u64) -> bool {
+        matches!(self.arena.var_kind(e), Some(super::kuna_pushanexpr::VarKind::InitReg { offset }) if offset == off)
+    }
+
+    fn is_call_clobber(&self, e: ExprId) -> bool {
+        matches!(self.arena.var_kind(e), Some(super::kuna_pushanexpr::VarKind::CallClobber { .. }))
+    }
+
+    fn undef_vn(&self, off: u64, size: u32) -> VarnodeData {
+        self.vn(&self.conf.register, undef_register(self.conf, off), size)
+    }
+
+    /// Before an external call, an argument register still holding its entry
+    /// value or a previous call's leftovers is one the program never defined:
+    /// it is rewritten as a read of a placeholder no instruction writes, which
+    /// the decompiler's parameter analysis rejects the way it rejects an
+    /// untouched register in native code.
+    fn undefined_arguments(&mut self, node: &super::kuna_pushanflow::Node, out: &mut Vec<OverlayOp>) {
+        let args: Vec<(u64, u8)> = self.conf.call_args.iter().copied().filter(|(o, _)| *o != self.conf.sp_reg).collect();
+        for (off, size) in args {
+            let Some(v) = self.exit_value(node, off, size) else { continue };
+            if self.is_entry_value(v, off) || self.is_call_clobber(v) {
+                let dst = self.vn(&self.conf.register, off, size as u32);
+                out.push(OverlayOp { opc: CPUI_COPY, out: Some(dst), ins: vec![self.undef_vn(off, size as u32)] });
+                self.stats.undefined += 1;
+            }
+        }
+    }
+
+    /// The same for the return register at a return: a function that merely
+    /// restores the caller's register returns nothing.
+    fn undefined_return(&mut self, node: &super::kuna_pushanflow::Node, out: &mut Vec<OverlayOp>) {
+        let (off, size) = (self.conf.return_reg, self.conf.ptr_size);
+        let Some(v) = self.exit_value(node, off, size) else { return };
+        if self.is_entry_value(v, off) || self.is_call_clobber(v) {
+            let dst = self.vn(&self.conf.register, off, size as u32);
+            out.push(OverlayOp { opc: CPUI_COPY, out: Some(dst), ins: vec![self.undef_vn(off, size as u32)] });
+            self.stats.undefined += 1;
+        }
+    }
+
+    /// What liveness may assume at the node's exit.
+    fn exit_info(&mut self, node: &super::kuna_pushanflow::Node) -> ExitInfo {
+        let ptr = self.conf.ptr_size;
+        let mut info = ExitInfo::default();
+        if !matches!(node.exit, NodeExit::Call { .. } | NodeExit::Return | NodeExit::TailCall(_)) {
+            return info;
+        }
+        if let Some(sp) = self.exit_value(node, self.conf.sp_reg, ptr) {
+            if let Some((Some(b), k)) = self.arena.affine(sp) {
+                if Some(b) == self.conf.sp0 {
+                    info.sp_off = Some(k);
+                }
+            }
+        }
+        if matches!(node.exit, NodeExit::Return) {
+            let mut regs: Vec<(u64, u8)> = Vec::new();
+            for &(off, size) in &self.conf.live_at_exit {
+                let saved = self.conf.callee_saved.contains(&(off, size)) && off != self.conf.sp_reg;
+                let restored = saved && self.exit_value(node, off, size).is_some_and(|v| self.is_entry_value(v, off));
+                if !restored {
+                    regs.push((off, size));
+                }
+            }
+            info.regs = Some(regs);
+        }
+        info
     }
 
     fn append_exit(&mut self, node: &super::kuna_pushanflow::Node, insn: &LiftedInsn, out: &mut Vec<OverlayOp>, kept_flow: bool) {
@@ -612,15 +993,16 @@ impl<'a> Emitter<'a> {
             }
             NodeExit::Call { target, ret } => {
                 if !kept_flow {
-                    match target {
-                        Some(t) => out.push(OverlayOp { opc: CPUI_CALL, out: None, ins: vec![self.code(*t)] }),
-                        None => {}
+                    if let Some(t) = target {
+                        self.undefined_arguments(node, out);
+                        out.push(OverlayOp { opc: CPUI_CALL, out: None, ins: vec![self.code(*t)] });
                     }
                 }
                 out.push(self.branch_op(syn_addr(self.conf, *ret)));
             }
             NodeExit::Return => {
                 if !kept_flow {
+                    self.undefined_return(node, out);
                     self.dead_end(out);
                 }
             }
