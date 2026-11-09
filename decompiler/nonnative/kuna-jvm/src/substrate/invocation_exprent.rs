@@ -1896,7 +1896,7 @@ impl InvocationExprent {
 
         while let Some(cls) = que.pop_front() {
             for mt in cls.get_methods().to_vec() {
-                if name == mt.get_name() {
+                if mt.name_eq(&name) {
                     let md = MethodDescriptor::parse_descriptor(&mt.get_descriptor());
                     let matched_params = match custom_param_matcher {
                         None => {
