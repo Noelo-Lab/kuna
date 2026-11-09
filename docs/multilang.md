@@ -25,7 +25,7 @@ length-carried strings).
 | CFG idioms | Rust panic/drop handling: `cleanupcode`, `securitycheck`; plus the stripper family (`stackguard`, `msvcstackguard`, `devectorize`, `msvcstrappend`, `strlenscan`, `outline`) | `p2_lift/kuna_cleanupcode.rs`, `p7_regions/kuna_securitycheck.rs`, … | All hand-coded; **no generic subgraph matcher**; nothing for Go (`morestack`, write barriers, `panicIndex`) or Swift (ARC, exclusivity) |
 | Types | Rust DWARF enum layouts parsed into `VariantLayout` side table | `analyzers/dwarf/kuna_dwarfvariants.rs`, `p0_knowledge/kuna_dwarfvariants.rs` | **Nothing reads the table yet**; no notion of slices/fat pointers/interfaces/tuples; zero-sized fields dropped; sizes are `int4` so unsized types unrepresentable |
 | Strings | NUL-terminated scan (`StringLiteralPass`), NUL-terminated render (`StringManagerUnicode::get_string_data`) | `analyzers/strings/mod.rs`, `p9_emit/stringmanage.rs` | Go/Rust strings carry length, not NUL; Go rodata is one unterminated blob. BUT: a bounded, NUL-free literal path already exists — `Funcdata::get_internal_string` → `BUILTIN_STRINGDATA` (used only by `constseq.rs`) |
-| Symbols | pclntab pass (names + extents, go1.2–1.20); Rust v0/legacy + Itanium + MSVC demangling; per-language no-return lists | `analyzers/pclntab/`, `analyzers/demangle/`, `loader/noreturn.rs` + `data/{Rust,Golang}FunctionsThatDoNotReturn` | No Go runtime type info (typelinks/moduledata); Swift demangler done (`kuna_swift`, `$s` + `_Tt`); `__swift5_*` metadata naming done (`analyzers/swift`, option `swiftmetadata`); no symbolic references in mangled type names yet |
+| Symbols | pclntab pass (names + extents, go1.2–1.20); Rust v0/legacy + Itanium + MSVC demangling; per-language no-return lists | `analyzers/pclntab/`, `analyzers/demangle/`, `loader/noreturn.rs` + `data/{Rust,Golang}FunctionsThatDoNotReturn` | No Go runtime type info (typelinks/moduledata); Swift demangler done (`kuna_swift`, `$s` + `_Tt`); `__swift5_*` metadata naming done (`analyzers/swift`, option `swiftmetadata`); struct/class layouts from static type metadata done (`swifttypes`; symbolic references resolved); no `swiftcall` model, so only getters' `self` is typed |
 | Output | Full outlang plane: `OutLang{C,Rust}`, `LangProfile`, `TypeSpeller`, `LangAbi` (stub: `extern_marker` only, doc names Go multi-return as the known omission) | `p9_emit/kuna_lang.rs`, `kuna_langrust.rs`, `p4_calls/kuna_langabi.rs` | Rust output has no type definitions renderer; no tuple/multi-return form |
 
 Two structural facts shape the whole design:
@@ -184,8 +184,9 @@ typed_data/prototypes` seam):
   the single highest-value type provider in the plan and is pure analysis-tier
   code (new `analyzers/gotypes/`).
 - Swift `__swift5_*` reflection metadata (field descriptors + mangled type
-  names) — the demangler it needs exists (`kuna_swift::demangle_swift_tree`
-  gives the type tree; symbolic references are not read yet).
+  names) — **done** as `swifttypes` (`analyzers/swift/kuna_swifttypes.rs`):
+  layouts from the static type metadata, field types through
+  `kuna_swift::demangle_swift_type` with its symbolic references resolved.
 - **Synthesized well-known shells** registered by each pack even with no
   debug info (`runtime.g`, `go.string`, `go.slice`, `go.iface`,
   `swift.refcounted`), so P5 recognizers can type a `(ptr,len)` pair loaded
@@ -305,10 +306,14 @@ panic no-return lists, securitycheck, DWARF variants):
 - Prereqs the others don't need: a Swift demangler (**done**: the pure-Rust
   `analyzers/demangle/kuna_swift.rs`, option `swiftdemangle`, verified against
   `swift-demangle`; every crate alternative builds Apple's C++ demangler, which
-  `kuna-wasm` cannot carry), `__swift5_*` metadata walker (**done** for
-  naming: `analyzers/swift`, option `swiftmetadata` — accessors, vtable slots,
-  witnesses, descriptors; field types still need symbolic-reference
-  demangling), Swift detection, cspec `swiftcall` models. Mach-O loading itself is already solid
+  `kuna-wasm` cannot carry), `__swift5_*` metadata walker (**done**:
+  `analyzers/swift`, option `swiftmetadata` names accessors, vtable slots,
+  witnesses and descriptors; its `swifttypes` arm lays out every fixed-layout
+  struct and class from the static type metadata, resolving the field
+  descriptors' symbolic references, and pins getters' `self` to the
+  `swiftself` register), Swift detection, cspec `swiftcall` models (still the
+  gap: without a model that puts `self` in x20 / r13 only a function of
+  known arity — a getter — can take a typed `self`). Mach-O loading itself is already solid
   (fat binaries, stubs, issue-#666 underscore handling).
 - Idioms: `swift_retain/release/autorelease` elision
   (`CallStraightLine` → `DeleteCall`; **default-on within the pack** — ARC

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3990,
-    3990
+    3999,
+    3999
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1110,7 +1110,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 395 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 396 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -3801,6 +3801,15 @@
     "data:swiftmetadata on: the metadata accessor is named after its type",
     "data:swiftmetadata on: the vtable slot is named by class, position and kind",
     "data:swiftmetadata on: the witness is named by conformance and requirement",
+    "data:swifttypes off: the accessor returns a bare constant",
+    "data:swifttypes off: the field is an offset off an unnamed register",
+    "data:swifttypes off: the getter takes no self and reads a raw offset",
+    "data:swifttypes on: a struct-typed field returns as the nested struct",
+    "data:swifttypes on: the accessor prototype",
+    "data:swifttypes on: the accessor returns the typed metadata record",
+    "data:swifttypes on: the getter takes the class's self",
+    "data:swifttypes on: the stored property is a field of the layout",
+    "data:swifttypes on: the witness getter takes the struct's self behind Self and the witness table",
     "data:switch-return-paths #1: tag 3 keeps its own case in all configurations",
     "data:switch-return-paths #2: first byte toggle",
     "data:switch-return-paths #3: second byte toggle",

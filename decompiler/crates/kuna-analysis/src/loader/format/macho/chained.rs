@@ -123,6 +123,17 @@ pub struct ChainedFixups {
 }
 
 impl ChainedFixups {
+    /// An overlay from another loader's resolved pointer slots (an ELF's
+    /// `R_*_RELATIVE` addends), so a reader works the same on both formats.
+    pub fn from_rebases(rebases: impl IntoIterator<Item = (u64, u64)>) -> ChainedFixups {
+        let mut out = ChainedFixups {
+            rebases: rebases.into_iter().collect(),
+            ..ChainedFixups::default()
+        };
+        out.sort_slots();
+        out
+    }
+
     /// Whether this image carried any chained-fixup rebases (a quick "is this a
     /// chained-fixup binary" probe; `false` ⇒ the resolver is a no-op).
     pub fn is_empty(&self) -> bool {
