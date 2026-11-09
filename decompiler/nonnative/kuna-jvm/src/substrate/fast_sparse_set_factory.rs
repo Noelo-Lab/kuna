@@ -101,10 +101,67 @@ impl<E: JavaHash + JavaEq + Clone> FastSparseSetFactory<E> {
     }
 }
 
+/// An `int[]` that keeps up to two words inline: almost every set fits, so
+/// copying one (the SSA passes copy them constantly) needs no extra block.
+#[derive(Clone)]
+enum Words {
+    Inline { len: u8, buf: [i32; 2] },
+    Heap(Vec<i32>),
+}
+
+impl Words {
+    fn zeroed(len: usize) -> Words {
+        if len <= 2 {
+            Words::Inline {
+                len: len as u8,
+                buf: [0; 2],
+            }
+        } else {
+            Words::Heap(vec![0; len])
+        }
+    }
+
+    fn resize(&mut self, new_len: usize, value: i32) {
+        match self {
+            Words::Inline { len, buf } if new_len <= 2 => {
+                for word in buf.iter_mut().take(new_len).skip(*len as usize) {
+                    *word = value;
+                }
+                *len = new_len as u8;
+            }
+            Words::Inline { len, buf } => {
+                let mut words = buf[..*len as usize].to_vec();
+                words.resize(new_len, value);
+                *self = Words::Heap(words);
+            }
+            Words::Heap(words) => words.resize(new_len, value),
+        }
+    }
+}
+
+impl std::ops::Deref for Words {
+    type Target = [i32];
+    fn deref(&self) -> &[i32] {
+        match self {
+            Words::Inline { len, buf } => &buf[..*len as usize],
+            Words::Heap(words) => words,
+        }
+    }
+}
+
+impl std::ops::DerefMut for Words {
+    fn deref_mut(&mut self) -> &mut [i32] {
+        match self {
+            Words::Inline { len, buf } => &mut buf[..*len as usize],
+            Words::Heap(words) => words,
+        }
+    }
+}
+
 pub struct FastSparseSet<E> {
     factory: FastSparseSetFactory<E>,
-    data: Vec<i32>,
-    next: Option<Vec<i32>>,
+    data: Words,
+    next: Option<Words>,
 }
 
 /// `getCopy()`.
@@ -123,7 +180,7 @@ impl<E: JavaHash + JavaEq + Clone> FastSparseSet<E> {
         let length = factory.get_last_block().max(1);
         FastSparseSet {
             factory,
-            data: vec![0; length as usize],
+            data: Words::zeroed(length as usize),
             next: None,
         }
     }
@@ -164,9 +221,9 @@ impl<E: JavaHash + JavaEq + Clone> FastSparseSet<E> {
         }
     }
 
-    fn alloc_next(&mut self) -> &mut Vec<i32> {
+    fn alloc_next(&mut self) -> &mut Words {
         let len = self.data.len();
-        self.next.get_or_insert_with(|| vec![0; len])
+        self.next.get_or_insert_with(|| Words::zeroed(len))
     }
 
     pub fn remove(&mut self, element: &E) {
