@@ -1,0 +1,210 @@
+F	REMOVE_BRIDGE	remove-bridge	rbr	Remove Bridge Methods	Removes any methods that are marked as bridge from the decompiled output.	BOOLEAN	\N
+F	REMOVE_SYNTHETIC	remove-synthetic	rsy	Remove Synthetic Methods And Fields	Removes any methods and fields that are marked as synthetic from the decompiled output.	BOOLEAN	\N
+F	DECOMPILE_INNER	decompile-inner	din	Decompile Inner Classes	Process inner classes and add them to the decompiled output.	BOOLEAN	\N
+F	DECOMPILE_CLASS_1_4	decompile-java4	dc4	Decompile Java 4 class references	Resugar the Java 1-4 class reference format instead of leaving the synthetic code.	BOOLEAN	\N
+F	DECOMPILE_ASSERTIONS	decompile-assert	das	Decompile Assertions	Decompile assert statements.	BOOLEAN	\N
+F	HIDE_EMPTY_SUPER	hide-empty-super	hes	Hide Empty super()	Hide super() calls with no parameters.	BOOLEAN	\N
+F	HIDE_DEFAULT_CONSTRUCTOR	hide-default-constructor	hdc	Hide Default Constructor	Hide constructors with no parameters and no code.	BOOLEAN	\N
+F	DECOMPILE_GENERIC_SIGNATURES	decompile-generics	dgs	Decompile Generics	Decompile generics in classes, methods, fields, and variables.	BOOLEAN	\N
+F	INCORPORATE_RETURNS	incorporate-returns	ner	Incorporate returns in try-catch blocks	Integrate returns better in try-catch blocks instead of storing them in a temporary variable.	BOOLEAN	\N
+F	ENSURE_SYNCHRONIZED_MONITOR	ensure-synchronized-monitors	esm	Ensure synchronized ranges are complete	If a synchronized block has a monitorenter without any corresponding monitorexit, try to deduce where one should be to ensure the synchronized is correctly decompiled.	BOOLEAN	\N
+F	DECOMPILE_ENUM	decompile-enums	den	Decompile Enums	Decompile enums.	BOOLEAN	\N
+F	DECOMPILE_PREVIEW	decompile-preview	dpr	Decompile Preview Features	Decompile features marked as preview or incubating in the latest Java versions.	BOOLEAN	\N
+F	REMOVE_GET_CLASS_NEW	remove-getclass	rgn	Remove reference getClass()	Remove synthetic getClass() calls created by code such as 'obj.new Inner()'.	BOOLEAN	\N
+F	LITERALS_AS_IS	keep-literals	lit	Keep Literals As Is	Keep NaN, infinities, and pi values as is without resugaring them.	BOOLEAN	\N
+F	BOOLEAN_TRUE_ONE	boolean-as-int	bto	Represent boolean as 0/1	Represent integers 0 and 1 as booleans.	BOOLEAN	\N
+F	ASCII_STRING_CHARACTERS	ascii-strings	asc	ASCII String Characters	Encode non-ASCII characters in string and character literals as Unicode escapes.	BOOLEAN	\N
+F	SYNTHETIC_NOT_SET	synthetic-not-set	nns	Synthetic Not Set	Treat some known structures as synthetic even when not explicitly set.	BOOLEAN	\N
+F	UNDEFINED_PARAM_TYPE_OBJECT	undefined-as-object	uto	Treat Undefined Param Type As Object	Treat nameless types as java.lang.Object.	BOOLEAN	\N
+F	USE_DEBUG_VAR_NAMES	use-lvt-names	udv	Use LVT Names	Use LVT names for local variables and parameters instead of var<index>_<version>.	BOOLEAN	\N
+F	USE_METHOD_PARAMETERS	use-method-parameters	ump	Use Method Parameters	Use method parameter names, as given in the MethodParameters attribute.	BOOLEAN	\N
+F	REMOVE_EMPTY_RANGES	remove-empty-try-catch	rer	Remove Empty try-catch blocks	Remove try-catch blocks with no code.	BOOLEAN	\N
+F	FINALLY_DEINLINE	decompile-finally	fdi	Decompile Finally	Decompile finally blocks.	BOOLEAN	\N
+F	LAMBDA_TO_ANONYMOUS_CLASS	lambda-to-anonymous-class	lac	Decompile Lambdas as Anonymous Classes	Decompile lambda expressions as anonymous classes.	BOOLEAN	\N
+F	BYTECODE_SOURCE_MAPPING	bytecode-source-mapping	bsm	Bytecode to Source Mapping	Map Bytecode to source lines.	BOOLEAN	\N
+F	DUMP_CODE_LINES	dump-code-lines	dcl	Dump Code Lines	Dump line mappings to output archive zip entry extra data.	BOOLEAN	\N
+F	IGNORE_INVALID_BYTECODE	ignore-invalid-bytecode	iib	Ignore Invalid Bytecode	Ignore bytecode that is malformed.	BOOLEAN	\N
+F	VERIFY_ANONYMOUS_CLASSES	verify-anonymous-classes	vac	Verify Anonymous Classes	Verify that anonymous classes are local.	BOOLEAN	\N
+F	TERNARY_CONSTANT_SIMPLIFICATION	ternary-constant-simplification	tcs	Ternary Constant Simplification	Fold branches of ternary expressions that have boolean true and false constants.	BOOLEAN	\N
+F	PATTERN_MATCHING	pattern-matching	pam	Pattern Matching	Decompile with if and switch pattern matching enabled.	BOOLEAN	\N
+F	TRY_LOOP_FIX	try-loop-fix	tlf	Try-Loop fix	Fixes rare cases of malformed decompilation when try blocks are found inside of while loops	BOOLEAN	\N
+F	TERNARY_CONDITIONS	ternary-in-if	tco	[Experimental] Ternary In If Conditions	Tries to collapse if statements that have a ternary in their condition.	BOOLEAN	\N
+F	SWITCH_EXPRESSIONS	decompile-switch-expressions	swe	Decompile Switch Expressions	Decompile switch expressions in modern Java class files.	BOOLEAN	\N
+F	SHOW_HIDDEN_STATEMENTS	show-hidden-statements	shs	[Debug] Show hidden statements	Display hidden code blocks for debugging purposes.	BOOLEAN	\N
+F	OVERRIDE_ANNOTATION	override-annotation	ovr	Override Annotation	Display override annotations for methods known to the decompiler.	BOOLEAN	\N
+F	SIMPLIFY_STACK_SECOND_PASS	simplify-stack	ssp	Second-Pass Stack Simplification	Simplify variables across stack bounds to resugar complex statements.	BOOLEAN	\N
+F	VERIFY_VARIABLE_MERGES	verify-merges	vvm	[Experimental] Verify Variable Merges	Tries harder to verify the validity of variable merges. If there are strange variable recompilation issues, this is a good place to start.	BOOLEAN	\N
+F	VERIFY_PRE_POST_VARIABLE_MERGES	verify-pre-post-merges	pvm	[Experimental] Verify Pre Post Variable Merges	Will try to validate that code before and after variable merges is equivalent	BOOLEAN	\N
+F	OLD_TRY_DEDUP	old-try-dedup	\N	[Experimental] Use old try deduplication	Use the old try deduplication algorithm for methods with obfuscated exceptions, which inserts dummy exception handlers instead of duplicating blocks	BOOLEAN	\N
+F	INCLUDE_ENTIRE_CLASSPATH	include-classpath	iec	Include Entire Classpath	Give the decompiler information about every jar on the classpath.	BOOLEAN	\N
+F	INCLUDE_JAVA_RUNTIME	include-runtime	jrt	Include Java Runtime	Give the decompiler information about the Java runtime, either 1 or current for the current runtime, or a path to another runtime	STRING	\N
+F	EXPLICIT_GENERIC_ARGUMENTS	explicit-generics	ega	Explicit Generic Arguments	Put explicit diamond generic arguments on method calls.	BOOLEAN	\N
+F	INLINE_SIMPLE_LAMBDAS	inline-simple-lambdas	isl	Inline Simple Lambdas	Remove braces on simple, one line, lambda expressions.	BOOLEAN	\N
+F	LOG_LEVEL	log-level	log	Logging Level	Logging level. Must be one of: 'info', 'debug', 'warn', 'error'.	STRING	\N
+F	MAX_PROCESSING_METHOD	max-time-per-method	mpm	[DEPRECATED] Max time to process method	Maximum time in seconds to process a method. This is deprecated, do not use.	INTEGER	\N
+F	RENAME_ENTITIES	rename-members	ren	Rename Members	Rename classes, fields, and methods with a number suffix to help in deobfuscation.	BOOLEAN	\N
+F	USER_RENAMER_CLASS	user-renamer-class	urc	User Renamer Class	Path to a class that implements IIdentifierRenamer.	STRING	\N
+F	NEW_LINE_SEPARATOR	new-line-separator	nls	[DEPRECATED] New Line Seperator	Use \\n instead of \\r\\n for new lines. Deprecated, do not use.	BOOLEAN	Disabled on Windows, enabled on other systems
+F	INDENT_STRING	indent-string	ind	Indent String	A string of spaces or tabs that is placed for each indent level.	STRING	\N
+F	PREFERRED_LINE_LENGTH	preferred-line-length	pll	Preferred line length	Max line length before formatting is applied.	INTEGER	\N
+F	BANNER	banner	ban	Banner	A message to display at the top of the decompiled file.	STRING	\N
+F	ERROR_MESSAGE	error-message	erm	Error Message	Message to display when an error occurs in the decompiler.	STRING	\N
+F	THREADS	thread-count	thr	Thread Count	How many threads to use to decompile.	INTEGER	all available processors
+F	DUMP_ORIGINAL_LINES	__dump_original_lines__	\N	\N	\N	\N	\N
+F	UNIT_TEST_MODE	__unit_test_mode__	\N	\N	\N	\N	\N
+F	LINE_SEPARATOR_WIN	\r\n	\N	\N	\N	\N	\N
+F	LINE_SEPARATOR_UNX	\n	\N	\N	\N	\N	\N
+F	SKIP_EXTRA_FILES	skip-extra-files	sef	Skip Extra Files	Skip copying non-class files from the input folder or file to the output	BOOLEAN	\N
+F	WARN_INCONSISTENT_INNER_CLASSES	warn-inconsistent-inner-attributes	win	Warn about inconsistent inner attributes	Warn about inconsistent inner class attributes	BOOLEAN	\N
+F	DUMP_BYTECODE_ON_ERROR	dump-bytecode-on-error	dbe	Dump Bytecode On Error	Put the bytecode in the method body when an error occurs.	BOOLEAN	\N
+F	DUMP_EXCEPTION_ON_ERROR	dump-exception-on-error	dee	Dump Exceptions On Error	Put the exception message in the method body or source file when an error occurs.	BOOLEAN	\N
+F	DECOMPILER_COMMENTS	decompiler-comments	dec	Decompiler Comments	Sometimes, odd behavior of the bytecode or unfixable problems occur. This enables or disables the adding of those to the decompiled output.	BOOLEAN	\N
+F	SOURCE_FILE_COMMENTS	sourcefile-comments	sfc	SourceFile comments	Add debug comments showing the class SourceFile attribute if present.	BOOLEAN	\N
+F	DECOMPILE_COMPLEX_CONDYS	decompile-complex-constant-dynamic	dcc	Decompile complex constant-dynamic expressions	Some constant-dynamic expressions can't be converted to a single Java expression with identical run-time behaviour. This decompiles them to a similar non-lazy expression, marked with a comment.	BOOLEAN	\N
+F	FORCE_JSR_INLINE	force-jsr-inline	fji	Force JSR inline	Forces the processing of JSR instructions even if the class files shouldn't contain it (Java 7+)	BOOLEAN	\N
+F	DUMP_TEXT_TOKENS	dump-text-tokens	dtt	Dump Text Tokens	Dump Text Tokens on each class file	BOOLEAN	\N
+F	REMOVE_IMPORTS	remove-imports	rim	Remove Imports	Remove import statements from the decompiled code	BOOLEAN	\N
+F	MARK_CORRESPONDING_SYNTHETICS	mark-corresponding-synthetics	mcs	Mark Corresponding Synthetics	Mark lambdas and anonymous and local classes with their respective synthetic constructs	\N	\N
+F	EXCLUDED_CLASSES	excluded-classes	\N	Excluded Classes	Exclude classes from decompilation if their fully qualified names match the specified regular expression.	STRING	\N
+F	INCLUDED_CLASSES	included-classes	\N	Included Classes	Include classes in decompilation only if their fully qualified names match the specified regular expression.	STRING	\N
+F	VALIDATE_INNER_CLASSES_NAMES	validate-inner-classes-names	\N	Validate inner classes names	Validates that the inner class name is correct (if it is separated using "$" for example BaseClass$InnerClass). If not then inner class won't be processed.	BOOLEAN	\N
+F	PRETTIFY_IFS	prettify-ifs	\N	Prettify Ifs	Use heuristics to restructure if statements to make them clearer to read.	BOOLEAN	\N
+F	METHOD_TO_DECOMPILE	method-to-decompile	\N	Method to decompile	Option to decompile a single method. Set to owner + "." + name + descriptor, e.g. foo/Bar.baz()V, or simply name + descriptor if you're only decompiling a single file and the method belongs to the root class.	STRING	\N
+D	excluded-classes	
+D	remove-synthetic	1
+D	validate-inner-classes-names	1
+D	ascii-strings	0
+D	__dump_original_lines__	0
+D	sourcefile-comments	0
+D	dump-code-lines	0
+D	keep-literals	0
+D	remove-empty-try-catch	1
+D	use-method-parameters	1
+D	ternary-constant-simplification	0
+D	pattern-matching	1
+D	dump-bytecode-on-error	1
+D	synthetic-not-set	0
+D	include-runtime	1
+D	lambda-to-anonymous-class	0
+D	max-time-per-method	0
+D	verify-pre-post-merges	0
+D	explicit-generics	0
+D	hide-empty-super	1
+D	include-classpath	0
+D	decompile-finally	1
+D	skip-extra-files	0
+D	inline-simple-lambdas	1
+D	bytecode-source-mapping	0
+D	prettify-ifs	1
+D	try-loop-fix	1
+D	old-try-dedup	0
+D	error-message	Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)
+D	hide-default-constructor	1
+D	log-level	INFO
+D	simplify-stack	1
+D	new-line-separator	1
+D	decompiler-comments	1
+D	method-to-decompile	
+D	thread-count	@THREADS@
+D	decompile-switch-expressions	1
+D	remove-bridge	1
+D	show-hidden-statements	0
+D	decompile-generics	1
+D	verify-anonymous-classes	0
+D	__unit_test_mode__	0
+D	decompile-java4	1
+D	decompile-enums	1
+D	use-lvt-names	1
+D	dump-text-tokens	0
+D	included-classes	
+D	decompile-inner	1
+D	decompile-assert	1
+D	rename-members	0
+D	boolean-as-int	1
+D	decompile-preview	1
+D	ignore-invalid-bytecode	0
+D	remove-imports	0
+D	override-annotation	1
+D	preferred-line-length	160
+D	ensure-synchronized-monitors	1
+D	banner	
+D	warn-inconsistent-inner-attributes	1
+D	mark-corresponding-synthetics	0
+D	verify-merges	0
+D	incorporate-returns	1
+D	indent-string	   
+D	force-jsr-inline	0
+D	remove-getclass	1
+D	undefined-as-object	1
+D	decompile-complex-constant-dynamic	0
+D	ternary-in-if	1
+D	dump-exception-on-error	1
+C	excluded-classes	
+C	remove-synthetic	1
+C	validate-inner-classes-names	1
+C	ascii-strings	0
+C	__dump_original_lines__	0
+C	sourcefile-comments	0
+C	dump-code-lines	0
+C	keep-literals	0
+C	remove-empty-try-catch	1
+C	use-method-parameters	1
+C	ternary-constant-simplification	0
+C	pattern-matching	1
+C	dump-bytecode-on-error	1
+C	synthetic-not-set	0
+C	include-runtime	1
+C	lambda-to-anonymous-class	0
+C	max-time-per-method	0
+C	verify-pre-post-merges	0
+C	explicit-generics	0
+C	hide-empty-super	1
+C	include-classpath	0
+C	decompile-finally	1
+C	skip-extra-files	0
+C	inline-simple-lambdas	1
+C	bytecode-source-mapping	0
+C	prettify-ifs	1
+C	try-loop-fix	1
+C	old-try-dedup	0
+C	error-message	Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)
+C	hide-default-constructor	1
+C	log-level	INFO
+C	simplify-stack	1
+C	new-line-separator	1
+C	decompiler-comments	1
+C	method-to-decompile	
+C	thread-count	@THREADS@
+C	decompile-switch-expressions	1
+C	remove-bridge	1
+C	show-hidden-statements	0
+C	decompile-generics	1
+C	verify-anonymous-classes	0
+C	__unit_test_mode__	0
+C	decompile-java4	1
+C	decompile-enums	1
+C	use-lvt-names	1
+C	dump-text-tokens	0
+C	included-classes	
+C	decompile-inner	1
+C	decompile-assert	1
+C	rename-members	0
+C	boolean-as-int	1
+C	decompile-preview	1
+C	ignore-invalid-bytecode	0
+C	remove-imports	0
+C	override-annotation	1
+C	preferred-line-length	160
+C	ensure-synchronized-monitors	1
+C	banner	
+C	warn-inconsistent-inner-attributes	1
+C	mark-corresponding-synthetics	0
+C	verify-merges	0
+C	incorporate-returns	1
+C	indent-string	   
+C	force-jsr-inline	0
+C	remove-getclass	1
+C	undefined-as-object	1
+C	decompile-complex-constant-dynamic	0
+C	ternary-in-if	1
+C	dump-exception-on-error	1
