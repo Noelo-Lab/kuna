@@ -280,6 +280,9 @@ mod verify_macho_imports;
 #[path = "verify_machomain.rs"]
 mod verify_machomain;
 
+#[path = "verify_unwindstarts.rs"]
+mod verify_unwindstarts;
+
 #[path = "verify_mappedflowboundary.rs"]
 mod verify_mappedflowboundary;
 
@@ -328,6 +331,12 @@ mod verify_objc;
 mod verify_swiftmetadata;
 #[path = "verify_swifttypes.rs"]
 mod verify_swifttypes;
+
+#[path = "verify_importdata.rs"]
+mod verify_importdata;
+
+#[path = "verify_cfstring.rs"]
+mod verify_cfstring;
 
 #[path = "verify_object_formats.rs"]
 mod verify_object_formats;

@@ -126,6 +126,17 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // instructions are NOT recovered — kuna's S5/S7 frame analysis already
         // recovers the stack frame from the code, so CFI is inherited, not rebuilt.
         Box::new(crate::entry::EhFrameLsdaPass),
+        // (kuna `unwindstarts`) S1 Mach-O `__unwind_info` function-start discovery:
+        // the linker-built second-level pages of `__TEXT,__unwind_info` list every
+        // function the unwinder can describe, by start offset. The section survives
+        // the `strip` that drops `LC_FUNCTION_STARTS`, so on a stripped App-Store app
+        // whose only starts are `LC_MAIN`/exports it recovers the whole `__text`.
+        // Registered always (the facts are cheap and stashed at load), COMMIT gated
+        // by `--option unwindstarts on|off` (default-OFF, output-changing: it ADDS
+        // entries) via `engine.rs::analysis_pass_enabled`, so a default run is
+        // byte-identical and an image carrying `LC_FUNCTION_STARTS` gains nothing
+        // (unwind starts are a strict subset there). After EntryDiscoveryPass.
+        Box::new(crate::entry::kuna_unwindinfo::UnwindInfoStartsPass),
         // (kuna `entrymainproto`) S1 PE CRT entry-function prototype recovery: the
         // function `__scrt_common_main_seh` calls immediately after the named
         // argc/argv/envp CRT accessors gets the prototype that call site
@@ -441,6 +452,14 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::loader::kuna_peimportcall::PeImportCallPass));
     }
 
+    // S1 arm64e `__auth_ptr` call binding (AuthPtrCallPass): name each chained
+    // bind slot of `__auth_ptr` after its import and paint it `externref`, the
+    // `peimportcall` facts for the one Mach-O import table the indirect-symbol
+    // walk does not cover. Committed only when `authptrcall` is on.
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::loader::kuna_authptrcall::AuthPtrCallPass));
+    }
+
     // S1 MSVC RTTI / vftable recovery (RttiPass): on a Windows PE, parse the
     // CompleteObjectLocator → RTTI3/2/1 → RTTI0 graph in `.rdata`/`.data`, demangle
     // each `.?A…@@` class name, and emit `<Class>::vftable` / `<Class>::RTTI_*`
@@ -456,6 +475,17 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::rtti::RttiPass));
     }
 
+
+    // S1 Mach-O Core Foundation constant strings (CFStringPass): when the binary
+    // is a Mach-O, read each `__cfstring` entry's resolved char pointer and emit
+    // the string so a `CFSTR("...")` reference renders the literal instead of
+    // `dat_<addr>`. Registered ONLY for a Mach-O target (structural no-op
+    // elsewhere). Default-on (`--option cfstrings`): the output is committed only
+    // when the gate is on (`engine.rs::analysis_pass_enabled`), so `off` is
+    // byte-identical to a build without the pass.
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::cfstring::CFStringPass));
+    }
 
     // S1 Mach-O Objective-C metadata recovery (ObjcMetadataPass): when the binary
     // is a Mach-O, walk the `__objc_*` metadata (classlist → class_t → class_ro_t
@@ -1856,14 +1886,14 @@ mod tests {
         assert!(!elf.contains(&"objc"), "ELF must not carry the objc pass");
         assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
         // Compare the format-neutral base after dropping each format's gated
-        // additions: `itaniumrtti` for ELF and `peimportcall` plus `objc` for
-        // Mach-O.
+        // additions: `itaniumrtti` for ELF and `peimportcall`, `authptrcall`,
+        // `cfstrings` and `objc` for Mach-O.
         let elf_neutral: Vec<&str> =
             elf.iter().copied().filter(|&p| p != "itaniumrtti").collect();
         let macho_neutral: Vec<&str> = macho
             .iter()
             .copied()
-            .filter(|&p| !matches!(p, "peimportcall" | "objc"))
+            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "cfstrings" | "objc"))
             .collect();
         assert!(!elf_neutral.contains(&"itaniumrtti"));
         assert_eq!(
