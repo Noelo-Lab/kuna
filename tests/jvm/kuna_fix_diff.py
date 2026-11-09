@@ -478,6 +478,24 @@ def kotlin_type_end(toks, j):
     while j + 2 < len(toks) and toks[j + 1] == '.' and WORD.fullmatch(toks[j + 2]):
         j += 2
     j += 1
+IDENT = re.compile(r'[A-Za-z_$][\w$]*$')
+TYPE_NAME = r'[\w$.]+(?:<[\w$.<>, ?\[\]]*>)?(?:\[\])*\??'
+JAVA_DECL_INIT = re.compile(r'^(?:final )?' + TYPE_NAME + r' ([\w$]+) = (.*)$')
+JAVA_DECL = re.compile(r'^(?:final )?' + TYPE_NAME + r' [\w$]+;$')
+KT_DECL_INIT = re.compile(r'^(?:val|var) ([\w$`]+)(?:: ' + TYPE_NAME + r')? = (.*)$')
+KT_DECL = re.compile(r'^(?:val|var) [\w$`]+: ' + TYPE_NAME + r'$')
+CONTINUED = (';', '{', '}', '(', ',', '=', '?', ':', '.', '+', '-', '|', '&')
+CONTINUING = ('?', ':', '.', ')', '|', '&', '+', '-')
+NOT_CAST_BEFORE = {'if', 'while', 'for', 'switch', 'synchronized', 'catch', ')', ']'}
+
+
+def type_end(toks, i):
+    """The index past a type written from toks[i] (a dotted name, type arguments, array brackets, `?`)."""
+    if i >= len(toks) or not IDENT.match(toks[i]):
+        return None
+    j = i + 1
+    while j + 1 < len(toks) and toks[j] == '.' and IDENT.match(toks[j + 1]):
+        j += 2
     if j < len(toks) and toks[j] == '<':
         depth = 0
         while j < len(toks):
@@ -485,6 +503,8 @@ def kotlin_type_end(toks, j):
             j += 1
             if depth == 0:
                 break
+    while j + 1 < len(toks) and toks[j] == '[' and toks[j + 1] == ']':
+        j += 2
     if j < len(toks) and toks[j] == '?':
         j += 1
     return j
@@ -531,6 +551,167 @@ def kt_default_args_ctor_descriptor(old, new):
         else:
             return False
     return found and j == len(b)
+def cast_type_end(toks, i):
+    """The index past a cast's type list `A & B` written from toks[i]."""
+    j = type_end(toks, i)
+    while j is not None and j + 1 < len(toks) and toks[j] == '&':
+        j = type_end(toks, j + 1)
+    return j
+
+
+def uncast_tokens(toks):
+    """The tokens with every cast `(T)` before an operand and every Kotlin `as T` removed, then the
+    parentheses around a lone name."""
+    toks = [t for t in toks if t != '`']
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == '(' and (not out or (out[-1] not in NOT_CAST_BEFORE and not IDENT.match(out[-1])
+                                            or out[-1] in ('return', 'throw', 'yield', 'else'))):
+            j = cast_type_end(toks, i + 1)
+            if j is not None and j + 1 < len(toks) and toks[j] == ')' and \
+                    (IDENT.match(toks[j + 1]) or toks[j + 1] in ('(', '"', "'") or toks[j + 1][0].isdigit()):
+                end = block_end(toks, j + 1) if toks[j + 1] == '(' else None
+                if end is not None:
+                    toks = toks[:end] + toks[end + 1:]
+                    i = j + 2
+                else:
+                    i = j + 1
+                continue
+        if toks[i] == 'as':
+            j = type_end(toks, i + 1)
+            if j is not None:
+                i = j
+                continue
+        out.append(toks[i])
+        i += 1
+    bare, i = [], 0
+    while i < len(out):
+        if out[i] == '(' and i + 2 < len(out) and IDENT.match(out[i + 1]) and out[i + 2] == ')' and \
+                not (bare and (IDENT.match(bare[-1]) or bare[-1] in (')', ']', '>'))):
+            bare.append(out[i + 1])
+            i += 3
+            continue
+        bare.append(out[i])
+        i += 1
+    return bare
+
+
+def undeclared(text_lines):
+    """The tokens of some lines, each line a statement ended by `;`, with local declarations reduced to
+    their assignment (`T v = E` and `val v: T = E` to `v = E`) and bare declarations dropped."""
+    rows = []
+    for line in text_lines:
+        s = line.strip()
+        if not s or JAVA_DECL.match(s) or KT_DECL.match(s):
+            continue
+        m = JAVA_DECL_INIT.match(s) or KT_DECL_INIT.match(s)
+        if m and not s.startswith(('return ', 'throw ')):
+            s = m.group(1) + ' = ' + m.group(2)
+        rows.append(TOKEN.findall(s))
+    out, depth = [], 0
+    for k, toks in enumerate(rows):
+        depth += sum(1 for t in toks if t in '([') - sum(1 for t in toks if t in ')]')
+        nxt = rows[k + 1][0] if k + 1 < len(rows) and rows[k + 1] else ''
+        out += toks
+        if toks and depth <= 0 and toks[-1] not in CONTINUED and nxt not in CONTINUING:
+            out.append(';')
+    return explicit_type_args_dropped(uncast_tokens(out))
+
+
+def explicit_type_args_dropped(toks):
+    """The tokens without explicit type arguments of method calls (`.<T>m(` to `.m(`)."""
+    out, i = [], 0
+    while i < len(toks):
+        if toks[i] == '<' and out and out[-1] == '.':
+            depth, j = 0, i
+            while j < len(toks):
+                depth += {'<': 1, '>': -1}.get(toks[j], 0)
+                j += 1
+                if depth == 0:
+                    break
+            if j + 1 < len(toks) and IDENT.match(toks[j]) and toks[j + 1] == '(':
+                i = j
+                continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def without_self_copies(toks):
+    out, i = [], 0
+    while i < len(toks):
+        if i + 3 < len(toks) and toks[i + 1] == '=' and toks[i] == toks[i + 2] and toks[i + 3] == ';' \
+                and IDENT.match(toks[i]) and (i == 0 or toks[i - 1] in (';', '{', '}')):
+            i += 4
+            continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def var_merge_narrowing(old, new):
+    """var_merge_narrowing: the same statements once a variable the fix keeps apart from another (its own
+    name, declaration and copy `v = w`) is renamed back onto it, and casts, declarations and self-copies
+    `v = v` are dropped."""
+    a, b = without_self_copies(undeclared(old)), undeclared(new)
+    if old == new:
+        return False
+    if a == b:
+        return True
+    mapping = {}
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == 'replace' and i2 - i1 == j2 - j1:
+            for x, y in zip(a[i1:i2], b[j1:j2]):
+                if IDENT.match(x) and IDENT.match(y) and x != y:
+                    if mapping.setdefault(y, x) != x:
+                        return False
+    names = set(a)
+    for i in range(len(b) - 3):
+        if b[i + 1] == '=' and b[i + 3] == ';' and b[i] not in names and IDENT.match(b[i]) \
+                and IDENT.match(b[i + 2]) and (i == 0 or b[i - 1] in (';', '{', '}')):
+            mapping.setdefault(b[i], b[i + 2])
+    if not mapping:
+        return False
+    return without_self_copies([mapping.get(t, t) for t in b]) == a
+
+
+def ternary_numeric_arms(old, new):
+    """ternary_numeric_arms: token for token, casts `(T)` put before arms of conditionals (right after
+    `?` or `:`), the lines possibly reflowed."""
+    a, b = tokens(old), tokens(new)
+    out, i, found = [], 0, False
+    while i < len(b):
+        if b[i] == '(' and out and out[-1] in ('?', ':'):
+            j = type_end(b, i + 1)
+            if j is not None and j < len(b) and b[j] == ')':
+                end = block_end(b, j + 1) if j + 1 < len(b) and b[j + 1] == '(' else None
+                if end is not None:
+                    b = b[:end] + b[end + 1:]
+                    j += 1
+                i, found = j + 1, True
+                continue
+        out.append(b[i])
+        i += 1
+    return found and out == a
+
+
+def switch_expression_poly_cast(old, new):
+    """switch_expression_poly_cast: token for token, `(T)(switch ...)` became `switch ...`, the lines
+    possibly reflowed."""
+    a, b = tokens(old), tokens(new)
+    out, i, found = [], 0, False
+    while i < len(a):
+        if a[i] == '(':
+            j = type_end(a, i + 1)
+            if j is not None and j + 2 < len(a) and a[j] == ')' and a[j + 1] == '(' and a[j + 2] == 'switch':
+                end = block_end(a, j + 1)
+                if end is not None:
+                    out += a[j + 2:end]
+                    i, found = end + 1, True
+                    continue
+        out.append(a[i])
+        i += 1
+    return found and out == b
 
 
 CONTEXT_RECOGNISERS = {'enum_body_separator': enum_body_separator,
@@ -551,6 +732,9 @@ RECOGNISERS = {
     'kt_local_visibility_comment': kt_local_visibility_comment,
     'kt_vararg_from_metadata': kt_vararg_from_metadata,
     'kt_default_args_ctor_descriptor': kt_default_args_ctor_descriptor,
+    'switch_expression_poly_cast': switch_expression_poly_cast,
+    'ternary_numeric_arms': ternary_numeric_arms,
+    'var_merge_narrowing': var_merge_narrowing,
 }
 
 
@@ -579,6 +763,8 @@ def classify_base(a, b, i1, i2, j1, j2, marked):
                     for o, n in zip(old, new))):
         return 'note'
     if not old:
+        if all(is_import(x) for x in new):
+            return 'import'
         return 'fixed' if (i1 - 1 in marked or i1 in marked) else 'other'
     if all(i in marked for i in range(i1, i2)):
         return 'fixed'

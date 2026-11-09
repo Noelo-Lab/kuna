@@ -120,6 +120,16 @@ pub enum KunaFix {
     /// `kt_default_args_ctor_descriptor`: a constructor's default-arguments
     /// constructor is looked up by the constructor's own descriptor.
     KtDefaultArgsCtorDescriptor,
+    /// `var_merge_narrowing`: two variables are not merged when the
+    /// merged type is a strict subtype of what either is assigned (the merge
+    /// would print a cast the bytecode does not have there).
+    VarMergeNarrowing,
+    /// `switch_expression_poly_cast`: a switch expression whose results
+    /// javac would promote together is not cast to its target type.
+    SwitchExpressionPolyCast,
+    /// `ternary_numeric_arms`: a reference conditional whose arms print as
+    /// different numeric types keeps its first arm cast to its type.
+    TernaryNumericArms,
 }
 
 impl KunaFix {
@@ -156,6 +166,9 @@ impl KunaFix {
         KunaFix::KtConstructorDiamond,
         KunaFix::KtLocalVisibilityComment,
         KunaFix::KtDefaultArgsCtorDescriptor,
+        KunaFix::VarMergeNarrowing,
+        KunaFix::SwitchExpressionPolyCast,
+        KunaFix::TernaryNumericArms,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -192,6 +205,9 @@ impl KunaFix {
             KunaFix::KtConstructorDiamond => "kt_constructor_diamond",
             KunaFix::KtLocalVisibilityComment => "kt_local_visibility_comment",
             KunaFix::KtDefaultArgsCtorDescriptor => "kt_default_args_ctor_descriptor",
+            KunaFix::VarMergeNarrowing => "var_merge_narrowing",
+            KunaFix::SwitchExpressionPolyCast => "switch_expression_poly_cast",
+            KunaFix::TernaryNumericArms => "ternary_numeric_arms",
         }
     }
 

@@ -417,6 +417,50 @@
       "compiler": "kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17)",
       "summary": "`skipsMiddle` (`TestDefaultArgsSuperNamed(a = x, c = 9L)`), `innerSuper` (an inner superclass, `Inner(z)`) and `picksPrimary` (`Overloaded(a = x)`, named because `Overloaded(x)` would select the secondary constructor) decompile; `picksSecondary` keeps `Overloaded(x)`",
       "language": "kotlin"
+    },
+    {
+      "id": "pkg/TestSuspendResultCast",
+      "fix": "var_merge_narrowing",
+      "class_files": [
+        "pkg/TestSuspendResultCast.class",
+        "pkg/TestSuspendResultCast$Source.class",
+        "pkg/TestSuspendResultCast$fold$1.class",
+        "pkg/TestSuspendResultCast$sum$1.class"
+      ],
+      "source": "src/pkg/TestSuspendResultCast.kt",
+      "compiler": "kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1)",
+      "summary": "`sum` and `fold`, suspend loops: the result of the suspend call is cast to `Integer` after the `COROUTINE_SUSPENDED` check, as in the bytecode, not before it (where the marker would throw `ClassCastException`)"
+    },
+    {
+      "id": "pkg/TestSwitchExprPolyCast",
+      "fix": "switch_expression_poly_cast",
+      "class_files": [
+        "pkg/TestSwitchExprPolyCast.class"
+      ],
+      "source": "src/pkg/TestSwitchExprPolyCast.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "`intOrLong`, `charOrInt` and `argument`, whose switch expressions yield numbers of different types to a reference target: the switch is no longer wrapped in a cast, which made it a standalone numeric switch (`case 1 -> 1` a `Long`)"
+    },
+    {
+      "id": "pkg/TestTernaryNumericArms",
+      "fix": "ternary_numeric_arms",
+      "class_files": [
+        "pkg/TestTernaryNumericArms.class"
+      ],
+      "source": "src/pkg/TestTernaryNumericArms.java",
+      "compiler": "javac 17.0.20.1 (`-g`)",
+      "summary": "the conditionals whose boxed arms would print as numbers of different types (`int` and `long`, `int` and `Integer`, `boolean` and `Boolean`, `Double` and `double`) keep an arm cast, so they stay reference conditionals: no promotion of `1` to `Long`, no unboxing of a `null` arm"
+    },
+    {
+      "id": "pkg/TestVarMergeNarrowing",
+      "fix": "var_merge_narrowing",
+      "class_files": [
+        "pkg/TestVarMergeNarrowing.class",
+        "pkg/TestVarMergeNarrowing$Source.class"
+      ],
+      "source": "src/pkg/TestVarMergeNarrowing.java",
+      "compiler": "javac 17.0.20.1 (no `-g`)",
+      "summary": "`firstLength`, whose two block-scoped locals share a slot: the `Object` one is no longer merged into the `String` one, so `src.next()` is not cast to `String` before it is compared with `MARK`"
     }
   ]
 }

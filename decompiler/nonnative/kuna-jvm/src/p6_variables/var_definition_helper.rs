@@ -6,6 +6,9 @@
 //! is `Option<i32>` (hash 0, like Java's null key). For the same reason the
 //! clash-renaming maps key statements by `Option<Statement>` (a root's parent)
 //! and hold `Option<String>` names (an unnamed parameter).
+//!
+//! kuna fix `var_merge_narrowing` (`kuna_fix_var_merge_narrowing.rs`): `mergeVars`
+//! refuses a merge whose type is narrower than a value either variable is assigned.
 
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
@@ -24,7 +27,9 @@ use crate::function_exprent::FunctionType;
 use crate::generic_type::GenericType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
+use crate::p6_variables::kuna_fix_var_merge_narrowing;
 use crate::pair::Pair;
 use crate::root_statement::RootStatement;
 use crate::rt::{
@@ -710,7 +715,11 @@ impl VarDefinitionHelper {
         let mut denylist: JHashMap<VarVersionPair, VarVersionPair> = JHashMap::new();
         let mut remap = self.merge_vars_rec(stat.0, &parent, &mut JHashMap::new(), &denylist);
         while let Some(entry) = remap {
-            if !self.remap_var(stat.0, entry.get_key(), entry.get_value()) {
+            if kuna_fixes::enabled(KunaFix::VarMergeNarrowing)
+                && self.narrowing_merge(entry.get_key(), entry.get_value())
+            {
+                denylist.put(entry.get_key(), entry.get_value());
+            } else if !self.remap_var(stat.0, entry.get_key(), entry.get_value()) {
                 denylist.put(entry.get_key(), entry.get_value());
             }
 
@@ -759,11 +768,13 @@ impl VarDefinitionHelper {
                     let index = varproc.get_var_original_index(var.get_index());
                     if index.is_some() {
                         if this_vars.contains_key(&index) {
-                            var_definitions.remove_at(x);
-                            return Some(VPPEntry::new(
-                                var,
-                                this_vars.get_cloned(&index).expect("contained"),
-                            ));
+                            let to = this_vars.get_cloned(&index).expect("contained");
+                            if !(kuna_fixes::enabled(KunaFix::VarMergeNarrowing)
+                                && self.narrowing_merge(VarVersionPair::from_var(var), to))
+                            {
+                                var_definitions.remove_at(x);
+                                return Some(VPPEntry::new(var, to));
+                            }
                         }
                         this_vars.put(index, VarVersionPair::from_var(var));
                         leaked.put(index, VarVersionPair::from_var(var));
@@ -1151,6 +1162,23 @@ impl VarDefinitionHelper {
         }
 
         true
+    }
+
+    /// Fix `var_merge_narrowing`: merging `from` into `to` would give them a
+    /// type strictly below a value one of them is assigned.
+    fn narrowing_merge(self, from: VarVersionPair, to: VarVersionPair) -> bool {
+        let Some(merged) = self.get_merged_type(from, to) else {
+            return false;
+        };
+        let (varproc, root) = self.with(|d| (d.varproc, d.root));
+        let (from_min, to_min) = (varproc.get_var_type(from), varproc.get_var_type(to));
+        let (Some(from_min), Some(to_min)) = (from_min, to_min) else {
+            return false;
+        };
+        kuna_fix_var_merge_narrowing::narrows(&merged, &from_min, &to_min)
+            && kuna_fix_var_merge_narrowing::assigns_wider(root.0, from, to, &merged, &|v| {
+                varproc.get_var_type(v)
+            })
     }
 
     /// Java: getMergedType(VarVersionPair, VarVersionPair)

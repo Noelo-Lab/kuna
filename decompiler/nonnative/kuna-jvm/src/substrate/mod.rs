@@ -36,6 +36,8 @@ pub mod kuna_fix_external_class_diamond;
 pub mod kuna_fix_switch_yield_const_retype;
 pub mod kuna_fix_statement_as_expression;
 pub mod kuna_fix_anonymous_static_qualifier;
+pub mod kuna_fix_switch_expression_poly_cast;
+pub mod kuna_fix_ternary_numeric_arms;
 pub mod list_stack;
 pub mod long_fast_fixed_set_factory;
 pub mod match_engine;

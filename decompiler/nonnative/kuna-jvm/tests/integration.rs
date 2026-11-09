@@ -176,3 +176,5 @@ mod kt5_exprents;
 mod kt8_kotlin_runs;
 #[path = "kuna_fix_switch_yield_const_retype.rs"]
 mod kuna_fix_switch_yield_const_retype;
+#[path = "kuna_fix_numeric_casts.rs"]
+mod kuna_fix_numeric_casts;

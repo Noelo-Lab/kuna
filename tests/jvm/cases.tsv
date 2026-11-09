@@ -3321,11 +3321,26 @@ class	kuna-fixes/classes/pkg/TestSuspendLoopFinally$drain$1.class
 class	kuna-fixes/classes/pkg/TestSuspendLoopFinally$first$1.class
 expected	kuna-fixes/expected-compat/pkg/TestSuspendLoopFinally.java
 compare	TestSuspendLoopFinally.java
+case	kuna-fixes-compat/pkg/TestSuspendResultCast	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSuspendResultCast.class
+class	kuna-fixes/classes/pkg/TestSuspendResultCast$Source.class
+class	kuna-fixes/classes/pkg/TestSuspendResultCast$fold$1.class
+class	kuna-fixes/classes/pkg/TestSuspendResultCast$sum$1.class
+expected	kuna-fixes/expected-compat/pkg/TestSuspendResultCast.java
+compare	TestSuspendResultCast.java
 case	kuna-fixes-compat/pkg/TestSwitchExprConstLub	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub.class
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub$IntSink.class
 expected	kuna-fixes/expected-compat/pkg/TestSwitchExprConstLub.java
 compare	TestSwitchExprConstLub.java
+case	kuna-fixes-compat/pkg/TestSwitchExprPolyCast	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestSwitchExprPolyCast.class
+expected	kuna-fixes/expected-compat/pkg/TestSwitchExprPolyCast.java
+compare	TestSwitchExprPolyCast.java
+case	kuna-fixes-compat/pkg/TestTernaryNumericArms	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestTernaryNumericArms.class
+expected	kuna-fixes/expected-compat/pkg/TestTernaryNumericArms.java
+compare	TestTernaryNumericArms.java
 case	kuna-fixes-compat/pkg/TestTryCatchNotFlag	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class
@@ -3351,6 +3366,11 @@ case	kuna-fixes-compat/pkg/TestTypeSwitchPatternType	Kuna Fixes, Vineflower comp
 class	kuna-fixes/classes/pkg/TestTypeSwitchPatternType.class
 expected	kuna-fixes/expected-compat/pkg/TestTypeSwitchPatternType.java
 compare	TestTypeSwitchPatternType.java
+case	kuna-fixes-compat/pkg/TestVarMergeNarrowing	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestVarMergeNarrowing.class
+class	kuna-fixes/classes/pkg/TestVarMergeNarrowing$Source.class
+expected	kuna-fixes/expected-compat/pkg/TestVarMergeNarrowing.java
+compare	TestVarMergeNarrowing.java
 case	kuna-fixes-compat/pkg/TestVarargFromMetadata	Kuna Fixes, Vineflower compat
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestVarargFromMetadata.class
@@ -3546,11 +3566,26 @@ class	kuna-fixes/classes/pkg/TestSuspendLoopFinally$drain$1.class
 class	kuna-fixes/classes/pkg/TestSuspendLoopFinally$first$1.class
 expected	kuna-fixes/expected/pkg/TestSuspendLoopFinally.java
 compare	TestSuspendLoopFinally.java
+case	kuna-fixes/pkg/TestSuspendResultCast	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSuspendResultCast.class
+class	kuna-fixes/classes/pkg/TestSuspendResultCast$Source.class
+class	kuna-fixes/classes/pkg/TestSuspendResultCast$fold$1.class
+class	kuna-fixes/classes/pkg/TestSuspendResultCast$sum$1.class
+expected	kuna-fixes/expected/pkg/TestSuspendResultCast.java
+compare	TestSuspendResultCast.java
 case	kuna-fixes/pkg/TestSwitchExprConstLub	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub.class
 class	kuna-fixes/classes/pkg/TestSwitchExprConstLub$IntSink.class
 expected	kuna-fixes/expected/pkg/TestSwitchExprConstLub.java
 compare	TestSwitchExprConstLub.java
+case	kuna-fixes/pkg/TestSwitchExprPolyCast	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestSwitchExprPolyCast.class
+expected	kuna-fixes/expected/pkg/TestSwitchExprPolyCast.java
+compare	TestSwitchExprPolyCast.java
+case	kuna-fixes/pkg/TestTernaryNumericArms	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestTernaryNumericArms.class
+expected	kuna-fixes/expected/pkg/TestTernaryNumericArms.java
+compare	TestTernaryNumericArms.java
 case	kuna-fixes/pkg/TestTryCatchNotFlag	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class
@@ -3576,6 +3611,11 @@ case	kuna-fixes/pkg/TestTypeSwitchPatternType	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestTypeSwitchPatternType.class
 expected	kuna-fixes/expected/pkg/TestTypeSwitchPatternType.java
 compare	TestTypeSwitchPatternType.java
+case	kuna-fixes/pkg/TestVarMergeNarrowing	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestVarMergeNarrowing.class
+class	kuna-fixes/classes/pkg/TestVarMergeNarrowing$Source.class
+expected	kuna-fixes/expected/pkg/TestVarMergeNarrowing.java
+compare	TestVarMergeNarrowing.java
 case	kuna-fixes/pkg/TestVarargFromMetadata	Kuna Fixes
 opt	jvm_plugins	1
 class	kuna-fixes/classes/pkg/TestVarargFromMetadata.class
