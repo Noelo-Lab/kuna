@@ -599,6 +599,9 @@ kuna-fixes-compat/pkg/TestSuspendFinallyKt
 kuna-fixes-compat/pkg/TestSuspendLoopFinally
 kuna-fixes-compat/pkg/TestSwitchExprConstLub
 kuna-fixes-compat/pkg/TestTryCatchNotFlag
+kuna-fixes-compat/pkg/TestTypeSwitchEnumLabel
+kuna-fixes-compat/pkg/TestTypeSwitchLabelLookup
+kuna-fixes-compat/pkg/TestTypeSwitchPatternType
 kuna-fixes/pkg/TestAnonymousStaticCall
 kuna-fixes/pkg/TestAssertDeadThrow
 kuna-fixes/pkg/TestAssertExpressionPosition
@@ -618,6 +621,9 @@ kuna-fixes/pkg/TestSuspendFinallyKt
 kuna-fixes/pkg/TestSuspendLoopFinally
 kuna-fixes/pkg/TestSwitchExprConstLub
 kuna-fixes/pkg/TestTryCatchNotFlag
+kuna-fixes/pkg/TestTypeSwitchEnumLabel
+kuna-fixes/pkg/TestTypeSwitchLabelLookup
+kuna-fixes/pkg/TestTypeSwitchPatternType
 lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass
 lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass2
 literals/pkg/TestConstantUninlining

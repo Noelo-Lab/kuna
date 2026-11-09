@@ -1506,3 +1506,49 @@ and rethrow, and the output swallows the exception. With the fix,
 `iterateGraph` marks a copied catch-all whose handler block traces back to a processed `finally`
 as a `finally`, with its original's semaphore variable. Without the two fixes above no method
 reaches this; with them, every suspend loop inside a `try`/`finally` does.
+
+**Pattern switches: `type_switch_enum_label`, `type_switch_pattern_type`, `type_switch_label_lookup`.**
+javac compiles a pattern switch to `SwitchBootstraps.typeSwitch(selector, restartIndex)`, whose
+static arguments are the case labels in order (an `Integer`, a `String`, a class, or, for a
+qualified enum constant, a dynamic constant), followed by a `lookupswitch` on the returned index;
+a guard that fails sets the restart index and loops. `decompiler/nonnative/kuna-jvm/src/p8_structure/switch_pattern_match_processor.rs (SwitchPatternMatchProcessor::process_statement)`
+turns the index constants among the case values back into labels: a pattern from the case
+body's cast assignment, and, from the bootstrap arguments, constants and type patterns. Three
+defects of that step have one fix each. *Enum labels* (`type_switch_enum_label`): a `case E.X`
+beside type patterns is passed as `ConstantBootstraps.invoke(EnumDesc.of, ClassDesc.of("pkg.E"),
+"X")`, which Vineflower 1.12.0 does not read, so the raw index stays a label and the switch head's
+type check fails the method (`Invalid switch case set`). With the fix,
+`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_type_switch_enum_label.rs (resolve_label)` resolves such a constant to the enum
+field, as upstream's `CondyHelper` does on `develop/1.13.0` (`36ac62ec`), reading `ClassDesc`'s
+binary name in internal form, and marks the field a dynamic constant as upstream does; the
+switch writers print such a label qualified (`case E.X:`, without the dynamic-constant comment)
+unless the switch is on the enum's own type, since an unqualified constant does not compile
+there. Upstream qualifies every enum label whose type differs from the switch's, which also
+changes `enumSwitch` labels built from a widened selector type (its own
+`TestSwitchPatternMatching19` now prints `case TestSwitchPatternMatching19.E.X1` for `XXX.X1`);
+kuna leaves those as Vineflower 1.12.0 prints them. *Pattern types* (`type_switch_pattern_type`): when a
+pattern's type is the selector's static type there is no `checkcast`, and Vineflower builds the
+pattern's type operand as a class literal, of type `java.lang.Class`, where its two other paths
+use the type itself. The switch head's bound computation
+(`decompiler/nonnative/kuna-jvm/src/substrate/switch_head_exprent.rs (SwitchHeadExprent::check_expr_type_bounds)`)
+joins the selector's type with each label's, so `Integer` joined with `Class` widens the selector
+to `Serializable` (with the JDK loaded) or `Object`, which no integer constant label fits: the
+method fails, either in that computation or when the constant label is printed against the
+widened type, and without debug information the pattern variable itself is declared
+`Class<Integer>`. With the fix the operand is typed by the label's class. Upstream's change on
+`develop/1.13.0` (`4cad12c6`) instead stops the bound computation at the contradiction, which
+leaves the widened type and moves the failure to printing when there is no LocalVariableTable;
+kuna does not take it. *Label lookup* (`type_switch_label_lookup`): Vineflower looks for index
+`i` as an integer constant equal to `i` in the first label of each case and otherwise uses case
+number `i`, so a case with several labels keeps the raw index of every label after the first
+(`case 5, 7` prints `case 5: case 1:`; `case E.X, E.Y` and `case Integer _, String _` fail on
+printing the index against a reference selector, or index past the last case), and an integer
+label already substituted is taken for an index (`case 1 -> ...` beside a type pattern at index
+1 becomes `case Integer var5 -> ...`). With the fix,
+`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_fix_type_switch_label_lookup.rs (replace_labels)` records every index constant before
+substituting and replaces each, by identity, in whichever case holds it. A case with several
+type patterns, which Java (22+) allows only unnamed, javac compiles to a guard that tests the
+selector against those types again (`sel instanceof Integer || sel instanceof String`, then
+`&&` the source's guard if any); `strip_multi_pattern_guards` removes exactly that test, and the
+switch statement and expression writers print such a case as one label of unnamed patterns
+(`case Integer _, String _:`). Each fix's case recompiles to the original bytecode.

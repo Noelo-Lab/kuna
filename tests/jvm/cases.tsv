@@ -3266,6 +3266,26 @@ class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class
 expected	kuna-fixes/expected-compat/pkg/TestTryCatchNotFlag.java
 compare	TestTryCatchNotFlag.java
+case	kuna-fixes-compat/pkg/TestTypeSwitchEnumLabel	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestTypeSwitchEnumLabel.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchEnumLabel$Kind.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchEnumLabel$Polygon.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchEnumLabel$Shape.class
+expected	kuna-fixes/expected-compat/pkg/TestTypeSwitchEnumLabel.java
+compare	TestTypeSwitchEnumLabel.java
+case	kuna-fixes-compat/pkg/TestTypeSwitchLabelLookup	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestTypeSwitchLabelLookup.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchLabelLookup$Kind.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchLabelLookup$Line.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchLabelLookup$Point.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchLabelLookup$Polygon.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchLabelLookup$Shape.class
+expected	kuna-fixes/expected-compat/pkg/TestTypeSwitchLabelLookup.java
+compare	TestTypeSwitchLabelLookup.java
+case	kuna-fixes-compat/pkg/TestTypeSwitchPatternType	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestTypeSwitchPatternType.class
+expected	kuna-fixes/expected-compat/pkg/TestTypeSwitchPatternType.java
+compare	TestTypeSwitchPatternType.java
 case	kuna-fixes/pkg/TestAnonymousStaticCall	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall.class
 class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$1$1.class
@@ -3401,3 +3421,23 @@ class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class
 expected	kuna-fixes/expected/pkg/TestTryCatchNotFlag.java
 compare	TestTryCatchNotFlag.java
+case	kuna-fixes/pkg/TestTypeSwitchEnumLabel	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestTypeSwitchEnumLabel.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchEnumLabel$Kind.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchEnumLabel$Polygon.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchEnumLabel$Shape.class
+expected	kuna-fixes/expected/pkg/TestTypeSwitchEnumLabel.java
+compare	TestTypeSwitchEnumLabel.java
+case	kuna-fixes/pkg/TestTypeSwitchLabelLookup	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestTypeSwitchLabelLookup.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchLabelLookup$Kind.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchLabelLookup$Line.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchLabelLookup$Point.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchLabelLookup$Polygon.class
+class	kuna-fixes/classes/pkg/TestTypeSwitchLabelLookup$Shape.class
+expected	kuna-fixes/expected/pkg/TestTypeSwitchLabelLookup.java
+compare	TestTypeSwitchLabelLookup.java
+case	kuna-fixes/pkg/TestTypeSwitchPatternType	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestTypeSwitchPatternType.class
+expected	kuna-fixes/expected/pkg/TestTypeSwitchPatternType.java
+compare	TestTypeSwitchPatternType.java

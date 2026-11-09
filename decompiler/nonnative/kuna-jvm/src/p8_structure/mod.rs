@@ -8,6 +8,8 @@ pub mod if_helper;
 pub mod if_node;
 pub mod if_pattern_match_processor;
 pub mod initializer_processor;
+pub mod kuna_fix_type_switch_enum_label;
+pub mod kuna_fix_type_switch_label_lookup;
 pub mod inline_single_block_helper;
 pub mod kuna_fix_assert_dead_throw;
 pub mod label_helper;

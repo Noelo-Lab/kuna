@@ -39,6 +39,9 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestSuspendLoopFinally` | `copied_finally` | kotlinc-jvm 2.0.0 (JDK 17.0.20.1) | `drain` (a suspend loop inside try/catch/finally) and `first` decompile; the loop body irreducible-flow splitting copies for the resume path keeps its finally, guarded by the same semaphore variable (with the fixes handler_copy_offsets and nested_handler_copies) |
 | `pkg/TestSwitchExprConstLub` | `switch_yield_const_retype` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the eight methods whose switch expression yields a string or class literal next to an arm of another reference type (a boxed char, int or boolean, a StringBuilder, a Class), as an argument, a returned value, a local and inside a lambda, decompile to their source; the failure comments and bytecode listings are gone |
 | `pkg/TestTryCatchNotFlag` | `twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
+| `pkg/TestTypeSwitchEnumLabel` | `type_switch_enum_label` | javac 21.0.12.1 -g | case Kind.CIRCLE beside type patterns in a switch on an interface: the enum label is resolved and printed qualified |
+| `pkg/TestTypeSwitchLabelLookup` | `type_switch_label_lookup` | javac 25.0.5 -g | cases with several labels (case Integer _, String _; case Kind.CIRCLE, Kind.SQUARE; case 5, 7) and an integer label equal to a later switch index: every label is resolved, multi-pattern cases print as one unnamed-pattern label |
+| `pkg/TestTypeSwitchPatternType` | `type_switch_pattern_type` | javac 21.0.12.1 (no -g) | case 42 beside case Integer i when ... on an Integer, String or Character selector (no checkcast, no LocalVariableTable): the pattern is typed by its class, the selector keeps its type |
 
 ## Diffs (compat -> default)
 
@@ -2456,4 +2459,548 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     int read(String name) throws Exception {
+```
+
+### `pkg/TestTypeSwitchEnumLabel`
+
+```diff
+--- expected-compat/pkg/TestTypeSwitchEnumLabel.java
++++ expected/pkg/TestTypeSwitchEnumLabel.java
+@@ -8,102 +8,46 @@
+    static void sink(String s) {
+    }
+ 
+-   void statement(TestTypeSwitchEnumLabel.Shape param1) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 1
+-      // 01: dup
+-      // 02: invokestatic java/util/Objects.requireNonNull (Ljava/lang/Object;)Ljava/lang/Object;
+-      // 05: pop
+-      // 06: astore 2
+-      // 07: bipush 0
+-      // 08: istore 3
+-      // 09: aload 2
+-      // 0a: iload 3
+-      // 0b: invokedynamic typeSwitch (Ljava/lang/Object;I)I bsm=java/lang/runtime/SwitchBootstraps.typeSwitch (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args=[ null.invoke Ljava/lang/Enum$EnumDesc;, pkg/TestTypeSwitchEnumLabel$Kind, pkg/TestTypeSwitchEnumLabel$Polygon ]
+-      // 10: tableswitch 64 0 2 28 36 50
+-      // 2c: ldc "circle"
+-      // 2e: invokestatic pkg/TestTypeSwitchEnumLabel.sink (Ljava/lang/String;)V
+-      // 31: goto 55
+-      // 34: aload 2
+-      // 35: checkcast pkg/TestTypeSwitchEnumLabel$Kind
+-      // 38: astore 4
+-      // 3a: ldc "kind"
+-      // 3c: invokestatic pkg/TestTypeSwitchEnumLabel.sink (Ljava/lang/String;)V
+-      // 3f: goto 55
+-      // 42: aload 2
+-      // 43: checkcast pkg/TestTypeSwitchEnumLabel$Polygon
+-      // 46: astore 5
+-      // 48: ldc "polygon"
+-      // 4a: invokestatic pkg/TestTypeSwitchEnumLabel.sink (Ljava/lang/String;)V
+-      // 4d: goto 55
+-      // 50: ldc "other"
+-      // 52: invokestatic pkg/TestTypeSwitchEnumLabel.sink (Ljava/lang/String;)V
+-      // 55: return
++   void statement(TestTypeSwitchEnumLabel.Shape s) {
++      switch (s) {
++         case TestTypeSwitchEnumLabel.Kind.CIRCLE:
++            sink("circle");
++            break;
++         case TestTypeSwitchEnumLabel.Kind k:
++            sink("kind");
++            break;
++         case TestTypeSwitchEnumLabel.Polygon p:
++            sink("polygon");
++            break;
++         default:
++            sink("other");
++      }
+    }
+ 
+-   int expression(TestTypeSwitchEnumLabel.Shape param1) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 1
+-      // 01: dup
+-      // 02: invokestatic java/util/Objects.requireNonNull (Ljava/lang/Object;)Ljava/lang/Object;
+-      // 05: pop
+-      // 06: astore 2
+-      // 07: bipush 0
+-      // 08: istore 3
+-      // 09: aload 2
+-      // 0a: iload 3
+-      // 0b: invokedynamic typeSwitch (Ljava/lang/Object;I)I bsm=java/lang/runtime/SwitchBootstraps.typeSwitch (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args=[ null.invoke Ljava/lang/Enum$EnumDesc;, null.invoke Ljava/lang/Enum$EnumDesc;, pkg/TestTypeSwitchEnumLabel$Polygon ]
+-      // 10: tableswitch 46 0 2 28 32 36
+-      // 2c: bipush 1
+-      // 2d: goto 3f
+-      // 30: bipush 2
+-      // 31: goto 3f
+-      // 34: aload 2
+-      // 35: checkcast pkg/TestTypeSwitchEnumLabel$Polygon
+-      // 38: astore 4
+-      // 3a: bipush 3
+-      // 3b: goto 3f
+-      // 3e: bipush 4
+-      // 3f: ireturn
++   int expression(TestTypeSwitchEnumLabel.Shape s) {
++      return switch (s) {
++         case TestTypeSwitchEnumLabel.Kind.CIRCLE -> 1;
++         case TestTypeSwitchEnumLabel.Kind.SQUARE -> 2;
++         case TestTypeSwitchEnumLabel.Polygon p -> 3;
++         default -> 4;
++      };
+    }
+ 
+    void guardedLocal() {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: invokestatic pkg/TestTypeSwitchEnumLabel.next ()Lpkg/TestTypeSwitchEnumLabel$Shape;
+-      // 03: astore 1
+-      // 04: aload 1
+-      // 05: astore 2
+-      // 06: bipush 0
+-      // 07: istore 3
+-      // 08: aload 2
+-      // 09: iload 3
+-      // 0a: invokedynamic typeSwitch (Ljava/lang/Object;I)I bsm=java/lang/runtime/SwitchBootstraps.typeSwitch (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args=[ null.invoke Ljava/lang/Enum$EnumDesc;, pkg/TestTypeSwitchEnumLabel$Kind ]
+-      // 0f: tableswitch 68 -1 1 25 33 41
+-      // 28: ldc "null"
+-      // 2a: invokestatic pkg/TestTypeSwitchEnumLabel.sink (Ljava/lang/String;)V
+-      // 2d: goto 5b
+-      // 30: ldc "square"
+-      // 32: invokestatic pkg/TestTypeSwitchEnumLabel.sink (Ljava/lang/String;)V
+-      // 35: goto 5b
+-      // 38: aload 2
+-      // 39: checkcast pkg/TestTypeSwitchEnumLabel$Kind
+-      // 3c: astore 4
+-      // 3e: aload 4
+-      // 40: getstatic pkg/TestTypeSwitchEnumLabel$Kind.CIRCLE Lpkg/TestTypeSwitchEnumLabel$Kind;
+-      // 43: if_acmpeq 4b
+-      // 46: bipush 2
+-      // 47: istore 3
+-      // 48: goto 08
+-      // 4b: ldc "circle"
+-      // 4d: invokestatic pkg/TestTypeSwitchEnumLabel.sink (Ljava/lang/String;)V
+-      // 50: goto 5b
+-      // 53: ldc "other"
+-      // 55: invokestatic pkg/TestTypeSwitchEnumLabel.sink (Ljava/lang/String;)V
+-      // 58: goto 5b
+-      // 5b: return
++      TestTypeSwitchEnumLabel.Shape s = next();
++      switch (s) {
++         case null:
++            sink("null");
++            break;
++         case TestTypeSwitchEnumLabel.Kind.SQUARE:
++            sink("square");
++            break;
++         case TestTypeSwitchEnumLabel.Kind k when k == TestTypeSwitchEnumLabel.Kind.CIRCLE:
++            sink("circle");
++            break;
++         default:
++            sink("other");
++      }
+    }
+ 
+    enum Kind implements TestTypeSwitchEnumLabel.Shape {
+```
+
+### `pkg/TestTypeSwitchLabelLookup`
+
+```diff
+--- expected-compat/pkg/TestTypeSwitchLabelLookup.java
++++ expected/pkg/TestTypeSwitchLabelLookup.java
+@@ -5,157 +5,51 @@
+    }
+ 
+    void arrow(Object o) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 1
+-      // 01: dup
+-      // 02: invokestatic java/util/Objects.requireNonNull (Ljava/lang/Object;)Ljava/lang/Object;
+-      // 05: pop
+-      // 06: astore 2
+-      // 07: bipush 0
+-      // 08: istore 3
+-      // 09: aload 2
+-      // 0a: iload 3
+-      // 0b: invokedynamic typeSwitch (Ljava/lang/Object;I)I bsm=java/lang/runtime/SwitchBootstraps.typeSwitch (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args=[ java/lang/Integer, java/lang/String ]
+-      // 10: lookupswitch 61 2 0 28 1 28
+-      // 2c: aload 2
+-      // 2d: instanceof java/lang/Integer
+-      // 30: ifeq 36
+-      // 33: goto 45
+-      // 36: aload 2
+-      // 37: instanceof java/lang/String
+-      // 3a: ifeq 40
+-      // 3d: goto 45
+-      // 40: bipush 2
+-      // 41: istore 3
+-      // 42: goto 09
+-      // 45: ldc "number or text"
+-      // 47: invokestatic pkg/TestTypeSwitchLabelLookup.sink (Ljava/lang/String;)V
+-      // 4a: goto 55
+-      // 4d: ldc "other"
+-      // 4f: invokestatic pkg/TestTypeSwitchLabelLookup.sink (Ljava/lang/String;)V
+-      // 52: goto 55
+-      // 55: return
++      switch (o) {
++         case Integer _, String _:
++            sink("number or text");
++            break;
++         default:
++            sink("other");
++      }
+    }
+ 
+    void guarded(Object o, boolean b) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 1
+-      // 01: dup
+-      // 02: invokestatic java/util/Objects.requireNonNull (Ljava/lang/Object;)Ljava/lang/Object;
+-      // 05: pop
+-      // 06: astore 3
+-      // 07: bipush 0
+-      // 08: istore 4
+-      // 0a: aload 3
+-      // 0b: iload 4
+-      // 0d: invokedynamic typeSwitch (Ljava/lang/Object;I)I bsm=java/lang/runtime/SwitchBootstraps.typeSwitch (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args=[ java/lang/Integer, java/lang/String ]
+-      // 12: lookupswitch 61 2 0 26 1 26
+-      // 2c: aload 3
+-      // 2d: instanceof java/lang/Integer
+-      // 30: ifeq 36
+-      // 33: goto 3d
+-      // 36: aload 3
+-      // 37: instanceof java/lang/String
+-      // 3a: ifeq 41
+-      // 3d: iload 2
+-      // 3e: ifne 47
+-      // 41: bipush 2
+-      // 42: istore 4
+-      // 44: goto 0a
+-      // 47: ldc "number or text"
+-      // 49: invokestatic pkg/TestTypeSwitchLabelLookup.sink (Ljava/lang/String;)V
+-      // 4c: goto 57
+-      // 4f: ldc "other"
+-      // 51: invokestatic pkg/TestTypeSwitchLabelLookup.sink (Ljava/lang/String;)V
+-      // 54: goto 57
+-      // 57: return
++      switch (o) {
++         case Integer _, String _ when b:
++            sink("number or text");
++            break;
++         default:
++            sink("other");
++      }
+    }
+ 
+    int expression(Object o) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 1
+-      // 01: dup
+-      // 02: invokestatic java/util/Objects.requireNonNull (Ljava/lang/Object;)Ljava/lang/Object;
+-      // 05: pop
+-      // 06: astore 2
+-      // 07: bipush 0
+-      // 08: istore 3
+-      // 09: aload 2
+-      // 0a: iload 3
+-      // 0b: invokedynamic typeSwitch (Ljava/lang/Object;I)I bsm=java/lang/runtime/SwitchBootstraps.typeSwitch (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args=[ java/lang/Integer, java/lang/String, java/lang/Long ]
+-      // 10: tableswitch 71 0 2 28 28 57
+-      // 2c: aload 2
+-      // 2d: instanceof java/lang/Integer
+-      // 30: ifeq 36
+-      // 33: goto 45
+-      // 36: aload 2
+-      // 37: instanceof java/lang/String
+-      // 3a: ifeq 40
+-      // 3d: goto 45
+-      // 40: bipush 2
+-      // 41: istore 3
+-      // 42: goto 09
+-      // 45: bipush 1
+-      // 46: goto 5b
+-      // 49: aload 2
+-      // 4a: checkcast java/lang/Long
+-      // 4d: astore 4
+-      // 4f: aload 4
+-      // 51: invokevirtual java/lang/Long.intValue ()I
+-      // 54: goto 5b
+-      // 57: bipush 3
+-      // 58: goto 5b
+-      // 5b: ireturn
++      return switch (o) {
++         case Integer _, String _ -> 1;
++         case Long l -> l.intValue();
++         default -> 3;
++      };
+    }
+ 
+-   void shapes(TestTypeSwitchLabelLookup.Shape param1) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 1
+-      // 01: dup
+-      // 02: invokestatic java/util/Objects.requireNonNull (Ljava/lang/Object;)Ljava/lang/Object;
+-      // 05: pop
+-      // 06: astore 2
+-      // 07: bipush 0
+-      // 08: istore 3
+-      // 09: aload 2
+-      // 0a: iload 3
+-      // 0b: invokedynamic typeSwitch (Lpkg/TestTypeSwitchLabelLookup$Shape;I)I bsm=java/lang/runtime/SwitchBootstraps.typeSwitch (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args=[ null.invoke Ljava/lang/Enum$EnumDesc;, null.invoke Ljava/lang/Enum$EnumDesc;, pkg/TestTypeSwitchLabelLookup$Polygon, pkg/TestTypeSwitchLabelLookup$Line, pkg/TestTypeSwitchLabelLookup$Point ]
+-      // 10: tableswitch 87 0 4 36 36 44 44 44
+-      // 34: ldc "kind"
+-      // 36: invokestatic pkg/TestTypeSwitchLabelLookup.sink (Ljava/lang/String;)V
+-      // 39: goto 6f
+-      // 3c: aload 2
+-      // 3d: instanceof pkg/TestTypeSwitchLabelLookup$Polygon
+-      // 40: ifeq 46
+-      // 43: goto 5f
+-      // 46: aload 2
+-      // 47: instanceof pkg/TestTypeSwitchLabelLookup$Line
+-      // 4a: ifeq 50
+-      // 4d: goto 5f
+-      // 50: aload 2
+-      // 51: instanceof pkg/TestTypeSwitchLabelLookup$Point
+-      // 54: ifeq 5a
+-      // 57: goto 5f
+-      // 5a: bipush 5
+-      // 5b: istore 3
+-      // 5c: goto 09
+-      // 5f: ldc "figure"
+-      // 61: invokestatic pkg/TestTypeSwitchLabelLookup.sink (Ljava/lang/String;)V
+-      // 64: goto 6f
+-      // 67: ldc "other"
+-      // 69: invokestatic pkg/TestTypeSwitchLabelLookup.sink (Ljava/lang/String;)V
+-      // 6c: goto 6f
+-      // 6f: return
++   void shapes(TestTypeSwitchLabelLookup.Shape s) {
++      switch (s) {
++         case TestTypeSwitchLabelLookup.Kind.CIRCLE:
++         case TestTypeSwitchLabelLookup.Kind.SQUARE:
++            sink("kind");
++            break;
++         case TestTypeSwitchLabelLookup.Polygon _, TestTypeSwitchLabelLookup.Line _, TestTypeSwitchLabelLookup.Point _:
++            sink("figure");
++            break;
++         default:
++            sink("other");
++      }
+    }
+ 
+    void constants(Integer o) {
+       switch (o) {
+          case 5:
+-         case 1:
++         case 7:
+             sink("5 or 7");
+             break;
+          case 1:
+@@ -171,7 +65,7 @@
+ 
+    String substituted(Integer o) {
+       return switch (o) {
+-         case Integer var5 -> "one";
++         case 1 -> "one";
+          case Integer i when i > 10 -> "big";
+          default -> "other";
+       };
+```
+
+### `pkg/TestTypeSwitchPatternType`
+
+```diff
+--- expected-compat/pkg/TestTypeSwitchPatternType.java
++++ expected/pkg/TestTypeSwitchPatternType.java
+@@ -9,144 +9,55 @@
+    }
+ 
+    static void boxed(Integer var0) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 0
+-      // 01: dup
+-      // 02: invokestatic java/util/Objects.requireNonNull (Ljava/lang/Object;)Ljava/lang/Object;
+-      // 05: pop
+-      // 06: astore 1
+-      // 07: bipush 0
+-      // 08: istore 2
+-      // 09: aload 1
+-      // 0a: iload 2
+-      // 0b: invokedynamic typeSwitch (Ljava/lang/Object;I)I bsm=java/lang/runtime/SwitchBootstraps.typeSwitch (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args=[ 42, java/lang/Integer ]
+-      // 10: lookupswitch 60 2 0 28 1 36
+-      // 2c: ldc "42"
+-      // 2e: invokestatic pkg/TestTypeSwitchPatternType.sink (Ljava/lang/String;)V
+-      // 31: goto 54
+-      // 34: aload 1
+-      // 35: astore 3
+-      // 36: aload 3
+-      // 37: invokevirtual java/lang/Integer.intValue ()I
+-      // 3a: bipush 50
+-      // 3c: if_icmplt 44
+-      // 3f: bipush 2
+-      // 40: istore 2
+-      // 41: goto 09
+-      // 44: ldc "small"
+-      // 46: invokestatic pkg/TestTypeSwitchPatternType.sink (Ljava/lang/String;)V
+-      // 49: goto 54
+-      // 4c: ldc "other"
+-      // 4e: invokestatic pkg/TestTypeSwitchPatternType.sink (Ljava/lang/String;)V
+-      // 51: goto 54
+-      // 54: return
++      switch (var0) {
++         case 42:
++            sink("42");
++            break;
++         case Integer var3 when var3 < 50:
++            sink("small");
++            break;
++         default:
++            sink("other");
++      }
+    }
+ 
+    static void local() {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: invokestatic pkg/TestTypeSwitchPatternType.next ()Ljava/lang/Integer;
+-      // 03: astore 0
+-      // 04: aload 0
+-      // 05: dup
+-      // 06: invokestatic java/util/Objects.requireNonNull (Ljava/lang/Object;)Ljava/lang/Object;
+-      // 09: pop
+-      // 0a: astore 1
+-      // 0b: bipush 0
+-      // 0c: istore 2
+-      // 0d: aload 1
+-      // 0e: iload 2
+-      // 0f: invokedynamic typeSwitch (Ljava/lang/Object;I)I bsm=java/lang/runtime/SwitchBootstraps.typeSwitch (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args=[ 42, java/lang/Integer ]
+-      // 14: lookupswitch 60 2 0 28 1 36
+-      // 30: ldc "42"
+-      // 32: invokestatic pkg/TestTypeSwitchPatternType.sink (Ljava/lang/String;)V
+-      // 35: goto 58
+-      // 38: aload 1
+-      // 39: astore 3
+-      // 3a: aload 3
+-      // 3b: invokevirtual java/lang/Integer.intValue ()I
+-      // 3e: bipush 50
+-      // 40: if_icmplt 48
+-      // 43: bipush 2
+-      // 44: istore 2
+-      // 45: goto 0d
+-      // 48: ldc "small"
+-      // 4a: invokestatic pkg/TestTypeSwitchPatternType.sink (Ljava/lang/String;)V
+-      // 4d: goto 58
+-      // 50: ldc "other"
+-      // 52: invokestatic pkg/TestTypeSwitchPatternType.sink (Ljava/lang/String;)V
+-      // 55: goto 58
+-      // 58: return
++      Integer var0 = next();
++      switch (var0) {
++         case 42:
++            sink("42");
++            break;
++         case Integer var3 when var3 < 50:
++            sink("small");
++            break;
++         default:
++            sink("other");
++      }
+    }
+ 
+    static void string(String var0) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 0
+-      // 01: dup
+-      // 02: invokestatic java/util/Objects.requireNonNull (Ljava/lang/Object;)Ljava/lang/Object;
+-      // 05: pop
+-      // 06: astore 1
+-      // 07: bipush 0
+-      // 08: istore 2
+-      // 09: aload 1
+-      // 0a: iload 2
+-      // 0b: invokedynamic typeSwitch (Ljava/lang/Object;I)I bsm=java/lang/runtime/SwitchBootstraps.typeSwitch (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args=[ "a", java/lang/String ]
+-      // 10: lookupswitch 59 2 0 28 1 36
+-      // 2c: ldc "a"
+-      // 2e: invokestatic pkg/TestTypeSwitchPatternType.sink (Ljava/lang/String;)V
+-      // 31: goto 53
+-      // 34: aload 1
+-      // 35: astore 3
+-      // 36: aload 3
+-      // 37: invokevirtual java/lang/String.length ()I
+-      // 3a: bipush 3
+-      // 3b: if_icmpgt 43
+-      // 3e: bipush 2
+-      // 3f: istore 2
+-      // 40: goto 09
+-      // 43: ldc "long"
+-      // 45: invokestatic pkg/TestTypeSwitchPatternType.sink (Ljava/lang/String;)V
+-      // 48: goto 53
+-      // 4b: ldc "other"
+-      // 4d: invokestatic pkg/TestTypeSwitchPatternType.sink (Ljava/lang/String;)V
+-      // 50: goto 53
+-      // 53: return
++      switch (var0) {
++         case "a":
++            sink("a");
++            break;
++         case String var3 when var3.length() > 3:
++            sink("long");
++            break;
++         default:
++            sink("other");
++      }
+    }
+ 
+    static void character(Character var0) {
+-      // $VF: Couldn't be decompiled
+-      // Bytecode:
+-      // 00: aload 0
+-      // 01: dup
+-      // 02: invokestatic java/util/Objects.requireNonNull (Ljava/lang/Object;)Ljava/lang/Object;
+-      // 05: pop
+-      // 06: astore 1
+-      // 07: bipush 0
+-      // 08: istore 2
+-      // 09: aload 1
+-      // 0a: iload 2
+-      // 0b: invokedynamic typeSwitch (Ljava/lang/Object;I)I bsm=java/lang/runtime/SwitchBootstraps.typeSwitch (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite; args=[ 97, java/lang/Character ]
+-      // 10: lookupswitch 60 2 0 28 1 36
+-      // 2c: ldc "a"
+-      // 2e: invokestatic pkg/TestTypeSwitchPatternType.sink (Ljava/lang/String;)V
+-      // 31: goto 54
+-      // 34: aload 1
+-      // 35: astore 3
+-      // 36: aload 3
+-      // 37: invokevirtual java/lang/Character.charValue ()C
+-      // 3a: bipush 120
+-      // 3c: if_icmpgt 44
+-      // 3f: bipush 2
+-      // 40: istore 2
+-      // 41: goto 09
+-      // 44: ldc "late"
+-      // 46: invokestatic pkg/TestTypeSwitchPatternType.sink (Ljava/lang/String;)V
+-      // 49: goto 54
+-      // 4c: ldc "other"
+-      // 4e: invokestatic pkg/TestTypeSwitchPatternType.sink (Ljava/lang/String;)V
+-      // 51: goto 54
+-      // 54: return
++      switch (var0) {
++         case 'a':
++            sink("a");
++            break;
++         case Character var3 when var3 > 'x':
++            sink("late");
++            break;
++         default:
++            sink("other");
++      }
+    }
+ }
 ```

@@ -38,12 +38,15 @@ def lines(path):
 
 
 def failure_blocks(text):
-    """The indices of the lines of every failure comment block."""
+    """The indices of the lines of every failure comment block, with the method's header line
+    (a failed method's parameters are printed `paramN`, a decompiled one's by their names)."""
     marked, inside = set(), False
     for i, line in enumerate(text):
         stripped = line.strip()
         if stripped == MARKER:
             inside = True
+            if i > 0 and text[i - 1].rstrip().endswith('{'):
+                marked.add(i - 1)
         elif not stripped.startswith('//'):
             inside = False
         if inside:

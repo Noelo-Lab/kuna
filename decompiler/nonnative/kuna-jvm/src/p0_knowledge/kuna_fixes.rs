@@ -85,6 +85,16 @@ pub enum KunaFix {
     /// Fix `copied_finally`: a `finally` copied by irreducible-flow
     /// splitting is a `finally` like its original.
     CopiedFinally,
+    /// `type_switch_enum_label`: a pattern switch's qualified enum
+    /// constant labels (`EnumDesc` dynamic constants) are resolved.
+    TypeSwitchEnumLabel,
+    /// `type_switch_pattern_type`: a type pattern made from a class
+    /// label without a cast is typed by that class, not by `Class`.
+    TypeSwitchPatternType,
+    /// `type_switch_label_lookup`: each pattern-switch label is found
+    /// by its own index constant, so labels after the first of a case and
+    /// labels whose index equals an integer label's value are resolved.
+    TypeSwitchLabelLookup,
 }
 
 impl KunaFix {
@@ -110,6 +120,9 @@ impl KunaFix {
         KunaFix::HandlerCopyOffsets,
         KunaFix::NestedHandlerCopies,
         KunaFix::CopiedFinally,
+        KunaFix::TypeSwitchEnumLabel,
+        KunaFix::TypeSwitchPatternType,
+        KunaFix::TypeSwitchLabelLookup,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -135,6 +148,9 @@ impl KunaFix {
             KunaFix::HandlerCopyOffsets => "handler_copy_offsets",
             KunaFix::NestedHandlerCopies => "nested_handler_copies",
             KunaFix::CopiedFinally => "copied_finally",
+            KunaFix::TypeSwitchEnumLabel => "type_switch_enum_label",
+            KunaFix::TypeSwitchPatternType => "type_switch_pattern_type",
+            KunaFix::TypeSwitchLabelLookup => "type_switch_label_lookup",
         }
     }
 

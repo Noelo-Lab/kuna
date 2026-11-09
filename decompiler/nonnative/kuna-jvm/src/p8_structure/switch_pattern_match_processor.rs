@@ -1,4 +1,10 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SwitchPatternMatchProcessor.java`.
+//!
+//! kuna fixes (`kuna_fixes`): `type_switch_enum_label` resolves an enum
+//! constant label passed as a dynamic constant; `type_switch_pattern_type`
+//! types the pattern made from a class label without a cast by that class
+//! instead of `Class`; `type_switch_label_lookup` finds each label by its
+//! own index constant and supports cases with several type patterns.
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::code_constants::{CONSTANT_CLASS, CONSTANT_INTEGER, CONSTANT_STRING};
@@ -15,9 +21,13 @@ use crate::if_pattern_match_processor::IfPatternMatchProcessor;
 use crate::if_statement::IfStatement;
 use crate::invocation_exprent::InvocationType;
 use crate::jthrow;
+use crate::p8_structure::kuna_fix_type_switch_enum_label;
+use crate::p8_structure::kuna_fix_type_switch_label_lookup;
+use crate::kuna_fixes::{self, KunaFix};
 use crate::pair::Pair;
 use crate::pattern_exprent::PatternExprent;
 use crate::pooled_constant::PooledConstant;
+use crate::primitive_constant::PrimitiveConstant;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JList, JavaEq};
 use crate::sequence_helper::SequenceHelper;
@@ -231,17 +241,33 @@ impl SwitchPatternMatchProcessor {
                                         {
                                             if primitive.type_ == CONSTANT_CLASS {
                                                 operands.push(check.0);
-                                                operands.push(
-                                                    ConstExprent::new(
-                                                        VarType::VARTYPE_CLASS(),
-                                                        primitive
-                                                            .value
-                                                            .as_ref()
-                                                            .map(ConstValue::from),
-                                                        None,
-                                                    )
-                                                    .0,
-                                                );
+                                                if kuna_fixes::enabled(
+                                                    KunaFix::TypeSwitchPatternType,
+                                                ) {
+                                                    operands.push(
+                                                        ConstExprent::new(
+                                                            VarType::new_signature_cl(
+                                                                &primitive.get_string(),
+                                                                true,
+                                                            ),
+                                                            None,
+                                                            None,
+                                                        )
+                                                        .0,
+                                                    );
+                                                } else {
+                                                    operands.push(
+                                                        ConstExprent::new(
+                                                            VarType::VARTYPE_CLASS(),
+                                                            primitive
+                                                                .value
+                                                                .as_ref()
+                                                                .map(ConstValue::from),
+                                                            None,
+                                                        )
+                                                        .0,
+                                                    );
+                                                }
                                                 operands.push(var.0);
                                                 if all_cases.contains(&None) {
                                                     stat.set_default_edge(None);
@@ -307,89 +333,50 @@ impl SwitchPatternMatchProcessor {
         }
 
         let bootstrap_arguments = value.get_bootstrap_arguments().expect("bsm args");
-        for (i, bsa) in bootstrap_arguments.iter().enumerate() {
-            let i = i as i32;
-            let mut replace_index = i;
-            for case_value_set in stat.get_case_values().iter() {
-                if let Some(const_expr) = case_value_set.get(0).and_then(|e| e.try_as_const()) {
-                    if let Some(ConstValue::Int(v)) = const_expr.get_value() {
-                        if v == i {
-                            replace_index = index_of_list(&stat.get_case_values(), &case_value_set);
+        if kuna_fixes::enabled(KunaFix::TypeSwitchLabelLookup) {
+            kuna_fix_type_switch_label_lookup::replace_labels(
+                stat,
+                &bootstrap_arguments,
+                real_selector,
+                is_enum_switch,
+            );
+            kuna_fix_type_switch_label_lookup::strip_multi_pattern_guards(stat);
+        } else {
+            for (i, bsa) in bootstrap_arguments.iter().enumerate() {
+                let i = i as i32;
+                let mut replace_index = i;
+                for case_value_set in stat.get_case_values().iter() {
+                    if let Some(const_expr) = case_value_set.get(0).and_then(|e| e.try_as_const()) {
+                        if let Some(ConstValue::Int(v)) = const_expr.get_value() {
+                            if v == i {
+                                replace_index =
+                                    index_of_list(&stat.get_case_values(), &case_value_set);
+                            }
                         }
                     }
                 }
-            }
-            if let Some(PooledConstant::Primitive(p)) = bsa {
-                let mut new_value: Option<Exprent> = None;
-                match p.type_ {
-                    CONSTANT_INTEGER => {
-                        let boxed = p.value.as_ref().expect("NullPointerException: value");
-                        new_value = Some(
-                            ConstExprent::new_int(ConstValue::from(boxed).as_int(), false, None).0,
-                        );
-                    }
-                    CONSTANT_STRING => {
-                        if is_enum_switch {
-                            let type_name = real_selector.get_expr_type().value_str().to_string();
-                            let name = p
-                                .value
-                                .as_ref()
-                                .expect("NullPointerException: value")
-                                .to_java_string();
-                            new_value = Some(
-                                FieldExprent::new_full(
-                                    name,
-                                    type_name.clone(),
-                                    true,
-                                    None,
-                                    FieldDescriptor::parse_descriptor(&format!("L{type_name};")),
-                                    None,
-                                    false,
-                                    false,
-                                )
-                                .0,
-                            );
-                        } else {
-                            new_value = Some(
-                                ConstExprent::new(
-                                    VarType::VARTYPE_STRING(),
-                                    p.value.as_ref().map(ConstValue::from),
-                                    None,
-                                )
-                                .0,
-                            );
+                let new_value = match bsa {
+                    Some(PooledConstant::Primitive(p)) => {
+                        let class_allowed = p.type_ == CONSTANT_CLASS
+                            && stat
+                                .get_case_values()
+                                .get(replace_index as usize)
+                                .iter()
+                                .all(|x| x.is_some_and(|x| x.is_const()));
+                        let new_value =
+                            Self::label_value(p, real_selector, is_enum_switch, class_allowed);
+                        if p.type_ == CONSTANT_STRING {
+                            replace_index = Self::get_index(i, &stat.get_case_values());
                         }
-
-                        replace_index = Self::get_index(i, &stat.get_case_values());
+                        new_value
                     }
-                    CONSTANT_CLASS => {
-                        let replace_values = stat.get_case_values().get(replace_index as usize);
-                        if replace_values
-                            .iter()
-                            .all(|x| x.is_some_and(|x| x.is_const()))
-                        {
-                            let cast_type =
-                                VarType::new_value(CodeType::Object, 0, p.get_string_opt());
-                            let mut operands: Vec<Exprent> = Vec::new();
-                            operands.push(real_selector);
-                            operands.push(ConstExprent::new(cast_type.clone(), None, None).0);
-                            let index = DecompilerContext::get_counter_container()
-                                .get_counter_and_increment(CounterContainer::VAR_COUNTER);
-                            operands.push(
-                                VarExprent::new(
-                                    index,
-                                    Some(cast_type),
-                                    Some(DecompilerContext::get_var_processor()),
-                                )
-                                .0,
-                            );
-                            new_value = Some(
-                                FunctionExprent::new(FunctionType::Instanceof, operands, None).0,
-                            );
-                        }
+                    Some(PooledConstant::Link(link))
+                        if kuna_fixes::enabled(KunaFix::TypeSwitchEnumLabel) =>
+                    {
+                        kuna_fix_type_switch_enum_label::resolve_label(link)
                     }
-                    _ => ValidationHelper::assert_true(false, "unexpected case"),
-                }
+                    _ => None,
+                };
                 if let Some(nvx) = new_value {
                     let ix = i;
                     let list = stat.get_case_values().get(replace_index as usize);
@@ -497,6 +484,79 @@ impl SwitchPatternMatchProcessor {
         head.set_value(real_selector);
 
         true
+    }
+
+    /// The label a primitive bootstrap argument stands for: an integer, a
+    /// string (an enum field in an `enumSwitch`), or, when `class_allowed`, a
+    /// type pattern on the selector for a class.
+    pub(crate) fn label_value(
+        p: &PrimitiveConstant,
+        real_selector: Exprent,
+        is_enum_switch: bool,
+        class_allowed: bool,
+    ) -> Option<Exprent> {
+        match p.type_ {
+            CONSTANT_INTEGER => {
+                let boxed = p.value.as_ref().expect("NullPointerException: value");
+                Some(ConstExprent::new_int(ConstValue::from(boxed).as_int(), false, None).0)
+            }
+            CONSTANT_STRING => {
+                if is_enum_switch {
+                    let type_name = real_selector.get_expr_type().value_str().to_string();
+                    let name = p
+                        .value
+                        .as_ref()
+                        .expect("NullPointerException: value")
+                        .to_java_string();
+                    Some(
+                        FieldExprent::new_full(
+                            name,
+                            type_name.clone(),
+                            true,
+                            None,
+                            FieldDescriptor::parse_descriptor(&format!("L{type_name};")),
+                            None,
+                            false,
+                            false,
+                        )
+                        .0,
+                    )
+                } else {
+                    Some(
+                        ConstExprent::new(
+                            VarType::VARTYPE_STRING(),
+                            p.value.as_ref().map(ConstValue::from),
+                            None,
+                        )
+                        .0,
+                    )
+                }
+            }
+            CONSTANT_CLASS => {
+                if !class_allowed {
+                    return None;
+                }
+                let cast_type = VarType::new_value(CodeType::Object, 0, p.get_string_opt());
+                let mut operands: Vec<Exprent> = Vec::new();
+                operands.push(real_selector);
+                operands.push(ConstExprent::new(cast_type.clone(), None, None).0);
+                let index = DecompilerContext::get_counter_container()
+                    .get_counter_and_increment(CounterContainer::VAR_COUNTER);
+                operands.push(
+                    VarExprent::new(
+                        index,
+                        Some(cast_type),
+                        Some(DecompilerContext::get_var_processor()),
+                    )
+                    .0,
+                );
+                Some(FunctionExprent::new(FunctionType::Instanceof, operands, None).0)
+            }
+            _ => {
+                ValidationHelper::assert_true(false, "unexpected case");
+                None
+            }
+        }
     }
 
     fn get_index(check: i32, values: &JList<JList<Option<Exprent>>>) -> i32 {
