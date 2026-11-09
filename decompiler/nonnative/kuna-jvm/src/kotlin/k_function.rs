@@ -22,13 +22,13 @@ use crate::k_type::KType;
 use crate::k_type_parameter::KTypeParameter;
 use crate::k_utils::KUtils;
 use crate::kotlin_options::KotlinOptions;
-use crate::kotlin_writer::KotlinWriter;
+use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{self, Modality, Visibility};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::method_wrapper::MethodWrapper;
-use crate::rt::try_catch;
+use crate::rt::{rethrow, try_catch};
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
@@ -575,6 +575,9 @@ impl KFunction {
                 buf.append_buffer_mapped(&body, Some(&qualified_name), Some(&method_key));
             });
             if let Err(t) = result {
+                if is_stop_signal(&t) {
+                    rethrow(t);
+                }
                 let message = format!(
                     "Method {} {} in class {} couldn't be written.",
                     method_struct.get_name(),

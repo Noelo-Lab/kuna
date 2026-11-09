@@ -1,5 +1,6 @@
 //! Port of `org/vineflower/kotlin/pass/JavaFinallyPass.java`.
 
+use crate::cancelation_manager::CancelationManager;
 use crate::dom_helper::DomHelper;
 use crate::finally_processor::FinallyProcessor;
 use crate::pass::Pass;
@@ -21,6 +22,7 @@ impl Pass for JavaFinallyPass {
         let mut res = false;
         let mut iteration = 0;
         while f_proc.iterate_graph(cl, mt, root, graph) {
+            CancelationManager::check_canceled();
             let old_root = root;
 
             iteration += 1;

@@ -7,6 +7,7 @@
 use std::rc::Rc;
 
 use crate::annotation_exprent::AnnotationExprent;
+use crate::cancelation_manager::{CanceledException, MethodDeadlineExceeded};
 use crate::class_reference14_processor::ClassReference14Processor;
 use crate::class_wrapper::ClassWrapper;
 use crate::class_writer::{ClassWriter, IFabricJavadocProvider};
@@ -49,6 +50,7 @@ use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{ClassKind, Modality, Visibility};
+use crate::kuna_spans;
 use crate::link_constant::LinkConstant;
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::method_descriptor::MethodDescriptor;
@@ -153,6 +155,15 @@ fn is_java_error(caught: &Caught) -> bool {
         .exception
         .as_ref()
         .is_some_and(|e| e.class.ends_with("Error"))
+}
+
+/// kuna's stop signals: a host cancel (`CanceledException`) or the per-method
+/// deadline (`MethodDeadlineExceeded`). Vineflower never raises either while it
+/// writes a Kotlin class (its checker runs in `codeToJava`, its watchdog only
+/// around it), so the Kotlin writer's catch-alls pass them on, as `ClassWriter`
+/// does, instead of recording a method or class that could not be written.
+pub fn is_stop_signal(caught: &Caught) -> bool {
+    CanceledException::is(caught) || caught.is(MethodDeadlineExceeded::CLASS)
 }
 
 /// A Java `String` that may be `null`, as `StringBuilder.append` prints it.
@@ -306,6 +317,9 @@ impl KotlinWriter {
             KotlinObjectProcessors::mark_object_instance(wrapper);
         });
         if let Err(t) = result {
+            if is_stop_signal(&t) {
+                rethrow(t);
+            }
             DecompilerContext::get_logger().write_message_ex(
                 &format!(
                     "Class {} couldn't be written.",
@@ -435,7 +449,19 @@ impl KotlinWriter {
             .expect("NullPointerException: KClass.resolver")
     }
 
+    /// Not in Vineflower: the class and each method written get a kuna span
+    /// (`kuna_spans`), as `ClassWriter` gives them; spans add no text.
     pub fn write_class(&self, node: ClassNode, buffer: &mut TextBuffer, indent: i32) {
+        let span = kuna_spans::open_class(buffer, node.with(|d| d.class_struct));
+        if self.write_class_body(node, buffer, indent) {
+            kuna_spans::close(buffer, span);
+        } else {
+            kuna_spans::close_failed(buffer, span);
+        }
+    }
+
+    /// `writeClass` itself; false when the class could not be written.
+    fn write_class_body(&self, node: ClassNode, buffer: &mut TextBuffer, indent: i32) -> bool {
         let mut indent = indent;
         let outer_node = DecompilerContext::get_current_class_node();
         DecompilerContext::set_current_class_node(Some(node));
@@ -448,7 +474,7 @@ impl KotlinWriter {
         let ok = self.invoke_processors(buffer, node);
 
         if !ok {
-            return;
+            return false;
         }
 
         let wrapper = node.get_wrapper().expect("NullPointerException: wrapper");
@@ -474,7 +500,7 @@ impl KotlinWriter {
             buffer.append(" */").append_line_separator();
 
             if !DecompilerContext::get_option(KotlinOptions::DECOMPILE_FACADES) {
-                return;
+                return true;
             }
         }
 
@@ -506,12 +532,12 @@ impl KotlinWriter {
             || cl.has_modifier(ACC_ANNOTATION)
         {
             self.write_annotation_definition(node, buffer, indent, kt_data.as_ref());
-            return;
+            return true;
         }
 
         if let Some(KElement::Function(function)) = &kt_data {
             self.write_lambda(node, buffer, indent, function);
-            return;
+            return true;
         }
 
         let companion: Option<ClassNode> = match &kt_data {
@@ -606,6 +632,7 @@ impl KotlinWriter {
                 } else {
                     constructor_key.as_str()
                 };
+                let spans = KotlinWriter::open_property_spans(&mut inner_buffer, prop, wrapper);
                 inner_buffer
                     .append_buffer_mapped(
                         &prop_buffer,
@@ -613,6 +640,7 @@ impl KotlinWriter {
                         Some(initializer),
                     )
                     .append_line_separator();
+                KotlinWriter::close_spans(&mut inner_buffer, spans);
 
                 if is_multiline {
                     inner_buffer.append_line_separator();
@@ -741,6 +769,7 @@ impl KotlinWriter {
                         inner_buffer.append_line_separator();
                     }
                     has_content = true;
+                    let spans = KotlinWriter::open_property_spans(&mut inner_buffer, prop, wrapper);
                     inner_buffer
                         .append_buffer_mapped(
                             &prop.stringify(wrapper, indent),
@@ -748,6 +777,7 @@ impl KotlinWriter {
                             Some(&method_key()),
                         )
                         .append_line_separator();
+                    KotlinWriter::close_spans(&mut inner_buffer, spans);
                 }
                 Some(KElement::Function(function)) => {
                     if function.class_struct != Some(cl) {
@@ -758,11 +788,13 @@ impl KotlinWriter {
                         inner_buffer.append_line_separator();
                     }
                     has_content = true;
+                    let span = kuna_spans::open_method(&mut inner_buffer, cl, mt, wrapper);
                     inner_buffer.append_buffer_mapped(
                         &function.stringify(wrapper, indent),
                         Some(&cl.qualified_name()),
                         Some(&method_key()),
                     );
+                    kuna_spans::close(&mut inner_buffer, span);
                 }
                 Some(KElement::Constructor(constructor)) => {
                     let mut ctor_buffer = TextBuffer::new();
@@ -774,11 +806,13 @@ impl KotlinWriter {
                             inner_buffer.append_line_separator();
                         }
                         has_content = true;
+                        let span = kuna_spans::open_method(&mut inner_buffer, cl, mt, wrapper);
                         inner_buffer.append_buffer_mapped(
                             &ctor_buffer,
                             Some(&cl.qualified_name()),
                             Some(&method_key()),
                         );
+                        kuna_spans::close(&mut inner_buffer, span);
                     }
                 }
                 _ => {
@@ -801,8 +835,10 @@ impl KotlinWriter {
                     }
 
                     let mut method_buffer = TextBuffer::new();
+                    let span = kuna_spans::open_method(&mut method_buffer, cl, mt, wrapper);
                     let method_skipped =
                         !self.write_method(node, mt, i as i32, &mut method_buffer, indent);
+                    kuna_spans::close(&mut method_buffer, span);
                     if !method_skipped {
                         if has_content {
                             inner_buffer.append_line_separator();
@@ -840,7 +876,7 @@ impl KotlinWriter {
 
         if matches!(kt_data, Some(KElement::File(_))) {
             buffer.append_buffer(&inner_buffer);
-            return;
+            return true;
         }
 
         if !inner_buffer.contains_only_whitespaces() {
@@ -855,6 +891,30 @@ impl KotlinWriter {
 
         if node.with(|d| d.type_) != ClassNodeType::Anonymous {
             buffer.append_line_separator();
+        }
+        true
+    }
+
+    /// Spans for the accessor methods of `prop` that this class declares,
+    /// opened where its text starts.
+    fn open_property_spans(
+        buffer: &mut TextBuffer,
+        prop: &KProperty,
+        wrapper: ClassWrapper,
+    ) -> Vec<kuna_spans::SpanId> {
+        let cl = wrapper.get_class_struct();
+        [&prop.getter, &prop.setter]
+            .into_iter()
+            .flatten()
+            .filter_map(|accessor| (accessor.method_supplier)(wrapper))
+            .map(|method| method.with(|d| d.method_struct))
+            .map(|mt| kuna_spans::open_method(buffer, cl, mt, wrapper))
+            .collect()
+    }
+
+    fn close_spans(buffer: &mut TextBuffer, spans: Vec<kuna_spans::SpanId>) {
+        for span in spans {
+            kuna_spans::close(buffer, span);
         }
     }
 
@@ -888,6 +948,10 @@ impl KotlinWriter {
             .expect("NullPointerException: methodStruct");
         let cl = node.with(|d| d.class_struct);
 
+        let span = match node.get_wrapper() {
+            Some(wrapper) => kuna_spans::open_method(buffer, cl, mt, wrapper),
+            None => None,
+        };
         buffer.append("{");
 
         let mut index: i32 = 0;
@@ -941,6 +1005,9 @@ impl KotlinWriter {
                 );
             });
             if let Err(t) = result {
+                if is_stop_signal(&t) {
+                    rethrow(t);
+                }
                 let message = format!(
                     "Method {} {} in class {} couldn't be written.",
                     mt.get_name(),
@@ -957,6 +1024,7 @@ impl KotlinWriter {
         }
 
         buffer.append_indent(indent).append("}");
+        kuna_spans::close(buffer, span);
     }
 
     pub fn stringify_reference(
@@ -2164,6 +2232,9 @@ impl KotlinWriter {
                 }
             });
             if let Err(t) = result {
+                if is_stop_signal(&t) {
+                    rethrow(t);
+                }
                 let message = format!(
                     "Method {} {} in class {} couldn't be written.",
                     mt.get_name(),

@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use crate::cancelation_manager::CancelationManager;
 use crate::named_pass::NamedPass;
 use crate::pass::Pass;
 use crate::pass_context::PassContext;
@@ -56,6 +57,7 @@ impl Pass for CompiledPass {
     fn run(&self, ctx: &mut PassContext) -> bool {
         let mut looping;
         loop {
+            CancelationManager::check_canceled();
             looping = false;
             for (pass, loops) in &self.passes {
                 if pass.run(ctx) && *loops {

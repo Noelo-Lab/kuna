@@ -1,5 +1,6 @@
 //! Port of `org/vineflower/kotlin/pass/StackVarInitialPass.java`.
 
+use crate::cancelation_manager::CancelationManager;
 use crate::p_pand_mm_helper::PPandMMHelper;
 use crate::pass::Pass;
 use crate::pass_context::PassContext;
@@ -15,6 +16,7 @@ impl Pass for StackVarInitialPass {
         let var_proc = ctx.get_var_proc();
 
         loop {
+            CancelationManager::check_canceled();
             StackVarsProcessor::simplify_stack_vars(root, mt, cl);
 
             var_proc.set_var_versions(root);

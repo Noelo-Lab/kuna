@@ -5,7 +5,6 @@
 //! annotation comes from ([`KPropertyAnnotation`]) and the exprent is fetched
 //! in the scope of the class being written.
 
-use std::cell::Cell;
 use std::rc::Rc;
 
 use crate::annotation_exprent::AnnotationExprent;
@@ -51,7 +50,7 @@ pub enum KPropertyAnnotation {
 }
 
 impl KPropertyAnnotation {
-    /// The annotation exprent, in the current class scope.
+    /// The annotation exprent, in the current class scope (built anew for `Deprecated`).
     pub fn get(&self) -> AnnotationExprent {
         match self {
             KPropertyAnnotation::Attribute(attribute, index) => {
@@ -61,7 +60,7 @@ impl KPropertyAnnotation {
         }
     }
 
-    /// Identity of the exprent this entry stands for (one object per class scope).
+    /// Java identity of the exprent this entry stands for.
     fn same_as(&self, o: &KPropertyAnnotation) -> bool {
         match (self, o) {
             (KPropertyAnnotation::Attribute(a, i), KPropertyAnnotation::Attribute(b, j)) => {
@@ -105,10 +104,6 @@ pub struct KProperty {
     pub class_struct: StructClass,
 }
 
-thread_local! {
-    static DEPRECATED_ANNOTATION: Cell<Option<AnnotationExprent>> = const { Cell::new(None) };
-}
-
 impl KProperty {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -137,15 +132,12 @@ impl KProperty {
         }
     }
 
-    /// `KProperty.DEPRECATED_ANNOTATION`: `@kotlin.Deprecated(message = "Deprecated by attribute.")`,
-    /// built once per class scope.
+    /// `KProperty.DEPRECATED_ANNOTATION`: `@kotlin.Deprecated(message = "Deprecated by attribute.")`.
+    /// Java builds one at class initialisation; here each use builds its own, so
+    /// no class-scope exprent outlives the write that prints it (no arena
+    /// reset or reclamation can strand a cached handle). Only its text is used.
     #[allow(non_snake_case)]
     pub fn DEPRECATED_ANNOTATION() -> AnnotationExprent {
-        if let Some(cached) = DEPRECATED_ANNOTATION.with(Cell::get) {
-            if cached.is_live() {
-                return cached;
-            }
-        }
         let class_name = VarType::new_signature("kotlin/Deprecated")
             .value
             .as_deref()
@@ -157,9 +149,7 @@ impl KProperty {
             Some(ConstValue::String("Deprecated by attribute.".to_string())),
             None,
         ))];
-        let annotation = AnnotationExprent::new(class_name, par_names, par_values);
-        DEPRECATED_ANNOTATION.with(|c| c.set(Some(annotation)));
-        annotation
+        AnnotationExprent::new(class_name, par_names, par_values)
     }
 
     /// The record accessor `annotations()`, as exprents of the current class scope.

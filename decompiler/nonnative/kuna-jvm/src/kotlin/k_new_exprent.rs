@@ -1,6 +1,5 @@
 //! Port of `org/vineflower/kotlin/expr/KNewExprent.java`.
 
-use crate::cancelation_manager::CanceledException;
 use crate::class_writer::ClassWriter;
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_type::CodeType;
@@ -18,7 +17,7 @@ use crate::k_types::KTypes;
 use crate::k_utils::KUtils;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
-use crate::kotlin_writer::KotlinWriter;
+use crate::kotlin_writer::{is_stop_signal, KotlinWriter};
 use crate::kt_attrs::KtAttrs;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
@@ -253,7 +252,7 @@ impl KNewExprent {
                             );
                         });
                         if let Err(t) = result {
-                            if CanceledException::is(&t) {
+                            if is_stop_signal(&t) {
                                 rethrow(t);
                             }
                             let message = format!(
