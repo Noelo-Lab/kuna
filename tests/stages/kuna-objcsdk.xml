@@ -46,6 +46,7 @@ c0035fd6
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_sdk_arm64</com>
+  <com>option partialaccess off</com>
   <com>option objc on</com>
   <com>read symbols</com>
   <com>load function _style</com>

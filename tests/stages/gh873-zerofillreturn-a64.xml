@@ -71,6 +71,7 @@ c0035fd61f2003d51f2003d51f2003d5
 <symbol space="ram" offset="0x102000" name="ins0"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>lo fu scale</com>
   <com>decompile</com>
   <com>print C</com>

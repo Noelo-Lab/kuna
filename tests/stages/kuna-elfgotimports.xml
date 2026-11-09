@@ -14,17 +14,17 @@
     named and painted externref), rendered by P9 naming-policy
     `PrintC::op_load` (`importdata`).
 
-    P0 assertion: `option importdata on|off` (default off). The ELF slot facts
-    are committed under the same gate, so it is set after `load file` and before
-    the `read symbols` that commits them.
+    P0 assertion: `option importdata on|off` (default on). The ELF slot facts
+    are committed under the same gate, so passes 1 and 3 set it off after
+    `load file` and before the `read symbols` that commits them.
 
     Fixtures: `elf_gotdata_x86_64.so` and `elf_gotdata_aarch64.so` (built from
     `elf_gotdata.c`, see the fixtures README). `get_counter` reads the undefined
     `imported_counter`; `get_exported` reads `exported_value`, a symbol the object
     defines, whose GLOB_DAT slot `dynrelocs` already folds.
 
-    Pass 1 / 3 (the default, the BUG): `get_counter` returns `*dat_2680` /
-    `*dat_205c0`. Pass 2 / 4 (`option importdata on`, the FIX): it returns
+    Pass 1 / 3 (`option importdata off`, the BUG): `get_counter` returns
+    `*dat_2680` / `*dat_205c0`. Pass 2 / 4 (the default, the FIX): it returns
     `imported_counter`. `get_exported` returns `exported_value` in all four
     passes: a defined symbol's slot is never painted.
 -->
@@ -36,6 +36,7 @@ c0035fd6
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elf_gotdata_x86_64.so</com>
+  <com>option importdata off</com>
   <com>read symbols</com>
   <com>load addr 0x1580</com>
   <com>decompile</com>
@@ -45,7 +46,6 @@ c0035fd6
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elf_gotdata_x86_64.so</com>
-  <com>option importdata on</com>
   <com>read symbols</com>
   <com>load addr 0x1580</com>
   <com>decompile</com>
@@ -55,6 +55,7 @@ c0035fd6
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elf_gotdata_aarch64.so</com>
+  <com>option importdata off</com>
   <com>read symbols</com>
   <com>load addr 0x104e4</com>
   <com>decompile</com>
@@ -64,7 +65,6 @@ c0035fd6
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elf_gotdata_aarch64.so</com>
-  <com>option importdata on</com>
   <com>read symbols</com>
   <com>load addr 0x104e4</com>
   <com>decompile</com>

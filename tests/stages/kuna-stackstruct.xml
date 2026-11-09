@@ -1,8 +1,8 @@
 <decompilertest>
 <binaryimage arch="x86:LE:64:default:gcc">
 <!-- An address-taken stack record read at several widths (P6 stack-frame-layout,
-     option stackstruct; P9 pointer-notation, option partialaccess; both default
-     off, both on in the aggressive preset).
+     option stackstruct, default off and on in the aggressive preset; P9
+     pointer-notation, option partialaccess, default on).
      Source: decompiler/crates/kuna-cli/tests/fixtures/stack_struct.c, linked with
      stack_struct_helpers.c (gcc -O1 -fno-tree-vectorize -fno-tree-loop-distribute-patterns
      -fno-builtin) as `ld -static -e parse_header -Ttext=<base>`; the record is compiled
@@ -50,6 +50,7 @@
 <symbol space="ram" offset="0x7011ab" name="report_clang_o2"/>
 </binaryimage>
 <script>
+  <com>option partialaccess off</com>
   <com>lo fu header_gcc_o0</com>
   <com>decompile</com>
   <com>print C</com>
@@ -156,7 +157,7 @@
 <stringmatch name="stackstruct #13: memset's byte count puts the data pointer in the clang -O0 record" min="1" max="1">v1\.field_0x10 \+ \(uint8\)v2</stringmatch>
 <stringmatch name="stackstruct #14: one 8-byte word stays a scalar with the options off and on" min="4" max="4">return \(v1 &gt;&gt; 0x20\) \+ \(v1 &amp; 0xffffffff\);</stringmatch>
 <stringmatch name="stackstruct #15: a string built in place stays text, its byte read typed" min="1" max="1">report_gcc_o2\(\(int4\)\(char\)v1,\(int4\)\(\(char \*\)&amp;v1\)\[1\],0\);</stringmatch>
-<stringmatch name="stackstruct #16: partialaccess is a discoverable P9 opt-in" min="1" max="1">"option": "partialaccess", "values": \["on", "off"\], "default": "off", "current": "on", "destructive_as_default": false, "phase": "P9"</stringmatch>
+<stringmatch name="stackstruct #16: partialaccess is a discoverable P9 default" min="1" max="1">"option": "partialaccess", "values": \["on", "off"\], "default": "on", "current": "on", "destructive_as_default": false, "phase": "P9"</stringmatch>
 <stringmatch name="stackstruct #17: stackstruct is a discoverable P6 opt-in" min="1" max="1">"option": "stackstruct", "values": \["on", "off"\], "default": "off", "current": "on", "destructive_as_default": false, "phase": "P6"</stringmatch>
 <stringmatch name="stackstruct #18: a 16-byte zero store into a byte array is a memset of its 16 bytes" min="1" max="1">memset\(&amp;v5,0,0x10\);</stringmatch>
 </decompilertest>

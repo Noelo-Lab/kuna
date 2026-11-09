@@ -32,6 +32,7 @@
 <symbol space="ram" offset="0x100020" name="helper"/>
 </binaryimage>
 <script>
+  <com>option voidtailreturn off</com>
   <com>option entryretdispatch off</com>
   <com>lo fu entry_dispatch</com>
   <com>decompile</com>
