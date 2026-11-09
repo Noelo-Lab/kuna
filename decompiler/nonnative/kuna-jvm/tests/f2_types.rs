@@ -2,7 +2,7 @@
 //! golden vectors computed by Vineflower 1.12.0 (`data/f2/GenF2Golden.java`).
 //!
 //! A vector field ending in `!` consulted the decompiler context in Java; those
-//! need a live `DecompilerContext` and are skipped here.
+//! are skipped here and replayed in a live context by `f2_context.rs`.
 
 use kuna_jvm::code_type::CodeType;
 use kuna_jvm::field_descriptor::FieldDescriptor;
