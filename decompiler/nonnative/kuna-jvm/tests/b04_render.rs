@@ -20,7 +20,7 @@ use kuna_jvm::list_stack::ListStack;
 use kuna_jvm::match_engine::MatchEngine;
 use kuna_jvm::match_node::MatchValue;
 use kuna_jvm::monitor_exprent::{MonitorExprent, Type as MonitorType};
-use kuna_jvm::rt::{rethrow, try_catch, JList};
+use kuna_jvm::rt::JList;
 use kuna_jvm::sequence_statement::SequenceStatement;
 use kuna_jvm::stat_edge::StatEdge;
 use kuna_jvm::statement::Statement;
@@ -37,7 +37,6 @@ use crate::common;
 use crate::k2_dom_helper::{fixture_method, start_method};
 
 const GOLDEN: &str = include_str!("data/b04/b04_golden.txt");
-const UNPORTED: &str = "<<unported ExprProcessor helper>>";
 
 const REG: i32 = StatEdge::TYPE_REGULAR;
 const BREAK: i32 = StatEdge::TYPE_BREAK;
@@ -110,23 +109,12 @@ impl Oracle {
         start_method(self.mt);
     }
 
-    /// A render that reaches a still-`unported!` `ExprProcessor` helper (owned
-    /// by another slice) is recorded as skipped instead of failing.
     fn out(&mut self, name: &str, render: impl FnOnce() -> TextBuffer) {
         self.out.push_str("== ");
         self.out.push_str(name);
         self.out.push('\n');
-        match try_catch(render) {
-            Ok(buf) => self
-                .out
-                .push_str(&buf.convert_to_string_and_allow_data_discard()),
-            Err(caught)
-                if caught.is("UnportedError") && caught.message.contains("ExprProcessor.") =>
-            {
-                self.out.push_str(UNPORTED);
-            }
-            Err(caught) => rethrow(caught),
-        }
+        self.out
+            .push_str(&render().convert_to_string_and_allow_data_discard());
         self.out.push_str("\n<<\n");
     }
 
@@ -520,16 +508,10 @@ fn renders_and_matches_like_vineflower() {
     let actual = records(&actual);
     assert_eq!(expected.len(), actual.len(), "record count");
     let mut mismatches = Vec::new();
-    let mut skipped = 0;
     for (e, a) in expected.iter().zip(&actual) {
-        if a.contains(UNPORTED) {
-            skipped += 1;
-        } else if e != a {
+        if e != a {
             mismatches.push(format!("java:\n{e}\nrust:\n{a}"));
         }
-    }
-    if skipped > 0 {
-        eprintln!("b04_render: {skipped} renders skipped (ExprProcessor helpers unported)");
     }
     assert!(
         mismatches.is_empty(),

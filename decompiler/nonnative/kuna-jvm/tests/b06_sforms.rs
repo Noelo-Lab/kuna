@@ -1,8 +1,7 @@
 //! `FlattenStatementsHelper` and the SSA / SSAU constructors on hand-built
 //! statement graphs decomposed by `DomHelper::process_statement`, replayed
 //! against the Vineflower 1.12.0 oracle in
-//! `tests/data/b06_sforms_oracle/SFormsOracle.java`. A section that stops at a
-//! callee another slice has not ported yet is skipped, and reported.
+//! `tests/data/b06_sforms_oracle/SFormsOracle.java`.
 
 use std::cell::RefCell;
 
@@ -274,7 +273,7 @@ fn set(s: &VersionSet) -> String {
     list(items)
 }
 
-/// Runs `body`; an `UnportedError` blocks the section, any other throw is its `.error` line.
+/// Runs `body`; a throw is its `.error` line.
 fn section(out: &mut Vec<String>, prefix: &str, body: impl FnOnce(&mut Vec<String>)) {
     let mut lines = Vec::new();
     match try_catch(|| {
@@ -282,7 +281,6 @@ fn section(out: &mut Vec<String>, prefix: &str, body: impl FnOnce(&mut Vec<Strin
         lines
     }) {
         Ok(lines) => out.extend(lines),
-        Err(e) if e.is("UnportedError") => out.push(format!("BLOCKED {prefix} {}", e.message)),
         Err(e) => out.push(format!("{prefix}error = {}", e.message)),
     }
 }
@@ -666,18 +664,9 @@ fn flatten_and_ssa_match_the_vineflower_oracle() {
     let expected: Vec<&str> = include_str!("data/b06_sforms_oracle/expected.txt")
         .lines()
         .collect();
-    let mut blocked = Vec::new();
-    let mut want = expected.iter().peekable();
+    let mut want = expected.iter();
     let mut compared = 0;
     for got in &out {
-        if let Some(rest) = got.strip_prefix("BLOCKED ") {
-            let (prefix, why) = rest.split_once(' ').expect("blocked line");
-            blocked.push(format!("{prefix} {why}"));
-            while want.peek().is_some_and(|w| w.starts_with(prefix)) {
-                want.next();
-            }
-            continue;
-        }
         let line = want
             .next()
             .unwrap_or_else(|| panic!("extra output line: {got}"));
@@ -685,12 +674,5 @@ fn flatten_and_ssa_match_the_vineflower_oracle() {
         compared += 1;
     }
     assert!(want.next().is_none(), "missing output lines");
-    eprintln!(
-        "b06 oracle: {compared} lines matched, {} sections blocked: {blocked:?}",
-        blocked.len()
-    );
-    assert!(
-        blocked.iter().all(|b| !b.contains(".flat.")),
-        "flattening must not be blocked: {blocked:?}"
-    );
+    eprintln!("b06 oracle: {compared} lines matched");
 }

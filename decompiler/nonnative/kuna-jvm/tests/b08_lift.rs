@@ -2,8 +2,6 @@
 //! the raw control flow graph of each fixture method is lifted on an empty
 //! stack and the expressions it builds (ids, types, offsets, structure) are
 //! compared with `data/b08/lift_golden.txt` (`data/b08/GenB08Oracle.java`).
-//! A method whose lift reaches a body other slices have not ported yet
-//! (`UnportedError`) is counted as blocked, not compared.
 
 use std::collections::BTreeMap;
 
@@ -176,8 +174,8 @@ fn e(x: Option<Exprent>) -> String {
     s
 }
 
-/// The dump of one method, or `None` when the lift reached an `unported!` body.
-fn lift_method(cl: StructClass, mt: StructMethod) -> Option<String> {
+/// The dump of one method.
+fn lift_method(cl: StructClass, mt: StructMethod) -> String {
     let mut out = String::new();
     mt.expand_data(cl);
     let md = mt.method_descriptor();
@@ -190,11 +188,7 @@ fn lift_method(cl: StructClass, mt: StructMethod) -> Option<String> {
         let stat = BasicBlockStatement::new(block);
         let mut data = PrimitiveExprsList::new();
         out.push_str(&format!("B {} stat {}\n", block.get_id(), stat.id()));
-        if let Err(caught) = try_catch(|| proc.process_block(stat, &mut data, cl)) {
-            if caught.is("UnportedError") {
-                mt.release_resources();
-                return None;
-            }
+        if try_catch(|| proc.process_block(stat, &mut data, cl)).is_err() {
             out.push_str("  EXC\n");
         }
         for x in data.get_lst_exprents().to_vec() {
@@ -211,7 +205,7 @@ fn lift_method(cl: StructClass, mt: StructMethod) -> Option<String> {
         counters.get_counter(CounterContainer::STATEMENT_COUNTER)
     ));
     mt.release_resources();
-    Some(out)
+    out
 }
 
 fn golden_sections() -> BTreeMap<String, String> {
@@ -237,7 +231,6 @@ fn process_block_matches_vineflower() {
     let dir = format!("{}/tests/data/b08/classes", env!("CARGO_MANIFEST_DIR"));
 
     let mut checked = 0;
-    let mut blocked = Vec::new();
     let mut failures = Vec::new();
     let mut seen = 0;
     for class in ["B08Lift", "B08Stack"] {
@@ -262,30 +255,23 @@ fn process_block_matches_vineflower() {
             let want = golden
                 .get(&name)
                 .unwrap_or_else(|| panic!("no golden for {name}"));
-            match lift_method(cl, mt) {
-                None => blocked.push(name),
-                Some(got) => {
-                    checked += 1;
-                    if &got != want {
-                        let diff = got
-                            .lines()
-                            .zip(want.lines())
-                            .find(|(g, w)| g != w)
-                            .map(|(g, w)| format!("   rust: {g}\n   java: {w}"))
-                            .unwrap_or_else(|| "   (length differs)".to_string());
-                        failures.push(format!("{name}\n{diff}"));
-                    }
-                }
+            let got = lift_method(cl, mt);
+            checked += 1;
+            if &got != want {
+                let diff = got
+                    .lines()
+                    .zip(want.lines())
+                    .find(|(g, w)| g != w)
+                    .map(|(g, w)| format!("   rust: {g}\n   java: {w}"))
+                    .unwrap_or_else(|| "   (length differs)".to_string());
+                failures.push(format!("{name}\n{diff}"));
             }
         }
         DecompilerContext::set_current_class_node(None);
         DecompilerContext::set_current_class(None);
     }
 
-    eprintln!(
-        "processBlock: {seen} methods, {checked} compared, {} blocked on unported bodies: {blocked:?}",
-        blocked.len()
-    );
+    eprintln!("processBlock: {seen} methods, {checked} compared");
     assert_eq!(seen, golden.len());
     assert!(
         failures.is_empty(),
