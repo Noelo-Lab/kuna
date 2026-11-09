@@ -115,8 +115,8 @@ applied in the same place. A maintainer needs these rules:
   `label7`), so an object is allocated exactly where the Java constructor runs, never as
   an extra temporary.
 - **kuna's own code** lives in `kuna_*` modules (`kuna_input`, `kuna_inventory`,
-  `kuna_options`, `kuna_driver`, `kuna_partition`, `kuna_spans`, `kuna_trace`,
-  `kuna_corpus`) and in the modules that replace JVM facilities (`context_source`,
+  `kuna_options`, `kuna_driver`, `kuna_partition`, `kuna_plugins`, `kuna_spans`,
+  `kuna_trace`, `kuna_corpus`) and in the modules that replace JVM facilities (`context_source`,
   `jdk_runtime`, `zip_reader`, `byte_cursor`). Changes inside ported files are kept to the
   seams those modules need (span marks in the writer, a deadline poll in the
   cancellation manager, partial runs in `fernflower.rs`), noted in the file headers.
@@ -151,9 +151,9 @@ objects by creation in the arena; see the fidelity contract below.
   `testData` sources and registrations and from the output of the released
   `vineflower-1.12.0.jar` (`tests/jvm/README.md`).
 - **What was ported.** Of the 273 Java files under `org/jetbrains/java/decompiler/` in
-  Vineflower's `src/`, 235 are ported one to one; each names its original in its first
+  Vineflower's `src/`, 242 are ported one to one; each names its original in its first
   line, so `grep -r '^//! Port of' decompiler/nonnative/kuna-jvm/src` is the manifest. The
-  other 38 are replaced or deliberately left out:
+  other 31 are replaced or deliberately left out:
 
 | Java package | Files | Ported | Replaced or not ported |
 |---|---:|---:|---|
@@ -164,8 +164,8 @@ objects by creation in the arena; see the fidelity contract below.
 | `main`, `main/rels`, `main/collectors` | 18 | 17 | `Init` (plugin loading) |
 | `main/extern` | 9 | 6 | `IContextSource` and `IBytecodeProvider` by `context_source`; `IResultSaver` by kuna's output |
 | `main/decompiler` | 9 | 1 | the console decompiler, its help, option parser and savers, by the `kuna` CLI and its output; `PrintStreamLogger` is folded into `i_fernflower_logger` |
-| `main/plugins` | 7 | 1 | the JVM plugin loaders and sources (no plugin can be loaded) |
-| `api/**` | 20 | 10 | `api/plugin` (the plugin and language-plugin API), `Decompiler`, `DecompilerOption` (by kuna's option catalog), `ClassAttributeRegistry` |
+| `main/plugins` | 7 | 1 | the plugin jar loaders and sources, by the plugins bundled with the engine (`kuna_plugins`) |
+| `api/**` | 20 | 17 | `Decompiler`, `DecompilerOption` (by kuna's option catalog), `ClassAttributeRegistry` |
 | `util/**` | 34 | 27 | `JrtFinder`, `ModuleBasedContextSource` and `ClasspathScanner` by `jdk_runtime`; `ZipFileCache` by `zip_reader`; `DataInputFullStream` by `byte_cursor`; `NullableConcurrentHashMap` by a plain map; `DotExporter` (debug graph dumps) dropped |
 
 - **JVM facilities replaced** (a port without a JVM has to supply them):
@@ -185,11 +185,12 @@ objects by creation in the arena; see the fidelity contract below.
     instance's state single-threaded.
   - **The watchdog:** Vineflower kills a method's thread at `max-time-per-method`; kuna
     polls a cooperative per-method deadline (below).
-- **Not ported:** Vineflower's plugins (Kotlin, Scala, IDEA `@NotNull`, variable renaming)
-  and the plugin and language-plugin API. Every class, including one compiled from Kotlin
-  or Scala, is written as Java. The pass locations a plugin would hook are kept in the
-  schedule and stay empty. A user renamer class and Vineflower's `include-classpath`
-  need a JVM and are refused (`options.toml`, `[[driver_owned]]`).
+- **Not ported:** Vineflower's plugins (Kotlin, Scala, IDEA `@NotNull`, variable renaming).
+  The plugin and language-plugin API is ported, and `jvm_plugins` (default `on`) loads the
+  plugins bundled with the engine, but that bundle is still empty: every class, including
+  one compiled from Kotlin or Scala, is written as Java. A user renamer class and
+  Vineflower's `include-classpath` need a JVM and are refused (`options.toml`,
+  `[[driver_owned]]`).
 
 ## The fidelity contract
 

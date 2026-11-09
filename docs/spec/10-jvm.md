@@ -70,12 +70,17 @@ tree. Every pass is recorded by name through
 `decompiler/nonnative/kuna-jvm/src/infra/decompile_record.rs (DecompileRecord::add)`, which
 is also where the trace differ hooks in (section 10.14).
 
-Vineflower's plugin pass locations (`CfgConstruction`, `BeforeMain`, `InLoopDecomp`,
-`MainLoop`, `AfterMain`, `AtEnd`, `LateProcessing`) are kept in the schedule, but plugin
-loading is not ported, so no pass is ever registered at them
-(`decompiler/nonnative/kuna-jvm/src/infra/plugin_context.rs (PluginContext)`). Language
-plugins (Vineflower's Kotlin and Scala support) are not ported either: every class is
-written as Java.
+Vineflower's plugin API is ported: the pass locations (`CfgConstruction`, `BeforeMain`,
+`InLoopDecomp`, `MainLoop`, `AfterMain`, `AtEnd`, `LateProcessing`) are kept in the
+schedule, and `decompiler/nonnative/kuna-jvm/src/infra/plugin_context.rs (PluginContext)`
+registers each plugin's passes there and asks it for a language spec, which takes over the
+method pipeline and the class writer for the classes it claims. (kuna) Plugins are not
+found on a class path: `decompiler/nonnative/kuna-jvm/src/infra/kuna_plugins.rs (plugin_sources)`
+gives each engine instance the plugins bundled with kuna-jvm, as `java -jar
+vineflower.jar` loads its own, unless `jvm_plugins` is off (the corpus runner turns it off,
+as Vineflower's test fixture loads none). The bundled list is still empty, so no pass is
+registered at those locations and every class, Kotlin and Scala included, is written as
+Java.
 
 ## 10.2 The class universe and nesting
 
