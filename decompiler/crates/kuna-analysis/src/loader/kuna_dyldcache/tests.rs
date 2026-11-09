@@ -237,7 +237,7 @@ fn image_paths_copy_at_most_the_file() {
     let n = 1000u32;
     let header_len = 0x200usize;
     let pool_at = header_len + 32 * n as usize;
-    let mut bytes = vec![0u8; pool_at + 1 << 16];
+    let mut bytes = vec![0u8; pool_at + (1 << 16)];
     bytes[..16].copy_from_slice(b"dyld_v1  arm64e\0");
     put(&mut bytes, HDR_IMAGES_OFFSET, &(header_len as u32).to_le_bytes());
     put(&mut bytes, HDR_IMAGES_OFFSET + 4, &n.to_le_bytes());
