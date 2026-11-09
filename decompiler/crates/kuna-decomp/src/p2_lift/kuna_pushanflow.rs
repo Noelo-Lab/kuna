@@ -124,6 +124,8 @@ pub struct Abi {
     pub big_endian: bool,
     /// Direction flag register, held clear at entry (string ops).
     pub df: Option<u64>,
+    /// The program counter register (written by call/return emulation only).
+    pub pc: Option<(u64, u8)>,
     /// System flags with their normal user-mode values at entry (TF=0, IF=1,
     /// NT/RF/VM/AC/VIF/VIP/ID=0): the interpreter's anti-debugging checks fold.
     pub fixed_flags: Vec<(u64, u8)>,
@@ -361,6 +363,11 @@ impl<'a> Explorer<'a> {
                         continue;
                     }
                 }
+                if let (Loc::Reg { off }, Some((pc, pcs))) = (d.loc.loc, self.abi.pc) {
+                    if off >= pc && off < pc + pcs as u64 {
+                        continue;
+                    }
+                }
                 // Memory under any other symbolic base is keyed by a variable
                 // that is fresh every round: it can never be re-applied.
                 if let Loc::Mem { base: Some(b), .. } = d.loc.loc {
@@ -568,6 +575,9 @@ impl<'a> Explorer<'a> {
                     map.insert(*a, self.arena.cst(1, first as u128));
                 }
             }
+            // Whatever else the arm assumes, the virtual PC itself is `c` on it.
+            let size = self.arena.size(v);
+            map.insert(v, self.arena.cst(size, *c as u128));
             let next = match exit {
                 Exit::Fallthrough(n) => *n,
                 Exit::Jump(t) => {

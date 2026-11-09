@@ -373,6 +373,7 @@ fn abi_for(arch: &Architecture, target: &ArchTarget<'_>) -> Option<Abi> {
         gprs,
         big_endian: false,
         df: reg("DF").map(|r| r.0),
+        pc: reg(if x64 { "RIP" } else { "EIP" }),
         fixed_flags: [("TF", 0u8), ("IF", 1), ("NT", 0), ("RF", 0), ("VM", 0), ("AC", 0), ("VIF", 0), ("VIP", 0), ("ID", 0), ("IOPL", 0)]
             .iter()
             .filter_map(|(n, v)| reg(n).map(|r| (r.0, *v)))
