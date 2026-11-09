@@ -855,474 +855,131 @@ const fn fs(
     }
 }
 
+#[rustfmt::skip]
 const CLASS_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, false, false, "flags"),
     fs(2, Int32, true, false, false, "supertype_id"),
     fs(3, Int32, false, true, false, "fq_name"),
     fs(4, Int32, false, false, false, "companion_object_name"),
-    fs(
-        5,
-        Msg(MsgType::TypeParameter),
-        true,
-        false,
-        false,
-        "type_parameter",
-    ),
+    fs(5, Msg(MsgType::TypeParameter), true, false, false, "type_parameter"),
     fs(6, Msg(MsgType::Type), true, false, false, "supertype"),
     fs(7, Int32, true, false, false, "nested_class_name"),
-    fs(
-        8,
-        Msg(MsgType::Constructor),
-        true,
-        false,
-        false,
-        "constructor",
-    ),
+    fs(8, Msg(MsgType::Constructor), true, false, false, "constructor"),
     fs(9, Msg(MsgType::Function), true, false, false, "function"),
     fs(10, Msg(MsgType::Property), true, false, false, "property"),
-    fs(
-        11,
-        Msg(MsgType::TypeAlias),
-        true,
-        false,
-        false,
-        "type_alias",
-    ),
-    fs(
-        13,
-        Msg(MsgType::EnumEntry),
-        true,
-        false,
-        false,
-        "enum_entry",
-    ),
+    fs(11, Msg(MsgType::TypeAlias), true, false, false, "type_alias"),
+    fs(13, Msg(MsgType::EnumEntry), true, false, false, "enum_entry"),
     fs(16, Int32, true, false, false, "sealed_subclass_fq_name"),
-    fs(
-        17,
-        Int32,
-        false,
-        false,
-        false,
-        "inline_class_underlying_property_name",
-    ),
-    fs(
-        18,
-        Msg(MsgType::Type),
-        false,
-        false,
-        false,
-        "inline_class_underlying_type",
-    ),
-    fs(
-        19,
-        Int32,
-        false,
-        false,
-        false,
-        "inline_class_underlying_type_id",
-    ),
-    fs(
-        20,
-        Msg(MsgType::Type),
-        true,
-        false,
-        false,
-        "context_receiver_type",
-    ),
+    fs(17, Int32, false, false, false, "inline_class_underlying_property_name"),
+    fs(18, Msg(MsgType::Type), false, false, false, "inline_class_underlying_type"),
+    fs(19, Int32, false, false, false, "inline_class_underlying_type_id"),
+    fs(20, Msg(MsgType::Type), true, false, false, "context_receiver_type"),
     fs(21, Int32, true, false, false, "context_receiver_type_id"),
-    fs(
-        25,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "annotation",
-    ),
-    fs(
-        30,
-        Msg(MsgType::TypeTable),
-        false,
-        false,
-        false,
-        "type_table",
-    ),
+    fs(25, Msg(MsgType::Annotation), true, false, false, "annotation"),
+    fs(30, Msg(MsgType::TypeTable), false, false, false, "type_table"),
     fs(31, Int32, true, false, false, "version_requirement"),
-    fs(
-        32,
-        Msg(MsgType::VersionRequirementTable),
-        false,
-        false,
-        false,
-        "version_requirement_table",
-    ),
-    fs(
-        33,
-        Msg(MsgType::CompilerPluginData),
-        true,
-        false,
-        false,
-        "compiler_plugin_data",
-    ),
+    fs(32, Msg(MsgType::VersionRequirementTable), false, false, false, "version_requirement_table"),
+    fs(33, Msg(MsgType::CompilerPluginData), true, false, false, "compiler_plugin_data"),
     fs(101, Int32, false, false, true, "class_module_name"),
-    fs(
-        102,
-        Msg(MsgType::Property),
-        true,
-        false,
-        true,
-        "class_local_variable",
-    ),
-    fs(
-        103,
-        Int32,
-        false,
-        false,
-        true,
-        "anonymous_object_origin_name",
-    ),
+    fs(102, Msg(MsgType::Property), true, false, true, "class_local_variable"),
+    fs(103, Int32, false, false, true, "anonymous_object_origin_name"),
     fs(104, Int32, false, false, true, "jvm_class_flags"),
 ];
 
+#[rustfmt::skip]
 const PACKAGE_FIELDS: &[FieldSpec] = &[
     fs(3, Msg(MsgType::Function), true, false, false, "function"),
     fs(4, Msg(MsgType::Property), true, false, false, "property"),
     fs(5, Msg(MsgType::TypeAlias), true, false, false, "type_alias"),
-    fs(
-        30,
-        Msg(MsgType::TypeTable),
-        false,
-        false,
-        false,
-        "type_table",
-    ),
-    fs(
-        32,
-        Msg(MsgType::VersionRequirementTable),
-        false,
-        false,
-        false,
-        "version_requirement_table",
-    ),
+    fs(30, Msg(MsgType::TypeTable), false, false, false, "type_table"),
+    fs(32, Msg(MsgType::VersionRequirementTable), false, false, false, "version_requirement_table"),
     fs(101, Int32, false, false, true, "package_module_name"),
-    fs(
-        102,
-        Msg(MsgType::Property),
-        true,
-        false,
-        true,
-        "package_local_variable",
-    ),
+    fs(102, Msg(MsgType::Property), true, false, true, "package_local_variable"),
 ];
 
+#[rustfmt::skip]
 const FUNCTION_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, false, false, "old_flags"),
     fs(2, Int32, false, true, false, "name"),
     fs(3, Msg(MsgType::Type), false, false, false, "return_type"),
-    fs(
-        4,
-        Msg(MsgType::TypeParameter),
-        true,
-        false,
-        false,
-        "type_parameter",
-    ),
+    fs(4, Msg(MsgType::TypeParameter), true, false, false, "type_parameter"),
     fs(5, Msg(MsgType::Type), false, false, false, "receiver_type"),
-    fs(
-        6,
-        Msg(MsgType::ValueParameter),
-        true,
-        false,
-        false,
-        "value_parameter",
-    ),
+    fs(6, Msg(MsgType::ValueParameter), true, false, false, "value_parameter"),
     fs(7, Int32, false, false, false, "return_type_id"),
     fs(8, Int32, false, false, false, "receiver_type_id"),
     fs(9, Int32, false, false, false, "flags"),
-    fs(
-        10,
-        Msg(MsgType::Type),
-        true,
-        false,
-        false,
-        "context_receiver_type",
-    ),
+    fs(10, Msg(MsgType::Type), true, false, false, "context_receiver_type"),
     fs(11, Int32, true, false, false, "context_receiver_type_id"),
-    fs(
-        12,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "annotation",
-    ),
-    fs(
-        13,
-        Msg(MsgType::ValueParameter),
-        true,
-        false,
-        false,
-        "context_parameter",
-    ),
-    fs(
-        30,
-        Msg(MsgType::TypeTable),
-        false,
-        false,
-        false,
-        "type_table",
-    ),
+    fs(12, Msg(MsgType::Annotation), true, false, false, "annotation"),
+    fs(13, Msg(MsgType::ValueParameter), true, false, false, "context_parameter"),
+    fs(30, Msg(MsgType::TypeTable), false, false, false, "type_table"),
     fs(31, Int32, true, false, false, "version_requirement"),
     fs(32, Msg(MsgType::Contract), false, false, false, "contract"),
-    fs(
-        33,
-        Msg(MsgType::CompilerPluginData),
-        true,
-        false,
-        false,
-        "compiler_plugin_data",
-    ),
-    fs(
-        34,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "extension_receiver_annotation",
-    ),
-    fs(
-        100,
-        Msg(MsgType::JvmMethodSignature),
-        false,
-        false,
-        true,
-        "method_signature",
-    ),
+    fs(33, Msg(MsgType::CompilerPluginData), true, false, false, "compiler_plugin_data"),
+    fs(34, Msg(MsgType::Annotation), true, false, false, "extension_receiver_annotation"),
+    fs(100, Msg(MsgType::JvmMethodSignature), false, false, true, "method_signature"),
     fs(101, Int32, false, false, true, "lambda_class_origin_name"),
 ];
 
+#[rustfmt::skip]
 const PROPERTY_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, false, false, "old_flags"),
     fs(2, Int32, false, true, false, "name"),
     fs(3, Msg(MsgType::Type), false, false, false, "return_type"),
-    fs(
-        4,
-        Msg(MsgType::TypeParameter),
-        true,
-        false,
-        false,
-        "type_parameter",
-    ),
+    fs(4, Msg(MsgType::TypeParameter), true, false, false, "type_parameter"),
     fs(5, Msg(MsgType::Type), false, false, false, "receiver_type"),
-    fs(
-        6,
-        Msg(MsgType::ValueParameter),
-        false,
-        false,
-        false,
-        "setter_value_parameter",
-    ),
+    fs(6, Msg(MsgType::ValueParameter), false, false, false, "setter_value_parameter"),
     fs(7, Int32, false, false, false, "getter_flags"),
     fs(8, Int32, false, false, false, "setter_flags"),
     fs(9, Int32, false, false, false, "return_type_id"),
     fs(10, Int32, false, false, false, "receiver_type_id"),
     fs(11, Int32, false, false, false, "flags"),
-    fs(
-        12,
-        Msg(MsgType::Type),
-        true,
-        false,
-        false,
-        "context_receiver_type",
-    ),
+    fs(12, Msg(MsgType::Type), true, false, false, "context_receiver_type"),
     fs(13, Int32, true, false, false, "context_receiver_type_id"),
-    fs(
-        14,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "annotation",
-    ),
-    fs(
-        15,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "getter_annotation",
-    ),
-    fs(
-        16,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "setter_annotation",
-    ),
-    fs(
-        17,
-        Msg(MsgType::ValueParameter),
-        true,
-        false,
-        false,
-        "context_parameter",
-    ),
+    fs(14, Msg(MsgType::Annotation), true, false, false, "annotation"),
+    fs(15, Msg(MsgType::Annotation), true, false, false, "getter_annotation"),
+    fs(16, Msg(MsgType::Annotation), true, false, false, "setter_annotation"),
+    fs(17, Msg(MsgType::ValueParameter), true, false, false, "context_parameter"),
     fs(31, Int32, true, false, false, "version_requirement"),
-    fs(
-        32,
-        Msg(MsgType::CompilerPluginData),
-        true,
-        false,
-        false,
-        "compiler_plugin_data",
-    ),
-    fs(
-        33,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "extension_receiver_annotation",
-    ),
-    fs(
-        34,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "backing_field_annotation",
-    ),
-    fs(
-        35,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "delegate_field_annotation",
-    ),
-    fs(
-        40,
-        Msg(MsgType::Contract),
-        false,
-        false,
-        false,
-        "getter_contract",
-    ),
-    fs(
-        41,
-        Msg(MsgType::Contract),
-        false,
-        false,
-        false,
-        "setter_contract",
-    ),
-    fs(
-        100,
-        Msg(MsgType::JvmPropertySignature),
-        false,
-        false,
-        true,
-        "property_signature",
-    ),
+    fs(32, Msg(MsgType::CompilerPluginData), true, false, false, "compiler_plugin_data"),
+    fs(33, Msg(MsgType::Annotation), true, false, false, "extension_receiver_annotation"),
+    fs(34, Msg(MsgType::Annotation), true, false, false, "backing_field_annotation"),
+    fs(35, Msg(MsgType::Annotation), true, false, false, "delegate_field_annotation"),
+    fs(40, Msg(MsgType::Contract), false, false, false, "getter_contract"),
+    fs(41, Msg(MsgType::Contract), false, false, false, "setter_contract"),
+    fs(100, Msg(MsgType::JvmPropertySignature), false, false, true, "property_signature"),
     fs(101, Int32, false, false, true, "jvm_flags"),
 ];
 
+#[rustfmt::skip]
 const CONSTRUCTOR_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, false, false, "flags"),
-    fs(
-        2,
-        Msg(MsgType::ValueParameter),
-        true,
-        false,
-        false,
-        "value_parameter",
-    ),
-    fs(
-        3,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "annotation",
-    ),
+    fs(2, Msg(MsgType::ValueParameter), true, false, false, "value_parameter"),
+    fs(3, Msg(MsgType::Annotation), true, false, false, "annotation"),
     fs(31, Int32, true, false, false, "version_requirement"),
-    fs(
-        32,
-        Msg(MsgType::CompilerPluginData),
-        true,
-        false,
-        false,
-        "compiler_plugin_data",
-    ),
-    fs(
-        100,
-        Msg(MsgType::JvmMethodSignature),
-        false,
-        false,
-        true,
-        "constructor_signature",
-    ),
+    fs(32, Msg(MsgType::CompilerPluginData), true, false, false, "compiler_plugin_data"),
+    fs(100, Msg(MsgType::JvmMethodSignature), false, false, true, "constructor_signature"),
 ];
 
+#[rustfmt::skip]
 const VALUE_PARAMETER_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, false, false, "flags"),
     fs(2, Int32, false, true, false, "name"),
     fs(3, Msg(MsgType::Type), false, false, false, "type"),
-    fs(
-        4,
-        Msg(MsgType::Type),
-        false,
-        false,
-        false,
-        "vararg_element_type",
-    ),
+    fs(4, Msg(MsgType::Type), false, false, false, "vararg_element_type"),
     fs(5, Int32, false, false, false, "type_id"),
     fs(6, Int32, false, false, false, "vararg_element_type_id"),
-    fs(
-        7,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "annotation",
-    ),
-    fs(
-        8,
-        Msg(MsgType::AnnotationArgumentValue),
-        false,
-        false,
-        false,
-        "annotation_parameter_default_value",
-    ),
+    fs(7, Msg(MsgType::Annotation), true, false, false, "annotation"),
+    fs(8, Msg(MsgType::AnnotationArgumentValue), false, false, false, "annotation_parameter_default_value"),
 ];
 
+#[rustfmt::skip]
 const TYPE_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, false, false, "flags"),
-    fs(
-        2,
-        Msg(MsgType::TypeArgument),
-        true,
-        false,
-        false,
-        "argument",
-    ),
+    fs(2, Msg(MsgType::TypeArgument), true, false, false, "argument"),
     fs(3, Bool, false, false, false, "nullable"),
-    fs(
-        4,
-        Int32,
-        false,
-        false,
-        false,
-        "flexible_type_capabilities_id",
-    ),
-    fs(
-        5,
-        Msg(MsgType::Type),
-        false,
-        false,
-        false,
-        "flexible_upper_bound",
-    ),
+    fs(4, Int32, false, false, false, "flexible_type_capabilities_id"),
+    fs(5, Msg(MsgType::Type), false, false, false, "flexible_upper_bound"),
     fs(6, Int32, false, false, false, "class_name"),
     fs(7, Int32, false, false, false, "type_parameter"),
     fs(8, Int32, false, false, false, "flexible_upper_bound_id"),
@@ -1330,32 +987,20 @@ const TYPE_FIELDS: &[FieldSpec] = &[
     fs(10, Msg(MsgType::Type), false, false, false, "outer_type"),
     fs(11, Int32, false, false, false, "outer_type_id"),
     fs(12, Int32, false, false, false, "type_alias_name"),
-    fs(
-        13,
-        Msg(MsgType::Type),
-        false,
-        false,
-        false,
-        "abbreviated_type",
-    ),
+    fs(13, Msg(MsgType::Type), false, false, false, "abbreviated_type"),
     fs(14, Int32, false, false, false, "abbreviated_type_id"),
-    fs(
-        100,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "annotation",
-    ),
+    fs(100, Msg(MsgType::Annotation), true, false, false, "annotation"),
     fs(101, Bool, false, false, true, "is_raw"),
 ];
 
+#[rustfmt::skip]
 const TYPE_ARGUMENT_FIELDS: &[FieldSpec] = &[
     fs(1, Enum(4), false, false, false, "projection"),
     fs(2, Msg(MsgType::Type), false, false, false, "type"),
     fs(3, Int32, false, false, false, "type_id"),
 ];
 
+#[rustfmt::skip]
 const TYPE_PARAMETER_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, true, false, "id"),
     fs(2, Int32, false, true, false, "name"),
@@ -1363,98 +1008,48 @@ const TYPE_PARAMETER_FIELDS: &[FieldSpec] = &[
     fs(4, Enum(3), false, false, false, "variance"),
     fs(5, Msg(MsgType::Type), true, false, false, "upper_bound"),
     fs(6, Int32, true, false, false, "upper_bound_id"),
-    fs(
-        100,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "annotation",
-    ),
+    fs(100, Msg(MsgType::Annotation), true, false, false, "annotation"),
 ];
 
+#[rustfmt::skip]
 const TYPE_TABLE_FIELDS: &[FieldSpec] = &[
     fs(1, Msg(MsgType::Type), true, false, false, "type"),
     fs(2, Int32, false, false, false, "first_nullable"),
 ];
 
+#[rustfmt::skip]
 const TYPE_ALIAS_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, false, false, "flags"),
     fs(2, Int32, false, true, false, "name"),
-    fs(
-        3,
-        Msg(MsgType::TypeParameter),
-        true,
-        false,
-        false,
-        "type_parameter",
-    ),
-    fs(
-        4,
-        Msg(MsgType::Type),
-        false,
-        false,
-        false,
-        "underlying_type",
-    ),
+    fs(3, Msg(MsgType::TypeParameter), true, false, false, "type_parameter"),
+    fs(4, Msg(MsgType::Type), false, false, false, "underlying_type"),
     fs(5, Int32, false, false, false, "underlying_type_id"),
     fs(6, Msg(MsgType::Type), false, false, false, "expanded_type"),
     fs(7, Int32, false, false, false, "expanded_type_id"),
-    fs(
-        8,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "annotation",
-    ),
+    fs(8, Msg(MsgType::Annotation), true, false, false, "annotation"),
     fs(31, Int32, true, false, false, "version_requirement"),
-    fs(
-        32,
-        Msg(MsgType::CompilerPluginData),
-        true,
-        false,
-        false,
-        "compiler_plugin_data",
-    ),
+    fs(32, Msg(MsgType::CompilerPluginData), true, false, false, "compiler_plugin_data"),
 ];
 
+#[rustfmt::skip]
 const ENUM_ENTRY_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, false, false, "name"),
-    fs(
-        2,
-        Msg(MsgType::Annotation),
-        true,
-        false,
-        false,
-        "annotation",
-    ),
+    fs(2, Msg(MsgType::Annotation), true, false, false, "annotation"),
 ];
 
+#[rustfmt::skip]
 const ANNOTATION_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, true, false, "id"),
-    fs(
-        2,
-        Msg(MsgType::AnnotationArgument),
-        true,
-        false,
-        false,
-        "argument",
-    ),
+    fs(2, Msg(MsgType::AnnotationArgument), true, false, false, "argument"),
 ];
 
+#[rustfmt::skip]
 const ANNOTATION_ARGUMENT_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, true, false, "name_id"),
-    fs(
-        2,
-        Msg(MsgType::AnnotationArgumentValue),
-        false,
-        true,
-        false,
-        "value",
-    ),
+    fs(2, Msg(MsgType::AnnotationArgumentValue), false, true, false, "value"),
 ];
 
+#[rustfmt::skip]
 const ANNOTATION_ARGUMENT_VALUE_FIELDS: &[FieldSpec] = &[
     fs(1, Enum(13), false, false, false, "type"),
     fs(2, SInt64, false, false, false, "int_value"),
@@ -1463,90 +1058,43 @@ const ANNOTATION_ARGUMENT_VALUE_FIELDS: &[FieldSpec] = &[
     fs(5, Int32, false, false, false, "string_value"),
     fs(6, Int32, false, false, false, "class_id"),
     fs(7, Int32, false, false, false, "enum_value_id"),
-    fs(
-        8,
-        Msg(MsgType::Annotation),
-        false,
-        false,
-        false,
-        "annotation",
-    ),
-    fs(
-        9,
-        Msg(MsgType::AnnotationArgumentValue),
-        true,
-        false,
-        false,
-        "array_element",
-    ),
+    fs(8, Msg(MsgType::Annotation), false, false, false, "annotation"),
+    fs(9, Msg(MsgType::AnnotationArgumentValue), true, false, false, "array_element"),
     fs(10, Int32, false, false, false, "flags"),
     fs(11, Int32, false, false, false, "array_dimension_count"),
 ];
 
-const CONTRACT_FIELDS: &[FieldSpec] = &[fs(1, Msg(MsgType::Effect), true, false, false, "effect")];
+#[rustfmt::skip]
+const CONTRACT_FIELDS: &[FieldSpec] = &[
+    fs(1, Msg(MsgType::Effect), true, false, false, "effect"),
+];
 
+#[rustfmt::skip]
 const EFFECT_FIELDS: &[FieldSpec] = &[
     fs(1, Enum(3), false, false, false, "effect_type"),
-    fs(
-        2,
-        Msg(MsgType::Expression),
-        true,
-        false,
-        false,
-        "effect_constructor_argument",
-    ),
-    fs(
-        3,
-        Msg(MsgType::Expression),
-        false,
-        false,
-        false,
-        "conclusion_of_conditional_effect",
-    ),
+    fs(2, Msg(MsgType::Expression), true, false, false, "effect_constructor_argument"),
+    fs(3, Msg(MsgType::Expression), false, false, false, "conclusion_of_conditional_effect"),
     fs(4, Enum(3), false, false, false, "kind"),
     fs(5, Enum(3), false, false, false, "condition_kind"),
 ];
 
+#[rustfmt::skip]
 const EXPRESSION_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, false, false, "flags"),
     fs(2, Int32, false, false, false, "value_parameter_reference"),
     fs(3, Enum(3), false, false, false, "constant_value"),
-    fs(
-        4,
-        Msg(MsgType::Type),
-        false,
-        false,
-        false,
-        "is_instance_type",
-    ),
+    fs(4, Msg(MsgType::Type), false, false, false, "is_instance_type"),
     fs(5, Int32, false, false, false, "is_instance_type_id"),
-    fs(
-        6,
-        Msg(MsgType::Expression),
-        true,
-        false,
-        false,
-        "and_argument",
-    ),
-    fs(
-        7,
-        Msg(MsgType::Expression),
-        true,
-        false,
-        false,
-        "or_argument",
-    ),
+    fs(6, Msg(MsgType::Expression), true, false, false, "and_argument"),
+    fs(7, Msg(MsgType::Expression), true, false, false, "or_argument"),
 ];
 
-const VERSION_REQUIREMENT_TABLE_FIELDS: &[FieldSpec] = &[fs(
-    1,
-    Msg(MsgType::VersionRequirement),
-    true,
-    false,
-    false,
-    "requirement",
-)];
+#[rustfmt::skip]
+const VERSION_REQUIREMENT_TABLE_FIELDS: &[FieldSpec] = &[
+    fs(1, Msg(MsgType::VersionRequirement), true, false, false, "requirement"),
+];
 
+#[rustfmt::skip]
 const VERSION_REQUIREMENT_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, false, false, "version"),
     fs(2, Int32, false, false, false, "version_full"),
@@ -1556,69 +1104,40 @@ const VERSION_REQUIREMENT_FIELDS: &[FieldSpec] = &[
     fs(6, Enum(3), false, false, false, "version_kind"),
 ];
 
+#[rustfmt::skip]
 const COMPILER_PLUGIN_DATA_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, true, false, "plugin_id"),
     fs(2, Bytes, false, true, false, "data"),
 ];
 
+#[rustfmt::skip]
 const JVM_METHOD_SIGNATURE_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, false, false, "name"),
     fs(2, Int32, false, false, false, "desc"),
 ];
 
+#[rustfmt::skip]
 const JVM_FIELD_SIGNATURE_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, false, false, "name"),
     fs(2, Int32, false, false, false, "desc"),
 ];
 
+#[rustfmt::skip]
 const JVM_PROPERTY_SIGNATURE_FIELDS: &[FieldSpec] = &[
-    fs(
-        1,
-        Msg(MsgType::JvmFieldSignature),
-        false,
-        false,
-        false,
-        "field",
-    ),
-    fs(
-        2,
-        Msg(MsgType::JvmMethodSignature),
-        false,
-        false,
-        false,
-        "synthetic_method",
-    ),
-    fs(
-        3,
-        Msg(MsgType::JvmMethodSignature),
-        false,
-        false,
-        false,
-        "getter",
-    ),
-    fs(
-        4,
-        Msg(MsgType::JvmMethodSignature),
-        false,
-        false,
-        false,
-        "setter",
-    ),
-    fs(
-        5,
-        Msg(MsgType::JvmMethodSignature),
-        false,
-        false,
-        false,
-        "delegate_method",
-    ),
+    fs(1, Msg(MsgType::JvmFieldSignature), false, false, false, "field"),
+    fs(2, Msg(MsgType::JvmMethodSignature), false, false, false, "synthetic_method"),
+    fs(3, Msg(MsgType::JvmMethodSignature), false, false, false, "getter"),
+    fs(4, Msg(MsgType::JvmMethodSignature), false, false, false, "setter"),
+    fs(5, Msg(MsgType::JvmMethodSignature), false, false, false, "delegate_method"),
 ];
 
+#[rustfmt::skip]
 const STRING_TABLE_TYPES_FIELDS: &[FieldSpec] = &[
     fs(1, Msg(MsgType::Record), true, false, false, "record"),
     fs(5, Int32, true, false, false, "local_name"),
 ];
 
+#[rustfmt::skip]
 const RECORD_FIELDS: &[FieldSpec] = &[
     fs(1, Int32, false, false, false, "range"),
     fs(2, Int32, false, false, false, "predefined_index"),

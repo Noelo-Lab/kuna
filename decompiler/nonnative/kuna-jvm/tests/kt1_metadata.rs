@@ -1156,8 +1156,8 @@ fn compare(records: &[GoldenRecord], tally: &mut Tally) {
         tally.names += r
             .lines
             .iter()
-            .filter(|l| l.starts_with(" -1") || l.starts_with("names "))
-            .count();
+            .find_map(|l| l.strip_prefix("names "))
+            .map_or(0, |n| n.parse::<usize>().unwrap() + 2);
         if r.lines.iter().any(|l| l.starts_with("msg ")) {
             tally.decoded += 1;
         }
@@ -1326,12 +1326,13 @@ fn kt1_sweep() {
             }
         }
         report.push(format!(
-            "{}: records {} decoded {} failed {} fields {} mismatches {} | via StructClass {} mismatches {}",
+            "{}: records {} decoded {} failed {} fields {} names {} mismatches {} | via StructClass {} mismatches {}",
             label,
             tally.records,
             tally.decoded,
             tally.failed,
             tally.fields,
+            tally.names,
             tally.mismatches.len(),
             via_struct,
             struct_mismatches.len()
