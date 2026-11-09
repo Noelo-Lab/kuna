@@ -370,6 +370,12 @@ pub struct AnalysisOutput {
     pub call_returns: Vec<(u64, u64)>,
     /// Extra read-only address ranges (e.g. `.got` after relocation).
     pub readonly: Vec<(u64, u64)>,
+    /// (kuna `objcrefconst`) `[first, last_open)` ranges whose loaded contents
+    /// are constant by construction — the Objective-C reference slots dyld
+    /// fills once before any code runs. Committed like the `dynrelocs`
+    /// RELRO slots: painted read-only *and* foldable without the program-wide
+    /// `option readonly`. Produced only by the `objc` pass; empty otherwise.
+    pub const_ranges: Vec<(u64, u64)>,
     /// (kuna) Address ranges holding an **external reference** — an import slot
     /// whose contents the dynamic loader fills in with the address of a function
     /// living in another image (a PE IAT entry or a typed Mach-O lazy/non-lazy
@@ -674,6 +680,7 @@ impl AnalysisOutput {
         self.no_fallthru_calls.extend(other.no_fallthru_calls);
         self.call_returns.extend(other.call_returns);
         self.readonly.extend(other.readonly);
+        self.const_ranges.extend(other.const_ranges);
         self.externref.extend(other.externref);
         self.import_slot_names.extend(other.import_slot_names);
         self.strings.extend(other.strings);
