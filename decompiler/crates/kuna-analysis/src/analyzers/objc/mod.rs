@@ -149,16 +149,19 @@ impl ObjcMetadataPass {
         let Some(class) = classt::read_class_t(img, class_ptr) else {
             return;
         };
-        let Some(name) = classt::class_name(img, class.ro) else {
+        let Some(runtime_name) = classt::class_name(img, class.ro) else {
             return;
         };
 
-        // The class symbol (`_OBJC_CLASS_$_Greeter`), a Data fact at the class_t.
+        // The class symbol (`_OBJC_CLASS_$_Greeter`), a Data fact at the class_t,
+        // under the runtime's own spelling.
         out.symbols.push(SymFact {
             addr: class.addr,
-            name: format!("_OBJC_CLASS_$_{name}"),
+            name: format!("_OBJC_CLASS_$_{runtime_name}"),
             kind: SymKind::Data,
         });
+        let name = display_class_name(&runtime_name);
+        let name = name.as_str();
 
         // Instance (`-`) methods: class_ro_t.baseMethods.
         if let Some(list) = classt::base_methods(img, class.ro) {
@@ -266,6 +269,18 @@ impl ObjcMetadataPass {
     }
 }
 
+/// The class name the labels render: the Swift demangling of an ObjC runtime
+/// name (`_TtC6Sample3Foo` → `Sample.Foo`) when `swiftdemangle` is on and the
+/// name is in the demangler's coverage, else the runtime spelling as is.
+fn display_class_name(runtime_name: &str) -> String {
+    if runtime_name.starts_with("_Tt") && kuna_decomp::kuna_swiftdemangle::swiftdemangle_enabled() {
+        if let Some(d) = crate::demangle::kuna_swift::demangle_swift_name(runtime_name) {
+            return d;
+        }
+    }
+    runtime_name.to_string()
+}
+
 /// Turn a selector (`greet:`, `setFoo:bar:`) into a symbol-name-safe token for a
 /// `sel_<...>` Data symbol: colons → underscores, every other non-alphanumeric →
 /// underscore. The selector text itself is preserved in the IMP rename label.
@@ -284,6 +299,14 @@ mod tests {
         let p = ObjcMetadataPass;
         assert_eq!(p.id(), "objc");
         assert_eq!(p.phase(), Phase::P1);
+    }
+
+    #[test]
+    fn swift_runtime_class_names_demangle_for_labels() {
+        assert_eq!(display_class_name("Greeter"), "Greeter");
+        assert_eq!(display_class_name("_TtC6Sample24MainScreenViewController"), "Sample.MainScreenViewController");
+        assert_eq!(display_class_name("_TtCC6Sample5Outer5Inner"), "Sample.Outer.Inner");
+        assert_eq!(display_class_name("_TtC1"), "_TtC1");
     }
 
     #[test]

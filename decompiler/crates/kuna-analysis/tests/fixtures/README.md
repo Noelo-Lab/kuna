@@ -1191,6 +1191,34 @@ rebase overlay is empty. Build: `clang -target arm64-apple-macos11 -O1 -c
 macho_bind_only.c -o bo.o` then the `macho_objc_refs_arm64` link line without
 `-objc_stubs_fast`.
 
+### `macho_swift_names_arm64` — Swift runtime class name + Swift 5 symbol (`swiftdemangle`)
+
+`macho_swift_names_arm64` (arm64, ~50 KB) is the Swift name-demangling fixture
+(`tests/stages/kuna-swiftdemangle.xml`). No Swift toolchain is needed: its source
+`macho_swift_names.m` is the `macho_objc.m` root class with two additions. The
+class carries the Swift runtime name `_TtC4main7Greeter` through
+`__attribute__((objc_runtime_name(...)))` — the spelling swiftc gives an `@objc
+class Greeter` in module `main`, so `class_ro_t.name` is a `_Tt` name the way it
+is in every Swift app — and the exported C function `count_words` carries the
+Swift 5 symbol `_$s4main10countWords2ofS2i_tF` (`main.countWords(of: Swift.Int)
+-> Swift.Int`, checked against `swift-demangle`) through an `asm` label. Same
+recipe as `macho_objc_arm64` (chained fixups, `-x`):
+
+```bash
+clang -target arm64-apple-macos11 -fobjc-arc -O1 -c macho_swift_names.m -o m.o
+LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+"$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+       -undefined dynamic_lookup -x -e _main -o macho_swift_names_arm64 m.o
+```
+
+**Pinned VMAs:** IMP `-[... greet:]`@`0x1000005f0`,
+`$s4main10countWords2ofS2i_tF`@`0x1000005fc`, `_main`@`0x100000608`. With
+`swiftdemangle` on (default) the two functions decompile as
+`-[main.Greeter greet:]` (`--option objc on`) and `main.countWords(of:)`; with
+`--option swiftdemangle off` they keep `-[_TtC4main7Greeter greet:]` and
+`$s4main10countWords2ofS2i_tF`. The `_OBJC_CLASS_$__TtC4main7Greeter` data
+symbol keeps the linker's spelling either way.
+
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 
 The multi-format **entry-discovery** gate
