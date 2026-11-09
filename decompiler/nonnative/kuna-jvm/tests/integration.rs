@@ -110,3 +110,5 @@ mod b13_structure_helpers;
 mod b14_structure;
 #[path = "b15_switch.rs"]
 mod b15_switch;
+#[path = "b16_pattern_match.rs"]
+mod b16_pattern_match;
