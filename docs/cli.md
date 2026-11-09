@@ -4292,7 +4292,7 @@ and `line_mappings` addresses that are **bytecode offsets** within the method; a
 `class`, `method`, `descriptor`, `access` (the modifier words), `path` (the compilation
 unit) and `line` (where the method starts in that unit).
 
-```json
+```
 $ kuna decompile app.jar com.ex.Main.check --json    # re-wrapped; the real output is indented
 {"binary": "app.jar", "engine": "jvm", "language": "java",
  "omitted": ["variables", "types", "stack_objects"], "count": 1, "error": null,
