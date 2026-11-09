@@ -554,10 +554,9 @@ mod tests {
         /// opt-in until its default validation is complete.
         /// `ppc32picimports` proves PIC caller bases but adds significant load
         /// cost on large import inventories, so it requires an explicit option.
-        /// `rustfmtwrite` did not clear its declared small-C wall-time confidence
-        /// bound and remains explicit in every preset.
-        /// `rustfmtio` did not clear its Go-control CPU and wall-time confidence
-        /// bounds and remains explicit in every preset.
+        /// `rustfmt all` (the String and Stdout write! recoveries) is deliberately
+        /// not in the preset for speed: neither writer cleared its speed study.
+        /// `rustfmt` is multi-valued, so it is outside this invariant's scope.
         /// `rustprobestack` did not clear its default wall-time confidence bounds.
         /// `highsliceguard` added 10.8% CPU time when recovering the upstream table.
         /// `rustarrayzero` missed the initial default-on CPU median budget.
@@ -568,7 +567,7 @@ mod tests {
               "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustfmtwrite", "rustfmtio", "rustprobestack", "highsliceguard", "rustarrayzero",
+              "armconstshift", "regsigned", "x86listingswitch", "callwide", "ppc32picimports", "ppcapu", "rustprobestack", "highsliceguard", "rustarrayzero",
               // `lazyfuncs` changes no output, but its saving is a single-function
               // property: the whole-binary surfaces the presets drive (decompile-all,
               // the web front-end, the benchmark) materialize every target they walk

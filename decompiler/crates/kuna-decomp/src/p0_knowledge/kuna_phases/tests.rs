@@ -38,13 +38,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_215() {
-    assert_eq!(kuna_num_settables(), 215);
-    assert_eq!(SETTABLE_TABLE.len(), 215);
+fn settable_count_is_209() {
+    assert_eq!(kuna_num_settables(), 209);
+    assert_eq!(SETTABLE_TABLE.len(), 209);
 }
 
 #[test]
-fn tier_counts_are_42_core_123_transform_50_analysis() {
+fn tier_counts_are_42_core_115_transform_52_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_42_core_123_transform_50_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (42, 123, 50));
+    assert_eq!((core, transform, analysis), (42, 115, 52));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_82() {
+fn option_values_live_value_present_for_73() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -597,6 +597,7 @@ fn option_values_live_value_present_for_82() {
                             // `Architecture::go_morestack`.
                             | "gomorestack"
                             | "rustprobestack"
+                            | "rustfmt"
                             // (kuna) `gobool` takes the same MODE shape; its
                             // live value is `Architecture::go_bool`.
                             | "gobool"
@@ -781,7 +782,7 @@ fn option_values_live_value_present_for_82() {
     // 179 -> 181: +1 for `copywaves` (pool_copy_waves), +1 for `armderef` (analysis_armderef).
     // 178 -> 179: +1 for `ptrauthtrap` (live_field = ptrauth_trap).
     // 179 -> 180: +1 for `authptrcall` (live_field = analysis_authptrcall).
-    assert_eq!(with_live, 82);
+    assert_eq!(with_live, 73);
 }
 
 #[test]
@@ -1026,7 +1027,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftcall`, beside that.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
-    assert_eq!(json.matches("},\n").count(), 214);
+    assert_eq!(json.matches("},\n").count(), 208);
 }
 
 #[test]

@@ -5,6 +5,7 @@ use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
+use kuna_decomp::kuna_rustfmt::RustFmtMode;
 use std::path::PathBuf;
 
 fn decompile(
@@ -30,7 +31,11 @@ fn decompile(
     .unwrap();
     assert_eq!(program.arch().rustc_stable_version, Some((1, 93, 1)));
     program.arch_mut().rustc_stable_version = version;
-    program.arch_mut().rust_fmt_literal = enabled;
+    program.arch_mut().rust_fmt = if enabled {
+        RustFmtMode::On
+    } else {
+        RustFmtMode::Off
+    };
     program.commit_pending_analysis().unwrap();
     let language = if rust { "rust-language" } else { "c-language" };
     let commands = vec![

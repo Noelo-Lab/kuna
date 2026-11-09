@@ -25,7 +25,7 @@ pub(crate) fn recover(
     formatter: u64,
     pointer: VarnodeId,
 ) -> Option<super::kuna_rustfmtargs::Argument> {
-    if !arch.rust_fmt_str
+    if !arch.rust_fmt.recovers()
         || !matches!(arch.rustc_stable_version, Some((1, 93, 0 | 1)))
         || !arch.rust_str_display_formatters.contains(&formatter)
     {

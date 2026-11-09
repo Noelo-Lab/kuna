@@ -9428,18 +9428,18 @@ in `decompiler/crates/kuna-analysis/src/analyzers/sourcelang/kuna_rustversion.rs
 requires three numeric components and rejects prerelease suffixes, malformed
 Rust records and conflicting versions. Missing metadata remains unknown even
 when `sourcelang` is forced. This image fact survives option resets and lets
-versioned consumers such as P9 `rustfmtliteral` reject unsupported layouts.
+versioned consumers such as the P9 `rustfmt` recoveries reject unsupported layouts.
 
 For verified stable Rust 1.93.0/1.93.1 images, the standalone loader also retains
 primitive integer Display callback types in `Architecture::rust_display_formatters`.
 The reader in `decompiler/crates/kuna-analysis/src/analyzers/sourcelang/kuna_rustformatters.rs` accepts only linked 64-bit little-endian ELF images. It reads full demangled object-function symbols and their aliases before normal
 symbol-name normalization removes trait qualifiers. Exact standard-library trait
 identities qualify; conflicting aliases invalidate the address. The P9
-`rustfmtargs` consumer independently checks language, layout and call shape.
+`rustfmt` consumers independently check language, layout and call shape.
 This evidence does not rename symbols or infer a generic formatter's pointee type.
 
 The same symbol walk records integer formatting traits in
-`Architecture::rust_integer_formatters` for P9 `rustfmtflags`. Display, Debug,
+`Architecture::rust_integer_formatters` for P9 `rustfmt`. Display, Debug,
 LowerHex, UpperHex, Octal, Binary, LowerExp and UpperExp retain exact type and
 trait identity; the Display-only map is derived from these facts without another
 object parse. Unknown or conflicting aliases invalidate the shared address.

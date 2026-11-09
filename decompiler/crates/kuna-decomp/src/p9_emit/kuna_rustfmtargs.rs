@@ -52,7 +52,7 @@ pub fn formatter_symbols(
 }
 
 pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Plan> {
-    if !arch.rust_fmt_args
+    if !arch.rust_fmt.recovers()
         || arch.source_lang() != crate::kuna_sourcelang::SourceLang::Rust
         || !matches!(arch.rustc_stable_version, Some((1, 93, 0 | 1)))
     {
@@ -89,12 +89,12 @@ pub(crate) fn recover_inputs_at(
     array_slot: i32,
     kind: MacroKind,
 ) -> Option<Plan> {
-    if !arch.rust_fmt_args
+    if !arch.rust_fmt.recovers()
         || arch.source_lang() != crate::kuna_sourcelang::SourceLang::Rust
         || !matches!(arch.rustc_stable_version, Some((1, 93, 0 | 1)))
         || (arch.rust_display_formatters.is_empty()
-            && (!arch.rust_fmt_flags || arch.rust_integer_formatters.is_empty())
-            && (!arch.rust_fmt_str || arch.rust_str_display_formatters.is_empty()))
+            && arch.rust_integer_formatters.is_empty()
+            && arch.rust_str_display_formatters.is_empty())
     {
         return None;
     }
@@ -115,7 +115,7 @@ pub(crate) fn recover_inputs_at(
         return None;
     }
     let mut position = 0usize;
-    let decoded = decode_template(arch.rust_fmt_flags, |size| {
+    let decoded = decode_template(true, |size| {
         let end = position.checked_add(size)?;
         if end > MAX_BYTES {
             return None;
@@ -161,15 +161,7 @@ pub(crate) fn primitive_arguments(
     for index in 0..count {
         let pointer = cells[index * 2];
         let address = constant_word(fd, cells[index * 2 + 1])?;
-        let formatter = if arch.rust_fmt_flags {
-            arch.rust_integer_formatters.get(&address).copied()
-        } else {
-            arch.rust_display_formatters.get(&address).map(|&primitive| Formatter {
-                primitive,
-                kind: Trait::Display,
-            })
-        };
-        let Some(formatter) = formatter else {
+        let Some(formatter) = arch.rust_integer_formatters.get(&address).copied() else {
             arguments.push(super::kuna_rustfmtstr::recover(fd, arch, id, address, pointer)?);
             formatters.push(Formatter { primitive: "&str", kind: Trait::Display });
             continue;

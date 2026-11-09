@@ -4536,10 +4536,24 @@ Rust forbids raw spellings of `_`, `crate`, `self`, `Self`, and `super`, so thos
 are excluded. This correction applies only to functional machine-operation
 calls, not to unrelated type, variable, namespace, or symbol naming.
 
+### Rust formatting macros
+
+The option `rustfmt` (`off|on|all`, default `on`) decides which verified Rust
+formatting runtime calls render as the source macros that produced them, using
+the mode in `decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmt.rs`. Every
+recovery in the sections below belongs to one of its values and acts only in
+Rust output on a rustc-built image. `on` runs the literal, primitive-argument,
+static-specification, `format!` String, `panic!`, piece-array and
+string-argument recoveries, which share their template, descriptor and
+formatter proofs. `all` adds the String and Stdout `write!`/`writeln!` writers;
+they stay out of `on` and out of every preset for speed, because neither
+cleared its speed study. `off` keeps every runtime call with its encoded
+`fmt::Arguments` words and descriptor setup.
+
 ### Literal Rust print macros
 
-`rustfmtliteral` (default on) uses
-`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtliteral.rs` to render
+Under `rustfmt on`,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtliteral.rs` renders
 literal-only `std::io::stdio::_print` and `_eprint` calls as Rust print macros.
 It changes only Rust output and requires the detected Rust language, an
 unambiguous stable 1.93.0 or 1.93.1 compiler version, and a 64-bit little-endian data space.
@@ -4565,13 +4579,13 @@ A final LF selects `println!` or `eprintln!` and removes exactly that one byte
 from the argument. All other bytes, including a preceding CR, are retained.
 Rust string escaping protects controls, quotes and backslashes; doubled braces
 preserve literal formatting semantics. No arguments or side effects are dropped.
-The option does not recover placeholder templates, `format!`, `write!` or panic
-macros. Turning it off restores both encoded runtime arguments.
+This literal reader does not decode placeholder templates; the sections below
+recover them. `rustfmt off` restores both encoded runtime arguments.
 
 ### Primitive Rust print arguments
 
-`rustfmtargs` (default on) uses
-`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtargs.rs` for the placeholder
+Under `rustfmt on`,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtargs.rs` handles the placeholder
 representation at the same verified Rust 1.93.0/1.93.1 stdout/stderr sinks.
 It requires Rust output, a 64-bit little-endian data space, exactly two runtime
 arguments, no return value and a nonnull constant template pointer. Sink identity
@@ -4598,12 +4612,12 @@ preserving width and signedness without substituting a later memory version.
 Literal escaping doubles braces and retains all controls; exactly one final LF
 selects an `ln` macro. Explicit indices preserve repeated-argument order. All
 original setup statements and IR remain intact, and C output is unchanged.
-Generic reference formatters, `format!`, `write!` and specialized sinks remain
-explicit. Other integer traits and width/precision require `rustfmtflags`.
+Generic reference formatters and specialized sinks remain explicit. Other
+integer traits and width/precision are decoded by the extension below.
 
 ### Static Rust integer format specifications
 
-`rustfmtflags` (default on) extends `rustfmtargs` through
+The same `rustfmt on` recovery extends primitive arguments through
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtflags.rs`. The same version,
 language, memory, stack descriptor and exact sink requirements apply. Full object
 symbols establish both integer width/signedness and Display, Debug, LowerHex,
@@ -4625,22 +4639,20 @@ Rendering retains alignment, fill, sign, alternate form, zero-padding, width and
 precision, followed by the verified trait suffix. Debug hexadecimal flags require
 a Debug callback. Fill characters are escaped for the surrounding Rust string;
 literal braces and repeated argument indices retain their existing treatment.
-Turning the option off restores default-only Display recovery. Disabling
-`rustfmtargs` disables this extension too. Floating-point, pointer and generic
-formatters, dynamic counts, `format!`, `write!` and specialized sinks remain
-explicit. No IR, descriptor setup or C output changes.
+Every consumer of the primitive-argument proofs (print, `format!`, `panic!` and
+the writers) decodes these specifications. Floating-point, pointer and generic
+formatters, dynamic counts and specialized sinks remain explicit. No IR, descriptor setup or C output changes.
 
 ### Rust format String initialization
 
-`rustfmtresult` (default on), in
-`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtresult.rs`, recognizes only
+Under `rustfmt on`,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtresult.rs` recognizes only
 `alloc::fmt::format::format_inner` at the existing direct-call rendering hook.
 The name must be fully qualified or resolve to the exact entry with the complete
 `alloc::fmt::format` namespace. The call has a hidden destination, template and
-argument-array input, and no output varnode. It reuses `rustfmtargs` version,
-language, endian, readonly-template, same-call descriptor and integer formatter
-proofs; disabling `rustfmtargs` also disables this result consumer. Static format
-specifications independently require `rustfmtflags`.
+argument-array input, and no output varnode. It reuses the primitive-argument
+version, language, endian, readonly-template, same-call descriptor and integer
+formatter proofs, including static format specifications.
 
 The destination is a word-sized integer/unknown or pointer value that resolves
 through bounded pure copies/casts to a non-spacebase entry input. Constants,
@@ -4655,14 +4667,14 @@ format!(...))`, with a raw-pointer bridge for pointer/reference expressions.
 This initializes the caller's storage without dropping its previous contents,
 as the original hidden-result call does. Format literals retain terminal LF;
 there is no println-style newline removal. Descriptor setup, surrounding IR,
-existing returns and function signatures remain intact. The option does not
+existing returns and function signatures remain intact. It does not
 recover generic wrappers, indirect calls, call-return values, unsupported
 formatters or other layouts, and it does not change C output.
 
 ### Rust panic messages
 
-`rustfmtpanic` (default on), in
-`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtpanic.rs`, renders verified
+Under `rustfmt on`,
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtpanic.rs` renders verified
 `core::panicking::panic_fmt` calls as `panic!`. The source language must be Rust,
 the output must be Rust, and the compiler record must identify stable Rust 1.93.0
 or 1.93.1 on a little-endian 64-bit data space. A direct call must have exactly
@@ -4682,13 +4694,12 @@ uses the recovered source's location rather than the original binary's file and
 line. No original-location or backtrace equivalence is claimed.
 
 The first two arguments use the existing verified `fmt::Arguments` layout.
-Literal-only messages share the bounded readonly UTF-8 byte reader with
-`rustfmtliteral`, but do not depend on that option. Braces are doubled and controls
-are escaped; every terminal newline is retained. Primitive integer messages reuse
-`rustfmtargs`' same-call descriptor cells, aligned local value pointers and exact
-formatter identities. Static format specifications additionally require
-`rustfmtflags`. Disabling either prerequisite retains calls requiring it; literal
-panics still qualify when both are off. Unsupported callbacks, templates, versions,
+Literal-only messages share the bounded readonly UTF-8 byte reader of the
+literal print recovery. Braces are doubled and controls are escaped; every
+terminal newline is retained. Primitive integer messages reuse the
+primitive-argument recovery's same-call descriptor cells, aligned local value
+pointers, exact formatter identities and static format specifications.
+Unsupported callbacks, templates, versions,
 call shapes or location records retain the runtime call.
 
 The change is confined to rendering the call expression. All descriptor setup,
@@ -4699,7 +4710,7 @@ or earlier formatting layouts, and it does not change C or Go output.
 ## Verified Rust piece-array printing
 
 `kuna_rustfmtpieces` extends source printing to the pre-template
-`fmt::Arguments` representation. The default-on `rustfmtpieces` option accepts
+`fmt::Arguments` representation. Under `rustfmt on` it accepts
 x86-64 little-endian ELF executables from stable Rust 1.89.0 and 1.90.0 and
 nightly 1.89.0 `bf64d66bd` dated 2025-05-21. Compiler comments must identify one
 unambiguous supported build; other nightly commits, missing metadata and mixed
@@ -4726,9 +4737,8 @@ Explicit volatile markings override both this fact and existing readonly
 properties. A relocated pointer alone is insufficient evidence for the
 surrounding table.
 
-Literal recovery also requires `rustfmtliteral`. Nonempty argument arrays also
-require `rustfmtargs`, exact full primitive Display callback identities, and
-the shared aligned stack-pointer proof for each 8/16/32/64-bit signed or
+Nonempty argument arrays require exact full primitive Display callback
+identities and the shared aligned stack-pointer proof for each 8/16/32/64-bit signed or
 unsigned input. Formatting specifications, generic callbacks and non-Display
 traits remain explicit. The pieces are interleaved with default placeholders
 and escaped through the shared renderer; precisely one final newline selects
@@ -4740,11 +4750,11 @@ IR, function prototypes, returns and surrounding statements remain. Existing
 descriptor type gaps can still prevent complete primitive functions from
 compiling; primitive macro execution does not imply whole-function
 recompilability. C and Go output, newer layouts and other formatting sinks are
-unchanged. Disabling `rustfmtpieces` restores the runtime-call presentation.
+unchanged. `rustfmt off` restores the runtime-call presentation.
 
 String callback discovery likewise indexes only the forwarding and pad candidates, then rejects every conflicting or unknown alias before reading callback bytes.
 
-`rustfmtstr` extends template-layout formatting to a proven string Display
+`rustfmt on` also extends template-layout formatting to a proven string Display
 argument. In x86-64 ELF images, complete object-symbol identities must identify
 both a generic reference Display callback and `core::fmt::Formatter::pad`.
 The callback must have the exact 18-byte body that loads the first two words of
@@ -4760,13 +4770,12 @@ those values. Valid UTF-8 storage follows the original `pad(&str)` call contract
 no string contents are guessed from neighboring memory. Existing literal,
 argument, static-format, result-destination and panic-location checks still
 apply. Every setup statement, IR operation, prototype and return remains.
-Disabling the option preserves runtime calls containing these string arguments;
-unknown wrappers and derived Debug callbacks remain explicit. C and Go emission
+Unknown wrappers and derived Debug callbacks remain explicit. C and Go emission
 is unchanged.
 
-`rustfmtwrite` is off by default: the declared speed study did not clear the
-small-C wall-time confidence bound, despite median deltas below 0.2 percent.
-When enabled, it recovers formatting into an existing `String` only for the verified
+The String writer runs only under `rustfmt all`: its declared speed study did
+not clear the small-C wall-time confidence bound, despite median deltas below
+0.2 percent. Under `all` it recovers formatting into an existing `String` only for the verified
 Rust 1.93.0/1.93.1 x86-64 little-endian ELF layout. The direct call must resolve
 exactly to `core::fmt::write`, with four runtime arguments and a one-byte result.
 The writer must derive from a function input through copies or casts. Its vtable
@@ -4786,13 +4795,14 @@ A local expression block imports `std::fmt::Write` for this call. The macro's
 with a cast matching the recovered signed or unsigned byte type; boolean results
 need no cast. Other result sizes or types remain explicit. Descriptor stores,
 result uses, branches, prototypes and IR remain unchanged. Custom writers,
-unsupported callbacks and IO-error result layouts do not qualify. Disabling the
-option retains the runtime call, and C/Go output is unchanged.
+unsupported callbacks and IO-error result layouts do not qualify. Under `on`
+and `off` the runtime call is retained, and C/Go output is unchanged.
 
 
-`rustfmtio` is off in every preset: the declared speed study did not clear the
-Go-control CPU and wall-time confidence bounds, despite median deltas below
-1.3 percent. When enabled, it recovers Stdout `write!` and `writeln!` expressions only for exact
+The Stdout writer likewise runs only under `rustfmt all`, which no preset
+selects: its declared speed study did not clear the Go-control CPU and
+wall-time confidence bounds, despite median deltas below 1.3 percent. Under
+`all` it recovers Stdout `write!` and `writeln!` expressions only for exact
 stable Rust 1.93.1 x86-64 little-endian linked ELF implementations. The loader
 proves the full `&Stdout` write_fmt body and all four formatting-adapter callback
 bodies. All nonrelative bytes, internal branches, external target roles and
@@ -4821,8 +4831,8 @@ converted through usize to the original signed or unsigned integer type. This
 preserves the owned error payload for surrounding result handling, without
 dropping it or reducing it to a Boolean. Descriptor setup, branches, prototypes
 and IR remain. Other writers, producer versions, dynamic formats, callback
-profiles and result layouts stay explicit. Disabling the option restores the
-runtime call, and C/Go emission is unchanged.
+profiles and result layouts stay explicit. Under `on` and `off` the runtime
+call stays, and C/Go emission is unchanged.
 
 An empty literal stays a runtime call. In the buffered broken-pipe regression,
 the Rust 1.93.1 producer reports an error for that call, while a recovered empty
