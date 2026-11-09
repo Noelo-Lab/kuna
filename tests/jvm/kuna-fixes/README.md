@@ -24,6 +24,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestCatchLoopBack` | `catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
 | `pkg/TestDefaultArgCompoundBranch` | `kt_default_arg_compound_branch` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7` |
 | `pkg/TestDefaultArgsSuperCall` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call |
+| `pkg/TestDiamondExternalClass` | `external_class_diamond` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
@@ -417,6 +418,76 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public fun noDefault(x: Int): Any {
+```
+
+### `pkg/TestDiamondExternalClass`
+
+```diff
+--- expected-compat/pkg/TestDiamondExternalClass.java
++++ expected/pkg/TestDiamondExternalClass.java
+@@ -1,26 +1,26 @@
+ package pkg;
+ 
+ public class TestDiamondExternalClass {
+-   static final DiamondLib<String, Void> PARSER = new DiamondLib("p", true, objs -> (String)objs[0]);
+-   private final DiamondLib<Integer, String> parser = new DiamondLib("q", (objs, c) -> objs.length + c.length());
+-   static final DiamondLib<?, Void> WILD = new DiamondLib("w", true, objs -> objs.length);
+-   static final DiamondBox<String> BOX = new DiamondBox();
++   static final DiamondLib<String, Void> PARSER = new DiamondLib<>("p", true, objs -> (String)objs[0]);
++   private final DiamondLib<Integer, String> parser = new DiamondLib<>("q", (objs, c) -> objs.length + c.length());
++   static final DiamondLib<?, Void> WILD = new DiamondLib<>("w", true, objs -> objs.length);
++   static final DiamondBox<String> BOX = new DiamondBox<>();
+    static final Object OBJECT = new DiamondBox();
+    static final DiamondPlain PLAIN = new DiamondPlain();
+    static DiamondLib<String, Void> assigned;
+ 
+    static DiamondLib<String, Void> local() {
+-      DiamondLib<String, Void> p = new DiamondLib("p", true, objs -> (String)objs[0]);
++      DiamondLib<String, Void> p = new DiamondLib<>("p", true, objs -> (String)objs[0]);
+       p.use();
+       return p;
+    }
+ 
+    static DiamondLib<String, Void> ret() {
+-      return new DiamondLib("p", true, objs -> (String)objs[0]);
++      return new DiamondLib<>("p", true, objs -> (String)objs[0]);
+    }
+ 
+    static void assign() {
+-      assigned = new DiamondLib("p", true, objs -> (String)objs[0]);
++      assigned = new DiamondLib<>("p", true, objs -> (String)objs[0]);
+    }
+ 
+    static void take(DiamondLib<String, Void> p) {
+@@ -30,12 +30,12 @@
+    }
+ 
+    static void arg() {
+-      take(new DiamondLib("p", true, objs -> (String)objs[0]));
+-      takeAny(new DiamondLib("p", true, objs -> (String)objs[0]));
++      take(new DiamondLib<>("p", true, objs -> (String)objs[0]));
++      takeAny(new DiamondLib<>("p", true, objs -> (String)objs[0]));
+    }
+ 
+    static DiamondBox<String> pick(boolean b, DiamondBox<String> other) {
+-      return b ? new DiamondBox() : other;
++      return b ? new DiamondBox<>() : other;
+    }
+ 
+    interface Fn<A, R> {
+@@ -47,10 +47,10 @@
+    }
+ 
+    static class Holder<T> {
+-      final DiamondBox<T> box = new DiamondBox();
++      final DiamondBox<T> box = new DiamondBox<>();
+ 
+       DiamondLib<T, Void> parser(T value) {
+-         return new DiamondLib("h", true, objs -> objs.length > 0 ? value : null);
++         return new DiamondLib<>("h", true, objs -> objs.length > 0 ? value : null);
+       }
+    }
+ }
 ```
 
 ### `pkg/TestIfDenestFallthrough`

@@ -584,6 +584,7 @@ kuna-fixes-compat/pkg/TestCapturedReceiverKt
 kuna-fixes-compat/pkg/TestCatchLoopBack
 kuna-fixes-compat/pkg/TestDefaultArgCompoundBranch
 kuna-fixes-compat/pkg/TestDefaultArgsSuperCall
+kuna-fixes-compat/pkg/TestDiamondExternalClass
 kuna-fixes-compat/pkg/TestIfDenestFallthrough
 kuna-fixes-compat/pkg/TestInnerOfGenericOuter
 kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver
@@ -595,6 +596,7 @@ kuna-fixes/pkg/TestCapturedReceiverKt
 kuna-fixes/pkg/TestCatchLoopBack
 kuna-fixes/pkg/TestDefaultArgCompoundBranch
 kuna-fixes/pkg/TestDefaultArgsSuperCall
+kuna-fixes/pkg/TestDiamondExternalClass
 kuna-fixes/pkg/TestIfDenestFallthrough
 kuna-fixes/pkg/TestInnerOfGenericOuter
 kuna-fixes/pkg/TestMethodRefWildcardReceiver

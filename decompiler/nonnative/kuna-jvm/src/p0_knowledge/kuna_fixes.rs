@@ -60,6 +60,9 @@ pub enum KunaFix {
     /// `self_referencing_lambda`: a lambda whose implementation method
     /// instantiates it again is written as a method reference.
     SelfReferencingLambda,
+    /// The fix `external_class_diamond`: `new C(..)` of a class outside the
+    /// input whose expected type is a parameterization of `C` keeps its diamond.
+    ExternalClassDiamond,
 }
 
 impl KunaFix {
@@ -77,6 +80,7 @@ impl KunaFix {
         KunaFix::KtDefaultArgCompoundBranch,
         KunaFix::GenericParentWithoutSignature,
         KunaFix::SelfReferencingLambda,
+        KunaFix::ExternalClassDiamond,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -94,6 +98,7 @@ impl KunaFix {
             KunaFix::KtDefaultArgCompoundBranch => "kt_default_arg_compound_branch",
             KunaFix::GenericParentWithoutSignature => "generic_parent_without_signature",
             KunaFix::SelfReferencingLambda => "self_referencing_lambda",
+            KunaFix::ExternalClassDiamond => "external_class_diamond",
         }
     }
 

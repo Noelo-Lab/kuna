@@ -151,6 +151,19 @@
       "source": "src/pkg/TestSelfReferencingLambda.jasm",
       "compiler": "asmtools-core 7.0.b10-ea jasm (`-g`), run on JDK 17.0.20.1",
       "summary": "the class, whose synthetic `body` creates the lambda it implements (as the constructor does), decompiles: both sites are written as `this::body`, and `body` stays a method (left out here, as every synthetic method is under `remove-synthetic`); `plain`'s ordinary lambda is still written in place"
+    },
+    {
+      "id": "pkg/TestDiamondExternalClass",
+      "fix": "external_class_diamond",
+      "class_files": [
+        "pkg/TestDiamondExternalClass.class",
+        "pkg/TestDiamondExternalClass$Fn.class",
+        "pkg/TestDiamondExternalClass$Fn2.class",
+        "pkg/TestDiamondExternalClass$Holder.class"
+      ],
+      "source": "src/pkg/TestDiamondExternalClass.java",
+      "compiler": "javac 17.0.20.1 (`-source 17 -target 17 -g`)",
+      "summary": "every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are"
     }
   ]
 }
