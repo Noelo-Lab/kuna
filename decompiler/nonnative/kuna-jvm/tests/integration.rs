@@ -60,3 +60,5 @@ mod k5_flow;
 mod struct_classfile;
 #[path = "struct_bytecode.rs"]
 mod struct_bytecode;
+#[path = "common/mod.rs"]
+pub mod common;
