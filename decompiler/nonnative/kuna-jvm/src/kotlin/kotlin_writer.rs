@@ -296,6 +296,7 @@ impl KotlinWriter {
     fn invoke_processors(&self, buffer: &mut TextBuffer, node: ClassNode) -> bool {
         let Some(wrapper) = node.get_wrapper() else {
             let qualified_name = node.with(|d| d.class_struct).qualified_name();
+            kuna_spans::class_failed(&qualified_name, &format!("Class {qualified_name} wasn't processed yet"));
             buffer.append(&format!(
                 "/* $VF: Couldn't be decompiled. Class {qualified_name} wasn't processed yet! */"
             ));
@@ -343,6 +344,7 @@ impl KotlinWriter {
                 Severity::Warn,
                 &t,
             );
+            kuna_spans::class_failed(&cl.qualified_name(), &t.message);
             buffer.append("// $VF: Couldn't be decompiled");
             buffer.append_line_separator();
             if DecompilerContext::get_option(IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR) {
@@ -818,7 +820,9 @@ impl KotlinWriter {
                 }
                 Some(KElement::Constructor(constructor)) => {
                     let mut ctor_buffer = TextBuffer::new();
+                    let span = kuna_spans::open_method(&mut ctor_buffer, cl, mt, wrapper);
                     let ctor_skipped = !constructor.stringify(wrapper, &mut ctor_buffer, indent);
+                    kuna_spans::close(&mut ctor_buffer, span);
                     if ctor_skipped {
                         ctor_buffer.clear_unassigned_bytecode_mapping_data();
                     } else {
@@ -826,13 +830,11 @@ impl KotlinWriter {
                             inner_buffer.append_line_separator();
                         }
                         has_content = true;
-                        let span = kuna_spans::open_method(&mut inner_buffer, cl, mt, wrapper);
                         inner_buffer.append_buffer_mapped(
                             &ctor_buffer,
                             Some(&cl.qualified_name()),
                             Some(&method_key()),
                         );
-                        kuna_spans::close(&mut inner_buffer, span);
                     }
                 }
                 _ => {
@@ -963,6 +965,10 @@ impl KotlinWriter {
                 Severity::Warn,
             );
             buffer.append("{").append_line_separator();
+            kuna_spans::class_failed(
+                &node.with(|d| d.class_struct).qualified_name(),
+                "Could not decompile lambda - root function was not found. Is this a suspend lambda?",
+            );
             KotlinWriter::append_comment(
                 buffer,
                 "Could not decompile lambda - root function was not found. Is this a suspend lambda?",
@@ -2293,6 +2299,7 @@ impl KotlinWriter {
     }
 
     pub fn dump_error(buffer: &mut TextBuffer, wrapper: MethodWrapper, indent: i32) {
+        kuna_spans::method_failed(wrapper);
         let mut lines: Vec<String> = vec!["$VF: Couldn't be decompiled".to_string()];
         let exceptions =
             DecompilerContext::get_option(IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR);

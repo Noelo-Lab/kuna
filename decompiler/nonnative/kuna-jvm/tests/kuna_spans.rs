@@ -164,3 +164,47 @@ fn line_mappings_point_at_statement_lines() {
         }
     }
 }
+
+/// `tests/fixtures/jvm/failures/classes` (kuna-cli's fixture): lambdas and an
+/// anonymous class method that fail in compat mode, inside methods and a field.
+#[test]
+fn failures_written_inside_a_method_are_recorded_against_it() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/fixtures/jvm/failures/classes");
+    let set = kuna_input::load(&dir, &LoadOptions::default()).unwrap();
+    let units = decompile(&set, &options(&[("jvm_vineflower_compat", "1")]));
+    let unit = units.iter().find(|u| u.qualified_name == "com/ex/fail/Nested").unwrap();
+    let method = |name: &str| unit.methods.iter().find(|m| m.name == name).unwrap();
+    let bodies = |name: &str| {
+        method(name)
+            .nested
+            .iter()
+            .map(|f| format!("{}.{}{}", f.class, f.name, f.descriptor))
+            .collect::<Vec<_>>()
+    };
+    assert!(method("escape").error.is_none());
+    assert_eq!(bodies("escape"), ["com/ex/fail/Nested.lambda$escape$1(Ljava/lang/StringBuilder;I)V"]);
+    assert_eq!(bodies("both").len(), 2);
+    assert_eq!(bodies("later"), ["com/ex/fail/Nested$1.run()V"]);
+    let run = method("run");
+    assert!(run.error.is_some() && run.nested.is_empty());
+    assert!(bodies("plain").is_empty());
+    let root = unit.classes.iter().find(|c| c.internal == unit.qualified_name).unwrap();
+    assert!(root.error.is_none());
+    assert_eq!(root.nested.len(), 1, "the field initializer's lambda");
+    assert!(root.nested[0].name.starts_with("lambda$static$"));
+    for failure in unit.methods.iter().flat_map(|m| &m.nested) {
+        assert!(failure.error.contains("invalid constant type"), "{failure:?}");
+    }
+}
+
+#[test]
+fn flagged_vf_comments_are_method_warnings() {
+    let set = kuna_input::load(&corpus("java25/pkg/TestAssertsEnabled.class"), &LoadOptions::default()).unwrap();
+    let unit = &decompile(&set, &options(&[]))[0];
+    let test7 = unit.methods.iter().find(|m| m.name == "test7").unwrap();
+    assert_eq!(test7.warnings, ["$VF: Could not resugar all assert statements!"]);
+    assert!(test7.error.is_none() && test7.nested.is_empty());
+    let test = unit.methods.iter().find(|m| m.name == "test").unwrap();
+    assert!(test.warnings.is_empty());
+}

@@ -624,8 +624,9 @@ public final void testFunctionReference() {
 ```
 
 The trace line under the exception is kuna's own, as for Java (item 1 of the fidelity
-contract). A whole class the plugin cannot write is a `// $VF: Couldn't be decompiled`
-comment with the exception. A class whose metadata cannot be decoded is still written as
+contract). A whole class the plugin cannot write is a `/* $VF: Unable to decompile class
+*/` comment with the exception, which the CLI reports as a failed class (*How failures are
+reported*, below). A class whose metadata cannot be decoded is still written as
 Kotlin, from its class file alone, under `// $VF: Class flags could not be determined`.
 
 ## The other bundled plugins
@@ -677,6 +678,42 @@ public static int loop(int n) {
 (`NullPointerException: type`), as Vineflower's provider does. The two deprecated
 Vineflower flags, `jvm_jad_style_variable_naming` and `jvm_jad_style_parameter_naming`,
 are accepted for old command lines.
+
+## How failures are reported
+
+The engine never stops on a method or class it cannot decompile: it writes the failure as
+a comment where the code would be. The comment's place decides what failed, and the class
+writers record each one as they write it (`src/infra/kuna_spans.rs`), changing no text:
+
+| The engine writes | Recorded as | The CLI reports |
+|---|---|---|
+| `// $VF: Couldn't be decompiled` as a method's body | the method's `error` | that method failed |
+| the same comment as the body of a lambda, of a method of an anonymous or local class, or `// $VF: Couldn't be decompiled` for such a class, written inside method M | a `BodyFailure` on M's span (and the anonymous class's method keeps its own `error`) | M failed too, naming the body (`nested_errors`); one `warning:` per body |
+| any of these outside every method (a field initializer's lambda, a member class) | a `BodyFailure` on the class's span | the class's `nested_errors`; `decompile-project` counts them as `outside methods` |
+| `/* $VF: Unable to decompile class */` in place of a whole unit (the Java and Kotlin writers' last resort) | the unit's `error` | a failed class (`status: "failed"`) on every command, with that reason |
+| a `$VF:` comment above a method that the engine flags as an error (`MethodWrapper::add_error_comment`, the comments that carry the report-this note) | the method span's `warnings` | a `warning:`, not a failure |
+| any other `$VF:` comment, or a line only logged | nothing | nothing |
+
+The flagged comments mark text that is complete but may be wrong (`Could not resugar all
+assert statements!`, `Unable to simplify switch on enum`, `Could not properly define all
+variable types!`, variable-merging and finally-processing failures, ...). The unflagged
+ones describe a transformation that worked (`Irreducible bytecode was duplicated to
+produce valid code`, `Removed empty exception range`, `Added assignment to ensure
+synchronized validity`). The Kotlin writer does not print method comments at all, so a
+Kotlin method's flagged comments show only as CLI warnings. A lambda's own flagged comments
+are printed by neither writer and are not reported.
+
+The engine's log (the logger the CLI installs is silent) has lines with no comment in the
+output: `Statement cannot be decomposed although reducible!` is a dead end of DomHelper's
+search that its caller recovers from, unless the method then fails with `parsing
+failure!`, which is reported as above; `Inconsistent inner class entries` says which of
+two conflicting `InnerClasses` records the engine kept (`jvm_warn_inconsistent_inner_attributes`);
+`Inconsistent anonymous class definition` and `Inconsistent references to the class`
+mean the engine writes that class as a top-level unit of its own instead of inside the
+method that creates it, which the CLI follows (it asks the engine for every class of a
+target's outer chain and takes the nearest one written as a unit). None of them is
+reported, and the JVM path has no `--verbose` to show them.
+`docs/cli.md` (*Failures and warnings*) has the record shapes and the summary line.
 
 ## Performance and limits
 

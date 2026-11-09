@@ -266,6 +266,7 @@ impl ClassWriter {
     fn invoke_processors(buffer: &mut TextBuffer, node: ClassNode) -> bool {
         let Some(wrapper) = node.get_wrapper() else {
             let qualified_name = node.with(|d| d.class_struct).qualified_name();
+            kuna_spans::class_failed(&qualified_name, &format!("Class {qualified_name} wasn't processed yet"));
             buffer.append(&format!(
                 "/* $VF: Couldn't be decompiled. Class {qualified_name} wasn't processed yet! */"
             ));
@@ -372,6 +373,7 @@ impl ClassWriter {
                 Severity::Warn,
                 &t,
             );
+            kuna_spans::class_failed(&cl.qualified_name(), &t.message);
             ClassWriter::write_exception(buffer, &t);
 
             return false;
@@ -668,6 +670,7 @@ impl ClassWriter {
                                             &ex,
                                         );
                                         mw.with_mut(|d| d.decompile_error = Some(ex));
+                                        kuna_spans::method_failed(mw);
                                         buffer.append(" // $VF: Couldn't be decompiled");
                                     }
                                 }
@@ -2362,6 +2365,7 @@ impl ClassWriter {
     }
 
     fn dump_error(buffer: &mut TextBuffer, wrapper: MethodWrapper, indent: i32) {
+        kuna_spans::method_failed(wrapper);
         let mut lines: Vec<String> = vec!["$VF: Couldn't be decompiled".to_string()];
         let exceptions =
             DecompilerContext::get_option(IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR);

@@ -4,11 +4,13 @@
 //! engine; every other file-taking subcommand answers with a capability error.
 //! Each subcommand has its own parser ([`args`]) that refuses the native-only
 //! flags; the selection grammar is [`select`], the driver glue [`run`], the
-//! text and JSON shapes [`render`], the source-tree export [`project`].
+//! text and JSON shapes [`render`], what is reported about failed and hidden
+//! code [`failures`], the source-tree export [`project`].
 
 mod args;
 pub(crate) mod catalog;
 pub(crate) mod corpus;
+mod failures;
 mod heap;
 mod project;
 mod render;

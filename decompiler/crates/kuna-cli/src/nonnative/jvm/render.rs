@@ -7,11 +7,12 @@
 //! property's getter and setter, print it once. The JSON documents keep the
 //! native shapes (`decompile-all --json`, `functions --json`, see
 //! `docs/cli.md`) and add what a method needs to be named: `class`, `method`,
-//! `descriptor`, `access`, `path`, `language` and `line`. Addresses are
-//! `null`, `size` is the bytecode length, and `line_mappings` map lines of
-//! `code` to bytecode offsets.
+//! `descriptor`, `access`, `path`, `language` and `line`, and what
+//! [`failures`] reports: `nested_errors` and `warnings` per method, `status`
+//! per class. Addresses are `null`, `size` is the bytecode length, and
+//! `line_mappings` map lines of `code` to bytecode offsets.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
@@ -21,6 +22,7 @@ use kuna_jvm::kuna_inventory::{class_access_names, method_access_names};
 use kuna_jvm::kuna_spans::MethodSpan;
 
 use super::args::{Args, SortKey, Triage};
+use super::failures::{self, Nested, Status, Units};
 use super::run::{self, Loaded, Outcome, Watch};
 use super::select::{java_name, Target, Universe};
 use crate::jsonfmt::{self, Json};
@@ -33,7 +35,11 @@ pub(crate) struct Record {
     pub(crate) access: i32,
     pub(crate) size: u64,
     pub(crate) code: String,
+    /// The method's own failure, else the bodies written inside it that failed.
     pub(crate) error: Option<String>,
+    pub(crate) own_error: Option<String>,
+    pub(crate) nested: Vec<Nested>,
+    pub(crate) warnings: Vec<String>,
     pub(crate) path: String,
     pub(crate) language: &'static str,
     pub(crate) line: u32,
@@ -63,6 +69,7 @@ impl Record {
             .method(&span.class, &span.name, &span.descriptor)
             .and_then(|m| m.code_length)
             .unwrap_or(0);
+        let nested = Nested::all(&span.nested);
         Record {
             class: span.class.clone(),
             method: span.name.clone(),
@@ -70,7 +77,10 @@ impl Record {
             access: span.access,
             size: u64::from(size),
             code: dedent(raw),
-            error: span.error.clone(),
+            error: failures::method_error(span.error.as_deref(), &nested),
+            own_error: span.error.clone(),
+            nested,
+            warnings: span.warnings.clone(),
             path: unit.path.clone(),
             language: unit.language(),
             line: span.start_line,
@@ -117,6 +127,11 @@ impl Record {
             ("path".into(), Json::Str(self.path.clone())),
             ("language".into(), Json::Str(self.language.into())),
             ("line".into(), number(self.line)),
+            ("nested_errors".into(), Nested::json(&self.nested)),
+            (
+                "warnings".into(),
+                Json::Array(self.warnings.iter().map(|w| Json::Str(w.clone())).collect()),
+            ),
         ]);
         Json::Object(record)
     }
@@ -130,10 +145,71 @@ struct ClassBlock {
     line: Option<u32>,
     size: u64,
     code: Option<String>,
+    status: Status,
+    /// Why the engine could not decompile the class (`Status::Failed`).
     error: Option<String>,
+    /// Why a hidden class has no text.
+    note: Option<String>,
+    /// Failed bodies in the class's text outside its methods.
+    nested: Vec<Nested>,
 }
 
 impl ClassBlock {
+    /// `class`, written in `unit` (`root_size`: the unit's class-file bytes).
+    fn written(unit: &DecompiledClass, class: &str, universe: &Universe, root_size: u64) -> ClassBlock {
+        let block = |status, code, line, error, note| ClassBlock {
+            name: java_name(class),
+            path: (status != Status::Hidden).then(|| unit.path.clone()),
+            language: (status != Status::Hidden).then(|| unit.language()),
+            line,
+            size: if class == unit.qualified_name {
+                root_size
+            } else {
+                universe.get(class).map_or(0, |c| c.size as u64)
+            },
+            code,
+            status,
+            error,
+            note,
+            nested: failures::outside_methods(unit, class),
+        };
+        match class_slice(unit, class) {
+            Some((code, line)) => {
+                let line = (class != unit.qualified_name).then_some(line);
+                match failures::class_failure(unit, class) {
+                    Some(why) => block(Status::Failed, Some(code), line, Some(why), None),
+                    None => block(Status::Decompiled, Some(code), line, None, None),
+                }
+            }
+            None => match failures::unit_failure(unit) {
+                Some(why) => {
+                    let why = format!("{} could not be decompiled: {why}", java_name(&unit.qualified_name));
+                    block(Status::Failed, None, None, Some(why), None)
+                }
+                None => {
+                    let why = hidden_member(&Target::Class(class.to_string()), unit.language() == "kotlin");
+                    block(Status::Hidden, None, None, None, Some(why))
+                }
+            },
+        }
+    }
+
+    /// `class`, whose unit was not delivered, for `why`.
+    fn missing(class: &str, size: u64, why: String) -> ClassBlock {
+        ClassBlock {
+            name: java_name(class),
+            path: None,
+            language: None,
+            line: None,
+            size,
+            code: None,
+            status: Status::Failed,
+            error: Some(why),
+            note: None,
+            nested: Vec::new(),
+        }
+    }
+
     fn json(&self) -> Json {
         Json::Object(vec![
             ("name".into(), Json::Str(self.name.clone())),
@@ -141,7 +217,10 @@ impl ClassBlock {
             ("language".into(), optional(self.language)),
             ("size".into(), number(self.size)),
             ("code".into(), optional(self.code.as_deref())),
+            ("status".into(), Json::Str(self.status.name().into())),
             ("error".into(), optional(self.error.as_deref())),
+            ("note".into(), optional(self.note.as_deref())),
+            ("nested_errors".into(), Nested::json(&self.nested)),
         ])
     }
 
@@ -157,12 +236,11 @@ impl ClassBlock {
                 out.push('\n');
             }
             _ => {
-                let _ = writeln!(
-                    out,
-                    "// Class: {}  (error: {})\n",
-                    self.name,
-                    self.error.as_deref().unwrap_or("no output")
-                );
+                let (label, why) = match self.status {
+                    Status::Hidden => ("hidden", self.note.as_deref()),
+                    _ => ("error", self.error.as_deref()),
+                };
+                let _ = writeln!(out, "// Class: {}  ({label}: {})\n", self.name, why.unwrap_or("no output"));
             }
         }
     }
@@ -198,15 +276,6 @@ pub(crate) fn dedent(text: &str) -> String {
         out.pop();
     }
     out
-}
-
-/// The bytes of the class files each root class is written from.
-fn unit_sizes(universe: &Universe) -> BTreeMap<String, u64> {
-    let mut sizes = BTreeMap::new();
-    for class in &universe.classes {
-        *sizes.entry(universe.root_of(&class.internal)).or_insert(0) += class.size as u64;
-    }
-    sizes
 }
 
 fn runtime_json(runtime: Option<&Arc<SharedRuntime>>) -> Json {
@@ -291,23 +360,6 @@ fn emit_document(
     }
 }
 
-/// The unit delivered for `root`, or why there is none.
-fn unit_of<'a>(outcome: &'a Outcome, root: &str) -> Result<&'a DecompiledClass, String> {
-    if let Some(result) = outcome.results.iter().find(|r| r.qualified_name == root) {
-        return result
-            .unit
-            .as_ref()
-            .ok_or_else(|| result.error.clone().unwrap_or_else(|| "no output".into()));
-    }
-    Err(outcome
-        .missing
-        .iter()
-        .find(|(name, _)| name == root)
-        .map(|(_, why)| why.clone())
-        .or_else(|| outcome.error.clone())
-        .unwrap_or_else(|| "no output".into()))
-}
-
 /// The part of `unit` that `class` (written inside it) covers, with its first line.
 fn class_slice(unit: &DecompiledClass, class: &str) -> Option<(String, u32)> {
     if unit.qualified_name == class {
@@ -358,7 +410,9 @@ fn hidden_member(target: &Target, kotlin: bool) -> String {
             java_name(class)
         ),
         Target::Class(class) => format!(
-            "{} is not in the decompiled source (--option jvm_remove_synthetic off prints synthetic classes)",
+            "{} is not in the decompiled source: the engine writes an anonymous or local class inside \
+             the method that creates it, so not when that method failed, and leaves synthetic classes out \
+             (--option jvm_remove_synthetic off prints them)",
             java_name(class)
         ),
     }
@@ -415,10 +469,9 @@ pub(crate) fn decompile(args: &Args) -> i32 {
             return 1;
         }
     };
-    let root = loaded.universe.root_of(target.class());
-    let select = BTreeSet::from([root.clone()]);
+    let select: BTreeSet<String> = loaded.universe.chain(target.class()).into_iter().collect();
     execute(args, &loaded, Some(select), &|outcome, runtime| {
-        finish_decompile(args, &loaded, &target, &root, &outcome, runtime)
+        finish_decompile(args, &loaded, &target, &outcome, runtime)
     })
 }
 
@@ -426,48 +479,57 @@ fn finish_decompile(
     args: &Args,
     loaded: &Loaded,
     target: &Target,
-    root: &str,
     outcome: &Outcome,
     runtime: Option<&Arc<SharedRuntime>>,
 ) -> i32 {
-    let failed = |why: String, unit: Option<&DecompiledClass>| {
-        let message = format!("could not decompile {}: {why}", java_name(root));
+    let universe = &loaded.universe;
+    let failed = |name: &str, why: String, unit: Option<&DecompiledClass>, block: Option<ClassBlock>| {
+        let message = format!("could not decompile {}: {why}", java_name(name));
         if args.json {
             let language = unit.map_or(Json::Null, |u| Json::Str(u.language().into()));
             let head = document(args, language, 0, None, Some(&message), runtime);
-            emit_document(args, head, &[], &[], 1);
+            emit_document(args, head, &[], block.as_slice(), 1);
+        } else if let Some(mut code) = block.and_then(|b| b.code) {
+            if !code.ends_with('\n') {
+                code.push('\n');
+            }
+            crate::output::emit_with_status(&code, 1);
         }
         eprintln!("error: {message}");
         1
     };
-    let unit = match unit_of(outcome, root) {
-        Ok(unit) => unit,
-        Err(why) => return failed(why, None),
+    let units = Units::new(outcome);
+    let result = match units.find(universe, target.class()) {
+        Ok(result) => result,
+        Err(why) => return failed(&universe.root_of(target.class()), why, None, None),
     };
+    let root = result.qualified_name.as_str();
+    let Some(unit) = &result.unit else {
+        let why = result.error.clone().unwrap_or_else(|| "no output".into());
+        return failed(root, why, None, None);
+    };
+    let unit_failed = || failures::unit_failure(unit);
+    let hidden = || hidden_member(target, unit.language() == "kotlin");
     let (records, classes): (Vec<Record>, Vec<ClassBlock>) = match target {
         Target::Class(class) => {
-            let Some((code, line)) = class_slice(unit, class) else {
-                return failed(hidden_member(target, unit.language() == "kotlin"), Some(unit));
-            };
+            let root_size = units.sizes(universe).get(root).copied().unwrap_or(0);
+            let block = ClassBlock::written(unit, class, universe, root_size);
+            match block.status {
+                Status::Hidden => return failed(root, hidden(), Some(unit), None),
+                Status::Failed => {
+                    let why = block.error.clone().unwrap_or_default();
+                    let name = if block.code.is_some() { class.as_str() } else { root };
+                    let why = if block.code.is_some() { why } else { unit_failed().unwrap_or(why) };
+                    return failed(name, why, Some(unit), Some(block));
+                }
+                Status::Decompiled => {}
+            }
             let records = unit
                 .methods
                 .iter()
                 .filter(|span| within_class(unit, class, span))
-                .map(|span| Record::from_span(unit, span, &loaded.universe))
+                .map(|span| Record::from_span(unit, span, universe))
                 .collect();
-            let block = ClassBlock {
-                name: java_name(class),
-                path: Some(unit.path.clone()),
-                language: Some(unit.language()),
-                line: (class != root).then_some(line),
-                size: if class == root {
-                    unit_sizes(&loaded.universe).get(root).copied().unwrap_or(0)
-                } else {
-                    loaded.universe.get(class).map_or(0, |c| c.size as u64)
-                },
-                code: Some(code),
-                error: if class == root { unit.error.clone() } else { None },
-            };
             (records, vec![block])
         }
         Target::Methods { .. } => {
@@ -475,10 +537,11 @@ fn finish_decompile(
                 .methods
                 .iter()
                 .filter(|s| target.matches(&s.class, &s.name, &s.descriptor))
-                .map(|span| Record::from_span(unit, span, &loaded.universe))
+                .map(|span| Record::from_span(unit, span, universe))
                 .collect();
             if records.is_empty() {
-                return failed(hidden_member(target, unit.language() == "kotlin"), Some(unit));
+                let why = unit_failed().unwrap_or_else(hidden);
+                return failed(root, why, Some(unit), None);
             }
             (records, Vec::new())
         }
@@ -492,13 +555,8 @@ fn finish_decompile(
         );
     }
     let all_failed = matches!(target, Target::Methods { .. }) && records.iter().all(|r| r.error.is_some());
-    for record in records.iter().filter(|r| r.error.is_some()) {
-        eprintln!(
-            "warning: {}: {}",
-            record.signature(),
-            record.error.as_deref().unwrap_or_default()
-        );
-    }
+    let class_level = classes.first().map(|b| (target.class(), b.nested.as_slice()));
+    failures::warn(&records, class_level);
     let status = i32::from(all_failed);
     if args.json {
         let error = all_failed.then(|| format!("could not decompile {}", records[0].name()));
@@ -640,7 +698,7 @@ pub(crate) fn decompile_all(args: &Args) -> i32 {
             })
     };
     let total = candidates(universe).len();
-    let select: Option<BTreeSet<String>> = if targets.is_empty() && !args.triage.narrows() {
+    let wanted: Option<BTreeSet<String>> = if targets.is_empty() && !args.triage.narrows() {
         None
     } else {
         let mut picked: Vec<Candidate<'_>> = candidates(universe)
@@ -656,38 +714,57 @@ pub(crate) fn decompile_all(args: &Args) -> i32 {
             });
         }
         order_and_limit(&mut picked, &args.triage, |c| (c.size, c.signature(), c.order));
-        let mut roots: BTreeSet<String> = picked.iter().map(|c| universe.root_of(c.class)).collect();
+        let mut classes: BTreeSet<String> = picked.iter().map(|c| c.class.to_string()).collect();
         for target in &targets {
             if let Target::Class(class) = target {
-                roots.insert(universe.root_of(class));
+                classes.insert(class.clone());
             }
         }
-        Some(roots)
+        Some(classes)
     };
-    execute(args, &loaded, select, &|outcome, runtime| {
-        let status = finish_decompile_all(args, &loaded, &targets, by_method, &selected, total, &outcome, runtime);
+    let roots = wanted
+        .as_ref()
+        .map(|classes| classes.iter().flat_map(|c| universe.chain(c)).collect::<BTreeSet<String>>());
+    let shape = Shape {
+        targets: &targets,
+        wanted: wanted.as_ref(),
+        by_method,
+        selected: &selected,
+        total,
+    };
+    execute(args, &loaded, roots, &|outcome, runtime| {
+        let status = finish_decompile_all(args, &loaded, &shape, &outcome, runtime);
         run::abandon(outcome);
         status
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+/// What `decompile-all` was asked for.
+struct Shape<'a> {
+    targets: &'a [Target],
+    /// The classes selected (`--functions`, triage); `None`: every class.
+    wanted: Option<&'a BTreeSet<String>>,
+    by_method: bool,
+    selected: &'a (dyn Fn(&str, &str, &str) -> bool + Sync),
+    total: usize,
+}
+
 fn finish_decompile_all(
     args: &Args,
     loaded: &Loaded,
-    targets: &[Target],
-    by_method: bool,
-    selected: &dyn Fn(&str, &str, &str) -> bool,
-    total: usize,
+    shape: &Shape<'_>,
     outcome: &Outcome,
     runtime: Option<&Arc<SharedRuntime>>,
 ) -> i32 {
     let universe = &loaded.universe;
+    let (targets, by_method) = (shape.targets, shape.by_method);
+    let units = Units::new(outcome);
+    let relevant = units.holding(universe, shape.wanted);
     let mut records: Vec<(Record, usize)> = Vec::new();
-    for result in &outcome.results {
+    for result in &relevant {
         let Some(unit) = &result.unit else { continue };
         for span in &unit.methods {
-            if !selected(&span.class, &span.name, &span.descriptor) {
+            if !(shape.selected)(&span.class, &span.name, &span.descriptor) {
                 continue;
             }
             let record = Record::from_span(unit, span, universe);
@@ -704,8 +781,7 @@ fn finish_decompile_all(
         if args.triage.narrows() {
             Vec::new()
         } else {
-            outcome
-                .results
+            relevant
                 .iter()
                 .map(|r| r.qualified_name.clone())
                 .chain(outcome.missing.iter().map(|(n, _)| n.clone()))
@@ -720,51 +796,24 @@ fn finish_decompile_all(
             })
             .collect()
     };
-    let sizes = unit_sizes(universe);
+    let sizes = units.sizes(universe);
     let unit_size = |root: &str| sizes.get(root).copied().unwrap_or(0);
     let classes: Vec<ClassBlock> = class_roots
         .iter()
-        .map(|class| {
-            let root = universe.root_of(class);
-            match unit_of(outcome, &root) {
-                Ok(unit) => match class_slice(unit, class) {
-                    Some((code, line)) => ClassBlock {
-                        name: java_name(class),
-                        path: Some(unit.path.clone()),
-                        language: Some(unit.language()),
-                        line: (*class != root).then_some(line),
-                        size: if *class == root {
-                            unit_size(&root)
-                        } else {
-                            universe.get(class).map_or(0, |c| c.size as u64)
-                        },
-                        code: Some(code),
-                        error: if *class == root { unit.error.clone() } else { None },
-                    },
-                    None => ClassBlock {
-                        name: java_name(class),
-                        path: None,
-                        language: None,
-                        line: None,
-                        size: 0,
-                        code: None,
-                        error: Some(hidden_member(&Target::Class(class.clone()), unit.language() == "kotlin")),
-                    },
-                },
-                Err(why) => ClassBlock {
-                    name: java_name(class),
-                    path: None,
-                    language: None,
-                    line: None,
-                    size: unit_size(&root),
-                    code: None,
-                    error: Some(why),
-                },
-            }
+        .map(|class| match units.find(universe, class) {
+            Ok(result) => match &result.unit {
+                Some(unit) => ClassBlock::written(unit, class, universe, unit_size(&result.qualified_name)),
+                None => ClassBlock::missing(
+                    class,
+                    unit_size(&result.qualified_name),
+                    result.error.clone().unwrap_or_else(|| "no output".into()),
+                ),
+            },
+            Err(why) => ClassBlock::missing(class, unit_size(&universe.root_of(class)), why),
         })
         .collect();
 
-    let produced = outcome.results.iter().any(|r| r.unit.is_some());
+    let produced = relevant.iter().any(|r| failures::result_failure(r).is_none());
     let error = match (&outcome.error, produced) {
         (Some(e), _) => Some(e.clone()),
         (None, false) => Some(format!("no class of {} could be decompiled", args.input)),
@@ -777,8 +826,13 @@ fn finish_decompile_all(
     for (name, why) in &outcome.missing {
         eprintln!("warning: could not decompile {}: {why}", java_name(name));
     }
+    for result in &relevant {
+        if let Some(why) = failures::result_failure(result) {
+            eprintln!("warning: could not decompile {}: {why}", java_name(&result.qualified_name));
+        }
+    }
     if args.json {
-        let total = by_method.then_some(total);
+        let total = by_method.then_some(shape.total);
         let language = language_of(&records, &classes);
         let head = document(args, language, records.len(), total, error.as_deref(), runtime);
         return emit_document(args, head, &records, &classes, status);

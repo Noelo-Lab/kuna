@@ -71,14 +71,23 @@ impl Universe {
 
     /// The top-level class `internal` is written in: its outer chain, as far as the input has it.
     pub(crate) fn root_of(&self, internal: &str) -> String {
-        let mut current = internal.to_string();
+        self.chain(internal).pop().unwrap_or_default()
+    }
+
+    /// `internal` and the classes its class file says it is nested in,
+    /// innermost first. The engine writes a class inside the nearest of them
+    /// it takes for a top-level class, which need not be the last: it keeps
+    /// an anonymous class it cannot place (a Kotlin `$$inlined$` copy) apart.
+    pub(crate) fn chain(&self, internal: &str) -> Vec<String> {
+        let mut chain = vec![internal.to_string()];
         for _ in 0..256 {
-            match self.get(&current).and_then(|c| c.outer.clone()) {
-                Some(outer) if outer != current && self.index.contains_key(&outer) => current = outer,
+            let current = chain.last().map(String::as_str).unwrap_or_default();
+            match self.get(current).and_then(|c| c.outer.clone()) {
+                Some(outer) if outer != current && self.index.contains_key(&outer) => chain.push(outer),
                 _ => break,
             }
         }
-        current
+        chain
     }
 
     pub(crate) fn method(&self, class: &str, name: &str, descriptor: &str) -> Option<&MethodInfo> {
@@ -295,6 +304,8 @@ mod tests {
         }
         assert_eq!(u.root_of("com/ex/Main$Checker"), "com/ex/Main");
         assert_eq!(u.root_of("com/ex/util/Helper"), "com/ex/util/Helper");
+        assert_eq!(u.chain("com/ex/Main$Checker"), ["com/ex/Main$Checker", "com/ex/Main"]);
+        assert_eq!(u.chain("com/ex/Main"), ["com/ex/Main"]);
     }
 
     #[test]

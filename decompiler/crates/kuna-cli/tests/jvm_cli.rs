@@ -200,7 +200,7 @@ fn decompile_json_is_the_native_document_with_java_records() {
         [
             "name", "address", "address_hex", "aliases", "object_location", "size", "code", "error",
             "unstructured_gotos", "line_mappings", "class", "method", "descriptor", "access", "path", "language",
-            "line"
+            "line", "nested_errors", "warnings"
         ]
     );
     assert_eq!(record["name"], "com.ex.Main.check");
@@ -228,7 +228,11 @@ fn decompile_json_of_a_class_carries_the_unit_and_its_methods() {
     assert_eq!(doc["omitted"], serde_json::json!(["line_mappings", "variables", "types", "stack_objects"]));
     let classes = doc["classes"].as_array().unwrap();
     assert_eq!(classes.len(), 1);
-    assert_eq!(keys(&classes[0]), ["name", "path", "language", "size", "code", "error"]);
+    assert_eq!(
+        keys(&classes[0]),
+        ["name", "path", "language", "size", "code", "status", "error", "note", "nested_errors"]
+    );
+    assert_eq!(classes[0]["status"], "decompiled");
     assert_eq!(classes[0]["name"], "com.ex.Main");
     assert_eq!(classes[0]["code"].as_str().unwrap(), ok(&jvm(&["decompile", &jar(), "com.ex.Main"])));
     let names: Vec<&str> = doc["functions"].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
@@ -779,4 +783,137 @@ fn decompile_project_writes_kotlin_classes_as_kt_files() {
     let mixed_out = scratch_dir("jvm-project-mixed");
     let summary = ok(&jvm(&["decompile-project", mixed.to_str().unwrap(), "-o", mixed_out.to_str().unwrap()]));
     assert!(summary.contains(": 1 .java files, 1 .kt files ("), "{summary}");
+}
+
+/// `tests/fixtures/jvm/failures`: classes the engine fails on in Vineflower's
+/// way, so every run pins `jvm_vineflower_compat on` (a later fix keeps them failing there).
+const COMPAT: [&str; 2] = ["--option", "jvm_vineflower_compat"];
+
+fn failing(args: &[&str]) -> Output {
+    let mut all: Vec<&str> = args.to_vec();
+    all.extend(COMPAT);
+    all.push("on");
+    jvm(&all)
+}
+
+fn failures_dir(sub: &str) -> String {
+    fixtures().join("failures").join(sub).display().to_string()
+}
+
+fn warnings(out: &Output) -> Vec<String> {
+    stderr(out).lines().filter(|l| l.starts_with("warning: ")).map(str::to_string).collect()
+}
+
+#[test]
+fn a_failure_inside_a_lambda_or_anonymous_class_fails_the_enclosing_method() {
+    let dir = failures_dir("classes");
+    let escape = failing(&["decompile", &dir, "com.ex.fail.Nested.escape"]);
+    assert_eq!(escape.status.code(), Some(1), "its only selected method failed: {}", stderr(&escape));
+    assert!(stdout(&escape).contains("// $VF: Couldn't be decompiled"), "{}", stdout(&escape));
+    assert_eq!(
+        warnings(&escape),
+        ["warning: com.ex.fail.Nested.escape(Ljava/lang/CharSequence;)Ljava/lang/String;: in \
+          com.ex.fail.Nested.lambda$escape$1(Ljava/lang/StringBuilder;I)V: RuntimeException: invalid constant type: \
+          Ljava/lang/Object; with value \\\""]
+    );
+    let later = failing(&["decompile", &dir, "com.ex.fail.Nested.later"]);
+    assert_eq!(later.status.code(), Some(1));
+    assert!(warnings(&later)[0].contains(": in com.ex.fail.Nested$1.run()V: RuntimeException"), "{}", stderr(&later));
+
+    let class = failing(&["decompile", &dir, "com.ex.fail.Nested"]);
+    assert_eq!(class.status.code(), Some(0), "a class target exits 0 when the class was written");
+    let told = warnings(&class);
+    assert_eq!(told.len(), 5, "each failed body once: {told:#?}");
+    assert!(told.iter().any(|w| w.starts_with("warning: com.ex.fail.Nested$1.run()V: RuntimeException")));
+    assert!(!told.iter().any(|w| w.starts_with("warning: com.ex.fail.Nested.later")), "{told:#?}");
+    assert!(told.iter().any(|w| w.starts_with("warning: com.ex.fail.Nested: in com.ex.fail.Nested.lambda$static$0")));
+
+    let doc = json(&failing(&["decompile-all", &dir, "--json"]));
+    let record = |name: &str| {
+        doc["functions"].as_array().unwrap().iter().find(|f| f["name"] == name).cloned().unwrap()
+    };
+    let escape = record("com.ex.fail.Nested.escape");
+    assert!(escape["error"].as_str().unwrap().starts_with("in com.ex.fail.Nested.lambda$escape$1("), "{escape}");
+    assert_eq!(escape["nested_errors"].as_array().unwrap().len(), 1);
+    assert_eq!(record("com.ex.fail.Nested.both")["nested_errors"].as_array().unwrap().len(), 2);
+    assert_eq!(record("com.ex.fail.Nested.later")["nested_errors"][0]["body"], "com.ex.fail.Nested$1.run()V");
+    assert!(record("com.ex.fail.Nested$1.run")["nested_errors"].as_array().unwrap().is_empty());
+    assert!(record("com.ex.fail.Nested.plain")["error"].is_null());
+    let class = &doc["classes"][0];
+    assert_eq!(class["status"], "decompiled");
+    assert!(class["error"].is_null());
+    assert_eq!(class["nested_errors"].as_array().unwrap().len(), 1, "the field initializer's lambda: {class}");
+
+    let out = scratch_dir("jvm-nested-failures");
+    let summary = ok(&failing(&["decompile-project", &dir, "-o", &out.display().to_string()]));
+    assert!(
+        summary.ends_with("; classes: 1 ok, 0 failed; methods: 1 ok, 4 failed; outside methods: 1 failed\n"),
+        "{summary}"
+    );
+}
+
+#[test]
+fn a_flagged_vf_comment_is_a_warning_not_a_failure() {
+    let class = common::repo_root().join("tests/jvm/classes/java25/pkg/TestAssertsEnabled.class").display().to_string();
+    let out = jvm(&["decompile", &class, "pkg.TestAssertsEnabled.test7"]);
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(warnings(&out), ["warning: pkg.TestAssertsEnabled.test7()V: $VF: Could not resugar all assert statements!"]);
+    let doc = json(&jvm(&["decompile", &class, "pkg.TestAssertsEnabled.test7", "--json"]));
+    let record = &doc["functions"][0];
+    assert!(record["error"].is_null());
+    assert_eq!(record["warnings"], serde_json::json!(["$VF: Could not resugar all assert statements!"]));
+    let plain = json(&jvm(&["decompile", &class, "pkg.TestAssertsEnabled.test", "--json"]));
+    assert_eq!(plain["functions"][0]["warnings"], serde_json::json!([]));
+}
+
+#[test]
+fn a_class_the_kotlin_writer_gives_up_on_is_failed_not_hidden() {
+    let dir = failures_dir("kotlin/classes");
+    let reason = "Class com/ex/ktfail/Lens couldn't be fully decompiled: NullPointerException: exprents";
+    let class = failing(&["decompile", &dir, "com.ex.ktfail.Lens"]);
+    assert_eq!(class.status.code(), Some(1));
+    assert!(stdout(&class).contains("$VF: Unable to decompile class"), "{}", stdout(&class));
+    assert!(stderr(&class).contains(&format!("error: could not decompile com.ex.ktfail.Lens: {reason}")), "{}", stderr(&class));
+    let method = failing(&["decompile", &dir, "com.ex.ktfail.Lens.getLens"]);
+    assert_eq!(method.status.code(), Some(1));
+    assert!(stderr(&method).contains(reason), "{}", stderr(&method));
+    assert!(!stderr(&method).contains("no declaration of its own"), "{}", stderr(&method));
+
+    let all = failing(&["decompile-all", &dir, "--json"]);
+    assert!(stderr(&all).contains(&format!("warning: could not decompile com.ex.ktfail.Lens: {reason}")));
+    let doc = json(&all);
+    let status = |name: &str| {
+        let c = doc["classes"].as_array().unwrap().iter().find(|c| c["name"] == name).cloned().unwrap();
+        (c["status"].as_str().unwrap().to_string(), c["error"].clone())
+    };
+    assert_eq!(status("com.ex.ktfail.Lens"), ("failed".into(), serde_json::json!(reason)));
+    assert_eq!(status("com.ex.ktfail.Plain"), ("decompiled".into(), Value::Null));
+
+    let lens = fixtures().join("failures/kotlin/classes/com/ex/ktfail/Lens.class").display().to_string();
+    let only = failing(&["decompile-all", &lens, "--json"]);
+    assert_eq!(only.status.code(), Some(1), "no class decompiled");
+    let doc: Value = serde_json::from_str(&stdout(&only)).unwrap();
+    assert_eq!(doc["error"], serde_json::json!(format!("no class of {lens} could be decompiled")));
+
+    let out = scratch_dir("jvm-kotlin-failed-class");
+    let summary = ok(&failing(&["decompile-project", &dir, "-o", &out.display().to_string()]));
+    assert!(summary.ends_with("; classes: 3 ok, 1 failed; methods: 5 ok, 1 failed\n"), "{summary}");
+}
+
+#[test]
+fn an_anonymous_class_the_engine_keeps_apart_is_its_own_unit() {
+    let dir = failures_dir("kotlin/classes");
+    let inlined = "com.ex.ktfail.InlKt$sortNames$$inlined$byLength$1";
+    let text = ok(&failing(&["decompile", &dir, inlined]));
+    assert!(text.starts_with("package com.ex.ktfail\n"), "{text}");
+    let doc = json(&failing(&["decompile-all", &dir, "--functions", inlined, "--json"]));
+    assert_eq!(doc["classes"][0]["status"], "decompiled");
+    assert_eq!(doc["classes"][0]["path"], "com/ex/ktfail/InlKt$sortNames$$inlined$byLength$1.kt");
+
+    let hidden = "com.ex.ktfail.InlKt$byLength$1";
+    let doc = json(&failing(&["decompile-all", &dir, "--functions", hidden, "--json"]));
+    let class = &doc["classes"][0];
+    assert_eq!(class["status"], "hidden");
+    assert!(class["error"].is_null() && class["code"].is_null());
+    assert!(class["note"].as_str().unwrap().contains("is not in the decompiled source"), "{class}");
 }

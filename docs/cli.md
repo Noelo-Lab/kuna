@@ -4259,11 +4259,16 @@ where the file count reads `N .kt files` when every file is Kotlin and
 `N .java files, M .kt files` when there are both, and exits `0` when at least one class
 was decompiled. A method the engine could not
 decompile is still written, with a `// $VF: Couldn't be decompiled` comment in place of
-its body (`docs/jvm.md`), and counts as a failed method. A class the engine produced no
-text for gets a one-line stub at the `.java` path its name implies (its language is not
-known),
-`// kuna: could not decompile com.ex.Broken: <reason>`, and counts as a failed class,
-with a `warning:` line on stderr.
+its body (`docs/jvm.md`), and counts as a failed method; so does a method whose text holds
+such a comment for a lambda or an anonymous or local class written inside it (*Failures
+and warnings* below). A class the engine wrote as an error comment
+(`/* $VF: Unable to decompile class ... */`, or a header with `// $VF: Couldn't be
+decompiled` under it) is written as it is and counts as a failed class; a class the engine
+produced no text for gets a one-line stub at the `.java` path its name implies (its
+language is not known), `// kuna: could not decompile com.ex.Broken: <reason>`, and counts
+as a failed class too. Each failed class gets a `warning:` line on stderr. When a lambda
+in a field initializer, or a member class, failed outside every method, the line ends with
+`; outside methods: N failed`, the number of such bodies.
 
 ### Naming a class or a method
 
@@ -4376,16 +4381,21 @@ or `null` for none); a `classes` array before `assertions`; and `omitted` always
 `variables`, `types` and `stack_objects`, which the JVM engine does not produce. `total`
 (every method of the input) follows `count` only when `--functions` names a method or a
 triage flag narrows the selection. `classes` holds one record per class printed whole,
-`{name, path, language, size, code, error}`, where `language` is its unit's and `size` the
-bytes of the class files the unit is written from; it is empty for a method selection. A method the engine does not write (a
+`{name, path, language, size, code, status, error, note, nested_errors}`, where `language`
+is its unit's, `size` the bytes of the class files the unit is written from, `status`
+`decompiled`, `failed` (`error` holds the engine's reason; `code` is the error comment the
+engine wrote, or `null`) or `hidden` (no text: `code`, `path` and `error` are `null` and
+`note` says why), and `nested_errors` the bodies outside the class's methods that failed;
+it is empty for a method selection. A method the engine does not write (a
 default constructor javac added, a synthetic or bridge method it folds into its users) has
 no record, so `count` can be below what `functions` lists. Each method record keeps the
 native keys, with `address`, `address_hex` and `object_location`
 `null`, `aliases` empty, `size` the method's bytecode length, `unstructured_gotos` `0`,
 and `line_mappings` addresses that are **bytecode offsets** within the method; and adds
 `class`, `method`, `descriptor`, `access` (the modifier words), `path` (the compilation
-unit), `language` (that unit's: `java`, or `kotlin` when `path` ends in `.kt`) and `line`
-(where the method starts in that unit).
+unit), `language` (that unit's: `java`, or `kotlin` when `path` ends in `.kt`), `line`
+(where the method starts in that unit), `nested_errors` and `warnings` (*Failures and
+warnings* below). `error` is `null` exactly when `code` holds no failure.
 
 ```
 $ kuna decompile app.jar com.ex.Main.check --json    # re-wrapped; the real output is indented
@@ -4398,7 +4408,8 @@ $ kuna decompile app.jar com.ex.Main.check --json    # re-wrapped; the real outp
    "error": null, "unstructured_gotos": 0,
    "line_mappings": [{"line_number": 2, "addresses": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 21]}],
    "class": "com.ex.Main", "method": "check", "descriptor": "(Ljava/lang/String;)Z",
-   "access": ["public", "static"], "path": "com/ex/Main.java", "language": "java", "line": 25}],
+   "access": ["public", "static"], "path": "com/ex/Main.java", "language": "java", "line": 25,
+   "nested_errors": [], "warnings": []}],
  "classes": [], "assertions": []}
 ```
 
@@ -4411,7 +4422,98 @@ $ kuna decompile app.jar com.ex.Main.check --json    # re-wrapped; the real outp
 object_location, size, class, method, descriptor, access}], classes: [{name, outer,
 source_file, size, access}]}`, with the same `null` address fields; `outer` is the
 enclosing class of a nested class (`null` for a top-level one) and `size` is the class
-file's length.
+file's length. `functions` reads the class files and decompiles nothing, so it says nothing
+about failures; `outer` is what the class file claims, and the engine may still write a
+class it cannot place inside its outer class (a Kotlin `$$inlined$` copy of an anonymous
+object) as a top-level unit of its own, which the other commands then name it by.
+
+### Failures and warnings
+
+The engine writes what it could not decompile as a comment in place of the code
+(`docs/jvm.md`). The CLI reports every such comment, by one rule: **code printed as part of
+a method is that method's.**
+
+- A method whose own body failed: its record's `error` is the engine's message.
+- A lambda, an anonymous or local class, or a method of such a class, that failed while
+  written inside method M: M's record lists it in `nested_errors`
+  (`[{body, error}]`, `body` named like `com.ex.Main.lambda$main$0(I)V`, or a class name),
+  and M's `error`, when M's own body did not fail, is `in <body>: <message>` (several joined
+  with `; `). The anonymous class's method keeps its own record and error too.
+- A failure outside every method of a class (a lambda in a field initializer, a member
+  class the engine could not write) is the class's: its `nested_errors` in `classes`, and
+  the `outside methods` count of `decompile-project`.
+- A class the engine wrote as an error comment has `status: "failed"` and the engine's
+  reason in `error`; one with no text at all (a synthetic class, an anonymous class whose
+  creating method failed) has `status: "hidden"`.
+
+A method's failure therefore counts once in `decompile-project`'s `methods: M ok, G
+failed` (G is the number of methods whose text holds a failure, however many bodies
+failed inside it), and `decompile` prints one `warning:` line per failed body, under its
+own record when that is selected, else under the selected method that holds it:
+
+```
+$ kuna decompile tests/fixtures/jvm/failures/classes com.ex.fail.Nested.later --option jvm_vineflower_compat on ; echo $?
+static Runnable later(final StringBuilder b, final int c) {
+   return new Runnable() {
+      @Override
+      public void run() {
+         // $VF: Couldn't be decompiled
+...
+warning: com.ex.fail.Nested.later(Ljava/lang/StringBuilder;I)Ljava/lang/Runnable;: in com.ex.fail.Nested$1.run()V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
+1
+$ kuna decompile tests/fixtures/jvm/failures/classes com.ex.fail.Nested --option jvm_vineflower_compat on >/dev/null
+warning: com.ex.fail.Nested.escape(Ljava/lang/CharSequence;)Ljava/lang/String;: in com.ex.fail.Nested.lambda$escape$1(Ljava/lang/StringBuilder;I)V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
+warning: com.ex.fail.Nested.both(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;: in com.ex.fail.Nested.lambda$both$2(Ljava/lang/StringBuilder;I)V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
+warning: com.ex.fail.Nested.both(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;: in com.ex.fail.Nested.lambda$both$3(Ljava/lang/StringBuilder;I)V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \\
+warning: com.ex.fail.Nested$1.run()V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
+warning: com.ex.fail.Nested: in com.ex.fail.Nested.lambda$static$0(I)Ljava/lang/Object;: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
+$ kuna decompile-project tests/fixtures/jvm/failures/classes -o out --option jvm_vineflower_compat on
+wrote out: 1 .java files (5641 bytes); classes: 1 ok, 0 failed; methods: 1 ok, 4 failed; outside methods: 1 failed
+```
+
+(`tests/fixtures/jvm/failures/` holds classes that fail in Vineflower's way, hence
+`jvm_vineflower_compat on`, which keeps them failing after a kuna fix for the defect.)
+
+A class the Kotlin writer gives up on is failed on every surface (`InlKt$sortNames$$inlined$byLength$1`,
+an anonymous object copied out of an inline function, is a unit of its own):
+
+```
+$ kuna decompile tests/fixtures/jvm/failures/kotlin/classes com.ex.ktfail.Lens.getLens --option jvm_vineflower_compat on
+error: could not decompile com.ex.ktfail.Lens: Class com/ex/ktfail/Lens couldn't be fully decompiled: NullPointerException: exprents
+$ kuna decompile-all tests/fixtures/jvm/failures/kotlin/classes --json --option jvm_vineflower_compat on 2>/dev/null | jq -c '.classes[] | {name, status, error}'
+{"name":"com.ex.ktfail.InlKt$sortNames$$inlined$byLength$1","status":"decompiled","error":null}
+{"name":"com.ex.ktfail.InlKt","status":"decompiled","error":null}
+{"name":"com.ex.ktfail.Lens","status":"failed","error":"Class com/ex/ktfail/Lens couldn't be fully decompiled: NullPointerException: exprents"}
+{"name":"com.ex.ktfail.Plain","status":"decompiled","error":null}
+$ kuna decompile-project tests/fixtures/jvm/failures/kotlin/classes -o out --option jvm_vineflower_compat on
+warning: could not decompile com.ex.ktfail.Lens: Class com/ex/ktfail/Lens couldn't be fully decompiled: NullPointerException: exprents
+wrote out: 4 .kt files (2271 bytes); classes: 3 ok, 1 failed; methods: 5 ok, 1 failed
+```
+
+**Warnings.** Some `$VF:` comments the engine writes above a method mark text that is
+complete but may be wrong; the engine flags them as errors (its report-this note follows
+them): `Could not resugar all assert statements!`, `Unable to simplify switch on enum`,
+`Could not properly define all variable types!`, `One or more variable merging failures!`,
+`Accidentally destroyed if statement, the decompiled code is not correct!`, `Made invalid
+labels!`, `Could not inline inconsistent finally blocks`, `Could not handle exception
+ranges with multiple entries`, and the like. A method with such a comment lists the
+method's `$VF:` comments in its record's `warnings` and gets a `warning:` line from
+`decompile`; it is not a failure (`error` stays `null`, nothing is counted, the exit code
+is unchanged). The Kotlin writer does not print these comments, and the warning is the only
+place they show. Comments the engine does not flag are informational and not reported:
+`Added assignment to ensure synchronized validity`, `Irreducible bytecode was duplicated to
+produce valid code`, `Removed empty exception range`, `Extended synchronized range to
+monitorexit`, `Could not fully resugar string concatentation!`, `Compiled from`,
+`renamed from`, `Class flags could not be determined`.
+
+```
+$ kuna decompile tests/jvm/classes/java25/pkg/TestAssertsEnabled.class pkg.TestAssertsEnabled.test7 >/dev/null
+warning: pkg.TestAssertsEnabled.test7()V: $VF: Could not resugar all assert statements!
+```
+
+Lines the engine only logs (`Statement cannot be decomposed although reducible!`,
+`Inconsistent inner class entries`, a Kotlin `Couldn't find method X in class Y`) are not
+shown: the JVM path has no `--verbose`, and none of them, alone, marks wrong output.
 
 ### Options, modes and libraries
 
@@ -4472,8 +4574,8 @@ error: --isa is a native-engine flag; app.jar is a JVM input (jar), decompiled b
 
 | Exit | Meaning |
 |---|---|
-| `0` | the selection was decompiled; for `decompile-all` and `decompile-project`, at least one class was produced (failed methods inside it are comments, not failures of the run) |
-| `1` | the input could not be read or is a recognized but unsupported kind, the command is not available for JVM inputs, the selection matched nothing or names a method with no text of its own, every method `decompile` selected failed, or no class was produced |
+| `0` | the selection was decompiled; for `decompile-all` and `decompile-project`, at least one class was decompiled (failed methods inside it are comments, not failures of the run) |
+| `1` | the input could not be read or is a recognized but unsupported kind, the command is not available for JVM inputs, the selection matched nothing or names a method with no text of its own, every method `decompile` selected failed (its own body or a body written inside it, *Failures and warnings*), the class `decompile` selected is one the engine could not decompile, or no class was decompiled (a class written as the engine's error comment does not count) |
 | `2` | a usage error: an unknown or driver-owned option, a bad option value, a refused flag, a `--language` other than `auto` or `java` |
 
 ## `kuna docs` — the manual, inside the binary
