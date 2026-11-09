@@ -140,3 +140,5 @@ mod kuna_spans;
 mod kuna_deadline;
 #[path = "kuna_driver.rs"]
 mod kuna_driver;
+#[path = "kt1_metadata.rs"]
+mod kt1_metadata;
