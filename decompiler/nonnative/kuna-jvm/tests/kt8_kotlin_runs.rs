@@ -55,6 +55,7 @@ fn a_kotlin_class_gets_class_and_method_spans() {
     assert_eq!(units.len(), 1);
     let unit = &units[0];
     assert_eq!(unit.path, "pkg/TestTrySynchronized.kt");
+    assert_eq!(unit.language(), "kotlin");
     assert!(unit.error.is_none());
 
     let classes: Vec<&str> = unit.classes.iter().map(|c| c.internal.as_str()).collect();
@@ -97,6 +98,20 @@ fn a_kotlin_class_gets_class_and_method_spans() {
     assert!(method_text(unit, "getInputStream")
         .trim_start()
         .starts_with("private final val inputStream: InputStream?"));
+}
+
+#[test]
+fn with_the_kotlin_plugin_off_the_class_is_written_as_java() {
+    for (key, value) in [("jvm_plugins", "0"), ("kt-enable", "0")] {
+        let (units, _) = decompile_with(&input(key), &options(&[(key, value)]), |_| {});
+        assert_eq!(units[0].path, "pkg/TestTrySynchronized.java", "{key}");
+        assert_eq!(units[0].language(), "java");
+        assert!(units[0].content.contains("@Metadata("));
+        assert!(units[0]
+            .methods
+            .iter()
+            .any(|m| m.name == "case01" && m.error.is_none()));
+    }
 }
 
 #[test]

@@ -7,6 +7,7 @@
 
 use std::rc::Rc;
 
+use crate::fernflower::DecompiledClass;
 use crate::i_fernflower_preferences::PreferenceOption;
 use crate::idea_not_null_plugin::IdeaNotNullPlugin;
 use crate::kotlin_plugin::KotlinPlugin;
@@ -115,4 +116,15 @@ pub fn find_plugin_option(key: &str) -> Option<PluginOption> {
     bundled_plugin_options()
         .into_iter()
         .find(|o| o.option.key == key)
+}
+
+impl DecompiledClass {
+    /// The language the class was written in: `kotlin` when the Kotlin plugin
+    /// claimed it (its `path` then ends in `.kt`), else `java`.
+    pub fn language(&self) -> &'static str {
+        match self.path.rsplit_once('.') {
+            Some((_, "kt")) => "kotlin",
+            _ => "java",
+        }
+    }
 }
