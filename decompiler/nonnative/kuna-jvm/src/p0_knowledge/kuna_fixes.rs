@@ -66,6 +66,15 @@ pub enum KunaFix {
     /// `statement_as_expression`: a statement-only exprent (an
     /// `assert`) is not written as a lambda's expression body or a `for` update.
     StatementAsExpression,
+    /// `enum_body_separator`: an enum body with members but no
+    /// constants starts with the `;` Java requires before its members.
+    EnumBodySeparator,
+    /// `anonymous_static_qualifier`: a static member of an anonymous
+    /// class used inside it is written unqualified, not as `<unrepresentable>.m`.
+    AnonymousStaticQualifier,
+    /// `assert_dead_throw`: the `throw new AssertionError` an assert
+    /// consumed through a break is removed, not left behind as dead code.
+    AssertDeadThrow,
 }
 
 impl KunaFix {
@@ -85,6 +94,9 @@ impl KunaFix {
         KunaFix::SelfReferencingLambda,
         KunaFix::ExternalClassDiamond,
         KunaFix::StatementAsExpression,
+        KunaFix::EnumBodySeparator,
+        KunaFix::AnonymousStaticQualifier,
+        KunaFix::AssertDeadThrow,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -104,6 +116,9 @@ impl KunaFix {
             KunaFix::SelfReferencingLambda => "self_referencing_lambda",
             KunaFix::ExternalClassDiamond => "external_class_diamond",
             KunaFix::StatementAsExpression => "statement_as_expression",
+            KunaFix::EnumBodySeparator => "enum_body_separator",
+            KunaFix::AnonymousStaticQualifier => "anonymous_static_qualifier",
+            KunaFix::AssertDeadThrow => "assert_dead_throw",
         }
     }
 

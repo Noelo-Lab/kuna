@@ -56,7 +56,9 @@ pub use infra::{
     graph_parser, kuna_plugins, language_chooser, language_spec, plugin, plugin_options,
     plugin_source, statement_writer,
 };
-pub use kotlin::{bit_encoding, kt_flags, kt_metadata, kt_proto, metadata_name_resolver};
+pub use kotlin::{
+    bit_encoding, kt_flags, kt_metadata, kt_proto, metadata_name_resolver,
+};
 pub use kotlin::{
     collapse_string_concat_pass, default_args_map, eliminate_dead_vars_pass, java_finally_pass,
     k_contract, k_enum_processor, k_expr_processor, k_merge_pass, k_parameter, k_property_accessor,
@@ -149,10 +151,10 @@ pub use substrate::{
     field_exprent, function_exprent, general_statement, i_matchable, if_exprent, if_statement,
     int_helper, interpreter_util, invocation_exprent, key, kuna_fix_statement_as_expression,
     kuna_fix_switch_yield_const_retype, list_stack, long_fast_fixed_set_factory, match_engine,
-    match_node, method_descriptor, monitor_exprent, new_class_name_builder, new_exprent,
-    packed_map, pair, pattern, pattern_exprent, root_statement, s_forms_fast_map_direct,
-    sequence_statement, short_fast_fixed_set_factory, start_end_pair, stat_edge, statement,
-    statement_iterator, statements, switch_exprent, switch_head_exprent, switch_statement,
-    synchronized_statement, text_util, type_annotation, type_family, typed, var_exprent, var_type,
-    vb_style_collection, yield_exprent, zip_reader,
+    match_node, method_descriptor, monitor_exprent, new_class_name_builder, new_exprent, packed_map,
+    pair, pattern, pattern_exprent, root_statement, s_forms_fast_map_direct, sequence_statement,
+    short_fast_fixed_set_factory, start_end_pair, stat_edge, statement, statement_iterator,
+    statements, switch_exprent, switch_head_exprent, switch_statement, synchronized_statement,
+    text_util, type_annotation, type_family, typed, var_exprent, var_type, vb_style_collection,
+    yield_exprent, zip_reader,
 };

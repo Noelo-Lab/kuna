@@ -205,9 +205,99 @@ def statement_as_expression(old, new):
     return any(candidate == a for candidate in unwhile_assert_updates(b))
 
 
+UNREPRESENTABLE = '<unrepresentable>.'
+ASSERT_THROW = re.compile(r'\s*throw new AssertionError\(')
+WORD = re.compile(r'[A-Za-z_$][\w$]*')
+ENUM_HEADER = re.compile(r'^\s*(?:[\w$]+ )*enum [\w$]+(?: implements [^{]*)? \{$')
+
+
+def anonymous_static_qualifier(old, new):
+    """anonymous_static_qualifier: line for line, `<unrepresentable>.` dropped and nothing else changed."""
+    if len(old) != len(new) or old == new:
+        return False
+    return all(o == n or (UNREPRESENTABLE in o and o.replace(UNREPRESENTABLE, '') == n) for o, n in zip(old, new))
+
+
+def assert_throws(old):
+    """The `throw new AssertionError(...)` statements of `old` when it holds nothing else but blank lines and
+    `return;` (the explicit return Vineflower prints before them), else None."""
+    throws, current = [], None
+    for line in old:
+        s = line.strip()
+        if current is not None:
+            current.append(s)
+            if s.endswith(';'):
+                throws.append(' '.join(current))
+                current = None
+        elif ASSERT_THROW.match(line):
+            current = [s]
+            if s.endswith(';'):
+                throws.append(s)
+                current = None
+        elif s not in ('', 'return;'):
+            return None
+    return throws if throws and current is None else None
+
+
+def assert_dead_throw(old, new):
+    """assert_dead_throw: dead `throw new AssertionError(...)` statements (with the `return;` before
+    them) removed and nothing added."""
+    return not any(x.strip() for x in new) and assert_throws(old) is not None
+
+
+
+
+def enum_body_separator(a, b, i1, i2, j1, j2, throw_names):
+    """enum_body_separator: a `;` line (and a blank line) inserted right after an enum's header."""
+    return (i1 == i2 and i1 > 0 and ENUM_HEADER.match(a[i1 - 1]) is not None
+            and [x.strip() for x in b[j1:j2]] == [';', ''] and b[j1].startswith(' '))
+
+
+def declared_in_scope(o, n, names):
+    """`n` is `o` with a type put before one use of a name of `names`, or with every use of one such name
+    renamed to one other identifier (and a type put before the first)."""
+    for name in names:
+        word = r'(?<![\w$])%s(?![\w$])' % re.escape(name)
+        for m in re.finditer(word, o):
+            head, tail = o[:m.start()], o[m.start():]
+            if (n.startswith(head) and n.endswith(tail)
+                    and re.fullmatch(r'[\w$.<>\[\], ?]+ ', n[len(head):len(n) - len(tail)])):
+                return True
+        pieces = re.split(word, o)
+        if len(pieces) > 1:
+            pattern = r'(?:[\w$.<>\[\], ?]+ )?([A-Za-z_$][\w$]*)'.join(re.escape(p) for p in pieces[:2])
+            pattern += ''.join(r'\1' + re.escape(p) for p in pieces[2:])
+            if re.fullmatch(pattern, n):
+                return True
+    return False
+
+
+def assert_dead_throw_scope(a, b, i1, i2, j1, j2, throw_names):
+    """assert_dead_throw, in a file where it removed throws: a variable the removed throws read is
+    declared where it is used (its separate declaration removed, a type put before its first assignment or
+    for-each header) or keeps its own name instead of being merged with another local."""
+    old, new = a[i1:i2], b[j1:j2]
+    if not throw_names or old == new:
+        return False
+    while old and len(old) > len(new):
+        m = re.fullmatch(r'\s*[\w$.<>\[\], ?]+ ([\w$]+);', old[0])
+        if not m or m.group(1) not in throw_names:
+            return False
+        old = old[1:]
+    if len(old) != len(new):
+        return False
+    return all(o == n or declared_in_scope(o, n, throw_names) for o, n in zip(old, new))
+
+
+CONTEXT_RECOGNISERS = {'enum_body_separator': enum_body_separator,
+                       'assert_dead_throw': assert_dead_throw_scope}
+
+
 RECOGNISERS = {
     'external_class_diamond': external_class_diamond,
     'statement_as_expression': statement_as_expression,
+    'anonymous_static_qualifier': anonymous_static_qualifier,
+    'assert_dead_throw': assert_dead_throw,
 }
 
 
@@ -224,6 +314,9 @@ def classify(a, b, i1, i2, j1, j2, marked):
 
 def classify_base(a, b, i1, i2, j1, j2, marked):
     old, new = a[i1:i2], b[j1:j2]
+    for fix, recognises in RECOGNISERS.items():
+        if recognises(old, new):
+            return fix
     if old and new and all(is_import(x) for x in old + new):
         return 'import'
     if (len(old) == len(new) and old

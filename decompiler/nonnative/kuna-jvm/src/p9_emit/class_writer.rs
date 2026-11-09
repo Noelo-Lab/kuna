@@ -11,6 +11,9 @@
 //! kuna fix `statement_as_expression` (`kuna_fixes`): in
 //! `class_lambda_to_java`, a lambda whose lone exprent is statement-only (an
 //! `assert`) gets a block body, where Vineflower writes it as an expression body.
+//! kuna fix `enum_body_separator` (`kuna_fixes`): in `write_class`, an
+//! enum whose members have no constant before them gets the `;` Java requires
+//! (`kuna_fix_enum_body_separator`).
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -55,6 +58,7 @@ use crate::kuna_spans;
 use crate::link_constant::LinkConstant;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
+use crate::p9_emit::kuna_fix_enum_body_separator::EnumBodySeparator;
 use crate::pair::Pair;
 use crate::pass_context::PassContext;
 use crate::pool_interceptor::PoolInterceptor;
@@ -756,6 +760,7 @@ impl ClassWriter {
             self.write_class_definition(node, buffer, indent);
 
             let mut has_content = false;
+            let mut enum_separator = EnumBodySeparator::new(node, indent);
             let have_content = |buffer: &mut TextBuffer, has_content: &mut bool| {
                 if !*has_content && node.with(|d| d.type_) == ClassNodeType::Anonymous {
                     buffer.append_line_separator();
@@ -789,6 +794,7 @@ impl ClassWriter {
                         buffer.append(",").append_line_separator();
                     }
                     enums = true;
+                    enum_separator.constant_written();
 
                     have_content(buffer, &mut has_content);
                     self.write_field_to_buffer(buffer, indent, fd, wrapper);
@@ -817,6 +823,11 @@ impl ClassWriter {
                         {
                             continue;
                         }
+                    }
+
+                    if enum_separator.before_member(buffer) {
+                        has_content = true;
+                        enums = true;
                     }
 
                     if enums {
@@ -865,6 +876,9 @@ impl ClassWriter {
                     !self.write_method(node, mt, i as i32, &mut method_buffer, indent + 1);
                 kuna_spans::close(&mut method_buffer, span);
                 if !method_skipped {
+                    if enum_separator.before_member(buffer) {
+                        has_content = true;
+                    }
                     if has_content {
                         buffer.append_line_separator();
                     }
@@ -895,6 +909,9 @@ impl ClassWriter {
                         continue;
                     }
 
+                    if enum_separator.before_member(buffer) {
+                        has_content = true;
+                    }
                     if has_content {
                         buffer.append_line_separator();
                     }

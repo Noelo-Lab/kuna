@@ -3131,6 +3131,18 @@ case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB	Kotlin Multifile 
 class	classes/kotlin/kt/pkg/TestMultifile__TestMultifileBKt.class
 expected	expected/kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB.kt
 compare	TestMultifile__TestMultifileBKt.kt	TestMultifile__TestMultifileBKt.java
+case	kuna-fixes-compat/pkg/TestAnonymousStaticCall	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestAnonymousStaticCall.class
+class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$1$1.class
+class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$1.class
+class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$Counter.class
+class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$Counter2.class
+expected	kuna-fixes/expected-compat/pkg/TestAnonymousStaticCall.java
+compare	TestAnonymousStaticCall.java
+case	kuna-fixes-compat/pkg/TestAssertDeadThrow	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestAssertDeadThrow.class
+expected	kuna-fixes/expected-compat/pkg/TestAssertDeadThrow.java
+compare	TestAssertDeadThrow.java
 case	kuna-fixes-compat/pkg/TestAssertExpressionPosition	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestAssertExpressionPosition.class
 class	kuna-fixes/classes/pkg/TestAssertExpressionPosition$Pairs.class
@@ -3181,6 +3193,13 @@ class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Fn2.class
 class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Holder.class
 expected	kuna-fixes/expected-compat/pkg/TestDiamondExternalClass.java
 compare	TestDiamondExternalClass.java
+case	kuna-fixes-compat/pkg/TestEnumNoConstants	Kuna Fixes, Vineflower compat
+class	kuna-fixes/classes/pkg/TestEnumNoConstants.class
+class	kuna-fixes/classes/pkg/TestEnumNoConstants$Empty.class
+class	kuna-fixes/classes/pkg/TestEnumNoConstants$Holder.class
+class	kuna-fixes/classes/pkg/TestEnumNoConstants$Only.class
+expected	kuna-fixes/expected-compat/pkg/TestEnumNoConstants.java
+compare	TestEnumNoConstants.java
 case	kuna-fixes-compat/pkg/TestIfDenestFallthrough	Kuna Fixes, Vineflower compat
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected-compat/pkg/TestIfDenestFallthrough.java
@@ -3225,6 +3244,18 @@ class	kuna-fixes/classes/pkg/TestTryCatchNotFlag.class
 class	kuna-fixes/classes/pkg/TestTryCatchNotFlag$Res.class
 expected	kuna-fixes/expected-compat/pkg/TestTryCatchNotFlag.java
 compare	TestTryCatchNotFlag.java
+case	kuna-fixes/pkg/TestAnonymousStaticCall	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestAnonymousStaticCall.class
+class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$1$1.class
+class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$1.class
+class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$Counter.class
+class	kuna-fixes/classes/pkg/TestAnonymousStaticCall$Counter2.class
+expected	kuna-fixes/expected/pkg/TestAnonymousStaticCall.java
+compare	TestAnonymousStaticCall.java
+case	kuna-fixes/pkg/TestAssertDeadThrow	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestAssertDeadThrow.class
+expected	kuna-fixes/expected/pkg/TestAssertDeadThrow.java
+compare	TestAssertDeadThrow.java
 case	kuna-fixes/pkg/TestAssertExpressionPosition	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestAssertExpressionPosition.class
 class	kuna-fixes/classes/pkg/TestAssertExpressionPosition$Pairs.class
@@ -3275,6 +3306,13 @@ class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Fn2.class
 class	kuna-fixes/classes/pkg/TestDiamondExternalClass$Holder.class
 expected	kuna-fixes/expected/pkg/TestDiamondExternalClass.java
 compare	TestDiamondExternalClass.java
+case	kuna-fixes/pkg/TestEnumNoConstants	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestEnumNoConstants.class
+class	kuna-fixes/classes/pkg/TestEnumNoConstants$Empty.class
+class	kuna-fixes/classes/pkg/TestEnumNoConstants$Holder.class
+class	kuna-fixes/classes/pkg/TestEnumNoConstants$Only.class
+expected	kuna-fixes/expected/pkg/TestEnumNoConstants.java
+compare	TestEnumNoConstants.java
 case	kuna-fixes/pkg/TestIfDenestFallthrough	Kuna Fixes
 class	kuna-fixes/classes/pkg/TestIfDenestFallthrough.class
 expected	kuna-fixes/expected/pkg/TestIfDenestFallthrough.java

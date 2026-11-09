@@ -20,12 +20,15 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 
 | Case | Fix id | Compiled with | With the fix |
 |---|---|---|---|
+| `pkg/TestAnonymousStaticCall` | `anonymous_static_qualifier` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the inner anonymous class's call of its enclosing anonymous class's static `twice` is written `twice(value)`, not `<unrepresentable>.twice(value)`; the call of a named class's static method keeps its qualifier |
+| `pkg/TestAssertDeadThrow` | `assert_dead_throw` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the dead `throw new AssertionError(...)` statements after `return` in `spans` and `widths` are gone, and `widths` declares its for-each variable in the header (`for (int[] row : rows)`, was `for (row : rows)`) |
 | `pkg/TestAssertExpressionPosition` | `statement_as_expression` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `consistent`, `noFailure`, `unreachable` and `plain`, whose lambdas are a lone `assert`, get block bodies; `drain`, whose inner loop ends with an `assert`, stays a `while` loop with the `assert` at the end of its body; Vineflower prints both in expression positions, which javac rejects |
 | `pkg/TestCapturedReceiverKt` | `kt_local_as_extension_receiver` | kotlinc 2.0.0 (`-jvm-target 17`, JDK 17.0.20.1) | `iterator`, whose `object : Iterator<String>` captures the extension receiver and gets the parameterless `remove()` stub kotlinc adds, decompiles; `remove()` is written as a plain method instead of being taken for an extension of the captured receiver |
 | `pkg/TestCatchLoopBack` | `catch_loop_back_successor` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `read`, `readThree`, `readOrDefault`, `readGuarded` and `readFinally` (a `while (true)` after other code around a `try` whose two or three `catch` blocks all go back to the loop) decompile to their source, `readOrDefault`'s `break` as `return -1` in its `catch` block, the way Vineflower prints such a `break`; the failure comments and bytecode listings are gone |
 | `pkg/TestDefaultArgCompoundBranch` | `kt_default_arg_compound_branch` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `make`, whose object has a function and an inner class with a default computed by an inlined `map`, decompiles; those defaults print as unknown (`= ...`), the simple one as `n: Int = 7` |
 | `pkg/TestDefaultArgsSuperCall` | `kt_default_args_super_call` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | `twoDefaults` and `oneDefault`, whose objects' inner classes call the superclass through its default-arguments constructor, decompile with `: TestDefaultArgsSuperCall(x)` and `(x, y)`; `otherConstructor` still fails by design: `Overloaded` has a one-argument secondary constructor that `Overloaded(x)` would call |
 | `pkg/TestDiamondExternalClass` | `external_class_diamond` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | every `new DiamondLib(..)`/`new DiamondBox()` whose expected type is a `DiamondLib<..>`/`DiamondBox<..>` (static and instance fields, a local, returns, an assignment, arguments, a ternary operand, a generic class's field) is written `new C<>(..)`, so the lambdas get their `Object[]` parameters back and the class recompiles to identical bytecode; `Object OBJECT = new DiamondBox()` and the non-generic `DiamondPlain` stay as they are |
+| `pkg/TestEnumNoConstants` | `enum_body_separator` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | the enums without constants, `TestEnumNoConstants` and `Only`, start their bodies with the `;` Java requires before members; `Empty` (no members) is unchanged |
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
@@ -35,6 +38,58 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestTryCatchNotFlag` | `twr_unary_condition` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `create` and `attempt`, whose `catch (Throwable)` handlers start with `if (!flag)`, decompile to their source; `read`, a try-with-resources on a nullable resource, is still rebuilt as one |
 
 ## Diffs (compat -> default)
+
+### `pkg/TestAnonymousStaticCall`
+
+```diff
+--- expected-compat/pkg/TestAnonymousStaticCall.java
++++ expected/pkg/TestAnonymousStaticCall.java
+@@ -10,7 +10,7 @@
+             TestAnonymousStaticCall.Counter inner = new TestAnonymousStaticCall.Counter() {
+                @Override
+                public int next() {
+-                  return <unrepresentable>.twice(value) + TestAnonymousStaticCall.Counter2.offset();
++                  return twice(value) + TestAnonymousStaticCall.Counter2.offset();
+                }
+             };
+             this.value = inner.next();
+```
+
+### `pkg/TestAssertDeadThrow`
+
+```diff
+--- expected-compat/pkg/TestAssertDeadThrow.java
++++ expected/pkg/TestAssertDeadThrow.java
+@@ -27,17 +27,13 @@
+       }
+ 
+       return out;
+-
+-      throw new AssertionError();
+    }
+ 
+    public int widths(int[][] rows, int limit) {
+       int sum = 0;
+ 
+-      int[] row;
+-      int pos;
+-      for (row : rows) {
+-         pos = 0;
++      for (int[] row : rows) {
++         int pos = 0;
+ 
+          for (int i = 0; i < row.length; i++) {
+             int width = row[i];
+@@ -57,8 +53,6 @@
+       }
+ 
+       return sum;
+-
+-      throw new AssertionError("row " + row + " at " + pos);
+    }
+ 
+    private static int max(int a, int b) {
+```
 
 ### `pkg/TestAssertExpressionPosition`
 
@@ -548,6 +603,31 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
        }
     }
  }
+```
+
+### `pkg/TestEnumNoConstants`
+
+```diff
+--- expected-compat/pkg/TestEnumNoConstants.java
++++ expected/pkg/TestEnumNoConstants.java
+@@ -1,6 +1,8 @@
+ package pkg;
+ 
+ public enum TestEnumNoConstants {
++   ;
++
+    private static int counter;
+ 
+    public static int next() {
+@@ -15,6 +17,8 @@
+    }
+ 
+    enum Only {
++      ;
++
+       static int twice(int x) {
+          return x * 2;
+       }
 ```
 
 ### `pkg/TestIfDenestFallthrough`
