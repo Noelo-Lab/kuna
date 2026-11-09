@@ -338,6 +338,9 @@ mod verify_importdata;
 #[path = "verify_cfstring.rs"]
 mod verify_cfstring;
 
+#[path = "verify_elfgotimports.rs"]
+mod verify_elfgotimports;
+
 #[path = "verify_object_formats.rs"]
 mod verify_object_formats;
 

@@ -2245,10 +2245,11 @@ holds `&imported_counter` is `imported_counter` — resolving it exactly as
 `ActionDeindirect` resolves a call through the same slot (`query_function` on the
 externref persist address, after a plain COPY chain). Calls never reach this path,
 since deindirection consumes them first, and a read through anything that is not an
-externref import slot keeps `*dat_<addr>`. It depends on the slot being painted, so
-it is a no-op when `peimportcall` is off and on any format whose import slots are
-not painted (ELF GOT data imports today); a pointer that reaches the LOAD through a
-phi rather than a COPY chain is left as the dereference. A slot pointer the body
+externref import slot keeps `*dat_<addr>`. It depends on the slot being painted:
+PE and Mach-O slots by `peimportcall`, ELF `GLOB_DAT` GOT slots by `elfgotimports`
+(chapter [01](01-program-prep.md)), which is committed under this same gate, so it
+is a no-op when neither paints. A pointer that reaches the LOAD through a phi rather
+than a COPY chain is left as the dereference. A slot pointer the body
 holds in a named local (`v2 = stdout_ptr;`, then several reads through `v2`) names
 the import only while some other printed statement still reads that local: when
 every read of it is such a load, the loads keep `*v2`, so naming the import never
