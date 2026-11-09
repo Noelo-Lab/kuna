@@ -571,15 +571,11 @@ kuna_options! { self, p1;
         on_off!(strip_msvc_stack_guard, "MSVC /GS frame-cookie stripping")
     },
     "gobounds" => on_off!(go_bounds, "Go compiler-check folding"),
-    "rustfmtliteral" => on_off!(rust_fmt_literal, "Rust literal print macros"),
-    "rustfmtargs" => on_off!(rust_fmt_args, "Rust primitive print arguments"),
-    "rustfmtflags" => on_off!(rust_fmt_flags, "Rust static integer format specifications"),
-    "rustfmtresult" => on_off!(rust_fmt_result, "Rust format String results"),
-    "rustfmtpanic" => on_off!(rust_fmt_panic, "Rust panic formatting"),
-    "rustfmtpieces" => on_off!(rust_fmt_pieces, "Rust piece-array formatting"),
-    "rustfmtstr" => on_off!(rust_fmt_str, "Rust verified string Display arguments"),
-    "rustfmtwrite" => on_off!(rust_fmt_write, "Rust verified String writer formatting"),
-    "rustfmtio" => on_off!(rust_fmt_io, "Rust verified Stdout writer formatting"),
+    "rustfmt" => {
+        let (mode, msg) = crate::kuna_rustfmt::parse_rustfmt_mode(p1).map_err(KunaError::parse)?;
+        self.rust_fmt = mode;
+        Ok(msg)
+    },
     "securitycheck" => {
         on_off!(strip_security_check, "Rust security-check branch stripping")
     },

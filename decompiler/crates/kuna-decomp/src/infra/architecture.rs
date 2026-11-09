@@ -1074,20 +1074,8 @@ pub struct Architecture {
     pub strip_security_check: bool,
     /// Fold Go compiler bounds/division panic arms (option gobounds).
     pub go_bounds: bool,
-    /// Render verified Rust literal formatting calls as print macros.
-    pub rust_fmt_literal: bool,
-    /// Render verified primitive Rust formatting arguments as print macros.
-    pub rust_fmt_args: bool,
-    /// Extend primitive Rust print recovery to static integer format specifications.
-    pub rust_fmt_flags: bool,
-    /// Render verified Rust format_inner initialization as a String-producing macro.
-    pub rust_fmt_result: bool,
-    /// Render verified Rust panic formatting as a panic macro.
-    pub rust_fmt_panic: bool,
-    pub rust_fmt_pieces: bool,
-    pub rust_fmt_str: bool,
-    pub rust_fmt_write: bool,
-    pub rust_fmt_io: bool,
+    /// Which verified Rust formatting calls render as macros (option rustfmt).
+    pub rust_fmt: crate::kuna_rustfmt::RustFmtMode,
     /// (kuna) Flip negated-guard if/else branches for linearity: when an
     /// `if (x == 0) {A} else {B}` (equality-to-zero / negated guard) can be flipped
     /// in place, rewrite it to the positive `if (x) {B} else {A}` so the common
@@ -2347,15 +2335,7 @@ impl Architecture {
             strip_stack_guard: false,
             strip_msvc_stack_guard: true, // (kuna) option msvcstackguard; shape-gated on the MSVC /GS cookie
             go_bounds: true,
-            rust_fmt_literal: true,
-            rust_fmt_args: true,
-            rust_fmt_flags: true,
-            rust_fmt_result: true,
-            rust_fmt_panic: true,
-            rust_fmt_pieces: true,
-            rust_fmt_str: true,
-            rust_fmt_write: false,
-            rust_fmt_io: false,
+            rust_fmt: crate::kuna_rustfmt::RustFmtMode::On,
             strip_security_check: false,
             branch_flip: false,
             name_style_angr: false,
@@ -2636,15 +2616,7 @@ impl Architecture {
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
         self.fold_call_returns = true; // (kuna) DIV-14 default-on (angr call-return folding; per-test opt-out on the datatests it changes)
         self.go_bounds = true;
-        self.rust_fmt_literal = true;
-        self.rust_fmt_args = true;
-        self.rust_fmt_flags = true;
-        self.rust_fmt_result = true;
-        self.rust_fmt_panic = true;
-        self.rust_fmt_pieces = true;
-        self.rust_fmt_str = true;
-        self.rust_fmt_write = false;
-        self.rust_fmt_io = false;
+        self.rust_fmt = crate::kuna_rustfmt::RustFmtMode::On;
         self.strip_security_check = true; // (kuna) DIV-82 default-on: REMOVES CODE (strips rustc's bounds/slice/divide-by-zero panic branches, the SEFCOM Oxidizer SecurityCheckRemover port). Name-triggered on seven Rust-only `core::panicking`/`core::slice::index`/`core::str` helpers, so it is structurally inert on a C binary: 0/675 datatests and 0 changed lines over the C fixtures
         self.strip_stack_guard = true; // (kuna) DIV-14 default-on: REMOVES CODE (strips the -fstack-protector canary epilogue). Per-test opt-out (`option stackguard off`) on the 2 Partial-splitting datatests keeps the corpus byte-identical
         self.branch_flip = true; // (kuna) DIV-13 default-on (angr negated-guard branch flipping; per-test opt-out on the datatests it changes)
