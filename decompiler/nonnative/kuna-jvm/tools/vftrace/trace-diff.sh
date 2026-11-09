@@ -9,7 +9,7 @@
 #   --initial-only  kuna runs codeToJava only up to DomHelper.parseGraph ("Initial"); compared with
 #                   --prefix, so methods agree when all steps kuna has agree
 #   --hash MODE     Vineflower's identity-hash mode (run.sh); default index = kuna's arena order
-#   --out DIR       where the two traces go (default: a fresh directory under $TMPDIR)
+#   --out DIR       where the two traces go (default: a fresh temporary directory)
 #   --kuna BIN      a built jvmtrace example (default: cargo build -p kuna-jvm --example jvmtrace)
 # Env: as run.sh (BUILD, VF_JAR, VF_JAVA, VF_XMX); CARGO_TARGET_DIR is honoured by the cargo build.
 set -euo pipefail
@@ -34,7 +34,7 @@ while [ $# -gt 0 ]; do
     *) COMMON+=("$1"); shift ;;
   esac
 done
-[ -n "$OUT" ] || OUT=$(mktemp -d "${TMPDIR:-/tmp}/trace-diff.XXXXXX")
+[ -n "$OUT" ] || OUT=$(mktemp -d -t trace-diff.XXXXXX)
 mkdir -p "$OUT"
 if [ -z "$KUNA" ]; then
   (cd "$WORKSPACE" && CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 \

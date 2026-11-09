@@ -1,5 +1,5 @@
 {
- "notes": "Kotlin cases vendored by kotlin_corpus.py from the Kotlin oracle corpus (~/kwt/jvm/corpus-kt): the fixture form of every case that needs no library. KotlinTests sets load only the Kotlin plugin in Vineflower (jvm_plugins on here: the other two bundled plugins do not change these outputs, per the corpus crosscheck); core SingleClassesTest sets load none and print Java. option_pairs are the complete effective option map. regen.py adds these cases to cases.tsv.",
+ "notes": "Kotlin cases vendored by kotlin_corpus.py from the Kotlin oracle corpus ($KUNA_JVM_ORACLE/corpus-kt): the fixture form of every case that needs no library. KotlinTests sets load only the Kotlin plugin in Vineflower (jvm_plugins on here: the other two bundled plugins do not change these outputs, per the corpus crosscheck); core SingleClassesTest sets load none and print Java. option_pairs are the complete effective option map. regen.py adds these cases to cases.tsv.",
  "corpus_manifest_sha256": "ca579c7d53b76a59e5ff80c43611475fe2bb77cdf51ad41178253e30ebee8b85",
  "excluded": [
   {

@@ -7,12 +7,15 @@
 #                    the classes whose constructors take no parameters
 #   isolated.golden  KEnumProcessor, markObjectInstance and DefaultArgsMap.from
 #                    with synthetic parameters (no KType/KContract needed)
+# Env: KUNA_JVM_ORACLE (decompiler/nonnative/kuna-jvm/tools/oracle/README.md), or the overrides JDK
+# (default $KUNA_JVM_ORACLE/jdks/jdk17), VF (the release jar), KOTLINC and WORK (default $KUNA_JVM_ORACLE/work/kt4-gen).
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
-JDK=${JDK:-$HOME/kwt/jvm/jdks/jdk17}
-VF=${VF:-$HOME/kwt/jvm/oracle/vineflower-1.12.0.jar}
-KOTLINC=${KOTLINC:-$HOME/kwt/jvm/jdks/kotlin/x200/kotlinc}
-WORK=${WORK:-$HOME/kwt/jvm/scratch/kt4/gen}
+NO_ORACLE='set it to the JVM oracle workspace (decompiler/nonnative/kuna-jvm/tools/oracle/README.md)'
+JDK=${JDK:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/jdks/jdk17}
+VF=${VF:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/oracle/vineflower-1.12.0.jar}
+KOTLINC=${KOTLINC:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/jdks/kotlin/x200/kotlinc}
+WORK=${WORK:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/work/kt4-gen}
 
 mkdir -p "$WORK/kc"
 if [ ! -d "$HERE/classes/kt4" ]; then

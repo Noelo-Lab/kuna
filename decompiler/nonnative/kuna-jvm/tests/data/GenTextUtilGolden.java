@@ -1,7 +1,7 @@
 // Golden vectors for the context-free TextUtil methods, from Vineflower 1.12.0's own TextUtil:
 //
-//   javac -cp vineflower-1.12.0.jar -d /tmp/gen GenTextUtilGolden.java
-//   java -cp vineflower-1.12.0.jar:/tmp/gen GenTextUtilGolden > text_util_golden.txt
+//   javac -cp vineflower-1.12.0.jar -d GEN_DIR GenTextUtilGolden.java
+//   java -cp vineflower-1.12.0.jar:GEN_DIR GenTextUtilGolden > text_util_golden.txt
 //
 // "P first last 0|1": isPrintableUnicode over maximal runs of 0..0xFFFF (hex);
 // "U value literal": charToUnicodeLiteral; "I opcode name": getInstructionName.

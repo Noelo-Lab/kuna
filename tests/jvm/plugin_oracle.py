@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Rebuild the plugin cases of tests/jvm (listed in plugins.json) with the Vineflower 1.12.0 release jar.
 
-  python3 -I tests/jvm/plugin_oracle.py --corpus ~/kwt/jvm/corpus --vf-src ~/github/vineflower --work NEW_DIR
+  python3 -I tests/jvm/plugin_oracle.py [--corpus DIR] [--vf-src DIR] --work NEW_DIR
+
+--corpus (the Java oracle corpus) and --vf-src (the Vineflower 1.12.0 checkout) default to
+$KUNA_JVM_ORACLE/corpus and $KUNA_JVM_ORACLE/vineflower (decompiler/nonnative/kuna-jvm/tools/oracle/README.md).
 
 1. Compiles plugins/variable-renaming/testData/src/java8 the way the plugin's build.gradle does (the oracle
-   corpus's scripts/compile_sets.sh with VF_SRC at the plugin) and copies those classes and the plugin's
+   tooling's java/scripts/compile_sets.sh with VF_SRC at the plugin) and copies those classes and the plugin's
    checked-in custom classes to classes/plugins/<plugin>/<set>/.
-2. Decompiles each case with <corpus>/bin/vf-decompile --plugins (the release jar's bundled plugins), adding
+2. Decompiles each case with the oracle tooling's java/bin/vf-decompile --plugins (the release jar's bundled
+   plugins, its driver built in <corpus>), adding
    --fixture for fixture sets, with the set's option pairs except kuna's own jvm_plugins; a non-fixture set runs
    like `java -jar` (--save folder --opt include-runtime=current). The compared file becomes the case's
    expected text.
@@ -23,6 +27,19 @@ import subprocess
 import sys
 
 KUNA_ONLY = {'jvm_plugins'}
+ORACLE_TOOLS = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                            'decompiler', 'nonnative', 'kuna-jvm', 'tools', 'oracle', 'java')
+NO_ORACLE = ('KUNA_JVM_ORACLE is not set: set it to the JVM oracle workspace '
+             '(decompiler/nonnative/kuna-jvm/tools/oracle/README.md), or pass --corpus and --vf-src')
+
+
+def oracle_dir(given, *parts):
+    if given:
+        return os.path.abspath(given)
+    root = os.environ.get('KUNA_JVM_ORACLE')
+    if not root:
+        sys.exit(NO_ORACLE)
+    return os.path.join(root, *parts)
 
 
 def java_trim(s):
@@ -47,13 +64,13 @@ def copy(src, dst):
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--corpus', required=True, help='the oracle corpus (bin/vf-decompile, scripts/compile_sets.sh)')
-    ap.add_argument('--vf-src', required=True, help='the Vineflower 1.12.0 checkout')
+    ap.add_argument('--corpus', help='the Java oracle corpus (default: $KUNA_JVM_ORACLE/corpus)')
+    ap.add_argument('--vf-src', help='the Vineflower 1.12.0 checkout (default: $KUNA_JVM_ORACLE/vineflower)')
     ap.add_argument('--work', required=True, help='a new directory for compiler and decompiler runs')
     ap.add_argument('--out', default=here, help='the tests/jvm directory to write (default: %(default)s)')
     a = ap.parse_args()
-    corpus = os.path.abspath(os.path.expanduser(a.corpus))
-    vf = os.path.abspath(os.path.expanduser(a.vf_src))
+    corpus = oracle_dir(a.corpus, 'corpus')
+    vf = oracle_dir(a.vf_src, 'vineflower')
     work = os.path.abspath(a.work)
     out = os.path.abspath(a.out)
     os.makedirs(work, exist_ok=False)
@@ -64,7 +81,7 @@ def main():
 
     plugin = os.path.join(vf, 'plugins', 'variable-renaming')
     env = dict(os.environ, VF_SRC=plugin, CORPUS=corpus)
-    subprocess.run(['bash', os.path.join(corpus, 'scripts', 'compile_sets.sh'), os.path.join(work, 'classes'),
+    subprocess.run(['bash', os.path.join(ORACLE_TOOLS, 'scripts', 'compile_sets.sh'), os.path.join(work, 'classes'),
                     os.path.join(work, 'logs'), 'java8'], env=env, check=True)
     for root, _, files in os.walk(os.path.join(work, 'classes', 'java8')):
         for name in files:
@@ -88,7 +105,7 @@ def main():
     for t in m['tests']:
         s = sets[t['set']]
         outdir = os.path.join(work, 'run', t['id'])
-        cmd = [os.path.join(corpus, 'bin', 'vf-decompile'), '--plugins']
+        cmd = [os.path.join(ORACLE_TOOLS, 'bin', 'vf-decompile'), '--plugins']
         if s['fixture']:
             cmd.append('--fixture')
         else:
@@ -99,7 +116,7 @@ def main():
         cmd += [os.path.join(out, 'classes', f) for f in t['class_files']] + ['-o', outdir]
         with open(os.path.join(work, t['id'].replace('/', '_') + '.log'), 'wb') as log:
             subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, check=True,
-                           env=dict(os.environ, LANG='C.UTF-8', LC_ALL='C.UTF-8'))
+                           env=dict(os.environ, LANG='C.UTF-8', LC_ALL='C.UTF-8', CORPUS=corpus))
         produced = [os.path.join(r, n) for r, _, fs in os.walk(outdir) for n in fs if n == t['decompiled_file']]
         if len(produced) != 1:
             sys.exit(f'{t["id"]}: expected one {t["decompiled_file"]}, got {produced}')

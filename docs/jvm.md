@@ -587,15 +587,18 @@ cases in-process (quick); `--out DIR` writes each case's actual text, diff and l
 more cases match (never to absorb a regression); `--manifest FILE` runs another manifest,
 such as the full 598-case Java one or the Kotlin one generated from the external corpora.
 
-**Regenerating the corpus.** `tests/jvm/` is generated, never edited by hand:
-`python3 -I tests/jvm/regen.py --corpus <oracle corpus>`. The oracle corpus compiles
-Vineflower's `testData` sources with the JDK of each source set and decompiles them with
-the released jar; `tests/jvm/README.md` records how and with which JDKs. The 68
-JDK-dependent cases run only from that external corpus
-(`regen.py --skip-vendor --full-manifest FILE`, then `corpus --manifest FILE`). The plugin
-cases come from `tests/jvm/plugin_oracle.py` and the Kotlin cases from a Kotlin oracle
-corpus (the plugin's test sources compiled with kotlinc 2.0.0) through
-`tests/jvm/kotlin_corpus.py`; `regen.py` appends both.
+**Regenerating the corpus.** `tests/jvm/` is generated, never edited by hand. Its source
+is the Vineflower oracle, built outside the repository by
+`decompiler/nonnative/kuna-jvm/tools/oracle` into the directory named by
+`KUNA_JVM_ORACLE`: Vineflower's `testData` sources compiled with the JDK of each source set
+(and the Kotlin plugin's with kotlinc 2.0.0), decompiled by the released jar under each
+test's options. Its `README.md` lists what it downloads, with pinned hashes, and how the
+test fixture is reproduced. With `KUNA_JVM_ORACLE` set, `python3 -I
+tests/jvm/kotlin_corpus.py` and `python3 -I tests/jvm/plugin_oracle.py --work NEW_DIR`
+refresh the Kotlin and plugin cases and `python3 -I tests/jvm/regen.py` the rest and
+`cases.tsv`; with `--out DIR` they write a fresh copy elsewhere, which matches the
+committed files byte for byte. The 68 JDK-dependent cases run only from the oracle itself
+(`regen.py --skip-vendor --full-manifest FILE`, then `corpus --manifest FILE`).
 
 **When a case differs.** The diff shows the symptom, rarely the pass. The trace differ
 (`decompiler/nonnative/kuna-jvm/tools/vftrace/`) runs both engines on the same classes and
@@ -608,9 +611,9 @@ tools/vftrace/trace-diff.sh Foo.class 'Foo$1.class' --fixture --opt ternary-in-i
 KUNA_JVM_TRACE=kuna.vft <any run>                            # the kuna side alone
 ```
 
-The build also compiles the oracle corpus's Vineflower driver; the environment variables
-that locate each input (`VF_JAR`, `VF_SRC`, `JAVAC`, `CORPUS`, `BUILD`) are at the top of
-`build.sh`.
+The build also compiles the oracle's Vineflower driver (`tools/oracle/java/driver`). Its
+inputs come from `KUNA_JVM_ORACLE`; the per-input overrides (`VF_JAR`, `VF_SRC`, `JAVAC`,
+`BUILD`) are at the top of `build.sh`.
 
 Use it whenever an output difference is not obviously in the writer. It sees only the
 statement tree (not the CFG, SSA state or variable names), and a method that throws

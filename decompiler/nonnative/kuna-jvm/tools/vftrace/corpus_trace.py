@@ -29,6 +29,8 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+NO_ORACLE = ('KUNA_JVM_ORACLE is not set: set it to the JVM oracle workspace '
+             '(decompiler/nonnative/kuna-jvm/tools/oracle/README.md), or pass --corpus, --manifest or --classes')
 
 
 def resolve(value, java_homes):
@@ -131,7 +133,7 @@ def main():
     ap.add_argument("--only", action="append")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--manifest", default=None)
-    ap.add_argument("--corpus", default=os.path.expanduser("~/kwt/jvm/corpus"))
+    ap.add_argument("--corpus", help="the oracle corpus (default: $KUNA_JVM_ORACLE/corpus)")
     ap.add_argument("--classes", default=None)
     ap.add_argument("--set", default="classes")
     ap.add_argument("--fixture", action="store_true")
@@ -148,6 +150,13 @@ def main():
         a.classes = os.path.abspath(a.classes)
         tests = class_dir_cases(a)
     else:
+        if not a.corpus:
+            if os.environ.get("KUNA_JVM_ORACLE"):
+                a.corpus = os.path.join(os.environ["KUNA_JVM_ORACLE"], "corpus")
+            elif a.manifest:
+                a.corpus = os.path.dirname(os.path.abspath(a.manifest))
+            else:
+                sys.exit(NO_ORACLE)
         m = json.load(open(a.manifest or os.path.join(a.corpus, "manifest.json"), encoding="utf-8"))
         java_homes = m["java_homes"]
         tests = [t for t in m["tests"] if t["status"] == "ok"]

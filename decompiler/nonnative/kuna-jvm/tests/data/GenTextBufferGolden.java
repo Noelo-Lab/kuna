@@ -1,7 +1,7 @@
 // Differential traces for the TextBuffer port, recorded on Vineflower 1.12.0's own TextBuffer:
 //
-//   javac -cp vineflower-1.12.0.jar -d /tmp/gen GenTextBufferGolden.java
-//   java -cp vineflower-1.12.0.jar:/tmp/gen GenTextBufferGolden > text_buffer_golden.txt
+//   javac -cp vineflower-1.12.0.jar -d GEN_DIR GenTextBufferGolden.java
+//   java -cp vineflower-1.12.0.jar:GEN_DIR GenTextBufferGolden > text_buffer_golden.txt
 //
 // A scenario starts with "TB <unix 0|1> <indent> <preferred line length>"; every line is one
 // operation on one of five buffers (the fifth gathers the others at the end), "op args = result" where it has a result. String arguments

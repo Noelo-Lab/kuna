@@ -65,7 +65,7 @@ class Vineflower(Adapter):
         java = os.path.join(P.JDKS[25], "bin/java") if Path(P.JDKS[25], "bin/java").exists() else "java"
         # Default decompilation options; only the output layout (--folder) and the
         # worker-thread count (output-neutral; the default is one per core) are set.
-        # JVM flags keep scratch files (hsperfdata, tmp) inside the run directory.
+        # JVM flags keep temporary files (hsperfdata, tmp) inside the run directory.
         tmp = outdir.parent / "jvm-tmp"
         tmp.mkdir(parents=True, exist_ok=True)
         return [java, "-Xmx16g", "-XX:-UsePerfData", f"-Djava.io.tmpdir={tmp}", "-jar", str(vineflower_jar()),

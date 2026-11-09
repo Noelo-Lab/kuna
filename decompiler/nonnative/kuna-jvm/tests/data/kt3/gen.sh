@@ -10,14 +10,20 @@
 #                       classes/ from src/
 #   gen.sh sweep DIR    full dumps of every input into DIR; then
 #                       KT3_SWEEP_DIR=DIR cargo test -p kuna-jvm --test integration kt3_sweep -- --ignored
+# Env: KUNA_JVM_ORACLE (decompiler/nonnative/kuna-jvm/tools/oracle/README.md), or the overrides JDK
+# (default $KUNA_JVM_ORACLE/jdks/jdk17), VF (the release jar), CORPUS (the Kotlin corpus classes, default
+# $KUNA_JVM_ORACLE/corpus-kt/classes), WORK (default $KUNA_JVM_ORACLE/work/kt3-gen),
+# KT_LIBS (the real-world jars the Kotlin oracle fetches, default $KUNA_JVM_ORACLE/corpus-kt/tools/realworld) and
+# SPRING_DIR (the javabench spring-framework dataset, default $KUNA_JVM_ORACLE/dataset/spring-framework).
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
-JDK=${JDK:-$HOME/kwt/jvm/jdks/jdk17}
-VF=${VF:-$HOME/kwt/jvm/oracle/vineflower-1.12.0.jar}
-CORPUS=${CORPUS:-$HOME/kwt/jvm/corpus-kt/classes}
-WORK=${WORK:-$HOME/kwt/jvm/scratch/kt3/gen}
-LIB=/opt/joern/joern-cli/frontends/kotlin2cpg/lib
-DEPS=$HOME/kwt/jvm/dataset/spring-framework
+NO_ORACLE='set it to the JVM oracle workspace (decompiler/nonnative/kuna-jvm/tools/oracle/README.md)'
+JDK=${JDK:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/jdks/jdk17}
+VF=${VF:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/oracle/vineflower-1.12.0.jar}
+CORPUS=${CORPUS:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/corpus-kt/classes}
+WORK=${WORK:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/work/kt3-gen}
+LIB=${KT_LIBS:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/corpus-kt/tools/realworld}
+DEPS=${SPRING_DIR:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/dataset/spring-framework}
 
 jars() {
   echo "spring=$DEPS/classes.jar"

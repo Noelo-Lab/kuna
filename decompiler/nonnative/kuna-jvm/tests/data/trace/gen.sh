@@ -2,12 +2,12 @@
 # Regenerates vectors.txt and record.vft: GenTraceVectors builds statement trees with the real
 # Vineflower 1.12.0 classes and dumps them with the Java tracer (tools/vftrace: Dumper, and Trace behind
 # the shadow DecompileRecord for record.vft). JDK 17+ javac/java.
-#   VF_JAR  Vineflower jar (default ~/kwt/jvm/oracle/vineflower-1.12.0.jar)
+#   VF_JAR  Vineflower jar (default $KUNA_JVM_ORACLE/oracle/vineflower-1.12.0.jar)
 #   BUILD   scratch dir for compiled classes (default: a fresh mktemp dir)
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 CRATE=$(cd "$HERE/../../.." && pwd)
-VF_JAR=${VF_JAR:-$HOME/kwt/jvm/oracle/vineflower-1.12.0.jar}
+VF_JAR=${VF_JAR:-${KUNA_JVM_ORACLE:?set it to the JVM oracle workspace (decompiler/nonnative/kuna-jvm/tools/oracle/README.md)}/oracle/vineflower-1.12.0.jar}
 BUILD=${BUILD:-$(mktemp -d)}
 JAVAC=${JAVAC:-javac}
 JAVA=${JAVA:-java}

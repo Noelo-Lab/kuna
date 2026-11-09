@@ -6,11 +6,14 @@
 #  - expected/<variant>/<Main>.java: each variants.tsv row decompiled by the release jar with
 #    its bundled plugins (vf-decompile --fixture --plugins) from <classes dir>/p/<Main>*.class.
 # WORK (default: a new mktemp directory) receives the extracted plugin jars and the runs.
+# Env: KUNA_JVM_ORACLE (decompiler/nonnative/kuna-jvm/tools/oracle/README.md), or the overrides VINEFLOWER_JAR,
+# JDK8 (default $KUNA_JVM_ORACLE/jdks/jdk8) and VF_DECOMPILE (default the oracle tooling's java/bin/vf-decompile).
 set -euo pipefail
 cd "$(dirname "$0")"
-VF_JAR=${VINEFLOWER_JAR:-$HOME/kwt/jvm/oracle/vineflower-1.12.0.jar}
-JDK8=${JDK8:-$HOME/kwt/jvm/jdks/jdk8}
-VF_DECOMPILE=${VF_DECOMPILE:-$HOME/kwt/jvm/corpus/bin/vf-decompile}
+NO_ORACLE='set it to the JVM oracle workspace (decompiler/nonnative/kuna-jvm/tools/oracle/README.md)'
+VF_JAR=${VINEFLOWER_JAR:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/oracle/vineflower-1.12.0.jar}
+JDK8=${JDK8:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/jdks/jdk8}
+VF_DECOMPILE=${VF_DECOMPILE:-$(cd ../../../tools/oracle/java/bin && pwd)/vf-decompile}
 WORK=${WORK:-$(mktemp -d)}
 mkdir -p "$WORK"
 

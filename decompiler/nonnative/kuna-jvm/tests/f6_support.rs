@@ -61,10 +61,12 @@ pub fn jdk_home() -> Option<PathBuf> {
         .filter(|h| h.join("lib/modules").is_file())
 }
 
+/// The Vineflower 1.12.0 jar: `VINEFLOWER_JAR`, else the oracle workspace's
+/// (`KUNA_JVM_ORACLE`, `tools/oracle/README.md`); `None` (tests skip) when absent.
 pub fn vineflower_jar() -> Option<PathBuf> {
     let explicit = std::env::var_os("VINEFLOWER_JAR").map(PathBuf::from);
-    let default = std::env::var_os("HOME")
-        .map(|h| PathBuf::from(h).join("kwt/jvm/oracle/vineflower-1.12.0.jar"));
+    let default = std::env::var_os("KUNA_JVM_ORACLE")
+        .map(|o| PathBuf::from(o).join("oracle/vineflower-1.12.0.jar"));
     explicit.into_iter().chain(default).find(|p| p.is_file())
 }
 

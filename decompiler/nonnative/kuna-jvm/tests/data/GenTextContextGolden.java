@@ -1,8 +1,8 @@
 // Golden vectors for the context-dependent TextBuffer / TextUtil / GenericType text paths, from
 // Vineflower 1.12.0 itself, inside a context made the way Fernflower's constructor makes one (no runtime):
 //
-//   javac -cp vineflower-1.12.0.jar -d /tmp/gen GenTextContextGolden.java
-//   java -cp vineflower-1.12.0.jar:/tmp/gen GenTextContextGolden f6/tree/pkg/Hello.class > text_context_golden.txt
+//   javac -cp vineflower-1.12.0.jar -d GEN_DIR GenTextContextGolden.java
+//   java -cp vineflower-1.12.0.jar:GEN_DIR GenTextContextGolden f6/tree/pkg/Hello.class > text_context_golden.txt
 //
 // The current class node is pkg.Hello (the argument), and every row runs on a fresh ImportCollector.
 // Rows are tab-separated, strings escaped (backslash, tab, CR, LF and every unit outside 0x20..0x7e as in esc(); null = \N);

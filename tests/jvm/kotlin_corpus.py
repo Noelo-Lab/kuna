@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Vendor the Kotlin cases of tests/jvm from the Kotlin oracle corpus (~/kwt/jvm/corpus-kt).
+"""Vendor the Kotlin cases of tests/jvm from the Kotlin oracle corpus ($KUNA_JVM_ORACLE/corpus-kt).
 
-  python3 -I tests/jvm/kotlin_corpus.py --corpus-kt ~/kwt/jvm/corpus-kt [--out tests/jvm]
-  python3 -I tests/jvm/kotlin_corpus.py --corpus-kt ~/kwt/jvm/corpus-kt --skip-vendor --full-manifest FILE
+  python3 -I tests/jvm/kotlin_corpus.py [--corpus-kt DIR] [--out tests/jvm]
+  python3 -I tests/jvm/kotlin_corpus.py [--corpus-kt DIR] --skip-vendor --full-manifest FILE
 
-The oracle corpus holds 73 cases (the 66 tests of Vineflower's Kotlin plugin, KotlinTests, plus the 7
+--corpus-kt defaults to $KUNA_JVM_ORACLE/corpus-kt, built by decompiler/nonnative/kuna-jvm/tools/oracle
+(its README.md). The oracle corpus holds 73 cases (the 66 tests of Vineflower's Kotlin plugin, KotlinTests, plus the 7
 KOTLIN tests of core SingleClassesTest), class files compiled by kotlinc 2.0.0, and what the release
-vineflower-1.12.0.jar prints for them in three forms; its README.md documents how all of it was built
+vineflower-1.12.0.jar prints for them in three forms; the oracle README documents how all of it was built
 and validated (73/73 fixture outputs pass the fixture comparison with upstream's .dec files).
 
 Vendoring copies the fixture form of every case that needs no library: the 66 KotlinTests (only the
@@ -19,10 +20,10 @@ It writes, under --out:
 --full-manifest writes a corpus manifest rooted at <corpus-kt> with all 73 cases in each of the three
 forms (sets kotlin-*, kotlin-defaults, kotlin-defaults-stdlib); the 2 core Entire Classpath cases and
 both plain-CLI forms need libraries or a JDK (kotlin-stdlib on the class path, include-classpath=1 or
-include-runtime), so they are run from there, not vendored. Existing files are overwritten, nothing is
-deleted.
+include-runtime), so they are run from there, not vendored; its java_home 17 is --jdk17 (default
+$KUNA_JVM_ORACLE/jdks/jdk17). Existing files are overwritten, nothing is deleted.
 
---overlays NEW_DIR runs the corpus's oracle (<corpus-kt>/bin/vf-decompile-kt, 16 JVMs) on the 66
+--overlays NEW_DIR runs the oracle (the tooling's kotlin/bin/vf-decompile-kt, 16 JVMs) on the 66
 KotlinTests cases under each option overlay of OVERLAYS (the Kotlin plugin's options and a few core
 ones) and writes NEW_DIR/cases.tsv with their expected text under NEW_DIR/expected/; run it with
 `corpus --manifest NEW_DIR/cases.tsv`.
@@ -52,6 +53,19 @@ OVERLAYS = {
     'dump-exception-on': [('dump-exception-on-error', '1'), ('dump-bytecode-on-error', '0')],
 }
 STDLIB = 'tools/m2/kotlin-stdlib-2.0.0.jar'
+ORACLE_TOOLS = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                            'decompiler', 'nonnative', 'kuna-jvm', 'tools', 'oracle', 'kotlin')
+NO_ORACLE = ('KUNA_JVM_ORACLE is not set: set it to the JVM oracle workspace '
+             '(decompiler/nonnative/kuna-jvm/tools/oracle/README.md)')
+
+
+def oracle_dir(given, flag, *parts):
+    if given:
+        return os.path.abspath(given)
+    root = os.environ.get('KUNA_JVM_ORACLE')
+    if not root:
+        sys.exit(f'{NO_ORACLE}, or pass {flag}')
+    return os.path.join(root, *parts)
 
 
 def esc(s):
@@ -102,13 +116,15 @@ def vendorable(t):
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--corpus-kt', required=True, help='the Kotlin oracle corpus (holds manifest.json)')
+    ap.add_argument('--corpus-kt', help='the Kotlin oracle corpus (holds manifest.json; default: '
+                    '$KUNA_JVM_ORACLE/corpus-kt)')
+    ap.add_argument('--jdk17', help='the JDK 17 home of --full-manifest (default: $KUNA_JVM_ORACLE/jdks/jdk17)')
     ap.add_argument('--out', default=here, help='the tests/jvm directory to write (default: %(default)s)')
     ap.add_argument('--full-manifest', help='also write a manifest of all 73 cases x 3 forms rooted at --corpus-kt')
     ap.add_argument('--skip-vendor', action='store_true', help='only write --full-manifest / --overlays')
     ap.add_argument('--overlays', help='a new directory: oracle runs of the KotlinTests cases under OVERLAYS')
     a = ap.parse_args()
-    corpus = os.path.abspath(os.path.expanduser(a.corpus_kt))
+    corpus = oracle_dir(a.corpus_kt, '--corpus-kt', 'corpus-kt')
     out = os.path.abspath(a.out)
 
     with open(os.path.join(corpus, 'manifest.json'), encoding='utf-8') as f:
@@ -120,7 +136,8 @@ def main():
         sys.exit('the corpus has cases that are not ok')
 
     if a.full_manifest:
-        write_full_manifest(os.path.abspath(a.full_manifest), corpus, tests, sets)
+        write_full_manifest(os.path.abspath(a.full_manifest), corpus, tests, sets,
+                            oracle_dir(a.jdk17, '--jdk17', 'jdks', 'jdk17'))
     if a.overlays:
         write_overlays(os.path.abspath(a.overlays), corpus, tests, sets)
     if a.skip_vendor:
@@ -154,7 +171,7 @@ def main():
                         'decompiled_file_fallback': t['decompiled_file_fallback'],
                         'reference': t['reference']})
     doc = {
-        'notes': ('Kotlin cases vendored by kotlin_corpus.py from the Kotlin oracle corpus (~/kwt/jvm/corpus-kt): '
+        'notes': ('Kotlin cases vendored by kotlin_corpus.py from the Kotlin oracle corpus ($KUNA_JVM_ORACLE/corpus-kt): '
                   'the fixture form of every case that needs no library. KotlinTests sets load only the Kotlin '
                   'plugin in Vineflower (jvm_plugins on here: the other two bundled plugins do not change these '
                   'outputs, per the corpus crosscheck); core SingleClassesTest sets load none and print Java. '
@@ -173,9 +190,9 @@ def main():
           f'{len(doc["excluded"])} left in {corpus}')
 
 
-def write_full_manifest(path, corpus, tests, sets):
+def write_full_manifest(path, corpus, tests, sets, jdk17):
     out = [line('#', 'kuna-jvm Kotlin corpus, all forms; generated by tests/jvm/kotlin_corpus.py'), FORMAT + '\n',
-           line('root', corpus), line('java_home', '17', os.path.expanduser('~/kwt/jvm/jdks/jdk17'))]
+           line('root', corpus), line('java_home', '17', jdk17)]
     seen = []
     for t in tests:
         s = sets[t['set_slug']]
@@ -227,12 +244,13 @@ def write_overlays(out, corpus, tests, sets):
         name, t, opts = job
         work = os.path.join(out, 'work', name, t['id'])
         os.makedirs(work)
-        cmd = [os.path.join(corpus, 'bin', 'vf-decompile-kt'), '--fixture', '--kotlin-only']
+        cmd = [os.path.join(ORACLE_TOOLS, 'bin', 'vf-decompile-kt'), '--fixture', '--kotlin-only']
         for k, v in opts.items():
             cmd += ['--opt', f'{k}={v}']
         cmd += [os.path.join(corpus, 'classes', c) for c in t['class_files']] + ['-o', os.path.join(work, 'o')]
         with open(os.path.join(work, 'log'), 'wb') as log:
-            subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, check=True, env=dict(os.environ, VF_XMX='1g'))
+            subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, check=True,
+                           env=dict(os.environ, VF_XMX='1g', CORPUS=corpus))
         for produced in (t['decompiled_file'], t['decompiled_file_fallback']):
             p = os.path.join(work, 'o', produced)
             if os.path.exists(p):

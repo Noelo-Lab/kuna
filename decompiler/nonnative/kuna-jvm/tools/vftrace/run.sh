@@ -7,13 +7,15 @@
 #   --hash index        shadow classes hash by kuna arena creation index (what the port does)
 #   --hash random:SEED  shadow classes hash pseudo-randomly from SEED (sensitivity experiments)
 # The rest goes to TraceDriver / corpus.VfDriver (--fixture, --opt k=v, inputs, -o OUT), e.g.
-#   run.sh --hash index --trace /tmp/t.vft --fixture --opt ternary-in-if=1 Foo.class
-# Env: BUILD (as build.sh), VF_JAR, VF_JAVA (default JDK 17), VF_XMX (default 2g), VF_JAVA_OPTS.
+#   run.sh --hash index --trace t.vft --fixture --opt ternary-in-if=1 Foo.class
+# Env: KUNA_JVM_ORACLE, or the overrides BUILD (as build.sh), VF_JAR, VF_JAVA (default JDK 17); VF_XMX
+# (default 2g), VF_JAVA_OPTS.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
-BUILD=${BUILD:-$HOME/kwt/jvm/scratch/s2-trace/vftrace-build}
-VF_JAR=${VF_JAR:-$HOME/kwt/jvm/oracle/vineflower-1.12.0.jar}
-VF_JAVA=${VF_JAVA:-$HOME/kwt/jvm/jdks/jdk17/bin/java}
+NO_ORACLE='set it to the JVM oracle workspace (decompiler/nonnative/kuna-jvm/tools/oracle/README.md)'
+BUILD=${BUILD:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/vftrace-build}
+VF_JAR=${VF_JAR:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/oracle/vineflower-1.12.0.jar}
+VF_JAVA=${VF_JAVA:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/jdks/jdk17/bin/java}
 HASH=stock
 ARGS=()
 while [ $# -gt 0 ]; do

@@ -1,8 +1,8 @@
 // Golden vector for TextBuffer's bytecode-mapping tracers after reformat() and for the token dump
 // visitor, from Vineflower 1.12.0's own TextBuffer:
 //
-//   javac -cp vineflower-1.12.0.jar -d /tmp/gen GenTracersGolden.java
-//   java -cp vineflower-1.12.0.jar:/tmp/gen GenTracersGolden > tracers_golden.txt
+//   javac -cp vineflower-1.12.0.jar -d GEN_DIR GenTracersGolden.java
+//   java -cp vineflower-1.12.0.jar:GEN_DIR GenTracersGolden > tracers_golden.txt
 import org.jetbrains.java.decompiler.main.*;
 import org.jetbrains.java.decompiler.main.collectors.BytecodeMappingTracer;
 import org.jetbrains.java.decompiler.main.extern.*;

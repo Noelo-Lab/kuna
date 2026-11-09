@@ -1,7 +1,7 @@
 // Differential traces for the util.collections ports, recorded on Vineflower 1.12.0's own classes:
 //
-//   javac -cp vineflower-1.12.0.jar -d /tmp/gen GenCollectionsGolden.java
-//   java -cp vineflower-1.12.0.jar:/tmp/gen GenCollectionsGolden > collections_golden.txt
+//   javac -cp vineflower-1.12.0.jar -d GEN_DIR GenCollectionsGolden.java
+//   java -cp vineflower-1.12.0.jar:GEN_DIR GenCollectionsGolden > collections_golden.txt
 //
 // Each scenario starts with a header line ("SPARSE n", "SFORMS", "VB", "FIXED n") and is a
 // sequence of operations, one per line; "op args = result" lines carry the observed result.

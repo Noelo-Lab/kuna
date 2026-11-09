@@ -12,7 +12,7 @@ compared method by method; the first step whose dump differs names the pass to l
 | Java tracer | `src/org/.../main/rels/DecompileRecord.java` and `src/org/.../modules/decompiler/vars/VarProcessor.java` (shadows of the released classes: `add` / `rerunClashing` also call the tracer), `src/kuna/vftrace/{Dumper,Trace,TraceDriver,HashMode}.java`, `gen_shadow.py`, `build.sh`, `run.sh` |
 | Rust tracer | `src/infra/kuna_trace.rs`, called from `DecompileRecord::add` (`src/infra/decompile_record.rs`) and `VarProcessor::rerun_clashing`; `examples/jvmtrace.rs` |
 | Comparer | `compare.py` (two traces); `sweep_compare.py` (two `corpus_trace.py` directories); `trace-diff.sh` runs both engines and the comparer |
-| Corpus runner | `corpus_trace.py --engine vineflower\|kuna` over `~/kwt/jvm/corpus/manifest.json` or a class directory; `sweep.sh` = both engines + `sweep_compare.py` |
+| Corpus runner | `corpus_trace.py --engine vineflower\|kuna` over the Java oracle corpus (`$KUNA_JVM_ORACLE/corpus/manifest.json`, `../oracle/README.md`) or a class directory; `sweep.sh` = both engines + `sweep_compare.py` |
 | Tests | `tests/trace_vectors.rs` + `tests/data/trace/` (both dumpers on the same hand-built trees and variable table; `gen.sh` regenerates), `tests/trace_file.rs` (trace file byte-identical to the Java one), `tests/trace_sweep.rs` (final-text regressions for bugs the sweep found) |
 
 ## The sweep (one command)
@@ -52,12 +52,12 @@ The traces are hash-stable: the corpus traced by Vineflower in `stock` and `rand
 `index` trace. Commands (scratch paths are examples):
 
 ```sh
-J=~/kwt/jvm/jdks/jdk21
+J=$KUNA_JVM_ORACLE/jdks/jdk21
+G=$JAVABENCH_WORKSPACE/dataset/guava/classes.jar      # the javabench dataset (docs/jvm-benchmark.md)
 $J/bin/jimage extract --include 'regex:/java.base/.*\.class' --dir jdk $J/lib/modules
 VF_XMX=1g tools/vftrace/sweep.sh --classes jdk/java.base --set jdk21 --opt include-runtime=$J --jobs 8 --out OUT1
-unzip -q ~/kwt/jvm/dataset/guava/classes.jar -d guava
-tools/vftrace/sweep.sh --classes guava --set guava --opt include-runtime=$J \
-    --lib ~/kwt/jvm/dataset/guava/classes.jar --out OUT2
+unzip -q $G -d guava
+tools/vftrace/sweep.sh --classes guava --set guava --opt include-runtime=$J --lib $G --out OUT2
 tools/vftrace/sweep.sh --opt decompile-enums=0 --opt remove-synthetic=0 --out OUT3    # an overlay
 ```
 
@@ -71,7 +71,7 @@ other methods come after it and are never traced by kuna.
 ## Running
 
 ```sh
-tools/vftrace/build.sh        # once; outputs go to ~/kwt/jvm/scratch/s2-trace/vftrace-build ($BUILD)
+tools/vftrace/build.sh        # once; outputs go to $KUNA_JVM_ORACLE/vftrace-build ($BUILD)
 
 # Vineflower: same arguments as the corpus oracle's VfDriver (--fixture, --opt k=v, inputs, -o)
 tools/vftrace/run.sh --hash index --trace vf.vft --fixture --opt ternary-in-if=1 Foo.class 'Foo$1.class'

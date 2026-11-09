@@ -9,16 +9,21 @@
 #   gen.sh jars        the label=jar list for KT1_SWEEP_JARS
 #
 # The fixture jars (labels fxutf8, fx8to7) are compiled from src/ with kotlinc
-# 2.0.0, the second with -Dkotlin.jvm.serialization.use8to7=true (no jar on this
-# machine uses the 8-to-7 encoding).
+# 2.0.0, the second with -Dkotlin.jvm.serialization.use8to7=true (none of the
+# real-world jars uses the 8-to-7 encoding).
+# Env: KUNA_JVM_ORACLE (decompiler/nonnative/kuna-jvm/tools/oracle/README.md), or the overrides JDK
+# (default $KUNA_JVM_ORACLE/jdks/jdk17), VF (the release jar), KOTLINC, WORK (default $KUNA_JVM_ORACLE/work/kt1-gen),
+# KT_LIBS (the real-world jars the Kotlin oracle fetches, default $KUNA_JVM_ORACLE/corpus-kt/tools/realworld) and
+# SPRING_DIR (the javabench spring-framework dataset, default $KUNA_JVM_ORACLE/dataset/spring-framework).
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
-JDK=${JDK:-$HOME/kwt/jvm/jdks/jdk17}
-VF=${VF:-$HOME/kwt/jvm/oracle/vineflower-1.12.0.jar}
-KOTLINC=${KOTLINC:-$HOME/kwt/jvm/jdks/kotlin/x200/kotlinc}
-WORK=${WORK:-$HOME/kwt/jvm/scratch/kt1/gen}
-LIB=/opt/joern/joern-cli/frontends/kotlin2cpg/lib
-DEPS=$HOME/kwt/jvm/dataset/spring-framework
+NO_ORACLE='set it to the JVM oracle workspace (decompiler/nonnative/kuna-jvm/tools/oracle/README.md)'
+JDK=${JDK:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/jdks/jdk17}
+VF=${VF:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/oracle/vineflower-1.12.0.jar}
+KOTLINC=${KOTLINC:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/jdks/kotlin/x200/kotlinc}
+WORK=${WORK:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/work/kt1-gen}
+LIB=${KT_LIBS:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/corpus-kt/tools/realworld}
+DEPS=${SPRING_DIR:-${KUNA_JVM_ORACLE:?$NO_ORACLE}/dataset/spring-framework}
 
 jars() {
   echo "spring=$DEPS/classes.jar"
