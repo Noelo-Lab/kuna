@@ -2055,10 +2055,39 @@ the statements no exception edge touches, and splits it with Java's
 edges and Vineflower's own splitting finishes it. Both steps keep what the method does: a sub-region
 with one entry and one regular exit is structured like any other, and a copied statement runs the
 same code under the same protection, none at that level. The method gets Vineflower's comment
-"Irreducible bytecode was duplicated". The twelve methods decompile as Java; as Kotlin, seven of
-them then fail like other suspend functions whose `finally` needs a semaphore variable
-(`Var types not processed!`: the Kotlin pipeline gives semaphore variables no type), and
-`StreamFlow.collect` on its continuation class (`Anonymous class does not have Class Kotlin
-metadata`). The fix does not touch `return` inside `finally`
+"Irreducible bytecode was duplicated". The twelve methods decompile as Java; as Kotlin, those that are
+suspend functions fail on their continuation class, as every suspend function does (see the fix
+`kt_anonymous_class_failure_reason`). The fix does not touch `return` inside `finally`
 (`TestTryReturn.testParsingFailure`) or a catch range covering the inlined `finally` (kotlinc 1.3,
 okhttp's `PublicSuffixDatabase.readTheListUninterruptibly`), which fail before any split could help.
+
+**`kt_semaphore_store_liveness`.** When `FinallyProcessor` cannot show that the copies of a
+`finally` match its handler, it guards the handler with a semaphore variable: `true` on entry to
+the `try`, `false` on every normal exit, and the catch-all reads it as its monitor, printed
+`if (varN)` at the head of the `finally`. That read is a field of `CatchAllStatement`, not an
+exprent, so the flattened flow graph and the SSAU versions built on it see no use of the
+variable. The Java pipeline never asks; the Kotlin schedule's `EliminateDeadVarsPass` removes
+every assignment of `0`, `null` or `Unit` whose SSAU node has no successor, which is every store
+of `false` to a semaphore. What is left is a guard reading a variable nothing assigns: the
+`true` store, now a version of its own, gets its own name, the guard's variable is declared
+after its use (`val var8: Boolean`, or `val var25: <unknown>` once a later `SetVarVersions` has
+forgotten its type), and where variable definition then merges the `true` store into the
+guard's variable it throws `Var types not processed! Is the graph broken?`. kotlinc produces the
+shape in an inline function that returns non-locally across a `try`/`finally` (its own or an
+inlined `synchronized`, `consume`, `withTimeout`), whose copies of the `finally` carry
+`InlineMarker.finallyStart(1)` and `(2)`, and in suspend functions whose `finally` the state
+machine splits (okio's `AsyncTimeout` sinks and sources and `Pipe`, okhttp's `RealCall`,
+`RealConnection`, `TaskRunner`, `CacheInterceptor`, `TaskLoggerKt`, kotlinx-coroutines'
+`DispatchedTask.run`, `ThreadSafeHeap.removeFirstIf`, `FastServiceLoader`, the `onStart`,
+`onEmpty`, `onCompletion` flows; the assertion: `ChannelsKt__DeprecatedKt`'s `toChannel`,
+`toCollection`, `toMap` and `StateFlowImpl.collect`). With the fix
+(`decompiler/nonnative/kuna-jvm/src/kotlin/kuna_fix_kt_semaphore_store_liveness.rs (monitor_vars)`),
+the pass collects the variables that a `finally`'s monitor reads and keeps every store to one of
+them or to a version of one (by `VarProcessor::get_var_original_index`): the semaphore is live
+wherever the guard can be reached. Its versions then merge back into one variable as in the
+Java pipeline, and the Kotlin output is the Java output's: `var var8: Boolean = false /* VF:
+Semaphore variable */`, `var8 = true`, `var8 = false` on each normal exit. The four methods that
+failed now reach the writer, which fails them as suspend functions whose continuation has no
+Kotlin form (the fix `kt_anonymous_class_failure_reason`); decompiled without their continuation
+classes they are written. No other assignment changes, and no Java output (the pass runs only in
+the Kotlin schedule). Upstream's `EliminateDeadVarsPass` is unchanged on `develop/1.13.0`.

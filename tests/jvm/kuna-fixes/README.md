@@ -44,6 +44,7 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
 | `pkg/TestIfDenestFallthrough` | `if_denest_fallthrough` | javac 17.0.20.1 (`-g`) | `assertThenTryFinally` decompiles; `tryFinallyThenCode` and `tryCatchReturn` keep the code after the if on the path through the try (Vineflower skips it with a `break`), and `tryFinallyThenReturn` keeps its source shape; the recompiled class's `javap -c -p` equals the original's |
 | `pkg/TestInnerOfGenericOuter` | `generic_parent_without_signature` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `sweep`, `lastOfHead`, `firstOf`, `itemLength` and `lengthOf`, which use a `Node` nested in the non-generic inner class `Itrs` of the generic class, decompile to their source, `E` mapped to `String` through `Itrs` where the instance is a `TestInnerOfGenericOuter<String>` one; the failure comments and bytecode listings are gone |
 | `pkg/TestIrreducibleTry` | `irreducible_with_exception_edges` | asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1 | `run` and `poll`, loops entered at their head and, from a resume branch, in their middle, whose body is protected by one catch-all in several ranges with an unprotected early `return` between them, decompile; the try is built inside its own region or a statement outside every range is copied, and the output recompiles and behaves as the original on 140,000 scripted runs (`run` fails earlier in Vineflower, IndexOutOfBounds, the fix `handler_copy_offsets`) |
+| `pkg/TestKtFinallySemaphore` | `kt_semaphore_store_liveness` | kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1) | the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable |
 | `pkg/TestLocalClassAnonymousSubclass` | `local_class_anonymous_subclass` | javac 17.0.20.1 (`-g`) | the local class is declared before new LocalClass<String>() {} instead of inside the later loop that uses LocalClass.class |
 | `pkg/TestLocalVisibilityComment` | `kt_local_visibility_comment` | kotlinc 2.0.0 (`-jvm-target 17 -no-stdlib -no-reflect`, JDK 17) | the local class written inside the object is one indented line, `/* $VF: local visibility outside of method */ internal inner class Sub : ...`, instead of a line comment naming `methodSupplier` followed by the header at column 0 |
 | `pkg/TestMethodRefWildcardReceiver` | `lambda_wildcard_return` | javac 17.0.20.1 (`-source 17 -target 17 -g`) | `objects` and `shapes`, which pass `factory::create` on a `Factory<?>`/`ShapeFactory<?>` receiver to a generic `map`, decompile to their source; the failure comments and bytecode listings are gone |
@@ -1827,6 +1828,80 @@ comment is not kuna's, so no exception text is printed. A Kotlin case (`"languag
     }
  
     public interface Src {
+```
+
+### `pkg/TestKtFinallySemaphore`
+
+```diff
+--- expected-compat/pkg/TestKtFinallySemaphore.kt
++++ expected/pkg/TestKtFinallySemaphore.kt
+@@ -28,19 +28,22 @@
+ 
+    public inline fun removeIf(p: (Any) -> Boolean): Any? {
+       synchronized (this){} // $VF: monitorenter 
++      var var8: Boolean = false /* VF: Semaphore variable */
+ 
+       var var6: Any
+       run label51@{
+          var var10: Any
+          try {
+-            val var11: Boolean = true
++            var8 = true
+             val var10000: Any = this.first
+             if (var10000 == null) {
+                var6 = null
++               var8 = false
+                return@label51
+             }
+ 
+             var10 = if (p(var10000)) var10000 else null
++            var8 = false
+          } finally {
+             if (var8) {
+                InlineMarker.finallyStart(1)
+@@ -53,7 +56,6 @@
+          // $VF: monitorexit
+          InlineMarker.finallyEnd(1)
+          return var10
+-         val var8: Boolean
+       }
+ 
+       InlineMarker.finallyStart(2)
+@@ -65,21 +67,25 @@
+    public inline fun firstNull(src: pkg.TestKtFinallySemaphore.Src): Int {
+       val `$this$consume$iv`: TestKtFinallySemaphore.Src = src
+       var `cause$iv`: java.lang.Throwable = null
++      var var13: Boolean = false /* VF: Semaphore variable */
+ 
+       var var10: Int
+       run label66@{
+          try {
+-            val var16: Boolean = true
++            var13 = true
+             val `e$iv`: TestKtFinallySemaphore.Src = `$this$consume$iv`
+ 
+             do {
+                if (`e$iv`.next() == null) {
+                   var10 = this.count
++                  var13 = false
+                   return@label66
+                }
+ 
+                this.count = this.count + 1
+             } while (`e$iv`.more())
++
++            var13 = false
+          } catch (var14: java.lang.Throwable) {
+             `cause$iv` = var14
+             throw var14
+@@ -95,7 +101,6 @@
+          src.cancel(null)
+          InlineMarker.finallyEnd(1)
+          return -1
+-         val var13: <unknown>
+       }
+ 
+       InlineMarker.finallyStart(2)
 ```
 
 ### `pkg/TestLocalClassAnonymousSubclass`

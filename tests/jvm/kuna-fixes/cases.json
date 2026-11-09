@@ -682,6 +682,18 @@
       "source": "src/pkg/TestSuspendLoopTry.kt",
       "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
       "summary": "`indexOf`, `pairs` and `watch`, suspend functions whose loop inside a `try` (with `catch`/`finally`) suspends and resumes in its middle, decompile: `indexOf` and `pairs` once a try region is isolated or a statement outside every range is copied, `watch` (whose loop is resumed in three places) with both"
+    },
+    {
+      "id": "pkg/TestKtFinallySemaphore",
+      "fix": "kt_semaphore_store_liveness",
+      "class_files": [
+        "pkg/TestKtFinallySemaphore.class",
+        "pkg/TestKtFinallySemaphore$Src.class"
+      ],
+      "source": "src/pkg/TestKtFinallySemaphore.kt",
+      "compiler": "kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)",
+      "summary": "the stores to each finally semaphore are kept, `var var8: Boolean = false /* VF: Semaphore variable */`, `var8 = true` at the try's entry and `var8 = false` on every normal exit, instead of a guard `if (var8)` that reads a variable declared after it (`val var8: Boolean`, `val var13: <unknown>`) while `true` goes to another variable",
+      "language": "kotlin"
     }
   ]
 }

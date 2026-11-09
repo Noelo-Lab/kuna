@@ -190,6 +190,9 @@ pub enum KunaFix {
     /// `irreducible_with_exception_edges`: an irreducible level of the
     /// statement graph that holds exception edges is split like one without.
     IrreducibleWithExceptionEdges,
+    /// `kt_semaphore_store_liveness`: Kotlin dead-variable elimination keeps
+    /// the stores to a `finally` semaphore, which the finally's guard reads.
+    KtSemaphoreStoreLiveness,
 }
 
 impl KunaFix {
@@ -247,6 +250,7 @@ impl KunaFix {
         KunaFix::VarMergeLiveness,
         KunaFix::KtPartialArrayDims,
         KunaFix::IrreducibleWithExceptionEdges,
+        KunaFix::KtSemaphoreStoreLiveness,
     ];
 
     /// The fix's id, as the docs and `tests/jvm/kuna-fixes/cases.json` name it.
@@ -304,6 +308,7 @@ impl KunaFix {
             KunaFix::VarMergeLiveness => "var_merge_liveness",
             KunaFix::KtPartialArrayDims => "kt_partial_array_dims",
             KunaFix::IrreducibleWithExceptionEdges => "irreducible_with_exception_edges",
+            KunaFix::KtSemaphoreStoreLiveness => "kt_semaphore_store_liveness",
         }
     }
 

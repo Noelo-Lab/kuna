@@ -186,3 +186,5 @@ mod kuna_fix_switch_yield_const_retype;
 mod kuna_fix_numeric_casts;
 #[path = "kuna_stackguard.rs"]
 mod kuna_stackguard;
+#[path = "kuna_fix_kt_semaphore.rs"]
+mod kuna_fix_kt_semaphore;
