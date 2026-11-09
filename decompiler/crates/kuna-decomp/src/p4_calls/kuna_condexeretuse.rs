@@ -1,5 +1,4 @@
-//! P4 output-trial scoring across a re-tested condition — the `condexeretuse`
-//! decision point.
+//! P4 output-trial scoring across a re-tested condition.
 //!
 //! # The gap
 //!
@@ -73,10 +72,9 @@ pub struct Forced {
 }
 
 /// Whether the walk matched at `opmatch` may take re-tested merges into
-/// account: the option is on and the match is a RETURN.
+/// account: the match is a RETURN.
 pub fn applies(data: &Funcdata, opmatch: OpId) -> bool {
-    data.get_arch().cond_exe_ret_use
-        && data.obank().get(opmatch).map(|o| o.code()) == Some(OpCode::CPUI_RETURN)
+    data.obank().get(opmatch).map(|o| o.code()) == Some(OpCode::CPUI_RETURN)
 }
 
 /// Whether any MULTIEQUAL `op` a walk reached through `vn` sits in a merge

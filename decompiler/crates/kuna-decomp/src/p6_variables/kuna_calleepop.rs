@@ -1,5 +1,5 @@
-//! (kuna) `calleepop` — recover how many argument bytes a callee pops when the
-//! compiler spec cannot say.
+//! (kuna) Recover how many argument bytes a callee pops when the compiler spec
+//! cannot say.
 //!
 //! # The gap
 //!
@@ -69,7 +69,6 @@
 //! calls never reach the guess at all.
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::space::AddrSpace;
 use kuna_base::types::int4;
@@ -77,28 +76,10 @@ use kuna_num::opcodes::OpCode;
 
 use crate::context::VarnodeId;
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 
 /// Marshaling element `<calleepop>` (kuna 4000+ range; 4150 = the previous high
 /// water mark).
 pub const ELEM_CALLEEPOP: ElementId = ElementId::new("calleepop", 4151);
-
-/// (kuna) Recover a callee-pops-arguments purge for an unknown extrapop:
-/// `calleepop on|off`.
-pub struct OptionCalleePop;
-
-impl OptionCalleePop {
-    /// The option name.
-    pub const NAME: &'static str = "calleepop";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_pop`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Callee-pop argument recovery turned {prop}")))
-    }
-}
 
 /// Upstream's constant guess (`coreaction.cc:238`): the return address only.
 pub const RETURN_ADDRESS_ONLY: int4 = 4;
@@ -106,57 +87,6 @@ pub const RETURN_ADDRESS_ONLY: int4 = 4;
 /// Most argument bytes a single call is credited with, so a malformed frame
 /// cannot walk the whole stack.
 pub(crate) const MAX_ARG_BYTES: int4 = 256;
-
-/// The guessed extrapop for a call whose model leaves it unknown.
-///
-/// `call_sp` is the stack-pointer Varnode entering the call (the INDIRECT's
-/// `in[0]`, i.e. the slot the return address was just pushed into) and
-/// `call_out` is the INDIRECT's output.  Returns [`RETURN_ADDRESS_ONLY`]
-/// whenever the caller's discipline does not say otherwise, which is exactly
-/// upstream's answer.
-pub fn guess_extra_pop(
-    data: &Funcdata,
-    spacebase: &Address,
-    entry: &Address,
-    call_sp: VarnodeId,
-    call_out: VarnodeId,
-) -> int4 {
-    if !is_imported(data, entry) {
-        return RETURN_ADDRESS_ONLY;
-    }
-    let (base, delta) = match decompose(data, spacebase, call_sp) {
-        Some(bd) => bd,
-        None => return RETURN_ADDRESS_ONLY,
-    };
-    let step = match data.vbank().get(call_sp).map(|v| v.get_size()) {
-        Some(s) if s > 0 => s,
-        _ => return RETURN_ADDRESS_ONLY,
-    };
-    // Count the argument pushes back from the return-address slot.  `delta` is
-    // measured against whatever base the additive normalization settled on, so
-    // the run can straddle offset zero -- the base Varnode itself is a pushed
-    // slot whenever `INT_ADD(base,#0)` folded away.
-    let mut bytes: int4 = 0;
-    let mut off = delta + step;
-    while bytes < MAX_ARG_BYTES {
-        let slot = if off == 0 { Some(base) } else { child_at(data, spacebase, base, off) };
-        match slot {
-            Some(v) if is_argument_push(data, v) => {
-                bytes += step;
-                off += step;
-            }
-            _ => break,
-        }
-    }
-    // A caller-side `add esp,#k` that covers the whole argument run is a
-    // `__cdecl` cleanup, so the callee popped nothing.  The bound matters: a
-    // mid-function `pop reg` also raises the stack pointer, and restoring one
-    // saved register does not account for a multi-argument run.
-    if bytes > 0 && caller_cleans_up(data, spacebase, call_out, bytes) {
-        return RETURN_ADDRESS_ONLY;
-    }
-    RETURN_ADDRESS_ONLY + bytes
-}
 
 /// The bytes the call instruction at `call_addr` itself stored: its return
 /// address (two bytes for an x86 16-bit near call, four for a far call or an

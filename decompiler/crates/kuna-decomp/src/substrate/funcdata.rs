@@ -497,8 +497,7 @@ pub struct Funcdata {
     /// `(space index, entry offset)`.  Seeded by the driver after the flow build
     /// — the only place the disassembly engine is still reachable — and read at
     /// the input-trial scoring seam
-    /// ([`crate::kuna_calleedeadarg::trial_is_dead_in_callee`]).  Empty unless
-    /// `option calleedeadarg` is live for this function.
+    /// ([`crate::kuna_calleedeadarg::trial_is_dead_in_callee`]).
     kuna_callee_entry_dead: std::collections::HashMap<
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_calleedeadarg::CalleeEntryDead>,
@@ -679,8 +678,7 @@ pub struct Funcdata {
     /// (kuna `retpushedhalf`) Registers this function only ever pushed, gathered
     /// during the flow build while the store and the load still exist and read at
     /// the return-half placement test
-    /// ([`crate::kuna_retpushedhalf::PushedRegisters`]).  Empty unless
-    /// `option retpushedhalf` is live for this function.
+    /// ([`crate::kuna_retpushedhalf::PushedRegisters`]).
     kuna_pushed_registers: crate::kuna_retpushedhalf::PushedRegisters,
 }
 
@@ -3068,9 +3066,8 @@ impl Funcdata {
         if self.localmap.is_none() || !self.funcp.has_model() {
             return;
         }
-        let spec = self.get_arch().proto_ranges;
-        let local = self.funcp.local_range(spec).clone();
-        let param = self.funcp.param_range(spec).clone();
+        let local = self.funcp.get_local_range().clone();
+        let param = self.funcp.get_param_range().clone();
         let grows_neg = self.funcp.is_stack_grows_negative();
         if let Some(sl) = self.localmap.as_mut() {
             sl.reset_local_window(&local, &param, grows_neg);

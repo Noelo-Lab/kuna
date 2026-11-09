@@ -14,7 +14,7 @@
 //! Fixture: `kuna-analysis/tests/fixtures/fauxware` — a small unstripped x86-64
 //! ELF whose `authenticate` has an 8-byte stack buffer (`v2`), two pointer
 //! parameters and a call to a named global (`sneaky`), so every directive has
-//! something observable to move.  It is decompiled with `foldcallretphi off`:
+//! something observable to move.  It is decompiled with `foldcallret off`:
 //! the register-local cases target `int v1; // eax`, the `strcmp(a1,sneaky)`
 //! result, which the default folds into its `if` -- leaving no register local
 //! and renumbering the buffer to `v1`.  The plane is under test here, not the fold.
@@ -38,8 +38,8 @@ fn load() -> ConsoleProgram {
     let bin = root.join("decompiler/crates/kuna-analysis/tests/fixtures/fauxware");
     let mut prog = bootstrap_from_object(bin.to_str().expect("UTF-8 fixture path"), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    prog.arch_mut().set_kuna_option("foldcallretphi", "off")
-        .expect("foldcallretphi is a registered option");
+    prog.arch_mut().set_kuna_option("foldcallret", "off")
+        .expect("foldcallret is a registered option");
     prog.commit_pending_analysis().expect("analysis commit");
     prog
 }

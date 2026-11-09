@@ -575,7 +575,6 @@ impl Action for ActionDefaultParams {
                                 // [`crate::p4_calls::kuna_calleeprotostack`].
                                 Ok(()) => {
                                     crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
-                                        arch.callee_proto_stack,
                                         &mut fp,
                                     );
                                     Some(Rc::new(fp))
@@ -628,7 +627,6 @@ impl Action for ActionDefaultParams {
                 }
             } else if arch.callee_proto_model(data.get_call_specs(i).get_entry_address()).is_some() {
                 crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
-                    arch.callee_proto_stack,
                     data.get_call_specs_mut(i).proto_mut(),
                 );
             }
@@ -1340,9 +1338,6 @@ impl Action for ActionActiveParam {
         // checker for the spacebase-parameter branch.
         let mut aliascheck = data.build_alias_checker_deferred();
         let manager_rc = data.get_arch().manage.clone();
-        // (kuna) varargstackargs
-        let vararg_stack_args = data.get_arch().vararg_stack_args;
-        let stack_arg_gap = data.get_arch().stack_arg_gap;
         // (kuna) `calleearityfwd`: call sites that finalize with an empty argument
         // list, retried at the end of the pass against the siblings that finalize
         // after them.  See [`crate::p4_calls::kuna_calleearityfwd`].
@@ -1429,13 +1424,13 @@ impl Action for ActionActiveParam {
                 // variable arguments live on the stack, so the empty register
                 // slots before them are the ABI's doing and not evidence that
                 // the recovery has run past the argument list.
-                let vararg_split = vararg_stack_args && fc.is_dotdotdot();
+                let vararg_split = fc.is_dotdotdot();
                 fc.get_active_input().set_vararg_stack_split(vararg_split);
                 // (kuna) `stackarggap`: tell `fillinMap` that an argument
                 // register this caller never wrote ends the argument list when
                 // the next slot is on the stack -- the ABI reaches the stack
                 // only past a full register file.
-                fc.get_active_input().set_stack_arg_gap(stack_arg_gap);
+                fc.get_active_input().set_stack_arg_gap(true);
                 crate::kuna_armfloatargs::mark_single_floats(&mut fc, data);
                 let written = crate::kuna_armfloatargs::written_inputs(&fc, data);
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
@@ -1763,8 +1758,7 @@ impl Action for ActionReturnRecovery {
             None => return 0,
         };
         let maxancestor = data.get_arch().trim_recurse_max;
-        let cond_exe_ret = data.get_arch().cond_exe_ret;
-        let remembering = crate::p4_calls::kuna_condexeret::remembering(&active, cond_exe_ret);
+        let remembering = crate::p4_calls::kuna_condexeret::remembering(&active);
         let mut cond_failed = Vec::new();
         let return_ops: Vec<crate::context::OpId> =
             data.obank().iter_code(OpCode::CPUI_RETURN).collect();
@@ -1847,7 +1841,7 @@ impl Action for ActionReturnRecovery {
         }
 
         crate::p4_calls::kuna_voidret::score_forced(data, &mut active, &return_ops, maxancestor);
-        crate::p4_calls::kuna_condexeret::end_pass(&mut active, cond_exe_ret, cond_failed);
+        crate::p4_calls::kuna_condexeret::end_pass(&mut active, cond_failed);
         active.finish_pass();
         if active.get_num_passes() > active.get_max_pass() {
             active.mark_fully_checked();
@@ -2008,12 +2002,12 @@ impl Action for ActionInputPrototype {
             // the heritage collected).  `triallist[i]` is the i-th registered
             // trial's Varnode (1-based slot in ParamTrial).
             let mut active = crate::fspec::ParamActive::new(false);
-            // (kuna) `inputparamgap`: these are the function's OWN input trials,
-            // where an ACTIVE trial means the body reads the register before it
-            // writes it.  Tell `forceInactiveChain` that a run of unused argument
-            // registers is not evidence against a later one.  See
+            // (kuna) These are the function's OWN input trials, where an ACTIVE
+            // trial means the body reads the register before it writes it.  Tell
+            // `forceInactiveChain` that a run of unused argument registers is not
+            // evidence against a later one.  See
             // [`crate::p4_calls::kuna_inputparamgap`].
-            active.set_own_input_gap(data.get_arch().input_param_gap);
+            active.set_own_input_gap(true);
             let mut triallist: Vec<crate::context::VarnodeId> = Vec::new();
             let input_vns: Vec<crate::context::VarnodeId> =
                 data.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();

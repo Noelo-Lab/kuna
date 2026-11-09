@@ -136,8 +136,6 @@ fn conditional_callback_keeps_the_callers_return_value() {
             }
             let off = decompile(words, little, "e500", Some("off"));
             assert!(off.contains("return a2;"), "{off}");
-            let vetoed = decompile_with(words, little, "e500", &[("exclusivecallret", "off")]);
-            assert!(!vetoed.contains("return a2;"), "{vetoed}");
             for overlap in [None, Some("auto"), Some("full")] {
                 let code = decompile(words, little, "e500", overlap);
                 assert!(code.contains("return a2;"), "{code}");

@@ -9,7 +9,6 @@ use std::rc::Rc;
 pub(super) fn target(
     fd: &Funcdata,
     op: OpId,
-    decl_high_type: bool,
     printed: impl FnOnce() -> Option<Rc<Datatype>>,
 ) -> Option<Rc<Datatype>> {
     let operation = fd.obank().get(op)?;
@@ -38,7 +37,7 @@ pub(super) fn target(
     }
     if operation.code() == OpCode::CPUI_COPY
         && source.get_metatype() == type_metatype::TYPE_PTR
-        && crate::printc::declared_variable_type(fd, decl_high_type, input)
+        && crate::printc::declared_variable_type(fd, input)
             .is_some_and(|declared| {
                 matches!(
                     declared.get_metatype(),
@@ -62,7 +61,7 @@ pub(super) fn target(
                 )
             })
             .cloned()
-            .or_else(|| super::kuna_bitcast::declared_member_type(fd, decl_high_type, output))?;
+            .or_else(|| super::kuna_bitcast::declared_member_type(fd, output))?;
         let offset = high
             .map(|high| high.kuna_symbol_offset().max(0))
             .unwrap_or(0);

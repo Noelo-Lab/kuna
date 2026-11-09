@@ -3353,8 +3353,8 @@ moves.
   `api-ms-win-crt-*` forwarders, `vcruntime*`, `crtdll`), and the commit boundary
   (`decompiler/crates/kuna-console/src/engine.rs (commit_analysis_output)`)
   declares the prototypes parked under those names with the spec's `__cdecl`
-  model, whose stated `extrapop` of 4 leaves nothing for `calleeprotostack`
-  (chapter 04) to resolve. The DLL is the evidence, not the name: the BSD socket
+  model, whose stated `extrapop` of 4 leaves nothing for the declared-callee
+  stack contract (chapter 04) to resolve. The DLL is the evidence, not the name: the BSD socket
   spellings the libc tables carry are `__stdcall` WinSock exports and keep the
   default. Only where the default model's `extrapop` is unknown and the spec
   registers a `__cdecl` model of its own, so x86-64 and every ELF are untouched.
@@ -4219,7 +4219,7 @@ moves.
   by-value class, no `...`) the arm also parks the whole declaration, the class a
   placeholder, and records every entry that builds an object at an address it is
   handed: a 32-bit `__thiscall` constructor (`??0`) and an applied declaration
-  returning a class by value; `msvcbyval` (04 §4.4) sizes the class at each call
+  returning a class by value; `kuna_msvcbyval.rs` (04 §4.4) sizes the class at each call
   from the caller's cleanup. LOSS: where it declines, those arguments render as stores before the
   call (`MakeStack(a1)`, after `Arr::Arr((Arr *)&v1,a2)`, keeps only its hidden
   return pointer).
@@ -4307,7 +4307,7 @@ moves.
   (`Architecture::source_lang` reports the effective value, and the catalog's
   `current` reports the option — `auto` until a run forces a language). The
   per-function rules that used to read the `source_is_rust`/`source_is_go`
-  bools (`rustabi auto`, `reloadarg`'s Go stand-down) read that one fact now.
+  bools (`rustabi auto`, the frame-reload rule's Go stand-down) read that one fact now.
   Forcing a language never invents facts (forcing `go` on a non-Go image
   enables the pclntab pass, which finds no table); it changes which
   language-gated rules may act. It is also the escape hatch when detection
@@ -6738,16 +6738,15 @@ both hand-written assembly rather than compiler output: a pushed return address
 table in `.text` whose first byte is `0xc3` reads as an empty function. Off restores
 the previous discovery set exactly.
 
-(kuna) `callerreads` (default-on;
-`decompiler/crates/kuna-analysis/src/listing/kuna_callerreads.rs (call_returns)`)
-reads the completed walk for the decompiler rather than for the inventory: every
+(kuna) The caller-return filing
+(`decompiler/crates/kuna-analysis/src/listing/kuna_callerreads.rs (call_returns)`,
+always on) reads the completed walk for the decompiler rather than for the inventory: every
 Call cross-reference, paired with the address its calling instruction falls through
 to, as `(callee entry, return address)`, sorted and de-duplicated
 (`AnalysisOutput::call_returns`). The commit parks the list on the architecture,
 and a single-function decompile of a function recovered `void` decodes its callers
 from those addresses to see whether they read its return register (chapter
-[04](04-calls-and-prototypes.md)). It adds no entry and no decode to the walk; off,
-nothing is filed.
+[04](04-calls-and-prototypes.md)). It adds no entry and no decode to the walk.
 
 A context painter applies the ARM/MIPS decode-mode paints per address before each
 decode, so a Thumb or MIPS16 body disassembles in the right ISA. Each instruction
@@ -9502,5 +9501,5 @@ call through the first stub names its import.
 Without a callee prototype, a preserved incoming argument register cannot
 establish import arity: calls with and without that argument can have identical
 instructions. A declared prototype supplies that missing contract
-(`gotimportproto`, §4).
+(`kuna_gotimportproto.rs`, §4).
 

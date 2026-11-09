@@ -29,17 +29,6 @@
 <com>map addr r0x100410 char named_format[3]</com>
 <com>map addr r0x100400 char tail_format[3]</com>
 <com>map addr r0x100420 char nul_format[3]</com>
-<com>option varargforward off</com>
-<com>lo fu stored_tail</com>
-<com>decompile</com>
-<com>print C</com>
-<com>lo fu stored_nul</com>
-<com>decompile</com>
-<com>print C</com>
-<com>lo fu stored_immutable</com>
-<com>decompile</com>
-<com>print C</com>
-<com>option varargforward on</com>
 <com>lo fu stored_tail</com>
 <com>decompile</com>
 <com>print C</com>
@@ -51,8 +40,8 @@
 <com>print C</com>
 <com>quit</com>
 </script>
-<stringmatch name="Writable conversion declines format evidence" min="2" max="2">return render_tail\("%i"\);</stringmatch>
-<stringmatch name="Writable terminator declines format evidence" min="2" max="2">return render_nul\("%i"\);</stringmatch>
-<stringmatch name="Immutable format off reproduces omission" min="1" max="1">return render_immutable\("%i"\);</stringmatch>
-<stringmatch name="Immutable format on recovers stored value" min="1" max="1">return render_immutable\("%i",[^;]+\);</stringmatch>
+<stringmatch name="Writable conversion declines format evidence" min="1" max="1">return render_tail\("%i"\);</stringmatch>
+<stringmatch name="Writable terminator declines format evidence" min="1" max="1">return render_nul\("%i"\);</stringmatch>
+<stringmatch name="Immutable format never omits the stored value" min="0" max="0">return render_immutable\("%i"\);</stringmatch>
+<stringmatch name="Immutable format recovers the stored value" min="1" max="1">return render_immutable\("%i",[^;]+\);</stringmatch>
 </decompilertest>

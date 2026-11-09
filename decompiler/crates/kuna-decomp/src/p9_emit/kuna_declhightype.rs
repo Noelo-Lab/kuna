@@ -1,5 +1,5 @@
-//! (kuna `declhightype`) Declare a merged local at the data-type its own body
-//! was cast against.
+//! (kuna) Declare a merged local at the data-type its own body was cast
+//! against.
 //!
 //! Upstream declares a local from the *Symbol* it is mapped to
 //! (`PrintC::emitVarDecl`, `printc.cc:1719` `sym->getType()`), and a Symbol's
@@ -27,39 +27,15 @@
 //! object, with the sign extension dropped.  The instruction is a one-byte signed
 //! load, and every other token on the line already says so.
 //!
-//! This option declares the type representative's type instead, which is the
+//! kuna declares the type representative's type instead, which is the
 //! `sym->getType()` upstream would have written.  It moves no cast and no
 //! statement: the body is untouched, and the declaration stops contradicting it.
-
-use kuna_base::error::KunaResult;
 
 use std::rc::Rc;
 
 use crate::context::{HighVariableId, VarnodeId};
 use crate::dtype::Datatype;
 use crate::funcdata::Funcdata;
-use crate::options::on_or_off;
-
-/// (kuna) Toggle the merged-local declaration type: `declhightype on|off`.
-///
-/// "on" declares the HighVariable's own data-type (its type representative's);
-/// "off" keeps the declaration representative's, which for a merged high is
-/// whichever member happens to be address-tied or first.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct OptionDeclHighType;
-
-impl OptionDeclHighType {
-    /// The option name.
-    pub const NAME: &'static str = "declhightype";
-
-    /// Parse + validate the `on`/`off` value and return the resolved flag plus the
-    /// confirmation message (the caller flips `Architecture::decl_high_type`).
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Merged-local declaration type turned {prop}")))
-    }
-}
 
 /// The member Varnode whose data-type the merged HighVariable carries.
 ///

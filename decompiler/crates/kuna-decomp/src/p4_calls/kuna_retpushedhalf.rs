@@ -160,11 +160,8 @@ fn reg_loc(data: &Funcdata, vn: VarnodeId) -> Option<RegLoc> {
 /// saved-only registers (see the module docs).
 ///
 /// Called from the flow build with `ops` the ops that instruction produced, in
-/// emission order. A no-op unless `option retpushedhalf` is on.
+/// emission order.
 pub fn observe_instruction(data: &mut Funcdata, ops: &[OpId]) {
-    if !data.get_arch().ret_pushed_half {
-        return;
-    }
     let Some(stackspc) = data.get_arch().manage().get_stack_space().cloned() else { return };
     let Ok(spreg) = stackspc.get_spacebase(0) else { return };
     let Some(spspace) = spreg.space.as_ref() else { return };

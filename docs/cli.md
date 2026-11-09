@@ -1767,8 +1767,7 @@ offset, and `register` for a local the C declares outside the stack frame (a reg
 a temporary, or a value with no storage of its own). A `register` row carries the
 declaration's own name, so it joins to its declaration line in `code`, and its type
 spelled as the other rows spell theirs (`char[16]` for `char v1 [16];`); its
-`stack_offset` and `arg_index` are `null`. `--option reglocals off` drops those rows
-and leaves the parameters and the frame.
+`stack_offset` and `arg_index` are `null`.
 `line_mappings` maps 1-based
 lines in `code` to sorted, unique machine-instruction VMAs. Variable `line_numbers`
 come from the printer's `varref` tokens; variable `addresses` are the union of the

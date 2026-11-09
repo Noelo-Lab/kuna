@@ -1,8 +1,8 @@
 <decompilertest>
 <binaryimage arch="x86:LE:64:default:gcc">
 <!--
-    GH-890 (follow-up to GH-888). Stage P5, type propagation: option floatbits
-    (kuna_floatbits.rs), default on.
+    GH-890 (follow-up to GH-888). Stage P5, type propagation
+    (kuna_floatbits.rs, always on).
 
     A float helper that only works on the bits of its float-register input is
     a float on both sides. newlib's fabsf is GET_FLOAT_WORD / SET_FLOAT_WORD:
@@ -15,9 +15,8 @@
     The XML wrapper only provides the harness architecture. The script loads
     three in-tree fixtures built from floatbitshelper.c (source beside them): clang
     -O2 for Cortex-M4F hard-float, gcc -O2 for x86-64, clang -O0 for AArch64.
-    Pass 1 (option floatbits off) reproduces the integer prototypes; pass 2
-    (on, the default) types fb_fabsf, fb_negf and fb_copysignf float on both
-    sides and fb_fabs double (x86-64, AArch64), and the classifier fb_isnanf, which answers in
+    fb_fabsf, fb_negf and fb_copysignf are typed float on both sides and
+    fb_fabs double (x86-64, AArch64), and the classifier fb_isnanf, which answers in
     an integer register, takes a float parameter only. fb_bump adds 1 to the
     bits, fb_store stores them, and fb_mix ors in an integer parameter before
     returning them in s0 / xmm0: all three keep their integer types, and
@@ -46,7 +45,6 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatbitshelper_armhf.o</com>
   <com>read symbols</com>
-  <com>option floatbits off</com>
   <com>load function fb_fabsf</com>
   <com>decompile</com>
   <com>print C</com>
@@ -71,7 +69,6 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatbitshelper_x86_64_O2.o</com>
   <com>read symbols</com>
-  <com>option floatbits off</com>
   <com>load function fb_fabsf</com>
   <com>decompile</com>
   <com>print C</com>
@@ -99,88 +96,6 @@ c3
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatbitshelper_a64_O0.o</com>
   <com>read symbols</com>
-  <com>option floatbits off</com>
-  <com>load function fb_fabsf</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_negf</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_copysignf</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_isnanf</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_bump</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_store</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_mix</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_fabs</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>clear architecture</com>
-  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatbitshelper_armhf.o</com>
-  <com>read symbols</com>
-  <com>option floatbits on</com>
-  <com>load function fb_fabsf</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_negf</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_copysignf</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_isnanf</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_bump</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_store</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_mix</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>clear architecture</com>
-  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatbitshelper_x86_64_O2.o</com>
-  <com>read symbols</com>
-  <com>option floatbits on</com>
-  <com>load function fb_fabsf</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_negf</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_copysignf</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_isnanf</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_fabs</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_bump</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_store</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>load function fb_mix</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>clear architecture</com>
-  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatbitshelper_a64_O0.o</com>
-  <com>read symbols</com>
-  <com>option floatbits on</com>
   <com>load function fb_fabsf</com>
   <com>decompile</com>
   <com>print C</com>
@@ -354,20 +269,20 @@ c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="FLOATBITS #1: fabsf prints integer on both sides with the option off" min="3" max="3">uint4 fb_fabsf\(uint4 a0\)</stringmatch>
+<stringmatch name="FLOATBITS #1: fabsf never prints integer on both sides" min="0" max="0">uint4 fb_fabsf\(uint4 a0\)</stringmatch>
 <stringmatch name="FLOATBITS #2: fabsf is float on both sides" min="3" max="3">float4 fb_fabsf\(float4 a0\)</stringmatch>
 <stringmatch name="FLOATBITS #3: the sign mask of a float prints as ABS" min="5" max="5">return ABS\(a0\);</stringmatch>
-<stringmatch name="FLOATBITS #4: the sign flip prints integer on both sides with the option off" min="3" max="3">int4 fb_negf\(u?int4 a0\)</stringmatch>
+<stringmatch name="FLOATBITS #4: the sign flip never prints integer on both sides" min="0" max="0">int4 fb_negf\(u?int4 a0\)</stringmatch>
 <stringmatch name="FLOATBITS #5: the sign flip is float on both sides" min="3" max="3">float4 fb_negf\(float4 a0\)</stringmatch>
-<stringmatch name="FLOATBITS #6: copysignf prints integer on both sides with the option off" min="3" max="3">uint4 fb_copysignf\(uint4 a0,uint4 a1\)</stringmatch>
+<stringmatch name="FLOATBITS #6: copysignf never prints integer on both sides" min="0" max="0">uint4 fb_copysignf\(uint4 a0,uint4 a1\)</stringmatch>
 <stringmatch name="FLOATBITS #7: copysignf is float on both sides" min="3" max="3">float4 fb_copysignf\(float4 a0,float4 a1\)</stringmatch>
-<stringmatch name="FLOATBITS #8: the classifier's parameter is an integer with the option off" min="3" max="3">bool fb_isnanf\(uint4 a0\)</stringmatch>
+<stringmatch name="FLOATBITS #8: the classifier's parameter is never an integer" min="0" max="0">bool fb_isnanf\(uint4 a0\)</stringmatch>
 <stringmatch name="FLOATBITS #9: a classifier answering in an integer register takes a float" min="3" max="3">bool fb_isnanf\(float4 a0\)</stringmatch>
-<stringmatch name="FLOATBITS #10: x86-64 and AArch64 fabs print integer on both sides with the option off" min="2" max="2">uint8 fb_fabs\(uint8 a0\)</stringmatch>
+<stringmatch name="FLOATBITS #10: x86-64 and AArch64 fabs never print integer on both sides" min="0" max="0">uint8 fb_fabs\(uint8 a0\)</stringmatch>
 <stringmatch name="FLOATBITS #11: x86-64 and AArch64 fabs are double on both sides" min="2" max="2">float8 fb_fabs\(float8 a0\)</stringmatch>
-<stringmatch name="FLOATBITS #12: arithmetic on the bits keeps the integer" min="6" max="6">int4 fb_bump\(int4 a0\)</stringmatch>
-<stringmatch name="FLOATBITS #13: storing the bits keeps the integer" min="6" max="6">void fb_store\(uint4 a0,uint4 \*a1\)</stringmatch>
-<stringmatch name="FLOATBITS #14: an integer parameter in the returned bits keeps both sides integer" min="6" max="6">uint4 fb_mix\(uint4 a0,uint4 a1\)</stringmatch>
+<stringmatch name="FLOATBITS #12: arithmetic on the bits keeps the integer" min="3" max="3">int4 fb_bump\(int4 a0\)</stringmatch>
+<stringmatch name="FLOATBITS #13: storing the bits keeps the integer" min="3" max="3">void fb_store\(uint4 a0,uint4 \*a1\)</stringmatch>
+<stringmatch name="FLOATBITS #14: an integer parameter in the returned bits keeps both sides integer" min="3" max="3">uint4 fb_mix\(uint4 a0,uint4 a1\)</stringmatch>
 <stringmatch name="FLOATBITS #15: an == of the bits with zero keeps the integer (a float == also matches -0.0)" min="3" max="3">bool fr_iszero\(int4 a0\)</stringmatch>
 <stringmatch name="FLOATBITS #16: an == of two inputs' bits keeps the integers (a float == fails for equal NaNs)" min="3" max="3">bool fr_eqbits\(int4 a0,int4 a1\)</stringmatch>
 <stringmatch name="FLOATBITS #17: a != of the bits with zero keeps the integer" min="3" max="3">bool fr_ne0\(int4 a0\)</stringmatch>

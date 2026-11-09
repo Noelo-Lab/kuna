@@ -673,7 +673,7 @@ symbol carries only parked pieces (the Win32 and libc tables) still waits for
 `ActionDeindirect`. A call to any address that set names, direct or made direct
 here, copies the locked prototype at flow and so never reaches the
 `ActionDefaultParams` arm that gives a declared callee the stack adjustment its
-parameter list implies (`calleeprotostack`, 04); the copy applies that rule
+parameter list implies (`kuna_calleeprotostack.rs`, 04); the copy applies that rule
 itself
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeprotostack.rs
 (resolve_declared_extra_pop)`), so a
@@ -3050,7 +3050,7 @@ diamonds around every check. The abstraction does not specify OS handler
 dispatch or resumable exception state. Both operand widths preserve the checks
 instead of lifting to an empty operation list.
 
-With `localstackviews`, the `FlowEmit::dump` seam in
+For the bounded local policy (`kuna_localstackviews.rs`), the `FlowEmit::dump` seam in
 `decompiler/crates/kuna-decomp/src/p2_lift/flow.rs` records original STORE and
 persistent memory COPY identities for the bounded P6 policy. Register COPYs do
 not contribute. Generational operation identity and original receiver storage

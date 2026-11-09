@@ -32,19 +32,19 @@ fn subphase_count_is_48() {
 }
 
 #[test]
-fn surface_count_is_121() {
-    assert_eq!(kuna_num_surfaces(), 121);
-    assert_eq!(SURFACE_TABLE.len(), 121);
+fn surface_count_is_113() {
+    assert_eq!(kuna_num_surfaces(), 113);
+    assert_eq!(SURFACE_TABLE.len(), 113);
 }
 
 #[test]
-fn settable_count_is_342() {
-    assert_eq!(kuna_num_settables(), 342);
-    assert_eq!(SETTABLE_TABLE.len(), 342);
+fn settable_count_is_333() {
+    assert_eq!(kuna_num_settables(), 333);
+    assert_eq!(SETTABLE_TABLE.len(), 333);
 }
 
 #[test]
-fn tier_counts_are_136_core_154_transform_52_analysis() {
+fn tier_counts_are_76_core_150_transform_107_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_136_core_154_transform_52_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (136, 154, 52));
+    assert_eq!((core, transform, analysis), (76, 150, 107));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_181() {
+fn option_values_live_value_present_for_141() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -465,7 +465,6 @@ fn option_values_live_value_present_for_181() {
                             // (kuna) `foldcallretphi` extends `foldcallret`'s
                             // decision and shares its seam, so it reports its
                             // live state the same way its sibling does.
-                            | "foldcallretphi"
                             // (kuna) `indirectonly` gates an engine-side
                             // Varnode flag read by `HighVariable::has_name` and
                             // `Merge::merge_test_adjacent`, not a printer flag;
@@ -480,11 +479,8 @@ fn option_values_live_value_present_for_181() {
                             | "iteregion"
                             | "iteexpr"
                             | "iteboolean"
-                            | "itecondlist"
                             | "returndup"
-                            | "orchain"
                             | "rettriangle"
-                            | "clonephiorder"
                             | "earlyreturn"
                             | "switchreturn"
                             | "loopbreak_recovery"
@@ -575,9 +571,7 @@ fn option_values_live_value_present_for_181() {
                             // (kuna) `bejoinpass` likewise (`off|whole|high`);
                             // its live value is `Architecture::be_join_pass`.
                             | "bejoinpass"
-                            | "arraycoverwidth"
                             | "bytearrayc"
-                            | "emptystrconst"
                             // (kuna) `structdefs` is a PrintC option like
                             // `arraycoverwidth`/`emptystrconst` above: its live
                             // state is `PrintC::options.struct_defs`, which the
@@ -588,7 +582,6 @@ fn option_values_live_value_present_for_181() {
                             // `PrintC::options.global_ref`.
                             | "globalref"
                             | "callsitestackargs"
-                            | "protoranges"
                             | "varargstackargs"
                             | "varargforward"
                             | "calleearity"
@@ -812,7 +805,7 @@ fn option_values_live_value_present_for_181() {
     // 179 -> 181: +1 for `copywaves` (pool_copy_waves), +1 for `armderef` (analysis_armderef).
     // 178 -> 179: +1 for `ptrauthtrap` (live_field = ptrauth_trap).
     // 179 -> 180: +1 for `authptrcall` (live_field = analysis_authptrcall).
-    assert_eq!(with_live, 181);
+    assert_eq!(with_live, 141);
 }
 
 #[test]
@@ -832,8 +825,8 @@ fn live_from_arch_matches_cpp_ternaries() {
     assert_eq!(OptionValues::live_from_arch("returnpair", on), Some("single"));
     assert_eq!(OptionValues::live_from_arch("returnpair", off), Some("pair"));
     // a plain on/off option
-    assert_eq!(OptionValues::live_from_arch("thumbfuncptr", on), Some("on"));
-    assert_eq!(OptionValues::live_from_arch("thumbfuncptr", off), Some("off"));
+    assert_eq!(OptionValues::live_from_arch("memsetrecover", on), Some("on"));
+    assert_eq!(OptionValues::live_from_arch("memsetrecover", off), Some("off"));
     // no live reader -> None even with a value-producing closure
     assert_eq!(OptionValues::live_from_arch("namestyle", on), None);
     assert_eq!(OptionValues::live_from_arch("stackguard", on), None);
@@ -1058,7 +1051,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftcall`, beside that.
     // +1 for `objcsdk`; its P1 row sits beside `objcivars`.
     // +2 for `dyldimage` and `dyldcrossrefs`; their P1 rows follow `swiftdemangle`.
-    assert_eq!(json.matches("},\n").count(), 341);
+    assert_eq!(json.matches("},\n").count(), 332);
 }
 
 #[test]

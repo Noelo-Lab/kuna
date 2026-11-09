@@ -1,5 +1,5 @@
-//! (kuna) `calleearitybody` — recover an argument list from the callee's own
-//! body when the call has no sibling to compare against.
+//! (kuna) Recover an argument list from the callee's own body when the call has
+//! no sibling to compare against.
 //!
 //! # The gap
 //!
@@ -70,7 +70,6 @@
 //! nested call before it can prove one.
 
 use kuna_base::address::Address;
-use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
 use kuna_base::types::int4;
 
@@ -79,28 +78,10 @@ use kuna_num::opcodes::OpCode;
 use crate::context::{OpId, VarnodeId};
 use crate::fspec::{FuncCallSpecs, ParamEntry};
 use crate::funcdata::Funcdata;
-use crate::p0_knowledge::options::on_or_off;
 use crate::p4_calls::kuna_calleedeadarg::CalleeEntryDead;
 
 /// Marshaling element `<calleearitybody>` (kuna 4000+ range; 4151 = calleepop).
 pub const ELEM_CALLEEARITYBODY: ElementId = ElementId::new("calleearitybody", 4152);
-
-/// (kuna) Recover a lone call's argument list from the callee's own body:
-/// `calleearitybody on|off`.
-pub struct OptionCalleeArityBody;
-
-impl OptionCalleeArityBody {
-    /// The option name.
-    pub const NAME: &'static str = "calleearitybody";
-
-    /// Resolve the flag and its confirmation message; the caller writes it into
-    /// `Architecture::callee_arity_body`.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
-        let val = on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("Callee-body argument-list recovery turned {prop}")))
-    }
-}
 
 /// One of a captured call's trials, in prototype order.
 ///
@@ -158,11 +139,10 @@ pub(crate) fn is_register(addr: &Address) -> bool {
 ///
 /// Called from `build_input_from_trials` with the trials still intact and the
 /// CALL op's pre-rewrite inputs still attached.  `None` whenever the recovery
-/// could not apply anyway: option off, locked prototype, not a live direct CALL
+/// could not apply anyway: locked prototype, not a live direct CALL
 /// to a known entry, or no register trial at all.
 pub fn capture_lone_call(fc: &FuncCallSpecs, data: &Funcdata) -> Option<PendingBodyArgs> {
-    let arch = data.get_arch();
-    if !arch.callee_arity || !arch.callee_arity_body || fc.is_input_locked() {
+    if fc.is_input_locked() {
         return None;
     }
     let op = fc.get_op();
@@ -253,8 +233,6 @@ pub fn plan_from_body(
     trials: &[BodyTrial],
     entries: &[(Address, int4)],
     live: &CalleeEntryDead,
-    cut: bool,
-    scratch: bool,
 ) -> Option<Vec<int4>> {
     if !live.is_complete() || entries.is_empty() {
         return None;
@@ -296,10 +274,7 @@ pub fn plan_from_body(
         return None;
     }
     if !left.iter().any(|(a, sz)| live.proves_dead(a, *sz))
-        && !(cut
-            && crate::p4_calls::kuna_calleearitycut::accepts_cut_run(
-                trials, &picked, entries, scratch,
-            ))
+        && !crate::p4_calls::kuna_calleearitycut::accepts_cut_run(trials, &picked, entries)
     {
         return None;
     }
@@ -344,8 +319,6 @@ fn recover_one(data: &mut Funcdata, p: &PendingBodyArgs) -> bool {
         Some(o) if !o.is_dead() && o.code() == OpCode::CPUI_CALL && o.num_input() == 1 + p.swift_self as int4 => {}
         _ => return false,
     }
-    let cut = data.get_arch().callee_arity_cut;
-    let scratch = data.get_arch().callee_arity_scratch;
     let Some(idx) = data.get_call_specs_index(p.op) else { return false };
     let entries = {
         let fc = data.get_call_specs(idx);
@@ -356,7 +329,7 @@ fn recover_one(data: &mut Funcdata, p: &PendingBodyArgs) -> bool {
     };
     let picked = {
         let Some(live) = data.kuna_callee_entry_dead(&p.entry) else { return false };
-        match plan_from_body(&p.trials, &entries, live, cut, scratch) {
+        match plan_from_body(&p.trials, &entries, live) {
             Some(v) => v,
             None => return false,
         }

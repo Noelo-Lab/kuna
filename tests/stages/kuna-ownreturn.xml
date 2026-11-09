@@ -5,7 +5,7 @@
     return value, not leftover.
 
     Stage / sub-stage: P4 call and prototype model, output-prototype.
-    P0 assertion:      option retinputhalf on|off  (default on).
+    The rule (kuna_retinputhalf.rs) is always on.
 
     Source (clang -O2 -target arm-linux-gnueabi, bytes verbatim below with each
     `bl ext` pointed at 0x100100, where `ext` has no body):
@@ -51,11 +51,10 @@
     `own` keeps b in r4 across the call and moves it back into r1, its own
     argument register, to return it as the high word. After copy propagation
     r1 reaches the RETURN as the caller's own r1, which is also what an
-    untouched register looks like, so the pair repair dropped it: pass 2
-    (option retinputhalf off, the strict rule) shows the old output,
-    `unsigned int own(unsigned int a0)`, with b gone from the prototype. Return
-    recovery still sees the two moves and records r1 as moved back, so by
-    default the pair and the parameter stay. `own_cond` moves the values on
+    untouched register looks like, so the strict pair repair dropped it,
+    printing `unsigned int own(unsigned int a0)` with b gone from the prototype.
+    Return recovery still sees the two moves and records r1 as moved back, so
+    the pair and the parameter stay. `own_cond` moves the values on
     both paths of the branch. `two_ret` leaves r0 and r1 untouched on its early
     return; the other return proves the function returns the pair, so both
     returns keep it. `keep_int` is the control: r1 is killed by the call,
@@ -65,8 +64,8 @@
     on its way to the RETURN does not count, and it stays an int function.
     `ashr_hi` moves only the high word back on its early return and leaves r0
     untouched there; returning r1 alone would hand back the high word as the
-    whole value (pass 2 shows the strict rule's `return a0;`), so that return
-    keeps the pair.
+    whole value (the strict rule's `return a0;`), so that return keeps the
+    pair.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 30482de90140a0e10050a0e13b0000eb0500a0e10410a0e13048bde81eff2fe1
@@ -104,26 +103,16 @@
   <com>lo fu ashr_hi</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option retinputhalf off</com>
-  <com>lo fu own</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu keep_int</com>
-  <com>decompile</com>
-  <com>print C</com>
-  <com>lo fu ashr_hi</com>
-  <com>decompile</com>
-  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="OWNRETURN #1: the high word moved back into r1 is kept, and b stays a parameter" min="1" max="1">unsigned long long own\(unsigned int a0,unsigned int a1\)</stringmatch>
 <stringmatch name="OWNRETURN #2: own, own_cond, both returns of two_ret and the early return of ashr_hi return both words" min="5" max="5">return CONCAT44\(a1,a0\);</stringmatch>
 <stringmatch name="OWNRETURN #3: own_cond, which moves the values on both paths, keeps the pair" min="1" max="1">unsigned long long own_cond\(unsigned int a0,unsigned int a1,int4 a2\)</stringmatch>
-<stringmatch name="OWNRETURN #4: keep_int stays a one-register function in both passes" min="2" max="2">unsigned int keep_int\(unsigned int a0\)</stringmatch>
-<stringmatch name="OWNRETURN #5: with option retinputhalf off the strict rule drops the high word and b" min="1" max="1">unsigned int own\(unsigned int a0\)</stringmatch>
+<stringmatch name="OWNRETURN #4: keep_int stays a one-register function" min="1" max="1">unsigned int keep_int\(unsigned int a0\)</stringmatch>
+<stringmatch name="OWNRETURN #5: the strict rule never drops the high word and b" min="0" max="0">unsigned int own\(unsigned int a0\)</stringmatch>
 <stringmatch name="OWNRETURN #6: two_ret returns the pair on both paths" min="1" max="1">unsigned long long two_ret\(unsigned int a0,unsigned int a1,int4 a2\)</stringmatch>
 <stringmatch name="OWNRETURN #7: sys2nr, whose move back into r1 feeds the svc, stays an int function" min="1" max="1">int4 sys2nr\(int4 a0\)</stringmatch>
 <stringmatch name="OWNRETURN #8: ashr_hi, whose early return moves back only the high word, returns the pair" min="1" max="1">unsigned long long ashr_hi\(uint4 a0,int4 a1,uint4 a2\)</stringmatch>
 <stringmatch name="OWNRETURN #9: the high word is never returned alone" min="0" max="0">return a1;</stringmatch>
-<stringmatch name="OWNRETURN #10: with option retinputhalf off ashr_hi's early return drops the high word" min="1" max="1">uint4 ashr_hi\(uint4 a0,int4 a1,uint4 a2\)</stringmatch>
+<stringmatch name="OWNRETURN #10: ashr_hi's early return never drops the high word" min="0" max="0">uint4 ashr_hi\(uint4 a0,int4 a1,uint4 a2\)</stringmatch>
 </decompilertest>
